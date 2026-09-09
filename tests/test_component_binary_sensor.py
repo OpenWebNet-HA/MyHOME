@@ -1,6 +1,6 @@
 """Test the MyHOME binary sensor component."""
 from datetime import timedelta
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 
@@ -392,4 +392,143 @@ async def test_binary_sensor_dispatcher_and_discovery(hass):
     sensor.async_on_remove = MagicMock()
     await sensor.async_added_to_hass()
     mock_gateway.send_status_request.assert_awaited()
+
+
+async def test_binary_sensor_entity_registry_and_motion_discovery(hass):
+    """Test binary sensor registry restoration and dynamic motion sensor discovery."""
+    from homeassistant.helpers.dispatcher import async_dispatcher_send
+    from custom_components.myhome.ownd.message import OWNEvent
+
+    mock_gateway = MagicMock()
+    mock_gateway.mac = "00:03:50:00:11:22"
+    mock_gateway.send_status_request = AsyncMock()
+
+    # Configure a sensor that is already in registry to hit the continue branch
+    hass.data = {
+        DOMAIN: {
+            mock_gateway.mac: {
+                "platforms": {
+                    "binary_sensor": {
+                        "reg_mot": {
+                            "who": "1",
+                            "where": "41",
+                            "name": "Restored Motion",
+                        }
+                    }
+                },
+                "entity": mock_gateway,
+            }
+        }
+    }
+    config_entry = MagicMock()
+    config_entry.data = {"mac": mock_gateway.mac}
+    config_entry.entry_id = "test_bs_reg_entry"
+
+    entry_motion = MagicMock()
+    entry_motion.domain = "binary_sensor"
+    entry_motion.unique_id = f"{mock_gateway.mac}-1-41-motion"
+    entry_motion.original_device_class = BinarySensorDeviceClass.MOTION
+
+    entry_dry = MagicMock()
+    entry_dry.domain = "binary_sensor"
+    entry_dry.unique_id = f"{mock_gateway.mac}-25-42"
+    entry_dry.original_device_class = BinarySensorDeviceClass.OPENING
+
+    entry_aux = MagicMock()
+    entry_aux.domain = "binary_sensor"
+    entry_aux.unique_id = f"{mock_gateway.mac}-9-43"
+    entry_aux.original_device_class = None
+
+    entry_aux2 = MagicMock()
+    entry_aux2.domain = "binary_sensor"
+    entry_aux2.unique_id = f"{mock_gateway.mac}-9-44"
+    entry_aux2.original_device_class = BinarySensorDeviceClass.CONNECTIVITY
+
+    mock_er = MagicMock()
+
+    with patch(
+        "custom_components.myhome.binary_sensor.er.async_entries_for_config_entry",
+        return_value=[entry_motion, entry_dry, entry_aux, entry_aux2],
+    ), patch(
+        "custom_components.myhome.binary_sensor.er.async_get",
+        return_value=mock_er,
+    ):
+        added = []
+        def fake_add(entities):
+            added.extend(entities)
+
+        assert await async_setup_entry(hass, config_entry, fake_add) is True
+        # 4 entities restored from registry; configured 41 is skipped via continue
+        assert len(added) == 4
+        assert isinstance(added[0], MyHOMEMotionSensor)
+        assert isinstance(added[1], MyHOMEDryContact)
+        assert isinstance(added[2], MyHOMEAuxiliary)
+        assert isinstance(added[3], MyHOMEAuxiliary)
+
+        # Dynamic motion discovery via *1*34*51##
+        motion_msg = OWNEvent.parse("*1*34*51##")
+        async_dispatcher_send(hass, f"myhome_message_{mock_gateway.mac}", motion_msg)
+        await hass.async_block_till_done()
+
+        # Should discover new motion sensor for 51
+        assert len(added) == 5
+        assert isinstance(added[4], MyHOMEMotionSensor)
+        assert added[4]._where == "51"
+
+        # Sending another motion message for 51 should not add duplicate
+        async_dispatcher_send(hass, f"myhome_message_{mock_gateway.mac}", motion_msg)
+        await hass.async_block_till_done()
+        assert len(added) == 5
+
+        # Dynamic motion discovery with interface *1*34*52#4#01##
+        motion_interface = OWNEvent.parse("*1*34*52#4#01##")
+        async_dispatcher_send(hass, f"myhome_message_{mock_gateway.mac}", motion_interface)
+        await hass.async_block_till_done()
+        assert len(added) == 6
+        assert added[5]._where == "52"
+
+        # Motion message with hyphenated WHERE to hit clean_where != where
+        hyphen_msg = MagicMock(spec=OWNLightingEvent)
+        hyphen_msg.where = "sub-53"
+        hyphen_msg.message_type = "motion_detected"
+        hyphen_msg.motion = True
+        hyphen_msg.human_readable_log = "motion on sub-53"
+        async_dispatcher_send(hass, f"myhome_message_{mock_gateway.mac}", hyphen_msg)
+        await hass.async_block_till_done()
+        assert len(added) == 7
+        assert added[6]._where == "sub-53"
+
+        # Message with dimension 5 (sensitivity) and dimension 7 (timeout)
+        dim5_msg = OWNEvent.parse("*#1*51*5*2##")
+        async_dispatcher_send(hass, f"myhome_message_{mock_gateway.mac}", dim5_msg)
+        await hass.async_block_till_done()
+
+        dim7_msg = OWNEvent.parse("*#1*51*7*0*15*0##")
+        async_dispatcher_send(hass, f"myhome_message_{mock_gateway.mac}", dim7_msg)
+        await hass.async_block_till_done()
+
+
+async def test_binary_sensor_registry_exception(hass):
+    """Test registry exception fallback in binary_sensor async_setup_entry."""
+    mock_gateway = MagicMock()
+    mock_gateway.mac = "mac_bs_err"
+    hass.data = {
+        DOMAIN: {
+            "mac_bs_err": {
+                "platforms": {},
+                "entity": mock_gateway,
+            }
+        }
+    }
+    config_entry = MagicMock()
+    config_entry.data = {"mac": "mac_bs_err"}
+    config_entry.entry_id = "test_bs_err"
+
+    with patch(
+        "custom_components.myhome.binary_sensor.er.async_get",
+        side_effect=Exception("ER error"),
+    ):
+        added = []
+        assert await async_setup_entry(hass, config_entry, lambda e: added.extend(e)) is True
+
 

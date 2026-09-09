@@ -38,6 +38,7 @@ from custom_components.myhome.const import (
     TRANSITION_MODE_SOFTWARE,
     CONF_PLATFORMS,
     CONF_WHERE,
+    CONF_WHO,
     CONF_BUS_INTERFACE,
     CONF_DIMMABLE,
     CONF_ENTITY_NAME,
@@ -810,3 +811,113 @@ async def test_light_setup_registry_exception(hass):
         entities = async_add_entities.call_args[0][0]
         assert len(entities) == 1
         assert entities[0]._device_id == "19"
+
+
+async def test_light_suppresses_sensor_discovery_and_purges_registry(hass):
+    """Test that light platform purges ghost light entities from registry and ignores sensor messages."""
+    mock_gateway = MagicMock()
+    mock_gateway.mac = "mac_sensor"
+    hass.data.setdefault(DOMAIN, {})["mac_sensor"] = {
+        "entity": mock_gateway,
+        CONF_PLATFORMS: {
+            "light": {
+                "25": {CONF_WHERE: "25", CONF_NAME: "Light 25"},
+            },
+            "binary_sensor": {
+                "bs_21": {CONF_WHO: "1", CONF_WHERE: "21", CONF_NAME: "Motion 21"},
+            },
+            "sensor": {
+                "s_22": {CONF_WHO: "1", CONF_WHERE: "22", CONF_NAME: "Illuminance 22"},
+            },
+        },
+    }
+    config_entry = MagicMock()
+    config_entry.data = {"mac": "mac_sensor"}
+    config_entry.entry_id = "test_entry_sensor"
+
+    # Mock entity registry with:
+    # 1. binary_sensor with who 1: mac_sensor-1-23-motion
+    # 2. sensor with who 1: mac_sensor-24-illuminance
+    # 3. ghost light entity for 21: mac_sensor-1-21
+    # 4. ghost light entity for 23: mac_sensor-1-23
+    # 5. real light entity: mac_sensor-1-25
+    bs_entry = MagicMock()
+    bs_entry.domain = "binary_sensor"
+    bs_entry.unique_id = "mac_sensor-1-23-motion"
+
+    s_entry = MagicMock()
+    s_entry.domain = "sensor"
+    s_entry.unique_id = "mac_sensor-24-illuminance"
+
+    ghost_21 = MagicMock()
+    ghost_21.domain = "light"
+    ghost_21.unique_id = "mac_sensor-1-21"
+    ghost_21.entity_id = "light.ghost_21"
+
+    ghost_23 = MagicMock()
+    ghost_23.domain = "light"
+    ghost_23.unique_id = "mac_sensor-1-23"
+    ghost_23.entity_id = "light.ghost_23"
+
+    light_25 = MagicMock()
+    light_25.domain = "light"
+    light_25.unique_id = "mac_sensor-1-25"
+    light_25.entity_id = "light.light_25"
+
+    mock_er = MagicMock()
+
+    with patch(
+        "custom_components.myhome.light.er.async_entries_for_config_entry",
+        return_value=[bs_entry, s_entry, ghost_21, ghost_23, light_25],
+    ), patch(
+        "custom_components.myhome.light.er.async_get",
+        return_value=mock_er,
+    ):
+        added = []
+        def fake_add(entities):
+            added.extend(entities)
+
+        await async_setup_entry(hass, config_entry, fake_add)
+
+        # Verify ghost lights are removed from registry
+        mock_er.async_remove.assert_any_call("light.ghost_21")
+        mock_er.async_remove.assert_any_call("light.ghost_23")
+        assert len(added) == 1
+        assert added[0]._device_id == "25"
+
+        # Now test receiving incoming sensor messages:
+        # 1. Motion message (*1*34*31##)
+        from custom_components.myhome.ownd.message import OWNEvent
+        motion_msg = OWNEvent.parse("*1*34*31##")
+        async_dispatcher_send(hass, "myhome_message_mac_sensor", motion_msg)
+        await hass.async_block_till_done()
+
+        # Should NOT add any new light entity
+        assert len(added) == 1
+
+        # 2. Illuminance message (*#1*31*6*500##)
+        illum_msg = OWNEvent.parse("*#1*31*6*500##")
+        async_dispatcher_send(hass, "myhome_message_mac_sensor", illum_msg)
+        await hass.async_block_till_done()
+
+        # Should NOT add any new light entity
+        assert len(added) == 1
+
+        # 3. Subsequent standard light event on address 31 (*1*1*31##)
+        # Since 31 is recognized as sensor_wheres, it should be ignored by light platform
+        on_msg = OWNEvent.parse("*1*1*31##")
+        async_dispatcher_send(hass, "myhome_message_mac_sensor", on_msg)
+        await hass.async_block_till_done()
+        assert len(added) == 1
+
+        # 4. Motion message with interface (*1*34*32#4#01##)
+        motion_interface = OWNEvent.parse("*1*34*32#4#01##")
+        async_dispatcher_send(hass, "myhome_message_mac_sensor", motion_interface)
+        await hass.async_block_till_done()
+        assert len(added) == 1
+
+        # 5. Sensor message arriving for an address previously in known_lights (e.g. "25")
+        sensor_for_light = OWNEvent.parse("*1*34*25##")
+        async_dispatcher_send(hass, "myhome_message_mac_sensor", sensor_for_light)
+        await hass.async_block_till_done()
+

@@ -14,6 +14,7 @@ from homeassistant.const import (
 )
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
+from homeassistant.helpers import entity_registry as er
 
 from .ownd.message import (
     OWNDryContactEvent,
@@ -47,14 +48,96 @@ PIR_SENSITIVITY = ["low", "medium", "high", "very high"]
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
+    gateway = hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY]
     _configured_binary_sensors = hass.data[DOMAIN][config_entry.data[CONF_MAC]].get(CONF_PLATFORMS, {}).get(PLATFORM, {})
 
     _binary_sensors = []
     known_sensors = set()
 
+    # Restore previously discovered entities from Entity Registry so they persist across restarts
+    try:
+        entity_registry = er.async_get(hass)
+        existing_entries = er.async_entries_for_config_entry(entity_registry, config_entry.entry_id)
+    except Exception:
+        entity_registry = None
+        existing_entries = []
+
+    for entry in existing_entries:
+        if entry.domain == PLATFORM:
+            unique_id = entry.unique_id
+            after_mac = unique_id.replace(f"{gateway.mac}-", "", 1).replace(f"{config_entry.data[CONF_MAC]}-", "", 1)
+            if "-motion" in unique_id or entry.original_device_class == BinarySensorDeviceClass.MOTION:
+                where = after_mac.replace("-motion", "")
+                parts_who = where.split("-", 1)
+                where = parts_who[-1] if len(parts_who) > 1 else where
+                clean_where = where.split("-")[-1]
+                cfg = _configured_binary_sensors.get(f"1-{where}") or _configured_binary_sensors.get(where) or _configured_binary_sensors.get(clean_where) or {}
+                bs = MyHOMEMotionSensor(
+                    hass=hass,
+                    device_id=where,
+                    who="1",
+                    where=where,
+                    name=cfg.get(CONF_NAME, f"Motion Sensor {clean_where}"),
+                    entity_name=cfg.get(CONF_ENTITY_NAME),
+                    inverted=cfg.get(CONF_INVERTED, False),
+                    device_class=BinarySensorDeviceClass.MOTION,
+                    manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
+                    model=cfg.get(CONF_DEVICE_MODEL, "Motion Sensor"),
+                    gateway=gateway,
+                )
+                known_sensors.add(f"1_{where}")
+                known_sensors.add(f"1_{clean_where}")
+                _binary_sensors.append(bs)
+            elif after_mac.startswith("25-"):
+                where = after_mac.replace("25-", "", 1)
+                clean_where = where.split("-")[-1]
+                cfg = _configured_binary_sensors.get(f"25-{where}") or _configured_binary_sensors.get(where) or _configured_binary_sensors.get(clean_where) or {}
+                bs = MyHOMEDryContact(
+                    hass=hass,
+                    device_id=where,
+                    who="25",
+                    where=where,
+                    name=cfg.get(CONF_NAME, f"Dry Contact {clean_where}"),
+                    entity_name=cfg.get(CONF_ENTITY_NAME),
+                    inverted=cfg.get(CONF_INVERTED, False),
+                    device_class=cfg.get(CONF_DEVICE_CLASS, BinarySensorDeviceClass.OPENING),
+                    manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
+                    model=cfg.get(CONF_DEVICE_MODEL, "Dry Contact Interface"),
+                    gateway=gateway,
+                )
+                known_sensors.add(f"25_{where}")
+                known_sensors.add(f"25_{clean_where}")
+                _binary_sensors.append(bs)
+            elif after_mac.startswith("9-"):
+                where = after_mac.replace("9-", "", 1)
+                clean_where = where.split("-")[-1]
+                cfg = _configured_binary_sensors.get(f"9-{where}") or _configured_binary_sensors.get(where) or _configured_binary_sensors.get(clean_where) or {}
+                bs = MyHOMEAuxiliary(
+                    hass=hass,
+                    device_id=where,
+                    who="9",
+                    where=where,
+                    name=cfg.get(CONF_NAME, f"Auxiliary Channel {clean_where}"),
+                    entity_name=cfg.get(CONF_ENTITY_NAME),
+                    inverted=cfg.get(CONF_INVERTED, False),
+                    device_class=cfg.get(CONF_DEVICE_CLASS) or entry.original_device_class,
+                    manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
+                    model=cfg.get(CONF_DEVICE_MODEL, "Auxiliary Channel"),
+                    gateway=gateway,
+                )
+                known_sensors.add(f"9_{where}")
+                known_sensors.add(f"9_{clean_where}")
+                _binary_sensors.append(bs)
+
+    # Also instantiate any configured binary sensors not yet in registry
     for _binary_sensor_key, dev_cfg in _configured_binary_sensors.items():
         _who = int(dev_cfg[CONF_WHO])
         _device_class = dev_cfg.get(CONF_DEVICE_CLASS) or dev_cfg.get("device_class")
+        where = str(dev_cfg[CONF_WHERE])
+        clean_where = where.split("-")[-1]
+        if f"{_who}_{where}" in known_sensors or f"{_who}_{clean_where}" in known_sensors:
+            continue
+
         if _who == 25:
             bs = MyHOMEDryContact(
                 hass=hass,
@@ -64,12 +147,13 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 name=dev_cfg[CONF_NAME],
                 entity_name=dev_cfg.get(CONF_ENTITY_NAME),
                 inverted=dev_cfg.get(CONF_INVERTED, False),
-                device_class=_device_class,
+                device_class=_device_class or BinarySensorDeviceClass.OPENING,
                 manufacturer=dev_cfg.get(CONF_MANUFACTURER, "BTicino"),
                 model=dev_cfg.get(CONF_DEVICE_MODEL, "Dry Contact"),
-                gateway=hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY],
+                gateway=gateway,
             )
             known_sensors.add(f"25_{dev_cfg[CONF_WHERE]}")
+            known_sensors.add(f"25_{clean_where}")
             _binary_sensors.append(bs)
         elif _who == 9:
             bs = MyHOMEAuxiliary(
@@ -83,9 +167,10 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 device_class=_device_class,
                 manufacturer=dev_cfg.get(CONF_MANUFACTURER, "BTicino"),
                 model=dev_cfg.get(CONF_DEVICE_MODEL, "Auxiliary Channel"),
-                gateway=hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY],
+                gateway=gateway,
             )
             known_sensors.add(f"9_{dev_cfg[CONF_WHERE]}")
+            known_sensors.add(f"9_{clean_where}")
             _binary_sensors.append(bs)
         elif _who == 1 and _device_class == BinarySensorDeviceClass.MOTION:
             bs = MyHOMEMotionSensor(
@@ -99,9 +184,10 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 device_class=_device_class,
                 manufacturer=dev_cfg.get(CONF_MANUFACTURER, "BTicino"),
                 model=dev_cfg.get(CONF_DEVICE_MODEL, "Motion Sensor"),
-                gateway=hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY],
+                gateway=gateway,
             )
             known_sensors.add(f"1_{dev_cfg[CONF_WHERE]}")
+            known_sensors.add(f"1_{clean_where}")
             _binary_sensors.append(bs)
 
     if _binary_sensors:
@@ -112,8 +198,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         """Forward incoming bus messages to binary sensor entities."""
         if isinstance(msg, OWNDryContactEvent):
             where = str(msg.where)
-            if f"25_{where}" not in known_sensors:
-                clean_where = where.split("-")[-1]
+            clean_where = where.split("-")[-1]
+            if f"25_{where}" not in known_sensors and f"25_{clean_where}" not in known_sensors:
                 name = f"Dry Contact {clean_where}"
                 bs = MyHOMEDryContact(
                     hass=hass,
@@ -126,9 +212,10 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                     device_class=BinarySensorDeviceClass.OPENING,
                     manufacturer="BTicino",
                     model="Dry Contact Interface",
-                    gateway=hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY],
+                    gateway=gateway,
                 )
                 known_sensors.add(f"25_{where}")
+                known_sensors.add(f"25_{clean_where}")
                 async_add_entities([bs])
                 bs.handle_event(msg)
             async_dispatcher_send(
@@ -143,13 +230,51 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 f"myhome_update_{config_entry.data[CONF_MAC]}_9_{where}",
                 msg,
             )
-        elif isinstance(msg, OWNLightingEvent) and getattr(msg, "dimension", None) is not None:
-            where = str(msg.where)
-            async_dispatcher_send(
-                hass,
-                f"myhome_update_{config_entry.data[CONF_MAC]}_1_{where}",
-                msg,
+        elif isinstance(msg, OWNLightingEvent):
+            is_motion = (
+                getattr(msg, "is_sensor", False) is True
+                or getattr(msg, "motion", False) is True
+                or getattr(msg, "message_type", None) in (
+                    MESSAGE_TYPE_MOTION,
+                    MESSAGE_TYPE_MOTION_TIMEOUT,
+                    MESSAGE_TYPE_PIR_SENSITIVITY,
+                )
+                or getattr(msg, "dimension", None) in (5, 7)
+                or getattr(msg, "_state", None) == 34
             )
+            if is_motion and hasattr(msg, "where") and msg.where is not None:
+                where = str(msg.where)
+                clean_where = where.split("-")[-1]
+                if f"1_{where}" not in known_sensors and f"1_{clean_where}" not in known_sensors:
+                    name = f"Motion Sensor {clean_where}"
+                    bs = MyHOMEMotionSensor(
+                        hass=hass,
+                        name=name,
+                        entity_name=None,
+                        device_id=where,
+                        who="1",
+                        where=where,
+                        inverted=False,
+                        device_class=BinarySensorDeviceClass.MOTION,
+                        manufacturer="BTicino",
+                        model="Motion Sensor",
+                        gateway=gateway,
+                    )
+                    known_sensors.add(f"1_{where}")
+                    known_sensors.add(f"1_{clean_where}")
+                    async_add_entities([bs])
+                    bs.handle_event(msg)
+                async_dispatcher_send(
+                    hass,
+                    f"myhome_update_{config_entry.data[CONF_MAC]}_1_{where}",
+                    msg,
+                )
+                if clean_where != where:
+                    async_dispatcher_send(
+                        hass,
+                        f"myhome_update_{config_entry.data[CONF_MAC]}_1_{clean_where}",
+                        msg,
+                    )
 
     config_entry.async_on_unload(
         async_dispatcher_connect(
@@ -286,9 +411,17 @@ class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
         self._inverted = inverted
 
         self._attr_device_class = device_class
-        self._attr_name = entity_name if entity_name else self._attr_device_class.replace("_", " ").capitalize()
+        if entity_name:
+            self._attr_name = entity_name
+        elif self._attr_device_class:
+            self._attr_name = self._attr_device_class.replace("_", " ").capitalize()
+        else:
+            self._attr_name = name
 
-        self._attr_unique_id = f"{gateway.mac}-{self._device_id}-{self._attr_device_class}"
+        if self._attr_device_class:
+            self._attr_unique_id = f"{gateway.mac}-{self._device_id}-{self._attr_device_class}"
+        else:
+            self._attr_unique_id = f"{gateway.mac}-{self._device_id}"
 
         self._attr_is_on = False
         self._attr_extra_state_attributes = {"Auxiliary channel": self._where}
@@ -450,5 +583,8 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity, RestoreEntity):
             self._attr_extra_state_attributes["Sensitivity"] = PIR_SENSITIVITY[message.pir_sensitivity]
         self._last_updated = datetime.now(timezone.utc)
         self._attr_force_update = True
-        self.async_write_ha_state()
+        try:
+            self.async_write_ha_state()
+        except RuntimeError:
+            pass
         self._attr_force_update = False

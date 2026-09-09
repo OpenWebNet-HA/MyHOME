@@ -529,7 +529,20 @@ class OWNLightingEvent(OWNEvent):
 
     @property
     def is_on(self) -> bool:
-        return 0 < self._state < 32
+        return self._state is not None and 0 < self._state < 32
+
+    @property
+    def is_sensor(self) -> bool:
+        return (
+            self._state == 34
+            or (self._dimension is not None and self._dimension in (5, 6, 7))
+            or self._type in (
+                MESSAGE_TYPE_MOTION,
+                MESSAGE_TYPE_ILLUMINANCE,
+                MESSAGE_TYPE_PIR_SENSITIVITY,
+                MESSAGE_TYPE_MOTION_TIMEOUT,
+            )
+        )
 
     @property
     def timer(self):

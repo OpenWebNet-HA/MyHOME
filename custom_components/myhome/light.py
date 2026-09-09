@@ -96,6 +96,44 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             switch_wheres.add(dev_id)
             switch_wheres.add(clean_sw)
 
+    # Collect all WHERE addresses configured or registered as sensors/binary_sensors so dynamic discovery
+    # of WHO=1 never auto-creates a duplicate Light entity for motion/illuminance sensors.
+    sensor_wheres = set()
+    _configured_bs = hass.data[DOMAIN][config_entry.data[CONF_MAC]].get(CONF_PLATFORMS, {}).get("binary_sensor", {})
+    for dev_id, bs_cfg in _configured_bs.items():
+        if str(bs_cfg.get(CONF_WHO, "25")) == "1":
+            bs_where = str(bs_cfg.get(CONF_WHERE, dev_id))
+            bs_clean = bs_where.split("-")[-1]
+            sensor_wheres.add(str(dev_id))
+            sensor_wheres.add(str(bs_where))
+            sensor_wheres.add(bs_clean)
+
+    _configured_s = hass.data[DOMAIN][config_entry.data[CONF_MAC]].get(CONF_PLATFORMS, {}).get("sensor", {})
+    for dev_id, s_cfg in _configured_s.items():
+        if str(s_cfg.get(CONF_WHO, "1")) == "1":
+            s_where = str(s_cfg.get(CONF_WHERE, dev_id))
+            s_clean = s_where.split("-")[-1]
+            sensor_wheres.add(str(dev_id))
+            sensor_wheres.add(str(s_where))
+            sensor_wheres.add(s_clean)
+
+    for entry in existing_entries:
+        if entry.domain in ("binary_sensor", "sensor"):
+            unique_id = entry.unique_id
+            after_mac = unique_id.replace(f"{gateway.mac}-", "", 1).replace(f"{config_entry.data[CONF_MAC]}-", "", 1)
+            parts_who = after_mac.split("-", 1)
+            if len(parts_who) > 1 and parts_who[0] == "1":
+                dev_id = parts_who[1].split("-")[0]
+                clean_s = dev_id.split("#4#")[0].split("-")[-1]
+                sensor_wheres.add(dev_id)
+                sensor_wheres.add(clean_s)
+            elif "-motion" in unique_id or "-illuminance" in unique_id:
+                # E.g. {mac}-{device_id}-{device_class}
+                dev_id = after_mac.split("-")[0]
+                clean_s = dev_id.split("#4#")[0].split("-")[-1]
+                sensor_wheres.add(dev_id)
+                sensor_wheres.add(clean_s)
+
     for entry in existing_entries:
         if entry.domain == PLATFORM:
             unique_id = entry.unique_id
@@ -114,8 +152,15 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 interface = None
 
             clean_where = where.split('-')[-1]
-            if clean_where in switch_wheres or device_id in switch_wheres or where in switch_wheres:
-                # Ghost light erroneously created in a previous session for a switch device
+            if (
+                clean_where in switch_wheres
+                or device_id in switch_wheres
+                or where in switch_wheres
+                or clean_where in sensor_wheres
+                or device_id in sensor_wheres
+                or where in sensor_wheres
+            ):
+                # Ghost light erroneously created in a previous session for a switch or sensor device
                 if entity_registry:
                     entity_registry.async_remove(entry.entity_id)
                 continue
@@ -161,7 +206,14 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
         if clean_where in seen_configured_where or device_where_id in known_lights or dev_id in known_lights:
             continue
-        if clean_where in switch_wheres or device_where_id in switch_wheres or dev_id in switch_wheres:
+        if (
+            clean_where in switch_wheres
+            or device_where_id in switch_wheres
+            or dev_id in switch_wheres
+            or clean_where in sensor_wheres
+            or device_where_id in sensor_wheres
+            or dev_id in sensor_wheres
+        ):
             continue
         seen_configured_where.add(clean_where)
 
@@ -217,8 +269,39 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         interface = getattr(message, "interface", None)
         unique_id = f"{where}#4#{interface}" if interface else str(where)
 
-        if clean_where in switch_wheres or unique_id in switch_wheres or where in switch_wheres:
-            # Route to switch entities, do not auto-create a light entity
+        # Ignore sensor messages (motion, illuminance, sensitivity, timeout)
+        if (
+            getattr(message, "is_sensor", False) is True
+            or getattr(message, "motion", False) is True
+            or isinstance(getattr(message, "illuminance", None), int)
+            or getattr(message, "message_type", None) in (
+                "motion_detected",
+                "illuminance_value",
+                "pir_sensitivity",
+                "motion_timeout",
+            )
+            or getattr(message, "dimension", None) in (5, 6, 7)
+            or getattr(message, "_state", None) == 34
+        ):
+            sensor_wheres.add(where)
+            sensor_wheres.add(unique_id)
+            sensor_wheres.add(clean_where)
+            if unique_id in known_lights:
+                known_lights.remove(unique_id)
+            async_dispatcher_send(hass, f"myhome_update_{config_entry.data[CONF_MAC]}_1_{unique_id}", message)
+            if unique_id != where:
+                async_dispatcher_send(hass, f"myhome_update_{config_entry.data[CONF_MAC]}_1_{where}", message)
+            return
+
+        if (
+            clean_where in switch_wheres
+            or unique_id in switch_wheres
+            or where in switch_wheres
+            or clean_where in sensor_wheres
+            or unique_id in sensor_wheres
+            or where in sensor_wheres
+        ):
+            # Route to switch or sensor entities, do not auto-create a light entity
             async_dispatcher_send(hass, f"myhome_update_{config_entry.data[CONF_MAC]}_1_{unique_id}", message)
             if unique_id != where:
                 async_dispatcher_send(hass, f"myhome_update_{config_entry.data[CONF_MAC]}_1_{where}", message)
