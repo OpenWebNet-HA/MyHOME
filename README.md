@@ -21,7 +21,7 @@ Maintained by the **[OpenWebNet-HA](https://github.com/OpenWebNet-HA)** communit
 [📦 Installation](#-installation) • [🏛️ Supported Hardware](#️-supported-hardware) • [📚 Wiki Docs](https://github.com/OpenWebNet-HA/MyHOME/wiki) • [💬 Discussions](https://github.com/OpenWebNet-HA/MyHOME/discussions) • [🤝 Contributing](CONTRIBUTING.md) • [🔒 Security](SECURITY.md)
 
 > [!TIP]
-> **🧪 Community Testing Active**: The modernized architecture is currently undergoing community validation in **[PR #232](https://github.com/OpenWebNet-HA/MyHOME/pull/232)**. Because HACS does not index unmerged Git branches from its default store, please see the [Testing the V2 Architecture Branch](#testing-the-v2-architecture-branch-v2-phase1-architecture) guide below to install it in 2 minutes!
+> **🚀 V2 Phase 1 Architecture Beta Now Live**: The modernized OpenWebNet integration is now available as an official GitHub pre-release (**`2.0.0b2`**)! See the [Installation & Beta Guide](#-installation) below to install or update in 2 minutes.
 
 ---
 
@@ -87,49 +87,92 @@ We now maintain a comprehensive, community-curated **[GitHub Wiki](https://githu
 
 ---
 
-## 📦 Installation
+## 📦 Installation & Updating
 
-### Testing the V2 Architecture Branch (`v2-phase1-architecture`)
+### Method 1: HACS (Recommended)
 
-While the V2 architecture is actively being validated in **[PR #232](https://github.com/OpenWebNet-HA/MyHOME/pull/232)**, HACS will not automatically display unmerged git branches or permit adding `OpenWebNet-HA/MyHOME` under *Custom repositories* (it will return `Repository 'openwebnet-ha/myhome' exists in the store`).
+#### Step 1: Add the Organization Repository
+1. Open **HACS** in your Home Assistant UI.
+2. Click the **three dots (`⋮`)** in the top-right corner and select **Custom repositories**.
+3. Add the repository details:
+   - **Repository:** `https://github.com/OpenWebNet-HA/MyHOME`
+   - **Type / Category:** `Integration`
+4. Click **Add**.
 
-You can easily install and test the modernized branch right now using either method below:
+> [!CAUTION]
+> **Migrating from a personal fork? DO NOT delete the MyHOME integration from Home Assistant Settings!**
+> Deleting the integration from *Settings → Devices & Services* will wipe all configured gateways and devices.
+> If you previously tracked a personal fork (such as `GreenGrassBlueOcean/MyHOME`):
+> 1. Open **HACS → ⋮ → Custom repositories**.
+> 2. Click the **red trash can icon** next to the old fork URL to unlink it.
+> 3. Verify `OpenWebNet-HA/MyHOME` is added.
+> 4. All your configured devices, gateways, and automations remain 100% intact.
 
-#### Method A: Manual Installation (Recommended)
+#### Step 2: Enable Beta Releases & Download
 
-1. Download the branch archive:  
-   👉 **[Download v2-phase1-architecture.zip](https://github.com/OpenWebNet-HA/MyHOME/archive/refs/heads/v2-phase1-architecture.zip)**
-2. Unzip the archive on your computer.
-3. Open your Home Assistant configuration directory (via **Samba Share**, **Studio Code Server**, or **File Editor** add-on).
-4. Copy the `custom_components/myhome` directory into your Home Assistant `/config/custom_components/myhome/` folder (overwriting the existing files).
-5. Clear your browser cache and restart Home Assistant (**Developer Tools → YAML → Restart**).
+- **In HACS 2.0+ (via Entity Switch):**
+  1. In Home Assistant, navigate to **Settings → Devices & Services**.
+  2. Click on the **HACS** integration tile → **Entities**.
+  3. Locate the pre-release switch for MyHome: **`MyHome (Approve pre-releases)`** or **`MyHome Beta`** (enable the entity first if disabled).
+  4. Turn that switch **ON**.
+  5. Open **HACS → Integrations → MyHome**.
+  6. Click the blue **Download** button (or `⋮` → **Redownload**), select **`2.0.0b2`** from the version dropdown, and click **Download**.
+
+- **In HACS 1.x:**
+  1. Open **HACS → Integrations → MyHome**.
+  2. Click the **three dots (`⋮`)** in the top-right corner and select **Redownload** (or click **Download**).
+  3. Toggle **"Show beta versions"** to **ON**.
+  4. Select **`2.0.0b2`** from the version dropdown and click **Download**.
+
+#### Step 3: Restart Home Assistant
+Go to **Settings → System → Restart** (or **Developer Tools → YAML → Restart**).
+
+---
+
+### Method 2: One-Liner via Terminal & SSH Add-on (Fastest & 100% Direct)
+
+If you have the **Terminal & SSH** add-on enabled in Home Assistant, run this command to install or update directly without navigating HACS:
+
+```bash
+cd /config/custom_components
+wget https://github.com/OpenWebNet-HA/MyHOME/releases/download/2.0.0b2/myhome.zip -O myhome_beta.zip
+rm -rf myhome
+unzip -q myhome_beta.zip -d myhome
+rm myhome_beta.zip
+```
+Then restart Home Assistant:
+```bash
+ha core restart
+```
 
 > [!NOTE]
 > All existing entity names, custom entity IDs, and gateway configurations are preserved automatically.
 
-#### Method B: One-Liner via Terminal & SSH Add-on
+---
 
-If you have the **Terminal & SSH** add-on enabled in Home Assistant, run this command:
-```bash
-cd /config/custom_components
-wget https://github.com/OpenWebNet-HA/MyHOME/archive/refs/heads/v2-phase1-architecture.zip -O temp_myhome.zip
-unzip -q temp_myhome.zip
-rm -rf myhome
-mv MyHOME-2-phase1-architecture/custom_components/myhome ./
-rm -rf MyHOME-2-phase1-architecture temp_myhome.zip
-```
-Then restart Home Assistant (**Developer Tools → YAML → Restart**).
+### Method 3: Manual Installation (Archive / Samba)
+
+1. Download the latest release package:  
+   👉 **[Download myhome.zip (v2.0.0b2)](https://github.com/OpenWebNet-HA/MyHOME/releases/download/2.0.0b2/myhome.zip)**
+2. Open your Home Assistant configuration directory (via **Samba Share**, **Studio Code Server**, or **File Editor** add-on).
+3. Extract `myhome.zip` directly into `/config/custom_components/myhome/` (overwriting the existing files).
+4. Restart Home Assistant (**Settings → System → Restart**).
 
 ---
 
-### Standard Installation (Stable Releases via HACS)
+### 🔄 Safe Rollback
 
-*(Available once PR #232 is merged into the main release channel)*
-
-1. Open **HACS** in your Home Assistant UI.
-2. Search for **MyHOME** in the Integrations tab.
-3. Click **Download** and select the latest version.
-4. Restart Home Assistant.
+If you ever need to revert to the legacy codebase (`0.9.4`):
+- **Via HACS:** Open **MyHome** → click `⋮` → **Redownload** → select **`0.9.4`** → **Download** → Restart Home Assistant.
+- **Via Terminal & SSH:**
+  ```bash
+  cd /config/custom_components
+  wget https://github.com/OpenWebNet-HA/MyHOME/releases/download/0.9.4/myhome.zip -O myhome_legacy.zip
+  rm -rf myhome
+  unzip -q myhome_legacy.zip -d myhome
+  rm myhome_legacy.zip
+  ha core restart
+  ```
 
 ---
 

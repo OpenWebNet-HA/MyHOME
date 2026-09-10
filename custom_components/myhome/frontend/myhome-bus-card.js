@@ -890,3 +890,11 @@ if (!window.customCards.some((c) => c.type === "myhome-openwebnet-bus-monitor"))
     preview: true,
   });
 }
+if (!window.customCards.some((c) => c.type === "myhome-bus-card")) {
+  window.customCards.push({
+    type: "myhome-bus-card",
+    name: "MyHOME Bus Card (Alias)",
+    description: "Real-time BTicino / Legrand SCS OpenWebNet bus monitor (alias for myhome-openwebnet-bus-monitor).",
+    preview: true,
+  });
+}

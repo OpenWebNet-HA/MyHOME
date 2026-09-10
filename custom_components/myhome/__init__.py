@@ -53,13 +53,16 @@ async def _async_register_lovelace_resource(hass: HomeAssistant, url_path: str) 
             existing = [
                 item["url"].split("?")[0]
                 for item in (resources.async_items() or [])
-                if isinstance(item, dict) and "url" in item
+                if isinstance(item, dict) and isinstance(item.get("url"), str)
             ]
             if clean_url not in existing:
                 await resources.async_create_item({
                     "res_type": "module",
                     "url": url_path,
                 })
+                LOGGER.debug("Auto-registered Lovelace bus monitor resource: %s", url_path)
+            else:
+                LOGGER.debug("Lovelace bus monitor resource already present: %s", url_path)
         return True
     except Exception as e:
         LOGGER.debug("Could not auto-register Lovelace resource: %s", e)
@@ -98,11 +101,18 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     # Auto-register resource in Lovelace dashboard resources collection
     if not await _async_register_lovelace_resource(hass, url_path):
         if not domain_data.get("_lovelace_listener_registered"):
-            async def _on_ha_started(event):
-                await _async_register_lovelace_resource(hass, url_path)
+            if getattr(hass, "is_running", False):
+                async def _delayed_retry():
+                    await asyncio.sleep(1)
+                    await _async_register_lovelace_resource(hass, url_path)
 
-            from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
-            hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_ha_started)
+                hass.async_create_task(_delayed_retry())
+            else:
+                async def _on_ha_started(event):
+                    await _async_register_lovelace_resource(hass, url_path)
+
+                from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+                hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_ha_started)
             domain_data["_lovelace_listener_registered"] = True
 
 

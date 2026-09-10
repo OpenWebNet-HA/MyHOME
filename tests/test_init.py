@@ -411,11 +411,12 @@ async def test_register_frontend_branches(hass: HomeAssistant):
     """Test _async_register_frontend static path and frontend script registration."""
     from custom_components.myhome import _async_register_frontend
 
-    # 1. Reset flag & test when hass.http is None
+    # 1. Reset flag & test when http is None, early return
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN]["_frontend_registered"] = False
     hass.http = None
-    await _async_register_frontend(hass)
+    with patch.object(hass, "is_running", False):
+        await _async_register_frontend(hass)
     assert hass.data[DOMAIN]["_frontend_registered"] is False
 
     # 2. Simulate modern async_register_static_paths
@@ -477,14 +478,16 @@ async def test_register_frontend_branches(hass: HomeAssistant):
     # 8. Lovelace raises exception
     hass.data[DOMAIN]["_frontend_registered"] = False
     mock_resources.async_items.side_effect = Exception("Lovelace storage error")
-    await _async_register_frontend(hass)
+    with patch.object(hass, "is_running", False):
+        await _async_register_frontend(hass)
 
     # 9. Lovelace has no resources attribute (returns False)
     hass.data[DOMAIN]["_frontend_registered"] = False
     mock_lovelace_no_res = MagicMock()
     mock_lovelace_no_res.resources = None
     hass.data["lovelace"] = mock_lovelace_no_res
-    await _async_register_frontend(hass)
+    with patch.object(hass, "is_running", False):
+        await _async_register_frontend(hass)
 
     # 10. Lovelace resources.loaded is False, verifies async_load is called
     hass.data[DOMAIN]["_frontend_registered"] = False
@@ -531,8 +534,39 @@ async def test_register_frontend_branches(hass: HomeAssistant):
     hass.data[DOMAIN]["_frontend_registered"] = False
     hass.data[DOMAIN]["_lovelace_listener_registered"] = False
     del hass.data["lovelace"]
-    await _async_register_frontend(hass)
+    with patch.object(hass, "is_running", False):
+        await _async_register_frontend(hass)
     assert hass.data[DOMAIN]["_lovelace_listener_registered"] is True
+
+    # 14. Lovelace not available while hass is already running creates delayed retry task
+    hass.data[DOMAIN]["_frontend_registered"] = False
+    hass.data[DOMAIN]["_lovelace_listener_registered"] = False
+    with patch.object(hass, "is_running", True), patch.object(hass, "async_create_task") as mock_create_task:
+        await _async_register_frontend(hass)
+        assert hass.data[DOMAIN]["_lovelace_listener_registered"] is True
+        mock_create_task.assert_called_once()
+        # Verify delayed retry coroutine executes _async_register_lovelace_resource
+        coro = mock_create_task.call_args[0][0]
+        retry_res = MagicMock(loaded=True, async_items=MagicMock(return_value=[]), async_create_item=AsyncMock())
+        hass.data["lovelace"] = MagicMock(resources=retry_res)
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            await coro
+            mock_sleep.assert_awaited_once_with(1)
+            retry_res.async_create_item.assert_awaited_once()
+
+    # 15. Lovelace resources contains items with non-string or None URLs
+    hass.data[DOMAIN]["_frontend_registered"] = False
+    mock_res_malformed = MagicMock(
+        loaded=True,
+        async_items=MagicMock(return_value=[{"url": None}, {"url": 123}, {"other": "value"}]),
+        async_create_item=AsyncMock(),
+    )
+    hass.data["lovelace"] = MagicMock(resources=mock_res_malformed)
+    await _async_register_frontend(hass)
+    mock_res_malformed.async_create_item.assert_awaited_once_with({
+        "res_type": "module",
+        "url": "/myhome_static/myhome-bus-card.js",
+    })
 
 
 async def test_setup_entry_myhome_yaml_loading(hass: HomeAssistant):
