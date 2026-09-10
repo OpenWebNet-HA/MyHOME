@@ -486,7 +486,7 @@ class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
     @callback
     def handle_event(self, message: OWNDryContactEvent):
         """Handle an event message."""
-        LOGGER.info(
+        LOGGER.debug(
             "%s %s",
             self._gateway_handler.log_id,
             message.human_readable_log,
@@ -575,7 +575,7 @@ class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
     @callback
     def handle_event(self, message: OWNDryContactEvent):
         """Handle an event message."""
-        LOGGER.info(
+        LOGGER.debug(
             "%s %s",
             self._gateway_handler.log_id,
             message.human_readable_log,
@@ -700,7 +700,7 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity, RestoreEntity):
         ]:
             return True
 
-        LOGGER.info(
+        LOGGER.debug(
             "%s %s",
             self._gateway_handler.log_id,
             message.human_readable_log,

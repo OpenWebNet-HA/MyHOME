@@ -737,7 +737,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         reports a significant change (is_on=False or brightness diff >=10pp or 0).
         This prevents wall switches or echoes from ruining the visible fade.
         """
-        LOGGER.info(
+        LOGGER.debug(
             "%s %s",
             self._gateway_handler.log_id,
             message.human_readable_log,

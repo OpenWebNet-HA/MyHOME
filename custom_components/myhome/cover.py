@@ -489,7 +489,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity, RestoreEntity):
     @callback
     def handle_event(self, message: OWNAutomationEvent):
         """Handle an event message."""
-        LOGGER.info(
+        LOGGER.debug(
             "%s %s",
             self._gateway_handler.log_id,
             message.human_readable_log,

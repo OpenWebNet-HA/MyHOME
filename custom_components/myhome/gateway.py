@@ -368,7 +368,7 @@ class MyHOMEGatewayHandler:
                         "event": event,
                     },
                 )
-                LOGGER.info(
+                LOGGER.debug(
                     "%s %s",
                     self.log_id,
                     message.human_readable_log,
@@ -394,7 +394,7 @@ class MyHOMEGatewayHandler:
                         "event": event,
                     },
                 )
-                LOGGER.info(
+                LOGGER.debug(
                     "%s %s",
                     self.log_id,
                     message.human_readable_log,
@@ -420,13 +420,13 @@ class MyHOMEGatewayHandler:
                     f"myhome_update_{self.mac}_5_0",
                     message,
                 )
-                LOGGER.info(
+                LOGGER.debug(
                     "%s %s",
                     self.log_id,
                     message.human_readable_log,
                 )
             elif isinstance(message, OWNGatewayEvent) or isinstance(message, OWNGatewayCommand):
-                LOGGER.info(
+                LOGGER.debug(
                     "%s %s",
                     self.log_id,
                     message.human_readable_log,
@@ -441,7 +441,7 @@ class MyHOMEGatewayHandler:
                     message,
                 )
             else:
-                LOGGER.info(
+                LOGGER.debug(
                     "%s Unsupported message type: `%s`",
                     self.log_id,
                     message,

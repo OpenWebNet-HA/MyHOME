@@ -100,6 +100,9 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 interface = None
 
             clean_where = where.split("-")[-1].replace("#", "")
+            if clean_where.isdigit() and int(clean_where) >= 100:
+                LOGGER.debug("Skipping non-zone address %s for climate platform", where)
+                continue
             default_suffix = f"{clean_where}I{interface}" if interface else clean_where
             cfg = (
                 _configured_climate_devices.get(device_id)
@@ -137,6 +140,9 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         where = str(cfg.get(CONF_ZONE, cfg.get(CONF_WHERE, dev_id)))
         interface = cfg.get(CONF_BUS_INTERFACE) or cfg.get("bus_interface") or cfg.get("interface")
         clean_where = where.split("-")[-1].replace("#", "")
+        if clean_where.isdigit() and int(clean_where) >= 100:
+            LOGGER.debug("Skipping non-zone address %s for climate platform", where)
+            continue
         device_where_id = f"{where}#4#{interface}" if interface else str(where)
         clean_unique_id = f"{clean_where}#4#{interface}" if interface else clean_where
         default_suffix = f"{clean_where}I{interface}" if interface else clean_where
@@ -211,7 +217,9 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 pass
 
         if not calling_zones and raw_where and raw_where not in ("0", ""):
-            calling_zones.append(str(raw_where))
+            clean_raw = str(raw_where).split("-")[-1].replace("#", "")
+            if not (clean_raw.isdigit() and int(clean_raw) >= 100):
+                calling_zones.append(str(raw_where))
 
         if not calling_zones and (not raw_where or raw_where == "0"):
             # Broadcast frame with no specific zone; ignore for entity creation
@@ -224,7 +232,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             default_suffix = f"{clean_where}I{interface}" if interface else clean_where
 
             if (
-                unique_id not in known_climates
+                not (clean_where.isdigit() and int(clean_where) >= 100)
+                and unique_id not in known_climates
                 and clean_where not in known_climates
                 and where not in known_climates
             ):
@@ -404,8 +413,15 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity, RestoreEntity):
         """Run when entity about to be added to hass."""
         try:
             state = await self.async_get_last_state()
-            if state is not None:
-                self._attr_hvac_mode = state.state
+            if state is not None and state.state is not None:
+                try:
+                    restored_mode = HVACMode(state.state)
+                    if restored_mode in self._attr_hvac_modes:
+                        self._attr_hvac_mode = restored_mode
+                    else:
+                        self._attr_hvac_mode = HVACMode.OFF
+                except (ValueError, TypeError):
+                    self._attr_hvac_mode = HVACMode.OFF
                 target_temp = state.attributes.get("temperature")
                 if target_temp is not None:
                     try:
@@ -545,21 +561,21 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity, RestoreEntity):
     def handle_event(self, message: OWNHeatingEvent):
         """Handle an event message."""
         if message.message_type == MESSAGE_TYPE_MAIN_TEMPERATURE:
-            LOGGER.info(
+            LOGGER.debug(
                 "%s %s",
                 self._gateway_handler.log_id,
                 message.human_readable_log,
             )
             self._attr_current_temperature = message.main_temperature
         elif message.message_type == MESSAGE_TYPE_MAIN_HUMIDITY:
-            LOGGER.info(
+            LOGGER.debug(
                 "%s %s",
                 self._gateway_handler.log_id,
                 message.human_readable_log,
             )
             self._attr_current_humidity = message.main_humidity
         elif message.message_type == MESSAGE_TYPE_TARGET_TEMPERATURE:
-            LOGGER.info(
+            LOGGER.debug(
                 "%s %s",
                 self._gateway_handler.log_id,
                 message.human_readable_log,
@@ -567,7 +583,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity, RestoreEntity):
             self._target_temperature = message.set_temperature
             self._local_target_temperature = self._target_temperature + self._local_offset
         elif message.message_type == MESSAGE_TYPE_LOCAL_OFFSET:
-            LOGGER.info(
+            LOGGER.debug(
                 "%s %s",
                 self._gateway_handler.log_id,
                 message.human_readable_log,
@@ -576,7 +592,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity, RestoreEntity):
             if self._target_temperature is not None:
                 self._local_target_temperature = self._target_temperature + self._local_offset
         elif message.message_type == MESSAGE_TYPE_LOCAL_TARGET_TEMPERATURE:
-            LOGGER.info(
+            LOGGER.debug(
                 "%s %s",
                 self._gateway_handler.log_id,
                 message.human_readable_log,
@@ -585,7 +601,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity, RestoreEntity):
             self._target_temperature = self._local_target_temperature - self._local_offset
         elif message.message_type == MESSAGE_TYPE_MODE:
             if message.mode == CLIMATE_MODE_AUTO and HVACMode.AUTO in self._attr_hvac_modes:
-                LOGGER.info(
+                LOGGER.debug(
                     "%s %s",
                     self._gateway_handler.log_id,
                     message.human_readable_log,
@@ -594,7 +610,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity, RestoreEntity):
                 if self._attr_hvac_action == HVACAction.OFF:
                     self._attr_hvac_action = HVACAction.IDLE
             elif message.mode == CLIMATE_MODE_COOL and HVACMode.COOL in self._attr_hvac_modes:
-                LOGGER.info(
+                LOGGER.debug(
                     "%s %s",
                     self._gateway_handler.log_id,
                     message.human_readable_log,
@@ -603,7 +619,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity, RestoreEntity):
                 if self._attr_hvac_action == HVACAction.OFF:
                     self._attr_hvac_action = HVACAction.IDLE
             elif message.mode == CLIMATE_MODE_HEAT and HVACMode.HEAT in self._attr_hvac_modes:
-                LOGGER.info(
+                LOGGER.debug(
                     "%s %s",
                     self._gateway_handler.log_id,
                     message.human_readable_log,
@@ -612,7 +628,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity, RestoreEntity):
                 if self._attr_hvac_action == HVACAction.OFF:
                     self._attr_hvac_action = HVACAction.IDLE
             elif message.mode == CLIMATE_MODE_OFF:
-                LOGGER.info(
+                LOGGER.debug(
                     "%s %s",
                     self._gateway_handler.log_id,
                     message.human_readable_log,
@@ -621,7 +637,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity, RestoreEntity):
                 self._attr_hvac_action = HVACAction.OFF
         elif message.message_type == MESSAGE_TYPE_MODE_TARGET:
             if message.mode == CLIMATE_MODE_AUTO and HVACMode.AUTO in self._attr_hvac_modes:
-                LOGGER.info(
+                LOGGER.debug(
                     "%s %s",
                     self._gateway_handler.log_id,
                     message.human_readable_log,
@@ -630,7 +646,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity, RestoreEntity):
                 if self._attr_hvac_action == HVACAction.OFF:
                     self._attr_hvac_action = HVACAction.IDLE
             elif message.mode == CLIMATE_MODE_COOL and HVACMode.COOL in self._attr_hvac_modes:
-                LOGGER.info(
+                LOGGER.debug(
                     "%s %s",
                     self._gateway_handler.log_id,
                     message.human_readable_log,
@@ -639,7 +655,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity, RestoreEntity):
                 if self._attr_hvac_action == HVACAction.OFF:
                     self._attr_hvac_action = HVACAction.IDLE
             elif message.mode == CLIMATE_MODE_HEAT and HVACMode.HEAT in self._attr_hvac_modes:
-                LOGGER.info(
+                LOGGER.debug(
                     "%s %s",
                     self._gateway_handler.log_id,
                     message.human_readable_log,
@@ -648,7 +664,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity, RestoreEntity):
                 if self._attr_hvac_action == HVACAction.OFF:
                     self._attr_hvac_action = HVACAction.IDLE
             elif message.mode == CLIMATE_MODE_OFF:
-                LOGGER.info(
+                LOGGER.debug(
                     "%s %s",
                     self._gateway_handler.log_id,
                     message.human_readable_log,
@@ -658,7 +674,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity, RestoreEntity):
             self._target_temperature = message.set_temperature
             self._local_target_temperature = self._target_temperature + self._local_offset
         elif message.message_type == MESSAGE_TYPE_ACTION:
-            LOGGER.info(
+            LOGGER.debug(
                 "%s %s",
                 self._gateway_handler.log_id,
                 message.human_readable_log,
@@ -680,7 +696,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity, RestoreEntity):
         elif message.message_type == MESSAGE_TYPE_FAN_SPEED or (
             hasattr(message, "fan_speed") and message.fan_speed is not None
         ):
-            LOGGER.info(
+            LOGGER.debug(
                 "%s %s",
                 self._gateway_handler.log_id,
                 message.human_readable_log,

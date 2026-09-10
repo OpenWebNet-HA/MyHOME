@@ -270,19 +270,19 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
     def handle_event(self, message: OWNLightingEvent):
         """Handle an event message."""
         if self._attr_device_class == SwitchDeviceClass.SWITCH:
-            LOGGER.info(
+            LOGGER.debug(
                 "%s %s",
                 self._gateway_handler.log_id,
                 message.human_readable_log.replace("Light", "Switch"),
             )
         elif self._attr_device_class == SwitchDeviceClass.OUTLET:
-            LOGGER.info(
+            LOGGER.debug(
                 "%s %s",
                 self._gateway_handler.log_id,
                 message.human_readable_log.replace("Light", "Outlet"),
             )
         else:
-            LOGGER.info(
+            LOGGER.debug(
                 "%s %s",
                 self._gateway_handler.log_id,
                 message.human_readable_log,
