@@ -163,3 +163,28 @@
   mcp_valid: true
   mcp_notes: "Lighting dimension write: Level 50% with speed 5"
   roundtrip: true
+
+- id: light.cmd.translation.on.53
+  frame: "*1*1000#1*53##"
+  direction: command
+  who: 1
+  what: "1000#1"
+  where: "53"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "[Translation] Lighting: Turn ON (100% or last saved level) at address '53'"
+  roundtrip: true
+  is_translation: true
+
+- id: light.cmd.translation.off.53
+  frame: "*1*1000#0*53##"
+  direction: command
+  who: 1
+  what: "1000#0"
+  where: "53"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "[Translation] Lighting: Turn OFF at address '53'"
+  roundtrip: true
+  is_translation: true
+

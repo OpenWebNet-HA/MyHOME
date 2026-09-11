@@ -270,6 +270,8 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
     @callback
     def handle_event(self, message: OWNLightingEvent):
         """Handle an event message."""
+        if getattr(message, "is_translation", None) is True:
+            return
         if self._attr_device_class == SwitchDeviceClass.SWITCH:
             LOGGER.debug(
                 "%s %s",

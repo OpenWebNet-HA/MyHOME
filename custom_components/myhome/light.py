@@ -274,6 +274,9 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     @callback
     def async_add_light(message):
         """Add a light from a discovered message."""
+        if getattr(message, "is_translation", None) is True:
+            return
+
         if not hasattr(message, "where") or not message.where:
             return
 
@@ -391,6 +394,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     def _handle_light_message(msg):
         """Filter and forward light messages."""
         if isinstance(msg, OWNLightingEvent):
+            if getattr(msg, "is_translation", None) is True:
+                return
             async_add_light(msg)
 
     # Listen to all incoming gateway messages
@@ -738,6 +743,9 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         reports a significant change (is_on=False or brightness diff >=10pp or 0).
         This prevents wall switches or echoes from ruining the visible fade.
         """
+        if getattr(message, "is_translation", None) is True:
+            return
+
         LOGGER.debug(
             "%s %s",
             self._gateway_handler.log_id,

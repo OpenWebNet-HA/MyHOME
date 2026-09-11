@@ -85,6 +85,10 @@
       "type": "boolean",
       "description": "Whether parsing and re-serializing in OWNd must exactly match the raw frame string."
     },
+    "is_translation": {
+      "type": "boolean",
+      "description": "Whether this frame is an OpenWebNet Command Translation frame (WHAT=1000)."
+    },
     "builder": {
       "type": "object",
       "required": ["class", "method", "args"],

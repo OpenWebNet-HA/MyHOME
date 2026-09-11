@@ -126,6 +126,14 @@ def test_golden_frame_parsing(fixture: Dict[str, Any]):
             f"Dimension values mismatch: {actual_dim_values} != {expected_dim_values}"
         )
 
+    # Translation frame assertion
+    expected_translation = fixture.get("is_translation")
+    if expected_translation is not None:
+        assert getattr(parsed, "is_translation", False) == expected_translation, (
+            f"is_translation mismatch for {frame_str}: {getattr(parsed, 'is_translation', False)} != {expected_translation}"
+        )
+
+
 
 @pytest.mark.parametrize("fixture", ROUNDTRIP_FIXTURES, ids=lambda f: f["id"])
 def test_golden_frame_roundtrip(fixture: Dict[str, Any]):
