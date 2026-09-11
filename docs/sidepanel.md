@@ -10,7 +10,7 @@ and provides English and Italian labels, with English fallback for other languag
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.4.0**, defined by
+The panel has an independent version, currently **0.4.1**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.
@@ -82,6 +82,11 @@ removed when the last gateway is deleted. Static routes are registered once and
 can be reused after reload or reconfiguration. Frontend-less installations skip
 sidebar registration.
 
+On its first load, the panel also handles HA properties assigned before its
+custom element is defined. Once the JavaScript finishes loading, those values
+are replayed through the component setters so the inventory starts immediately.
+This avoids a blank first visit that previously required navigating away and back.
+
 The bus API now returns “not found” when an explicitly requested gateway does
 not exist, rather than silently selecting another bus. Requests with no gateway
 selection retain their existing default behavior.
@@ -115,6 +120,8 @@ Recorded CEN+ object IDs are displayed as addresses, not expanded into wire fram
    integration files in a test Home Assistant instance.
 2. Restart Home Assistant and refresh the browser page.
 3. Sign in as an administrator and open **MyHOME** in the sidebar.
+   On the first visit after a browser reload, check that the inventory appears
+   without navigating away and back.
 4. Check the panel version in the header, then compare the gateway/device/entity
    lists with Home Assistant's native settings. Verify WHO grouping, especially
    temperature sensors (WHO 4), energy sensors (WHO 18), and CEN devices (WHO 15/25).
@@ -155,6 +162,11 @@ address rendering/search, native writes, concurrent area changes, errors,
 escaping, live states, and cleanup of delayed subscriptions.
 It runs separately in `panel-tests.yml`.
 Browser layout and real hardware checks remain manual.
+
+Panel 0.4.1: all 13 frontend tests passed. The isolated startup regression first
+reproduced the empty first mount on 0.4.0, then passed with the fix. It covers
+properties set before definition, detached elements, delayed HA data, subsequent
+state/menu updates, and disconnect/reconnect without duplicate subscriptions.
 
 Panel 0.4.0 validation on Home Assistant 2026.9.1: all 29 panel/WebSocket tests
 passed, including WHO/address metadata for legacy sensor IDs, offline gateways,

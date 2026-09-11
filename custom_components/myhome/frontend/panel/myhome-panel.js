@@ -56,7 +56,19 @@ class MyHomePanel extends HTMLElement {
   set panel(value) { this._panel = value; this._renderVersions(); }
   set narrow(value) { this._narrow = value; this._updateMenu(); }
 
-  connectedCallback() { if (this._hass) this._start(); }
+  connectedCallback() {
+    // HA can assign properties while this module is still awaiting its imports.
+    // Replay those own properties through the setters after the element upgrades,
+    // otherwise they shadow the setters and the first mount never starts.
+    // Restore panel/menu configuration before hass can initiate rendering.
+    for (const property of ["panel", "narrow", "hass"]) {
+      if (!Object.prototype.hasOwnProperty.call(this, property)) continue;
+      const value = this[property];
+      delete this[property];
+      this[property] = value;
+    }
+    if (this._hass) this._start();
+  }
   disconnectedCallback() { this._stop(); }
 
   _t(key) {
