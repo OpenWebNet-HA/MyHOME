@@ -18,7 +18,6 @@ from homeassistant.const import (
 from homeassistant.core import callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
-from homeassistant.helpers.restore_state import RestoreEntity
 from OWNd.message import (
     MESSAGE_TYPE_MOTION,
     MESSAGE_TYPE_MOTION_TIMEOUT,
@@ -50,6 +49,48 @@ from .myhome_device import MyHOMEEntity
 SCAN_INTERVAL = timedelta(seconds=30)
 PIR_SENSITIVITY = ["low", "medium", "high", "very high"]
 
+ALL_DEVICE_CLASS_SUFFIXES = tuple(
+    sorted(
+        list(
+            {
+                f"-{getattr(dc, 'value', dc)}"
+                for dc in BinarySensorDeviceClass
+            }
+            | {
+                "-opening",
+                "-door",
+                "-garage_door",
+                "-window",
+                "-moving",
+                "-motion",
+                "-safety",
+                "-moisture",
+                "-smoke",
+                "-gas",
+                "-heat",
+                "-cold",
+                "-light",
+                "-lock",
+                "-occupancy",
+                "-plug",
+                "-power",
+                "-presence",
+                "-problem",
+                "-running",
+                "-sound",
+                "-tamper",
+                "-update",
+                "-vibration",
+                "-battery",
+                "-battery_charging",
+                "-connectivity",
+            }
+        ),
+        key=len,
+        reverse=True,
+    )
+)
+
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
     gateway = hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY]
@@ -72,7 +113,148 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             continue
         unique_id = entry.unique_id
         after_mac = unique_id.replace(f"{gateway.mac}-", "", 1).replace(f"{config_entry.data[CONF_MAC]}-", "", 1)
-        if "-motion" in unique_id or entry.original_device_class == BinarySensorDeviceClass.MOTION:
+
+        # WHO 9: Auxiliary binary sensors (must be checked before motion check since aux can have motion device class)
+        if after_mac.startswith("9-") or "-9-" in unique_id:
+            raw_id = after_mac.replace("9-", "", 1) if after_mac.startswith("9-") else after_mac
+            candidate_id = raw_id
+            for s in ALL_DEVICE_CLASS_SUFFIXES:
+                if candidate_id.endswith(s):
+                    candidate_id = candidate_id[:-len(s)]
+                    break
+            clean_candidate = candidate_id.split("-")[-1]
+
+            cfg = (
+                _configured_binary_sensors.get(f"9-{candidate_id}")
+                or _configured_binary_sensors.get(f"9-{clean_candidate}")
+                or _configured_binary_sensors.get(candidate_id)
+                or _configured_binary_sensors.get(clean_candidate)
+                or {}
+            )
+            actual_where = str(cfg.get(CONF_WHERE, clean_candidate or candidate_id))
+            clean_where = actual_where.split("-")[-1]
+
+            if any(f"9_{x}" in known_sensors for x in (actual_where, clean_where, candidate_id, clean_candidate, f"9-{actual_where}", f"9-{clean_where}", f"9-{candidate_id}", f"9-{clean_candidate}")):
+                if entity_registry:
+                    try:
+                        entity_registry.async_remove(entry.entity_id)
+                        LOGGER.info("Removed duplicate auxiliary registry entry: %s", entry.entity_id)
+                    except Exception:
+                        pass
+                continue
+
+            device_class = cfg.get(CONF_DEVICE_CLASS) or entry.original_device_class
+            device_id = clean_where or clean_candidate or candidate_id
+            bs = MyHOMEAuxiliary(
+                hass=hass,
+                device_id=device_id,
+                who="9",
+                where=actual_where,
+                name=cfg.get(CONF_NAME, f"Auxiliary Channel {clean_where}"),
+                entity_name=cfg.get(CONF_ENTITY_NAME),
+                inverted=cfg.get(CONF_INVERTED, False),
+                device_class=device_class,
+                manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
+                model=cfg.get(CONF_DEVICE_MODEL, "Auxiliary Channel"),
+                gateway=gateway,
+            )
+            bs._attr_unique_id = entry.unique_id
+            for x in (actual_where, clean_where, candidate_id, clean_candidate, device_id, f"9-{actual_where}", f"9-{clean_where}", f"9-{candidate_id}", f"9-{clean_candidate}"):
+                known_sensors.add(f"9_{x}")
+            known_device_ids.add(device_id)
+            known_device_ids.add(actual_where)
+            known_device_ids.add(clean_where)
+            known_device_ids.add(candidate_id)
+            known_device_ids.add(clean_candidate)
+            known_device_ids.add(f"9-{actual_where}")
+            known_device_ids.add(f"9-{clean_where}")
+            known_device_ids.add(f"9-{candidate_id}")
+            known_device_ids.add(f"9-{clean_candidate}")
+            _binary_sensors.append(bs)
+
+        # WHO 25: Dry Contact binary sensors
+        elif (
+            after_mac.startswith("25-")
+            or "-25-" in unique_id
+            or entry.original_device_class in (
+                BinarySensorDeviceClass.OPENING,
+                BinarySensorDeviceClass.DOOR,
+                BinarySensorDeviceClass.GARAGE_DOOR,
+                BinarySensorDeviceClass.WINDOW,
+                BinarySensorDeviceClass.MOVING,
+            )
+            or any(unique_id.endswith(s) for s in ALL_DEVICE_CLASS_SUFFIXES if s != "-motion")
+        ):
+            raw_id = after_mac.replace("25-", "", 1) if after_mac.startswith("25-") else after_mac
+            candidate_id = raw_id
+            for s in ALL_DEVICE_CLASS_SUFFIXES:
+                if candidate_id.endswith(s):
+                    candidate_id = candidate_id[:-len(s)]
+                    break
+            clean_candidate = candidate_id.split("-")[-1]
+
+            cfg = (
+                _configured_binary_sensors.get(f"25-{candidate_id}")
+                or _configured_binary_sensors.get(candidate_id)
+                or _configured_binary_sensors.get(clean_candidate)
+                or _configured_binary_sensors.get(normalize_where(candidate_id))
+                or _configured_binary_sensors.get(normalize_where(clean_candidate))
+                or {}
+            )
+            actual_where = str(cfg.get(CONF_WHERE, candidate_id))
+            norm_where = normalize_where(actual_where)
+            clean_where = actual_where.split("-")[-1]
+            clean_norm = normalize_where(clean_where)
+
+            is_dup = (
+                any(f"25_{x}" in known_sensors for x in (actual_where, norm_where, clean_where, clean_norm, candidate_id, clean_candidate, f"25-{actual_where}", f"25-{norm_where}", f"25-{candidate_id}"))
+                or candidate_id in known_device_ids
+                or actual_where in known_device_ids
+                or norm_where in known_device_ids
+                or clean_candidate in known_device_ids
+                or f"25-{actual_where}" in known_device_ids
+                or f"25-{norm_where}" in known_device_ids
+                or f"25-{candidate_id}" in known_device_ids
+            )
+            if is_dup:
+                if entity_registry:
+                    try:
+                        entity_registry.async_remove(entry.entity_id)
+                        LOGGER.info("Removed duplicate dry contact registry entry: %s", entry.entity_id)
+                    except Exception:
+                        pass
+                continue
+
+            device_id = candidate_id if candidate_id in _configured_binary_sensors else (norm_where or clean_norm or clean_where)
+            device_class = cfg.get(CONF_DEVICE_CLASS, entry.original_device_class or BinarySensorDeviceClass.OPENING)
+            bs = MyHOMEDryContact(
+                hass=hass,
+                device_id=device_id,
+                who="25",
+                where=norm_where or actual_where,
+                name=cfg.get(CONF_NAME, f"Dry Contact {clean_norm or clean_where}"),
+                entity_name=cfg.get(CONF_ENTITY_NAME),
+                inverted=cfg.get(CONF_INVERTED, False),
+                device_class=device_class,
+                manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
+                model=cfg.get(CONF_DEVICE_MODEL, "Dry Contact Interface"),
+                gateway=gateway,
+            )
+            bs._attr_unique_id = entry.unique_id
+            for x in (actual_where, norm_where, clean_where, clean_norm, candidate_id, clean_candidate, device_id, f"25-{actual_where}", f"25-{norm_where}", f"25-{candidate_id}"):
+                known_sensors.add(f"25_{x}")
+            known_device_ids.add(candidate_id)
+            known_device_ids.add(clean_candidate)
+            known_device_ids.add(device_id)
+            known_device_ids.add(actual_where)
+            known_device_ids.add(norm_where)
+            known_device_ids.add(f"25-{actual_where}")
+            known_device_ids.add(f"25-{norm_where}")
+            known_device_ids.add(f"25-{candidate_id}")
+            _binary_sensors.append(bs)
+
+        # WHO 1: Motion sensors
+        elif "-motion" in unique_id or entry.original_device_class == BinarySensorDeviceClass.MOTION:
             where = after_mac.replace("-motion", "")
             parts_who = where.split("-", 1)
             where = parts_who[-1] if len(parts_who) > 1 else where
@@ -80,7 +262,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             norm_where = normalize_where(where)
             clean_norm = normalize_where(clean_where)
 
-            if any(f"1_{x}" in known_sensors for x in (where, norm_where, clean_where, clean_norm)):
+            if any(f"1_{x}" in known_sensors for x in (where, norm_where, clean_where, clean_norm, f"1-{where}", f"1-{norm_where}")):
                 if entity_registry:
                     try:
                         entity_registry.async_remove(entry.entity_id)
@@ -115,104 +297,16 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 gateway=gateway,
             )
             bs._attr_unique_id = entry.unique_id
-            for x in (where, norm_where, clean_where, clean_norm, actual_where, norm_actual, dev_id):
+            for x in (where, norm_where, clean_where, clean_norm, actual_where, norm_actual, dev_id, f"1-{where}", f"1-{norm_where}", f"1-{actual_where}", f"1-{norm_actual}"):
                 known_sensors.add(f"1_{x}")
             known_device_ids.add(dev_id)
-            _binary_sensors.append(bs)
-        elif (
-            after_mac.startswith("25-")
-            or entry.original_device_class in (
-                BinarySensorDeviceClass.OPENING,
-                BinarySensorDeviceClass.DOOR,
-                BinarySensorDeviceClass.GARAGE_DOOR,
-                BinarySensorDeviceClass.WINDOW,
-            )
-            or any(s in unique_id for s in ("-opening", "-door", "-garage_door", "-window"))
-        ):
-            raw_id = after_mac.replace("25-", "", 1) if after_mac.startswith("25-") else after_mac
-            candidate_id = raw_id
-            for s in ("-opening", "-door", "-garage_door", "-window"):
-                if candidate_id.endswith(s):
-                    candidate_id = candidate_id[:-len(s)]
-                    break
-            clean_candidate = candidate_id.split("-")[-1]
-
-            cfg = (
-                _configured_binary_sensors.get(f"25-{candidate_id}")
-                or _configured_binary_sensors.get(candidate_id)
-                or _configured_binary_sensors.get(clean_candidate)
-                or _configured_binary_sensors.get(normalize_where(candidate_id))
-                or _configured_binary_sensors.get(normalize_where(clean_candidate))
-                or {}
-            )
-            actual_where = str(cfg.get(CONF_WHERE, candidate_id))
-            norm_where = normalize_where(actual_where)
-            clean_where = actual_where.split("-")[-1]
-            clean_norm = normalize_where(clean_where)
-
-            is_dup = (
-                any(f"25_{x}" in known_sensors for x in (actual_where, norm_where, clean_where, clean_norm))
-                or candidate_id in known_device_ids
-            )
-            if is_dup:
-                if entity_registry:
-                    try:
-                        entity_registry.async_remove(entry.entity_id)
-                        LOGGER.info("Removed duplicate dry contact registry entry: %s", entry.entity_id)
-                    except Exception:
-                        pass
-                continue
-
-            device_id = candidate_id if candidate_id in _configured_binary_sensors else (norm_where or clean_norm or clean_where)
-            bs = MyHOMEDryContact(
-                hass=hass,
-                device_id=device_id,
-                who="25",
-                where=norm_where or actual_where,
-                name=cfg.get(CONF_NAME, f"Dry Contact {clean_norm or clean_where}"),
-                entity_name=cfg.get(CONF_ENTITY_NAME),
-                inverted=cfg.get(CONF_INVERTED, False),
-                device_class=cfg.get(CONF_DEVICE_CLASS, entry.original_device_class or BinarySensorDeviceClass.OPENING),
-                manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
-                model=cfg.get(CONF_DEVICE_MODEL, "Dry Contact Interface"),
-                gateway=gateway,
-            )
-            bs._attr_unique_id = entry.unique_id
-            for x in (actual_where, norm_where, clean_where, clean_norm, candidate_id, clean_candidate, device_id):
-                known_sensors.add(f"25_{x}")
-            known_device_ids.add(candidate_id)
-            known_device_ids.add(device_id)
-            _binary_sensors.append(bs)
-        elif after_mac.startswith("9-"):
-            where = after_mac.replace("9-", "", 1)
-            clean_where = where.split("-")[-1]
-            if any(f"9_{x}" in known_sensors for x in (where, clean_where)):
-                if entity_registry:
-                    try:
-                        entity_registry.async_remove(entry.entity_id)
-                        LOGGER.info("Removed duplicate auxiliary registry entry: %s", entry.entity_id)
-                    except Exception:
-                        pass
-                continue
-
-            cfg = _configured_binary_sensors.get(f"9-{where}") or _configured_binary_sensors.get(where) or _configured_binary_sensors.get(clean_where) or {}
-            bs = MyHOMEAuxiliary(
-                hass=hass,
-                device_id=where,
-                who="9",
-                where=where,
-                name=cfg.get(CONF_NAME, f"Auxiliary Channel {clean_where}"),
-                entity_name=cfg.get(CONF_ENTITY_NAME),
-                inverted=cfg.get(CONF_INVERTED, False),
-                device_class=cfg.get(CONF_DEVICE_CLASS) or entry.original_device_class,
-                manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
-                model=cfg.get(CONF_DEVICE_MODEL, "Auxiliary Channel"),
-                gateway=gateway,
-            )
-            bs._attr_unique_id = entry.unique_id
-            known_sensors.add(f"9_{where}")
-            known_sensors.add(f"9_{clean_where}")
             known_device_ids.add(where)
+            known_device_ids.add(norm_where)
+            known_device_ids.add(actual_where)
+            known_device_ids.add(norm_actual)
+            known_device_ids.add(f"1-{dev_id}")
+            known_device_ids.add(f"1-{where}")
+            known_device_ids.add(f"1-{norm_where}")
             _binary_sensors.append(bs)
 
     # Also instantiate any configured binary sensors not yet in registry
@@ -225,8 +319,14 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         clean_norm = normalize_where(clean_where)
 
         if (
-            any(f"{_who}_{x}" in known_sensors for x in (where, norm_where, clean_where, clean_norm))
+            any(f"{_who}_{x}" in known_sensors for x in (where, norm_where, clean_where, clean_norm, _binary_sensor_key, f"{_who}-{where}", f"{_who}-{norm_where}"))
             or _binary_sensor_key in known_device_ids
+            or where in known_device_ids
+            or norm_where in known_device_ids
+            or clean_where in known_device_ids
+            or clean_norm in known_device_ids
+            or f"{_who}-{where}" in known_device_ids
+            or f"{_who}-{norm_where}" in known_device_ids
         ):
             continue
 
@@ -244,9 +344,15 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 model=dev_cfg.get(CONF_DEVICE_MODEL, "Dry Contact"),
                 gateway=gateway,
             )
-            for x in (where, norm_where, clean_where, clean_norm, _binary_sensor_key):
+            for x in (where, norm_where, clean_where, clean_norm, _binary_sensor_key, f"25-{where}", f"25-{norm_where}"):
                 known_sensors.add(f"25_{x}")
             known_device_ids.add(_binary_sensor_key)
+            known_device_ids.add(where)
+            known_device_ids.add(norm_where)
+            known_device_ids.add(clean_where)
+            known_device_ids.add(clean_norm)
+            known_device_ids.add(f"25-{where}")
+            known_device_ids.add(f"25-{norm_where}")
             _binary_sensors.append(bs)
         elif _who == 9:
             bs = MyHOMEAuxiliary(
@@ -262,9 +368,13 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 model=dev_cfg.get(CONF_DEVICE_MODEL, "Auxiliary Channel"),
                 gateway=gateway,
             )
-            for x in (where, clean_where, _binary_sensor_key):
+            for x in (where, clean_where, _binary_sensor_key, f"9-{where}", f"9-{clean_where}"):
                 known_sensors.add(f"9_{x}")
             known_device_ids.add(_binary_sensor_key)
+            known_device_ids.add(where)
+            known_device_ids.add(clean_where)
+            known_device_ids.add(f"9-{where}")
+            known_device_ids.add(f"9-{clean_where}")
             _binary_sensors.append(bs)
         elif _who == 1 and _device_class == BinarySensorDeviceClass.MOTION:
             bs = MyHOMEMotionSensor(
@@ -280,9 +390,15 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 model=dev_cfg.get(CONF_DEVICE_MODEL, "Motion Sensor"),
                 gateway=gateway,
             )
-            for x in (where, norm_where, clean_where, clean_norm, _binary_sensor_key):
+            for x in (where, norm_where, clean_where, clean_norm, _binary_sensor_key, f"1-{where}", f"1-{norm_where}"):
                 known_sensors.add(f"1_{x}")
             known_device_ids.add(_binary_sensor_key)
+            known_device_ids.add(where)
+            known_device_ids.add(norm_where)
+            known_device_ids.add(clean_where)
+            known_device_ids.add(clean_norm)
+            known_device_ids.add(f"1-{where}")
+            known_device_ids.add(f"1-{norm_where}")
             _binary_sensors.append(bs)
 
     if _binary_sensors:
@@ -440,9 +556,13 @@ class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
         sensor_attr = f"({self._where[0]}){self._where[1:]}" if self._where else ""
         self._attr_extra_state_attributes = {"Sensor": sensor_attr}
 
+    async def async_restore_last_state(self, last_state) -> None:
+        """Restore dry contact state."""
+        if last_state is not None and last_state.state not in ("unknown", "unavailable"):
+            self._attr_is_on = last_state.state == "on"
+
     async def async_added_to_hass(self):
         """When entity is added to hass."""
-        self._register_availability_listener()
         try:
             device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
             if CONF_ENTITIES not in device_dict or not isinstance(device_dict[CONF_ENTITIES], dict):
@@ -466,7 +586,7 @@ class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
                     self.handle_event,
                 )
                 self.async_on_remove(unsub2)
-        await self.async_update()
+        await super().async_added_to_hass()
 
     async def async_will_remove_from_hass(self):
         """When entity is removed from hass."""
@@ -542,9 +662,13 @@ class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
         self._attr_is_on = False
         self._attr_extra_state_attributes = {"Auxiliary channel": self._where}
 
+    async def async_restore_last_state(self, last_state) -> None:
+        """Restore auxiliary state."""
+        if last_state is not None and last_state.state not in ("unknown", "unavailable"):
+            self._attr_is_on = last_state.state == "on"
+
     async def async_added_to_hass(self):
         """When entity is added to hass."""
-        self._register_availability_listener()
         try:
             device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
             if CONF_ENTITIES not in device_dict or not isinstance(device_dict[CONF_ENTITIES], dict):
@@ -560,7 +684,7 @@ class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
                 self.handle_event,
             )
             self.async_on_remove(unsub)
-        await self.async_update()
+        await super().async_added_to_hass()
 
     async def async_will_remove_from_hass(self):
         """When entity is removed from hass."""
@@ -587,7 +711,7 @@ class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
             self.async_schedule_update_ha_state()
 
 
-class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity, RestoreEntity):
+class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
     def __init__(
         self,
         hass,
@@ -637,9 +761,14 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity, RestoreEntity):
             "Sensitivity": PIR_SENSITIVITY[1],
         }
 
+    async def async_restore_last_state(self, last_state) -> None:
+        """Restore motion sensor state."""
+        if last_state is not None and last_state.state not in ("unknown", "unavailable"):
+            self._attr_is_on = last_state.state == STATE_ON
+            self._last_updated = last_state.last_updated
+
     async def async_added_to_hass(self):
         """When entity is added to hass."""
-        self._register_availability_listener()
         try:
             device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
             if CONF_ENTITIES not in device_dict or not isinstance(device_dict[CONF_ENTITIES], dict):
@@ -665,14 +794,7 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity, RestoreEntity):
                 self.async_on_remove(unsub2)
         await self._gateway_handler.send_status_request(OWNLightingCommand.get_pir_sensitivity(self._where))
         await self._gateway_handler.send_status_request(OWNLightingCommand.get_motion_timeout(self._where))
-        try:
-            state = await self.async_get_last_state()
-            if state:
-                self._attr_is_on = state.state == STATE_ON
-                self._last_updated = state.last_updated
-        except Exception:
-            pass
-        await self.async_update()
+        await super().async_added_to_hass()
 
     async def async_will_remove_from_hass(self):
         """When entity is removed from hass."""

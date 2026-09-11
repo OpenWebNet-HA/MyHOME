@@ -499,8 +499,26 @@ async def test_listening_loop_other_events(gateway_handler):
         except asyncio.CancelledError:
             pass
 
-        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cenplus_event", {"object": 1, "pushbutton": 2, "event": CONF_SHORT_PRESS})
-        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cen_event", {"object": 3, "pushbutton": 4, "event": CONF_LONG_PRESS})
+        gateway_handler.hass.bus.async_fire.assert_any_call(
+            "myhome_cenplus_event",
+            {
+                "object": 1,
+                "pushbutton": 2,
+                "event": CONF_SHORT_PRESS,
+                "where": "1",
+                "gateway_mac": gateway_handler.mac,
+            },
+        )
+        gateway_handler.hass.bus.async_fire.assert_any_call(
+            "myhome_cen_event",
+            {
+                "object": 3,
+                "pushbutton": 4,
+                "event": CONF_LONG_PRESS,
+                "where": "3",
+                "gateway_mac": gateway_handler.mac,
+            },
+        )
         gateway_handler.hass.bus.async_fire.assert_any_call(
             "myhome_alarm_event",
             {
@@ -563,19 +581,19 @@ async def test_listening_loop_cen_and_cenplus_variants(gateway_handler):
         except asyncio.CancelledError:
             pass
 
-        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cenplus_event", {"object": 1, "pushbutton": 1, "event": CONF_LONG_PRESS})
-        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cenplus_event", {"object": 1, "pushbutton": 2, "event": CONF_LONG_PRESS})
-        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cenplus_event", {"object": 1, "pushbutton": 3, "event": CONF_LONG_RELEASE})
-        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cenplus_event", {"object": 1, "pushbutton": 4, "event": None})
-        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cenplus_event", {"object": 1, "pushbutton": 5, "event": CONF_ROTARY_CW_SLOW})
-        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cenplus_event", {"object": 1, "pushbutton": 6, "event": CONF_ROTARY_CW_FAST})
-        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cenplus_event", {"object": 1, "pushbutton": 7, "event": CONF_ROTARY_CCW_SLOW})
-        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cenplus_event", {"object": 1, "pushbutton": 8, "event": CONF_ROTARY_CCW_FAST})
+        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cenplus_event", {"object": 1, "pushbutton": 1, "event": CONF_LONG_PRESS, "where": "1", "gateway_mac": gateway_handler.mac})
+        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cenplus_event", {"object": 1, "pushbutton": 2, "event": CONF_LONG_PRESS, "where": "1", "gateway_mac": gateway_handler.mac})
+        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cenplus_event", {"object": 1, "pushbutton": 3, "event": CONF_LONG_RELEASE, "where": "1", "gateway_mac": gateway_handler.mac})
+        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cenplus_event", {"object": 1, "pushbutton": 4, "event": None, "where": "1", "gateway_mac": gateway_handler.mac})
+        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cenplus_event", {"object": 1, "pushbutton": 5, "event": CONF_ROTARY_CW_SLOW, "where": "1", "gateway_mac": gateway_handler.mac})
+        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cenplus_event", {"object": 1, "pushbutton": 6, "event": CONF_ROTARY_CW_FAST, "where": "1", "gateway_mac": gateway_handler.mac})
+        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cenplus_event", {"object": 1, "pushbutton": 7, "event": CONF_ROTARY_CCW_SLOW, "where": "1", "gateway_mac": gateway_handler.mac})
+        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cenplus_event", {"object": 1, "pushbutton": 8, "event": CONF_ROTARY_CCW_FAST, "where": "1", "gateway_mac": gateway_handler.mac})
 
-        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cen_event", {"object": 2, "pushbutton": 1, "event": CONF_SHORT_PRESS})
-        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cen_event", {"object": 2, "pushbutton": 2, "event": CONF_SHORT_RELEASE})
-        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cen_event", {"object": 2, "pushbutton": 3, "event": CONF_LONG_RELEASE})
-        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cen_event", {"object": 2, "pushbutton": 4, "event": None})
+        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cen_event", {"object": 2, "pushbutton": 1, "event": CONF_SHORT_PRESS, "where": "2", "gateway_mac": gateway_handler.mac})
+        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cen_event", {"object": 2, "pushbutton": 2, "event": CONF_SHORT_RELEASE, "where": "2", "gateway_mac": gateway_handler.mac})
+        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cen_event", {"object": 2, "pushbutton": 3, "event": CONF_LONG_RELEASE, "where": "2", "gateway_mac": gateway_handler.mac})
+        gateway_handler.hass.bus.async_fire.assert_any_call("myhome_cen_event", {"object": 2, "pushbutton": 4, "event": None, "where": "2", "gateway_mac": gateway_handler.mac})
 
 
 @pytest.mark.asyncio
@@ -795,13 +813,16 @@ async def test_gateway_cen_event_and_auto_registration(gateway_handler: MyHOMEGa
                 except asyncio.CancelledError:
                     pass
 
-                # Check bus event fired with object, pushbutton, event
+                # Check bus event fired with object, pushbutton, event, where, gateway_mac, entry_id
                 mock_fire.assert_any_call(
                     "myhome_cen_event",
                     {
                         "object": 5,
                         "pushbutton": 1,
                         "event": CONF_SHORT_PRESS,
+                        "where": "5",
+                        "gateway_mac": gateway_handler.mac,
+                        "entry_id": "test_entry_123",
                     },
                 )
 
@@ -855,6 +876,9 @@ async def test_gateway_cenplus_event_and_auto_registration(gateway_handler: MyHO
                         "object": 12,
                         "pushbutton": 3,
                         "event": CONF_ROTARY_CW_FAST,
+                        "where": "12",
+                        "gateway_mac": gateway_handler.mac,
+                        "entry_id": "test_entry_456",
                     },
                 )
 

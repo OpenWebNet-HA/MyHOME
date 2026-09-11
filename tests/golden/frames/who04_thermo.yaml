@@ -35,6 +35,10 @@
   mcp_valid: true
   mcp_notes: "Set Zone 1 target temperature to 20.5°C in Heating mode"
   roundtrip: true
+  builder:
+    class: OWNHeatingCommand
+    method: set_temperature
+    args: ["1", 20.5, "heat", true]
 
 - id: thermo.cmd.mode.antifreeze.zone1
   frame: "*4*110*1##"
@@ -70,3 +74,97 @@
   mcp_valid: true
   mcp_notes: "Complete probe status probe 6: -4.8°C (extended dimension 12)"
   roundtrip: true
+
+- id: thermo.cmd.central.mode.heat.cu99
+  frame: "*4*101*#0##"
+  direction: command
+  who: 4
+  what: 101
+  where: "#0"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Set 99-zone Central Unit to Heating mode"
+  roundtrip: true
+  builder:
+    class: OWNHeatingCommand
+    method: set_central_mode
+    args: ["#0", "heat"]
+
+- id: thermo.cmd.central.mode.cool.cu99
+  frame: "*4*102*#0##"
+  direction: command
+  who: 4
+  what: 102
+  where: "#0"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Set 99-zone Central Unit to Cooling mode"
+  roundtrip: true
+  builder:
+    class: OWNHeatingCommand
+    method: set_central_mode
+    args: ["#0", "cool"]
+
+- id: thermo.cmd.central.mode.off.cu99
+  frame: "*4*100*#0##"
+  direction: command
+  who: 4
+  what: 100
+  where: "#0"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Turn conditioning OFF on 99-zone Central Unit"
+  roundtrip: true
+  builder:
+    class: OWNHeatingCommand
+    method: set_central_mode
+    args: ["#0", "off"]
+
+- id: thermo.cmd.central.setpoint.cu99.205
+  frame: "*#4*#0*#14*0205*1##"
+  direction: dimension_write
+  who: 4
+  what: null
+  where: "#0"
+  dimension: 14
+  dimension_values: ["0205", "1"]
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Set 99-zone Central Unit target setpoint to 20.5°C in Heating mode"
+  roundtrip: true
+  builder:
+    class: OWNHeatingCommand
+    method: set_central_temperature
+    args: ["#0", 20.5, "heat"]
+
+- id: thermo.cmd.central.status.cu99
+  frame: "*#4*#0*14##"
+  direction: dimension_request
+  who: 4
+  what: null
+  where: "#0"
+  dimension: 14
+  dimension_values: []
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Request 99-zone Central Unit status"
+  roundtrip: true
+  builder:
+    class: OWNHeatingCommand
+    method: central_status
+    args: ["#0"]
+
+- id: thermo.cmd.central.mode.heat.cu4
+  frame: "*4*101*#0#1##"
+  direction: command
+  who: 4
+  what: 101
+  where: "#0"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Set 4-zone Central Unit to Heating mode"
+  roundtrip: true
+  builder:
+    class: OWNHeatingCommand
+    method: set_central_mode
+    args: ["#0#1", "heat"]

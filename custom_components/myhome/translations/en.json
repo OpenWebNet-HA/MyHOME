@@ -147,6 +147,46 @@
           "description": "For how long the instant power information will be sent."
         }
       }
+    },
+    "turn_on_timed": {
+      "name": "Turn on timed",
+      "description": "Turn on a light or switch with a hardware-offloaded SCS bus timer that turns off automatically even if Home Assistant restarts.",
+      "fields": {
+        "duration": {
+          "name": "Duration",
+          "description": "Duration in seconds before the device turns off automatically."
+        },
+        "hours": {
+          "name": "Hours",
+          "description": "Optional hours component for custom timer duration (0-255)."
+        },
+        "minutes": {
+          "name": "Minutes",
+          "description": "Optional minutes component for custom timer duration (0-59)."
+        },
+        "seconds": {
+          "name": "Seconds",
+          "description": "Optional seconds component for custom timer duration (0-59)."
+        },
+        "brightness": {
+          "name": "Brightness",
+          "description": "Optional brightness level (1-255) for lights."
+        },
+        "brightness_pct": {
+          "name": "Brightness percentage",
+          "description": "Optional brightness percentage (1-100%) for lights."
+        }
+      }
+    },
+    "sweep_bus": {
+      "name": "Sweep bus status",
+      "description": "Triggers an active read-only status query across all bus subsystems (lighting, covers, thermoregulation, clock, and gateway diagnostics) to populate the diagnostic bus monitor ring buffer.",
+      "fields": {
+        "gateway": {
+          "name": "Gateway",
+          "description": "The gateway's MAC address (optional; defaults to all active gateways)."
+        }
+      }
     }
   }
 }

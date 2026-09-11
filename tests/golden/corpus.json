@@ -300,6 +300,214 @@
     "_file": "who01_lighting.yaml"
   },
   {
+    "id": "light.req.color_temp.all",
+    "frame": "*#1*0*14##",
+    "direction": "status_request",
+    "who": 1,
+    "what": null,
+    "where": "0",
+    "dimension": 14,
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Query color temperature status across all ballasts",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.req.color_temp.ptp",
+    "frame": "*#1*25#4#02*14##",
+    "direction": "status_request",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 14,
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Query color temperature for DALI ballast 25 on interface 02",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "get_color_temperature",
+      "args": [
+        "25#4#02"
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.reply.color_temp.cool",
+    "frame": "*#1*25#4#02*14*153##",
+    "direction": "dimension_response",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 14,
+    "dimension_values": [
+      "153"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Color temperature reading 153 mireds (~6535 K cool white)",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.reply.color_temp.warm",
+    "frame": "*#1*25#4#02*14*370##",
+    "direction": "dimension_response",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 14,
+    "dimension_values": [
+      "370"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Color temperature reading 370 mireds (~2700 K warm white)",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.reply.color_temp.unsupported_sentinel",
+    "frame": "*#1*27#4#02*14*1##",
+    "direction": "dimension_response",
+    "who": 1,
+    "what": null,
+    "where": "27",
+    "interface": "02",
+    "dimension": 14,
+    "dimension_values": [
+      "1"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Sentinel value 1 indicating color temperature unsupported",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.write.color_temp.370",
+    "frame": "*#1*25#4#02*#14*370##",
+    "direction": "dimension_write",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 14,
+    "dimension_values": [
+      "370"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Set color temperature to 370 mireds (~2700 K)",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "set_color_temperature",
+      "args": [
+        "25#4#02",
+        370
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.req.hsv.ptp",
+    "frame": "*#1*25#4#02*12##",
+    "direction": "status_request",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 12,
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Query HSV color status for DALI ballast 25 on interface 02",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "get_hsv_color",
+      "args": [
+        "25#4#02"
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.reply.hsv.valid",
+    "frame": "*#1*25#4#02*12*255*100*50##",
+    "direction": "dimension_response",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 12,
+    "dimension_values": [
+      "255",
+      "100",
+      "50"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: HSV color reading (Hue 255\u00b0, Sat 100%, Val 50%)",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.reply.hsv.unsupported_sentinel",
+    "frame": "*#1*25#4#02*12*511*127*255##",
+    "direction": "dimension_response",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 12,
+    "dimension_values": [
+      "511",
+      "127",
+      "255"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Sentinel values (511, 127, 255) indicating HSV color unsupported",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.write.hsv",
+    "frame": "*#1*25#4#02*#12*255*100*50##",
+    "direction": "dimension_write",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 12,
+    "dimension_values": [
+      "255",
+      "100",
+      "50"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Set HSV color to (255\u00b0, 100%, 50%)",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "set_hsv_color",
+      "args": [
+        "25#4#02",
+        255,
+        100,
+        50
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
     "id": "light.cmd.translation.on.53",
     "frame": "*1*1000#1*53##",
     "direction": "command",
@@ -325,6 +533,230 @@
     "mcp_notes": "[Translation] Lighting: Turn OFF at address '53'",
     "roundtrip": true,
     "is_translation": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.reply.color_temp.170",
+    "frame": "*#1*25#4#02*14*170##",
+    "direction": "dimension_response",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 14,
+    "dimension_values": [
+      "170"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Color temperature reading 170 mireds (~5882 K) verified on BTicino F461 + DALI DT8",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.write.color_temp.170",
+    "frame": "*#1*25#4#02*#14*170##",
+    "direction": "dimension_write",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 14,
+    "dimension_values": [
+      "170"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Set color temperature to 170 mireds (~5882 K) verified on BTicino F461 + DALI DT8",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "set_color_temperature",
+      "args": [
+        "25#4#02",
+        170
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.reply.level.dali.100",
+    "frame": "*#1*25#4#02*1*200*5##",
+    "direction": "dimension_response",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 1,
+    "dimension_values": [
+      "200",
+      "5"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Dimension 1 level reading (100% at speed 5) on private DALI bus 02",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.cmd.off.bus.25",
+    "frame": "*1*0*25#4#02##",
+    "direction": "command",
+    "who": 1,
+    "what": 0,
+    "where": "25",
+    "interface": "02",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Turn OFF at address '25' on private DALI bus 02",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "switch_off",
+      "args": [
+        "25#4#02"
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.event.on.point_0910",
+    "frame": "*1*1*0910##",
+    "direction": "event",
+    "who": 1,
+    "what": 1,
+    "where": "0910",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Turn ON point-to-point at 4-digit zero-padded address 0910 (Nicola Cavallo plant)",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.event.off.point_1002",
+    "frame": "*1*0*1002##",
+    "direction": "event",
+    "who": 1,
+    "what": 0,
+    "where": "1002",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Turn OFF point-to-point at 4-digit address 1002 (Nicola Cavallo plant)",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.cmd.timed_preset_0_5s.ptp.21",
+    "frame": "*1*18*21##",
+    "direction": "command",
+    "who": 1,
+    "what": 18,
+    "where": "21",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Turn ON timed for 0.5s (flashing/strobe) at address '21'",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.cmd.timed_preset_5m.ptp.21",
+    "frame": "*1*15*21##",
+    "direction": "command",
+    "who": 1,
+    "what": 15,
+    "where": "21",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Turn ON timed for 5 minutes (preset 15) at address '21'",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.cmd.timed_custom_20m.ptp.21",
+    "frame": "*#1*21*#2*0*20*0##",
+    "direction": "dimension_write",
+    "who": 1,
+    "where": "21",
+    "dimension": 2,
+    "dimension_values": [
+      "0",
+      "20",
+      "0"
+    ],
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Dimension 2 custom timer write (0h 20m 0s) at address '21'",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.level100_speed.0714",
+    "frame": "*#1*0714*1*147*2##",
+    "direction": "dimension_response",
+    "who": 1,
+    "where": "0714",
+    "dimension": 1,
+    "dimension_values": [
+      "147",
+      "2"
+    ],
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Dimmer level 100 reading (47% at speed 2) at address '0714'",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.status100_speed.0714",
+    "frame": "*#1*0714*4*200*2##",
+    "direction": "dimension_response",
+    "who": 1,
+    "where": "0714",
+    "dimension": 4,
+    "dimension_values": [
+      "200",
+      "2"
+    ],
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Dimmer status 100 reading (100% at speed 2) at address '0714'",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.req.status.group_bus.25",
+    "frame": "*#1*#25#4#01##",
+    "direction": "status_request",
+    "who": 1,
+    "what": null,
+    "where": "#25",
+    "interface": "01",
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Query status of group #25 routed to private SCS bus 01",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "status",
+      "args": [
+        "#25#4#01"
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.cmd.translation.bus.0311",
+    "frame": "*1*1000#1#01#2#3*0311#4#01##",
+    "direction": "command",
+    "who": 1,
+    "what": "1000#1#01#2#3",
+    "where": "0311",
+    "interface": "01",
+    "is_translation": true,
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Command Translation frame on private SCS bus 01",
+    "roundtrip": true,
     "_file": "who01_lighting.yaml"
   },
   {
@@ -549,6 +981,26 @@
     "_file": "who02_automation.yaml"
   },
   {
+    "id": "cover.status.dimension10.level10.73",
+    "frame": "*#2*73*10*10*0*001*0##",
+    "direction": "dimension_response",
+    "who": 2,
+    "what": null,
+    "where": "73",
+    "dimension": 10,
+    "dimension_values": [
+      "10",
+      "0",
+      "001",
+      "0"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Automation: Absolute position level 10% report for address 73 (Nicola Cavallo plant)",
+    "roundtrip": true,
+    "_file": "who02_automation.yaml"
+  },
+  {
     "id": "thermo.req.temp.zone1",
     "frame": "*#4*1*0##",
     "direction": "dimension_request",
@@ -595,6 +1047,16 @@
     "mcp_valid": true,
     "mcp_notes": "Set Zone 1 target temperature to 20.5\u00b0C in Heating mode",
     "roundtrip": true,
+    "builder": {
+      "class": "OWNHeatingCommand",
+      "method": "set_temperature",
+      "args": [
+        "1",
+        20.5,
+        "heat",
+        true
+      ]
+    },
     "_file": "who04_thermo.yaml"
   },
   {
@@ -639,6 +1101,139 @@
     "mcp_valid": true,
     "mcp_notes": "Complete probe status probe 6: -4.8\u00b0C (extended dimension 12)",
     "roundtrip": true,
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.cmd.central.mode.heat.cu99",
+    "frame": "*4*101*#0##",
+    "direction": "command",
+    "who": 4,
+    "what": 101,
+    "where": "#0",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Set 99-zone Central Unit to Heating mode",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNHeatingCommand",
+      "method": "set_central_mode",
+      "args": [
+        "#0",
+        "heat"
+      ]
+    },
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.cmd.central.mode.cool.cu99",
+    "frame": "*4*102*#0##",
+    "direction": "command",
+    "who": 4,
+    "what": 102,
+    "where": "#0",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Set 99-zone Central Unit to Cooling mode",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNHeatingCommand",
+      "method": "set_central_mode",
+      "args": [
+        "#0",
+        "cool"
+      ]
+    },
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.cmd.central.mode.off.cu99",
+    "frame": "*4*100*#0##",
+    "direction": "command",
+    "who": 4,
+    "what": 100,
+    "where": "#0",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Turn conditioning OFF on 99-zone Central Unit",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNHeatingCommand",
+      "method": "set_central_mode",
+      "args": [
+        "#0",
+        "off"
+      ]
+    },
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.cmd.central.setpoint.cu99.205",
+    "frame": "*#4*#0*#14*0205*1##",
+    "direction": "dimension_write",
+    "who": 4,
+    "what": null,
+    "where": "#0",
+    "dimension": 14,
+    "dimension_values": [
+      "0205",
+      "1"
+    ],
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Set 99-zone Central Unit target setpoint to 20.5\u00b0C in Heating mode",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNHeatingCommand",
+      "method": "set_central_temperature",
+      "args": [
+        "#0",
+        20.5,
+        "heat"
+      ]
+    },
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.cmd.central.status.cu99",
+    "frame": "*#4*#0*14##",
+    "direction": "dimension_request",
+    "who": 4,
+    "what": null,
+    "where": "#0",
+    "dimension": 14,
+    "dimension_values": [],
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Request 99-zone Central Unit status",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNHeatingCommand",
+      "method": "central_status",
+      "args": [
+        "#0"
+      ]
+    },
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.cmd.central.mode.heat.cu4",
+    "frame": "*4*101*#0#1##",
+    "direction": "command",
+    "who": 4,
+    "what": 101,
+    "where": "#0",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Set 4-zone Central Unit to Heating mode",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNHeatingCommand",
+      "method": "set_central_mode",
+      "args": [
+        "#0#1",
+        "heat"
+      ]
+    },
     "_file": "who04_thermo.yaml"
   },
   {
@@ -789,6 +1384,30 @@
     "_file": "who13_gateway.yaml"
   },
   {
+    "id": "gateway.write.internal.datetime.2026",
+    "frame": "*#13**#22*17*33*54*002*05*11*09*2026##",
+    "direction": "dimension_write",
+    "who": 13,
+    "what": null,
+    "where": "",
+    "dimension": 22,
+    "dimension_values": [
+      "17",
+      "33",
+      "54",
+      "002",
+      "05",
+      "11",
+      "09",
+      "2026"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Gateway Management: Set gateway internal datetime to 2026-09-11 17:33:54 (Nicola Cavallo plant)",
+    "roundtrip": true,
+    "_file": "who13_gateway.yaml"
+  },
+  {
     "id": "cen.event.short_press.btn2.11",
     "frame": "*15*1*11#2##",
     "direction": "event",
@@ -799,6 +1418,14 @@
     "mcp_valid": true,
     "mcp_notes": "CEN: Short press on button 2 of interface 11",
     "roundtrip": true,
+    "builder": {
+      "class": "OWNCenCommand",
+      "method": "press",
+      "args": [
+        "11",
+        2
+      ]
+    },
     "_file": "who15_cen.yaml"
   },
   {
@@ -812,6 +1439,14 @@
     "mcp_valid": true,
     "mcp_notes": "CEN: Start of long press on button 2 of interface 11",
     "roundtrip": true,
+    "builder": {
+      "class": "OWNCenCommand",
+      "method": "start_long_press",
+      "args": [
+        "11",
+        2
+      ]
+    },
     "_file": "who15_cen.yaml"
   },
   {
@@ -825,6 +1460,14 @@
     "mcp_valid": true,
     "mcp_notes": "CEN: Release button 2 of interface 11",
     "roundtrip": true,
+    "builder": {
+      "class": "OWNCenCommand",
+      "method": "release",
+      "args": [
+        "11",
+        2
+      ]
+    },
     "_file": "who15_cen.yaml"
   },
   {
@@ -917,6 +1560,40 @@
     "_file": "who18_energy.yaml"
   },
   {
+    "id": "energy.resp.active_power.meter51.602",
+    "frame": "*#18*51*113*602##",
+    "direction": "dimension_response",
+    "who": 18,
+    "what": null,
+    "where": "51",
+    "dimension": 113,
+    "dimension_values": [
+      "602"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Energy Management: Meter 51 reports 602 Watts instantaneous active power (Nicola Cavallo plant)",
+    "roundtrip": true,
+    "_file": "who18_energy.yaml"
+  },
+  {
+    "id": "energy.resp.actuator_power.channel77.415",
+    "frame": "*#18*77#0*113*415##",
+    "direction": "dimension_response",
+    "who": 18,
+    "what": null,
+    "where": "77",
+    "dimension": 113,
+    "dimension_values": [
+      "415"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Energy Management: Actuator channel 77#0 reports 415 Watts active power (Nicola Cavallo plant)",
+    "roundtrip": true,
+    "_file": "who18_energy.yaml"
+  },
+  {
     "id": "cen_plus.event.short_press.btn1.12",
     "frame": "*25*21#1*12##",
     "direction": "event",
@@ -927,6 +1604,14 @@
     "mcp_valid": true,
     "mcp_notes": "CEN+: Short press on button 1 of interface 12",
     "roundtrip": true,
+    "builder": {
+      "class": "OWNCenPlusCommand",
+      "method": "press",
+      "args": [
+        "12",
+        1
+      ]
+    },
     "_file": "who25_cen_plus.yaml"
   },
   {
@@ -940,6 +1625,14 @@
     "mcp_valid": true,
     "mcp_notes": "CEN+: Start long press on button 1 of interface 12",
     "roundtrip": true,
+    "builder": {
+      "class": "OWNCenPlusCommand",
+      "method": "start_long_press",
+      "args": [
+        "12",
+        1
+      ]
+    },
     "_file": "who25_cen_plus.yaml"
   },
   {
@@ -953,6 +1646,14 @@
     "mcp_valid": true,
     "mcp_notes": "CEN+: Release button 1 of interface 12",
     "roundtrip": true,
+    "builder": {
+      "class": "OWNCenPlusCommand",
+      "method": "release",
+      "args": [
+        "12",
+        1
+      ]
+    },
     "_file": "who25_cen_plus.yaml"
   },
   {
@@ -979,6 +1680,14 @@
     "mcp_valid": true,
     "mcp_notes": "CEN+: Start long press on button 2 of module 22047",
     "roundtrip": true,
+    "builder": {
+      "class": "OWNCenPlusCommand",
+      "method": "start_long_press",
+      "args": [
+        "22047",
+        2
+      ]
+    },
     "_file": "who25_cen_plus.yaml"
   }
 ]

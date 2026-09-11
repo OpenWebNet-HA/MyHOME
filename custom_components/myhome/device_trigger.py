@@ -48,10 +48,38 @@ TRIGGER_SCHEMA = DEVICE_TRIGGER_BASE_SCHEMA.extend(
     {
         vol.Required(CONF_TYPE): vol.In(TRIGGER_TYPES),
         vol.Required(CONF_SUBTYPE): vol.In(TRIGGER_SUBTYPES),
-        vol.Optional(CONF_ADDRESS): vol.Coerce(int),
-        vol.Optional(CONF_OBJECT): vol.Coerce(int),
+        vol.Optional(CONF_ADDRESS): vol.Any(vol.Coerce(int), str),
+        vol.Optional(CONF_OBJECT): vol.Any(vol.Coerce(int), str),
     }
 )
+
+
+def _get_gateway_mac_from_device(device: dr.DeviceEntry) -> str | None:
+    """Extract gateway MAC address from device entry."""
+    for identifier in device.identifiers:
+        if identifier[0] != DOMAIN:
+            continue
+        ident = str(identifier[1])
+        parts = ident.split("-")
+        if len(parts) >= 3 and parts[-2] in ("15", "25", "cen", "cenplus"):
+            return parts[0]
+        if len(parts) == 1 and ":" in ident:
+            return ident
+    return None
+
+
+def _get_cen_address_from_device(device: dr.DeviceEntry) -> str | None:
+    """Extract scenario address as string from device entry."""
+    for identifier in device.identifiers:
+        if identifier[0] != DOMAIN:
+            continue
+        ident = str(identifier[1])
+        parts = ident.split("-")
+        if len(parts) >= 3 and parts[-2] in ("15", "25", "cen", "cenplus"):
+            return parts[-1]
+        elif ident.startswith("cen_") or ident.startswith("cenplus_"):
+            return ident.split("_", 1)[1]
+    return None
 
 
 def _get_cen_info_from_device(device: dr.DeviceEntry) -> tuple[bool, int | None]:
@@ -137,17 +165,23 @@ async def async_attach_trigger(
     subtype = config[CONF_SUBTYPE]
     button_num = int(subtype.replace("button_", ""))
 
-    # Determine target scenario address from config or associated device
+    # Determine target scenario address and gateway MAC from config or associated device
     target_address = config.get(CONF_ADDRESS)
     if target_address is None:
         target_address = config.get(CONF_OBJECT)
-    if target_address is None and CONF_DEVICE_ID in config:
+
+    target_gateway_mac = None
+    if CONF_DEVICE_ID in config:
         device_registry = dr.async_get(hass)
         device = device_registry.async_get(config[CONF_DEVICE_ID])
         if device is not None:
-            _, dev_addr = _get_cen_info_from_device(device)
-            if dev_addr is not None:
-                target_address = dev_addr
+            target_gateway_mac = _get_gateway_mac_from_device(device)
+            if target_address is None:
+                target_address = _get_cen_address_from_device(device)
+                if target_address is None:
+                    _, dev_addr = _get_cen_info_from_device(device)
+                    if dev_addr is not None:
+                        target_address = dev_addr
 
     async def _handle_event(event: Any) -> None:
         event_data = event.data
@@ -155,11 +189,27 @@ async def async_attach_trigger(
             event_data.get("event") == trigger_type
             and event_data.get("pushbutton") == button_num
         ):
-            # If an address is specified or resolved from device, filter on event object
+            # Gateway MAC filtering for multi-gateway plant isolation (P6)
+            if target_gateway_mac is not None:
+                event_mac = event_data.get("gateway_mac")
+                if event_mac is not None and event_mac != target_gateway_mac:
+                    return
+
+            # Address filtering with string and numeric tolerance (P2)
             if target_address is not None:
                 event_object = event_data.get("object")
-                if event_object is not None and int(event_object) != int(target_address):
-                    return
+                event_where = event_data.get("where")
+                str_target = str(target_address)
+                matches_str = (
+                    (event_where is not None and str(event_where) == str_target)
+                    or (event_object is not None and str(event_object) == str_target)
+                )
+                if not matches_str:
+                    try:
+                        if event_object is None or int(event_object) != int(target_address):
+                            return
+                    except (ValueError, TypeError):
+                        return
 
             await action(
                 {

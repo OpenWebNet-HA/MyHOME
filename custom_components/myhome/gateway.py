@@ -1,6 +1,6 @@
 """Code to handle a MyHome Gateway."""
 import asyncio
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from homeassistant.const import (
     CONF_FRIENDLY_NAME,
@@ -100,16 +100,23 @@ class MyHOMEGatewayHandler:
         self.send_buffer = asyncio.Queue(maxsize=queue_max_size)
         self.bus_monitor = BusMonitor()
         self.device_registry_id: str | None = None
-        self._cen_devices: set[tuple[int, int]] = set()
+        self._cen_devices: set[tuple[int, Any]] = set()
 
-    def _ensure_cen_device(self, who: int, object_id: int) -> None:
+    def _ensure_cen_device(self, who: int, object_id: int | str) -> None:
         """Ensure CEN/CEN+ scenario unit is registered in device registry."""
         device_key = (who, object_id)
-        if device_key in self._cen_devices:
+        obj_str = str(object_id)
+        if device_key in self._cen_devices or (who, obj_str) in self._cen_devices:
             return
 
         self._cen_devices.add(device_key)
-        if not self.config_entry or not hasattr(self.config_entry, "entry_id"):
+        self._cen_devices.add((who, obj_str))
+        try:
+            self._cen_devices.add((who, int(object_id)))
+        except (ValueError, TypeError):
+            pass
+
+        if not self.config_entry or not hasattr(self.config_entry, "entry_id") or not isinstance(self.config_entry.entry_id, str):
             return
 
         try:
@@ -117,8 +124,8 @@ class MyHOMEGatewayHandler:
             type_name = "CEN+" if who == 25 else "CEN"
             device_registry.async_get_or_create(
                 config_entry_id=self.config_entry.entry_id,
-                identifiers={(DOMAIN, f"{self.mac}-{who}-{object_id}")},
-                name=f"{type_name} Unit {object_id}",
+                identifiers={(DOMAIN, f"{self.mac}-{who}-{obj_str}")},
+                name=f"{type_name} Unit {obj_str}",
                 manufacturer="BTicino",
                 model=f"{type_name} Scenario Control",
                 via_device=(DOMAIN, self.mac),
@@ -285,227 +292,228 @@ class MyHOMEGatewayHandler:
                     parsed=message if isinstance(message, OWNMessage) else None,
                 )
             LOGGER.debug("%s Message received: `%s`", self.log_id, message)
-
-            if self.generate_events:
-                if isinstance(message, OWNMessage):
-                    _event_content = {"gateway": str(self.gateway.host)}
-                    _event_content.update(message.event_content)
-                    self.hass.bus.async_fire("myhome_message_event", _event_content)
-                else:
-                    self.hass.bus.async_fire("myhome_message_event", {"gateway": str(self.gateway.host), "message": str(message)})
-
-            if isinstance(message, OWNMessage):
-                async_dispatcher_send(self.hass, f"myhome_message_{self.mac}", message)
-
-            if not isinstance(message, OWNMessage):
-                LOGGER.warning(
-                    "%s Data received is not a message: `%s`",
-                    self.log_id,
-                    message,
-                )
-            elif (
-                isinstance(message, OWNLightingEvent)
-                or isinstance(message, OWNAutomationEvent)
-                or isinstance(message, OWNDryContactEvent)
-                or isinstance(message, OWNAuxEvent)
-                or isinstance(message, OWNHeatingEvent)
-            ):
-                if not message.is_translation:
-                    if isinstance(message, OWNLightingEvent):
-                        if message.is_general:
-                            event = "on" if message.is_on else "off"
-                            self.hass.bus.async_fire(
-                                "myhome_general_light_event",
-                                {"message": str(message), "event": event},
-                            )
-                        elif message.is_area:
-                            event = "on" if message.is_on else "off"
-                            self.hass.bus.async_fire(
-                                "myhome_area_light_event",
-                                {
-                                    "message": str(message),
-                                    "area": message.area,
-                                    "event": event,
-                                },
-                            )
-                            await asyncio.sleep(0.1)
-                            await self.send_status_request(OWNLightingCommand.status(message.area))
-                        elif message.is_group:
-                            event = "on" if message.is_on else "off"
-                            self.hass.bus.async_fire(
-                                "myhome_group_light_event",
-                                {
-                                    "message": str(message),
-                                    "group": message.group,
-                                    "event": event,
-                                },
-                            )
-                    elif isinstance(message, OWNAutomationEvent):
-                        if message.is_general:
-                            if message.is_opening and not message.is_closing:
-                                event = "open"
-                            elif message.is_closing and not message.is_opening:
-                                event = "close"
-                            else:
-                                event = "stop"
-                            self.hass.bus.async_fire(
-                                "myhome_general_automation_event",
-                                {"message": str(message), "event": event},
-                            )
-                        elif message.is_area:
-                            if message.is_opening and not message.is_closing:
-                                event = "open"
-                            elif message.is_closing and not message.is_opening:
-                                event = "close"
-                            else:
-                                event = "stop"
-                            self.hass.bus.async_fire(
-                                "myhome_area_automation_event",
-                                {
-                                    "message": str(message),
-                                    "area": message.area,
-                                    "event": event,
-                                },
-                            )
-                        elif message.is_group:
-                            if message.is_opening and not message.is_closing:
-                                event = "open"
-                            elif message.is_closing and not message.is_opening:
-                                event = "close"
-                            else:
-                                event = "stop"
-                            self.hass.bus.async_fire(
-                                "myhome_group_automation_event",
-                                {
-                                    "message": str(message),
-                                    "group": message.group,
-                                    "event": event,
-                                },
-                            )
-                else:
-                    LOGGER.debug(
-                        "%s Ignoring translation message `%s`",
-                        self.log_id,
-                        message,
-                    )
-            elif isinstance(message, OWNHeatingCommand) and message.dimension is not None and message.dimension == 14:
-                where = message.where[1:] if message.where.startswith("#") else message.where
-                LOGGER.debug(
-                    "%s Received heating command, sending query to zone %s",
-                    self.log_id,
-                    where,
-                )
-                await self.send_status_request(OWNHeatingCommand.status(where))
-            elif isinstance(message, OWNCENPlusEvent):
-                event = None
-                if message.is_short_pressed:
-                    event = CONF_SHORT_PRESS
-                elif message.is_held or message.is_still_held:
-                    event = CONF_LONG_PRESS
-                elif message.is_released:
-                    event = CONF_LONG_RELEASE
-                elif getattr(message, "is_slowly_turned_cw", False) is True:
-                    event = CONF_ROTARY_CW_SLOW
-                elif getattr(message, "is_quickly_turned_cw", False) is True:
-                    event = CONF_ROTARY_CW_FAST
-                elif getattr(message, "is_slowly_turned_ccw", False) is True:
-                    event = CONF_ROTARY_CCW_SLOW
-                elif getattr(message, "is_quickly_turned_ccw", False) is True:
-                    event = CONF_ROTARY_CCW_FAST
-                else:
-                    event = None
-                self._ensure_cen_device(25, int(message.object))
-                self.hass.bus.async_fire(
-                    "myhome_cenplus_event",
-                    {
-                        "object": int(message.object),
-                        "pushbutton": int(message.push_button),
-                        "event": event,
-                    },
-                )
-                LOGGER.debug(
-                    "%s %s",
-                    self.log_id,
-                    message.human_readable_log,
-                )
-            elif isinstance(message, OWNCENEvent):
-                event = None
-                if message.is_pressed:
-                    event = CONF_SHORT_PRESS
-                elif message.is_released_after_short_press:
-                    event = CONF_SHORT_RELEASE
-                elif message.is_held:
-                    event = CONF_LONG_PRESS
-                elif message.is_released_after_long_press:
-                    event = CONF_LONG_RELEASE
-                else:
-                    event = None
-                self._ensure_cen_device(15, int(message.object))
-                self.hass.bus.async_fire(
-                    "myhome_cen_event",
-                    {
-                        "object": int(message.object),
-                        "pushbutton": int(message.push_button),
-                        "event": event,
-                    },
-                )
-                LOGGER.debug(
-                    "%s %s",
-                    self.log_id,
-                    message.human_readable_log,
-                )
-            elif isinstance(message, OWNAlarmEvent):
-                self.hass.bus.async_fire(
-                    "myhome_alarm_event",
-                    {
-                        "where": str(message.where),
-                        "state": message.state_name,
-                        "state_code": message.state_code,
-                        "is_alarm": message.is_alarm,
-                        "message": str(message),
-                    },
-                )
-                async_dispatcher_send(
-                    self.hass,
-                    f"myhome_update_{self.mac}_5_{message.where}",
-                    message,
-                )
-                async_dispatcher_send(
-                    self.hass,
-                    f"myhome_update_{self.mac}_5_0",
-                    message,
-                )
-                LOGGER.debug(
-                    "%s %s",
-                    self.log_id,
-                    message.human_readable_log,
-                )
-            elif isinstance(message, OWNGatewayEvent) or isinstance(message, OWNGatewayCommand):
-                LOGGER.debug(
-                    "%s %s",
-                    self.log_id,
-                    message.human_readable_log,
-                )
-            elif (
-                getattr(message, "who", None) == 18
-                or isinstance(message, (OWNEnergyEvent, OWNEnergyCommand))
-            ):
-                LOGGER.debug(
-                    "%s Energy telemetry message: `%s`",
-                    self.log_id,
-                    message,
-                )
-            else:
-                LOGGER.debug(
-                    "%s Unsupported message type: `%s`",
-                    self.log_id,
-                    message,
-                )
+            await self._process_message(message)
 
         await _event_session.close()
         self._on_event_connection_state_change(False)
 
         LOGGER.debug("%s Destroying listening worker.", self.log_id)
+
+    async def _process_message(self, message: Any) -> None:
+        """Process a received message and dispatch to Home Assistant."""
+        if self.generate_events:
+            if isinstance(message, OWNMessage):
+                _event_content = {"gateway": str(self.gateway.host)}
+                _event_content.update(message.event_content)
+                self.hass.bus.async_fire("myhome_message_event", _event_content)
+            else:
+                self.hass.bus.async_fire("myhome_message_event", {"gateway": str(self.gateway.host), "message": str(message)})
+
+        if isinstance(message, OWNMessage):
+            async_dispatcher_send(self.hass, f"myhome_message_{self.mac}", message)
+
+        if not isinstance(message, OWNMessage):
+            LOGGER.warning(
+                "%s Data received is not a message: `%s`",
+                self.log_id,
+                message,
+            )
+        elif (
+            isinstance(message, OWNLightingEvent)
+            or isinstance(message, OWNAutomationEvent)
+            or isinstance(message, OWNDryContactEvent)
+            or isinstance(message, OWNAuxEvent)
+            or isinstance(message, OWNHeatingEvent)
+        ):
+            if not message.is_translation:
+                if isinstance(message, OWNLightingEvent):
+                    if message.is_general:
+                        event = "on" if message.is_on else "off"
+                        self.hass.bus.async_fire(
+                            "myhome_general_light_event",
+                            {"message": str(message), "event": event},
+                        )
+                    elif message.is_area:
+                        event = "on" if message.is_on else "off"
+                        self.hass.bus.async_fire(
+                            "myhome_area_light_event",
+                            {
+                                "message": str(message),
+                                "area": message.area,
+                                "event": event,
+                            },
+                        )
+                        await asyncio.sleep(0.1)
+                        await self.send_status_request(OWNLightingCommand.status(message.area))
+                    elif message.is_group:
+                        event = "on" if message.is_on else "off"
+                        self.hass.bus.async_fire(
+                            "myhome_group_light_event",
+                            {
+                                "message": str(message),
+                                "group": message.group,
+                                "event": event,
+                            },
+                        )
+                elif isinstance(message, OWNAutomationEvent):
+                    if message.is_general:
+                        if message.is_opening and not message.is_closing:
+                            event = "open"
+                        elif message.is_closing and not message.is_opening:
+                            event = "close"
+                        else:
+                            event = "stop"
+                        self.hass.bus.async_fire(
+                            "myhome_general_automation_event",
+                            {"message": str(message), "event": event},
+                        )
+                    elif message.is_area:
+                        if message.is_opening and not message.is_closing:
+                            event = "open"
+                        elif message.is_closing and not message.is_opening:
+                            event = "close"
+                        else:
+                            event = "stop"
+                        self.hass.bus.async_fire(
+                            "myhome_area_automation_event",
+                            {
+                                "message": str(message),
+                                "area": message.area,
+                                "event": event,
+                            },
+                        )
+                    elif message.is_group:
+                        if message.is_opening and not message.is_closing:
+                            event = "open"
+                        elif message.is_closing and not message.is_opening:
+                            event = "close"
+                        else:
+                            event = "stop"
+                        self.hass.bus.async_fire(
+                            "myhome_group_automation_event",
+                            {
+                                "message": str(message),
+                                "group": message.group,
+                                "event": event,
+                            },
+                        )
+            else:
+                LOGGER.debug(
+                    "%s Ignoring translation message `%s`",
+                    self.log_id,
+                    message,
+                )
+        elif isinstance(message, OWNHeatingCommand) and message.dimension is not None and message.dimension == 14:
+            where = message.where[1:] if message.where.startswith("#") else message.where
+            LOGGER.debug(
+                "%s Received heating command, sending query to zone %s",
+                self.log_id,
+                where,
+            )
+            await self.send_status_request(OWNHeatingCommand.status(where))
+        elif isinstance(message, OWNCENPlusEvent):
+            event = None
+            if message.is_short_pressed:
+                event = CONF_SHORT_PRESS
+            elif message.is_held or message.is_still_held:
+                event = CONF_LONG_PRESS
+            elif message.is_released:
+                event = CONF_LONG_RELEASE
+            elif getattr(message, "is_slowly_turned_cw", False) is True:
+                event = CONF_ROTARY_CW_SLOW
+            elif getattr(message, "is_quickly_turned_cw", False) is True:
+                event = CONF_ROTARY_CW_FAST
+            elif getattr(message, "is_slowly_turned_ccw", False) is True:
+                event = CONF_ROTARY_CCW_SLOW
+            elif getattr(message, "is_quickly_turned_ccw", False) is True:
+                event = CONF_ROTARY_CCW_FAST
+            else:
+                event = None
+            raw_obj = str(message.object)
+            self._ensure_cen_device(25, raw_obj)
+            cenplus_payload = {
+                "object": int(message.object),
+                "pushbutton": int(message.push_button),
+                "event": event,
+                "where": raw_obj,
+                "gateway_mac": self.mac,
+            }
+            if self.config_entry and hasattr(self.config_entry, "entry_id") and isinstance(self.config_entry.entry_id, str):
+                cenplus_payload["entry_id"] = self.config_entry.entry_id
+            self.hass.bus.async_fire("myhome_cenplus_event", cenplus_payload)
+            async_dispatcher_send(self.hass, f"myhome_cenplus_event_{self.mac}", cenplus_payload)
+            LOGGER.debug(
+                "%s %s",
+                self.log_id,
+                message.human_readable_log,
+            )
+        elif isinstance(message, OWNCENEvent):
+            event = None
+            if message.is_pressed:
+                event = CONF_SHORT_PRESS
+            elif message.is_released_after_short_press:
+                event = CONF_SHORT_RELEASE
+            elif message.is_held:
+                event = CONF_LONG_PRESS
+            elif message.is_released_after_long_press:
+                event = CONF_LONG_RELEASE
+            else:
+                event = None
+            raw_obj = str(message.object)
+            self._ensure_cen_device(15, raw_obj)
+            cen_payload = {
+                "object": int(message.object),
+                "pushbutton": int(message.push_button),
+                "event": event,
+                "where": raw_obj,
+                "gateway_mac": self.mac,
+            }
+            if self.config_entry and hasattr(self.config_entry, "entry_id") and isinstance(self.config_entry.entry_id, str):
+                cen_payload["entry_id"] = self.config_entry.entry_id
+            self.hass.bus.async_fire("myhome_cen_event", cen_payload)
+            async_dispatcher_send(self.hass, f"myhome_cen_event_{self.mac}", cen_payload)
+            LOGGER.debug(
+                "%s %s",
+                self.log_id,
+                message.human_readable_log,
+            )
+        elif isinstance(message, OWNAlarmEvent):
+            self.hass.bus.async_fire(
+                "myhome_alarm_event",
+                {
+                    "where": str(message.where),
+                    "state": message.state_name,
+                    "state_code": message.state_code,
+                    "is_alarm": message.is_alarm,
+                    "message": str(message),
+                },
+            )
+            LOGGER.debug(
+                "%s %s",
+                self.log_id,
+                message.human_readable_log,
+            )
+        elif isinstance(message, OWNGatewayEvent) or isinstance(message, OWNGatewayCommand):
+            LOGGER.debug(
+                "%s %s",
+                self.log_id,
+                message.human_readable_log,
+            )
+        elif (
+            getattr(message, "who", None) == 18
+            or isinstance(message, (OWNEnergyEvent, OWNEnergyCommand))
+        ):
+            LOGGER.debug(
+                "%s Energy telemetry message: `%s`",
+                self.log_id,
+                message,
+            )
+        else:
+            LOGGER.debug(
+                "%s Unsupported message type: `%s`",
+                self.log_id,
+                message,
+            )
 
     async def sending_loop(self, worker_id: int):
         self._terminate_sender = False

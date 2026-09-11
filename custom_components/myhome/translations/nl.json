@@ -126,6 +126,46 @@
           "description": "For how long the instant power information will be sent."
         }
       }
+    },
+    "turn_on_timed": {
+      "name": "Tijdelijk inschakelen",
+      "description": "Schakel een lamp of schakelaar in met een hardwarematige SCS-bustimer die automatisch uitschakelt, zelfs als Home Assistant herstart.",
+      "fields": {
+        "duration": {
+          "name": "Tijdsduur",
+          "description": "Tijdsduur in seconden voordat het apparaat automatisch uitschakelt."
+        },
+        "hours": {
+          "name": "Uren",
+          "description": "Optionele uren voor aangepaste timerduur (0-255)."
+        },
+        "minutes": {
+          "name": "Minuten",
+          "description": "Optionele minuten voor aangepaste timerduur (0-59)."
+        },
+        "seconds": {
+          "name": "Seconden",
+          "description": "Optionele seconden voor aangepaste timerduur (0-59)."
+        },
+        "brightness": {
+          "name": "Helderheid",
+          "description": "Optioneel helderheidsniveau (1-255) voor lampen."
+        },
+        "brightness_pct": {
+          "name": "Helderheidspercentage",
+          "description": "Optioneel helderheidspercentage (1-100%) voor lampen."
+        }
+      }
+    },
+    "sweep_bus": {
+      "name": "Busstatus scannen",
+      "description": "Voert een alleen-lezen statusverzoek uit over alle bussubsystemen (verlichting, rolluiken, klimaatregeling, klok en gatewaydiagnostiek) om de diagnostische ringbuffer te vullen.",
+      "fields": {
+        "gateway": {
+          "name": "Gateway",
+          "description": "MAC-adres van de gateway (optioneel; standaard voor alle actieve gateways)."
+        }
+      }
     }
   }
 }

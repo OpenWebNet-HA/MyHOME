@@ -7,8 +7,8 @@ DOMAIN = "myhome"
 
 ATTR_GATEWAY = "gateway"
 ATTR_MESSAGE = "message"
-INTEGRATION_VERSION = "2.0.0b9"
-REQUIRED_OWND_VERSION = "2.0.0b5"
+INTEGRATION_VERSION = "2.0.0b11"
+REQUIRED_OWND_VERSION = "2.0.0b6"
 
 
 @lru_cache(maxsize=1)
@@ -47,6 +47,9 @@ CONF_WHERE = "where"
 CONF_BUS_INTERFACE = "interface"
 CONF_ZONE = "zone"
 CONF_DIMMABLE = "dimmable"
+CONF_COLOR_TEMP = "color_temp"
+CONF_RGB = "rgb"
+CONF_HS = "hs"
 CONF_GATEWAY = "gateway"
 CONF_DEVICE_CLASS = "class"
 CONF_INVERTED = "inverted"
@@ -143,3 +146,47 @@ def normalize_where(where: str | int | None) -> str:
         norm_base = base
     return f"{norm_base}#{parts[1]}" if len(parts) > 1 else norm_base
 
+
+SERVICE_TURN_ON_TIMED = "turn_on_timed"
+
+PRESET_TIMERS: dict[float, int] = {
+    0.5: 18,
+    30.0: 17,
+    60.0: 11,
+    120.0: 12,
+    180.0: 13,
+    240.0: 14,
+    300.0: 15,
+    900.0: 16,
+}
+
+
+def build_timed_turn_on_command(
+    where: str,
+    duration: float | None = None,
+    hours: int = 0,
+    minutes: int = 0,
+    seconds: float = 0,
+):
+    """Build OpenWebNet hardware timer command for WHO=1."""
+    from OWNd.message import OWNCommand
+
+    total_seconds = float(duration if duration is not None else 0.0)
+    total_seconds += (int(hours) * 3600) + (int(minutes) * 60) + float(seconds)
+
+    if total_seconds <= 0:
+        total_seconds = 0.5
+
+    rounded_secs = round(total_seconds, 1)
+    if rounded_secs in PRESET_TIMERS:
+        what = PRESET_TIMERS[rounded_secs]
+        frame = f"*1*{what}*{where}##"
+    else:
+        int_secs = int(round(total_seconds))
+        h = max(0, min(255, int_secs // 3600))
+        m = max(0, min(59, (int_secs % 3600) // 60))
+        s = max(0, min(59, int_secs % 60))
+        frame = f"*#1*{where}*#2*{h}*{m}*{s}##"
+
+    parsed = OWNCommand.parse(frame)
+    return parsed if parsed is not None else OWNCommand(frame)

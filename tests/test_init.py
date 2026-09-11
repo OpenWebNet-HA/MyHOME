@@ -191,7 +191,29 @@ async def test_services(hass: HomeAssistant):
                 DOMAIN, "send_message", {ATTR_GATEWAY: "invalid_mac", ATTR_MESSAGE: "*1*1*12##"}, blocking=True
             )
 
-        # Test sync_time and send_message when no gateways exist in hass.data[DOMAIN] (lines 231-232, 262-266)
+        # Test sweep_bus service with specific gateway
+        gateway.send.reset_mock()
+        await hass.services.async_call(
+            DOMAIN, "sweep_bus", {ATTR_GATEWAY: "00:03:50:00:12:34"}, blocking=True
+        )
+        assert gateway.send.call_count >= 5
+        gateway.send.reset_mock()
+
+        # Test sweep_bus without gateway specified (sweeps all active gateways)
+        await hass.services.async_call(
+            DOMAIN, "sweep_bus", {}, blocking=True
+        )
+        assert gateway.send.call_count >= 5
+        gateway.send.reset_mock()
+
+        # Test sweep_bus with unconfigured gateway
+        with patch("homeassistant.helpers.device_registry.format_mac", return_value="00:03:50:99:99:99"):
+            await hass.services.async_call(
+                DOMAIN, "sweep_bus", {ATTR_GATEWAY: "00:03:50:99:99:99"}, blocking=True
+            )
+        gateway.send.assert_not_called()
+
+        # Test sync_time, send_message, and sweep_bus when no gateways exist in hass.data[DOMAIN]
         saved_data = hass.data[DOMAIN]
         hass.data[DOMAIN] = {}
         try:
@@ -200,6 +222,9 @@ async def test_services(hass: HomeAssistant):
             )
             await hass.services.async_call(
                 DOMAIN, "send_message", {ATTR_MESSAGE: "*1*1*12##"}, blocking=True
+            )
+            await hass.services.async_call(
+                DOMAIN, "sweep_bus", {}, blocking=True
             )
         finally:
             hass.data[DOMAIN] = saved_data
@@ -825,6 +850,12 @@ async def test_setup_entry_prunes_empty_devices_but_preserves_cen(hass: HomeAssi
             identifiers={(DOMAIN, "00:03:50:00:88:77-25-10")},
             name="CEN+ Unit 10",
         )
+        empty_dry_contact = dev_reg.async_get_or_create(
+            config_entry_id=config_entry.entry_id,
+            identifiers={(DOMAIN, "00:03:50:00:88:77-25-31")},
+            name="Dry Contact 31",
+            model="Dry Contact Interface",
+        )
         orphan_device = dev_reg.async_get_or_create(
             config_entry_id=config_entry.entry_id,
             identifiers={(DOMAIN, "00:03:50:00:88:77-orphan")},
@@ -834,8 +865,9 @@ async def test_setup_entry_prunes_empty_devices_but_preserves_cen(hass: HomeAssi
         assert await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        # The orphan device with 0 entities should have been pruned
+        # The orphan device and empty dry contact with 0 entities should have been pruned
         assert orphan_device.id not in dev_reg.devices
+        assert empty_dry_contact.id not in dev_reg.devices
         # The CEN and CEN+ devices must be preserved
         assert cen_device.id in dev_reg.devices
         assert cenplus_device.id in dev_reg.devices
@@ -1202,7 +1234,7 @@ async def test_async_setup_entry_engine_mismatch_raises_not_ready(hass: HomeAssi
 
     from custom_components.myhome import async_setup_entry
 
-    entry = MockConfigEntry(domain=DOMAIN, data={"mac": "00:03:50:00:12:99", "host": "1.2.3.4", "port": 20000})
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": "00:03:50:00:12:99", "host": "1.2.3.4", "port": 20000}, unique_id="00:03:50:00:12:99")
     with patch("custom_components.myhome.async_ensure_ownd_engine", return_value=False):
         with pytest.raises(ConfigEntryNotReady):
             await async_setup_entry(hass, entry)

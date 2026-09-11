@@ -8,6 +8,10 @@
   mcp_valid: true
   mcp_notes: "CEN+: Short press on button 1 of interface 12"
   roundtrip: true
+  builder:
+    class: OWNCenPlusCommand
+    method: press
+    args: ["12", 1]
 
 - id: cen_plus.event.start_long_press.btn1.12
   frame: "*25*22#1*12##"
@@ -19,6 +23,10 @@
   mcp_valid: true
   mcp_notes: "CEN+: Start long press on button 1 of interface 12"
   roundtrip: true
+  builder:
+    class: OWNCenPlusCommand
+    method: start_long_press
+    args: ["12", 1]
 
 - id: cen_plus.event.release.btn1.12
   frame: "*25*24#1*12##"
@@ -30,6 +38,10 @@
   mcp_valid: true
   mcp_notes: "CEN+: Release button 1 of interface 12"
   roundtrip: true
+  builder:
+    class: OWNCenPlusCommand
+    method: release
+    args: ["12", 1]
 
 - id: cen_plus.dry_contact.closed.input1.15
   frame: "*25*31#1*15##"
@@ -52,3 +64,7 @@
   mcp_valid: true
   mcp_notes: "CEN+: Start long press on button 2 of module 22047"
   roundtrip: true
+  builder:
+    class: OWNCenPlusCommand
+    method: start_long_press
+    args: ["22047", 2]

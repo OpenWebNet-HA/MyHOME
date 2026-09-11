@@ -49,18 +49,22 @@ tools/golden/
   harvest_4j_fixtures.py        # Oracle test harvester & divergence detector
   HARVEST_REPORT.md             # Harvest analysis report
   MASSI_OUTREACH.md             # Community proposal draft for Massi Valla
+tests/golden/
+  corpus.json                   # Zero-dependency standard library runtime cache
 tests/
-  test_golden_spike.py          # Pytest suite running conformance tests
+  test_golden_conformance.py    # Pytest suite running conformance tests
+docs/
+  protocol_conformance_matrix.md # Verifiable truth matrix across all 11 subsystems
 ```
 
 ## Running Conformance Verification
 
-To validate all YAML fixtures against `schema.json`:
+To validate all YAML fixtures against `schema.json` and synchronize `corpus.json`:
 ```powershell
 & "C:\Users\laurensvdb\Documents\GitHub\MyHOME\.venv\Scripts\python.exe" tools/golden/validate_corpus.py
 ```
 
-To run the automated pytest test suite:
+To run the automated pytest conformance suite (zero external dependencies required):
 ```powershell
-& "C:\Users\laurensvdb\Documents\GitHub\MyHOME\.venv\Scripts\python.exe" -m pytest tests/test_golden_spike.py -v
+& "C:\Users\laurensvdb\Documents\GitHub\MyHOME\.venv\Scripts\python.exe" -m pytest tests/test_golden_conformance.py -v
 ```

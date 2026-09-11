@@ -33,9 +33,11 @@ except ImportError:
 if not os.environ.get("OWND_SMOKE_TEST"):
     try:
         import OWNd  # noqa: F401
-        from OWNd.message import OWNCenCommand, OWNHeatingCommand  # noqa: F401
+        from OWNd.message import OWNCenCommand, OWNHeatingCommand, OWNLightingCommand  # noqa: F401
         if not hasattr(OWNHeatingCommand, "central_status"):
             raise AttributeError("central_status not found on OWNHeatingCommand")
+        if not hasattr(OWNLightingCommand, "get_hsv_color"):
+            raise AttributeError("get_hsv_color not found on OWNLightingCommand")
     except (ImportError, AttributeError):
         installed = False
         if os.environ.get("GITHUB_ACTIONS"):
@@ -84,6 +86,7 @@ if not os.environ.get("OWND_SMOKE_TEST"):
                     os.remove(os.path.join(repo_root, f_name))
                 except OSError:
                     pass
+
 # Ensure repository custom_components directory is discoverable even when
 # pytest-homeassistant-custom-component redirects custom_components package path
 try:

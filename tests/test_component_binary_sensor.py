@@ -928,5 +928,145 @@ async def test_binary_sensor_duplicate_exceptions_and_padded_where(hass):
         await dry_padded.async_added_to_hass()
 
 
+@pytest.mark.asyncio
+async def test_moving_device_class_dry_contact_restoration_and_deduplication(hass):
+    """Test that dry contacts with class moving (Issue #247) strip suffix properly and do not duplicate."""
+    mac = "00:03:50:a4:11:2e"
+    mock_gateway = MagicMock()
+    mock_gateway.mac = mac
+    mock_gateway.serial = "00:03:50:a4:11:2e"
+    mock_gateway.unique_id = "00:03:50:a4:11:2e"
+    mock_gateway.device_registry_id = "test_gw_dev_reg_id"
+
+    hass.data[DOMAIN] = {
+        mac: {
+            "platforms": {
+                "binary_sensor": {
+                    "25-331": {
+                        "who": "25",
+                        "where": "331",
+                        "name": "Contatto Finestra Salone",
+                        "entity_name": "Contatto Finestra Salone",
+                        "inverted": False,
+                        "class": BinarySensorDeviceClass.MOVING,
+                        "manufacturer": "BTicino",
+                        "model": "Dry Contact",
+                    },
+                    "331": {
+                        "who": "25",
+                        "where": "331",
+                        "name": "Contatto Finestra Salone",
+                        "entity_name": "Contatto Finestra Salone",
+                        "inverted": False,
+                        "class": BinarySensorDeviceClass.MOVING,
+                        "manufacturer": "BTicino",
+                        "model": "Dry Contact",
+                    },
+                }
+            },
+            "entity": mock_gateway,
+        }
+    }
+    config_entry = MagicMock()
+    config_entry.data = {"mac": mac}
+    config_entry.entry_id = "test_moving_dc_entry"
+
+    entry_moving = MagicMock()
+    entry_moving.domain = "binary_sensor"
+    entry_moving.entity_id = "binary_sensor.contatto_tapparella_finestra_salone_moving"
+    entry_moving.unique_id = f"{mac}-25-331-moving"
+    entry_moving.original_device_class = BinarySensorDeviceClass.MOVING
+
+    mock_er = MagicMock()
+
+    with patch(
+        "custom_components.myhome.binary_sensor.er.async_entries_for_config_entry",
+        return_value=[entry_moving],
+    ), patch(
+        "custom_components.myhome.binary_sensor.er.async_get",
+        return_value=mock_er,
+    ):
+        added = []
+        assert await async_setup_entry(hass, config_entry, lambda e: added.extend(e)) is True
+        assert len(added) == 1
+        bs = added[0]
+        assert bs._who == "25"
+        assert bs._where == "331"
+        assert bs._attr_device_class == BinarySensorDeviceClass.MOVING
+        assert bs.unique_id == f"{mac}-25-331-moving"
+        assert (DOMAIN, f"{mac}-25-331") in bs.device_info["identifiers"]
+
+
+@pytest.mark.asyncio
+async def test_who9_auxiliary_sensor_with_motion_device_class_restoration(hass):
+    """Test that WHO 9 auxiliary sensors with device_class motion (Issue #247) restore as MyHOMEAuxiliary and avoid collision."""
+    mac = "00:03:50:a4:11:2e"
+    mock_gateway = MagicMock()
+    mock_gateway.mac = mac
+    mock_gateway.serial = "00:03:50:a4:11:2e"
+    mock_gateway.unique_id = "00:03:50:a4:11:2e"
+    mock_gateway.device_registry_id = "test_gw_dev_reg_id"
+
+    hass.data[DOMAIN] = {
+        mac: {
+            "platforms": {
+                "binary_sensor": {
+                    "9-1": {
+                        "who": "9",
+                        "where": "1",
+                        "name": "Radar Salone",
+                        "entity_name": "Radar Salone",
+                        "inverted": False,
+                        "class": BinarySensorDeviceClass.MOTION,
+                        "manufacturer": "BTicino",
+                        "model": "Auxiliary Channel",
+                    },
+                    "1": {
+                        "who": "9",
+                        "where": "1",
+                        "name": "Radar Salone",
+                        "entity_name": "Radar Salone",
+                        "inverted": False,
+                        "class": BinarySensorDeviceClass.MOTION,
+                        "manufacturer": "BTicino",
+                        "model": "Auxiliary Channel",
+                    },
+                }
+            },
+            "entity": mock_gateway,
+        }
+    }
+    config_entry = MagicMock()
+    config_entry.data = {"mac": mac}
+    config_entry.entry_id = "test_radar_entry"
+
+    entry_radar = MagicMock()
+    entry_radar.domain = "binary_sensor"
+    entry_radar.entity_id = "binary_sensor.radar_salone_motion"
+    entry_radar.unique_id = f"{mac}-9-1-motion"
+    entry_radar.original_device_class = BinarySensorDeviceClass.MOTION
+
+    mock_er = MagicMock()
+
+    with patch(
+        "custom_components.myhome.binary_sensor.er.async_entries_for_config_entry",
+        return_value=[entry_radar],
+    ), patch(
+        "custom_components.myhome.binary_sensor.er.async_get",
+        return_value=mock_er,
+    ):
+        added = []
+        assert await async_setup_entry(hass, config_entry, lambda e: added.extend(e)) is True
+        assert len(added) == 1
+        bs = added[0]
+        assert isinstance(bs, MyHOMEAuxiliary)
+        assert not isinstance(bs, MyHOMEMotionSensor)
+        assert bs._who == "9"
+        assert bs._where == "1"
+        assert bs._attr_device_class == BinarySensorDeviceClass.MOTION
+        assert bs.unique_id == f"{mac}-9-1-motion"
+        assert (DOMAIN, f"{mac}-9-1") in bs.device_info["identifiers"]
+
+
 
 

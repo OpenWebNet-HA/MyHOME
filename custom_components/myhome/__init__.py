@@ -612,16 +612,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             if gateway_id and (DOMAIN, gateway_id) in dev.identifiers:
                 continue
             # Do not prune scenario devices (CEN / CEN+) that intentionally have no entities
-            if any(
-                isinstance(ident[1], str)
-                and (
-                    "-15-" in ident[1]
-                    or "-25-" in ident[1]
-                    or ident[1].startswith("cen")
+            is_scenario_device = (
+                (dev.model and ("Scenario Control" in dev.model or dev.model.startswith("CEN")))
+                or (dev.name and (dev.name.startswith("CEN") or "Scenario" in dev.name))
+                or any(
+                    isinstance(ident[1], str)
+                    and (
+                        "-15-" in ident[1]
+                        or ident[1].startswith("cen")
+                        or ident[1].startswith("cenplus")
+                    )
+                    for ident in dev.identifiers
+                    if ident[0] == DOMAIN
                 )
-                for ident in dev.identifiers
-                if ident[0] == DOMAIN
-            ):
+            )
+            if is_scenario_device:
                 continue
             dev_entries = er.async_entries_for_device(
                 entity_registry, dev.id, include_disabled_entities=True
@@ -769,6 +774,49 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     hass.services.async_register(DOMAIN, "send_message", handle_send_message)
 
+    async def handle_sweep_bus(call):
+        """Trigger an active status query sweep across bus subsystems to populate the bus monitor."""
+        from OWNd.message import OWNMessage
+
+        gateway = call.data.get(ATTR_GATEWAY, None)
+        target_gateways = []
+        if gateway is not None:
+            mac = dr.format_mac(gateway)
+            if mac and mac in hass.data[DOMAIN] and CONF_ENTITY in hass.data[DOMAIN][mac]:
+                target_gateways.append(mac)
+            else:
+                LOGGER.error("Gateway `%s` not found for sweep_bus.", gateway)
+                return False
+        else:
+            target_gateways = [
+                k
+                for k in hass.data[DOMAIN]
+                if isinstance(k, str) and ":" in k and CONF_ENTITY in hass.data[DOMAIN][k]
+            ]
+
+        if not target_gateways:
+            LOGGER.warning("No active MyHOME gateways found to sweep.")
+            return False
+
+        sweep_queries = [
+            "*#13**0##",   # Gateway real-time clock
+            "*#13**15##",  # Gateway model & firmware status
+            "*#1*0##",     # All lighting & switch actuators
+            "*#2*0##",     # All cover actuators
+            "*#4*0##",     # Thermoregulation master status
+        ]
+
+        for gw_mac in target_gateways:
+            handler = hass.data[DOMAIN][gw_mac][CONF_ENTITY]
+            LOGGER.info("Executing diagnostic bus sweep on gateway %s", gw_mac)
+            for query in sweep_queries:
+                await handler.send(OWNMessage.parse(query))
+                await asyncio.sleep(0.05)
+
+        return True
+
+    hass.services.async_register(DOMAIN, "sweep_bus", handle_sweep_bus)
+
     return True
 
 
@@ -782,6 +830,7 @@ async def async_unload_entry(hass, entry):
 
     hass.services.async_remove(DOMAIN, "sync_time")
     hass.services.async_remove(DOMAIN, "send_message")
+    hass.services.async_remove(DOMAIN, "sweep_bus")
 
     gateway_handler = hass.data[DOMAIN][entry.data[CONF_MAC]].pop(CONF_ENTITY)
     del hass.data[DOMAIN][entry.data[CONF_MAC]]

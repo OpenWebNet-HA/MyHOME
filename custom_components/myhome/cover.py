@@ -21,7 +21,6 @@ from homeassistant.const import (
 from homeassistant.core import callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
-from homeassistant.helpers.restore_state import RestoreEntity
 from OWNd.message import (
     OWNAutomationCommand,
     OWNAutomationEvent,
@@ -243,7 +242,7 @@ async def async_unload_entry(hass, config_entry):  # pylint: disable=unused-argu
     return True
 
 
-class MyHOMECover(MyHOMEEntity, CoverEntity, RestoreEntity):
+class MyHOMECover(MyHOMEEntity, CoverEntity):
     device_class = CoverDeviceClass.SHUTTER
 
     def __init__(
@@ -344,50 +343,53 @@ class MyHOMECover(MyHOMEEntity, CoverEntity, RestoreEntity):
 
     async def async_added_to_hass(self):
         """Run when entity about to be added to hass."""
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass,
-                f"myhome_update_{self._gateway_handler.mac}_2_{self._full_where}",
-                self.handle_event,
+        target_hass = self.hass or self._hass
+        if target_hass is not None:
+            self.async_on_remove(
+                async_dispatcher_connect(
+                    target_hass,
+                    f"myhome_update_{self._gateway_handler.mac}_2_{self._full_where}",
+                    self.handle_event,
+                )
             )
-        )
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass,
-                f"myhome_update_{self._gateway_handler.mac}_2_general",
-                self.handle_event,
+            self.async_on_remove(
+                async_dispatcher_connect(
+                    target_hass,
+                    f"myhome_update_{self._gateway_handler.mac}_2_general",
+                    self.handle_event,
+                )
             )
-        )
-
-        if not self._advanced:
-            try:
-                state = await self.async_get_last_state()
-            except Exception:
-                state = None
-            if state is not None:
-                restored = False
-                last_pos = state.attributes.get(ATTR_CURRENT_POSITION)
-                if last_pos is not None:
-                    try:
-                        self._attr_current_cover_position = max(0, min(100, int(round(float(last_pos)))))
-                        self._start_position = self._attr_current_cover_position
-                        self._attr_is_closed = (self._attr_current_cover_position == 0)
-                        restored = True
-                    except (ValueError, TypeError):
-                        restored = False
-                if not restored:
-                    if state.state in (STATE_CLOSED, "closed"):
-                        self._attr_current_cover_position = 0
-                        self._start_position = 0
-                        self._attr_is_closed = True
-                    elif state.state in (STATE_OPEN, "open"):
-                        self._attr_current_cover_position = 100
-                        self._start_position = 100
-                        self._attr_is_closed = False
-
         # Subscribe before requesting the current status so the reply cannot
         # arrive before this entity is ready to handle it.
+        if self._advanced:
+            # Advanced covers query live position from bus; do not restore stale state
+            self._register_availability_listener()
+            await self.async_update()
+            return
         await super().async_added_to_hass()
+
+    async def async_restore_last_state(self, last_state) -> None:
+        """Restore cover position and closure state."""
+        if not self._advanced:
+            restored = False
+            last_pos = last_state.attributes.get(ATTR_CURRENT_POSITION)
+            if last_pos is not None:
+                try:
+                    self._attr_current_cover_position = max(0, min(100, int(round(float(last_pos)))))
+                    self._start_position = self._attr_current_cover_position
+                    self._attr_is_closed = (self._attr_current_cover_position == 0)
+                    restored = True
+                except (ValueError, TypeError):
+                    restored = False
+            if not restored:
+                if last_state.state in (STATE_CLOSED, "closed"):
+                    self._attr_current_cover_position = 0
+                    self._start_position = 0
+                    self._attr_is_closed = True
+                elif last_state.state in (STATE_OPEN, "open"):
+                    self._attr_current_cover_position = 100
+                    self._start_position = 100
+                    self._attr_is_closed = False
 
     async def async_will_remove_from_hass(self):
         """Run when entity will be removed from hass."""

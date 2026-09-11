@@ -35,7 +35,7 @@ jobs:
         run: |
           PYTHONPATH=. pytest tests/ --snapshot-update --cov=custom_components.myhome --cov-report=xml --cov-report=html --cov-report=term --junitxml=junit.xml
           python scripts/update_readme_coverage.py
-          if [ "${{ github.event_name }}" = "push" ] && ([ "${{ github.ref }}" = "refs/heads/main" ] || [ "${{ github.ref }}" = "refs/heads/master" ] || [ "${{ github.ref }}" = "refs/heads/v2-phase1-architecture" ]); then
+          if [ "${{ github.event_name }}" = "push" ] && ([ "${{ github.ref }}" = "refs/heads/main" ] || [ "${{ github.ref }}" = "refs/heads/master" ]); then
             git config --global user.name "github-actions[bot]"
             git config --global user.email "github-actions[bot]@users.noreply.github.com"
             git add "tests/**/__snapshots__/*" || true

@@ -8,6 +8,10 @@
   mcp_valid: true
   mcp_notes: "CEN: Short press on button 2 of interface 11"
   roundtrip: true
+  builder:
+    class: OWNCenCommand
+    method: press
+    args: ["11", 2]
 
 - id: cen.event.start_long_press.btn2.11
   frame: "*15*0*11#2##"
@@ -19,6 +23,10 @@
   mcp_valid: true
   mcp_notes: "CEN: Start of long press on button 2 of interface 11"
   roundtrip: true
+  builder:
+    class: OWNCenCommand
+    method: start_long_press
+    args: ["11", 2]
 
 - id: cen.event.release.btn2.11
   frame: "*15*2*11#2##"
@@ -30,6 +38,10 @@
   mcp_valid: true
   mcp_notes: "CEN: Release button 2 of interface 11"
   roundtrip: true
+  builder:
+    class: OWNCenCommand
+    method: release
+    args: ["11", 2]
 
 - id: cen.event.extended_press.btn1.0001
   frame: "*15*01#3*0001##"
