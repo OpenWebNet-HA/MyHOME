@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+from aiohttp.resolver import ThreadedResolver
 from homeassistant.components import frontend
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.exceptions import Unauthorized
@@ -76,6 +77,18 @@ def installation(hass):
         config_entry_id=entries[0].entry_id,
         identifiers={(DOMAIN, "00:03:50:00:00:00-25-21")},
         name="CEN entrance",
+    )
+    # A shared native registry can contain metadata owned by other integrations.
+    # Neither their identifiers nor their entities belong in the MyHOME inventory.
+    device_registry.async_update_device(
+        cen.id,
+        new_identifiers={
+            *cen.identifiers,
+            ("other", "00:03:50:00:00:00-18-52"),
+        },
+    )
+    entity_registry.async_get_or_create(
+        "sensor", "other", "foreign-sensor", config_entry=entries[0], device_id=cen.id
     )
     hass.data[DOMAIN] = {
         entries[0].data["mac"]: {
@@ -164,6 +177,26 @@ async def test_who_uses_device_identifiers_for_legacy_sensor_ids(hass, installat
     assert {entity_id: actual[entity_id] for entity_id in expected} == expected
 
 
+async def test_inventory_keeps_devices_without_a_gateway_mac_unclassified(hass, installation):
+    entry = installation.entries[1]
+    data = dict(entry.data)
+    del data["mac"]
+    hass.config_entries.async_update_entry(entry, data=data)
+
+    payload = async_panel_inventory(hass)
+    gateway = next(item for item in payload["gateways"] if item["entry_id"] == entry.entry_id)
+    device = next(item for item in payload["devices"] if item["id"] == installation.devices[1].id)
+    entity = next(
+        item for item in payload["entities"]
+        if item["entity_id"] == installation.entities[1].entity_id
+    )
+    assert gateway["mac"] is None
+    assert gateway["connected"] is False
+    for item in (device, entity):
+        assert item["who"] is None
+        assert item["address"] is None
+
+
 async def test_inventory_reflects_native_registry_changes_without_a_second_store(
     hass, installation
 ):
@@ -244,13 +277,16 @@ async def test_inventory_addresses_preserve_apl_and_routes_on_offline_devices(ha
     assert {key: actual[key] for key in expected} == expected
 
 
-async def test_inventory_does_not_guess_ambiguous_or_cross_gateway_addresses(hass, installation):
+@pytest.mark.parametrize("second_who", ["1", "2"])
+async def test_inventory_does_not_guess_ambiguous_or_cross_gateway_addresses(
+    hass, installation, second_who
+):
     devices = dr.async_get(hass)
     entities = er.async_get(hass)
     first, second = installation.entries[:2]
     identifiers = {
         (DOMAIN, f"{first.data['mac']}-1-0015"),
-        (DOMAIN, f"{second.data['mac']}-1-15#4#02"),
+        (DOMAIN, f"{second.data['mac']}-{second_who}-15#4#02"),
     }
     registered = [
         devices.async_get_or_create(config_entry_id=entry.entry_id, identifiers=identifiers)
@@ -268,6 +304,9 @@ async def test_inventory_does_not_guess_ambiguous_or_cross_gateway_addresses(has
     )
     orphan = entities.async_get_or_create("sensor", DOMAIN, "0015-illuminance", config_entry=first)
     payload = async_panel_inventory(hass)
+    whos = {entity["entity_id"]: entity["who"] for entity in payload["entities"]}
+    assert whos[linked[0].entity_id] == "1"
+    assert whos[linked[1].entity_id] == second_who
     addresses = {entity["entity_id"]: entity["address"] for entity in payload["entities"]}
     assert addresses[linked[0].entity_id] == {
         "raw": "0015",
@@ -288,9 +327,11 @@ async def test_inventory_does_not_guess_ambiguous_or_cross_gateway_addresses(has
     # Older HA versions share a device; newer versions scope it to a config entry.
     if registered[0].id == registered[1].id:
         assert by_id[registered[0].id]["address"] is None
+        assert by_id[registered[0].id]["who"] == ("1" if second_who == "1" else None)
     else:
         for device, entity in zip(registered, linked, strict=True):
             assert by_id[device.id]["address"] == addresses[entity.entity_id]
+            assert by_id[device.id]["who"] == whos[entity.entity_id]
 
 
 @pytest.mark.parametrize("user", [None, SimpleNamespace(is_admin=False)])
@@ -303,12 +344,18 @@ async def test_inventory_rejects_non_admins(hass, user):
 
 async def test_inventory_websocket_round_trip(hass, hass_ws_client, installation):
     await async_setup_panel(hass, "/myhome_static/myhome-bus-card.js?v=test")
-    client = await hass_ws_client(hass)
-    await client.send_json({"id": 1, "type": WS_INVENTORY})
-    response = await client.receive_json()
-    assert response["success"] is True
-    assert len(response["result"]["gateways"]) == 2
-    await client.close()
+    # The real HTTP/WebSocket client only connects to loopback. Avoid starting
+    # pycares' persistent DNS shutdown thread, which older HA test fixtures flag
+    # as a leak. Keep the normal thread/task cleanup assertions enabled.
+    with patch("aiohttp.connector.DefaultResolver", ThreadedResolver):
+        client = await hass_ws_client(hass)
+        try:
+            await client.send_json({"id": 1, "type": WS_INVENTORY})
+            response = await client.receive_json()
+            assert response["success"] is True
+            assert len(response["result"]["gateways"]) == 2
+        finally:
+            await client.close()
 
 
 async def test_registration_concurrent_and_repeated_setup(hass):
