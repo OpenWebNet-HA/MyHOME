@@ -27,19 +27,19 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
-    panel_version: "0.3.0",
+    panel_version: "0.4.0",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
     ],
     devices: [
-      { id: "device-one", entry_ids: ["one"], name: "Luce sala", name_by_user: null, area_id: "living", who: "1", identifiers: ["00:03:50:00:00:01-1-11"] },
-      { id: "cen", entry_ids: ["one"], name: "CEN ingresso", area_id: null, who: "25", identifiers: ["00:03:50:00:00:01-25-21"] },
-      { id: "device-two", entry_ids: ["two"], name: "Luce garage", area_id: null, who: "1", identifiers: ["00:03:50:00:00:02-1-11"] },
+      { id: "device-one", entry_ids: ["one"], name: "Luce sala", name_by_user: null, area_id: "living", who: "1", address: { raw: "11", a: "1", pl: "1", interface: null }, identifiers: ["00:03:50:00:00:01-1-11"] },
+      { id: "cen", entry_ids: ["one"], name: "CEN ingresso", area_id: null, who: "25", address: { raw: "21", a: null, pl: null, interface: null }, identifiers: ["00:03:50:00:00:01-25-21"] },
+      { id: "device-two", entry_ids: ["two"], name: "Luce garage", area_id: null, who: "1", address: { raw: "11", a: "1", pl: "1", interface: null }, identifiers: ["00:03:50:00:00:02-1-11"] },
     ],
     entities: [
-      { entity_id: "light.sala", entry_id: "one", domain: "light", who: "1", name: null, original_name: "Luce sala", device_id: "device-one", area_id: null, unique_id: "00:03:50:00:00:01-1-11" },
-      { entity_id: "light.garage", entry_id: "two", domain: "light", who: "1", original_name: "Luce garage", device_id: "device-two", area_id: null, disabled_by: "user", unique_id: "00:03:50:00:00:02-1-11" },
+      { entity_id: "light.sala", entry_id: "one", domain: "light", who: "1", address: { raw: "11", a: "1", pl: "1", interface: null }, name: null, original_name: "Luce sala", device_id: "device-one", area_id: null, unique_id: "00:03:50:00:00:01-1-11" },
+      { entity_id: "light.garage", entry_id: "two", domain: "light", who: "1", address: { raw: "11", a: "1", pl: "1", interface: null }, original_name: "Luce garage", device_id: "device-two", area_id: null, disabled_by: "user", unique_id: "00:03:50:00:00:02-1-11" },
     ],
     areas: [{ id: "living", name: "Soggiorno" }, { id: "outside", name: "Esterno" }],
   };
@@ -105,7 +105,7 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
-  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.3.0");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.4.0");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
   root.querySelector('[data-view="devices"]').click();
   assert.equal(root.querySelectorAll(".item-card").length, 3);
@@ -222,6 +222,32 @@ test("category navigation recovers from removed categories, empty inventories an
   }
 });
 
+test("entity and device cards display searchable A/PL, bus routes and unknown addresses safely", async () => {
+  const { panel, root, hass } = await mount({ prepare: (data) => {
+    const address = { raw: "0015#4#02", a: "00", pl: "15", interface: "02" };
+    data.devices.push({ id: "lux-device", entry_ids: ["one"], name: "Lux", who: "1", identifiers: ["legacy-lux-device"], address });
+    data.entities.push({ entity_id: "sensor.lux", entry_id: "one", domain: "sensor", who: "1", device_id: "lux-device", unique_id: "legacy-lux", address });
+    data.entities.push({ entity_id: "sensor.unknown", entry_id: "one", domain: "sensor", who: null, unique_id: "legacy-unknown", address: null });
+    data.entities.push({ entity_id: "sensor.energy", entry_id: "one", domain: "sensor", who: "18", unique_id: "legacy-energy", address: { raw: "52", a: null, pl: null, interface: null } });
+  } });
+  const card = (id) => root.querySelector(`[data-id="${id}"]`).closest(".item-card");
+  const fields = (id) => [...card(id).querySelectorAll(".address div")].map((field) => [field.querySelector("dt").textContent, field.querySelector("dd").textContent]);
+  assert.deepEqual(fields("sensor.lux"), [["Indirizzo:", "0015#4#02"], ["A:", "00"], ["PL:", "15"], ["Interfaccia:", "02"]]);
+  assert.deepEqual(fields("light.garage"), [["Indirizzo:", "11"], ["A:", "1"], ["PL:", "1"]]);
+  assert.match(card("sensor.unknown").querySelector(".address").textContent, /Indirizzo: Non disponibile/);
+  assert.deepEqual(fields("sensor.energy"), [["Indirizzo:", "52"]]);
+  change(root.getElementById("search"), "A:00 PL:15");
+  assert.equal(root.querySelectorAll(".item-card").length, 1);
+  assert.ok(card("sensor.lux"));
+  root.querySelector('[data-view="devices"]').click();
+  assert.equal(root.querySelectorAll(".item-card").length, 1);
+  assert.deepEqual(fields("lux-device"), [["Indirizzo:", "0015#4#02"], ["A:", "00"], ["PL:", "15"], ["Interfaccia:", "02"]]);
+  change(root.getElementById("search"), "0015#4#02");
+  assert.equal(root.querySelectorAll(".item-card").length, 1);
+  panel.hass = { ...hass, language: "en" };
+  assert.equal(fields("lux-device")[3][0], "Interface:");
+});
+
 test("entity editor saves through the native API without overwriting an externally changed area", async () => {
   const { root, calls, data } = await mount();
   root.querySelector('[data-view="entities"]').click();
@@ -243,6 +269,7 @@ test("failed saves keep the dialog usable and server text is escaped", async () 
   const { root } = await mount({ callWS: async (message, data) => {
     if (message.type === "myhome/panel/inventory") {
       data.devices[0].name = '<img src=x onerror="alert(1)">';
+      data.devices[0].address.raw = '<img src=x onerror="alert(2)">';
       return structuredClone(data);
     }
     throw new Error("Entity removed");

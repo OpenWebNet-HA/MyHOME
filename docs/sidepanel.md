@@ -10,7 +10,7 @@ and provides English and Italian labels, with English fallback for other languag
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.3.0**, defined by
+The panel has an independent version, currently **0.4.0**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.
@@ -42,6 +42,10 @@ parameters. This refreshes assets independently from integration releases.
   bus monitor and when no categories are available.
 - Search names, entity IDs, and the integration's OpenWebNet identifiers. Filter
   by entity type and area; entity area filtering respects device inheritance.
+- Every device/entity card includes its recorded address. Point-to-point lighting,
+  automation and CEN addresses also show **A** and **PL**, plus the bus interface
+  when present. Leading zeros remain significant: `15` is A `1` / PL `5`, whereas
+  `0015` is A `00` / PL `15`. Search accepts full addresses and `A:00 PL:15`.
 - Edit device/entity names and areas. An empty name restores the original name;
   an empty entity area inherits its device's area.
 - Open the native device page, entity details, advanced entity settings, and
@@ -61,6 +65,7 @@ integration settings remain the place to add and configure gateways.
 | Gateway connection configuration | Existing MyHOME Config Entry and Options Flow |
 | Device names and areas | Home Assistant device registry, `config/device_registry/update` |
 | Entity names and area overrides | Home Assistant entity registry, `config/entity_registry/update` |
+| WHO and recorded address / A / PL / interface | MyHOME identifiers in the native device registry; read only |
 | Entity values and availability | Home Assistant frontend state updates |
 | Bus traffic | Existing `myhome/bus_monitor/*` APIs |
 
@@ -87,6 +92,23 @@ Home Assistant entity type or from legacy sensor entity IDs, which may omit WHO.
 Unclassified/ambiguous items remain visible in **No WHO category**; newly seen WHO
 numbers remain visible even if no translated label has been added yet.
 
+Address metadata uses the same native device identifiers, so it also works for
+disabled entities, offline gateways and auxiliary lock/unlock buttons. A repeated
+WHO in YAML-generated device keys is removed once; the WHO 16 media-player `#16`
+registry suffix is not part of its zone address. Ambiguous, missing and unsupported
+identifiers display **Address: Not available**, without guessing from entity IDs.
+Entities use the identifiers matching their own gateway MAC. Shared devices with
+different addresses across gateways show an unknown device address; their entities
+retain the address for their respective gateway.
+
+A/PL splitting is limited to valid point-to-point addresses in WHO 1, 2, 14, 15
+and 1001. Other categories, general/area/group commands, and unrecognized address
+formats retain their recorded address without invented A/PL fields. This follows
+the existing `is_apl_address` rules and the Legrand
+[lighting/actuator addressing](https://static.developer.legrand.com/files/2024/05/WHO_1.pdf)
+and [CEN/CEN+ specifications](https://developer.legrand.com/uploads/2019/12/WHO_15-25.pdf).
+Recorded CEN+ object IDs are displayed as addresses, not expanded into wire frames.
+
 ## Try this branch
 
 1. Install `custom_components/myhome` from `feat/myhome-sidepanel` over the
@@ -102,7 +124,8 @@ numbers remain visible even if no translated label has been added yet.
 5. Change a device name and area; verify them on its native device page. Change an
    entity name and area override, then clear the override to check inheritance.
 6. Check an offline gateway and a disabled entity. Their configuration should
-   remain visible and editable.
+   remain visible and editable. Compare address/A/PL/interface values on a device
+   and its entities, including `0015`, `15`, and an address routed through `#4#02`.
 7. With two gateways, switch the bus monitor between them and confirm the title
    and traffic always match the selected gateway. Reload a gateway while the
    panel is open, then return to the monitor.
@@ -127,16 +150,18 @@ python scripts/verify_ha_standards.py
 ```
 
 The frontend suite uses Node.js 24 and jsdom. It covers gateway/area/type/WHO
-filtering, WHO grouping/navigation, layout preferences, panel version display, native writes, concurrent area
-changes, errors, escaping, live states, and cleanup of delayed subscriptions.
+filtering, WHO grouping/navigation, layout preferences, panel version display,
+address rendering/search, native writes, concurrent area changes, errors,
+escaping, live states, and cleanup of delayed subscriptions.
 It runs separately in `panel-tests.yml`.
 Browser layout and real hardware checks remain manual.
 
-Panel 0.3.0 validation on Home Assistant 2026.9.1: all 27 panel/WebSocket tests
-passed, including WHO classification for legacy sensor IDs and offline gateways.
-All eleven frontend tests passed, including category navigation, layout and
-selection persistence, changing inventories, and blocked browser storage.
-The changed Python file passes Ruff.
+Panel 0.4.0 validation on Home Assistant 2026.9.1: all 29 panel/WebSocket tests
+passed, including WHO/address metadata for legacy sensor IDs, offline gateways,
+bus interfaces and ambiguous identifiers. All twelve frontend tests passed,
+including address rendering/search, category navigation, layout and selection
+persistence, changing inventories, and blocked browser storage.
+The changed Python files pass Ruff.
 
 Initial implementation validation on Home Assistant 2026.9.1: 47 Python checks passed
 and four existing `test_init.py` checks failed on deprecated device-registry

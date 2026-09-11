@@ -42,6 +42,9 @@ export function filterItems(data, scope, view, { query, category, area, who }, h
     const text = [
       item.name_by_user, item.name, item.model, item.manufacturer, areaName(areaId),
       item.who == null ? "" : `WHO ${item.who}`,
+      item.address?.raw,
+      item.address?.a == null ? "" : `A:${item.address.a} A: ${item.address.a}`,
+      item.address?.pl == null ? "" : `PL:${item.address.pl} PL: ${item.address.pl}`,
       ...(item.identifiers || []), ...linked.flatMap((entity) => [
         entityName(entity, hass), entity.entity_id, entity.unique_id,
       ]),

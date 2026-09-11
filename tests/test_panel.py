@@ -187,6 +187,101 @@ async def test_inventory_reflects_native_registry_changes_without_a_second_store
     assert dict(entry.options) == old_options
 
 
+async def test_inventory_addresses_preserve_apl_and_routes_on_offline_devices(hass, installation):
+    entry = installation.entries[1]
+    devices = dr.async_get(hass)
+    entities = er.async_get(hass)
+    expected = {}
+    cases = [
+        ("1", "15", "15", "1", "5", None),
+        ("1", "0015", "0015", "00", "15", None),
+        ("1", "1-0115#4#02", "0115#4#02", "01", "15", "02"),
+        ("2", "1015#4#00", "1015#4#00", "10", "15", "00"),
+        ("15", "21#3", "21#3", "2", "1", None),
+        ("1", "#12#4#02", "#12#4#02", None, None, "02"),
+        ("1", "0", "0", None, None, None),
+        ("1", "100", "100", None, None, None),
+        ("4", "4-101", "101", None, None, None),
+        ("18", "18-52", "52", None, None, None),
+        ("25", "21", "21", None, None, None),
+        ("16", "31#16", "31", None, None, None),
+        ("1", "0116", "0116", None, None, None),
+        ("1", "0015#4#99", "0015#4#99", None, None, None),
+        ("1", "custom-15", None, None, None, None),
+    ]
+    for index, (who, device_id, raw, a, pl, interface) in enumerate(cases):
+        device = devices.async_get_or_create(
+            config_entry_id=entry.entry_id,
+            identifiers={(DOMAIN, f"{entry.data['mac']}-{who}-{device_id}")},
+        )
+        address = {"raw": raw, "a": a, "pl": pl, "interface": interface} if raw else None
+        expected[device.id] = address
+        # Both legacy sensor IDs and auxiliary buttons inherit their device address.
+        for domain, suffix in [("sensor", "illuminance"), ("button", "disable")]:
+            entity = entities.async_get_or_create(
+                domain,
+                DOMAIN,
+                f"legacy-{index}-{suffix}",
+                config_entry=entry,
+                device_id=device.id,
+                disabled_by=er.RegistryEntryDisabler.USER,
+            )
+            expected[entity.entity_id] = address
+    payload = async_panel_inventory(hass)
+    actual = {device["id"]: device["address"] for device in payload["devices"]}
+    actual.update({entity["entity_id"]: entity["address"] for entity in payload["entities"]})
+    assert {key: actual[key] for key in expected} == expected
+
+
+async def test_inventory_does_not_guess_ambiguous_or_cross_gateway_addresses(hass, installation):
+    devices = dr.async_get(hass)
+    entities = er.async_get(hass)
+    first, second = installation.entries[:2]
+    identifiers = {
+        (DOMAIN, f"{first.data['mac']}-1-0015"),
+        (DOMAIN, f"{second.data['mac']}-1-15#4#02"),
+    }
+    registered = [
+        devices.async_get_or_create(config_entry_id=entry.entry_id, identifiers=identifiers)
+        for entry in [first, second]
+    ]
+    linked = [
+        entities.async_get_or_create(
+            "light", DOMAIN, f"shared-{index}", config_entry=entry, device_id=device.id
+        )
+        for index, (entry, device) in enumerate(zip([first, second], registered, strict=True))
+    ]
+    ambiguous = devices.async_get_or_create(
+        config_entry_id=first.entry_id,
+        identifiers={(DOMAIN, f"{first.data['mac']}-1-21"), (DOMAIN, f"{first.data['mac']}-1-22")},
+    )
+    orphan = entities.async_get_or_create("sensor", DOMAIN, "0015-illuminance", config_entry=first)
+    payload = async_panel_inventory(hass)
+    addresses = {entity["entity_id"]: entity["address"] for entity in payload["entities"]}
+    assert addresses[linked[0].entity_id] == {
+        "raw": "0015",
+        "a": "00",
+        "pl": "15",
+        "interface": None,
+    }
+    assert addresses[linked[1].entity_id] == {
+        "raw": "15#4#02",
+        "a": "1",
+        "pl": "5",
+        "interface": "02",
+    }
+    assert addresses[orphan.entity_id] is None
+    by_id = {device["id"]: device for device in payload["devices"]}
+    assert by_id[ambiguous.id]["who"] == "1"
+    assert by_id[ambiguous.id]["address"] is None
+    # Older HA versions share a device; newer versions scope it to a config entry.
+    if registered[0].id == registered[1].id:
+        assert by_id[registered[0].id]["address"] is None
+    else:
+        for device, entity in zip(registered, linked, strict=True):
+            assert by_id[device.id]["address"] == addresses[entity.entity_id]
+
+
 @pytest.mark.parametrize("user", [None, SimpleNamespace(is_admin=False)])
 async def test_inventory_rejects_non_admins(hass, user):
     connection = MagicMock(user=user)

@@ -21,10 +21,10 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from .const import CONF_ENTITY, CONF_FIRMWARE, DOMAIN, INTEGRATION_VERSION
+from .const import CONF_ENTITY, CONF_FIRMWARE, DOMAIN, INTEGRATION_VERSION, is_apl_address
 
 PANEL_URL = "myhome"
-PANEL_VERSION = "0.3.0"
+PANEL_VERSION = "0.4.0"
 PANEL_STATIC_URL = "/myhome_panel"
 WS_INVENTORY = "myhome/panel/inventory"
 _PANEL_REGISTERED = "_panel_registered"
@@ -33,17 +33,19 @@ _WS_REGISTERED = "_panel_ws_registered"
 _LOCK = "_panel_setup_lock"
 
 
-def _device_who(identifiers: set[tuple[str, str]], mac: str | None) -> str | None:
-    """Read WHO from the canonical MAC-WHO-device identifier, never the HA type.
+def _device_metadata(
+    identifiers: set[tuple[str, str]], mac: str | None
+) -> tuple[str | None, dict[str, str | None] | None]:
+    """Read WHO/address from canonical MAC-WHO-device identifiers.
 
     Sensor entity unique IDs may omit WHO entirely, so their device registry
     identifier is the source for both device and entity grouping. Ambiguous or
     legacy identifiers remain unclassified rather than treating WHERE as WHO.
     """
     if not mac:
-        return None
+        return None, None
     normalized_mac = re.sub(r"[:.\-]", "", mac).lower()
-    whos = set()
+    identities = set()
     for domain, identifier in identifiers:
         if domain != DOMAIN:
             continue
@@ -54,8 +56,35 @@ def _device_who(identifiers: set[tuple[str, str]], mac: str | None) -> str | Non
             re.IGNORECASE,
         )
         if match and re.sub(r"[:.\-]", "", match[1]).lower() == normalized_mac:
-            whos.add(str(int(match[2])))
-    return next(iter(whos)) if len(whos) == 1 else None
+            identities.add((str(int(match[2])), match[3]))
+    whos = {who for who, _ in identities}
+    if len(whos) != 1:
+        return None, None
+    who = next(iter(whos))
+    # YAML keys can repeat WHO inside device_id (e.g. MAC-1-1-0015).
+    addresses = {device_id.removeprefix(f"{who}-") for _, device_id in identities}
+    address = _address_details(who, next(iter(addresses))) if len(addresses) == 1 else None
+    return who, address
+
+
+def _address_details(who: str, raw: str) -> dict[str, str | None] | None:
+    """Expose recorded addresses without confusing zones/objects with A/PL."""
+    if who == "16":
+        raw = raw.removesuffix("#16")  # Media player registry discriminator, not WHERE.
+    if not re.fullmatch(r"#?[0-9]+(?:#[0-9]+)*", raw):
+        return None
+    address = {"raw": raw, "a": None, "pl": None, "interface": None}
+    base = raw
+    routed = re.fullmatch(r"(.+)#4#([0-9]{1,2})", raw)
+    if routed and int(routed[2]) <= 15:
+        base, address["interface"] = routed[1], routed[2]
+    # #3 explicitly addresses the private riser. Keep it in the raw address.
+    if not routed:
+        base = base.removesuffix("#3")
+    if who in {"1", "2", "14", "15", "1001"} and is_apl_address(base):
+        half = len(base) // 2
+        address["a"], address["pl"] = base[:half], base[half:]
+    return address
 
 
 def _asset_version() -> str:
@@ -99,14 +128,16 @@ def async_panel_inventory(hass: HomeAssistant) -> dict[str, Any]:
                 "device_id": getattr(gateway, "device_registry_id", None) if loaded else None,
             }
         )
-        entry_device_whos = {}
+        entry_device_metadata = {}
         for device in dr.async_entries_for_config_entry(devices, entry.entry_id):
-            who = _device_who(device.identifiers, entry.data.get(CONF_MAC))
-            entry_device_whos[device.id] = who
+            who, address = _device_metadata(device.identifiers, entry.data.get(CONF_MAC))
+            entry_device_metadata[device.id] = (who, address)
             if device.id in device_payloads:
                 device_payloads[device.id]["entry_ids"].append(entry.entry_id)
                 if device_payloads[device.id]["who"] != who:
                     device_payloads[device.id]["who"] = None
+                if device_payloads[device.id]["address"] != address:
+                    device_payloads[device.id]["address"] = None
                 continue
             device_payloads[device.id] = {
                 "id": device.id,
@@ -118,6 +149,7 @@ def async_panel_inventory(hass: HomeAssistant) -> dict[str, Any]:
                 "model": device.model,
                 "disabled_by": device.disabled_by,
                 "who": who,
+                "address": address,
                 "identifiers": sorted(
                     str(identifier) for domain, identifier in device.identifiers if domain == DOMAIN
                 ),
@@ -125,6 +157,7 @@ def async_panel_inventory(hass: HomeAssistant) -> dict[str, Any]:
         for entity in er.async_entries_for_config_entry(entities, entry.entry_id):
             if entity.platform != DOMAIN:
                 continue
+            who, address = entry_device_metadata.get(entity.device_id, (None, None))
             entity_payloads[entity.entity_id] = {
                 "entity_id": entity.entity_id,
                 "entry_id": entry.entry_id,
@@ -137,7 +170,8 @@ def async_panel_inventory(hass: HomeAssistant) -> dict[str, Any]:
                 "hidden_by": entity.hidden_by,
                 "entity_category": entity.entity_category,
                 "unique_id": entity.unique_id,
-                "who": entry_device_whos.get(entity.device_id),
+                "who": who,
+                "address": address,
             }
     return {
         "version": INTEGRATION_VERSION,

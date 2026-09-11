@@ -316,6 +316,15 @@ class MyHomePanel extends HTMLElement {
     return item.entity_id ? model.entityName(item, this._hass) : item.name_by_user || item.name || item.id;
   }
 
+  _addressDetails(item) {
+    const address = item.address;
+    if (!address) return `<p class="address muted">${escapeHtml(this._t("address"))}: ${escapeHtml(this._t("addressUnknown"))}</p>`;
+    const fields = [[this._t("address"), address.raw]];
+    if (address.a != null && address.pl != null) fields.push(["A", address.a], ["PL", address.pl]);
+    if (address.interface != null) fields.push([this._t("busInterface"), address.interface]);
+    return `<dl class="address">${fields.map(([label, value]) => `<div><dt>${escapeHtml(label)}:</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl>`;
+  }
+
   _itemCard(item, scope) {
     const isEntity = !!item.entity_id;
     const t = (key) => escapeHtml(this._t(key));
@@ -327,6 +336,7 @@ class MyHomePanel extends HTMLElement {
     const description = isEntity ? item.entity_id : [item.manufacturer, item.model].filter(Boolean).join(" · ");
     return `<article class="item-card"><div class="card-head"><h2>${escapeHtml(this._itemName(item))}</h2>${item.disabled_by ? `<span class="badge">${t("disabled")}</span>` : ""}</div>
       <p class="muted">${escapeHtml(description)}</p><div class="chips"><span class="chip">${escapeHtml(area)}</span>${categories.map((category) => `<span class="chip">${escapeHtml(category)}</span>`).join("")}${item.hidden_by ? `<span class="chip">${t("hidden")}</span>` : ""}</div>
+      ${this._addressDetails(item)}
       <p class="muted">${escapeHtml(isEntity ? item.unique_id : item.identifiers.join(" · "))}</p>
       ${isEntity ? `<p class="state" data-state="${id}" aria-label="${t("state")}"></p>` : `<p class="muted">${linked.length ? `${linked.length} ${t("entities")}` : t("noEntities")}</p>`}
       <div class="actions"><button data-action="edit-${isEntity ? "entity" : "device"}" data-id="${id}">${t("edit")}</button>
