@@ -349,7 +349,7 @@ class MyHomePanel extends HTMLElement {
     return `<article class="item-card"><div class="card-head"><h2>${escapeHtml(this._itemName(item))}</h2>${item.disabled_by ? `<span class="badge">${t("disabled")}</span>` : ""}</div>
       <p class="muted">${escapeHtml(description)}</p><div class="chips"><span class="chip">${escapeHtml(area)}</span>${categories.map((category) => `<span class="chip">${escapeHtml(category)}</span>`).join("")}${item.hidden_by ? `<span class="chip">${t("hidden")}</span>` : ""}</div>
       ${this._addressDetails(item)}
-      <p class="muted">${escapeHtml(isEntity ? item.unique_id : item.identifiers.join(" · "))}</p>
+      ${isEntity ? "" : `<p class="muted">${escapeHtml(item.identifiers.join(" · "))}</p>`}
       ${isEntity ? `<p class="state" data-state="${id}" aria-label="${t("state")}"></p>` : `<p class="muted">${linked.length ? `${linked.length} ${t("entities")}` : t("noEntities")}</p>`}
       <div class="actions"><button data-action="edit-${isEntity ? "entity" : "device"}" data-id="${id}">${t("edit")}</button>
       ${isEntity ? `<button data-action="details" data-id="${id}">${t("details")}</button>` : `<a class="button" href="${escapeHtml(deviceUrl(item.id))}">${t("openDevice")}</a>`}</div></article>`;
