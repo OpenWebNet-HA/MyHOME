@@ -69,7 +69,8 @@
         "legrand-spec",
         "openwebnet4j",
         "mcp-draft",
-        "conflict"
+        "conflict",
+        "community-plant-capture"
       ],
       "description": "Authority or provenance of this test frame."
     },

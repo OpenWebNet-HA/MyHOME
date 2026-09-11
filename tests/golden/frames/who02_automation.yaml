@@ -162,3 +162,17 @@
     class: OWNAutomationCommand
     method: set_shutter_level
     args: ["93", 75]
+
+- id: cover.status.dimension10.level10.73
+  frame: "*#2*73*10*10*0*001*0##"
+  direction: dimension_response
+  who: 2
+  what: null
+  where: "73"
+  dimension: 10
+  dimension_values: ["10", "0", "001", "0"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Absolute position level 10% report for address 73 (Nicola Cavallo plant)"
+  roundtrip: true
+

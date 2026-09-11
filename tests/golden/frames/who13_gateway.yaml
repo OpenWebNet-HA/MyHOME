@@ -23,3 +23,17 @@
   mcp_valid: true
   mcp_notes: "Gateway Management: Gateway reports internal datetime 2019-05-01 09:37:30-02:00"
   roundtrip: true
+
+- id: gateway.write.internal.datetime.2026
+  frame: "*#13**#22*17*33*54*002*05*11*09*2026##"
+  direction: dimension_write
+  who: 13
+  what: null
+  where: ""
+  dimension: 22
+  dimension_values: ["17", "33", "54", "002", "05", "11", "09", "2026"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: Set gateway internal datetime to 2026-09-11 17:33:54 (Nicola Cavallo plant)"
+  roundtrip: true
+

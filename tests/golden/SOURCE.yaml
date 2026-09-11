@@ -65,6 +65,15 @@ authorities:
       - "org.openwebnet4j.test.MessageTest"
       - "org.openhab.binding.openwebnet.internal.handler.OwnIdTest"
 
+  community_capture:
+    name: "Physical Bus Capture (MyHomeServer1 Full Installation)"
+    reference: "https://github.com/OpenWebNet-HA/MyHOME/issues/247"
+    author: "Nicola Cavallo (@nicolacavallo84)"
+    date: "2026-09-11"
+    gateway: "BTicino MyHomeServer1"
+    devices: "Full installation: F428, F482V12 dry contacts, 4-digit lighting (0910/1000s), LN4661M2 shutters, 3550 99-zone climate, F52X energy management"
+    role: "Provides authentic on-wire bus frames and status replies captured from live physical hardware."
+
   sut:
     name: "OWNd / MyHOME Integration v2"
     repository: "https://github.com/anotherjulien/MyHOME"
@@ -72,3 +81,4 @@ authorities:
     license: "GPL-3.0-or-later"
     ownd_version: ">=2.0.0b5"
     role: "Python runtime implementation under test for parsing and serializing OpenWebNet frames."
+

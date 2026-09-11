@@ -188,3 +188,26 @@
   roundtrip: true
   is_translation: true
 
+- id: light.event.on.point_0910
+  frame: "*1*1*0910##"
+  direction: event
+  who: 1
+  what: 1
+  where: "0910"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting: Turn ON point-to-point at 4-digit zero-padded address 0910 (Nicola Cavallo plant)"
+  roundtrip: true
+
+- id: light.event.off.point_1002
+  frame: "*1*0*1002##"
+  direction: event
+  who: 1
+  what: 0
+  where: "1002"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting: Turn OFF point-to-point at 4-digit address 1002 (Nicola Cavallo plant)"
+  roundtrip: true
+
+

@@ -59,3 +59,30 @@
   mcp_valid: true
   mcp_notes: "Energy Management: Request energy meter 51 diagnostic/unit parameter 113"
   roundtrip: true
+
+- id: energy.resp.active_power.meter51.602
+  frame: "*#18*51*113*602##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "51"
+  dimension: 113
+  dimension_values: ["602"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Meter 51 reports 602 Watts instantaneous active power (Nicola Cavallo plant)"
+  roundtrip: true
+
+- id: energy.resp.actuator_power.channel77.415
+  frame: "*#18*77#0*113*415##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "77"
+  dimension: 113
+  dimension_values: ["415"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Actuator channel 77#0 reports 415 Watts active power (Nicola Cavallo plant)"
+  roundtrip: true
+

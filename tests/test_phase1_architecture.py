@@ -7,6 +7,7 @@
 - Entity registry migration safety, collision avoidance, and entity_id canonicalization
 """
 import asyncio
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -48,6 +49,8 @@ from custom_components.myhome.const import (
     CONF_DECODER_PRE_GAIN,
     CONF_DECODER_SOURCE,
     CONF_DEVICE_TYPE,
+    CONF_ENTITY,
+    CONF_FILE_PATH,
     CONF_FIRMWARE,
     CONF_GENERATE_EVENTS,
     CONF_MANUFACTURER,
@@ -1140,3 +1143,191 @@ class TestEntityRegistryMigrationSafety:
         assert "brightness" in state.attributes.get("supported_color_modes", [])
 
         await hass.config_entries.async_unload(entry.entry_id)
+
+
+# ── 7. Golden Plant Sample Conformance (Issue #247 Nicola Cavallo Plant) ──────
+
+class TestPhase1GoldenPlantSampleIssue247:
+    """End-to-end golden plant conformance tests using real production data from Issue #247.
+
+    Verifies that Nicola Cavallo's full 70+ device plant configuration
+    (lights, switches, covers, climate, dry contact sensors, radar sensors, energy meters)
+    loads cleanly, eliminates ghost devices, normalizes 4-digit zero-padded WHEREs,
+    and updates entity states upon receiving authentic on-wire OpenWebNet bus frames.
+    """
+
+    @pytest.mark.asyncio
+    async def test_golden_plant_yaml_import_and_device_cleanliness(self, hass: HomeAssistant):
+        """Verify Nicola Cavallo's 70+ device plant initializes with zero orphaned ghost devices."""
+        from homeassistant.helpers import device_registry as dr
+        mac = "00:03:50:24:70:01"
+        plant_yaml_path = Path(__file__).resolve().parent / "fixtures" / "plants" / "issue_247_nicolacavallo84" / "myhome.yaml"
+        assert plant_yaml_path.is_file(), f"Fixture plant YAML not found at {plant_yaml_path}"
+
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_HOST: "192.168.1.50",
+                CONF_PORT: 20000,
+                CONF_PASSWORD: "pass",
+                CONF_MAC: mac,
+                CONF_SSDP_LOCATION: "http://192.168.1.50:49153/description.xml",
+                CONF_SSDP_ST: "urn:schemas-upnp-org:device:Basic:1",
+                CONF_DEVICE_TYPE: "urn:schemas-upnp-org:device:Basic:1",
+                CONF_FRIENDLY_NAME: "MyHomeServer1",
+                CONF_MANUFACTURER: "BTicino",
+                CONF_MANUFACTURER_URL: "http://www.bticino.com",
+                CONF_NAME: "MyHomeServer1",
+                CONF_FIRMWARE: "2.0.0",
+                CONF_UDN: "uuid:mhs1-issue247",
+            },
+            options={
+                CONF_FILE_PATH: str(plant_yaml_path),
+            },
+            unique_id=mac,
+        )
+        entry.add_to_hass(hass)
+
+        with patch("custom_components.myhome.gateway.OWNSession.test_connection", return_value={"Success": True, "Message": None}), \
+             patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"), \
+             patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"):
+            assert await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+        # 1. Device Registry Verification: Absolutely NO orphaned empty ghost devices
+        device_registry = dr.async_get(hass)
+        entity_registry = er.async_get(hass)
+        entry_devices = [d for d in device_registry.devices.values() if entry.entry_id in d.config_entries]
+        assert len(entry_devices) > 0, "Expected devices to be registered for the plant"
+
+        for dev in entry_devices:
+            # Skip the gateway hub device itself
+            if (DOMAIN, mac) in dev.identifiers:
+                continue
+            # Each device must have at least one entity associated with it (no empty ghost devices)
+            dev_entities = er.async_entries_for_device(entity_registry, dev.id)
+            assert len(dev_entities) >= 1, (
+                f"Ghost device detected with 0 entities: name={dev.name}, identifiers={dev.identifiers}"
+            )
+            # Verify no device identifier contains double WHO prefixes (e.g. mac-25-25-31)
+            for domain_name, ident in dev.identifiers:
+                assert "-25-25-" not in ident, f"Double WHO-25 prefix found in identifier: {ident}"
+                # Verify no device identifier contains class suffix leaks (e.g. -moving)
+                assert not ident.endswith("-moving"), f"Device class suffix leaked into identifier: {ident}"
+
+        # 2. Entity Registry Verification: Platform entity population
+        # 4-digit lighting and switches
+        ent_vialetto = entity_registry.async_get("light.luci_vialetto_vicino")
+        assert ent_vialetto is not None
+        assert ent_vialetto.unique_id == f"{mac}-1-1000"
+
+        ent_presa = entity_registry.async_get("switch.prese_esterne")
+        assert ent_presa is not None
+        assert ent_presa.unique_id in (f"{mac}-1-0910", f"{mac}-1-910")
+
+        # Dimmable light with model F418
+        ent_dimmable = entity_registry.async_get("light.luce_centrale_camera_matrimoniale")
+        assert ent_dimmable is not None
+
+        # Covers with advanced model LN4661M2
+        ent_cover = entity_registry.async_get("cover.tapparella_camera_matrimoniale")
+        assert ent_cover is not None
+        assert ent_cover.unique_id == f"{mac}-2-73"
+
+        # Climate central unit 3550 and zone thermostats
+        ent_cu = entity_registry.async_get("climate.centrale_termoregolazione")
+        assert ent_cu is not None
+
+        # Dry contact binary sensors (WHO=25)
+        ent_cancello = entity_registry.async_get("binary_sensor.cancello")
+        assert ent_cancello is not None
+        assert ent_cancello.unique_id == f"{mac}-25-31-opening"
+
+        ent_moving = entity_registry.async_get("binary_sensor.contatto_tapparella_finestra_salone")
+        assert ent_moving is not None
+        assert ent_moving.unique_id == f"{mac}-25-331-moving"
+
+        # WHO=18 energy power sensors
+        ent_power = entity_registry.async_get("sensor.consumo_energia")
+        assert ent_power is not None
+        assert ent_power.unique_id.startswith(f"{mac}-18-51")
+
+        await hass.config_entries.async_unload(entry.entry_id)
+
+    @pytest.mark.asyncio
+    async def test_golden_plant_live_bus_event_dispatching(self, hass: HomeAssistant):
+        """Verify authentic on-wire frames from Nicola's bus monitor update HA entity states."""
+        from homeassistant.helpers.dispatcher import async_dispatcher_send
+        from OWNd.message import OWNMessage
+        mac = "00:03:50:24:70:01"
+        plant_yaml_path = Path(__file__).resolve().parent / "fixtures" / "plants" / "issue_247_nicolacavallo84" / "myhome.yaml"
+
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_HOST: "192.168.1.50",
+                CONF_PORT: 20000,
+                CONF_PASSWORD: "pass",
+                CONF_MAC: mac,
+                CONF_SSDP_LOCATION: "",
+                CONF_SSDP_ST: "",
+                CONF_DEVICE_TYPE: "",
+                CONF_FRIENDLY_NAME: "MyHomeServer1",
+                CONF_MANUFACTURER: "BTicino",
+                CONF_MANUFACTURER_URL: "",
+                CONF_NAME: "MyHomeServer1",
+                CONF_FIRMWARE: "2.0.0",
+                CONF_UDN: "uuid:mhs1-issue247",
+            },
+            options={
+                CONF_FILE_PATH: str(plant_yaml_path),
+            },
+            unique_id=mac,
+        )
+        entry.add_to_hass(hass)
+
+        with patch("custom_components.myhome.gateway.OWNSession.test_connection", return_value={"Success": True, "Message": None}), \
+             patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"), \
+             patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"):
+            assert await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+        handler = hass.data[DOMAIN][mac][CONF_ENTITY]
+        handler._on_event_connection_state_change(True)
+
+        # 1. 4-digit lighting frame: *1*0*1002## (Luci vialetto lontano OFF)
+        msg_light_off = OWNMessage.parse("*1*0*1002##")
+        async_dispatcher_send(hass, f"myhome_message_{mac}", msg_light_off)
+        await hass.async_block_till_done()
+        state_light = hass.states.get("light.luci_vialetto_lontano")
+        assert state_light is not None
+        assert state_light.state == "off"
+
+
+        # 2. 4-digit switch frame: *1*1*0910## (Prese esterne ON)
+        msg_switch_on = OWNMessage.parse("*1*1*0910##")
+        async_dispatcher_send(hass, f"myhome_message_{mac}", msg_switch_on)
+        await hass.async_block_till_done()
+        state_switch = hass.states.get("switch.prese_esterne")
+        assert state_switch is not None
+        assert state_switch.state == "on"
+
+        # 3. Dry contact frame: *25*31#1*31## (Cancello CLOSED / ON)
+        msg_dry_closed = OWNMessage.parse("*25*31#1*31##")
+        async_dispatcher_send(hass, f"myhome_message_{mac}", msg_dry_closed)
+        await hass.async_block_till_done()
+        state_dry = hass.states.get("binary_sensor.cancello")
+        assert state_dry is not None
+        assert state_dry.state == "on"
+
+        # 4. Energy meter frame: *#18*51*113*602## (602 W active power)
+        msg_energy = OWNMessage.parse("*#18*51*113*602##")
+        async_dispatcher_send(hass, f"myhome_message_{mac}", msg_energy)
+        await hass.async_block_till_done()
+        state_energy = hass.states.get("sensor.consumo_energia")
+        assert state_energy is not None
+        assert state_energy.state == "602"
+
+        await hass.config_entries.async_unload(entry.entry_id)
+
+

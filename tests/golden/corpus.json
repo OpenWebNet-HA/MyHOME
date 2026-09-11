@@ -328,6 +328,32 @@
     "_file": "who01_lighting.yaml"
   },
   {
+    "id": "light.event.on.point_0910",
+    "frame": "*1*1*0910##",
+    "direction": "event",
+    "who": 1,
+    "what": 1,
+    "where": "0910",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Turn ON point-to-point at 4-digit zero-padded address 0910 (Nicola Cavallo plant)",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.event.off.point_1002",
+    "frame": "*1*0*1002##",
+    "direction": "event",
+    "who": 1,
+    "what": 0,
+    "where": "1002",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Turn OFF point-to-point at 4-digit address 1002 (Nicola Cavallo plant)",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
     "id": "cover.cmd.up.ptp.93",
     "frame": "*2*1*93##",
     "direction": "command",
@@ -546,6 +572,26 @@
         75
       ]
     },
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.status.dimension10.level10.73",
+    "frame": "*#2*73*10*10*0*001*0##",
+    "direction": "dimension_response",
+    "who": 2,
+    "what": null,
+    "where": "73",
+    "dimension": 10,
+    "dimension_values": [
+      "10",
+      "0",
+      "001",
+      "0"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Automation: Absolute position level 10% report for address 73 (Nicola Cavallo plant)",
+    "roundtrip": true,
     "_file": "who02_automation.yaml"
   },
   {
@@ -789,6 +835,30 @@
     "_file": "who13_gateway.yaml"
   },
   {
+    "id": "gateway.write.internal.datetime.2026",
+    "frame": "*#13**#22*17*33*54*002*05*11*09*2026##",
+    "direction": "dimension_write",
+    "who": 13,
+    "what": null,
+    "where": "",
+    "dimension": 22,
+    "dimension_values": [
+      "17",
+      "33",
+      "54",
+      "002",
+      "05",
+      "11",
+      "09",
+      "2026"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Gateway Management: Set gateway internal datetime to 2026-09-11 17:33:54 (Nicola Cavallo plant)",
+    "roundtrip": true,
+    "_file": "who13_gateway.yaml"
+  },
+  {
     "id": "cen.event.short_press.btn2.11",
     "frame": "*15*1*11#2##",
     "direction": "event",
@@ -913,6 +983,40 @@
     "source": "openwebnet4j",
     "mcp_valid": true,
     "mcp_notes": "Energy Management: Request energy meter 51 diagnostic/unit parameter 113",
+    "roundtrip": true,
+    "_file": "who18_energy.yaml"
+  },
+  {
+    "id": "energy.resp.active_power.meter51.602",
+    "frame": "*#18*51*113*602##",
+    "direction": "dimension_response",
+    "who": 18,
+    "what": null,
+    "where": "51",
+    "dimension": 113,
+    "dimension_values": [
+      "602"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Energy Management: Meter 51 reports 602 Watts instantaneous active power (Nicola Cavallo plant)",
+    "roundtrip": true,
+    "_file": "who18_energy.yaml"
+  },
+  {
+    "id": "energy.resp.actuator_power.channel77.415",
+    "frame": "*#18*77#0*113*415##",
+    "direction": "dimension_response",
+    "who": 18,
+    "what": null,
+    "where": "77",
+    "dimension": 113,
+    "dimension_values": [
+      "415"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Energy Management: Actuator channel 77#0 reports 415 Watts active power (Nicola Cavallo plant)",
     "roundtrip": true,
     "_file": "who18_energy.yaml"
   },
