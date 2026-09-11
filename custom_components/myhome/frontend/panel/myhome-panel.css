@@ -43,7 +43,14 @@ label { display: grid; gap: 7px; font-size: 12px; color: var(--secondary-text-co
 .tabs button { flex-shrink: 0; background: transparent; border: none; border-radius: 0; padding: 13px 18px; border-bottom: 3px solid transparent; }
 .tabs button[aria-pressed="true"] { color: var(--panel-accent); border-bottom-color: var(--panel-accent); }
 .count { background: var(--secondary-background-color, #e8edf0); border-radius: 5px; padding: 2px 6px; font-size: 11px; }
-.filters { display: grid; grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(130px, 200px)); gap: 14px; margin-bottom: 20px; }
+.who-navigation { margin-bottom: 20px; min-width: 0; }
+.who-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.who-toolbar ha-icon { --mdc-icon-size: 20px; }
+.who-buttons { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px; }
+.who-buttons button { flex-shrink: 0; max-width: 100%; }
+.who-buttons button > span:first-child { overflow-wrap: anywhere; text-align: start; }
+.who-buttons button[aria-pressed="true"] { color: var(--panel-accent); border-color: var(--panel-accent); box-shadow: inset 0 -2px var(--panel-accent); }
+.filters { display: grid; grid-template-columns: minmax(180px, 1fr) repeat(2, minmax(150px, 210px)); gap: 14px; margin-bottom: 20px; }
 .item-card { background: var(--card-background-color, #fff); border: 1px solid var(--panel-border); border-radius: 12px; padding: 20px; min-width: 0; display: flex; flex-direction: column; }
 .item-card .muted { overflow-wrap: anywhere; }
 .item-card .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 20px; }
@@ -61,7 +68,8 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; }
 dialog h2 { padding-right: 10px; }
 dialog a { color: var(--panel-accent); font-size: 13px; }
 @media (max-width: 900px) {
-  .filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .who-buttons { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 10px; }
+  .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .filters label:first-child { grid-column: 1 / -1; }
 }
 @media (max-width: 600px) {
@@ -73,7 +81,6 @@ dialog a { color: var(--panel-accent); font-size: 13px; }
   h1 { font-size: 24px; }
   .filters { grid-template-columns: 1fr 1fr; gap: 12px; }
   .filters label:first-child { grid-column: 1 / -1; }
-  .filters label:nth-child(2) { grid-column: 1 / -1; }
   .tabs button { padding-inline: 12px; }
   .gateway-grid, .item-grid { grid-template-columns: 1fr; }
 }

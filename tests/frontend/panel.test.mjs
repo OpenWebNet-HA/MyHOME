@@ -27,7 +27,7 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
-    panel_version: "0.2.0",
+    panel_version: "0.3.0",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
@@ -86,7 +86,7 @@ const change = (element, value) => {
   element.value = value;
   element.dispatchEvent(new Event(element.type === "search" ? "input" : "change", { bubbles: true }));
 };
-afterEach(() => document.body.replaceChildren());
+afterEach(() => { document.body.replaceChildren(); window.localStorage.clear(); });
 after(() => dom.window.close());
 
 test("gateway, category and inherited area filters retain trigger-only and disabled items", () => {
@@ -105,7 +105,7 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
-  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.2.0");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.3.0");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
   root.querySelector('[data-view="devices"]').click();
   assert.equal(root.querySelectorAll(".item-card").length, 3);
@@ -131,7 +131,12 @@ test("home groups mixed sensor WHOs numerically and filters categories without l
   assert.equal(root.querySelector('[data-who="99"] h2').textContent, "WHO 99");
   assert.equal(root.querySelector('[data-who="__unknown__"] h2').textContent, "Senza categoria WHO");
   assert.equal(root.querySelectorAll(".item-card").length, 7);
-  change(root.getElementById("who"), "18");
+  assert.deepEqual([...root.querySelectorAll("#who-buttons button")].map((button) => button.dataset.who), groups());
+  root.querySelector('#who-buttons [data-who="__unknown__"]').click();
+  assert.deepEqual(groups(), ["__unknown__"]);
+  root.querySelector('#who-buttons [data-who="99"]').click();
+  assert.deepEqual(groups(), ["99"]);
+  root.querySelector('#who-buttons [data-who="18"]').click();
   change(root.getElementById("category"), "sensor");
   assert.deepEqual(groups(), ["18"]);
   assert.equal(root.querySelectorAll(".item-card").length, 1);
@@ -139,8 +144,82 @@ test("home groups mixed sensor WHOs numerically and filters categories without l
   assert.equal(root.querySelectorAll(".item-card").length, 0);
   change(root.getElementById("search"), "");
   change(root.getElementById("gateway"), "two");
-  assert.equal(root.getElementById("who").value, "");
+  assert.equal(root.querySelector('#who-buttons [aria-pressed="true"]').dataset.who, "1");
   assert.deepEqual(groups(), ["1"]);
+});
+
+test("category buttons and layout toggle preserve selection, focus, filters and browser preference", async () => {
+  const { panel, root, hass, data } = await mount();
+  const toggle = root.querySelector('[data-action="toggle-category-view"]');
+  const groups = () => [...root.querySelectorAll(".who-group")].map((group) => group.dataset.who);
+  assert.equal(toggle.textContent, "Mostra solo categoria");
+  root.querySelector('[data-view="devices"]').click();
+  const cen = root.querySelector('#who-buttons [data-who="25"]');
+  cen.focus();
+  cen.click();
+  assert.deepEqual(groups(), ["25"]);
+  assert.equal(root.activeElement.dataset.who, "25");
+  assert.equal(toggle.textContent, "Mostra tutto");
+  toggle.click();
+  assert.deepEqual(groups(), ["1", "25"]);
+  assert.equal(root.querySelector('#who-buttons [aria-pressed="true"]'), null);
+  toggle.click();
+  assert.deepEqual(groups(), ["25"]);
+
+  // Unrelated live updates must not change the user's chosen category.
+  data.devices[0].name_by_user = "Nuovo nome";
+  await panel._refresh();
+  assert.deepEqual(groups(), ["25"]);
+  change(root.getElementById("search"), "missing");
+  assert.equal(root.querySelectorAll(".item-card").length, 0);
+  assert.equal(root.querySelectorAll("#who-buttons button").length, 2);
+  toggle.click();
+  assert.equal(root.getElementById("search").value, "missing");
+  assert.equal(root.querySelectorAll(".item-card").length, 0);
+  change(root.getElementById("search"), "");
+  assert.deepEqual(groups(), ["1", "25"]);
+
+  root.querySelector('#who-buttons [data-who="25"]').click();
+  root.querySelector('[data-view="bus"]').click();
+  assert.equal(root.getElementById("who-navigation").hidden, true);
+  root.querySelector('[data-view="devices"]').click();
+  assert.deepEqual(groups(), ["25"]);
+  panel.hass = { ...hass, language: "en" };
+  assert.match(root.querySelector('[data-action="toggle-category-view"]').textContent, /Show all/);
+  assert.deepEqual(groups(), ["25"]);
+
+  // Reopening the panel restores the preference if the category is available.
+  panel.remove();
+  const reopened = await mount({ prepare: (inventory) => {
+    inventory.entities.push({ entity_id: "sensor.cen", entry_id: "one", domain: "sensor", who: "25", unique_id: "cen" });
+  } });
+  assert.equal(reopened.root.querySelector('#who-buttons [aria-pressed="true"]').dataset.who, "25");
+  assert.equal(reopened.root.querySelectorAll(".item-card").length, 1);
+});
+
+test("category navigation recovers from removed categories, empty inventories and unavailable storage", async () => {
+  const storage = Object.getOwnPropertyDescriptor(window, "localStorage");
+  Object.defineProperty(window, "localStorage", { configurable: true, get() { throw new Error("Storage blocked"); } });
+  try {
+    const { panel, root, data } = await mount();
+    root.querySelector('[data-view="devices"]').click();
+    root.querySelector('#who-buttons [data-who="25"]').click();
+    data.devices = data.devices.filter((device) => device.id !== "cen");
+    await panel._refresh();
+    assert.equal(root.querySelector('#who-buttons [aria-pressed="true"]').dataset.who, "1");
+    assert.equal(root.querySelectorAll(".item-card").length, 2);
+    data.devices = [];
+    await panel._refresh();
+    assert.equal(root.getElementById("who-navigation").hidden, true);
+    assert.equal(root.querySelectorAll(".item-card").length, 0);
+    data.devices = inventory().devices;
+    await panel._refresh();
+    assert.equal(root.getElementById("who-navigation").hidden, false);
+    root.querySelector('[data-action="toggle-category-view"]').click();
+    assert.equal(root.querySelectorAll(".item-card").length, 3);
+  } finally {
+    Object.defineProperty(window, "localStorage", storage);
+  }
 });
 
 test("entity editor saves through the native API without overwriting an externally changed area", async () => {

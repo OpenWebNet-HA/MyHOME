@@ -10,7 +10,7 @@ and provides English and Italian labels, with English fallback for other languag
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.2.0**, defined by
+The panel has an independent version, currently **0.3.0**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.
@@ -29,8 +29,17 @@ parameters. This refreshes assets independently from integration releases.
 - The initial **Entities** view groups cards into numbered WHO sections, for
   example WHO 1 Lighting, WHO 2 Automation, WHO 4 Thermoregulation, WHO 16 Sound
   system, and WHO 18 Energy management. The **Devices** view uses the same grouping.
-  Each section shows its item count. A WHO filter combines with the existing
-  entity-type, area and search filters.
+  Each section shows its item count.
+- WHO buttons above the lists open the selected category directly. **Show all**
+  restores all WHO sections; **Show selected category** returns to the last
+  selection. The initial layout shows all categories, and the browser remembers
+  the chosen layout and WHO. These preferences do not change HA configuration.
+  Buttons wrap on wide screens and scroll horizontally on narrow windows (up to
+  900 px), including by touch swipe. The entity-type, area and search filters
+  remain active in both layouts. A category with no filter matches stays selected
+  and shows the empty state; if it disappears from the gateway/view inventory,
+  the panel selects the first available WHO. Category controls are hidden in the
+  bus monitor and when no categories are available.
 - Search names, entity IDs, and the integration's OpenWebNet identifiers. Filter
   by entity type and area; entity area filtering respects device inheritance.
 - Edit device/entity names and areas. An empty name restores the original name;
@@ -87,6 +96,9 @@ numbers remain visible even if no translated label has been added yet.
 4. Check the panel version in the header, then compare the gateway/device/entity
    lists with Home Assistant's native settings. Verify WHO grouping, especially
    temperature sensors (WHO 4), energy sensors (WHO 18), and CEN devices (WHO 15/25).
+   Select a WHO button, switch between **Show all** and **Show selected category**,
+   and reopen the panel to verify the saved preference. Check the category row
+   on a wide desktop and a narrow touch screen.
 5. Change a device name and area; verify them on its native device page. Change an
    entity name and area override, then clear the override to check inheritance.
 6. Check an offline gateway and a disabled entity. Their configuration should
@@ -115,14 +127,16 @@ python scripts/verify_ha_standards.py
 ```
 
 The frontend suite uses Node.js 24 and jsdom. It covers gateway/area/type/WHO
-filtering, WHO grouping, panel version display, native writes, concurrent area
+filtering, WHO grouping/navigation, layout preferences, panel version display, native writes, concurrent area
 changes, errors, escaping, live states, and cleanup of delayed subscriptions.
 It runs separately in `panel-tests.yml`.
 Browser layout and real hardware checks remain manual.
 
-Panel 0.2.0 validation on Home Assistant 2026.9.1: all 27 panel/WebSocket tests
+Panel 0.3.0 validation on Home Assistant 2026.9.1: all 27 panel/WebSocket tests
 passed, including WHO classification for legacy sensor IDs and offline gateways.
-All nine frontend tests passed; the changed Python files pass Ruff.
+All eleven frontend tests passed, including category navigation, layout and
+selection persistence, changing inventories, and blocked browser storage.
+The changed Python file passes Ruff.
 
 Initial implementation validation on Home Assistant 2026.9.1: 47 Python checks passed
 and four existing `test_init.py` checks failed on deprecated device-registry

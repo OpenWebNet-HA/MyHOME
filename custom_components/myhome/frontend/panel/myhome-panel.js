@@ -12,6 +12,7 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => 
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
 })[char]);
 const SETTINGS_URL = "/config/integrations/integration/myhome";
+const CATEGORY_VIEW_STORAGE_KEY = "myhome-panel-category-view-v1";
 const deviceUrl = (id) => `/config/devices/device/${encodeURIComponent(id)}`;
 
 class MyHomePanel extends HTMLElement {
@@ -21,7 +22,14 @@ class MyHomePanel extends HTMLElement {
     this.shadowRoot.addEventListener("click", (event) => this._onClick(event));
     this._entryId = "";
     this._view = "entities";
-    this._filters = { query: "", category: "", area: "", who: "" };
+    this._filters = { query: "", category: "", area: "" };
+    this._categoryMode = "all";
+    this._selectedWho = "";
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(CATEGORY_VIEW_STORAGE_KEY));
+      if (["all", "single"].includes(saved?.mode)) this._categoryMode = saved.mode;
+      if (typeof saved?.who === "string" && (/^\d+$/.test(saved.who) || saved.who === model.WHO_UNKNOWN)) this._selectedWho = saved.who;
+    } catch { /* Navigation remains available when browser storage is blocked. */ }
     this._session = 0;
     this._unsubs = [];
     this._monitorToken = 0;
@@ -160,9 +168,14 @@ class MyHomePanel extends HTMLElement {
           ${["entities", "devices", "bus"].map((view) => `<button data-view="${view}" aria-pressed="${view === this._view}">${t(view)} <span class="count" id="count-${view}" ${view === "bus" ? "hidden" : ""}></span></button>`).join("")}
           <button data-action="refresh">${t("refresh")}</button>
         </nav>
+        <section id="who-navigation" class="who-navigation" hidden>
+          <div class="who-toolbar"><p id="category-view-label" class="muted" aria-live="polite"></p>
+            <button type="button" data-action="toggle-category-view" aria-controls="items"></button>
+          </div>
+          <nav id="who-buttons" class="who-buttons" aria-label="${t("whoCategory")}"></nav>
+        </section>
         <div class="filters" id="filters">
           <label>${t("search")}<input id="search" type="search" value="${escapeHtml(this._filters.query)}"></label>
-          <label>${t("whoCategory")}<select id="who"></select></label>
           <label>${t("category")}<select id="category"></select></label>
           <label>${t("area")}<select id="area"></select></label>
         </div>
@@ -176,7 +189,7 @@ class MyHomePanel extends HTMLElement {
       this._entryId = event.target.value;
       this._renderInventory();
     };
-    for (const [id, key] of [["search", "query"], ["who", "who"], ["category", "category"], ["area", "area"]]) {
+    for (const [id, key] of [["search", "query"], ["category", "category"], ["area", "area"]]) {
       this.shadowRoot.getElementById(id).addEventListener(id === "search" ? "input" : "change", (event) => {
         this._filters[key] = event.target.value;
         this._renderContent();
@@ -238,10 +251,41 @@ class MyHomePanel extends HTMLElement {
     return label === key ? `WHO ${who}` : `WHO ${who} · ${label}`;
   }
 
+  _setCategoryView(mode, who = this._selectedWho) {
+    this._categoryMode = mode;
+    this._selectedWho = who;
+    try {
+      window.localStorage.setItem(CATEGORY_VIEW_STORAGE_KEY, JSON.stringify({ mode, who }));
+    } catch { /* This preference is optional; it never changes HA configuration. */ }
+    this._renderContent();
+  }
+
+  _renderCategoryNavigation(groups) {
+    const root = this.shadowRoot;
+    if (!groups.some(([who]) => who === this._selectedWho)) this._selectedWho = groups[0]?.[0] || "";
+    root.getElementById("who-navigation").hidden = !groups.length;
+    const all = this._categoryMode === "all";
+    root.getElementById("category-view-label").textContent = all ? this._t("allWhoCategories") : this._whoLabel(this._selectedWho);
+    const toggle = root.querySelector('[data-action="toggle-category-view"]');
+    toggle.innerHTML = `<ha-icon icon="mdi:${all ? "tab" : "view-sequential"}" aria-hidden="true"></ha-icon><span>${escapeHtml(this._t(all ? "showSelectedCategory" : "showAllCategories"))}</span>`;
+    const nav = root.getElementById("who-buttons");
+    const buttons = groups.map(([who, members]) => `<button type="button" data-action="select-who" data-who="${escapeHtml(who)}" aria-pressed="${!all && who === this._selectedWho}" aria-controls="items">
+      <span>${escapeHtml(this._whoLabel(who))}</span><span class="count">${members.length}</span></button>`).join("");
+    // Keep keyboard focus and horizontal position when registry updates rebuild buttons.
+    if (nav.innerHTML !== buttons) {
+      const focusedWho = nav.contains(root.activeElement) ? root.activeElement.dataset.who : null;
+      const scrollLeft = nav.scrollLeft;
+      nav.innerHTML = buttons;
+      if (focusedWho) [...nav.children].find((button) => button.dataset.who === focusedWho)?.focus({ preventScroll: true });
+      nav.scrollLeft = scrollLeft;
+    }
+  }
+
   _renderContent() {
     if (!this._data) return;
     const root = this.shadowRoot;
     const isBus = this._view === "bus";
+    root.getElementById("who-navigation").hidden = isBus || !this._data.gateways.length;
     for (const button of root.querySelectorAll("[data-view]")) button.setAttribute("aria-pressed", String(button.dataset.view === this._view));
     root.getElementById("filters").hidden = isBus || !this._data.gateways.length;
     root.getElementById("discovery-help").hidden = isBus || !this._data.gateways.length;
@@ -255,11 +299,9 @@ class MyHomePanel extends HTMLElement {
     }
     const scope = this._scope();
     const groups = model.groupByWho(scope[this._view]);
-    if (this._filters.who && !groups.some(([who]) => who === this._filters.who)) this._filters.who = "";
-    root.getElementById("who").innerHTML = `<option value="">${escapeHtml(this._t("allWhoCategories"))}</option>`
-      + groups.map(([who]) => `<option value="${escapeHtml(who)}">${escapeHtml(this._whoLabel(who))}</option>`).join("");
-    root.getElementById("who").value = this._filters.who;
-    const items = model.filterItems(this._data, scope, this._view, this._filters, this._hass);
+    this._renderCategoryNavigation(groups);
+    const filters = { ...this._filters, who: this._categoryMode === "single" ? this._selectedWho : "" };
+    const items = model.filterItems(this._data, scope, this._view, filters, this._hass);
     items.sort((a, b) => this._itemName(a).localeCompare(this._itemName(b)));
     root.getElementById("items").innerHTML = model.groupByWho(items).map(([who, members]) => `
       <section class="who-group" data-who="${escapeHtml(who)}" aria-labelledby="who-title-${escapeHtml(who)}">
@@ -313,6 +355,10 @@ class MyHomePanel extends HTMLElement {
     } else if (target.dataset.view) {
       this._view = target.dataset.view;
       this._renderContent();
+    } else if (target.dataset.action === "select-who") {
+      this._setCategoryView("single", target.dataset.who);
+    } else if (target.dataset.action === "toggle-category-view") {
+      this._setCategoryView(this._categoryMode === "all" ? "single" : "all");
     } else if (target.dataset.action === "refresh") {
       this._refresh();
       if (this._view === "bus" && !this._monitor) { this._monitorKey = null; this._renderMonitor(); }
