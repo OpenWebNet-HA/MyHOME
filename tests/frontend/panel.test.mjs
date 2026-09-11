@@ -27,7 +27,7 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
-    panel_version: "0.4.1",
+    panel_version: "0.4.2",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
@@ -105,7 +105,7 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
-  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.4.1");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.4.2");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
   root.querySelector('[data-view="devices"]').click();
   assert.equal(root.querySelectorAll(".item-card").length, 3);
@@ -225,6 +225,9 @@ test("category navigation recovers from removed categories, empty inventories an
 test("entity and device cards display searchable A/PL, bus routes and unknown addresses safely", async () => {
   const { panel, root, hass } = await mount({ prepare: (data) => {
     const address = { raw: "0015#4#02", a: "00", pl: "15", interface: "02" };
+    const shortAddress = { raw: "01", a: "0", pl: "1", interface: null };
+    data.devices[2].address = shortAddress;
+    data.entities[1].address = shortAddress;
     data.devices.push({ id: "lux-device", entry_ids: ["one"], name: "Lux", who: "1", identifiers: ["legacy-lux-device"], address });
     data.entities.push({ entity_id: "sensor.lux", entry_id: "one", domain: "sensor", who: "1", device_id: "lux-device", unique_id: "legacy-lux", address });
     data.entities.push({ entity_id: "sensor.unknown", entry_id: "one", domain: "sensor", who: null, unique_id: "legacy-unknown", address: null });
@@ -233,7 +236,7 @@ test("entity and device cards display searchable A/PL, bus routes and unknown ad
   const card = (id) => root.querySelector(`[data-id="${id}"]`).closest(".item-card");
   const fields = (id) => [...card(id).querySelectorAll(".address div")].map((field) => [field.querySelector("dt").textContent, field.querySelector("dd").textContent]);
   assert.deepEqual(fields("sensor.lux"), [["Indirizzo:", "0015#4#02"], ["A:", "00"], ["PL:", "15"], ["Interfaccia:", "02"]]);
-  assert.deepEqual(fields("light.garage"), [["Indirizzo:", "11"], ["A:", "1"], ["PL:", "1"]]);
+  assert.deepEqual(fields("light.garage"), [["Indirizzo:", "01"], ["A:", "0"], ["PL:", "1"]]);
   assert.match(card("sensor.unknown").querySelector(".address").textContent, /Indirizzo: Non disponibile/);
   assert.deepEqual(fields("sensor.energy"), [["Indirizzo:", "52"]]);
   change(root.getElementById("search"), "A:00 PL:15");

@@ -24,7 +24,7 @@ from homeassistant.helpers import entity_registry as er
 from .const import CONF_ENTITY, CONF_FIRMWARE, DOMAIN, INTEGRATION_VERSION, is_apl_address
 
 PANEL_URL = "myhome"
-PANEL_VERSION = "0.4.1"
+PANEL_VERSION = "0.4.2"
 PANEL_STATIC_URL = "/myhome_panel"
 WS_INVENTORY = "myhome/panel/inventory"
 _PANEL_REGISTERED = "_panel_registered"
@@ -81,7 +81,10 @@ def _address_details(who: str, raw: str) -> dict[str, str | None] | None:
     # #3 explicitly addresses the private riser. Keep it in the raw address.
     if not routed:
         base = base.removesuffix("#3")
-    if who in {"1", "2", "14", "15", "1001"} and is_apl_address(base):
+    # The integration also accepts 01..09 as A=0, PL=1..9. Display those
+    # recorded addresses without relaxing discovery/command validation.
+    display_apl = is_apl_address(base) or re.fullmatch(r"0[1-9]", base) is not None
+    if who in {"1", "2", "14", "15", "1001"} and display_apl:
         half = len(base) // 2
         address["a"], address["pl"] = base[:half], base[half:]
     return address

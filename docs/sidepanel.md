@@ -10,7 +10,7 @@ and provides English and Italian labels, with English fallback for other languag
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.4.1**, defined by
+The panel has an independent version, currently **0.4.2**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.
@@ -46,6 +46,8 @@ parameters. This refreshes assets independently from integration releases.
   automation and CEN addresses also show **A** and **PL**, plus the bus interface
   when present. Leading zeros remain significant: `15` is A `1` / PL `5`, whereas
   `0015` is A `00` / PL `15`. Search accepts full addresses and `A:00 PL:15`.
+  Short area-zero addresses already accepted by the integration also show their
+  parts: `01` → A `0` / PL `1`, `02` → A `0` / PL `2`, through `09`.
 - Edit device/entity names and areas. An empty name restores the original name;
   an empty entity area inherits its device's area.
 - Open the native device page, entity details, advanced entity settings, and
@@ -106,10 +108,14 @@ Entities use the identifiers matching their own gateway MAC. Shared devices with
 different addresses across gateways show an unknown device address; their entities
 retain the address for their respective gateway.
 
-A/PL splitting is limited to valid point-to-point addresses in WHO 1, 2, 14, 15
-and 1001. Other categories, general/area/group commands, and unrecognized address
-formats retain their recorded address without invented A/PL fields. This follows
-the existing `is_apl_address` rules and the Legrand
+A/PL splitting is limited to WHO 1, 2, 14, 15 and 1001. For display, the panel
+accepts `01`–`09` in addition to the existing `is_apl_address` formats, matching
+addresses already accepted by the integration. It preserves the raw address and
+does not change discovery, validation or commands. `00` remains an area address;
+WHO 4 zones and WHO 25 objects remain unsplit even when they contain `01`–`09`.
+Other categories, general/area/group commands, and unrecognized address formats
+retain their recorded address without invented A/PL fields. The canonical
+protocol formats are documented in the Legrand
 [lighting/actuator addressing](https://static.developer.legrand.com/files/2024/05/WHO_1.pdf)
 and [CEN/CEN+ specifications](https://developer.legrand.com/uploads/2019/12/WHO_15-25.pdf).
 Recorded CEN+ object IDs are displayed as addresses, not expanded into wire frames.
@@ -162,6 +168,10 @@ address rendering/search, native writes, concurrent area changes, errors,
 escaping, live states, and cleanup of delayed subscriptions.
 It runs separately in `panel-tests.yml`.
 Browser layout and real hardware checks remain manual.
+
+Panel 0.4.2: all 29 panel/WebSocket tests and 13 frontend tests passed. The address
+regression covers `01`–`09`, routed addresses and extended `0001`, while retaining
+unsplit area/group addresses, WHO 4 zones and WHO 25 objects.
 
 Panel 0.4.1: all 13 frontend tests passed. The isolated startup regression first
 reproduced the empty first mount on 0.4.0, then passed with the fix. It covers
