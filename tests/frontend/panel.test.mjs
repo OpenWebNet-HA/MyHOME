@@ -28,7 +28,7 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
-    panel_version: "0.6.0",
+    panel_version: "0.6.1",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
@@ -106,7 +106,7 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
-  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.6.0");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.6.1");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
   root.querySelector('[data-view="entities"]').click();
   assert.equal(root.querySelectorAll(".device-group").length, 3);
@@ -304,10 +304,14 @@ test("device headers collapse independently and preserve their state through ref
   const group = (id) => root.querySelector(`.device-group[data-device="${id}"]`);
   const toggle = (id) => group(id).querySelector('[data-action="toggle-device"]');
   assert.equal(root.querySelector('[data-view="devices"]'), null);
+  assert.ok([...root.querySelectorAll(".entity-list")].every((list) => list.hidden));
+  toggle("device-one").click();
+  assert.equal(toggle("device-one").getAttribute("aria-expanded"), "true");
+  assert.equal(group("device-one").querySelector(".entity-list").hidden, false);
   toggle("device-one").click();
   assert.equal(toggle("device-one").getAttribute("aria-expanded"), "false");
   assert.equal(group("device-one").querySelector(".entity-list").hidden, true);
-  assert.equal(group("device-two").querySelector(".entity-list").hidden, false);
+  assert.equal(group("device-two").querySelector(".entity-list").hidden, true);
   assert.ok(group("device-one").querySelector(".device-group-header .address"));
   group("device-one").querySelector('[data-action="edit-device"]').click();
   const form = root.querySelector("dialog form");
@@ -329,10 +333,12 @@ test("device headers collapse independently and preserve their state through ref
   assert.equal(toggle("device-one").getAttribute("aria-expanded"), "true");
   assert.equal(group("device-one").querySelector(".entity-list").hidden, false);
   assert.equal(group("device-one").querySelector(".state").textContent, "off");
+  await panel._refresh();
+  assert.equal(group("device-one").querySelector(".entity-list").hidden, false);
   assert.match(group("cen").textContent, /Nessuna entità registrata/);
   assert.ok(group("cen").querySelector('[data-action="edit-device"]'));
   toggle("cen").click();
-  assert.equal(group("cen").querySelector(".entity-list").hidden, true);
+  assert.equal(group("cen").querySelector(".entity-list").hidden, false);
 });
 
 test("entity editor saves through the native API without overwriting an externally changed area", async () => {

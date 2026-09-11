@@ -10,7 +10,7 @@ and provides English and Italian labels, with English fallback for other languag
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.6.0**, defined by
+The panel has an independent version, currently **0.6.1**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.
@@ -57,7 +57,7 @@ parameters. This refreshes assets independently from integration releases.
   and entity area overrides remain visible. Entities without a device are kept
   in a separate group. Search also matches device names; group counts reflect
   the entities matching the active filters.
-- Click a device header to collapse or expand its entity list. The selection
+- Devices start collapsed. Click a device header to expand or collapse its entity list. The selection
   survives inventory refreshes, filtering and switching to the bus monitor
   during the current panel visit. Device editing and the native device link
   remain in the header. This unified view also includes devices without entities

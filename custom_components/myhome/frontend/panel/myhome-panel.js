@@ -23,7 +23,7 @@ class MyHomePanel extends HTMLElement {
     this._entryId = "";
     this._view = "entities";
     this._filters = { query: "", category: "", area: "" };
-    this._collapsedDevices = new Set();
+    this._expandedDevices = new Set();
     this._categoryMode = "all";
     this._selectedWho = "";
     try {
@@ -357,7 +357,7 @@ class MyHomePanel extends HTMLElement {
     const gateway = scope.gateways.length > 1 && scope.gateways.find((gateway) => gateway.entry_id === entryId)?.title;
     const key = JSON.stringify([entryId, device?.id || null]);
     const listId = escapeHtml(`device-entities-${encodeURIComponent(JSON.stringify([key, who]))}`);
-    const expanded = !this._collapsedDevices.has(key);
+    const expanded = this._expandedDevices.has(key);
     return `<section class="device-group" data-device="${escapeHtml(device?.id || "")}" data-entry="${escapeHtml(entryId)}">
       <header class="device-group-header"><button class="device-group-title" data-action="toggle-device" data-group="${escapeHtml(key)}" aria-expanded="${expanded}" aria-controls="${listId}"><ha-icon class="device-chevron" icon="mdi:chevron-down" aria-hidden="true"></ha-icon><span class="device-label">
         <span class="device-name">${escapeHtml(device ? this._itemName(device) : this._t("unassignedEntities"))}</span>
@@ -420,8 +420,8 @@ class MyHomePanel extends HTMLElement {
     } else if (target.dataset.action === "toggle-device") {
       const expanded = target.getAttribute("aria-expanded") !== "true";
       const key = target.dataset.group;
-      if (expanded) this._collapsedDevices.delete(key);
-      else this._collapsedDevices.add(key);
+      if (expanded) this._expandedDevices.add(key);
+      else this._expandedDevices.delete(key);
       for (const button of this.shadowRoot.querySelectorAll('[data-action="toggle-device"]')) {
         if (button.dataset.group !== key) continue;
         button.setAttribute("aria-expanded", String(expanded));
