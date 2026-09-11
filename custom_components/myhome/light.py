@@ -394,8 +394,6 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     def _handle_light_message(msg):
         """Filter and forward light messages."""
         if isinstance(msg, OWNLightingEvent):
-            if getattr(msg, "is_translation", None) is True:
-                return
             async_add_light(msg)
 
     # Listen to all incoming gateway messages

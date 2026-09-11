@@ -227,8 +227,6 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     def _handle_cover_message(msg):
         """Filter and forward cover messages."""
         if isinstance(msg, OWNAutomationEvent):
-            if getattr(msg, "is_translation", None) is True:
-                return
             async_add_cover(msg)
 
     # Listen to all incoming gateway messages
