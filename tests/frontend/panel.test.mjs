@@ -16,6 +16,7 @@ for (const key of ["window", "document", "HTMLElement", "customElements", "Custo
 dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
 dom.window.HTMLDialogElement.prototype.close = function () { this.open = false; };
 await import("../../custom_components/myhome/frontend/panel/myhome-panel.js");
+dom.window.eval(await readFile(new URL("../../custom_components/myhome/frontend/myhome-bus-card.js", import.meta.url), "utf8"));
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const deferred = () => {
@@ -328,8 +329,6 @@ test("bus selection never opens the monitor for an unloaded or ambiguous gateway
 });
 
 test("bus card unsubscribes a late stream after removal and can reconnect", async () => {
-  const source = await readFile(new URL("../../custom_components/myhome/frontend/myhome-bus-card.js", import.meta.url), "utf8");
-  dom.window.eval(source);
   const card = document.createElement("myhome-openwebnet-bus-monitor");
   const pending = deferred();
   let unsubscribed = 0;
@@ -352,4 +351,21 @@ test("bus card unsubscribes a late stream after removal and can reconnect", asyn
   assert.equal(requests, 2);
   card.remove();
   assert.equal(unsubscribed, 2);
+});
+
+test("bus sweep follows the selected gateway and preserves unscoped Lovelace usage", async () => {
+  const card = document.createElement("myhome-openwebnet-bus-monitor");
+  const calls = [];
+  card.hass = { callService: async (...args) => { calls.push(structuredClone(args)); } };
+  for (const mac of [" 00:03:50:00:00:01 ", "00:03:50:00:00:02", null]) {
+    card.setConfig({ mac });
+    assert.ok(card.shadowRoot.getElementById("btn-export"));
+    card.shadowRoot.getElementById("btn-sweep").click();
+    await tick();
+  }
+  assert.deepEqual(calls, [
+    ["myhome", "sweep_bus", { gateway: "00:03:50:00:00:01" }],
+    ["myhome", "sweep_bus", { gateway: "00:03:50:00:00:02" }],
+    ["myhome", "sweep_bus", {}],
+  ]);
 });

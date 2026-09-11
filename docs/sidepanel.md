@@ -54,6 +54,8 @@ parameters. This refreshes assets independently from integration releases.
   the MyHOME integration settings page.
 - Open the existing bus monitor for one selected, loaded gateway. Switching
   gateways creates a separate card instance and closes the previous stream.
+  **Sweep Bus** queries only that gateway; **Export Trace** downloads the trace
+  displayed in its monitor as JSON.
 
 Discovery and manual `myhome.yaml` configuration continue to provide the devices.
 This first version does not implement an OpenWebNet device/address editor,

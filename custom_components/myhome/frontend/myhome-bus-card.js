@@ -560,6 +560,30 @@ class MyHomeBusCard extends HTMLElement {
           align-items: center;
           flex-wrap: wrap;
         }
+        .btn-sweep {
+          background: #1976d2;
+          color: #fff;
+          font-weight: 600;
+          font-size: 0.8rem;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+        }
+        .btn-sweep:hover {
+          background: #1565c0;
+        }
+        .btn-export {
+          background: #2e7d32;
+          color: #fff;
+          font-weight: 600;
+          font-size: 0.8rem;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+        }
+        .btn-export:hover {
+          background: #1b5e20;
+        }
         .btn-report {
           background: #ff9800;
           color: #fff;
@@ -608,8 +632,14 @@ class MyHomeBusCard extends HTMLElement {
             <span id="badge" class="badge badge-connecting">CONNECTING...</span>
           </div>
           <div class="actions">
-            <button id="btn-report" class="btn-report" title="Bundle system diagnostics & bus trace to clipboard, then open GitHub issue form">
-              📋 Report Issue / Copy Trace
+            <button id="btn-sweep" class="btn-sweep" title="Safely query all bus subsystems to discover all devices and populate trace buffer">
+              🧹 Sweep Bus
+            </button>
+            <button id="btn-export" class="btn-export" title="Download sanitized gateway trace JSON file">
+              💾 Export Trace
+            </button>
+            <button id="btn-report" class="btn-report" title="Copy diagnostic markdown to clipboard and open GitHub issue form">
+              📋 Copy Trace
             </button>
             <button id="btn-pause" class="btn-secondary">Pause</button>
             <button id="btn-clear" class="btn-secondary">Clear</button>
@@ -623,7 +653,7 @@ class MyHomeBusCard extends HTMLElement {
           <div>RX: <span id="stat-rx" class="stat-val">0</span></div>
           <div>TX: <span id="stat-tx" class="stat-val">0</span></div>
           <div>Queue: <span id="stat-queue" class="stat-val">0</span></div>
-          <div style="margin-left: auto; font-size: 0.75rem; opacity: 0.85;">MyHOME <span id="stat-version" class="stat-val">v2.0.0b11</span></div>
+          <div style="margin-left: auto; font-size: 0.75rem; opacity: 0.85;">MyHOME <span id="stat-version" class="stat-val">v2.0.0b12</span></div>
         </div>
 
         <div class="controls">
@@ -659,6 +689,8 @@ class MyHomeBusCard extends HTMLElement {
   _bindEvents() {
     const root = this.shadowRoot;
     if (!root) return;
+    root.getElementById("btn-sweep")?.addEventListener("click", () => this._handleSweepBus());
+    root.getElementById("btn-export")?.addEventListener("click", () => this._handleExportTrace());
     root.getElementById("btn-report")?.addEventListener("click", () => this._handleReportIssue());
     root.getElementById("btn-pause")?.addEventListener("click", () => this._togglePause());
     root.getElementById("btn-clear")?.addEventListener("click", () => this._clearBuffer());
@@ -859,9 +891,167 @@ ${framesText}
 </details>`;
   }
 
+  async _handleSweepBus() {
+    const btn = this.shadowRoot.getElementById("btn-sweep");
+    const origText = btn ? btn.innerHTML : "🧹 Sweep Bus";
+    if (btn) {
+      btn.innerHTML = "⏳ Sweeping...";
+      btn.disabled = true;
+    }
+
+    const banner = this.shadowRoot.getElementById("feedback-banner");
+    if (this._bannerTimeout) {
+      clearTimeout(this._bannerTimeout);
+      this._bannerTimeout = null;
+    }
+
+    if (this._hass) {
+      try {
+        const mac = this._config?.mac == null ? "" : String(this._config.mac).trim();
+        await this._hass.callService("myhome", "sweep_bus", mac ? { gateway: mac } : {});
+        if (banner) {
+          banner.className = "feedback-banner banner-success";
+          banner.innerHTML = `
+            <span><strong>🧹 Bus sweep initiated!</strong> Querying all lighting, automation, heating, and diagnostic states across the bus.</span>
+          `;
+          banner.style.display = "flex";
+          this._bannerTimeout = setTimeout(() => {
+            if (banner) banner.style.display = "none";
+          }, 6000);
+        }
+      } catch (err) {
+        console.error("MyHOME Bus Monitor: Error triggering sweep_bus service", err);
+        if (banner) {
+          banner.className = "feedback-banner banner-warning";
+          banner.innerHTML = `
+            <span><strong>⚠️ Bus sweep failed:</strong> ${this._escapeHtml(err.message || String(err))}</span>
+          `;
+          banner.style.display = "flex";
+          this._bannerTimeout = setTimeout(() => {
+            if (banner) banner.style.display = "none";
+          }, 6000);
+        }
+      }
+    }
+
+    setTimeout(() => {
+      if (btn) {
+        btn.innerHTML = origText;
+        btn.disabled = false;
+      }
+    }, 3000);
+  }
+
+  async _handleExportTrace() {
+    const btn = this.shadowRoot.getElementById("btn-export");
+    const origText = btn ? btn.innerHTML : "💾 Export Trace";
+    if (btn) btn.innerHTML = "⏳ Exporting...";
+
+    if (this._hass) {
+      try {
+        const infoRes = await this._hass.callWS(
+          this._wsPayload("myhome/bus_monitor/info")
+        );
+        if (infoRes) {
+          if (infoRes.gateway) this._gatewayInfo = infoRes.gateway;
+          if (infoRes.stats) {
+            this._stats = Object.assign({}, this._stats, infoRes.stats);
+            this._updateStats();
+          }
+        }
+      } catch (err) {
+        console.debug("MyHOME Bus Monitor: Falling back to cached gateway telemetry", err);
+      }
+    }
+
+    const haVersion =
+      (this._hass && this._hass.config && this._hass.config.version) ||
+      (this.hass && this.hass.config && this.hass.config.version) ||
+      "";
+    const integrationVersion = (this._gatewayInfo && this._gatewayInfo.integration_version) || "2.0.0b12";
+    const owndVersion = (this._gatewayInfo && this._gatewayInfo.ownd_version) || "Unknown";
+
+    const timestampIso = new Date().toISOString();
+    const timestampFile = timestampIso.replace(/[:.]/g, "-").slice(0, 19);
+
+    const tracePayload = {
+      environment: {
+        home_assistant_version: haVersion,
+        integration_version: integrationVersion,
+        ownd_version: owndVersion,
+        exported_at: timestampIso,
+        user_agent: navigator.userAgent,
+      },
+      gateway: {
+        model: (this._gatewayInfo && this._gatewayInfo.model) || "Unknown",
+        manufacturer: (this._gatewayInfo && this._gatewayInfo.manufacturer) || "BTicino",
+        firmware: (this._gatewayInfo && this._gatewayInfo.firmware) || "Unknown",
+        mac_prefix: (this._gatewayInfo && this._gatewayInfo.mac_prefix) || "Unknown",
+        connection_type: (this._gatewayInfo && this._gatewayInfo.connection_type) || "tcp",
+        queue_pacing: (this._gatewayInfo && this._gatewayInfo.queue_pacing) || "standard",
+        is_connected: (this._gatewayInfo && this._gatewayInfo.is_connected) !== false,
+      },
+      telemetry: {
+        total_rx: this._stats.total_rx,
+        total_tx: this._stats.total_tx,
+        captured_in_buffer: this._frames.length,
+        buffer_depth: this._maxDisplayFrames,
+        queue_depth: this._stats.queue_depth || 0,
+      },
+      frames: this._frames.map((f) => ({
+        timestamp: f.timestamp,
+        direction: f.dir,
+        raw: f.raw,
+        who: f.who,
+        what: f.what,
+        where: f.where,
+        description: f.desc || "",
+      })),
+    };
+
+    const blob = new Blob([JSON.stringify(tracePayload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const fileName = `myhome_gateway_trace_${timestampFile}.json`;
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    const banner = this.shadowRoot.getElementById("feedback-banner");
+    if (this._bannerTimeout) {
+      clearTimeout(this._bannerTimeout);
+      this._bannerTimeout = null;
+    }
+
+    if (banner) {
+      banner.className = "feedback-banner banner-success";
+      banner.innerHTML = `
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <span><strong>✅ Exported trace:</strong> <code>${fileName}</code></span>
+          <span style="font-size: 0.75rem; opacity: 0.9;">Attach this file directly to GitHub Discussion #291 or a bug report.</span>
+        </div>
+        <a href="https://github.com/orgs/OpenWebNet-HA/discussions/291" target="_blank" rel="noopener noreferrer" class="banner-link">Open Discussion #291 ↗</a>
+      `;
+      banner.style.display = "flex";
+      this._bannerTimeout = setTimeout(() => {
+        if (banner) banner.style.display = "none";
+      }, 9000);
+    }
+
+    if (btn) {
+      btn.innerHTML = "✅ Exported!";
+      setTimeout(() => {
+        if (btn) btn.innerHTML = origText;
+      }, 3000);
+    }
+  }
+
   async _handleReportIssue() {
     const btn = this.shadowRoot.getElementById("btn-report");
-    const origText = btn ? btn.innerHTML : "📋 Report Issue / Copy Trace";
+    const origText = btn ? btn.innerHTML : "📋 Copy Trace";
     if (btn) btn.innerHTML = "⏳ Generating...";
 
     // Try fetching the freshest gateway & buffer telemetry from backend
@@ -890,7 +1080,7 @@ ${framesText}
       (this._hass && this._hass.config && this._hass.config.version) ||
       (this.hass && this.hass.config && this.hass.config.version) ||
       "";
-    const integrationVersion = (this._gatewayInfo && this._gatewayInfo.integration_version) || "2.0.0b11";
+    const integrationVersion = (this._gatewayInfo && this._gatewayInfo.integration_version) || "2.0.0b12";
     const owndVersion = (this._gatewayInfo && this._gatewayInfo.ownd_version) || "Unknown";
 
     const issueUrl = `https://github.com/OpenWebNet-HA/MyHOME/issues/new?template=bug_report.yml&ha_version=${encodeURIComponent(haVersion)}&integration_version=${encodeURIComponent(integrationVersion)}&ownd_version=${encodeURIComponent(owndVersion)}`;
