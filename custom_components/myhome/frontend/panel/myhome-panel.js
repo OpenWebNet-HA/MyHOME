@@ -23,6 +23,7 @@ class MyHomePanel extends HTMLElement {
     this._entryId = "";
     this._view = "entities";
     this._filters = { query: "", category: "", area: "" };
+    this._collapsedDevices = new Set();
     this._categoryMode = "all";
     this._selectedWho = "";
     try {
@@ -177,7 +178,7 @@ class MyHomePanel extends HTMLElement {
         <div id="error" class="notice error" role="alert" hidden></div>
         <section id="gateways" class="gateway-grid" aria-label="${t("gateway")}"></section>
         <nav class="tabs" aria-label="MyHOME">
-          ${["entities", "devices", "bus"].map((view) => `<button data-view="${view}" aria-pressed="${view === this._view}">${t(view)} <span class="count" id="count-${view}" ${view === "bus" ? "hidden" : ""}></span></button>`).join("")}
+          ${["entities", "bus"].map((view) => `<button data-view="${view}" aria-pressed="${view === this._view}">${t(view)} <span class="count" id="count-${view}" ${view === "bus" ? "hidden" : ""}></span></button>`).join("")}
           <button data-action="refresh">${t("refresh")}</button>
         </nav>
         <section id="who-navigation" class="who-navigation" hidden>
@@ -237,7 +238,7 @@ class MyHomePanel extends HTMLElement {
         <div class="gateway-meta"><span>${devices} ${t("devices")}</span><span>${entities} ${t("entities")}</span>
         ${item.firmware ? `<span>${t("firmware")} ${escapeHtml(item.firmware)}</span>` : ""}</div></article>`;
     }).join("");
-    for (const view of ["devices", "entities"]) root.getElementById(`count-${view}`).textContent = scope[view].length;
+    root.getElementById("count-entities").textContent = scope.entities.length;
     const categories = [...new Set(scope.entities.map((item) => item.domain))].sort();
     if (this._filters.category && !categories.includes(this._filters.category)) this._filters.category = "";
     root.getElementById("category").innerHTML = `<option value="">${t("allCategories")}</option>` + categories.map((category) => `<option value="${escapeHtml(category)}">${t(category)}</option>`).join("");
@@ -263,6 +264,12 @@ class MyHomePanel extends HTMLElement {
     return label === key ? `WHO ${who}` : `WHO ${who} · ${label}`;
   }
 
+  _inventoryCount(items) {
+    const entities = items.filter((item) => item.entity_id).length;
+    const devices = items.length - entities;
+    return [entities ? `${entities} ${this._t("entities")}` : "", devices ? `${devices} ${this._t("devices")}` : ""].filter(Boolean).join(" · ");
+  }
+
   _setCategoryView(mode, who = this._selectedWho) {
     this._categoryMode = mode;
     this._selectedWho = who;
@@ -282,7 +289,7 @@ class MyHomePanel extends HTMLElement {
     toggle.innerHTML = `<ha-icon icon="mdi:${all ? "tab" : "view-sequential"}" aria-hidden="true"></ha-icon><span>${escapeHtml(this._t(all ? "showSelectedCategory" : "showAllCategories"))}</span>`;
     const nav = root.getElementById("who-buttons");
     const buttons = groups.map(([who, members]) => `<button type="button" data-action="select-who" data-who="${escapeHtml(who)}" aria-pressed="${!all && who === this._selectedWho}" aria-controls="items">
-      <span>${escapeHtml(this._whoLabel(who))}</span><span class="count">${members.length}</span></button>`).join("");
+      <span>${escapeHtml(this._whoLabel(who))}</span><span class="count">${escapeHtml(this._inventoryCount(members))}</span></button>`).join("");
     // Keep keyboard focus and horizontal position when registry updates rebuild buttons.
     if (nav.innerHTML !== buttons) {
       const focusedWho = nav.contains(root.activeElement) ? root.activeElement.dataset.who : null;
@@ -310,20 +317,30 @@ class MyHomePanel extends HTMLElement {
       return;
     }
     const scope = this._scope();
-    const groups = model.groupByWho(scope[this._view]);
+    const emptyDevices = scope.devices.map((device) => ({ ...device, entry_ids: device.entry_ids.filter((entryId) =>
+      scope.gateways.some((gateway) => gateway.entry_id === entryId)
+      && !scope.entities.some((entity) => entity.device_id === device.id && entity.entry_id === entryId)),
+    })).filter((device) => device.entry_ids.length);
+    const groups = model.groupByWho([...scope.entities, ...emptyDevices]);
     this._renderCategoryNavigation(groups);
     const filters = { ...this._filters, who: this._categoryMode === "single" ? this._selectedWho : "" };
-    const items = model.filterItems(this._data, scope, this._view, filters, this._hass);
+    const items = [
+      ...model.filterItems(this._data, scope, "entities", filters, this._hass),
+      ...model.filterItems(this._data, { ...scope, devices: emptyDevices, entities: [] }, "devices", filters, this._hass),
+    ];
     items.sort((a, b) => this._itemName(a).localeCompare(this._itemName(b)));
     root.getElementById("items").innerHTML = model.groupByWho(items).map(([who, members]) => `
       <section class="who-group" data-who="${escapeHtml(who)}" aria-labelledby="who-title-${escapeHtml(who)}">
         <div class="who-heading"><h2 id="who-title-${escapeHtml(who)}">${escapeHtml(this._whoLabel(who))}</h2>
-          <span class="count">${members.length} ${escapeHtml(this._t(this._view))}</span></div>
-        <div class="${this._view === "entities" ? "device-groups" : "item-grid"}">${this._view === "entities"
-          ? model.groupEntitiesByDevice(members, scope.devices)
+          <span class="count">${escapeHtml(this._inventoryCount(members))}</span></div>
+        <div class="device-groups">${[
+          ...model.groupEntitiesByDevice(members.filter((item) => item.entity_id), scope.devices),
+          ...members.filter((item) => !item.entity_id).flatMap((device) => device.entry_ids
+            .filter((entryId) => scope.gateways.some((gateway) => gateway.entry_id === entryId))
+            .map((entryId) => ({ device, entryId, entities: [] }))),
+        ]
             .sort((a, b) => a.device ? (b.device ? this._itemName(a.device).localeCompare(this._itemName(b.device)) : -1) : b.device ? 1 : 0)
-            .map((group) => this._entityGroup(group, scope)).join("")
-          : members.map((item) => this._itemCard(item, scope)).join("")}</div>
+            .map((group) => this._entityGroup(group, scope, who)).join("")}</div>
       </section>`).join("") || this._empty(this._t("noResults"), this._t("noResultsHelp"));
     this._updateStates();
   }
@@ -332,20 +349,23 @@ class MyHomePanel extends HTMLElement {
     return item.entity_id ? model.entityName(item, this._hass) : item.name_by_user || item.name || item.id;
   }
 
-  _entityGroup({ device, entryId, entities }, scope) {
-    const firstAddress = entities[0].address;
+  _entityGroup({ device, entryId, entities }, scope, who) {
+    const firstAddress = entities[0]?.address || (!entities.length && device?.address);
     const sharedAddress = device && firstAddress && entities.every((entity) =>
       ["raw", "a", "pl", "interface"].every((key) => entity.address?.[key] === firstAddress[key])) ? firstAddress : null;
     const area = device && this._data.areas.find((area) => area.id === device.area_id)?.name;
     const gateway = scope.gateways.length > 1 && scope.gateways.find((gateway) => gateway.entry_id === entryId)?.title;
+    const key = JSON.stringify([entryId, device?.id || null]);
+    const listId = escapeHtml(`device-entities-${encodeURIComponent(JSON.stringify([key, who]))}`);
+    const expanded = !this._collapsedDevices.has(key);
     return `<section class="device-group" data-device="${escapeHtml(device?.id || "")}" data-entry="${escapeHtml(entryId)}">
-      <header class="device-group-header"><div class="device-group-title"><ha-icon icon="mdi:devices" aria-hidden="true"></ha-icon><div>
-        <h3>${escapeHtml(device ? this._itemName(device) : this._t("unassignedEntities"))}</h3>
-        <p class="muted">${escapeHtml([area, gateway].filter(Boolean).join(" · "))}</p>
-      </div><span class="count">${entities.length} ${escapeHtml(this._t("entities"))}</span></div>
-      ${device ? `<a class="button" href="${escapeHtml(deviceUrl(device.id))}">${escapeHtml(this._t("openDevice"))}</a>` : ""}
-      ${sharedAddress ? this._addressDetails({ address: sharedAddress }) : ""}</header>
-      <div class="entity-list">${entities.map((entity) => this._entityRow(entity, device, sharedAddress)).join("")}</div>
+      <header class="device-group-header"><button class="device-group-title" data-action="toggle-device" data-group="${escapeHtml(key)}" aria-expanded="${expanded}" aria-controls="${listId}"><ha-icon class="device-chevron" icon="mdi:chevron-down" aria-hidden="true"></ha-icon><span class="device-label">
+        <span class="device-name">${escapeHtml(device ? this._itemName(device) : this._t("unassignedEntities"))}</span>
+        <span class="muted">${escapeHtml([area, gateway].filter(Boolean).join(" · "))}</span>
+      </span><span class="count">${entities.length} ${escapeHtml(this._t("entities"))}</span></button>
+      ${device ? `<div class="device-actions"><button data-action="edit-device" data-id="${escapeHtml(device.id)}">${escapeHtml(this._t("edit"))}</button><a class="button" href="${escapeHtml(deviceUrl(device.id))}">${escapeHtml(this._t("openDevice"))}</a></div>` : ""}
+      ${sharedAddress ? this._addressDetails({ address: sharedAddress }) : !entities.length && device ? this._addressDetails(device) : ""}</header>
+      <div class="entity-list" id="${listId}" ${expanded ? "" : "hidden"}>${entities.map((entity) => this._entityRow(entity, device, sharedAddress)).join("") || `<p class="muted no-entities">${escapeHtml(this._t("noEntities"))}</p>`}</div>
     </section>`;
   }
 
@@ -375,24 +395,6 @@ class MyHomePanel extends HTMLElement {
     return `<dl class="address">${fields.map(([label, value]) => `<div><dt>${escapeHtml(label)}:</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl>`;
   }
 
-  _itemCard(item, scope) {
-    const isEntity = !!item.entity_id;
-    const t = (key) => escapeHtml(this._t(key));
-    const id = escapeHtml(isEntity ? item.entity_id : item.id);
-    const linked = isEntity ? [item] : scope.entities.filter((entity) => entity.device_id === item.id);
-    const areaId = isEntity ? model.effectiveArea(item, this._data.devices) : item.area_id;
-    const area = this._data.areas.find((entry) => entry.id === areaId)?.name || this._t("noArea");
-    const categories = [...new Set(linked.map((entity) => this._t(entity.domain)))];
-    const description = isEntity ? item.entity_id : [item.manufacturer, item.model].filter(Boolean).join(" · ");
-    return `<article class="item-card"><div class="card-head"><h2>${escapeHtml(this._itemName(item))}</h2>${item.disabled_by ? `<span class="badge">${t("disabled")}</span>` : ""}</div>
-      <p class="muted">${escapeHtml(description)}</p><div class="chips"><span class="chip">${escapeHtml(area)}</span>${categories.map((category) => `<span class="chip">${escapeHtml(category)}</span>`).join("")}${item.hidden_by ? `<span class="chip">${t("hidden")}</span>` : ""}</div>
-      ${this._addressDetails(item)}
-      ${isEntity ? "" : `<p class="muted">${escapeHtml(item.identifiers.join(" · "))}</p>`}
-      ${isEntity ? `<p class="state" data-state="${id}" aria-label="${t("state")}"></p>` : `<p class="muted">${linked.length ? `${linked.length} ${t("entities")}` : t("noEntities")}</p>`}
-      <div class="actions"><button data-action="edit-${isEntity ? "entity" : "device"}" data-id="${id}">${t("edit")}</button>
-      ${isEntity ? `<button data-action="details" data-id="${id}">${t("details")}</button>` : `<a class="button" href="${escapeHtml(deviceUrl(item.id))}">${t("openDevice")}</a>`}</div></article>`;
-  }
-
   _updateStates() {
     if (!this._data) return;
     for (const element of this.shadowRoot.querySelectorAll("[data-state]")) {
@@ -415,6 +417,16 @@ class MyHomePanel extends HTMLElement {
     } else if (target.dataset.view) {
       this._view = target.dataset.view;
       this._renderContent();
+    } else if (target.dataset.action === "toggle-device") {
+      const expanded = target.getAttribute("aria-expanded") !== "true";
+      const key = target.dataset.group;
+      if (expanded) this._collapsedDevices.delete(key);
+      else this._collapsedDevices.add(key);
+      for (const button of this.shadowRoot.querySelectorAll('[data-action="toggle-device"]')) {
+        if (button.dataset.group !== key) continue;
+        button.setAttribute("aria-expanded", String(expanded));
+        button.closest(".device-group").querySelector(".entity-list").hidden = !expanded;
+      }
     } else if (target.dataset.action === "select-who") {
       this._setCategoryView("single", target.dataset.who);
     } else if (target.dataset.action === "toggle-category-view") {

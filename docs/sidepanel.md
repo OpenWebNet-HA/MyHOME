@@ -10,7 +10,7 @@ and provides English and Italian labels, with English fallback for other languag
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.5.0**, defined by
+The panel has an independent version, currently **0.6.0**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.
@@ -28,7 +28,8 @@ parameters. This refreshes assets independently from integration releases.
   which have device triggers but no entities.
 - The initial **Entities** view groups cards into numbered WHO sections, for
   example WHO 1 Lighting, WHO 2 Automation, WHO 4 Thermoregulation, WHO 16 Sound
-  system, and WHO 18 Energy management. The **Devices** view uses the same grouping.
+  system, and WHO 18 Energy management. Devices without entities appear in their
+  WHO category in this same view.
   Each section shows its item count.
 - WHO buttons above the lists open the selected category directly. **Show all**
   restores all WHO sections; **Show selected category** returns to the last
@@ -56,6 +57,11 @@ parameters. This refreshes assets independently from integration releases.
   and entity area overrides remain visible. Entities without a device are kept
   in a separate group. Search also matches device names; group counts reflect
   the entities matching the active filters.
+- Click a device header to collapse or expand its entity list. The selection
+  survives inventory refreshes, filtering and switching to the bus monitor
+  during the current panel visit. Device editing and the native device link
+  remain in the header. This unified view also includes devices without entities
+  (for example CEN triggers), so there is no separate Devices tab.
 - Open the native device page, entity details, advanced entity settings, and
   the MyHOME integration settings page.
 - Open the existing bus monitor for one selected, loaded gateway. Switching

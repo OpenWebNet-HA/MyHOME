@@ -24,7 +24,7 @@ from homeassistant.helpers import entity_registry as er
 from .const import CONF_ENTITY, CONF_FIRMWARE, DOMAIN, INTEGRATION_VERSION, is_apl_address
 
 PANEL_URL = "myhome"
-PANEL_VERSION = "0.5.0"
+PANEL_VERSION = "0.6.0"
 PANEL_STATIC_URL = "/myhome_panel"
 WS_INVENTORY = "myhome/panel/inventory"
 _PANEL_REGISTERED = "_panel_registered"

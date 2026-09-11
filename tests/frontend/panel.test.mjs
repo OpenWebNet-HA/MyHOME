@@ -28,7 +28,7 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
-    panel_version: "0.5.0",
+    panel_version: "0.6.0",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
@@ -106,14 +106,14 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
-  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.5.0");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.6.0");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
-  root.querySelector('[data-view="devices"]').click();
-  assert.equal(root.querySelectorAll(".item-card").length, 3);
+  root.querySelector('[data-view="entities"]').click();
+  assert.equal(root.querySelectorAll(".device-group").length, 3);
   change(root.getElementById("gateway"), "one");
-  assert.equal(root.querySelectorAll(".item-card").length, 2);
+  assert.equal(root.querySelectorAll(".device-group").length, 2);
   change(root.getElementById("search"), "25-21");
-  assert.equal(root.querySelector(".item-card h2").textContent, "CEN ingresso");
+  assert.equal(root.querySelector(".device-name").textContent, "CEN ingresso");
   change(root.getElementById("search"), "");
   change(root.getElementById("gateway"), "two");
   root.querySelector('[data-view="entities"]').click();
@@ -127,7 +127,7 @@ test("home groups mixed sensor WHOs numerically and filters categories without l
     }
   } });
   const groups = () => [...root.querySelectorAll(".who-group")].map((group) => group.dataset.who);
-  assert.deepEqual(groups(), ["0", "1", "4", "18", "99", "__unknown__"]);
+  assert.deepEqual(groups(), ["0", "1", "4", "18", "25", "99", "__unknown__"]);
   assert.match(root.querySelector('[data-who="18"] h2').textContent, /WHO 18 · Gestione energia/);
   assert.equal(root.querySelector('[data-who="99"] h2').textContent, "WHO 99");
   assert.equal(root.querySelector('[data-who="__unknown__"] h2').textContent, "Senza categoria WHO");
@@ -154,7 +154,7 @@ test("category buttons and layout toggle preserve selection, focus, filters and 
   const toggle = root.querySelector('[data-action="toggle-category-view"]');
   const groups = () => [...root.querySelectorAll(".who-group")].map((group) => group.dataset.who);
   assert.equal(toggle.textContent, "Mostra solo categoria");
-  root.querySelector('[data-view="devices"]').click();
+  root.querySelector('[data-view="entities"]').click();
   const cen = root.querySelector('#who-buttons [data-who="25"]');
   cen.focus();
   cen.click();
@@ -183,7 +183,7 @@ test("category buttons and layout toggle preserve selection, focus, filters and 
   root.querySelector('#who-buttons [data-who="25"]').click();
   root.querySelector('[data-view="bus"]').click();
   assert.equal(root.getElementById("who-navigation").hidden, true);
-  root.querySelector('[data-view="devices"]').click();
+  root.querySelector('[data-view="entities"]').click();
   assert.deepEqual(groups(), ["25"]);
   panel.hass = { ...hass, language: "en" };
   assert.match(root.querySelector('[data-action="toggle-category-view"]').textContent, /Show all/);
@@ -203,7 +203,7 @@ test("category navigation recovers from removed categories, empty inventories an
   Object.defineProperty(window, "localStorage", { configurable: true, get() { throw new Error("Storage blocked"); } });
   try {
     const { panel, root, data } = await mount();
-    root.querySelector('[data-view="devices"]').click();
+    root.querySelector('[data-view="entities"]').click();
     root.querySelector('#who-buttons [data-who="25"]').click();
     data.devices = data.devices.filter((device) => device.id !== "cen");
     await panel._refresh();
@@ -211,13 +211,18 @@ test("category navigation recovers from removed categories, empty inventories an
     assert.equal(root.querySelectorAll(".item-card").length, 2);
     data.devices = [];
     await panel._refresh();
+    // Registry orphans remain available even when no devices are registered.
+    assert.equal(root.querySelectorAll(".entity-row").length, 2);
+    data.entities = [];
+    await panel._refresh();
     assert.equal(root.getElementById("who-navigation").hidden, true);
     assert.equal(root.querySelectorAll(".item-card").length, 0);
     data.devices = inventory().devices;
+    data.entities = inventory().entities;
     await panel._refresh();
     assert.equal(root.getElementById("who-navigation").hidden, false);
     root.querySelector('[data-action="toggle-category-view"]').click();
-    assert.equal(root.querySelectorAll(".item-card").length, 3);
+    assert.equal(root.querySelectorAll(".device-group").length, 3);
   } finally {
     Object.defineProperty(window, "localStorage", storage);
   }
@@ -234,7 +239,7 @@ test("entity and device cards display searchable A/PL, bus routes and unknown ad
     data.entities.push({ entity_id: "sensor.unknown", entry_id: "one", domain: "sensor", who: null, unique_id: "legacy-unknown", address: null });
     data.entities.push({ entity_id: "sensor.energy", entry_id: "one", domain: "sensor", who: "18", unique_id: "legacy-energy", address: { raw: "52", a: null, pl: null, interface: null } });
   } });
-  const card = (id) => root.querySelector(`[data-id="${id}"]`).closest(".item-card");
+  const card = (id) => root.querySelector(`[data-id="${id}"]`).closest(".item-card, .device-group");
   const fields = (id) => [...(card(id).querySelector(".address") || card(id).closest(".device-group")?.querySelector(".device-group-header .address")).querySelectorAll("div")].map((field) => [field.querySelector("dt").textContent, field.querySelector("dd").textContent]);
   assert.deepEqual(fields("sensor.lux"), [["Indirizzo:", "0015#4#02"], ["A:", "00"], ["PL:", "15"], ["Interfaccia:", "02"]]);
   assert.deepEqual(fields("light.garage"), [["Indirizzo:", "01"], ["A:", "0"], ["PL:", "1"]]);
@@ -243,7 +248,7 @@ test("entity and device cards display searchable A/PL, bus routes and unknown ad
   change(root.getElementById("search"), "A:00 PL:15");
   assert.equal(root.querySelectorAll(".item-card").length, 1);
   assert.ok(card("sensor.lux"));
-  root.querySelector('[data-view="devices"]').click();
+  root.querySelector('[data-view="entities"]').click();
   assert.equal(root.querySelectorAll(".item-card").length, 1);
   assert.deepEqual(fields("lux-device"), [["Indirizzo:", "0015#4#02"], ["A:", "00"], ["PL:", "15"], ["Interfaccia:", "02"]]);
   change(root.getElementById("search"), "0015#4#02");
@@ -265,9 +270,9 @@ test("entity groups use device and gateway identity, share metadata and retain f
     );
   } });
   const group = (device, entry) => root.querySelector(`.device-group[data-device="${device}"][data-entry="${entry}"]`);
-  assert.equal(root.querySelectorAll(".device-group").length, 4);
+  assert.equal(root.querySelectorAll(".device-group").length, 5);
   const living = group("device-one", "one");
-  assert.equal(living.querySelector("h3").textContent, "Attuatore <sala>");
+  assert.equal(living.querySelector(".device-name").textContent, "Attuatore <sala>");
   assert.equal(living.querySelector("sala"), null);
   assert.equal(living.querySelectorAll(".entity-row").length, 2);
   assert.equal(living.querySelectorAll(".address").length, 1);
@@ -279,7 +284,7 @@ test("entity groups use device and gateway identity, share metadata and retain f
   assert.doesNotMatch(living.textContent, /00:03:50/);
   assert.match(group("device-one", "two").querySelector(".address").textContent, /22/);
   assert.equal(group("", "one").querySelectorAll(".entity-row").length, 2);
-  assert.match(group("", "one").querySelector("h3").textContent, /senza dispositivo/);
+  assert.match(group("", "one").querySelector(".device-name").textContent, /senza dispositivo/);
   data.entities.find((entity) => entity.entity_id === "sensor.diagnostic").address = { raw: "12", a: "1", pl: "2", interface: null };
   await panel._refresh();
   assert.equal(group("device-one", "one").querySelectorAll(".entity-row .address").length, 2);
@@ -292,6 +297,42 @@ test("entity groups use device and gateway identity, share metadata and retain f
   assert.equal(root.querySelectorAll(".device-group").length, 1);
   assert.equal(root.querySelector(".device-group .count").textContent, "1 Entità");
   assert.ok(root.querySelector('[data-id="sensor.diagnostic"]'));
+});
+
+test("device headers collapse independently and preserve their state through refresh and navigation", async () => {
+  const { panel, root, hass } = await mount();
+  const group = (id) => root.querySelector(`.device-group[data-device="${id}"]`);
+  const toggle = (id) => group(id).querySelector('[data-action="toggle-device"]');
+  assert.equal(root.querySelector('[data-view="devices"]'), null);
+  toggle("device-one").click();
+  assert.equal(toggle("device-one").getAttribute("aria-expanded"), "false");
+  assert.equal(group("device-one").querySelector(".entity-list").hidden, true);
+  assert.equal(group("device-two").querySelector(".entity-list").hidden, false);
+  assert.ok(group("device-one").querySelector(".device-group-header .address"));
+  group("device-one").querySelector('[data-action="edit-device"]').click();
+  const form = root.querySelector("dialog form");
+  form.elements.name.value = "Attuatore rinominato";
+  form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  await tick();
+  assert.equal(group("device-one").querySelector(".entity-list").hidden, true);
+  assert.equal(group("device-one").querySelector(".device-name").textContent, "Attuatore rinominato");
+  change(root.getElementById("gateway"), "two");
+  change(root.getElementById("gateway"), "");
+  change(root.getElementById("search"), "missing");
+  change(root.getElementById("search"), "");
+  await panel._refresh();
+  root.querySelector('[data-view="bus"]').click();
+  root.querySelector('[data-view="entities"]').click();
+  assert.equal(group("device-one").querySelector(".entity-list").hidden, true);
+  panel.hass = { ...hass, states: { "light.sala": { state: "off", attributes: {} } } };
+  toggle("device-one").click();
+  assert.equal(toggle("device-one").getAttribute("aria-expanded"), "true");
+  assert.equal(group("device-one").querySelector(".entity-list").hidden, false);
+  assert.equal(group("device-one").querySelector(".state").textContent, "off");
+  assert.match(group("cen").textContent, /Nessuna entità registrata/);
+  assert.ok(group("cen").querySelector('[data-action="edit-device"]'));
+  toggle("cen").click();
+  assert.equal(group("cen").querySelector(".entity-list").hidden, true);
 });
 
 test("entity editor saves through the native API without overwriting an externally changed area", async () => {
@@ -320,7 +361,7 @@ test("failed saves keep the dialog usable and server text is escaped", async () 
     }
     throw new Error("Entity removed");
   } });
-  root.querySelector('[data-view="devices"]').click();
+  root.querySelector('[data-view="entities"]').click();
   assert.equal(root.querySelector("img"), null);
   root.querySelector('[data-action="edit-device"][data-id="device-one"]').click();
   const form = root.querySelector("form");
