@@ -47,6 +47,7 @@ class MyHomeBusCard extends HTMLElement {
     this._retryDelay = 1000;
     this._maxRetryDelay = 30000;
     this._isSubscribing = false;
+    this._subscriptionGeneration = 0;
   }
 
   static getStubConfig() {
@@ -90,6 +91,8 @@ class MyHomeBusCard extends HTMLElement {
     if (!oldHass && hass) {
       this._subscribeStream();
     } else if (oldHass && hass && oldHass.connection !== hass.connection) {
+      this._subscriptionGeneration++;
+      this._isSubscribing = false;
       if (this._unsub) {
         try { this._unsub(); } catch (e) {}
         this._unsub = null;
@@ -105,6 +108,7 @@ class MyHomeBusCard extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this._subscriptionGeneration++;
     if (this._retryTimeout) {
       clearTimeout(this._retryTimeout);
       this._retryTimeout = null;
@@ -155,20 +159,27 @@ class MyHomeBusCard extends HTMLElement {
   }
 
   async _subscribeStream() {
-    if (!this._hass || this._unsub || this._isSubscribing) return;
+    if (!this.isConnected || !this._hass || this._unsub || this._isSubscribing) return;
+    const generation = ++this._subscriptionGeneration;
     this._isSubscribing = true;
     this._updateConnectionStatus("connecting");
 
     try {
-      this._unsub = await this._hass.connection.subscribeMessage(
+      const unsubscribe = await this._hass.connection.subscribeMessage(
         (frame) => this._onNewFrame(frame),
         this._wsPayload("myhome/bus_monitor/stream")
       );
+      if (!this.isConnected || generation !== this._subscriptionGeneration) {
+        unsubscribe();
+        return;
+      }
+      this._unsub = unsubscribe;
       this._isSubscribing = false;
       this._retryDelay = 1000;
       this._updateConnectionStatus("connected");
       this._loadHistory();
     } catch (err) {
+      if (!this.isConnected || generation !== this._subscriptionGeneration) return;
       this._isSubscribing = false;
       console.warn(`MyHOME Bus Monitor: Failed to subscribe to stream, retrying in ${this._retryDelay / 1000}s`, err);
       this._updateConnectionStatus("disconnected");
@@ -1078,4 +1089,3 @@ if (existingIndex >= 0) {
 } else {
   window.customCards.push(cardDefinition);
 }
-

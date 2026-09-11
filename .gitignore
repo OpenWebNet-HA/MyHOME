@@ -146,4 +146,6 @@ design-light-transitions.md
 
 # Release archives
 myhome.zip
-*.zip
+*.zip
+# Frontend test dependencies
+/node_modules

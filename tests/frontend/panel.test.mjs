@@ -1,0 +1,215 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { after, afterEach, test } from "node:test";
+import { JSDOM } from "jsdom";
+
+import { effectiveArea, filterItems, registryChanges, scopedInventory } from "../../custom_components/myhome/frontend/panel/panel-model.js";
+import { translations } from "../../custom_components/myhome/frontend/panel/panel-translations.js";
+
+const dom = new JSDOM("<!doctype html><html><body></body></html>", {
+  url: "http://localhost/", pretendToBeVisual: true, runScripts: "outside-only",
+});
+for (const key of ["window", "document", "HTMLElement", "customElements", "CustomEvent", "Event", "history"]) {
+  globalThis[key] = key === "window" ? dom.window : dom.window[key];
+}
+// jsdom has no dialog layout; preserve native open/close behavior for DOM tests.
+dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+dom.window.HTMLDialogElement.prototype.close = function () { this.open = false; };
+await import("../../custom_components/myhome/frontend/panel/myhome-panel.js");
+
+const tick = () => new Promise((resolve) => setImmediate(resolve));
+const deferred = () => {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+};
+
+function inventory() {
+  return {
+    version: "2.0.0b9",
+    gateways: [
+      { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
+      { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
+    ],
+    devices: [
+      { id: "device-one", entry_ids: ["one"], name: "Luce sala", name_by_user: null, area_id: "living", identifiers: ["00:03:50:00:00:01-1-11"] },
+      { id: "cen", entry_ids: ["one"], name: "CEN ingresso", area_id: null, identifiers: ["00:03:50:00:00:01-25-21"] },
+      { id: "device-two", entry_ids: ["two"], name: "Luce garage", area_id: null, identifiers: ["00:03:50:00:00:02-1-11"] },
+    ],
+    entities: [
+      { entity_id: "light.sala", entry_id: "one", domain: "light", name: null, original_name: "Luce sala", device_id: "device-one", area_id: null, unique_id: "00:03:50:00:00:01-1-11" },
+      { entity_id: "light.garage", entry_id: "two", domain: "light", original_name: "Luce garage", device_id: "device-two", area_id: null, disabled_by: "user", unique_id: "00:03:50:00:00:02-1-11" },
+    ],
+    areas: [{ id: "living", name: "Soggiorno" }, { id: "outside", name: "Esterno" }],
+  };
+}
+
+async function mount(options = {}) {
+  const data = inventory();
+  const calls = [];
+  const subscriptions = [];
+  const hass = {
+    language: "it",
+    states: { "light.sala": { state: "on", attributes: { friendly_name: "Luce sala" } } },
+    connection: {
+      subscribeEvents: async (callback, type) => {
+        const subscription = { callback, type, stopped: false };
+        subscriptions.push(subscription);
+        return () => { subscription.stopped = true; };
+      },
+    },
+    callWS: async (message) => {
+      calls.push(message);
+      if (options.callWS) return options.callWS(message, data);
+      if (message.type === "myhome/panel/inventory") return structuredClone(data);
+      if (message.type === "config/entity_registry/update") {
+        Object.assign(data.entities.find((entity) => entity.entity_id === message.entity_id), message);
+        return {};
+      }
+      if (message.type === "config/device_registry/update") {
+        Object.assign(data.devices.find((device) => device.id === message.device_id), message);
+        return {};
+      }
+      throw new Error(`Unexpected command: ${message.type}`);
+    },
+  };
+  const panel = document.createElement("myhome-panel");
+  panel.hass = hass;
+  document.body.append(panel);
+  await tick();
+  return { panel, root: panel.shadowRoot, data, calls, subscriptions, hass };
+}
+
+const change = (element, value) => {
+  element.value = value;
+  element.dispatchEvent(new Event(element.type === "search" ? "input" : "change", { bubbles: true }));
+};
+afterEach(() => document.body.replaceChildren());
+after(() => dom.window.close());
+
+test("gateway, category and inherited area filters retain trigger-only and disabled items", () => {
+  const data = inventory();
+  const one = scopedInventory(data, "one");
+  assert.deepEqual(one.devices.map((item) => item.id), ["device-one", "cen"]);
+  assert.equal(effectiveArea(one.entities[0], data.devices), "living");
+  const filters = { query: "soggiorno 1-11", category: "light", area: "living" };
+  assert.deepEqual(filterItems(data, one, "entities", filters, {}).map((item) => item.entity_id), ["light.sala"]);
+  assert.equal(scopedInventory(data, "two").entities[0].disabled_by, "user");
+  assert.deepEqual(registryChanges("entity", one.entities[0], "Lettura", ""), { name: "Lettura" });
+  assert.deepEqual(registryChanges("device", { name_by_user: "Old", area_id: "living" }, " ", ""), { name_by_user: null, area_id: null });
+  assert.deepEqual(Object.keys(translations.it).sort(), Object.keys(translations.en).sort());
+});
+
+test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
+  const { root } = await mount();
+  assert.equal(root.querySelectorAll(".item-card").length, 3);
+  change(root.getElementById("gateway"), "one");
+  assert.equal(root.querySelectorAll(".item-card").length, 2);
+  change(root.getElementById("search"), "25-21");
+  assert.equal(root.querySelector(".item-card h2").textContent, "CEN ingresso");
+  change(root.getElementById("search"), "");
+  change(root.getElementById("gateway"), "two");
+  root.querySelector('[data-view="entities"]').click();
+  assert.equal(root.querySelector(".state").textContent, "Disabilitato");
+});
+
+test("entity editor saves through the native API without overwriting an externally changed area", async () => {
+  const { root, calls, data } = await mount();
+  root.querySelector('[data-view="entities"]').click();
+  root.querySelector('[data-action="edit-entity"][data-id="light.sala"]').click();
+  const form = root.querySelector("dialog form");
+  form.elements.name.value = "Lettura";
+  data.entities[0].area_id = "outside";
+  form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  await tick();
+  assert.deepEqual(calls.find((call) => call.type === "config/entity_registry/update"), {
+    type: "config/entity_registry/update", entity_id: "light.sala", name: "Lettura",
+  });
+  assert.equal(data.entities[0].area_id, "outside");
+  assert.equal(root.querySelector("dialog").open, false);
+  assert.equal(root.getElementById("toast").textContent, "Salvato");
+});
+
+test("failed saves keep the dialog usable and server text is escaped", async () => {
+  const { root } = await mount({ callWS: async (message, data) => {
+    if (message.type === "myhome/panel/inventory") {
+      data.devices[0].name = '<img src=x onerror="alert(1)">';
+      return structuredClone(data);
+    }
+    throw new Error("Entity removed");
+  } });
+  assert.equal(root.querySelector("img"), null);
+  root.querySelector('[data-action="edit-device"][data-id="device-one"]').click();
+  const form = root.querySelector("form");
+  form.elements.name.value = "New name";
+  form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  await tick();
+  assert.equal(root.querySelector("dialog").open, true);
+  assert.equal(form.querySelector('[type="submit"]').disabled, false);
+  assert.match(root.getElementById("save-error").textContent, /Entity removed/);
+  root.getElementById("cancel").click();
+  assert.equal(root.querySelector("dialog").open, false);
+});
+
+test("native more-info settings and live states preserve an open editor", async () => {
+  const { panel, root, hass } = await mount();
+  root.querySelector('[data-view="entities"]').click();
+  root.querySelector('[data-action="edit-entity"][data-id="light.sala"]').click();
+  const form = root.querySelector("form");
+  form.elements.name.value = "Unsaved";
+  panel.hass = { ...hass, states: { "light.sala": { state: "off", attributes: {} } } };
+  assert.equal(root.querySelector("form"), form);
+  assert.equal(form.elements.name.value, "Unsaved");
+  assert.equal(root.querySelector('[data-state="light.sala"]').textContent, "off");
+  let detail;
+  panel.addEventListener("hass-more-info", (event) => { detail = event.detail; });
+  root.querySelector('[data-action="entity-settings"]').click();
+  assert.equal(detail.entityId, "light.sala");
+  assert.equal(detail.view, "settings");
+});
+
+test("disconnect discards pending inventory and cleans late registry subscriptions", async () => {
+  const pending = deferred();
+  const { panel, root, subscriptions } = await mount({ callWS: () => pending.promise });
+  panel.remove();
+  pending.resolve(inventory());
+  await tick();
+  assert.equal(root.querySelectorAll(".item-card").length, 0);
+  assert.ok(subscriptions.every((subscription) => subscription.stopped));
+});
+
+test("bus selection never opens the monitor for an unloaded or ambiguous gateway", async () => {
+  const { root } = await mount();
+  root.querySelector('[data-view="bus"]').click();
+  assert.match(root.getElementById("monitor").textContent, /Seleziona un gateway/);
+  change(root.getElementById("gateway"), "two");
+  assert.match(root.getElementById("monitor").textContent, /non è caricato/);
+  assert.equal(root.querySelector("myhome-openwebnet-bus-monitor"), null);
+});
+
+test("bus card unsubscribes a late stream after removal and can reconnect", async () => {
+  const source = await readFile(new URL("../../custom_components/myhome/frontend/myhome-bus-card.js", import.meta.url), "utf8");
+  dom.window.eval(source);
+  const card = document.createElement("myhome-openwebnet-bus-monitor");
+  const pending = deferred();
+  let unsubscribed = 0;
+  let requests = 0;
+  const hass = {
+    connection: { subscribeMessage: async () => { requests++; return pending.promise; } },
+    callWS: async () => ({ frames: [] }),
+  };
+  card.setConfig({ mac: "00:03:50:00:00:01" });
+  card.hass = hass;
+  assert.equal(requests, 0); // Do not subscribe until attached.
+  document.body.append(card);
+  assert.equal(requests, 1);
+  card.remove();
+  pending.resolve(() => { unsubscribed++; });
+  await tick();
+  assert.equal(unsubscribed, 1);
+  document.body.append(card);
+  await tick();
+  assert.equal(requests, 2);
+  card.remove();
+  assert.equal(unsubscribed, 2);
+});

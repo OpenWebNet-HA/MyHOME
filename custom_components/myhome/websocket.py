@@ -226,6 +226,9 @@ def _get_gateway_and_monitor(
                     if gw or bm:
                         return gw, bm
 
+        # An explicit selection must never fall back to a different gateway.
+        return None, None
+
     # Fallback to the first available gateway entry
     for key, val in domain_data.items():
         if isinstance(val, dict) and (CONF_ENTITY in val or "bus_monitor" in val):

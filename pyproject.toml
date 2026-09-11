@@ -45,7 +45,7 @@ Issues = "https://github.com/anotherjulien/MyHOME/issues"
 include = ["custom_components*"]
 
 [tool.setuptools.package-data]
-"*" = ["*.json", "*.yaml", "translations/*.json"]
+"*" = ["*.json", "*.yaml", "translations/*.json", "frontend/*.js", "frontend/panel/*.js", "frontend/panel/*.css"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
