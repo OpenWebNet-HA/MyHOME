@@ -4,6 +4,7 @@ import asyncio
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from homeassistant.components import frontend
@@ -19,6 +20,7 @@ from custom_components.myhome import async_remove_entry
 from custom_components.myhome.const import CONF_ENTITY, DOMAIN
 from custom_components.myhome.panel import (
     PANEL_URL,
+    PANEL_VERSION,
     WS_INVENTORY,
     async_panel_inventory,
     async_setup_panel,
@@ -95,6 +97,8 @@ def installation(hass):
 
 async def test_inventory_includes_offline_disabled_and_trigger_only_devices(hass, installation):
     payload = async_panel_inventory(hass)
+    assert payload["panel_version"] == PANEL_VERSION
+    assert payload["panel_version"] != payload["version"]
     assert len(payload["gateways"]) == 2
     assert payload["gateways"][0]["connected"] is True
     assert payload["gateways"][1]["connected"] is False
@@ -109,9 +113,55 @@ async def test_inventory_includes_offline_disabled_and_trigger_only_devices(hass
         installation.entities[1].entity_id,
     }
     assert any(entity["disabled_by"] == "user" for entity in payload["entities"])
+    assert {entity["who"] for entity in payload["entities"]} == {"1"}
+    assert (
+        next(device for device in payload["devices"] if device["id"] == installation.cen.id)["who"]
+        == "25"
+    )
     serialized = json.dumps(payload)
     for secret in ("do-not-expose", "also-secret", "password", "unrelated_option"):
         assert secret not in serialized
+
+
+async def test_who_uses_device_identifiers_for_legacy_sensor_ids(hass, installation):
+    """Temperature and energy sensors share an HA type but have distinct WHOs."""
+    entry = installation.entries[1]  # An offline gateway must still be classified.
+    devices = dr.async_get(hass)
+    entities = er.async_get(hass)
+    expected = {}
+    for index, (who, identifier, unique_id) in enumerate(
+        [
+            ("4", "000350000001-4-101", "00:03:50:00:00:01-18-temperature"),
+            ("18", "00-03-50-00-00-01-18-18-52", "00:03:50:00:00:01-12-power"),
+            ("0", "00:03:50:00:00:01-0-1", "scenario-status"),
+            (None, "00:03:50:00:00:01-11", "00:03:50:00:00:01-11-energy"),
+        ]
+    ):
+        device = devices.async_get_or_create(
+            config_entry_id=entry.entry_id,
+            identifiers={(DOMAIN, identifier)},
+            name=f"Meter {index}",
+        )
+        entity = entities.async_get_or_create(
+            "sensor",
+            DOMAIN,
+            unique_id,
+            config_entry=entry,
+            device_id=device.id,
+            disabled_by=er.RegistryEntryDisabler.USER,
+        )
+        expected[entity.entity_id] = who
+    orphan = entities.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        "00:03:50:00:00:01-18-temperature-orphan",
+        config_entry=entry,
+    )
+    expected[orphan.entity_id] = None
+    actual = {
+        entity["entity_id"]: entity["who"] for entity in async_panel_inventory(hass)["entities"]
+    }
+    assert {entity_id: actual[entity_id] for entity_id in expected} == expected
 
 
 async def test_inventory_reflects_native_registry_changes_without_a_second_store(
@@ -163,7 +213,11 @@ async def test_registration_concurrent_and_repeated_setup(hass):
     panel = hass.data[frontend.DATA_PANELS][PANEL_URL]
     assert panel.require_admin is True
     assert panel.config["bus_card_url"] == "/card.js?v=1"
-    assert "/myhome_panel/myhome-panel.js?v=" in panel.config["_panel_custom"]["module_url"]
+    assert panel.config["panel_version"] == PANEL_VERSION
+    url = urlsplit(panel.config["_panel_custom"]["module_url"])
+    assert url.path == "/myhome_panel/myhome-panel.js"
+    assert parse_qs(url.query)["v"] == [PANEL_VERSION]
+    assert len(parse_qs(url.query)["build"][0]) == 12
 
 
 async def test_registration_retry_does_not_register_static_path_twice(hass):

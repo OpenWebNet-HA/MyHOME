@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import re
 from pathlib import Path
 from typing import Any
 
@@ -23,12 +24,38 @@ from homeassistant.helpers import entity_registry as er
 from .const import CONF_ENTITY, CONF_FIRMWARE, DOMAIN, INTEGRATION_VERSION
 
 PANEL_URL = "myhome"
+PANEL_VERSION = "0.2.0"
 PANEL_STATIC_URL = "/myhome_panel"
 WS_INVENTORY = "myhome/panel/inventory"
 _PANEL_REGISTERED = "_panel_registered"
 _STATIC_REGISTERED = "_panel_static_registered"
 _WS_REGISTERED = "_panel_ws_registered"
 _LOCK = "_panel_setup_lock"
+
+
+def _device_who(identifiers: set[tuple[str, str]], mac: str | None) -> str | None:
+    """Read WHO from the canonical MAC-WHO-device identifier, never the HA type.
+
+    Sensor entity unique IDs may omit WHO entirely, so their device registry
+    identifier is the source for both device and entity grouping. Ambiguous or
+    legacy identifiers remain unclassified rather than treating WHERE as WHO.
+    """
+    if not mac:
+        return None
+    normalized_mac = re.sub(r"[:.\-]", "", mac).lower()
+    whos = set()
+    for domain, identifier in identifiers:
+        if domain != DOMAIN:
+            continue
+        # Consume all six MAC octets before WHO; device IDs can contain hyphens.
+        match = re.fullmatch(
+            r"([0-9a-f]{2}(?:[:.\-]?[0-9a-f]{2}){5})-(\d+)-(.+)",
+            str(identifier),
+            re.IGNORECASE,
+        )
+        if match and re.sub(r"[:.\-]", "", match[1]).lower() == normalized_mac:
+            whos.add(str(int(match[2])))
+    return next(iter(whos)) if len(whos) == 1 else None
 
 
 def _asset_version() -> str:
@@ -72,9 +99,14 @@ def async_panel_inventory(hass: HomeAssistant) -> dict[str, Any]:
                 "device_id": getattr(gateway, "device_registry_id", None) if loaded else None,
             }
         )
+        entry_device_whos = {}
         for device in dr.async_entries_for_config_entry(devices, entry.entry_id):
+            who = _device_who(device.identifiers, entry.data.get(CONF_MAC))
+            entry_device_whos[device.id] = who
             if device.id in device_payloads:
                 device_payloads[device.id]["entry_ids"].append(entry.entry_id)
+                if device_payloads[device.id]["who"] != who:
+                    device_payloads[device.id]["who"] = None
                 continue
             device_payloads[device.id] = {
                 "id": device.id,
@@ -85,6 +117,7 @@ def async_panel_inventory(hass: HomeAssistant) -> dict[str, Any]:
                 "manufacturer": device.manufacturer,
                 "model": device.model,
                 "disabled_by": device.disabled_by,
+                "who": who,
                 "identifiers": sorted(
                     str(identifier) for domain, identifier in device.identifiers if domain == DOMAIN
                 ),
@@ -104,9 +137,11 @@ def async_panel_inventory(hass: HomeAssistant) -> dict[str, Any]:
                 "hidden_by": entity.hidden_by,
                 "entity_category": entity.entity_category,
                 "unique_id": entity.unique_id,
+                "who": entry_device_whos.get(entity.device_id),
             }
     return {
         "version": INTEGRATION_VERSION,
+        "panel_version": PANEL_VERSION,
         "gateways": gateways,
         "devices": list(device_payloads.values()),
         "entities": list(entity_payloads.values()),
@@ -137,7 +172,7 @@ async def async_setup_panel(hass: HomeAssistant, bus_card_url: str) -> None:
     async with data.setdefault(_LOCK, asyncio.Lock()):
         if data.get(_PANEL_REGISTERED):
             return
-        version = await hass.async_add_executor_job(_asset_version)
+        build = await hass.async_add_executor_job(_asset_version)
         if not data.get(_STATIC_REGISTERED):
             path = str(Path(__file__).parent / "frontend" / "panel")
             if hasattr(hass.http, "async_register_static_paths"):
@@ -155,9 +190,9 @@ async def async_setup_panel(hass: HomeAssistant, bus_card_url: str) -> None:
             webcomponent_name="myhome-panel",
             sidebar_title="MyHOME",
             sidebar_icon="mdi:home-automation",
-            module_url=f"{PANEL_STATIC_URL}/myhome-panel.js?v={version}",
+            module_url=f"{PANEL_STATIC_URL}/myhome-panel.js?v={PANEL_VERSION}&build={build}",
             require_admin=True,
-            config={"bus_card_url": bus_card_url},
+            config={"bus_card_url": bus_card_url, "panel_version": PANEL_VERSION},
         )
         data[_PANEL_REGISTERED] = True
 

@@ -16,17 +16,32 @@ export function effectiveArea(entity, devices) {
   return entity.area_id || devices.find((device) => device.id === entity.device_id)?.area_id || "";
 }
 
-export function filterItems(data, scope, view, { query, category, area }, hass) {
+export const WHO_UNKNOWN = "__unknown__";
+export const whoKey = (item) => item.who == null ? WHO_UNKNOWN : String(item.who);
+
+export function groupByWho(items) {
+  const groups = new Map();
+  for (const item of items) {
+    const who = whoKey(item);
+    if (!groups.has(who)) groups.set(who, []);
+    groups.get(who).push(item);
+  }
+  return [...groups].sort(([a], [b]) => a === WHO_UNKNOWN ? 1 : b === WHO_UNKNOWN ? -1 : Number(a) - Number(b));
+}
+
+export function filterItems(data, scope, view, { query, category, area, who }, hass) {
   const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   const areaName = (id) => data.areas.find((item) => item.id === id)?.name || "";
   return scope[view].filter((item) => {
     const isEntity = view === "entities";
     const linked = isEntity ? [item] : scope.entities.filter((entity) => entity.device_id === item.id);
     const areaId = isEntity ? effectiveArea(item, data.devices) : item.area_id || "";
+    if (who && whoKey(item) !== who) return false;
     if (area && (area === "__none__" ? !!areaId : areaId !== area)) return false;
     if (category && !linked.some((entity) => entity.domain === category)) return false;
     const text = [
       item.name_by_user, item.name, item.model, item.manufacturer, areaName(areaId),
+      item.who == null ? "" : `WHO ${item.who}`,
       ...(item.identifiers || []), ...linked.flatMap((entity) => [
         entityName(entity, hass), entity.entity_id, entity.unique_id,
       ]),

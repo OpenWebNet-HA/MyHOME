@@ -8,14 +8,31 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Panel versioning
+
+The panel has an independent version, currently **0.2.0**, defined by
+`PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
+the MyHOME header; the integration version is shown separately at the bottom.
+The label uses the version of the JavaScript module actually loaded by the tab.
+
+Every panel change should increment this version (patch for fixes, minor for new
+features during the preview). The module URL includes both `v=<panel version>`
+and `build=<bundle content hash>`; imported JavaScript and CSS retain both query
+parameters. This refreshes assets independently from integration releases.
+
 ## Available now
 
 - Select one gateway or view the whole installation. Gateway setup errors,
   retries, disabled entries, and lost connections remain visible.
 - Browse devices and entities, including disabled entities and CEN/CEN+ devices
   which have device triggers but no entities.
+- The initial **Entities** view groups cards into numbered WHO sections, for
+  example WHO 1 Lighting, WHO 2 Automation, WHO 4 Thermoregulation, WHO 16 Sound
+  system, and WHO 18 Energy management. The **Devices** view uses the same grouping.
+  Each section shows its item count. A WHO filter combines with the existing
+  entity-type, area and search filters.
 - Search names, entity IDs, and the integration's OpenWebNet identifiers. Filter
-  by entity category and area; entity area filtering respects device inheritance.
+  by entity type and area; entity area filtering respects device inheritance.
 - Edit device/entity names and areas. An empty name restores the original name;
   an empty entity area inherits its device's area.
 - Open the native device page, entity details, advanced entity settings, and
@@ -55,13 +72,21 @@ The bus API now returns “not found” when an explicitly requested gateway doe
 not exist, rather than silently selecting another bus. Requests with no gateway
 selection retain their existing default behavior.
 
+WHO classification comes from each device's canonical `MAC-WHO-device` registry
+identifier, including when the gateway is offline. It is not inferred from the
+Home Assistant entity type or from legacy sensor entity IDs, which may omit WHO.
+Unclassified/ambiguous items remain visible in **No WHO category**; newly seen WHO
+numbers remain visible even if no translated label has been added yet.
+
 ## Try this branch
 
 1. Install `custom_components/myhome` from `feat/myhome-sidepanel` over the
    integration files in a test Home Assistant instance.
 2. Restart Home Assistant and refresh the browser page.
 3. Sign in as an administrator and open **MyHOME** in the sidebar.
-4. Compare the gateway/device/entity lists with Home Assistant's native settings.
+4. Check the panel version in the header, then compare the gateway/device/entity
+   lists with Home Assistant's native settings. Verify WHO grouping, especially
+   temperature sensors (WHO 4), energy sensors (WHO 18), and CEN devices (WHO 15/25).
 5. Change a device name and area; verify them on its native device page. Change an
    entity name and area override, then clear the override to check inheritance.
 6. Check an offline gateway and a disabled entity. Their configuration should
@@ -89,18 +114,23 @@ npm run test:panel
 python scripts/verify_ha_standards.py
 ```
 
-The frontend suite uses Node.js 24 and jsdom. It covers gateway/area/category
-filtering, native writes, concurrent area changes, errors, escaping, live states,
-and cleanup of delayed subscriptions. It runs separately in `panel-tests.yml`.
+The frontend suite uses Node.js 24 and jsdom. It covers gateway/area/type/WHO
+filtering, WHO grouping, panel version display, native writes, concurrent area
+changes, errors, escaping, live states, and cleanup of delayed subscriptions.
+It runs separately in `panel-tests.yml`.
 Browser layout and real hardware checks remain manual.
 
-Validation during development on Home Assistant 2026.9.1: 47 Python checks passed
+Panel 0.2.0 validation on Home Assistant 2026.9.1: all 27 panel/WebSocket tests
+passed, including WHO classification for legacy sensor IDs and offline gateways.
+All nine frontend tests passed; the changed Python files pass Ruff.
+
+Initial implementation validation on Home Assistant 2026.9.1: 47 Python checks passed
 and four existing `test_init.py` checks failed on deprecated device-registry
 access in the tests. Running `test_init.py` on the unchanged starting commit
 `195b6acf9a4699ad35993d0d3fd9b320dfd47344` reproduced the same four failures.
-All eight frontend tests passed.
+All eight frontend tests available at that point passed.
 
-On the available Home Assistant 2025.1.4 / Python 3.12 environment, the 25
+For the initial implementation on Home Assistant 2025.1.4 / Python 3.12, the 25
 panel/bus API checks not requiring an HTTP client also passed. The WebSocket
 round-trip itself succeeded, but HTTP fixture teardown reported a lingering
 `_run_safe_shutdown_loop` thread. A plain WebSocket ping test on the unchanged

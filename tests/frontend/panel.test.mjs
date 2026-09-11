@@ -27,18 +27,19 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
+    panel_version: "0.2.0",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
     ],
     devices: [
-      { id: "device-one", entry_ids: ["one"], name: "Luce sala", name_by_user: null, area_id: "living", identifiers: ["00:03:50:00:00:01-1-11"] },
-      { id: "cen", entry_ids: ["one"], name: "CEN ingresso", area_id: null, identifiers: ["00:03:50:00:00:01-25-21"] },
-      { id: "device-two", entry_ids: ["two"], name: "Luce garage", area_id: null, identifiers: ["00:03:50:00:00:02-1-11"] },
+      { id: "device-one", entry_ids: ["one"], name: "Luce sala", name_by_user: null, area_id: "living", who: "1", identifiers: ["00:03:50:00:00:01-1-11"] },
+      { id: "cen", entry_ids: ["one"], name: "CEN ingresso", area_id: null, who: "25", identifiers: ["00:03:50:00:00:01-25-21"] },
+      { id: "device-two", entry_ids: ["two"], name: "Luce garage", area_id: null, who: "1", identifiers: ["00:03:50:00:00:02-1-11"] },
     ],
     entities: [
-      { entity_id: "light.sala", entry_id: "one", domain: "light", name: null, original_name: "Luce sala", device_id: "device-one", area_id: null, unique_id: "00:03:50:00:00:01-1-11" },
-      { entity_id: "light.garage", entry_id: "two", domain: "light", original_name: "Luce garage", device_id: "device-two", area_id: null, disabled_by: "user", unique_id: "00:03:50:00:00:02-1-11" },
+      { entity_id: "light.sala", entry_id: "one", domain: "light", who: "1", name: null, original_name: "Luce sala", device_id: "device-one", area_id: null, unique_id: "00:03:50:00:00:01-1-11" },
+      { entity_id: "light.garage", entry_id: "two", domain: "light", who: "1", original_name: "Luce garage", device_id: "device-two", area_id: null, disabled_by: "user", unique_id: "00:03:50:00:00:02-1-11" },
     ],
     areas: [{ id: "living", name: "Soggiorno" }, { id: "outside", name: "Esterno" }],
   };
@@ -46,6 +47,7 @@ function inventory() {
 
 async function mount(options = {}) {
   const data = inventory();
+  options.prepare?.(data);
   const calls = [];
   const subscriptions = [];
   const hass = {
@@ -102,6 +104,10 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
+  assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.2.0");
+  assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
+  root.querySelector('[data-view="devices"]').click();
   assert.equal(root.querySelectorAll(".item-card").length, 3);
   change(root.getElementById("gateway"), "one");
   assert.equal(root.querySelectorAll(".item-card").length, 2);
@@ -111,6 +117,30 @@ test("DOM search and gateway selection expose the expected devices and disabled 
   change(root.getElementById("gateway"), "two");
   root.querySelector('[data-view="entities"]').click();
   assert.equal(root.querySelector(".state").textContent, "Disabilitato");
+});
+
+test("home groups mixed sensor WHOs numerically and filters categories without losing unclassified items", async () => {
+  const { root } = await mount({ prepare: (data) => {
+    for (const [id, who] of [["power", "18"], ["temperature", "4"], ["diagnostic", null], ["scenario", "0"], ["future", "99"]]) {
+      data.entities.push({ entity_id: `sensor.${id}`, entry_id: "one", domain: "sensor", who, original_name: id, unique_id: id });
+    }
+  } });
+  const groups = () => [...root.querySelectorAll(".who-group")].map((group) => group.dataset.who);
+  assert.deepEqual(groups(), ["0", "1", "4", "18", "99", "__unknown__"]);
+  assert.match(root.querySelector('[data-who="18"] h2').textContent, /WHO 18 · Gestione energia/);
+  assert.equal(root.querySelector('[data-who="99"] h2').textContent, "WHO 99");
+  assert.equal(root.querySelector('[data-who="__unknown__"] h2').textContent, "Senza categoria WHO");
+  assert.equal(root.querySelectorAll(".item-card").length, 7);
+  change(root.getElementById("who"), "18");
+  change(root.getElementById("category"), "sensor");
+  assert.deepEqual(groups(), ["18"]);
+  assert.equal(root.querySelectorAll(".item-card").length, 1);
+  change(root.getElementById("search"), "temperature");
+  assert.equal(root.querySelectorAll(".item-card").length, 0);
+  change(root.getElementById("search"), "");
+  change(root.getElementById("gateway"), "two");
+  assert.equal(root.getElementById("who").value, "");
+  assert.deepEqual(groups(), ["1"]);
 });
 
 test("entity editor saves through the native API without overwriting an externally changed area", async () => {
@@ -138,6 +168,7 @@ test("failed saves keep the dialog usable and server text is escaped", async () 
     }
     throw new Error("Entity removed");
   } });
+  root.querySelector('[data-view="devices"]').click();
   assert.equal(root.querySelector("img"), null);
   root.querySelector('[data-action="edit-device"][data-id="device-one"]').click();
   const form = root.querySelector("form");

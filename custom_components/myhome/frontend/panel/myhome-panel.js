@@ -1,4 +1,5 @@
 /** MyHOME sidepanel. Configuration stays in Home Assistant's native registries. */
+const MODULE_VERSION = new URL(import.meta.url).searchParams.get("v");
 const assetUrl = (name) => {
   const url = new URL(name, import.meta.url);
   url.search = new URL(import.meta.url).search;
@@ -19,8 +20,8 @@ class MyHomePanel extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this.shadowRoot.addEventListener("click", (event) => this._onClick(event));
     this._entryId = "";
-    this._view = "devices";
-    this._filters = { query: "", category: "", area: "" };
+    this._view = "entities";
+    this._filters = { query: "", category: "", area: "", who: "" };
     this._session = 0;
     this._unsubs = [];
     this._monitorToken = 0;
@@ -44,7 +45,7 @@ class MyHomePanel extends HTMLElement {
   }
 
   get hass() { return this._hass; }
-  set panel(value) { this._panel = value; }
+  set panel(value) { this._panel = value; this._renderVersions(); }
   set narrow(value) { this._narrow = value; this._updateMenu(); }
 
   connectedCallback() { if (this._hass) this._start(); }
@@ -131,13 +132,22 @@ class MyHomePanel extends HTMLElement {
     if (menu) { menu.hass = this._hass; menu.narrow = this._narrow; }
   }
 
+  _renderVersions() {
+    // Show the bundle actually loaded by this tab, even after a backend update.
+    const version = MODULE_VERSION || this._panel?.config?.panel_version || this._data?.panel_version;
+    const label = this.shadowRoot.getElementById("panel-version");
+    if (label) label.textContent = `${this._t("panelVersion")}${version ? ` v${version}` : ""}`;
+    const integration = this.shadowRoot.getElementById("version");
+    if (integration) integration.textContent = this._data?.version ? `${this._t("integrationVersion")} v${this._data.version}` : "";
+  }
+
   _buildShell() {
     this._removeMonitor();
     const t = (key) => escapeHtml(this._t(key));
     this.shadowRoot.innerHTML = `
       <link rel="stylesheet" href="${escapeHtml(assetUrl("myhome-panel.css"))}">
       <header class="topbar"><ha-menu-button></ha-menu-button>
-        <div class="brand">My<span>HOME</span></div><span class="version" id="version"></span>
+        <div class="brand-group"><div class="brand">My<span>HOME</span></div><span class="version" id="panel-version"></span></div>
         <a class="button" href="${SETTINGS_URL}">${t("settings")}</a>
       </header>
       <main>
@@ -147,30 +157,33 @@ class MyHomePanel extends HTMLElement {
         <div id="error" class="notice error" role="alert" hidden></div>
         <section id="gateways" class="gateway-grid" aria-label="${t("gateway")}"></section>
         <nav class="tabs" aria-label="MyHOME">
-          ${["devices", "entities", "bus"].map((view) => `<button data-view="${view}" aria-pressed="${view === this._view}">${t(view)} <span class="count" id="count-${view}" ${view === "bus" ? "hidden" : ""}></span></button>`).join("")}
+          ${["entities", "devices", "bus"].map((view) => `<button data-view="${view}" aria-pressed="${view === this._view}">${t(view)} <span class="count" id="count-${view}" ${view === "bus" ? "hidden" : ""}></span></button>`).join("")}
           <button data-action="refresh">${t("refresh")}</button>
         </nav>
         <div class="filters" id="filters">
           <label>${t("search")}<input id="search" type="search" value="${escapeHtml(this._filters.query)}"></label>
+          <label>${t("whoCategory")}<select id="who"></select></label>
           <label>${t("category")}<select id="category"></select></label>
           <label>${t("area")}<select id="area"></select></label>
         </div>
         <p class="notice muted" id="discovery-help">${t("discoveryHelp")}</p>
-        <section id="items" class="item-grid"></section>
+        <section id="items" class="who-groups"></section>
         <section id="monitor" hidden></section>
         <p id="toast" class="muted" role="status"></p>
+        <p id="version" class="muted"></p>
       </main><div id="dialog-host"></div>`;
     this.shadowRoot.getElementById("gateway").onchange = (event) => {
       this._entryId = event.target.value;
       this._renderInventory();
     };
-    for (const [id, key] of [["search", "query"], ["category", "category"], ["area", "area"]]) {
+    for (const [id, key] of [["search", "query"], ["who", "who"], ["category", "category"], ["area", "area"]]) {
       this.shadowRoot.getElementById(id).addEventListener(id === "search" ? "input" : "change", (event) => {
         this._filters[key] = event.target.value;
         this._renderContent();
       });
     }
     this._updateMenu();
+    this._renderVersions();
   }
 
   _scope() { return model.scopedInventory(this._data, this._entryId); }
@@ -185,7 +198,7 @@ class MyHomePanel extends HTMLElement {
     const data = this._data;
     const scope = this._scope();
     const t = (key) => escapeHtml(this._t(key));
-    root.getElementById("version").textContent = `v${data.version}`;
+    this._renderVersions();
     root.getElementById("totals").textContent = `${scope.devices.length} ${this._t("devices").toLocaleLowerCase()} · ${scope.entities.length} ${this._t("entities").toLocaleLowerCase()}`;
     root.getElementById("gateway").innerHTML = `<option value="">${t("allGateways")}</option>` + data.gateways.map((item) => `<option value="${escapeHtml(item.entry_id)}">${escapeHtml(item.title)}</option>`).join("");
     root.getElementById("gateway").value = this._entryId;
@@ -218,6 +231,13 @@ class MyHomePanel extends HTMLElement {
     return `<div class="empty"><h2>${escapeHtml(title)}</h2><p class="muted">${escapeHtml(description)}</p></div>`;
   }
 
+  _whoLabel(who) {
+    if (who === model.WHO_UNKNOWN) return this._t("whoUnknown");
+    const key = `who_${who}`;
+    const label = this._t(key);
+    return label === key ? `WHO ${who}` : `WHO ${who} · ${label}`;
+  }
+
   _renderContent() {
     if (!this._data) return;
     const root = this.shadowRoot;
@@ -234,9 +254,19 @@ class MyHomePanel extends HTMLElement {
       return;
     }
     const scope = this._scope();
+    const groups = model.groupByWho(scope[this._view]);
+    if (this._filters.who && !groups.some(([who]) => who === this._filters.who)) this._filters.who = "";
+    root.getElementById("who").innerHTML = `<option value="">${escapeHtml(this._t("allWhoCategories"))}</option>`
+      + groups.map(([who]) => `<option value="${escapeHtml(who)}">${escapeHtml(this._whoLabel(who))}</option>`).join("");
+    root.getElementById("who").value = this._filters.who;
     const items = model.filterItems(this._data, scope, this._view, this._filters, this._hass);
     items.sort((a, b) => this._itemName(a).localeCompare(this._itemName(b)));
-    root.getElementById("items").innerHTML = items.map((item) => this._itemCard(item, scope)).join("") || this._empty(this._t("noResults"), this._t("noResultsHelp"));
+    root.getElementById("items").innerHTML = model.groupByWho(items).map(([who, members]) => `
+      <section class="who-group" data-who="${escapeHtml(who)}" aria-labelledby="who-title-${escapeHtml(who)}">
+        <div class="who-heading"><h2 id="who-title-${escapeHtml(who)}">${escapeHtml(this._whoLabel(who))}</h2>
+          <span class="count">${members.length} ${escapeHtml(this._t(this._view))}</span></div>
+        <div class="item-grid">${members.map((item) => this._itemCard(item, scope)).join("")}</div>
+      </section>`).join("") || this._empty(this._t("noResults"), this._t("noResultsHelp"));
     this._updateStates();
   }
 
