@@ -29,11 +29,25 @@ export function groupByWho(items) {
   return [...groups].sort(([a], [b]) => a === WHO_UNKNOWN ? 1 : b === WHO_UNKNOWN ? -1 : Number(a) - Number(b));
 }
 
+export function groupEntitiesByDevice(entities, devices) {
+  const byId = new Map(devices.map((device) => [device.id, device]));
+  const groups = new Map();
+  for (const entity of entities) {
+    const device = byId.get(entity.device_id) || null;
+    // A device shared by two config entries still belongs to separate buses.
+    const key = JSON.stringify([entity.entry_id, device?.id || null]);
+    if (!groups.has(key)) groups.set(key, { device, entryId: entity.entry_id, entities: [] });
+    groups.get(key).entities.push(entity);
+  }
+  return [...groups.values()];
+}
+
 export function filterItems(data, scope, view, { query, category, area, who }, hass) {
   const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   const areaName = (id) => data.areas.find((item) => item.id === id)?.name || "";
   return scope[view].filter((item) => {
     const isEntity = view === "entities";
+    const device = isEntity ? data.devices.find((device) => device.id === item.device_id) : null;
     const linked = isEntity ? [item] : scope.entities.filter((entity) => entity.device_id === item.id);
     const areaId = isEntity ? effectiveArea(item, data.devices) : item.area_id || "";
     if (who && whoKey(item) !== who) return false;
@@ -41,6 +55,7 @@ export function filterItems(data, scope, view, { query, category, area, who }, h
     if (category && !linked.some((entity) => entity.domain === category)) return false;
     const text = [
       item.name_by_user, item.name, item.model, item.manufacturer, areaName(areaId),
+      device?.name_by_user, device?.name, device?.model, device?.manufacturer,
       item.who == null ? "" : `WHO ${item.who}`,
       item.address?.raw,
       item.address?.a == null ? "" : `A:${item.address.a} A: ${item.address.a}`,

@@ -319,13 +319,51 @@ class MyHomePanel extends HTMLElement {
       <section class="who-group" data-who="${escapeHtml(who)}" aria-labelledby="who-title-${escapeHtml(who)}">
         <div class="who-heading"><h2 id="who-title-${escapeHtml(who)}">${escapeHtml(this._whoLabel(who))}</h2>
           <span class="count">${members.length} ${escapeHtml(this._t(this._view))}</span></div>
-        <div class="item-grid">${members.map((item) => this._itemCard(item, scope)).join("")}</div>
+        <div class="${this._view === "entities" ? "device-groups" : "item-grid"}">${this._view === "entities"
+          ? model.groupEntitiesByDevice(members, scope.devices)
+            .sort((a, b) => a.device ? (b.device ? this._itemName(a.device).localeCompare(this._itemName(b.device)) : -1) : b.device ? 1 : 0)
+            .map((group) => this._entityGroup(group, scope)).join("")
+          : members.map((item) => this._itemCard(item, scope)).join("")}</div>
       </section>`).join("") || this._empty(this._t("noResults"), this._t("noResultsHelp"));
     this._updateStates();
   }
 
   _itemName(item) {
     return item.entity_id ? model.entityName(item, this._hass) : item.name_by_user || item.name || item.id;
+  }
+
+  _entityGroup({ device, entryId, entities }, scope) {
+    const firstAddress = entities[0].address;
+    const sharedAddress = device && firstAddress && entities.every((entity) =>
+      ["raw", "a", "pl", "interface"].every((key) => entity.address?.[key] === firstAddress[key])) ? firstAddress : null;
+    const area = device && this._data.areas.find((area) => area.id === device.area_id)?.name;
+    const gateway = scope.gateways.length > 1 && scope.gateways.find((gateway) => gateway.entry_id === entryId)?.title;
+    return `<section class="device-group" data-device="${escapeHtml(device?.id || "")}" data-entry="${escapeHtml(entryId)}">
+      <header class="device-group-header"><div class="device-group-title"><ha-icon icon="mdi:devices" aria-hidden="true"></ha-icon><div>
+        <h3>${escapeHtml(device ? this._itemName(device) : this._t("unassignedEntities"))}</h3>
+        <p class="muted">${escapeHtml([area, gateway].filter(Boolean).join(" · "))}</p>
+      </div><span class="count">${entities.length} ${escapeHtml(this._t("entities"))}</span></div>
+      ${device ? `<a class="button" href="${escapeHtml(deviceUrl(device.id))}">${escapeHtml(this._t("openDevice"))}</a>` : ""}
+      ${sharedAddress ? this._addressDetails({ address: sharedAddress }) : ""}</header>
+      <div class="entity-list">${entities.map((entity) => this._entityRow(entity, device, sharedAddress)).join("")}</div>
+    </section>`;
+  }
+
+  _entityRow(item, device, sharedAddress) {
+    const t = (key) => escapeHtml(this._t(key));
+    const id = escapeHtml(item.entity_id);
+    const areaId = model.effectiveArea(item, this._data.devices);
+    const area = this._data.areas.find((area) => area.id === areaId)?.name || this._t("noArea");
+    return `<article class="item-card entity-row"><div class="entity-info">
+      <h4>${escapeHtml(this._itemName(item))}</h4><p class="muted">${id}</p>
+      <div class="chips"><span class="chip">${t(item.domain)}</span>
+        ${!device || areaId !== (device.area_id || "") ? `<span class="chip">${escapeHtml(area)}</span>` : ""}
+        ${item.disabled_by ? `<span class="badge">${t("disabled")}</span>` : ""}
+        ${item.hidden_by ? `<span class="chip">${t("hidden")}</span>` : ""}</div>
+      ${sharedAddress ? "" : this._addressDetails(item)}</div>
+      <p class="state" data-state="${id}" aria-label="${t("state")}"></p>
+      <div class="actions"><button data-action="edit-entity" data-id="${id}">${t("edit")}</button>
+        <button data-action="details" data-id="${id}">${t("details")}</button></div></article>`;
   }
 
   _addressDetails(item) {

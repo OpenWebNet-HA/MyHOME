@@ -10,7 +10,7 @@ and provides English and Italian labels, with English fallback for other languag
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.4.3**, defined by
+The panel has an independent version, currently **0.5.0**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.
@@ -50,6 +50,12 @@ parameters. This refreshes assets independently from integration releases.
   parts: `01` → A `0` / PL `1`, `02` → A `0` / PL `2`, through `09`.
 - Edit device/entity names and areas. An empty name restores the original name;
   an empty entity area inherits its device's area.
+- Within each WHO category, entities are grouped by native device and gateway.
+  The device header shows its name, area and shared address once, followed by
+  compact entity rows with individual states and actions. Distinct addresses
+  and entity area overrides remain visible. Entities without a device are kept
+  in a separate group. Search also matches device names; group counts reflect
+  the entities matching the active filters.
 - Open the native device page, entity details, advanced entity settings, and
   the MyHOME integration settings page.
 - Open the existing bus monitor for one selected, loaded gateway. Switching

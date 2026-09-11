@@ -28,7 +28,7 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
-    panel_version: "0.4.3",
+    panel_version: "0.5.0",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
@@ -106,7 +106,7 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
-  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.4.3");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.5.0");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
   root.querySelector('[data-view="devices"]').click();
   assert.equal(root.querySelectorAll(".item-card").length, 3);
@@ -235,7 +235,7 @@ test("entity and device cards display searchable A/PL, bus routes and unknown ad
     data.entities.push({ entity_id: "sensor.energy", entry_id: "one", domain: "sensor", who: "18", unique_id: "legacy-energy", address: { raw: "52", a: null, pl: null, interface: null } });
   } });
   const card = (id) => root.querySelector(`[data-id="${id}"]`).closest(".item-card");
-  const fields = (id) => [...card(id).querySelectorAll(".address div")].map((field) => [field.querySelector("dt").textContent, field.querySelector("dd").textContent]);
+  const fields = (id) => [...(card(id).querySelector(".address") || card(id).closest(".device-group")?.querySelector(".device-group-header .address")).querySelectorAll("div")].map((field) => [field.querySelector("dt").textContent, field.querySelector("dd").textContent]);
   assert.deepEqual(fields("sensor.lux"), [["Indirizzo:", "0015#4#02"], ["A:", "00"], ["PL:", "15"], ["Interfaccia:", "02"]]);
   assert.deepEqual(fields("light.garage"), [["Indirizzo:", "01"], ["A:", "0"], ["PL:", "1"]]);
   assert.match(card("sensor.unknown").querySelector(".address").textContent, /Indirizzo: Non disponibile/);
@@ -250,6 +250,48 @@ test("entity and device cards display searchable A/PL, bus routes and unknown ad
   assert.equal(root.querySelectorAll(".item-card").length, 1);
   panel.hass = { ...hass, language: "en" };
   assert.equal(fields("lux-device")[3][0], "Interface:");
+});
+
+test("entity groups use device and gateway identity, share metadata and retain filtered orphans", async () => {
+  const { panel, root, data } = await mount({ prepare: (data) => {
+    data.devices[0].name_by_user = "Attuatore <sala>";
+    data.devices[2].name_by_user = "Attuatore <sala>";
+    const first = data.entities[0];
+    data.entities.push(
+      { ...first, entity_id: "sensor.diagnostic", domain: "sensor", name: "Diagnostica", disabled_by: "user", hidden_by: "user", area_id: "outside" },
+      { ...first, entity_id: "sensor.other_bus", entry_id: "two", domain: "sensor", address: { raw: "22", a: "2", pl: "2", interface: null } },
+      { ...first, entity_id: "sensor.orphan", domain: "sensor", device_id: null },
+      { ...first, entity_id: "sensor.missing_device", domain: "sensor", device_id: "deleted" },
+    );
+  } });
+  const group = (device, entry) => root.querySelector(`.device-group[data-device="${device}"][data-entry="${entry}"]`);
+  assert.equal(root.querySelectorAll(".device-group").length, 4);
+  const living = group("device-one", "one");
+  assert.equal(living.querySelector("h3").textContent, "Attuatore <sala>");
+  assert.equal(living.querySelector("sala"), null);
+  assert.equal(living.querySelectorAll(".entity-row").length, 2);
+  assert.equal(living.querySelectorAll(".address").length, 1);
+  assert.match(living.querySelector(".device-group-header").textContent, /Soggiorno · Casa/);
+  const diagnostic = living.querySelector('[data-id="sensor.diagnostic"]').closest(".entity-row");
+  assert.match(diagnostic.textContent, /Esterno/);
+  assert.match(diagnostic.textContent, /Disabilitato/);
+  assert.match(diagnostic.textContent, /Nascosta/);
+  assert.doesNotMatch(living.textContent, /00:03:50/);
+  assert.match(group("device-one", "two").querySelector(".address").textContent, /22/);
+  assert.equal(group("", "one").querySelectorAll(".entity-row").length, 2);
+  assert.match(group("", "one").querySelector("h3").textContent, /senza dispositivo/);
+  data.entities.find((entity) => entity.entity_id === "sensor.diagnostic").address = { raw: "12", a: "1", pl: "2", interface: null };
+  await panel._refresh();
+  assert.equal(group("device-one", "one").querySelectorAll(".entity-row .address").length, 2);
+  assert.equal(group("device-one", "one").querySelector(".device-group-header .address"), null);
+  change(root.getElementById("search"), "Attuatore");
+  assert.equal(root.querySelectorAll(".device-group").length, 3);
+  change(root.getElementById("category"), "sensor");
+  assert.equal(root.querySelectorAll(".entity-row").length, 2);
+  change(root.getElementById("area"), "outside");
+  assert.equal(root.querySelectorAll(".device-group").length, 1);
+  assert.equal(root.querySelector(".device-group .count").textContent, "1 Entità");
+  assert.ok(root.querySelector('[data-id="sensor.diagnostic"]'));
 });
 
 test("entity editor saves through the native API without overwriting an externally changed area", async () => {

@@ -2,7 +2,7 @@
 export const translations = {
   en: {
     subtitle: "Your MyHOME installation", gateway: "Gateway", allGateways: "All gateways",
-    devices: "Devices", entities: "Entities", bus: "Bus monitor", settings: "Integration settings",
+    devices: "Devices", entities: "Entities", unassignedEntities: "Entities without a device", bus: "Bus monitor", settings: "Integration settings",
     search: "Search by name, entity ID or OpenWebNet identifier", category: "Entity type", allCategories: "All entity types",
     panelVersion: "Panel", integrationVersion: "Integration", whoCategory: "WHO category", allWhoCategories: "All WHO categories", whoUnknown: "No WHO category",
     showSelectedCategory: "Show selected category", showAllCategories: "Show all",
@@ -32,7 +32,7 @@ export const translations = {
   },
   it: {
     subtitle: "Il tuo impianto MyHOME", gateway: "Gateway", allGateways: "Tutti i gateway",
-    devices: "Dispositivi", entities: "Entità", bus: "Monitor bus", settings: "Impostazioni integrazione",
+    devices: "Dispositivi", entities: "Entità", unassignedEntities: "Entità senza dispositivo", bus: "Monitor bus", settings: "Impostazioni integrazione",
     search: "Cerca per nome, ID entità o identificativo OpenWebNet", category: "Tipo entità", allCategories: "Tutti i tipi di entità",
     panelVersion: "Pannello", integrationVersion: "Integrazione", whoCategory: "Categoria WHO", allWhoCategories: "Tutte le categorie WHO", whoUnknown: "Senza categoria WHO",
     showSelectedCategory: "Mostra solo categoria", showAllCategories: "Mostra tutto",
