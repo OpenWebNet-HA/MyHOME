@@ -1,0 +1,92 @@
+# OpenWebNet Golden Corpus — Source Manifest & Provenance
+
+authorities:
+  judge:
+    name: "OpenWebNet MCP Server"
+    repository: "https://github.com/OpenWebNet-HA/openwebnet-mcp"
+    license: "MIT"
+    release_date: "2026-09-09"
+    verified_commit: "main"
+    role: "Judges syntactic grammar and semantic validity against official Legrand specifications."
+    specifications_referenced:
+      - who: 0
+        name: "Scenarios (Basic)"
+        document: "WHO_0.pdf"
+        version: "v2.0.0"
+        date: "2010-10-01"
+      - who: 1
+        name: "Lighting"
+        document: "WHO_1.pdf"
+        version: "v1.1.0"
+        date: "2014-11-17"
+      - who: 2
+        name: "Automation (Covers & Shutters)"
+        document: "WHO_2.pdf"
+        version: "v1.0.0"
+        date: "2015-11-12"
+      - who: 4
+        name: "Thermoregulation (Heating/Cooling)"
+        document: "WHO_4 2.pdf"
+        version: "v2.0.0"
+        date: "2013-11-27"
+      - who: 9
+        name: "Auxiliary"
+        document: "WHO_9.pdf"
+        version: "v1.0.0"
+        date: "2006"
+      - who: 15
+        name: "CEN (Scenario Pushbuttons)"
+        document: "WHO_15.pdf"
+        version: "v1.0.0"
+        date: "2008"
+      - who: 18
+        name: "Energy Management"
+        document: "WHO_18.pdf"
+        version: "v1.0.0"
+        date: "2010"
+      - who: 25
+        name: "CEN+ (Dry Contacts)"
+        document: "WHO_25.pdf"
+        version: "v1.0.0"
+        date: "2011"
+
+  oracle:
+    name: "openwebnet4j & openHAB OpenWebNet Binding"
+    repositories:
+      - "https://github.com/mvalla/openwebnet4j (tag 0.15.0, commit dd2d0be)"
+      - "https://github.com/openhab/openhab-addons (org.openhab.binding.openwebnet)"
+    license: "EPL-2.0"
+    authors:
+      - "Massimo Valla (mvalla)"
+      - "Andrea Conte"
+      - "Giovanni Fabiani"
+    role: "Provides mature, reference factory strings and empirically tested on-wire frames from openHAB."
+    referenced_test_sources:
+      - "org.openwebnet4j.test.MessageTest"
+      - "org.openhab.binding.openwebnet.internal.handler.OwnIdTest"
+
+  community_capture:
+    name: "Physical Bus Captures (BTicino F461 + DALI DT8 & MyHomeServer1 Full Installation)"
+    captures:
+      - name: "Physical Bus Capture (BTicino F461 + DALI DT8)"
+        reference: "https://github.com/OpenWebNet-HA/MyHOME/issues/273"
+        author: "Lyubomir Traykov (@lyubomirtraykov)"
+        date: "2026-09-10"
+        gateway: "BTicino F461 DIN-rail Server"
+        devices: "DALI DT8 Tunable White and RGB Ballasts"
+      - name: "Physical Bus Capture (MyHomeServer1 Full Installation)"
+        reference: "https://github.com/OpenWebNet-HA/MyHOME/issues/247"
+        author: "Nicola Cavallo (@nicolacavallo84)"
+        date: "2026-09-11"
+        gateway: "BTicino MyHomeServer1"
+        devices: "Full installation: F428, F482V12 dry contacts, 4-digit lighting (0910/1000s), LN4661M2 shutters, 3550 99-zone climate, F52X energy management"
+    role: "Provides authentic on-wire bus frames and status replies captured from live physical hardware."
+
+  sut:
+    name: "OWNd / MyHOME Integration v2"
+    repository: "https://github.com/anotherjulien/MyHOME"
+    branch: "v2-phase2-architecture"
+    license: "GPL-3.0-or-later"
+    ownd_version: ">=2.0.0b5"
+    role: "Python runtime implementation under test for parsing and serializing OpenWebNet frames."
+

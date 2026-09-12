@@ -1,0 +1,101 @@
+myhomeserver1:
+  mac: "00:03:50:30:13:34"
+
+  light:
+    light_12:
+      where: "12"
+      name: "Light 12"
+      dimmable: False
+    light_19:
+      where: "19"
+      name: "Light 19"
+      dimmable: False
+    light_13:
+      where: "13"
+      name: "Light 13"
+      dimmable: False
+    light_17:
+      where: "17"
+      name: "Light 17"
+      dimmable: False
+    light_14:
+      where: "14"
+      name: "Light 14"
+      dimmable: False
+    light_15:
+      where: "15"
+      name: "Light 15"
+      dimmable: False
+    light_16:
+      where: "16"
+      name: "Light 16"
+      dimmable: False
+    light_11:
+      where: "11"
+      name: "Light 11"
+      dimmable: False
+    light_07:
+      where: "07"
+      name: "Light 07"
+      dimmable: False
+    light_08:
+      where: "08"
+      name: "Light 08"
+      dimmable: False
+    light_09:
+      where: "09"
+      name: "Light 09"
+      dimmable: False
+    light_0012:
+      where: "0012"
+      name: "Light 0012"
+      dimmable: False
+    light_0110:
+      where: "0110"
+      name: "Light 0110"
+      dimmable: False
+    light_0111:
+      where: "0111"
+      name: "Light 0111"
+      dimmable: False
+    light_0011:
+      where: "0011"
+      name: "Light 0011"
+      dimmable: False
+    light_06:
+      where: "06"
+      name: "Light 06"
+      dimmable: False
+    light_0013:
+      where: "0013"
+      name: "Light 0013"
+      dimmable: False
+    light_0010:
+      where: "0010"
+      name: "Light 0010"
+      dimmable: False
+    light_0014:
+      where: "0014"
+      name: "Light 0014"
+      dimmable: False
+    light_18:
+      where: "18"
+      name: "Light 18"
+      dimmable: False
+
+  cover:
+    cover_01:
+      where: "01"
+      name: "Cover 01"
+    cover_02:
+      where: "02"
+      name: "Cover 02"
+    cover_03:
+      where: "03"
+      name: "Cover 03"
+    cover_04:
+      where: "04"
+      name: "Cover 04"
+    cover_05:
+      where: "05"
+      name: "Cover 05"

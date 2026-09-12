@@ -1,5 +1,6 @@
 {
   "name": "MyHome",
+  "render_readme": true,
   "zip_release": true,
   "filename": "myhome.zip",
   "country": [
@@ -8,5 +9,5 @@
     "NL",
     "IT"
   ],
-  "homeassistant": "2024.3.0"
+  "homeassistant": "2024.4.0"
 }

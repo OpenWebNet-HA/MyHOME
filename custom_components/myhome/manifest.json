@@ -1,16 +1,22 @@
 {
   "domain": "myhome",
   "name": "MyHOME",
+  "after_dependencies": [
+    "frontend",
+    "http",
+    "lovelace"
+  ],
   "codeowners": [
-    "@anotherjulien"
+    "@anotherjulien",
+    "@GreenGrassBlueOcean"
   ],
   "config_flow": true,
-  "documentation": "https://github.com/anotherjulien/MyHOME",
+  "documentation": "https://github.com/OpenWebNet-HA/MyHOME",
   "integration_type": "hub",
-  "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/anotherjulien/MyHOME/issues",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/OpenWebNet-HA/MyHOME/issues",
   "requirements": [
-    "OWNd==0.7.48"
+    "OWNd==2.0.0b6"
   ],
   "ssdp": [
     {
@@ -69,5 +75,5 @@
       "modelName": "MH201"
     }
   ],
-  "version": "0.9.4"
+  "version": "2.0.0b12"
 }

@@ -32,6 +32,19 @@
           "serialNumber": "Adresse MAC",
           "modelName": "Type de serveur"
         }
+      },
+      "discovery_confirm": {
+        "title": "Passerelle MyHOME découverte",
+        "description": "Voulez-vous configurer la passerelle {name} ({host}) ?"
+      },
+      "serial": {
+        "title": "Passerelle USB / Série",
+        "description": "Configurez votre passerelle USB ou série Legrand 3578 / OpenZigBee.",
+        "data": {
+          "port": "Port série",
+          "baudrate": "Vitesse en bauds",
+          "friendly_name": "Nom convivial"
+        }
       }
     },
     "error": {
@@ -111,6 +124,46 @@
         "duration": {
           "name": "Durée",
           "description": "Pendant combien de temps la puissance instantanée va-t-elle être automatiquement envoyée."
+        }
+      }
+    },
+    "turn_on_timed": {
+      "name": "Allumer avec minuterie",
+      "description": "Allumer un éclairage ou un interrupteur avec une minuterie matérielle SCS sur le bus qui s'éteint automatiquement même si Home Assistant redémarre.",
+      "fields": {
+        "duration": {
+          "name": "Durée",
+          "description": "Durée en secondes avant que l'appareil ne s'éteigne automatiquement."
+        },
+        "hours": {
+          "name": "Heures",
+          "description": "Composante optionnelle des heures pour la durée personnalisée (0-255)."
+        },
+        "minutes": {
+          "name": "Minutes",
+          "description": "Composante optionnelle des minutes pour la durée personnalisée (0-59)."
+        },
+        "seconds": {
+          "name": "Secondes",
+          "description": "Composante optionnelle des secondes pour la durée personnalisée (0-59)."
+        },
+        "brightness": {
+          "name": "Luminosité",
+          "description": "Niveau de luminosité optionnel (1-255) pour les lumières."
+        },
+        "brightness_pct": {
+          "name": "Pourcentage de luminosité",
+          "description": "Pourcentage de luminosité optionnel (1-100%) pour les lumières."
+        }
+      }
+    },
+    "sweep_bus": {
+      "name": "Balayage de l'état du bus",
+      "description": "Déclenche une interrogation en lecture seule de tous les sous-systèmes du bus (éclairage, volets, régulation thermique, horloge et diagnostic de la passerelle) pour alimenter le tampon circulaire de diagnostic.",
+      "fields": {
+        "gateway": {
+          "name": "Passerelle",
+          "description": "Adresse MAC de la passerelle (facultatif ; par défaut pour toutes les passerelles actives)."
         }
       }
     }

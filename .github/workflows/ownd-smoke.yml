@@ -1,0 +1,57 @@
+name: OWNd Protocol Engine Smoke Test
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - "v2-*"
+      - "feat/*"
+  pull_request:
+    branches:
+      - main
+      - master
+      - "v2-*"
+  schedule:
+    - cron: "0 5 * * 1"  # Weekly run every Monday at 05:00 UTC
+  workflow_dispatch:
+
+jobs:
+  ownd-smoke:
+    name: OWNd (${{ matrix.ownd-target }} / Py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+        ownd-target: [pinned, latest, dev]
+        include:
+          - ownd-target: pinned
+            allow-failure: false
+          - ownd-target: latest
+            allow-failure: false
+          - ownd-target: dev
+            allow-failure: true
+
+    continue-on-error: ${{ matrix.allow-failure }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install homeassistant
+          pip install pytest pytest-asyncio pytest-cov pytest-socket "syrupy>=4.6.0,<5.0.0" time-machine python-dateutil pytz freezegun requests-mock respx paho-mqtt tqdm jsonschema pyyaml packaging
+          pip install pytest-homeassistant-custom-component --no-deps
+
+      - name: Run OWNd Smoke Test (${{ matrix.ownd-target }})
+        run: |
+          python scripts/run_ownd_smoke.py --target ${{ matrix.ownd-target }}

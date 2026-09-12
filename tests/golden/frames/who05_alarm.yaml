@@ -1,0 +1,43 @@
+- id: alarm.req.status.zone2
+  frame: "*#5*2##"
+  direction: status_request
+  who: 5
+  what: null
+  where: "2"
+  source: openwebnet4j
+  mcp_valid: true
+  mcp_notes: "Burglar Alarm: Status request for zone 2"
+  roundtrip: true
+
+- id: alarm.req.status.zone_cu_2
+  frame: "*#5*#2##"
+  direction: status_request
+  who: 5
+  what: null
+  where: "#2"
+  source: openwebnet4j
+  mcp_valid: true
+  mcp_notes: "Burglar Alarm: Status request for central unit zone #2"
+  roundtrip: true
+
+- id: alarm.event.silent.zone0
+  frame: "*5*2*0##"
+  direction: event
+  who: 5
+  what: 2
+  where: "0"
+  source: openwebnet4j
+  mcp_valid: true
+  mcp_notes: "Burglar Alarm: Silent alarm event for zone 0"
+  roundtrip: true
+
+- id: alarm.event.zone_cu_2
+  frame: "*5*11*#2##"
+  direction: event
+  who: 5
+  what: 11
+  where: "#2"
+  source: openwebnet4j
+  mcp_valid: true
+  mcp_notes: "Burglar Alarm: Zone #2 alarm event"
+  roundtrip: true

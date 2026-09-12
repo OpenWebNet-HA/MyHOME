@@ -1,0 +1,87 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "custom-components-myhome"
+version = "1.0.0"
+description = "Home Assistant custom integration for BTicino / Legrand MyHOME OpenWebNet gateways"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+authors = [
+    {name = "MyHOME Integration Contributors"}
+]
+requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Home Automation",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-homeassistant-custom-component>=0.13.100",
+    "syrupy>=4.6.0,<5.0.0",
+    "build>=1.0.0",
+    "twine>=5.0.0",
+    "check-wheel-contents>=0.6.0",
+    "validate-pyproject[all]>=0.16",
+    "ruff>=0.4.0",
+    "OWNd>=2.0.0b6",
+]
+
+[project.urls]
+Homepage = "https://github.com/anotherjulien/MyHOME"
+Documentation = "https://github.com/anotherjulien/MyHOME"
+Issues = "https://github.com/anotherjulien/MyHOME/issues"
+
+[tool.setuptools.packages.find]
+include = ["custom_components*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.json", "*.yaml", "translations/*.json"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-p no:socket"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+    "ignore::aiohttp.web_exceptions.NotAppKeyWarning",
+    "ignore::pluggy.PluggyTeardownRaisedWarning",
+]
+
+[tool.coverage.run]
+omit = []
+
+[tool.coverage.report]
+show_missing = true
+precision = 1
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+exclude = [
+    ".venv",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = [
+    "E501",  # Line length handled by inspection/formatting
+]

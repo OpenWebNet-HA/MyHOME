@@ -1,0 +1,78 @@
+# serializer version: 1
+# name: test_legacy_platforms_setup_and_execution[binary_sensor_state]
+  StateSnapshot({
+    'attributes': ReadOnlyDict({
+      'Sensor': '(3)5',
+      'device_class': 'door',
+      'friendly_name': 'BS 35',
+    }),
+    'context': <ANY>,
+    'entity_id': 'binary_sensor.bs_35',
+    'last_changed': <ANY>,
+    'last_reported': <ANY>,
+    'last_updated': <ANY>,
+    'state': 'off',
+  })
+# ---
+# name: test_legacy_platforms_setup_and_execution[button_state]
+  StateSnapshot({
+    'attributes': ReadOnlyDict({
+      'A': '',
+      'PL': '1',
+      'friendly_name': 'Button 1 Lock',
+      'icon': 'mdi:lock-alert',
+    }),
+    'context': <ANY>,
+    'entity_id': 'button.button_1_lock',
+    'last_changed': <ANY>,
+    'last_reported': <ANY>,
+    'last_updated': <ANY>,
+    'state': str,
+  })
+# ---
+# name: test_legacy_platforms_setup_and_execution[climate_state]
+  StateSnapshot({
+    'attributes': ReadOnlyDict({
+      'current_temperature': None,
+      'friendly_name': 'Climate 1',
+      'hvac_modes': list([
+        <HVACMode.OFF: 'off'>,
+        <HVACMode.AUTO: 'auto'>,
+        <HVACMode.HEAT: 'heat'>,
+        <HVACMode.COOL: 'cool'>,
+      ]),
+      'local_offset': 0,
+      'max_temp': 40,
+      'min_temp': 5,
+      'supported_features': <ClimateEntityFeature: 1>,
+      'target_temp_step': 0.5,
+      'temperature': None,
+    }),
+    'context': <ANY>,
+    'entity_id': 'climate.climate_1',
+    'last_changed': <ANY>,
+    'last_reported': <ANY>,
+    'last_updated': <ANY>,
+    'state': 'unknown',
+  })
+# ---
+# name: test_legacy_platforms_setup_and_execution[sensor_energy_state]
+  None
+# ---
+# name: test_legacy_platforms_setup_and_execution[switch_state]
+  StateSnapshot({
+    'attributes': ReadOnlyDict({
+      'A': '1',
+      'PL': '2',
+      'device_class': 'switch',
+      'friendly_name': 'Switch 12',
+      'icon': 'mdi:flash',
+    }),
+    'context': <ANY>,
+    'entity_id': 'switch.switch_12',
+    'last_changed': <ANY>,
+    'last_reported': <ANY>,
+    'last_updated': <ANY>,
+    'state': 'unknown',
+  })
+# ---

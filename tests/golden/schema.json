@@ -1,0 +1,114 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OpenWebNetGoldenFrameCorpus",
+  "description": "Schema for OpenWebNet Golden Corpus test frame records.",
+  "type": "object",
+  "required": [
+    "id",
+    "frame",
+    "direction",
+    "source",
+    "mcp_valid",
+    "roundtrip"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+$",
+      "description": "Unique identifier for the golden frame fixture."
+    },
+    "frame": {
+      "type": "string",
+      "pattern": "^\\*(#)?.*##$",
+      "description": "Raw OpenWebNet frame string starting with '*' and ending with '##'."
+    },
+    "direction": {
+      "type": "string",
+      "enum": [
+        "command",
+        "event",
+        "status_request",
+        "dimension_request",
+        "dimension_write",
+        "dimension_response",
+        "signaling"
+      ],
+      "description": "Protocol interaction type."
+    },
+    "who": {
+      "type": ["integer", "null"],
+      "description": "Subsystem WHO code (null for signaling frames)."
+    },
+    "what": {
+      "type": ["string", "integer", "null"],
+      "description": "Action or state code WHAT (e.g. 1 for ON, 0 for OFF, or combined speed '1#5')."
+    },
+    "where": {
+      "type": ["string", "null"],
+      "description": "Target or source address (preserving leading zeros, e.g. '0311', '51')."
+    },
+    "interface": {
+      "type": ["string", "null"],
+      "description": "Private bus interface identifier if routed (e.g. '01' from '#4#01')."
+    },
+    "dimension": {
+      "type": ["integer", "null"],
+      "description": "Dimension index if a dimension frame."
+    },
+    "dimension_values": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "string"
+      },
+      "description": "Parameters for dimension writing or response frames."
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "public-readme",
+        "legrand-spec",
+        "openwebnet4j",
+        "mcp-draft",
+        "conflict",
+        "community-plant-capture"
+      ],
+      "description": "Authority or provenance of this test frame."
+    },
+    "mcp_valid": {
+      "type": "boolean",
+      "description": "Whether openwebnet-mcp confirmed this frame as legal."
+    },
+    "mcp_notes": {
+      "type": "string",
+      "description": "Explanation or validation details from openwebnet-mcp."
+    },
+    "roundtrip": {
+      "type": "boolean",
+      "description": "Whether parsing and re-serializing in OWNd must exactly match the raw frame string."
+    },
+    "is_translation": {
+      "type": "boolean",
+      "description": "Whether this frame is an OpenWebNet Command Translation frame (WHAT=1000)."
+    },
+    "builder": {
+      "type": "object",
+      "required": ["class", "method", "args"],
+      "properties": {
+        "class": {
+          "type": "string",
+          "description": "OWNd class name (e.g. OWNLightingCommand, OWNAutomationCommand)."
+        },
+        "method": {
+          "type": "string",
+          "description": "Builder classmethod name (e.g. switch_on, raise_shutter)."
+        },
+        "args": {
+          "type": "array",
+          "description": "Positional arguments to pass to the builder method."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

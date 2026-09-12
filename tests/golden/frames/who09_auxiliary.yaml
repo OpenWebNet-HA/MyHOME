@@ -1,0 +1,43 @@
+- id: aux.cmd.activate.1
+  frame: "*9*1*1##"
+  direction: command
+  who: 9
+  what: 1
+  where: "1"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Auxiliary: Activate AUX channel 1"
+  roundtrip: true
+
+- id: aux.cmd.deactivate.1
+  frame: "*9*0*1##"
+  direction: command
+  who: 9
+  what: 0
+  where: "1"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Auxiliary: Deactivate AUX channel 1"
+  roundtrip: true
+
+- id: aux.cmd.activate.4
+  frame: "*9*1*4##"
+  direction: command
+  who: 9
+  what: 1
+  where: "4"
+  source: openwebnet4j
+  mcp_valid: true
+  mcp_notes: "Auxiliary: Activate AUX channel 4"
+  roundtrip: true
+
+- id: aux.cmd.deactivate.4
+  frame: "*9*0*4##"
+  direction: command
+  who: 9
+  what: 0
+  where: "4"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Auxiliary: Deactivate AUX channel 4"
+  roundtrip: true

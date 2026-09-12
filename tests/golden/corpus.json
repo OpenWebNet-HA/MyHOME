@@ -1,0 +1,1693 @@
+[
+  {
+    "id": "scenario.cmd.activate.1",
+    "frame": "*0*1*1##",
+    "direction": "command",
+    "who": 0,
+    "what": 1,
+    "where": "1",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Scenarios (Basic): Activate scenario 1",
+    "roundtrip": true,
+    "_file": "who00_scenario.yaml"
+  },
+  {
+    "id": "scenario.cmd.stop.5",
+    "frame": "*0*0*5##",
+    "direction": "command",
+    "who": 0,
+    "what": 0,
+    "where": "5",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Scenarios (Basic): Stop execution of scenario 5",
+    "roundtrip": true,
+    "_file": "who00_scenario.yaml"
+  },
+  {
+    "id": "scenario.event.execute.05",
+    "frame": "*0*2*05##",
+    "direction": "event",
+    "who": 0,
+    "what": 2,
+    "where": "05",
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Scenarios (Basic): Execute scenario 05",
+    "roundtrip": true,
+    "_file": "who00_scenario.yaml"
+  },
+  {
+    "id": "scenario.event.start.95",
+    "frame": "*0*14*95##",
+    "direction": "event",
+    "who": 0,
+    "what": 14,
+    "where": "95",
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Scenarios (Basic): Start scenario 95",
+    "roundtrip": true,
+    "_file": "who00_scenario.yaml"
+  },
+  {
+    "id": "signaling.ack",
+    "frame": "*#*1##",
+    "direction": "signaling",
+    "who": null,
+    "what": null,
+    "where": null,
+    "source": "public-readme",
+    "mcp_valid": true,
+    "mcp_notes": "Acknowledge (*#*1##): Command accepted by gateway",
+    "roundtrip": true,
+    "_file": "who00_signaling.yaml"
+  },
+  {
+    "id": "signaling.nack",
+    "frame": "*#*0##",
+    "direction": "signaling",
+    "who": null,
+    "what": null,
+    "where": null,
+    "source": "public-readme",
+    "mcp_valid": true,
+    "mcp_notes": "Negative Acknowledge (*#*0##): Command rejected, invalid address, or bus busy",
+    "roundtrip": true,
+    "_file": "who00_signaling.yaml"
+  },
+  {
+    "id": "light.cmd.on.ptp.51",
+    "frame": "*1*1*51##",
+    "direction": "command",
+    "who": 1,
+    "what": 1,
+    "where": "51",
+    "source": "public-readme",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Turn ON (100% or last saved level) at address '51'",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "switch_on",
+      "args": [
+        "51"
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.cmd.off.ptp.51",
+    "frame": "*1*0*51##",
+    "direction": "command",
+    "who": 1,
+    "what": 0,
+    "where": "51",
+    "source": "public-readme",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Turn OFF at address '51'",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "switch_off",
+      "args": [
+        "51"
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.req.status.ptp.51",
+    "frame": "*#1*51##",
+    "direction": "status_request",
+    "who": 1,
+    "what": null,
+    "where": "51",
+    "source": "public-readme",
+    "mcp_valid": true,
+    "mcp_notes": "Query status of Lighting at address '51'",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "status",
+      "args": [
+        "51"
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.cmd.on.bus.0311",
+    "frame": "*1*1*0311#4#01##",
+    "direction": "command",
+    "who": 1,
+    "what": 1,
+    "where": "0311",
+    "interface": "01",
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Turn ON at address '0311' routed to private SCS bus 01",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "switch_on",
+      "args": [
+        "0311#4#01"
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.cmd.off.bus.0311",
+    "frame": "*1*0*0311#4#01##",
+    "direction": "command",
+    "who": 1,
+    "what": 0,
+    "where": "0311",
+    "interface": "01",
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Turn OFF at address '0311' routed to private SCS bus 01",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "switch_off",
+      "args": [
+        "0311#4#01"
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.req.status.bus.0311",
+    "frame": "*#1*0311#4#01##",
+    "direction": "status_request",
+    "who": 1,
+    "what": null,
+    "where": "0311",
+    "interface": "01",
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Query status of Lighting at address '0311' on private SCS bus 01",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "status",
+      "args": [
+        "0311#4#01"
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.cmd.on.gen.0",
+    "frame": "*1*1*0##",
+    "direction": "command",
+    "who": 1,
+    "what": 1,
+    "where": "0",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: General Turn ON for all lights in the system",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "switch_on",
+      "args": [
+        "0"
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.cmd.off.gen.0",
+    "frame": "*1*0*0##",
+    "direction": "command",
+    "who": 1,
+    "what": 0,
+    "where": "0",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: General Turn OFF for all lights in the system",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "switch_off",
+      "args": [
+        "0"
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.cmd.on.group.25",
+    "frame": "*1*1*#25##",
+    "direction": "command",
+    "who": 1,
+    "what": 1,
+    "where": "#25",
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Turn ON for group #25",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "switch_on",
+      "args": [
+        "#25"
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.cmd.on.speed.12",
+    "frame": "*1*1#5*12##",
+    "direction": "command",
+    "who": 1,
+    "what": "1#5",
+    "where": "12",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Turn ON at address 12 with transition speed 5",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "switch_on",
+      "args": [
+        "12",
+        5
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.write.level.50",
+    "frame": "*#1*51*#1*50*5##",
+    "direction": "dimension_write",
+    "who": 1,
+    "what": null,
+    "where": "51",
+    "dimension": 1,
+    "dimension_values": [
+      "50",
+      "5"
+    ],
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting dimension write: Level 50% with speed 5",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.req.color_temp.all",
+    "frame": "*#1*0*14##",
+    "direction": "status_request",
+    "who": 1,
+    "what": null,
+    "where": "0",
+    "dimension": 14,
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Query color temperature status across all ballasts",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.req.color_temp.ptp",
+    "frame": "*#1*25#4#02*14##",
+    "direction": "status_request",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 14,
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Query color temperature for DALI ballast 25 on interface 02",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "get_color_temperature",
+      "args": [
+        "25#4#02"
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.reply.color_temp.cool",
+    "frame": "*#1*25#4#02*14*153##",
+    "direction": "dimension_response",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 14,
+    "dimension_values": [
+      "153"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Color temperature reading 153 mireds (~6535 K cool white)",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.reply.color_temp.warm",
+    "frame": "*#1*25#4#02*14*370##",
+    "direction": "dimension_response",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 14,
+    "dimension_values": [
+      "370"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Color temperature reading 370 mireds (~2700 K warm white)",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.reply.color_temp.unsupported_sentinel",
+    "frame": "*#1*27#4#02*14*1##",
+    "direction": "dimension_response",
+    "who": 1,
+    "what": null,
+    "where": "27",
+    "interface": "02",
+    "dimension": 14,
+    "dimension_values": [
+      "1"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Sentinel value 1 indicating color temperature unsupported",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.write.color_temp.370",
+    "frame": "*#1*25#4#02*#14*370##",
+    "direction": "dimension_write",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 14,
+    "dimension_values": [
+      "370"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Set color temperature to 370 mireds (~2700 K)",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "set_color_temperature",
+      "args": [
+        "25#4#02",
+        370
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.req.hsv.ptp",
+    "frame": "*#1*25#4#02*12##",
+    "direction": "status_request",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 12,
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Query HSV color status for DALI ballast 25 on interface 02",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "get_hsv_color",
+      "args": [
+        "25#4#02"
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.reply.hsv.valid",
+    "frame": "*#1*25#4#02*12*255*100*50##",
+    "direction": "dimension_response",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 12,
+    "dimension_values": [
+      "255",
+      "100",
+      "50"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: HSV color reading (Hue 255\u00b0, Sat 100%, Val 50%)",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.reply.hsv.unsupported_sentinel",
+    "frame": "*#1*25#4#02*12*511*127*255##",
+    "direction": "dimension_response",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 12,
+    "dimension_values": [
+      "511",
+      "127",
+      "255"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Sentinel values (511, 127, 255) indicating HSV color unsupported",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.write.hsv",
+    "frame": "*#1*25#4#02*#12*255*100*50##",
+    "direction": "dimension_write",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 12,
+    "dimension_values": [
+      "255",
+      "100",
+      "50"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Set HSV color to (255\u00b0, 100%, 50%)",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "set_hsv_color",
+      "args": [
+        "25#4#02",
+        255,
+        100,
+        50
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.cmd.translation.on.53",
+    "frame": "*1*1000#1*53##",
+    "direction": "command",
+    "who": 1,
+    "what": "1000#1",
+    "where": "53",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "[Translation] Lighting: Turn ON (100% or last saved level) at address '53'",
+    "roundtrip": true,
+    "is_translation": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.cmd.translation.off.53",
+    "frame": "*1*1000#0*53##",
+    "direction": "command",
+    "who": 1,
+    "what": "1000#0",
+    "where": "53",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "[Translation] Lighting: Turn OFF at address '53'",
+    "roundtrip": true,
+    "is_translation": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.reply.color_temp.170",
+    "frame": "*#1*25#4#02*14*170##",
+    "direction": "dimension_response",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 14,
+    "dimension_values": [
+      "170"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Color temperature reading 170 mireds (~5882 K) verified on BTicino F461 + DALI DT8",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.write.color_temp.170",
+    "frame": "*#1*25#4#02*#14*170##",
+    "direction": "dimension_write",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 14,
+    "dimension_values": [
+      "170"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Set color temperature to 170 mireds (~5882 K) verified on BTicino F461 + DALI DT8",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "set_color_temperature",
+      "args": [
+        "25#4#02",
+        170
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.reply.level.dali.100",
+    "frame": "*#1*25#4#02*1*200*5##",
+    "direction": "dimension_response",
+    "who": 1,
+    "what": null,
+    "where": "25",
+    "interface": "02",
+    "dimension": 1,
+    "dimension_values": [
+      "200",
+      "5"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Dimension 1 level reading (100% at speed 5) on private DALI bus 02",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.cmd.off.bus.25",
+    "frame": "*1*0*25#4#02##",
+    "direction": "command",
+    "who": 1,
+    "what": 0,
+    "where": "25",
+    "interface": "02",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Turn OFF at address '25' on private DALI bus 02",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "switch_off",
+      "args": [
+        "25#4#02"
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.event.on.point_0910",
+    "frame": "*1*1*0910##",
+    "direction": "event",
+    "who": 1,
+    "what": 1,
+    "where": "0910",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Turn ON point-to-point at 4-digit zero-padded address 0910 (Nicola Cavallo plant)",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.event.off.point_1002",
+    "frame": "*1*0*1002##",
+    "direction": "event",
+    "who": 1,
+    "what": 0,
+    "where": "1002",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Turn OFF point-to-point at 4-digit address 1002 (Nicola Cavallo plant)",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.cmd.timed_preset_0_5s.ptp.21",
+    "frame": "*1*18*21##",
+    "direction": "command",
+    "who": 1,
+    "what": 18,
+    "where": "21",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Turn ON timed for 0.5s (flashing/strobe) at address '21'",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.cmd.timed_preset_5m.ptp.21",
+    "frame": "*1*15*21##",
+    "direction": "command",
+    "who": 1,
+    "what": 15,
+    "where": "21",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Turn ON timed for 5 minutes (preset 15) at address '21'",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.cmd.timed_custom_20m.ptp.21",
+    "frame": "*#1*21*#2*0*20*0##",
+    "direction": "dimension_write",
+    "who": 1,
+    "where": "21",
+    "dimension": 2,
+    "dimension_values": [
+      "0",
+      "20",
+      "0"
+    ],
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Dimension 2 custom timer write (0h 20m 0s) at address '21'",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.level100_speed.0714",
+    "frame": "*#1*0714*1*147*2##",
+    "direction": "dimension_response",
+    "who": 1,
+    "where": "0714",
+    "dimension": 1,
+    "dimension_values": [
+      "147",
+      "2"
+    ],
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Dimmer level 100 reading (47% at speed 2) at address '0714'",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.status100_speed.0714",
+    "frame": "*#1*0714*4*200*2##",
+    "direction": "dimension_response",
+    "who": 1,
+    "where": "0714",
+    "dimension": 4,
+    "dimension_values": [
+      "200",
+      "2"
+    ],
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Dimmer status 100 reading (100% at speed 2) at address '0714'",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.req.status.group_bus.25",
+    "frame": "*#1*#25#4#01##",
+    "direction": "status_request",
+    "who": 1,
+    "what": null,
+    "where": "#25",
+    "interface": "01",
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Query status of group #25 routed to private SCS bus 01",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "status",
+      "args": [
+        "#25#4#01"
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.cmd.translation.bus.0311",
+    "frame": "*1*1000#1#01#2#3*0311#4#01##",
+    "direction": "command",
+    "who": 1,
+    "what": "1000#1#01#2#3",
+    "where": "0311",
+    "interface": "01",
+    "is_translation": true,
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Command Translation frame on private SCS bus 01",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "cover.cmd.up.ptp.93",
+    "frame": "*2*1*93##",
+    "direction": "command",
+    "who": 2,
+    "what": 1,
+    "where": "93",
+    "source": "public-readme",
+    "mcp_valid": true,
+    "mcp_notes": "Automation (Covers & Shutters): UP (Open shutter) at address '93'",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNAutomationCommand",
+      "method": "raise_shutter",
+      "args": [
+        "93"
+      ]
+    },
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.cmd.down.ptp.93",
+    "frame": "*2*2*93##",
+    "direction": "command",
+    "who": 2,
+    "what": 2,
+    "where": "93",
+    "source": "public-readme",
+    "mcp_valid": true,
+    "mcp_notes": "Automation (Covers & Shutters): DOWN (Close shutter) at address '93'",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNAutomationCommand",
+      "method": "lower_shutter",
+      "args": [
+        "93"
+      ]
+    },
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.cmd.stop.ptp.93",
+    "frame": "*2*0*93##",
+    "direction": "command",
+    "who": 2,
+    "what": 0,
+    "where": "93",
+    "source": "public-readme",
+    "mcp_valid": true,
+    "mcp_notes": "Automation (Covers & Shutters): STOP movement at address '93'",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNAutomationCommand",
+      "method": "stop_shutter",
+      "args": [
+        "93"
+      ]
+    },
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.req.status.ptp.93",
+    "frame": "*#2*93##",
+    "direction": "status_request",
+    "who": 2,
+    "what": null,
+    "where": "93",
+    "source": "public-readme",
+    "mcp_valid": true,
+    "mcp_notes": "Query status of Automation at address '93'",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNAutomationCommand",
+      "method": "status",
+      "args": [
+        "93"
+      ]
+    },
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.cmd.up.bus.21",
+    "frame": "*2*1*21#4#1##",
+    "direction": "command",
+    "who": 2,
+    "what": 1,
+    "where": "21",
+    "interface": "1",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Automation: UP at address 21 on private SCS bus 1",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNAutomationCommand",
+      "method": "raise_shutter",
+      "args": [
+        "21#4#1"
+      ]
+    },
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.cmd.stop.bus.21",
+    "frame": "*2*0*21#4#1##",
+    "direction": "command",
+    "who": 2,
+    "what": 0,
+    "where": "21",
+    "interface": "1",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Automation: STOP at address 21 on private SCS bus 1",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNAutomationCommand",
+      "method": "stop_shutter",
+      "args": [
+        "21#4#1"
+      ]
+    },
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.cmd.up.gen.0",
+    "frame": "*2*1*0##",
+    "direction": "command",
+    "who": 2,
+    "what": 1,
+    "where": "0",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Automation: General UP for all covers",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNAutomationCommand",
+      "method": "raise_shutter",
+      "args": [
+        "0"
+      ]
+    },
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.cmd.stop.gen.0",
+    "frame": "*2*0*0##",
+    "direction": "command",
+    "who": 2,
+    "what": 0,
+    "where": "0",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Automation: General STOP for all covers",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNAutomationCommand",
+      "method": "stop_shutter",
+      "args": [
+        "0"
+      ]
+    },
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.dim.write.pos.75",
+    "frame": "*#2*93*#10*75##",
+    "direction": "dimension_write",
+    "who": 2,
+    "what": null,
+    "where": "93",
+    "dimension": 10,
+    "dimension_values": [
+      "75"
+    ],
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Automation dimension write: Set shutter position to 75%",
+    "roundtrip": true,
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.dim.write.tilt.30",
+    "frame": "*#2*93*#11*30##",
+    "direction": "dimension_write",
+    "who": 2,
+    "what": null,
+    "where": "93",
+    "dimension": 11,
+    "dimension_values": [
+      "30"
+    ],
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Automation dimension write: Set slat tilt angle to 30%",
+    "roundtrip": true,
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.cmd.level.75",
+    "frame": "*#2*93*#11#001*75##",
+    "direction": "dimension_write",
+    "who": 2,
+    "what": null,
+    "where": "93",
+    "dimension": 11,
+    "dimension_values": [
+      "75"
+    ],
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Automation: Set shutter level with dimension param 001",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNAutomationCommand",
+      "method": "set_shutter_level",
+      "args": [
+        "93",
+        75
+      ]
+    },
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.status.dimension10.level10.73",
+    "frame": "*#2*73*10*10*0*001*0##",
+    "direction": "dimension_response",
+    "who": 2,
+    "what": null,
+    "where": "73",
+    "dimension": 10,
+    "dimension_values": [
+      "10",
+      "0",
+      "001",
+      "0"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Automation: Absolute position level 10% report for address 73 (Nicola Cavallo plant)",
+    "roundtrip": true,
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "thermo.req.temp.zone1",
+    "frame": "*#4*1*0##",
+    "direction": "dimension_request",
+    "who": 4,
+    "what": null,
+    "where": "1",
+    "dimension": 0,
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Request measured temperature for Zone 1",
+    "roundtrip": true,
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.resp.temp.zone1.215",
+    "frame": "*#4*1*0*0215##",
+    "direction": "dimension_response",
+    "who": 4,
+    "what": null,
+    "where": "1",
+    "dimension": 0,
+    "dimension_values": [
+      "0215"
+    ],
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Temperature response: Zone 1 is at 21.5\u00b0C",
+    "roundtrip": true,
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.cmd.setpoint.zone1.205",
+    "frame": "*#4*1*#14*0205*1##",
+    "direction": "dimension_write",
+    "who": 4,
+    "what": null,
+    "where": "1",
+    "dimension": 14,
+    "dimension_values": [
+      "0205",
+      "1"
+    ],
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Set Zone 1 target temperature to 20.5\u00b0C in Heating mode",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNHeatingCommand",
+      "method": "set_temperature",
+      "args": [
+        "1",
+        20.5,
+        "heat",
+        true
+      ]
+    },
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.cmd.mode.antifreeze.zone1",
+    "frame": "*4*110*1##",
+    "direction": "command",
+    "who": 4,
+    "what": 110,
+    "where": "1",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Set Zone 1 to Antifreeze protection mode",
+    "roundtrip": true,
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.cmd.mode.protection.zone1",
+    "frame": "*4*111*1##",
+    "direction": "command",
+    "who": 4,
+    "what": 111,
+    "where": "1",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Set Zone 1 to Thermal Protection mode",
+    "roundtrip": true,
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.resp.probe.status.neg_temp",
+    "frame": "*#4*6*12*1048*3##",
+    "direction": "dimension_response",
+    "who": 4,
+    "what": null,
+    "where": "6",
+    "dimension": 12,
+    "dimension_values": [
+      "1048",
+      "3"
+    ],
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Complete probe status probe 6: -4.8\u00b0C (extended dimension 12)",
+    "roundtrip": true,
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.cmd.central.mode.heat.cu99",
+    "frame": "*4*101*#0##",
+    "direction": "command",
+    "who": 4,
+    "what": 101,
+    "where": "#0",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Set 99-zone Central Unit to Heating mode",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNHeatingCommand",
+      "method": "set_central_mode",
+      "args": [
+        "#0",
+        "heat"
+      ]
+    },
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.cmd.central.mode.cool.cu99",
+    "frame": "*4*102*#0##",
+    "direction": "command",
+    "who": 4,
+    "what": 102,
+    "where": "#0",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Set 99-zone Central Unit to Cooling mode",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNHeatingCommand",
+      "method": "set_central_mode",
+      "args": [
+        "#0",
+        "cool"
+      ]
+    },
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.cmd.central.mode.off.cu99",
+    "frame": "*4*100*#0##",
+    "direction": "command",
+    "who": 4,
+    "what": 100,
+    "where": "#0",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Turn conditioning OFF on 99-zone Central Unit",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNHeatingCommand",
+      "method": "set_central_mode",
+      "args": [
+        "#0",
+        "off"
+      ]
+    },
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.cmd.central.setpoint.cu99.205",
+    "frame": "*#4*#0*#14*0205*1##",
+    "direction": "dimension_write",
+    "who": 4,
+    "what": null,
+    "where": "#0",
+    "dimension": 14,
+    "dimension_values": [
+      "0205",
+      "1"
+    ],
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Set 99-zone Central Unit target setpoint to 20.5\u00b0C in Heating mode",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNHeatingCommand",
+      "method": "set_central_temperature",
+      "args": [
+        "#0",
+        20.5,
+        "heat"
+      ]
+    },
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.cmd.central.status.cu99",
+    "frame": "*#4*#0*14##",
+    "direction": "dimension_request",
+    "who": 4,
+    "what": null,
+    "where": "#0",
+    "dimension": 14,
+    "dimension_values": [],
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Request 99-zone Central Unit status",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNHeatingCommand",
+      "method": "central_status",
+      "args": [
+        "#0"
+      ]
+    },
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.cmd.central.mode.heat.cu4",
+    "frame": "*4*101*#0#1##",
+    "direction": "command",
+    "who": 4,
+    "what": 101,
+    "where": "#0",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Set 4-zone Central Unit to Heating mode",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNHeatingCommand",
+      "method": "set_central_mode",
+      "args": [
+        "#0#1",
+        "heat"
+      ]
+    },
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "alarm.req.status.zone2",
+    "frame": "*#5*2##",
+    "direction": "status_request",
+    "who": 5,
+    "what": null,
+    "where": "2",
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Burglar Alarm: Status request for zone 2",
+    "roundtrip": true,
+    "_file": "who05_alarm.yaml"
+  },
+  {
+    "id": "alarm.req.status.zone_cu_2",
+    "frame": "*#5*#2##",
+    "direction": "status_request",
+    "who": 5,
+    "what": null,
+    "where": "#2",
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Burglar Alarm: Status request for central unit zone #2",
+    "roundtrip": true,
+    "_file": "who05_alarm.yaml"
+  },
+  {
+    "id": "alarm.event.silent.zone0",
+    "frame": "*5*2*0##",
+    "direction": "event",
+    "who": 5,
+    "what": 2,
+    "where": "0",
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Burglar Alarm: Silent alarm event for zone 0",
+    "roundtrip": true,
+    "_file": "who05_alarm.yaml"
+  },
+  {
+    "id": "alarm.event.zone_cu_2",
+    "frame": "*5*11*#2##",
+    "direction": "event",
+    "who": 5,
+    "what": 11,
+    "where": "#2",
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Burglar Alarm: Zone #2 alarm event",
+    "roundtrip": true,
+    "_file": "who05_alarm.yaml"
+  },
+  {
+    "id": "aux.cmd.activate.1",
+    "frame": "*9*1*1##",
+    "direction": "command",
+    "who": 9,
+    "what": 1,
+    "where": "1",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Auxiliary: Activate AUX channel 1",
+    "roundtrip": true,
+    "_file": "who09_auxiliary.yaml"
+  },
+  {
+    "id": "aux.cmd.deactivate.1",
+    "frame": "*9*0*1##",
+    "direction": "command",
+    "who": 9,
+    "what": 0,
+    "where": "1",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Auxiliary: Deactivate AUX channel 1",
+    "roundtrip": true,
+    "_file": "who09_auxiliary.yaml"
+  },
+  {
+    "id": "aux.cmd.activate.4",
+    "frame": "*9*1*4##",
+    "direction": "command",
+    "who": 9,
+    "what": 1,
+    "where": "4",
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Auxiliary: Activate AUX channel 4",
+    "roundtrip": true,
+    "_file": "who09_auxiliary.yaml"
+  },
+  {
+    "id": "aux.cmd.deactivate.4",
+    "frame": "*9*0*4##",
+    "direction": "command",
+    "who": 9,
+    "what": 0,
+    "where": "4",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Auxiliary: Deactivate AUX channel 4",
+    "roundtrip": true,
+    "_file": "who09_auxiliary.yaml"
+  },
+  {
+    "id": "gateway.resp.firmware.version",
+    "frame": "*#13**16*1*2*3##",
+    "direction": "dimension_response",
+    "who": 13,
+    "what": null,
+    "where": "",
+    "dimension": 16,
+    "dimension_values": [
+      "1",
+      "2",
+      "3"
+    ],
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Gateway Management: Gateway reports firmware version 1.2.3",
+    "roundtrip": true,
+    "_file": "who13_gateway.yaml"
+  },
+  {
+    "id": "gateway.resp.internal.datetime",
+    "frame": "*#13**22*09*37*30*102*03*01*05*2019##",
+    "direction": "dimension_response",
+    "who": 13,
+    "what": null,
+    "where": "",
+    "dimension": 22,
+    "dimension_values": [
+      "09",
+      "37",
+      "30",
+      "102",
+      "03",
+      "01",
+      "05",
+      "2019"
+    ],
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Gateway Management: Gateway reports internal datetime 2019-05-01 09:37:30-02:00",
+    "roundtrip": true,
+    "_file": "who13_gateway.yaml"
+  },
+  {
+    "id": "gateway.write.internal.datetime.2026",
+    "frame": "*#13**#22*17*33*54*002*05*11*09*2026##",
+    "direction": "dimension_write",
+    "who": 13,
+    "what": null,
+    "where": "",
+    "dimension": 22,
+    "dimension_values": [
+      "17",
+      "33",
+      "54",
+      "002",
+      "05",
+      "11",
+      "09",
+      "2026"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Gateway Management: Set gateway internal datetime to 2026-09-11 17:33:54 (Nicola Cavallo plant)",
+    "roundtrip": true,
+    "_file": "who13_gateway.yaml"
+  },
+  {
+    "id": "cen.event.short_press.btn2.11",
+    "frame": "*15*1*11#2##",
+    "direction": "event",
+    "who": 15,
+    "what": 1,
+    "where": "11",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "CEN: Short press on button 2 of interface 11",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNCenCommand",
+      "method": "press",
+      "args": [
+        "11",
+        2
+      ]
+    },
+    "_file": "who15_cen.yaml"
+  },
+  {
+    "id": "cen.event.start_long_press.btn2.11",
+    "frame": "*15*0*11#2##",
+    "direction": "event",
+    "who": 15,
+    "what": 0,
+    "where": "11",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "CEN: Start of long press on button 2 of interface 11",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNCenCommand",
+      "method": "start_long_press",
+      "args": [
+        "11",
+        2
+      ]
+    },
+    "_file": "who15_cen.yaml"
+  },
+  {
+    "id": "cen.event.release.btn2.11",
+    "frame": "*15*2*11#2##",
+    "direction": "event",
+    "who": 15,
+    "what": 2,
+    "where": "11",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "CEN: Release button 2 of interface 11",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNCenCommand",
+      "method": "release",
+      "args": [
+        "11",
+        2
+      ]
+    },
+    "_file": "who15_cen.yaml"
+  },
+  {
+    "id": "cen.event.extended_press.btn1.0001",
+    "frame": "*15*01#3*0001##",
+    "direction": "event",
+    "who": 15,
+    "what": "01#3",
+    "where": "0001",
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "CEN: Button 1 extended pressure on module 0001",
+    "roundtrip": true,
+    "_file": "who15_cen.yaml"
+  },
+  {
+    "id": "energy.req.active_power.meter1",
+    "frame": "*#18*1*1##",
+    "direction": "dimension_request",
+    "who": 18,
+    "what": null,
+    "where": "1",
+    "dimension": 1,
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Energy Management: Request instantaneous active power from meter 1",
+    "roundtrip": true,
+    "_file": "who18_energy.yaml"
+  },
+  {
+    "id": "energy.resp.active_power.meter1.1450",
+    "frame": "*#18*1*1*1450##",
+    "direction": "dimension_response",
+    "who": 18,
+    "what": null,
+    "where": "1",
+    "dimension": 1,
+    "dimension_values": [
+      "1450"
+    ],
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Energy Management: Meter 1 reports 1450 Watts instantaneous active power",
+    "roundtrip": true,
+    "_file": "who18_energy.yaml"
+  },
+  {
+    "id": "energy.req.lifetime.meter1",
+    "frame": "*#18*1*11##",
+    "direction": "dimension_request",
+    "who": 18,
+    "what": null,
+    "where": "1",
+    "dimension": 11,
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Energy Management: Request cumulative energy totalizer for meter 1",
+    "roundtrip": true,
+    "_file": "who18_energy.yaml"
+  },
+  {
+    "id": "energy.resp.lifetime.meter1.45230",
+    "frame": "*#18*1*11*00452300##",
+    "direction": "dimension_response",
+    "who": 18,
+    "what": null,
+    "where": "1",
+    "dimension": 11,
+    "dimension_values": [
+      "00452300"
+    ],
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Energy Management: Cumulative energy reports 45,230.0 kWh",
+    "roundtrip": true,
+    "_file": "who18_energy.yaml"
+  },
+  {
+    "id": "energy.req.unit.meter51",
+    "frame": "*#18*51*113##",
+    "direction": "dimension_request",
+    "who": 18,
+    "what": null,
+    "where": "51",
+    "dimension": 113,
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "Energy Management: Request energy meter 51 diagnostic/unit parameter 113",
+    "roundtrip": true,
+    "_file": "who18_energy.yaml"
+  },
+  {
+    "id": "energy.resp.active_power.meter51.602",
+    "frame": "*#18*51*113*602##",
+    "direction": "dimension_response",
+    "who": 18,
+    "what": null,
+    "where": "51",
+    "dimension": 113,
+    "dimension_values": [
+      "602"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Energy Management: Meter 51 reports 602 Watts instantaneous active power (Nicola Cavallo plant)",
+    "roundtrip": true,
+    "_file": "who18_energy.yaml"
+  },
+  {
+    "id": "energy.resp.actuator_power.channel77.415",
+    "frame": "*#18*77#0*113*415##",
+    "direction": "dimension_response",
+    "who": 18,
+    "what": null,
+    "where": "77",
+    "dimension": 113,
+    "dimension_values": [
+      "415"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Energy Management: Actuator channel 77#0 reports 415 Watts active power (Nicola Cavallo plant)",
+    "roundtrip": true,
+    "_file": "who18_energy.yaml"
+  },
+  {
+    "id": "cen_plus.event.short_press.btn1.12",
+    "frame": "*25*21#1*12##",
+    "direction": "event",
+    "who": 25,
+    "what": "21#1",
+    "where": "12",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "CEN+: Short press on button 1 of interface 12",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNCenPlusCommand",
+      "method": "press",
+      "args": [
+        "12",
+        1
+      ]
+    },
+    "_file": "who25_cen_plus.yaml"
+  },
+  {
+    "id": "cen_plus.event.start_long_press.btn1.12",
+    "frame": "*25*22#1*12##",
+    "direction": "event",
+    "who": 25,
+    "what": "22#1",
+    "where": "12",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "CEN+: Start long press on button 1 of interface 12",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNCenPlusCommand",
+      "method": "start_long_press",
+      "args": [
+        "12",
+        1
+      ]
+    },
+    "_file": "who25_cen_plus.yaml"
+  },
+  {
+    "id": "cen_plus.event.release.btn1.12",
+    "frame": "*25*24#1*12##",
+    "direction": "event",
+    "who": 25,
+    "what": "24#1",
+    "where": "12",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "CEN+: Release button 1 of interface 12",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNCenPlusCommand",
+      "method": "release",
+      "args": [
+        "12",
+        1
+      ]
+    },
+    "_file": "who25_cen_plus.yaml"
+  },
+  {
+    "id": "cen_plus.dry_contact.closed.input1.15",
+    "frame": "*25*31#1*15##",
+    "direction": "event",
+    "who": 25,
+    "what": "31#1",
+    "where": "15",
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "CEN+ Dry contact: Input 1 on interface 15 CLOSED",
+    "roundtrip": true,
+    "_file": "who25_cen_plus.yaml"
+  },
+  {
+    "id": "cen_plus.event.start_long_press.btn2.22047",
+    "frame": "*25*22#2*22047##",
+    "direction": "event",
+    "who": 25,
+    "what": "22#2",
+    "where": "22047",
+    "source": "openwebnet4j",
+    "mcp_valid": true,
+    "mcp_notes": "CEN+: Start long press on button 2 of module 22047",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNCenPlusCommand",
+      "method": "start_long_press",
+      "args": [
+        "22047",
+        2
+      ]
+    },
+    "_file": "who25_cen_plus.yaml"
+  }
+]

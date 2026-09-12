@@ -1,0 +1,103 @@
+{
+  "home_assistant": {
+    "installation_type": "Home Assistant OS",
+    "version": "2026.9.1"
+  },
+  "data": {
+    "integration_version": "2.0.0b11",
+    "ownd_version": "2.0.0b6",
+    "config_entry": {
+      "entry_id": "01M292THEDARKWIZARDMHS1",
+      "version": 1,
+      "domain": "myhome",
+      "title": "F454 Gateway",
+      "data": {
+        "UDN": null,
+        "deviceType": null,
+        "firmware": null,
+        "friendly_name": null,
+        "host": "192.168.30.134",
+        "id": "00:03:50:30:13:34",
+        "mac": "00:03:50:30:13:34",
+        "manufacturer": "BTicino S.p.A.",
+        "manufacturerURL": "http://www.bticino.it",
+        "name": "F454",
+        "password": null,
+        "port": 20000,
+        "ssdp_location": null,
+        "ssdp_st": null
+      },
+      "options": {
+        "command_worker_count": 4
+      }
+    },
+    "gateway": {
+      "model_name": "F454",
+      "manufacturer": "BTicino S.p.A.",
+      "firmware": null,
+      "is_connected": true,
+      "send_workers": 4
+    },
+    "bus_monitor": {
+      "stats": {
+        "capacity": 200,
+        "captured": 50,
+        "total_rx": 303,
+        "total_tx": 45,
+        "subscribers": 0
+      },
+      "recent_frames": [
+        {"raw": "*1*1*12##", "direction": "rx", "who": "1", "where": "12", "what": "1", "timestamp": 1789154710.793, "iso_time": "2026-09-11T19:25:10.793Z"},
+        {"raw": "*1*0*19##", "direction": "rx", "who": "1", "where": "19", "what": "0", "timestamp": 1789154710.794, "iso_time": "2026-09-11T19:25:10.794Z"},
+        {"raw": "*1*1*12##", "direction": "rx", "who": "1", "where": "12", "what": "1", "timestamp": 1789154710.794, "iso_time": "2026-09-11T19:25:10.794Z"},
+        {"raw": "*1*0*19##", "direction": "rx", "who": "1", "where": "19", "what": "0", "timestamp": 1789154710.794, "iso_time": "2026-09-11T19:25:10.794Z"},
+        {"raw": "*1*0*13##", "direction": "rx", "who": "1", "where": "13", "what": "0", "timestamp": 1789154710.794, "iso_time": "2026-09-11T19:25:10.794Z"},
+        {"raw": "*1*1*17##", "direction": "rx", "who": "1", "where": "17", "what": "1", "timestamp": 1789154710.794, "iso_time": "2026-09-11T19:25:10.794Z"},
+        {"raw": "*1*0*13##", "direction": "rx", "who": "1", "where": "13", "what": "0", "timestamp": 1789154710.794, "iso_time": "2026-09-11T19:25:10.794Z"},
+        {"raw": "*1*1*17##", "direction": "rx", "who": "1", "where": "17", "what": "1", "timestamp": 1789154710.794, "iso_time": "2026-09-11T19:25:10.794Z"},
+        {"raw": "*1*1*14##", "direction": "rx", "who": "1", "where": "14", "what": "1", "timestamp": 1789154710.794, "iso_time": "2026-09-11T19:25:10.794Z"},
+        {"raw": "*1*0*15##", "direction": "rx", "who": "1", "where": "15", "what": "0", "timestamp": 1789154710.794, "iso_time": "2026-09-11T19:25:10.794Z"},
+        {"raw": "*1*1*14##", "direction": "rx", "who": "1", "where": "14", "what": "1", "timestamp": 1789154710.794, "iso_time": "2026-09-11T19:25:10.794Z"},
+        {"raw": "*1*0*15##", "direction": "rx", "who": "1", "where": "15", "what": "0", "timestamp": 1789154710.794, "iso_time": "2026-09-11T19:25:10.794Z"},
+        {"raw": "*1*0*16##", "direction": "rx", "who": "1", "where": "16", "what": "0", "timestamp": 1789154710.794, "iso_time": "2026-09-11T19:25:10.794Z"},
+        {"raw": "*1*0*11##", "direction": "rx", "who": "1", "where": "11", "what": "0", "timestamp": 1789154710.795, "iso_time": "2026-09-11T19:25:10.795Z"},
+        {"raw": "*1*0*16##", "direction": "rx", "who": "1", "where": "16", "what": "0", "timestamp": 1789154710.795, "iso_time": "2026-09-11T19:25:10.795Z"},
+        {"raw": "*1*0*11##", "direction": "rx", "who": "1", "where": "11", "what": "0", "timestamp": 1789154710.795, "iso_time": "2026-09-11T19:25:10.795Z"},
+        {"raw": "*1*1*07##", "direction": "rx", "who": "1", "where": "07", "what": "1", "timestamp": 1789154710.795, "iso_time": "2026-09-11T19:25:10.795Z"},
+        {"raw": "*1*0*08##", "direction": "rx", "who": "1", "where": "08", "what": "0", "timestamp": 1789154710.795, "iso_time": "2026-09-11T19:25:10.795Z"},
+        {"raw": "*1*1*07##", "direction": "rx", "who": "1", "where": "07", "what": "1", "timestamp": 1789154710.795, "iso_time": "2026-09-11T19:25:10.795Z"},
+        {"raw": "*1*0*08##", "direction": "rx", "who": "1", "where": "08", "what": "0", "timestamp": 1789154710.795, "iso_time": "2026-09-11T19:25:10.795Z"},
+        {"raw": "*1*0*09##", "direction": "rx", "who": "1", "where": "09", "what": "0", "timestamp": 1789154710.795, "iso_time": "2026-09-11T19:25:10.795Z"},
+        {"raw": "*1*1*0012##", "direction": "rx", "who": "1", "where": "0012", "what": "1", "timestamp": 1789154710.795, "iso_time": "2026-09-11T19:25:10.795Z"},
+        {"raw": "*1*0*09##", "direction": "rx", "who": "1", "where": "09", "what": "0", "timestamp": 1789154710.795, "iso_time": "2026-09-11T19:25:10.795Z"},
+        {"raw": "*1*1*0012##", "direction": "rx", "who": "1", "where": "0012", "what": "1", "timestamp": 1789154710.795, "iso_time": "2026-09-11T19:25:10.795Z"},
+        {"raw": "*1*0*0110##", "direction": "rx", "who": "1", "where": "0110", "what": "0", "timestamp": 1789154710.795, "iso_time": "2026-09-11T19:25:10.795Z"},
+        {"raw": "*1*0*0111##", "direction": "rx", "who": "1", "where": "0111", "what": "0", "timestamp": 1789154710.795, "iso_time": "2026-09-11T19:25:10.795Z"},
+        {"raw": "*1*0*0110##", "direction": "rx", "who": "1", "where": "0110", "what": "0", "timestamp": 1789154710.796, "iso_time": "2026-09-11T19:25:10.796Z"},
+        {"raw": "*1*0*0111##", "direction": "rx", "who": "1", "where": "0111", "what": "0", "timestamp": 1789154710.796, "iso_time": "2026-09-11T19:25:10.796Z"},
+        {"raw": "*1*1*0011##", "direction": "rx", "who": "1", "where": "0011", "what": "1", "timestamp": 1789154710.796, "iso_time": "2026-09-11T19:25:10.796Z"},
+        {"raw": "*1*1*06##", "direction": "rx", "who": "1", "where": "06", "what": "1", "timestamp": 1789154710.796, "iso_time": "2026-09-11T19:25:10.796Z"},
+        {"raw": "*1*1*0011##", "direction": "rx", "who": "1", "where": "0011", "what": "1", "timestamp": 1789154710.796, "iso_time": "2026-09-11T19:25:10.796Z"},
+        {"raw": "*1*1*06##", "direction": "rx", "who": "1", "where": "06", "what": "1", "timestamp": 1789154710.796, "iso_time": "2026-09-11T19:25:10.796Z"},
+        {"raw": "*1*1*0013##", "direction": "rx", "who": "1", "where": "0013", "what": "1", "timestamp": 1789154710.796, "iso_time": "2026-09-11T19:25:10.796Z"},
+        {"raw": "*1*1*0010##", "direction": "rx", "who": "1", "where": "0010", "what": "1", "timestamp": 1789154710.796, "iso_time": "2026-09-11T19:25:10.796Z"},
+        {"raw": "*1*1*0013##", "direction": "rx", "who": "1", "where": "0013", "what": "1", "timestamp": 1789154710.796, "iso_time": "2026-09-11T19:25:10.796Z"},
+        {"raw": "*1*1*0010##", "direction": "rx", "who": "1", "where": "0010", "what": "1", "timestamp": 1789154710.796, "iso_time": "2026-09-11T19:25:10.796Z"},
+        {"raw": "*1*0*0014##", "direction": "rx", "who": "1", "where": "0014", "what": "0", "timestamp": 1789154710.796, "iso_time": "2026-09-11T19:25:10.796Z"},
+        {"raw": "*1*0*18##", "direction": "rx", "who": "1", "where": "18", "what": "0", "timestamp": 1789154710.796, "iso_time": "2026-09-11T19:25:10.796Z"},
+        {"raw": "*1*0*0014##", "direction": "rx", "who": "1", "where": "0014", "what": "0", "timestamp": 1789154710.796, "iso_time": "2026-09-11T19:25:10.796Z"},
+        {"raw": "*1*0*18##", "direction": "rx", "who": "1", "where": "18", "what": "0", "timestamp": 1789154710.796, "iso_time": "2026-09-11T19:25:10.796Z"},
+        {"raw": "*2*0*02##", "direction": "rx", "who": "2", "where": "02", "what": "0", "timestamp": 1789154710.797, "iso_time": "2026-09-11T19:25:10.797Z"},
+        {"raw": "*2*0*02##", "direction": "rx", "who": "2", "where": "02", "what": "0", "timestamp": 1789154710.797, "iso_time": "2026-09-11T19:25:10.797Z"},
+        {"raw": "*2*0*03##", "direction": "rx", "who": "2", "where": "03", "what": "0", "timestamp": 1789154710.797, "iso_time": "2026-09-11T19:25:10.797Z"},
+        {"raw": "*2*0*01##", "direction": "rx", "who": "2", "where": "01", "what": "0", "timestamp": 1789154710.797, "iso_time": "2026-09-11T19:25:10.797Z"},
+        {"raw": "*2*0*03##", "direction": "rx", "who": "2", "where": "03", "what": "0", "timestamp": 1789154710.797, "iso_time": "2026-09-11T19:25:10.797Z"},
+        {"raw": "*2*0*04##", "direction": "rx", "who": "2", "where": "04", "what": "0", "timestamp": 1789154710.797, "iso_time": "2026-09-11T19:25:10.797Z"},
+        {"raw": "*2*0*01##", "direction": "rx", "who": "2", "where": "01", "what": "0", "timestamp": 1789154710.797, "iso_time": "2026-09-11T19:25:10.797Z"},
+        {"raw": "*2*0*04##", "direction": "rx", "who": "2", "where": "04", "what": "0", "timestamp": 1789154710.797, "iso_time": "2026-09-11T19:25:10.797Z"},
+        {"raw": "*2*0*05##", "direction": "rx", "who": "2", "where": "05", "what": "0", "timestamp": 1789154710.797, "iso_time": "2026-09-11T19:25:10.797Z"},
+        {"raw": "*2*0*05##", "direction": "rx", "who": "2", "where": "05", "what": "0", "timestamp": 1789154710.797, "iso_time": "2026-09-11T19:25:10.797Z"}
+      ]
+    }
+  }
+}

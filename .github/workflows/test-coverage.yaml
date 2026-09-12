@@ -1,0 +1,90 @@
+name: test-coverage
+
+on:
+  push:
+    branches: [main, master, "v2-*"]
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  test-coverage:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov pytest-asyncio homeassistant python-dateutil pytz pytest-homeassistant-custom-component pytest-socket "syrupy>=4.6.0,<5.0.0" time-machine
+
+      - name: Verify Home Assistant Architectural Standards
+        run: |
+          python scripts/verify_ha_standards.py
+
+      - name: Test coverage & Snapshot generation
+        run: |
+          PYTHONPATH=. pytest tests/ --snapshot-update --cov=custom_components.myhome --cov-report=xml --cov-report=html --cov-report=term --junitxml=junit.xml
+          python scripts/update_readme_coverage.py
+          if [ "${{ github.event_name }}" = "push" ] && ([ "${{ github.ref }}" = "refs/heads/main" ] || [ "${{ github.ref }}" = "refs/heads/master" ]); then
+            git config --global user.name "github-actions[bot]"
+            git config --global user.email "github-actions[bot]@users.noreply.github.com"
+            git add "tests/**/__snapshots__/*" || true
+            git add "tests/__snapshots__/*" || true
+            git add "tests/snapshots/*" || true
+            git add coverage.svg || true
+            git add README.md || true
+            if ! git diff --staged --quiet; then
+              git commit -m "chore: auto-generate coverage badge & README table [skip ci]"
+              git push || echo "No files pushed"
+            fi
+          fi
+
+      - name: Enforce 100% test coverage on ownd core
+        run: |
+          python scripts/verify_ownd_coverage.py
+
+      - name: Upload HTML coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-coverage-report
+          path: htmlcov/
+          retention-days: 14
+
+      - name: Publish Coverage Step Summary
+        run: |
+          python -c "
+          import xml.etree.ElementTree as ET
+          import os
+          tree = ET.parse('coverage.xml')
+          root = tree.getroot()
+          rate = float(root.attrib.get('line-rate', 0)) * 100
+          summary_path = os.getenv('GITHUB_STEP_SUMMARY')
+          if summary_path:
+              with open(summary_path, 'a', encoding='utf-8') as f:
+                  f.write(f'## 📊 Test Code Coverage: {rate:.1f}%\n\n')
+                  f.write('| Component / File | Line Coverage |\n|---|:---:|\n')
+                  for p in root.findall('.//package'):
+                      for c in p.findall('.//class'):
+                          fn = c.attrib.get('filename')
+                          cr = float(c.attrib.get('line-rate', 0)) * 100
+                          f.write(f'| \`{fn}\` | **{cr:.1f}%** |\n')
+          "
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.xml
+          fail_ci_if_error: false
+
+

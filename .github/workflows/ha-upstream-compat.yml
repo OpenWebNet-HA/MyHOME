@@ -1,0 +1,66 @@
+name: Upstream Home Assistant Compatibility
+
+on:
+  push:
+    branches: [main, master, "v2-*"]
+  schedule:
+    - cron: "0 3 * * 1"  # Weekly run every Monday at 03:00 UTC
+  workflow_dispatch:
+  pull_request:
+    branches: [main, master, "v2-*"]
+
+jobs:
+  ha-compatibility:
+    name: HA Compatibility (${{ matrix.ha-channel }})
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.allow-failure }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ha-channel: stable
+            pip-install: "homeassistant"
+            allow-failure: false
+          - ha-channel: beta
+            pip-install: "--pre homeassistant"
+            allow-failure: false
+          - ha-channel: dev
+            pip-install: "git+https://github.com/home-assistant/core.git@dev"
+            allow-failure: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Home Assistant (${{ matrix.ha-channel }}) & test requirements
+        id: install-deps
+        run: |
+          python -m pip install --upgrade pip
+          if [ "${{ matrix.ha-channel }}" = "dev" ]; then
+            if ! pip install ${{ matrix.pip-install }}; then
+              echo "::warning title=HA Dev Channel Incompatible::Upstream home-assistant/core@dev requires Python >=3.14.2 which is incompatible with Python 3.12. Skipping dev tests."
+              echo "installed=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          else
+            pip install ${{ matrix.pip-install }}
+          fi
+          pip install pytest pytest-asyncio pytest-cov pytest-socket "syrupy>=4.6.0,<5.0.0" time-machine python-dateutil pytz freezegun requests-mock respx paho-mqtt tqdm
+          pip install pytest-homeassistant-custom-component --no-deps
+          echo "installed=true" >> $GITHUB_OUTPUT
+
+      - name: Fast Platform Import Smoke Test
+        if: steps.install-deps.outputs.installed == 'true'
+        run: |
+          PYTHONPATH=. pytest tests/test_platforms.py -k "TestPlatformImportCleanliness" -v
+
+      - name: Run Core Platform Test Suite
+        if: steps.install-deps.outputs.installed == 'true'
+        run: |
+          PYTHONPATH=. pytest tests/test_component_alarm.py tests/test_platforms.py -v

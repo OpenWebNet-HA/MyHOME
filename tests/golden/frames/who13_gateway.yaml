@@ -1,0 +1,39 @@
+- id: gateway.resp.firmware.version
+  frame: "*#13**16*1*2*3##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 16
+  dimension_values: ["1", "2", "3"]
+  source: openwebnet4j
+  mcp_valid: true
+  mcp_notes: "Gateway Management: Gateway reports firmware version 1.2.3"
+  roundtrip: true
+
+- id: gateway.resp.internal.datetime
+  frame: "*#13**22*09*37*30*102*03*01*05*2019##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 22
+  dimension_values: ["09", "37", "30", "102", "03", "01", "05", "2019"]
+  source: openwebnet4j
+  mcp_valid: true
+  mcp_notes: "Gateway Management: Gateway reports internal datetime 2019-05-01 09:37:30-02:00"
+  roundtrip: true
+
+- id: gateway.write.internal.datetime.2026
+  frame: "*#13**#22*17*33*54*002*05*11*09*2026##"
+  direction: dimension_write
+  who: 13
+  what: null
+  where: ""
+  dimension: 22
+  dimension_values: ["17", "33", "54", "002", "05", "11", "09", "2026"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: Set gateway internal datetime to 2026-09-11 17:33:54 (Nicola Cavallo plant)"
+  roundtrip: true
+

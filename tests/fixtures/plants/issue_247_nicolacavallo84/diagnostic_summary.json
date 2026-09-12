@@ -1,0 +1,1739 @@
+{
+  "home_assistant": {
+    "arch": "x86_64",
+    "dev": false,
+    "docker": true,
+    "hassio": true,
+    "installation_type": "Home Assistant OS",
+    "os_name": "Linux",
+    "os_version": "6.18.39-haos",
+    "python_version": "3.14.6",
+    "timezone": "Europe/Rome",
+    "version": "2026.9.1",
+    "virtualenv": false,
+    "container_arch": "amd64",
+    "supervisor": "2026.09.0",
+    "host_os": "Home Assistant OS 18.2",
+    "docker_version": "29.6.2",
+    "chassis": "embedded",
+    "run_as_root": true
+  },
+  "custom_components": {
+    "alarmo": {
+      "documentation": "https://github.com/nielsfaber/alarmo",
+      "version": "1.10.19",
+      "requirements": []
+    },
+    "webrtc": {
+      "documentation": "https://github.com/AlexxIT/WebRTC",
+      "version": "v3.6.1",
+      "requirements": []
+    },
+    "ventoptimization": {
+      "documentation": "https://github.com/HrGaertner/HA-vent-optimization",
+      "version": "0.8",
+      "requirements": []
+    },
+    "llmvision": {
+      "documentation": "https://llmvision.gitbook.io/getting-started/",
+      "version": "1.7.1",
+      "requirements": [
+        "boto3>=1.37.1",
+        "aiosqlite>=0.21.0",
+        "aiofile>=3.9.0"
+      ]
+    },
+    "ssh": {
+      "documentation": "https://github.com/zhbjsh/homeassistant-ssh",
+      "version": "1.3.1",
+      "requirements": [
+        "ssh-terminal-manager==2.0.2"
+      ]
+    },
+    "pyscript": {
+      "documentation": "https://github.com/custom-components/pyscript",
+      "version": "2.1.0",
+      "requirements": [
+        "croniter==6.0.0",
+        "watchdog==6.0.0"
+      ]
+    },
+    "samsungtv_smart": {
+      "documentation": "https://github.com/ollo69/ha-samsungtv-smart",
+      "version": "0.14.5",
+      "requirements": [
+        "websocket-client!=1.4.0,>=0.58.0",
+        "wakeonlan>=2.0.0",
+        "aiofiles>=0.8.0",
+        "casttube>=0.2.1"
+      ]
+    },
+    "home_connect_alt": {
+      "documentation": "https://github.com/ekutner/home-connect-hass",
+      "version": "1.4.2",
+      "requirements": [
+        "home-connect-async==0.8.6"
+      ]
+    },
+    "nuki_ng": {
+      "documentation": "https://github.com/kvj/hass_nuki_ng",
+      "version": "0.5.5",
+      "requirements": []
+    },
+    "adaptive_lighting": {
+      "documentation": "https://github.com/basnijholt/adaptive-lighting#readme",
+      "version": "1.32.0",
+      "requirements": [
+        "ulid-transform"
+      ]
+    },
+    "pun_sensor": {
+      "documentation": "https://github.com/virtualdj/pun_sensor",
+      "version": "v4.0.1",
+      "requirements": [
+        "holidays"
+      ]
+    },
+    "browser_mod": {
+      "documentation": "https://github.com/thomasloven/hass-browser_mod/blob/master/README.md",
+      "version": "3.2.3",
+      "requirements": []
+    },
+    "philips_airfryer": {
+      "documentation": "https://github.com/V4n1X/ha_philips_airfryer/blob/master/README.md",
+      "version": "1.0.0",
+      "requirements": [
+        "requests"
+      ]
+    },
+    "omv": {
+      "documentation": "https://github.com/slybase/homeassistant-openmediavault",
+      "version": "2.8.1",
+      "requirements": []
+    },
+    "climate_ip": {
+      "documentation": "https://github.com/atxbyea/samsungrac",
+      "version": "3.5.2",
+      "requirements": [
+        "requests>=2.21.0",
+        "xmltodict>=0.13.0"
+      ]
+    },
+    "roborock_custom_map": {
+      "documentation": "https://github.com/Lash-L/RoborockCustomMap",
+      "version": "0.1.6",
+      "requirements": []
+    },
+    "nodered": {
+      "documentation": "https://zachowj.github.io/node-red-contrib-home-assistant-websocket/guide/custom_integration/",
+      "version": "4.2.3",
+      "requirements": []
+    },
+    "solarman": {
+      "documentation": "https://github.com/davidrapan/ha-solarman",
+      "version": "25.08.16",
+      "requirements": [
+        "propcache",
+        "aiohttp",
+        "aiofiles",
+        "pyyaml"
+      ]
+    },
+    "imou_life": {
+      "documentation": "https://open.imoulife.com/book/guide/haDev.html",
+      "version": "1.4.1",
+      "requirements": [
+        "pyimouapi==1.4.1"
+      ]
+    },
+    "familylink": {
+      "documentation": "https://github.com/noiwid/HAFamilyLink",
+      "version": "1.2.14",
+      "requirements": []
+    },
+    "alexa_media": {
+      "documentation": "https://github.com/alandtse/alexa_media_player/wiki",
+      "version": "5.15.7",
+      "requirements": [
+        "alexapy==1.29.25",
+        "packaging>=20.3",
+        "wrapt>=1.14.0",
+        "dictor>=0.1.12,<0.2"
+      ]
+    },
+    "powercalc": {
+      "documentation": "https://docs.powercalc.nl",
+      "version": "v1.25.3",
+      "requirements": [
+        "numpy>=1.21.1"
+      ]
+    },
+    "skylinewebcams": {
+      "documentation": "https://github.com/timmaurice/skyline-webcams",
+      "version": "2.1.0",
+      "requirements": [
+        "beautifulsoup4>=4.14.3"
+      ]
+    },
+    "tuya_local": {
+      "documentation": "https://github.com/make-all/tuya-local",
+      "version": "2026.7.2",
+      "requirements": [
+        "tinytuya==1.20.0",
+        "tuya-device-sharing-sdk~=0.2.4"
+      ]
+    },
+    "philips_homeid": {
+      "documentation": "https://github.com/renaudallard/homeassistant_philips_homeid",
+      "version": "3.8.4",
+      "requirements": []
+    },
+    "scheduler": {
+      "documentation": "https://github.com/nielsfaber/scheduler-component",
+      "version": "v0.0.0",
+      "requirements": []
+    },
+    "smartir": {
+      "documentation": "https://github.com/smartHomeHub/SmartIR",
+      "version": "1.18.1",
+      "requirements": [
+        "aiofiles>=0.6.0"
+      ]
+    },
+    "google_home": {
+      "documentation": "https://github.com/leikoilja/ha-google-home",
+      "version": "1.13.3",
+      "requirements": [
+        "glocaltokens==0.7.6"
+      ]
+    },
+    "myhome": {
+      "documentation": "https://github.com/OpenWebNet-HA/MyHOME",
+      "version": "2.0.0b10",
+      "requirements": [
+        "OWNd==2.0.0b5"
+      ]
+    },
+    "blitzortung": {
+      "documentation": "https://github.com/mrk-its/homeassistant-blitzortung",
+      "version": "1.7.1",
+      "requirements": [
+        "paho-mqtt>=2.1.0"
+      ]
+    },
+    "spook_inverse": {
+      "documentation": "https://spook.boo",
+      "version": "5.4.0",
+      "requirements": []
+    },
+    "dpc": {
+      "documentation": "https://github.com/caiosweet/Home-Assistant-custom-components-DPC-Alert",
+      "version": "v2026.2.0",
+      "requirements": []
+    },
+    "sunlight_visualizer": {
+      "documentation": "https://github.com/NoUsername10/Sunlight_Visualizer",
+      "version": "0.3.2",
+      "requirements": []
+    },
+    "hpprinter": {
+      "documentation": "https://github.com/elad-bar/ha-hpprinter",
+      "version": "2.0.6",
+      "requirements": [
+        "xmltodict~=0.13.0",
+        "flatten_json",
+        "defusedxml"
+      ]
+    },
+    "power_control": {
+      "documentation": "https://github.com/andbad/HA_PowerControl",
+      "version": "4.2.3",
+      "requirements": []
+    },
+    "saver": {
+      "documentation": "https://github.com/PiotrMachowski/Home-Assistant-custom-components-Saver",
+      "version": "v3.0.1",
+      "requirements": []
+    },
+    "eon_energia": {
+      "documentation": "https://github.com/fezvrasta/eon-energia-italia-hass",
+      "version": "1.7.0",
+      "requirements": []
+    },
+    "bolletta": {
+      "documentation": "https://github.com/Sanji78/bolletta",
+      "version": "1.4.2",
+      "requirements": [
+        "holidays",
+        "bs4",
+        "openpyxl"
+      ]
+    },
+    "hacs": {
+      "documentation": "https://hacs.xyz/docs/use/",
+      "version": "2.0.5",
+      "requirements": [
+        "aiogithubapi>=22.10.1"
+      ]
+    },
+    "maintenance_supporter": {
+      "documentation": "https://github.com/iluebbe/maintenance_supporter",
+      "version": "2.81.0",
+      "requirements": [
+        "pypdf>=4.3.0"
+      ]
+    },
+    "solcast_solar": {
+      "documentation": "https://github.com/BJReplay/ha-solcast-solar",
+      "version": "v4.6.1",
+      "requirements": [
+        "aiofiles>=23.2.0",
+        "watchfiles>=1.0.0"
+      ]
+    },
+    "whatsapp": {
+      "documentation": null,
+      "version": "1.0.2",
+      "requirements": [
+        "url-normalize==1.4.3"
+      ]
+    },
+    "presence_simulation": {
+      "documentation": "https://github.com/slashback100/presence_simulation",
+      "version": "5.3",
+      "requirements": []
+    },
+    "adaptive_cover": {
+      "documentation": "https://github.com/basbruss/adaptive-cover",
+      "version": "2.25.0",
+      "requirements": [
+        "astral",
+        "pandas"
+      ]
+    },
+    "raccolta_rifiuti": {
+      "documentation": "https://github.com/DomoticaFacile/raccolta_rifiuti",
+      "version": "1.1.1",
+      "requirements": []
+    },
+    "ookla_speedtest": {
+      "documentation": "https://github.com/soulripper13/hass-speedtest-ookla",
+      "version": "3.1.2",
+      "requirements": []
+    },
+    "aliexpress_package_tracker": {
+      "documentation": "https://github.com/yohaybn/HA_aliexpress_package_tracker_sensor",
+      "version": "2.9.1",
+      "requirements": []
+    },
+    "climate_template": {
+      "documentation": "https://github.com/jcwillox/hass-template-climate",
+      "version": "1.4.0",
+      "requirements": []
+    },
+    "meross_lan": {
+      "documentation": "https://github.com/krahabb/meross_lan",
+      "version": "5.8.0",
+      "requirements": []
+    },
+    "thermal_comfort": {
+      "documentation": "https://github.com/dolezsa/thermal_comfort/blob/master/README.md",
+      "version": "2.2.6",
+      "requirements": []
+    },
+    "farmaciola": {
+      "documentation": "https://github.com/etorhub/farmaciola",
+      "version": "0.10.1",
+      "requirements": []
+    },
+    "battery_notes": {
+      "documentation": "https://andrew-codechimp.github.io/HA-Battery-Notes/",
+      "version": "3.6.3",
+      "requirements": []
+    },
+    "argo_family_dashboard": {
+      "documentation": "https://github.com/fcaloro-beep/argo-family-dashboard",
+      "version": "4.16",
+      "requirements": []
+    },
+    "aguaiot": {
+      "documentation": "https://github.com/vincentwolsink/home_assistant_micronova_agua_iot/",
+      "version": "1.2.1",
+      "requirements": [
+        "httpx",
+        "simpleeval"
+      ]
+    },
+    "osservaprezzi_carburanti": {
+      "documentation": "https://github.com/casungo/osservaprezzi-carburanti-ha",
+      "version": "2.4.0",
+      "requirements": []
+    },
+    "spook": {
+      "documentation": "https://spook.boo",
+      "version": "5.4.0",
+      "requirements": [
+        "cronsim==2.7"
+      ]
+    }
+  },
+  "integration_manifest": {
+    "domain": "myhome",
+    "name": "MyHOME",
+    "after_dependencies": [
+      "frontend",
+      "http",
+      "lovelace"
+    ],
+    "codeowners": [
+      "anotherjulien",
+      "GreenGrassBlueOcean"
+    ],
+    "config_flow": true,
+    "documentation": "https://github.com/OpenWebNet-HA/MyHOME",
+    "integration_type": "hub",
+    "iot_class": "local_push",
+    "issue_tracker": "https://github.com/OpenWebNet-HA/MyHOME/issues",
+    "requirements": [
+      "OWNd==2.0.0b5"
+    ],
+    "ssdp": [
+      {
+        "st": "upnp:rootdevice",
+        "manufacturer": "BTicino S.p.A.",
+        "modelName": "HL4684"
+      },
+      {
+        "st": "upnp:rootdevice",
+        "manufacturer": "BTicino S.p.A.",
+        "modelName": "AM4890"
+      },
+      {
+        "st": "upnp:rootdevice",
+        "manufacturer": "BTicino S.p.A.",
+        "modelName": "MyHomeServer1"
+      },
+      {
+        "st": "upnp:rootdevice",
+        "manufacturer": "BTicino S.p.A.",
+        "modelName": "F455"
+      },
+      {
+        "st": "upnp:rootdevice",
+        "manufacturer": "BTicino S.p.A.",
+        "modelName": "F454"
+      },
+      {
+        "st": "upnp:rootdevice",
+        "manufacturer": "BTicino S.p.A.",
+        "modelName": "F453AV"
+      },
+      {
+        "st": "upnp:rootdevice",
+        "manufacturer": "BTicino S.p.A.",
+        "modelName": "F452"
+      },
+      {
+        "st": "upnp:rootdevice",
+        "manufacturer": "BTicino S.p.A.",
+        "modelName": "MH200N"
+      },
+      {
+        "st": "upnp:rootdevice",
+        "manufacturer": "BTicino S.p.A.",
+        "modelName": "MH200"
+      },
+      {
+        "st": "upnp:rootdevice",
+        "manufacturer": "BTicino S.p.A.",
+        "modelName": "MH202"
+      },
+      {
+        "st": "upnp:rootdevice",
+        "manufacturer": "BTicino S.p.A.",
+        "modelName": "MH201"
+      }
+    ],
+    "version": "2.0.0b10",
+    "is_built_in": false,
+    "overwrites_built_in": false
+  },
+  "setup_times": {
+    "null": {
+      "setup": 0.022359028924256563
+    },
+    "01M284WWKZG4XTEG62NVW1DPVG": {
+      "wait_import_platforms": -23.941434708074667,
+      "config_entry_setup": 24.45339778100606
+    }
+  },
+  "data": {
+    "integration_version": "2.0.0b10",
+    "ownd_version": "2.0.0b5",
+    "config_entry": {
+      "entry_id": "01M284WWKZG4XTEG62NVW1DPVG",
+      "version": 1,
+      "domain": "myhome",
+      "title": "MyHomeServer1 Gateway",
+      "data": {
+        "UDN": null,
+        "deviceType": null,
+        "firmware": null,
+        "friendly_name": null,
+        "host": "192.168.1.50",
+        "id": "00:03:50:a4:11:2e",
+        "mac": "00:03:50:24:70:01",
+        "manufacturer": "BTicino S.p.A.",
+        "manufacturerURL": "http://www.bticino.it",
+        "name": "MyHomeServer1",
+        "password": "12345",
+        "port": 20000,
+        "ssdp_location": "http://192.168.1.50:49153/description.xml",
+        "ssdp_st": null
+      },
+      "options": {
+        "command_worker_count": 1
+      }
+    },
+    "gateway": {
+      "model_name": "MyHomeServer1",
+      "manufacturer": "BTicino S.p.A.",
+      "firmware": null,
+      "is_connected": true,
+      "send_workers": 1
+    },
+    "profile": {
+      "name": "Generic",
+      "command_queue_delay": 0.02,
+      "max_queue_size": 300,
+      "keepalive_interval": 90.0
+    },
+    "queue": {
+      "queue_depth": 0,
+      "max_size": 300
+    },
+    "platforms": {
+      "light": 0,
+      "switch": 0,
+      "cover": 0,
+      "climate": 0,
+      "binary_sensor": 0,
+      "sensor": 0,
+      "media_player": 0,
+      "button": 0,
+      "alarm_control_panel": 0
+    },
+    "bus_monitor": {
+      "stats": {
+        "capacity": 500,
+        "captured": 500,
+        "total_rx": 383,
+        "total_tx": 123,
+        "subscribers": 0
+      },
+      "recent_frames": [
+        {
+          "timestamp": 1789140866.553275,
+          "iso_time": "2026-09-11T15:34:26.553275+00:00",
+          "direction": "rx",
+          "raw": "*1*0*92##",
+          "who": "1",
+          "where": "92",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140866.595329,
+          "iso_time": "2026-09-11T15:34:26.595329+00:00",
+          "direction": "rx",
+          "raw": "*1*0*93##",
+          "who": "1",
+          "where": "93",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140866.628285,
+          "iso_time": "2026-09-11T15:34:26.628285+00:00",
+          "direction": "rx",
+          "raw": "*2*0*42##",
+          "who": "2",
+          "where": "42",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140866.66688,
+          "iso_time": "2026-09-11T15:34:26.666880+00:00",
+          "direction": "rx",
+          "raw": "*1*0*1002##",
+          "who": "1",
+          "where": "1002",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140866.713664,
+          "iso_time": "2026-09-11T15:34:26.713664+00:00",
+          "direction": "rx",
+          "raw": "*1*0*1003##",
+          "who": "1",
+          "where": "1003",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140866.764653,
+          "iso_time": "2026-09-11T15:34:26.764653+00:00",
+          "direction": "rx",
+          "raw": "*1*1*24##",
+          "who": "1",
+          "where": "24",
+          "what": "1",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140866.808622,
+          "iso_time": "2026-09-11T15:34:26.808622+00:00",
+          "direction": "rx",
+          "raw": "*1*0*83##",
+          "who": "1",
+          "where": "83",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140866.88342,
+          "iso_time": "2026-09-11T15:34:26.883420+00:00",
+          "direction": "rx",
+          "raw": "*#2*73*10*10*0*001*0##",
+          "who": "2",
+          "where": "73",
+          "what": null,
+          "dimension": "10",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140866.897448,
+          "iso_time": "2026-09-11T15:34:26.897448+00:00",
+          "direction": "rx",
+          "raw": "*1*0*84##",
+          "who": "1",
+          "where": "84",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140866.948554,
+          "iso_time": "2026-09-11T15:34:26.948554+00:00",
+          "direction": "rx",
+          "raw": "*1*0*94##",
+          "who": "1",
+          "where": "94",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140866.995911,
+          "iso_time": "2026-09-11T15:34:26.995911+00:00",
+          "direction": "rx",
+          "raw": "*1*0*95##",
+          "who": "1",
+          "where": "95",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140867.02828,
+          "iso_time": "2026-09-11T15:34:27.028280+00:00",
+          "direction": "rx",
+          "raw": "*2*0*73##",
+          "who": "2",
+          "where": "73",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140867.073438,
+          "iso_time": "2026-09-11T15:34:27.073438+00:00",
+          "direction": "rx",
+          "raw": "*1*0*96##",
+          "who": "1",
+          "where": "96",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140867.135637,
+          "iso_time": "2026-09-11T15:34:27.135637+00:00",
+          "direction": "rx",
+          "raw": "*#2*34*10*10*0*001*0##",
+          "who": "2",
+          "where": "34",
+          "what": null,
+          "dimension": "10",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140867.161874,
+          "iso_time": "2026-09-11T15:34:27.161874+00:00",
+          "direction": "rx",
+          "raw": "*1*0*97##",
+          "who": "1",
+          "where": "97",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140867.184698,
+          "iso_time": "2026-09-11T15:34:27.184698+00:00",
+          "direction": "rx",
+          "raw": "*2*0*34##",
+          "who": "2",
+          "where": "34",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140867.234631,
+          "iso_time": "2026-09-11T15:34:27.234631+00:00",
+          "direction": "rx",
+          "raw": "*1*1*04##",
+          "who": "1",
+          "where": "04",
+          "what": "1",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140867.299661,
+          "iso_time": "2026-09-11T15:34:27.299661+00:00",
+          "direction": "rx",
+          "raw": "*2*0*08##",
+          "who": "2",
+          "where": "08",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140867.336785,
+          "iso_time": "2026-09-11T15:34:27.336785+00:00",
+          "direction": "rx",
+          "raw": "*#2*05*10*10*0*001*0##",
+          "who": "2",
+          "where": "05",
+          "what": null,
+          "dimension": "10",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140867.366796,
+          "iso_time": "2026-09-11T15:34:27.366796+00:00",
+          "direction": "rx",
+          "raw": "*2*0*05##",
+          "who": "2",
+          "where": "05",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140867.415815,
+          "iso_time": "2026-09-11T15:34:27.415815+00:00",
+          "direction": "rx",
+          "raw": "*1*1*0910##",
+          "who": "1",
+          "where": "0910",
+          "what": "1",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140867.459232,
+          "iso_time": "2026-09-11T15:34:27.459232+00:00",
+          "direction": "rx",
+          "raw": "*1*0*98##",
+          "who": "1",
+          "where": "98",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140867.503355,
+          "iso_time": "2026-09-11T15:34:27.503355+00:00",
+          "direction": "rx",
+          "raw": "*#2*15*10*10*0*001*0##",
+          "who": "2",
+          "where": "15",
+          "what": null,
+          "dimension": "10",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140867.543679,
+          "iso_time": "2026-09-11T15:34:27.543679+00:00",
+          "direction": "rx",
+          "raw": "*1*0*99##",
+          "who": "1",
+          "where": "99",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140867.593863,
+          "iso_time": "2026-09-11T15:34:27.593863+00:00",
+          "direction": "rx",
+          "raw": "*2*0*15##",
+          "who": "2",
+          "where": "15",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140867.63753,
+          "iso_time": "2026-09-11T15:34:27.637530+00:00",
+          "direction": "rx",
+          "raw": "*1*1*23##",
+          "who": "1",
+          "where": "23",
+          "what": "1",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140867.85009,
+          "iso_time": "2026-09-11T15:34:27.850090+00:00",
+          "direction": "rx",
+          "raw": "*#2*06*10*10*0*001*0##",
+          "who": "2",
+          "where": "06",
+          "what": null,
+          "dimension": "10",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140867.85058,
+          "iso_time": "2026-09-11T15:34:27.850580+00:00",
+          "direction": "rx",
+          "raw": "*2*0*06##",
+          "who": "2",
+          "where": "06",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140867.850859,
+          "iso_time": "2026-09-11T15:34:27.850859+00:00",
+          "direction": "rx",
+          "raw": "*1*1*12##",
+          "who": "1",
+          "where": "12",
+          "what": "1",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140867.860249,
+          "iso_time": "2026-09-11T15:34:27.860249+00:00",
+          "direction": "rx",
+          "raw": "*1*0*1006##",
+          "who": "1",
+          "where": "1006",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140867.94624,
+          "iso_time": "2026-09-11T15:34:27.946240+00:00",
+          "direction": "rx",
+          "raw": "*1*0*1007##",
+          "who": "1",
+          "where": "1007",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140868.015871,
+          "iso_time": "2026-09-11T15:34:28.015871+00:00",
+          "direction": "rx",
+          "raw": "*1*1*14##",
+          "who": "1",
+          "where": "14",
+          "what": "1",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140868.017541,
+          "iso_time": "2026-09-11T15:34:28.017541+00:00",
+          "direction": "rx",
+          "raw": "*1*0*0213##",
+          "who": "1",
+          "where": "0213",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140868.078162,
+          "iso_time": "2026-09-11T15:34:28.078162+00:00",
+          "direction": "rx",
+          "raw": "*1*0*0214##",
+          "who": "1",
+          "where": "0214",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.062514,
+          "iso_time": "2026-09-11T15:34:29.062514+00:00",
+          "direction": "rx",
+          "raw": "*2*0*21##",
+          "who": "2",
+          "where": "21",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.063204,
+          "iso_time": "2026-09-11T15:34:29.063204+00:00",
+          "direction": "rx",
+          "raw": "*2*0*51##",
+          "who": "2",
+          "where": "51",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.063515,
+          "iso_time": "2026-09-11T15:34:29.063515+00:00",
+          "direction": "rx",
+          "raw": "*2*0*61##",
+          "who": "2",
+          "where": "61",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.063885,
+          "iso_time": "2026-09-11T15:34:29.063885+00:00",
+          "direction": "rx",
+          "raw": "*2*0*22##",
+          "who": "2",
+          "where": "22",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.064182,
+          "iso_time": "2026-09-11T15:34:29.064182+00:00",
+          "direction": "rx",
+          "raw": "*2*0*42##",
+          "who": "2",
+          "where": "42",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.064457,
+          "iso_time": "2026-09-11T15:34:29.064457+00:00",
+          "direction": "rx",
+          "raw": "*2*0*73##",
+          "who": "2",
+          "where": "73",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.064754,
+          "iso_time": "2026-09-11T15:34:29.064754+00:00",
+          "direction": "rx",
+          "raw": "*2*0*34##",
+          "who": "2",
+          "where": "34",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.06504,
+          "iso_time": "2026-09-11T15:34:29.065040+00:00",
+          "direction": "rx",
+          "raw": "*2*0*08##",
+          "who": "2",
+          "where": "08",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.065313,
+          "iso_time": "2026-09-11T15:34:29.065313+00:00",
+          "direction": "rx",
+          "raw": "*2*0*05##",
+          "who": "2",
+          "where": "05",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.065579,
+          "iso_time": "2026-09-11T15:34:29.065579+00:00",
+          "direction": "rx",
+          "raw": "*2*0*15##",
+          "who": "2",
+          "where": "15",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.06587,
+          "iso_time": "2026-09-11T15:34:29.065870+00:00",
+          "direction": "rx",
+          "raw": "*2*0*06##",
+          "who": "2",
+          "where": "06",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.086914,
+          "iso_time": "2026-09-11T15:34:29.086914+00:00",
+          "direction": "tx",
+          "raw": "*#4*0##",
+          "who": "4",
+          "where": "0",
+          "what": null,
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.148621,
+          "iso_time": "2026-09-11T15:34:29.148621+00:00",
+          "direction": "tx",
+          "raw": "*#16*0##",
+          "who": "16",
+          "where": "0",
+          "what": null,
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.172883,
+          "iso_time": "2026-09-11T15:34:29.172883+00:00",
+          "direction": "tx",
+          "raw": "*#13**#22*17*33*54*002*05*11*09*2026##",
+          "who": "13",
+          "where": "",
+          "what": null,
+          "dimension": "22",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.201376,
+          "iso_time": "2026-09-11T15:34:29.201376+00:00",
+          "direction": "tx",
+          "raw": "*14*0*1000##",
+          "who": null,
+          "where": null,
+          "what": null,
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.254224,
+          "iso_time": "2026-09-11T15:34:29.254224+00:00",
+          "direction": "tx",
+          "raw": "*14*0*95##",
+          "who": null,
+          "where": null,
+          "what": null,
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.293341,
+          "iso_time": "2026-09-11T15:34:29.293341+00:00",
+          "direction": "rx",
+          "raw": "*14*0*1000##",
+          "who": "14",
+          "where": "1000",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.332021,
+          "iso_time": "2026-09-11T15:34:29.332021+00:00",
+          "direction": "tx",
+          "raw": "*14*0*94##",
+          "who": null,
+          "where": null,
+          "what": null,
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.376702,
+          "iso_time": "2026-09-11T15:34:29.376702+00:00",
+          "direction": "rx",
+          "raw": "*14*0*95##",
+          "who": "14",
+          "where": "95",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.443656,
+          "iso_time": "2026-09-11T15:34:29.443656+00:00",
+          "direction": "tx",
+          "raw": "*14*0*93##",
+          "who": null,
+          "where": null,
+          "what": null,
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.466304,
+          "iso_time": "2026-09-11T15:34:29.466304+00:00",
+          "direction": "rx",
+          "raw": "*14*0*94##",
+          "who": "14",
+          "where": "94",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.50649,
+          "iso_time": "2026-09-11T15:34:29.506490+00:00",
+          "direction": "tx",
+          "raw": "*14*0*96##",
+          "who": null,
+          "where": null,
+          "what": null,
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.547545,
+          "iso_time": "2026-09-11T15:34:29.547545+00:00",
+          "direction": "rx",
+          "raw": "*14*0*93##",
+          "who": "14",
+          "where": "93",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.604591,
+          "iso_time": "2026-09-11T15:34:29.604591+00:00",
+          "direction": "tx",
+          "raw": "*14*0*1002##",
+          "who": null,
+          "where": null,
+          "what": null,
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.641742,
+          "iso_time": "2026-09-11T15:34:29.641742+00:00",
+          "direction": "rx",
+          "raw": "*14*0*96##",
+          "who": "14",
+          "where": "96",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.677141,
+          "iso_time": "2026-09-11T15:34:29.677141+00:00",
+          "direction": "tx",
+          "raw": "*14*0*1001##",
+          "who": null,
+          "where": null,
+          "what": null,
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.72048,
+          "iso_time": "2026-09-11T15:34:29.720480+00:00",
+          "direction": "rx",
+          "raw": "*14*0*1002##",
+          "who": "14",
+          "where": "1002",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.756418,
+          "iso_time": "2026-09-11T15:34:29.756418+00:00",
+          "direction": "tx",
+          "raw": "*14*0*97##",
+          "who": null,
+          "where": null,
+          "what": null,
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.794423,
+          "iso_time": "2026-09-11T15:34:29.794423+00:00",
+          "direction": "rx",
+          "raw": "*14*0*1001##",
+          "who": "14",
+          "where": "1001",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.836102,
+          "iso_time": "2026-09-11T15:34:29.836102+00:00",
+          "direction": "tx",
+          "raw": "*14*0*90##",
+          "who": null,
+          "where": null,
+          "what": null,
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.87241,
+          "iso_time": "2026-09-11T15:34:29.872410+00:00",
+          "direction": "rx",
+          "raw": "*14*0*97##",
+          "who": "14",
+          "where": "97",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.935139,
+          "iso_time": "2026-09-11T15:34:29.935139+00:00",
+          "direction": "tx",
+          "raw": "*14*0*92##",
+          "who": null,
+          "where": null,
+          "what": null,
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140869.963087,
+          "iso_time": "2026-09-11T15:34:29.963087+00:00",
+          "direction": "rx",
+          "raw": "*14*0*90##",
+          "who": "14",
+          "where": "90",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140870.0002,
+          "iso_time": "2026-09-11T15:34:30.000200+00:00",
+          "direction": "tx",
+          "raw": "*14*0*91##",
+          "who": null,
+          "where": null,
+          "what": null,
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140870.043377,
+          "iso_time": "2026-09-11T15:34:30.043377+00:00",
+          "direction": "rx",
+          "raw": "*14*0*92##",
+          "who": "14",
+          "where": "92",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140870.081615,
+          "iso_time": "2026-09-11T15:34:30.081615+00:00",
+          "direction": "tx",
+          "raw": "*#18*51*#1200#1*125##",
+          "who": "18",
+          "where": "51",
+          "what": null,
+          "dimension": "1200",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140870.119856,
+          "iso_time": "2026-09-11T15:34:30.119856+00:00",
+          "direction": "rx",
+          "raw": "*14*0*91##",
+          "who": "14",
+          "where": "91",
+          "what": "0",
+          "dimension": null,
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140870.194792,
+          "iso_time": "2026-09-11T15:34:30.194792+00:00",
+          "direction": "tx",
+          "raw": "*#18*73#0*#1200#1*125##",
+          "who": "18",
+          "where": "73",
+          "what": null,
+          "dimension": "1200",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140870.218522,
+          "iso_time": "2026-09-11T15:34:30.218522+00:00",
+          "direction": "rx",
+          "raw": "*#18*51*1200#1*125##",
+          "who": "18",
+          "where": "51",
+          "what": null,
+          "dimension": "1200",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140870.278678,
+          "iso_time": "2026-09-11T15:34:30.278678+00:00",
+          "direction": "rx",
+          "raw": "*#18*51*113*602##",
+          "who": "18",
+          "where": "51",
+          "what": null,
+          "dimension": "113",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140870.343754,
+          "iso_time": "2026-09-11T15:34:30.343754+00:00",
+          "direction": "tx",
+          "raw": "*#18*72#0*#1200#1*125##",
+          "who": "18",
+          "where": "72",
+          "what": null,
+          "dimension": "1200",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140870.36778,
+          "iso_time": "2026-09-11T15:34:30.367780+00:00",
+          "direction": "rx",
+          "raw": "*#18*73#0*1200#1*125##",
+          "who": "18",
+          "where": "73",
+          "what": null,
+          "dimension": "1200",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140870.418929,
+          "iso_time": "2026-09-11T15:34:30.418929+00:00",
+          "direction": "rx",
+          "raw": "*#18*73#0*113*0##",
+          "who": "18",
+          "where": "73",
+          "what": null,
+          "dimension": "113",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140870.495097,
+          "iso_time": "2026-09-11T15:34:30.495097+00:00",
+          "direction": "tx",
+          "raw": "*#18*79#0*#1200#1*125##",
+          "who": "18",
+          "where": "79",
+          "what": null,
+          "dimension": "1200",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140870.519811,
+          "iso_time": "2026-09-11T15:34:30.519811+00:00",
+          "direction": "rx",
+          "raw": "*#18*72#0*1200#1*125##",
+          "who": "18",
+          "where": "72",
+          "what": null,
+          "dimension": "1200",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140870.571707,
+          "iso_time": "2026-09-11T15:34:30.571707+00:00",
+          "direction": "rx",
+          "raw": "*#18*72#0*113*0##",
+          "who": "18",
+          "where": "72",
+          "what": null,
+          "dimension": "113",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140870.645985,
+          "iso_time": "2026-09-11T15:34:30.645985+00:00",
+          "direction": "tx",
+          "raw": "*#18*71#0*#1200#1*125##",
+          "who": "18",
+          "where": "71",
+          "what": null,
+          "dimension": "1200",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140870.683903,
+          "iso_time": "2026-09-11T15:34:30.683903+00:00",
+          "direction": "rx",
+          "raw": "*#18*79#0*1200#1*125##",
+          "who": "18",
+          "where": "79",
+          "what": null,
+          "dimension": "1200",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140870.76143,
+          "iso_time": "2026-09-11T15:34:30.761430+00:00",
+          "direction": "tx",
+          "raw": "*#18*77#0*#1200#1*125##",
+          "who": "18",
+          "where": "77",
+          "what": null,
+          "dimension": "1200",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140870.784693,
+          "iso_time": "2026-09-11T15:34:30.784693+00:00",
+          "direction": "rx",
+          "raw": "*#18*71#0*1200#1*125##",
+          "who": "18",
+          "where": "71",
+          "what": null,
+          "dimension": "1200",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140870.833187,
+          "iso_time": "2026-09-11T15:34:30.833187+00:00",
+          "direction": "rx",
+          "raw": "*#18*71#0*113*0##",
+          "who": "18",
+          "where": "71",
+          "what": null,
+          "dimension": "113",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140870.907409,
+          "iso_time": "2026-09-11T15:34:30.907409+00:00",
+          "direction": "tx",
+          "raw": "*#18*76#0*#1200#1*125##",
+          "who": "18",
+          "where": "76",
+          "what": null,
+          "dimension": "1200",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140870.945553,
+          "iso_time": "2026-09-11T15:34:30.945553+00:00",
+          "direction": "rx",
+          "raw": "*#18*77#0*1200#1*125##",
+          "who": "18",
+          "where": "77",
+          "what": null,
+          "dimension": "1200",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140871.025293,
+          "iso_time": "2026-09-11T15:34:31.025293+00:00",
+          "direction": "tx",
+          "raw": "*#18*75#0*#1200#1*125##",
+          "who": "18",
+          "where": "75",
+          "what": null,
+          "dimension": "1200",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140871.06386,
+          "iso_time": "2026-09-11T15:34:31.063860+00:00",
+          "direction": "rx",
+          "raw": "*#18*76#0*1200#1*125##",
+          "who": "18",
+          "where": "76",
+          "what": null,
+          "dimension": "1200",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140871.112919,
+          "iso_time": "2026-09-11T15:34:31.112919+00:00",
+          "direction": "rx",
+          "raw": "*#18*76#0*113*0##",
+          "who": "18",
+          "where": "76",
+          "what": null,
+          "dimension": "113",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140871.188609,
+          "iso_time": "2026-09-11T15:34:31.188609+00:00",
+          "direction": "tx",
+          "raw": "*#18*74#0*#1200#1*125##",
+          "who": "18",
+          "where": "74",
+          "what": null,
+          "dimension": "1200",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140871.226661,
+          "iso_time": "2026-09-11T15:34:31.226661+00:00",
+          "direction": "rx",
+          "raw": "*#18*75#0*1200#1*125##",
+          "who": "18",
+          "where": "75",
+          "what": null,
+          "dimension": "1200",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140871.272231,
+          "iso_time": "2026-09-11T15:34:31.272231+00:00",
+          "direction": "rx",
+          "raw": "*#18*75#0*113*0##",
+          "who": "18",
+          "where": "75",
+          "what": null,
+          "dimension": "113",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140871.349471,
+          "iso_time": "2026-09-11T15:34:31.349471+00:00",
+          "direction": "tx",
+          "raw": "*#18*78#0*#1200#1*125##",
+          "who": "18",
+          "where": "78",
+          "what": null,
+          "dimension": "1200",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140871.377491,
+          "iso_time": "2026-09-11T15:34:31.377491+00:00",
+          "direction": "rx",
+          "raw": "*#18*74#0*1200#1*125##",
+          "who": "18",
+          "where": "74",
+          "what": null,
+          "dimension": "1200",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140871.427007,
+          "iso_time": "2026-09-11T15:34:31.427007+00:00",
+          "direction": "rx",
+          "raw": "*#18*74#0*113*0##",
+          "who": "18",
+          "where": "74",
+          "what": null,
+          "dimension": "113",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140871.535631,
+          "iso_time": "2026-09-11T15:34:31.535631+00:00",
+          "direction": "rx",
+          "raw": "*#18*77#0*113*415##",
+          "who": "18",
+          "where": "77",
+          "what": null,
+          "dimension": "113",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140871.600942,
+          "iso_time": "2026-09-11T15:34:31.600942+00:00",
+          "direction": "rx",
+          "raw": "*#18*78#0*1200#1*125##",
+          "who": "18",
+          "where": "78",
+          "what": null,
+          "dimension": "1200",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140871.659373,
+          "iso_time": "2026-09-11T15:34:31.659373+00:00",
+          "direction": "rx",
+          "raw": "*#18*78#0*113*0##",
+          "who": "18",
+          "where": "78",
+          "what": null,
+          "dimension": "113",
+          "is_ack": false,
+          "is_nack": false
+        },
+        {
+          "timestamp": 1789140871.721801,
+          "iso_time": "2026-09-11T15:34:31.721801+00:00",
+          "direction": "rx",
+          "raw": "*#18*79#0*113*0##",
+          "who": "18",
+          "where": "79",
+          "what": null,
+          "dimension": "113",
+          "is_ack": false,
+          "is_nack": false
+        }
+      ]
+    }
+  },
+  "issues": []
+}

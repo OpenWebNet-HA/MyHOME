@@ -1,0 +1,1507 @@
+Open Web Net   Language  
+ 
+Pag.1 di 19 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+Document name  
+OpenWebNet_Community_4_soundsystem_v1_0_1_EN.doc 
+Last date modify 
+11/24/2011 
+Last version 
+1.0.1 
+Open Web Net   Language  
+ 
+Pag.2 di 19 
+ 
+Updating history 
+Version 
+Date 
+Author 
+1.0.0 
+05/19/2006 
+Bticino S.p.A.  
+Direzione Marketing e Sviluppo Prodotti (Sviluppo Software Embedded) 
+Via L. Manara, 4  
+Erba (CO) Italy 
+www.myopen-bticino.it 
+Updating description: 
+FIRST VERSION 
+1.0.1 
+11/24/2011 
+Legrand  
+R&D dept 
+www.myopen-legrandgroup.com 
+Updating description: 
+REMOVED WHAT 3001/4016 
+ADD LICENCES 
+ 
+Open Web Net   Language  
+ 
+Pag.3 di 19 
+ 
+INDEX 
+Updating history ................................................................................................................................... 2 
+INDEX ................................................................................................................................................. 3 
+1. 
+Sound system (WHO = 16) .......................................................................................................... 4 
+1.1. 
+WHAT table: ........................................................................................................................ 4 
+1.2. 
+WHERE table:...................................................................................................................... 6 
+1.3. 
+DIMENSIONS table: ........................................................................................................... 6 
+1.4. 
+Allowed OPEN messages Command session: Amplifiers and sources set in ..................... 7 
+1.4.1. 
+AMPLIFIERS/SOURCES ON Command ................................................................... 7 
+1.4.2. 
+AMPLIFIERS/SOURCES OFF Command ................................................................. 8 
+1.4.3. 
+SOURCES CYCLE Command .................................................................................... 8 
+1.4.4. 
+SLEEP ACTIVATION Command............................................................................... 9 
+1.4.5. 
+SLEEP DEACTIVATION Command ......................................................................... 9 
+1.4.6. 
+FOLLOW ME Command ............................................................................................ 9 
+1.4.7. 
+RDS START-SEND Command ................................................................................. 10 
+1.4.8. 
+RDS STOP-SEND Command .................................................................................... 10 
+1.4.9. 
+VOLUME UP Command ........................................................................................... 10 
+1.4.10. 
+VOLUME DOWN Command ................................................................................... 11 
+1.4.11. 
+FREQUENCY UP Command .................................................................................... 11 
+1.4.12. 
+FREQUENCY DOWN Command............................................................................. 11 
+1.4.13. 
+STATION UP Command ........................................................................................... 12 
+1.4.14. 
+STATION DOWN Command ................................................................................... 12 
+1.5. 
+Allowed OPEN messages Command session: Dimensions and status request and 
+dimensions written ......................................................................................................................... 13 
+1.5.1. 
+VOLUME REQUEST Command .............................................................................. 13 
+1.5.2. 
+STATUS REQUEST Command ................................................................................ 13 
+1.5.3. 
+FREQUENCY REQUEST Command ....................................................................... 14 
+1.5.4. 
+STATION REQUEST Command .............................................................................. 14 
+1.5.5. 
+RDS REQUEST Command ....................................................................................... 15 
+1.5.6. 
+VOLUME WRITE Command ................................................................................... 15 
+1.5.7. 
+FREQUENCY WRITE Command ............................................................................ 15 
+1.5.8. 
+STATION WRITE Command ................................................................................... 16 
+1.5.9. 
+STATION MEMORIZED Command ........................................................................ 16 
+1.6. 
+Allowed OPEN messages Monitor Session ....................................................................... 17 
+1.6.1. 
+VOLUME INFORMATION...................................................................................... 17 
+1.6.2. 
+STATUS INFORMATION ....................................................................................... 17 
+1.6.3. 
+STATUS AND FREQUENCY INFORMATION ..................................................... 17 
+1.6.4. 
+RDS INFORMATION ............................................................................................... 18 
+License ............................................................................................................................................... 19 
+Disclaimers......................................................................................................................................... 19 
+ 
+Open Web Net   Language  
+ 
+Pag.4 di 19 
+ 
+1. Sound system (WHO = 16) 
+1.1.  WHAT table: 
+ 
+0 
+ON amplifier / source “base band” 
+3 
+ON amplifier / source stereo channel 
+10 
+OFF amplifier / source “base band” 
+13 
+OFF amplifier / source stereo channel 
+20 
+source cycle (“base band”) 
+23 
+source cycle (channel stereo) 
+30 
+Sleep on “base band” 
+33 
+Sleep on channel stereo 
+40 
+Sleep OFF 
+50 
+Follow me “base band” 
+53 
+Follow me channel stereo 
+100 
+source Busy 
+101 
+Start send RDS 
+102 
+Stop send RDS 
+ 
+ 
+1001 
+Delta volume: +1 
+1002 
+Delta volume: +2 
+… 
+… 
+1014 
+Delta volume: +14 
+1015 
+Delta volume: +15 
+1101 
+Delta volume: -1 
+1102 
+Delta volume: -2 
+… 
+… 
+1114 
+Delta volume: -14 
+1115 
+Delta volume: -15 
+ 
+ 
+2001 
+Delta high tones: +1 
+2002 
+Delta high tones: +2 
+… 
+… 
+2014 
+Delta high tones: +14 
+2015 
+Delta high tones: +15 
+2101 
+Delta high tones: -1 
+2102 
+Delta high tones: -2 
+… 
+… 
+2114 
+Delta high tones: -14 
+2115 
+Delta high tones: -15 
+ 
+ 
+Open Web Net   Language  
+ 
+Pag.5 di 19 
+ 
+5000 
+Find the first free frequency greater than the 
+selected one  
+5001 
+Delta frequency: +0.05Mhz 
+5002 
+Delta frequency: +0.1Mhz 
+… 
+… 
+5014 
+Delta frequency: +0.7Mhz 
+5015 
+Delta frequency: +0.75Mhz 
+5100 
+Find the first free frequency less than the selected 
+one 
+5101 
+Delta frequency: -0.05Mhz 
+5102 
+Delta frequency: -0.1Mhz 
+… 
+… 
+5114 
+Delta frequency: -0.7Mhz 
+5115 
+Delta frequency: -0.75Mhz 
+ 
+ 
+6001 
+Delta radio station or track:  +1 
+6002 
+Delta radio station or track: +2 
+… 
+… 
+6014 
+Delta radio station or track: +14 
+6015 
+Delta radio station or track: +15 
+6101 
+Delta radio station or track: -1 
+6102 
+Delta radio station or track: -2 
+… 
+… 
+6114 
+Delta radio station or track: -14 
+6115 
+Delta radio station or track: -15 
+ 
+ 
+ 
+Open Web Net   Language  
+ 
+Pag.6 di 19 
+ 
+ 
+1.2.  WHERE table: 
+0 
+General amplifiers 
+#0 
+0 Environment amplifiers 
+#1 
+1 Environment amplifiers 
+#2 
+2 Environment amplifiers 
+#3 
+3 Environment amplifiers 
+#4 
+4 Environment amplifiers 
+#5 
+5 Environment amplifiers 
+#6 
+6 Environment amplifiers 
+#7 
+7 Environment amplifiers 
+#8 
+8 Environment amplifiers 
+#9 
+9 Environment amplifiers 
+ 
+ 
+01 
+01 Amplifier  
+…. 
+…. 
+99 
+99 Amplifier  
+ 
+ 
+100 
+General source 
+101 
+1 Source  
+102 
+2 Source  
+103 
+3 Source 
+104 
+4 Source 
+105 
+5 Source 
+106 
+6 Source  
+107 
+7 Source  
+108 
+8 Source 
+109 
+9 Source  
+ 
+1.3.  DIMENSIONS table: 
+ 
+1 
+Volume 
+2 
+High Tones 
+3 
+Low Tones 
+4 
+Balance 
+5 
+State 
+6 
+Frequency 
+7 
+Radio station / track 
+8 
+RDS 
+9 
+Frequency + Radio station / track 
+10 
+Radio station 
+Open Web Net   Language  
+ 
+Pag.7 di 19 
+ 
+1.4.  Allowed OPEN messages Command session: Amplifiers and 
+sources set in 
+1.4.1. 
+AMPLIFIERS/SOURCES ON Command  
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server  
+*16*what*where## 
+what = 0, 3 
+where =  
+0 
+Amplifiers general command 
+#0 - #9 
+Amplifiers environment command 
+01 - 99 
+Amplifiers point to point command 
+101 - 109 Sources point to point command 
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*16*what*where1## 
+… 
+*16*what* wheren## 
+ 
+ 
+ 
+*#16*where*1*parameter## 
+ 
+ 
+ 
+*#16*where*8*parameter## 
+ 
+ 
+ 
+ 
+It is sent the activate amplifiers and sources 
+status. 
+where = point to point amplifiers or commanded 
+source address. 
+what = 0, 3 
+ 
+where = [01 – 99] 
+parameter = [0 – 31] it indicates the amplifier 
+volume’s.  
+ 
+where = [101 - 109] 
+parameter = it indicates the RDS string and it 
+includes 8 ASCII characters. 
+Example: enabled RDS on 101 source. 
+*#16*101*8*32*67*65*80*73*84*65*76## 
+ 
+Open Web Net   Language  
+ 
+Pag.8 di 19 
+ 
+ 
+1.4.2. 
+AMPLIFIERS/SOURCES OFF Command  
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server 
+*16*what*where## 
+what = 10, 13 
+where =  
+0 
+Amplifiers general command 
+#0 - #9 
+Amplifiers environment command 
+01 - 99 
+Amplifiers point to point command 
+100 
+Sources general command 
+101 - 109 Sources point to point command 
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*16*[10-15]*where1## 
+… 
+*16*[10-15]* wheren## 
+ 
+It is sent the deactivate amplifiers and sources 
+status. 
+where = point to point amplifiers or commanded 
+source address. 
+1.4.3. 
+SOURCES CYCLE Command 
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server 
+*16*what*100## 
+what = 20, 23 
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*16*what*where## 
+ 
+ 
+ 
+*16*what*where1## 
+… 
+*16*what*wheren## 
+ 
+ 
+ 
+*#16*where*6*0*parameter
+## 
+ 
+ 
+ 
+ 
+ 
+ 
+*#16*where*7*0*parameter
+## 
+If activated source:  
+what = 0, 3 
+where = [101 – 109] 
+ 
+If deactivated source: 
+what = 10, 13 
+where = [101 -109] 
+(preceding source compared with the actual 
+source) 
+ 
+These 2 frames are optional and they depend 
+from activated source: 
+where = [101 – 109] 
+parameter = it indicates the listen frequency 
+expressed  in Hz. It is composed by 6 digits: 
+Example: set 107.00 frequency 
+*#16*where*#6*0*107000## 
+ 
+If the radio station is memorized then: 
+where = [101 – 109] 
+Open Web Net   Language  
+ 
+Pag.9 di 19 
+ 
+parameter = it indicates the memory number 
+that the actual radio station is saved. 
+1.4.4. 
+SLEEP ACTIVATION Command 
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server 
+*16*what*where## 
+what =  
+30  “base band” Sleep activation 
+33  “stereo channel” Sleep activation  
+where = 
+0 
+Amplifiers general command 
+#0 - #9 
+Amplifiers environment command 
+01 - 99 
+Amplifiers point to point command 
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*16*what*where1## 
+… 
+*16*what*wheren## 
+ 
+ 
+*#16*where1*1*parameter## 
+… 
+*#16*wheren*1*parameter## 
+where = Commanded amplifier address 
+what =  
+30 (sent)  0 (response) 
+33 (sent)  3 (response) 
+ 
+where = [01 – 99] 
+parameter = [0 – 31] it indicates the amplifier 
+volume’s.  
+ 
+1.4.5. 
+SLEEP DEACTIVATION Command 
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server 
+*16*40*where## 
+where = 
+0 
+Amplifiers general command 
+#0 - #9 
+Amplifiers environment command 
+01 - 99 
+Amplifiers point to point command 
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*16*13*where## 
+where = Commanded amplifier address 
+ 
+1.4.6. 
+FOLLOW ME Command 
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server 
+*16*53*100## 
+ 
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Open Web Net   Language  
+ 
+Pag.10 di 19 
+ 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*16*what*where## 
+what = 
+0  Base band ON 
+3  Stereo channel ON   
+13  OFF 
+where = [101 – 109] 
+1.4.7. 
+RDS START-SEND Command 
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server 
+*16*101*where## 
+where = [101 – 109] 
+ 
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*#16*where*8*0*parameter
+## 
+where = [101 - 109] 
+parameter = it indicates the RDS string and it 
+includes 8 ASCII characters. 
+Example: enabled RDS on 101 source. 
+*#16*101*8*32*67*65*80*73*84*65*76## 
+1.4.8. 
+RDS STOP-SEND Command 
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server 
+*16*102*where## 
+where = [101 - 109] 
+ 
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+ 
+ 
+ 
+1.4.9. 
+VOLUME UP Command 
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server 
+*16*what*where## 
+what = [1001 – 1015] 
+where = 
+0 
+Amplifiers general command 
+#0 - #9 
+Amplifiers environment command 
+01 - 99 
+Amplifiers point to point command 
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Open Web Net   Language  
+ 
+Pag.11 di 19 
+ 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*#16*where1*1*parameter## 
+… 
+*#16*wheren*1*parameter## 
+where = [01 – 99] 
+parameter = [0 – 31] it indicates the amplifier 
+volume’s.  
+1.4.10. VOLUME DOWN Command 
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server 
+*16*what*where## 
+what = [1101 – 1115] 
+where = 
+0 
+Amplifiers general command 
+#0 - #9 
+Amplifiers environment command 
+01 - 99 
+Amplifiers point to point command 
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*#16*where1*1*parameter## 
+… 
+*#16*wheren*1*parameter## 
+where = [01 – 99] 
+parameter = [0 – 31] it indicates the amplifier 
+volume’s.  
+1.4.11. FREQUENCY UP Command 
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server 
+*16*what*where ## 
+what = [5000 – 5015] 
+where = [101 - 109] 
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*#16*where*6*0*parameter
+## 
+ 
+ 
+ 
+ 
+*#16*where*7*0*parameter
+## 
+where = [101 – 109] 
+parameter = it indicates the listen frequency 
+expressed  in Hz. It is composed by 6 digits: 
+Example: 107.00 frequency 
+*#16*where*6*0*107000## 
+ 
+If the radio station is memorized then: 
+where = [101 – 109] 
+parameter = it indicates the memory number 
+that the actual radio station is saved. 
+1.4.12. FREQUENCY DOWN Command 
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server 
+*16*what*where## 
+what = [5100 – 5115] 
+where = [101 - 109]  
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Open Web Net   Language  
+ 
+Pag.12 di 19 
+ 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*#16*where*6*0*parameter
+## 
+ 
+ 
+ 
+ 
+*#16*where*7*0*parameter
+## 
+where = [101 – 109] 
+parameter = it indicates the listen frequency 
+expressed  in Hz. It is composed by 6 digits: 
+Example: 107.00 frequency 
+*#16*where*6*0*107000## 
+ 
+If the radio station is memorized then: 
+where = [101 – 109] 
+parameter = it indicates the memory number 
+that the actual radio station is saved. 
+1.4.13. STATION UP Command 
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server 
+*16*what*where## 
+what = [6001 – 6015] 
+where = [101 - 109] 
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*#16*where*6*0*parameter
+## 
+ 
+ 
+ 
+ 
+*#16*where*7*0*parameter
+## 
+where = [101 – 109] 
+parameter = it indicates the listen frequency 
+expressed  in Hz. It is composed by 6 digits: 
+Example: 107.00 frequency 
+*#16*where*6*0*107000## 
+ 
+If the radio station is memorized then: 
+where = [101 – 109] 
+parameter = it indicates the memory number 
+that the actual radio station is saved. 
+1.4.14. STATION DOWN Command 
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server 
+*16*what*where## 
+what = [6101 – 6115] 
+where = [101 - 109] 
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*#16*where*6*0*parameter
+## 
+ 
+ 
+ 
+ 
+*#16*where*7*0*parameter
+## 
+where = [101 – 109] 
+parameter = it indicates the listen frequency 
+expressed  in Hz. It is composed by 6 digits: 
+Example: 107.00 frequency 
+*#16*where*6*0*107000## 
+ 
+If the radio station is memorized then: 
+where = [101 – 109] 
+Open Web Net   Language  
+ 
+Pag.13 di 19 
+ 
+parameter = it indicates the memory number 
+that the actual radio station is saved. 
+ 
+1.5.  Allowed OPEN messages Command session: Dimensions and 
+status request and dimensions written  
+1.5.1. 
+VOLUME REQUEST Command 
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server  
+*#16*where*1## 
+where = 
+0 
+Amplifiers general command 
+#0 - #9 
+Amplifiers environment command 
+01 - 99 
+Amplifiers point to point command 
+Tcp/Ip 
+Client 
+ Server 
+*#16*where1*1*parameter## 
+… 
+*#16*wheren*1*parameter## 
+If environment or general request, we get as a lot 
+of frames as the active amplifiers are available: 
+where = [01 – 99] 
+parameter = [0 – 31] it indicates the amplifier 
+volume’s.  
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*#16*where1*1*parameter## 
+… 
+*#16*wheren*1*parameter## 
+See upper comment. 
+1.5.2. 
+STATUS REQUEST Command 
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server 
+*#16*where*5## 
+where = 
+0 
+Amplifiers general command 
+#0 - #9 
+Amplifiers environment command 
+01 - 99 
+Amplifiers point to point command 
+100 
+Sources general command 
+101 - 109 Sources point to point command 
+Tcp/Ip 
+Client 
+ Server 
+*16*what*where## 
+If environment or general request, we get as a lot 
+of frames as the active amplifiers are available: 
+what = 
+0  Base band ON 
+3  Stereo channel ON   
+13  OFF 
+where = [01 – 99] and [101 – 109] 
+ 
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Open Web Net   Language  
+ 
+Pag.14 di 19 
+ 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*16*what*where## 
+See upper comment. 
+1.5.3. 
+FREQUENCY REQUEST Command 
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server 
+*#16*where*6## 
+Se where: 
+100 
+Sources general command 
+101 - 109 Sources point to point command 
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*#16*where*6*0*parameter
+## 
+ 
+ 
+ 
+ 
+*#16*where*7*0*parameter
+## 
+where = [101 – 109] 
+parameter = it indicates the listen frequency 
+expressed  in Hz. It is composed by 6 digits: 
+Example: set 107.00 frequency 
+*#16*where*#6*0*107000## 
+ 
+If the radio station is memorized then: 
+where = [101 – 109] 
+parameter = it indicates the memory number 
+that the actual radio station is saved. 
+1.5.4. 
+STATION REQUEST Command 
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server 
+*#16*where*7## 
+Se where: 
+100 
+Sources general command 
+101 - 109 Sources point to point command 
+Tcp/Ip 
+Client 
+ Server 
+*#16*where*7*0*parameter
+## 
+If the radio station is memorized then: 
+where = [101 – 109] 
+parameter = it indicates the memory number 
+that the actual radio station is saved. 
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*#16*where*6*0*parameter
+## 
+ 
+ 
+ 
+ 
+*#16*where*7*0*parameter
+## 
+where = [101 – 109] 
+parameter = it indicates the listen frequency 
+expressed  in Hz. It is composed by 6 digits: 
+Example: set 107.00 frequency 
+*#16*where*#6*0*107000## 
+ 
+If the radio station is memorized then: 
+where = [101 – 109] 
+parameter = it indicates the memory number 
+that the actual radio station is saved. 
+Open Web Net   Language  
+ 
+Pag.15 di 19 
+ 
+1.5.5. 
+RDS REQUEST Command 
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server 
+*#16*where*8## 
+where = [101 – 109] 
+ 
+Tcp/Ip 
+Client 
+ Server 
+*#16*where*8*parameter## 
+ 
+where = [101 - 109] 
+parameter = it indicates the RDS string and it 
+includes 8 ASCII characters. 
+Example: enabled RDS on 101 source. 
+*#16*101*8*32*67*65*80*73*84*65*76## 
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*#16*where*8*parameter2#
+# 
+ 
+See upper comment. 
+1.5.6. 
+VOLUME WRITE Command 
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server 
+*#16*where*#1*parameter*
+## 
+where = 
+0 
+Amplifiers general command 
+#0 - #9 
+Amplifiers environment command 
+01 - 99 
+Amplifiers point to point command 
+parameter = [0 – 31] it indicates the amplifier 
+volume’s that we want to set in 
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*#16*where1*1*parameter## 
+… 
+*#16*wheren*1*parameter## 
+where = [01 – 99] 
+parameter = [0 – 31] it indicates the amplifier 
+volume. 
+1.5.7. 
+FREQUENCY WRITE Command 
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server 
+*#16*where*#6*0*paramete
+r## 
+where = [101 – 109] 
+parameter = it indicates the frequency that we 
+want to set in and it is expressed  in Hz. It is 
+composed by 6 digits: 
+ 
+Example: set 107.00 frequency 
+*#16*where*#6*0*107000## 
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+*#16*where*6*0*parameter
+where = [101 – 109] 
+Open Web Net   Language  
+ 
+Pag.16 di 19 
+ 
+Client monitor  
+Server 
+## 
+ 
+ 
+ 
+ 
+*#16*where*8*parameter## 
+ 
+parameter = it indicates the listen frequency 
+expressed  in Hz. It is composed by 6 digits: 
+Example: set 107.00 frequency 
+*#16*where*#6*0*107000## 
+ 
+If available: 
+where = [101 - 109] 
+parameter = it indicates the RDS string and it 
+includes 8 ASCII. 
+Example: enabled RDS on 101 source. 
+*#16*101*8*32*67*65*80*73*84*65*76## 
+1.5.8. 
+STATION WRITE Command 
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server  
+*#16*where*#7*parameter#
+# 
+where = [101 – 109] 
+parameter = [1 – 5] it indicates the radio 
+station that we want to listen. 
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*#16*where*6*0*parameter
+## 
+ 
+ 
+ 
+ 
+*#16*where*7*0*parameter
+## 
+ 
+ 
+ 
+*#16*where*8*parameter## 
+ 
+where = [101 – 109] 
+parameter = it indicates the listen frequency 
+expressed  in Hz. It is composed by 6 digits: 
+Example: set 107.00 frequency 
+*#16*where*#6*0*107000## 
+ 
+where = [101 – 109] 
+parameter = it indicates the memory number 
+that the actual radio station is saved. 
+ 
+If available: 
+where = [101 - 109] 
+parameter = it indicates the RDS string and it 
+includes 8 ASCII characters. 
+Example: enabled RDS on 101 source. 
+*#16*101*8*32*67*65*80*73*84*65*76## 
+1.5.9. 
+STATION MEMORIZED Command 
+Command Session 
+Open Frame 
+Note 
+Tcp/Ip:  
+Client 
+ Server  
+*#16*where*#10*parameter
+## 
+where = [101 – 109] 
+parameter = [1 – 5] it indicates the radio 
+station that we want to listen. 
+Tcp/Ip: 
+Client
+Server 
+*#*1## or *#*0## 
+ACK if command is sent to Bus. 
+NACK if command is not sent to Bus. 
+Monitor Session 
+Open Frame  
+Note 
+Tcp/Ip 
+*#16*where*6*0*parameter
+where = [101 – 109] 
+Open Web Net   Language  
+ 
+Pag.17 di 19 
+ 
+Client monitor  
+Server 
+## 
+ 
+ 
+ 
+ 
+*#16*where*7*0*parameter
+## 
+ 
+parameter = it indicates the listen frequency 
+expressed  in Hz. It is composed by 6 digits: 
+Example: set 107.00 frequency 
+*#16*where*#6*0*107000## 
+ 
+where = [101 – 109] 
+parameter = it indicates the memory number 
+that the actual radio station is saved. 
+ 
+1.6.  Allowed OPEN messages Monitor Session 
+1.6.1. 
+VOLUME INFORMATION 
+Monitor Session 
+Open Frame 
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*#16*where*1*parameter## where = [01 – 99]  
+parameter = [0 – 31] it indicates the amplifier’s 
+volume that we want to set in.  
+1.6.2. 
+STATUS INFORMATION 
+Monitor Session 
+Open Frame 
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*16*what*where## 
+what = 
+0  Base band ON 
+3  Stereo channel ON   
+13  OFF 
+where = [01 – 99] e [101 – 109] 
+1.6.3. 
+STATUS AND FREQUENCY INFORMATION 
+Monitor Session 
+Open Frame 
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*#16*where*6*0*parameter
+## 
+ 
+ 
+ 
+ 
+*#16*where*7*0*parameter
+## 
+where = [101 – 109] 
+parameter = it indicates the listen frequency 
+expressed  in Hz. It is composed by 6 digits: 
+Example: set 107.00 frequency 
+*#16*where*#6*0*107000## 
+ 
+If the radio station is memorized then: 
+where = [101 – 109] 
+parameter = it indicates the memory number 
+that the actual radio station is saved. 
+Open Web Net   Language  
+ 
+Pag.18 di 19 
+ 
+1.6.4. 
+RDS INFORMATION 
+Monitor Session 
+Open Frame 
+Note 
+Tcp/Ip 
+Client monitor  
+Server 
+*#16*where*8*0*parameter where = [101 - 109] 
+parameter = it indicates the RDS string and it 
+includes 8 ASCII characters. 
+Example: enabled RDS on 101 source. 
+*#16*101*8*32*67*65*80*73*84*65*76## 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+Open Web Net   Language  
+ 
+Pag.19 di 19 
+ 
+License 
+ 
+By using and/or copying this document, you (the licensee) agree that you have read, understood, 
+and will comply with the following terms and conditions: 
+Permission to copy, and distribute the contents of this document, in any medium for any purpose 
+and without fee or royalty is hereby granted, provided that you include the following on ALL copies 
+of the document, or portions thereof, that you use: 
+A link or URL to the www.myopen-legrandgroup.com. 
+The copyright notice of the original author, or if it doesn't exist, a notice (hypertext is preferred, 
+but a textual representation is permitted) of the form: "Copyright © [date-of-document] 
+www.myopen-legrandgroup.com. All Rights Reserved".  
+ 
+When space permits, inclusion of the full text of this NOTICE should be provided. We request that 
+authorship attribution be provided in any software, documents, or other items or products that you 
+create pursuant to the implementation of the contents of this document, or any portion thereof. 
+Any contributions to the document (i.e. translation, modifications, improvements, etc) has to be 
+submitted to and accepted by the My Open staff (using the forum of the community or sending an 
+email via the www.myopen-legrandgroup.com dedicated section) . Once the improvement has been 
+accepted the new release will be published in the My Open Community web site.  
+. 
+Disclaimers 
+ 
+THIS DOCUMENT IS PROVIDED "AS IS," AND COPYRIGHT HOLDERS MAKE NO 
+REPRESENTATIONS OR WARRANTIES, EXPRESS OR IMPLIED, INCLUDING, BUT NOT 
+LIMITED TO, WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR 
+PURPOSE, NON-INFRINGEMENT, OR TITLE; THAT THE CONTENTS OF THE 
+DOCUMENT ARE SUITABLE FOR ANY PURPOSE; NOR THAT THE IMPLEMENTATION 
+OF SUCH CONTENTS WILL NOT INFRINGE ANY THIRD PARTY PATENTS, 
+COPYRIGHTS, TRADEMARKS OR OTHER RIGHTS. 
+COPYRIGHT HOLDERS WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, SPECIAL 
+OR CONSEQUENTIAL DAMAGES ARISING OUT OF ANY USE OF THE DOCUMENT OR 
+THE PERFORMANCE OR IMPLEMENTATION OF THE CONTENTS THEREOF. 
+The name and trademarks of copyright holders may NOT be used in advertising or publicity 
+pertaining to this document or its contents without specific, written prior permission. Title to 
+copyright in this document will at all times remain with copyright holders. 
+ 

@@ -1,0 +1,95 @@
+name: PyPI Standards & Packaging
+
+on:
+  push:
+    branches: [main, master, "v2-*"]
+  pull_request:
+    branches: [main, master, "v2-*"]
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  packaging-standards:
+    name: Validate PyPI Packaging Standards
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install packaging tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine "validate-pyproject[all]" check-wheel-contents
+
+      - name: Validate pyproject.toml standards
+        run: |
+          validate-pyproject pyproject.toml
+
+      - name: Build sdist and wheel
+        run: |
+          python -m build
+
+      - name: Strict twine distribution check
+        run: |
+          twine check --strict dist/*
+
+      - name: Check wheel hygiene
+        run: |
+          check-wheel-contents dist/*.whl
+
+      - name: Verify integration assets in wheel
+        run: |
+          python -c "import zipfile, glob; whl = glob.glob('dist/*.whl')[0]; z = zipfile.ZipFile(whl); files = z.namelist(); assert any('manifest.json' in f for f in files), f'manifest.json missing from {whl}'; assert any('en.json' in f for f in files), f'translations missing from {whl}'; print('Integration wheel assets verified successfully!')"
+
+      - name: Upload distribution packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-packages
+          path: dist/*
+          retention-days: 7
+
+  unit-tests-and-coverage:
+    name: Run Pytest Suite & Coverage (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install .[test] homeassistant python-dateutil pytz pytest-socket
+          pip install --upgrade --force-reinstall "git+https://github.com/OpenWebNet-HA/OWNd.git@${{ github.head_ref || github.ref_name }}" || pip install --upgrade --force-reinstall "git+https://github.com/OpenWebNet-HA/OWNd.git@v2-phase2-architecture"
+
+      - name: Run test suite with coverage tracking
+        run: |
+          pytest --snapshot-update --cov=custom_components.myhome --cov-report=xml --cov-report=term-missing tests/
+
+      - name: Enforce 100% test coverage on ownd core
+        run: |
+          python scripts/verify_ownd_coverage.py
+
+      - name: Upload coverage report
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 7

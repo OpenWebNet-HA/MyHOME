@@ -1,0 +1,55 @@
+- id: cen.event.short_press.btn2.11
+  frame: "*15*1*11#2##"
+  direction: event
+  who: 15
+  what: 1
+  where: "11"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "CEN: Short press on button 2 of interface 11"
+  roundtrip: true
+  builder:
+    class: OWNCenCommand
+    method: press
+    args: ["11", 2]
+
+- id: cen.event.start_long_press.btn2.11
+  frame: "*15*0*11#2##"
+  direction: event
+  who: 15
+  what: 0
+  where: "11"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "CEN: Start of long press on button 2 of interface 11"
+  roundtrip: true
+  builder:
+    class: OWNCenCommand
+    method: start_long_press
+    args: ["11", 2]
+
+- id: cen.event.release.btn2.11
+  frame: "*15*2*11#2##"
+  direction: event
+  who: 15
+  what: 2
+  where: "11"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "CEN: Release button 2 of interface 11"
+  roundtrip: true
+  builder:
+    class: OWNCenCommand
+    method: release
+    args: ["11", 2]
+
+- id: cen.event.extended_press.btn1.0001
+  frame: "*15*01#3*0001##"
+  direction: event
+  who: 15
+  what: "01#3"
+  where: "0001"
+  source: openwebnet4j
+  mcp_valid: true
+  mcp_notes: "CEN: Button 1 extended pressure on module 0001"
+  roundtrip: true

@@ -1,0 +1,178 @@
+- id: cover.cmd.up.ptp.93
+  frame: "*2*1*93##"
+  direction: command
+  who: 2
+  what: 1
+  where: "93"
+  source: public-readme
+  mcp_valid: true
+  mcp_notes: "Automation (Covers & Shutters): UP (Open shutter) at address '93'"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: raise_shutter
+    args: ["93"]
+
+- id: cover.cmd.down.ptp.93
+  frame: "*2*2*93##"
+  direction: command
+  who: 2
+  what: 2
+  where: "93"
+  source: public-readme
+  mcp_valid: true
+  mcp_notes: "Automation (Covers & Shutters): DOWN (Close shutter) at address '93'"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: lower_shutter
+    args: ["93"]
+
+- id: cover.cmd.stop.ptp.93
+  frame: "*2*0*93##"
+  direction: command
+  who: 2
+  what: 0
+  where: "93"
+  source: public-readme
+  mcp_valid: true
+  mcp_notes: "Automation (Covers & Shutters): STOP movement at address '93'"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: stop_shutter
+    args: ["93"]
+
+- id: cover.req.status.ptp.93
+  frame: "*#2*93##"
+  direction: status_request
+  who: 2
+  what: null
+  where: "93"
+  source: public-readme
+  mcp_valid: true
+  mcp_notes: "Query status of Automation at address '93'"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: status
+    args: ["93"]
+
+- id: cover.cmd.up.bus.21
+  frame: "*2*1*21#4#1##"
+  direction: command
+  who: 2
+  what: 1
+  where: "21"
+  interface: "1"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Automation: UP at address 21 on private SCS bus 1"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: raise_shutter
+    args: ["21#4#1"]
+
+- id: cover.cmd.stop.bus.21
+  frame: "*2*0*21#4#1##"
+  direction: command
+  who: 2
+  what: 0
+  where: "21"
+  interface: "1"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Automation: STOP at address 21 on private SCS bus 1"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: stop_shutter
+    args: ["21#4#1"]
+
+- id: cover.cmd.up.gen.0
+  frame: "*2*1*0##"
+  direction: command
+  who: 2
+  what: 1
+  where: "0"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Automation: General UP for all covers"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: raise_shutter
+    args: ["0"]
+
+- id: cover.cmd.stop.gen.0
+  frame: "*2*0*0##"
+  direction: command
+  who: 2
+  what: 0
+  where: "0"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Automation: General STOP for all covers"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: stop_shutter
+    args: ["0"]
+
+- id: cover.dim.write.pos.75
+  frame: "*#2*93*#10*75##"
+  direction: dimension_write
+  who: 2
+  what: null
+  where: "93"
+  dimension: 10
+  dimension_values: ["75"]
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Automation dimension write: Set shutter position to 75%"
+  roundtrip: true
+
+- id: cover.dim.write.tilt.30
+  frame: "*#2*93*#11*30##"
+  direction: dimension_write
+  who: 2
+  what: null
+  where: "93"
+  dimension: 11
+  dimension_values: ["30"]
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Automation dimension write: Set slat tilt angle to 30%"
+  roundtrip: true
+
+- id: cover.cmd.level.75
+  frame: "*#2*93*#11#001*75##"
+  direction: dimension_write
+  who: 2
+  what: null
+  where: "93"
+  dimension: 11
+  dimension_values: ["75"]
+  source: openwebnet4j
+  mcp_valid: true
+  mcp_notes: "Automation: Set shutter level with dimension param 001"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: set_shutter_level
+    args: ["93", 75]
+
+- id: cover.status.dimension10.level10.73
+  frame: "*#2*73*10*10*0*001*0##"
+  direction: dimension_response
+  who: 2
+  what: null
+  where: "73"
+  dimension: 10
+  dimension_values: ["10", "0", "001", "0"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Absolute position level 10% report for address 73 (Nicola Cavallo plant)"
+  roundtrip: true
+

@@ -1,0 +1,377 @@
+# ═══════════════════════════════════════════════════════════
+# BTicino MH200 — MyHOME Device Configuration
+# ═══════════════════════════════════════════════════════════
+# Place this file at: /config/myhome.yaml
+#
+# IMPORTANT: Replace the MAC address below with your MH200's
+# actual MAC (find it in TiMH200 or your router's DHCP list).
+# ═══════════════════════════════════════════════════════════
+
+mh200:
+  mac: "00:03:50:20:00:01"
+
+  # ── LIGHTS (62 devices) ──────────────────────────────────
+  light:
+    # ── Keuken ─────────────────────────────────────────────
+    keuken_tafel:
+      where: "69"
+      name: "Keuken Tafel"
+      dimmable: True
+    keuken_klok:
+      where: "73"
+      name: "Keuken Klok"
+      dimmable: True
+    keuken_wasbak:
+      where: "57"
+      name: "Keuken Wasbak"
+      dimmable: False
+    keuken_plafond:
+      where: "67"
+      name: "Keuken Plafond"
+      dimmable: False
+    keuken_sfeer_muur:
+      where: "59"
+      name: "Keuken Sfeer Muur"
+      dimmable: True
+    bijkeuken:
+      where: "61"
+      name: "Bijkeuken"
+      dimmable: False
+
+    # ── Eetkamer ───────────────────────────────────────────
+    eetkamer_plafond:
+      where: "72"
+      name: "Eetkamer Plafond"
+      dimmable: True
+    eetkamer_schilderij:
+      where: "53"
+      name: "Eetkamer Schilderij"
+      dimmable: False
+    eetkamer_kroonluchter:
+      where: "89"
+      name: "Eetkamer Kroonluchter"
+      dimmable: True
+
+    # ── Hal & Inkom ────────────────────────────────────────
+    hal_inkom_kroonluchter:
+      where: "19"
+      name: "Hal Inkom Kroonluchter"
+      dimmable: True
+    hal_inkom_plafond_bureau:
+      where: "62"
+      name: "Hal Inkom Plafond Bureau"
+      dimmable: False
+    hal_inkom_plafond_wc:
+      where: "48"
+      name: "Hal Inkom Plafond WC"
+      dimmable: False
+    hal_inkom_wandverlichting:
+      where: "29"
+      name: "Hal Inkom Wandverlichting"
+      dimmable: True
+    hal_inkom_trap_2e:
+      where: "75"
+      name: "Hal Inkom Trap 2e Verdieping"
+      dimmable: True
+
+    # ── Woonkamer ──────────────────────────────────────────
+    woonkamer_plafond:
+      where: "99"
+      name: "Woonkamer Plafond"
+      dimmable: True
+    woonkamer_stopcontacten:
+      where: "81"
+      name: "Woonkamer Stopcontacten"
+      dimmable: False
+    woonkamer_sfeer_haard:
+      where: "71"
+      name: "Woonkamer Sfeer Haard"
+      dimmable: True
+
+    # ── Bureau ─────────────────────────────────────────────
+    bureau_plafond:
+      where: "79"
+      name: "Bureau Plafond"
+      dimmable: True
+    bureau_spots_vaandel:
+      where: "65"
+      name: "Bureau Spots Vaandel"
+      dimmable: False
+    bureau_sfeer_kasten:
+      where: "64"
+      name: "Bureau Sfeer Kasten"
+      dimmable: False
+
+    # ── Garage & Bijgebouwen ───────────────────────────────
+    garage_plafond:
+      where: "68"
+      name: "Garage Plafond"
+      dimmable: False
+    fietsenberging_plafond:
+      where: "58"
+      name: "Fietsenberging Plafond"
+      dimmable: False
+    waskamer_plafond:
+      where: "23"
+      name: "Waskamer Plafond"
+      dimmable: False
+
+    # ── Kelder ─────────────────────────────────────────────
+    kelder_trap:
+      where: "56"
+      name: "Kelder Trap"
+      dimmable: False
+    kelder_wijnkelder:
+      where: "54"
+      name: "Kelder Wijnkelder"
+      dimmable: False
+    kelder_wijnproeverij:
+      where: "42"
+      name: "Kelder Wijnproeverij"
+      dimmable: False
+    kelder_opslag:
+      where: "55"
+      name: "Kelder Opslag"
+      dimmable: False
+
+    # ── Master Slaapkamer ──────────────────────────────────
+    master_slaapkamer_bollen:
+      where: "39"
+      name: "Master Slaapkamer Bollen"
+      dimmable: True
+    master_slaapkamer_muur:
+      where: "45"
+      name: "Master Slaapkamer Muur"
+      dimmable: False
+    master_slaapkamer_spot_plafond:
+      where: "49"
+      name: "Master Slaapkamer Spot Plafond"
+      dimmable: False
+    master_badkamer_plafond:
+      where: "35"
+      name: "Master Badkamer Plafond"
+      dimmable: False
+    master_badkamer_plafond_centraal:
+      where: "34"
+      name: "Master Badkamer Plafond Centraal"
+      dimmable: False
+
+    # ── Master Dressing ────────────────────────────────────
+    master_dressing_hanglamp:
+      where: "11"
+      name: "Master Dressing Hanglamp"
+      dimmable: False
+    master_dressing_sfeer_kast:
+      where: "52"
+      name: "Master Dressing Sfeer Kast"
+      dimmable: False
+    master_dressing_plafond:
+      where: "14"
+      name: "Master Dressing Plafond"
+      dimmable: False
+
+    # ── Slaapkamer Noord ───────────────────────────────────
+    slaapkamer_noord_plafond:
+      where: "24"
+      name: "Slaapkamer Noord Plafond"
+      dimmable: False
+    slaapkamer_noord_sfeer_muur:
+      where: "66"
+      name: "Slaapkamer Noord Sfeer Muur"
+      dimmable: False
+    slaapkamer_noord_dressing:
+      where: "25"
+      name: "Slaapkamer Noord Dressing"
+      dimmable: False
+    slaapkamer_noord_badkamer:
+      where: "32"
+      name: "Slaapkamer Noord Badkamer"
+      dimmable: False
+
+    # ── Slaapkamer Oost ────────────────────────────────────
+    slaapkamer_oost_plafond:
+      where: "17"
+      name: "Slaapkamer Oost Plafond"
+      dimmable: False
+    slaapkamer_oost_sfeer_muur:
+      where: "43"
+      name: "Slaapkamer Oost Sfeer Muur"
+      dimmable: False
+    slaapkamer_oost_badkamer_plafond:
+      where: "21"
+      name: "Slaapkamer Oost Badkamer Plafond"
+      dimmable: False
+    slaapkamer_oost_badkamer_wand:
+      where: "77"
+      name: "Slaapkamer Oost Badkamer Wand"
+      dimmable: False
+
+    # ── Slaapkamer West ────────────────────────────────────
+    slaapkamer_west_plafond:
+      where: "18"
+      name: "Slaapkamer West Plafond"
+      dimmable: False
+    slaapkamer_west_sfeer_muur:
+      where: "44"
+      name: "Slaapkamer West Sfeer Muur"
+      dimmable: False
+    slaapkamer_west_badkamer_plafond:
+      where: "16"
+      name: "Slaapkamer West Badkamer Plafond"
+      dimmable: False
+    slaapkamer_west_badkamer_wand:
+      where: "76"
+      name: "Slaapkamer West Badkamer Wand"
+      dimmable: False
+
+    # ── Zolder ─────────────────────────────────────────────
+    zolder_technische:
+      where: "37"
+      name: "Zolder LP Technische Zolder"
+      dimmable: False
+    zolder_1_uplight:
+      where: "13"
+      name: "Zolder 1 Uplight"
+      dimmable: False
+    zolder_1_douche_spa:
+      where: "26"
+      name: "Zolder 1 Douche + SPA"
+      dimmable: False
+    zolder_1_stoomdouche:
+      where: "31"
+      name: "Zolder 1 Stoomdouche"
+      dimmable: False
+    zolder_2_uplight:
+      where: "12"
+      name: "Zolder 2 Uplight"
+      dimmable: False
+    zolder_2_kapel:
+      where: "15"
+      name: "Zolder 2 Kapel"
+      dimmable: False
+    zolder_3_uplight:
+      where: "38"
+      name: "Zolder 3 Uplight"
+      dimmable: False
+    zolder_3_spots:
+      where: "28"
+      name: "Zolder 3 Spots"
+      dimmable: False
+
+    # ── Buiten ─────────────────────────────────────────────
+    buiten_achter:
+      where: "91"
+      name: "Verlichting Buiten Achter"
+      dimmable: False
+    buiten_voor:
+      where: "92"
+      name: "Verlichting Buiten Voor"
+      dimmable: False
+    buiten_eetkamer:
+      where: "93"
+      name: "Verlichting Buiten Eetkamer"
+      dimmable: False
+    overdekt_terras:
+      where: "94"
+      name: "Verlichting Overdekt Terras"
+      dimmable: False
+    vijver_licht:
+      where: "96"
+      name: "Vijver Licht"
+      dimmable: False
+    spots_tuin:
+      where: "97"
+      name: "Spots Tuin"
+      dimmable: False
+
+  # ── SWITCHES (7 devices) ─────────────────────────────────
+  switch:
+    ventilatie_hoog:
+      where: "27"
+      name: "Ventilatie Hoog"
+      class: switch
+    pomp_warm_water:
+      where: "78"
+      name: "Pomp Warm Water"
+      class: switch
+    stopcontact_bed:
+      where: "84"
+      name: "Stopcontact Bed"
+      class: outlet
+    stopcontact_zolder:
+      where: "81"
+      name: "Stopcontact Zolder"
+      class: outlet
+    stopcontact_living:
+      where: "82"
+      name: "Stopcontact Living"
+      class: outlet
+    stopcontact_hal_1e:
+      where: "83"
+      name: "Stopcontact Hal 1e"
+      class: outlet
+    vijver_pomp:
+      where: "95"
+      name: "Vijver Pomp"
+      class: switch
+
+  # ── COVERS / CURTAINS (11 devices) ───────────────────────
+  # Most use a F422 BUS-BUS Interface (interface: "02").
+  # sdomotica address "18#4#02" → where: "18", interface: "02"
+  # MyHOME sends the OpenWebNet address as 18#4#02 automatically.
+  # ─────────────────────────────────────────────────────────
+  cover:
+    gordijn_keuken_terras:
+      where: "18"
+      interface: "02"
+      name: "Gordijn Keuken Terras"
+      advanced: False
+    gordijn_keuken_raam:
+      where: "19"
+      interface: "02"
+      name: "Gordijn Keuken Raam"
+      advanced: False
+    gordijn_eetkamer:
+      where: "16"
+      interface: "02"
+      name: "Gordijn Eetkamer"
+      advanced: False
+    gordijn_woonkamer_west:
+      where: "11"
+      interface: "02"
+      name: "Gordijn Woonkamer West"
+      advanced: False
+    gordijn_woonkamer_zuid:
+      where: "12"
+      interface: "02"
+      name: "Gordijn Woonkamer Zuid"
+      advanced: False
+    gordijn_woonkamer_oost_1:
+      where: "13"
+      interface: "02"
+      name: "Gordijn Woonkamer Oost 1"
+      advanced: False
+    gordijn_woonkamer_oost_2:
+      where: "22"
+      interface: "02"
+      name: "Gordijn Woonkamer Oost 2"
+      advanced: False
+    gordijn_badkamer:
+      where: "21"
+      interface: "02"
+      name: "Gordijn Badkamer"
+      advanced: False
+    gordijn_slaapkamer:
+      where: "85"
+      name: "Gordijn Slaapkamer"
+      advanced: False
+    gordijn_dressing_1:
+      where: "14"
+      interface: "02"
+      name: "Gordijn Dressing 1"
+      advanced: False
+    gordijn_dressing_2:
+      where: "15"
+      interface: "02"
+      name: "Gordijn Dressing 2"
+      advanced: False

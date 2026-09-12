@@ -1,0 +1,703 @@
+myhomeserver1:
+  mac: "00:03:50:24:70:01"
+
+  light:
+    light_luce_centrale_cucina:
+      where: "10"
+      name: Luce Centrale Cucina
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_pensili:
+      where: "11"
+      name: Pensili
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luce_disimpegno:
+      where: "20"
+      name: Luce Disimpegno
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luce_centrale_garage:
+      where: "80"
+      name: Luce Centrale Garage
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luce_centrale_bagno_piccolo:
+      where: "30"
+      name: Luce Centrale Bagno Piccolo
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luce_centrale_bagno_grande:
+      where: "40"
+      name: Luce Centrale Bagno Grande
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luce_specchio_bagno_piccolo:
+      where: "31"
+      name: Luce Specchio Bagno Piccolo
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luce_specchio_bagno_grande:
+      where: "41"
+      name: Luce Specchio Bagno Grande
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luce_cameretta_sinistra:
+      where: "50"
+      name: Luce Cameretta Sinistra
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luce_cameretta_giorgia:
+      where: "60"
+      name: Luce Cameretta Giorgia
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luce_veranda_avanti:
+      where: "90"
+      name: Luce Veranda Avanti
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luci_vialetto_vicino:
+      where: "1000"
+      name: Luci vialetto vicino
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luce_veranda_dietro:
+      where: "91"
+      name: Luce veranda dietro
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luci_vialetto_medio:
+      where: "1001"
+      name: Luci vialetto medio
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luce_comodino_nico:
+      where: "71"
+      name: Luce Comodino Nico
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luce_intercapedine_interna:
+      where: "81"
+      name: Luce Intercapedine Interna
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luce_comodino_elena:
+      where: "72"
+      name: Luce Comodino Elena
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luce_intercapedine_esterna:
+      where: "82"
+      name: Luce Intercapedine Esterna
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    # light_predisposizione_faretti:
+    #   where: '02'
+    #   name: Predisposizione faretti
+    #   dimmable: False
+    #   manufacturer: bticino
+    #   model: F411U2
+    light_piantana:
+      where: "03"
+      name: Piantana
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luce_scala_esterna:
+      where: "92"
+      name: Luce Scala esterna
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luce_garage_esterno:
+      where: "93"
+      name: Luce Garage Esterno
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luci_vialetto_lontano:
+      where: "1002"
+      name: Luci vialetto lontano
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luci_cancello:
+      where: "1003"
+      name: Luci cancello
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luce_balcone:
+      where: "94"
+      name: Luce balcone
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luci_lato_notte:
+      where: "95"
+      name: Luci lato notte
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    # light_luci_piazzale_1_predisposto:
+    #   where: '1004'
+    #   name: Luci piazzale 1 predisposto
+    #   dimmable: False
+    #   manufacturer: bticino
+    #   model: F411U2
+    # light_luci_piazzale_2_predisposto:
+    #   where: '1005'
+    #   name: Luci piazzale 2 predisposto
+    #   dimmable: False
+    #   manufacturer: bticino
+    #   model: F411U2
+    light_luci_lato_cucina:
+      where: "96"
+      name: Luci lato cucina
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luci_lato_salone:
+      where: "97"
+      name: Luci lato salone
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luci_colonne_esterne:
+      where: "98"
+      name: Luci Colonne esterne
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_luce_centrale_camera_matrimoniale:
+      where: "70"
+      name: Luce Centrale Camera Matrimoniale
+      dimmable: True
+      manufacturer: bticino
+      model: F418
+    light_luce_centrale_salone:
+      where: "01"
+      name: Luce Centrale Salone
+      dimmable: True
+      manufacturer: bticino
+      model: F413N
+    light_luci_colonne_interne:
+      where: "99"
+      name: Luci colonne interne
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+  switch:
+    presa_forno:
+      where: "14"
+      name: Presa forno
+      class: outlet
+      manufacturer: BTicino
+      model: F522
+    prese_esterne:
+      where: "0910"
+      name: Prese esterne
+      class: outlet
+      manufacturer: BTicino
+      model: F522
+    prese_piano_cucina:
+      where: "12"
+      name: Prese piano cucina
+      class: outlet
+      manufacturer: BTicino
+      model: F522
+    prese_interne:
+      where: "23"
+      name: Prese interne
+      class: outlet
+      manufacturer: BTicino
+      model: F522
+    presa_lavatrice:
+      where: "32"
+      name: Presa lavatrice
+      class: outlet
+      manufacturer: BTicino
+      model: F522
+    presa_asciugatrice:
+      where: "33"
+      name: Presa asciugatrice
+      class: outlet
+      manufacturer: BTicino
+      model: F522
+    presa_lavastoviglie:
+      where: "13"
+      name: Presa lavastoviglie
+      class: outlet
+      manufacturer: BTicino
+      model: F522
+    interruttore_climatizzatori_zona_notte:
+      where: "24"
+      name: Interruttore climatizzatori zona notte
+      class: switch
+      manufacturer: BTicino
+      model: F522
+    interruttore_climatizzatore_salone:
+      where: "04"
+      name: Interruttore climatizzatore salone
+      class: switch
+      manufacturer: BTicino
+      model: F522
+    esclusione_alimentazione_serranda:
+      where: "83"
+      name: Esclusione_alimentazione_serranda
+      class: switch
+      manufacturer: BTicino
+      model: F411U2
+    apertura_cancello:
+      where: "0213"
+      name: Apertura cancello
+      class: switch
+      manufacturer: BTicino
+      model: F411U2
+    interruzione_fotocellule_cancello:
+      where: "0214"
+      name: Interruzione fotocellule cancello
+      class: switch
+      manufacturer: BTicino
+      model: F411U2
+    riserva_acqua_cisterna:
+      where: "1006"
+      name: Riserva acqua cisterna
+      class: switch
+      manufacturer: BTicino
+      model: F411/4
+    sensore_pioggia:
+      where: "1007"
+      name: Sensore pioggia
+      class: switch
+      manufacturer: BTicino
+      model: F411/4
+    ricircolo_acqua_calda:
+      where: "43"
+      name: Ricircolo acqua calda
+      class: switch
+      manufacturer: BTicino
+      model: F411U2
+    apertura_serranda:
+      where: "84"
+      name: Apertura serranda
+      class: switch
+      manufacturer: BTicino
+      model: F411U2
+  cover:
+    cover_vasistas:
+      where: "22"
+      name: Vasistas
+      advanced: False
+      manufacturer: bticino
+      model: F411U2
+    # cover_tenda_filtrante:
+    #   where: '07'
+    #   name: Tenda Filtrante
+    #   advanced: False
+    #   manufacturer: bticino
+    #   model: F411U2
+    # cover_tenda_oscurante: #configurazione normale
+    #   where: '08'
+    #   name: Tenda Oscurante
+    #   advanced: False
+    #   manufacturer: bticino
+    #   model: F411U2
+    cover_tenda_oscurante: #configurazione con percentuale di apertura
+      where: "08"
+      name: Tenda Oscurante
+      advanced: False
+      manufacturer: BTicino
+      model: F411U2
+    #   opening_time: 20
+    #   closing_time: 20
+    cover_tapparella_disimpegno:
+      where: "21"
+      name: Tapparella Disimpegno
+      advanced: True
+      manufacturer: bticino
+      model: LN4661M2
+    cover_tapparella_cameretta_sinistra:
+      where: "51"
+      name: Tapparella Cameretta Sinistra
+      advanced: True
+      manufacturer: bticino
+      model: LN4661M2
+    cover_tapparella_cameretta_giorgia:
+      where: "61"
+      name: Tapparella Cameretta Giorgia
+      advanced: True
+      manufacturer: bticino
+      model: LN4661M2
+    cover_tapparella_bagno_grande:
+      where: "42"
+      name: Tapparella Bagno Grande
+      advanced: True
+      manufacturer: bticino
+      model: LN4661M2
+    cover_tapparella_camera_matrimoniale:
+      where: "73"
+      name: Tapparella Camera Matrimoniale
+      advanced: True
+      manufacturer: bticino
+      model: LN4661M2
+    cover_tapparella_bagno_piccolo:
+      where: "34"
+      name: Tapparella Bagno Piccolo
+      advanced: True
+      manufacturer: bticino
+      model: LN4661M2
+    cover_finestra_salone:
+      where: "05"
+      name: Finestra Salone
+      advanced: True
+      manufacturer: bticino
+      model: LN4661M2
+    cover_tapparella_cucina:
+      where: "15"
+      name: Tapparella Cucina
+      advanced: True
+      manufacturer: bticino
+      model: LN4661M2
+    cover_portafinestra_salone:
+      where: "06"
+      name: Portafinestra Salone
+      advanced: True
+      manufacturer: bticino
+      model: LN4661M2
+  climate:
+    central_unit:
+      zone: "#0"
+      name: Centrale termoregolazione
+      heat: True
+      cool: False
+      standalone: False
+      manufacturer: BTicino
+      model: 3550
+    climate_salone:
+      zone: "1"
+      name: Salone
+      heat: True
+      cool: False
+      standalone: False
+      manufacturer: bticino
+      model: LN4691
+    climate_bagno_piccolo:
+      zone: "2"
+      name: Bagno piccolo
+      heat: True
+      cool: False
+      standalone: False
+      manufacturer: bticino
+      model: LN4691
+    climate_bagno_grande:
+      zone: "3"
+      name: Bagno grande
+      heat: True
+      cool: False
+      standalone: False
+      manufacturer: bticino
+      model: LN4691
+    climate_cameretta_sinistra:
+      zone: "4"
+      name: Cameretta sinistra
+      heat: True
+      cool: False
+      standalone: False
+      manufacturer: bticino
+      model: LN4691
+    climate_cameretta_giorgia:
+      zone: "5"
+      name: Cameretta Giorgia
+      heat: True
+      cool: False
+      standalone: False
+      manufacturer: bticino
+      model: LN4691
+    climate_camera_matrimoniale:
+      zone: "6"
+      name: Camera matrimoniale
+      heat: True
+      cool: False
+      standalone: False
+      manufacturer: bticino
+      model: LN4691
+  binary_sensor:
+    contatto_cancello:
+      where: "31"
+      who: "25"
+      name: Cancello
+      class: opening
+      manufacturer: BTicino
+      model: F428
+    contatto_porta_ingresso:
+      where: "311"
+      who: "25"
+      name: Porta ingresso
+      class: door
+      manufacturer: BTicino
+      model: F482V12
+    contatto_finestra_salone:
+      where: "321"
+      who: "25"
+      name: Finestra salone
+      class: window
+      manufacturer: BTicino
+      model: F482V12
+    contatto_portafinestra_salone:
+      where: "322"
+      who: "25"
+      name: Porta finestra salone
+      class: door
+      manufacturer: BTicino
+      model: F482V12
+    contatto_porta_intercapedine_esterna:
+      where: "362"
+      who: "25"
+      name: Porta intercapedine esterna
+      class: door
+      manufacturer: BTicino
+      model: F482V12
+    contatto_serranda:
+      where: "361"
+      who: "25"
+      name: Serranda
+      class: garage_door
+      manufacturer: BTicino
+      model: F482V12
+    contatto_finestra_cucina:
+      where: "323"
+      who: "25"
+      name: Finestra cucina
+      class: window
+      manufacturer: BTicino
+      model: F482V12
+    contatto_vasistas:
+      where: "324"
+      who: "25"
+      name: Vasistas disimpegno
+      class: window
+      manufacturer: BTicino
+      model: F482V12
+    contatto_finestra_bagno_piccolo:
+      where: "325"
+      who: "25"
+      name: Finestra bagno piccolo
+      class: window
+      manufacturer: BTicino
+      model: F482V12
+    contatto_finestra_bagno_grande:
+      where: "326"
+      who: "25"
+      name: Finestra bagno grande
+      class: window
+      manufacturer: BTicino
+      model: F482V12
+    contatto_finestra_camera_sinistra:
+      where: "327"
+      who: "25"
+      name: Finestra camera sinistra
+      class: window
+      manufacturer: BTicino
+      model: F482V12
+    contatto_finestra_camera_giorgia:
+      where: "328"
+      who: "25"
+      name: Finestra camera Giorgia
+      class: window
+      manufacturer: BTicino
+      model: F482V12
+    contatto_finestra_camera_matrimoniale:
+      where: "329"
+      who: "25"
+      name: Finestra camera matrimoniale
+      class: window
+      manufacturer: BTicino
+      model: F482V12
+    contatto_tapparella_finestra_salone:
+      where: "331"
+      who: "25"
+      name: Contatto tapparella finestra salone
+      class: moving
+      manufacturer: BTicino
+      model: F482V12
+    contatto_tapparella_portafinestra_salone:
+      where: "332"
+      who: "25"
+      name: Contatto tapparella porta finestra salone
+      class: moving
+      manufacturer: BTicino
+      model: F482V12
+    contatto_tapparella_cucina:
+      where: "333"
+      who: "25"
+      name: Contatto tapparella cucina
+      class: moving
+      manufacturer: BTicino
+      model: F482V12
+    contatto_tapparella_disimpegno:
+      where: "334"
+      who: "25"
+      name: Contatto tapparella disimpegno
+      class: moving
+      manufacturer: BTicino
+      model: F482V12
+    contatto_tapparella_bagno_piccolo:
+      where: "335"
+      who: "25"
+      name: Contatto tapparella bagno piccolo
+      class: moving
+      manufacturer: BTicino
+      model: F482V12
+    contatto_tapparella_bagno_grande:
+      where: "336"
+      who: "25"
+      name: Contatto tapparella bagno grande
+      class: moving
+      manufacturer: BTicino
+      model: F482V12
+    contatto_tapparella_camera_sinistra:
+      where: "337"
+      who: "25"
+      name: Contatto tapparella camera sinistra
+      class: moving
+      manufacturer: BTicino
+      model: F482V12
+    contatto_tapparella_camera_giorgia:
+      where: "338"
+      who: "25"
+      name: Contatto tapparella camera Giorgia
+      class: moving
+      manufacturer: BTicino
+      model: F482V12
+    contatto_tapparella_camera_matrimoniale:
+      where: "339"
+      who: "25"
+      name: Contatto tapparella camera matrimoniale
+      class: moving
+      manufacturer: BTicino
+      model: F482V12
+    radar_salone:
+      where: "1"
+      who: "9"
+      name: Radar salone
+      class: motion
+      manufacturer: BTicino
+      model: HC4613
+    radar_disimpegno:
+      where: "2"
+      who: "9"
+      name: Radar disimpegno
+      class: motion
+      manufacturer: BTicino
+      model: HC4613
+    radar_camera_sinistra:
+      where: "3"
+      who: "9"
+      name: Radar camera sinistra
+      class: motion
+      manufacturer: BTicino
+      model: HC4613
+    radar_camera_giorgia:
+      where: "4"
+      who: "9"
+      name: Radar camera Giorgia
+      class: motion
+      manufacturer: BTicino
+      model: HC4613
+    radar_camera_matrimoniale:
+      where: "5"
+      who: "9"
+      name: Radar camera matrimoniale
+      class: motion
+      manufacturer: BTicino
+      model: HC4613
+    radar_garage:
+      where: "6"
+      who: "9"
+      name: Radar garage
+      class: motion
+      manufacturer: BTicino
+      model: HC4613
+  sensor:
+    sensor_asciugatrice:
+      where: "72"
+      name: Asciugatrice
+      class: power
+      manufacturer: bticino
+      model: F52X
+    sensor_lavatrice:
+      where: "73"
+      name: Lavatrice
+      class: power
+      manufacturer: bticino
+      model: F52X
+    sensor_climatizzatore_zona_notte:
+      where: "74"
+      name: Climatizzatore zona notte
+      class: power
+      manufacturer: bticino
+      model: F52X
+    sensor_climatizzatore_salone:
+      where: "75"
+      name: Climatizzatore Salone
+      class: power
+      manufacturer: bticino
+      model: F52X
+    sensor_prese_esterne:
+      where: "76"
+      name: Prese esterne
+      class: power
+      manufacturer: bticino
+      model: F52X
+    sensor_prese_interne:
+      where: "77"
+      name: Prese interne
+      class: power
+      manufacturer: bticino
+      model: F52X
+    sensor_piano_cucina:
+      where: "78"
+      name: Piano cucina
+      class: power
+      manufacturer: bticino
+      model: F52X
+    sensor_forno:
+      where: "79"
+      name: Forno
+      class: power
+      manufacturer: bticino
+      model: F52X
+    sensor_lavastoviglie:
+      where: "71"
+      name: Lavastoviglie
+      class: power
+      manufacturer: bticino
+      model: F52X
+    sensor_consumo_energia:
+      where: "51"
+      name: Consumo Energia
+      class: power
+      manufacturer: bticino
+      model: F52X
+
+
