@@ -42,10 +42,15 @@ class MyHomeBusCard extends HTMLElement {
     this._filterWho = "all";
     this._filterWhere = "";
     this._filterDir = "all";
-    // Epoch seconds of the last Sweep Bus click: an export whose window contains
-    // it is a "sweep" capture (device inventory), otherwise a passive "trace".
+    // Capture mode chosen by the user: "trace" (default, passive recording started
+    // with Start Trace or simply the live buffer) or "sweep" (buffer populated by
+    // Sweep Bus). Export / Copy follow it; Clear and Start Trace reset it.
+    this._captureMode = "trace";
     this._lastSweepAt = null;
-    this._exportLabelTimeout = null;
+    this._traceStartedAt = null;
+    // Raw-frame transmission must be armed explicitly (see _toggleArmed).
+    this._sendArmed = false;
+    this._helpOpen = false;
     this._unsub = null;
     this._stats = { captured: 0, total_rx: 0, total_tx: 0 };
     this._gatewayInfo = {};
@@ -581,6 +586,60 @@ class MyHomeBusCard extends HTMLElement {
           align-items: center;
           flex-wrap: wrap;
         }
+        .btn-trace {
+          background: #c62828;
+          color: #fff;
+          font-weight: 600;
+          font-size: 0.8rem;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+        }
+        .btn-trace:hover { opacity: 0.85; }
+        .btn-help {
+          background: transparent;
+          color: var(--primary-text-color);
+          border: 1px solid var(--divider-color, #555);
+          border-radius: 50%;
+          width: 26px;
+          height: 26px;
+          padding: 0;
+          font-weight: 700;
+          font-size: 0.8rem;
+        }
+        .help-panel {
+          display: none;
+          margin: 0 0 12px 0;
+          padding: 10px 14px;
+          border-radius: 6px;
+          border: 1px solid var(--divider-color, #555);
+          background: var(--secondary-background-color, #263238);
+          font-size: 0.82rem;
+          line-height: 1.5;
+        }
+        .help-panel h4 { margin: 8px 0 4px 0; font-size: 0.85rem; }
+        .help-panel p, .help-panel ul { margin: 4px 0; }
+        .help-panel ul { padding-left: 18px; }
+        .help-panel code { font-size: 0.78rem; }
+        .arm-bar {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 14px;
+          padding: 8px 12px;
+          border-radius: 6px;
+          border: 1px solid #ef6c00;
+          background: rgba(239, 108, 0, 0.12);
+          font-size: 0.8rem;
+          line-height: 1.4;
+        }
+        .arm-bar.armed {
+          border-color: #c62828;
+          background: rgba(198, 40, 40, 0.15);
+        }
+        .arm-bar label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 600; white-space: nowrap; }
+        .arm-bar .arm-text { flex-grow: 1; opacity: 0.9; }
+        .sender-bar button:disabled, .sender-bar input:disabled { opacity: 0.45; cursor: not-allowed; }
         .btn-sweep {
           background: #1976d2;
           color: #fff;
@@ -653,18 +712,35 @@ class MyHomeBusCard extends HTMLElement {
             <span id="badge" class="badge badge-connecting">CONNECTING...</span>
           </div>
           <div class="actions">
-            <button id="btn-sweep" class="btn-sweep" title="Safely query all bus subsystems to discover all devices and populate trace buffer">
+            <button id="btn-trace" class="btn-trace" title="Start a new passive trace: clears the buffer and records everything the bus says. Harmless - nothing is sent.">
+              🔴 Start Trace
+            </button>
+            <button id="btn-sweep" class="btn-sweep" title="Start a new bus sweep: clears the buffer and asks every subsystem for its status. Harmless - only status requests are sent.">
               🧹 Sweep Bus
             </button>
-            <button id="btn-export" class="btn-export" title="Download the frames currently shown (active filters applied) as a JSON capture; the file name says whether it is a passive trace or a bus sweep">
-              💾 Export Capture
+            <button id="btn-export" class="btn-export" title="Download the frames currently shown (active filters applied) as a JSON file named after the capture kind">
+              💾 Export Trace
             </button>
             <button id="btn-report" class="btn-report" title="Copy the shown frames as a diagnostic markdown bundle to the clipboard and open the GitHub issue form">
-              📋 Copy Capture
+              📋 Copy Trace
             </button>
             <button id="btn-pause" class="btn-secondary">Pause</button>
             <button id="btn-clear" class="btn-secondary">Clear</button>
+            <button id="btn-help" class="btn-help" title="How this card works">i</button>
           </div>
+        </div>
+
+        <div id="help-panel" class="help-panel">
+          <p><strong>Two ways to capture, both harmless:</strong></p>
+          <h4>🔴 Start Trace</h4>
+          <p>Clears the buffer and records what the bus says while you reproduce a problem (press a wall switch, run an automation, move a cover). Nothing is sent to the bus. Then <em>Export Trace</em> or <em>Copy Trace</em>.</p>
+          <h4>🧹 Sweep Bus</h4>
+          <p>Clears the buffer and sends one status request per subsystem (<code>*#1*0##</code>-style queries). Every device answers with its current state, so the buffer becomes a device inventory. Only read-only status requests are sent. Then <em>Export Sweep</em> / <em>Copy Sweep</em>.</p>
+          <h4>💾 Export / 📋 Copy</h4>
+          <p>Both use the frames <strong>currently shown</strong> (WHO / WHERE / direction filters applied). The file is named <code>myhome_&lt;trace|sweep&gt;_&lt;gateway&gt;_&lt;filter&gt;_&lt;time&gt;.json</code> and starts with a <code>capture</code> block describing what it is. Clear the filters to export the whole buffer.</p>
+          <h4>⚠️ Transmit frame</h4>
+          <p>The bar at the bottom writes a raw OpenWebNet frame to the bus - this <strong>can</strong> switch loads, move shutters, arm or disarm the alarm. It stays disabled until you tick <em>I understand the risk</em>. Trace and Sweep never use it.</p>
+          <p style="opacity:0.8">Time stamps are shown in your browser's local time; exports keep UTC.</p>
         </div>
 
         <div id="feedback-banner" class="feedback-banner"></div>
@@ -695,9 +771,13 @@ class MyHomeBusCard extends HTMLElement {
 
         <div id="stream" class="stream-container"></div>
 
+        <div id="arm-bar" class="arm-bar">
+          <span class="arm-text"><strong>⚠️ Direct bus command.</strong> The frame below is written to the SCS bus as-is and can switch loads, move shutters or arm/disarm the alarm. <em>Start Trace</em> and <em>Sweep Bus</em> above are read-only and safe.</span>
+          <label><input type="checkbox" id="arm-send" /> I understand the risk</label>
+        </div>
         <div class="sender-bar">
-          <input type="text" id="send-frame" placeholder="Transmit frame (e.g. *1*1*12##)..." />
-          <button id="btn-send">Send</button>
+          <input type="text" id="send-frame" placeholder="Transmit frame (e.g. *1*1*12##)..." disabled />
+          <button id="btn-send" disabled>Send</button>
         </div>
       </ha-card>
     `;
@@ -710,7 +790,10 @@ class MyHomeBusCard extends HTMLElement {
   _bindEvents() {
     const root = this.shadowRoot;
     if (!root) return;
+    root.getElementById("btn-trace")?.addEventListener("click", () => this._handleStartTrace());
     root.getElementById("btn-sweep")?.addEventListener("click", () => this._handleSweepBus());
+    root.getElementById("btn-help")?.addEventListener("click", () => this._toggleHelp());
+    root.getElementById("arm-send")?.addEventListener("change", (e) => this._toggleArmed(!!e.target.checked));
     root.getElementById("btn-export")?.addEventListener("click", () => this._handleExportTrace());
     root.getElementById("btn-report")?.addEventListener("click", () => this._handleReportIssue());
     root.getElementById("btn-pause")?.addEventListener("click", () => this._togglePause());
@@ -733,6 +816,57 @@ class MyHomeBusCard extends HTMLElement {
     });
   }
 
+  _setCaptureMode(mode) {
+    this._captureMode = mode === "sweep" ? "sweep" : "trace";
+    this._refreshExportLabel();
+  }
+
+  async _handleStartTrace() {
+    await this._clearBuffer();
+    this._traceStartedAt = Date.now() / 1000;
+    this._lastSweepAt = null;
+    this._setCaptureMode("trace");
+    if (this._isPaused) this._togglePause();
+    this._showBanner(
+      "banner-success",
+      `<span><strong>🔴 Trace started.</strong> Reproduce the problem now (wall switch, automation, cover...), then click <em>Export Trace</em> or <em>Copy Trace</em>. Nothing is sent to the bus.</span>`,
+      8000
+    );
+  }
+
+  _toggleHelp() {
+    this._helpOpen = !this._helpOpen;
+    const panel = this.shadowRoot.getElementById("help-panel");
+    if (panel) panel.style.display = this._helpOpen ? "block" : "none";
+  }
+
+  _toggleArmed(armed) {
+    this._sendArmed = !!armed;
+    const root = this.shadowRoot;
+    const input = root.getElementById("send-frame");
+    const btn = root.getElementById("btn-send");
+    const bar = root.getElementById("arm-bar");
+    if (input) input.disabled = !this._sendArmed;
+    if (btn) btn.disabled = !this._sendArmed;
+    if (bar) bar.classList.toggle("armed", this._sendArmed);
+    if (this._sendArmed && input) input.focus();
+  }
+
+  _showBanner(className, html, timeoutMs) {
+    const banner = this.shadowRoot.getElementById("feedback-banner");
+    if (!banner) return;
+    if (this._bannerTimeout) {
+      clearTimeout(this._bannerTimeout);
+      this._bannerTimeout = null;
+    }
+    banner.className = `feedback-banner ${className}`;
+    banner.innerHTML = html;
+    banner.style.display = "flex";
+    this._bannerTimeout = setTimeout(() => {
+      banner.style.display = "none";
+    }, timeoutMs);
+  }
+
   _togglePause() {
     this._isPaused = !this._isPaused;
     const btn = this.shadowRoot.getElementById("btn-pause");
@@ -744,6 +878,8 @@ class MyHomeBusCard extends HTMLElement {
 
   async _clearBuffer() {
     this._frames = [];
+    this._lastSweepAt = null;
+    this._setCaptureMode("trace");
     this._updateFrameList();
     this._updateStats();
     if (this._hass) {
@@ -758,6 +894,7 @@ class MyHomeBusCard extends HTMLElement {
   }
 
   async _sendCustomFrame() {
+    if (!this._sendArmed) return;
     const input = this.shadowRoot.getElementById("send-frame");
     const frame = input ? input.value.trim() : "";
     if (!frame || !this._hass) return;
@@ -864,7 +1001,7 @@ class MyHomeBusCard extends HTMLElement {
     const filterDesc = activeFilter.length > 0 ? activeFilter.join(", ") : "None (All frames)";
 
     const visible = this._visibleFrames();
-    const captureKind = this._captureKind(visible);
+    const captureKind = this._captureKind();
     const frameLines = visible.map((f) => {
       const timeStr = this._formatFrameTime(f);
       const dir = (f.direction || "rx").toUpperCase();
@@ -926,13 +1063,14 @@ ${framesText}
 
     if (this._hass) {
       try {
+        await this._clearBuffer();
         await this._hass.callService("myhome", "sweep_bus", {});
         this._lastSweepAt = Date.now() / 1000;
-        this._refreshExportLabel();
+        this._setCaptureMode("sweep");
         if (banner) {
           banner.className = "feedback-banner banner-success";
           banner.innerHTML = `
-            <span><strong>🧹 Bus sweep initiated!</strong> Querying all lighting, automation, heating, and diagnostic states across the bus. The next export will be saved as a <em>sweep</em> capture.</span>
+            <span><strong>🧹 Bus sweep started.</strong> Every subsystem is asked for its status (read-only). Wait a few seconds for the replies, then <em>Export Sweep</em> or <em>Copy Sweep</em>.</span>
           `;
           banner.style.display = "flex";
           this._bannerTimeout = setTimeout(() => {
@@ -967,13 +1105,9 @@ ${framesText}
     return this._frames.filter((f) => this._matchesFilter(f));
   }
 
-  _captureKind(frames) {
-    // "sweep" when a Sweep Bus click falls inside the captured window (with a little slack for
-    // the sweep's own replies), "trace" for a passive capture.
-    if (this._lastSweepAt == null || frames.length === 0) return "trace";
-    const first = frames[0].timestamp || 0;
-    const last = frames[frames.length - 1].timestamp || 0;
-    return this._lastSweepAt >= first - 2 && this._lastSweepAt <= last + 2 ? "sweep" : "trace";
+  _captureKind() {
+    // The kind is what the user chose: Start Trace / Clear -> "trace", Sweep Bus -> "sweep".
+    return this._captureMode === "sweep" ? "sweep" : "trace";
   }
 
   _captureFilters() {
@@ -993,25 +1127,18 @@ ${framesText}
   }
 
   _refreshExportLabel() {
-    const btn = this.shadowRoot && this.shadowRoot.getElementById("btn-export");
-    if (!btn) return;
-    if (this._exportLabelTimeout) {
-      clearTimeout(this._exportLabelTimeout);
-      this._exportLabelTimeout = null;
-    }
-    const kind = this._captureKind(this._visibleFrames());
-    btn.innerHTML = kind === "sweep" ? "💾 Export Sweep" : "💾 Export Capture";
-    const reportBtn = this.shadowRoot.getElementById("btn-report");
-    if (reportBtn) reportBtn.innerHTML = kind === "sweep" ? "📋 Copy Sweep" : "📋 Copy Capture";
-    if (kind === "sweep") {
-      // Sweep replies age out of the window; re-evaluate the label later.
-      this._exportLabelTimeout = setTimeout(() => this._refreshExportLabel(), 60000);
-    }
+    const root = this.shadowRoot;
+    if (!root) return;
+    const kind = this._captureKind();
+    const btn = root.getElementById("btn-export");
+    if (btn) btn.innerHTML = kind === "sweep" ? "💾 Export Sweep" : "💾 Export Trace";
+    const reportBtn = root.getElementById("btn-report");
+    if (reportBtn) reportBtn.innerHTML = kind === "sweep" ? "📋 Copy Sweep" : "📋 Copy Trace";
   }
 
   async _handleExportTrace() {
     const btn = this.shadowRoot.getElementById("btn-export");
-    const origText = btn ? btn.innerHTML : "💾 Export Capture";
+    const origText = btn ? btn.innerHTML : "💾 Export Trace";
     if (btn) btn.innerHTML = "⏳ Exporting...";
 
     if (this._hass) {
@@ -1042,7 +1169,7 @@ ${framesText}
     const timestampFile = timestampIso.replace(/[:.]/g, "-").slice(0, 19);
 
     const frames = this._visibleFrames();
-    const kind = this._captureKind(frames);
+    const kind = this._captureKind();
     const firstTs = frames.length ? frames[0].timestamp : null;
     const lastTs = frames.length ? frames[frames.length - 1].timestamp : null;
     const modelSlug = String((this._gatewayInfo && this._gatewayInfo.model) || "gateway").replace(/[^a-z0-9]+/gi, "");
@@ -1050,7 +1177,9 @@ ${framesText}
     const tracePayload = {
       capture: {
         kind,
-        sweep_at: kind === "sweep" ? new Date(this._lastSweepAt * 1000).toISOString() : null,
+        started_at: kind === "sweep"
+          ? (this._lastSweepAt ? new Date(this._lastSweepAt * 1000).toISOString() : null)
+          : (this._traceStartedAt ? new Date(this._traceStartedAt * 1000).toISOString() : null),
         filters: this._captureFilters(),
         window: {
           first: firstTs != null ? new Date(firstTs * 1000).toISOString() : null,
@@ -1144,7 +1273,7 @@ ${framesText}
 
   async _handleReportIssue() {
     const btn = this.shadowRoot.getElementById("btn-report");
-    const origText = btn ? btn.innerHTML : "📋 Copy Capture";
+    const origText = btn ? btn.innerHTML : "📋 Copy Trace";
     if (btn) btn.innerHTML = "⏳ Generating...";
 
     // Try fetching the freshest gateway & buffer telemetry from backend
