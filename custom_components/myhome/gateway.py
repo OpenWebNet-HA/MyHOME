@@ -602,8 +602,12 @@ class MyHOMEGatewayHandler:
                             update_kwargs["title"] = f"{mapped_model} Gateway"
                         self.hass.config_entries.async_update_entry(self.config_entry, **update_kwargs)
 
-                if self.device_registry_id:
-                    dev_reg = dr.async_get(self.hass)
+            # Keep the device registry in step even when the in-memory model already
+            # matches (e.g. an entry mislabelled by an earlier release).
+            if mapped_model and self.device_registry_id:
+                dev_reg = dr.async_get(self.hass)
+                device = dev_reg.async_get(self.device_registry_id)
+                if device is not None and device.model != mapped_model:
                     dev_reg.async_update_device(self.device_registry_id, model=mapped_model)
 
         # ── Dimension 16: Firmware Version ───────────────────────────────
