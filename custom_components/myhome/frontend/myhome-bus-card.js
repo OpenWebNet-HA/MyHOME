@@ -608,16 +608,23 @@ class MyHomeBusCard extends HTMLElement {
         }
         .btn-trace:hover { opacity: 0.85; }
         .btn-help {
-          background: transparent;
-          color: var(--primary-text-color);
-          border: 1px solid var(--divider-color, #555);
+          background: #0288d1;
+          color: #fff;
+          border: none;
           border-radius: 50%;
-          width: 26px;
-          height: 26px;
+          width: 24px;
+          height: 24px;
           padding: 0;
+          font-family: Georgia, "Times New Roman", serif;
+          font-style: italic;
           font-weight: 700;
-          font-size: 0.8rem;
+          font-size: 0.85rem;
+          line-height: 24px;
+          text-align: center;
+          box-shadow: 0 0 0 2px rgba(2, 136, 209, 0.25);
         }
+        .btn-help:hover { background: #039be5; opacity: 1; }
+        .btn-help.open { background: #ffb300; color: #212121; box-shadow: 0 0 0 2px rgba(255, 179, 0, 0.35); }
         .help-panel {
           display: none;
           margin: 0 0 12px 0;
@@ -721,6 +728,7 @@ class MyHomeBusCard extends HTMLElement {
           <div class="title">
             <span>📡 ${this._config.title}</span>
             <span id="badge" class="badge badge-connecting">CONNECTING...</span>
+            <button id="btn-help" class="btn-help" title="How this card works: Start Trace vs Sweep Bus, exports, transmit bar" aria-label="How this card works">i</button>
           </div>
           <div class="actions">
             <button id="btn-trace" class="btn-trace" title="Start a new passive trace: clears the buffer and records everything the bus says. Harmless - nothing is sent.">
@@ -737,7 +745,6 @@ class MyHomeBusCard extends HTMLElement {
             </button>
             <button id="btn-pause" class="btn-secondary">Pause</button>
             <button id="btn-clear" class="btn-secondary">Clear</button>
-            <button id="btn-help" class="btn-help" title="How this card works">i</button>
           </div>
         </div>
 
@@ -868,6 +875,8 @@ class MyHomeBusCard extends HTMLElement {
     this._helpOpen = !this._helpOpen;
     const panel = this.shadowRoot.getElementById("help-panel");
     if (panel) panel.style.display = this._helpOpen ? "block" : "none";
+    const btn = this.shadowRoot.getElementById("btn-help");
+    if (btn) btn.classList.toggle("open", this._helpOpen);
   }
 
   _toggleArmed(armed) {
