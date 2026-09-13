@@ -1114,6 +1114,15 @@ def test_handle_gateway_diagnostics_dimension_15_and_16(gateway_handler, mock_co
 
     gateway_handler.device_registry_id = "dev_123"
     mock_dev_reg = MagicMock()
+    registry_device = MagicMock()
+    registry_device.model = gateway_handler.gateway.model_name
+    mock_dev_reg.async_get.return_value = registry_device
+
+    def _track_model(_dev_id, **kwargs):
+        if "model" in kwargs:
+            registry_device.model = kwargs["model"]
+
+    mock_dev_reg.async_update_device.side_effect = _track_model
 
     with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dev_reg):
         # 1. Dimension 15: Device Type 2 -> MyHomeServer1
@@ -1146,6 +1155,38 @@ def test_handle_gateway_diagnostics_dimension_15_and_16(gateway_handler, mock_co
         mock_dev_reg.reset_mock()
         gateway_handler._handle_gateway_diagnostics(msg_dim16)
         assert not mock_dev_reg.async_update_device.called
+
+        # 6. Registry mislabelled by an earlier release: corrected even though the
+        #    in-memory model already matches (no entry rewrite, just the registry)
+        mock_dev_reg.reset_mock()
+        registry_device.model = "MH200N"
+        gateway_handler._handle_gateway_diagnostics(msg_dim15)
+        mock_dev_reg.async_update_device.assert_called_once_with("dev_123", model="MyHomeServer1")
+        assert registry_device.model == "MyHomeServer1"
+
+
+def test_device_type_4_is_mh200_not_mh200n(gateway_handler):
+    """WHO=13 device type 4 is the original MH200 (as OWNd decodes it), not the MH200N."""
+    from OWNd.message import OWNEvent
+
+    from custom_components.myhome.const import GATEWAY_DEVICE_TYPE_MAP
+
+    assert GATEWAY_DEVICE_TYPE_MAP["4"] == "MH200"
+    # every code in the map agrees with OWNd's own decoder
+    for code, model in GATEWAY_DEVICE_TYPE_MAP.items():
+        decoded = OWNEvent.parse(f"*#13**15*{code}##")
+        ownd_name = getattr(decoded, "device_type", getattr(decoded, "_device_type", None))
+        if ownd_name and ownd_name not in ("MHServer", "MHServer2", "F452V"):
+            assert ownd_name == model, (code, ownd_name, model)
+
+    gateway_handler.gateway.model_name = "MH200"
+    gateway_handler.device_registry_id = "dev_1"
+    mock_dev_reg = MagicMock()
+    mock_dev_reg.async_get.return_value = MagicMock(model="MH200")
+    with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dev_reg):
+        gateway_handler._handle_gateway_diagnostics(OWNEvent.parse("*#13**15*4##"))
+    assert gateway_handler.gateway.model_name == "MH200"
+    assert not mock_dev_reg.async_update_device.called
 
 
 def test_compat_gateway_timezone():

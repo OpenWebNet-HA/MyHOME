@@ -181,14 +181,18 @@ SUPPORTED_GATEWAY_MODELS = [
     "Generic",
 ]
 
+# WHO=13 dimension 15 device-type codes -> model names. Mirrors OWNd's decoder
+# (OWNGatewayEvent): keep the two in step. Type 4 is the original MH200, not the
+# MH200N - both share the MH200N gateway profile in OWNd, but the label lands in
+# the entry title, the device registry and every exported trace.
 GATEWAY_DEVICE_TYPE_MAP = {
     "2": "MyHomeServer1",
-    "11": "MyHomeServer1",
-    "200": "F454",
-    "4": "MH200N",
+    "4": "MH200",
     "6": "F452",
     "7": "F452",
+    "11": "MyHomeServer1",
     "13": "H4684",
+    "200": "F454",
 }
 
 
