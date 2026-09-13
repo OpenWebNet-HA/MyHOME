@@ -8,7 +8,6 @@ from homeassistant.core import HomeAssistant
 from OWNd.message import OWNEvent, OWNSignaling
 
 from custom_components.myhome.bus_monitor import BusFrame, BusMonitor
-from custom_components.myhome.const import CONF_ENTITY, DOMAIN
 from custom_components.myhome.websocket import (
     _matches_filter,
     ws_bus_monitor_history,
@@ -98,17 +97,10 @@ def test_backend_filter_ack_nack_direction():
     assert _matches_filter(normal_frame, direction="nack") is False
 
 
-async def test_ws_history_with_who_5(hass: HomeAssistant, mock_ws_connection):
+async def test_ws_history_with_who_5(hass: HomeAssistant, mock_ws_connection, attach_gateway):
     """Test history request returns frames filtered specifically by WHO=5."""
     monitor = BusMonitor(maxlen=100)
-    gateway = MagicMock()
-    mac = "00:03:50:00:12:34"
-    hass.data[DOMAIN] = {
-        mac: {
-            CONF_ENTITY: gateway,
-            "bus_monitor": monitor,
-        }
-    }
+    attach_gateway("00:03:50:00:12:34", MagicMock(), monitor)
 
     # Record mixed frames: light (WHO=1), automation (WHO=2), alarm (WHO=5)
     ev_light = OWNEvent.parse("*1*1*12##")
