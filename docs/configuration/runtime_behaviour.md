@@ -46,6 +46,31 @@ Behaviour:
 
 ---
 
+## 🪟 Timed covers: clock starts at the write, echoes are not keypad presses
+
+Covers without position feedback (`advanced: false`) estimate their position from `travel_time`. Measured on a MyHOMEServer1, this is what the bus does after Home Assistant queues a direction command:
+
+```
+enqueue ─(queue wait, up to ~1.6 s with many covers)─▶ frame written
+   +0.10 s  gateway relays a real stop status   *2*0*<where>##
+   +0.15 s  translation                          *2*1000#<dir>*<where>##
+   +0.55 s  motor starts, direction status       *2*<dir>*<where>##
+stop:       motor stops ~0.08 s after the stop frame is written
+```
+
+The v2 model therefore:
+
+1. **Starts the clock at the write, not at enqueue.** The gateway's send queue reports when each frame actually leaves; with several covers commanded together the last one can leave more than a second after it was queued.
+2. **Opens an echo window** for each command, from enqueue until 1.5 s after the write. Inside it, the relayed stop status is ignored and our own direction status **re-anchors the clock to the real motor start** — no gateway-specific latency constant needed. An opposite-direction frame, or any frame after the window, is a genuine command (wall switch, scenario) and is handled normally.
+3. **Times `set_position` from that anchor**, then re-anchors at the target when the timer fires and lets the stop frame's own write time settle the estimate (target plus whatever the queue delay added).
+4. **Freezes the estimate for a stop at its write**, not at enqueue.
+
+Trade-off: a wall-switch stop pressed in the ≤ 0.6 s between the write and the motor start is treated as an echo. The motor has not moved yet, so nothing is lost; once the motor-start status arrives the window closes and wall-switch stops are honoured immediately.
+
+*(#302, measurements by @Interstellar0verdrive)*
+
+---
+
 ## 🎨 Lights learn colour capabilities additively
 
 Colour modes are promoted from bus frames, and never removed:
