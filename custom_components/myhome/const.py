@@ -8,12 +8,17 @@ DOMAIN = "myhome"
 ATTR_GATEWAY = "gateway"
 ATTR_MESSAGE = "message"
 INTEGRATION_VERSION = "2.0.0b12"
-REQUIRED_OWND_VERSION = "2.0.0b6"
+# hass.data[DOMAIN] key holding the OWNd version resolved off the event loop
+DATA_OWND_VERSION = "_ownd_version"
 
 
 @lru_cache(maxsize=1)
 def get_ownd_version() -> str:
-    """Return the installed version of the OWNd protocol engine."""
+    """Return the installed version of the OWNd protocol engine.
+
+    Reads package metadata from disk: call it via ``hass.async_add_executor_job``
+    (see ``_async_resolve_ownd_version``), never directly from the event loop.
+    """
     try:
         import importlib.metadata
 

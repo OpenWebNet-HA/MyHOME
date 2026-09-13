@@ -55,11 +55,12 @@ async def test_setup_entry_success(hass: HomeAssistant):
         assert config_entry.state is ConfigEntryState.NOT_LOADED
 
 
-async def test_setup_entry_connection_failed(hass: HomeAssistant):
-    """Test failing setup due to bad password or timeout."""
+@pytest.mark.parametrize("reason", ["password_error", "password_required"])
+async def test_setup_entry_auth_failed_starts_reauth(hass: HomeAssistant, reason: str):
+    """A rejected password raises ConfigEntryAuthFailed and HA opens the reauth flow."""
     with patch(
         "custom_components.myhome.gateway.OWNSession.test_connection",
-        return_value={"Success": False, "Message": "password_error"}
+        return_value={"Success": False, "Message": reason}
     ):
         config_entry = MockConfigEntry(
             domain=DOMAIN,
@@ -85,9 +86,59 @@ async def test_setup_entry_connection_failed(hass: HomeAssistant):
         result = await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        # Should return False
         assert not result
         assert config_entry.state is ConfigEntryState.SETUP_ERROR
+        # Home Assistant itself started the reauth flow for this entry
+        flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+        assert [f["context"]["source"] for f in flows] == ["reauth"]
+        assert flows[0]["context"]["entry_id"] == config_entry.entry_id
+        # The half-initialised handler was cleaned up
+        assert "entity" not in hass.data[DOMAIN][config_entry.data["mac"]]
+
+
+async def test_setup_entry_generic_test_failure_retries(hass: HomeAssistant):
+    """A non-auth connection test failure raises ConfigEntryNotReady (retry)."""
+    with patch(
+        "custom_components.myhome.gateway.OWNSession.test_connection",
+        return_value={"Success": False, "Message": "negotiation_refused"}
+    ):
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={"host": "192.168.0.35", "port": 20000, "mac": "00:03:50:00:12:36", "name": "F454"},
+            unique_id="00:03:50:00:12:36",
+        )
+        config_entry.add_to_hass(hass)
+        assert not await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+        assert config_entry.state is ConfigEntryState.SETUP_RETRY
+        assert not hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+
+
+async def test_unload_entry_keeps_state_when_platform_unload_fails(hass: HomeAssistant):
+    """If a platform refuses to unload, hass.data and the gateway stay intact."""
+    from custom_components.myhome import async_unload_entry
+    from custom_components.myhome.const import CONF_ENTITY
+
+    mac = "00:03:50:00:12:37"
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": mac, "host": "1.2.3.4", "port": 20000}, unique_id=mac)
+    entry.add_to_hass(hass)
+    gateway = MagicMock()
+    gateway.close_listener = AsyncMock(return_value=True)
+    hass.data.setdefault(DOMAIN, {})[mac] = {CONF_ENTITY: gateway}
+    entry.runtime_data = gateway
+
+    with patch.object(hass.config_entries, "async_unload_platforms", AsyncMock(return_value=False)):
+        assert await async_unload_entry(hass, entry) is False
+    assert hass.data[DOMAIN][mac][CONF_ENTITY] is gateway
+    assert entry.runtime_data is gateway
+    gateway.close_listener.assert_not_awaited()
+
+    with patch.object(hass.config_entries, "async_unload_platforms", AsyncMock(return_value=True)):
+        assert await async_unload_entry(hass, entry) is True
+    assert mac not in hass.data[DOMAIN]
+    assert entry.runtime_data is None
+    gateway.close_listener.assert_awaited_once()
+
 
 async def test_setup_yaml(hass: HomeAssistant):
     """Test setup from yaml configurations returns false."""
@@ -630,23 +681,6 @@ async def test_register_frontend_branches(hass: HomeAssistant):
     with patch("builtins.open", side_effect=Exception("Read error")):
         assert _get_card_url(card_path) == "/myhome_static/myhome-bus-card.js"
 
-    # 17. Test _sync_www_card helper directly
-    import tempfile
-
-    from custom_components.myhome import _sync_www_card
-    with tempfile.TemporaryDirectory() as tmpdir:
-        src = os.path.join(tmpdir, "src.js")
-        dst = os.path.join(tmpdir, "sub", "dst.js")
-        with open(src, "w") as f:
-            f.write("test")
-        _sync_www_card(src, dst)
-        assert os.path.isfile(dst)
-        with open(dst, "r") as f:
-            assert f.read() == "test"
-        # Exception branch
-        with patch("shutil.copy2", side_effect=Exception("Copy error")):
-            _sync_www_card(src, dst)
-
 
 async def test_setup_entry_myhome_yaml_loading(hass: HomeAssistant):
     """Test loading legacy myhome.yaml with all branches."""
@@ -1120,86 +1154,25 @@ def test_get_ownd_version():
     get_ownd_version.cache_clear()
 
 
-async def test_async_ensure_ownd_engine_fast_path(hass: HomeAssistant):
-    """Test async_ensure_ownd_engine fast-path when version matches."""
-    from custom_components.myhome import async_ensure_ownd_engine
-    from custom_components.myhome.const import REQUIRED_OWND_VERSION
+async def test_ownd_version_resolved_once_off_loop(hass: HomeAssistant):
+    """The OWNd version is read from disk once in the executor and cached in hass.data."""
+    from custom_components.myhome import _async_resolve_ownd_version
+    from custom_components.myhome.const import DATA_OWND_VERSION, get_ownd_version
 
-    with patch("homeassistant.util.package.is_installed", return_value=True), \
-         patch("custom_components.myhome.get_ownd_version", return_value=REQUIRED_OWND_VERSION):
-        result = await async_ensure_ownd_engine(hass)
-        assert result is True
+    executor_targets = []
+    real_executor = hass.async_add_executor_job
 
+    async def track_executor(target, *args, **kwargs):
+        executor_targets.append(target)
+        return await real_executor(target, *args, **kwargs)
 
-async def test_async_ensure_ownd_engine_auto_install_success(hass: HomeAssistant):
-    """Test async_ensure_ownd_engine self-heals by installing missing requirement."""
-    from custom_components.myhome import async_ensure_ownd_engine
-    from custom_components.myhome.const import REQUIRED_OWND_VERSION
+    hass.data.pop(DOMAIN, None)
+    with patch.object(hass, "async_add_executor_job", side_effect=track_executor):
+        first = await _async_resolve_ownd_version(hass)
+        second = await _async_resolve_ownd_version(hass)
+    assert first == second == hass.data[DOMAIN][DATA_OWND_VERSION]
+    assert executor_targets == [get_ownd_version]
 
-    installed_status = [False, True]
-    def mock_is_installed(req):
-        return installed_status.pop(0) if installed_status else True
-
-    with patch("homeassistant.util.package.is_installed", side_effect=mock_is_installed), \
-         patch("homeassistant.requirements.async_process_requirements", new_callable=AsyncMock) as mock_proc, \
-         patch("importlib.reload") as mock_reload, \
-         patch("importlib.invalidate_caches"), \
-         patch("custom_components.myhome.get_ownd_version", side_effect=["2.0.0b2", REQUIRED_OWND_VERSION]):
-        result = await async_ensure_ownd_engine(hass)
-        assert result is True
-        mock_proc.assert_awaited_once_with(hass, "myhome", [f"OWNd=={REQUIRED_OWND_VERSION}"])
-        assert mock_reload.called
-
-
-async def test_async_ensure_ownd_engine_install_failed(hass: HomeAssistant):
-    """Test async_ensure_ownd_engine handles install failure and creates notification."""
-    from custom_components.myhome import async_ensure_ownd_engine
-
-    with patch("homeassistant.util.package.is_installed", return_value=False), \
-         patch("homeassistant.requirements.async_process_requirements", side_effect=RuntimeError("Pip network timeout")), \
-         patch("custom_components.myhome.get_ownd_version", return_value="2.0.0b2"), \
-         patch("homeassistant.components.persistent_notification.async_create") as mock_notify:
-        result = await async_ensure_ownd_engine(hass)
-        assert result is False
-        mock_notify.assert_called_once()
-
-    # And when notification creation itself raises
-    with patch("homeassistant.util.package.is_installed", return_value=False), \
-         patch("homeassistant.requirements.async_process_requirements", side_effect=RuntimeError("Pip network timeout")), \
-         patch("custom_components.myhome.get_ownd_version", return_value="2.0.0b2"), \
-         patch("homeassistant.components.persistent_notification.async_create", side_effect=RuntimeError("Notification error")):
-        result = await async_ensure_ownd_engine(hass)
-        assert result is False
-
-
-async def test_async_ensure_ownd_engine_reload_error(hass: HomeAssistant):
-    """Test async_ensure_ownd_engine logs and survives reload failures."""
-    from custom_components.myhome import async_ensure_ownd_engine
-    from custom_components.myhome.const import REQUIRED_OWND_VERSION
-
-    installed_status = [False, True]
-    def mock_is_installed(req):
-        return installed_status.pop(0) if installed_status else True
-
-    with patch("homeassistant.util.package.is_installed", side_effect=mock_is_installed), \
-         patch("homeassistant.requirements.async_process_requirements", new_callable=AsyncMock), \
-         patch("importlib.reload", side_effect=RuntimeError("Module reload failure")), \
-         patch("importlib.invalidate_caches"), \
-         patch("custom_components.myhome.get_ownd_version", side_effect=["2.0.0b2", REQUIRED_OWND_VERSION]):
-        result = await async_ensure_ownd_engine(hass)
-        assert result is True
-
-
-async def test_async_setup_entry_engine_mismatch_raises_not_ready(hass: HomeAssistant):
-    """Test async_setup_entry raises ConfigEntryNotReady when engine cannot be synchronized."""
-    from homeassistant.exceptions import ConfigEntryNotReady
-
-    from custom_components.myhome import async_setup_entry
-
-    entry = MockConfigEntry(domain=DOMAIN, data={"mac": "00:03:50:00:12:99", "host": "1.2.3.4", "port": 20000}, unique_id="00:03:50:00:12:99")
-    with patch("custom_components.myhome.async_ensure_ownd_engine", return_value=False):
-        with pytest.raises(ConfigEntryNotReady):
-            await async_setup_entry(hass, entry)
 
 async def test_async_setup_entry_uses_executor_for_ownd_version(hass: HomeAssistant):
     """Test async_setup_entry offloads get_ownd_version to executor to prevent loop blocking."""
@@ -1219,6 +1192,7 @@ async def test_async_setup_entry_uses_executor_for_ownd_version(hass: HomeAssist
         executor_targets.append(target)
         return await real_executor(target, *args, **kwargs)
 
+    hass.data.pop(DOMAIN, None)
     with patch(
         "custom_components.myhome.gateway.OWNSession.test_connection",
         side_effect=asyncio.TimeoutError("Timeout"),
