@@ -219,6 +219,23 @@ If you ever need to revert to the legacy codebase (`0.9.4`):
   ha core restart
   ```
 
+### 🗑️ Removing the Integration
+
+1. Go to **Settings → Devices & services → MyHOME**, open the gateway entry's `⋮` menu and choose **Delete**. Repeat for every configured gateway. This closes the bus sessions, unloads all platforms and removes the gateway's devices and entities from the registries.
+2. Restart Home Assistant if you also want to remove the code:
+   - **HACS:** open **MyHome** in HACS → `⋮` → **Remove**.
+   - **Manual / one-liner installs:** delete the folder:
+     ```bash
+     rm -rf /config/custom_components/myhome
+     ha core restart
+     ```
+3. Optional clean-up the integration does not touch on its own:
+   - `/config/myhome.yaml` — the legacy platform configuration file, if you used one.
+   - **Settings → Dashboards → Resources**: the auto-registered `/myhome_static/myhome-bus-card.js` resource, and any `custom:myhome-openwebnet-bus-monitor` cards on your dashboards.
+   - Automations and blueprints that reference `myhome.*` services or the `myhome_*` events (`myhome_cen_event`, `myhome_cenplus_event`, `myhome_message_event`, `myhome_cover_calibration`, …).
+
+The gateway itself is not modified by installing or removing the integration; nothing needs to be reset on the OpenWebNet side.
+
 ---
 
 ## ⚙️ Configuration
@@ -541,7 +558,7 @@ automated coverage and physical gateway verification steps.
 
 | Tier | Rules satisfied | Status |
 | :--- | :---: | :--- |
-| 🥉 Bronze | 16 / 20 | ⏳ next — blocked by `brands`, `docs-removal-instructions`, `has-entity-name`, `runtime-data` |
+| 🥉 Bronze | 17 / 20 | ⏳ next — blocked by `brands`, `has-entity-name`, `runtime-data` |
 | 🥈 Silver | 10 / 10 | ✅ all rules satisfied (waiting on lower tier) |
 | 🥇 Gold | 10 / 21 | ⬜ 11 rule(s) open |
 | 🏆 Platinum | 2 / 3 | ⬜ 1 rule(s) open |
