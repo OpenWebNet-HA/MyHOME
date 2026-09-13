@@ -448,23 +448,56 @@ class MyHomeBusCard extends HTMLElement {
         }
         .header {
           display: flex;
-          justify-content: space-between;
-          align-items: center;
+          flex-direction: column;
+          gap: 10px;
           margin-bottom: 12px;
         }
+        .title-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          min-height: 28px;
+        }
         .title {
+          flex: 1 1 auto;
+          min-width: 0;
           font-size: 1.15rem;
           font-weight: 600;
           color: var(--primary-text-color);
-          display: flex;
-          align-items: center;
-          gap: 8px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         .badge {
-          font-size: 0.75rem;
-          padding: 2px 8px;
+          flex-shrink: 0;
+          white-space: nowrap;
+          font-size: 0.72rem;
+          letter-spacing: 0.02em;
+          padding: 3px 9px;
           border-radius: 12px;
-          font-weight: 500;
+          font-weight: 600;
+          line-height: 1.2;
+        }
+        .toolbar {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 8px 14px;
+        }
+        .toolbar .group {
+          display: inline-flex;
+          gap: 6px;
+        }
+        .toolbar .group.stream { margin-left: auto; }
+        .toolbar button {
+          height: 32px;
+          padding: 0 12px;
+          font-size: 0.8rem;
+          font-weight: 600;
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          white-space: nowrap;
         }
         .badge-live {
           background: rgba(76, 175, 80, 0.15);
@@ -591,35 +624,25 @@ class MyHomeBusCard extends HTMLElement {
           margin-top: 12px;
         }
         .sender-bar input { flex-grow: 1; }
-        .actions {
-          display: flex;
-          gap: 6px;
-          align-items: center;
-          flex-wrap: wrap;
-        }
         .btn-trace {
           background: #c62828;
           color: #fff;
-          font-weight: 600;
-          font-size: 0.8rem;
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
         }
         .btn-trace:hover { opacity: 0.85; }
         .btn-help {
+          flex-shrink: 0;
           background: #0288d1;
           color: #fff;
           border: none;
           border-radius: 50%;
-          width: 24px;
-          height: 24px;
+          width: 26px;
+          height: 26px;
           padding: 0;
           font-family: Georgia, "Times New Roman", serif;
           font-style: italic;
           font-weight: 700;
-          font-size: 0.85rem;
-          line-height: 24px;
+          font-size: 0.9rem;
+          line-height: 26px;
           text-align: center;
           box-shadow: 0 0 0 2px rgba(2, 136, 209, 0.25);
         }
@@ -661,11 +684,6 @@ class MyHomeBusCard extends HTMLElement {
         .btn-sweep {
           background: #1976d2;
           color: #fff;
-          font-weight: 600;
-          font-size: 0.8rem;
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
         }
         .btn-sweep:hover {
           background: #1565c0;
@@ -673,11 +691,6 @@ class MyHomeBusCard extends HTMLElement {
         .btn-export {
           background: #2e7d32;
           color: #fff;
-          font-weight: 600;
-          font-size: 0.8rem;
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
         }
         .btn-export:hover {
           background: #1b5e20;
@@ -685,11 +698,6 @@ class MyHomeBusCard extends HTMLElement {
         .btn-report {
           background: #ff9800;
           color: #fff;
-          font-weight: 600;
-          font-size: 0.8rem;
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
         }
         .btn-report:hover {
           background: #f57c00;
@@ -725,26 +733,32 @@ class MyHomeBusCard extends HTMLElement {
 
       <ha-card>
         <div class="header">
-          <div class="title">
-            <span>📡 ${this._config.title}</span>
+          <div class="title-row">
+            <span class="title" title="${this._escapeHtml(String(this._config.title))}">📡 ${this._config.title}</span>
             <span id="badge" class="badge badge-connecting">CONNECTING...</span>
             <button id="btn-help" class="btn-help" title="How this card works: Start Trace vs Sweep Bus, exports, transmit bar" aria-label="How this card works">i</button>
           </div>
-          <div class="actions">
-            <button id="btn-trace" class="btn-trace" title="Start a new passive trace: clears the buffer and records everything the bus says. Harmless - nothing is sent.">
-              🔴 Start Trace
-            </button>
-            <button id="btn-sweep" class="btn-sweep" title="Start a new bus sweep: clears the buffer and asks every subsystem for its status. Harmless - only status requests are sent.">
-              🧹 Sweep Bus
-            </button>
-            <button id="btn-export" class="btn-export" title="Download the frames currently shown (active filters applied) as a JSON file named after the capture kind">
-              💾 Export Trace
-            </button>
-            <button id="btn-report" class="btn-report" title="Copy the shown frames as a diagnostic markdown bundle to the clipboard and open the GitHub issue form">
-              📋 Copy Trace
-            </button>
-            <button id="btn-pause" class="btn-secondary">Pause</button>
-            <button id="btn-clear" class="btn-secondary">Clear</button>
+          <div class="toolbar actions" role="toolbar" aria-label="Bus monitor actions">
+            <div class="group capture" aria-label="Capture">
+              <button id="btn-trace" class="btn-trace" title="Start a new passive trace: clears the buffer and records everything the bus says. Harmless - nothing is sent.">
+                🔴 Start Trace
+              </button>
+              <button id="btn-sweep" class="btn-sweep" title="Start a new bus sweep: clears the buffer and asks every subsystem for its status. Harmless - only status requests are sent.">
+                🧹 Sweep Bus
+              </button>
+            </div>
+            <div class="group output" aria-label="Output">
+              <button id="btn-export" class="btn-export" title="Download the frames currently shown (active filters applied) as a JSON file named after the capture kind">
+                💾 Export Trace
+              </button>
+              <button id="btn-report" class="btn-report" title="Copy the shown frames as a diagnostic markdown bundle to the clipboard and open the GitHub issue form">
+                📋 Copy Trace
+              </button>
+            </div>
+            <div class="group stream" aria-label="Stream">
+              <button id="btn-pause" class="btn-secondary">Pause</button>
+              <button id="btn-clear" class="btn-secondary">Clear</button>
+            </div>
           </div>
         </div>
 

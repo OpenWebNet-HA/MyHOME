@@ -175,8 +175,11 @@ test("markup: transmit bar disabled, arm checkbox and help panel present; help t
   // the help button lives in the title row, next to the status badge, before the actions
   const badgeAt = html.indexOf('id="badge"');
   const helpAt = html.indexOf('id="btn-help"');
-  const actionsAt = html.indexOf('<div class="actions">');
+  const actionsAt = html.indexOf('class="toolbar actions"');
   assert.ok(badgeAt > 0 && helpAt > badgeAt && actionsAt > helpAt, "help button must sit between the badge and the action buttons");
+  // toolbar is grouped by intent: capture, output, stream
+  const groups = [...html.matchAll(/class="group (capture|output|stream)"/g)].map((m) => m[1]);
+  assert.deepEqual(groups, ["capture", "output", "stream"]);
 
   card._toggleHelp();
   assert.equal(el("help-panel").style.display, "block");
