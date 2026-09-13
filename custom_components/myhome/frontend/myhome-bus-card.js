@@ -1007,12 +1007,15 @@ ${framesText}
       },
       frames: this._frames.map((f) => ({
         timestamp: f.timestamp,
-        direction: f.dir,
+        iso_time: f.iso_time || null,
+        direction: f.direction || null,
         raw: f.raw,
         who: f.who,
         what: f.what,
         where: f.where,
-        description: f.desc || "",
+        dimension: f.dimension != null ? f.dimension : null,
+        is_ack: !!f.is_ack,
+        is_nack: !!f.is_nack,
       })),
     };
 
