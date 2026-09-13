@@ -1096,6 +1096,8 @@ ${framesText}
     if (this._hass) {
       try {
         await this._clearBuffer();
+        // A stopped trace leaves the stream paused; the sweep replies must be captured.
+        if (this._isPaused) this._togglePause();
         await this._hass.callService("myhome", "sweep_bus", {});
         this._lastSweepAt = Date.now() / 1000;
         this._setCaptureMode("sweep");
