@@ -322,20 +322,19 @@ def check_manifest_requirements_rule(checker: StandardsChecker):
             f"Version mismatch: manifest.json ({manifest_version}) != const.py ({const_version})",
         )
 
-    ownd_match = re.search(r'REQUIRED_OWND_VERSION\s*=\s*["\']([^"\']+)["\']', const_content)
-    required_ownd_version = ownd_match.group(1) if ownd_match else manifest_version
-
+    # manifest.json is the single source of truth for the OWNd pin: Home Assistant
+    # installs it, so it must be an exact ``==`` pin (no runtime self-installer).
     requirements = manifest.get("requirements", [])
-    expected_req = f"OWNd=={required_ownd_version}"
-    if expected_req not in requirements:
+    ownd_pins = [r for r in requirements if re.fullmatch(r"OWNd==[0-9][0-9A-Za-z.]*", r)]
+    if len(ownd_pins) != 1:
         checker.log_error(
             "RULE_MANIFEST",
             manifest_file,
             1,
-            f"manifest.json requirements must contain '{expected_req}' to guarantee Home Assistant dependency updates. Found: {requirements}",
+            f"manifest.json requirements must contain exactly one exact 'OWNd==<version>' pin. Found: {requirements}",
         )
     else:
-        checker.log_ok(f"manifest.json requirements synchronization verified ({expected_req}).")
+        checker.log_ok(f"manifest.json requirements pin verified ({ownd_pins[0]}).")
 
 
 def check_quality_scale_rules(checker: StandardsChecker):
@@ -365,15 +364,19 @@ def check_quality_scale_rules(checker: StandardsChecker):
         )
     else:
         services_content = services_file.read_text(encoding="utf-8")
-        if "async_setup_services" not in services_content or "async_unload_services" not in services_content:
+        init_content = (CUSTOM_COMPONENTS_DIR / "__init__.py").read_text(encoding="utf-8")
+        setup_body = re.search(r"async def async_setup\(.*?(?=\nasync def |\ndef |\Z)", init_content, re.S)
+        registered_in_setup = bool(setup_body and "async_setup_services(" in setup_body.group(0))
+        if "async_setup_services" not in services_content or not registered_in_setup:
             checker.log_error(
                 "RULE_IQS_BRONZE",
                 services_file,
                 1,
-                "Quality Scale Bronze rule 'action-setup': services.py must define async_setup_services and async_unload_services",
+                "Quality Scale Bronze rule 'action-setup': services.py must define async_setup_services and "
+                "__init__.async_setup must call it (services stay registered independent of config entries)",
             )
         else:
-            checker.log_ok("[BRONZE] action-setup: services.py registered with setup and unload handlers.")
+            checker.log_ok("[BRONZE] action-setup: services registered once in async_setup.")
 
     # 3. [SILVER] Concurrency: PARALLEL_UPDATES = 0 across all platform files
     platform_files = [

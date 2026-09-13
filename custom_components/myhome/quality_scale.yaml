@@ -25,11 +25,11 @@ rules:
     status: todo
     comment: Pending Community RFC on non-breaking entity ID preservation migration.
   runtime-data:
-    status: done
-    comment: entry.runtime_data implemented with backwards-compatible hass.data mapping.
+    status: in_progress
+    comment: entry.runtime_data is set before platforms load and is the source of truth for the WebSocket API; platforms still read the legacy hass.data mapping (migration pending).
   action-setup:
     status: done
-    comment: Services extracted to dedicated services.py with async_setup_services and async_unload_services.
+    comment: Services are registered once in async_setup (services.py) and stay registered regardless of config entry state.
 
   # 🥈 Silver Tier Rules
   parallel-updates:
@@ -43,7 +43,7 @@ rules:
     comment: Grace period and connection supervisor log cleanly without spamming.
   reauthentication-flow:
     status: done
-    comment: Reauth flow allows recovering from invalid OpenWebNet passwords.
+    comment: async_setup_entry raises ConfigEntryAuthFailed on password rejection; Home Assistant starts the reauth flow natively.
   action-exceptions:
     status: done
     comment: Handled in services.py with parameter validation and robust logging.
@@ -53,8 +53,8 @@ rules:
     status: done
     comment: async_step_reconfigure implemented allowing in-place IP, port, and password updates.
   entity-translations:
-    status: done
-    comment: Canonical strings.json established for English master strings and translations.
+    status: todo
+    comment: Entities use has_entity_name=False with legacy entity IDs; no entity translation keys yet. Blocked on the same migration as has-entity-name.
   icon-translations:
     status: done
     comment: icons.json established for service actions and platform icons.
@@ -68,8 +68,8 @@ rules:
     status: done
     comment: Full DeviceRegistry representation for gateways, actuators, probes, and scenario units.
   repair-issues:
-    status: done
-    comment: Repairs framework integration implemented in repairs.py with issue registry.
+    status: todo
+    comment: repairs.py provides helpers but no production code path raises an issue yet; auth failures rely on ConfigEntryAuthFailed (native reauth repair).
 
   # 💎 Platinum Tier Rules
   async-dependency:
