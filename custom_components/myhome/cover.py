@@ -1,7 +1,12 @@
 """Support for MyHome covers."""
-import asyncio
-import time
+from __future__ import annotations
 
+import asyncio
+import collections
+import time
+from typing import Any
+
+import voluptuous as vol
 from homeassistant.components.cover import (
     ATTR_CURRENT_POSITION,
     ATTR_POSITION,
@@ -50,6 +55,9 @@ from .const import (
     EVENT_COVER_CALIBRATION,
     LOGGER,
     SERVICE_CALIBRATE_COVER,
+    SERVICE_RESET_COVER_TRAVEL_TIME,
+    SERVICE_SET_COVER_TRAVEL_TIME,
+    SERVICE_STOP_COVER_CALIBRATION,
 )
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
@@ -75,11 +83,77 @@ WRITE_TIMEOUT = 30.0
 # One calibration at a time per gateway: a single-session gateway (MH200) cannot
 # drive two motors reliably, and overlapping runs would confuse the echo windows.
 _CALIBRATION_LOCKS: dict[str, asyncio.Lock] = {}
+_CALIBRATION_ACTIVE: dict[str, Any] = {}
+_CALIBRATION_QUEUED: dict[str, set[Any]] = {}
+_LAST_CALIBRATION_TRACE: collections.deque[dict[str, Any]] = collections.deque(maxlen=1000)
+
+
+def _gateway_key(gateway) -> str:
+    return str(getattr(gateway, "mac", "") or id(gateway))
 
 
 def _calibration_lock(gateway) -> asyncio.Lock:
-    key = str(getattr(gateway, "mac", "") or id(gateway))
-    return _CALIBRATION_LOCKS.setdefault(key, asyncio.Lock())
+    key = _gateway_key(gateway)
+    lock = _CALIBRATION_LOCKS.get(key)
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        current_loop = None
+
+    if lock is not None and current_loop is not None:
+        lock_loop = getattr(lock, "_loop", None)
+        if lock_loop is not None and lock_loop is not current_loop:
+            lock = None
+
+    if lock is None:
+        lock = asyncio.Lock()
+        _CALIBRATION_LOCKS[key] = lock
+
+    return lock
+
+
+def _record_calibration_frame(direction: str, raw: str, **extra: Any) -> None:
+    now = dt_util.utcnow()
+    _LAST_CALIBRATION_TRACE.append({
+        "timestamp": time.time(),
+        "iso_time": now.isoformat(),
+        "direction": direction,
+        "raw": str(raw).strip(),
+        **extra,
+    })
+
+
+def get_last_calibration_trace() -> list[dict[str, Any]]:
+    """Return in-memory trace frames captured during recent cover calibrations."""
+    return list(_LAST_CALIBRATION_TRACE)
+
+
+async def async_stop_cover_calibration(hass, gateway_mac: str | None = None) -> bool:
+    """Stop active and queued cover calibrations on one or all gateways."""
+    stopped_any = False
+    for gw_key, active_cover in list(_CALIBRATION_ACTIVE.items()):
+        if gateway_mac and not gw_key.startswith(str(gateway_mac)):
+            continue
+        # Cancel queued covers waiting for the lock
+        queued_covers = list(_CALIBRATION_QUEUED.get(gw_key, set()))
+        _CALIBRATION_QUEUED.setdefault(gw_key, set()).clear()
+        for c in queued_covers:
+            c._calibration_interrupted = "Calibration stopped by user"
+            c._fire_calibration_event("failed", error="Calibration stopped by user")
+            stopped_any = True
+
+        # Stop currently running cover
+        if active_cover is not None and getattr(active_cover, "_calibrating", False):
+            active_cover._calibration_interrupted = "Calibration stopped by user"
+            active_cover._motor_started.set()
+            active_cover._stopped_event.set()
+            try:
+                await active_cover.async_stop_cover()
+            except Exception as err:
+                LOGGER.warning("Error stopping cover %s: %s", active_cover.entity_id, err)
+            stopped_any = True
+
+    return stopped_any
 
 
 def _stored_calibration(config_entry, device_id: str) -> dict | None:
@@ -210,9 +284,26 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     if restored_covers:
         async_add_entities(restored_covers)
 
+    SCHEMA_SET_COVER_TRAVEL_TIME = {
+        vol.Optional("travel_time"): vol.Coerce(float),
+        vol.Optional("travel_time_down"): vol.Coerce(float),
+        vol.Optional("travel_time_up"): vol.Coerce(float),
+    }
+
     platform = entity_platform.current_platform.get()
     if platform is not None:
         platform.async_register_entity_service(SERVICE_CALIBRATE_COVER, {}, "async_calibrate")
+        platform.async_register_entity_service(SERVICE_STOP_COVER_CALIBRATION, {}, "async_stop_calibration")
+        platform.async_register_entity_service(
+            SERVICE_SET_COVER_TRAVEL_TIME,
+            SCHEMA_SET_COVER_TRAVEL_TIME,
+            "async_set_travel_time",
+        )
+        platform.async_register_entity_service(
+            SERVICE_RESET_COVER_TRAVEL_TIME,
+            {},
+            "async_reset_travel_time",
+        )
 
     @callback
     def async_add_cover(message):
@@ -613,6 +704,17 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._stopped_event.set()
 
     def _fire_calibration_event(self, phase: str, **data) -> None:
+        extra = dict(data)
+        run_direction = extra.pop("direction", None)
+        _record_calibration_frame(
+            direction="event",
+            raw=f"phase:{phase}",
+            phase=phase,
+            entity_id=self.entity_id,
+            where=self._full_where,
+            movement_direction=run_direction,
+            **extra,
+        )
         bus = getattr(getattr(self, "hass", None), "bus", None)
         if bus is None:
             return
@@ -629,17 +731,32 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._fire_calibration_event("run", direction=direction)
         written = await self._async_move(direction)
         anchor = await self._await_motion_anchor(written)
-        try:
-            await asyncio.wait_for(self._stopped_event.wait(), CALIBRATION_RUN_TIMEOUT)
-        except TimeoutError as err:
-            raise HomeAssistantError(
-                f"{self._attr_name}: no stop status from the actuator within {CALIBRATION_RUN_TIMEOUT:.0f} s "
-                "- it may not report status; set travel_time manually"
-            ) from err
         if self._calibration_interrupted:
             raise CalibrationInterrupted(f"{self._attr_name}: {self._calibration_interrupted}")
-        stop_at = self._last_stop_at if self._last_stop_at is not None else time.monotonic()
-        return max(0.0, stop_at - anchor)
+        deadline = time.monotonic() + CALIBRATION_RUN_TIMEOUT
+        while True:
+            remaining = max(0.01, deadline - time.monotonic())
+            try:
+                await asyncio.wait_for(self._stopped_event.wait(), remaining)
+            except TimeoutError as err:
+                raise HomeAssistantError(
+                    f"{self._attr_name}: no stop status from the actuator within {CALIBRATION_RUN_TIMEOUT:.0f} s "
+                    "- it may not report status; set travel_time manually"
+                ) from err
+            if self._calibration_interrupted:
+                raise CalibrationInterrupted(f"{self._attr_name}: {self._calibration_interrupted}")
+            stop_at = self._last_stop_at if self._last_stop_at is not None else time.monotonic()
+            elapsed = max(0.0, stop_at - anchor)
+            # If a stop frame arrives less than 0.15s after anchor (e.g. trailing relay echo on MH200),
+            # ignore it and keep waiting for the real actuator limit stop.
+            if elapsed < 0.15:
+                LOGGER.debug(
+                    "%s Ignoring premature stop echo for %s during calibration (%.2f s < 0.15 s); continuing run.",
+                    self._gateway_handler.log_id, self._full_where, elapsed,
+                )
+                self._stopped_event.clear()
+                continue
+            return elapsed
 
     async def async_calibrate(self) -> dict:
         """Measure this cover's travel times on the bus and store them.
@@ -654,21 +771,39 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if self._calibrating:
             raise HomeAssistantError(f"{self._attr_name} is already being calibrated")
 
-        async with _calibration_lock(self._gateway_handler):
-            self._calibrating = True
-            self._cancel_stop_task()
-            self._fire_calibration_event("start")
-            try:
-                await self._calibration_run("open")          # reach the top: known position
-                await asyncio.sleep(CALIBRATION_SETTLE)
-                down = await self._calibration_run("close")
-                await asyncio.sleep(CALIBRATION_SETTLE)
-                up = await self._calibration_run("open")
-            except HomeAssistantError as err:
-                self._fire_calibration_event("failed", error=str(err))
-                raise
-            finally:
-                self._calibrating = False
+        gw_key = _gateway_key(self._gateway_handler)
+        lock = _calibration_lock(self._gateway_handler)
+        self._calibration_interrupted = None
+
+        if lock.locked():
+            # Another cover of this gateway is running: tell the UI we are waiting, not moving.
+            _CALIBRATION_QUEUED.setdefault(gw_key, set()).add(self)
+            self._fire_calibration_event("queued")
+
+        try:
+            async with lock:
+                _CALIBRATION_QUEUED.setdefault(gw_key, set()).discard(self)
+                if self._calibration_interrupted:
+                    self._fire_calibration_event("failed", error=self._calibration_interrupted)
+                    raise CalibrationInterrupted(f"{self._attr_name}: {self._calibration_interrupted}")
+                _CALIBRATION_ACTIVE[gw_key] = self
+                self._calibrating = True
+                self._cancel_stop_task()
+                self._fire_calibration_event("start")
+                try:
+                    await self._calibration_run("open")          # reach the top: known position
+                    await asyncio.sleep(CALIBRATION_SETTLE)
+                    down = await self._calibration_run("close")
+                    await asyncio.sleep(CALIBRATION_SETTLE)
+                    up = await self._calibration_run("open")
+                except HomeAssistantError as err:
+                    self._fire_calibration_event("failed", error=str(err))
+                    raise
+                finally:
+                    self._calibrating = False
+                    _CALIBRATION_ACTIVE[gw_key] = None
+        finally:
+            _CALIBRATION_QUEUED.setdefault(gw_key, set()).discard(self)
 
         for label, value in (("down", down), ("up", up)):
             if not CALIBRATION_MIN_RUN <= value <= CALIBRATION_MAX_RUN:
@@ -700,6 +835,111 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._gateway_handler.log_id, self._full_where, down, up,
         )
         return result
+
+    async def async_stop_calibration(self) -> None:
+        """Stop calibration on this cover's gateway."""
+        gw_mac = getattr(self._gateway_handler, "mac", None)
+        await async_stop_cover_calibration(self.hass or self._hass, gateway_mac=gw_mac)
+
+    async def async_set_travel_time(
+        self,
+        travel_time: float | None = None,
+        travel_time_down: float | None = None,
+        travel_time_up: float | None = None,
+    ) -> dict:
+        """Manually set physical travel times for this timed cover."""
+        if self._advanced:
+            raise HomeAssistantError(f"{self._attr_name} reports its position; travel time cannot be set")
+
+        down = travel_time_down if travel_time_down is not None else travel_time
+        up = travel_time_up if travel_time_up is not None else (travel_time if travel_time is not None else down)
+
+        if down is None and up is None:
+            raise HomeAssistantError("At least travel_time or travel_time_down/up must be specified")
+
+        if down is None:
+            down = self._travel_time_down
+        if up is None:
+            up = self._travel_time_up
+
+        if not CALIBRATION_MIN_RUN <= down <= CALIBRATION_MAX_RUN:
+            raise HomeAssistantError(f"travel_time_down must be between {CALIBRATION_MIN_RUN:.0f}s and {CALIBRATION_MAX_RUN:.0f}s")
+        if not CALIBRATION_MIN_RUN <= up <= CALIBRATION_MAX_RUN:
+            raise HomeAssistantError(f"travel_time_up must be between {CALIBRATION_MIN_RUN:.0f}s and {CALIBRATION_MAX_RUN:.0f}s")
+
+        self._travel_time_down = round(float(down), 2)
+        self._travel_time_up = round(float(up), 2)
+        self._travel_time = int(round(self._travel_time_down))
+        self._calibration_source = "manual"
+        self._calibrated_at = dt_util.utcnow().isoformat(timespec="seconds")
+
+        result = {
+            "down": self._travel_time_down,
+            "up": self._travel_time_up,
+            "measured_at": self._calibrated_at,
+            "source": "manual",
+        }
+        self._persist_calibration(result)
+        self._refresh_travel_attributes()
+        if self.hass is not None:
+            self.async_write_ha_state()
+
+        self._fire_calibration_event("done", **result)
+        LOGGER.info(
+            "%s Cover %s manual travel time set: down %.1f s, up %.1f s.",
+            self._gateway_handler.log_id, self._full_where, self._travel_time_down, self._travel_time_up,
+        )
+        return result
+
+    async def async_reset_travel_time(self) -> None:
+        """Reset travel times back to default or YAML configuration."""
+        if self._advanced:
+            raise HomeAssistantError(f"{self._attr_name} reports its position; calibration is not applicable")
+
+        entry = getattr(self._gateway_handler, "config_entry", None)
+        hass = self.hass or self._hass
+        if entry is not None and getattr(entry, "entry_id", None) and hass is not None and hasattr(hass, "config_entries"):
+            options = dict(getattr(entry, "options", None) or {})
+            stored = dict(options.get(CONF_COVER_TRAVEL_TIMES) or {})
+            if str(self._device_id) in stored:
+                del stored[str(self._device_id)]
+                options[CONF_COVER_TRAVEL_TIMES] = stored
+                hass.config_entries.async_update_entry(entry, options=options)
+
+        configured_covers = {}
+        if hass is not None and DOMAIN in getattr(hass, "data", {}):
+            gw_mac = getattr(self._gateway_handler, "mac", "")
+            gw_data = hass.data[DOMAIN].get(gw_mac, {}) if isinstance(hass.data[DOMAIN], dict) else {}
+            configured_covers = gw_data.get(CONF_PLATFORMS, {}).get(PLATFORM, {})
+
+        cfg = configured_covers.get(self._device_id) or configured_covers.get(self._where) or {}
+        if CONF_TRAVEL_TIME in cfg:
+            base_travel = float(cfg[CONF_TRAVEL_TIME])
+            source = "yaml"
+        else:
+            base_travel = float(DEFAULT_TRAVEL_TIME)
+            source = "default"
+
+        self._travel_time_down = base_travel
+        self._travel_time_up = base_travel
+        self._travel_time = int(round(base_travel))
+        self._calibration_source = source
+        self._calibrated_at = None
+
+        self._refresh_travel_attributes()
+        if self.hass is not None:
+            self.async_write_ha_state()
+
+        self._fire_calibration_event(
+            "reset",
+            down=self._travel_time_down,
+            up=self._travel_time_up,
+            source=source,
+        )
+        LOGGER.info(
+            "%s Cover %s travel times reset to %s (%.1f s).",
+            self._gateway_handler.log_id, self._full_where, source, base_travel,
+        )
 
     def _persist_calibration(self, result: dict) -> None:
         """Store the measurement in the config entry options (survives restarts, applies to discovered covers)."""
@@ -755,6 +995,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._attr_is_closed = False
             self._begin_command(direction)
         written = await self._gateway_handler.send(command)
+        if self._calibrating or any(getattr(c, "_calibrating", False) for c in _CALIBRATION_ACTIVE.values() if c):
+            _record_calibration_frame("tx", str(command), direction_action=direction, entity_id=self.entity_id)
         if not self._advanced:
             self._track_write(written)
         if self.hass is not None:
@@ -825,7 +1067,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             # written (_track_write freezes it then); if delivery never
             # happens the next status frame will correct us.
             self._begin_command("stop")
-        written = await self._gateway_handler.send(OWNAutomationCommand.stop_shutter(self._full_where))
+        cmd = OWNAutomationCommand.stop_shutter(self._full_where)
+        written = await self._gateway_handler.send(cmd)
+        if self._calibrating or any(getattr(c, "_calibrating", False) for c in _CALIBRATION_ACTIVE.values() if c):
+            _record_calibration_frame("tx", str(cmd), action="stop", entity_id=self.entity_id)
         if not self._advanced:
             self._track_write(written)
             if not isinstance(written, asyncio.Future):
@@ -853,7 +1098,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 LOGGER.debug("%s Motor start echo for %s; clock anchored.", self._gateway_handler.log_id, self._full_where)
                 return True
             if is_stop:
-                # Gateway relays a stop status ~0.1 s after our direction frame,
+                # Gateway relays a stop status before or shortly after our direction frame,
                 # before the motor starts: an echo, not a keypad stop.
                 LOGGER.debug("%s Ignoring stop echo for %s.", self._gateway_handler.log_id, self._full_where)
                 return True
@@ -869,6 +1114,31 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Handle an event message."""
         if getattr(message, "is_translation", None) is True:
             return
+
+        # Ignore status queries/requests (e.g. *#2*...##) - they are polls, not state transitions
+        if getattr(message, "_family", None) == "REQUEST" or getattr(message, "_message_type", None) == "STATUS_REQUEST":
+            return
+
+        # Ignore frames with no what and no movement/position (e.g. unknown queries)
+        if getattr(message, "_what", None) is None and message.current_position is None and not message.is_opening and not message.is_closing:
+            return
+
+        # Ignore general commands (WHERE=0) and groups/areas during active calibration
+        if self._calibrating and (getattr(message, "is_general", False) or str(getattr(message, "where", "")) == "0"):
+            LOGGER.debug("%s Ignoring general frame during calibration of %s: %s", self._gateway_handler.log_id, self._full_where, message)
+            return
+
+        # Record frame to recent calibration trace if calibration is active
+        if self._calibrating or any(getattr(c, "_calibrating", False) for c in _CALIBRATION_ACTIVE.values() if c):
+            _record_calibration_frame(
+                direction="rx",
+                raw=str(getattr(message, "raw", getattr(message, "_raw", str(message)))),
+                who=getattr(message, "who", getattr(message, "_who", 2)),
+                where=getattr(message, "where", getattr(message, "_where", self._full_where)),
+                what=getattr(message, "what", getattr(message, "_what", None)),
+                entity_id=self.entity_id,
+            )
+
         LOGGER.debug(
             "%s %s",
             self._gateway_handler.log_id,
