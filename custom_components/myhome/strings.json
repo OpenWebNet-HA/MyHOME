@@ -197,6 +197,10 @@
           "description": "The gateway's MAC address (optional; defaults to all active gateways)."
         }
       }
+    },
+    "calibrate_cover": {
+      "name": "Calibrate cover travel time",
+      "description": "Measures a timed cover's up and down travel times on the SCS bus and stores them: the cover is driven fully up, then fully down (timed), then fully up again (timed). Covers are calibrated one at a time per gateway."
     }
   },
   "issues": {

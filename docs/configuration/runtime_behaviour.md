@@ -67,6 +67,8 @@ The v2 model therefore:
 
 Trade-off: a wall-switch stop pressed in the ≤ 0.6 s between the write and the motor start is treated as an echo. The motor has not moved yet, so nothing is lost; once the motor-start status arrives the window closes and wall-switch stops are honoured immediately.
 
+**Calibration.** Because the actuator reports its motor start and stop, a timed cover can measure its own travel: `myhome.calibrate_cover` (or the *Calibrate travel time* button on the cover's device, *Calibrate all covers* on the gateway, or the 🪟 Covers panel of the bus-monitor card) drives the cover fully up, then fully down (timed), then fully up (timed), one cover at a time per gateway, and stores the up and down times in the config entry options. The model then uses the up time when opening and the down time when closing. Measured values are the actuator's run times — equal to the physical travel on an installer-calibrated actuator; otherwise an upper bound. See [Services → `myhome.calibrate_cover`](services.md#6-myhomecalibrate_cover).
+
 *(#302, measurements by @Interstellar0verdrive)*
 
 ---
