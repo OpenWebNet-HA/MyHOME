@@ -1,0 +1,65 @@
+name: Integration Quality Scale
+
+# Audits custom_components/myhome/quality_scale.yaml against the official Home Assistant
+# Integration Quality Scale (Bronze -> Silver -> Gold -> Platinum) and reports the tier
+# actually reached plus the rules blocking the next one. A tier is reached only when every
+# rule of that tier and of all lower tiers is done/exempt. This is a self-audit of the
+# published checklist; tiers are formally awarded only by Home Assistant core review.
+
+on:
+  push:
+    branches: [main, master, "v2-*", "fix/*", "feat/*"]
+  pull_request:
+    branches: [main, master, "v2-*"]
+  schedule:
+    - cron: "30 4 * * 1" # weekly, Monday 04:30 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  quality-scale:
+    name: Audit quality_scale.yaml
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install audit dependencies
+        run: python -m pip install --upgrade pip pyyaml ruff
+
+      - name: Automated rule checks (verify_ha_standards.py)
+        # Mechanical checks behind the rules the manifest marks as done
+        # (action-setup, parallel-updates, reconfiguration-flow, diagnostics, manifest pin, ...).
+        run: python scripts/verify_ha_standards.py
+
+      - name: Quality scale audit and badge
+        run: |
+          python scripts/quality_scale_report.py --badge quality_scale.svg --json quality_scale.json
+          echo "reached=$(python -c 'import json;print(json.load(open("quality_scale.json"))["reached"])')" >> "$GITHUB_OUTPUT"
+        id: audit
+
+      - name: Upload audit result
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-scale-audit
+          path: |
+            quality_scale.json
+            quality_scale.svg
+
+      - name: Commit badge on the default branch
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add quality_scale.svg
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: update quality scale badge (${{ steps.audit.outputs.reached }}) [skip ci]"
+            git push || echo "No files pushed"
+          fi
