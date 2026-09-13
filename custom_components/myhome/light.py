@@ -561,31 +561,37 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             )
         await super().async_added_to_hass()
 
+    def _promote_color_mode(self, mode: ColorMode) -> None:
+        """Add a color capability learned from the bus without dropping others.
+
+        DALI DT8 drivers report both HSV (dimension 12) and tunable white
+        (dimension 14); HS and COLOR_TEMP therefore coexist.  BRIGHTNESS and
+        ONOFF are subsumed by any color mode per the HA light model.
+        """
+        if mode in (ColorMode.HS, ColorMode.COLOR_TEMP):
+            self._attr_supported_color_modes.discard(ColorMode.BRIGHTNESS)
+            self._attr_supported_color_modes.discard(ColorMode.ONOFF)
+        elif mode == ColorMode.BRIGHTNESS:
+            self._attr_supported_color_modes.discard(ColorMode.ONOFF)
+        self._attr_supported_color_modes.add(mode)
+        self._attr_color_mode = mode
+        self._attr_supported_features |= LightEntityFeature.TRANSITION
+        self._attr_supported_features &= ~LightEntityFeature.FLASH
+
     async def async_restore_last_state(self, last_state) -> None:
         """Restore previous state attributes and color modes."""
-        # 1. Restore color modes and features
-        last_modes = last_state.attributes.get("supported_color_modes")
-        if last_modes:
-            if (
-                ColorMode.HS in last_modes
-                or "hs" in last_modes
-                or ColorMode.RGB in last_modes
-                or "rgb" in last_modes
-            ):
-                self._attr_supported_color_modes = {ColorMode.HS}
-                self._attr_color_mode = ColorMode.HS
-                self._attr_supported_features |= LightEntityFeature.TRANSITION
-                self._attr_supported_features &= ~LightEntityFeature.FLASH
-            elif ColorMode.COLOR_TEMP in last_modes or "color_temp" in last_modes:
-                self._attr_supported_color_modes = {ColorMode.COLOR_TEMP}
-                self._attr_color_mode = ColorMode.COLOR_TEMP
-                self._attr_supported_features |= LightEntityFeature.TRANSITION
-                self._attr_supported_features &= ~LightEntityFeature.FLASH
-            elif ColorMode.BRIGHTNESS in last_modes or "brightness" in last_modes:
-                self._attr_supported_color_modes = {ColorMode.BRIGHTNESS}
-                self._attr_color_mode = ColorMode.BRIGHTNESS
-                self._attr_supported_features |= LightEntityFeature.TRANSITION
-                self._attr_supported_features &= ~LightEntityFeature.FLASH
+        # 1. Restore color modes and features (all of them, not just the "best")
+        last_modes = last_state.attributes.get("supported_color_modes") or []
+        if ColorMode.HS in last_modes or "hs" in last_modes or ColorMode.RGB in last_modes or "rgb" in last_modes:
+            self._promote_color_mode(ColorMode.HS)
+        if ColorMode.COLOR_TEMP in last_modes or "color_temp" in last_modes:
+            self._promote_color_mode(ColorMode.COLOR_TEMP)
+        if ColorMode.BRIGHTNESS in last_modes or "brightness" in last_modes:
+            if not self._attr_supported_color_modes & {ColorMode.HS, ColorMode.COLOR_TEMP}:
+                self._promote_color_mode(ColorMode.BRIGHTNESS)
+        last_mode = last_state.attributes.get("color_mode")
+        if last_mode in self._attr_supported_color_modes:
+            self._attr_color_mode = ColorMode(last_mode)
 
         # 2. Restore brightness
         last_brightness = last_state.attributes.get(ATTR_BRIGHTNESS)
@@ -1029,13 +1035,10 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         if has_hs or has_rgb:
             if ColorMode.HS not in self._attr_supported_color_modes:
                 LOGGER.info(
-                    "Auto-detected HSV color for light %s, upgrading to HS mode.",
+                    "Auto-detected HSV color for light %s, adding HS mode.",
                     self._where,
                 )
-                self._attr_supported_color_modes = {ColorMode.HS}
-                self._attr_color_mode = ColorMode.HS
-                self._attr_supported_features |= LightEntityFeature.TRANSITION
-                self._attr_supported_features &= ~LightEntityFeature.FLASH
+            self._promote_color_mode(ColorMode.HS)
             if has_hs:
                 self._attr_hs_color = (float(message.hue), float(message.saturation))
                 if has_rgb:
@@ -1056,13 +1059,10 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         elif isinstance(getattr(message, "color_temp", None), int):
             if ColorMode.COLOR_TEMP not in self._attr_supported_color_modes:
                 LOGGER.info(
-                    "Auto-detected tunable white for light %s, upgrading to COLOR_TEMP mode.",
+                    "Auto-detected tunable white for light %s, adding COLOR_TEMP mode.",
                     self._where,
                 )
-                self._attr_supported_color_modes = {ColorMode.COLOR_TEMP}
-                self._attr_color_mode = ColorMode.COLOR_TEMP
-                self._attr_supported_features |= LightEntityFeature.TRANSITION
-                self._attr_supported_features &= ~LightEntityFeature.FLASH
+            self._promote_color_mode(ColorMode.COLOR_TEMP)
             self._attr_color_temp = message.color_temp
             self._attr_color_temp_kelvin = color_temperature_mired_to_kelvin(message.color_temp)
 
@@ -1078,10 +1078,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     "Auto-detected dimmer for light %s, upgrading to BRIGHTNESS mode.",
                     self._where,
                 )
-                self._attr_supported_color_modes = {ColorMode.BRIGHTNESS}
-                self._attr_color_mode = ColorMode.BRIGHTNESS
-                self._attr_supported_features |= LightEntityFeature.TRANSITION
-                self._attr_supported_features &= ~LightEntityFeature.FLASH
+                self._promote_color_mode(ColorMode.BRIGHTNESS)
 
         if (
             ColorMode.BRIGHTNESS in self._attr_supported_color_modes
