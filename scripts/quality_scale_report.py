@@ -9,8 +9,10 @@ tier* is ``done`` or ``exempt``. This script:
    rule catalogue (rules that are not listed count as *missing*, i.e. not done);
 2. computes the highest tier actually reached and the rules blocking the next;
 3. prints a Markdown report (also appended to ``$GITHUB_STEP_SUMMARY`` in CI);
-4. optionally writes a shields-style SVG badge (``--badge``) and a JSON
-   summary (``--json``);
+4. optionally writes a shields-style SVG badge (``--badge``), a JSON
+   summary (``--json``) and rewrites the block between the
+   ``<!-- START_QUALITY_SCALE -->`` / ``<!-- END_QUALITY_SCALE -->`` markers in
+   a README (``--update-readme``);
 5. exits non-zero when the manifest is malformed or, with ``--require TIER``,
    when that tier is not reached.
 
@@ -24,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -35,6 +38,9 @@ except ImportError:  # pragma: no cover - dependency error surfaced to the calle
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = REPO_ROOT / "custom_components" / "myhome" / "quality_scale.yaml"
+README_START = "<!-- START_QUALITY_SCALE -->"
+README_END = "<!-- END_QUALITY_SCALE -->"
+MANIFEST_LINK = "custom_components/myhome/quality_scale.yaml"
 
 TIERS = ["bronze", "silver", "gold", "platinum"]
 TIER_LABEL = {"bronze": "🥉 Bronze", "silver": "🥈 Silver", "gold": "🥇 Gold", "platinum": "🏆 Platinum"}
@@ -140,6 +146,53 @@ def markdown(result: dict) -> str:
     return "\n".join(lines)
 
 
+def readme_block(result: dict) -> str:
+    """Compact, README-sized view: tier reached, progress per tier, what blocks the next tier."""
+    reached = result["reached"]
+    nxt = next_tier(reached)
+    lines = [
+        f"**Tier reached: {TIER_LABEL.get(reached, '— none yet')}**",
+        "",
+        "| Tier | Rules satisfied | Status |",
+        "| :--- | :---: | :--- |",
+    ]
+    for tier in TIERS:
+        t = result["tiers"][tier]
+        if t["complete"]:
+            status = "✅ complete"
+        elif tier == nxt:
+            status = "⏳ next — blocked by " + ", ".join(f"`{b}`" for b in t["blocking"])
+        elif not t["blocking"]:
+            status = "✅ all rules satisfied (waiting on lower tier)"
+        else:
+            status = f"⬜ {len(t['blocking'])} rule(s) open"
+        lines.append(f"| {TIER_LABEL[tier]} | {t['satisfied']} / {t['total']} | {status} |")
+    lines += [
+        "",
+        f"_Self-audit of [`quality_scale.yaml`]({MANIFEST_LINK}) against the official "
+        "[Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/); "
+        "a tier needs every rule of that tier and all lower tiers `done`/`exempt`. Updated by the "
+        "[Integration Quality Scale workflow](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/quality-scale.yml); "
+        "tiers are formally awarded only by Home Assistant core review._",
+    ]
+    return "\n".join(lines)
+
+
+def update_readme(path: Path, result: dict) -> bool:
+    """Replace the marker block in ``path``; return True when the file changed."""
+    content = path.read_text(encoding="utf-8")
+    if README_START not in content or README_END not in content:
+        raise ValueError(f"{path} has no {README_START} / {README_END} markers")
+    block = f"{README_START}\n\n{readme_block(result)}\n\n{README_END}"
+    updated = re.sub(
+        rf"{re.escape(README_START)}.*?{re.escape(README_END)}", lambda _m: block, content, count=1, flags=re.S
+    )
+    if updated == content:
+        return False
+    path.write_text(updated, encoding="utf-8")
+    return True
+
+
 def badge_svg(reached: str) -> str:
     label = "quality scale"
     value = {"none": "not yet bronze"}.get(reached, reached)
@@ -162,6 +215,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--manifest", type=Path, default=MANIFEST)
     parser.add_argument("--badge", type=Path, help="write a shields-style SVG badge here")
     parser.add_argument("--json", type=Path, help="write the audit result as JSON here")
+    parser.add_argument("--update-readme", type=Path, metavar="README", help="rewrite the quality-scale block between the README markers")
     parser.add_argument("--require", choices=TIERS, help="exit 1 unless this tier is reached")
     parser.add_argument("--quiet", action="store_true", help="do not print the Markdown report")
     args = parser.parse_args(argv)
@@ -184,6 +238,13 @@ def main(argv: list[str] | None = None) -> int:
         args.badge.write_text(badge_svg(result["reached"]), encoding="utf-8")
     if args.json:
         args.json.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    if args.update_readme:
+        try:
+            changed = update_readme(args.update_readme, result)
+        except (OSError, ValueError) as err:
+            print(f"ERROR: {err}", file=sys.stderr)
+            return 2
+        print(f"README block {'updated' if changed else 'unchanged'}: {args.update_readme}", file=sys.stderr)
 
     if args.require and (result["reached"] == "none" or TIERS.index(result["reached"]) < TIERS.index(args.require)):
         print(f"FAILED: required tier {args.require} not reached (reached: {result['reached']})", file=sys.stderr)

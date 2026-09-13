@@ -41,7 +41,7 @@ jobs:
 
       - name: Quality scale audit and badge
         run: |
-          python scripts/quality_scale_report.py --badge quality_scale.svg --json quality_scale.json
+          python scripts/quality_scale_report.py --badge quality_scale.svg --json quality_scale.json --update-readme README.md
           echo "reached=$(python -c 'import json;print(json.load(open("quality_scale.json"))["reached"])')" >> "$GITHUB_OUTPUT"
         id: audit
 
@@ -53,13 +53,13 @@ jobs:
             quality_scale.json
             quality_scale.svg
 
-      - name: Commit badge on the default branch
+      - name: Commit badge and README table on the default branch
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add quality_scale.svg
+          git add quality_scale.svg README.md
           if ! git diff --staged --quiet; then
-            git commit -m "chore: update quality scale badge (${{ steps.audit.outputs.reached }}) [skip ci]"
+            git commit -m "chore: update quality scale badge and README table (${{ steps.audit.outputs.reached }}) [skip ci]"
             git push || echo "No files pushed"
           fi
