@@ -4,6 +4,8 @@
 [![HACS Validation](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/validate.yml/badge.svg)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/validate.yml)
 [![test-coverage](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/test-coverage.yaml/badge.svg)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/test-coverage.yaml)
 [![Coverage](coverage.svg)](https://app.codecov.io/gh/OpenWebNet-HA/MyHOME/tree/v2-phase2-architecture)
+[![Integration Quality Scale](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/quality-scale.yml/badge.svg)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/quality-scale.yml)
+[![Quality scale tier](quality_scale.svg)](custom_components/myhome/quality_scale.yaml)
 [![Codecov](https://codecov.io/gh/OpenWebNet-HA/MyHOME/branch/v2-phase2-architecture/graph/badge.svg)](https://app.codecov.io/gh/OpenWebNet-HA/MyHOME/tree/v2-phase2-architecture)
 [![PyPI Standards & Packaging](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/pypi_standards.yml/badge.svg?branch=v2-phase2-architecture)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/pypi_standards.yml?query=branch%3Av2-phase2-architecture)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)

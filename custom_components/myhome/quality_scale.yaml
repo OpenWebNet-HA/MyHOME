@@ -1,77 +1,172 @@
-# Home Assistant Integration Quality Scale Audit Manifest for MyHOME
+# Home Assistant Integration Quality Scale audit manifest for MyHOME
 # Reference: https://developers.home-assistant.io/docs/core/integration-quality-scale/
+#
+# Every rule of the official scale is listed. A tier is reached only when every rule of
+# that tier and of all lower tiers is `done` or `exempt`; `scripts/quality_scale_report.py`
+# computes the tier reached and the rules blocking the next one (run in CI by the
+# "Integration Quality Scale" workflow). Keep statuses honest: `todo` beats a wrong `done`.
 
 rules:
-  # 🥉 Bronze Tier Rules
-  config-flow:
-    status: done
-    comment: Fully implemented via Home Assistant ConfigFlow with SSDP and manual entry.
-  test-before-configure:
-    status: done
-    comment: Verifies gateway connection and authentication before creating config entry.
-  unique-config-entry:
-    status: done
-    comment: Config entry unique_id is strictly bound to canonical gateway MAC address.
-  discovery:
-    status: done
-    comment: Automatically discovers F454, MyHomeServer1, and MH200 gateways via SSDP/UPnP.
-  discovery-update-info:
-    status: done
-    comment: Updates gateway host and port dynamically if IP changes on rediscovery.
-  common-modules:
-    status: done
-    comment: Utilizes standard Home Assistant core helpers, dispatchers, and device registry.
-  has-entity-name:
-    status: todo
-    comment: Pending Community RFC on non-breaking entity ID preservation migration.
-  runtime-data:
-    status: in_progress
-    comment: entry.runtime_data is set before platforms load and is the source of truth for the WebSocket API; platforms still read the legacy hass.data mapping (migration pending).
+  # 🥉 Bronze
   action-setup:
     status: done
     comment: Services are registered once in async_setup (services.py) and stay registered regardless of config entry state.
+  appropriate-polling:
+    status: done
+    comment: local_push; only temperature sensors poll (5 min) and probes (WHERE >= 100) are receive-only unless the push stream goes silent.
+  brands:
+    status: todo
+    comment: No pull request to home-assistant/brands has been submitted yet.
+  common-modules:
+    status: done
+    comment: Base entity in myhome_device.py; gateway handler in gateway.py; shared constants in const.py.
+  config-flow-test-coverage:
+    status: done
+    comment: tests/test_config_flow.py and test_config_flow_serial.py cover user, SSDP, reauth, reconfigure and error recovery paths (100% statement coverage of config_flow.py).
+  config-flow:
+    status: done
+    comment: ConfigFlow with SSDP discovery, manual entry, serial transport, reauth and reconfigure.
+  dependency-transparency:
+    status: done
+    comment: OWNd is published on PyPI from the public OpenWebNet-HA/OWNd repository with CI; MIT/GPL licensed.
+  docs-actions:
+    status: done
+    comment: docs/configuration/services.md documents every service and its fields.
+  docs-triggers:
+    status: done
+    comment: docs/configuration/cen_cenplus.md documents CEN / CEN+ device triggers.
+  docs-conditions:
+    status: exempt
+    comment: The integration provides no custom conditions.
+  docs-high-level-description:
+    status: done
+    comment: README.md opens with what the integration does and which hardware it targets.
+  docs-installation-instructions:
+    status: done
+    comment: README.md "Installation & Updating" (terminal, manual, HACS).
+  docs-removal-instructions:
+    status: todo
+    comment: README has no removal / uninstall section yet.
+  entity-event-setup:
+    status: done
+    comment: Entities subscribe to dispatcher signals in async_added_to_hass and unsubscribe via async_on_remove.
+  entity-unique-id:
+    status: done
+    comment: Every entity has a unique_id of the form {gateway mac}-{who}-{where}.
+  has-entity-name:
+    status: todo
+    comment: Entities still set has_entity_name=False with legacy entity IDs; pending the community RFC on non-breaking entity ID migration.
+  runtime-data:
+    status: in_progress
+    comment: entry.runtime_data is set before platforms load and is the source of truth for the WebSocket API; platforms still read the legacy hass.data mapping.
+  test-before-configure:
+    status: done
+    comment: The config flow opens a test session and validates the password before creating the entry.
+  test-before-setup:
+    status: done
+    comment: async_setup_entry runs gateway.test(); failures raise ConfigEntryNotReady, a rejected password raises ConfigEntryAuthFailed.
+  unique-config-entry:
+    status: done
+    comment: Config entry unique_id is the canonical gateway MAC address.
 
-  # 🥈 Silver Tier Rules
-  parallel-updates:
-    status: done
-    comment: PARALLEL_UPDATES = 0 declared across all 9 platform files for push-driven event streaming.
-  test-coverage:
-    status: done
-    comment: 100.0% statement coverage verified across all 25 integration modules.
-  log-when-unavailable:
-    status: done
-    comment: Grace period and connection supervisor log cleanly without spamming.
-  reauthentication-flow:
-    status: done
-    comment: async_setup_entry raises ConfigEntryAuthFailed on password rejection; Home Assistant starts the reauth flow natively.
+  # 🥈 Silver
   action-exceptions:
     status: done
     comment: Handled in services.py with parameter validation and robust logging.
+  config-entry-unloading:
+    status: done
+    comment: async_unload_entry unloads platforms via async_unload_platforms and closes the gateway sessions; listeners are registered with entry.async_on_unload.
+  docs-configuration-parameters:
+    status: done
+    comment: docs/configuration/gateways.md documents the options flow (worker count, transition mode, event broadcasting, decoders).
+  docs-installation-parameters:
+    status: done
+    comment: docs/configuration/gateways.md documents host, port, password and serial parameters.
+  entity-unavailable:
+    status: done
+    comment: MyHOMEEntity.available follows the gateway availability with a 60 s reconnect grace period.
+  integration-owner:
+    status: done
+    comment: codeowners declared in manifest.json.
+  log-when-unavailable:
+    status: done
+    comment: Grace period and connection supervisor log once on loss and once on recovery, without spamming.
+  parallel-updates:
+    status: done
+    comment: PARALLEL_UPDATES = 0 declared across all 9 platform files for push-driven event streaming.
+  reauthentication-flow:
+    status: done
+    comment: async_setup_entry raises ConfigEntryAuthFailed on password rejection; Home Assistant starts the reauth flow natively.
+  test-coverage:
+    status: done
+    comment: 100.0% statement coverage verified across all integration modules.
 
-  # 🥇 Gold Tier Rules
-  reconfiguration-flow:
-    status: done
-    comment: async_step_reconfigure implemented allowing in-place IP, port, and password updates.
-  entity-translations:
-    status: todo
-    comment: Entities use has_entity_name=False with legacy entity IDs; no entity translation keys yet. Blocked on the same migration as has-entity-name.
-  icon-translations:
-    status: done
-    comment: icons.json established for service actions and platform icons.
-  diagnostics:
-    status: done
-    comment: Native diagnostics.py sanitizes credentials and exports gateway and bus telemetry.
-  dynamic-devices:
-    status: done
-    comment: Dynamic discovery wires bus devices to Home Assistant without static configuration.
+  # 🥇 Gold
   devices:
     status: done
     comment: Full DeviceRegistry representation for gateways, actuators, probes, and scenario units.
+  diagnostics:
+    status: done
+    comment: Native diagnostics.py sanitizes credentials and exports gateway and bus telemetry.
+  discovery-update-info:
+    status: done
+    comment: Updates gateway host and port dynamically if IP changes on rediscovery.
+  discovery:
+    status: done
+    comment: Automatically discovers F454, MyHomeServer1, and MH200 gateways via SSDP/UPnP.
+  docs-data-update:
+    status: done
+    comment: docs/configuration/runtime_behaviour.md describes what is pushed by the bus and what is polled.
+  docs-examples:
+    status: done
+    comment: docs/configuration/lovelace_recipes.md and the CEN / CEN+ automation blueprints.
+  docs-known-limitations:
+    status: todo
+    comment: No dedicated known-limitations section yet.
+  docs-supported-devices:
+    status: done
+    comment: README.md "Supported Hardware" lists gateways and device families.
+  docs-supported-functions:
+    status: todo
+    comment: Not audited against the rule's checklist yet.
+  docs-troubleshooting:
+    status: todo
+    comment: README covers one loader error; no general troubleshooting section yet.
+  docs-use-cases:
+    status: todo
+    comment: Not written yet.
+  dynamic-devices:
+    status: done
+    comment: Dynamic discovery wires bus devices to Home Assistant without static configuration.
+  entity-category:
+    status: in_progress
+    comment: Button entities use EntityCategory.CONFIG; diagnostic sensors are not yet categorised.
+  entity-device-class:
+    status: in_progress
+    comment: Sensors and binary sensors declare device classes; not yet audited for every platform.
+  entity-disabled-by-default:
+    status: in_progress
+    comment: Some noisy sensors default to disabled; not yet audited for every platform.
+  entity-translations:
+    status: todo
+    comment: Entities use has_entity_name=False with legacy entity IDs; no entity translation keys yet. Blocked on the same migration as has-entity-name.
+  exception-translations:
+    status: todo
+    comment: Exceptions raised to the user are not translated yet.
+  icon-translations:
+    status: done
+    comment: icons.json established for service actions and platform icons.
+  reconfiguration-flow:
+    status: done
+    comment: async_step_reconfigure implemented allowing in-place IP, port, and password updates.
   repair-issues:
     status: todo
     comment: repairs.py provides helpers but no production code path raises an issue yet; auth failures rely on ConfigEntryAuthFailed (native reauth repair).
+  stale-devices:
+    status: in_progress
+    comment: Empty orphaned devices are pruned at setup; async_remove_config_entry_device is not implemented yet.
 
-  # 💎 Platinum Tier Rules
+  # 🏆 Platinum
   async-dependency:
     status: done
     comment: OWNd client library is 100% native non-blocking asyncio protocols and streams.
