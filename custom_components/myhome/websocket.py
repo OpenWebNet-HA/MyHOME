@@ -181,6 +181,16 @@ def _extract_gateway_info(gw: Optional[Any], ownd_version: str = "unknown") -> d
 
     is_connected = bool(getattr(gw, "is_connected", False))
 
+    identification: dict[str, Any] = {}
+    ident_fn = getattr(gw, "identification", None)
+    if callable(ident_fn):
+        try:
+            raw_ident = ident_fn()
+            if isinstance(raw_ident, dict):
+                identification = {k: v for k, v in raw_ident.items() if k != "ssdp_location"}
+        except Exception:  # pragma: no cover - defensive against mocks
+            identification = {}
+
     return {
         "model": model,
         "manufacturer": manufacturer,
@@ -193,6 +203,7 @@ def _extract_gateway_info(gw: Optional[Any], ownd_version: str = "unknown") -> d
         "worker_count": worker_count,
         "queue_depth": queue_depth,
         "is_connected": is_connected,
+        "identification": identification,
         "integration_version": INTEGRATION_VERSION,
         "ownd_version": ownd_version,
     }
