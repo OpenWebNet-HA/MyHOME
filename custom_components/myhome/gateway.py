@@ -313,10 +313,14 @@ class MyHOMEGatewayHandler:
                 self.log_id,
             )
 
-        # Active Discovery (WHO=1 general status request *#1*0## is invalid in OpenWebNet and omitted)
-        await self.send_status_request(OWNCommand.parse("*#2*0##")) # Automation / Covers
-        await self.send_status_request(OWNCommand.parse("*#4*0##")) # Heating / Climate
-        await self.send_status_request(OWNCommand.parse("*#16*0##")) # Audio
+        # Active Discovery (WHO=1 general status request *#1*0## is invalid in OpenWebNet and omitted).
+        # Only query subsystems the gateway profile advertises: an MH200N NACKs *#16*0##
+        # (no audio) and logs a retry error on every boot otherwise.
+        for who, frame in ((2, "*#2*0##"), (4, "*#4*0##"), (16, "*#16*0##")):
+            if not self._profile_supports_who(who):
+                LOGGER.debug("%s Skipping WHO=%s discovery: not supported by %s profile.", self.log_id, who, self.gateway.model_name)
+                continue
+            await self.send_status_request(OWNCommand.parse(frame))
 
         while not self._terminate_listener:
             message = await _event_session.get_next()
@@ -337,6 +341,17 @@ class MyHOMEGatewayHandler:
         self._on_event_connection_state_change(False)
 
         LOGGER.debug("%s Destroying listening worker.", self.log_id)
+
+    def _profile_supports_who(self, who: int) -> bool:
+        """Return whether the gateway profile advertises a WHO subsystem (True when unknown)."""
+        profile = getattr(self.gateway, "profile", None)
+        supports = getattr(profile, "supports_who", None)
+        if not callable(supports):
+            return True
+        try:
+            return bool(supports(who))
+        except Exception:  # pragma: no cover - defensive against foreign profile objects
+            return True
 
     async def _process_message(self, message: Any) -> None:
         """Process a received message and dispatch to Home Assistant."""

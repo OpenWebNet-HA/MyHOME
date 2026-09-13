@@ -91,7 +91,7 @@ def _extract_gateway_info(gw: Optional[Any], ownd_version: str = "unknown") -> d
         if isinstance(m_manuf, str):
             manufacturer = m_manuf
         m_fw = getattr(raw_gw, "firmware", None)
-        if isinstance(m_fw, str):
+        if isinstance(m_fw, str) and m_fw.strip().lower() not in ("", "none", "null", "unknown"):
             firmware = m_fw
         m_host = getattr(raw_gw, "host", None)
         if isinstance(m_host, str):
@@ -117,8 +117,9 @@ def _extract_gateway_info(gw: Optional[Any], ownd_version: str = "unknown") -> d
         host = config_data[CONF_HOST]
     if port == 20000 and isinstance(config_data.get(CONF_PORT), int):
         port = config_data[CONF_PORT]
-    if not firmware and isinstance(config_data.get(CONF_FIRMWARE), str):
-        firmware = config_data[CONF_FIRMWARE]
+    cfg_fw = config_data.get(CONF_FIRMWARE)
+    if not firmware and isinstance(cfg_fw, str) and cfg_fw.strip().lower() not in ("", "none", "null", "unknown"):
+        firmware = cfg_fw
 
     transport_type = config_data.get("transport_type") or getattr(gw, "transport_type", None)
     is_serial = isinstance(transport_type, str) and transport_type == "serial"
