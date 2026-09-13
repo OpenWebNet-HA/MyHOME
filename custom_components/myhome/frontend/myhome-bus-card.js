@@ -56,7 +56,13 @@ class MyHomeBusCard extends HTMLElement {
     // Cover calibration panel: live status per cover entity from myhome_cover_calibration events
     this._coversOpen = false;
     this._calibration = {};
+    this._calibrationTrace = [];
+    this._calibrationEvents = [];
+    this._isCalibrating = false;
     this._unsubCalibration = null;
+    this._activeStopwatchCover = null;
+    this._stopwatch = { entity_id: null, direction: null, startTime: null, timerId: null, elapsed: 0 };
+    this._userCoversMode = null;
     this._unsub = null;
     this._stats = { captured: 0, total_rx: 0, total_tx: 0 };
     this._gatewayInfo = {};
@@ -114,11 +120,19 @@ class MyHomeBusCard extends HTMLElement {
       }
       this._subscribeStream();
     }
+
+    if (this._coversOpen) {
+      this._renderCoversList();
+    }
   }
 
   connectedCallback() {
     if (this._hass && !this._unsub && !this._isSubscribing) {
       this._subscribeStream();
+    }
+    if (this._coversOpen) {
+      this._ensureCalibrationSubscription();
+      this._renderCoversList();
     }
   }
 
@@ -134,6 +148,10 @@ class MyHomeBusCard extends HTMLElement {
     if (this._unsub) {
       try { this._unsub(); } catch (e) {}
       this._unsub = null;
+    }
+    if (this._stopwatch && this._stopwatch.timerId) {
+      clearInterval(this._stopwatch.timerId);
+      this._stopwatch.timerId = null;
     }
     this._isSubscribing = false;
   }
@@ -170,6 +188,9 @@ class MyHomeBusCard extends HTMLElement {
         if (res.gateway) this._gatewayInfo = res.gateway;
         this._updateFrameList();
         this._updateStats();
+        if (this._coversOpen) {
+          this._renderCoversList();
+        }
       }
     } catch (err) {
       console.warn("MyHOME Bus Monitor: Failed to load initial history", err);
@@ -326,6 +347,13 @@ class MyHomeBusCard extends HTMLElement {
     this._frames.push(frame);
     if (this._frames.length > this._maxDisplayFrames) {
       this._frames.shift();
+    }
+
+    if (this._isCalibrating || (this._calibrationTrace && this._calibrationTrace.length > 0)) {
+      this._calibrationTrace.push(frame);
+      if (this._calibrationTrace.length > 2000) {
+        this._calibrationTrace.shift();
+      }
     }
 
     this._appendFrameElement(frame);
@@ -687,17 +715,132 @@ class MyHomeBusCard extends HTMLElement {
         }
         .covers-panel h4 { margin: 0 0 6px 0; font-size: 0.9rem; }
         .covers-panel p { margin: 4px 0 8px 0; }
+        .covers-panel .callout-box {
+          margin: 8px 0 12px 0;
+          padding: 8px 12px;
+          border-radius: 6px;
+          border: 1px solid #ff9800;
+          background: rgba(255, 152, 0, 0.12);
+          font-size: 0.8rem;
+          line-height: 1.45;
+        }
+        .covers-panel .callout-box p { margin: 4px 0; }
+        .covers-panel .callout-box a {
+          color: #ffb74d;
+          text-decoration: underline;
+        }
+        .covers-panel .covers-mode-bar {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin: 6px 0 10px 0;
+          flex-wrap: wrap;
+        }
+        .covers-panel .mode-label {
+          font-size: 0.8rem;
+          font-weight: 600;
+          opacity: 0.85;
+        }
+        .covers-panel .segmented-control {
+          display: inline-flex;
+          background: rgba(0, 0, 0, 0.25);
+          border-radius: 6px;
+          padding: 2px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        .covers-panel .segmented-control button.mode-btn {
+          background: transparent;
+          border: none;
+          border-radius: 4px;
+          color: inherit;
+          padding: 4px 10px;
+          font-size: 0.78rem;
+          font-weight: 500;
+          cursor: pointer;
+          transition: background 0.15s ease, color 0.15s ease;
+        }
+        .covers-panel .segmented-control button.mode-btn:hover {
+          background: rgba(255, 255, 255, 0.08);
+        }
+        .covers-panel .segmented-control button.mode-btn.active {
+          background: #0288d1;
+          color: #fff;
+          font-weight: 600;
+        }
+        .covers-panel .segmented-control button.mode-btn:disabled,
+        .covers-panel .segmented-control button.mode-btn.disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
+          pointer-events: none;
+        }
+        .covers-panel .mode-hint {
+          font-size: 0.76rem;
+          opacity: 0.75;
+          font-style: italic;
+        }
         .covers-panel table { width: 100%; border-collapse: collapse; margin: 6px 0; }
         .covers-panel th, .covers-panel td { text-align: left; padding: 4px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); vertical-align: middle; }
         .covers-panel th { font-weight: 600; opacity: 0.8; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; }
         .covers-panel td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
         .covers-panel .src-measured { color: #66bb6a; font-weight: 600; }
+        .covers-panel .src-manual { color: #ba68c8; font-weight: 600; }
         .covers-panel .src-yaml { color: #ffca28; }
         .covers-panel .src-default { color: #ef9a9a; }
         .covers-panel .status-run { color: #4fc3f7; }
         .covers-panel .status-done { color: #66bb6a; }
         .covers-panel .status-failed { color: #ef5350; }
-        .covers-panel button.small { height: 26px; padding: 0 10px; font-size: 0.75rem; }
+        .covers-panel .action-group {
+          display: inline-flex;
+          gap: 4px;
+          align-items: center;
+        }
+        .covers-panel button.small { height: 26px; padding: 0 8px; font-size: 0.75rem; }
+        .covers-panel button.btn-secondary {
+          background: #455a64;
+          color: #fff;
+        }
+        .covers-panel button.btn-secondary:hover {
+          background: #546e7a;
+        }
+        .covers-panel tr.stopwatch-row td {
+          background: rgba(0, 0, 0, 0.22);
+          padding: 10px 12px;
+          border-bottom: 2px solid rgba(255, 255, 255, 0.15);
+        }
+        .stopwatch-container {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 14px;
+          align-items: center;
+          justify-content: space-between;
+        }
+        .stopwatch-section {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .stopwatch-clock {
+          font-family: monospace;
+          font-size: 1.15rem;
+          font-weight: 700;
+          padding: 2px 10px;
+          border-radius: 4px;
+          background: rgba(0, 0, 0, 0.45);
+          color: #4fc3f7;
+          min-width: 65px;
+          text-align: center;
+        }
+        .stopwatch-input {
+          width: 60px;
+          padding: 3px 6px;
+          background: rgba(0, 0, 0, 0.3);
+          border: 1px solid var(--divider-color, #666);
+          border-radius: 4px;
+          color: #fff;
+          font-size: 0.82rem;
+          text-align: right;
+        }
         .covers-panel .panel-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
         .covers-panel .warn { font-size: 0.78rem; opacity: 0.85; }
         .arm-bar {
@@ -739,6 +882,13 @@ class MyHomeBusCard extends HTMLElement {
         }
         .btn-report:hover {
           background: #f57c00;
+        }
+        .btn-danger {
+          background: #d32f2f;
+          color: #fff;
+        }
+        .btn-danger:hover {
+          background: #b71c1c;
         }
         .feedback-banner {
           display: none;
@@ -807,13 +957,27 @@ class MyHomeBusCard extends HTMLElement {
 
         <div id="covers-panel" class="covers-panel">
           <h4>🪟 Calibrate cover travel times</h4>
-          <p>Timed covers estimate their position from a travel time. Calibration drives a cover <strong>fully up</strong>, then <strong>fully down</strong> (timed), then <strong>fully up</strong> (timed) and stores the measured times. Covers run one at a time; the shutter will move for about three full travels.</p>
+          <div class="covers-mode-bar">
+            <span class="mode-label">Mode:</span>
+            <div class="segmented-control">
+              <button id="mode-btn-manual" class="mode-btn" data-mode="manual">⏱️ Manual Stopwatch</button>
+              <button id="mode-btn-auto" class="mode-btn" data-mode="auto">🤖 Bus Auto-Calibration</button>
+            </div>
+            <span id="covers-mode-hint" class="mode-hint"></span>
+          </div>
+          <div id="covers-callout" class="callout-box">
+            <strong>⚠️ Actuator Relay Cutoff vs Physical Travel:</strong>
+            <p>Standard BTicino actuators (F411/U2, F401, modular relay units) have no current-sensing circuitry. Unless configured with physical <code>T</code> configurators, the actuator relay stays energized for a factory-default <strong>60-second safety cutoff</strong>, regardless of curtain height or motor limits. On such actuators, bus calibration measures ~61s.</p>
+            <p>For accurate position reporting, opening percentages, and partial moves (<a href="https://github.com/OpenWebNet-HA/MyHOME/issues/302" target="_blank" rel="noopener noreferrer">Issue #302</a>), use the <strong>⏱️ Live Stopwatch</strong> or <strong>✏️ Edit</strong> tools below to record the true physical travel time.</p>
+          </div>
           <div id="covers-list"></div>
           <div class="panel-actions">
             <button id="btn-calibrate-all" class="btn-covers small">Calibrate all covers</button>
+            <button id="btn-stop-calibration" class="btn-danger small" style="display: none;">⏹ Stop calibration</button>
+            <button id="btn-export-calibration-trace" class="btn-export small" title="Export frames recorded during cover calibration">💾 Export Trace</button>
             <span id="covers-estimate" class="warn"></span>
           </div>
-          <p class="warn">Measured values are the actuator's run times; they equal the physical travel when the installer calibrated the actuator. If a shutter visibly stops before the timer ends, set <code>travel_time</code> manually in <code>myhome.yaml</code>.</p>
+          <p id="covers-footer-note" class="warn">Measured values are the actuator's run times; they equal the physical travel when the installer calibrated the actuator. If a shutter visibly stops before the timer ends, set <code>travel_time</code> manually using the stopwatch or direct inputs above.</p>
         </div>
 
         <div id="help-panel" class="help-panel">
@@ -882,10 +1046,33 @@ class MyHomeBusCard extends HTMLElement {
     root.getElementById("btn-sweep")?.addEventListener("click", () => this._handleSweepBus());
     root.getElementById("btn-help")?.addEventListener("click", () => this._toggleHelp());
     root.getElementById("btn-covers")?.addEventListener("click", () => this._toggleCovers());
+    root.getElementById("mode-btn-manual")?.addEventListener("click", () => this._setCoversMode("manual"));
+    root.getElementById("mode-btn-auto")?.addEventListener("click", () => this._setCoversMode("auto"));
     root.getElementById("btn-calibrate-all")?.addEventListener("click", () => this._calibrateAll());
+    root.getElementById("btn-stop-calibration")?.addEventListener("click", () => this._stopCalibration());
+    root.getElementById("btn-export-calibration-trace")?.addEventListener("click", () => this._handleExportCalibrationTrace());
     root.getElementById("covers-list")?.addEventListener("click", (e) => {
       const btn = e.target && e.target.closest ? e.target.closest("button[data-entity]") : null;
-      if (btn) this._calibrateOne(btn.getAttribute("data-entity"));
+      if (!btn) return;
+      const entityId = btn.getAttribute("data-entity");
+      const action = btn.getAttribute("data-action") || "calibrate";
+      if (action === "calibrate") {
+        this._calibrateOne(entityId);
+      } else if (action === "toggle-stopwatch") {
+        this._toggleStopwatch(entityId);
+      } else if (action === "sw-close") {
+        this._toggleStopwatch(null);
+      } else if (action === "sw-start-down") {
+        this._startStopwatch(entityId, "down");
+      } else if (action === "sw-start-up") {
+        this._startStopwatch(entityId, "up");
+      } else if (action === "sw-stop-save") {
+        this._stopAndSaveStopwatch(entityId);
+      } else if (action === "sw-save-manual") {
+        this._saveManualInputs(entityId);
+      } else if (action === "reset") {
+        this._resetTravelTime(entityId);
+      }
     });
     root.getElementById("arm-send")?.addEventListener("change", (e) => this._toggleArmed(!!e.target.checked));
     root.getElementById("btn-export")?.addEventListener("click", () => this._handleExportTrace());
@@ -949,6 +1136,66 @@ class MyHomeBusCard extends HTMLElement {
 
   // ── Cover calibration panel ──────────────────────────────────────────
 
+  _isAutoCalibrationSupported() {
+    const gw = this._gatewayInfo || {};
+    const model = String(gw.model || "").toUpperCase();
+    const legacyModels = ["MH200", "MH200N", "MH202", "F452", "F453", "F453AV", "F454", "MH201"];
+    if (legacyModels.some((m) => model.includes(m))) {
+      return false;
+    }
+
+    const covers = this._timedCovers();
+    for (const c of covers) {
+      const down = Number((c.attributes && c.attributes.travel_time_down) || 0);
+      const up = Number((c.attributes && c.attributes.travel_time_up) || 0);
+      if ((down >= 59.0 && down <= 65.0) || (up >= 59.0 && up <= 65.0)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  _detectCoversMode() {
+    if (!this._isAutoCalibrationSupported()) {
+      return "manual";
+    }
+    if (this._userCoversMode) {
+      return this._userCoversMode;
+    }
+    return "auto";
+  }
+
+  _coversModeReason() {
+    const gw = this._gatewayInfo || {};
+    const model = String(gw.model || "").toUpperCase();
+    const legacyModels = ["MH200", "MH200N", "MH202", "F452", "F453", "F453AV", "F454", "MH201"];
+    const matchedModel = legacyModels.find((m) => model.includes(m));
+    if (matchedModel) {
+      return `🚫 Bus auto-calibration not supported on gateway ${matchedModel} (actuators lack current sensing)`;
+    }
+    const covers = this._timedCovers();
+    const has60sCutoff = covers.some((c) => {
+      const d = Number((c.attributes && c.attributes.travel_time_down) || 0);
+      const u = Number((c.attributes && c.attributes.travel_time_up) || 0);
+      return (d >= 59.0 && d <= 65.0) || (u >= 59.0 && u <= 65.0);
+    });
+    if (has60sCutoff) {
+      return "🚫 Bus auto-calibration not supported: 60s actuator safety cutoff signature detected (~61s)";
+    }
+    if (this._userCoversMode) {
+      return this._userCoversMode === "manual" ? "Manual stopwatch mode selected by user" : "Bus auto-calibration selected by user";
+    }
+    return "Auto-detected: Bus auto-calibration available";
+  }
+
+  _setCoversMode(mode) {
+    if (mode === "auto" && !this._isAutoCalibrationSupported()) {
+      return;
+    }
+    this._userCoversMode = mode;
+    this._renderCoversList();
+  }
+
   _timedCovers() {
     const states = (this._hass && this._hass.states) || {};
     return Object.values(states)
@@ -975,16 +1222,132 @@ class MyHomeBusCard extends HTMLElement {
     const data = (ev && ev.data) || {};
     if (!data.entity_id) return;
     this._calibration[data.entity_id] = data;
+    if (!this._calibrationEvents) this._calibrationEvents = [];
+    this._calibrationEvents.push({
+      timestamp: Date.now() / 1000,
+      iso_time: new Date().toISOString(),
+      ...data,
+    });
+    const activePhases = ["scheduled", "queued", "start", "run"];
+    this._isCalibrating = Object.values(this._calibration).some(
+      (c) => c && activePhases.includes(c.phase)
+    );
+    this._updateCalibrationButtons();
     this._renderCoversList();
+  }
+
+  _updateCalibrationButtons() {
+    const root = this.shadowRoot;
+    if (!root) return;
+    const stopBtn = root.getElementById("btn-stop-calibration");
+    const calAllBtn = root.getElementById("btn-calibrate-all");
+    const mode = this._detectCoversMode();
+    if (stopBtn) {
+      stopBtn.style.display = this._isCalibrating ? "inline-block" : "none";
+    }
+    if (calAllBtn) {
+      calAllBtn.style.display = mode === "auto" ? "inline-block" : "none";
+      calAllBtn.disabled = this._isCalibrating;
+    }
+  }
+
+  _startCalibrationTrace() {
+    this._isCalibrating = true;
+    this._calibrationTrace = [];
+    this._calibrationEvents = [];
+    this._updateCalibrationButtons();
+  }
+
+  async _stopCalibration() {
+    if (!this._hass) return;
+    const btn = this.shadowRoot && this.shadowRoot.getElementById("btn-stop-calibration");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Stopping…";
+    }
+    try {
+      await this._hass.callService("myhome", "stop_cover_calibration", {});
+    } catch (err) {
+      console.warn("MyHOME: error stopping calibration", err);
+    }
+    const activePhases = ["scheduled", "queued", "start", "run"];
+    for (const id of Object.keys(this._calibration)) {
+      if (this._calibration[id] && activePhases.includes(this._calibration[id].phase)) {
+        this._calibration[id] = { entity_id: id, phase: "failed", error: "cancelled" };
+      }
+    }
+    this._isCalibrating = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "⏹ Stop calibration";
+    }
+    this._updateCalibrationButtons();
+    this._renderCoversList();
+  }
+
+  async _handleExportCalibrationTrace() {
+    const btn = this.shadowRoot && this.shadowRoot.getElementById("btn-export-calibration-trace");
+    const origText = btn ? btn.innerHTML : "💾 Export Trace";
+    if (btn) btn.innerHTML = "⏳ Exporting...";
+
+    let frames = (this._calibrationTrace && this._calibrationTrace.length > 0)
+      ? [...this._calibrationTrace]
+      : [];
+
+    if (this._hass && this._hass.callWS) {
+      try {
+        const res = await this._hass.callWS({ type: "myhome/cover/calibration_trace" });
+        if (res && Array.isArray(res.frames) && res.frames.length > 0) {
+          if (frames.length === 0) {
+            frames = res.frames.map((f) => ({
+              timestamp: f.timestamp || (Date.now() / 1000),
+              iso_time: f.iso_time || null,
+              direction: f.direction || null,
+              raw: f.raw,
+              who: f.who,
+              what: f.what,
+              where: f.where,
+              action: f.action,
+              entity_id: f.entity_id,
+            }));
+          }
+        }
+      } catch (err) {
+        console.debug("MyHOME: could not fetch backend calibration trace", err);
+      }
+    }
+
+    if (frames.length === 0) {
+      frames = this._visibleFrames();
+      if (frames.length === 0 && this._frames.length > 0) {
+        frames = [...this._frames];
+      }
+    }
+
+    await this._handleExportTrace("calibration", frames);
+
+    if (btn) {
+      btn.innerHTML = "✅ Exported!";
+      setTimeout(() => {
+        if (btn) btn.innerHTML = origText;
+      }, 3000);
+    }
   }
 
   _calibrationStatusHtml(entityId) {
     const c = this._calibration[entityId];
     if (!c) return "";
+    if (c.phase === "scheduled") return `<span class="status-run">scheduled…</span>`;
+    if (c.phase === "queued") return `<span class="status-run">waiting for another cover…</span>`;
     if (c.phase === "start") return `<span class="status-run">starting…</span>`;
     if (c.phase === "run") return `<span class="status-run">running ${this._escapeHtml(String(c.direction || ""))}…</span>`;
     if (c.phase === "done") return `<span class="status-done">✓ down ${Number(c.down).toFixed(1)} s · up ${Number(c.up).toFixed(1)} s</span>`;
-    if (c.phase === "failed") return `<span class="status-failed">✗ ${this._escapeHtml(String(c.error || "failed"))}</span>`;
+    if (c.phase === "cancelled") return `<span class="status-failed">✗ cancelled</span>`;
+    if (c.phase === "failed") {
+      const err = String(c.error || "failed");
+      const isCancelled = err.toLowerCase().includes("cancelled") || err.toLowerCase().includes("canceled");
+      return `<span class="status-failed">✗ ${this._escapeHtml(isCancelled ? "cancelled" : err)}</span>`;
+    }
     return "";
   }
 
@@ -992,28 +1355,269 @@ class MyHomeBusCard extends HTMLElement {
     const root = this.shadowRoot;
     const list = root && root.getElementById("covers-list");
     if (!list) return;
+    this._updateCalibrationButtons();
     const covers = this._timedCovers();
+    const supported = this._isAutoCalibrationSupported();
+    const mode = this._detectCoversMode();
+
+    // Update segmented mode buttons and hint
+    const manualBtn = root.getElementById("mode-btn-manual");
+    const autoBtn = root.getElementById("mode-btn-auto");
+    const hintEl = root.getElementById("covers-mode-hint");
+    if (manualBtn) manualBtn.classList.toggle("active", mode === "manual");
+    if (autoBtn) {
+      autoBtn.classList.toggle("active", mode === "auto");
+      autoBtn.disabled = !supported;
+      autoBtn.classList.toggle("disabled", !supported);
+      if (!supported) {
+        autoBtn.textContent = "🤖 Bus Auto-Calibration (Unsupported)";
+        autoBtn.title = "Bus auto-calibration is not supported on this gateway (actuators lack current sensing / use 60s cutoff).";
+      } else {
+        autoBtn.textContent = "🤖 Bus Auto-Calibration";
+        autoBtn.title = "Bus Automatic Calibration";
+      }
+    }
+    if (hintEl) hintEl.textContent = this._coversModeReason();
+
+    // Update callout box
+    const calloutEl = root.getElementById("covers-callout");
+    if (calloutEl) {
+      if (mode === "manual") {
+        calloutEl.innerHTML = `<strong>⚠️ Actuator Relay Cutoff vs Physical Travel:</strong>
+          <p>Standard BTicino actuators (F411/U2, F401, modular relay units) have no current-sensing circuitry. Unless configured with physical <code>T</code> configurators, the actuator relay stays energized for a factory-default <strong>60-second safety cutoff</strong>, regardless of curtain height or motor limits. On such actuators, bus calibration measures ~61s.</p>
+          <p>For accurate position reporting, opening percentages, and partial moves (<a href="https://github.com/OpenWebNet-HA/MyHOME/issues/302" target="_blank" rel="noopener noreferrer">Issue #302</a>), use <strong>⏱️ Time</strong> on each cover below to record the true physical travel time.</p>`;
+      } else {
+        calloutEl.innerHTML = `<strong>🤖 Bus Auto-Calibration:</strong>
+          <p>Calibration drives each cover <strong>fully up</strong>, then <strong>fully down</strong> (timed), then <strong>fully up</strong> (timed) and records run times from bus stop frames. Requires actuators configured with real travel times or current sensing.</p>
+          <p>For accurate position reporting, opening percentages, and partial moves (<a href="https://github.com/OpenWebNet-HA/MyHOME/issues/302" target="_blank" rel="noopener noreferrer">Issue #302</a>), you can calibrate individually or all at once.</p>`;
+      }
+    }
+
+    // Bottom action visibility
+    const calAllBtn = root.getElementById("btn-calibrate-all");
+    if (calAllBtn) {
+      calAllBtn.style.display = mode === "auto" ? "inline-block" : "none";
+    }
     const estimate = root.getElementById("covers-estimate");
-    if (estimate) estimate.textContent = covers.length ? `${covers.length} cover(s), about ${this._estimateMinutes(covers)} min in total` : "";
+    if (estimate) {
+      estimate.textContent = covers.length ? `${covers.length} cover(s), about ${this._estimateMinutes(covers)} min in total` : "";
+    }
+    const footerNote = root.getElementById("covers-footer-note");
+    if (footerNote) {
+      if (mode === "manual") {
+        footerNote.textContent = "Click ⏱️ Time on any cover to time with the live stopwatch or enter known physical seconds directly.";
+      } else {
+        footerNote.textContent = "Measured values are the actuator's run times; they equal the physical travel when the installer calibrated the actuator. If a shutter visibly stops before the timer ends, set travel_time manually using the stopwatch or direct inputs.";
+      }
+    }
+
     if (!covers.length) {
       list.innerHTML = `<p class="warn">No timed MyHOME covers found (advanced covers report their position and need no calibration).</p>`;
       return;
     }
-    const rows = covers.map((st) => {
+    const rows = [];
+    for (const st of covers) {
       const a = st.attributes;
       const name = this._escapeHtml(String(a.friendly_name || st.entity_id));
       const src = String(a.calibration_source || "default");
       const when = a.calibrated_at ? new Date(a.calibrated_at).toLocaleString() : "";
-      return `<tr>
+      const isDrawerOpen = this._activeStopwatchCover === st.entity_id;
+      const sw = this._stopwatch;
+      const isRunning = sw && sw.entity_id === st.entity_id && sw.timerId != null;
+
+      const actionBtn = mode === "manual"
+        ? `<button class="btn-secondary small" data-action="toggle-stopwatch" data-entity="${this._escapeHtml(st.entity_id)}" title="Manual Stopwatch / Direct Edit">⏱️ Time</button>`
+        : `<button class="btn-covers small" data-action="calibrate" data-entity="${this._escapeHtml(st.entity_id)}" title="Bus Automatic Calibration">Calibrate</button>`;
+
+      rows.push(`<tr>
         <td>${name}<br><span class="warn">${this._escapeHtml(st.entity_id)}</span></td>
         <td class="num">${Number(a.travel_time_down || 0).toFixed(1)} s</td>
         <td class="num">${Number(a.travel_time_up || 0).toFixed(1)} s</td>
         <td><span class="src-${this._escapeHtml(src)}">${this._escapeHtml(src)}</span>${when ? `<br><span class="warn">${this._escapeHtml(when)}</span>` : ""}</td>
         <td>${this._calibrationStatusHtml(st.entity_id)}</td>
-        <td><button class="btn-covers small" data-entity="${this._escapeHtml(st.entity_id)}">Calibrate</button></td>
-      </tr>`;
-    });
-    list.innerHTML = `<table><thead><tr><th>Cover</th><th>Down</th><th>Up</th><th>Source</th><th>Status</th><th></th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+        <td>${actionBtn}</td>
+      </tr>`);
+
+      if (isDrawerOpen) {
+        const travelDown = Number(a.travel_time_down || 25).toFixed(1);
+        const travelUp = Number(a.travel_time_up || 25).toFixed(1);
+        const elapsedStr = (sw && sw.entity_id === st.entity_id && sw.elapsed != null ? sw.elapsed : 0).toFixed(1) + "s";
+        rows.push(`<tr class="stopwatch-row">
+          <td colspan="6">
+            <div class="stopwatch-container">
+              <div class="stopwatch-section">
+                <span style="font-weight:600;">Manual:</span>
+                <label>Down: <input type="number" id="input-down-${this._escapeHtml(st.entity_id)}" class="stopwatch-input" step="0.1" min="1" max="300" value="${travelDown}"> s</label>
+                <label>Up: <input type="number" id="input-up-${this._escapeHtml(st.entity_id)}" class="stopwatch-input" step="0.1" min="1" max="300" value="${travelUp}"> s</label>
+                <button class="btn-covers small" data-action="sw-save-manual" data-entity="${this._escapeHtml(st.entity_id)}">💾 Save</button>
+                <button class="btn-secondary small" data-action="reset" data-entity="${this._escapeHtml(st.entity_id)}" title="Reset to YAML or default (25s)">↺ Reset</button>
+              </div>
+              <div class="stopwatch-section">
+                <span style="font-weight:600;">Stopwatch:</span>
+                <span id="stopwatch-clock-${this._escapeHtml(st.entity_id)}" class="stopwatch-clock">${elapsedStr}</span>
+                <button class="btn-secondary small" data-action="sw-start-down" data-entity="${this._escapeHtml(st.entity_id)}" ${isRunning ? "disabled" : ""}>⬇️ Start Down</button>
+                <button class="btn-secondary small" data-action="sw-start-up" data-entity="${this._escapeHtml(st.entity_id)}" ${isRunning ? "disabled" : ""}>⬆️ Start Up</button>
+                <button class="btn-danger small" data-action="sw-stop-save" data-entity="${this._escapeHtml(st.entity_id)}" ${!isRunning ? "disabled" : ""}>⏹️ Stop &amp; Save</button>
+                <button class="btn-secondary small" data-action="sw-close" data-entity="${this._escapeHtml(st.entity_id)}">✕</button>
+              </div>
+            </div>
+          </td>
+        </tr>`);
+      }
+    }
+    list.innerHTML = `<table><thead><tr><th>Cover</th><th>Down</th><th>Up</th><th>Source</th><th>Status</th><th>Actions</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+  }
+
+  _toggleStopwatch(entityId) {
+    if (this._stopwatch && this._stopwatch.timerId) {
+      clearInterval(this._stopwatch.timerId);
+      this._stopwatch.timerId = null;
+    }
+    if (!entityId || this._activeStopwatchCover === entityId) {
+      this._activeStopwatchCover = null;
+      this._stopwatch = { entity_id: null, direction: null, startTime: null, timerId: null, elapsed: 0 };
+    } else {
+      this._activeStopwatchCover = entityId;
+      this._stopwatch = { entity_id: entityId, direction: null, startTime: null, timerId: null, elapsed: 0 };
+    }
+    this._renderCoversList();
+  }
+
+  async _startStopwatch(entityId, direction) {
+    if (!entityId || !this._hass) return;
+    if (this._stopwatch && this._stopwatch.timerId) {
+      clearInterval(this._stopwatch.timerId);
+    }
+    const service = direction === "down" ? "close_cover" : "open_cover";
+    try {
+      await this._hass.callService("cover", service, { entity_id: entityId });
+    } catch (err) {
+      this._showBanner("feedback-banner banner-warning", `<span><strong>⚠️ Could not send ${service}:</strong> ${this._escapeHtml(err.message || String(err))}</span>`, 6000);
+      return;
+    }
+    const startTime = Date.now();
+    this._stopwatch = {
+      entity_id: entityId,
+      direction: direction,
+      startTime: startTime,
+      elapsed: 0,
+      timerId: setInterval(() => {
+        const elapsed = (Date.now() - startTime) / 1000;
+        if (this._stopwatch) this._stopwatch.elapsed = elapsed;
+        const clockEl = this.shadowRoot && this.shadowRoot.getElementById(`stopwatch-clock-${entityId}`);
+        if (clockEl) clockEl.textContent = elapsed.toFixed(1) + "s";
+      }, 100),
+    };
+    this._renderCoversList();
+  }
+
+  async _stopAndSaveStopwatch(entityId) {
+    if (!this._stopwatch || this._stopwatch.entity_id !== entityId || !this._hass) return;
+    if (this._stopwatch.timerId) {
+      clearInterval(this._stopwatch.timerId);
+      this._stopwatch.timerId = null;
+    }
+    try {
+      await this._hass.callService("cover", "stop_cover", { entity_id: entityId });
+    } catch (err) {
+      console.warn("Could not send stop_cover:", err);
+    }
+    const elapsed = Math.max(1, Math.round(this._stopwatch.elapsed * 10) / 10);
+    const direction = this._stopwatch.direction;
+    const st = this._hass.states && this._hass.states[entityId];
+    const curDown = (st && st.attributes && st.attributes.travel_time_down) || 25;
+    const curUp = (st && st.attributes && st.attributes.travel_time_up) || 25;
+
+    const payload = { entity_id: entityId };
+    if (direction === "down") {
+      payload.travel_time_down = elapsed;
+      payload.travel_time_up = curUp;
+    } else {
+      payload.travel_time_down = curDown;
+      payload.travel_time_up = elapsed;
+    }
+
+    try {
+      await this._hass.callService("myhome", "set_cover_travel_time", payload);
+      this._showBanner(
+        "feedback-banner banner-success",
+        `<span><strong>⏱️ Measured &amp; saved:</strong> ${direction === "down" ? "Down" : "Up"} = ${elapsed.toFixed(1)}s</span>`,
+        6000
+      );
+    } catch (err) {
+      this._showBanner(
+        "feedback-banner banner-warning",
+        `<span><strong>⚠️ Failed to save travel time:</strong> ${this._escapeHtml(err.message || String(err))}</span>`,
+        6000
+      );
+    }
+    this._stopwatch = { entity_id: entityId, direction: null, startTime: null, timerId: null, elapsed: 0 };
+    this._renderCoversList();
+  }
+
+  async _saveManualInputs(entityId) {
+    if (!entityId || !this._hass) return;
+    const root = this.shadowRoot;
+    const downEl = root && root.getElementById(`input-down-${entityId}`);
+    const upEl = root && root.getElementById(`input-up-${entityId}`);
+    const down = downEl ? parseFloat(downEl.value) : null;
+    const up = upEl ? parseFloat(upEl.value) : null;
+
+    if (down == null || isNaN(down) || down < 1 || down > 300) {
+      this._showBanner("feedback-banner banner-warning", `<span><strong>⚠️ Invalid Down time:</strong> Must be between 1 and 300 seconds.</span>`, 5000);
+      return;
+    }
+    if (up == null || isNaN(up) || up < 1 || up > 300) {
+      this._showBanner("feedback-banner banner-warning", `<span><strong>⚠️ Invalid Up time:</strong> Must be between 1 and 300 seconds.</span>`, 5000);
+      return;
+    }
+
+    try {
+      await this._hass.callService("myhome", "set_cover_travel_time", {
+        entity_id: entityId,
+        travel_time_down: down,
+        travel_time_up: up,
+      });
+      this._showBanner(
+        "feedback-banner banner-success",
+        `<span><strong>💾 Saved travel times:</strong> Down ${down.toFixed(1)}s, Up ${up.toFixed(1)}s</span>`,
+        5000
+      );
+      this._activeStopwatchCover = null;
+      this._renderCoversList();
+    } catch (err) {
+      this._showBanner(
+        "feedback-banner banner-warning",
+        `<span><strong>⚠️ Failed to save travel time:</strong> ${this._escapeHtml(err.message || String(err))}</span>`,
+        6000
+      );
+    }
+  }
+
+  async _resetTravelTime(entityId) {
+    if (!entityId || !this._hass) return;
+    const st = this._hass.states && this._hass.states[entityId];
+    const name = (st && st.attributes && st.attributes.friendly_name) || entityId;
+    const ok = typeof confirm === "function"
+      ? confirm(`Reset travel times for "${name}" back to default (25s) or YAML?`)
+      : true;
+    if (!ok) return;
+
+    try {
+      await this._hass.callService("myhome", "reset_cover_travel_time", { entity_id: entityId });
+      this._showBanner(
+        "feedback-banner banner-success",
+        `<span><strong>↺ Reset travel times for ${this._escapeHtml(name)}</strong></span>`,
+        5000
+      );
+      this._renderCoversList();
+    } catch (err) {
+      this._showBanner(
+        "feedback-banner banner-warning",
+        `<span><strong>⚠️ Failed to reset travel time:</strong> ${this._escapeHtml(err.message || String(err))}</span>`,
+        6000
+      );
+    }
   }
 
   async _toggleCovers() {
@@ -1037,12 +1641,16 @@ class MyHomeBusCard extends HTMLElement {
       ? confirm(`Calibrate "${name}"?\n\nIt will run fully up, fully down and fully up again (about ${Math.round(3 * travel)} s). Continue?`)
       : true;
     if (!ok) return;
-    this._calibration[entityId] = { entity_id: entityId, phase: "start" };
+    this._startCalibrationTrace();
+    this._calibration[entityId] = { entity_id: entityId, phase: "scheduled" };
     this._renderCoversList();
     try {
       await this._hass.callService("myhome", "calibrate_cover", { entity_id: entityId });
     } catch (err) {
       this._calibration[entityId] = { entity_id: entityId, phase: "failed", error: err && err.message ? err.message : String(err) };
+      const activePhases = ["scheduled", "queued", "start", "run"];
+      this._isCalibrating = Object.values(this._calibration).some((c) => c && activePhases.includes(c.phase));
+      this._updateCalibrationButtons();
       this._renderCoversList();
     }
   }
@@ -1055,8 +1663,9 @@ class MyHomeBusCard extends HTMLElement {
       ? confirm(`Calibrate all ${covers.length} covers, one after another?\n\nEvery shutter will run fully up, fully down and fully up again - about ${this._estimateMinutes(covers)} minutes in total. Continue?`)
       : true;
     if (!ok) return;
+    this._startCalibrationTrace();
     for (const st of covers) {
-      this._calibration[st.entity_id] = { entity_id: st.entity_id, phase: "start" };
+      this._calibration[st.entity_id] = { entity_id: st.entity_id, phase: "scheduled" };
     }
     this._renderCoversList();
     try {
@@ -1064,10 +1673,13 @@ class MyHomeBusCard extends HTMLElement {
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
       for (const st of covers) {
-        if ((this._calibration[st.entity_id] || {}).phase === "start") {
+        if ((this._calibration[st.entity_id] || {}).phase === "scheduled") {
           this._calibration[st.entity_id] = { entity_id: st.entity_id, phase: "failed", error: msg };
         }
       }
+      const activePhases = ["scheduled", "queued", "start", "run"];
+      this._isCalibrating = Object.values(this._calibration).some((c) => c && activePhases.includes(c.phase));
+      this._updateCalibrationButtons();
       this._renderCoversList();
     }
   }
@@ -1380,8 +1992,11 @@ ${framesText}
     if (reportBtn) reportBtn.innerHTML = kind === "sweep" ? "📋 Copy Sweep" : "📋 Copy Trace";
   }
 
-  async _handleExportTrace() {
-    const btn = this.shadowRoot.getElementById("btn-export");
+  async _handleExportTrace(forcedKind = null, explicitFrames = null) {
+    const isCalExport = forcedKind === "calibration";
+    const btn = isCalExport
+      ? (this.shadowRoot && this.shadowRoot.getElementById("btn-export-calibration-trace"))
+      : (this.shadowRoot && this.shadowRoot.getElementById("btn-export"));
     const origText = btn ? btn.innerHTML : "💾 Export Trace";
     if (btn) btn.innerHTML = "⏳ Exporting...";
 
@@ -1412,8 +2027,16 @@ ${framesText}
     const timestampIso = new Date().toISOString();
     const timestampFile = timestampIso.replace(/[:.]/g, "-").slice(0, 19);
 
-    const frames = this._visibleFrames();
-    const kind = this._captureKind();
+    let frames = explicitFrames || this._visibleFrames();
+    if (frames.length === 0) {
+      if (isCalExport && this._calibrationTrace && this._calibrationTrace.length > 0) {
+        frames = [...this._calibrationTrace];
+      } else if (this._frames.length > 0) {
+        frames = [...this._frames];
+      }
+    }
+
+    const kind = forcedKind || this._captureKind();
     const firstTs = frames.length ? frames[0].timestamp : null;
     const lastTs = frames.length ? frames[frames.length - 1].timestamp : null;
     const modelSlug = String((this._gatewayInfo && this._gatewayInfo.model) || "gateway").replace(/[^a-z0-9]+/gi, "");
@@ -1430,6 +2053,7 @@ ${framesText}
           last: lastTs != null ? new Date(lastTs * 1000).toISOString() : null,
           frames: frames.length,
           buffer_frames: this._frames.length,
+          calibration_frames: this._calibrationTrace ? this._calibrationTrace.length : 0,
           buffer_depth: this._maxDisplayFrames,
           // the ring buffer had already wrapped: the true start of a sequence may be missing
           truncated: this._frames.length >= this._maxDisplayFrames,
@@ -1440,7 +2064,7 @@ ${framesText}
         integration_version: integrationVersion,
         ownd_version: owndVersion,
         exported_at: timestampIso,
-        user_agent: navigator.userAgent,
+        user_agent: (typeof navigator !== "undefined" && navigator.userAgent) ? navigator.userAgent : "Unknown",
       },
       gateway: {
         model: (this._gatewayInfo && this._gatewayInfo.model) || "Unknown",
@@ -1461,6 +2085,7 @@ ${framesText}
         buffer_depth: this._maxDisplayFrames,
         queue_depth: this._stats.queue_depth || 0,
       },
+      calibration_events: (this._calibrationEvents && this._calibrationEvents.length > 0) ? this._calibrationEvents : undefined,
       frames: frames.map((f) => ({
         timestamp: f.timestamp,
         iso_time: f.iso_time || null,
@@ -1472,46 +2097,50 @@ ${framesText}
         dimension: f.dimension != null ? f.dimension : null,
         is_ack: !!f.is_ack,
         is_nack: !!f.is_nack,
+        action: f.action != null ? f.action : null,
+        entity_id: f.entity_id != null ? f.entity_id : null,
       })),
     };
 
-    const blob = new Blob([JSON.stringify(tracePayload, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    const fileName = `myhome_${kind}_${modelSlug}_${this._captureFilterSlug()}_${timestampFile}.json`;
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    if (typeof Blob !== "undefined" && typeof document !== "undefined") {
+      const blob = new Blob([JSON.stringify(tracePayload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const fileName = `myhome_${kind}_${modelSlug}_${this._captureFilterSlug()}_${timestampFile}.json`;
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
 
-    const banner = this.shadowRoot.getElementById("feedback-banner");
-    if (this._bannerTimeout) {
-      clearTimeout(this._bannerTimeout);
-      this._bannerTimeout = null;
-    }
+      const banner = this.shadowRoot.getElementById("feedback-banner");
+      if (this._bannerTimeout) {
+        clearTimeout(this._bannerTimeout);
+        this._bannerTimeout = null;
+      }
 
-    if (banner) {
-      banner.className = "feedback-banner banner-success";
-      banner.innerHTML = `
-        <div style="display: flex; flex-direction: column; gap: 4px;">
-          <span><strong>✅ Exported ${kind === "sweep" ? "bus sweep" : "trace"}:</strong> <code>${fileName}</code></span>
-          <span style="font-size: 0.75rem; opacity: 0.9;">${frames.length} of ${this._frames.length} buffered frames (active filters applied). Attach this file directly to GitHub Discussion #291 or a bug report.</span>
-        </div>
-        <a href="https://github.com/orgs/OpenWebNet-HA/discussions/291" target="_blank" rel="noopener noreferrer" class="banner-link">Open Discussion #291 ↗</a>
-      `;
-      banner.style.display = "flex";
-      this._bannerTimeout = setTimeout(() => {
-        if (banner) banner.style.display = "none";
-      }, 9000);
+      if (banner) {
+        banner.className = "feedback-banner banner-success";
+        banner.innerHTML = `
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <span><strong>✅ Exported ${kind === "sweep" ? "bus sweep" : (kind === "calibration" ? "calibration trace" : "trace")}:</strong> <code>${fileName}</code></span>
+            <span style="font-size: 0.75rem; opacity: 0.9;">${frames.length} frames captured. Attach this file directly to GitHub Discussion #291 or a bug report.</span>
+          </div>
+          <a href="https://github.com/orgs/OpenWebNet-HA/discussions/291" target="_blank" rel="noopener noreferrer" class="banner-link">Open Discussion #291 ↗</a>
+        `;
+        banner.style.display = "flex";
+        this._bannerTimeout = setTimeout(() => {
+          if (banner) banner.style.display = "none";
+        }, 9000);
+      }
     }
 
     if (btn) {
       btn.innerHTML = "✅ Exported!";
       setTimeout(() => {
         if (btn) btn.innerHTML = origText;
-        this._refreshExportLabel();
+        if (!isCalExport) this._refreshExportLabel();
       }, 3000);
     }
   }

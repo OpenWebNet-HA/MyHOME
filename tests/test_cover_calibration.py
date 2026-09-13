@@ -8,7 +8,13 @@ from homeassistant.exceptions import HomeAssistantError
 from OWNd.message import OWNEvent
 
 from custom_components.myhome.const import CONF_COVER_TRAVEL_TIMES, EVENT_COVER_CALIBRATION
-from custom_components.myhome.cover import CalibrationInterrupted, MyHOMECover, _stored_calibration
+from custom_components.myhome.cover import (
+    CalibrationInterrupted,
+    MyHOMECover,
+    _stored_calibration,
+    async_stop_cover_calibration,
+    get_last_calibration_trace,
+)
 
 
 class Clock:
@@ -269,10 +275,15 @@ async def test_calibrations_on_one_gateway_run_sequentially(hass, gateway, clock
     b = _make_cover(hass, gateway)
     b.entity_id = "cover.other"
     b._device_id = "22"
+    events = []
+    hass.bus.async_listen(EVENT_COVER_CALIBRATION, lambda ev: events.append((ev.data["entity_id"], ev.data["phase"])))
     t_a = asyncio.create_task(a.async_calibrate())
     t_b = asyncio.create_task(b.async_calibrate())
     await _yield()
     assert a._calibrating is True and b._calibrating is False  # b waits for the gateway lock
+    await hass.async_block_till_done()
+    assert ("cover.bedroom_shutter", "start") in events
+    assert ("cover.other", "queued") in events  # the UI shows "waiting", not "starting"
     t_a.cancel()
     t_b.cancel()
     for t in (t_a, t_b):
@@ -412,3 +423,168 @@ async def test_external_open_during_a_closing_run_interrupts_calibration(hass, g
     cover.handle_event(OWNEvent.parse("*2*1*21##"))
     with pytest.raises(CalibrationInterrupted, match="external open"):
         await asyncio.wait_for(task, 5)
+
+
+async def test_trailing_stop_echo_does_not_abort_calibration(hass, gateway, clock, fake_time, sleeps):
+    """MH200 sends direction status then a stop echo ~0.1s later; calibration must ignore the echo."""
+    cover = _make_cover(hass, gateway)
+    task = asyncio.create_task(cover.async_calibrate())
+
+    # Run 1: up
+    await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.1, motor_delay=0.5, run=25.0)
+
+    # Run 2: down with trailing stop echo 0.1s after motor start
+    await _yield()
+    _, written = gateway.deliveries[-1]
+    written.set_result(clock.now)
+    await _yield()
+    clock.now += 0.5
+    cover.handle_event(OWNEvent.parse("*2*2*21##"))  # motor start echo
+    await _yield()
+    clock.now += 0.1
+    cover.handle_event(OWNEvent.parse("*2*0*21##"))  # trailing stop echo (< 0.15s)
+    await _yield()
+    assert not task.done()  # must not have aborted or finished early!
+    clock.now += 20.0
+    cover.handle_event(OWNEvent.parse("*2*0*21##"))  # actual actuator stop
+    await _yield()
+
+    # Run 3: up
+    await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.1, motor_delay=0.5, run=22.0)
+    result = await asyncio.wait_for(task, 5)
+    assert result["down"] == pytest.approx(20.1, abs=0.01)
+    assert result["up"] == pytest.approx(22.0, abs=0.01)
+
+
+async def test_status_request_does_not_stop_calibration(hass, gateway, clock, fake_time, sleeps):
+    """Status polls (*#2*21##, *#2*0##) on the bus must not abort ongoing calibration."""
+    cover = _make_cover(hass, gateway)
+    task = asyncio.create_task(cover.async_calibrate())
+
+    # Run 1: up
+    await _yield()
+    _, written = gateway.deliveries[-1]
+    written.set_result(clock.now)
+    await _yield()
+    clock.now += 0.5
+    cover.handle_event(OWNEvent.parse("*2*1*21##"))
+    await _yield()
+
+    # Periodic poll arrives on bus
+    clock.now += 5.0
+    cover.handle_event(OWNEvent.parse("*#2*21##"))
+    await _yield()
+    assert not task.done()
+
+    # General poll arrives on bus
+    clock.now += 5.0
+    cover.handle_event(OWNEvent.parse("*#2*0##"))
+    await _yield()
+    assert not task.done()
+
+    clock.now += 15.0
+    cover.handle_event(OWNEvent.parse("*2*0*21##"))  # actual stop
+    await _yield()
+
+    # Run 2 & 3
+    await _drive_run(cover, gateway, clock, direction_frame="2", write_delay=0.1, motor_delay=0.5, run=20.0)
+    await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.1, motor_delay=0.5, run=22.0)
+    result = await asyncio.wait_for(task, 5)
+    assert result["down"] == pytest.approx(20.0, abs=0.01)
+
+
+async def test_stop_cover_calibration_service(hass, gateway, clock, fake_time, sleeps):
+    """Calling stop_cover_calibration halts the motor and interrupts queued runs."""
+    a = _make_cover(hass, gateway)
+    b = _make_cover(hass, gateway)
+    b.entity_id = "cover.kitchen"
+    b._device_id = "22"
+    b._full_where = "22"
+
+    task_a = asyncio.create_task(a.async_calibrate())
+    task_b = asyncio.create_task(b.async_calibrate())
+    await _yield()
+    assert a._calibrating is True
+    assert not task_a.done()
+    _, written = gateway.deliveries[-1]
+    written.set_result(clock.now)
+    await _yield()
+
+    stopped = await async_stop_cover_calibration(hass, gateway.mac)
+    assert stopped is True
+    with pytest.raises(CalibrationInterrupted):
+        await asyncio.wait_for(task_a, 2)
+    with pytest.raises(CalibrationInterrupted):
+        await asyncio.wait_for(task_b, 2)
+    assert a._calibrating is False
+    assert b._calibrating is False
+
+
+async def test_backend_calibration_trace(hass, gateway, clock, fake_time, sleeps):
+    """Recent calibration trace captures TX, RX, and lifecycle events."""
+    cover = _make_cover(hass, gateway)
+    task = asyncio.create_task(cover.async_calibrate())
+    await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.1, motor_delay=0.5, run=25.0)
+    await _drive_run(cover, gateway, clock, direction_frame="2", write_delay=0.1, motor_delay=0.5, run=20.0)
+    await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.1, motor_delay=0.5, run=22.0)
+    await asyncio.wait_for(task, 5)
+
+    trace = get_last_calibration_trace()
+    assert len(trace) > 0
+    raws = [f["raw"] for f in trace]
+    assert "*2*1*21##" in raws
+    assert "*2*2*21##" in raws
+    assert any("phase:start" in r or "phase:run" in r for r in raws)
+
+
+async def test_set_cover_travel_time_manual(hass, gateway):
+    """Setting manual travel time persists and updates attributes."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.const import DOMAIN
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": gateway.mac}, unique_id="entry_manual_test", options={})
+    entry.add_to_hass(hass)
+    gateway.config_entry = entry
+
+    cover = _make_cover(hass, gateway)
+    events = []
+    hass.bus.async_listen(EVENT_COVER_CALIBRATION, lambda ev: events.append(ev.data))
+
+    res = await cover.async_set_travel_time(travel_time=18.5, travel_time_up=19.2)
+    assert res["down"] == 18.5
+    assert res["up"] == 19.2
+    assert res["source"] == "manual"
+    assert cover.extra_state_attributes["travel_time_down"] == 18.5
+    assert cover.extra_state_attributes["travel_time_up"] == 19.2
+    assert cover.extra_state_attributes["calibration_source"] == "manual"
+
+    stored = _stored_calibration(gateway.config_entry, cover._device_id)
+    assert stored["down"] == 18.5
+    assert stored["up"] == 19.2
+    assert stored["source"] == "manual"
+    assert any(ev.get("phase") == "done" and ev.get("source") == "manual" for ev in events)
+
+
+async def test_reset_cover_travel_time(hass, gateway):
+    """Resetting travel time clears stored calibration and restores default/YAML."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.const import DOMAIN
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": gateway.mac}, unique_id="entry_reset_test", options={})
+    entry.add_to_hass(hass)
+    gateway.config_entry = entry
+
+    cover = _make_cover(hass, gateway)
+    await cover.async_set_travel_time(travel_time=18.5)
+    assert cover.extra_state_attributes["calibration_source"] == "manual"
+
+    await cover.async_reset_travel_time()
+    assert cover._travel_time_down == 25.0
+    assert cover._travel_time_up == 25.0
+    assert cover.extra_state_attributes["calibration_source"] == "default"
+    assert cover.extra_state_attributes["calibrated_at"] is None
+
+    stored = _stored_calibration(gateway.config_entry, cover._device_id)
+    assert stored is None

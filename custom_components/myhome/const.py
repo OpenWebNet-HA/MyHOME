@@ -80,6 +80,9 @@ DEFAULT_TRAVEL_TIME = 25
 # Cover calibration (timed covers measure their own travel times on the bus)
 CONF_COVER_TRAVEL_TIMES = "cover_travel_times"  # config entry option: {device_id: {...}}
 SERVICE_CALIBRATE_COVER = "calibrate_cover"
+SERVICE_STOP_COVER_CALIBRATION = "stop_cover_calibration"
+SERVICE_SET_COVER_TRAVEL_TIME = "set_cover_travel_time"
+SERVICE_RESET_COVER_TRAVEL_TIME = "reset_cover_travel_time"
 EVENT_COVER_CALIBRATION = "myhome_cover_calibration"
 CALIBRATION_RUN_TIMEOUT = 180.0  # s to wait for the actuator's stop status per run
 CALIBRATION_MIN_RUN = 1.0        # s: anything shorter is not a full travel
