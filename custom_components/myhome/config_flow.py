@@ -6,7 +6,6 @@ from typing import Dict, Optional
 
 import voluptuous as vol
 from homeassistant.config_entries import (
-    CONN_CLASS_LOCAL_PUSH,
     ConfigEntry,
     ConfigFlow,
     OptionsFlow,
@@ -88,7 +87,6 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
     """Handle a MyHome config flow."""
 
     VERSION = 1
-    CONNECTION_CLASS = CONN_CLASS_LOCAL_PUSH
 
     @staticmethod
     @callback
