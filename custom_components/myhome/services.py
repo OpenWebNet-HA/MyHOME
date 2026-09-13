@@ -179,10 +179,3 @@ async def async_setup_services(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, SERVICE_SYNC_TIME, handle_sync_time)
     hass.services.async_register(DOMAIN, SERVICE_SEND_MESSAGE, handle_send_message)
     hass.services.async_register(DOMAIN, SERVICE_SWEEP_BUS, handle_sweep_bus)
-
-
-async def async_unload_services(hass: HomeAssistant) -> None:
-    """Unregister MyHOME domain services."""
-    for service in (SERVICE_SYNC_TIME, SERVICE_SEND_MESSAGE, SERVICE_SWEEP_BUS):
-        if hass.services.has_service(DOMAIN, service):
-            hass.services.async_remove(DOMAIN, service)

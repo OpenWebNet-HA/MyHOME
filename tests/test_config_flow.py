@@ -1058,6 +1058,15 @@ async def test_reconfigure_flow_missing_entry(hass: HomeAssistant) -> None:
     assert result_direct["type"] == FlowResultType.ABORT
     assert result_direct["reason"] == "unknown"
 
+    # Newer cores raise UnknownEntry from _get_reconfigure_entry: still a clean abort
+    flow_raise = MyhomeFlowHandler()
+    flow_raise.hass = hass
+    flow_raise.context = dict(flow.context)
+    flow_raise._get_reconfigure_entry = MagicMock(side_effect=RuntimeError("UnknownEntry"))
+    result_raise = await flow_raise.async_step_reconfigure()
+    assert result_raise["type"] == FlowResultType.ABORT
+    assert result_raise["reason"] == "unknown"
+
     # Also test direct step invocation with invalid port to cover defensive error handling
     entry = MockConfigEntry(
         domain=DOMAIN,
