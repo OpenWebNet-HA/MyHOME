@@ -45,8 +45,8 @@ rules:
     status: done
     comment: README.md "Installation & Updating" (terminal, manual, HACS).
   docs-removal-instructions:
-    status: todo
-    comment: README has no removal / uninstall section yet.
+    status: done
+    comment: README.md "Removing the Integration" covers deleting the entry, removing the code (HACS / manual) and the optional leftovers (myhome.yaml, dashboard resource, automations).
   entity-event-setup:
     status: done
     comment: Entities subscribe to dispatcher signals in async_added_to_hass and unsubscribe via async_on_remove.
