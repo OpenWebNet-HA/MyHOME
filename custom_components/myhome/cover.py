@@ -46,6 +46,16 @@ from .myhome_device import MyHOMEEntity
 
 PARALLEL_UPDATES = 0
 
+# Timed-cover echo model (issue #302). After a direction/stop frame is written,
+# the gateway relays our own command back on the monitor session: a stop status
+# within ~0.1 s, the WHAT=1000 translation, and the real direction status once the
+# motor starts (~0.55 s on a MyHOMEServer1). Frames for this cover inside the
+# window are treated as echoes of our command, not as keypad presses.
+ECHO_WINDOW = 1.5
+# Upper bound on how long we wait for the send queue to write our frame before
+# falling back to "now" as the motion anchor.
+WRITE_TIMEOUT = 10.0
+
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
     """Set up the MyHOME cover platform dynamically via Discovery."""
@@ -306,6 +316,97 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._start_position = 50
         self._stop_task = None
 
+        # Echo model state (see ECHO_WINDOW): which command of ours is in
+        # flight, until when relayed frames count as its echo, when the motor
+        # was observed to start, and a generation counter so a stale auto-stop
+        # timer never acts on a later run.
+        self._pending_cmd: str | None = None
+        self._echo_until: float | None = None
+        self._motor_started: asyncio.Event = asyncio.Event()
+        self._run_generation: int = 0
+
+    # ── Echo model helpers ───────────────────────────────────────────────
+
+    def _begin_command(self, cmd: str) -> None:
+        """Open an echo window for a command we are about to queue."""
+        self._run_generation += 1
+        self._pending_cmd = cmd
+        self._echo_until = float("inf")  # until the write time is known
+        self._motor_started = asyncio.Event()
+
+    def _track_write(self, written) -> None:
+        """Anchor the echo window (and the clock) on the real write time."""
+        if not isinstance(written, asyncio.Future):
+            # No delivery information (legacy gateway object): bound the window
+            # from enqueue so an external frame can never be mistaken for an
+            # echo indefinitely.
+            self._echo_until = time.monotonic() + ECHO_WINDOW
+            return
+        generation = self._run_generation
+
+        @callback
+        def _on_written(fut: asyncio.Future) -> None:
+            if generation != self._run_generation or fut.cancelled() or fut.exception() is not None:
+                return
+            write_ts = fut.result()
+            self._echo_until = write_ts + ECHO_WINDOW
+            if self._pending_cmd in ("open", "close") and not self._motor_started.is_set():
+                # Provisional anchor: the motor starts shortly after the write.
+                # The direction echo re-anchors precisely if the gateway relays it.
+                self._move_start_time = write_ts
+            elif self._pending_cmd == "stop":
+                # Motion stops within ~0.1 s of the write, not at enqueue time.
+                self._freeze_position(write_ts)
+                self._motor_started.set()
+
+        written.add_done_callback(_on_written)
+
+    def _in_echo_window(self, now: float) -> bool:
+        return self._echo_until is not None and now < self._echo_until
+
+    def _end_echo_window(self) -> None:
+        self._pending_cmd = None
+        self._echo_until = None
+
+    def _freeze_position(self, at: float) -> None:
+        """Turn the running estimate into a fixed position as of ``at``."""
+        if self._move_start_time is not None:
+            elapsed = max(0.0, at - self._move_start_time)
+            delta = (elapsed / self._travel_time) * 100
+            if self._attr_is_opening:
+                self._attr_current_cover_position = min(100, int(round(self._start_position + delta)))
+            elif self._attr_is_closing:
+                self._attr_current_cover_position = max(0, int(round(self._start_position - delta)))
+            self._start_position = self._attr_current_cover_position
+            self._move_start_time = None
+        self._attr_is_opening = False
+        self._attr_is_closing = False
+        if self._attr_current_cover_position is not None:
+            self._attr_is_closed = (self._attr_current_cover_position == 0)
+
+    async def _await_motion_anchor(self, written) -> float:
+        """Wait for our frame to be written and for the motor-start echo.
+
+        Returns the monotonic time motion is anchored on: the direction echo
+        if the gateway relayed one inside the window, else the write time,
+        else (no delivery within WRITE_TIMEOUT) now.
+        """
+        if isinstance(written, asyncio.Future):
+            try:
+                await asyncio.wait_for(asyncio.shield(written), WRITE_TIMEOUT)
+            except (TimeoutError, asyncio.CancelledError):
+                pass
+        deadline = self._echo_until if self._echo_until not in (None, float("inf")) else time.monotonic() + ECHO_WINDOW
+        remaining = deadline - time.monotonic()
+        if remaining > 0 and not self._motor_started.is_set():
+            try:
+                await asyncio.wait_for(self._motor_started.wait(), remaining)
+            except TimeoutError:
+                pass
+        if self._move_start_time is None:
+            self._move_start_time = time.monotonic()
+        return self._move_start_time
+
     def _cancel_stop_task(self):
         """Cancel any running scheduled auto-stop task."""
         if self._stop_task is not None:
@@ -414,28 +515,34 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def async_open_cover(self, **kwargs):  # pylint: disable=unused-argument
         """Open the cover."""
-        self._cancel_stop_task()
-        if not self._advanced:
-            self._start_position = self.current_cover_position if self.current_cover_position is not None else 0
-            self._move_start_time = time.monotonic()
-            self._attr_is_opening = True
-            self._attr_is_closing = False
-            self._attr_is_closed = False
-        await self._gateway_handler.send(OWNAutomationCommand.raise_shutter(self._full_where))
-        if self.hass is not None:
-            self.async_write_ha_state()
+        await self._async_move("open")
 
     async def async_close_cover(self, **kwargs):  # pylint: disable=unused-argument
         """Close cover."""
+        await self._async_move("close")
+
+    async def _async_move(self, direction: str):
+        """Queue a direction command and return its delivery future."""
         self._cancel_stop_task()
+        if direction == "open":
+            command = OWNAutomationCommand.raise_shutter(self._full_where)
+        else:
+            command = OWNAutomationCommand.lower_shutter(self._full_where)
         if not self._advanced:
-            self._start_position = self.current_cover_position if self.current_cover_position is not None else 100
-            self._move_start_time = time.monotonic()
-            self._attr_is_opening = False
-            self._attr_is_closing = True
-        await self._gateway_handler.send(OWNAutomationCommand.lower_shutter(self._full_where))
+            self._start_position = self.current_cover_position if self.current_cover_position is not None else (0 if direction == "open" else 100)
+            # The clock starts when the frame is written (see _track_write),
+            # not now: with a busy queue the motor is still idle for a while.
+            self._move_start_time = None
+            self._attr_is_opening = direction == "open"
+            self._attr_is_closing = direction == "close"
+            self._attr_is_closed = False
+            self._begin_command(direction)
+        written = await self._gateway_handler.send(command)
+        if not self._advanced:
+            self._track_write(written)
         if self.hass is not None:
             self.async_write_ha_state()
+        return written
 
     async def async_set_cover_position(self, **kwargs):
         """Move the cover to a specific position."""
@@ -464,18 +571,25 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         travel_fraction = abs(diff) / 100.0
         run_duration = travel_fraction * self._travel_time
 
-        if diff > 0:
-            await self.async_open_cover()
-        else:
-            await self.async_close_cover()
+        written = await self._async_move("open" if diff > 0 else "close")
+        generation = self._run_generation
 
         async def _auto_stop():
             try:
-                await asyncio.sleep(run_duration)
-                await self.async_stop_cover()
-                self._attr_current_cover_position = target_position
+                anchor = await self._await_motion_anchor(written)
+                if generation != self._run_generation:
+                    return  # a newer command superseded this run
+                await asyncio.sleep(max(0.0, run_duration - (time.monotonic() - anchor)))
+                if generation != self._run_generation:
+                    return
+                # By the model we are at the target now; the motor keeps
+                # running until the stop frame is written, so re-anchor the
+                # run here and let the stop's write time freeze the estimate
+                # (target plus whatever the queue delay added).
                 self._start_position = target_position
-                self._attr_is_closed = (target_position == 0)
+                self._attr_current_cover_position = target_position
+                self._move_start_time = time.monotonic()
+                await self.async_stop_cover()
                 if self.hass is not None:
                     self.async_write_ha_state()
             except asyncio.CancelledError:
@@ -487,22 +601,48 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Stop the cover."""
         self._cancel_stop_task()
         if not self._advanced:
-            if self._move_start_time is not None:
-                elapsed = time.monotonic() - self._move_start_time
-                delta = (elapsed / self._travel_time) * 100
-                if self._attr_is_opening:
-                    self._attr_current_cover_position = min(100, int(round(self._start_position + delta)))
-                elif self._attr_is_closing:
-                    self._attr_current_cover_position = max(0, int(round(self._start_position - delta)))
-                self._start_position = self._attr_current_cover_position
-                self._move_start_time = None
-            self._attr_is_opening = False
-            self._attr_is_closing = False
-            if self._attr_current_cover_position is not None:
-                self._attr_is_closed = (self._attr_current_cover_position == 0)
-        await self._gateway_handler.send(OWNAutomationCommand.stop_shutter(self._full_where))
+            # The estimate keeps running until the stop frame is actually
+            # written (_track_write freezes it then); if delivery never
+            # happens the next status frame will correct us.
+            self._begin_command("stop")
+        written = await self._gateway_handler.send(OWNAutomationCommand.stop_shutter(self._full_where))
+        if not self._advanced:
+            self._track_write(written)
+            if not isinstance(written, asyncio.Future):
+                self._freeze_position(time.monotonic())
         if self.hass is not None:
             self.async_write_ha_state()
+
+    def _handle_echo(self, message: OWNAutomationEvent, now: float) -> bool:
+        """Consume frames the gateway relays for our own in-flight command.
+
+        Returns True when the frame was an echo and needs no further handling.
+        """
+        if self._advanced or not self._in_echo_window(now) or self._pending_cmd is None:
+            return False
+        is_stop = not message.is_opening and not message.is_closing
+        if self._pending_cmd in ("open", "close"):
+            matches = (message.is_opening and self._pending_cmd == "open") or (
+                message.is_closing and self._pending_cmd == "close"
+            )
+            if matches:
+                # The relayed direction status marks the real motor start.
+                self._move_start_time = now
+                self._motor_started.set()
+                self._end_echo_window()
+                LOGGER.debug("%s Motor start echo for %s; clock anchored.", self._gateway_handler.log_id, self._full_where)
+                return True
+            if is_stop:
+                # Gateway relays a stop status ~0.1 s after our direction frame,
+                # before the motor starts: an echo, not a keypad stop.
+                LOGGER.debug("%s Ignoring stop echo for %s.", self._gateway_handler.log_id, self._full_where)
+                return True
+            # Opposite direction inside the window: somebody else took over.
+            self._end_echo_window()
+            return False
+        # Pending stop: the relayed stop confirms it, anything else is external.
+        self._end_echo_window()
+        return False
 
     @callback
     def handle_event(self, message: OWNAutomationEvent):
@@ -514,6 +654,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._gateway_handler.log_id,
             message.human_readable_log,
         )
+        now = time.monotonic()
+        if message.current_position is None and self._handle_echo(message, now):
+            if self.hass is not None or hasattr(self.async_schedule_update_ha_state, "assert_called"):
+                try:
+                    self.async_schedule_update_ha_state()
+                except RuntimeError:
+                    pass
+            return
         if message.current_position is not None:
             self._cancel_stop_task()
             self._attr_current_cover_position = message.current_position
@@ -529,33 +677,28 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         elif message.is_opening:
             if self._attr_is_closing:
                 self._cancel_stop_task()
+                self._run_generation += 1
             if not self._advanced and not self._attr_is_opening:
                 self._start_position = self.current_cover_position if self.current_cover_position is not None else 0
-                self._move_start_time = time.monotonic()
+                self._move_start_time = now
             self._attr_is_opening = True
             self._attr_is_closing = False
             self._attr_is_closed = False
         elif message.is_closing:
             if self._attr_is_opening:
                 self._cancel_stop_task()
+                self._run_generation += 1
             if not self._advanced and not self._attr_is_closing:
                 self._start_position = self.current_cover_position if self.current_cover_position is not None else 100
-                self._move_start_time = time.monotonic()
+                self._move_start_time = now
             self._attr_is_opening = False
             self._attr_is_closing = True
         else:
-            # Stopped (state == 0 or other)
+            # Stopped (state == 0 or other): a genuine stop ends any timed run.
             self._cancel_stop_task()
+            self._run_generation += 1
             if not self._advanced:
-                if self._move_start_time is not None:
-                    elapsed = time.monotonic() - self._move_start_time
-                    delta = (elapsed / self._travel_time) * 100
-                    if self._attr_is_opening:
-                        self._attr_current_cover_position = min(100, int(round(self._start_position + delta)))
-                    elif self._attr_is_closing:
-                        self._attr_current_cover_position = max(0, int(round(self._start_position - delta)))
-                    self._start_position = self._attr_current_cover_position
-                    self._move_start_time = None
+                self._freeze_position(now)
             self._attr_is_opening = False
             self._attr_is_closing = False
             if message.is_closed is not None:
