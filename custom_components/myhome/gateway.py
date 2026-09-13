@@ -88,6 +88,20 @@ _ownd_msg._gateway_timezone = _compat_gateway_timezone
 EVENT_READY_TIMEOUT = 120
 
 
+def _resolve_written(task: dict[str, Any], when: float) -> None:
+    """Complete a queued frame's delivery future with the write timestamp."""
+    written = task.get("written")
+    if isinstance(written, asyncio.Future) and not written.done():
+        written.set_result(when)
+
+
+def _cancel_written(task: dict[str, Any]) -> None:
+    """Cancel a queued frame's delivery future (the frame will never be written)."""
+    written = task.get("written")
+    if isinstance(written, asyncio.Future) and not written.done():
+        written.cancel()
+
+
 @lru_cache(maxsize=1)
 def _registry_supports_via_device_id() -> bool:
     """Return True when this Home Assistant accepts ``via_device_id`` (2026.x+).
@@ -844,6 +858,7 @@ class MyHOMEGatewayHandler:
                 raw=str(task["message"]),
                 parsed=task["message"] if isinstance(task["message"], OWNMessage) else None,
             )
+            _resolve_written(task, time.monotonic())
             collected = await _command_session.send(message=task["message"], is_status_request=task["is_status_request"])
             if collected and isinstance(collected, list):
                 for resp in collected:
@@ -883,6 +898,16 @@ class MyHOMEGatewayHandler:
         self._sender_stop.set()
 
 
+        # Nothing queued will be written any more: tell the callers waiting on delivery
+        while True:
+            try:
+                task = self.send_buffer.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            if task is not None:
+                _cancel_written(task)
+            self.send_buffer.task_done()
+
         # Unblock any sending workers waiting on send_buffer
         for _ in range(max(1, len(self.sending_workers))):
             try:
@@ -892,18 +917,31 @@ class MyHOMEGatewayHandler:
 
         return True
 
-    async def send(self, message: OWNCommand):
-        await self.send_buffer.put({"message": message, "is_status_request": False})
-        LOGGER.debug(
-            "%s Message `%s` was successfully queued.",
-            self.log_id,
-            message,
-        )
+    async def send(self, message: OWNCommand) -> asyncio.Future[float]:
+        """Queue a command; the returned future resolves to the monotonic write time."""
+        return await self._enqueue(message, is_status_request=False)
 
-    async def send_status_request(self, message: OWNCommand):
-        await self.send_buffer.put({"message": message, "is_status_request": True})
+    async def send_status_request(self, message: OWNCommand) -> asyncio.Future[float]:
+        """Queue a status request; the returned future resolves to the monotonic write time."""
+        return await self._enqueue(message, is_status_request=True)
+
+    async def _enqueue(self, message: OWNCommand, *, is_status_request: bool) -> asyncio.Future[float]:
+        """Put a frame on the send queue and hand back its delivery future.
+
+        The future completes with ``time.monotonic()`` taken by the sending
+        worker immediately before the frame is written to the command
+        session - queue wait included - so callers that model physical
+        motion (timed covers) can start their clock at the real write
+        instead of at enqueue. It is cancelled if the gateway shuts down
+        before the frame leaves.
+        """
+        written: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+        await self.send_buffer.put(
+            {"message": message, "is_status_request": is_status_request, "written": written}
+        )
         LOGGER.debug(
             "%s Message `%s` was successfully queued.",
             self.log_id,
             message,
         )
+        return written
