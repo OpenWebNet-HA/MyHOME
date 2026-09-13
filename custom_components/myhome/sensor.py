@@ -1,6 +1,7 @@
 """Support for MyHome sensors (power/energy, temperature, illuminance)."""
 
 import re
+import time
 from datetime import timedelta
 
 from homeassistant.components.sensor import DOMAIN as PLATFORM
@@ -751,6 +752,24 @@ class MyHOMETemperatureSensor(MyHOMEEntity, SensorEntity):
         self._attr_extra_state_attributes = {
             "Sensor": f"({self._where[0]}){self._where[1:]}"
         }
+        # Monotonic timestamp of the last temperature received from the bus.
+        # Probes (WHERE >= 100, e.g. 3455 via L4577) push readings unsolicited
+        # every few seconds and NACK explicit polls, so polling is only a
+        # fallback for when the push stream goes quiet (issue #308).
+        self._last_push_at: float | None = None
+
+    @property
+    def _is_probe(self) -> bool:
+        """Return True for slave/external probe addresses (ZPP >= 100)."""
+        clean_where = str(self._where).split("-")[-1].split("#")[0]
+        return clean_where.isdigit() and int(clean_where) >= 100
+
+    def _push_is_fresh(self) -> bool:
+        """Return True when a reading arrived within the last poll interval."""
+        return (
+            self._last_push_at is not None
+            and (time.monotonic() - self._last_push_at) < SCAN_INTERVAL.total_seconds()
+        )
 
     async def async_added_to_hass(self):
         """When entity is added to hass."""
@@ -761,6 +780,9 @@ class MyHOMETemperatureSensor(MyHOMEEntity, SensorEntity):
             device_dict[CONF_ENTITIES][self._attr_device_class] = self
         except (KeyError, TypeError):
             pass
+        # Probes start receive-only: no initial poll, the push stream fills in
+        # and the periodic update only polls if it stays silent (issue #308).
+        self._poll_on_add = not self._is_probe
         await super().async_added_to_hass()
 
     async def async_will_remove_from_hass(self):
@@ -773,12 +795,10 @@ class MyHOMETemperatureSensor(MyHOMEEntity, SensorEntity):
             pass
 
     async def async_update(self):
-        """Update the entity.
-
-        Only used by the generic entity update service.
-        """
-        clean_where = str(self._where).split("-")[-1].split("#")[0]
-        if clean_where.isdigit() and int(clean_where) >= 100:
+        """Poll the probe, unless the bus already pushed a fresh reading."""
+        if self._push_is_fresh():
+            return
+        if self._is_probe:
             cmd = (
                 getattr(OWNHeatingCommand, "get_probe_temperature", None)
                 and OWNHeatingCommand.get_probe_temperature(self._where)
@@ -834,6 +854,7 @@ class MyHOMETemperatureSensor(MyHOMEEntity, SensorEntity):
                     message.human_readable_log,
                 )
             self._attr_native_value = val
+            self._last_push_at = time.monotonic()
             self._publish_state()
 
 
