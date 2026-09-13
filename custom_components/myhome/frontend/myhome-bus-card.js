@@ -997,6 +997,9 @@ ${framesText}
         connection_type: (this._gatewayInfo && this._gatewayInfo.connection_type) || "tcp",
         queue_pacing: (this._gatewayInfo && this._gatewayInfo.queue_pacing) || "standard",
         is_connected: (this._gatewayInfo && this._gatewayInfo.is_connected) !== false,
+        // How the model label was established (ssdp / manual / serial / who13) and the
+        // WHO=13 evidence behind it - so a trace never hides a mislabelled gateway.
+        identification: (this._gatewayInfo && this._gatewayInfo.identification) || null,
       },
       telemetry: {
         total_rx: this._stats.total_rx,

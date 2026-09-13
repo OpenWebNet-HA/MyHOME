@@ -82,6 +82,9 @@ async def async_get_config_entry_diagnostics(
                 "is_connected": getattr(gateway_handler, "is_connected", False),
                 "send_workers": len(getattr(gateway_handler, "sending_workers", [])),
             }
+            identification = getattr(gateway_handler, "identification", None)
+            if callable(identification):
+                gw_info["identification"] = async_redact_data(identification(), TO_REDACT)
             if hasattr(gw, "profile") and gw.profile:
                 profile = gw.profile
                 profile_info = {
