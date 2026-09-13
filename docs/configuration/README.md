@@ -20,6 +20,7 @@ This directory provides comprehensive, step-by-step guides for connecting, confi
 | [**Lovelace Bus Monitor Card**](bus_monitor.md) | In-Band Diagnostic Monitor | All WHOs | Native Lovelace card (`custom:myhome-bus-card`), 500-frame circular ring buffer, real-time live streaming, WHO filtering, 1-click **Sweep Bus**, and 1-click **Export Trace**. |
 | [**Lovelace Dashboard Recipes**](lovelace_recipes.md) | UI & Dashboard Showcase | All WHOs | Dynamic auto-collapsing active lights, multiroom audio player cards, perimeter security status, and equipment runtime tracker. |
 | [**Integration Services Reference**](services.md) | Integration Actions | All WHOs | Reference for `myhome.send_message`, `myhome.turn_on_timed` (hardware SCS timers), `myhome.sync_time`, `myhome.start_sending_instant_power`, and `myhome.sweep_bus`. |
+| [**Runtime Behaviour Notes**](runtime_behaviour.md) | Polling, discovery & runtime learning | `WHO = 1, 2, 4, 13, 15, 25` | Profile-gated startup discovery, silent reconnect cycles, reauth flow, push-driven temperature probes (`WHERE ≥ 100`), additive light colour modes (DALI DT8), `via_device_id` links, OWNd version handling. |
 
 ---
 
