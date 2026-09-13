@@ -315,14 +315,20 @@ class TestMyHOMECoverEntity:
             assert basic_cover.is_opening is True
             assert basic_cover.is_closing is False
 
-        # External stop event cancels stop task
+        # External stop event cancels stop task - but only once our own command's
+        # echo window is over: the gateway relays a stop status right after our
+        # direction frame (#302), which must not end the timed run.
         basic_cover.handle_event(OWNEvent.parse("*2*0*21##"))
         basic_cover._attr_current_cover_position = 20
         basic_cover._start_position = 20
         with patch("asyncio.sleep", new_callable=AsyncMock):
             await basic_cover.async_set_cover_position(**{ATTR_POSITION: 80})
             assert basic_cover._stop_task is not None
-            basic_cover.handle_event(OWNEvent.parse("*2*0*21##"))
+            basic_cover.handle_event(OWNEvent.parse("*2*0*21##"))  # relayed echo
+            assert basic_cover._stop_task is not None
+            basic_cover.handle_event(OWNEvent.parse("*2*1*21##"))  # motor start echo
+            assert basic_cover._stop_task is not None
+            basic_cover.handle_event(OWNEvent.parse("*2*0*21##"))  # genuine keypad stop
             assert basic_cover._stop_task is None
             assert basic_cover.is_opening is False
 

@@ -1,0 +1,369 @@
+"""Issue #302: timed covers anchored on the real write / motor start (MyHOMEServer1 echo model).
+
+Sequence measured by the reporter after a direction command is queued:
+  enqueue -> (queue wait, up to 1.6 s with 12 covers) -> frame written
+  +0.10 s  gateway relays a real stop status  *2*0*<where>##   (not a translation)
+  +0.15 s  translation                          *2*1000#<dir>*<where>##
+  +0.55 s  motor starts, direction status       *2*<dir>*<where>##
+  stop command: motor stops 0.08 s after the stop frame is written.
+"""
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from homeassistant.components.cover import ATTR_POSITION
+from OWNd.message import OWNEvent
+
+from custom_components.myhome.cover import ECHO_WINDOW, MyHOMECover
+from custom_components.myhome.gateway import MyHOMEGatewayHandler
+
+
+class Clock:
+    def __init__(self, now: float = 0.0):
+        self.now = now
+
+
+@pytest.fixture
+def clock():
+    return Clock()
+
+
+@pytest.fixture
+def fake_time(clock):
+    """Replace cover.time with a controllable monotonic clock (asyncio's own clock untouched)."""
+    with patch("custom_components.myhome.cover.time") as mock_time:
+        mock_time.monotonic.side_effect = lambda: clock.now
+        yield mock_time
+
+
+@pytest.fixture
+def sleeps(clock):
+    """Record requested sleep durations and advance the fake clock instead of waiting."""
+    real_sleep = asyncio.sleep
+    recorded = []
+
+    async def fake_sleep(delay, *args, **kwargs):
+        recorded.append(delay)
+        clock.now += delay
+        await real_sleep(0)
+
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=fake_sleep):
+        yield recorded
+
+
+async def _yield(n: int = 3):
+    for _ in range(n):
+        await asyncio.sleep(0)  # real sleep: asyncio.sleep is only patched on the cover module
+
+
+@pytest.fixture
+def gateway():
+    gw = MagicMock()
+    gw.mac = "00:03:50:00:00:01"
+    gw.log_id = "[MyHOMEServer1 gateway - test]"
+    gw.availability_signal = "myhome_avail"
+    gw.available = True
+    gw.device_registry_id = None
+    gw.send_status_request = AsyncMock()
+    # every send() hands back a fresh, unresolved delivery future
+    gw.deliveries = []
+
+    async def _send(message):
+        fut = asyncio.get_running_loop().create_future()
+        gw.deliveries.append((str(message), fut))
+        return fut
+
+    gw.send = AsyncMock(side_effect=_send)
+    return gw
+
+
+@pytest.fixture
+def cover(hass, gateway):
+    c = MyHOMECover(
+        hass=hass,
+        name="Shutter 21",
+        entity_name=None,
+        device_id="21",
+        who="2",
+        where="21",
+        interface=None,
+        advanced=False,
+        manufacturer="BTicino",
+        model="Shutter",
+        gateway=gateway,
+        travel_time=10,
+    )
+    c.hass = hass
+    c.async_write_ha_state = MagicMock()
+    c.async_schedule_update_ha_state = MagicMock()
+    c._attr_current_cover_position = 100
+    c._start_position = 100
+    return c
+
+
+async def test_set_position_survives_relayed_stop_and_anchors_on_motor_start(cover, gateway, clock, fake_time, sleeps):
+    """The relayed stop must not cancel the run; the timer starts at the motor-start echo."""
+    await cover.async_set_cover_position(**{ATTR_POSITION: 50})  # 50% of 10 s = 5 s run
+    assert cover.is_closing is True
+    assert cover._pending_cmd == "close"
+    assert cover._move_start_time is None  # clock does not start at enqueue
+    assert cover._stop_task is not None
+    await _yield()
+
+    # Queue was busy: frame leaves 1.6 s after enqueue
+    clock.now = 1.6
+    frame, written = gateway.deliveries[0]
+    assert frame == "*2*2*21##"
+    written.set_result(1.6)
+    await _yield()
+    assert cover._move_start_time == 1.6  # provisional anchor at write
+    assert cover._echo_until == pytest.approx(1.6 + ECHO_WINDOW)
+
+    # +0.10 s: gateway relays a REAL stop status for our own command
+    clock.now = 1.7
+    cover.handle_event(OWNEvent.parse("*2*0*21##"))
+    assert cover._stop_task is not None and not cover._stop_task.done()
+    assert cover.is_closing is True
+
+    # +0.15 s: translation frame (always ignored)
+    clock.now = 1.75
+    cover.handle_event(OWNEvent.parse("*2*1000#2*21##"))
+    assert cover.is_closing is True
+
+    # +0.55 s: motor really starts
+    clock.now = 2.15
+    cover.handle_event(OWNEvent.parse("*2*2*21##"))
+    assert cover._move_start_time == 2.15
+    assert cover._pending_cmd is None  # window closed: later frames are genuine
+    assert cover._motor_started.is_set()
+    await _yield()
+
+    # Auto-stop slept the full run from the motor start, not from enqueue
+    assert sleeps and sleeps[-1] == pytest.approx(5.0)
+    await _yield()
+    assert clock.now == pytest.approx(7.15)
+    stop_frame, stop_written = gateway.deliveries[-1]
+    assert stop_frame == "*2*0*21##"
+    # Until the stop frame is written the motor is still running past the target
+    assert cover.is_closing is True
+    assert cover.current_cover_position == 50
+
+    # Stop leaves the queue 0.1 s later: the estimate settles at target + overshoot
+    clock.now = 7.25
+    stop_written.set_result(7.25)
+    await _yield()
+    assert cover.is_closing is False
+    assert cover._move_start_time is None
+    assert cover._attr_current_cover_position == 49
+
+    # ... and the relayed stop confirmation changes nothing
+    clock.now = 7.35
+    cover.handle_event(OWNEvent.parse("*2*0*21##"))
+    assert cover._attr_current_cover_position == 49
+
+
+async def test_position_estimate_frozen_at_stop_write_not_enqueue(cover, gateway, clock, fake_time):
+    """Stop latency is the queue wait plus 0.08 s: freeze the estimate when the stop is written."""
+    cover._attr_current_cover_position = 0
+    cover._start_position = 0
+    await cover.async_open_cover()
+    _, written = gateway.deliveries[0]
+    clock.now = 1.0
+    written.set_result(1.0)
+    await _yield()
+    clock.now = 1.5
+    cover.handle_event(OWNEvent.parse("*2*1*21##"))  # motor start
+    assert cover._move_start_time == 1.5
+
+    clock.now = 4.5  # user presses stop in HA: 3 s of travel so far (30 %)
+    await cover.async_stop_cover()
+    assert cover._pending_cmd == "stop"
+    assert cover.current_cover_position == 30  # still interpolating until written
+    _, stop_written = gateway.deliveries[1]
+    clock.now = 5.5  # busy queue: stop frame leaves 1 s later -> motor ran 4 s
+    stop_written.set_result(5.5)
+    await _yield()
+    assert cover._attr_current_cover_position == 40
+    assert cover._move_start_time is None
+    assert cover.is_opening is False
+
+    # The relayed stop confirmation is then a no-op, not a second freeze
+    clock.now = 5.6
+    cover.handle_event(OWNEvent.parse("*2*0*21##"))
+    assert cover._attr_current_cover_position == 40
+
+
+async def test_opposite_direction_inside_window_is_external(cover, gateway, clock, fake_time, sleeps):
+    """Someone closing from the keypad right after our open takes over the run."""
+    cover._attr_current_cover_position = 0
+    cover._start_position = 0
+    await cover.async_set_cover_position(**{ATTR_POSITION: 60})
+    generation = cover._run_generation
+    _, written = gateway.deliveries[0]
+    clock.now = 0.5
+    written.set_result(0.5)
+    await _yield()
+
+    clock.now = 0.8
+    cover.handle_event(OWNEvent.parse("*2*2*21##"))  # closing, not our direction
+    assert cover.is_closing is True and cover.is_opening is False
+    assert cover._pending_cmd is None
+    assert cover._stop_task is None
+    assert cover._run_generation > generation
+
+
+async def test_stale_auto_stop_generation_is_a_noop(cover, gateway, clock, fake_time, sleeps):
+    """A timer from a previous run never stops a newer one."""
+    await cover.async_set_cover_position(**{ATTR_POSITION: 50})
+    first_task = cover._stop_task
+    _, written = gateway.deliveries[0]
+    written.set_result(0.2)
+    await _yield()
+    # A second command supersedes the first before its timer fires
+    await cover.async_open_cover()
+    assert first_task.cancelled() or first_task.done() or cover._stop_task is None
+    await _yield()
+    # Only the direction frames were sent: no stop from the stale run
+    assert [f for f, _ in gateway.deliveries] == ["*2*2*21##", "*2*1*21##"]
+
+
+async def test_echo_window_bounded_without_delivery_info(cover, clock, fake_time):
+    """A gateway object whose send() returns no future still gets a bounded echo window."""
+    cover._gateway_handler.send = AsyncMock(return_value=None)
+    await cover.async_open_cover()
+    assert cover._echo_until == pytest.approx(clock.now + ECHO_WINDOW)
+    clock.now = ECHO_WINDOW + 0.1
+    cover.handle_event(OWNEvent.parse("*2*0*21##"))  # after the window: genuine stop
+    assert cover.is_opening is False
+
+    # stop without delivery info freezes immediately
+    cover._move_start_time = clock.now
+    cover._attr_is_opening = True
+    await cover.async_stop_cover()
+    assert cover._move_start_time is None
+
+
+async def test_motion_anchor_falls_back_when_write_is_cancelled(cover, gateway, clock, fake_time, sleeps):
+    """Gateway shutdown cancels the delivery: the run anchors on 'now' instead of hanging."""
+    await cover.async_set_cover_position(**{ATTR_POSITION: 50})
+    _, written = gateway.deliveries[0]
+    written.cancel()
+    clock.now = 3.0
+    with patch("custom_components.myhome.cover.ECHO_WINDOW", 0.0):
+        await _yield(5)
+    assert cover._move_start_time is not None
+
+
+# ── gateway side: the delivery future ────────────────────────────────────
+
+
+@pytest.fixture
+def handler():
+    entry = MagicMock()
+    entry.entry_id = "e302"
+    entry.data = {"host": "1.2.3.4", "port": 20000, "password": "x", "mac": "00:03:50:00:00:01", "name": "MyHomeServer1"}
+    entry.options = {}
+    hass = MagicMock()
+    hass.data = {}
+    return MyHOMEGatewayHandler(hass, entry)
+
+
+async def test_send_future_resolves_at_write(handler):
+    """send() returns a future completed with the monotonic write time by the worker."""
+    import time as _time
+
+    handler._event_session_ready.set()
+    before = _time.monotonic()
+    # NB: never patch time.monotonic here - asyncio's loop clock is the same function.
+    with patch("custom_components.myhome.gateway.OWNCommandSession") as session_cls:
+        session = MagicMock()
+        session.connect = AsyncMock(return_value={"Success": True})
+        session.is_connected = True
+        session.send = AsyncMock(return_value=[])
+        session.close = AsyncMock()
+        session_cls.return_value = session
+
+        from OWNd.message import OWNAutomationCommand
+
+        written = await handler.send(OWNAutomationCommand.raise_shutter("21"))
+        assert isinstance(written, asyncio.Future) and not written.done()
+        status = await handler.send_status_request(OWNAutomationCommand.status("21"))
+        await handler.send_buffer.put(None)  # stop the worker after draining
+        await handler.sending_loop(0)
+
+    assert before <= written.result() <= status.result() <= _time.monotonic()
+    session.send.assert_awaited()
+
+
+async def test_close_listener_cancels_undelivered_futures(handler):
+    """Frames still queued at shutdown will never be written: their futures are cancelled."""
+    from OWNd.message import OWNAutomationCommand
+
+    written = await handler.send(OWNAutomationCommand.raise_shutter("21"))
+    assert await handler.close_listener() is True
+    assert written.cancelled()
+    # Only the worker sentinels remain in the queue
+    remaining = []
+    while not handler.send_buffer.empty():
+        remaining.append(handler.send_buffer.get_nowait())
+    assert remaining and all(item is None for item in remaining)
+
+
+# ── edge paths ───────────────────────────────────────────────────────────
+
+
+async def test_no_motor_echo_anchors_on_write_time(cover, gateway, clock, fake_time, sleeps):
+    """Gateways that never relay the direction status: the run anchors on the write."""
+    await cover.async_set_cover_position(**{ATTR_POSITION: 50})
+    _, written = gateway.deliveries[0]
+    clock.now = 1.0
+    written.set_result(1.0)
+    with patch("custom_components.myhome.cover.ECHO_WINDOW", 0.05):
+        # the window (0.05 s real, since the fake clock stands still) elapses with
+        # no echo; wait on a timer, not asyncio.sleep (faked by the fixture)
+        try:
+            await asyncio.wait_for(asyncio.Event().wait(), 0.3)
+        except TimeoutError:
+            pass
+    # The 5 s run was measured from the write (1.0), then the stop was queued
+    assert sleeps and sleeps[-1] == pytest.approx(5.0)
+    assert [f for f, _ in gateway.deliveries] == ["*2*2*21##", "*2*0*21##"]
+
+
+async def test_generation_guard_before_and_after_sleep(cover, gateway, clock, fake_time):
+    """A run superseded while waiting (anchor or sleep) never sends its stop."""
+    # 1. superseded while waiting for the motion anchor
+    await cover.async_set_cover_position(**{ATTR_POSITION: 50})
+    _, written = gateway.deliveries[0]
+    cover._run_generation += 1  # e.g. a manual command handled elsewhere
+    cover._motor_started.set()  # anchor available immediately
+    written.set_result(0.1)
+    await _yield(5)
+    assert cover._stop_task.done()
+    assert [f for f, _ in gateway.deliveries] == ["*2*2*21##"]
+
+    # 2. superseded during the sleep
+    cover._stop_task = None
+    real_sleep = asyncio.sleep
+
+    async def bump_generation_sleep(delay, *args, **kwargs):
+        cover._run_generation += 1
+        await real_sleep(0)
+
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=bump_generation_sleep):
+        await cover.async_set_cover_position(**{ATTR_POSITION: 20})
+        _, written2 = gateway.deliveries[-1]
+        cover._motor_started.set()
+        written2.set_result(0.2)
+        for _ in range(5):
+            await real_sleep(0)
+    assert cover._stop_task.done()
+    assert [f for f, _ in gateway.deliveries] == ["*2*2*21##", "*2*2*21##"]
+
+
+async def test_echo_path_tolerates_state_write_runtime_error(cover, gateway, clock, fake_time):
+    """Echo handling survives async_schedule_update_ha_state raising (entity being removed)."""
+    await cover.async_open_cover()
+    cover.async_schedule_update_ha_state = MagicMock(side_effect=RuntimeError("no loop"))
+    cover.handle_event(OWNEvent.parse("*2*0*21##"))  # echo inside the window
+    assert cover.is_opening is True
