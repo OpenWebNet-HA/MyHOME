@@ -482,7 +482,7 @@ python scripts/run_ownd_smoke.py --target all
 ```
 
 This runner executes 4 validation gates:
-1. **Metadata Lockstep**: Verifies that `manifest.json` and `const.py` (`REQUIRED_OWND_VERSION`) match the installed package.
+1. **Metadata Lockstep**: Verifies that the exact `OWNd==` pin in `manifest.json` matches the installed package.
 2. **Golden Corpus Conformance**: Runs 191 OpenWebNet frame fixtures (`tests/test_golden_conformance.py`) verifying parser extraction and builder parity.
 3. **Platform Clean Imports**: Verifies all 14 integration platform modules import cleanly without missing symbols or deprecation errors.
 4. **Mock Gateway TCP Loopback**: Boots a mock OpenWebNet TCP server, negotiates session handshake (`*99*0##`), dispatches commands, and verifies frame parsing end-to-end.

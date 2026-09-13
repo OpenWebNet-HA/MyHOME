@@ -48,14 +48,12 @@ def check_versions(target_tag=None):
         sys.exit(1)
 
     requirements = manifest.get("requirements", [])
-    ownd_match = re.search(r'REQUIRED_OWND_VERSION\s*=\s*["\']([^"\']+)["\']', const_content)
-    required_ownd_version = ownd_match.group(1) if ownd_match else manifest_version
-    expected_ownd_req = f"OWNd=={required_ownd_version}"
+    ownd_pins = [r for r in requirements if re.fullmatch(r"OWNd==[0-9][0-9A-Za-z.]*", r)]
     print(f"[CHECK] manifest requirements: {requirements}")
-    if expected_ownd_req not in requirements:
+    if len(ownd_pins) != 1:
         print(
-            f"[ERROR] Deployment Rule Violation: manifest.json 'requirements' must contain '{expected_ownd_req}'! "
-            f"Found: {requirements}. Without this, Home Assistant will NOT fetch the updated engine from PyPI!",
+            "[ERROR] Deployment Rule Violation: manifest.json 'requirements' must contain exactly one exact "
+            f"'OWNd==<version>' pin! Found: {requirements}. Without this, Home Assistant will NOT fetch the engine from PyPI!",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -70,7 +68,7 @@ def check_versions(target_tag=None):
             )
             sys.exit(1)
 
-    return manifest_version, required_ownd_version
+    return manifest_version, ownd_pins[0].split("==", 1)[1]
 
 
 def check_pypi_release(version):
