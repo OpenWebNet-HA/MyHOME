@@ -659,8 +659,8 @@ class MyHomeBusCard extends HTMLElement {
             <button id="btn-export" class="btn-export" title="Download the frames currently shown (active filters applied) as a JSON capture; the file name says whether it is a passive trace or a bus sweep">
               💾 Export Capture
             </button>
-            <button id="btn-report" class="btn-report" title="Copy diagnostic markdown to clipboard and open GitHub issue form">
-              📋 Copy Trace
+            <button id="btn-report" class="btn-report" title="Copy the shown frames as a diagnostic markdown bundle to the clipboard and open the GitHub issue form">
+              📋 Copy Capture
             </button>
             <button id="btn-pause" class="btn-secondary">Pause</button>
             <button id="btn-clear" class="btn-secondary">Clear</button>
@@ -1001,6 +1001,8 @@ ${framesText}
     }
     const kind = this._captureKind(this._visibleFrames());
     btn.innerHTML = kind === "sweep" ? "💾 Export Sweep" : "💾 Export Capture";
+    const reportBtn = this.shadowRoot.getElementById("btn-report");
+    if (reportBtn) reportBtn.innerHTML = kind === "sweep" ? "📋 Copy Sweep" : "📋 Copy Capture";
     if (kind === "sweep") {
       // Sweep replies age out of the window; re-evaluate the label later.
       this._exportLabelTimeout = setTimeout(() => this._refreshExportLabel(), 60000);
@@ -1142,7 +1144,7 @@ ${framesText}
 
   async _handleReportIssue() {
     const btn = this.shadowRoot.getElementById("btn-report");
-    const origText = btn ? btn.innerHTML : "📋 Copy Trace";
+    const origText = btn ? btn.innerHTML : "📋 Copy Capture";
     if (btn) btn.innerHTML = "⏳ Generating...";
 
     // Try fetching the freshest gateway & buffer telemetry from backend
@@ -1212,8 +1214,10 @@ ${framesText}
 
     if (btn) {
       btn.innerHTML = copied ? "✅ Copied & Opened!" : "⚠️ Check Console";
+      // label follows the capture kind again once the confirmation fades
       setTimeout(() => {
         if (btn) btn.innerHTML = origText;
+        this._refreshExportLabel();
       }, 3000);
     }
 

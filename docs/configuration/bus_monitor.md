@@ -87,7 +87,8 @@ The card interface provides a live telemetry stream and controls:
   myhome_sweep_MH200N_all_2026-09-13T11-52-19.json        buffer populated by a Sweep Bus click
   ```
 
-  `kind` is derived, not chosen: if the last **Sweep Bus** click falls inside the captured window the export is a `sweep` (device inventory), otherwise a `trace`. After a sweep the button reads **Export Sweep** for as long as that holds. Clear the filters first if you want the whole buffer.
+  `kind` is derived, not chosen: if the last **Sweep Bus** click falls inside the captured window the export is a `sweep` (device inventory), otherwise a `trace`. After a sweep the buttons read **Export Sweep** / **Copy Sweep** for as long as that holds. Clear the filters first if you want the whole buffer.
+- **📋 Copy Capture / Copy Sweep**: copies the same shown frames as a markdown diagnostic bundle (environment, gateway, capture kind, active filter, frames) to the clipboard and opens the GitHub issue form.
 
 ### 4. Time stamps
 
