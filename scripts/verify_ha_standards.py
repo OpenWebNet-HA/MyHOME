@@ -338,7 +338,7 @@ def check_manifest_requirements_rule(checker: StandardsChecker):
 
 
 def check_quality_scale_rules(checker: StandardsChecker):
-    """Enforce Home Assistant Integration Quality Scale (Bronze, Silver, Gold, Platinum/Diamond)."""
+    """Enforce Home Assistant Integration Quality Scale (Bronze, Silver, Gold, Platinum)."""
     # 1. [BRONZE] Runtime Data
     init_file = CUSTOM_COMPONENTS_DIR / "__init__.py"
     if init_file.exists():
@@ -485,7 +485,7 @@ def check_quality_scale_rules(checker: StandardsChecker):
     else:
         checker.log_ok("[GOLD] diagnostics: diagnostics.py platform implemented.")
 
-    # 9. [DIAMOND/PLATINUM] Async Dependency (No blocking libraries)
+    # 9. [PLATINUM] Async Dependency (No blocking libraries)
     manifest_file = CUSTOM_COMPONENTS_DIR / "manifest.json"
     if manifest_file.exists():
         try:
@@ -496,21 +496,21 @@ def check_quality_scale_rules(checker: StandardsChecker):
             found_blocking = [r for r in reqs if any(b in r.lower() for b in blocking_libs)]
             if found_blocking:
                 checker.log_error(
-                    "RULE_IQS_DIAMOND",
+                    "RULE_IQS_PLATINUM",
                     manifest_file,
                     1,
                     f"Quality Scale Platinum rule 'async-dependency': blocking library found in requirements: {found_blocking}",
                 )
             else:
-                checker.log_ok("[DIAMOND] async-dependency: zero blocking network libraries in manifest requirements.")
+                checker.log_ok("[PLATINUM] async-dependency: zero blocking network libraries in manifest requirements.")
         except Exception as e:
-            checker.log_error("RULE_IQS_DIAMOND", manifest_file, 1, f"Failed parsing manifest.json: {e}")
+            checker.log_error("RULE_IQS_PLATINUM", manifest_file, 1, f"Failed parsing manifest.json: {e}")
 
-    # 10. [DIAMOND/PLATINUM] Quality Scale Manifest Audit
+    # 10. [PLATINUM] Quality Scale Manifest Audit
     qs_file = CUSTOM_COMPONENTS_DIR / "quality_scale.yaml"
     if not qs_file.exists():
         checker.log_error(
-            "RULE_IQS_DIAMOND",
+            "RULE_IQS_PLATINUM",
             qs_file,
             1,
             "Quality Scale audit manifest quality_scale.yaml must exist in custom_components/myhome/",
@@ -525,16 +525,16 @@ def check_quality_scale_rules(checker: StandardsChecker):
             invalid_rules = [k for k, v in rules.items() if isinstance(v, dict) and v.get("status") not in valid_statuses]
             if invalid_rules:
                 checker.log_error(
-                    "RULE_IQS_DIAMOND",
+                    "RULE_IQS_PLATINUM",
                     qs_file,
                     1,
                     f"quality_scale.yaml has invalid status for rules: {invalid_rules}",
                 )
             else:
                 done_count = sum(1 for v in rules.values() if isinstance(v, dict) and v.get("status") in ("done", "exempt"))
-                checker.log_ok(f"[DIAMOND] quality_scale.yaml validated ({done_count}/{len(rules)} rules satisfied/exempt).")
+                checker.log_ok(f"[PLATINUM] quality_scale.yaml validated ({done_count}/{len(rules)} rules satisfied/exempt).")
         except Exception as e:
-            checker.log_error("RULE_IQS_DIAMOND", qs_file, 1, f"Failed parsing quality_scale.yaml: {e}")
+            checker.log_error("RULE_IQS_PLATINUM", qs_file, 1, f"Failed parsing quality_scale.yaml: {e}")
 
 
 def check_ownd_library_standards(checker: StandardsChecker):
