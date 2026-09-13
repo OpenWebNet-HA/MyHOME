@@ -122,3 +122,46 @@ def test_require_gate(tmp_path: Path):
 
 def test_badge_for_no_tier():
     assert "not yet bronze" in qs.badge_svg("none")
+
+
+def test_readme_block_rendering_and_update(tmp_path: Path):
+    statuses = {r: "done" for r in ALL_RULES}
+    statuses["brands"] = "todo"
+    result = qs.audit(qs.load_manifest(_manifest(tmp_path, statuses)))
+    block = qs.readme_block(result)
+    assert "**Tier reached: — none yet**" in block
+    assert "| 🥉 Bronze | 19 / 20 | ⏳ next — blocked by `brands` |" in block
+    assert "| 🥈 Silver | 10 / 10 | ✅ all rules satisfied (waiting on lower tier) |" in block
+    assert "| 🏆 Platinum | 3 / 3 | ✅ all rules satisfied (waiting on lower tier) |" in block
+
+    readme = tmp_path / "README.md"
+    readme.write_text(
+        "# x\n\n<!-- START_QUALITY_SCALE -->\nSTALE_BLOCK\n<!-- END_QUALITY_SCALE -->\n\ntail\n", encoding="utf-8"
+    )
+    assert qs.update_readme(readme, result) is True
+    content = readme.read_text(encoding="utf-8")
+    assert "STALE_BLOCK" not in content and block in content and content.endswith("tail\n")
+    assert qs.update_readme(readme, result) is False  # idempotent
+
+    # markers missing -> error surfaced through the CLI
+    bare = tmp_path / "bare.md"
+    bare.write_text("no markers", encoding="utf-8")
+    assert qs.main(["--manifest", str(_manifest(tmp_path, statuses)), "--quiet", "--update-readme", str(bare)]) == 2
+
+
+def test_readme_block_marks_open_tiers_and_complete_tiers(tmp_path: Path):
+    statuses = {r: "done" for r in ALL_RULES}
+    statuses["strict-typing"] = "todo"
+    statuses["repair-issues"] = "todo"
+    block = qs.readme_block(qs.audit(qs.load_manifest(_manifest(tmp_path, statuses))))
+    assert "| 🥉 Bronze | 20 / 20 | ✅ complete |" in block
+    assert "| 🥇 Gold | 20 / 21 | ⏳ next — blocked by `repair-issues` |" in block
+    assert "| 🏆 Platinum | 2 / 3 | ⬜ 1 rule(s) open |" in block
+
+
+def test_repo_readme_block_is_current():
+    """The committed README table must match the manifest (the workflow keeps it so)."""
+    readme = REPO_ROOT / "README.md"
+    result = qs.audit(qs.load_manifest(MANIFEST))
+    assert qs.readme_block(result) in readme.read_text(encoding="utf-8")
+
