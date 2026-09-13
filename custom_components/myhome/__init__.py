@@ -3,10 +3,10 @@ import asyncio
 import hashlib
 import os
 
-from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntry
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_MAC
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -23,14 +23,14 @@ from .const import (
     CONF_PLATFORMS,
     CONF_WORKER_COUNT,
     CONF_ZONE,
+    DATA_OWND_VERSION,
     DOMAIN,
     INTEGRATION_VERSION,
     LOGGER,
-    REQUIRED_OWND_VERSION,
     get_ownd_version,
 )
 from .gateway import MyHOMEGatewayHandler
-from .services import async_setup_services, async_unload_services
+from .services import async_setup_services
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 PLATFORMS = ["light", "switch", "cover", "climate", "binary_sensor", "sensor", "media_player", "button", "alarm_control_panel"]
@@ -106,17 +106,6 @@ async def _async_register_lovelace_resource(hass: HomeAssistant, url_path: str) 
         return False
 
 
-def _sync_www_card(card_path: str, www_path: str) -> None:
-    """Synchronize bus monitor card to /config/www/ as an additional fail-safe source."""
-    try:
-        os.makedirs(os.path.dirname(www_path), exist_ok=True)
-        import shutil
-        shutil.copy2(card_path, www_path)
-        LOGGER.debug("Synchronized bus monitor card to %s", www_path)
-    except Exception as err:
-        LOGGER.debug("Could not copy card to www: %s", err)
-
-
 async def _async_register_frontend(hass: HomeAssistant) -> None:
     """Register the Lovelace bus monitor card static resource and script."""
     domain_data = hass.data.setdefault(DOMAIN, {})
@@ -147,13 +136,6 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
                 http.register_static_path("/myhome_static", frontend_dir, False)
                 http.register_static_path(static_url, card_path, False)
 
-            # Also sync to /config/www/myhome-bus-card.js so /local/ is guaranteed to serve it
-            if hasattr(hass, "config") and hasattr(hass.config, "path"):
-                www_dir = hass.config.path("www")
-                if www_dir:
-                    www_card_path = os.path.join(www_dir, "myhome-bus-card.js")
-                    await hass.async_add_executor_job(_sync_www_card, card_path, www_card_path)
-
             try:
                 from homeassistant.components import frontend
                 frontend.add_extra_js_url(hass, versioned_url)
@@ -180,85 +162,28 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
             domain_data["_lovelace_listener_registered"] = True
 
 
-async def async_ensure_ownd_engine(hass: HomeAssistant) -> bool:
-    """Ensure that the exact matching OWNd engine requirement is installed and loaded."""
-    required_pkg = f"OWNd=={REQUIRED_OWND_VERSION}"
-    from homeassistant.util import package as pkg_util
-
-    # Fast path: requirement satisfied and currently loaded version matches
-    current_ver = await hass.async_add_executor_job(get_ownd_version)
-    is_installed = await hass.async_add_executor_job(pkg_util.is_installed, required_pkg)
-    if is_installed and current_ver == REQUIRED_OWND_VERSION:
-        return True
-
-    LOGGER.warning(
-        "OWNd engine mismatch detected (installed: %s, required: %s). "
-        "Attempting automatic self-healing installation via Home Assistant package manager...",
-        current_ver,
-        required_pkg,
-    )
-
-    # 1. Install missing/outdated distribution from PyPI via Home Assistant's native processor
-    if not is_installed:
-        try:
-            from homeassistant.requirements import async_process_requirements
-            await async_process_requirements(hass, DOMAIN, [required_pkg])
-            if hasattr(get_ownd_version, "cache_clear"):
-                get_ownd_version.cache_clear()
-            LOGGER.info("Successfully installed matching requirement %s", required_pkg)
-        except Exception as err:
-            LOGGER.error("Automatic installation of %s failed: %s", required_pkg, err)
-            try:
-                from homeassistant.components import persistent_notification
-                persistent_notification.async_create(
-                    hass,
-                    title="MyHOME Engine Mismatch",
-                    message=(
-                        f"MyHOME integration v{INTEGRATION_VERSION} requires OWNd v{REQUIRED_OWND_VERSION}, "
-                        f"but detected {current_ver}.\n\n"
-                        f"Automatic package upgrade failed ({err}). Please check network connectivity or run:\n"
-                        f"```bash\npip install '{required_pkg}'\n```"
-                    ),
-                    notification_id="myhome_ownd_version_mismatch",
-                )
-            except Exception:  # pragma: no cover
-                pass
-            return False
-
-    # 2. Invalidate importlib caches and reload loaded in-memory OWNd modules
-    import importlib
-    import sys
-
-    if hasattr(get_ownd_version, "cache_clear"):
-        get_ownd_version.cache_clear()
-    importlib.invalidate_caches()
-    for mod_name in list(sys.modules.keys()):
-        if mod_name == "OWNd" or mod_name.startswith("OWNd."):
-            try:
-                importlib.reload(sys.modules[mod_name])
-            except Exception as reload_err:  # pragma: no cover
-                LOGGER.debug("Could not reload module %s: %s", mod_name, reload_err)
-
-    new_ver = await hass.async_add_executor_job(get_ownd_version)
-    LOGGER.info("Self-healing complete: OWNd engine synchronized to v%s", new_ver)
-    return True
+async def _async_resolve_ownd_version(hass: HomeAssistant) -> str:
+    """Resolve the installed OWNd version once, off the event loop, and cache it."""
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    if DATA_OWND_VERSION not in domain_data:
+        domain_data[DATA_OWND_VERSION] = await hass.async_add_executor_job(get_ownd_version)
+    return domain_data[DATA_OWND_VERSION]
 
 
 async def async_setup(hass, config):
     """Set up the MyHOME component."""
     hass.data.setdefault(DOMAIN, {})
 
-    await async_ensure_ownd_engine(hass)
-
     LOGGER.info(
         "Initializing MyHOME integration v%s (OWNd v%s)",
         INTEGRATION_VERSION,
-        await hass.async_add_executor_job(get_ownd_version),
+        await _async_resolve_ownd_version(hass),
     )
 
     from .websocket import async_setup_websocket_api
     async_setup_websocket_api(hass)
     await _async_register_frontend(hass)
+    await async_setup_services(hass)
 
     if DOMAIN not in config:
         return True
@@ -283,22 +208,12 @@ def _device_for_identifier(
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
-    if not await async_ensure_ownd_engine(hass):
-        ownd_ver = await hass.async_add_executor_job(get_ownd_version)
-        raise ConfigEntryNotReady(
-            f"Required OWNd engine version {REQUIRED_OWND_VERSION} is not available (found: {ownd_ver})"
-        )
-
-    from .websocket import async_setup_websocket_api
-    async_setup_websocket_api(hass)
-    await _async_register_frontend(hass)
-
-    ownd_ver = await hass.async_add_executor_job(get_ownd_version)
+    """Set up a MyHOME gateway from a config entry."""
     LOGGER.info(
         "Setting up MyHOME gateway '%s' (v%s, OWNd v%s)",
         entry.title,
         INTEGRATION_VERSION,
-        ownd_ver,
+        await _async_resolve_ownd_version(hass),
     )
 
     if entry.data[CONF_MAC] not in hass.data[DOMAIN]:
@@ -553,19 +468,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         )
 
     if not tests_results.get("Success", False):
-        if (
-            tests_results.get("Message") == "password_error"
-            or tests_results.get("Message") == "password_required"
-        ):
-            hass.async_create_task(
-                hass.config_entries.flow.async_init(
-                    DOMAIN,
-                    context={"source": SOURCE_REAUTH, "entry_id": entry.entry_id},
-                    data=entry.data,
-                )
-            )
         del hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY]
-        return False
+        hass.data[DOMAIN][entry.data[CONF_MAC]].pop("bus_monitor", None)
+        reason = tests_results.get("Message")
+        if reason in ("password_error", "password_required"):
+            # Home Assistant starts the reauth flow and shows the entry as
+            # "Reauthentication required" instead of "Failed to set up".
+            raise ConfigEntryAuthFailed(f"Gateway rejected the OpenWebNet password ({reason})")
+        raise ConfigEntryNotReady(f"Gateway connection test failed at {entry.data[CONF_HOST]}: {reason}")
 
     _command_worker_count = (
         int(entry.options[CONF_WORKER_COUNT])
@@ -605,6 +515,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].device_registry_id = (
         gateway_device_entry.id
     )
+
+    # runtime_data is the source of truth; hass.data is kept for legacy readers.
+    entry.runtime_data = gateway
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -702,33 +615,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             )
         )
 
-    # Static entity pruning has been removed in favor of dynamic discovery.
-
-    # Set modern runtime_data while maintaining backwards-compatible hass.data
-    entry.runtime_data = gateway
-
-    # Register domain services
-    await async_setup_services(hass)
-
     return True
 
 
-async def async_unload_entry(hass, entry):
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-
     LOGGER.info("Unloading MyHome entry.")
 
-    for platform in PLATFORMS:
-        await hass.config_entries.async_forward_entry_unload(entry, platform)
-
-    # Check if there are other configured entries before unloading services
-    entries = [
-        e for e in hass.config_entries.async_entries(DOMAIN) if e.entry_id != entry.entry_id
-    ]
-    if not entries:
-        await async_unload_services(hass)
+    if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+        return False
 
     gateway_handler = hass.data[DOMAIN][entry.data[CONF_MAC]].pop(CONF_ENTITY)
     del hass.data[DOMAIN][entry.data[CONF_MAC]]
+    entry.runtime_data = None
 
     return await gateway_handler.close_listener()
