@@ -76,9 +76,17 @@ The card interface provides a live telemetry stream and controls:
 - **Direction Filter**: Switch between `All`, `RX Only` (bus events), or `TX Only` (commands sent from Home Assistant).
 - **Free-Text & Regex Search**: Search for specific addresses (e.g. `*1*1*12##` or `12#1`).
 
-### 3. Diagnostic Actions
-- **🧹 Sweep Bus**: A 1-click button that invokes the `myhome.sweep_bus` service. It queries the current status of all lighting actuators, shutters, climate probes, and gateway clocks to immediately hydrate the ring buffer with fresh data.
-- **💾 Export Capture**: Downloads the frames **currently shown** (active WHO / WHERE / direction filters applied) as a structured `.json` file with timestamps, parsed attributes, direction and ACK/NACK flags. The file name tells you what it is:
+### 3. Capturing: Start Trace vs Sweep Bus
+
+Two ways to begin a capture. **Both are harmless** — neither can switch a load, move a shutter or touch the alarm.
+
+- **🔴 Start Trace**: clears the buffer and records what the bus says while you reproduce a problem (press a wall switch, run an automation, move a cover). Nothing is sent. Use this for bug reports about behaviour.
+- **🧹 Sweep Bus**: clears the buffer and invokes `myhome.sweep_bus`, which sends one read-only status request per subsystem; every device answers with its current state, so the buffer becomes a **device inventory**. Use this for "which devices does the integration see" questions (duplicates, missing zones).
+- **Clear** returns to trace mode. Without pressing anything, the live buffer is a trace.
+- The **ⓘ** button opens this explanation inside the card.
+
+### 4. Export / Copy
+- **💾 Export Trace / Export Sweep**: downloads the frames **currently shown** (active WHO / WHERE / direction filters applied) as a structured `.json` file with timestamps, parsed attributes, direction and ACK/NACK flags. The label follows the capture kind you chose, and so does the file name:
 
   ```
   myhome_<kind>_<gateway model>_<filter>_<UTC timestamp>.json
@@ -87,14 +95,18 @@ The card interface provides a live telemetry stream and controls:
   myhome_sweep_MH200N_all_2026-09-13T11-52-19.json        buffer populated by a Sweep Bus click
   ```
 
-  `kind` is derived, not chosen: if the last **Sweep Bus** click falls inside the captured window the export is a `sweep` (device inventory), otherwise a `trace`. After a sweep the buttons read **Export Sweep** / **Copy Sweep** for as long as that holds. Clear the filters first if you want the whole buffer.
-- **📋 Copy Capture / Copy Sweep**: copies the same shown frames as a markdown diagnostic bundle (environment, gateway, capture kind, active filter, frames) to the clipboard and opens the GitHub issue form.
+  Clear the filters first if you want the whole buffer.
+- **📋 Copy Trace / Copy Sweep**: copies the same shown frames as a markdown diagnostic bundle (environment, gateway, capture kind, active filter, frames) to the clipboard and opens the GitHub issue form.
 
-### 4. Time stamps
+### 5. Transmit frame (⚠️ direct bus command)
+
+The bar at the bottom writes a raw OpenWebNet frame to the SCS bus exactly as typed. That **can** switch loads, move shutters, or arm/disarm the burglar alarm, so it is disabled until you tick **I understand the risk** in the orange bar above it; the bar turns red while armed. Untick it when you are done. Start Trace and Sweep Bus never use this path. (The backend additionally refuses the command for non-administrator users.)
+
+### 6. Time stamps
 
 Frames are stamped in **UTC** by the integration (`timestamp` / `iso_time`) and rendered by the card in the **browser's local time zone**, so they line up with the Home Assistant logbook. Exports keep the UTC values. *(#305)*
 
-### 5. Permissions
+### 7. Permissions
 
 Reading the stream, history and gateway info is available to any signed-in user. **Send frame** and **Clear buffer** require an **administrator** user: a non-admin (or a kiosk/long-lived token created by one) gets `Unauthorized`, because a raw `*5*…##` frame can arm or disarm the burglar alarm.
 
@@ -107,7 +119,7 @@ Every export starts with a `capture` block describing what the file is, so it st
 ```json
 "capture": {
   "kind": "sweep",
-  "sweep_at": "2026-09-13T11:52:15.104Z",
+  "started_at": "2026-09-13T11:52:15.104Z",
   "filters": { "who": "2", "where": null, "direction": "rx" },
   "window": {
     "first": "2026-09-13T11:49:44.845Z",
