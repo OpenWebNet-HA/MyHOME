@@ -80,7 +80,7 @@ The card interface provides a live telemetry stream and controls:
 
 Two ways to begin a capture. **Both are harmless** — neither can switch a load, move a shutter or touch the alarm.
 
-- **🔴 Start Trace**: clears the buffer and records what the bus says while you reproduce a problem (press a wall switch, run an automation, move a cover). Nothing is sent. Use this for bug reports about behaviour.
+- **🔴 Start Trace / ⏹ Stop Trace**: clears the buffer and records what the bus says while you reproduce a problem (press a wall switch, run an automation, move a cover); the badge shows **● REC**. Nothing is sent. **Stop Trace** freezes the buffer (same as Pause) so the export is exactly what you reproduced; **Resume** returns to the live view. Use this for bug reports about behaviour.
 - **🧹 Sweep Bus**: clears the buffer and invokes `myhome.sweep_bus`, which sends one read-only status request per subsystem; every device answers with its current state, so the buffer becomes a **device inventory**. Use this for "which devices does the integration see" questions (duplicates, missing zones).
 - **Clear** returns to trace mode. Without pressing anything, the live buffer is a trace.
 - The **ⓘ** button opens this explanation inside the card.

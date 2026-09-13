@@ -48,6 +48,8 @@ class MyHomeBusCard extends HTMLElement {
     this._captureMode = "trace";
     this._lastSweepAt = null;
     this._traceStartedAt = null;
+    // True between Start Trace and Stop Trace (or Pause / Clear / Sweep Bus).
+    this._tracing = false;
     // Raw-frame transmission must be armed explicitly (see _toggleArmed).
     this._sendArmed = false;
     this._helpOpen = false;
@@ -221,6 +223,9 @@ class MyHomeBusCard extends HTMLElement {
     if (this._isPaused) {
       badge.textContent = "PAUSED";
       badge.className = "badge badge-paused";
+    } else if (this._tracing && this._connectionStatus === "connected") {
+      badge.textContent = "● REC";
+      badge.className = "badge badge-recording";
     } else if (this._connectionStatus === "connected") {
       badge.textContent = "LIVE";
       badge.className = "badge badge-live";
@@ -477,6 +482,12 @@ class MyHomeBusCard extends HTMLElement {
           background: rgba(244, 67, 54, 0.15);
           color: #d32f2f;
         }
+        .badge-recording {
+          background: rgba(198, 40, 40, 0.2);
+          color: #ef5350;
+          animation: rec-blink 1.2s ease-in-out infinite;
+        }
+        @keyframes rec-blink { 50% { opacity: 0.45; } }
         .placeholder-msg {
           color: #888;
           font-style: italic;
@@ -732,8 +743,8 @@ class MyHomeBusCard extends HTMLElement {
 
         <div id="help-panel" class="help-panel">
           <p><strong>Two ways to capture, both harmless:</strong></p>
-          <h4>🔴 Start Trace</h4>
-          <p>Clears the buffer and records what the bus says while you reproduce a problem (press a wall switch, run an automation, move a cover). Nothing is sent to the bus. Then <em>Export Trace</em> or <em>Copy Trace</em>.</p>
+          <h4>🔴 Start Trace / ⏹ Stop Trace</h4>
+          <p>Clears the buffer and records what the bus says while you reproduce a problem (press a wall switch, run an automation, move a cover). Nothing is sent to the bus. <em>Stop Trace</em> freezes the buffer; then <em>Export Trace</em> or <em>Copy Trace</em>. <em>Resume</em> returns to the live view.</p>
           <h4>🧹 Sweep Bus</h4>
           <p>Clears the buffer and sends one status request per subsystem (<code>*#1*0##</code>-style queries). Every device answers with its current state, so the buffer becomes a device inventory. Only read-only status requests are sent. Then <em>Export Sweep</em> / <em>Copy Sweep</em>.</p>
           <h4>💾 Export / 📋 Copy</h4>
@@ -821,15 +832,34 @@ class MyHomeBusCard extends HTMLElement {
     this._refreshExportLabel();
   }
 
+  _setTracing(on) {
+    this._tracing = !!on;
+    const btn = this.shadowRoot && this.shadowRoot.getElementById("btn-trace");
+    if (btn) btn.innerHTML = this._tracing ? "⏹ Stop Trace" : "🔴 Start Trace";
+    this._updateBadge();
+  }
+
   async _handleStartTrace() {
+    if (this._tracing) {
+      // Stop: freeze the buffer so the export is exactly what was reproduced.
+      this._setTracing(false);
+      if (!this._isPaused) this._togglePause();
+      this._showBanner(
+        "banner-success",
+        `<span><strong>⏹ Trace stopped.</strong> ${this._frames.length} frame(s) captured and frozen. Click <em>Export Trace</em> or <em>Copy Trace</em>; <em>Resume</em> goes back to the live view.</span>`,
+        8000
+      );
+      return;
+    }
     await this._clearBuffer();
     this._traceStartedAt = Date.now() / 1000;
     this._lastSweepAt = null;
     this._setCaptureMode("trace");
     if (this._isPaused) this._togglePause();
+    this._setTracing(true);
     this._showBanner(
       "banner-success",
-      `<span><strong>🔴 Trace started.</strong> Reproduce the problem now (wall switch, automation, cover...), then click <em>Export Trace</em> or <em>Copy Trace</em>. Nothing is sent to the bus.</span>`,
+      `<span><strong>🔴 Trace running.</strong> Reproduce the problem now (wall switch, automation, cover...), then click <em>Stop Trace</em> and export. Nothing is sent to the bus.</span>`,
       8000
     );
   }
@@ -873,12 +903,14 @@ class MyHomeBusCard extends HTMLElement {
     if (btn) {
       btn.textContent = this._isPaused ? "Resume" : "Pause";
     }
+    if (this._isPaused && this._tracing) this._setTracing(false);
     this._updateBadge();
   }
 
   async _clearBuffer() {
     this._frames = [];
     this._lastSweepAt = null;
+    this._setTracing(false);
     this._setCaptureMode("trace");
     this._updateFrameList();
     this._updateStats();
