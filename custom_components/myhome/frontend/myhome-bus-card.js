@@ -53,6 +53,10 @@ class MyHomeBusCard extends HTMLElement {
     // Raw-frame transmission must be armed explicitly (see _toggleArmed).
     this._sendArmed = false;
     this._helpOpen = false;
+    // Cover calibration panel: live status per cover entity from myhome_cover_calibration events
+    this._coversOpen = false;
+    this._calibration = {};
+    this._unsubCalibration = null;
     this._unsub = null;
     this._stats = { captured: 0, total_rx: 0, total_tx: 0 };
     this._gatewayInfo = {};
@@ -119,6 +123,10 @@ class MyHomeBusCard extends HTMLElement {
   }
 
   disconnectedCallback() {
+    if (this._unsubCalibration) {
+      try { this._unsubCalibration(); } catch (e) {}
+      this._unsubCalibration = null;
+    }
     if (this._retryTimeout) {
       clearTimeout(this._retryTimeout);
       this._retryTimeout = null;
@@ -662,6 +670,36 @@ class MyHomeBusCard extends HTMLElement {
         .help-panel p, .help-panel ul { margin: 4px 0; }
         .help-panel ul { padding-left: 18px; }
         .help-panel code { font-size: 0.78rem; }
+        .btn-covers {
+          background: #6a1b9a;
+          color: #fff;
+        }
+        .btn-covers.open { background: #8e24aa; }
+        .covers-panel {
+          display: none;
+          margin: 0 0 12px 0;
+          padding: 10px 14px;
+          border-radius: 6px;
+          border: 1px solid var(--divider-color, #555);
+          background: var(--secondary-background-color, #263238);
+          font-size: 0.82rem;
+          line-height: 1.45;
+        }
+        .covers-panel h4 { margin: 0 0 6px 0; font-size: 0.9rem; }
+        .covers-panel p { margin: 4px 0 8px 0; }
+        .covers-panel table { width: 100%; border-collapse: collapse; margin: 6px 0; }
+        .covers-panel th, .covers-panel td { text-align: left; padding: 4px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); vertical-align: middle; }
+        .covers-panel th { font-weight: 600; opacity: 0.8; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; }
+        .covers-panel td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .covers-panel .src-measured { color: #66bb6a; font-weight: 600; }
+        .covers-panel .src-yaml { color: #ffca28; }
+        .covers-panel .src-default { color: #ef9a9a; }
+        .covers-panel .status-run { color: #4fc3f7; }
+        .covers-panel .status-done { color: #66bb6a; }
+        .covers-panel .status-failed { color: #ef5350; }
+        .covers-panel button.small { height: 26px; padding: 0 10px; font-size: 0.75rem; }
+        .covers-panel .panel-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+        .covers-panel .warn { font-size: 0.78rem; opacity: 0.85; }
         .arm-bar {
           display: flex;
           align-items: center;
@@ -755,11 +793,27 @@ class MyHomeBusCard extends HTMLElement {
                 📋 Copy Trace
               </button>
             </div>
+            <div class="group tools" aria-label="Tools">
+              <button id="btn-covers" class="btn-covers" title="Measure the travel time of timed covers on the bus and store it (opens a panel; nothing moves until you confirm)">
+                🪟 Covers
+              </button>
+            </div>
             <div class="group stream" aria-label="Stream">
               <button id="btn-pause" class="btn-secondary">Pause</button>
               <button id="btn-clear" class="btn-secondary">Clear</button>
             </div>
           </div>
+        </div>
+
+        <div id="covers-panel" class="covers-panel">
+          <h4>🪟 Calibrate cover travel times</h4>
+          <p>Timed covers estimate their position from a travel time. Calibration drives a cover <strong>fully up</strong>, then <strong>fully down</strong> (timed), then <strong>fully up</strong> (timed) and stores the measured times. Covers run one at a time; the shutter will move for about three full travels.</p>
+          <div id="covers-list"></div>
+          <div class="panel-actions">
+            <button id="btn-calibrate-all" class="btn-covers small">Calibrate all covers</button>
+            <span id="covers-estimate" class="warn"></span>
+          </div>
+          <p class="warn">Measured values are the actuator's run times; they equal the physical travel when the installer calibrated the actuator. If a shutter visibly stops before the timer ends, set <code>travel_time</code> manually in <code>myhome.yaml</code>.</p>
         </div>
 
         <div id="help-panel" class="help-panel">
@@ -770,6 +824,8 @@ class MyHomeBusCard extends HTMLElement {
           <p>Clears the buffer and sends one status request per subsystem (<code>*#1*0##</code>-style queries). Every device answers with its current state, so the buffer becomes a device inventory. Only read-only status requests are sent. Then <em>Export Sweep</em> / <em>Copy Sweep</em>.</p>
           <h4>💾 Export / 📋 Copy</h4>
           <p>Both use the frames <strong>currently shown</strong> (WHO / WHERE / direction filters applied). The file is named <code>myhome_&lt;trace|sweep&gt;_&lt;gateway&gt;_&lt;filter&gt;_&lt;time&gt;.json</code> and starts with a <code>capture</code> block describing what it is. Clear the filters to export the whole buffer.</p>
+          <h4>🪟 Covers</h4>
+          <p>Opens the calibration panel: measure a timed cover's up and down travel on the bus (three full runs, one cover at a time) and store it. Same as the <em>Calibrate travel time</em> button on each cover's device page and the <code>myhome.calibrate_cover</code> action.</p>
           <h4>⚠️ Transmit frame</h4>
           <p>The bar at the bottom writes a raw OpenWebNet frame to the bus - this <strong>can</strong> switch loads, move shutters, arm or disarm the alarm. It stays disabled until you tick <em>I understand the risk</em>. Trace and Sweep never use it.</p>
           <p style="opacity:0.8">Time stamps are shown in your browser's local time; exports keep UTC.</p>
@@ -825,6 +881,12 @@ class MyHomeBusCard extends HTMLElement {
     root.getElementById("btn-trace")?.addEventListener("click", () => this._handleStartTrace());
     root.getElementById("btn-sweep")?.addEventListener("click", () => this._handleSweepBus());
     root.getElementById("btn-help")?.addEventListener("click", () => this._toggleHelp());
+    root.getElementById("btn-covers")?.addEventListener("click", () => this._toggleCovers());
+    root.getElementById("btn-calibrate-all")?.addEventListener("click", () => this._calibrateAll());
+    root.getElementById("covers-list")?.addEventListener("click", (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest("button[data-entity]") : null;
+      if (btn) this._calibrateOne(btn.getAttribute("data-entity"));
+    });
     root.getElementById("arm-send")?.addEventListener("change", (e) => this._toggleArmed(!!e.target.checked));
     root.getElementById("btn-export")?.addEventListener("click", () => this._handleExportTrace());
     root.getElementById("btn-report")?.addEventListener("click", () => this._handleReportIssue());
@@ -883,6 +945,131 @@ class MyHomeBusCard extends HTMLElement {
       `<span><strong>🔴 Trace running.</strong> Reproduce the problem now (wall switch, automation, cover...), then click <em>Stop Trace</em> and export. Nothing is sent to the bus.</span>`,
       8000
     );
+  }
+
+  // ── Cover calibration panel ──────────────────────────────────────────
+
+  _timedCovers() {
+    const states = (this._hass && this._hass.states) || {};
+    return Object.values(states)
+      .filter((st) => st.entity_id.startsWith("cover.") && st.attributes && st.attributes.calibration_source !== undefined)
+      .sort((a, b) => String(a.attributes.friendly_name || a.entity_id).localeCompare(String(b.attributes.friendly_name || b.entity_id)));
+  }
+
+  _estimateMinutes(covers) {
+    // three full runs per cover plus settle pauses, sequential
+    const seconds = covers.reduce((acc, st) => acc + 3 * (Number(st.attributes.travel_time_down) || 25) + 3, 0);
+    return Math.max(1, Math.round(seconds / 60));
+  }
+
+  async _ensureCalibrationSubscription() {
+    if (this._unsubCalibration || !this._hass || !this._hass.connection || !this._hass.connection.subscribeEvents) return;
+    try {
+      this._unsubCalibration = await this._hass.connection.subscribeEvents((ev) => this._onCalibrationEvent(ev), "myhome_cover_calibration");
+    } catch (err) {
+      console.warn("MyHOME Bus Monitor: could not subscribe to calibration events", err);
+    }
+  }
+
+  _onCalibrationEvent(ev) {
+    const data = (ev && ev.data) || {};
+    if (!data.entity_id) return;
+    this._calibration[data.entity_id] = data;
+    this._renderCoversList();
+  }
+
+  _calibrationStatusHtml(entityId) {
+    const c = this._calibration[entityId];
+    if (!c) return "";
+    if (c.phase === "start") return `<span class="status-run">starting…</span>`;
+    if (c.phase === "run") return `<span class="status-run">running ${this._escapeHtml(String(c.direction || ""))}…</span>`;
+    if (c.phase === "done") return `<span class="status-done">✓ down ${Number(c.down).toFixed(1)} s · up ${Number(c.up).toFixed(1)} s</span>`;
+    if (c.phase === "failed") return `<span class="status-failed">✗ ${this._escapeHtml(String(c.error || "failed"))}</span>`;
+    return "";
+  }
+
+  _renderCoversList() {
+    const root = this.shadowRoot;
+    const list = root && root.getElementById("covers-list");
+    if (!list) return;
+    const covers = this._timedCovers();
+    const estimate = root.getElementById("covers-estimate");
+    if (estimate) estimate.textContent = covers.length ? `${covers.length} cover(s), about ${this._estimateMinutes(covers)} min in total` : "";
+    if (!covers.length) {
+      list.innerHTML = `<p class="warn">No timed MyHOME covers found (advanced covers report their position and need no calibration).</p>`;
+      return;
+    }
+    const rows = covers.map((st) => {
+      const a = st.attributes;
+      const name = this._escapeHtml(String(a.friendly_name || st.entity_id));
+      const src = String(a.calibration_source || "default");
+      const when = a.calibrated_at ? new Date(a.calibrated_at).toLocaleString() : "";
+      return `<tr>
+        <td>${name}<br><span class="warn">${this._escapeHtml(st.entity_id)}</span></td>
+        <td class="num">${Number(a.travel_time_down || 0).toFixed(1)} s</td>
+        <td class="num">${Number(a.travel_time_up || 0).toFixed(1)} s</td>
+        <td><span class="src-${this._escapeHtml(src)}">${this._escapeHtml(src)}</span>${when ? `<br><span class="warn">${this._escapeHtml(when)}</span>` : ""}</td>
+        <td>${this._calibrationStatusHtml(st.entity_id)}</td>
+        <td><button class="btn-covers small" data-entity="${this._escapeHtml(st.entity_id)}">Calibrate</button></td>
+      </tr>`;
+    });
+    list.innerHTML = `<table><thead><tr><th>Cover</th><th>Down</th><th>Up</th><th>Source</th><th>Status</th><th></th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+  }
+
+  async _toggleCovers() {
+    this._coversOpen = !this._coversOpen;
+    const panel = this.shadowRoot.getElementById("covers-panel");
+    if (panel) panel.style.display = this._coversOpen ? "block" : "none";
+    const btn = this.shadowRoot.getElementById("btn-covers");
+    if (btn) btn.classList.toggle("open", this._coversOpen);
+    if (this._coversOpen) {
+      await this._ensureCalibrationSubscription();
+      this._renderCoversList();
+    }
+  }
+
+  async _calibrateOne(entityId) {
+    if (!entityId || !this._hass) return;
+    const st = this._hass.states && this._hass.states[entityId];
+    const name = (st && st.attributes && st.attributes.friendly_name) || entityId;
+    const travel = (st && st.attributes && Number(st.attributes.travel_time_down)) || 25;
+    const ok = typeof confirm === "function"
+      ? confirm(`Calibrate "${name}"?\n\nIt will run fully up, fully down and fully up again (about ${Math.round(3 * travel)} s). Continue?`)
+      : true;
+    if (!ok) return;
+    this._calibration[entityId] = { entity_id: entityId, phase: "start" };
+    this._renderCoversList();
+    try {
+      await this._hass.callService("myhome", "calibrate_cover", { entity_id: entityId });
+    } catch (err) {
+      this._calibration[entityId] = { entity_id: entityId, phase: "failed", error: err && err.message ? err.message : String(err) };
+      this._renderCoversList();
+    }
+  }
+
+  async _calibrateAll() {
+    if (!this._hass) return;
+    const covers = this._timedCovers();
+    if (!covers.length) return;
+    const ok = typeof confirm === "function"
+      ? confirm(`Calibrate all ${covers.length} covers, one after another?\n\nEvery shutter will run fully up, fully down and fully up again - about ${this._estimateMinutes(covers)} minutes in total. Continue?`)
+      : true;
+    if (!ok) return;
+    for (const st of covers) {
+      this._calibration[st.entity_id] = { entity_id: st.entity_id, phase: "start" };
+    }
+    this._renderCoversList();
+    try {
+      await this._hass.callService("myhome", "calibrate_cover", { entity_id: covers.map((st) => st.entity_id) });
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      for (const st of covers) {
+        if ((this._calibration[st.entity_id] || {}).phase === "start") {
+          this._calibration[st.entity_id] = { entity_id: st.entity_id, phase: "failed", error: msg };
+        }
+      }
+      this._renderCoversList();
+    }
   }
 
   _toggleHelp() {

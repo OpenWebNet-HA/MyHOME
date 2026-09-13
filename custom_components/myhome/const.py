@@ -76,6 +76,15 @@ CONF_ROTARY_CCW_SLOW = "rotary_ccw_slow"
 CONF_ROTARY_CCW_FAST = "rotary_ccw_fast"
 CONF_TRAVEL_TIME = "travel_time"
 DEFAULT_TRAVEL_TIME = 25
+
+# Cover calibration (timed covers measure their own travel times on the bus)
+CONF_COVER_TRAVEL_TIMES = "cover_travel_times"  # config entry option: {device_id: {...}}
+SERVICE_CALIBRATE_COVER = "calibrate_cover"
+EVENT_COVER_CALIBRATION = "myhome_cover_calibration"
+CALIBRATION_RUN_TIMEOUT = 180.0  # s to wait for the actuator's stop status per run
+CALIBRATION_MIN_RUN = 1.0        # s: anything shorter is not a full travel
+CALIBRATION_MAX_RUN = 300.0      # s: anything longer is an actuator with no run-time limit
+CALIBRATION_SETTLE = 1.0         # s pause between runs so the actuator relay settles
 WHO_BURGLAR_ALARM = "5"
 PLATFORM_ALARM = "alarm_control_panel"
 

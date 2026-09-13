@@ -13,6 +13,7 @@ This document provides a comprehensive reference for all custom services registe
 | [`myhome.sync_time`](#myhomesync_time) | Gateway | Synchronize the gateway internal clock with Home Assistant's local time. |
 | [`myhome.start_sending_instant_power`](#myhomestart_sending_instant_power) | `sensor` | Request a temporary continuous stream of instant power readings from an energy meter. |
 | [`myhome.sweep_bus`](#myhomesweep_bus) | Gateway | Actively poll status across all subsystems to populate diagnostic buffers. |
+| [`myhome.calibrate_cover`](#myhomecalibrate_cover) | `cover` | Measure a timed cover's up and down travel times on the bus and store them. |
 
 ---
 
@@ -118,4 +119,30 @@ Actively queries status across all configured subsystems (lighting, automation, 
 ### Example YAML Call
 ```yaml
 action: myhome.sweep_bus
+```
+
+---
+
+## 6. `myhome.calibrate_cover`
+
+Measures a timed cover's travel times **on the bus** and stores them, replacing the guessed `travel_time`. The cover is driven fully **up** (so its position is known), then fully **down** (timed), then fully **up** again (timed). Covers of one gateway are calibrated **one at a time** — a single-session gateway cannot drive two motors reliably and overlapping runs would confuse the timing. The shutter moves for about three full travels; do not run it while the shutter must stay put.
+
+The measured values are the actuator's run times (motor start → actuator stop status). They equal the physical travel when the installer calibrated the actuator's run-time parameter, which is the usual case; if a shutter visibly stops before the timer ends, set `travel_time` manually in `myhome.yaml` instead.
+
+Results are stored in the config entry options (`cover_travel_times`), survive restarts and reinstalls, apply to discovered covers without any YAML, and show up as entity attributes: `travel_time_down`, `travel_time_up`, `calibration_source` (`measured` / `yaml` / `default`), `calibrated_at`. Advanced covers (which report their position) are refused. Progress is published on the event bus as `myhome_cover_calibration` (`phase`: `start`, `run`, `done`, `failed`).
+
+The same action sits behind the **Calibrate travel time** button on every timed cover's device page, the **Calibrate all covers** button on the gateway device, and the **🪟 Covers** panel of the bus-monitor card.
+
+### Fields
+| Parameter | Type | Required | Description | Example |
+| :--- | :---: | :---: | :--- | :--- |
+| `entity_id` | target | Yes | One or more MyHOME cover entities (`all` for every cover). | `cover.bedroom_shutter` |
+
+### Example YAML Call
+```yaml
+action: myhome.calibrate_cover
+target:
+  entity_id:
+    - cover.bedroom_shutter
+    - cover.kitchen_shutter
 ```
