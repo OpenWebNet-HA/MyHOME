@@ -38,9 +38,9 @@ test = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/anotherjulien/MyHOME"
-Documentation = "https://github.com/anotherjulien/MyHOME"
-Issues = "https://github.com/anotherjulien/MyHOME/issues"
+Homepage = "https://github.com/OpenWebNet-HA/MyHOME"
+Documentation = "https://github.com/OpenWebNet-HA/MyHOME"
+Issues = "https://github.com/OpenWebNet-HA/MyHOME/issues"
 
 [tool.setuptools.packages.find]
 include = ["custom_components*"]
