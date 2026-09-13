@@ -665,18 +665,28 @@ class TestTraceReplayHarness:
         cover_02 = hass.states.get("cover.cover_02")
         assert cover_02 is not None
 
-        # 4. Verify WHO=13 Dimension 15 auto-detection:
-        # Gateway sends *#13**15*2## (device type 2 = MHServer / MyHomeServer1)
-        who13_dim15 = OWNMessage.parse("*#13**15*2##")
+        # 4. WHO=13 dimension 15: this MyHOMEServer1 really sends *#13**15*200## (issue #297
+        #    diagnostics; the owner self-identified the hardware in #292). Code 200 is not in
+        #    the 2006 specification, so a manually configured model is questioned, not overruled:
+        #    the model stays F454 and a repair issue asks the owner to confirm.
+        from homeassistant.helpers import issue_registry as ir
+
+        who13_dim15 = OWNMessage.parse("*#13**15*200##")
         await handler._process_message(who13_dim15)
         await hass.async_block_till_done()
 
-        # Model and profile must now be auto-corrected to MyHomeServer1!
-        assert handler.model == "MyHomeServer1"
-        assert handler.profile.model_name == "MyHomeServer1"
-        assert handler.profile.command_queue_delay == 0.02
-        assert entry.data[CONF_NAME] == "MyHomeServer1"
-        assert entry.title == "MyHomeServer1 Gateway"
+        assert handler.model == "F454"
+        assert entry.data[CONF_NAME] == "F454"
+        ident = handler.identification()
+        assert ident["source"] == "manual"
+        assert ident["who13_code"] == "200"
+        assert ident["who13_model_observed"] == "MyHomeServer1"
+        assert ident["who13_model_official"] is None
+        assert "MyHomeServer1" in ident["conflict"]
+        issue = ir.async_get(hass).async_get_issue(DOMAIN, f"gateway_identity_mismatch_{entry.entry_id}")
+        assert issue is not None
+        assert issue.translation_placeholders["reported"] == "MyHomeServer1"
+        assert issue.translation_placeholders["code"] == "200"
 
         # 5. Verify WHO=13 Dimension 16 firmware auto-detection:
         who13_dim16 = OWNMessage.parse("*#13**16*2*40*12##")

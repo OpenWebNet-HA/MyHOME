@@ -105,6 +105,30 @@ See [Runtime Behaviour Notes](runtime_behaviour.md) for the reasoning behind eac
 
 ---
 
+## 🪪 How the gateway model is identified
+
+The model label decides the gateway profile (command sessions, pacing, queue size, which subsystems are queried) and appears in the entry title, the device registry, diagnostics and every bus-monitor export — so it must be right, and it must say *how* it was established.
+
+| Source | Meaning | Trust |
+| :--- | :--- | :--- |
+| `ssdp` | the gateway announced its own `modelName` over UPnP/SSDP | authoritative |
+| `serial` | USB/serial interface (Legrand 3578): model fixed by the transport | authoritative |
+| `manual` | you picked the model in the config flow | trusted, but correctable by certain evidence |
+| `who13` | no model was configured; labelled from the WHO=13 device-type reply | best effort |
+
+**WHO=13 dimension 15 ("MODEL REQUEST", `*#13**15*<code>##`)** is the only in-band identity signal. Its official table — BTicino *OpenWebNet_Community_2_device* v1.0.0, 13 June 2006, §1.2.6 — is complete at six entries: `2` MHServer, `4` MH200, `6` F452, `7` F452V, `11` MHServer2, `13` H4684. Every gateway sold since (F454, F455, MH200N, MH202, MyHOMEServer1…) is absent and reuses or invents codes, so the reply can **corroborate** an identity but never establish one for a modern gateway. Field evidence collected so far: code `200` on a self-identified MyHOMEServer1 (#292/#297).
+
+Rules applied when the reply arrives:
+
+- **Same family** (e.g. configured MH200N, code `4` = MH200): consistent, nothing changes. A variant suffix is never downgraded.
+- **`ssdp` / `serial` contradicted**: model kept; a repair issue *asks* you to confirm.
+- **`manual` contradicted by an official code**: model, profile and device registry are corrected and a repair issue tells you (the old manual flow defaulted to F454, which is how mislabelled entries came to exist).
+- **`manual` contradicted by an observed-only code**: model kept; a repair issue asks you to confirm.
+- **No model configured**: labelled from the code (official first, then observed); the entry records `model_source: who13`.
+- **Unknown code**: recorded, nothing changes — please attach a trace to an issue so the code can be documented.
+
+Every diagnostics download and bus-monitor export carries an `identification` block: the model, its `source`, the raw `who13_code`, what the specification (`who13_model_official`) and field evidence (`who13_model_observed`) say it means, firmware / kernel / distribution from dimensions 16 / 23 / 24, the active profile, and any `conflict`. A trace can therefore never hide a mislabelled gateway.
+
 ## 📦 Manual Installation Pitfalls
 
 When installing a release `myhome.zip` by hand, the archive must be extracted **into** `/config/custom_components/myhome/` — never into `/config/custom_components/` itself:
