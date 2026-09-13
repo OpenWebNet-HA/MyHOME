@@ -5,6 +5,9 @@
  * for BTicino / Legrand MyHOME SCS bus systems via OpenWebNet.
  */
 
+// Fallback only: the live value comes from the backend (bus_monitor/info -> integration_version).
+const CARD_VERSION = "2.0.0b12";
+
 const WHO_CATALOG = {
   "0": { name: "Scenarios (Basic)", short: "Scenario", class: "who-cen" },
   "1": { name: "Lighting / Switches", short: "Light/Switch", class: "who-light" },
@@ -39,6 +42,10 @@ class MyHomeBusCard extends HTMLElement {
     this._filterWho = "all";
     this._filterWhere = "";
     this._filterDir = "all";
+    // Epoch seconds of the last Sweep Bus click: an export whose window contains
+    // it is a "sweep" capture (device inventory), otherwise a passive "trace".
+    this._lastSweepAt = null;
+    this._exportLabelTimeout = null;
     this._unsub = null;
     this._stats = { captured: 0, total_rx: 0, total_tx: 0 };
     this._gatewayInfo = {};
@@ -649,8 +656,8 @@ class MyHomeBusCard extends HTMLElement {
             <button id="btn-sweep" class="btn-sweep" title="Safely query all bus subsystems to discover all devices and populate trace buffer">
               🧹 Sweep Bus
             </button>
-            <button id="btn-export" class="btn-export" title="Download sanitized gateway trace JSON file">
-              💾 Export Trace
+            <button id="btn-export" class="btn-export" title="Download the frames currently shown (active filters applied) as a JSON capture; the file name says whether it is a passive trace or a bus sweep">
+              💾 Export Capture
             </button>
             <button id="btn-report" class="btn-report" title="Copy diagnostic markdown to clipboard and open GitHub issue form">
               📋 Copy Trace
@@ -667,7 +674,7 @@ class MyHomeBusCard extends HTMLElement {
           <div>RX: <span id="stat-rx" class="stat-val">0</span></div>
           <div>TX: <span id="stat-tx" class="stat-val">0</span></div>
           <div>Queue: <span id="stat-queue" class="stat-val">0</span></div>
-          <div style="margin-left: auto; font-size: 0.75rem; opacity: 0.85;">MyHOME <span id="stat-version" class="stat-val">v2.0.0b12</span></div>
+          <div style="margin-left: auto; font-size: 0.75rem; opacity: 0.85;">MyHOME <span id="stat-version" class="stat-val">v${CARD_VERSION}</span></div>
         </div>
 
         <div class="controls">
@@ -780,7 +787,7 @@ class MyHomeBusCard extends HTMLElement {
     if (tx) tx.textContent = this._stats.total_tx;
     if (queue) queue.textContent = (this._gatewayInfo && this._gatewayInfo.queue_depth != null) ? this._gatewayInfo.queue_depth : 0;
     if (ver && this._gatewayInfo) {
-      const intVer = this._gatewayInfo.integration_version || "2.0.0b8";
+      const intVer = this._gatewayInfo.integration_version || CARD_VERSION;
       const owndVer = this._gatewayInfo.ownd_version;
       ver.textContent = owndVer && owndVer !== "unknown" ? `v${intVer} (OWNd ${owndVer})` : `v${intVer}`;
     }
@@ -819,7 +826,7 @@ class MyHomeBusCard extends HTMLElement {
       (this.hass && this.hass.config && this.hass.config.version) ||
       "Unknown";
     const gw = this._gatewayInfo || {};
-    const integrationVersion = gw.integration_version || "2.0.0b8";
+    const integrationVersion = gw.integration_version || CARD_VERSION;
     const owndVersion = gw.ownd_version || "Unknown";
     const timestamp = new Date().toISOString();
 
@@ -856,7 +863,9 @@ class MyHomeBusCard extends HTMLElement {
     if (this._filterDir !== "all") activeFilter.push(`DIR=${this._filterDir.toUpperCase()}`);
     const filterDesc = activeFilter.length > 0 ? activeFilter.join(", ") : "None (All frames)";
 
-    const frameLines = this._frames.map((f) => {
+    const visible = this._visibleFrames();
+    const captureKind = this._captureKind(visible);
+    const frameLines = visible.map((f) => {
       const timeStr = this._formatFrameTime(f);
       const dir = (f.direction || "rx").toUpperCase();
       return `[${timeStr}] [${dir}] ${f.raw || ""}`;
@@ -889,6 +898,7 @@ class MyHomeBusCard extends HTMLElement {
 - **Total TX Frames:** ${totalTx}
 - **Total Captured:** ${captured}
 - **Buffer Depth:** ${bufferDepth}
+- **Capture Kind:** ${captureKind === "sweep" ? "Bus sweep (device inventory)" : "Passive trace"}
 - **Gateway Queue Depth:** ${queueDepth}
 - **Active Card Filter:** ${filterDesc}
 
@@ -917,10 +927,12 @@ ${framesText}
     if (this._hass) {
       try {
         await this._hass.callService("myhome", "sweep_bus", {});
+        this._lastSweepAt = Date.now() / 1000;
+        this._refreshExportLabel();
         if (banner) {
           banner.className = "feedback-banner banner-success";
           banner.innerHTML = `
-            <span><strong>🧹 Bus sweep initiated!</strong> Querying all lighting, automation, heating, and diagnostic states across the bus.</span>
+            <span><strong>🧹 Bus sweep initiated!</strong> Querying all lighting, automation, heating, and diagnostic states across the bus. The next export will be saved as a <em>sweep</em> capture.</span>
           `;
           banner.style.display = "flex";
           this._bannerTimeout = setTimeout(() => {
@@ -950,9 +962,54 @@ ${framesText}
     }, 3000);
   }
 
+  _visibleFrames() {
+    // What the user sees: the ring buffer with the active WHO / WHERE / direction filters applied.
+    return this._frames.filter((f) => this._matchesFilter(f));
+  }
+
+  _captureKind(frames) {
+    // "sweep" when a Sweep Bus click falls inside the captured window (with a little slack for
+    // the sweep's own replies), "trace" for a passive capture.
+    if (this._lastSweepAt == null || frames.length === 0) return "trace";
+    const first = frames[0].timestamp || 0;
+    const last = frames[frames.length - 1].timestamp || 0;
+    return this._lastSweepAt >= first - 2 && this._lastSweepAt <= last + 2 ? "sweep" : "trace";
+  }
+
+  _captureFilters() {
+    return {
+      who: this._filterWho === "all" ? null : String(this._filterWho),
+      where: this._filterWhere ? this._filterWhere.trim() : null,
+      direction: this._filterDir === "all" ? null : this._filterDir,
+    };
+  }
+
+  _captureFilterSlug() {
+    const parts = [];
+    if (this._filterWho !== "all") parts.push(`who${this._filterWho}`);
+    if (this._filterDir !== "all") parts.push(this._filterDir);
+    if (this._filterWhere) parts.push(this._filterWhere.trim().replace(/[^a-z0-9]+/gi, "").slice(0, 12).toLowerCase());
+    return parts.length ? parts.join("-") : "all";
+  }
+
+  _refreshExportLabel() {
+    const btn = this.shadowRoot && this.shadowRoot.getElementById("btn-export");
+    if (!btn) return;
+    if (this._exportLabelTimeout) {
+      clearTimeout(this._exportLabelTimeout);
+      this._exportLabelTimeout = null;
+    }
+    const kind = this._captureKind(this._visibleFrames());
+    btn.innerHTML = kind === "sweep" ? "💾 Export Sweep" : "💾 Export Capture";
+    if (kind === "sweep") {
+      // Sweep replies age out of the window; re-evaluate the label later.
+      this._exportLabelTimeout = setTimeout(() => this._refreshExportLabel(), 60000);
+    }
+  }
+
   async _handleExportTrace() {
     const btn = this.shadowRoot.getElementById("btn-export");
-    const origText = btn ? btn.innerHTML : "💾 Export Trace";
+    const origText = btn ? btn.innerHTML : "💾 Export Capture";
     if (btn) btn.innerHTML = "⏳ Exporting...";
 
     if (this._hass) {
@@ -976,13 +1033,33 @@ ${framesText}
       (this._hass && this._hass.config && this._hass.config.version) ||
       (this.hass && this.hass.config && this.hass.config.version) ||
       "";
-    const integrationVersion = (this._gatewayInfo && this._gatewayInfo.integration_version) || "2.0.0b12";
+    const integrationVersion = (this._gatewayInfo && this._gatewayInfo.integration_version) || CARD_VERSION;
     const owndVersion = (this._gatewayInfo && this._gatewayInfo.ownd_version) || "Unknown";
 
     const timestampIso = new Date().toISOString();
     const timestampFile = timestampIso.replace(/[:.]/g, "-").slice(0, 19);
 
+    const frames = this._visibleFrames();
+    const kind = this._captureKind(frames);
+    const firstTs = frames.length ? frames[0].timestamp : null;
+    const lastTs = frames.length ? frames[frames.length - 1].timestamp : null;
+    const modelSlug = String((this._gatewayInfo && this._gatewayInfo.model) || "gateway").replace(/[^a-z0-9]+/gi, "");
+
     const tracePayload = {
+      capture: {
+        kind,
+        sweep_at: kind === "sweep" ? new Date(this._lastSweepAt * 1000).toISOString() : null,
+        filters: this._captureFilters(),
+        window: {
+          first: firstTs != null ? new Date(firstTs * 1000).toISOString() : null,
+          last: lastTs != null ? new Date(lastTs * 1000).toISOString() : null,
+          frames: frames.length,
+          buffer_frames: this._frames.length,
+          buffer_depth: this._maxDisplayFrames,
+          // the ring buffer had already wrapped: the true start of a sequence may be missing
+          truncated: this._frames.length >= this._maxDisplayFrames,
+        },
+      },
       environment: {
         home_assistant_version: haVersion,
         integration_version: integrationVersion,
@@ -1008,7 +1085,7 @@ ${framesText}
         buffer_depth: this._maxDisplayFrames,
         queue_depth: this._stats.queue_depth || 0,
       },
-      frames: this._frames.map((f) => ({
+      frames: frames.map((f) => ({
         timestamp: f.timestamp,
         iso_time: f.iso_time || null,
         direction: f.direction || null,
@@ -1025,7 +1102,7 @@ ${framesText}
     const blob = new Blob([JSON.stringify(tracePayload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    const fileName = `myhome_gateway_trace_${timestampFile}.json`;
+    const fileName = `myhome_${kind}_${modelSlug}_${this._captureFilterSlug()}_${timestampFile}.json`;
     a.href = url;
     a.download = fileName;
     document.body.appendChild(a);
@@ -1043,8 +1120,8 @@ ${framesText}
       banner.className = "feedback-banner banner-success";
       banner.innerHTML = `
         <div style="display: flex; flex-direction: column; gap: 4px;">
-          <span><strong>✅ Exported trace:</strong> <code>${fileName}</code></span>
-          <span style="font-size: 0.75rem; opacity: 0.9;">Attach this file directly to GitHub Discussion #291 or a bug report.</span>
+          <span><strong>✅ Exported ${kind === "sweep" ? "bus sweep" : "trace"}:</strong> <code>${fileName}</code></span>
+          <span style="font-size: 0.75rem; opacity: 0.9;">${frames.length} of ${this._frames.length} buffered frames (active filters applied). Attach this file directly to GitHub Discussion #291 or a bug report.</span>
         </div>
         <a href="https://github.com/orgs/OpenWebNet-HA/discussions/291" target="_blank" rel="noopener noreferrer" class="banner-link">Open Discussion #291 ↗</a>
       `;
@@ -1058,6 +1135,7 @@ ${framesText}
       btn.innerHTML = "✅ Exported!";
       setTimeout(() => {
         if (btn) btn.innerHTML = origText;
+        this._refreshExportLabel();
       }, 3000);
     }
   }
@@ -1093,7 +1171,7 @@ ${framesText}
       (this._hass && this._hass.config && this._hass.config.version) ||
       (this.hass && this.hass.config && this.hass.config.version) ||
       "";
-    const integrationVersion = (this._gatewayInfo && this._gatewayInfo.integration_version) || "2.0.0b12";
+    const integrationVersion = (this._gatewayInfo && this._gatewayInfo.integration_version) || CARD_VERSION;
     const owndVersion = (this._gatewayInfo && this._gatewayInfo.ownd_version) || "Unknown";
 
     const issueUrl = `https://github.com/OpenWebNet-HA/MyHOME/issues/new?template=bug_report.yml&ha_version=${encodeURIComponent(haVersion)}&integration_version=${encodeURIComponent(integrationVersion)}&ownd_version=${encodeURIComponent(owndVersion)}`;
@@ -1255,7 +1333,7 @@ if (typeof window !== "undefined") {
 }
 
 console.info(
-  "%c MYHOME-BUS-CARD %c v2.0.0b8 ",
+  `%c MYHOME-BUS-CARD %c v${CARD_VERSION} `,
   "background:#03a9f4;color:#fff;font-weight:bold;padding:2px 4px;border-radius:3px 0 0 3px;",
   "background:#263238;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0;"
 );
