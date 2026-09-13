@@ -1,6 +1,8 @@
 """Code to handle a MyHome Gateway."""
 import asyncio
+import inspect
 import time
+from functools import lru_cache
 from typing import Any, Dict, List
 
 import OWNd.message as _ownd_msg
@@ -72,6 +74,17 @@ def _compat_gateway_timezone(values: list[str]) -> str:
 _ownd_msg._gateway_timezone = _compat_gateway_timezone
 
 EVENT_READY_TIMEOUT = 120
+
+
+@lru_cache(maxsize=1)
+def _registry_supports_via_device_id() -> bool:
+    """Return True when this Home Assistant accepts ``via_device_id`` (2026.x+).
+
+    ``via_device`` is deprecated and removed in 2027.8; older cores only know
+    ``via_device``.  Probe the signature once instead of guessing from versions.
+    """
+    params = inspect.signature(dr.DeviceRegistry.async_get_or_create).parameters
+    return "via_device_id" in params
 COMMAND_SESSION_IDLE_TIMEOUT = 15.0
 AVAILABILITY_GRACE = 60
 
@@ -138,13 +151,19 @@ class MyHOMEGatewayHandler:
         try:
             device_registry = dr.async_get(self.hass)
             type_name = "CEN+" if who == 25 else "CEN"
+            via_kwargs: dict[str, Any] = {}
+            if _registry_supports_via_device_id():
+                if self.device_registry_id:
+                    via_kwargs["via_device_id"] = self.device_registry_id
+            else:
+                via_kwargs["via_device"] = (DOMAIN, self.mac)
             device_registry.async_get_or_create(
                 config_entry_id=self.config_entry.entry_id,
                 identifiers={(DOMAIN, f"{self.mac}-{who}-{obj_str}")},
                 name=f"{type_name} Unit {obj_str}",
                 manufacturer="BTicino",
                 model=f"{type_name} Scenario Control",
-                via_device=(DOMAIN, self.mac),
+                **via_kwargs,
             )
         except Exception as err:
             LOGGER.debug("Could not auto-register %s device %s: %s", who, object_id, err)
@@ -301,12 +320,16 @@ class MyHOMEGatewayHandler:
 
         while not self._terminate_listener:
             message = await _event_session.get_next()
-            if message is not None:
-                self.bus_monitor.record_frame(
-                    direction="rx",
-                    raw=str(message),
-                    parsed=message if isinstance(message, OWNMessage) else None,
-                )
+            if message is None:
+                # OWNd yields None while the event socket is being re-established
+                # (e.g. after a gateway-side idle close); nothing to dispatch.
+                LOGGER.debug("%s Event session yielded no message (reconnecting).", self.log_id)
+                continue
+            self.bus_monitor.record_frame(
+                direction="rx",
+                raw=str(message),
+                parsed=message if isinstance(message, OWNMessage) else None,
+            )
             LOGGER.debug("%s Message received: `%s`", self.log_id, message)
             await self._process_message(message)
 
