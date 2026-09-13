@@ -1,5 +1,6 @@
 """Constants for the MyHome component."""
 import logging
+import re
 from functools import lru_cache
 
 LOGGER = logging.getLogger(__package__)
@@ -181,19 +182,53 @@ SUPPORTED_GATEWAY_MODELS = [
     "Generic",
 ]
 
-# WHO=13 dimension 15 device-type codes -> model names. Mirrors OWNd's decoder
-# (OWNGatewayEvent): keep the two in step. Type 4 is the original MH200, not the
-# MH200N - both share the MH200N gateway profile in OWNd, but the label lands in
-# the entry title, the device registry and every exported trace.
-GATEWAY_DEVICE_TYPE_MAP = {
-    "2": "MyHomeServer1",
+# WHO=13 dimension 15 ("MODEL REQUEST", *#13**15*MODEL##) device-type codes.
+#
+# Official table - BTicino "OpenWebNet_Community_2_device" v1.0.0 (2006-06-13),
+# section 1.2.6, reproduced completely. It predates every gateway sold after
+# 2006 (F454, F455, MH200N, MH202, MyHOMEServer1 ...), which therefore reuse or
+# invent codes: dimension 15 can CORROBORATE an identity, it can never establish
+# one for a modern gateway. Identification precedence lives in
+# MyHOMEGatewayHandler (SSDP announcement > user's choice > WHO=13).
+WHO13_OFFICIAL_DEVICE_TYPES = {
+    "2": "MHServer",
     "4": "MH200",
     "6": "F452",
-    "7": "F452",
-    "11": "MyHomeServer1",
+    "7": "F452V",
+    "11": "MHServer2",
     "13": "H4684",
-    "200": "F454",
 }
+# Codes seen on real hardware but absent from the official document, with the
+# evidence. They label an entry that has no model, and otherwise only raise a
+# repair issue asking the owner to confirm - never an automatic relabel.
+#   200 -> MyHOMEServer1: issue #297 diagnostics from a self-identified
+#          MyHOMEServer1 owner (#292); the entry said F454 only because the
+#          manual flow defaulted to it. OWNd still decodes 200 as F454 (circular
+#          inference from that mislabel) - to be corrected upstream.
+WHO13_OBSERVED_DEVICE_TYPES = {
+    "200": "MyHomeServer1",
+}
+GATEWAY_DEVICE_TYPE_MAP = {**WHO13_OBSERVED_DEVICE_TYPES, **WHO13_OFFICIAL_DEVICE_TYPES}
+
+# How the configured gateway model was established.
+IDENTIFICATION_SSDP = "ssdp"        # the gateway announced its modelName over UPnP/SSDP
+IDENTIFICATION_MANUAL = "manual"    # the user picked the model in the config flow
+IDENTIFICATION_SERIAL = "serial"    # serial (USB) interface: model fixed by the transport
+IDENTIFICATION_WHO13 = "who13"      # no model configured; labelled from WHO=13 dimension 15
+IDENTIFICATION_UNKNOWN = "unknown"
+
+
+def gateway_model_family(model: str | None) -> str:
+    """Reduce a model name to its family for identity comparisons.
+
+    ``MH200N`` -> ``MH200``, ``F452V`` -> ``F452``, ``MyHomeServer1`` -> ``MYHOMESERVER1``.
+    Trailing letters are variant suffixes the 2006 code table cannot express.
+    """
+    if not model:
+        return ""
+    name = str(model).strip().upper().replace(" ", "").replace("-", "").replace("_", "")
+    m = re.match(r"^([A-Z]+\d+)[A-Z]*$", name)
+    return m.group(1) if m else name
 
 
 
