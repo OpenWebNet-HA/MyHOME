@@ -80,11 +80,19 @@ The card interface provides a live telemetry stream and controls:
 - **🧹 Sweep Bus**: A 1-click button that invokes the `myhome.sweep_bus` service. It queries the current status of all lighting actuators, shutters, climate probes, and gateway clocks to immediately hydrate the ring buffer with fresh data.
 - **💾 Export Trace**: Generates and downloads a structured `.json` diagnostic file containing all captured frames with timestamps, parsed semantic attributes, direction flags, and ACK/NACK status.
 
+### 4. Time stamps
+
+Frames are stamped in **UTC** by the integration (`timestamp` / `iso_time`) and rendered by the card in the **browser's local time zone**, so they line up with the Home Assistant logbook. Exports keep the UTC values. *(#305)*
+
+### 5. Permissions
+
+Reading the stream, history and gateway info is available to any signed-in user. **Send frame** and **Clear buffer** require an **administrator** user: a non-admin (or a kiosk/long-lived token created by one) gets `Unauthorized`, because a raw `*5*…##` frame can arm or disarm the burglar alarm.
+
 ---
 
 ## 📄 Exported Frame Data Format
 
-When exporting traces or inspecting WebSocket frames, each frame adheres to the following JSON schema:
+When exporting traces or inspecting WebSocket frames, each frame adheres to the following JSON schema (`direction`, `dimension` and the ACK/NACK flags are included in exports since 2.0.0b13):
 
 ```json
 {

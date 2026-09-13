@@ -97,4 +97,24 @@ The integration includes enterprise-grade connection reliability safeguards:
 - **Active Keep-Alive**: Periodically transmits diagnostic ping frames (`*#13**0##` or `*#13**22##`) to prevent gateway NAT socket closure.
 - **Backoff & Auto-Reconnect**: If a network glitch or gateway reboot occurs, the event and command workers automatically cycle through an exponential backoff reconnect loop.
 - **Availability Grace Period**: An entity availability grace timer (60 seconds) prevents entities from rapidly toggling to `Unavailable` during brief gateway reconnections or WiFi dropouts.
+- **Silent Reconnect Cycles**: the read cycle in which OWNd re-establishes the event socket produces no frame and is skipped at `DEBUG` level; `Event connection lost, reconnecting...` is OWNd's own log line and is normal on gateways that close idle sockets (MH200/MH201).
+- **Profile-Gated Discovery**: the startup status requests (`*#2*0##`, `*#4*0##`, `*#16*0##`) are only sent for subsystems the gateway profile advertises, so an MH200N is never asked for audio it does not have.
+- **Reauthentication**: a rejected OpenWebNet password raises `ConfigEntryAuthFailed`; Home Assistant shows *Reauthentication required* and opens the reauth flow. Other connection failures are retried with backoff (`ConfigEntryNotReady`).
+
+See [Runtime Behaviour Notes](runtime_behaviour.md) for the reasoning behind each of these.
+
+---
+
+## 📦 Manual Installation Pitfalls
+
+When installing a release `myhome.zip` by hand, the archive must be extracted **into** `/config/custom_components/myhome/` — never into `/config/custom_components/` itself:
+
+```bash
+unzip -q myhome.zip -d /config/custom_components/myhome     # correct
+unzip -q myhome.zip -d /config/custom_components            # wrong
+```
+
+A stray `__init__.py` / `manifest.json` in the root of `custom_components` turns that folder into a regular Python package whose init is the integration code. On Home Assistant 2026.9+ the loader then imports **no custom integration at all** — every custom integration shows *Not loaded*, the bus-monitor card 404s, and nothing is logged at `warning` level.
+
+Likewise keep backups **outside** `custom_components` (e.g. `/config/myhome_backup/`). A copy such as `custom_components/myhome_backup_2026…/` registers a second `myhome` domain: the loader logs *We found a custom integration myhome* twice and may load the backup instead of the real one (duplicate CEN units, stale code).
 - **Bus Monitor Tap**: Zero-overhead in-band packet tap that copies incoming and outgoing frames directly to the diagnostic Lovelace bus card without opening additional sockets.
