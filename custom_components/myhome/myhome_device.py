@@ -19,6 +19,10 @@ __all__ = ["Entity", "MyHOMEEntity"]
 
 
 class MyHOMEEntity(RestoreEntity):
+    # Whether to request a status update from the bus right after being added.
+    # Push-only devices set this to False to avoid a useless (NACKed) query.
+    _poll_on_add: bool = True
+
     def __init__(
         self,
         hass,
@@ -121,7 +125,8 @@ class MyHOMEEntity(RestoreEntity):
             last_state = None
         if last_state is not None:
             await self.async_restore_last_state(last_state)
-        await self.async_update()
+        if self._poll_on_add:
+            await self.async_update()
 
     async def async_restore_last_state(self, last_state) -> None:
         """Hook for entities to restore specific attributes and modes."""
