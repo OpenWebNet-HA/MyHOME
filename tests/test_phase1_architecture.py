@@ -659,11 +659,11 @@ class TestConfigFlowHardening:
     async def test_async_step_reauth_preserves_discovery_data(self, hass: HomeAssistant):
         mac = "00:03:50:00:12:99"
         old_data = {
-            CONF_HOST: "192.168.1.50",
+            CONF_HOST: "192.0.2.1",
             CONF_PORT: 20000,
             CONF_PASSWORD: "old_password",
             CONF_MAC: mac,
-            CONF_SSDP_LOCATION: "http://192.168.1.50:49153/description.xml",
+            CONF_SSDP_LOCATION: "http://192.0.2.1:49153/description.xml",
             CONF_SSDP_ST: "urn:schemas-upnp-org:device:Basic:1",
             CONF_DEVICE_TYPE: "urn:schemas-upnp-org:device:Basic:1",
             CONF_FRIENDLY_NAME: "My Gateway",
@@ -693,7 +693,7 @@ class TestConfigFlowHardening:
         ), patch("custom_components.myhome.config_flow.OWNGateway.find_from_address") as mock_find:
             mock_gw = MagicMock()
             mock_gw.password = "new_password"
-            mock_gw.address = "192.168.1.50"
+            mock_gw.address = "192.0.2.1"
             mock_gw.serial = mac
             mock_gw.model_name = "F454"
             mock_gw.port = 20000
@@ -707,13 +707,13 @@ class TestConfigFlowHardening:
             # Verify entry has updated password while retaining existing metadata
             updated = hass.config_entries.async_get_entry(entry.entry_id)
             assert updated.data[CONF_PASSWORD] == "new_password"
-            assert updated.data[CONF_HOST] == "192.168.1.50"
-            assert updated.data[CONF_SSDP_LOCATION] == "http://192.168.1.50:49153/description.xml"
+            assert updated.data[CONF_HOST] == "192.0.2.1"
+            assert updated.data[CONF_SSDP_LOCATION] == "http://192.0.2.1:49153/description.xml"
 
     @pytest.mark.asyncio
     async def test_async_step_reauth_wrong_password_shows_error(self, hass: HomeAssistant):
         mac = "00:03:50:00:12:98"
-        entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: mac, CONF_HOST: "192.168.1.50", CONF_PASSWORD: "p"}, unique_id=mac)
+        entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: mac, CONF_HOST: "192.0.2.1", CONF_PASSWORD: "p"}, unique_id=mac)
         entry.add_to_hass(hass)
 
         flow = MyhomeFlowHandler()
@@ -735,7 +735,7 @@ class TestConfigFlowHardening:
         mac = "00:03:50:00:12:88"
         entry = MockConfigEntry(
             domain=DOMAIN,
-            data={CONF_MAC: mac, CONF_HOST: "192.168.1.50", CONF_PORT: 20000, CONF_PASSWORD: "p"},
+            data={CONF_MAC: mac, CONF_HOST: "192.0.2.1", CONF_PORT: 20000, CONF_PASSWORD: "p"},
             options={CONF_WORKER_COUNT: 1, CONF_GENERATE_EVENTS: False},
             unique_id=mac,
         )
@@ -749,7 +749,7 @@ class TestConfigFlowHardening:
         assert init_res["step_id"] == "user"
 
         user_input = {
-            "address": "192.168.1.50",
+            "address": "192.0.2.1",
             "own_password": "p",
             CONF_WORKER_COUNT: 3,
             CONF_GENERATE_EVENTS: True,
@@ -778,7 +778,7 @@ class TestConfigFlowHardening:
     @pytest.mark.asyncio
     async def test_options_flow_rejects_invalid_decoder_and_mass(self, hass: HomeAssistant):
         mac = "00:03:50:00:12:87"
-        entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: mac, CONF_HOST: "192.168.1.50"}, options={}, unique_id=mac)
+        entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: mac, CONF_HOST: "192.0.2.1"}, options={}, unique_id=mac)
         entry.add_to_hass(hass)
 
         entity_registry = er.async_get(hass)
@@ -789,7 +789,7 @@ class TestConfigFlowHardening:
 
         # 1. Non-media_player entity rejection
         bad_input = {
-            "address": "192.168.1.50",
+            "address": "192.0.2.1",
             "own_password": "p",
             CONF_WORKER_COUNT: 1,
             CONF_GENERATE_EVENTS: False,
@@ -801,7 +801,7 @@ class TestConfigFlowHardening:
 
         # 2. Music Assistant entity rejection
         mass_input = {
-            "address": "192.168.1.50",
+            "address": "192.0.2.1",
             "own_password": "p",
             CONF_WORKER_COUNT: 1,
             CONF_GENERATE_EVENTS: False,
@@ -814,7 +814,7 @@ class TestConfigFlowHardening:
     @pytest.mark.asyncio
     async def test_options_flow_rejects_invalid_ip(self, hass: HomeAssistant):
         mac = "00:03:50:00:12:86"
-        entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: mac, CONF_HOST: "192.168.1.50"}, options={}, unique_id=mac)
+        entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: mac, CONF_HOST: "192.0.2.1"}, options={}, unique_id=mac)
         entry.add_to_hass(hass)
 
         options_flow = MyhomeOptionsFlowHandler(entry)
@@ -1160,18 +1160,18 @@ class TestPhase1GoldenPlantSampleIssue247:
     async def test_golden_plant_yaml_import_and_device_cleanliness(self, hass: HomeAssistant):
         """Verify Nicola Cavallo's 70+ device plant initializes with zero orphaned ghost devices."""
         from homeassistant.helpers import device_registry as dr
-        mac = "00:03:50:24:70:01"
-        plant_yaml_path = Path(__file__).resolve().parent / "fixtures" / "plants" / "issue_247_nicolacavallo84" / "myhome.yaml"
+        mac = "00:03:50:00:02:47"
+        plant_yaml_path = Path(__file__).resolve().parent / "fixtures" / "plants" / "issue_247_myhomeserver1" / "myhome.yaml"
         assert plant_yaml_path.is_file(), f"Fixture plant YAML not found at {plant_yaml_path}"
 
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
-                CONF_HOST: "192.168.1.50",
+                CONF_HOST: "192.0.2.1",
                 CONF_PORT: 20000,
                 CONF_PASSWORD: "pass",
                 CONF_MAC: mac,
-                CONF_SSDP_LOCATION: "http://192.168.1.50:49153/description.xml",
+                CONF_SSDP_LOCATION: "http://192.0.2.1:49153/description.xml",
                 CONF_SSDP_ST: "urn:schemas-upnp-org:device:Basic:1",
                 CONF_DEVICE_TYPE: "urn:schemas-upnp-org:device:Basic:1",
                 CONF_FRIENDLY_NAME: "MyHomeServer1",
@@ -1217,38 +1217,38 @@ class TestPhase1GoldenPlantSampleIssue247:
 
         # 2. Entity Registry Verification: Platform entity population
         # 4-digit lighting and switches
-        ent_vialetto = entity_registry.async_get("light.luci_vialetto_vicino")
+        ent_vialetto = entity_registry.async_get("light.light_1000")
         assert ent_vialetto is not None
         assert ent_vialetto.unique_id == f"{mac}-1-1000"
 
-        ent_presa = entity_registry.async_get("switch.prese_esterne")
+        ent_presa = entity_registry.async_get("switch.switch_0910")
         assert ent_presa is not None
         assert ent_presa.unique_id in (f"{mac}-1-0910", f"{mac}-1-910")
 
         # Dimmable light with model F418
-        ent_dimmable = entity_registry.async_get("light.luce_centrale_camera_matrimoniale")
+        ent_dimmable = entity_registry.async_get("light.light_70")
         assert ent_dimmable is not None
 
         # Covers with advanced model LN4661M2
-        ent_cover = entity_registry.async_get("cover.tapparella_camera_matrimoniale")
+        ent_cover = entity_registry.async_get("cover.cover_73")
         assert ent_cover is not None
         assert ent_cover.unique_id == f"{mac}-2-73"
 
         # Climate central unit 3550 and zone thermostats
-        ent_cu = entity_registry.async_get("climate.centrale_termoregolazione")
+        ent_cu = entity_registry.async_get("climate.climate_zone_0")
         assert ent_cu is not None
 
         # Dry contact binary sensors (WHO=25)
-        ent_cancello = entity_registry.async_get("binary_sensor.cancello")
+        ent_cancello = entity_registry.async_get("binary_sensor.binary_sensor_31")
         assert ent_cancello is not None
         assert ent_cancello.unique_id == f"{mac}-25-31-opening"
 
-        ent_moving = entity_registry.async_get("binary_sensor.contatto_tapparella_finestra_salone")
+        ent_moving = entity_registry.async_get("binary_sensor.binary_sensor_331")
         assert ent_moving is not None
         assert ent_moving.unique_id == f"{mac}-25-331-moving"
 
         # WHO=18 energy power sensors
-        ent_power = entity_registry.async_get("sensor.consumo_energia")
+        ent_power = entity_registry.async_get("sensor.sensor_51")
         assert ent_power is not None
         assert ent_power.unique_id.startswith(f"{mac}-18-51")
 
@@ -1259,13 +1259,13 @@ class TestPhase1GoldenPlantSampleIssue247:
         """Verify authentic on-wire frames from Nicola's bus monitor update HA entity states."""
         from homeassistant.helpers.dispatcher import async_dispatcher_send
         from OWNd.message import OWNMessage
-        mac = "00:03:50:24:70:01"
-        plant_yaml_path = Path(__file__).resolve().parent / "fixtures" / "plants" / "issue_247_nicolacavallo84" / "myhome.yaml"
+        mac = "00:03:50:00:02:47"
+        plant_yaml_path = Path(__file__).resolve().parent / "fixtures" / "plants" / "issue_247_myhomeserver1" / "myhome.yaml"
 
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
-                CONF_HOST: "192.168.1.50",
+                CONF_HOST: "192.0.2.1",
                 CONF_PORT: 20000,
                 CONF_PASSWORD: "pass",
                 CONF_MAC: mac,
@@ -1299,7 +1299,7 @@ class TestPhase1GoldenPlantSampleIssue247:
         msg_light_off = OWNMessage.parse("*1*0*1002##")
         async_dispatcher_send(hass, f"myhome_message_{mac}", msg_light_off)
         await hass.async_block_till_done()
-        state_light = hass.states.get("light.luci_vialetto_lontano")
+        state_light = hass.states.get("light.light_1002")
         assert state_light is not None
         assert state_light.state == "off"
 
@@ -1308,7 +1308,7 @@ class TestPhase1GoldenPlantSampleIssue247:
         msg_switch_on = OWNMessage.parse("*1*1*0910##")
         async_dispatcher_send(hass, f"myhome_message_{mac}", msg_switch_on)
         await hass.async_block_till_done()
-        state_switch = hass.states.get("switch.prese_esterne")
+        state_switch = hass.states.get("switch.switch_0910")
         assert state_switch is not None
         assert state_switch.state == "on"
 
@@ -1316,7 +1316,7 @@ class TestPhase1GoldenPlantSampleIssue247:
         msg_dry_closed = OWNMessage.parse("*25*31#1*31##")
         async_dispatcher_send(hass, f"myhome_message_{mac}", msg_dry_closed)
         await hass.async_block_till_done()
-        state_dry = hass.states.get("binary_sensor.cancello")
+        state_dry = hass.states.get("binary_sensor.binary_sensor_31")
         assert state_dry is not None
         assert state_dry.state == "on"
 
@@ -1324,7 +1324,7 @@ class TestPhase1GoldenPlantSampleIssue247:
         msg_energy = OWNMessage.parse("*#18*51*113*602##")
         async_dispatcher_send(hass, f"myhome_message_{mac}", msg_energy)
         await hass.async_block_till_done()
-        state_energy = hass.states.get("sensor.consumo_energia")
+        state_energy = hass.states.get("sensor.sensor_51")
         assert state_energy is not None
         assert state_energy.state == "602"
 
