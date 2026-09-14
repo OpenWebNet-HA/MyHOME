@@ -9,6 +9,7 @@ unless CI is set, in which case it fails loudly.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -32,8 +33,10 @@ def test_bus_monitor_card_node_suite() -> None:
     node = _node()
     assert node is not None, "node is required in CI to run tests/frontend"
 
+    # The TAP reporter is the same on every node version and whether or not stdout
+    # is a terminal (the default reporter is not: spec on a TTY, tap in CI).
     result = subprocess.run(
-        [node, "--test", *sorted(str(p) for p in FRONTEND_TESTS.glob("*.test.mjs"))],
+        [node, "--test", "--test-reporter=tap", *sorted(str(p) for p in FRONTEND_TESTS.glob("*.test.mjs"))],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
@@ -42,8 +45,9 @@ def test_bus_monitor_card_node_suite() -> None:
         timeout=120,
         check=False,
     )
-    summary = "\n".join(line for line in result.stdout.splitlines() if line.startswith(("✖", "ℹ")))
+    summary = "\n".join(line for line in result.stdout.splitlines() if line.startswith(("not ok", "# ")))
     assert result.returncode == 0, (
         f"node --test failed (exit {result.returncode})\n{summary}\n{result.stderr[-2000:]}"
     )
-    assert "ℹ fail 0" in result.stdout, summary
+    counts = dict(re.findall(r"^# (tests|pass|fail) (\d+)$", result.stdout, re.M))
+    assert counts.get("fail") == "0" and int(counts.get("pass", "0")) == int(counts.get("tests", "-1")) > 0, summary
