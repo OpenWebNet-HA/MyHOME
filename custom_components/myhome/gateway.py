@@ -1,8 +1,6 @@
 """Code to handle a MyHome Gateway."""
 import asyncio
-import inspect
 import time
-from functools import lru_cache
 from typing import Any, Dict, List
 
 import OWNd.message as _ownd_msg
@@ -112,15 +110,6 @@ def _cancel_written(task: dict[str, Any]) -> None:
         written.cancel()
 
 
-@lru_cache(maxsize=1)
-def _registry_supports_via_device_id() -> bool:
-    """Return True when this Home Assistant accepts ``via_device_id`` (2026.x+).
-
-    ``via_device`` is deprecated and removed in 2027.8; older cores only know
-    ``via_device``.  Probe the signature once instead of guessing from versions.
-    """
-    params = inspect.signature(dr.DeviceRegistry.async_get_or_create).parameters
-    return "via_device_id" in params
 COMMAND_SESSION_IDLE_TIMEOUT = 15.0
 AVAILABILITY_GRACE = 60
 
@@ -198,11 +187,8 @@ class MyHOMEGatewayHandler:
             device_registry = dr.async_get(self.hass)
             type_name = "CEN+" if who == 25 else "CEN"
             via_kwargs: dict[str, Any] = {}
-            if _registry_supports_via_device_id():
-                if self.device_registry_id:
-                    via_kwargs["via_device_id"] = self.device_registry_id
-            else:
-                via_kwargs["via_device"] = (DOMAIN, self.mac)
+            if self.device_registry_id:
+                via_kwargs["via_device_id"] = self.device_registry_id
             device_registry.async_get_or_create(
                 config_entry_id=self.config_entry.entry_id,
                 identifiers={(DOMAIN, f"{self.mac}-{who}-{obj_str}")},
