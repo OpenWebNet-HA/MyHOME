@@ -52,7 +52,6 @@ from homeassistant.components.media_player import (
 from homeassistant.const import CONF_MAC
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.event import async_track_state_change_event
 from OWNd.message import OWNSoundCommand, OWNSoundEvent
@@ -67,6 +66,7 @@ from .const import (
 )
 from .data import get_runtime_data
 from .decoder_pool import DecoderPool
+from .discovery import Address, DeviceContext, PlatformDiscovery
 from .myhome_device import MyHOMEEntity
 
 PARALLEL_UPDATES = 0
@@ -105,7 +105,6 @@ def _build_pool(hass: HomeAssistant, config_entry) -> DecoderPool:
 async def async_setup_entry(hass: HomeAssistant, config_entry, async_add_entities):
     """Set up the MyHOME media player platform and initialise the decoder pool."""
     runtime = config_entry.runtime_data
-    known_media_players: set[str] = set()
 
     # ── Build and store the decoder pool ─────────────────────────────────────
     pool = _build_pool(hass, config_entry)
@@ -116,98 +115,53 @@ async def async_setup_entry(hass: HomeAssistant, config_entry, async_add_entitie
         len(pool.decoder_entity_ids),
     )
 
-    # ── Restore previously discovered entities from the Entity Registry ───────
-    entity_registry = er.async_get(hass)
-    existing_entries = er.async_entries_for_config_entry(entity_registry, config_entry.entry_id)
-    restored_players: list[MyHOMEMediaPlayer] = []
+    def build(ctx: DeviceContext) -> MyHOMEMediaPlayer:
+        zone = ctx.address.where
+        return MyHOMEMediaPlayer(
+            hass=hass,
+            name=f"Audio Zone {zone}",
+            entity_name=None,
+            device_id=ctx.key,
+            who=ctx.who,
+            where=zone,
+            manufacturer="BTicino",
+            model="Audio System",
+            gateway=runtime.gateway,
+        )
 
-    gateway = runtime.gateway
+    discovery = PlatformDiscovery(
+        hass, config_entry, async_add_entities,
+        platform=PLATFORM, who="16", event_type=OWNSoundEvent, build=build,
+        address=_zone_address, pre_message=_route_pseudo_zones(hass, config_entry.data[CONF_MAC]),
+        key_suffix="#16",
+    )
+    # Audio zones are keyed "<zone>#16" in unique ids; the registry restore reads that key back.
+    discovery.start()
 
-    for entry in existing_entries:
-        if entry.domain == PLATFORM:
-            unique_id = entry.unique_id
-            after_mac = unique_id.replace(f"{gateway.mac}-", "", 1).replace(f"{config_entry.data[CONF_MAC]}-", "", 1)
-            parts = after_mac.split("-", 1)
-            device_id = parts[-1] if len(parts) > 1 else after_mac
-            zone = device_id.replace("#16", "")
 
-            _player = MyHOMEMediaPlayer(
-                hass=hass,
-                name=f"Audio Zone {zone}",
-                entity_name=None,
-                device_id=device_id,
-                who="16",
-                where=zone,
-                manufacturer="BTicino",
-                model="Audio System",
-                gateway=gateway,
-            )
-            known_media_players.add(device_id)
-            restored_players.append(_player)
+def _zone_address(message) -> Address | None:
+    """Sound-system frames address a zone (amplifier); sources are never devices."""
+    zone = getattr(message, "zone", None)
+    if not zone or getattr(message, "is_source_event", False):
+        return None
+    return Address(str(zone), key_suffix="#16")
 
-    if restored_players:
-        async_add_entities(restored_players)
 
-    # ── Discovery listener ────────────────────────────────────────────────────
+def _route_pseudo_zones(hass, mac):
+    """Stereo-module pseudo zones (10x-14x) select the source for amplifier x."""
+
     @callback
-    def async_add_media_player(message):
-        """Add a media player from a discovered message."""
-        if not hasattr(message, "zone") or not message.zone:
-            return
-
-        # Do not discover native sources (e.g. 101, 102, 103, 104)
-        if getattr(message, "is_source_event", False):
-            return
-
-        zone = str(message.zone)
-
-        # Intercept stereo module pseudo-zones used for source selection
-        # (e.g. 10x, 11x, 12x, 13x, 14x representing source 0-4 for amplifier output x)
+    def handler(message, address: Address, known) -> bool:
+        zone = address.where
         if len(zone) == 3 and zone[:2] in ("10", "11", "12", "13", "14"):
             point = zone[-1]
-            for player_id in known_media_players:
+            for player_id in known:
                 if player_id.split("#")[0].endswith(point):
-                    async_dispatcher_send(
-                        hass,
-                        f"myhome_update_{config_entry.data[CONF_MAC]}_16_{player_id}",
-                        message
-                    )
-            return
+                    async_dispatcher_send(hass, f"myhome_update_{mac}_16_{player_id}", message)
+            return True
+        return False
 
-
-        unique_id = f"{zone}#16"
-
-        if unique_id not in known_media_players:
-            _player = MyHOMEMediaPlayer(
-                hass=hass,
-                name=f"Audio Zone {zone}",
-                entity_name=None,
-                device_id=unique_id,
-                who=str(message.who),
-                where=zone,
-                manufacturer="BTicino",
-                model="Audio System",
-                gateway=runtime.gateway,
-            )
-            known_media_players.add(unique_id)
-            async_add_entities([_player])
-            _player.handle_event(message)
-
-        async_dispatcher_send(hass, f"myhome_update_{config_entry.data[CONF_MAC]}_16_{unique_id}", message)
-
-    @callback
-    def _handle_media_player_message(msg):
-        """Filter and forward media player messages."""
-        if isinstance(msg, OWNSoundEvent):
-            async_add_media_player(msg)
-
-    config_entry.async_on_unload(
-        async_dispatcher_connect(
-            hass,
-            f"myhome_message_{config_entry.data[CONF_MAC]}",
-            _handle_media_player_message,
-        )
-    )
+    return handler
 
 
 async def async_unload_entry(hass, config_entry):

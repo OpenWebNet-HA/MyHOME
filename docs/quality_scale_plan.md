@@ -49,9 +49,13 @@ Add a parametrised test that asserts the table so it cannot regress.
 
 ## Phase 5 — 🏆 Platinum: `strict-typing`
 
-- ✅ Ratchet in place: `[tool.mypy]` (strict) in `pyproject.toml`, `mypy_baseline.json` with a per-module ceiling, `scripts/typing_ratchet.py` (fails on any regression, `--update` only lowers), workflow `strict-typing.yml`. 15 of 28 modules are clean (`const`, `data`, `gateway`, `myhome_device`, `services`, `device_trigger`, `decoder_pool`, transports, diagnostics, repairs, bus monitor); **547 errors remain in 13 modules** — biggest first: `config_flow` 104, `cover` 67, `validate` 57, `sensor` 56, `binary_sensor` 44, `light` 41, `websocket` 34, `climate` 33, `__init__` 27, `media_player` 25, `alarm_control_panel` 21, `button` 20, `switch` 18. Each PR that touches a module should leave it lower and run `--update`.
+- ✅ Ratchet in place: `[tool.mypy]` (strict) in `pyproject.toml`, `mypy_baseline.json` with a per-module ceiling, `scripts/typing_ratchet.py` (fails on any regression, `--update` only lowers), workflow `strict-typing.yml`. 15 of 28 modules are clean (`const`, `data`, `gateway`, `myhome_device`, `services`, `device_trigger`, `decoder_pool`, transports, diagnostics, repairs, bus monitor); **537 errors remain in 13 modules** — biggest first: `config_flow` 104, `cover` 65, `validate` 57, `sensor` 56, `binary_sensor` 44, `light` 39, `websocket` 34, `climate` 33, `__init__` 27, `media_player` 25, `button` 20, `alarm_control_panel` 18, `switch` 15 (`discovery` is clean). Each PR that touches a module should leave it lower and run `--update`.
 - OWNd does **not** ship `py.typed`; the rule needs an OWNd release that is PEP 561 typed before it can be marked done.
 - `inject-websession` is correctly `exempt` (raw TCP, no HTTP); `async-dependency` is done.
+
+## Maintainability (not a scale rule, keeps the rules honest)
+
+- ✅ `custom_components/myhome/discovery.py` holds the restore / configure / discover / route skeleton once; `light`, `switch`, `cover`, `alarm_control_panel` and `media_player` are on it (their setup functions shrank from ~940 to ~260 lines, module coverage stays 100%, the new module is mypy-strict clean). `sensor`, `binary_sensor`, `climate` and `button` follow in a second PR.
 
 ## Throughout
 

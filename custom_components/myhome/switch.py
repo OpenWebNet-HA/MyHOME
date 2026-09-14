@@ -12,28 +12,25 @@ from homeassistant.const import (
 )
 from homeassistant.core import callback
 from homeassistant.helpers import entity_platform
-from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from OWNd.message import (
     OWNLightingCommand,
     OWNLightingEvent,
 )
 
 from .const import (
-    CONF_BUS_INTERFACE,
     CONF_DEVICE_CLASS,
     CONF_DEVICE_MODEL,
     CONF_ENTITY_NAME,
     CONF_ICON,
     CONF_ICON_ON,
     CONF_MANUFACTURER,
-    CONF_WHERE,
-    CONF_WHO,
     LOGGER,
     SERVICE_TURN_ON_TIMED,
     build_timed_turn_on_command,
 )
 from .data import get_runtime_data
+from .discovery import DeviceContext, PlatformDiscovery
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 
@@ -41,129 +38,44 @@ PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
+    """Set up the switches of a gateway: registry entries first, then myhome.yaml.
+
+    Switches are WHO=1 actuators that *must* be configured (a relay driving a
+    socket looks exactly like a light on the bus); discovery of WHO=1 frames is
+    the light platform's job, which routes frames for configured switches here.
+    """
     runtime = get_runtime_data(config_entry)
     if runtime is None or PLATFORM not in runtime.platforms:
         return True
-    mac = runtime.mac
 
-    known_switches = set()
-    try:
-        entity_registry = er.async_get(hass)
-        existing_entries = er.async_entries_for_config_entry(entity_registry, config_entry.entry_id)
-    except Exception:
-        entity_registry = None
-        existing_entries = []
-    restored_switches = []
-
-    gateway = runtime.gateway
-    _configured_switches = runtime.platforms.get(PLATFORM, {})
-
-    for entry in existing_entries:
-        if entry.domain == PLATFORM:
-            unique_id = entry.unique_id
-            # Clean up corrupted duplicate unique IDs from earlier versions like "{mac}-1-1-06"
-            if "-1-1-" in unique_id:
-                if entity_registry:
-                    entity_registry.async_remove(entry.entity_id)
-                continue
-
-            # unique_id format: "{mac}-{who}-{device_id}"
-            # device_id is "{where}" or "{where}#4#{interface}"
-            after_mac = unique_id.replace(f"{gateway.mac}-", "", 1).replace(f"{mac}-", "", 1)
-            parts_who = after_mac.split("-", 1)
-            device_id = parts_who[-1] if len(parts_who) > 1 else after_mac
-            if "#4#" in device_id:
-                parts = device_id.split("#4#")
-                where = parts[0]
-                interface = parts[1] if len(parts) > 1 else None
-            else:
-                where = device_id
-                interface = None
-
-            clean_where = where.split('-')[-1]
-            default_suffix = f"{clean_where}I{interface}" if interface else clean_where
-            cfg = _configured_switches.get(device_id) or _configured_switches.get(where) or _configured_switches.get(clean_where) or {}
-
-            _name = cfg.get(CONF_NAME) or f"Switch {default_suffix}"
-            _entity_name = cfg.get(CONF_ENTITY_NAME)
-            _icon = cfg.get(CONF_ICON)
-            _icon_on = cfg.get(CONF_ICON_ON)
-            _device_class = cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class") or SwitchDeviceClass.SWITCH
-            _manufacturer = cfg.get(CONF_MANUFACTURER, "BTicino")
-            _model = cfg.get(CONF_DEVICE_MODEL, "Switch / Relay")
-
-            _switch = MyHOMESwitch(
-                hass=hass,
-                name=_name,
-                entity_name=_entity_name,
-                icon=_icon,
-                icon_on=_icon_on,
-                device_id=device_id,
-                who="1",
-                where=where,
-                interface=interface,
-                device_class=_device_class,
-                manufacturer=_manufacturer,
-                model=_model,
-                gateway=gateway,
-            )
-            known_switches.add(device_id)
-            if not interface:
-                known_switches.add(clean_where)
-            restored_switches.append(_switch)
-
-    # Also instantiate any configured switches from myhome.yaml not yet in registry
-    seen_configured_where = set()
-    for dev_id, cfg in _configured_switches.items():
-        where = str(cfg.get(CONF_WHERE, dev_id))
-        clean_where = where.split("-")[-1]
-        interface = cfg.get(CONF_BUS_INTERFACE) or cfg.get("bus_interface") or cfg.get("interface")
-        device_where_id = f"{clean_where}#4#{interface}" if interface else str(clean_where)
-        clean_unique_id = device_where_id
-        default_suffix = f"{clean_where}I{interface}" if interface else clean_where
-
-        if clean_unique_id in seen_configured_where or device_where_id in known_switches or dev_id in known_switches:
-            continue
-        seen_configured_where.add(clean_unique_id)
-
-        _name = cfg.get(CONF_NAME) or f"Switch {default_suffix}"
-        _device_class = cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class") or SwitchDeviceClass.SWITCH
-        _switch = MyHOMESwitch(
+    def build(ctx: DeviceContext) -> MyHOMESwitch:
+        cfg = ctx.cfg
+        return MyHOMESwitch(
             hass=hass,
-            name=_name,
+            name=cfg.get(CONF_NAME) or f"Switch {ctx.suffix}",
             entity_name=cfg.get(CONF_ENTITY_NAME),
             icon=cfg.get(CONF_ICON),
             icon_on=cfg.get(CONF_ICON_ON),
-            device_id=device_where_id,
-            who=str(cfg.get(CONF_WHO, "1")),
-            where=where,
-            interface=interface,
-            device_class=_device_class,
+            device_id=ctx.key if ctx.source != "yaml" else ctx.address.clean_key,
+            who=ctx.who,
+            where=ctx.address.where,
+            interface=ctx.address.interface,
+            device_class=cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class") or SwitchDeviceClass.SWITCH,
             manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
             model=cfg.get(CONF_DEVICE_MODEL, "Switch / Relay"),
-            gateway=gateway,
-        )
-        known_switches.add(device_where_id)
-        if not interface:
-            known_switches.add(clean_where)
-        known_switches.add(dev_id)
-        restored_switches.append(_switch)
-
-        # Signal button platform to create Lock/Unlock buttons if needed
-        async_dispatcher_send(
-            hass,
-            f"myhome_new_device_{mac}",
-            {
-                "who": str(cfg.get(CONF_WHO, "1")),
-                "where": where,
-                "interface": interface,
-                "name": _name,
-                "device_id": device_where_id,
-            },
+            gateway=runtime.gateway,
         )
 
-    if restored_switches:
-        async_add_entities(restored_switches)
+    def corrupted(entry, ctx: DeviceContext) -> bool:
+        # Duplicate unique ids like "{mac}-1-1-06" written by earlier versions
+        return "-1-1-" in entry.unique_id
+
+    PlatformDiscovery(
+        hass, config_entry, async_add_entities,
+        platform=PLATFORM, who="1", event_type=None, build=build, announce=True,
+        reject_registry_entry=corrupted,
+        yaml_device_id=lambda address: address.clean_key,
+    ).start(listen=False)
 
     platform = entity_platform.current_platform.get()
     if platform is not None:

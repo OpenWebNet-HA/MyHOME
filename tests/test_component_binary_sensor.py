@@ -783,7 +783,7 @@ async def test_motion_sensor_0015_and_switch_15_coexistence(hass):
     config_entry.entry_id = "test_coexistence"
 
     with patch("custom_components.myhome.binary_sensor.er.async_entries_for_config_entry", return_value=[]), \
-         patch("custom_components.myhome.switch.er.async_entries_for_config_entry", return_value=[]):
+         patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]):
         motion_entities = []
         switch_entities = []
         attach_runtime(hass, config_entry)

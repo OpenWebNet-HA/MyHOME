@@ -262,10 +262,10 @@ class TestSwitchEntity:
         mock_registry = MagicMock()
 
         with patch(
-            "custom_components.myhome.switch.er.async_get",
+            "custom_components.myhome.discovery.er.async_get",
             return_value=mock_registry,
         ), patch(
-            "custom_components.myhome.switch.er.async_entries_for_config_entry",
+            "custom_components.myhome.discovery.er.async_entries_for_config_entry",
             return_value=[corrupt_entry, interface_entry, standard_entry],
         ):
             async_add_entities = MagicMock()
@@ -276,7 +276,7 @@ class TestSwitchEntity:
             assert len(async_add_entities.call_args[0][0]) == 3
 
         # Test entity registry exception (lines 50-52)
-        with patch("custom_components.myhome.switch.er.async_get", side_effect=Exception("Registry error")):
+        with patch("custom_components.myhome.discovery.er.async_get", side_effect=Exception("Registry error")):
             attach_runtime(mock_hass, config_entry)
             await async_setup_entry(mock_hass, config_entry, MagicMock())
 
@@ -302,7 +302,7 @@ class TestSwitchEntity:
         sw_interface.async_on_remove = MagicMock()
         sw_interface.async_update = AsyncMock()
 
-        with patch("custom_components.myhome.switch.async_dispatcher_connect"):
+        with patch("custom_components.myhome.discovery.async_dispatcher_connect"):
             await sw_interface.async_added_to_hass()
         # Connected to both full_where and base where
         assert sw_interface.async_on_remove.call_count == 3
@@ -493,7 +493,7 @@ class TestCoverEntity:
 
         with patch("homeassistant.helpers.entity_registry.async_get", return_value=MagicMock()), \
              patch("homeassistant.helpers.entity_registry.async_entries_for_config_entry", return_value=[]), \
-             patch("custom_components.myhome.cover.async_dispatcher_connect", side_effect=fake_dispatcher_connect):
+             patch("custom_components.myhome.discovery.async_dispatcher_connect", side_effect=fake_dispatcher_connect):
             async_add_entities = MagicMock()
             attach_runtime(mock_hass, config_entry)
             await async_setup_entry(mock_hass, config_entry, async_add_entities)

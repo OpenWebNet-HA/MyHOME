@@ -20,6 +20,23 @@ Each request is only sent when the gateway's OWNd **profile** advertises that WH
 
 ---
 
+## 🧱 Every platform follows the same life cycle
+
+Lights, switches, covers, the alarm panel and audio zones share one setup skeleton (`custom_components/myhome/discovery.py`). For each gateway a platform runs, in order:
+
+| Step | What happens | Why it matters |
+| :--- | :--- | :--- |
+| **Restore** | Entities already in the entity registry are re-created immediately. | Your names, areas and entity ids exist before the gateway has said a word; a restart never shows an empty dashboard. |
+| **Configure** | Devices declared in `myhome.yaml` that are not in the registry yet are created. | The configuration is the source of truth for names, device classes and options. |
+| **Discover** | The first frame from an unknown address creates the entity. | New actuators appear on their own; nothing needs a restart. |
+| **Route** | Every frame is forwarded to the entity that owns the address. | One dispatcher signal per entity, no per-platform message loops. |
+
+Addresses follow the OpenWebNet `WHERE` conventions - point-to-point `APL` (`12`), area `A` (`1`), group `#G` (`#5`), general `0` - plus the F422 bus-routing form `APL#4#<bus>` (`0311#4#01`). Area, group and general frames never create an entity: they are broadcasts, not devices (the alarm central unit is the one subsystem where `WHERE = 0` is a real device). Translation frames (`*1*1000#1*14##`) are ignored as well.
+
+Platforms only add what differs: which `WHO` they serve, how a device is built, and a few hooks - the light platform hands WHO 1 frames for configured switches and motion / illuminance sensors to those platforms instead of creating a light, the cover platform relays a general `*2*x*0##` to every cover, and the media player maps stereo-module pseudo zones (`10x`-`14x`) to amplifier `x`.
+
+---
+
 ## 🔁 Reconnect cycles are silent
 
 OWNd's event session returns *no message* for the read cycle in which it transparently reconnects (gateway-side idle close, keep-alive timeout, cable pulled). The integration skips that cycle at `DEBUG` level. The `Event connection lost, reconnecting...` line that accompanies it is OWNd's own log and is expected on gateways that close idle event sockets (MH200/MH201). *(#304)*
