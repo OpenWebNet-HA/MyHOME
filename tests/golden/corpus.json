@@ -628,7 +628,7 @@
     "where": "0910",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Lighting: Turn ON point-to-point at 4-digit zero-padded address 0910 (Nicola Cavallo plant)",
+    "mcp_notes": "Lighting: Turn ON point-to-point at 4-digit zero-padded address 0910 (issue #247 reporter plant)",
     "roundtrip": true,
     "_file": "who01_lighting.yaml"
   },
@@ -641,7 +641,7 @@
     "where": "1002",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Lighting: Turn OFF point-to-point at 4-digit address 1002 (Nicola Cavallo plant)",
+    "mcp_notes": "Lighting: Turn OFF point-to-point at 4-digit address 1002 (issue #247 reporter plant)",
     "roundtrip": true,
     "_file": "who01_lighting.yaml"
   },
@@ -996,7 +996,7 @@
     ],
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Automation: Absolute position level 10% report for address 73 (Nicola Cavallo plant)",
+    "mcp_notes": "Automation: Absolute position level 10% report for address 73 (issue #247 reporter plant)",
     "roundtrip": true,
     "_file": "who02_automation.yaml"
   },
@@ -1403,7 +1403,7 @@
     ],
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Gateway Management: Set gateway internal datetime to 2026-09-11 17:33:54 (Nicola Cavallo plant)",
+    "mcp_notes": "Gateway Management: Set gateway internal datetime to 2026-09-11 17:33:54 (issue #247 reporter plant)",
     "roundtrip": true,
     "_file": "who13_gateway.yaml"
   },
@@ -1572,7 +1572,7 @@
     ],
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Energy Management: Meter 51 reports 602 Watts instantaneous active power (Nicola Cavallo plant)",
+    "mcp_notes": "Energy Management: Meter 51 reports 602 Watts instantaneous active power (issue #247 reporter plant)",
     "roundtrip": true,
     "_file": "who18_energy.yaml"
   },
@@ -1589,7 +1589,7 @@
     ],
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Energy Management: Actuator channel 77#0 reports 415 Watts active power (Nicola Cavallo plant)",
+    "mcp_notes": "Energy Management: Actuator channel 77#0 reports 415 Watts active power (issue #247 reporter plant)",
     "roundtrip": true,
     "_file": "who18_energy.yaml"
   },

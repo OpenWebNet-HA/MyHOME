@@ -70,7 +70,7 @@
   dimension_values: ["602"]
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Energy Management: Meter 51 reports 602 Watts instantaneous active power (Nicola Cavallo plant)"
+  mcp_notes: "Energy Management: Meter 51 reports 602 Watts instantaneous active power (issue #247 reporter plant)"
   roundtrip: true
 
 - id: energy.resp.actuator_power.channel77.415
@@ -83,6 +83,6 @@
   dimension_values: ["415"]
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Energy Management: Actuator channel 77#0 reports 415 Watts active power (Nicola Cavallo plant)"
+  mcp_notes: "Energy Management: Actuator channel 77#0 reports 415 Watts active power (issue #247 reporter plant)"
   roundtrip: true
 

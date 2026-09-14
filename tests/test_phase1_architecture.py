@@ -1145,12 +1145,12 @@ class TestEntityRegistryMigrationSafety:
         await hass.config_entries.async_unload(entry.entry_id)
 
 
-# ── 7. Golden Plant Sample Conformance (Issue #247 Nicola Cavallo Plant) ──────
+# ── 7. Golden Plant Sample Conformance (issue #247 plant) ──────
 
 class TestPhase1GoldenPlantSampleIssue247:
     """End-to-end golden plant conformance tests using real production data from Issue #247.
 
-    Verifies that Nicola Cavallo's full 70+ device plant configuration
+    Verifies that the issue #247 plant's full 70+ device configuration
     (lights, switches, covers, climate, dry contact sensors, radar sensors, energy meters)
     loads cleanly, eliminates ghost devices, normalizes 4-digit zero-padded WHEREs,
     and updates entity states upon receiving authentic on-wire OpenWebNet bus frames.
@@ -1158,7 +1158,7 @@ class TestPhase1GoldenPlantSampleIssue247:
 
     @pytest.mark.asyncio
     async def test_golden_plant_yaml_import_and_device_cleanliness(self, hass: HomeAssistant):
-        """Verify Nicola Cavallo's 70+ device plant initializes with zero orphaned ghost devices."""
+        """Verify the issue #247 plant (70+ devices) initializes with zero orphaned ghost devices."""
         from homeassistant.helpers import device_registry as dr
         mac = "00:03:50:00:02:47"
         plant_yaml_path = Path(__file__).resolve().parent / "fixtures" / "plants" / "issue_247_myhomeserver1" / "myhome.yaml"
