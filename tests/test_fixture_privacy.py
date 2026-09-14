@@ -1,4 +1,5 @@
 """Plant fixtures carry no personal data, and the anonymizer keeps it that way."""
+# privacy-check: allow-samples - the inputs below are what the check must catch
 import json
 import re
 import shutil
@@ -6,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.anonymize_plant_fixture import Anonymizer, anonymize, main
+from scripts.anonymize_plant_fixture import Anonymizer, anonymize, check, findings, main
 
 PLANTS = Path(__file__).resolve().parent / "fixtures" / "plants"
 PRIVATE_IP = re.compile(r"\b(10\.\d+|172\.(1[6-9]|2\d|3[01])|192\.168)\.\d+\.\d+\b")
@@ -129,3 +130,28 @@ def test_cli_writes_the_mapping(tmp_path, capsys):
     assert set(written) == {"entity_ids", "ips", "macs"}
     # already synthetic: running it again changes nothing
     assert (plant / "myhome.yaml").read_text(encoding="utf-8") == (src / "myhome.yaml").read_text(encoding="utf-8")
+
+
+def test_nothing_in_the_test_tree_looks_personal():
+    """The same rules, over every data and source file under tests/ - wherever a dump lands."""
+    assert check([PLANTS.parent]) == 0
+
+
+def test_check_reports_and_rejects(tmp_path, capsys):
+    dump = tmp_path / "diagnostics.json"
+    dump.write_text(json.dumps({"host": "192.168.1.35", "mac": "00:03:50:AB:CD:EF", "password": "12345",
+                                "entry_id": "01M284WWKZG4XTEG62NVW1DPVG", "file_path": "C:/Users/someone/x"}), encoding="utf-8")
+    assert findings(dump.read_text(encoding="utf-8")) == ["LAN address", "non-synthetic MAC", "secret value", "local path", "config-entry id"]
+    assert findings("mac = '00:03:50:aa:bb:cc'; password = '123'", data_file=False) == []  # placeholders in source are fine
+    assert findings("x = '/home/alice/.homeassistant'", data_file=False) == ["local path"]  # a user name is not
+    assert findings("192.168.1.1  # privacy-check: allow-samples") == []
+    assert check([dump]) == 1
+    assert "diagnostics.json: LAN address" in capsys.readouterr().out
+    assert main(["--check", str(dump)]) == 1
+
+
+def test_card_exports_carry_no_fingerprint_or_address():
+    """The issue bundle and the JSON export name the transport and the model, never the browser or the address."""
+    card = (Path(__file__).resolve().parents[1] / "custom_components" / "myhome" / "frontend" / "myhome-bus-card.js").read_text(encoding="utf-8")
+    assert "userAgent" not in card and "user_agent" not in card
+    assert "${gw.host}" not in card and "${gw.port" not in card and "${gw.serial_port}" not in card
