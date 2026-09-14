@@ -558,7 +558,7 @@ automated coverage and physical gateway verification steps.
 
 | Tier | Rules satisfied | Status |
 | :--- | :---: | :--- |
-| 🥉 Bronze | 17 / 20 | ⏳ next — blocked by `brands`, `has-entity-name`, `runtime-data` |
+| 🥉 Bronze | 18 / 20 | ⏳ next — blocked by `brands`, `has-entity-name` |
 | 🥈 Silver | 10 / 10 | ✅ all rules satisfied (waiting on lower tier) |
 | 🥇 Gold | 10 / 21 | ⬜ 11 rule(s) open |
 | 🏆 Platinum | 2 / 3 | ⬜ 1 rule(s) open |

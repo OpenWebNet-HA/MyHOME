@@ -47,15 +47,12 @@ from .const import (
     CONF_BUS_INTERFACE,
     CONF_COVER_TRAVEL_TIMES,
     CONF_DEVICE_MODEL,
-    CONF_ENTITY,
     CONF_ENTITY_NAME,
     CONF_MANUFACTURER,
-    CONF_PLATFORMS,
     CONF_TRAVEL_TIME,
     CONF_WHERE,
     CONF_WHO,
     DEFAULT_TRAVEL_TIME,
-    DOMAIN,
     EVENT_COVER_CALIBRATION,
     LOGGER,
     SERVICE_CALIBRATE_COVER,
@@ -192,6 +189,7 @@ class CalibrationInterrupted(HomeAssistantError):
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
     """Set up the MyHOME cover platform dynamically via Discovery."""
+    runtime = config_entry.runtime_data
     known_covers = set()
 
     # Restore previously discovered entities from the Entity Registry so they
@@ -204,8 +202,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         existing_entries = []
     restored_covers = []
 
-    gateway = hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY]
-    _configured_covers = hass.data[DOMAIN][config_entry.data[CONF_MAC]].get(CONF_PLATFORMS, {}).get(PLATFORM, {})
+    gateway = runtime.gateway
+    _configured_covers = runtime.platforms.get(PLATFORM, {})
 
     for entry in existing_entries:
         if entry.domain == PLATFORM:
@@ -374,7 +372,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 advanced=_advanced,
                 manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
                 model=cfg.get(CONF_DEVICE_MODEL, "Shutter / Cover"),
-                gateway=hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY],
+                gateway=runtime.gateway,
                 travel_time=_travel_time,
                 travel_time_source="yaml" if CONF_TRAVEL_TIME in cfg else "default",
                 calibration=_stored_calibration(config_entry, unique_id),
@@ -969,13 +967,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 options[CONF_COVER_TRAVEL_TIMES] = stored
                 hass.config_entries.async_update_entry(entry, options=options)
 
-        configured_covers = {}
-        if hass is not None and DOMAIN in getattr(hass, "data", {}):
-            gw_mac = getattr(self._gateway_handler, "mac", "")
-            gw_data = hass.data[DOMAIN].get(gw_mac, {}) if isinstance(hass.data[DOMAIN], dict) else {}
-            configured_covers = gw_data.get(CONF_PLATFORMS, {}).get(PLATFORM, {})
-
-        cfg = configured_covers.get(self._device_id) or configured_covers.get(self._where) or {}
+        cfg = self._device_config() or {}
         if CONF_TRAVEL_TIME in cfg:
             base_travel = float(cfg[CONF_TRAVEL_TIME])
             source = "yaml"

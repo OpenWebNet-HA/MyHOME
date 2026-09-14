@@ -16,6 +16,7 @@ from custom_components.myhome.cover import (
     async_stop_cover_calibration,
     get_last_calibration_trace,
 )
+from tests.conftest import attach_runtime, bind_entity
 
 
 @pytest.fixture(autouse=True)
@@ -401,6 +402,7 @@ async def test_button_platform_creates_calibration_buttons_for_registered_and_di
     hass.data[DOMAIN] = {gateway.mac: {CONF_PLATFORMS: {"button": {}}, CONF_ENTITY: gateway}}
 
     added = []
+    attach_runtime(hass, entry)
     await async_setup_entry(hass, entry, lambda ents: added.extend(ents))
     calib = [e for e in added if isinstance(e, CalibrateCoverButtonEntity)]
     assert sorted(e.unique_id for e in calib) == sorted([f"{gateway.mac}-2-21-calibrate", f"{gateway.mac}-2-22#4#02-calibrate"])
@@ -678,7 +680,7 @@ async def test_reset_travel_time_advanced_and_yaml(hass, gateway):
     with pytest.raises(HomeAssistantError, match="reports its position"):
         await adv_cover.async_reset_travel_time()
 
-    # With YAML configuration in hass.data
+    # With YAML configuration on the entry's runtime data (seeded through the legacy mapping)
     cover = _make_cover(hass, gateway)
     hass.data[DOMAIN] = {
         gateway.mac: {
@@ -689,6 +691,7 @@ async def test_reset_travel_time_advanced_and_yaml(hass, gateway):
             }
         }
     }
+    bind_entity(hass, cover, gateway.mac, gateway)
     await cover.async_reset_travel_time()
     assert cover._travel_time_down == 32.0
     assert cover._travel_time_up == 32.0

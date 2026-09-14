@@ -48,9 +48,7 @@ from voluptuous import (
 from .const import (
     CONF_DEVICE_CLASS,
     CONF_DEVICE_MODEL,
-    CONF_ENTITY,
     CONF_MANUFACTURER,
-    CONF_PLATFORMS,
     CONF_WHERE,
     CONF_WHO,
     DOMAIN,
@@ -89,15 +87,15 @@ def _sensor_address(who, where):
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    if PLATFORM not in hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_PLATFORMS]:
+    runtime = config_entry.runtime_data
+
+    if PLATFORM not in runtime.platforms:
         return True
 
     _sensors = []
-    _configured_sensors = hass.data[DOMAIN][config_entry.data[CONF_MAC]][
-        CONF_PLATFORMS
-    ][PLATFORM]
+    _configured_sensors = runtime.platforms[PLATFORM]
     _power_devices_configured = False
-    gateway = hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY]
+    gateway = runtime.gateway
     seen_configs = set()
 
     for _sensor in list(_configured_sensors.keys()):
@@ -151,9 +149,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                         device_class=dev_class,
                         manufacturer=_configured_sensors[_sensor][CONF_MANUFACTURER],
                         model=_configured_sensors[_sensor][CONF_DEVICE_MODEL],
-                        gateway=hass.data[DOMAIN][config_entry.data[CONF_MAC]][
-                            CONF_ENTITY
-                        ],
+                        gateway=runtime.gateway,
                     )
                 )
                 if SensorDeviceClass.POWER in _required_entities:
@@ -171,9 +167,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                         device_class=SensorDeviceClass.ENERGY,
                         manufacturer=_configured_sensors[_sensor][CONF_MANUFACTURER],
                         model=_configured_sensors[_sensor][CONF_DEVICE_MODEL],
-                        gateway=hass.data[DOMAIN][config_entry.data[CONF_MAC]][
-                            CONF_ENTITY
-                        ],
+                        gateway=runtime.gateway,
                     )
                 )
 
@@ -188,7 +182,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                     device_class=dev_class,
                     manufacturer=_configured_sensors[_sensor][CONF_MANUFACTURER],
                     model=_configured_sensors[_sensor][CONF_DEVICE_MODEL],
-                    gateway=hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY],
+                    gateway=runtime.gateway,
                 )
             )
 
@@ -203,7 +197,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                     device_class=dev_class,
                     manufacturer=_configured_sensors[_sensor][CONF_MANUFACTURER],
                     model=_configured_sensors[_sensor][CONF_DEVICE_MODEL],
-                    gateway=hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY],
+                    gateway=runtime.gateway,
                 )
             )
 
@@ -475,15 +469,15 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
 
 async def async_unload_entry(hass, config_entry):
-    if PLATFORM not in hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_PLATFORMS]:
+    runtime = config_entry.runtime_data
+
+    if PLATFORM not in runtime.platforms:
         return True
 
-    _configured_sensors = hass.data[DOMAIN][config_entry.data[CONF_MAC]][
-        CONF_PLATFORMS
-    ][PLATFORM]
+    _configured_sensors = runtime.platforms[PLATFORM]
 
     for _sensor in list(_configured_sensors.keys()):
-        del hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_PLATFORMS][PLATFORM][
+        del runtime.platforms[PLATFORM][
             _sensor
         ]
 
@@ -530,23 +524,12 @@ class MyHOMEPowerSensor(MyHOMEEntity, SensorEntity):
 
     async def async_added_to_hass(self):
         """When entity is added to hass."""
-        try:
-            device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
-            if CONF_ENTITIES not in device_dict or not isinstance(device_dict[CONF_ENTITIES], dict):
-                device_dict[CONF_ENTITIES] = {}
-            device_dict[CONF_ENTITIES][self._attr_device_class] = self
-        except (KeyError, TypeError):
-            pass
+        self._register_entity_ref(self._attr_device_class)
         await super().async_added_to_hass()
 
     async def async_will_remove_from_hass(self):
         """When entity is removed from hass."""
-        try:
-            device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
-            if CONF_ENTITIES in device_dict and isinstance(device_dict[CONF_ENTITIES], dict) and self._attr_device_class in device_dict[CONF_ENTITIES]:
-                del device_dict[CONF_ENTITIES][self._attr_device_class]
-        except (KeyError, TypeError):
-            pass
+        self._unregister_entity_ref(self._attr_device_class)
 
     async def async_update(self):
         """Update the entity.
@@ -632,23 +615,12 @@ class MyHOMEEnergySensor(MyHOMEEntity, SensorEntity):
 
     async def async_added_to_hass(self):
         """When entity is added to hass."""
-        try:
-            device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
-            if CONF_ENTITIES not in device_dict or not isinstance(device_dict[CONF_ENTITIES], dict):
-                device_dict[CONF_ENTITIES] = {}
-            device_dict[CONF_ENTITIES][self._entity_specific_id] = self
-        except (KeyError, TypeError):
-            pass
+        self._register_entity_ref(self._entity_specific_id)
         await super().async_added_to_hass()
 
     async def async_will_remove_from_hass(self):
         """When entity is removed from hass."""
-        try:
-            device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
-            if CONF_ENTITIES in device_dict and isinstance(device_dict[CONF_ENTITIES], dict) and self._entity_specific_id in device_dict[CONF_ENTITIES]:
-                del device_dict[CONF_ENTITIES][self._entity_specific_id]
-        except (KeyError, TypeError):
-            pass
+        self._unregister_entity_ref(self._entity_specific_id)
 
     async def async_update(self):
         """Update the entity.
@@ -773,13 +745,7 @@ class MyHOMETemperatureSensor(MyHOMEEntity, SensorEntity):
 
     async def async_added_to_hass(self):
         """When entity is added to hass."""
-        try:
-            device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
-            if CONF_ENTITIES not in device_dict or not isinstance(device_dict[CONF_ENTITIES], dict):
-                device_dict[CONF_ENTITIES] = {}
-            device_dict[CONF_ENTITIES][self._attr_device_class] = self
-        except (KeyError, TypeError):
-            pass
+        self._register_entity_ref(self._attr_device_class)
         # Probes start receive-only: no initial poll, the push stream fills in
         # and the periodic update only polls if it stays silent (issue #308).
         self._poll_on_add = not self._is_probe
@@ -787,12 +753,7 @@ class MyHOMETemperatureSensor(MyHOMEEntity, SensorEntity):
 
     async def async_will_remove_from_hass(self):
         """When entity is removed from hass."""
-        try:
-            device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
-            if CONF_ENTITIES in device_dict and isinstance(device_dict[CONF_ENTITIES], dict) and self._attr_device_class in device_dict[CONF_ENTITIES]:
-                del device_dict[CONF_ENTITIES][self._attr_device_class]
-        except (KeyError, TypeError):
-            pass
+        self._unregister_entity_ref(self._attr_device_class)
 
     async def async_update(self):
         """Poll the probe, unless the bus already pushed a fresh reading."""
@@ -900,13 +861,7 @@ class MyHOMEIlluminanceSensor(MyHOMEEntity, SensorEntity):
 
     async def async_added_to_hass(self):
         """When entity is added to hass."""
-        try:
-            device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
-            if CONF_ENTITIES not in device_dict or not isinstance(device_dict[CONF_ENTITIES], dict):
-                device_dict[CONF_ENTITIES] = {}
-            device_dict[CONF_ENTITIES][self._attr_device_class] = self
-        except (KeyError, TypeError):
-            pass
+        self._register_entity_ref(self._attr_device_class)
         target_hass = self.hass or self._hass
         if target_hass is not None:
             unsub = async_dispatcher_connect(
@@ -927,12 +882,7 @@ class MyHOMEIlluminanceSensor(MyHOMEEntity, SensorEntity):
 
     async def async_will_remove_from_hass(self):
         """When entity is removed from hass."""
-        try:
-            device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
-            if CONF_ENTITIES in device_dict and isinstance(device_dict[CONF_ENTITIES], dict) and self._attr_device_class in device_dict[CONF_ENTITIES]:
-                del device_dict[CONF_ENTITIES][self._attr_device_class]
-        except (KeyError, TypeError):
-            pass
+        self._unregister_entity_ref(self._attr_device_class)
 
     async def async_update(self):
         """Update the entity.

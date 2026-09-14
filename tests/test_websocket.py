@@ -131,17 +131,12 @@ def test_get_gateway_and_monitor_runtime_data_first(hass: HomeAssistant, attach_
     assert _get_gateway_and_monitor(hass, "000350aabbcc") == (gw, monitor)
 
 
-def test_get_gateway_and_monitor_legacy_fallback(hass: HomeAssistant, attach_gateway):
-    """Entries without runtime_data are still found through hass.data."""
+def test_get_gateway_and_monitor_ignores_entries_not_set_up(hass: HomeAssistant, attach_gateway):
+    """An entry without runtime_data is not set up; the legacy hass.data alias is never consulted."""
     monitor = BusMonitor(maxlen=10)
     gw = MagicMock()
     attach_gateway("00:03:50:aa:bb:cc", gw, monitor, legacy_only=True)
-    assert _get_gateway_and_monitor(hass, "00:03:50:aa:bb:cc") == (gw, monitor)
-
-    # Legacy mapping present but empty -> nothing usable
-    hass.data[DOMAIN]["00:03:50:aa:bb:cc"] = {}
-    assert _get_gateway_and_monitor(hass) == (None, None)
-    hass.data[DOMAIN]["00:03:50:aa:bb:cc"] = "not-a-dict"
+    assert _get_gateway_and_monitor(hass, "00:03:50:aa:bb:cc") == (None, None)
     assert _get_gateway_and_monitor(hass) == (None, None)
 
 

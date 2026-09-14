@@ -31,6 +31,7 @@ from custom_components.myhome.const import (
     CONF_WHERE,
     DOMAIN,
 )
+from tests.conftest import attach_runtime
 
 
 @pytest.fixture
@@ -85,6 +86,7 @@ async def test_alarm_setup_restores_and_discovers(hass: HomeAssistant, mock_gate
         def fake_add_entities(entities):
             added_entities.extend(entities)
 
+        attach_runtime(hass, config_entry)
         await async_setup_entry(hass, config_entry, fake_add_entities)
 
         # Restored (0) + Configured from YAML (1) = 2 alarms
@@ -101,6 +103,7 @@ async def test_alarm_setup_restores_and_discovers(hass: HomeAssistant, mock_gate
         assert len(added_entities) == 3
 
         # Unload
+        attach_runtime(hass, config_entry)
         assert await async_unload_entry(hass, config_entry) is True
 
 

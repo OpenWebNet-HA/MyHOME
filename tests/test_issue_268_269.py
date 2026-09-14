@@ -32,6 +32,7 @@ from custom_components.myhome.const import (
     DOMAIN,
 )
 from custom_components.myhome.validate import climate_schema
+from tests.conftest import attach_runtime
 
 
 @pytest.mark.asyncio
@@ -394,6 +395,7 @@ async def test_issue_268_climate_friendly_name_restored_from_myhome_yaml(hass: H
     }
 
     added_entities = []
+    attach_runtime(hass, config_entry)
     await async_setup_climate_entry(hass, config_entry, lambda ents: added_entities.extend(ents))
 
     assert len(added_entities) == 1
@@ -446,6 +448,7 @@ async def test_issue_268_climate_discovery_preserves_name_via_bus_message(hass: 
     }
 
     added_entities = []
+    attach_runtime(hass, config_entry)
     await async_setup_climate_entry(hass, config_entry, lambda ents: added_entities.extend(ents))
 
     # Initially no entity in registry or config, so added_entities is empty
@@ -528,6 +531,7 @@ async def test_issue_268_climate_central_unit_name_restoration(hass: HomeAssista
     }
 
     added_entities = []
+    attach_runtime(hass, config_entry)
     await async_setup_climate_entry(hass, config_entry, lambda ents: added_entities.extend(ents))
 
     assert len(added_entities) == 1
@@ -586,6 +590,7 @@ async def test_issue_268_climate_customize_yaml_fallback(hass: HomeAssistant):
     }
 
     added_entities = []
+    attach_runtime(hass, config_entry)
     await async_setup_climate_entry(hass, config_entry, lambda ents: added_entities.extend(ents))
 
     assert len(added_entities) == 1

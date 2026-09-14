@@ -48,13 +48,11 @@ from .const import (
     CONF_COLOR_TEMP,
     CONF_DEVICE_MODEL,
     CONF_DIMMABLE,
-    CONF_ENTITY,
     CONF_ENTITY_NAME,
     CONF_HS,
     CONF_ICON,
     CONF_ICON_ON,
     CONF_MANUFACTURER,
-    CONF_PLATFORMS,
     CONF_RGB,
     CONF_TRANSITION_MODE,
     CONF_WHERE,
@@ -81,6 +79,7 @@ PARALLEL_UPDATES = 0
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
     """Set up the MyHOME light platform dynamically via Discovery."""
+    runtime = config_entry.runtime_data
     known_lights = set()
 
     # Restore previously discovered entities from the Entity Registry so they
@@ -93,13 +92,13 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         existing_entries = []
     restored_lights = []
 
-    gateway = hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY]
-    _configured_lights = hass.data[DOMAIN][config_entry.data[CONF_MAC]].get(CONF_PLATFORMS, {}).get(PLATFORM, {})
+    gateway = runtime.gateway
+    _configured_lights = runtime.platforms.get(PLATFORM, {})
 
     # Collect all WHERE addresses configured or registered as switches so dynamic discovery
     # of WHO=1 never auto-creates a duplicate Light entity for switch/outlet devices.
     switch_wheres = set()
-    _configured_switches = hass.data[DOMAIN][config_entry.data[CONF_MAC]].get(CONF_PLATFORMS, {}).get("switch", {})
+    _configured_switches = runtime.platforms.get("switch", {})
     for dev_id, sw_cfg in _configured_switches.items():
         sw_where = str(sw_cfg.get(CONF_WHERE, dev_id))
         sw_clean = sw_where.split("-")[-1]
@@ -123,7 +122,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     # Collect all WHERE addresses configured or registered as sensors/binary_sensors so dynamic discovery
     # of WHO=1 never auto-creates a duplicate Light entity for motion/illuminance sensors.
     sensor_wheres = set()
-    _configured_bs = hass.data[DOMAIN][config_entry.data[CONF_MAC]].get(CONF_PLATFORMS, {}).get("binary_sensor", {})
+    _configured_bs = runtime.platforms.get("binary_sensor", {})
     for dev_id, bs_cfg in _configured_bs.items():
         if str(bs_cfg.get(CONF_WHO, "25")) == "1":
             bs_where = str(bs_cfg.get(CONF_WHERE, dev_id))
@@ -134,7 +133,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             sensor_wheres.add(normalize_where(bs_where))
             sensor_wheres.add(normalize_where(bs_clean))
 
-    _configured_s = hass.data[DOMAIN][config_entry.data[CONF_MAC]].get(CONF_PLATFORMS, {}).get("sensor", {})
+    _configured_s = runtime.platforms.get("sensor", {})
     for dev_id, s_cfg in _configured_s.items():
         if str(s_cfg.get(CONF_WHO, "1")) == "1":
             s_where = str(s_cfg.get(CONF_WHERE, dev_id))
@@ -419,7 +418,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 dimmable=_is_dimmable,
                 manufacturer=_manufacturer,
                 model=_model,
-                gateway=hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY],
+                gateway=runtime.gateway,
             )
             known_lights.add(unique_id)
             async_add_entities([_light])

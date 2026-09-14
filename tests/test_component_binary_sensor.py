@@ -20,6 +20,7 @@ from custom_components.myhome.binary_sensor import (
     async_unload_entry,
 )
 from custom_components.myhome.const import DOMAIN
+from tests.conftest import attach_runtime, bind_entity
 
 
 async def test_setup_and_unload_entry(hass):
@@ -72,6 +73,7 @@ async def test_setup_and_unload_entry(hass):
     config_entry.data = {"mac": "mac"}
 
     async_add_entities = MagicMock()
+    attach_runtime(hass, config_entry)
     await async_setup_entry(hass, config_entry, async_add_entities)
 
     async_add_entities.assert_called_once()
@@ -83,6 +85,7 @@ async def test_setup_and_unload_entry(hass):
     assert isinstance(entities[2], MyHOMEMotionSensor)
 
     # Test unload
+    attach_runtime(hass, config_entry)
     await async_unload_entry(hass, config_entry)
     assert "device_1" not in hass.data[DOMAIN]["mac"]["platforms"]["binary_sensor"]
 
@@ -239,7 +242,9 @@ async def test_binary_sensor_platform_not_in_platforms(hass):
     config_entry = MagicMock()
     config_entry.data = {"mac": "mac"}
 
+    attach_runtime(hass, config_entry)
     assert await async_setup_entry(hass, config_entry, MagicMock()) is True
+    attach_runtime(hass, config_entry)
     assert await async_unload_entry(hass, config_entry) is True
 
 
@@ -280,6 +285,8 @@ async def test_binary_sensor_lifecycle_edge_cases(hass):
     )
     motion.async_get_last_state = AsyncMock(return_value=None)
     mock_gateway.send_status_request = AsyncMock()
+    for entity in (dry, aux, motion):
+        bind_entity(hass, entity, "mac", mock_gateway)
 
     # Trigger async_added_to_hass with device_dict lacking CONF_ENTITIES
     await dry.async_added_to_hass()
@@ -294,8 +301,10 @@ async def test_binary_sensor_lifecycle_edge_cases(hass):
     await aux.async_will_remove_from_hass()
     await motion.async_will_remove_from_hass()
 
-    # Trigger KeyError branches when hass.data is empty
-    hass.data = {}
+    # Entities without a platform / runtime data must not raise
+    dry.platform = None
+    aux.platform.config_entry.runtime_data = None
+    motion.platform.config_entry.runtime_data.platforms.clear()
     await dry.async_added_to_hass()
     await dry.async_will_remove_from_hass()
     await aux.async_added_to_hass()
@@ -373,6 +382,7 @@ async def test_binary_sensor_dispatcher_and_discovery(hass):
     def fake_add(entities):
         added.extend(entities)
 
+    attach_runtime(hass, config_entry)
     assert await async_setup_entry(hass, config_entry, fake_add) is True
 
     # Discover new dry contact
@@ -459,6 +469,7 @@ async def test_binary_sensor_entity_registry_and_motion_discovery(hass):
         def fake_add(entities):
             added.extend(entities)
 
+        attach_runtime(hass, config_entry)
         assert await async_setup_entry(hass, config_entry, fake_add) is True
         # 4 entities restored from registry; configured 41 is skipped via continue
         assert len(added) == 4
@@ -531,6 +542,7 @@ async def test_binary_sensor_registry_exception(hass):
         side_effect=Exception("ER error"),
     ):
         added = []
+        attach_runtime(hass, config_entry)
         assert await async_setup_entry(hass, config_entry, lambda e: added.extend(e)) is True
 
 
@@ -604,6 +616,7 @@ async def test_dry_contact_garage_door_deduplication_and_zero_padded_where(hass)
         return_value=mock_er,
     ):
         added = []
+        attach_runtime(hass, config_entry)
         assert await async_setup_entry(hass, config_entry, lambda e: added.extend(e)) is True
         # Stale duplicate entry must be removed from ER
         mock_er.async_remove.assert_called_with("binary_sensor.dry_contact_garage_door")
@@ -689,6 +702,7 @@ async def test_motion_sensor_zero_padded_where_and_legrand_048834_frames(hass):
         return_value=mock_er,
     ):
         added = []
+        attach_runtime(hass, config_entry)
         assert await async_setup_entry(hass, config_entry, lambda e: added.extend(e)) is True
         mock_er.async_remove.assert_called_with("binary_sensor.motion_sensor_0015_legacy")
         assert len(added) == 1
@@ -772,6 +786,7 @@ async def test_motion_sensor_0015_and_switch_15_coexistence(hass):
          patch("custom_components.myhome.switch.er.async_entries_for_config_entry", return_value=[]):
         motion_entities = []
         switch_entities = []
+        attach_runtime(hass, config_entry)
         assert await async_setup_entry(hass, config_entry, lambda e: motion_entities.extend(e)) is True
         assert await async_setup_switch_entry(hass, config_entry, lambda e: switch_entities.extend(e)) is True
 
@@ -868,6 +883,7 @@ async def test_binary_sensor_duplicate_exceptions_and_padded_where(hass):
     with patch("custom_components.myhome.binary_sensor.er.async_entries_for_config_entry", return_value=[entry_other_domain, entry_motion1, entry_motion2, entry_motion3, entry_dry1, entry_dry2, entry_dry3, entry_dup_aux1, entry_dup_aux2, entry_dup_aux3]), \
          patch("custom_components.myhome.binary_sensor.er.async_get", return_value=mock_er):
         added = []
+        attach_runtime(hass, config_entry)
         assert await async_setup_entry(hass, config_entry, lambda e: added.extend(e)) is True
 
         for entity in added:
@@ -987,6 +1003,7 @@ async def test_moving_device_class_dry_contact_restoration_and_deduplication(has
         return_value=mock_er,
     ):
         added = []
+        attach_runtime(hass, config_entry)
         assert await async_setup_entry(hass, config_entry, lambda e: added.extend(e)) is True
         assert len(added) == 1
         bs = added[0]
@@ -1056,6 +1073,7 @@ async def test_who9_auxiliary_sensor_with_motion_device_class_restoration(hass):
         return_value=mock_er,
     ):
         added = []
+        attach_runtime(hass, config_entry)
         assert await async_setup_entry(hass, config_entry, lambda e: added.extend(e)) is True
         assert len(added) == 1
         bs = added[0]

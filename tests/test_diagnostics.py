@@ -10,6 +10,7 @@ from OWNd.message import OWNMessage
 from custom_components.myhome.bus_monitor import BusMonitor
 from custom_components.myhome.const import CONF_ENTITIES, CONF_ENTITY, DOMAIN, INTEGRATION_VERSION
 from custom_components.myhome.diagnostics import async_get_config_entry_diagnostics
+from tests.conftest import attach_runtime
 
 
 @pytest.mark.asyncio
@@ -110,6 +111,7 @@ async def test_diagnostics_with_full_gateway_and_bus_monitor(hass: HomeAssistant
             },
         }
     }
+    attach_runtime(hass, mock_entry, mac, mock_handler)
 
     diag = await async_get_config_entry_diagnostics(hass, mock_entry)
 
@@ -191,8 +193,8 @@ async def test_diagnostics_carry_no_household_identity(hass: HomeAssistant):
 async def test_redaction_is_scoped_to_the_config_entry(hass: HomeAssistant):
     """Review of #335: redaction covers entry data / options only, and breaks no relationship.
 
-    The entry is tied to its gateway by the raw MAC (``hass.data[DOMAIN][mac]``), so
-    the gateway, queue and bus-monitor blocks are still found and arrive whole - a
+    The entry is tied to its gateway through ``entry.runtime_data`` (the raw MAC is
+    the legacy key), so the gateway, queue and bus-monitor blocks are still found and arrive whole - a
     frame's ``where`` / ``who`` / ``what`` are what a bug report is about.
     """
     mac = "00:03:50:24:70:01"
@@ -213,6 +215,7 @@ async def test_redaction_is_scoped_to_the_config_entry(hass: HomeAssistant):
     mock_handler.send_buffer, mock_handler.bus_monitor = None, bus_mon
     mock_handler.identification.return_value = {"model": "F454", "source": "manual", "conflict": None}
     hass.data[DOMAIN] = {mac: {CONF_ENTITY: mock_handler, CONF_ENTITIES: {"light": [MagicMock()]}}}
+    attach_runtime(hass, mock_entry, mac, mock_handler)
 
     diag = await async_get_config_entry_diagnostics(hass, mock_entry)
 
