@@ -44,6 +44,7 @@ from homeassistant.components.media_player import (
     DOMAIN as PLATFORM,
 )
 from homeassistant.components.media_player import (
+    MediaPlayerDeviceClass,
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
     MediaPlayerState,
@@ -61,6 +62,7 @@ from .const import (
     CONF_DECODER_PRE_GAIN,
     CONF_DECODER_SLOTS,
     CONF_DECODER_SOURCE,
+    DOMAIN,
     LOGGER,
 )
 from .data import get_runtime_data
@@ -225,6 +227,9 @@ class MyHOMEMediaPlayer(MyHOMEEntity, MediaPlayerEntity):
     full WHO=16 hardware control with no streaming features advertised.
     """
 
+    # Audio zones are amplified speaker outputs of the SCS sound system.
+    _attr_device_class = MediaPlayerDeviceClass.SPEAKER
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -385,7 +390,10 @@ class MyHOMEMediaPlayer(MyHOMEEntity, MediaPlayerEntity):
         result = await pool.claim(self.entity_id)
         if result is None:
             raise HomeAssistantError(
-                f"{self.entity_id}: All audio matrix inputs are currently in use by other rooms!"
+                f"{self.entity_id}: All audio matrix inputs are currently in use by other rooms!",
+                translation_domain=DOMAIN,
+                translation_key="decoders_busy",
+                translation_placeholders={"entity_id": str(self.entity_id)},
             )
         decoder_id, source_num = result
         self._active_decoder = decoder_id
@@ -451,7 +459,12 @@ class MyHOMEMediaPlayer(MyHOMEEntity, MediaPlayerEntity):
             await pool.release(self.entity_id)
             self._active_decoder = None
             raise HomeAssistantError(
-                f"{self.entity_id}: decoder {decoder_id} failed to start playback: {err}"
+                f"{self.entity_id}: decoder {decoder_id} failed to start playback: {err}",
+                translation_domain=DOMAIN,
+                translation_key="decoder_start_failed",
+                translation_placeholders={
+                    "entity_id": str(self.entity_id), "decoder": str(decoder_id), "error": str(err),
+                },
             ) from err
 
         self.async_schedule_update_ha_state()

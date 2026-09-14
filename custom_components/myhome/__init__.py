@@ -615,6 +615,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry):
     return True
 
 
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: MyHOMEConfigEntry, device_entry: dr.DeviceEntry
+) -> bool:
+    """Let the user delete a device that is no longer on the bus (quality-scale stale-devices).
+
+    Devices are discovered from bus traffic, so a device that is still wired in
+    simply reappears on its next status frame; removing it is safe. Only the
+    gateway itself is refused: it is the config entry.
+    """
+    runtime = entry.runtime_data if isinstance(getattr(entry, "runtime_data", None), MyHOMERuntimeData) else None
+    gateway_ids = {getattr(runtime.gateway, "unique_id", None), getattr(runtime.gateway, "id", None)} if runtime else set()
+    if any(
+        ident[0] == DOMAIN and ident[1] in gateway_ids
+        for ident in device_entry.identifiers
+    ) or (dr.CONNECTION_NETWORK_MAC, str(entry.data.get(CONF_MAC, "")).lower()) in {
+        (kind, str(value).lower()) for kind, value in device_entry.connections
+    }:
+        LOGGER.debug("Refusing to remove gateway device %s", device_entry.id)
+        return False
+    return True
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bool:
     """Unload a config entry."""
     LOGGER.info("Unloading MyHome entry.")

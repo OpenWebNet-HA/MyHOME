@@ -590,3 +590,52 @@ async def test_reset_cover_travel_time(hass, gateway):
 
     stored = _stored_calibration(gateway.config_entry, cover._device_id)
     assert stored is None
+
+
+# ── exception translations (quality-scale exception-translations) ────────
+
+
+async def test_set_travel_time_validation_raises_translated_service_errors(hass, gateway):
+    """Bad service input is a ServiceValidationError carrying a translation key."""
+    from homeassistant.exceptions import ServiceValidationError
+
+    cover = _make_cover(hass, gateway)
+
+    with pytest.raises(ServiceValidationError, match="must be specified") as err:
+        await cover.async_set_travel_time()
+    assert err.value.translation_key == "travel_time_missing"
+
+    with pytest.raises(ServiceValidationError, match="travel_time_down must be between") as err:
+        await cover.async_set_travel_time(travel_time_down=0.2, travel_time_up=20)
+    assert err.value.translation_placeholders["field"] == "travel_time_down"
+
+    with pytest.raises(ServiceValidationError, match="travel_time_up must be between") as err:
+        await cover.async_set_travel_time(travel_time_down=20, travel_time_up=999)
+    assert err.value.translation_placeholders["field"] == "travel_time_up"
+
+    advanced = MyHOMECover(hass=hass, name="Pos", entity_name=None, device_id="31", who="2", where="31",
+                           interface=None, advanced=True, manufacturer="BTicino", model="F401", gateway=gateway)
+    for coro in (advanced.async_set_travel_time(travel_time=10), advanced.async_reset_travel_time()):
+        with pytest.raises(HomeAssistantError) as err:
+            await coro
+        assert err.value.translation_key == "cover_reports_position"
+
+
+def test_every_raised_translation_key_is_defined():
+    """Every literal translation_key used by a raised exception exists in strings.json and en.json."""
+    import json
+    import re
+    from pathlib import Path
+
+    root = Path("custom_components/myhome")
+    # Repair issues pass their keys as constants; literal keys are only used by exceptions.
+    raised = {
+        key
+        for source in root.glob("*.py")
+        for key in re.findall(r'translation_key="([a-z_]+)"', source.read_text(encoding="utf-8"))
+    }
+    assert raised, "no translated exceptions found"
+    for name in ("strings.json", "translations/en.json"):
+        defined = set(json.loads((root / name).read_text(encoding="utf-8"))["exceptions"])
+        missing = raised - defined
+        assert not missing, f"{name} lacks exception translations for {sorted(missing)}"

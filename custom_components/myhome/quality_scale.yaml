@@ -139,20 +139,20 @@ rules:
     status: done
     comment: Dynamic discovery wires bus devices to Home Assistant without static configuration.
   entity-category:
-    status: in_progress
-    comment: Button entities use EntityCategory.CONFIG; diagnostic sensors are not yet categorised.
+    status: done
+    comment: Audited in tests/test_entity_audit.py - lock/unlock and calibration buttons are EntityCategory.CONFIG; every other entity is a primary control or measurement and carries no category (there are no diagnostic entities).
   entity-device-class:
-    status: in_progress
-    comment: Sensors and binary sensors declare device classes; not yet audited for every platform.
+    status: done
+    comment: Audited in tests/test_entity_audit.py - switch (switch/outlet), cover (shutter), binary sensors, sensors (power/energy/temperature/illuminance) and media player (speaker) declare device classes; light, climate, button and alarm panel have none applicable.
   entity-disabled-by-default:
-    status: in_progress
-    comment: Some noisy sensors default to disabled; not yet audited for every platform.
+    status: done
+    comment: Audited in tests/test_entity_audit.py - the daily and monthly energy counters are disabled by default; all other entities are primary controls and stay enabled.
   entity-translations:
     status: todo
     comment: Entities use has_entity_name=False with legacy entity IDs; no entity translation keys yet. Blocked on the same migration as has-entity-name.
   exception-translations:
-    status: todo
-    comment: Exceptions raised to the user are not translated yet.
+    status: done
+    comment: HomeAssistantError/ServiceValidationError raised from cover calibration, travel-time services and the media player decoder proxy carry translation keys defined under `exceptions` in strings.json / translations/en.json (guarded by test_every_raised_translation_key_is_defined).
   icon-translations:
     status: done
     comment: icons.json established for service actions and platform icons.
@@ -160,11 +160,11 @@ rules:
     status: done
     comment: async_step_reconfigure implemented allowing in-place IP, port, and password updates.
   repair-issues:
-    status: todo
-    comment: repairs.py provides helpers but no production code path raises an issue yet; auth failures rely on ConfigEntryAuthFailed (native reauth repair).
+    status: done
+    comment: gateway.py raises gateway_identity_mismatch / gateway_identity_corrected repair issues when the WHO=13 device type contradicts the configured model, and clears them when they agree; password rejection uses ConfigEntryAuthFailed (native reauth repair).
   stale-devices:
-    status: in_progress
-    comment: Empty orphaned devices are pruned at setup; async_remove_config_entry_device is not implemented yet.
+    status: done
+    comment: Empty orphaned devices are pruned at setup; async_remove_config_entry_device lets the user delete any bus device (a device still wired in reappears on its next status frame) and refuses only the gateway device.
 
   # 🏆 Platinum
   async-dependency:
