@@ -92,7 +92,7 @@ async def test_probe_dimension_15_discovery_and_update(mock_gateway, mock_config
     assert probe_sensor._device_id == "100"
     assert probe_sensor.native_unit_of_measurement == UnitOfTemperature.CELSIUS
     assert probe_sensor.native_value == 20.0
-    assert probe_sensor.name == "Probe 100 Temperature"
+    assert probe_sensor._display_name == "Probe 100 Temperature"
     assert probe_sensor.unique_id == f"{mac}-100-temperature"
 
     # 2. Dispatch subsequent update: *#4*100*15*1*0196*0001## (19.6°C)
@@ -152,7 +152,7 @@ async def test_probe_dimension_0_discovery(mock_gateway, mock_config_entry):
     sensor = discovered_entities[0]
     assert sensor._where == "105"
     assert sensor.native_value == 21.5
-    assert sensor.name == "Probe 105 Temperature"
+    assert sensor._display_name == "Probe 105 Temperature"
 
 
 @pytest.mark.asyncio
@@ -296,6 +296,7 @@ async def test_temperature_sensor_async_update_and_events(mock_gateway):
     mock_event.human_readable_log = "Probe reporting 20.5"
 
     sensor.hass = hass  # a live entity writes its state
+    sensor.entity_id = sensor.entity_id or "test.sensor"
     sensor.platform = MagicMock()
     sensor.async_schedule_update_ha_state = MagicMock()
     sensor.handle_event(mock_event)

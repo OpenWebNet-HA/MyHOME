@@ -204,8 +204,8 @@ class TestCommandGenerationFeasibility:
         )
 
         # 1. Rule: Entity IDs must strictly end with _lock and _unlock
-        assert lock_btn.entity_id == "button.office_light_lock"
-        assert unlock_btn.entity_id == "button.office_light_unlock"
+        # entity ids are assigned by the registry now; the buttons carry their translation keys
+        assert lock_btn.translation_key == "lock" and unlock_btn.translation_key == "unlock"
         assert lock_btn.entity_id != "button.office_light"
         assert unlock_btn.entity_id != "button.office_light_2"
 

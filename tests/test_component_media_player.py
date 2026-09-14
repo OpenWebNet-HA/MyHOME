@@ -126,7 +126,7 @@ async def test_setup_and_unload_entry_with_restored_entities(hass, mock_config_e
     async_add_entities.assert_called_once()
     entities = async_add_entities.call_args[0][0]
     assert len(entities) == 1
-    assert entities[0].name == "Audio Zone 1"
+    assert entities[0]._display_name == "Audio Zone 1"
 
     # Unload
     attach_runtime(hass, mock_config_entry)
@@ -190,7 +190,7 @@ async def test_dynamic_discovery_listener(hass, mock_config_entry, mock_gateway)
     assert async_add_entities.call_count == 2
     new_players = async_add_entities.call_args[0][0]
     assert len(new_players) == 1
-    assert new_players[0].name == "Audio Zone 2"
+    assert new_players[0]._display_name == "Audio Zone 2"
 
 
 @pytest.mark.asyncio

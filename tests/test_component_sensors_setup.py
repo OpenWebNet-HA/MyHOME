@@ -102,7 +102,7 @@ async def test_async_setup_entry_power_migration(mock_hass, mock_config_entry):
 
             power_sens = [s for s in sensors_added if isinstance(s, MyHOMEPowerSensor)]
             assert len(power_sens) == 1
-            assert power_sens[0].name == "Power Sensor Power"
+            assert power_sens[0]._display_name == "Power Sensor Power"
     finally:
         entity_platform.current_platform.reset(platform_token)
 
@@ -312,6 +312,7 @@ async def test_async_setup_entry_illuminance_registry_and_discovery(hass, mock_c
 
         # Hook up entity to hass dispatcher
         added[4].hass = hass
+        added[4].entity_id = added[4].entity_id or "test.added_4"
         added[4].async_on_remove = MagicMock()
         await added[4].async_added_to_hass()
 
@@ -443,6 +444,7 @@ async def test_illuminance_sensor_zero_padded_where_and_deduplication(hass: Home
         assert sensor._where == "0015"
 
         sensor.hass = hass
+        sensor.entity_id = sensor.entity_id or "test.sensor"
         sensor.platform = MagicMock()  # added by an EntityPlatform
         sensor.async_write_ha_state = MagicMock()
         await sensor.async_added_to_hass()
@@ -512,6 +514,7 @@ async def test_async_setup_entry_illuminance_deduplication_exception_and_padded_
         assert sensor._where == "021"
 
         sensor.hass = hass
+        sensor.entity_id = sensor.entity_id or "test.sensor"
         sensor.async_write_ha_state = MagicMock()
         sensor.async_on_remove = MagicMock()
         await sensor.async_added_to_hass()

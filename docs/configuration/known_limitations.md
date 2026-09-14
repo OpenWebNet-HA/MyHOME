@@ -63,8 +63,8 @@ Things the integration does not do, or does with a caveat, and the reason. Where
 
 | Limitation | Why | Workaround |
 | :--- | :--- | :--- |
-| **Entity names are legacy (`has_entity_name = False`).** New installs get `light.<name>` ids built from the configured name rather than device + entity naming. | Changing it renames entities on new installs and is being decided in the community RFC (quality-scale rule `has-entity-name`). | Existing installs keep their entity ids either way. |
-| **Entity names are not translated.** | Follows the naming decision above. | — |
+| **`entity_name` in `myhome.yaml` only applies to sensors and binary sensors.** On a light, switch, cover, thermostat, audio zone or alarm panel it is ignored: those entities *are* their device and carry the device `name`. | Home Assistant's device / entity naming model; `entity_name` never named those platforms in earlier versions either. | Rename the device in the UI, or change `name`. |
+| **Fresh installs name sensor ids after the device class** (`sensor.house_power`, `binary_sensor.cancello_opening`) where 2.0.0b12 produced `sensor.house`, `sensor.house_2`, `binary_sensor.cancello`. | The previous ids were the device name with numeric suffixes for the second and third sensor of a device. | Existing installations keep their ids; automations on a fresh install use the new ids. |
 | **Strict typing is incomplete.** | `mypy --strict` still reports errors in older modules; being ratcheted down. | — |
 | **`myhome.yaml` is a compatibility path, not the primary configuration.** Devices are discovered from the bus; YAML only adds names, device classes and options. | v2 is UI-first. | Keep `myhome.yaml` for names and `travel_time`; delete devices you no longer want from the device page. |
 | **Deleting a device does not stop it from coming back.** | Devices are re-discovered from bus traffic; a device that still exists reappears on its next status frame. | Only delete devices that are physically gone. |
