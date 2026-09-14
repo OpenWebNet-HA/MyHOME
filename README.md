@@ -562,6 +562,7 @@ automated coverage and physical gateway verification steps.
 - **`ha_standards`**: Automated architectural standards enforcement (`verify_ha_standards.py` / `test_ha_standards.py`) ensuring user-confirmed discovery flows, complete step translations, no deprecated constants, and no blocking calls in async coroutines.
 - **`pypi_standards`**: Strict wheel hygiene, metadata verification, and packaging checks.
 - **`quality-scale`**: Self-audit of `quality_scale.yaml` against the official Home Assistant Integration Quality Scale (`quality_scale_report.py`); reports the tier reached, refreshes the badge and the table below.
+- **`strict-typing`**: `mypy --strict` over the integration, ratcheted per module (`scripts/typing_ratchet.py`, `mypy_baseline.json`) — a module may only ever get cleaner (Platinum rule `strict-typing`).
 
 ### 🏅 Home Assistant Integration Quality Scale
 

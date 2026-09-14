@@ -10,6 +10,7 @@ from typing import Any, Optional
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
+from homeassistant.components.websocket_api import ActiveConnection
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PORT
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
@@ -281,7 +282,7 @@ def _matches_filter(
 @websocket_api.async_response
 async def ws_bus_monitor_history(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    connection: ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Return historical bus frames from the circular ring buffer."""
@@ -322,7 +323,7 @@ async def ws_bus_monitor_history(
 @websocket_api.async_response
 async def ws_bus_monitor_stream(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    connection: ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Subscribe to real-time bus monitor frames."""
@@ -356,7 +357,7 @@ async def ws_bus_monitor_stream(
 @websocket_api.async_response
 async def ws_bus_monitor_send(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    connection: ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Send an OpenWebNet diagnostic frame directly to the gateway."""
@@ -403,7 +404,7 @@ async def ws_bus_monitor_send(
 @websocket_api.async_response
 async def ws_bus_monitor_clear(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    connection: ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Clear the in-memory bus monitor ring buffer."""
@@ -424,7 +425,7 @@ async def ws_bus_monitor_clear(
 @websocket_api.async_response
 async def ws_bus_monitor_info(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    connection: ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Return runtime gateway telemetry and buffer stats."""
@@ -450,7 +451,7 @@ async def ws_bus_monitor_info(
 @websocket_api.async_response
 async def ws_cover_calibration_trace(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    connection: ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Return the calibration trace frames of one gateway.
