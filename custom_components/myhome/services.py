@@ -13,6 +13,7 @@ from .const import (
     ATTR_MESSAGE,
     CONF_ENTITY,
     DOMAIN,
+    SERVICE_STOP_COVER_CALIBRATION,
 )
 
 if TYPE_CHECKING:
@@ -176,6 +177,13 @@ async def async_setup_services(hass: HomeAssistant) -> None:
 
         return True
 
+    async def handle_stop_cover_calibration(call: ServiceCall) -> bool:
+        """Handle stopping active and queued cover calibrations."""
+        from .cover import async_stop_cover_calibration
+        gateway = call.data.get(ATTR_GATEWAY, None)
+        return await async_stop_cover_calibration(hass, gateway_mac=gateway)
+
     hass.services.async_register(DOMAIN, SERVICE_SYNC_TIME, handle_sync_time)
     hass.services.async_register(DOMAIN, SERVICE_SEND_MESSAGE, handle_send_message)
     hass.services.async_register(DOMAIN, SERVICE_SWEEP_BUS, handle_sweep_bus)
+    hass.services.async_register(DOMAIN, SERVICE_STOP_COVER_CALIBRATION, handle_stop_cover_calibration)

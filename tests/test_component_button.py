@@ -51,7 +51,12 @@ async def test_setup_and_unload_entry(hass):
     await async_setup_entry(hass, config_entry, async_add_entities)
 
     async_add_entities.assert_called_once()
-    entities = async_add_entities.call_args[0][0]
+    from custom_components.myhome.button import CalibrateAllCoversButtonEntity
+
+    all_entities = async_add_entities.call_args[0][0]
+    # The gateway always gets one "Calibrate all covers" button
+    assert sum(isinstance(e, CalibrateAllCoversButtonEntity) for e in all_entities) == 1
+    entities = [e for e in all_entities if not isinstance(e, CalibrateAllCoversButtonEntity)]
 
     # Each device gets 1 disable and 1 enable button
     assert len(entities) == 4
@@ -305,8 +310,10 @@ async def test_button_additional_edge_coverage(hass):
     config_entry.data = {"mac": "mac1"}
     added_entities = []
     await async_setup_entry(hass, config_entry, lambda ents: added_entities.extend(ents))
-    # Area button with '#' ignored
-    assert len(added_entities) == 0
+    # Area button with '#' ignored; only the gateway's "Calibrate all covers" button remains
+    from custom_components.myhome.button import CalibrateAllCoversButtonEntity
+
+    assert [type(e) for e in added_entities] == [CalibrateAllCoversButtonEntity]
 
     # Test dynamic device listener
     from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -315,7 +322,7 @@ async def test_button_additional_edge_coverage(hass):
         "myhome_new_device_mac1",
         {"who": "1", "where": "21", "name": "Light 21", "device_id": "21"},
     )
-    assert len(added_entities) == 2  # lock + unlock
+    assert len(added_entities) == 3  # calibrate-all + lock + unlock
 
     # Send duplicate device event (triggers line 58 return [])
     async_dispatcher_send(
@@ -323,4 +330,4 @@ async def test_button_additional_edge_coverage(hass):
         "myhome_new_device_mac1",
         {"who": "1", "where": "21", "name": "Light 21", "device_id": "21"},
     )
-    assert len(added_entities) == 2
+    assert len(added_entities) == 3
