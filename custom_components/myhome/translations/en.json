@@ -97,6 +97,20 @@
           "decoder_4_source": "Decoder 4 — BTicino source input number (1–4)",
           "decoder_4_pre_gain": "Decoder 4 — Pre-gain offset %"
         }
+      },
+      "init": {
+        "title": "MyHOME",
+        "menu_options": {
+          "panel": "MyHOME panel",
+          "user": "Gateway settings"
+        }
+      },
+      "panel": {
+        "title": "MyHOME panel",
+        "description": "[Open the MyHOME panel]({panel_url}) for this gateway.\n\nSidebar visibility is shared across all gateways and administrators. The panel remains accessible through this link when the shortcut is hidden.",
+        "data": {
+          "show_sidebar": "Show MyHOME in the sidebar"
+        }
       }
     },
     "error": {
@@ -106,7 +120,8 @@
       "invalid_password": "Invalid password",
       "password_error": "Invalid password",
       "not_a_media_player": "Must be a media_player entity (e.g. media_player.cambridge_audio_cxn)",
-      "mass_entity_not_allowed": "Infinite Loop Protection: Do not select Music Assistant clones! Select the original hardware entity instead."
+      "mass_entity_not_allowed": "Infinite Loop Protection: Do not select Music Assistant clones! Select the original hardware entity instead.",
+      "panel_save_failed": "Could not save the preference. Try again."
     }
   },
   "services": {

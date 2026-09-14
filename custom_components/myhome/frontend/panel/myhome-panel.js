@@ -34,6 +34,7 @@ class MyHomePanel extends HTMLElement {
     this._session = 0;
     this._unsubs = [];
     this._monitorToken = 0;
+    this._locationChanged = () => this._syncGatewayFromUrl();
   }
 
   set hass(value) {
@@ -54,6 +55,7 @@ class MyHomePanel extends HTMLElement {
   }
 
   get hass() { return this._hass; }
+  set route(value) { this._route = value; this._syncGatewayFromUrl(); }
   set panel(value) { this._panel = value; this._renderVersions(); }
   set narrow(value) { this._narrow = value; this._updateMenu(); }
 
@@ -62,7 +64,7 @@ class MyHomePanel extends HTMLElement {
     // Replay those own properties through the setters after the element upgrades,
     // otherwise they shadow the setters and the first mount never starts.
     // Restore panel/menu configuration before hass can initiate rendering.
-    for (const property of ["panel", "narrow", "hass"]) {
+    for (const property of ["panel", "narrow", "route", "hass"]) {
       if (!Object.prototype.hasOwnProperty.call(this, property)) continue;
       const value = this[property];
       delete this[property];
@@ -79,6 +81,9 @@ class MyHomePanel extends HTMLElement {
 
   _start() {
     if (this._timer) return;
+    this._syncGatewayFromUrl();
+    window.addEventListener("popstate", this._locationChanged);
+    window.addEventListener("location-changed", this._locationChanged);
     this._buildShell();
     this._renderInventory();
     this._refresh();
@@ -98,6 +103,8 @@ class MyHomePanel extends HTMLElement {
   }
 
   _stop() {
+    window.removeEventListener("popstate", this._locationChanged);
+    window.removeEventListener("location-changed", this._locationChanged);
     this._session++;
     clearInterval(this._timer);
     clearTimeout(this._refreshTimer);
@@ -125,7 +132,9 @@ class MyHomePanel extends HTMLElement {
         this._entryId = data.gateways.length === 1 ? data.gateways[0].entry_id : "";
         this._selectedInitially = true;
       }
-      if (this._entryId && !data.gateways.some((entry) => entry.entry_id === this._entryId)) this._entryId = "";
+      if (this._entryId && !data.gateways.some((entry) => entry.entry_id === this._entryId)) {
+        this._showError(this._t("gatewayNotFound"));
+      }
       if (changed) this._renderInventory();
     } catch (error) {
       if (session === this._session) this._showError(this._t("loadError"));
@@ -135,6 +144,22 @@ class MyHomePanel extends HTMLElement {
         this._setBusy(false);
         if (this._refreshAgain) { this._refreshAgain = false; this._refresh(); }
       }
+    }
+  }
+
+  _syncGatewayFromUrl() {
+    if (!this.isConnected) return;
+    const entryId = new URL(window.location.href).searchParams.get("entry_id");
+    if (this._entryQuery === entryId) return;
+    this._entryQuery = entryId;
+    this._entryId = entryId || "";
+    this._selectedInitially = entryId !== null;
+    this._view = "entities";
+    this._removeMonitor();
+    if (this._data) {
+      this._showError(this._entryId && !this._data.gateways.some((item) => item.entry_id === this._entryId)
+        ? this._t("gatewayNotFound") : "");
+      this._renderInventory();
     }
   }
 
@@ -200,6 +225,12 @@ class MyHomePanel extends HTMLElement {
       </main><div id="dialog-host"></div>`;
     this.shadowRoot.getElementById("gateway").onchange = (event) => {
       this._entryId = event.target.value;
+      this._selectedInitially = true;
+      const url = new URL(window.location.href);
+      url.searchParams.set("entry_id", this._entryId);
+      window.history.replaceState(window.history.state, "", url);
+      this._entryQuery = this._entryId;
+      this._showError("");
       this._renderInventory();
     };
     for (const [id, key] of [["search", "query"], ["category", "category"], ["area", "area"]]) {
@@ -227,6 +258,9 @@ class MyHomePanel extends HTMLElement {
     this._renderVersions();
     root.getElementById("totals").textContent = `${scope.devices.length} ${this._t("devices").toLocaleLowerCase()} · ${scope.entities.length} ${this._t("entities").toLocaleLowerCase()}`;
     root.getElementById("gateway").innerHTML = `<option value="">${t("allGateways")}</option>` + data.gateways.map((item) => `<option value="${escapeHtml(item.entry_id)}">${escapeHtml(item.title)}</option>`).join("");
+    if (this._entryId && !data.gateways.some((item) => item.entry_id === this._entryId)) {
+      root.getElementById("gateway").insertAdjacentHTML("beforeend", `<option value="${escapeHtml(this._entryId)}" disabled>${t("gatewayNotFound")}</option>`);
+    }
     root.getElementById("gateway").value = this._entryId;
     root.getElementById("gateways").innerHTML = scope.gateways.map((item) => {
       const status = item.disabled_by ? "disabled" : item.state === "loaded" ? (item.connected ? "connected" : "disconnected") : item.state;

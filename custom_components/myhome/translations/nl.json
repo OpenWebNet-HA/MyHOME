@@ -78,6 +78,20 @@
           "command_worker_count": "Aantal open command sessies",
           "generate_events": "Genereer gebeurtenissen in Home Assistant voor elk ontvangen bericht"
         }
+      },
+      "init": {
+        "title": "MyHOME",
+        "menu_options": {
+          "panel": "MyHOME-paneel",
+          "user": "Gatewayinstellingen"
+        }
+      },
+      "panel": {
+        "title": "MyHOME-paneel",
+        "description": "[Open het MyHOME-paneel]({panel_url}) voor deze gateway.\n\nDe zichtbaarheid in de zijbalk geldt voor alle gateways en beheerders. Het paneel blijft via deze link bereikbaar wanneer de snelkoppeling verborgen is.",
+        "data": {
+          "show_sidebar": "MyHOME in de zijbalk tonen"
+        }
       }
     },
     "error": {
@@ -85,7 +99,8 @@
       "invalid_worker_count": "Aantal workers moet tussen 1 and 10 zijn",
       "invalid_config_path": "Ongeldig path voor configuratie bestand",
       "invalid_password": "Ongeldig password",
-      "password_error": "Ongeldig password"
+      "password_error": "Ongeldig password",
+      "panel_save_failed": "De voorkeur kon niet worden opgeslagen. Probeer het opnieuw."
     }
   },
   "services": {

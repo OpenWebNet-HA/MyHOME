@@ -1,7 +1,7 @@
 """MyHOME administration panel backed by Home Assistant's native registries.
 
-The panel owns no configuration store. Its only custom WebSocket command is a
-read-only inventory; edits use Home Assistant's registry APIs directly.
+The panel stores only its shared sidebar preference. Its only custom WebSocket
+command is a read-only inventory; edits use Home Assistant's registry APIs directly.
 """
 
 from __future__ import annotations
@@ -20,17 +20,77 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.storage import Store
 
 from .const import CONF_ENTITY, CONF_FIRMWARE, DOMAIN, INTEGRATION_VERSION, is_apl_address
 
 PANEL_URL = "myhome"
-PANEL_VERSION = "0.6.1"
+PANEL_VERSION = "0.7.0"
 PANEL_STATIC_URL = "/myhome_panel"
 WS_INVENTORY = "myhome/panel/inventory"
 _PANEL_REGISTERED = "_panel_registered"
 _STATIC_REGISTERED = "_panel_static_registered"
 _WS_REGISTERED = "_panel_ws_registered"
 _LOCK = "_panel_setup_lock"
+_PREFERENCES = "_panel_preferences"
+PANEL_STORAGE_KEY = "myhome_panel"
+CONF_SHOW_SIDEBAR = "show_sidebar"
+
+
+class PanelPreferences:
+    """One backend-owned presentation preference shared by every gateway."""
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self.store = Store(hass, 1, PANEL_STORAGE_KEY)
+        self.lock = asyncio.Lock()
+        self.loaded = False
+        self.show_sidebar = True
+
+    async def async_load(self) -> None:
+        """Load once while holding the preferences lock."""
+        if not self.loaded:
+            saved = await self.store.async_load()
+            if isinstance(saved, dict) and isinstance(saved.get(CONF_SHOW_SIDEBAR), bool):
+                self.show_sidebar = saved[CONF_SHOW_SIDEBAR]
+            self.loaded = True
+
+
+def _preferences(hass: HomeAssistant) -> PanelPreferences:
+    data = hass.data.setdefault(DOMAIN, {})
+    if _PREFERENCES not in data:
+        data[_PREFERENCES] = PanelPreferences(hass)
+    return data[_PREFERENCES]
+
+
+async def async_get_panel_sidebar(hass: HomeAssistant) -> bool:
+    """Read the shared sidebar preference, including before gateway setup."""
+    preferences = _preferences(hass)
+    async with preferences.lock:
+        await preferences.async_load()
+        return preferences.show_sidebar
+
+
+async def async_set_panel_sidebar(hass: HomeAssistant, visible: bool) -> None:
+    """Persist the preference before updating the registered panel in place."""
+    if not isinstance(visible, bool):
+        raise vol.Invalid("show_sidebar must be a boolean")
+    preferences = _preferences(hass)
+    async with preferences.lock:
+        await preferences.async_load()
+        await preferences.store.async_save({CONF_SHOW_SIDEBAR: visible})
+        preferences.show_sidebar = visible
+        panel = hass.data.get(frontend.DATA_PANELS, {}).get(PANEL_URL)
+        if panel is not None:
+            frontend.async_register_built_in_panel(
+                hass,
+                component_name="custom",
+                frontend_url_path=PANEL_URL,
+                sidebar_title="MyHOME" if visible else None,
+                sidebar_icon="mdi:home-automation",
+                config=panel.config,
+                require_admin=True,
+                update=True,
+            )
 
 
 def _device_metadata(
@@ -221,16 +281,19 @@ async def async_setup_panel(hass: HomeAssistant, bus_card_url: str) -> None:
             else:  # Home Assistant 2024.4–2024.6
                 hass.http.register_static_path(PANEL_STATIC_URL, path, cache_headers=False)
             data[_STATIC_REGISTERED] = True
-        await panel_custom.async_register_panel(
-            hass,
-            frontend_url_path=PANEL_URL,
-            webcomponent_name="myhome-panel",
-            sidebar_title="MyHOME",
-            sidebar_icon="mdi:home-automation",
-            module_url=f"{PANEL_STATIC_URL}/myhome-panel.js?v={PANEL_VERSION}&build={build}",
-            require_admin=True,
-            config={"bus_card_url": bus_card_url, "panel_version": PANEL_VERSION},
-        )
+        preferences = _preferences(hass)
+        async with preferences.lock:
+            await preferences.async_load()
+            await panel_custom.async_register_panel(
+                hass,
+                frontend_url_path=PANEL_URL,
+                webcomponent_name="myhome-panel",
+                sidebar_title="MyHOME" if preferences.show_sidebar else None,
+                sidebar_icon="mdi:home-automation",
+                module_url=f"{PANEL_STATIC_URL}/myhome-panel.js?v={PANEL_VERSION}&build={build}",
+                require_admin=True,
+                config={"bus_card_url": bus_card_url, "panel_version": PANEL_VERSION},
+            )
         data[_PANEL_REGISTERED] = True
 
 

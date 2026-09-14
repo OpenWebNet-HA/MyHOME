@@ -78,6 +78,20 @@
           "command_worker_count": "Nombre de session de commande simultanées",
           "generate_events": "Générer des événements dans Home Assistant pour chaque message reçu"
         }
+      },
+      "init": {
+        "title": "MyHOME",
+        "menu_options": {
+          "panel": "Panneau MyHOME",
+          "user": "Paramètres de la passerelle"
+        }
+      },
+      "panel": {
+        "title": "Panneau MyHOME",
+        "description": "[Ouvrir le panneau MyHOME]({panel_url}) pour cette passerelle.\n\nLa visibilité dans la barre latérale est partagée par toutes les passerelles et tous les administrateurs. Le panneau reste accessible par ce lien lorsque le raccourci est masqué.",
+        "data": {
+          "show_sidebar": "Afficher MyHOME dans la barre latérale"
+        }
       }
     },
     "error": {
@@ -85,7 +99,8 @@
       "invalid_worker_count": "Workers must be between 1 and 10",
       "invalid_config_path": "Fichier de configuration inexistant à ce chemin",
       "invalid_password": "Mot de passe invalide",
-      "password_error": "Mot de passe invalide"
+      "password_error": "Mot de passe invalide",
+      "panel_save_failed": "Impossible d’enregistrer la préférence. Réessayez."
     }
   },
   "services": {

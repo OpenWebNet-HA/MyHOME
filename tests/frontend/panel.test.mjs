@@ -28,7 +28,7 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
-    panel_version: "0.6.1",
+    panel_version: "0.7.0",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
@@ -87,7 +87,7 @@ const change = (element, value) => {
   element.value = value;
   element.dispatchEvent(new Event(element.type === "search" ? "input" : "change", { bubbles: true }));
 };
-afterEach(() => { document.body.replaceChildren(); window.localStorage.clear(); });
+afterEach(() => { document.body.replaceChildren(); window.localStorage.clear(); window.history.replaceState(null, "", "/"); });
 after(() => dom.window.close());
 
 test("gateway, category and inherited area filters retain trigger-only and disabled items", () => {
@@ -106,7 +106,7 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
-  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.6.1");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.7.0");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
   root.querySelector('[data-view="entities"]').click();
   assert.equal(root.querySelectorAll(".device-group").length, 3);
@@ -457,4 +457,46 @@ test("bus sweep follows the selected gateway and preserves unscoped Lovelace usa
     ["myhome", "sweep_bus", { gateway: "00:03:50:00:00:02" }],
     ["myhome", "sweep_bus", {}],
   ]);
+});
+
+test("gateway deep links work on first load, route changes and browser navigation", async () => {
+  window.history.replaceState(null, "", "/myhome?entry_id=two");
+  const { panel, root } = await mount();
+  assert.equal(root.getElementById("gateway").value, "two");
+  assert.equal(root.querySelectorAll(".device-group").length, 1);
+  await panel._refresh();
+  assert.equal(root.getElementById("gateway").value, "two");
+  window.history.pushState(null, "", "/myhome?entry_id=one");
+  window.dispatchEvent(new Event("location-changed"));
+  assert.equal(root.getElementById("gateway").value, "one");
+  assert.equal(root.querySelectorAll(".device-group").length, 2);
+  window.history.replaceState(null, "", "/myhome?entry_id=two");
+  window.dispatchEvent(new Event("popstate"));
+  assert.equal(root.getElementById("gateway").value, "two");
+  change(root.getElementById("gateway"), "");
+  assert.equal(new URL(window.location.href).searchParams.get("entry_id"), "");
+  await panel._refresh();
+  assert.equal(root.querySelectorAll(".device-group").length, 3);
+  window.history.replaceState(null, "", "/myhome?entry_id=one");
+  panel.route = { path: "" };
+  assert.equal(root.getElementById("gateway").value, "one");
+  panel.remove();
+  window.history.replaceState(null, "", "/myhome?entry_id=two");
+  window.dispatchEvent(new Event("location-changed"));
+  assert.equal(panel._entryId, "one");
+  document.body.append(panel);
+  await tick();
+  assert.equal(root.getElementById("gateway").value, "two");
+});
+
+test("unknown gateway links never fall back to another installation", async () => {
+  window.history.replaceState(null, "", "/myhome?entry_id=removed");
+  const { panel, root } = await mount();
+  assert.equal(root.getElementById("gateway").value, "removed");
+  assert.equal(root.querySelectorAll(".device-group").length, 0);
+  assert.ok(root.textContent.includes(translations.it.gatewayNotFound));
+  await panel._refresh();
+  assert.equal(panel._entryId, "removed");
+  change(root.getElementById("gateway"), "one");
+  assert.equal(root.querySelectorAll(".device-group").length, 2);
 });

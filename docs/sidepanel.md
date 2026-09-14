@@ -1,7 +1,14 @@
 # MyHOME sidepanel — first version
 
-The **MyHOME** sidebar is available to Home Assistant administrators after the
-integration starts. It opens at `/myhome` and is installed with the integration;
+Home Assistant administrators can open **Configure → MyHOME panel** from a
+gateway integration entry, then follow **Open the MyHOME panel**. The link selects
+that gateway using `/myhome?entry_id=<config entry ID>`. **Gateway settings** in
+the same Configure menu retains the existing connection and decoder Options Flow.
+
+The **MyHOME** sidebar shortcut is shown by default for compatibility. The panel
+options page can hide or show it for the whole installation, across all gateways
+and administrators. Hiding it leaves the panel URL and Configure link available;
+it does not unload a gateway. The panel is installed with the integration;
 no Lovelace dashboard resource or `panel_custom` YAML entry is needed for it.
 
 The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
@@ -10,7 +17,7 @@ and provides English and Italian labels, with English fallback for other languag
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.6.1**, defined by
+The panel has an independent version, currently **0.7.0**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.
@@ -78,6 +85,7 @@ integration settings remain the place to add and configure gateways.
 
 | Information | Source / write API |
 | --- | --- |
+| Sidebar shortcut visibility | HA storage `myhome_panel`, native Options Flow |
 | Gateway connection configuration | Existing MyHOME Config Entry and Options Flow |
 | Device names and areas | Home Assistant device registry, `config/device_registry/update` |
 | Entity names and area overrides | Home Assistant entity registry, `config/entity_registry/update` |
@@ -90,7 +98,11 @@ operation. It returns an explicit allowlist of gateway, device, entity, and area
 fields, including IP/MAC information needed by administrators. It does not return
 gateway passwords, full Config Entry data/options, or runtime objects.
 
-There is no additional configuration file/store and no migration. Edits submit
+Gateway and device configuration is not duplicated and needs no migration. The
+only extra HA-managed store, `myhome_panel` (version 1), contains the global
+`show_sidebar` presentation preference. It is saved by the native Options Flow
+and retained across restarts and gateway deletion/recreation. WHO view preferences
+remain browser-local. Edits submit
 only changed fields through native registry APIs. Changes made elsewhere are
 reflected through registry events; gateway status also refreshes every 15 seconds.
 The panel remains accessible while a gateway is unloaded or offline, and is
@@ -139,7 +151,10 @@ Recorded CEN+ object IDs are displayed as addresses, not expanded into wire fram
 1. Install `custom_components/myhome` from `feat/myhome-sidepanel` over the
    integration files in a test Home Assistant instance.
 2. Restart Home Assistant and refresh the browser page.
-3. Sign in as an administrator and open **MyHOME** in the sidebar.
+3. Sign in as an administrator and open **Configure → MyHOME panel** on a gateway,
+   then follow its panel link. Verify that this gateway is selected. Hide the
+   sidebar shortcut, reopen through Configure, and restart HA to confirm the
+   choice persists. Re-enable it from either gateway’s panel options.
    On the first visit after a browser reload, check that the inventory appears
    without navigating away and back.
 4. Check the panel version in the header, then compare the gateway/device/entity
@@ -211,3 +226,15 @@ round-trip itself succeeded, but HTTP fixture teardown reported a lingering
 `_run_safe_shutdown_loop` thread. A plain WebSocket ping test on the unchanged
 starting commit reproduced this environment issue; it is not suppressed by the
 new tests.
+
+Panel 0.7.0 adds the Configure menu, gateway-specific links and the shared sidebar
+preference. A link to a removed gateway shows an error and an empty inventory;
+it never silently switches to another gateway. Selecting a gateway updates the
+URL, and browser navigation or another Configure link updates the existing panel.
+
+Validation for 0.7.0 on Home Assistant 2025.1.4 / Python 3.12 with OWNd 2.0.0b6:
+1,312 Python tests passed, 1 skipped, five snapshots passed, and all 26 integration
+modules reached 100% line coverage (5,273 statements). All 18 frontend tests passed,
+including native-property upgrade, gateway links and navigation. Ruff and the HA
+architectural checks passed. The Configure link and sidebar visibility still need
+a visual check in a real Home Assistant frontend.

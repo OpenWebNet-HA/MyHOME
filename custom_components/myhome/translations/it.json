@@ -78,6 +78,20 @@
           "command_worker_count": "Numero di sessioni di comando simultanee",
           "generate_events": "Genera eventi in Home Assistant per ogni messaggio ricevuto"
         }
+      },
+      "init": {
+        "title": "MyHOME",
+        "menu_options": {
+          "panel": "Pannello MyHOME",
+          "user": "Impostazioni gateway"
+        }
+      },
+      "panel": {
+        "title": "Pannello MyHOME",
+        "description": "[Apri il pannello MyHOME]({panel_url}) per questo gateway.\n\nLa visibilità nella barra laterale è condivisa da tutti i gateway e dagli amministratori. Il pannello resta accessibile da questo collegamento anche quando la voce è nascosta.",
+        "data": {
+          "show_sidebar": "Mostra MyHOME nella barra laterale"
+        }
       }
     },
     "error": {
@@ -85,7 +99,8 @@
       "invalid_worker_count": "I workers devono essere compresi tra 1 e 10",
       "invalid_config_path": "Il file di configurazione non esiste in questo percorso",
       "invalid_password": "Password non valida",
-      "password_error": "Errore password"
+      "password_error": "Errore password",
+      "panel_save_failed": "Impossibile salvare la preferenza. Riprova."
     }
   },
   "services": {
