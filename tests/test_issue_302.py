@@ -36,16 +36,19 @@ def fake_time(clock):
         yield mock_time
 
 
+_REAL_SLEEP = asyncio.sleep
+
+
 @pytest.fixture
 def sleeps(clock):
     """Record requested sleep durations and advance the fake clock instead of waiting."""
-    real_sleep = asyncio.sleep
     recorded = []
 
     async def fake_sleep(delay, *args, **kwargs):
-        recorded.append(delay)
-        clock.now += delay
-        await real_sleep(0)
+        if delay > 0:
+            recorded.append(delay)
+            clock.now += delay
+        await _REAL_SLEEP(0)
 
     with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=fake_sleep):
         yield recorded
@@ -53,7 +56,7 @@ def sleeps(clock):
 
 async def _yield(n: int = 3):
     for _ in range(n):
-        await asyncio.sleep(0)  # real sleep: asyncio.sleep is only patched on the cover module
+        await _REAL_SLEEP(0)  # real sleep: unpatched reference so yielding does not pollute the fake-sleep trace
 
 
 @pytest.fixture
