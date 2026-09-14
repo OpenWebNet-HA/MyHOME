@@ -91,7 +91,7 @@ async def test_climate_auto_discovery_from_temperature_event(hass, mock_gateway)
     assert len(added_entities) == 1
     climate_entity = added_entities[0]
     assert isinstance(climate_entity, MyHOMEClimate)
-    assert climate_entity.name == "Climate Zone 2"
+    assert climate_entity._display_name == "Climate Zone 2"
     assert climate_entity._where == "2"
     assert climate_entity.current_temperature == 23.0
 
@@ -130,7 +130,7 @@ async def test_climate_auto_discovery_from_humidity_event(hass, mock_gateway):
 
     assert len(added_entities) == 1
     climate_entity = added_entities[0]
-    assert climate_entity.name == "Climate Zone 3"
+    assert climate_entity._display_name == "Climate Zone 3"
     assert climate_entity._where == "3"
     assert climate_entity.current_humidity == 55.0
 
@@ -272,8 +272,7 @@ async def test_climate_central_unit_auto_discovery(hass, mock_gateway):
 
     assert len(added_entities) == 1
     central_entity = added_entities[0]
-    assert central_entity.name == "Climate Zone 0"
-    assert central_entity.entity_id == "climate.climate_zone_0"
+    assert central_entity._display_name == "Climate Zone 0"
     assert central_entity._central is True
     assert central_entity._standalone is False
 
@@ -317,7 +316,7 @@ async def test_climate_restore_from_entity_registry(hass, mock_gateway):
     assert len(added_entities) == 1
     restored = added_entities[0]
     assert restored._where == "02"
-    assert restored.name == "Climate Zone 02"
+    assert restored._display_name == "Climate Zone 02"
 
 
 async def test_climate_state_restoration(hass, mock_gateway):
@@ -337,7 +336,9 @@ async def test_climate_state_restoration(hass, mock_gateway):
         model="Heating Zone",
         gateway=mock_gateway,
     )
+    climate.entity_id = "climate.climate"  # assigned by the registry in real Home Assistant
     climate.hass = hass
+    climate.entity_id = climate.entity_id or "test.climate"
 
     mock_state = MagicMock()
     mock_state.state = HVACMode.HEAT
@@ -367,7 +368,9 @@ async def test_climate_state_restoration_cool_mode(hass, mock_gateway):
         model="Heating Zone",
         gateway=mock_gateway,
     )
+    climate.entity_id = "climate.climate"  # assigned by the registry in real Home Assistant
     climate.hass = hass
+    climate.entity_id = climate.entity_id or "test.climate"
 
     mock_state = MagicMock()
     mock_state.state = HVACMode.COOL
@@ -415,24 +418,21 @@ async def test_light_f422_interface_naming(hass, mock_gateway):
     async_dispatcher_send(hass, f"myhome_message_{mac}", main_light_msg)
 
     assert len(added_entities) == 1
-    assert added_entities[0].name == "Light 02"
-    assert added_entities[0].entity_id == "light.light_02"
+    assert added_entities[0]._display_name == "Light 02"
 
     # 2. Light behind F422 interface 02 at address 02: *1*1*02#4#02##
     interface_light_msg = OWNLightingEvent("*1*1*02#4#02##")
     async_dispatcher_send(hass, f"myhome_message_{mac}", interface_light_msg)
 
     assert len(added_entities) == 2
-    assert added_entities[1].name == "Light 02I02"
-    assert added_entities[1].entity_id == "light.light_02i02"
+    assert added_entities[1]._display_name == "Light 02I02"
 
     # 3. Extended address light behind interface 02: *1*1*0010#4#02##
     ext_light_msg = OWNLightingEvent("*1*1*0010#4#02##")
     async_dispatcher_send(hass, f"myhome_message_{mac}", ext_light_msg)
 
     assert len(added_entities) == 3
-    assert added_entities[2].name == "Light 0010I02"
-    assert added_entities[2].entity_id == "light.light_0010i02"
+    assert added_entities[2]._display_name == "Light 0010I02"
 
 
 async def test_cover_f422_interface_naming(hass, mock_gateway):
@@ -465,14 +465,14 @@ async def test_cover_f422_interface_naming(hass, mock_gateway):
     async_dispatcher_send(hass, f"myhome_message_{mac}", main_cover_msg)
 
     assert len(added_entities) == 1
-    assert added_entities[0].name == "Cover 10"
+    assert added_entities[0]._display_name == "Cover 10"
 
     # Cover behind F422 interface 02: *2*1*10#4#02##
     int_cover_msg = OWNAutomationEvent("*2*1*10#4#02##")
     async_dispatcher_send(hass, f"myhome_message_{mac}", int_cover_msg)
 
     assert len(added_entities) == 2
-    assert added_entities[1].name == "Cover 10I02"
+    assert added_entities[1]._display_name == "Cover 10I02"
 
 
 async def test_switch_f422_interface_naming(hass, mock_gateway):
@@ -511,7 +511,7 @@ async def test_switch_f422_interface_naming(hass, mock_gateway):
     await async_setup_switch_entry(hass, config_entry, mock_add_entities)
 
     assert len(added_entities) == 2
-    names = [e.name for e in added_entities]
+    names = [e._display_name for e in added_entities]
     assert "Switch 02" in names
     assert "Switch 02I02" in names
 
@@ -547,7 +547,7 @@ async def test_climate_f422_interface_naming(hass, mock_gateway):
     await hass.async_block_till_done()  # let the handler finish its zone dispatch
 
     assert len(added_entities) == 1
-    assert added_entities[0].name == "Climate Zone 2I02"
+    assert added_entities[0]._display_name == "Climate Zone 2I02"
     assert added_entities[0]._interface == "02"
 
 
@@ -569,7 +569,9 @@ async def test_climate_f422_interface_command_routing(hass, mock_gateway):
         model="Heating Zone",
         gateway=mock_gateway,
     )
+    climate.entity_id = "climate.climate"  # assigned by the registry in real Home Assistant
     climate.hass = hass
+    climate.entity_id = climate.entity_id or "test.climate"
 
     # Test status query routes with full interface address: *#4*2#4#02##
     await climate.async_update()
@@ -626,8 +628,7 @@ async def test_f422_custom_names_override(hass, mock_gateway):
     await async_setup_light_entry(hass, config_entry, mock_add_entities)
 
     assert len(added_entities) == 1
-    assert added_entities[0].name == "Custom Island Light"
-    assert added_entities[0].entity_id == "light.custom_island_light"
+    assert added_entities[0]._display_name == "Custom Island Light"
 
 
 async def test_f422_extra_state_attributes(hass, mock_gateway):
@@ -648,6 +649,7 @@ async def test_f422_extra_state_attributes(hass, mock_gateway):
         model="Heating Zone",
         gateway=mock_gateway,
     )
+    climate_int.entity_id = "climate.climate_int"  # assigned by the registry in real Home Assistant
     assert climate_int.extra_state_attributes.get("Int") == "02"
 
     climate_main = MyHOMEClimate(
@@ -666,6 +668,7 @@ async def test_f422_extra_state_attributes(hass, mock_gateway):
         model="Heating Zone",
         gateway=mock_gateway,
     )
+    climate_main.entity_id = "climate.climate_main"  # assigned by the registry in real Home Assistant
     assert "Int" not in climate_main.extra_state_attributes
 
 
@@ -761,7 +764,7 @@ async def test_climate_async_setup_entry_restores_interface_from_registry(hass, 
         await async_setup_climate_entry(hass, config_entry, added.extend)
         assert len(added) == 1
         assert added[0]._interface == "02"
-        assert added[0].name == "Climate Zone 02I02"
+        assert added[0]._display_name == "Climate Zone 02I02"
 
 
 async def test_climate_async_setup_entry_duplicate_configured(hass, mock_gateway):
@@ -860,6 +863,7 @@ async def test_climate_restore_invalid_target_temp_and_exception(hass, mock_gate
         model="Heating Zone",
         gateway=mock_gateway,
     )
+    climate.entity_id = "climate.climate"  # assigned by the registry in real Home Assistant
 
     # 1. Non-numeric temperature attribute
     mock_state = MagicMock()
@@ -894,5 +898,6 @@ async def test_climate_async_added_to_hass_with_interface(hass, mock_gateway):
         model="Heating Zone",
         gateway=mock_gateway,
     )
+    climate.entity_id = "climate.climate"  # assigned by the registry in real Home Assistant
     await climate.async_added_to_hass()
     mock_gateway.send_status_request.assert_called()

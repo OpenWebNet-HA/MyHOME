@@ -54,8 +54,8 @@ rules:
     status: done
     comment: Every entity has a unique_id of the form {gateway mac}-{who}-{where}.
   has-entity-name:
-    status: todo
-    comment: Entities still set has_entity_name=False with legacy entity IDs; pending the community RFC on non-breaking entity ID migration.
+    status: done
+    comment: MyHOMEEntity sets has_entity_name=True; primary entities carry the device name (_attr_name None), sensors / binary sensors are named after their device class or entity_name, buttons and energy counters by translation key; no manual entity_id assignment (tests/test_entity_naming.py pins ids and friendly names and the delete / re-add restore).
   runtime-data:
     status: done
     comment: entry.runtime_data holds a typed MyHOMERuntimeData (data.py) set before platforms load; platforms, services, WebSocket API and diagnostics read only it (enforced by verify_ha_standards.py). hass.data[DOMAIN][mac] survives one release as a deprecated alias.
@@ -148,8 +148,8 @@ rules:
     status: done
     comment: Audited in tests/test_entity_audit.py - the daily and monthly energy counters are disabled by default; all other entities are primary controls and stay enabled.
   entity-translations:
-    status: todo
-    comment: Entities use has_entity_name=False with legacy entity IDs; no entity translation keys yet. Blocked on the same migration as has-entity-name.
+    status: done
+    comment: Translation keys for the lock / unlock / calibration buttons and the energy counters under `entity` in strings.json and translations/en.json; device-class-named sensors and binary sensors use Home Assistant's own translations.
   exception-translations:
     status: done
     comment: HomeAssistantError/ServiceValidationError raised from cover calibration, travel-time services and the media player decoder proxy carry translation keys defined under `exceptions` in strings.json / translations/en.json (guarded by test_every_raised_translation_key_is_defined).

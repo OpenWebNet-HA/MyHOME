@@ -309,6 +309,8 @@ f454:
       name: Central Alarm
 ```
 
+3. **How names work** (Home Assistant's device / entity model): `name` names the **device** on the bus. A light, switch, cover, thermostat, audio zone or alarm panel *is* its device, so its entity carries the device name (`light.living_room_light`, friendly name *Living Room Light*). Sensors and binary sensors are features of their device and are named after their device class — a power meter named `House` gives `sensor.house_power` (*House Power*) and `sensor.house_energy`; a dry contact named `Cancello` with `class: opening` gives `binary_sensor.cancello_opening` (*Cancello Opening*). Use `entity_name` on a sensor or binary sensor to name the feature yourself (`entity_name: Contact` → *Front Door Contact*); an `entity_name` equal to `name` means "the entity is the device". Lock/unlock and calibration buttons are named *Lock*, *Unlock*, *Calibrate travel time* under their device. Entity ids are assigned once by the entity registry: **existing installations keep every entity id and every name you set in the UI**, and deleting the integration by accident is safe — Home Assistant keeps the registry entries for 30 days and restores names, areas and ids when the gateway is added again.
+
 ---
 
 ### ⚡ Custom Services
@@ -569,9 +571,9 @@ automated coverage and physical gateway verification steps.
 
 | Tier | Rules satisfied | Status |
 | :--- | :---: | :--- |
-| 🥉 Bronze | 18 / 20 | ⏳ next — blocked by `brands`, `has-entity-name` |
+| 🥉 Bronze | 19 / 20 | ⏳ next — blocked by `brands` |
 | 🥈 Silver | 10 / 10 | ✅ all rules satisfied (waiting on lower tier) |
-| 🥇 Gold | 20 / 21 | ⬜ 1 rule(s) open |
+| 🥇 Gold | 21 / 21 | ✅ all rules satisfied (waiting on lower tier) |
 | 🏆 Platinum | 2 / 3 | ⬜ 1 rule(s) open |
 
 _Self-audit of [`quality_scale.yaml`](custom_components/myhome/quality_scale.yaml) against the official [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/); a tier needs every rule of that tier and all lower tiers `done`/`exempt`. Updated by the [Integration Quality Scale workflow](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/quality-scale.yml); tiers are formally awarded only by Home Assistant core review._

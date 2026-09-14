@@ -60,7 +60,7 @@ class TestMyHOMEEntity:
             )
             assert entity._attr_unique_id == f"{mock_gateway.mac}-1-21"
             assert entity._attr_should_poll is False
-            assert entity._attr_has_entity_name is False
+            assert entity._attr_has_entity_name is True
             assert entity._manufacturer == "BTicino"
 
     def test_entity_default_manufacturer(self, mock_hass, mock_gateway):

@@ -156,7 +156,7 @@ class TestMyHOMEAlarmEntity:
         assert alarm_central.state == STATE_DISARMED
         assert alarm_central.extra_state_attributes["where"] == "0"
         assert alarm_central.extra_state_attributes["raw_state"] == "disarmed"
-        assert alarm_zone1.name == "Zone 1 Burglar Alarm"
+        assert alarm_zone1._display_name == "Zone 1 Burglar Alarm"
 
     async def test_async_lifecycle_and_update(self, alarm_central, alarm_zone1):
         alarm_central.async_on_remove = MagicMock()

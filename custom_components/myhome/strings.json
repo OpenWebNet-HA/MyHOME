@@ -284,5 +284,29 @@
     "decoder_start_failed": {
       "message": "{entity_id}: decoder {decoder} failed to start playback: {error}"
     }
+  },
+  "entity": {
+    "button": {
+      "lock": {
+        "name": "Lock"
+      },
+      "unlock": {
+        "name": "Unlock"
+      },
+      "calibrate_travel_time": {
+        "name": "Calibrate travel time"
+      },
+      "calibrate_all_covers": {
+        "name": "Calibrate all covers"
+      }
+    },
+    "sensor": {
+      "energy_today": {
+        "name": "Energy (today)"
+      },
+      "energy_month": {
+        "name": "Energy (current month)"
+      }
+    }
   }
 }
