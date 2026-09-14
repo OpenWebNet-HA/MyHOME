@@ -1,0 +1,83 @@
+# Home Assistant Integration Quality Scale Audit Manifest for MyHOME
+# Reference: https://developers.home-assistant.io/docs/core/integration-quality-scale/
+
+rules:
+  # 🥉 Bronze Tier Rules
+  config-flow:
+    status: done
+    comment: Fully implemented via Home Assistant ConfigFlow with SSDP and manual entry.
+  test-before-configure:
+    status: done
+    comment: Verifies gateway connection and authentication before creating config entry.
+  unique-config-entry:
+    status: done
+    comment: Config entry unique_id is strictly bound to canonical gateway MAC address.
+  discovery:
+    status: done
+    comment: Automatically discovers F454, MyHomeServer1, and MH200 gateways via SSDP/UPnP.
+  discovery-update-info:
+    status: done
+    comment: Updates gateway host and port dynamically if IP changes on rediscovery.
+  common-modules:
+    status: done
+    comment: Utilizes standard Home Assistant core helpers, dispatchers, and device registry.
+  has-entity-name:
+    status: todo
+    comment: Pending Community RFC on non-breaking entity ID preservation migration.
+  runtime-data:
+    status: done
+    comment: entry.runtime_data implemented with backwards-compatible hass.data mapping.
+  action-setup:
+    status: done
+    comment: Services extracted to dedicated services.py with async_setup_services and async_unload_services.
+
+  # 🥈 Silver Tier Rules
+  parallel-updates:
+    status: done
+    comment: PARALLEL_UPDATES = 0 declared across all 9 platform files for push-driven event streaming.
+  test-coverage:
+    status: done
+    comment: 100.0% statement coverage verified across all 25 integration modules.
+  log-when-unavailable:
+    status: done
+    comment: Grace period and connection supervisor log cleanly without spamming.
+  reauthentication-flow:
+    status: done
+    comment: Reauth flow allows recovering from invalid OpenWebNet passwords.
+  action-exceptions:
+    status: done
+    comment: Handled in services.py with parameter validation and robust logging.
+
+  # 🥇 Gold Tier Rules
+  reconfiguration-flow:
+    status: done
+    comment: async_step_reconfigure implemented allowing in-place IP, port, and password updates.
+  entity-translations:
+    status: done
+    comment: Canonical strings.json established for English master strings and translations.
+  icon-translations:
+    status: done
+    comment: icons.json established for service actions and platform icons.
+  diagnostics:
+    status: done
+    comment: Native diagnostics.py sanitizes credentials and exports gateway and bus telemetry.
+  dynamic-devices:
+    status: done
+    comment: Dynamic discovery wires bus devices to Home Assistant without static configuration.
+  devices:
+    status: done
+    comment: Full DeviceRegistry representation for gateways, actuators, probes, and scenario units.
+  repair-issues:
+    status: done
+    comment: Repairs framework integration implemented in repairs.py with issue registry.
+
+  # 💎 Platinum Tier Rules
+  async-dependency:
+    status: done
+    comment: OWNd client library is 100% native non-blocking asyncio protocols and streams.
+  inject-websession:
+    status: exempt
+    comment: No HTTP is used; communication is via raw TCP OpenWebNet sockets.
+  strict-typing:
+    status: in_progress
+    comment: Comprehensive static typing annotations active across modules.

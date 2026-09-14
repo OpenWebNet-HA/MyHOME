@@ -8,6 +8,7 @@ replayed against the integration state machine without exceptions or regressions
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -43,45 +44,42 @@ FIXTURES_PLANTS_DIR = Path(__file__).resolve().parent / "fixtures" / "plants"
 
 
 def get_plant_fixture_dirs() -> list[Path]:
-    """Discover all plant fixture directories containing diagnostic traces."""
-    if not FIXTURES_PLANTS_DIR.is_dir():
-        return []
-    return [
-        p
-        for p in FIXTURES_PLANTS_DIR.iterdir()
-        if p.is_dir() and (p / "diagnostic_summary.json").is_file()
-    ]
+    """Always run the synthetic fixture, plus any locally supplied captures."""
+    fixtures = [Path(__file__).resolve().parent / "fixtures" / "synthetic"]
+    if FIXTURES_PLANTS_DIR.is_dir():
+        fixtures.extend(
+            p for p in FIXTURES_PLANTS_DIR.iterdir()
+            if p.is_dir() and (p / "diagnostic_summary.json").is_file()
+        )
+    return fixtures
 
 
 class TestTraceReplayHarness:
     """Test suite executing frozen real-world gateway bus captures."""
 
-    def test_fixture_discovery_and_schema(self) -> None:
+    @pytest.mark.parametrize("plant_dir", get_plant_fixture_dirs(), ids=lambda p: p.name)
+    def test_fixture_discovery_and_schema(self, plant_dir: Path) -> None:
         """Verify plant fixture directories contain valid diagnostic summaries."""
-        fixtures = get_plant_fixture_dirs()
-        assert len(fixtures) >= 1, (
-            "Expected at least one real-world plant fixture in tests/fixtures/plants"
-        )
+        diag_file = plant_dir / "diagnostic_summary.json"
+        assert diag_file.is_file()
+        with open(diag_file, "r", encoding="utf-8") as f:
+            payload = json.load(f)
 
-        for plant_dir in fixtures:
-            diag_file = plant_dir / "diagnostic_summary.json"
-            assert diag_file.is_file()
-            with open(diag_file, "r", encoding="utf-8") as f:
-                payload = json.load(f)
+        # Validate standard HA diagnostic & bus card structure
+        assert "data" in payload, f"Missing 'data' in {diag_file}"
+        data = payload["data"]
+        assert "bus_monitor" in data, f"Missing 'bus_monitor' in {diag_file}"
+        recent_frames = data["bus_monitor"].get("recent_frames", [])
+        assert len(recent_frames) > 0, f"No frames recorded in {diag_file}"
 
-            # Validate standard HA diagnostic & bus card structure
-            assert "data" in payload, f"Missing 'data' in {diag_file}"
-            data = payload["data"]
-            assert "bus_monitor" in data, f"Missing 'bus_monitor' in {diag_file}"
-            recent_frames = data["bus_monitor"].get("recent_frames", [])
-            assert len(recent_frames) > 0, f"No frames recorded in {diag_file}"
-
-            for frame in recent_frames:
-                assert "raw" in frame
-                assert "direction" in frame
-                assert frame["direction"] in ("rx", "tx")
+        for frame in recent_frames:
+            assert "raw" in frame
+            assert "direction" in frame
+            assert frame["direction"] in ("rx", "tx")
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not (FIXTURES_PLANTS_DIR / "issue_247_nicolacavallo84").is_dir(),
+                        reason="Optional installation capture is not distributed")
     async def test_real_world_trace_replay_issue_247(self, hass: HomeAssistant) -> None:
         """Replay all 100 on-wire frames from Nicola Cavallo's production F454 gateway.
 
@@ -214,6 +212,8 @@ class TestTraceReplayHarness:
         await hass.config_entries.async_unload(entry.entry_id)
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not (FIXTURES_PLANTS_DIR / "mh200_physical_plant").is_dir(),
+                        reason="Optional installation capture is not distributed")
     async def test_real_world_trace_replay_mh200_physical_plant(
         self, hass: HomeAssistant
     ) -> None:
@@ -460,8 +460,8 @@ class TestTraceReplayHarness:
     @pytest.mark.asyncio
     async def test_trace_replay_high_frequency_burst(self, hass: HomeAssistant) -> None:
         """Stress-test dispatcher with 50 frames fired in rapid burst without per-frame awaits."""
-        mac = "00:03:50:24:70:88"
-        plant_dir = FIXTURES_PLANTS_DIR / "issue_247_nicolacavallo84"
+        mac = "00:03:50:00:00:01"
+        plant_dir = Path(__file__).resolve().parent / "fixtures" / "synthetic"
         plant_yaml = plant_dir / "myhome.yaml"
 
         entry = MockConfigEntry(
@@ -561,3 +561,262 @@ class TestTraceReplayHarness:
         assert recorded_raws == test_frames
 
         await hass.config_entries.async_unload(entry.entry_id)
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(not (FIXTURES_PLANTS_DIR / "issue_292_thedarkwizard").is_dir(),
+                        reason="Optional installation capture is not distributed")
+    async def test_real_world_trace_replay_issue_292_thedarkwizard(self, hass: HomeAssistant) -> None:
+        """Replay all 50 on-wire frames from @TheDarkWizard's MyHomeServer1 gateway trace (Issue #292).
+
+        Verifies:
+        1. All 50 frames are parsed and dispatched cleanly across 20 lights and 5 covers.
+        2. BusMonitor de-duplication suppresses the duplicate interleaved echo frames.
+        3. WHO=13 Dimension 15 dynamic auto-detection updates the gateway model from F454
+           to MyHomeServer1 and sets inter-frame pacing to 0.02s.
+        4. WHO=13 Dimension 16 updates the firmware version.
+        """
+        plant_dir = FIXTURES_PLANTS_DIR / "issue_292_thedarkwizard"
+        plant_yaml = plant_dir / "myhome.yaml"
+        diag_json = plant_dir / "diagnostic_summary.json"
+
+        assert plant_yaml.is_file()
+        assert diag_json.is_file()
+
+        with open(diag_json, "r", encoding="utf-8") as f:
+            diag_data = json.load(f)
+
+        raw_frames = diag_data["data"]["bus_monitor"]["recent_frames"]
+        assert len(raw_frames) == 50, f"Expected 50 frames in trace, found {len(raw_frames)}"
+
+        mac = "00:03:50:30:13:34"
+        # Configured as F454 initially (reproducing the issue where manual entry defaulted to F454)
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_HOST: "192.168.30.134",
+                CONF_PORT: 20000,
+                CONF_PASSWORD: None,
+                CONF_MAC: mac,
+                CONF_NAME: "F454",
+                CONF_FIRMWARE: None,
+            },
+            options={
+                CONF_FILE_PATH: str(plant_yaml),
+            },
+            unique_id=mac,
+            title="F454 Gateway",
+        )
+        entry.add_to_hass(hass)
+
+        with (
+            patch(
+                "custom_components.myhome.gateway.OWNSession.test_connection",
+                return_value={"Success": True, "Message": None},
+            ),
+            patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+            patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"),
+        ):
+            assert await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+        handler = hass.data[DOMAIN][mac][CONF_ENTITY]
+        handler._on_event_connection_state_change(True)
+
+        # Initial state: gateway profile is F454 with 0.05s pacing
+        assert handler.model == "F454"
+        assert handler.profile.command_queue_delay == 0.05
+
+        # Replay all 50 frames into bus monitor and dispatcher
+        for item in raw_frames:
+            raw = item.get("raw")
+            if not raw:
+                continue
+            handler.bus_monitor.record_frame(raw=raw, direction="rx")
+            msg = OWNMessage.parse(raw)
+            async_dispatcher_send(hass, f"myhome_message_{mac}", msg)
+
+        await hass.async_block_till_done()
+
+        # 1. Verify bus monitor de-duplication: the 50 frames had 25 duplicates, so captured should be 25
+        assert handler.bus_monitor.total_rx == 25
+        assert len(handler.bus_monitor.get_recent_frames()) == 25
+
+        # 2. Verify lighting entity states
+        # *1*1*12## -> ON
+        light_12 = hass.states.get("light.light_12")
+        assert light_12 is not None
+        assert light_12.state == "on"
+
+        # *1*0*19## -> OFF
+        light_19 = hass.states.get("light.light_19")
+        assert light_19 is not None
+        assert light_19.state == "off"
+
+        # *1*1*0012## -> ON
+        light_0012 = hass.states.get("light.light_0012")
+        assert light_0012 is not None
+        assert light_0012.state == "on"
+
+        # *1*0*0110## -> OFF
+        light_0110 = hass.states.get("light.light_0110")
+        assert light_0110 is not None
+        assert light_0110.state == "off"
+
+        # 3. Verify cover entity states
+        cover_02 = hass.states.get("cover.cover_02")
+        assert cover_02 is not None
+
+        # 4. Verify WHO=13 Dimension 15 auto-detection:
+        # Gateway sends *#13**15*2## (device type 2 = MHServer / MyHomeServer1)
+        who13_dim15 = OWNMessage.parse("*#13**15*2##")
+        await handler._process_message(who13_dim15)
+        await hass.async_block_till_done()
+
+        # Model and profile must now be auto-corrected to MyHomeServer1!
+        assert handler.model == "MyHomeServer1"
+        assert handler.profile.model_name == "MyHomeServer1"
+        assert handler.profile.command_queue_delay == 0.02
+        assert entry.data[CONF_NAME] == "MyHomeServer1"
+        assert entry.title == "MyHomeServer1 Gateway"
+
+        # 5. Verify WHO=13 Dimension 16 firmware auto-detection:
+        who13_dim16 = OWNMessage.parse("*#13**16*2*40*12##")
+        await handler._process_message(who13_dim16)
+        await hass.async_block_till_done()
+
+        assert handler.firmware == "2.40.12"
+        assert entry.data[CONF_FIRMWARE] == "2.40.12"
+
+        await hass.config_entries.async_unload(entry.entry_id)
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(not (FIXTURES_PLANTS_DIR / "issue_297_thedarkwizard").is_dir(),
+                        reason="Optional installation capture is not distributed")
+    async def test_real_world_trace_replay_issue_297_f454_thedarkwizard(self, hass: HomeAssistant) -> None:
+        """Replay all 127 on-wire frames from @TheDarkWizard's F454 gateway trace (Issue #297).
+
+        Verifies:
+        1. All 127 frames are parsed cleanly without crashing on timezone sentinel 999.
+        2. F454 clock broadcast *#13**0*23*06*59*999## parses into a valid datetime.time.
+        3. WHO=13 Dimension 15 *#13**15*200## accurately identifies hardware model as F454.
+        4. BusMonitor sliding-window deduplication and has_frame_since suppress redundant frames.
+        5. Light and cover entities are populated and updated correctly.
+        """
+        plant_dir = FIXTURES_PLANTS_DIR / "issue_297_thedarkwizard"
+        plant_yaml = plant_dir / "myhome.yaml"
+        diag_json = plant_dir / "diagnostic_summary.json"
+
+        assert plant_yaml.is_file()
+        assert diag_json.is_file()
+
+        with open(diag_json, "r", encoding="utf-8") as f:
+            diag_data = json.load(f)
+
+        raw_frames = diag_data["data"]["bus_monitor"]["recent_frames"]
+        assert len(raw_frames) == 127, f"Expected 127 frames in trace, found {len(raw_frames)}"
+
+        mac = "00:03:50:30:13:34"
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_HOST: "192.168.30.134",
+                CONF_PORT: 20000,
+                CONF_PASSWORD: None,
+                CONF_MAC: mac,
+                CONF_NAME: "F454",
+                CONF_FIRMWARE: None,
+            },
+            options={
+                CONF_FILE_PATH: str(plant_yaml),
+            },
+            unique_id=mac,
+            title="F454 Gateway",
+        )
+        entry.add_to_hass(hass)
+
+        with (
+            patch(
+                "custom_components.myhome.gateway.OWNSession.test_connection",
+                return_value={"Success": True, "Message": None},
+            ),
+            patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+            patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"),
+        ):
+            assert await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+        handler = hass.data[DOMAIN][mac][CONF_ENTITY]
+        handler._on_event_connection_state_change(True)
+
+        # 1. Test F454 real-time clock frame with 999 unconfigured timezone offset
+        rtc_frame = "*#13**0*23*06*59*999##"
+        rtc_msg = OWNMessage.parse(rtc_frame)
+        assert isinstance(rtc_msg, OWNMessage)
+        assert rtc_msg.is_valid is True
+        assert getattr(rtc_msg, "_hour", None) == "23"
+        assert getattr(rtc_msg, "_minute", None) == "06"
+        assert getattr(rtc_msg, "_second", None) == "59"
+        assert getattr(rtc_msg, "_timezone", None) == ""
+        await handler._process_message(rtc_msg)
+
+        # 2. Test F454 hardware model identification frame
+        model_frame = "*#13**15*200##"
+        model_msg = OWNMessage.parse(model_frame)
+        assert isinstance(model_msg, OWNMessage)
+        assert getattr(model_msg, "_device_type", None) == "F454"
+        await handler._process_message(model_msg)
+        assert handler.model == "F454"
+        assert handler.profile.model_name == "F454"
+        assert handler.profile.command_queue_delay == 0.05
+
+        # 3. Feed frames into BusMonitor and verify sliding window deduplication
+        task_start = time.time()
+        for item in raw_frames:
+            raw = item.get("raw")
+            direction = item.get("direction", "rx")
+            if not raw:
+                continue
+            parsed_msg = OWNMessage.parse(raw)
+            handler.bus_monitor.record_frame(direction=direction, raw=raw, parsed=parsed_msg)
+            if direction == "rx" and parsed_msg is not None:
+                async_dispatcher_send(hass, f"myhome_message_{mac}", parsed_msg)
+
+        await hass.async_block_till_done()
+
+        # Deduplication check: immediate duplicates in trace are suppressed
+        # Out of 127 total frames, immediate identical frames are deduplicated
+        assert handler.bus_monitor.total_rx < 122
+        assert len(handler.bus_monitor.get_recent_frames()) < 127
+
+        # 4. Verify has_frame_since detects frames recorded during the sweep
+        assert handler.bus_monitor.has_frame_since(task_start, direction="rx", raw="*#2*02*10*10*100*001*0##") is True
+        assert handler.bus_monitor.has_frame_since(task_start, direction="rx", raw="*#2*99*10*10*100*001*0##") is False
+
+        # 5. Verify entity states from trace status messages
+        # *1*1*12## -> ON
+        light_12 = hass.states.get("light.light_12")
+        assert light_12 is not None
+        assert light_12.state == "on"
+
+        # *1*0*19## -> OFF
+        light_19 = hass.states.get("light.light_19")
+        assert light_19 is not None
+        assert light_19.state == "off"
+
+        # *1*1*0012## -> ON
+        light_0012 = hass.states.get("light.light_0012")
+        assert light_0012 is not None
+        assert light_0012.state == "on"
+
+        # *1*0*0110## -> OFF
+        light_0110 = hass.states.get("light.light_0110")
+        assert light_0110 is not None
+        assert light_0110.state == "off"
+
+        # Verify cover entity
+        cover_02 = hass.states.get("cover.cover_02")
+        assert cover_02 is not None
+
+        await hass.config_entries.async_unload(entry.entry_id)
+
+

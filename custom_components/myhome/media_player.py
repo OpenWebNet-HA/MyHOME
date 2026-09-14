@@ -68,6 +68,8 @@ from .const import (
 from .decoder_pool import DecoderPool
 from .myhome_device import MyHOMEEntity
 
+PARALLEL_UPDATES = 0
+
 
 def _build_pool(hass: HomeAssistant, config_entry) -> DecoderPool:
     """Build a :class:`DecoderPool` from the current options entry.

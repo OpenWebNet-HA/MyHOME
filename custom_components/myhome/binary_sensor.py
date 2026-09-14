@@ -46,6 +46,8 @@ from .const import (
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 
+PARALLEL_UPDATES = 0
+
 SCAN_INTERVAL = timedelta(seconds=30)
 PIR_SENSITIVITY = ["low", "medium", "high", "very high"]
 

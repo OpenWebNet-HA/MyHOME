@@ -109,3 +109,63 @@ def test_bus_monitor_subscriber_exception():
     frame = monitor.record_frame(direction="rx", raw="*1*1*12##")
     assert frame.raw == "*1*1*12##"
 
+
+def test_bus_monitor_deduplication():
+    """Verify immediate duplicate frames within dedup window are suppressed."""
+    monitor = BusMonitor(maxlen=10, dedup_window=0.2)
+
+    # First frame recorded normally
+    f1 = monitor.record_frame(direction="rx", raw="*1*1*12##")
+    assert f1.raw == "*1*1*12##"
+    assert monitor.total_rx == 1
+    assert len(monitor.get_recent_frames()) == 1
+
+    # Immediate duplicate within dedup window (e.g. command session + event session echo)
+    f2 = monitor.record_frame(direction="rx", raw="*1*1*12##")
+    assert monitor.total_rx == 1  # Not incremented
+    assert len(monitor.get_recent_frames()) == 1  # Not duplicated in ring buffer
+    assert f2.raw == "*1*1*12##"
+    assert f1.is_duplicate is False
+    assert f2.is_duplicate is True
+    assert f2.to_dict()["is_duplicate"] is True
+
+    # Different frame recorded normally
+    f3 = monitor.record_frame(direction="rx", raw="*1*0*19##")
+    assert f3.raw == "*1*0*19##"
+    assert monitor.total_rx == 2
+    assert len(monitor.get_recent_frames()) == 2
+
+    # Different direction for same raw frame is NOT suppressed
+    f4 = monitor.record_frame(direction="tx", raw="*1*0*19##")
+    assert f4.raw == "*1*0*19##"
+    assert monitor.total_tx == 1
+    assert len(monitor.get_recent_frames()) == 3
+
+    # An entry beyond the dedup window breaks loop and allows re-recording
+    monitor._recent_signatures.clear()
+    monitor._recent_signatures.append((0.0, "rx", "*1*1*12##"))
+    f5 = monitor.record_frame(direction="rx", raw="*1*1*12##")
+    assert f5.raw == "*1*1*12##"
+    assert monitor.total_rx == 3
+
+
+def test_bus_monitor_has_frame_since():
+    """Verify has_frame_since accurately detects recent frames."""
+    import time
+    monitor = BusMonitor(maxlen=50, dedup_window=0.0)
+
+    t0 = time.time()
+    monitor.record_frame(direction="rx", raw="*#2*1*0*0##")
+    monitor.record_frame(direction="tx", raw="*#2*0##")
+
+    assert monitor.has_frame_since(t0, direction="rx", raw="*#2*1*0*0##") is True
+    assert monitor.has_frame_since(t0, direction="tx", raw="*#2*0##") is True
+    assert monitor.has_frame_since(t0, direction="rx", raw="*#2*0##") is False
+    assert monitor.has_frame_since(t0, direction="rx", raw="*#2*99*0*0##") is False
+    # Timestamp in the future returns False
+    assert monitor.has_frame_since(t0 + 100.0, direction="rx", raw="*#2*1*0*0##") is False
+
+
+
+
+

@@ -29,6 +29,20 @@ try:
 except ImportError:
     pass
 
+# Upstream OWNd compatibility patch for F454 unconfigured timezone '999'
+try:
+    import OWNd.message as _ownd_msg
+    _orig_gw_tz = getattr(_ownd_msg, "_gateway_timezone", None)
+    if _orig_gw_tz is not None:
+        def _compat_gateway_timezone(values: list[str]) -> str:
+            if len(values) > 3 and values[3] == "999":
+                return ""
+            return _orig_gw_tz(values)
+
+        _ownd_msg._gateway_timezone = _compat_gateway_timezone
+except (ImportError, AttributeError):
+    pass
+
 # Ensure required integration dependencies declared in manifest.json are available in CI
 if not os.environ.get("OWND_SMOKE_TEST"):
     try:

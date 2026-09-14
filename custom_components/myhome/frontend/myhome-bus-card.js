@@ -290,6 +290,17 @@ class MyHomeBusCard extends HTMLElement {
     }
     if (this._isPaused) return;
 
+    // Suppress immediate duplicate frames within 1.0s window (e.g. concurrent session echoes)
+    const last = this._frames[this._frames.length - 1];
+    if (
+      last &&
+      last.direction === frame.direction &&
+      last.raw === frame.raw &&
+      Math.abs((frame.timestamp || 0) - (last.timestamp || 0)) < 1.0
+    ) {
+      return;
+    }
+
     if (frame.who != null) {
       this._ensureWhoRegistered(frame.who);
     }

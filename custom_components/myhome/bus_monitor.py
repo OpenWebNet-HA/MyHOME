@@ -32,6 +32,7 @@ class BusFrame:
         "dimension",
         "is_ack",
         "is_nack",
+        "is_duplicate",
     )
 
     def __init__(
@@ -46,6 +47,7 @@ class BusFrame:
         self.iso_time = now.isoformat()
         self.direction = direction.lower()
         self.raw = str(raw).strip()
+        self.is_duplicate = False
 
         # Extract semantics if parsed message is available
         self.who = getattr(parsed, "who", getattr(parsed, "_who", None)) if parsed else None
@@ -79,15 +81,18 @@ class BusFrame:
             "dimension": str(self.dimension) if self.dimension is not None else None,
             "is_ack": self.is_ack,
             "is_nack": self.is_nack,
+            "is_duplicate": self.is_duplicate,
         }
 
 
 class BusMonitor:
     """Non-blocking circular buffer tap for OpenWebNet traffic."""
 
-    def __init__(self, maxlen: int = DEFAULT_RING_BUFFER_SIZE) -> None:
+    def __init__(self, maxlen: int = DEFAULT_RING_BUFFER_SIZE, dedup_window: float = 0.2) -> None:
         self._maxlen = maxlen
+        self._dedup_window = dedup_window
         self._frames: collections.deque[BusFrame] = collections.deque(maxlen=maxlen)
+        self._recent_signatures: collections.deque[tuple[float, str, str]] = collections.deque(maxlen=maxlen)
         self._subscribers: set[Callable[[BusFrame], Any]] = set()
         self._total_rx = 0
         self._total_tx = 0
@@ -104,6 +109,17 @@ class BusMonitor:
     def total_tx(self) -> int:
         return self._total_tx
 
+    def has_frame_since(self, since: float, direction: str, raw: str) -> bool:
+        """Check if an identical frame was already recorded since a given timestamp."""
+        dir_lower = direction.lower()
+        raw_str = str(raw).strip()
+        for frame in reversed(self._frames):
+            if frame.timestamp < since - 0.1:
+                break
+            if frame.direction == dir_lower and frame.raw == raw_str:
+                return True
+        return False
+
     def record_frame(
         self,
         direction: str,
@@ -112,6 +128,17 @@ class BusMonitor:
     ) -> BusFrame:
         """Record a frame into the circular buffer and notify subscribers."""
         frame = BusFrame(direction=direction, raw=raw, parsed=parsed)
+
+        # Sliding-window duplicate suppression (e.g. concurrent command & event session echo)
+        if self._dedup_window > 0:
+            for prev_ts, prev_dir, prev_raw in reversed(self._recent_signatures):
+                if (frame.timestamp - prev_ts) > self._dedup_window:
+                    break
+                if prev_dir == frame.direction and prev_raw == frame.raw:
+                    frame.is_duplicate = True
+                    return frame
+
+        self._recent_signatures.append((frame.timestamp, frame.direction, frame.raw))
         self._frames.append(frame)
 
         if frame.direction == "rx":
@@ -145,6 +172,7 @@ class BusMonitor:
     def clear(self) -> None:
         """Clear all captured frames."""
         self._frames.clear()
+        self._recent_signatures.clear()
         self._total_rx = 0
         self._total_tx = 0
 

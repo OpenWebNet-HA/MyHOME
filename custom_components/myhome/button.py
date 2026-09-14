@@ -34,6 +34,8 @@ from .const import (
 )
 from .myhome_device import MyHOMEEntity
 
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
     mac = config_entry.data.get(CONF_MAC)

@@ -12,8 +12,6 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from .const import (
-    ATTR_GATEWAY,
-    ATTR_MESSAGE,
     CONF_DECODER_ENTITY,
     CONF_DECODER_PRE_GAIN,
     CONF_DECODER_SLOTS,
@@ -32,6 +30,7 @@ from .const import (
     get_ownd_version,
 )
 from .gateway import MyHOMEGatewayHandler
+from .services import async_setup_services, async_unload_services
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 PLATFORMS = ["light", "switch", "cover", "climate", "binary_sensor", "sensor", "media_player", "button", "alarm_control_panel"]
@@ -694,128 +693,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     # Static entity pruning has been removed in favor of dynamic discovery.
 
-    # Defining the services
-    async def handle_sync_time(call):
-        gateway = call.data.get(ATTR_GATEWAY, None)
-        if gateway is None:
-            _gw_keys = [k for k in hass.data[DOMAIN] if isinstance(k, str) and ":" in k]
-            if not _gw_keys:
-                LOGGER.error("No MyHOME gateways found, cannot sync time.")
-                return False
-            gateway = _gw_keys[0]
-        else:
-            mac = dr.format_mac(gateway)
-            if mac is None:
-                LOGGER.error(
-                    "Invalid gateway mac `%s`, could not send time synchronisation message.",
-                    gateway,
-                )
-                return False
-            else:
-                gateway = mac
-        timezone = hass.config.as_dict()["time_zone"]
-        if gateway in hass.data[DOMAIN]:
-            from OWNd.message import OWNGatewayCommand
-            await hass.data[DOMAIN][gateway][CONF_ENTITY].send(
-                OWNGatewayCommand.set_datetime_to_now(timezone)
-            )
-        else:
-            LOGGER.error(
-                "Gateway `%s` not found, could not send time synchronisation message.",
-                gateway,
-            )
-            return False
+    # Set modern runtime_data while maintaining backwards-compatible hass.data
+    entry.runtime_data = gateway
 
-    hass.services.async_register(DOMAIN, "sync_time", handle_sync_time)
-
-    async def handle_send_message(call):
-        gateway = call.data.get(ATTR_GATEWAY, None)
-        message = call.data.get(ATTR_MESSAGE, None)
-        if gateway is None:
-            _gw_keys = [k for k in hass.data[DOMAIN] if isinstance(k, str) and ":" in k]
-            if not _gw_keys:
-                LOGGER.error("No MyHOME gateways found, cannot send message `%s`.", message)
-                return False
-            gateway = _gw_keys[0]
-        else:
-            mac = dr.format_mac(gateway)
-            if mac is None:
-                LOGGER.error(
-                    "Invalid gateway mac `%s`, could not send message `%s`.",
-                    gateway,
-                    message,
-                )
-                return False
-            else:
-                gateway = mac
-        LOGGER.debug("Handling message `%s` to be sent to `%s`", message, gateway)
-        if gateway in hass.data[DOMAIN]:
-            if message is not None:
-                from OWNd.message import OWNCommand
-                own_message = OWNCommand.parse(message)
-                if own_message is not None:
-                    if own_message.is_valid:
-                        LOGGER.debug(
-                            "%s Sending valid OpenWebNet Message: `%s`",
-                            hass.data[DOMAIN][gateway][CONF_ENTITY].log_id,
-                            own_message,
-                        )
-                        await hass.data[DOMAIN][gateway][CONF_ENTITY].send(own_message)
-                else:
-                    LOGGER.error(
-                        "Could not parse message `%s`, not sending it.", message
-                    )
-                    return False
-        else:
-            LOGGER.error(
-                "Gateway `%s` not found, could not send message `%s`.", gateway, message
-            )
-            return False
-
-    hass.services.async_register(DOMAIN, "send_message", handle_send_message)
-
-    async def handle_sweep_bus(call):
-        """Trigger an active status query sweep across bus subsystems to populate the bus monitor."""
-        from OWNd.message import OWNMessage
-
-        gateway = call.data.get(ATTR_GATEWAY, None)
-        target_gateways = []
-        if gateway is not None:
-            mac = dr.format_mac(gateway)
-            if mac and mac in hass.data[DOMAIN] and CONF_ENTITY in hass.data[DOMAIN][mac]:
-                target_gateways.append(mac)
-            else:
-                LOGGER.error("Gateway `%s` not found for sweep_bus.", gateway)
-                return False
-        else:
-            target_gateways = [
-                k
-                for k in hass.data[DOMAIN]
-                if isinstance(k, str) and ":" in k and CONF_ENTITY in hass.data[DOMAIN][k]
-            ]
-
-        if not target_gateways:
-            LOGGER.warning("No active MyHOME gateways found to sweep.")
-            return False
-
-        sweep_queries = [
-            "*#13**0##",   # Gateway real-time clock
-            "*#13**15##",  # Gateway model & firmware status
-            "*#1*0##",     # All lighting & switch actuators
-            "*#2*0##",     # All cover actuators
-            "*#4*0##",     # Thermoregulation master status
-        ]
-
-        for gw_mac in target_gateways:
-            handler = hass.data[DOMAIN][gw_mac][CONF_ENTITY]
-            LOGGER.info("Executing diagnostic bus sweep on gateway %s", gw_mac)
-            for query in sweep_queries:
-                await handler.send(OWNMessage.parse(query))
-                await asyncio.sleep(0.05)
-
-        return True
-
-    hass.services.async_register(DOMAIN, "sweep_bus", handle_sweep_bus)
+    # Register domain services
+    await async_setup_services(hass)
 
     return True
 
@@ -828,9 +710,12 @@ async def async_unload_entry(hass, entry):
     for platform in PLATFORMS:
         await hass.config_entries.async_forward_entry_unload(entry, platform)
 
-    hass.services.async_remove(DOMAIN, "sync_time")
-    hass.services.async_remove(DOMAIN, "send_message")
-    hass.services.async_remove(DOMAIN, "sweep_bus")
+    # Check if there are other configured entries before unloading services
+    entries = [
+        e for e in hass.config_entries.async_entries(DOMAIN) if e.entry_id != entry.entry_id
+    ]
+    if not entries:
+        await async_unload_services(hass)
 
     gateway_handler = hass.data[DOMAIN][entry.data[CONF_MAC]].pop(CONF_ENTITY)
     del hass.data[DOMAIN][entry.data[CONF_MAC]]

@@ -1,7 +1,9 @@
 """Code to handle a MyHome Gateway."""
 import asyncio
+import time
 from typing import Any, Dict, List
 
+import OWNd.message as _ownd_msg
 from homeassistant.const import (
     CONF_FRIENDLY_NAME,
     CONF_HOST,
@@ -33,6 +35,7 @@ from OWNd.message import (
     OWNLightingEvent,
     OWNMessage,
 )
+from OWNd.profiles import get_gateway_profile
 
 from .bus_monitor import BusMonitor
 from .const import (
@@ -52,8 +55,21 @@ from .const import (
     CONF_SSDP_ST,
     CONF_UDN,
     DOMAIN,
+    GATEWAY_DEVICE_TYPE_MAP,
     LOGGER,
 )
+
+_orig_gw_tz = _ownd_msg._gateway_timezone
+
+
+def _compat_gateway_timezone(values: list[str]) -> str:
+    """Compatibility wrapper for OWNd < 2.0.0b7: accept 999 as unconfigured timezone."""
+    if len(values) > 3 and values[3] == "999":
+        return ""
+    return _orig_gw_tz(values)
+
+
+_ownd_msg._gateway_timezone = _compat_gateway_timezone
 
 EVENT_READY_TIMEOUT = 120
 COMMAND_SESSION_IDLE_TIMEOUT = 15.0
@@ -499,6 +515,8 @@ class MyHOMEGatewayHandler:
                 self.log_id,
                 message.human_readable_log,
             )
+            if isinstance(message, OWNGatewayEvent):
+                self._handle_gateway_diagnostics(message)
         elif (
             getattr(message, "who", None) == 18
             or isinstance(message, (OWNEnergyEvent, OWNEnergyCommand))
@@ -514,6 +532,60 @@ class MyHOMEGatewayHandler:
                 self.log_id,
                 message,
             )
+
+    def _handle_gateway_diagnostics(self, message: OWNGatewayEvent) -> None:
+        """Handle WHO=13 Gateway Management diagnostic telemetry."""
+        dim = getattr(message, "dimension", getattr(message, "_dimension", None))
+        dim_val = getattr(message, "dimension_value", getattr(message, "_dimension_value", []))
+
+        # ── Dimension 15: Hardware Device Type ───────────────────────────
+        if dim == 15 and dim_val:
+            raw_type = str(dim_val[0])
+            mapped_model = GATEWAY_DEVICE_TYPE_MAP.get(raw_type)
+
+            if mapped_model and mapped_model.lower() != str(self.gateway.model_name).lower():
+                LOGGER.info(
+                    "%s Auto-detected gateway model `%s` via WHO=13 Dimension 15 (previously `%s`). Updating profile.",
+                    self.log_id,
+                    mapped_model,
+                    self.gateway.model_name,
+                )
+                self.gateway.model_name = mapped_model
+                self.gateway.model = mapped_model
+                self.gateway.profile = get_gateway_profile(mapped_model)
+                self.gateway._log_id = f"[{mapped_model} gateway - {self.gateway.host}]"
+
+                if self.config_entry is not None:
+                    new_data = dict(self.config_entry.data)
+                    if new_data.get(CONF_NAME) != mapped_model:
+                        new_data[CONF_NAME] = mapped_model
+                        update_kwargs = {"data": new_data}
+                        if self.config_entry.title.endswith("Gateway"):
+                            update_kwargs["title"] = f"{mapped_model} Gateway"
+                        self.hass.config_entries.async_update_entry(self.config_entry, **update_kwargs)
+
+                if self.device_registry_id:
+                    dev_reg = dr.async_get(self.hass)
+                    dev_reg.async_update_device(self.device_registry_id, model=mapped_model)
+
+        # ── Dimension 16: Firmware Version ───────────────────────────────
+        elif dim == 16:
+            fw = getattr(message, "firmware_version", getattr(message, "_firmware_version", None))
+            if fw and fw != self.gateway.firmware:
+                LOGGER.info(
+                    "%s Auto-detected gateway firmware `%s` via WHO=13 Dimension 16.",
+                    self.log_id,
+                    fw,
+                )
+                self.gateway.firmware = fw
+                if self.config_entry is not None:
+                    new_data = dict(self.config_entry.data)
+                    if new_data.get(CONF_FIRMWARE) != fw:
+                        new_data[CONF_FIRMWARE] = fw
+                        self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+                if self.device_registry_id:
+                    dev_reg = dr.async_get(self.hass)
+                    dev_reg.async_update_device(self.device_registry_id, sw_version=fw)
 
     async def sending_loop(self, worker_id: int):
         self._terminate_sender = False
@@ -590,6 +662,7 @@ class MyHOMEGatewayHandler:
                 task["message"],
                 worker_id,
             )
+            task_start = time.time()
             self.bus_monitor.record_frame(
                 direction="tx",
                 raw=str(task["message"]),
@@ -598,12 +671,15 @@ class MyHOMEGatewayHandler:
             collected = await _command_session.send(message=task["message"], is_status_request=task["is_status_request"])
             if collected and isinstance(collected, list):
                 for resp in collected:
-                    self.bus_monitor.record_frame(
+                    raw_resp = str(resp)
+                    if self.bus_monitor.has_frame_since(task_start, direction="rx", raw=raw_resp):
+                        continue
+                    frame = self.bus_monitor.record_frame(
                         direction="rx",
-                        raw=str(resp),
+                        raw=raw_resp,
                         parsed=resp if isinstance(resp, OWNMessage) else None,
                     )
-                    if isinstance(resp, OWNMessage):
+                    if not getattr(frame, "is_duplicate", False) and isinstance(resp, OWNMessage):
                         async_dispatcher_send(self.hass, f"myhome_message_{self.mac}", resp)
             self.send_buffer.task_done()
 

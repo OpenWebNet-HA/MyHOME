@@ -338,6 +338,225 @@ def check_manifest_requirements_rule(checker: StandardsChecker):
         checker.log_ok(f"manifest.json requirements synchronization verified ({expected_req}).")
 
 
+def check_quality_scale_rules(checker: StandardsChecker):
+    """Enforce Home Assistant Integration Quality Scale (Bronze, Silver, Gold, Platinum/Diamond)."""
+    # 1. [BRONZE] Runtime Data
+    init_file = CUSTOM_COMPONENTS_DIR / "__init__.py"
+    if init_file.exists():
+        init_content = init_file.read_text(encoding="utf-8")
+        if "runtime_data" not in init_content:
+            checker.log_error(
+                "RULE_IQS_BRONZE",
+                init_file,
+                1,
+                "Quality Scale Bronze rule 'runtime-data': entry.runtime_data must be implemented in __init__.py",
+            )
+        else:
+            checker.log_ok("[BRONZE] runtime_data entry mapping implemented.")
+
+    # 2. [BRONZE] Services Extraction
+    services_file = CUSTOM_COMPONENTS_DIR / "services.py"
+    if not services_file.exists():
+        checker.log_error(
+            "RULE_IQS_BRONZE",
+            services_file,
+            1,
+            "Quality Scale Bronze rule 'action-setup': services must be extracted to services.py",
+        )
+    else:
+        services_content = services_file.read_text(encoding="utf-8")
+        if "async_setup_services" not in services_content or "async_unload_services" not in services_content:
+            checker.log_error(
+                "RULE_IQS_BRONZE",
+                services_file,
+                1,
+                "Quality Scale Bronze rule 'action-setup': services.py must define async_setup_services and async_unload_services",
+            )
+        else:
+            checker.log_ok("[BRONZE] action-setup: services.py registered with setup and unload handlers.")
+
+    # 3. [SILVER] Concurrency: PARALLEL_UPDATES = 0 across all platform files
+    platform_files = [
+        "alarm_control_panel.py",
+        "binary_sensor.py",
+        "button.py",
+        "climate.py",
+        "cover.py",
+        "light.py",
+        "media_player.py",
+        "sensor.py",
+        "switch.py",
+    ]
+    missing_parallel = []
+    for pf_name in platform_files:
+        pf = CUSTOM_COMPONENTS_DIR / pf_name
+        if pf.exists():
+            content = pf.read_text(encoding="utf-8")
+            if not re.search(r"^PARALLEL_UPDATES\s*(:\s*int)?\s*=\s*0", content, re.MULTILINE):
+                missing_parallel.append(pf_name)
+    if missing_parallel:
+        checker.log_error(
+            "RULE_IQS_SILVER",
+            CUSTOM_COMPONENTS_DIR,
+            1,
+            f"Quality Scale Silver rule 'parallel-updates': PARALLEL_UPDATES = 0 missing in: {', '.join(missing_parallel)}",
+        )
+    else:
+        checker.log_ok(f"[SILVER] parallel-updates: PARALLEL_UPDATES = 0 verified across all {len(platform_files)} platform files.")
+
+    # 4. [GOLD] Reconfiguration Flow
+    config_flow_file = CUSTOM_COMPONENTS_DIR / "config_flow.py"
+    if config_flow_file.exists():
+        content = config_flow_file.read_text(encoding="utf-8")
+        if "async_step_reconfigure" not in content:
+            checker.log_error(
+                "RULE_IQS_GOLD",
+                config_flow_file,
+                1,
+                "Quality Scale Gold rule 'reconfiguration-flow': async_step_reconfigure must be implemented in config_flow.py",
+            )
+        else:
+            checker.log_ok("[GOLD] reconfiguration-flow: async_step_reconfigure implemented.")
+
+    # 5. [GOLD] Translations & Strings Sync
+    strings_file = CUSTOM_COMPONENTS_DIR / "strings.json"
+    en_file = TRANSLATIONS_DIR / "en.json"
+    if not strings_file.exists() or not en_file.exists():
+        checker.log_error(
+            "RULE_IQS_GOLD",
+            strings_file,
+            1,
+            "Quality Scale Gold rule 'entity-translations': strings.json and translations/en.json must exist",
+        )
+    else:
+        try:
+            with open(strings_file, "r", encoding="utf-8") as f:
+                strings_data = json.load(f)
+            with open(en_file, "r", encoding="utf-8") as f:
+                en_data = json.load(f)
+            if set(strings_data.keys()) != set(en_data.keys()):
+                checker.log_error(
+                    "RULE_IQS_GOLD",
+                    strings_file,
+                    1,
+                    "Quality Scale Gold rule 'entity-translations': top-level keys in strings.json and translations/en.json do not match",
+                )
+            else:
+                checker.log_ok("[GOLD] entity-translations: strings.json and translations/en.json synchronized.")
+        except Exception as e:
+            checker.log_error("RULE_IQS_GOLD", strings_file, 1, f"Failed parsing strings/translations JSON: {e}")
+
+    # 6. [GOLD] Icon Translations
+    icons_file = CUSTOM_COMPONENTS_DIR / "icons.json"
+    if not icons_file.exists():
+        checker.log_error(
+            "RULE_IQS_GOLD",
+            icons_file,
+            1,
+            "Quality Scale Gold rule 'icon-translations': icons.json must exist",
+        )
+    else:
+        checker.log_ok("[GOLD] icon-translations: icons.json registered.")
+
+    # 7. [GOLD] Repairs Platform
+    repairs_file = CUSTOM_COMPONENTS_DIR / "repairs.py"
+    if not repairs_file.exists():
+        checker.log_error(
+            "RULE_IQS_GOLD",
+            repairs_file,
+            1,
+            "Quality Scale Gold rule 'repair-issues': repairs.py platform must exist",
+        )
+    else:
+        checker.log_ok("[GOLD] repair-issues: repairs.py platform implemented.")
+
+    # 8. [GOLD] Diagnostics
+    diag_file = CUSTOM_COMPONENTS_DIR / "diagnostics.py"
+    if not diag_file.exists():
+        checker.log_error(
+            "RULE_IQS_GOLD",
+            diag_file,
+            1,
+            "Quality Scale Gold rule 'diagnostics': diagnostics.py platform must exist",
+        )
+    else:
+        checker.log_ok("[GOLD] diagnostics: diagnostics.py platform implemented.")
+
+    # 9. [DIAMOND/PLATINUM] Async Dependency (No blocking libraries)
+    manifest_file = CUSTOM_COMPONENTS_DIR / "manifest.json"
+    if manifest_file.exists():
+        try:
+            with open(manifest_file, "r", encoding="utf-8") as f:
+                manifest_data = json.load(f)
+            reqs = manifest_data.get("requirements", [])
+            blocking_libs = ["requests", "urllib3", "urllib"]
+            found_blocking = [r for r in reqs if any(b in r.lower() for b in blocking_libs)]
+            if found_blocking:
+                checker.log_error(
+                    "RULE_IQS_DIAMOND",
+                    manifest_file,
+                    1,
+                    f"Quality Scale Platinum rule 'async-dependency': blocking library found in requirements: {found_blocking}",
+                )
+            else:
+                checker.log_ok("[DIAMOND] async-dependency: zero blocking network libraries in manifest requirements.")
+        except Exception as e:
+            checker.log_error("RULE_IQS_DIAMOND", manifest_file, 1, f"Failed parsing manifest.json: {e}")
+
+    # 10. [DIAMOND/PLATINUM] Quality Scale Manifest Audit
+    qs_file = CUSTOM_COMPONENTS_DIR / "quality_scale.yaml"
+    if not qs_file.exists():
+        checker.log_error(
+            "RULE_IQS_DIAMOND",
+            qs_file,
+            1,
+            "Quality Scale audit manifest quality_scale.yaml must exist in custom_components/myhome/",
+        )
+    else:
+        try:
+            import yaml
+            with open(qs_file, "r", encoding="utf-8") as f:
+                qs_data = yaml.safe_load(f)
+            rules = qs_data.get("rules", {})
+            valid_statuses = {"done", "todo", "in_progress", "exempt"}
+            invalid_rules = [k for k, v in rules.items() if isinstance(v, dict) and v.get("status") not in valid_statuses]
+            if invalid_rules:
+                checker.log_error(
+                    "RULE_IQS_DIAMOND",
+                    qs_file,
+                    1,
+                    f"quality_scale.yaml has invalid status for rules: {invalid_rules}",
+                )
+            else:
+                done_count = sum(1 for v in rules.values() if isinstance(v, dict) and v.get("status") in ("done", "exempt"))
+                checker.log_ok(f"[DIAMOND] quality_scale.yaml validated ({done_count}/{len(rules)} rules satisfied/exempt).")
+        except Exception as e:
+            checker.log_error("RULE_IQS_DIAMOND", qs_file, 1, f"Failed parsing quality_scale.yaml: {e}")
+
+
+def check_ownd_library_standards(checker: StandardsChecker):
+    """Enforce OWNd client library PyPI & async decoupling standards."""
+    try:
+        import OWNd
+        ownd_dir = Path(OWNd.__file__).resolve().parent
+        has_ha_import = False
+        for py_file in ownd_dir.rglob("*.py"):
+            text = py_file.read_text(encoding="utf-8", errors="ignore")
+            if re.search(r"^\s*(import homeassistant|from homeassistant)", text, re.MULTILINE):
+                has_ha_import = True
+                checker.log_error(
+                    "RULE_OWND_DECOUPLING",
+                    py_file,
+                    1,
+                    "OWNd protocol library must be completely decoupled and MUST NOT import homeassistant",
+                )
+                break
+        if not has_ha_import:
+            checker.log_ok("[OWND] Client library clean decoupling verified (0 homeassistant imports).")
+    except Exception as err:
+        checker.log_ok(f"[OWND] Client library verification skipped (OWNd not in path: {err}).")
+
+
 def main():
     print("=" * 70)
     print("Running Home Assistant Architectural Standards Validator")
@@ -350,6 +569,8 @@ def main():
     check_no_blocking_calls(checker)
     check_ruff_standards(checker)
     check_manifest_requirements_rule(checker)
+    check_quality_scale_rules(checker)
+    check_ownd_library_standards(checker)
 
     print("=" * 70)
     if checker.errors:

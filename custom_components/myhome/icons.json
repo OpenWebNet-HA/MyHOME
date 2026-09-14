@@ -1,0 +1,19 @@
+{
+  "services": {
+    "sync_time": {
+      "service": "mdi:clock-sync"
+    },
+    "send_message": {
+      "service": "mdi:message-text-outline"
+    },
+    "start_sending_instant_power": {
+      "service": "mdi:flash"
+    },
+    "turn_on_timed": {
+      "service": "mdi:timer-outline"
+    },
+    "sweep_bus": {
+      "service": "mdi:radar"
+    }
+  }
+}

@@ -55,6 +55,7 @@ from .const import (
     DEFAULT_TRANSITION_MODE,
     DOMAIN,
     LOGGER,
+    SUPPORTED_GATEWAY_MODELS,
 )
 from .gateway import MyHOMEGatewayHandler
 
@@ -317,7 +318,10 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
         address_val = getattr(self, "_custom_address", "192.168.1.135")
         port_val = getattr(self, "_custom_port", 20000)
         serial_number_suggestion = user_input["serialNumber"] if user_input is not None and user_input.get("serialNumber") else "00:03:50:00:00:00"
-        model_name_suggestion = user_input["modelName"] if user_input is not None and user_input.get("modelName") else "F454"
+        model_name_suggestion = user_input["modelName"] if user_input is not None and user_input.get("modelName") else "MyHomeServer1"
+        model_options = [m for m in SUPPORTED_GATEWAY_MODELS]
+        if model_name_suggestion not in model_options:
+            model_options.insert(0, model_name_suggestion)
 
         return self.async_show_form(
             step_id="custom_manual",
@@ -329,8 +333,8 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
                     ): str,
                     Required(
                         "modelName",
-                        description={"suggested_value": model_name_suggestion},
-                    ): str,
+                        default=model_name_suggestion,
+                    ): vol.Any(In(model_options), cv.string),
                 }
             ),
             description_placeholders={
@@ -570,6 +574,99 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
             },
         )
 
+    async def async_step_reconfigure(self, user_input=None):
+        """Handle reconfiguration of the gateway connection."""
+        errors = {}
+        try:
+            entry = (
+                self._get_reconfigure_entry()
+                if hasattr(self, "_get_reconfigure_entry")
+                else self.hass.config_entries.async_get_entry(self.context.get("entry_id"))
+            )
+        except Exception:
+            entry = None
+
+        if entry is None:
+            return self.async_abort(reason="unknown")
+
+        is_serial = entry.data.get("transport_type") == "serial"
+
+        if user_input is not None:
+            if is_serial:
+                port = str(user_input.get("port", "")).strip()
+                if not port:
+                    errors["port"] = "invalid_port"
+                else:
+                    new_data = {**entry.data}
+                    new_data[CONF_HOST] = port
+                    new_data["port"] = port
+                    new_data["baudrate"] = user_input.get("baudrate", 19200)
+                    new_data[CONF_PORT] = new_data["baudrate"]
+                    return self.async_update_reload_and_abort(
+                        entry,
+                        data=new_data,
+                        reason="reconfigure_successful",
+                    )
+            else:
+                address = str(user_input.get(CONF_HOST, "")).strip()
+                try:
+                    address = str(ipaddress.IPv4Address(address))
+                except ipaddress.AddressValueError:
+                    errors[CONF_HOST] = "invalid_ip"
+
+                port = user_input.get(CONF_PORT, 20000)
+                try:
+                    port = int(port)
+                    if not (1 <= port <= 65535):
+                        errors[CONF_PORT] = "invalid_port"
+                except (ValueError, TypeError):
+                    errors[CONF_PORT] = "invalid_port"
+
+                if not errors:
+                    new_data = {**entry.data}
+                    new_data[CONF_HOST] = address
+                    new_data[CONF_PORT] = port
+                    if CONF_PASSWORD in user_input:
+                        new_data[CONF_PASSWORD] = user_input.get(CONF_PASSWORD) or None
+                    return self.async_update_reload_and_abort(
+                        entry,
+                        data=new_data,
+                        reason="reconfigure_successful",
+                    )
+
+        if is_serial:
+            schema = Schema(
+                {
+                    Required("port", default=entry.data.get(CONF_HOST, "")): cv.string,
+                    Required("baudrate", default=entry.data.get("baudrate", 19200)): In(
+                        [9600, 19200, 38400, 57600, 115200]
+                    ),
+                }
+            )
+        else:
+            schema = Schema(
+                {
+                    Required(CONF_HOST, default=entry.data.get(CONF_HOST, "")): str,
+                    Required(CONF_PORT, default=entry.data.get(CONF_PORT, 20000)): All(
+                        Coerce(int), Range(min=1, max=65535)
+                    ),
+                    vol.Optional(
+                        CONF_PASSWORD,
+                        description={"suggested_value": entry.data.get(CONF_PASSWORD) or ""},
+                    ): str,
+                }
+            )
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={
+                CONF_NAME: entry.data.get(CONF_NAME, "Gateway"),
+            },
+        )
+
+
 
 
 class MyhomeOptionsFlowHandler(OptionsFlow):
@@ -673,10 +770,15 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
                     self.options[source_key] = user_input.get(source_key, i)
                     self.options[gain_key] = user_input.get(gain_key, 0)
 
+                _model_update = False
+                if CONF_NAME in user_input and user_input[CONF_NAME] != self.data.get(CONF_NAME):
+                    self.data[CONF_NAME] = user_input[CONF_NAME]
+                    _model_update = True
+
                 _data_update = not (
                     self.data.get(CONF_HOST) == user_input.get(CONF_ADDRESS)
                     and self.data.get(CONF_PASSWORD) == user_input.get(CONF_OWN_PASSWORD)
-                )
+                ) or _model_update
                 self.data.update({CONF_HOST: user_input.get(CONF_ADDRESS)})
                 self.data.update({CONF_PASSWORD: user_input.get(CONF_OWN_PASSWORD)})
 
@@ -687,17 +789,29 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
 
                 if not errors:
                     if _data_update:
-                        self.hass.config_entries.async_update_entry(self.config_entry, data=self.data)
+                        update_kwargs = {"data": self.data}
+                        if _model_update and self.config_entry.title.endswith("Gateway"):
+                            update_kwargs["title"] = f"{user_input[CONF_NAME]} Gateway"
+                        self.hass.config_entries.async_update_entry(self.config_entry, **update_kwargs)
                         await self.hass.config_entries.async_reload(self.config_entry.entry_id)
 
                     return self.async_create_entry(title="", data=self.options)
 
         # ── Build form schema ─────────────────────────────────────────────
+        model_options = [m for m in SUPPORTED_GATEWAY_MODELS]
+        current_model = self.data.get(CONF_NAME, "MyHomeServer1")
+        if current_model not in model_options:
+            model_options.insert(0, current_model)
+
         schema_dict = {
             Required(
                 CONF_ADDRESS,
                 description={"suggested_value": self.data.get(CONF_HOST) or ""},
             ): str,
+            vol.Optional(
+                CONF_NAME,
+                default=current_model,
+            ): vol.Any(In(model_options), cv.string),
             vol.Optional(
                 CONF_OWN_PASSWORD,
                 description={"suggested_value": self.data.get(CONF_PASSWORD) or ""},

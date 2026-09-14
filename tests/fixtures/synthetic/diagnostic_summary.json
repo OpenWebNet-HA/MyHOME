@@ -1,0 +1,36 @@
+{
+  "data": {
+    "config_entry": {
+      "data": {
+        "host": "192.0.2.1",
+        "port": 20000,
+        "mac": "00:03:50:00:00:01",
+        "name": "MyHomeServer1"
+      }
+    },
+    "bus_monitor": {
+      "recent_frames": [
+        {
+          "raw": "*1*0*1002##",
+          "direction": "rx"
+        },
+        {
+          "raw": "*1*1*0910##",
+          "direction": "rx"
+        },
+        {
+          "raw": "*25*31#1*31##",
+          "direction": "rx"
+        },
+        {
+          "raw": "*#18*51*113*602##",
+          "direction": "rx"
+        },
+        {
+          "raw": "*#*1##",
+          "direction": "rx"
+        }
+      ]
+    }
+  }
+}

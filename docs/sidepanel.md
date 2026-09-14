@@ -238,3 +238,22 @@ modules reached 100% line coverage (5,273 statements). All 18 frontend tests pas
 including native-property upgrade, gateway links and navigation. Ruff and the HA
 architectural checks passed. The Configure link and sidebar visibility still need
 a visual check in a real Home Assistant frontend.
+
+## CI alignment with the current architecture branch
+
+The sidepanel branch includes `v2-phase1-architecture` through `96d86a8`.
+The gateway-model options regression now enters the native Configure menu before
+opening Gateway settings, while retaining model, title and reload assertions.
+The new panel labels are also included in upstream's `strings.json`.
+
+That upstream revision removes the real installation fixtures. Mandatory YAML
+import, registry cleanliness, state-dispatch, burst and generic replay checks now
+use a small invented installation in `tests/fixtures/synthetic`. The four replay
+tests tied to specific real captures run when those capture directories are
+supplied locally, and are explicitly skipped otherwise. Their original assertions
+remain intact; the removed capture files have not been restored.
+
+Validation on HA 2025.1.4 / Python 3.12 / OWNd 2.0.0b6: 1,332 tests passed,
+5 skipped (four unavailable captures and one pre-existing skip), five snapshots
+passed, and all 28 integration modules retain 100% line coverage (5,472 statements).
+All 18 frontend tests, Ruff, architecture checks and the strict coverage gate pass.

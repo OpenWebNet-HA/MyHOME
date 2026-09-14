@@ -24,6 +24,8 @@ gantt
     WHO 18 Energy Power/Meters & WHO 16 Audio Matrix Proxy          :done, 2026-09-01, 2026-09-11
     section Active Community Consultation
     RFC - P7 Group Sync, P3 Cover Calibration, WHO 14/24/22 Scope   :active, 2026-09-11, 2026-11-01
+    section Post-Beta Milestones
+    Phase 5 - Golden Quality Scale (IQS) & HA Core Alignment         :2026-11-01, 2026-12-15
 ```
 
 ---
@@ -114,6 +116,66 @@ Modern installations stream digital music from **Music Assistant**, **Spotify Co
 
 #### Open Questions for the Community:
 1. **Deprecation**: Should WHO 22 FM tuner controls be formally deprecated in favor of our active F441 Dynamic Streaming Proxy?
+
+---
+
+## 🥇 Phase 5: Home Assistant Integration Quality Scale — Golden Quality Seal (Post-Beta)
+
+Following the conclusion of the beta testing period and community RFC consultation, all engineering efforts will transition to qualifying for the **official Home Assistant 🥇 Golden Quality Seal** ([Home Assistant Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/)) and preparing the codebase for upstream inclusion in Home Assistant Core.
+
+Under Home Assistant's grading architecture, an integration cannot achieve Gold without **100% compliance across all Bronze and Silver rules as well**.
+
+### 📊 Quality Scale Compliance & Gap Analysis
+
+```mermaid
+graph LR
+    subgraph Prerequisites["🥉 Bronze & 🥈 Silver Prerequisites"]
+        B1["has_entity_name = True"]
+        B2["entry.runtime_data"]
+        B3["async_setup Service Actions"]
+        S1["Service Action Exceptions"]
+        S2["PARALLEL_UPDATES Declarations"]
+    end
+
+    subgraph GoldMilestones["🥇 Gold Tier Implementation"]
+        G1["async_step_reconfigure"]
+        G2["strings.json & Entity Translations"]
+        G3["icons.json Translations"]
+        G4["Repairs Framework (async_create_issue)"]
+        G5["quality_scale.yaml Tracking"]
+    end
+
+    subgraph Upstream["🌐 Upstream Inclusion & Assets"]
+        U1["home-assistant/brands Assets"]
+        U2["Official Core Docs (All 10 rules)"]
+        U3["Core Integration PR"]
+    end
+
+    Prerequisites --> GoldMilestones --> Upstream
+```
+
+### 📋 Detailed Workstream Breakdown
+
+#### 1. 🥉 Bronze Architectural Alignments (Core Prerequisites)
+* **`has-entity-name`**: Migrate all entity implementations (`MyHOMEEntity` in `custom_components/myhome/myhome_device.py`) from `self._attr_has_entity_name = False` to `True`. Primary entities (where the device and entity are one, such as a single light actuator or thermostat) will set `_attr_name = None` to inherit the device's friendly name. Remove manual `self.entity_id` overrides to allow Home Assistant Core's registry to handle naming.
+* **`runtime-data`**: Deprecate global `hass.data[DOMAIN][mac]` state storage in favor of modern `ConfigEntry.runtime_data` (introduced in HA 2024.4). Establish a typed `MyHomeData` dataclass and `type MyHomeConfigEntry = ConfigEntry[MyHomeData]`.
+* **`action-setup`**: Move service action registrations (`sync_time`, `send_message`, `sweep_bus`, `turn_on_timed`) out of `async_setup_entry` into `async_setup` (or a dedicated `services.py`), using standard Home Assistant service targets (`entity_id` / `device_id`) and preventing premature unregistration on entry unload.
+
+#### 2. 🥈 Silver Robustness & Quality Hardening
+* **`test-coverage` (>95% per module)**: ✅ **Already Satisfied (Strict 100.0%)**. MyHOME already enforces strict 100.0% statement and branch coverage across all 25 modules (5,155/5,155 statements with 0 missing lines verified by `scripts/verify_ownd_coverage.py` and `tests/test_coverage_enforcer.py`), easily surpassing the Home Assistant >95% requirement.
+* **`action-exceptions`**: Update service handlers to raise `homeassistant.exceptions.ServiceValidationError` or `HomeAssistantError` instead of logging errors and returning `False`.
+* **`parallel-updates`**: Declare explicit `PARALLEL_UPDATES = 0` (for push-driven event stream entities) or `PARALLEL_UPDATES = 1` (where sequential bus dispatch is needed) across all platform modules (`light.py`, `switch.py`, `cover.py`, `climate.py`, `sensor.py`, `binary_sensor.py`, `media_player.py`, `button.py`, and `alarm_control_panel.py`).
+
+#### 3. 🥇 Gold User Experience & Framework Features
+* **`reconfiguration-flow`**: Implement `async_step_reconfigure` in `custom_components/myhome/config_flow.py` allowing users to update the gateway IP, port, or connection mode directly through the UI when network settings change, without deleting and recreating their config entry.
+* **`strings.json` & `entity-translations`**: Introduce `custom_components/myhome/strings.json` as the canonical source of truth for translations, and assign `translation_key` across all entities and diagnostic sensors.
+* **`icon-translations`**: Add `custom_components/myhome/icons.json` to define standard icons for service actions and state representations rather than hardcoding `_attr_icon`.
+* **`repair-issues`**: Integrate Home Assistant's Repairs framework (`homeassistant.helpers.issue_registry.async_create_issue`) for user-actionable situations (such as OWNd engine version mismatches or deprecation warnings for legacy `myhome.yaml` configurations).
+* **`quality_scale.yaml`**: Add the official Home Assistant quality scale tracking file (`custom_components/myhome/quality_scale.yaml`) to document rule statuses (`done`, `todo`, `exempt`) and maintain accountability during core review.
+
+#### 4. 🌐 Upstream Ecosystem & Documentation
+* **Branding Assets (`brands`)**: Submit official SVG/PNG branding assets (`icon.png`, `icon@2x.png`, `logo.png`, `logo@2x.png`) to the [`home-assistant/brands`](https://github.com/home-assistant/brands) repository.
+* **Official Core Documentation**: Author the complete documentation suite for `home-assistant.io/integrations/myhome` fulfilling all 10 Gold documentation standards: data update model, supported hardware matrix, troubleshooting guide, automation examples, known limitations, and removal instructions.
 
 ---
 

@@ -58,6 +58,7 @@ CONF_HEATING_SUPPORT = "heat"
 CONF_COOLING_SUPPORT = "cool"
 CONF_FAN_SUPPORT = "fan"
 CONF_STANDALONE = "standalone"
+CONF_SDOMOTICA_COMPAT = "sdomotica_compat"
 CONF_CENTRAL = "central"
 CONF_SHORT_PRESS = "pushbutton_short_press"
 CONF_SHORT_RELEASE = "pushbutton_short_release"
@@ -159,6 +160,33 @@ PRESET_TIMERS: dict[float, int] = {
     300.0: 15,
     900.0: 16,
 }
+
+SUPPORTED_GATEWAY_MODELS = [
+    "MyHomeServer1",
+    "F454",
+    "F455",
+    "MH202",
+    "MH200N",
+    "MH200",
+    "MH201",
+    "F453AV",
+    "F452",
+    "F461",
+    "AM4890",
+    "Generic",
+]
+
+GATEWAY_DEVICE_TYPE_MAP = {
+    "2": "MyHomeServer1",
+    "11": "MyHomeServer1",
+    "200": "F454",
+    "4": "MH200N",
+    "6": "F452",
+    "7": "F452",
+    "13": "H4684",
+}
+
+
 
 
 def build_timed_turn_on_command(
