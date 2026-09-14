@@ -63,10 +63,8 @@ class MyHOMEEntity(RestoreEntity):
             manufacturer=self._manufacturer,
             model=self._model,
         )
-        if "via_device_id" in DeviceInfo.__annotations__:
-            self._attr_device_info["via_device_id"] = gateway.device_registry_id
-        else:
-            self._attr_device_info["via_device"] = (DOMAIN, gateway.unique_id)
+        # Link to the gateway device (via_device_id; via_device is gone since core 2026.8).
+        self._attr_device_info["via_device_id"] = gateway.device_registry_id
 
     def _publish_state(self) -> None:
         """Write the entity state once the entity is live in Home Assistant.

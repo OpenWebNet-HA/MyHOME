@@ -1,6 +1,7 @@
 """Support for MyHome lights."""
 import asyncio
 
+import voluptuous as vol
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ATTR_BRIGHTNESS_PCT,
@@ -15,12 +16,6 @@ from homeassistant.components.light import (
     LightEntity,
     LightEntityFeature,
 )
-
-try:
-    from homeassistant.components.light import ATTR_COLOR_TEMP
-except ImportError:  # pragma: no cover
-    ATTR_COLOR_TEMP = "color_temp"
-import voluptuous as vol
 from homeassistant.components.light import (
     DOMAIN as PLATFORM,
 )
@@ -74,6 +69,9 @@ from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 
 PARALLEL_UPDATES = 0
+
+# Legacy mired attribute of stored states (core dropped ATTR_COLOR_TEMP in 2025).
+ATTR_COLOR_TEMP = "color_temp"
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):

@@ -5,35 +5,8 @@ from homeassistant.components.alarm_control_panel import (
 from homeassistant.components.alarm_control_panel import (
     AlarmControlPanelEntity,
     AlarmControlPanelEntityFeature,
+    AlarmControlPanelState,
 )
-
-try:
-    from homeassistant.components.alarm_control_panel import AlarmControlPanelState
-
-    STATE_DISARMED = AlarmControlPanelState.DISARMED
-    STATE_ARMED_HOME = AlarmControlPanelState.ARMED_HOME
-    STATE_ARMED_AWAY = AlarmControlPanelState.ARMED_AWAY
-    STATE_TRIGGERED = AlarmControlPanelState.TRIGGERED
-except ImportError:
-    try:
-        from homeassistant.const import (
-            STATE_ALARM_ARMED_AWAY as STATE_ARMED_AWAY,
-        )
-        from homeassistant.const import (
-            STATE_ALARM_ARMED_HOME as STATE_ARMED_HOME,
-        )
-        from homeassistant.const import (
-            STATE_ALARM_DISARMED as STATE_DISARMED,
-        )
-        from homeassistant.const import (
-            STATE_ALARM_TRIGGERED as STATE_TRIGGERED,
-        )
-    except ImportError:
-        STATE_DISARMED = "disarmed"
-        STATE_ARMED_HOME = "armed_home"
-        STATE_ARMED_AWAY = "armed_away"
-        STATE_TRIGGERED = "triggered"
-
 from homeassistant.const import (
     CONF_MAC,
     CONF_NAME,
@@ -58,6 +31,11 @@ from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 
 PARALLEL_UPDATES = 0
+
+STATE_DISARMED = AlarmControlPanelState.DISARMED
+STATE_ARMED_HOME = AlarmControlPanelState.ARMED_HOME
+STATE_ARMED_AWAY = AlarmControlPanelState.ARMED_AWAY
+STATE_TRIGGERED = AlarmControlPanelState.TRIGGERED
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):

@@ -42,12 +42,7 @@ class MyHOMERuntimeData:
         return getattr(self.gateway, "bus_monitor", None)
 
 
-if TYPE_CHECKING:
-    MyHOMEConfigEntry = ConfigEntry[MyHOMERuntimeData]
-else:
-    # ConfigEntry only became generic in Home Assistant 2024.4; the alias must
-    # also import on the older cores the test matrix still runs against.
-    MyHOMEConfigEntry = ConfigEntry
+MyHOMEConfigEntry = ConfigEntry[MyHOMERuntimeData]
 
 
 def get_runtime_data(entry: ConfigEntry) -> MyHOMERuntimeData | None:

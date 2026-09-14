@@ -519,32 +519,19 @@ async def test_register_frontend_branches(hass: HomeAssistant):
     await _async_register_frontend(hass)
     mock_http.async_register_static_paths.assert_not_called()
 
-    # 4. Fallback to register_static_path and exception handling
+    # 4. add_extra_js_url failing is logged, registration still completes
     hass.data[DOMAIN]["_frontend_registered"] = False
-    del mock_http.async_register_static_paths
-    mock_http.register_static_path = MagicMock()
     with patch("homeassistant.components.frontend.add_extra_js_url", side_effect=Exception("Frontend error")):
         await _async_register_frontend(hass)
         assert hass.data[DOMAIN]["_frontend_registered"] is True
-        assert mock_http.register_static_path.call_count >= 1
 
-    # 5. async_register_static_paths raises exception and falls back to register_static_path
+    # 5. async_register_static_paths raising (already registered after a reload) is tolerated
     hass.data[DOMAIN]["_frontend_registered"] = False
     mock_http.async_register_static_paths = AsyncMock(side_effect=Exception("Async static paths failed"))
-    mock_http.register_static_path.reset_mock()
     with patch("homeassistant.components.http.StaticPathConfig", create=True):
         await _async_register_frontend(hass)
     assert hass.data[DOMAIN]["_frontend_registered"] is True
-    assert mock_http.register_static_path.call_count >= 1
-
-    # 5b. When static_path_cls is None, falls back to register_static_path even if async_register_static_paths exists
-    hass.data[DOMAIN]["_frontend_registered"] = False
     mock_http.async_register_static_paths = AsyncMock()
-    mock_http.register_static_path.reset_mock()
-    with patch("homeassistant.components.http.StaticPathConfig", None, create=True):
-        await _async_register_frontend(hass)
-    assert hass.data[DOMAIN]["_frontend_registered"] is True
-    assert mock_http.register_static_path.call_count >= 1
 
     # 6. Lovelace resource auto-registration (lines 69-78)
     hass.data[DOMAIN]["_frontend_registered"] = False
@@ -1018,32 +1005,6 @@ async def test_setup_entry_sw_version_list_normalization(hass: HomeAssistant):
 
         await hass.config_entries.async_unload(config_entry.entry_id)
         await hass.async_block_till_done()
-
-
-async def test_async_register_lovelace_resource_dict_storage_collection(hass: HomeAssistant):
-    """Test auto-registering lovelace resource when hass.data['lovelace'] is a dictionary (real HA Core structure)."""
-    from custom_components.myhome import _async_register_lovelace_resource
-
-    mock_resources = MagicMock()
-    mock_resources.loaded = False
-    mock_resources.async_load = AsyncMock()
-    mock_resources.async_items.return_value = []
-    mock_resources.async_create_item = AsyncMock()
-
-    hass.data["lovelace"] = {
-        "mode": "storage",
-        "dashboards": {},
-        "resources": mock_resources,
-    }
-
-    result = await _async_register_lovelace_resource(hass, "/myhome_static/myhome-bus-card.js")
-    assert result is True
-    mock_resources.async_load.assert_awaited_once()
-    assert mock_resources.loaded is True
-    mock_resources.async_create_item.assert_awaited_once_with({
-        "res_type": "module",
-        "url": "/myhome_static/myhome-bus-card.js",
-    })
 
 
 async def test_setup_entry_mfg_fw_fallbacks_and_pruning_branches(hass: HomeAssistant):

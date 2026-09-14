@@ -69,10 +69,7 @@ async def _async_register_lovelace_resource(hass: HomeAssistant, url_path: str) 
         lovelace = hass.data.get("lovelace")
         if not lovelace:
             return False
-        if isinstance(lovelace, dict):
-            resources = lovelace.get("resources")
-        else:
-            resources = getattr(lovelace, "resources", None)
+        resources = getattr(lovelace, "resources", None)
         if not resources:
             return False
         if hasattr(resources, "loaded") and not resources.loaded:
@@ -133,23 +130,15 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     if not domain_data.get("_frontend_registered"):
         if http is not None and os.path.isfile(card_path):
             frontend_dir = os.path.dirname(card_path)
-            import homeassistant.components.http as ha_http
+            from homeassistant.components.http import StaticPathConfig
 
-            static_path_cls = getattr(ha_http, "StaticPathConfig", None)
-
-            if static_path_cls is not None and hasattr(http, "async_register_static_paths"):
-                try:
-                    await http.async_register_static_paths([
-                        static_path_cls("/myhome_static", frontend_dir, False),
-                        static_path_cls(static_url, card_path, False),
-                    ])
-                except Exception:
-                    if hasattr(http, "register_static_path"):
-                        http.register_static_path("/myhome_static", frontend_dir, False)
-                        http.register_static_path(static_url, card_path, False)
-            elif hasattr(http, "register_static_path"):
-                http.register_static_path("/myhome_static", frontend_dir, False)
-                http.register_static_path(static_url, card_path, False)
+            try:
+                await http.async_register_static_paths([
+                    StaticPathConfig("/myhome_static", frontend_dir, False),
+                    StaticPathConfig(static_url, card_path, False),
+                ])
+            except Exception as err:  # already registered after a reload, or http not ready
+                LOGGER.debug("Static path registration for the bus-monitor card skipped: %s", err)
 
             try:
                 from homeassistant.components import frontend

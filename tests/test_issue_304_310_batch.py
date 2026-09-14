@@ -10,7 +10,7 @@ from homeassistant.core import State
 from OWNd.message import OWNEvent, OWNHeatingEvent, OWNLightingEvent
 
 from custom_components.myhome.const import DOMAIN
-from custom_components.myhome.gateway import MyHOMEGatewayHandler, _registry_supports_via_device_id
+from custom_components.myhome.gateway import MyHOMEGatewayHandler
 from custom_components.myhome.light import MyHOMELight
 from custom_components.myhome.sensor import SCAN_INTERVAL, MyHOMETemperatureSensor
 
@@ -80,52 +80,25 @@ async def test_listening_loop_skips_none_without_warning(gateway_handler, caplog
 # ── #310: via_device -> via_device_id ────────────────────────────────────
 
 
-def test_cen_device_uses_via_device_id_when_supported(gateway_handler):
-    """On cores that accept via_device_id the deprecated via_device is not passed (#310)."""
+def test_cen_device_links_to_the_gateway_with_via_device_id(gateway_handler):
+    """CEN devices link to the gateway device by id; never the deprecated via_device tuple (#310)."""
     mock_dr = MagicMock()
     gateway_handler.device_registry_id = "gateway_dev_id"
-    with patch("custom_components.myhome.gateway._registry_supports_via_device_id", return_value=True), \
-         patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
+    with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
         gateway_handler._ensure_cen_device(15, "7")
     kwargs = mock_dr.async_get_or_create.call_args.kwargs
     assert kwargs["via_device_id"] == "gateway_dev_id"
     assert "via_device" not in kwargs
     assert kwargs["identifiers"] == {(DOMAIN, f"{gateway_handler.mac}-15-7")}
 
-    # Without a gateway device id yet, neither link is passed (never a stale via_device)
+    # Without a gateway device id yet, no link is passed (never a stale via_device)
     mock_dr.reset_mock()
     gateway_handler._cen_devices.clear()
     gateway_handler.device_registry_id = None
-    with patch("custom_components.myhome.gateway._registry_supports_via_device_id", return_value=True), \
-         patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
+    with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
         gateway_handler._ensure_cen_device(25, "3")
     kwargs = mock_dr.async_get_or_create.call_args.kwargs
     assert "via_device_id" not in kwargs and "via_device" not in kwargs
-
-
-def test_cen_device_falls_back_to_via_device_on_old_cores(gateway_handler):
-    """Older cores without via_device_id keep the legacy tuple link."""
-    mock_dr = MagicMock()
-    with patch("custom_components.myhome.gateway._registry_supports_via_device_id", return_value=False), \
-         patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
-        gateway_handler._ensure_cen_device(15, "9")
-    kwargs = mock_dr.async_get_or_create.call_args.kwargs
-    assert kwargs["via_device"] == (DOMAIN, gateway_handler.mac)
-    assert "via_device_id" not in kwargs
-
-
-def test_registry_probe_matches_installed_core():
-    """The signature probe reflects the running Home Assistant, and is cached."""
-    import inspect
-
-    from homeassistant.helpers import device_registry as dr
-
-    expected = "via_device_id" in inspect.signature(dr.DeviceRegistry.async_get_or_create).parameters
-    _registry_supports_via_device_id.cache_clear()
-    assert _registry_supports_via_device_id() is expected
-    assert _registry_supports_via_device_id.cache_info().hits == 0
-    _registry_supports_via_device_id()
-    assert _registry_supports_via_device_id.cache_info().hits == 1
 
 
 # ── #308: external probes are push-driven, poll only as a fallback ───────
