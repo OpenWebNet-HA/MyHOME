@@ -114,7 +114,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         return True
 
     def known_keys(ctx: DeviceContext) -> list[str]:
-        keys = [ctx.key, ctx.address.where, ctx.config_id or ""]
+        keys = [ctx.key, ctx.address.key, ctx.address.where, ctx.config_id or ""]
         if not ctx.address.interface:
             keys.append(_zone_number(ctx.address.where))
         return [k for k in keys if k]
@@ -343,21 +343,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         """Run when entity about to be added to hass."""
         target_hass = self.hass or self._hass
         if target_hass is not None:
-            self.async_on_remove(
-                async_dispatcher_connect(
-                    target_hass,
-                    f"myhome_update_{self._gateway_handler.mac}_4_{self._where}",
-                    self.handle_event,
-                )
-            )
-            if self._full_where != self._where:
-                self.async_on_remove(
-                    async_dispatcher_connect(
-                        target_hass,
-                        f"myhome_update_{self._gateway_handler.mac}_4_{self._full_where}",
-                        self.handle_event,
-                    )
-                )
             if not self._standalone and not self._central:
                 self.async_on_remove(
                     async_dispatcher_connect(

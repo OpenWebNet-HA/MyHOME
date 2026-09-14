@@ -19,7 +19,6 @@ from homeassistant.components.cover import (
     DOMAIN as PLATFORM,
 )
 from homeassistant.const import (
-    CONF_MAC,
     CONF_NAME,
     STATE_CLOSED,
     STATE_OPEN,
@@ -29,7 +28,6 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_platform
-from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.util import dt as dt_util
 from OWNd.message import (
     OWNAutomationCommand,
@@ -58,7 +56,7 @@ from .const import (
     SERVICE_SET_COVER_TRAVEL_TIME,
     SERVICE_STOP_COVER_CALIBRATION,
 )
-from .discovery import DeviceContext, PlatformDiscovery
+from .discovery import DeviceContext, PlatformDiscovery, default_known_keys
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 
@@ -197,7 +195,6 @@ class CalibrationInterrupted(HomeAssistantError):
 async def async_setup_entry(hass, config_entry, async_add_entities):
     """Set up the covers of a gateway (WHO=2): registry, myhome.yaml, then bus discovery."""
     runtime = config_entry.runtime_data
-    mac = config_entry.data[CONF_MAC]
 
     def build(ctx: DeviceContext) -> MyHOMECover:
         cfg = ctx.cfg
@@ -225,13 +222,13 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     @callback
     def relay_general(message) -> None:
-        """A general command (WHERE=0) moves every cover: one signal, all entities."""
-        async_dispatcher_send(hass, f"myhome_update_{mac}_2_general", message)
+        """A general command (WHERE=0) moves every cover."""
+        runtime.router.publish("2", ("general",), message)
 
     PlatformDiscovery(
         hass, config_entry, async_add_entities,
         platform=PLATFORM, who="2", event_type=OWNAutomationEvent, build=build, announce=True,
-        on_general=relay_general,
+        on_general=relay_general, known_keys=lambda ctx: [*default_known_keys(ctx), "general"],
     ).start()
 
     SCHEMA_SET_COVER_TRAVEL_TIME = {
@@ -549,24 +546,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def async_added_to_hass(self):
         """Run when entity about to be added to hass."""
-        target_hass = self.hass or self._hass
-        if target_hass is not None:
-            self.async_on_remove(
-                async_dispatcher_connect(
-                    target_hass,
-                    f"myhome_update_{self._gateway_handler.mac}_2_{self._full_where}",
-                    self.handle_event,
-                )
-            )
-            self.async_on_remove(
-                async_dispatcher_connect(
-                    target_hass,
-                    f"myhome_update_{self._gateway_handler.mac}_2_general",
-                    self.handle_event,
-                )
-            )
-        # Subscribe before requesting the current status so the reply cannot
-        # arrive before this entity is ready to handle it.
         if self._advanced:
             # Advanced covers query live position from bus; do not restore stale state
             self._register_availability_listener()

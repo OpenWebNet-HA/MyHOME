@@ -13,7 +13,7 @@ from homeassistant.const import (
     CONF_NAME,
 )
 from homeassistant.core import HomeAssistant, State, callback
-from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import (
     OWNAutomationEvent,
     OWNEvent,
@@ -32,6 +32,7 @@ from custom_components.myhome.cover import (
     async_setup_entry,
     async_unload_entry,
 )
+from custom_components.myhome.router import FrameRouter
 from tests.conftest import attach_runtime
 
 
@@ -207,7 +208,7 @@ class TestMyHOMECoverEntity:
     async def test_async_lifecycle_and_update(self, basic_cover, hass):
         basic_cover.async_on_remove = MagicMock()
         await basic_cover.async_added_to_hass()
-        assert basic_cover.async_on_remove.call_count == 3
+        assert basic_cover.async_on_remove.call_count == 1  # availability; frames come via the router
 
         basic_cover._gateway_handler.send_status_request.assert_awaited_once()
         assert str(basic_cover._gateway_handler.send_status_request.call_args[0][0]) == "*#2*21##"
@@ -580,7 +581,6 @@ class TestMyHOMECoverEntity:
 
 async def test_cover_general_commands_update_all_covers(hass: HomeAssistant, mock_gateway):
     """Test that general cover events (*2*1*0##, *2*2*0##, *2*0*0##) update all covers."""
-    mac = mock_gateway.mac
 
     with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
         cover1 = MyHOMECover(
@@ -623,6 +623,10 @@ async def test_cover_general_commands_update_all_covers(hass: HomeAssistant, moc
 
     await cover1.async_added_to_hass()
     await cover2.async_added_to_hass()
+    # The cover platform subscribes every cover under "general" (see cover.async_setup_entry)
+    router = FrameRouter()
+    for cover in (cover1, cover2):
+        router.subscribe("2", [cover._where, "general"], cover.handle_event)
 
     cover1._attr_current_cover_position = 50
     cover1._start_position = 50
@@ -632,7 +636,7 @@ async def test_cover_general_commands_update_all_covers(hass: HomeAssistant, moc
     # 1. General Open (*2*1*0##)
     msg_open = OWNEvent.parse("*2*1*0##")
     with patch("time.monotonic", return_value=1000.0):
-        async_dispatcher_send(hass, f"myhome_update_{mac}_2_general", msg_open)
+        router.publish("2", ["general"], msg_open)
 
     assert cover1.is_opening is True
     assert cover1.is_closing is False
@@ -642,7 +646,7 @@ async def test_cover_general_commands_update_all_covers(hass: HomeAssistant, moc
     # 2. General Stop (*2*0*0##) after 5 seconds (5s / 25s * 100 = 20% increase -> 70%)
     with patch("time.monotonic", return_value=1005.0):
         msg_stop = OWNEvent.parse("*2*0*0##")
-        async_dispatcher_send(hass, f"myhome_update_{mac}_2_general", msg_stop)
+        router.publish("2", ["general"], msg_stop)
 
     assert cover1.is_opening is False
     assert cover1.is_closing is False
@@ -654,7 +658,7 @@ async def test_cover_general_commands_update_all_covers(hass: HomeAssistant, moc
     # 3. General Close (*2*2*0##)
     msg_close = OWNEvent.parse("*2*2*0##")
     with patch("time.monotonic", return_value=2000.0):
-        async_dispatcher_send(hass, f"myhome_update_{mac}_2_general", msg_close)
+        router.publish("2", ["general"], msg_close)
 
     assert cover1.is_closing is True
     assert cover1.is_opening is False
@@ -663,7 +667,7 @@ async def test_cover_general_commands_update_all_covers(hass: HomeAssistant, moc
 
     # 4. General Stop (*2*0*0##) after 5 seconds (70% - 20% = 50%)
     with patch("time.monotonic", return_value=2005.0):
-        async_dispatcher_send(hass, f"myhome_update_{mac}_2_general", msg_stop)
+        router.publish("2", ["general"], msg_stop)
 
     assert cover1.is_closing is False
     assert cover2.is_closing is False
@@ -672,7 +676,7 @@ async def test_cover_general_commands_update_all_covers(hass: HomeAssistant, moc
 
     # 5. Verify individual commands only affect the target cover
     msg_single_open = OWNEvent.parse("*2*1*21##")
-    async_dispatcher_send(hass, f"myhome_update_{mac}_2_21", msg_single_open)
+    router.publish("2", ["21"], msg_single_open)
     assert cover1.is_opening is True
     assert cover2.is_opening is False
 
@@ -703,7 +707,7 @@ async def test_cover_setup_dispatches_general_messages_from_gateway(hass: HomeAs
     def on_general_event(msg):
         dispatched.append(msg)
 
-    async_dispatcher_connect(hass, f"myhome_update_{mac}_2_general", on_general_event)
+    config_entry.runtime_data.router.subscribe("2", ["general"], on_general_event)
 
     # Dispatch general open from gateway
     async_dispatcher_send(hass, f"myhome_message_{mac}", OWNEvent.parse("*2*1*0##"))

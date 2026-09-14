@@ -8,7 +8,12 @@ gateway (config entry):
 2. **configure** - devices declared in ``myhome.yaml`` that are not in the
    registry yet are created;
 3. **discover** - the first frame from an unknown address creates the entity;
-4. **route** - every frame is forwarded to the entity that owns the address.
+4. **route** - every frame is delivered to the entities that own the address.
+
+Delivery goes through the gateway's :class:`~.router.FrameRouter`: an entity
+is subscribed the moment it is created, under every key it answers to, so
+no frame of a burst is lost while Home Assistant adds it; a platform
+publishes each frame under the keys derived from it.
 
 This module holds that skeleton once. A platform supplies what differs: the
 ``WHO`` it serves, the OWNd event class it listens to, how a device is built
@@ -149,11 +154,6 @@ def announce_new_device(hass: HomeAssistant, mac: str, who: str, address: Addres
     )
 
 
-def update_signal(mac: str, who: str, key: str) -> str:
-    """Dispatcher signal an entity subscribes to for its own frames."""
-    return f"myhome_update_{mac}_{who}_{key}"
-
-
 @dataclass
 class DeviceContext:
     """Everything a platform needs to build one entity."""
@@ -184,9 +184,10 @@ class DeviceContext:
 BuildFn = Callable[[DeviceContext], "Entity | Sequence[Entity] | None"]
 
 
-def _default_known_keys(ctx: DeviceContext) -> list[str]:
-    """Keys an entity is remembered under: its id, plus the yaml key and bare WHERE for yaml devices."""
-    keys = [ctx.key]
+def default_known_keys(ctx: DeviceContext) -> list[str]:
+    """Keys an entity is remembered and reached under: its id and address, plus the
+    yaml key and bare WHERE for yaml devices."""
+    keys = [ctx.key, ctx.address.key, ctx.address.clean_key]
     if ctx.source == "yaml":
         keys.append(ctx.config_id or "")
         if not ctx.address.interface:
@@ -239,18 +240,15 @@ class PlatformDiscovery:
         unique ids carrying a device-class suffix). Default: parse the
         ``{mac}-{who}-{device_id}`` unique id.
     known_keys:
-        Optional: every key a created entity is remembered under - the
-        spellings a later frame or registry entry may use for the same
-        device (``0021`` and ``21``). Default: the device id, plus the yaml
-        key and bare WHERE for ``myhome.yaml`` devices.
+        Optional: every key a created entity is remembered under and
+        subscribed to - the spellings a later frame or registry entry may
+        use for the same device (``0021`` and ``21``), ``general`` for a
+        cover. Default: the device id and address, plus the yaml key and
+        bare WHERE for ``myhome.yaml`` devices.
     route_keys:
-        Optional: the keys a frame is routed under, given ``(message,
+        Optional: the keys a frame is published under, given ``(message,
         address)`` where ``address`` is ``None`` for frames without one.
         Default: the address key.
-    direct:
-        Feed frames to the entities directly (``entity.handle_event``) instead
-        of through the dispatcher; for entities that do not subscribe
-        themselves. The entities are kept per known key in :attr:`entities`.
     one_per_address:
         A ``myhome.yaml`` address is one device (default): a second entry for
         the same WHERE is skipped. Off for sensors, where a power and an
@@ -280,7 +278,6 @@ class PlatformDiscovery:
         registry_address: Callable[[er.RegistryEntry], Address | None] | None = None,
         known_keys: Callable[[DeviceContext], Iterable[str]] | None = None,
         route_keys: Callable[[Any, Address | None], Iterable[str]] | None = None,
-        direct: bool = False,
         one_per_address: bool = True,
     ) -> None:
         self.hass = hass
@@ -300,16 +297,14 @@ class PlatformDiscovery:
         self.key_suffix = key_suffix
         self.yaml_device_id = yaml_device_id or (lambda address: address.key)
         self.registry_address = registry_address
-        self.known_keys = known_keys or _default_known_keys
+        self.known_keys = known_keys or default_known_keys
         self.route_keys = route_keys
-        self.direct = direct
         self.one_per_address = one_per_address
         self.runtime: MyHOMERuntimeData = config_entry.runtime_data
         # Signals are keyed on the entry's MAC (what the gateway handler publishes under).
         self.mac: str = str(config_entry.data.get(CONF_MAC) or self.runtime.mac)
         self.known = KnownDevices()
-        #: Entities per known key (``direct`` mode only).
-        self.entities: dict[str, list[Entity]] = {}
+        self.router = self.runtime.router
         self.configured: dict[str, Any] = self.runtime.platforms.get(platform, {})
 
     # ── registry ────────────────────────────────────────────────────────
@@ -398,10 +393,8 @@ class PlatformDiscovery:
             return []
         keys = list(self.known_keys(ctx))
         self.known.add(*keys)
-        if self.direct:
-            for key in keys:
-                owners = self.entities.setdefault(key, [])
-                owners.extend(e for e in created if e not in owners)
+        for entity in created:
+            entity.async_on_remove(self.router.subscribe(self.who, keys, entity.handle_event))  # type: ignore[attr-defined]
         return created
 
     # ── bus ─────────────────────────────────────────────────────────────
@@ -422,7 +415,6 @@ class PlatformDiscovery:
         address = self.address_of(message)
         if address is None and self.route_keys is None:
             return
-        created: list[Entity] = []
         if address is not None:
             if getattr(message, "is_group", False) is True or getattr(message, "is_area", False) is True:
                 return
@@ -436,32 +428,23 @@ class PlatformDiscovery:
                 if not self.accept or self.accept(ctx):
                     created = self._create(ctx)
                     if created:
+                        # Already subscribed: the frame below is their first state
                         self.async_add_entities(created)
-                        for entity in created:
-                            entity.handle_event(message)  # type: ignore[attr-defined]
                         if self.announce:
                             announce_new_device(
                                 self.hass, self.mac, self.who, address, self._name_of(created[0], address)
                             )
-        self.route(message, address, skip=created)
+        self.route(message, address)
 
     @callback
-    def route(self, message: Any, address: Address | None, skip: Iterable[Entity] = ()) -> None:
-        """Forward a frame to the entities owning its keys (``skip``: already fed)."""
+    def route(self, message: Any, address: Address | None) -> None:
+        """Deliver a frame to the entities owning its keys."""
         if self.route_keys is not None:
-            keys = list(dict.fromkeys(self.route_keys(message, address)))
+            keys = list(self.route_keys(message, address))
         else:
             keys = [address.key] if address is not None else []
-        if not self.direct:
-            for key in keys:
-                async_dispatcher_send(self.hass, update_signal(self.mac, self.who, key), message)
-            return
-        fed: list[Entity] = list(skip)
-        for key in keys:
-            for entity in self.entities.get(key, ()):
-                if entity not in fed:
-                    fed.append(entity)
-                    entity.handle_event(message)  # type: ignore[attr-defined]
+        if keys:
+            self.router.publish(self.who, keys, message)
 
     def listen(self) -> None:
         """Subscribe to the gateway's frames for the life of the config entry."""

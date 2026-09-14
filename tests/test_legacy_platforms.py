@@ -150,7 +150,7 @@ async def test_legacy_platforms_setup_and_execution(hass: HomeAssistant, mock_ga
     await hass.services.async_call("switch", "turn_off", {"entity_id": "switch.switch_12"}, blocking=True)
     # Switch Event
     sw_event = OWNEvent.parse("*1*1*12##")
-    async_dispatcher_send(hass, f"myhome_update_{mac_addr}_1", sw_event)
+    async_dispatcher_send(hass, f"myhome_message_{mac_addr}", sw_event)
     await hass.async_block_till_done()
 
     # Snapshot Switch
@@ -164,7 +164,7 @@ async def test_legacy_platforms_setup_and_execution(hass: HomeAssistant, mock_ga
     await hass.services.async_call("climate", "set_hvac_mode", {"entity_id": "climate.climate_1", "hvac_mode": "auto"}, blocking=True)
     # Climate Event
     clim_event = OWNEvent.parse("*#4*01*#14*0220*1##")
-    async_dispatcher_send(hass, f"myhome_update_{mac_addr}_4", clim_event)
+    async_dispatcher_send(hass, f"myhome_message_{mac_addr}", clim_event)
     await hass.async_block_till_done()
 
     # Snapshot Climate
@@ -172,7 +172,7 @@ async def test_legacy_platforms_setup_and_execution(hass: HomeAssistant, mock_ga
 
     # Hit Binary Sensor
     bs_event = OWNEvent.parse("*25*31#1*35##")
-    async_dispatcher_send(hass, f"myhome_update_{mac_addr}_25", bs_event)
+    async_dispatcher_send(hass, f"myhome_message_{mac_addr}", bs_event)
     await hass.async_block_till_done()
 
     # Snapshot Binary Sensor
@@ -180,7 +180,7 @@ async def test_legacy_platforms_setup_and_execution(hass: HomeAssistant, mock_ga
 
     # Hit Sensor Event
     sens_event = OWNEvent.parse("*18*51*113*114*115##")
-    async_dispatcher_send(hass, f"myhome_update_{mac_addr}_18", sens_event)
+    async_dispatcher_send(hass, f"myhome_message_{mac_addr}", sens_event)
     await hass.async_block_till_done()
 
     # Snapshot Sensor
@@ -198,7 +198,7 @@ async def test_legacy_platforms_setup_and_execution(hass: HomeAssistant, mock_ga
 
     # Send Dummy Dispatch update to climate
     clim_event = OWNEvent.parse("*#4*01*0*0225##")
-    async_dispatcher_send(hass, f"myhome_update_{mac_addr}_4", clim_event)
+    async_dispatcher_send(hass, f"myhome_message_{mac_addr}", clim_event)
     await hass.async_block_till_done()
 
     # Boost coverage by simulating UI/core state machine reads for properties
@@ -226,11 +226,11 @@ async def test_legacy_platforms_setup_and_execution(hass: HomeAssistant, mock_ga
 
     # Trigger error parser paths
     error_event = OWNEvent.parse("*#4*01*#14*1220*1##") # Bad climate dimension
-    async_dispatcher_send(hass, f"myhome_update_{mac_addr}_4", error_event)
+    async_dispatcher_send(hass, f"myhome_message_{mac_addr}", error_event)
     error_event = OWNEvent.parse("*99*99*99*99##") # Bad sensor
-    async_dispatcher_send(hass, f"myhome_update_{mac_addr}_18", error_event)
+    async_dispatcher_send(hass, f"myhome_message_{mac_addr}", error_event)
     error_event = OWNEvent.parse("*1*0*12##") # Invalid action switch
-    async_dispatcher_send(hass, f"myhome_update_{mac_addr}_1", error_event)
+    async_dispatcher_send(hass, f"myhome_message_{mac_addr}", error_event)
     await hass.async_block_till_done()
 
     # Cleanup teardown
