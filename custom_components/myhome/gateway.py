@@ -118,6 +118,9 @@ AVAILABILITY_GRACE = 60
 class MyHOMEGatewayHandler:
     """Manages a single MyHOME Gateway."""
 
+    # Device registry id of the gateway device; set once the entry's device exists.
+    device_registry_id: str | None = None
+
     def __init__(self, hass, config_entry, generate_events=False):
         build_info = {
             "address": config_entry.data.get(CONF_HOST),
@@ -154,7 +157,7 @@ class MyHOMEGatewayHandler:
         )
         self.send_buffer = asyncio.Queue(maxsize=queue_max_size)
         self.bus_monitor = BusMonitor()
-        self.device_registry_id: str | None = None
+        self.device_registry_id = None
         self._cen_devices: set[tuple[int, Any]] = set()
         # Everything we know about how this gateway was identified; exported in
         # diagnostics, the WebSocket info payload and every trace (see identification()).

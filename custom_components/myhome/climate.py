@@ -48,7 +48,6 @@ from .const import (
     CONF_WHERE,
     CONF_WHO,
     CONF_ZONE,
-    DOMAIN,
     LOGGER,
 )
 from .data import get_runtime_data
@@ -117,15 +116,12 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             )
 
             is_central = cfg.get(CONF_CENTRAL, clean_where in ("0", "01") or where in ("#0", "#0#1"))
-            _customs = hass.data.get(DOMAIN, {}).get("customizations", {})
-            _custom_entry = _customs.get(entry.entity_id, {})
             _entry_name = getattr(entry, "name", None)
             if not isinstance(_entry_name, str):
                 _entry_name = None
             default_name = f"Central Unit {default_suffix}" if is_central else f"Climate Zone {default_suffix}"
             _name = (
                 cfg.get(CONF_NAME)
-                or _custom_entry.get("friendly_name")
                 or _entry_name
                 or default_name
             )
@@ -273,14 +269,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                     or {}
                 )
                 is_central = clean_where in ("0", "01") or where in ("#0", "#0#1")
-                _customs = hass.data.get(DOMAIN, {}).get("customizations", {})
-                _predicted_id = f"climate.climate_zone_{default_suffix.lower().replace(' ', '_')}"
-                _custom_entry = _customs.get(_predicted_id, {})
-                _name = (
-                    cfg.get(CONF_NAME)
-                    or _custom_entry.get("friendly_name")
-                    or f"Climate Zone {default_suffix}"
-                )
+                _name = cfg.get(CONF_NAME) or f"Climate Zone {default_suffix}"
                 default_model = "Central Unit (3550)" if where == "#0" else ("Central Unit (4695)" if where == "#0#1" else "Heating Zone")
                 _climate = MyHOMEClimate(
                     hass=hass,
@@ -404,7 +393,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._attr_min_temp = 5
         self._attr_max_temp = 40
 
-        self._attr_supported_features = 0
+        # HVACMode.OFF is always available, so climate.turn_off / turn_on must be
+        # advertised explicitly (mandatory since core 2025.1).
+        self._attr_supported_features = ClimateEntityFeature.TURN_OFF | ClimateEntityFeature.TURN_ON
         self._attr_hvac_modes = [HVACMode.OFF]
         self._heating = heating
         self._cooling = cooling
@@ -817,8 +808,4 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             elif speed == 3:
                 self._attr_fan_mode = "high"
 
-        if self.hass is not None or hasattr(self.async_schedule_update_ha_state, "assert_called"):
-            try:
-                self.async_schedule_update_ha_state()
-            except RuntimeError:
-                pass
+        self._publish_state()

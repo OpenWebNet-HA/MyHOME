@@ -540,64 +540,6 @@ async def test_issue_268_climate_central_unit_name_restoration(hass: HomeAssista
     assert climate_entity._central is True
 
 
-@pytest.mark.asyncio
-async def test_issue_268_climate_customize_yaml_fallback(hass: HomeAssistant):
-    """Verify that customizations (e.g. customize.yaml) are used when no name is in YAML."""
-    mock_gateway = MagicMock()
-    mock_gateway.mac = "00:03:50:81:17:76"
-
-    entity_reg = er.async_get(hass)
-
-    config_entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={
-            "host": "192.168.1.56",
-            "port": 20000,
-            "password": "pass",
-            "mac": "00:03:50:81:17:76",
-        },
-        unique_id="00:03:50:81:17:76",
-    )
-    config_entry.add_to_hass(hass)
-
-    reg_entry = entity_reg.async_get_or_create(
-        domain="climate",
-        platform=DOMAIN,
-        unique_id="00:03:50:81:17:76-4-3",
-        suggested_object_id="zone_3",
-        config_entry=config_entry,
-    )
-
-    # Empty config without name
-    climate_cfg = {
-        "who": "4",
-        "zone": "3",
-        "entities": {},
-    }
-
-    hass.data.setdefault(DOMAIN, {})[config_entry.data[CONF_MAC]] = {
-        CONF_PLATFORMS: {
-            CLIMATE_DOMAIN: {
-                "4-3": climate_cfg,
-                "3": climate_cfg,
-            }
-        },
-        CONF_ENTITY: mock_gateway,
-    }
-    # Set customizations
-    hass.data[DOMAIN]["customizations"] = {
-        reg_entry.entity_id: {"friendly_name": "Salone Principale"}
-    }
-
-    added_entities = []
-    attach_runtime(hass, config_entry)
-    await async_setup_climate_entry(hass, config_entry, lambda ents: added_entities.extend(ents))
-
-    assert len(added_entities) == 1
-    climate_entity = added_entities[0]
-    assert climate_entity.name == "Salone Principale"
-
-
 def test_issue_268_validate_schema_climate_aliases():
     """Verify that climate_schema generates all alias keys for integer and string zones."""
     raw = {

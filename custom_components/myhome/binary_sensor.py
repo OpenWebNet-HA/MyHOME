@@ -604,8 +604,7 @@ class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
             message.human_readable_log,
         )
         self._attr_is_on = message.is_on != self._inverted
-        if self.hass is not None or hasattr(self.async_schedule_update_ha_state, "assert_called"):
-            self.async_schedule_update_ha_state()
+        self._publish_state()
 
 
 class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
@@ -687,8 +686,7 @@ class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
             message.human_readable_log,
         )
         self._attr_is_on = message.is_on != self._inverted
-        if self.hass is not None or hasattr(self.async_schedule_update_ha_state, "assert_called"):
-            self.async_schedule_update_ha_state()
+        self._publish_state()
 
 
 class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):

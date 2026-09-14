@@ -142,3 +142,22 @@ def test_entity_audit(hass, gateway, label, factory, device_class, category, ena
     assert entity.device_class == device_class, f"{label}: device_class"
     assert entity.entity_category == category, f"{label}: entity_category"
     assert entity.entity_registry_enabled_default is enabled, f"{label}: enabled by default"
+
+
+def test_device_link_falls_back_to_via_device_on_old_cores(hass, gateway):
+    """Cores without DeviceInfo.via_device_id (before 2025) get the legacy via_device link."""
+    from unittest.mock import patch
+
+    from homeassistant.helpers.device_registry import DeviceInfo
+
+    from custom_components.myhome.const import DOMAIN
+
+    with patch.dict(DeviceInfo.__annotations__):
+        DeviceInfo.__annotations__.pop("via_device_id", None)
+        entity = _light(hass, gateway)
+    assert entity.device_info["via_device"] == (DOMAIN, gateway.unique_id)
+    assert "via_device_id" not in entity.device_info
+
+    if "via_device_id" in DeviceInfo.__annotations__:  # current cores
+        entity = _light(hass, gateway)
+        assert entity.device_info["via_device_id"] == gateway.device_registry_id

@@ -1153,11 +1153,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         )
         now = time.monotonic()
         if message.current_position is None and self._handle_echo(message, now):
-            if self.hass is not None or hasattr(self.async_schedule_update_ha_state, "assert_called"):
-                try:
-                    self.async_schedule_update_ha_state()
-                except RuntimeError:
-                    pass
+            self._publish_state()
             return
         if message.current_position is not None:
             self._cancel_stop_task()
@@ -1209,8 +1205,4 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             elif self._attr_current_cover_position is not None:
                 self._attr_is_closed = (self._attr_current_cover_position == 0)
 
-        if self.hass is not None or hasattr(self.async_schedule_update_ha_state, "assert_called"):
-            try:
-                self.async_schedule_update_ha_state()
-            except RuntimeError:
-                pass
+        self._publish_state()

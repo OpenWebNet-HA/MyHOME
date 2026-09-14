@@ -37,6 +37,20 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 PLATFORMS = ["light", "switch", "cover", "climate", "binary_sensor", "sensor", "media_player", "button", "alarm_control_panel"]
 
 
+def _device_for_identifier(
+    device_registry: dr.DeviceRegistry, entry: ConfigEntry, identifier: tuple[str, str]
+) -> dr.DeviceEntry | None:
+    """Return the entry's device carrying ``identifier``.
+
+    Identifiers are only unique per config entry since core 2026.8, so the
+    lookup is scoped to this entry (``async_get_device`` is deprecated).
+    """
+    for device in dr.async_entries_for_config_entry(device_registry, entry.entry_id):
+        if identifier in device.identifiers:
+            return device
+    return None
+
+
 def _get_card_url(card_path: str, base_url: str = "/myhome_static/myhome-bus-card.js") -> str:
     """Return versioned URL with content hash for Lovelace card cache-busting."""
     try:
@@ -405,8 +419,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry):
                 # Also migrate matching device in device_registry if present so custom device names and areas are preserved
                 device_registry = dr.async_get(hass)
                 old_device = (
-                    device_registry.async_get_device(identifiers={(DOMAIN, f"{_mac}-{where_part}")})
-                    or device_registry.async_get_device(identifiers={(DOMAIN, f"{entry.data[CONF_MAC]}-{where_part}")})
+                    _device_for_identifier(device_registry, entry, (DOMAIN, f"{_mac}-{where_part}"))
+                    or _device_for_identifier(device_registry, entry, (DOMAIN, f"{entry.data[CONF_MAC]}-{where_part}"))
                     or (device_registry.async_get(reg_entry.device_id) if reg_entry.device_id else None)
                 )
                 if old_device:
@@ -427,21 +441,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry):
                     reg_entry = entity_registry.async_get(reg_entry.entity_id)
                 except ValueError:
                     pass
-
-    # Hack to forcefully absorb customize.yaml for users who deleted their integrations
-    # and therefore lost the transparent entity_registry migration!
-    from homeassistant.util.yaml.loader import load_yaml
-
-    hass.data[DOMAIN]["customizations"] = {}
-    customize_file = hass.config.path("customize.yaml")
-    if os.path.isfile(customize_file):
-        try:
-            hass.data[DOMAIN]["customizations"] = (
-                await hass.async_add_executor_job(load_yaml, customize_file) or {}
-            )
-            LOGGER.info("Successfully loaded %s custom names from customize.yaml for recovery", len(hass.data[DOMAIN]["customizations"]))
-        except Exception as e:
-            LOGGER.error("Failed to parse customize.yaml for friendly_name recovery: %s", e)
 
     gateway = MyHOMEGatewayHandler(
         hass=hass, config_entry=entry, generate_events=_generate_events
