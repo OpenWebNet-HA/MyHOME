@@ -459,10 +459,10 @@ async def test_binary_sensor_entity_registry_and_motion_discovery(hass):
     mock_er = MagicMock()
 
     with patch(
-        "custom_components.myhome.binary_sensor.er.async_entries_for_config_entry",
+        "custom_components.myhome.discovery.er.async_entries_for_config_entry",
         return_value=[entry_motion, entry_dry, entry_aux, entry_aux2],
     ), patch(
-        "custom_components.myhome.binary_sensor.er.async_get",
+        "custom_components.myhome.discovery.er.async_get",
         return_value=mock_er,
     ):
         added = []
@@ -471,12 +471,13 @@ async def test_binary_sensor_entity_registry_and_motion_discovery(hass):
 
         attach_runtime(hass, config_entry)
         assert await async_setup_entry(hass, config_entry, fake_add) is True
-        # 4 entities restored from registry; configured 41 is skipped via continue
+        # 4 entities restored from registry (dry contacts, then aux channels, then motion);
+        # configured 41 is skipped because the registry already has it
         assert len(added) == 4
-        assert isinstance(added[0], MyHOMEMotionSensor)
-        assert isinstance(added[1], MyHOMEDryContact)
+        assert isinstance(added[0], MyHOMEDryContact)
+        assert isinstance(added[1], MyHOMEAuxiliary)
         assert isinstance(added[2], MyHOMEAuxiliary)
-        assert isinstance(added[3], MyHOMEAuxiliary)
+        assert isinstance(added[3], MyHOMEMotionSensor)
 
         # Dynamic motion discovery via *1*34*51##
         motion_msg = OWNEvent.parse("*1*34*51##")
@@ -538,7 +539,7 @@ async def test_binary_sensor_registry_exception(hass):
     config_entry.entry_id = "test_bs_err"
 
     with patch(
-        "custom_components.myhome.binary_sensor.er.async_get",
+        "custom_components.myhome.discovery.er.async_get",
         side_effect=Exception("ER error"),
     ):
         added = []
@@ -609,10 +610,10 @@ async def test_dry_contact_garage_door_deduplication_and_zero_padded_where(hass)
     mock_er = MagicMock()
 
     with patch(
-        "custom_components.myhome.binary_sensor.er.async_entries_for_config_entry",
+        "custom_components.myhome.discovery.er.async_entries_for_config_entry",
         return_value=[entry_v2, entry_legacy],
     ), patch(
-        "custom_components.myhome.binary_sensor.er.async_get",
+        "custom_components.myhome.discovery.er.async_get",
         return_value=mock_er,
     ):
         added = []
@@ -695,10 +696,10 @@ async def test_motion_sensor_zero_padded_where_and_legrand_048834_frames(hass):
     mock_er = MagicMock()
 
     with patch(
-        "custom_components.myhome.binary_sensor.er.async_entries_for_config_entry",
+        "custom_components.myhome.discovery.er.async_entries_for_config_entry",
         return_value=[entry_v2, entry_dup],
     ), patch(
-        "custom_components.myhome.binary_sensor.er.async_get",
+        "custom_components.myhome.discovery.er.async_get",
         return_value=mock_er,
     ):
         added = []
@@ -782,7 +783,7 @@ async def test_motion_sensor_0015_and_switch_15_coexistence(hass):
     config_entry.data = {"mac": mac}
     config_entry.entry_id = "test_coexistence"
 
-    with patch("custom_components.myhome.binary_sensor.er.async_entries_for_config_entry", return_value=[]), \
+    with patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]), \
          patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]):
         motion_entities = []
         switch_entities = []
@@ -880,8 +881,8 @@ async def test_binary_sensor_duplicate_exceptions_and_padded_where(hass):
     mock_er = MagicMock()
     mock_er.async_remove.side_effect = mock_remove
 
-    with patch("custom_components.myhome.binary_sensor.er.async_entries_for_config_entry", return_value=[entry_other_domain, entry_motion1, entry_motion2, entry_motion3, entry_dry1, entry_dry2, entry_dry3, entry_dup_aux1, entry_dup_aux2, entry_dup_aux3]), \
-         patch("custom_components.myhome.binary_sensor.er.async_get", return_value=mock_er):
+    with patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[entry_other_domain, entry_motion1, entry_motion2, entry_motion3, entry_dry1, entry_dry2, entry_dry3, entry_dup_aux1, entry_dup_aux2, entry_dup_aux3]), \
+         patch("custom_components.myhome.discovery.er.async_get", return_value=mock_er):
         added = []
         attach_runtime(hass, config_entry)
         assert await async_setup_entry(hass, config_entry, lambda e: added.extend(e)) is True
@@ -996,10 +997,10 @@ async def test_moving_device_class_dry_contact_restoration_and_deduplication(has
     mock_er = MagicMock()
 
     with patch(
-        "custom_components.myhome.binary_sensor.er.async_entries_for_config_entry",
+        "custom_components.myhome.discovery.er.async_entries_for_config_entry",
         return_value=[entry_moving],
     ), patch(
-        "custom_components.myhome.binary_sensor.er.async_get",
+        "custom_components.myhome.discovery.er.async_get",
         return_value=mock_er,
     ):
         added = []
@@ -1066,10 +1067,10 @@ async def test_who9_auxiliary_sensor_with_motion_device_class_restoration(hass):
     mock_er = MagicMock()
 
     with patch(
-        "custom_components.myhome.binary_sensor.er.async_entries_for_config_entry",
+        "custom_components.myhome.discovery.er.async_entries_for_config_entry",
         return_value=[entry_radar],
     ), patch(
-        "custom_components.myhome.binary_sensor.er.async_get",
+        "custom_components.myhome.discovery.er.async_get",
         return_value=mock_er,
     ):
         added = []
@@ -1086,5 +1087,13 @@ async def test_who9_auxiliary_sensor_with_motion_device_class_restoration(hass):
         assert (DOMAIN, f"{mac}-9-1") in bs.device_info["identifiers"]
 
 
+def test_registry_entry_without_class_or_who_is_not_a_binary_sensor():
+    """A binary_sensor registry entry that names no WHO and carries no class suffix is left alone."""
+    from custom_components.myhome.binary_sensor import _classify_registry_entry
 
-
+    mac = "00:03:50:00:00:01"
+    entry = MagicMock(unique_id=f"{mac}-42", original_device_class=None)
+    assert _classify_registry_entry(entry, mac, mac) is None
+    assert _classify_registry_entry(MagicMock(unique_id=f"{mac}-1-42-motion", original_device_class=None), mac, mac) == ("1", "42")
+    assert _classify_registry_entry(MagicMock(unique_id=f"{mac}-25-0031-opening", original_device_class=None), mac, mac) == ("25", "0031")
+    assert _classify_registry_entry(MagicMock(unique_id=f"{mac}-9-3-motion", original_device_class=None), mac, mac) == ("9", "3")

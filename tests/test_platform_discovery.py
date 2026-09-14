@@ -198,3 +198,29 @@ async def test_key_suffix_and_custom_address(hass):
     assert "4#16" not in discovery.known  # the address hook ignored the frame
     discovery.handle_message(MagicMock(zone=4, where="4"))
     assert "4#16" in discovery.known
+
+
+async def test_build_may_return_several_entities_or_none(hass):
+    """A meter is one address with one entity per measurement; an empty list creates nothing."""
+    entry = _entry(hass, {"sensor": {"m1": {"where": "51"}, "m2": {"where": "52"}}})
+    fed = []
+
+    def build(ctx: DeviceContext):
+        if ctx.address.where == "52":
+            return []
+        a, b = _entity("Power"), _entity("Energy")
+        a.handle_event.side_effect = lambda m: fed.append(("a", m.where))
+        b.handle_event.side_effect = lambda m: fed.append(("b", m.where))
+        return [a, b]
+
+    discovery = PlatformDiscovery(
+        hass, entry, lambda ents: None, platform="sensor", who="18", event_type=None, build=build,
+        direct=True, route_keys=lambda msg, address: [str(msg.where)],
+    )
+    entities = discovery.start(listen=False)
+    assert len(entities) == 2 and "51" in discovery.known and "52" not in discovery.known
+    assert [e._device_name for e in discovery.entities["51"]] == ["Power", "Energy"]
+    discovery.handle_message(MagicMock(where="51", interface=None, is_translation=False))
+    assert fed == [("a", "51"), ("b", "51")]  # both entities of the address, once each
+    discovery.handle_message(MagicMock(where="53", interface=None, is_translation=False))  # discovered: fed once
+    assert fed[2:] == [("a", "53"), ("b", "53")]

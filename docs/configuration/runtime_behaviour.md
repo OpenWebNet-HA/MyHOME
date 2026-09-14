@@ -22,7 +22,7 @@ Each request is only sent when the gateway's OWNd **profile** advertises that WH
 
 ## 🧱 Every platform follows the same life cycle
 
-Lights, switches, covers, the alarm panel and audio zones share one setup skeleton (`custom_components/myhome/discovery.py`). For each gateway a platform runs, in order:
+Every entity platform shares one setup skeleton (`custom_components/myhome/discovery.py`). For each gateway a platform runs, in order:
 
 | Step | What happens | Why it matters |
 | :--- | :--- | :--- |
@@ -33,7 +33,9 @@ Lights, switches, covers, the alarm panel and audio zones share one setup skelet
 
 Addresses follow the OpenWebNet `WHERE` conventions - point-to-point `APL` (`12`), area `A` (`1`), group `#G` (`#5`), general `0` - plus the F422 bus-routing form `APL#4#<bus>` (`0311#4#01`). Area, group and general frames never create an entity: they are broadcasts, not devices (the alarm central unit is the one subsystem where `WHERE = 0` is a real device). Translation frames (`*1*1000#1*14##`) are ignored as well.
 
-Platforms only add what differs: which `WHO` they serve, how a device is built, and a few hooks - the light platform hands WHO 1 frames for configured switches and motion / illuminance sensors to those platforms instead of creating a light, the cover platform relays a general `*2*x*0##` to every cover, and the media player maps stereo-module pseudo zones (`10x`-`14x`) to amplifier `x`.
+Platforms only add what differs: which `WHO` they serve, how a device is built, and a few hooks - the light platform hands WHO 1 frames for configured switches and motion / illuminance sensors to those platforms instead of creating a light, the cover platform relays a general `*2*x*0##` to every cover, the media player maps stereo-module pseudo zones (`10x`-`14x`) to amplifier `x`, the climate platform reads the zone a heating frame concerns from its parameters (`*4*4001#5*0##` is about zone 5), and the sensor and binary-sensor platforms run one such cycle per subsystem they serve (energy meters, illuminance and temperature probes; dry contacts, auxiliary channels and motion sensors). A meter address owns one entity per measurement it reports. Contacts and probes remember every spelling of their address (`0021` and `21`) so a renamed entity is never duplicated after a restart.
+
+Buttons have no bus address: lock / unlock and calibrate buttons are created for the actuators the other platforms announce.
 
 ---
 
