@@ -16,12 +16,24 @@ from .const import (
     get_ownd_version,
 )
 
+# A diagnostics download is meant to be attached to a public issue. Secrets go
+# without saying; the rest identifies a household - where the gateway lives on
+# the LAN, its MAC, the SSDP/UDN identity, the path of the user's config file.
+# The bus frames, the model, the firmware and the queue figures are what a bug
+# report needs, and they carry none of that.
 TO_REDACT = {
     CONF_PASSWORD,
     "password",
     "pin",
     "token",
     "secret",
+    "host",
+    "mac",
+    "id",
+    "UDN",
+    "ssdp_location",
+    "friendly_name",
+    "file_path",
 }
 
 
@@ -84,10 +96,11 @@ async def async_get_config_entry_diagnostics(
         "integration_version": INTEGRATION_VERSION,
         "ownd_version": await hass.async_add_executor_job(get_ownd_version),
         "config_entry": {
-            "entry_id": entry.entry_id,
+            # The entry id and the user's title are identity, not diagnostics
+            "entry_id": "**REDACTED**",
             "version": entry.version,
             "domain": entry.domain,
-            "title": entry.title,
+            "title": f"{gw_info.get('model_name') or 'MyHOME'} Gateway",
             "data": entry_data,
             "options": entry_options,
         },

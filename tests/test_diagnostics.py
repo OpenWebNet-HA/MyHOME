@@ -1,3 +1,4 @@
+# privacy-check: allow-samples - the redaction test feeds the diagnostics a household identity
 """Tests for MyHOME config entry diagnostics."""
 from unittest.mock import MagicMock
 
@@ -38,7 +39,8 @@ async def test_diagnostics_without_gateway_handler(hass: HomeAssistant):
     assert "ownd_version" in diag
 
     # Verify redactions
-    assert diag["config_entry"]["entry_id"] == "test_entry_123"
+    assert diag["config_entry"]["entry_id"] == "**REDACTED**"
+    assert diag["config_entry"]["title"] == "MyHOME Gateway"  # not the user's title
     assert diag["config_entry"]["data"][CONF_PASSWORD] == "**REDACTED**"
     assert diag["config_entry"]["data"]["pin"] == "**REDACTED**"
     assert diag["config_entry"]["data"]["normal_field"] == "visible_value"
@@ -138,3 +140,38 @@ async def test_diagnostics_with_full_gateway_and_bus_monitor(hass: HomeAssistant
 
     # Verify platform counts
     assert diag["platforms"] == {"light": 2, "switch": 1}
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_carry_no_household_identity(hass: HomeAssistant):
+    """A download is attached to public issues: no LAN address, MAC, SSDP identity, path or title."""
+    mock_entry = MagicMock()
+    mock_entry.entry_id = "01M284WWKZG4XTEG62NVW1DPVG"
+    mock_entry.version = 1
+    mock_entry.domain = DOMAIN
+    mock_entry.title = "Casa Rossi"
+    mock_entry.data = {
+        "host": "192.168.1.50",
+        "port": 20000,
+        CONF_MAC: "00:03:50:24:70:01",
+        "id": "00:03:50:a4:11:2e",
+        "UDN": "uuid:12345678",
+        "ssdp_location": "http://192.168.1.50:49153/description.xml",
+        "friendly_name": "Rossi MyHomeServer1",
+        CONF_PASSWORD: "12345",
+        "name": "MyHomeServer1",
+    }
+    mock_entry.options = {"file_path": "C:/Users/rossi/myhome.yaml", "command_worker_count": 1}
+    hass.data[DOMAIN] = {}
+
+    diag = await async_get_config_entry_diagnostics(hass, mock_entry)
+
+    data, options = diag["config_entry"]["data"], diag["config_entry"]["options"]
+    for key in ("host", CONF_MAC, "id", "UDN", "ssdp_location", "friendly_name", CONF_PASSWORD):
+        assert data[key] == "**REDACTED**", key
+    assert options["file_path"] == "**REDACTED**"
+    assert data["port"] == 20000 and data["name"] == "MyHomeServer1" and options["command_worker_count"] == 1
+    assert diag["config_entry"]["entry_id"] == "**REDACTED**"
+    assert diag["config_entry"]["title"] == "MyHOME Gateway"
+    text = str(diag)
+    assert "192.168" not in text and "Rossi" not in text and "rossi" not in text and "01M284" not in text
