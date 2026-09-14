@@ -822,8 +822,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         if down is None:
             down = self._travel_time_down
-        if up is None:
-            up = self._travel_time_up
 
         if not CALIBRATION_MIN_RUN <= down <= CALIBRATION_MAX_RUN:
             raise HomeAssistantError(f"travel_time_down must be between {CALIBRATION_MIN_RUN:.0f}s and {CALIBRATION_MAX_RUN:.0f}s")
