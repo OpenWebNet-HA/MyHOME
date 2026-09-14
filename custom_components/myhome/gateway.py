@@ -858,8 +858,21 @@ class MyHOMEGatewayHandler:
                 raw=str(task["message"]),
                 parsed=task["message"] if isinstance(task["message"], OWNMessage) else None,
             )
-            _resolve_written(task, time.monotonic())
+            # The delivery future carries the time the frame reached the bus. The
+            # session is closed after COMMAND_SESSION_IDLE_TIMEOUT, so reconnect
+            # (and handshake) explicitly *before* taking the timestamp; OWNd's
+            # send() would otherwise do it after our stamp. The future is resolved
+            # only once send() reports the frame written and acknowledged, and
+            # cancelled when it was not: a frame that never reached the bus must
+            # not start a timed run.
+            if not _command_session.is_connected:
+                await _command_session.connect()
+            written_at = time.monotonic()
             collected = await _command_session.send(message=task["message"], is_status_request=task["is_status_request"])
+            if collected is None:
+                _cancel_written(task)
+            else:
+                _resolve_written(task, written_at)
             if collected and isinstance(collected, list):
                 for resp in collected:
                     raw_resp = str(resp)
@@ -929,10 +942,12 @@ class MyHOMEGatewayHandler:
         """Put a frame on the send queue and hand back its delivery future.
 
         The future completes with ``time.monotonic()`` taken by the sending
-        worker immediately before the frame is written to the command
-        session - queue wait included - so callers that model physical
-        motion (timed covers) can start their clock at the real write
-        instead of at enqueue. It is cancelled if the gateway shuts down
+        worker immediately before the frame is written to an already open
+        command session - queue wait and reconnect included - once the
+        gateway has acknowledged it, so callers that model physical motion
+        (timed covers) can start their clock at the real write instead of
+        at enqueue. It is cancelled when the frame was not delivered (send
+        failed, NACK) or if the gateway shuts down
         before the frame leaves.
         """
         written: asyncio.Future[float] = asyncio.get_running_loop().create_future()

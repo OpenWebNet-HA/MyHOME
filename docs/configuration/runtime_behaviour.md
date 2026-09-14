@@ -51,7 +51,7 @@ Behaviour:
 Covers without position feedback (`advanced: false`) estimate their position from `travel_time`. Measured on a MyHOMEServer1, this is what the bus does after Home Assistant queues a direction command:
 
 ```
-enqueue ─(queue wait, up to ~1.6 s with many covers)─▶ frame written
+enqueue ─(queue wait: ~1.5 s per queued frame, up to ~12 s with twelve covers)─▶ frame written
    +0.10 s  gateway relays a real stop status   *2*0*<where>##
    +0.15 s  translation                          *2*1000#<dir>*<where>##
    +0.55 s  motor starts, direction status       *2*<dir>*<where>##
@@ -60,10 +60,10 @@ stop:       motor stops ~0.08 s after the stop frame is written
 
 The v2 model therefore:
 
-1. **Starts the clock at the write, not at enqueue.** The gateway's send queue reports when each frame actually leaves; with several covers commanded together the last one can leave more than a second after it was queued.
-2. **Opens an echo window** for each command, from enqueue until 1.5 s after the write. Inside it, the relayed stop status is ignored and our own direction status **re-anchors the clock to the real motor start** — no gateway-specific latency constant needed. An opposite-direction frame, or any frame after the window, is a genuine command (wall switch, scenario) and is handled normally.
+1. **Starts the clock at the write, not at enqueue.** The gateway's send queue reports when each frame actually left the socket (after any reconnect of the command session, and only when the gateway acknowledged it); with several covers commanded together the last one can leave many seconds after it was queued. A frame that is never delivered (connection lost, NACK) cancels its report, and the cover falls back to a run timed from now.
+2. **Opens an echo window** for each command, from enqueue until 1.5 s after the write (bounded: it closes at once when delivery fails, and 30 s after enqueue at the latest). Inside it, the relayed stop status is ignored and our own direction status **re-anchors the clock to the real motor start** — no gateway-specific latency constant needed. A gateway that never relays that status gets the measured 0.55 s motor-start delay added to the write time instead. An opposite-direction frame, or any frame after the window, is a genuine command (wall switch, scenario) and is handled normally.
 3. **Times `set_position` from that anchor**, then re-anchors at the target when the timer fires and lets the stop frame's own write time settle the estimate (target plus whatever the queue delay added).
-4. **Freezes the estimate for a stop at its write**, not at enqueue.
+4. **Freezes the estimate for a stop at its write**, not at enqueue, and repaints the entity at every write so the estimate is right without waiting for a status frame.
 
 Trade-off: a wall-switch stop pressed in the ≤ 0.6 s between the write and the motor start is treated as an echo. The motor has not moved yet, so nothing is lost; once the motor-start status arrives the window closes and wall-switch stops are honoured immediately.
 
