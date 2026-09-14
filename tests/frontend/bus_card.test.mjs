@@ -426,6 +426,49 @@ test("live stopwatch: start down sends close_cover and stop & save calls set_cov
   assert.equal(serviceCalls[2].service, "myhome.set_cover_travel_time");
   assert.equal(serviceCalls[2].data.entity_id, "cover.a");
   assert.equal(serviceCalls[2].data.travel_time_down, 18.4);
+
+  // "Save" is visible: the measured time lands in the Down field (flashed) and the
+  // clock keeps the final reading instead of resetting to 0.0
+  assert.equal(el("input-down-cover.a").value, "18.4");
+  assert.equal(card._manualDrafts["cover.a"].down, "18.4");
+  assert.ok(el("input-down-cover.a").classList.contains("flash"));
+  assert.equal(card._stopwatch.elapsed, 18.4);
+  assert.equal(card._stopwatch.savedDirection, "down");
+  assert.match(el("covers-list").innerHTML, /stopwatch-clock done">18\.4s/);
+});
+
+test("stopwatch buttons: Start turns into Stop & Save in place; ✕ cancels without saving", async () => {
+  const card = withCovers(create({ model: "MH200" }), {
+    "cover.a": coverState("cover.a", { friendly_name: "Bedroom", travel_time_down: 25, travel_time_up: 25 }),
+  });
+  await card._toggleCovers();
+  card._toggleStopwatch("cover.a");
+  const serviceCalls = [];
+  card._hass.callService = async (domain, service, data) => {
+    serviceCalls.push({ service: `${domain}.${service}`, data });
+    return data;
+  };
+
+  let html = el("covers-list").innerHTML;
+  assert.match(html, /data-action="sw-start-down"[^>]*>⬇️ Start Down/);
+  assert.match(html, /data-action="sw-start-up"[^>]*>⬆️ Start Up/);
+  assert.doesNotMatch(html, /Stop &amp; Save/);
+
+  await card._startStopwatch("cover.a", "up");
+  html = el("covers-list").innerHTML;
+  // the Up button is now the stop button, Down is disabled, ✕ became Cancel
+  assert.match(html, /data-action="sw-stop-save"[^>]*>⏹️ Stop &amp; Save Up/);
+  assert.match(html, /data-action="sw-start-down"[^>]*disabled/);
+  assert.match(html, /✕ Cancel/);
+
+  // ✕ while running: motor stopped, nothing saved, drawer still open
+  card._toggleStopwatch("cover.a");
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(serviceCalls.at(-1).service, "cover.stop_cover");
+  assert.ok(!serviceCalls.some((c) => c.service === "myhome.set_cover_travel_time"));
+  assert.equal(card._activeStopwatchCover, "cover.a");
+  assert.equal(card._stopwatch.timerId, null);
+  assert.match(el("covers-list").innerHTML, /⬆️ Start Up/);
 });
 
 test("manual inputs save: validates range and calls set_cover_travel_time", async () => {
@@ -577,4 +620,170 @@ test("stopwatch drawer contains reset button alongside save", async () => {
   assert.match(listHtml, /💾 Save/);
   assert.match(listHtml, /↺ Reset/);
 });
+
+test("manual edits persistence: editing down and up values is preserved across background hass state updates", async () => {
+  const card = withCovers(create({ model: "MH200" }), {
+    "cover.persist": coverState("cover.persist", { friendly_name: "Living Room", travel_time_down: 25.0, travel_time_up: 25.0 }),
+  });
+  await card._toggleCovers();
+  card._toggleStopwatch("cover.persist");
+
+  // User edits down value
+  el("input-down-cover.persist").value = "14.5";
+  card._manualDrafts["cover.persist"] = { down: "14.5" };
+
+  // User edits up value
+  el("input-up-cover.persist").value = "16.0";
+  card._manualDrafts["cover.persist"].up = "16.0";
+
+  // A background update arrives from HA (e.g. sensor update or bus state)
+  card._renderCoversList();
+
+  // The rendered HTML must still display 14.5 and 16.0, NOT 25.0!
+  assert.equal(card._manualDrafts["cover.persist"].down, "14.5");
+  assert.equal(card._manualDrafts["cover.persist"].up, "16.0");
+
+  const serviceCalls = [];
+  card._hass.callService = async (domain, service, data) => {
+    serviceCalls.push({ service: `${domain}.${service}`, data });
+    return data;
+  };
+
+  await card._saveManualInputs("cover.persist");
+  assert.equal(serviceCalls.length, 1);
+  assert.equal(serviceCalls[0].data.travel_time_down, 14.5);
+  assert.equal(serviceCalls[0].data.travel_time_up, 16.0);
+  assert.equal(card._manualDrafts["cover.persist"], undefined); // Draft cleared on save
+});
+
+test("stepper controls: -1s, -½, +½, +1s correctly adjust manual inputs and update drafts", async () => {
+  const card = withCovers(create({ model: "MH200" }), {
+    "cover.step": coverState("cover.step", { friendly_name: "Kitchen", travel_time_down: 20.0, travel_time_up: 22.0 }),
+  });
+  await card._toggleCovers();
+  card._toggleStopwatch("cover.step");
+
+  // Initialize mock input values from attributes
+  el("input-down-cover.step").value = "20.0";
+  el("input-up-cover.step").value = "22.0";
+
+  // Step down value +1s
+  card._stepInputValue("input-down-cover.step", 1.0);
+  assert.equal(el("input-down-cover.step").value, "21.0");
+  assert.equal(card._manualDrafts["cover.step"].down, "21.0");
+
+  // Step down value -0.5s
+  card._stepInputValue("input-down-cover.step", -0.5);
+  assert.equal(el("input-down-cover.step").value, "20.5");
+  assert.equal(card._manualDrafts["cover.step"].down, "20.5");
+
+  // Step up value -1s
+  card._stepInputValue("input-up-cover.step", -1.0);
+  assert.equal(el("input-up-cover.step").value, "21.0");
+  assert.equal(card._manualDrafts["cover.step"].up, "21.0");
+
+  // Step up value +0.5s
+  card._stepInputValue("input-up-cover.step", 0.5);
+  assert.equal(el("input-up-cover.step").value, "21.5");
+  assert.equal(card._manualDrafts["cover.step"].up, "21.5");
+});
+
+test("batch apply: applies travel times to selected covers in one click", async () => {
+  const card = withCovers(create({ model: "MH200" }), {
+    "cover.batch1": coverState("cover.batch1", { friendly_name: "Window 1", travel_time_down: 25.0, travel_time_up: 25.0 }),
+    "cover.batch2": coverState("cover.batch2", { friendly_name: "Window 2", travel_time_down: 25.0, travel_time_up: 25.0 }),
+    "cover.batch3": coverState("cover.batch3", { friendly_name: "Window 3", travel_time_down: 25.0, travel_time_up: 25.0 }),
+  });
+  await card._toggleCovers();
+  card._toggleStopwatch("cover.batch1");
+
+  el("input-down-cover.batch1").value = "19.5";
+  el("input-up-cover.batch1").value = "20.5";
+  card._manualDrafts["cover.batch1"] = { down: "19.5", up: "20.5" };
+
+  card._toggleApplyOthers("cover.batch1");
+  assert.equal(card._applyOthersCover, "cover.batch1");
+
+  // Check Window 2 and Window 3
+  const chkB = el("batch-chk-cover.batch1-cover.batch2");
+  chkB.checked = true;
+  chkB.value = "cover.batch2";
+  // The class carries a CSS-safe key: an entity id's dot would split the selector in a browser
+  chkB.className = `batch-cover-chk-${card._batchKey("cover.batch1")}`;
+  assert.equal(chkB.className, "batch-cover-chk-cover_batch1");
+
+  const chkC = el("batch-chk-cover.batch1-cover.batch3");
+  chkC.checked = true;
+  chkC.value = "cover.batch3";
+  chkC.className = `batch-cover-chk-${card._batchKey("cover.batch1")}`;
+
+  const serviceCalls = [];
+  card._hass.callService = async (domain, service, data) => {
+    serviceCalls.push({ service: `${domain}.${service}`, data });
+    return data;
+  };
+
+  await card._applyToSelectedCovers("cover.batch1");
+
+  // The edited source is saved as its own (manual) time; the others are "copied" from it
+  assert.equal(serviceCalls.length, 2);
+  assert.equal(serviceCalls[0].service, "myhome.set_cover_travel_time");
+  assert.equal(serviceCalls[0].data.entity_id, "cover.batch1");
+  assert.equal(serviceCalls[0].data.copied_from, undefined);
+  assert.equal(serviceCalls[1].service, "myhome.set_cover_travel_time");
+  assert.deepEqual(serviceCalls[1].data.entity_id, ["cover.batch2", "cover.batch3"]);
+  assert.equal(serviceCalls[1].data.travel_time_down, 19.5);
+  assert.equal(serviceCalls[1].data.travel_time_up, 20.5);
+  assert.equal(serviceCalls[1].data.copied_from, "cover.batch1");
+  // The panel stays open and confirms the result where the click happened
+  assert.equal(card._applyOthersCover, "cover.batch1");
+  const status = el("batch-status-cover.batch1");
+  assert.match(status.textContent, /Saved to 3 covers/);
+  assert.match(status.className, /ok/);
+
+  // Pushing a cover's *stored* times (fields untouched) does not re-save the source
+  card._hass.states["cover.batch1"] = coverState("cover.batch1", { friendly_name: "Window 1", travel_time_down: 19.5, travel_time_up: 20.5, calibration_source: "measured" });
+  serviceCalls.length = 0;
+  chkB.checked = true;
+  chkC.checked = false;
+  await card._applyToSelectedCovers("cover.batch1");
+  assert.equal(serviceCalls.length, 1);
+  assert.deepEqual(serviceCalls[0].data.entity_id, ["cover.batch2"]);
+  assert.equal(serviceCalls[0].data.copied_from, "cover.batch1");
+
+  // Nothing selected: the warning is shown inline too (a browser re-render clears the
+  // boxes; the harness keeps element objects, so clear them here)
+  serviceCalls.length = 0;
+  chkB.checked = false;
+  chkC.checked = false;
+  await card._applyToSelectedCovers("cover.batch1");
+  assert.equal(serviceCalls.length, 0);
+  assert.match(el("batch-status-cover.batch1").textContent, /Select at least one cover/);
+  // The drawer stays open after a batch apply so the confirmation is visible
+  assert.equal(card._activeStopwatchCover, "cover.batch1");
+});
+
+test("markup: stopwatch drawer has stepper buttons and pushes its times to other covers", async () => {
+  const card = withCovers(create({ model: "MH200" }), {
+    "cover.mark1": coverState("cover.mark1", { friendly_name: "Living 1", travel_time_down: 25.0 }),
+    "cover.mark2": coverState("cover.mark2", { friendly_name: "Living 2", travel_time_down: 25.0 }),
+  });
+  await card._toggleCovers();
+  card._toggleStopwatch("cover.mark1");
+
+  const html = el("covers-list").innerHTML;
+  assert.match(html, /stepper-control/);
+  assert.match(html, /data-delta="-1"/);
+  assert.match(html, /data-delta="-0.5"/);
+  assert.match(html, /data-delta="0.5"/);
+  assert.match(html, /data-delta="1"/);
+  // The open cover is the source: no "copy from" selector, only the push to other covers
+  assert.doesNotMatch(html, /copy-cover-select|Copy from/);
+  assert.match(html, /📋 Apply these times to other covers…/);
+  card._toggleApplyOthers("cover.mark1");
+  const panel = el("covers-list").innerHTML;
+  assert.match(panel, /Apply this cover's times/);
+  assert.match(panel, /Living 2/);
+});
+
 

@@ -55,9 +55,32 @@ export function loadCard() {
 
   globalThis.window = globalThis;
   Object.defineProperty(globalThis, "navigator", { value: { userAgent: "node-test" }, configurable: true });
+  const matchSelector = (el, sel) => {
+    let s = (sel || "").trim();
+    let needChecked = false;
+    if (s.endsWith(":checked")) {
+      needChecked = true;
+      s = s.slice(0, -8);
+    }
+    if (needChecked && !el.checked) return false;
+    if (s.startsWith(".")) {
+      // Like a browser: ".a.b" means an element carrying BOTH classes a and b - so a
+      // class name that itself contains a dot (an entity id) can never be matched.
+      const wanted = s.slice(1).split(".").filter(Boolean);
+      const have = new Set(((el.className || "") + "").split(/\s+/).filter(Boolean));
+      return wanted.length > 0 && wanted.every((cls) => have.has(cls) || el.classList.contains(cls));
+    }
+    if (s.startsWith("#")) {
+      return el.id === s.slice(1);
+    }
+    return false;
+  };
+  const querySelectorAll = (sel) => Object.values(elements).filter((el) => matchSelector(el, sel));
+  const querySelector = (sel) => querySelectorAll(sel)[0] || null;
+
   globalThis.HTMLElement = class {
     attachShadow() {
-      this.shadowRoot = { getElementById: byId, querySelector: () => null, querySelectorAll: () => [] };
+      this.shadowRoot = { getElementById: byId, querySelector, querySelectorAll };
       return this.shadowRoot;
     }
   };
