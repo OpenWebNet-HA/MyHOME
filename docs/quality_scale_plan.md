@@ -49,8 +49,8 @@ Add a parametrised test that asserts the table so it cannot regress.
 
 ## Phase 5 — 🏆 Platinum: `strict-typing`
 
-- `mypy --strict custom_components/myhome` reports **522 errors in 20 files** today. Ratchet: add mypy to CI with a per-module allowlist, clear modules in order (`const` → `myhome_device` → `gateway` → platforms → `__init__`), shrink the allowlist with every PR.
-- The rule also requires the dependency to be PEP 561 typed: confirm OWNd ships `py.typed` and is fully annotated; if not, that is an OWNd release first.
+- ✅ Ratchet in place: `[tool.mypy]` (strict) in `pyproject.toml`, `mypy_baseline.json` with a per-module ceiling, `scripts/typing_ratchet.py` (fails on any regression, `--update` only lowers), workflow `strict-typing.yml`. 15 of 28 modules are clean (`const`, `data`, `gateway`, `myhome_device`, `services`, `device_trigger`, `decoder_pool`, transports, diagnostics, repairs, bus monitor); **547 errors remain in 13 modules** — biggest first: `config_flow` 104, `cover` 67, `validate` 57, `sensor` 56, `binary_sensor` 44, `light` 41, `websocket` 34, `climate` 33, `__init__` 27, `media_player` 25, `alarm_control_panel` 21, `button` 20, `switch` 18. Each PR that touches a module should leave it lower and run `--update`.
+- OWNd does **not** ship `py.typed`; the rule needs an OWNd release that is PEP 561 typed before it can be marked done.
 - `inject-websession` is correctly `exempt` (raw TCP, no HTTP); `async-dependency` is done.
 
 ## Throughout

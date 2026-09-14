@@ -41,7 +41,7 @@ class AsyncSerialTransport(OWNTransport):
 
         self._reader: Optional[asyncio.StreamReader] = None
         self._writer: Optional[asyncio.StreamWriter] = None
-        self._reader_task: Optional[asyncio.Task] = None
+        self._reader_task: Optional[asyncio.Task[None]] = None
         self._is_connected = False
         self._terminate = False
 
@@ -66,7 +66,7 @@ class AsyncSerialTransport(OWNTransport):
             # If simulated stream reader/writer are already injected (e.g. for testing), use them
             if self._reader is None or self._writer is None:
                 try:
-                    import serial_asyncio  # type: ignore
+                    import serial_asyncio
 
                     self._reader, self._writer = await serial_asyncio.open_serial_connection(
                         url=self.port, baudrate=self.baudrate
@@ -101,8 +101,8 @@ class AsyncSerialTransport(OWNTransport):
             except asyncio.CancelledError:
                 break
             except Exception as ex:  # pylint: disable=broad-except
-                if self._terminate:
-                    break
+                if self._terminate:  # set by close() while we were awaiting
+                    break  # type: ignore[unreachable]
                 self._logger.warning("%s Serial read error: %s", self.log_id, ex)
                 await asyncio.sleep(0.5)
 

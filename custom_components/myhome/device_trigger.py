@@ -54,7 +54,7 @@ TRIGGER_SCHEMA = DEVICE_TRIGGER_BASE_SCHEMA.extend(
 )
 
 
-def _get_gateway_mac_from_device(device: dr.DeviceEntry) -> str | None:
+def _get_gateway_mac_from_device(device: dr.BaseDeviceEntry) -> str | None:
     """Extract gateway MAC address from device entry."""
     for identifier in device.identifiers:
         if identifier[0] != DOMAIN:
@@ -68,7 +68,7 @@ def _get_gateway_mac_from_device(device: dr.DeviceEntry) -> str | None:
     return None
 
 
-def _get_cen_address_from_device(device: dr.DeviceEntry) -> str | None:
+def _get_cen_address_from_device(device: dr.BaseDeviceEntry) -> str | None:
     """Extract scenario address as string from device entry."""
     for identifier in device.identifiers:
         if identifier[0] != DOMAIN:
@@ -82,7 +82,7 @@ def _get_cen_address_from_device(device: dr.DeviceEntry) -> str | None:
     return None
 
 
-def _get_cen_info_from_device(device: dr.DeviceEntry) -> tuple[bool, int | None]:
+def _get_cen_info_from_device(device: dr.BaseDeviceEntry) -> tuple[bool, int | None]:
     """Check if device is a CEN/CEN+ scenario device or gateway, and extract address if available.
 
     Returns:
