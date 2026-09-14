@@ -1207,43 +1207,6 @@ async def test_async_setup_entry_uses_executor_for_ownd_version(hass: HomeAssist
     assert get_ownd_version in executor_targets
 
 
-async def test_setup_entry_async_customize_yaml(hass: HomeAssistant, tmp_path):
-    """Test customize.yaml is loaded asynchronously using async_add_executor_job without blocking the loop."""
-    custom_yaml_path = tmp_path / "customize.yaml"
-    custom_yaml_path.write_text("light.living:\n  friendly_name: Living Spot\n", encoding="utf-8")
-
-    with patch.object(hass.config, "path", return_value=str(custom_yaml_path)), patch(
-        "custom_components.myhome.gateway.OWNSession.test_connection",
-        return_value={"Success": True, "Message": None},
-    ), patch(
-        "custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"
-    ), patch(
-        "custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"
-    ), patch.object(
-        hass, "async_add_executor_job", wraps=hass.async_add_executor_job
-    ) as mock_executor:
-        config_entry = MockConfigEntry(
-            domain=DOMAIN,
-            data={
-                "host": "192.168.0.35",
-                "port": 20000,
-                "password": "pass",
-                "mac": "00:03:50:00:12:88",
-            },
-            unique_id="00:03:50:00:12:88",
-        )
-        config_entry.add_to_hass(hass)
-
-        assert await hass.config_entries.async_setup(config_entry.entry_id)
-        await hass.async_block_till_done()
-
-        # Verify async_add_executor_job was called to load customize.yaml
-        assert mock_executor.called
-        assert hass.data[DOMAIN]["customizations"].get("light.living", {}).get("friendly_name") == "Living Spot"
-
-        await hass.config_entries.async_unload(config_entry.entry_id)
-        await hass.async_block_till_done()
-
 async def test_remove_config_entry_device_refuses_gateway_allows_others(hass: HomeAssistant):
     """Quality-scale stale-devices: bus devices may be deleted, the gateway may not."""
     from homeassistant.helpers import device_registry as dr

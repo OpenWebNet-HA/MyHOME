@@ -59,7 +59,6 @@ from .const import (
     CONF_WHO,
     CONF_WORKER_COUNT,
     DEFAULT_TRANSITION_MODE,
-    DOMAIN,
     LOGGER,
     SERVICE_TURN_ON_TIMED,
     SOFTWARE_TRANSITION_MAX_STEPS,
@@ -203,12 +202,9 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             cfg = _configured_lights.get(device_id) or _configured_lights.get(where) or _configured_lights.get(clean_where) or {}
 
             default_suffix = f"{clean_where}I{interface}" if interface else clean_where
-            _customs = hass.data.get(DOMAIN, {}).get("customizations", {})
-            _predicted_id = f"light.light_{default_suffix.lower().replace(' ', '_')}"
-            _custom_entry = _customs.get(entry.entity_id, {}) or _customs.get(_predicted_id, {})
-            _is_dimmable = cfg.get(CONF_DIMMABLE, _custom_entry.get("dimmable", False))
-            _is_color_temp = cfg.get(CONF_COLOR_TEMP, _custom_entry.get("color_temp", False))
-            _is_rgb = cfg.get(CONF_RGB, _custom_entry.get("rgb", False)) or cfg.get(CONF_HS, _custom_entry.get("hs", False))
+            _is_dimmable = cfg.get(CONF_DIMMABLE, False)
+            _is_color_temp = cfg.get(CONF_COLOR_TEMP, False)
+            _is_rgb = cfg.get(CONF_RGB, False) or cfg.get(CONF_HS, False)
             _name = cfg.get(CONF_NAME, f"Light {default_suffix}")
             _entity_name = cfg.get(CONF_ENTITY_NAME)
             _icon = cfg.get(CONF_ICON)
@@ -386,10 +382,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             default_suffix = f"{clean_where}I{interface}" if interface else clean_where
             cfg = _configured_lights.get(unique_id) or _configured_lights.get(where) or _configured_lights.get(clean_where) or {}
 
-            _customs = hass.data.get(DOMAIN, {}).get("customizations", {})
-            _predicted_id = f"light.light_{default_suffix.lower().replace(' ', '_')}"
-            _custom_entry = _customs.get(_predicted_id, {})
-            _is_dimmable = cfg.get(CONF_DIMMABLE, _custom_entry.get("dimmable", False))
+            _is_dimmable = cfg.get(CONF_DIMMABLE, False)
 
             # Auto-detect dimmer from the first protocol message
             if not _is_dimmable:
@@ -546,6 +539,15 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._fade_id: int = 0
         self._cmd_lock: asyncio.Lock = asyncio.Lock()
         self._last_brightness_pct: int = 100
+
+    @property
+    def color_temp(self) -> int | None:
+        """Colour temperature in mireds, as carried on the bus (dimension 14).
+
+        Current cores no longer expose LightEntity.color_temp; keep the
+        accessor so the mired value stays inspectable alongside the Kelvin one.
+        """
+        return self._attr_color_temp
 
     async def async_added_to_hass(self):
         """Run when entity about to be added to hass."""
@@ -993,15 +995,6 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
 
         # plain off (preserved)
         return await self._gateway_handler.send(OWNLightingCommand.switch_off(self._full_where))
-
-    @property
-    def color_temp(self) -> int | None:
-        """Colour temperature in mireds, as carried on the bus (dimension 14).
-
-        Current cores no longer expose LightEntity.color_temp; keep the
-        accessor so the mired value stays inspectable alongside the Kelvin one.
-        """
-        return self._attr_color_temp
 
     @callback
     def handle_event(self, message: OWNLightingEvent):
