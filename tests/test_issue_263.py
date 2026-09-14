@@ -50,6 +50,7 @@ from custom_components.myhome.cover import MyHOMECover
 from custom_components.myhome.gateway import MyHOMEGatewayHandler
 from custom_components.myhome.light import MyHOMELight
 from custom_components.myhome.switch import MyHOMESwitch
+from tests.conftest import attach_runtime
 
 
 @pytest.fixture
@@ -90,6 +91,7 @@ async def test_probe_frame_does_not_create_climate_entity(hass, mock_gateway):
     def mock_add_entities(entities):
         discovered_entities.extend(entities)
 
+    attach_runtime(hass, config_entry)
     await async_setup_climate_entry(hass, config_entry, mock_add_entities)
     # Initially no entities
     assert len(discovered_entities) == 0
@@ -154,6 +156,7 @@ async def test_climate_registry_restore_skips_probe_entries(hass, mock_gateway):
         "homeassistant.helpers.entity_registry.async_entries_for_config_entry",
         return_value=[mock_entry_probe, mock_entry_zone],
     ):
+        attach_runtime(hass, config_entry)
         await async_setup_climate_entry(hass, config_entry, mock_add_entities)
 
     # Only zone 2 should be restored, probe 100 skipped
@@ -202,6 +205,7 @@ async def test_climate_yaml_config_skips_probe_entries(hass, mock_gateway):
         "homeassistant.helpers.entity_registry.async_entries_for_config_entry",
         return_value=[],
     ):
+        attach_runtime(hass, config_entry)
         await async_setup_climate_entry(hass, config_entry, mock_add_entities)
 
     # Only zone 1 should be restored

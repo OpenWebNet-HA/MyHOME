@@ -24,6 +24,7 @@ from custom_components.myhome.sensor import (
     MyHOMETemperatureSensor,
     async_setup_entry,
 )
+from tests.conftest import attach_runtime
 
 
 @pytest.fixture
@@ -74,6 +75,7 @@ async def test_probe_dimension_15_discovery_and_update(mock_gateway, mock_config
     with patch("custom_components.myhome.sensor.async_dispatcher_connect", side_effect=mock_dispatcher_connect), \
          patch("custom_components.myhome.sensor.er.async_get", return_value=MagicMock()), \
          patch("custom_components.myhome.sensor.er.async_entries_for_config_entry", return_value=[]):
+        attach_runtime(hass, mock_config_entry)
         await async_setup_entry(hass, mock_config_entry, mock_add_entities)
 
     assert len(discovered_entities) == 0
@@ -137,6 +139,7 @@ async def test_probe_dimension_0_discovery(mock_gateway, mock_config_entry):
     with patch("custom_components.myhome.sensor.async_dispatcher_connect", side_effect=mock_dispatcher_connect), \
          patch("custom_components.myhome.sensor.er.async_get", return_value=MagicMock()), \
          patch("custom_components.myhome.sensor.er.async_entries_for_config_entry", return_value=[]):
+        attach_runtime(hass, mock_config_entry)
         await async_setup_entry(hass, mock_config_entry, mock_add_entities)
 
     handle_message = dispatch_callbacks[0]
@@ -181,6 +184,7 @@ async def test_actuators_and_valves_do_not_discover_temperature_sensor(mock_gate
     with patch("custom_components.myhome.sensor.async_dispatcher_connect", side_effect=mock_dispatcher_connect), \
          patch("custom_components.myhome.sensor.er.async_get", return_value=MagicMock()), \
          patch("custom_components.myhome.sensor.er.async_entries_for_config_entry", return_value=[]):
+        attach_runtime(hass, mock_config_entry)
         await async_setup_entry(hass, mock_config_entry, mock_add_entities)
 
     handle_message = dispatch_callbacks[0]
@@ -236,6 +240,7 @@ async def test_temperature_registry_restoration(mock_gateway, mock_config_entry)
     with patch("custom_components.myhome.sensor.er.async_get", return_value=MagicMock()), \
          patch("custom_components.myhome.sensor.er.async_entries_for_config_entry", return_value=[reg_entry1, reg_entry2]), \
          patch("custom_components.myhome.sensor.async_dispatcher_connect", return_value=MagicMock()):
+        attach_runtime(hass, mock_config_entry)
         await async_setup_entry(hass, mock_config_entry, mock_add_entities)
 
     assert len(discovered_entities) == 1

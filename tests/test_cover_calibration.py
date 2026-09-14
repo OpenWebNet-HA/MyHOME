@@ -15,6 +15,7 @@ from custom_components.myhome.cover import (
     async_stop_cover_calibration,
     get_last_calibration_trace,
 )
+from tests.conftest import attach_runtime
 
 
 class Clock:
@@ -392,6 +393,7 @@ async def test_button_platform_creates_calibration_buttons_for_registered_and_di
     hass.data[DOMAIN] = {gateway.mac: {CONF_PLATFORMS: {"button": {}}, CONF_ENTITY: gateway}}
 
     added = []
+    attach_runtime(hass, entry)
     await async_setup_entry(hass, entry, lambda ents: added.extend(ents))
     calib = [e for e in added if isinstance(e, CalibrateCoverButtonEntity)]
     assert sorted(e.unique_id for e in calib) == sorted([f"{gateway.mac}-2-21-calibrate", f"{gateway.mac}-2-22#4#02-calibrate"])

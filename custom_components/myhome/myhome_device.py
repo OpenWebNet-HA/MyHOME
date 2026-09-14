@@ -13,7 +13,8 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DOMAIN
+from .const import CONF_ENTITIES, DOMAIN
+from .data import get_runtime_data
 
 __all__ = ["Entity", "MyHOMEEntity"]
 
@@ -66,6 +67,38 @@ class MyHOMEEntity(RestoreEntity):
             self._attr_device_info["via_device_id"] = gateway.device_registry_id
         else:
             self._attr_device_info["via_device"] = (DOMAIN, gateway.unique_id)
+
+    def _device_config(self) -> dict | None:
+        """Return this device's configuration mapping from the entry's runtime data.
+
+        ``None`` when the entity is not attached to a config-entry platform (or the
+        device is not known to it), which is the case for entities built directly
+        in tests.
+        """
+        entry = getattr(getattr(self, "platform", None), "config_entry", None)
+        runtime = get_runtime_data(entry) if entry is not None else None
+        if runtime is None:
+            return None
+        device_dict = runtime.platforms.get(self._platform, {}).get(self._device_id)
+        return device_dict if isinstance(device_dict, dict) else None
+
+    def _register_entity_ref(self, key: str) -> None:
+        """Expose this entity under ``key`` in the device's ``entities`` mapping."""
+        device_dict = self._device_config()
+        if device_dict is None:
+            return
+        if not isinstance(device_dict.get(CONF_ENTITIES), dict):
+            device_dict[CONF_ENTITIES] = {}
+        device_dict[CONF_ENTITIES][key] = self
+
+    def _unregister_entity_ref(self, key: str) -> None:
+        """Remove the ``key`` reference added by :meth:`_register_entity_ref`."""
+        device_dict = self._device_config()
+        if device_dict is None:
+            return
+        entities = device_dict.get(CONF_ENTITIES)
+        if isinstance(entities, dict):
+            entities.pop(key, None)
 
     @property
     def via_device_id(self) -> str:

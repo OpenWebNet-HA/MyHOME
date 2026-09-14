@@ -8,7 +8,6 @@ from homeassistant.components.switch import (
     SwitchEntity,
 )
 from homeassistant.const import (
-    CONF_MAC,
     CONF_NAME,
 )
 from homeassistant.core import callback
@@ -24,19 +23,17 @@ from .const import (
     CONF_BUS_INTERFACE,
     CONF_DEVICE_CLASS,
     CONF_DEVICE_MODEL,
-    CONF_ENTITY,
     CONF_ENTITY_NAME,
     CONF_ICON,
     CONF_ICON_ON,
     CONF_MANUFACTURER,
-    CONF_PLATFORMS,
     CONF_WHERE,
     CONF_WHO,
-    DOMAIN,
     LOGGER,
     SERVICE_TURN_ON_TIMED,
     build_timed_turn_on_command,
 )
+from .data import get_runtime_data
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 
@@ -44,11 +41,10 @@ PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    mac = config_entry.data.get(CONF_MAC)
-    if not mac or mac not in hass.data.get(DOMAIN, {}):
+    runtime = get_runtime_data(config_entry)
+    if runtime is None or PLATFORM not in runtime.platforms:
         return True
-    if PLATFORM not in hass.data[DOMAIN][mac].get(CONF_PLATFORMS, {}):
-        return True
+    mac = runtime.mac
 
     known_switches = set()
     try:
@@ -59,8 +55,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         existing_entries = []
     restored_switches = []
 
-    gateway = hass.data[DOMAIN][mac][CONF_ENTITY]
-    _configured_switches = hass.data[DOMAIN][mac].get(CONF_PLATFORMS, {}).get(PLATFORM, {})
+    gateway = runtime.gateway
+    _configured_switches = runtime.platforms.get(PLATFORM, {})
 
     for entry in existing_entries:
         if entry.domain == PLATFORM:
@@ -185,15 +181,13 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
 
 async def async_unload_entry(hass, config_entry):
-    mac = config_entry.data.get(CONF_MAC)
-    if not mac or mac not in hass.data.get(DOMAIN, {}):
-        return True
-    if PLATFORM not in hass.data[DOMAIN][mac].get(CONF_PLATFORMS, {}):
+    runtime = get_runtime_data(config_entry)
+    if runtime is None or PLATFORM not in runtime.platforms:
         return True
 
-    _configured_switches = hass.data[DOMAIN][mac][CONF_PLATFORMS][PLATFORM]
+    _configured_switches = runtime.platforms[PLATFORM]
     for _switch in list(_configured_switches.keys()):
-        del hass.data[DOMAIN][mac][CONF_PLATFORMS][PLATFORM][_switch]
+        del runtime.platforms[PLATFORM][_switch]
 
     return True
 

@@ -57,8 +57,8 @@ rules:
     status: todo
     comment: Entities still set has_entity_name=False with legacy entity IDs; pending the community RFC on non-breaking entity ID migration.
   runtime-data:
-    status: in_progress
-    comment: entry.runtime_data is set before platforms load and is the source of truth for the WebSocket API; platforms still read the legacy hass.data mapping.
+    status: done
+    comment: entry.runtime_data holds a typed MyHOMERuntimeData (data.py) set before platforms load; platforms, services, WebSocket API and diagnostics read only it (enforced by verify_ha_standards.py). hass.data[DOMAIN][mac] survives one release as a deprecated alias.
   test-before-configure:
     status: done
     comment: The config flow opens a test session and validates the password before creating the entry.

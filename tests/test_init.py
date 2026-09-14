@@ -9,6 +9,7 @@ from homeassistant.helpers import device_registry as dr
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome.const import CONF_PLATFORMS, DOMAIN
+from tests.conftest import attach_runtime
 
 
 async def test_setup_entry_success(hass: HomeAssistant):
@@ -92,8 +93,9 @@ async def test_setup_entry_auth_failed_starts_reauth(hass: HomeAssistant, reason
         flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
         assert [f["context"]["source"] for f in flows] == ["reauth"]
         assert flows[0]["context"]["entry_id"] == config_entry.entry_id
-        # The half-initialised handler was cleaned up
-        assert "entity" not in hass.data[DOMAIN][config_entry.data["mac"]]
+        # Nothing was published for the entry: no runtime data, no legacy alias
+        assert getattr(config_entry, "runtime_data", None) is None
+        assert config_entry.data["mac"] not in hass.data[DOMAIN]
 
 
 async def test_setup_entry_generic_test_failure_retries(hass: HomeAssistant):
@@ -115,7 +117,7 @@ async def test_setup_entry_generic_test_failure_retries(hass: HomeAssistant):
 
 
 async def test_unload_entry_keeps_state_when_platform_unload_fails(hass: HomeAssistant):
-    """If a platform refuses to unload, hass.data and the gateway stay intact."""
+    """If a platform refuses to unload, runtime data and the gateway stay intact."""
     from custom_components.myhome import async_unload_entry
     from custom_components.myhome.const import CONF_ENTITY
 
@@ -125,12 +127,12 @@ async def test_unload_entry_keeps_state_when_platform_unload_fails(hass: HomeAss
     gateway = MagicMock()
     gateway.close_listener = AsyncMock(return_value=True)
     hass.data.setdefault(DOMAIN, {})[mac] = {CONF_ENTITY: gateway}
-    entry.runtime_data = gateway
+    runtime = attach_runtime(hass, entry, mac, gateway)
 
     with patch.object(hass.config_entries, "async_unload_platforms", AsyncMock(return_value=False)):
         assert await async_unload_entry(hass, entry) is False
     assert hass.data[DOMAIN][mac][CONF_ENTITY] is gateway
-    assert entry.runtime_data is gateway
+    assert entry.runtime_data is runtime
     gateway.close_listener.assert_not_awaited()
 
     with patch.object(hass.config_entries, "async_unload_platforms", AsyncMock(return_value=True)):
@@ -264,9 +266,10 @@ async def test_services(hass: HomeAssistant):
             )
         gateway.send.assert_not_called()
 
-        # Test sync_time, send_message, and sweep_bus when no gateways exist in hass.data[DOMAIN]
-        saved_data = hass.data[DOMAIN]
-        hass.data[DOMAIN] = {}
+        # Test sync_time, send_message, and sweep_bus when no gateway is set up
+        # (an entry without runtime_data does not count as a gateway)
+        saved_runtime = config_entry.runtime_data
+        config_entry.runtime_data = None
         try:
             await hass.services.async_call(
                 DOMAIN, "sync_time", {}, blocking=True
@@ -278,7 +281,8 @@ async def test_services(hass: HomeAssistant):
                 DOMAIN, "sweep_bus", {}, blocking=True
             )
         finally:
-            hass.data[DOMAIN] = saved_data
+            config_entry.runtime_data = saved_runtime
+        gateway.send.assert_not_called()
 
 
 async def test_options_update_rebuilds_decoder_pool(hass: HomeAssistant):
@@ -321,7 +325,7 @@ async def test_options_update_rebuilds_decoder_pool(hass: HomeAssistant):
         hass.config_entries.async_update_entry(config_entry, options=new_options)
         await hass.async_block_till_done()
 
-        pool = hass.data[DOMAIN]["00:03:50:00:12:34"]["decoder_pool"]
+        pool = config_entry.runtime_data.decoder_pool
         assert pool is not None
         assert pool.is_configured is True
         assert "media_player.zone1" in pool._decoder_map

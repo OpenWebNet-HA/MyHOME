@@ -6,7 +6,6 @@ from homeassistant.core import HomeAssistant
 from custom_components.myhome.const import (
     ATTR_GATEWAY,
     ATTR_MESSAGE,
-    CONF_ENTITY,
     DOMAIN,
 )
 from custom_components.myhome.services import (
@@ -34,20 +33,19 @@ async def test_services_setup_is_idempotent(hass: HomeAssistant) -> None:
     assert hass.services.has_service(DOMAIN, SERVICE_SYNC_TIME)
 
 
-async def test_get_gateway_handler_helper(hass: HomeAssistant) -> None:
+async def test_get_gateway_handler_helper(hass: HomeAssistant, attach_gateway) -> None:
     """Test _get_gateway_handler lookup helper."""
-    # When DOMAIN not in hass.data
-    hass.data.pop(DOMAIN, None)
+    # No config entries at all
     assert _get_gateway_handler(hass, None) is None
 
-    # When no gateways configured
-    hass.data[DOMAIN] = {}
+    # An entry that is not set up (no runtime_data) does not count
+    attach_gateway("00:03:50:00:00:01", MagicMock(), legacy_only=True)
     assert _get_gateway_handler(hass, None) is None
 
     # When valid gateway configured
     mock_handler = MagicMock()
     gw_mac = "00:03:50:AA:BB:CC"
-    hass.data[DOMAIN][gw_mac] = {CONF_ENTITY: mock_handler}
+    attach_gateway(gw_mac, mock_handler)
 
     # Default lookup (None)
     assert _get_gateway_handler(hass, None) == mock_handler
@@ -63,22 +61,22 @@ async def test_get_gateway_handler_helper(hass: HomeAssistant) -> None:
 
     # Format MAC lookup
     gw_mac_fmt = "00:03:50:11:22:33"
-    hass.data[DOMAIN][gw_mac_fmt] = {CONF_ENTITY: mock_handler}
+    attach_gateway(gw_mac_fmt, mock_handler)
     assert _get_gateway_handler(hass, "000350112233") == mock_handler
 
     # Case-insensitive MAC lookup
     gw_mac_case = "00:03:50:AA:BB:DD"
-    hass.data[DOMAIN][gw_mac_case] = {CONF_ENTITY: mock_handler}
+    attach_gateway(gw_mac_case, mock_handler)
     assert _get_gateway_handler(hass, "000350aabbdd") == mock_handler
 
 
-async def test_services_edge_cases(hass: HomeAssistant) -> None:
+async def test_services_edge_cases(hass: HomeAssistant, attach_gateway) -> None:
     """Test edge cases for service calls."""
     await async_setup_services(hass)
 
     mock_handler = MagicMock()
     gw_mac = "00:03:50:aa:bb:cc"
-    hass.data[DOMAIN] = {gw_mac: {CONF_ENTITY: mock_handler}}
+    entry = attach_gateway(gw_mac, mock_handler)
 
     # Test send_message with message=None
     await hass.services.async_call(
@@ -88,12 +86,12 @@ async def test_services_edge_cases(hass: HomeAssistant) -> None:
         blocking=True,
     )
 
-    # Test sweep_bus when no gateways configured
-    hass.data[DOMAIN] = {}
+    # Test sweep_bus when no gateway is set up
+    entry.runtime_data = None
     await hass.services.async_call(DOMAIN, SERVICE_SWEEP_BUS, {}, blocking=True)
 
 
-async def test_sweep_bus_queries_sent(hass: HomeAssistant) -> None:
+async def test_sweep_bus_queries_sent(hass: HomeAssistant, attach_gateway) -> None:
     """Test sweep_bus sends updated queries including firmware and excluding invalid lighting query."""
     from unittest.mock import AsyncMock
     await async_setup_services(hass)
@@ -101,7 +99,7 @@ async def test_sweep_bus_queries_sent(hass: HomeAssistant) -> None:
     mock_handler = MagicMock()
     mock_handler.send = AsyncMock()
     gw_mac = "00:03:50:aa:bb:cc"
-    hass.data[DOMAIN] = {gw_mac: {CONF_ENTITY: mock_handler}}
+    attach_gateway(gw_mac, mock_handler)
 
     await hass.services.async_call(
         DOMAIN,

@@ -8,6 +8,7 @@ from custom_components.myhome.button import (
     async_unload_entry,
 )
 from custom_components.myhome.const import DOMAIN
+from tests.conftest import attach_runtime, bind_entity
 
 
 async def test_setup_and_unload_entry(hass):
@@ -48,6 +49,7 @@ async def test_setup_and_unload_entry(hass):
     config_entry.data = {"mac": "mac"}
 
     async_add_entities = MagicMock()
+    attach_runtime(hass, config_entry)
     await async_setup_entry(hass, config_entry, async_add_entities)
 
     async_add_entities.assert_called_once()
@@ -69,6 +71,7 @@ async def test_setup_and_unload_entry(hass):
     ]
 
     # Test unload
+    attach_runtime(hass, config_entry)
     await async_unload_entry(hass, config_entry)
     assert "device_1" not in hass.data[DOMAIN]["mac"]["platforms"]["button"]
     assert "device_2" not in hass.data[DOMAIN]["mac"]["platforms"]["button"]
@@ -111,6 +114,7 @@ async def test_disable_button_entity(hass):
     assert btn1.name == "Lock"
     assert btn1.entity_id == "button.device_lock"
     assert btn1.unique_id == "mac-1-device_1-disable"
+    bind_entity(hass, btn1, "mac", mock_gateway)
     assert btn1.extra_state_attributes["A"] == "1"
     assert btn1.extra_state_attributes["PL"] == "2"
     assert "Int" not in btn1.extra_state_attributes
@@ -183,6 +187,7 @@ async def test_enable_button_entity(hass):
     assert btn1.name == "Unlock"
     assert btn1.entity_id == "button.device_unlock"
     assert btn1.unique_id == "mac-1-device_1-enable"
+    bind_entity(hass, btn1, "mac", mock_gateway)
 
     await btn1.async_press()
     mock_gateway.send.assert_called_once_with("*14*1*12##")
@@ -210,7 +215,9 @@ async def test_button_platform_not_in_platforms(hass):
     config_entry = MagicMock()
     config_entry.data = {"mac": "mac"}
 
+    attach_runtime(hass, config_entry)
     assert await async_setup_entry(hass, config_entry, MagicMock()) is True
+    attach_runtime(hass, config_entry)
     assert await async_unload_entry(hass, config_entry) is True
 
 
@@ -257,6 +264,8 @@ async def test_button_entities_lifecycle_edge_cases(hass):
         gateway=mock_gateway,
     )
 
+    bind_entity(hass, dis_btn, "mac", mock_gateway)
+    bind_entity(hass, en_btn, "mac", mock_gateway)
     await dis_btn.async_added_to_hass()
     assert "disable" in hass.data[DOMAIN]["mac"]["platforms"]["button"]["device_1"]["entities"]
 
@@ -270,9 +279,9 @@ async def test_button_entities_lifecycle_edge_cases(hass):
     assert "disable" not in hass.data[DOMAIN]["mac"]["platforms"]["button"]["device_1"]["entities"]
     assert "enable" not in hass.data[DOMAIN]["mac"]["platforms"]["button"]["device_1"]["entities"]
 
-    # 2. Test when hass.data raises KeyError/TypeError
-    hass.data = {}
-    # Both add and remove should gracefully swallow KeyError without raising
+    # 2. Entities without a platform / runtime data must not raise
+    dis_btn.platform = None
+    en_btn.platform.config_entry.runtime_data = None
     await dis_btn.async_added_to_hass()
     await dis_btn.async_will_remove_from_hass()
     await en_btn.async_added_to_hass()
@@ -286,7 +295,9 @@ async def test_button_additional_edge_coverage(hass):
 
     # mac not in hass.data
     hass.data = {}
+    attach_runtime(hass, config_entry)
     assert await async_setup_entry(hass, config_entry, MagicMock()) is True
+    attach_runtime(hass, config_entry)
     assert await async_unload_entry(hass, config_entry) is True
 
     # configured button with where starting with '#' (should return empty list)
@@ -309,6 +320,7 @@ async def test_button_additional_edge_coverage(hass):
     }
     config_entry.data = {"mac": "mac1"}
     added_entities = []
+    attach_runtime(hass, config_entry)
     await async_setup_entry(hass, config_entry, lambda ents: added_entities.extend(ents))
     # Area button with '#' ignored; only the gateway's "Calibrate all covers" button remains
     from custom_components.myhome.button import CalibrateAllCoversButtonEntity

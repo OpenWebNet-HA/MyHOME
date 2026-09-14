@@ -8,6 +8,7 @@ from homeassistant.core import HomeAssistant
 from custom_components.myhome.bus_monitor import BusMonitor
 from custom_components.myhome.const import CONF_ENTITIES, CONF_ENTITY, DOMAIN, INTEGRATION_VERSION
 from custom_components.myhome.diagnostics import async_get_config_entry_diagnostics
+from tests.conftest import attach_runtime
 
 
 @pytest.mark.asyncio
@@ -107,6 +108,7 @@ async def test_diagnostics_with_full_gateway_and_bus_monitor(hass: HomeAssistant
             },
         }
     }
+    attach_runtime(hass, mock_entry, mac, mock_handler)
 
     diag = await async_get_config_entry_diagnostics(hass, mock_entry)
 

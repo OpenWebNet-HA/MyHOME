@@ -22,6 +22,13 @@ from typing import List
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 CUSTOM_COMPONENTS_DIR = ROOT_DIR / "custom_components" / "myhome"
+
+# Modules that read per-config-entry state; audited by the runtime-data check.
+RUNTIME_DATA_READERS = [
+    "light.py", "switch.py", "cover.py", "climate.py", "binary_sensor.py", "sensor.py",
+    "media_player.py", "button.py", "alarm_control_panel.py",
+    "services.py", "websocket.py", "diagnostics.py", "myhome_device.py", "decoder_pool.py",
+]
 TRANSLATIONS_DIR = CUSTOM_COMPONENTS_DIR / "translations"
 
 DISCOVERY_STEPS = {
@@ -352,6 +359,30 @@ def check_quality_scale_rules(checker: StandardsChecker):
             )
         else:
             checker.log_ok("[BRONZE] runtime_data entry mapping implemented.")
+
+    # Platforms, services, WebSocket API and diagnostics must read per-entry state from
+    # entry.runtime_data, never from the deprecated hass.data[DOMAIN][mac] alias.
+    per_entry_reader = re.compile(
+        r"hass\.data(?:\.get\(DOMAIN|\[DOMAIN\])\S*\b(?:CONF_ENTITY|CONF_PLATFORMS|CONF_ENTITIES|mac|CONF_MAC)\b"
+    )
+    offenders = []
+    for module in RUNTIME_DATA_READERS:
+        module_file = CUSTOM_COMPONENTS_DIR / module
+        if not module_file.exists():
+            continue
+        for lineno, line in enumerate(module_file.read_text(encoding="utf-8").splitlines(), 1):
+            if per_entry_reader.search(line):
+                offenders.append((module_file, lineno, line.strip()))
+    if offenders:
+        for module_file, lineno, line in offenders:
+            checker.log_error(
+                "RULE_IQS_BRONZE",
+                module_file,
+                lineno,
+                f"Quality Scale Bronze rule 'runtime-data': read entry.runtime_data instead of hass.data: {line}",
+            )
+    else:
+        checker.log_ok(f"[BRONZE] runtime-data: {len(RUNTIME_DATA_READERS)} modules read per-entry state from entry.runtime_data only.")
 
     # 2. [BRONZE] Services Extraction
     services_file = CUSTOM_COMPONENTS_DIR / "services.py"

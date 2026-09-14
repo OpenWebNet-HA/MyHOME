@@ -61,10 +61,9 @@ from .const import (
     CONF_DECODER_PRE_GAIN,
     CONF_DECODER_SLOTS,
     CONF_DECODER_SOURCE,
-    CONF_ENTITY,
-    DOMAIN,
     LOGGER,
 )
+from .data import get_runtime_data
 from .decoder_pool import DecoderPool
 from .myhome_device import MyHOMEEntity
 
@@ -103,11 +102,12 @@ def _build_pool(hass: HomeAssistant, config_entry) -> DecoderPool:
 
 async def async_setup_entry(hass: HomeAssistant, config_entry, async_add_entities):
     """Set up the MyHOME media player platform and initialise the decoder pool."""
+    runtime = config_entry.runtime_data
     known_media_players: set[str] = set()
 
     # ── Build and store the decoder pool ─────────────────────────────────────
     pool = _build_pool(hass, config_entry)
-    hass.data[DOMAIN][config_entry.data[CONF_MAC]]["decoder_pool"] = pool
+    runtime.decoder_pool = pool
 
     LOGGER.info(
         "MyHOME media player: decoder pool initialised with %d decoder(s)",
@@ -119,7 +119,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry, async_add_entitie
     existing_entries = er.async_entries_for_config_entry(entity_registry, config_entry.entry_id)
     restored_players: list[MyHOMEMediaPlayer] = []
 
-    gateway = hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY]
+    gateway = runtime.gateway
 
     for entry in existing_entries:
         if entry.domain == PLATFORM:
@@ -185,7 +185,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry, async_add_entitie
                 where=zone,
                 manufacturer="BTicino",
                 model="Audio System",
-                gateway=hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY],
+                gateway=runtime.gateway,
             )
             known_media_players.add(unique_id)
             async_add_entities([_player])
@@ -275,13 +275,14 @@ class MyHOMEMediaPlayer(MyHOMEEntity, MediaPlayerEntity):
     # ── Pool helpers ──────────────────────────────────────────────────────────
 
     def _get_pool(self) -> DecoderPool | None:
-        """Return the shared :class:`DecoderPool` from ``hass.data``.
+        """Return the shared :class:`DecoderPool` from the entry's runtime data.
 
         Returns ``None`` if the pool has not yet been initialised (e.g.
         during early startup) or if no decoders are configured.
         """
-        mac_data = self.hass.data.get(DOMAIN, {}).get(self._gateway_handler.mac, {})
-        return mac_data.get("decoder_pool")
+        entry = getattr(getattr(self, "platform", None), "config_entry", None)
+        runtime = get_runtime_data(entry) if entry is not None else None
+        return runtime.decoder_pool if runtime is not None else None
 
     # ── Dynamic feature flags ─────────────────────────────────────────────────
 

@@ -9,8 +9,8 @@ forwards the stream URL to the backend decoder.
 Architecture
 ------------
 - One ``DecoderPool`` instance per gateway, keyed by MAC address in
-  ``hass.data[DOMAIN][mac]["decoder_pool"]``.
-- Survives entity reloads (lives in hass.data, not inside an entity).
+  ``entry.runtime_data.decoder_pool``.
+- Survives entity reloads (lives on the config entry, not inside an entity).
 - Thread-safe: all claim/release operations are serialised with a single
   ``asyncio.Lock`` to prevent race conditions when multiple zones compete for
   the last available decoder.
