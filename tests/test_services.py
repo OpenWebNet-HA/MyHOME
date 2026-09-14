@@ -117,8 +117,6 @@ async def test_sweep_bus_queries_sent(hass: HomeAssistant, attach_gateway) -> No
     assert "*#1*0##" not in sent_raw
 
 
-
-
 async def test_stop_cover_calibration_service_forwards_gateway(hass: HomeAssistant) -> None:
     """myhome.stop_cover_calibration hands the optional gateway MAC to the cover helper."""
     from unittest.mock import AsyncMock, patch

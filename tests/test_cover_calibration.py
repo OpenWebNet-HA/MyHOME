@@ -86,11 +86,11 @@ def _make_cover(hass, gateway, **kwargs):
         who="2",
         where="21",
         interface=None,
-        advanced=False,
+        advanced=kwargs.pop("advanced", False),
         manufacturer="BTicino",
         model="Shutter",
         gateway=gateway,
-        travel_time=25,
+        travel_time=kwargs.pop("travel_time", 25),
         **kwargs,
     )
     c.hass = hass

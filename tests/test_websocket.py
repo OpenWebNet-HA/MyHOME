@@ -601,3 +601,4 @@ async def test_ws_cover_calibration_trace(hass: HomeAssistant, mock_ws_connectio
         ws_cover_calibration_trace(hass, mock_ws_connection, {"id": 77, "type": "myhome/cover/calibration_trace"})
         await hass.async_block_till_done()
     mock_ws_connection.send_result.assert_called_once_with(77, {"frames": [{"raw": "*2*1*21##"}]})
+
