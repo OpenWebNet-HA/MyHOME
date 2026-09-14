@@ -555,7 +555,7 @@ automated coverage and physical gateway verification steps.
 ### CI Workflows
 - **`hassfest`**: Official Home Assistant manifest, translation, and metadata validation.
 - **`validate`**: Official HACS compliance checks.
-- **`test-coverage`**: 1294 automated unit tests with snapshot matching and 100% line coverage enforcement on the `ownd` core package.
+- **`test-coverage`**: 1443 automated unit tests with snapshot matching and 100% line coverage enforcement on the `ownd` core package.
 - **`ha-container-smoke`**: Automated containerized smoke testing against official Home Assistant Docker images (`stable`, `beta`, `dev`) verifying `check_config`, clean platform module imports, and zero asyncio loop-blocking calls.
 - **`ownd-smoke`**: Automated smoke testing of the `OWNd` protocol engine across `pinned`, `latest`, and `upstream-dev` distributions on Python 3.14.
 - **`ha-upstream-compat`**: Continuous integration testing against upstream Home Assistant Stable, Beta, and Dev channels.
@@ -583,7 +583,7 @@ _Self-audit of [`quality_scale.yaml`](custom_components/myhome/quality_scale.yam
 
 ### 📊 Code Coverage & Quality Assurance
 
-The integration maintains 1294 automated unit tests (100% line coverage across all modules) covering core protocol handling, hardware profiles, discovery, state reconciliation, and error boundaries.
+The integration maintains 1443 automated unit tests (100% line coverage across all modules) covering core protocol handling, hardware profiles, discovery, state reconciliation, and error boundaries.
 
 <!-- START_COVERAGE_TABLE -->
 
@@ -601,6 +601,7 @@ The integration maintains 1294 automated unit tests (100% line coverage across a
 | [`core/transport/serial.py`](custom_components/myhome/core/transport/serial.py) | **100%** | Async Serial/USB transport for Legrand 3578 / OpenZigBee |
 | [`core/transport/tcp.py`](custom_components/myhome/core/transport/tcp.py) | **100%** | Modular TCP/IP socket transport with framed stream parsing |
 | [`cover.py`](custom_components/myhome/cover.py) | **100%** | Motorized shutters, blinds, roll-ups with state tracking |
+| [`data.py`](custom_components/myhome/data.py) | **100%** | Core integration component |
 | [`decoder_pool.py`](custom_components/myhome/decoder_pool.py) | **100%** | Thread-safe streaming proxy audio pool |
 | [`device_trigger.py`](custom_components/myhome/device_trigger.py) | **100%** | Stateless CEN/CEN+ scenario device automation triggers |
 | [`diagnostics.py`](custom_components/myhome/diagnostics.py) | **100%** | Config entry diagnostics with sensitive data redaction |
@@ -608,7 +609,9 @@ The integration maintains 1294 automated unit tests (100% line coverage across a
 | [`light.py`](custom_components/myhome/light.py) | **100%** | Relays, auto-dimmer detection, and brightness transitions |
 | [`media_player.py`](custom_components/myhome/media_player.py) | **100%** | F441/F441M sound system zones, dynamic proxy, gain-staging |
 | [`myhome_device.py`](custom_components/myhome/myhome_device.py) | **100%** | Home Assistant device registry schema compliance |
+| [`repairs.py`](custom_components/myhome/repairs.py) | **100%** | Core integration component |
 | [`sensor.py`](custom_components/myhome/sensor.py) | **100%** | Power meters, energy counters, and pulse sensors |
+| [`services.py`](custom_components/myhome/services.py) | **100%** | Core integration component |
 | [`switch.py`](custom_components/myhome/switch.py) | **100%** | Relay actuators, auxiliary switches, socket controllers |
 | [`validate.py`](custom_components/myhome/validate.py) | **100%** | Device & gateway schemas, custom WHERE validators, sensor injections |
 | [`websocket.py`](custom_components/myhome/websocket.py) | **100%** | WebSocket API for real-time bus streaming, history, and diagnostics |
