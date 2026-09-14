@@ -201,6 +201,38 @@
     "calibrate_cover": {
       "name": "Calibrate cover travel time",
       "description": "Measures a timed cover's up and down travel times on the SCS bus and stores them: the cover is driven fully up, then fully down (timed), then fully up again (timed). Covers are calibrated one at a time per gateway."
+    },
+    "stop_cover_calibration": {
+      "name": "Stop cover calibration",
+      "description": "Stops the running travel-time calibration and cancels the queued ones; the moving cover is stopped and nothing is stored.",
+      "fields": {
+        "gateway": {
+          "name": "Gateway",
+          "description": "The gateway's MAC address (optional; defaults to all gateways)."
+        }
+      }
+    },
+    "set_cover_travel_time": {
+      "name": "Set cover travel time",
+      "description": "Stores the physical travel times of a timed cover by hand instead of calibrating on the bus.",
+      "fields": {
+        "travel_time": {
+          "name": "Travel time",
+          "description": "Seconds for a full travel in both directions (1-180); used for whichever direction has no explicit value."
+        },
+        "travel_time_down": {
+          "name": "Travel time down",
+          "description": "Seconds for a full closing run (1-180)."
+        },
+        "travel_time_up": {
+          "name": "Travel time up",
+          "description": "Seconds for a full opening run (1-180)."
+        }
+      }
+    },
+    "reset_cover_travel_time": {
+      "name": "Reset cover travel time",
+      "description": "Forgets the measured or manually set travel times and returns to the myhome.yaml travel_time or the 25 s default."
     }
   },
   "issues": {

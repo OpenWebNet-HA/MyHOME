@@ -17,6 +17,15 @@
     },
     "calibrate_cover": {
       "service": "mdi:ruler-square-compass"
+    },
+    "stop_cover_calibration": {
+      "service": "mdi:stop-circle-outline"
+    },
+    "set_cover_travel_time": {
+      "service": "mdi:timer-edit-outline"
+    },
+    "reset_cover_travel_time": {
+      "service": "mdi:timer-refresh-outline"
     }
   }
 }
