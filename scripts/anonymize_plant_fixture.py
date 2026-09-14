@@ -17,10 +17,13 @@ MACs, config-entry ids or passwords, so this script replaces them:
   synthetic), the config-entry id a synthetic ULID-shaped string, passwords
   ``null``, the Home Assistant time zone ``UTC``.
 
-The files are edited in place, line by line: everything that is not one of
-those values - frames, quoting, indentation, the file header - stays byte for
-byte, so a reviewer sees only what changed and the frames stay one per line.
-Section comments inside a platform (``# -- Kitchen --``) become ``# -- group n --``.
+``myhome.yaml`` is edited line by line: everything that is not one of those
+values - quoting, indentation, the file header - stays byte for byte, so a
+reviewer sees only what changed. Section comments inside a platform
+(``# -- Kitchen --``) become ``# -- group n --``. The diagnostics are parsed,
+sanitized as a structure (a numeric password, an escaped quote or single-line
+JSON cannot slip through a text pass) and written back with the bus frames one
+per line.
 
 Run it on every contributed fixture before committing::
 
@@ -172,35 +175,70 @@ class Anonymizer:
     # ── diagnostics ──────────────────────────────────────────────────
 
     def json_text(self, text: str) -> str:
-        """Scrub addresses, secrets and the household's installation; frames and layout are untouched."""
-        text = self.scrub_text(text)
-        entry_id = f"01PLANT{slugify(self.plant).upper().replace('_', '')}".ljust(26, "0")[:26]
-        original = re.search(r'"entry_id":\s*"([^"]*)"', text)
-        if original:  # the id also keys setup_times
-            text = text.replace(original.group(1), entry_id)
-        text = re.sub(r'("timezone":\s*)"[^"]*"', r'\g<1>"UTC"', text)
-        text = re.sub(r'("file_path":\s*)"[^"]*"', r'\g<1>"/config/myhome.yaml"', text)
-        for secret in ("password", "UDN", "friendly_name"):
-            text = re.sub(rf'("{secret}":\s*)(?:"[^"]*"|null)', r"\g<1>null", text)
-        text = self._only_this_integration(text)
-        json.loads(text)  # still valid JSON
-        return text
+        """Parse the diagnostics, sanitize the structure, serialize it back.
 
-    @staticmethod
-    def _only_this_integration(text: str) -> str:
-        """Keep only ``myhome`` under ``custom_components``: what else a home runs is nobody's business."""
-        start = re.search(r'^(\s*)"custom_components":\s*\{\s*$', text, re.M)
-        if start is None:
-            return text
-        indent = start.group(1)
-        end = re.compile(rf"^{indent}\}}(,?)\s*$", re.M).search(text, start.end())
-        if end is None:
-            return text
-        block = json.loads("{" + text[start.end():end.start()] + "}")
-        kept = {"myhome": block["myhome"]} if "myhome" in block else {}
-        body = json.dumps(kept, indent=2)
-        body = "\n".join(indent + line if line else line for line in body.splitlines())
-        return f'{text[:start.start()]}{indent}"custom_components": {body[len(indent):]}{end.group(1)}{text[end.end():]}'
+        The file is a user's download: numeric passwords, escaped quotes,
+        single-line JSON are all possible, so nothing here works on the text.
+        """
+        return dump_json(self.json_data(json.loads(text))) + "\n"
+
+    def json_data(self, diag: Any) -> Any:
+        """The sanitized diagnostics structure (a new object; the input is not modified)."""
+        entry_id = f"01PLANT{slugify(self.plant).upper().replace('_', '')}".ljust(26, "0")[:26]
+        original_id = None
+        entry = diag.get("data", {}).get("config_entry") if isinstance(diag, dict) else None
+        if isinstance(entry, dict) and isinstance(entry.get("entry_id"), str):
+            original_id = entry["entry_id"]  # also keys setup_times
+
+        def walk(value: Any, key: str | None = None) -> Any:
+            if isinstance(value, dict):
+                if key == "custom_components":
+                    # what else the home runs is nobody's business
+                    return {k: walk(v, k) for k, v in value.items() if k == "myhome"}
+                return {
+                    (entry_id if original_id and k == original_id else k): walk(v, k)
+                    for k, v in value.items()
+                }
+            if isinstance(value, list):
+                return [walk(v, key) for v in value]
+            if key in SECRET_KEYS:
+                return None  # whatever the type: "12345", 12345, null
+            if key == "entry_id" and isinstance(value, str):
+                return entry_id
+            if key == "timezone" and isinstance(value, str):
+                return "UTC"
+            if key == "file_path" and isinstance(value, str):
+                return "/config/myhome.yaml"
+            if isinstance(value, str):
+                if original_id and original_id in value:
+                    value = value.replace(original_id, entry_id)
+                return self.scrub_text(value)
+            return value
+
+        return walk(diag)
+
+
+SECRET_KEYS = frozenset({"password", "pin", "token", "secret", "UDN", "friendly_name"})
+
+
+def dump_json(value: Any, indent: int = 0) -> str:
+    """``json.dumps(indent=2)``, except that a list of flat objects - the bus frames -
+    keeps one object per line, so a fixture stays diffable and greppable."""
+    pad, inner = " " * indent, " " * (indent + 2)
+    if isinstance(value, dict):
+        if not value:
+            return "{}"
+        items = (f"{inner}{json.dumps(str(k))}: {dump_json(v, indent + 2)}" for k, v in value.items())
+        return "{\n" + ",\n".join(items) + f"\n{pad}}}"
+    if isinstance(value, list):
+        if not value:
+            return "[]"
+        if all(isinstance(v, dict) and not any(isinstance(x, (dict, list)) for x in v.values()) for v in value):
+            items = (inner + json.dumps(v, separators=(", ", ": ")) for v in value)
+        else:
+            items = (inner + dump_json(v, indent + 2) for v in value)
+        return "[\n" + ",\n".join(items) + f"\n{pad}]"
+    return json.dumps(value)
 
 
 def anonymize(plant_dir: Path) -> Anonymizer:

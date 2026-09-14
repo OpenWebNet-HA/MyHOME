@@ -155,3 +155,47 @@ def test_card_exports_carry_no_fingerprint_or_address():
     card = (Path(__file__).resolve().parents[1] / "custom_components" / "myhome" / "frontend" / "myhome-bus-card.js").read_text(encoding="utf-8")
     assert "userAgent" not in card and "user_agent" not in card
     assert "${gw.host}" not in card and "${gw.port" not in card and "${gw.serial_port}" not in card
+
+
+def _sanitize(text: str) -> tuple[str, dict]:
+    out = Anonymizer("issue_500_f454").json_text(text)
+    return out, json.loads(out)  # valid JSON, whatever came in
+
+
+def test_diagnostics_are_sanitized_structurally_not_textually():
+    """Review of #316: single-line JSON, numeric passwords and escaped quotes are user input."""
+    # compact, single-line JSON still drops the other integrations
+    out, diag = _sanitize('{"custom_components":{"alarmo":{"version":"1"},"myhome":{"version":"2"}},"data":{}}')
+    assert diag["custom_components"] == {"myhome": {"version": "2"}}
+    # a numeric password is cleared like a string one
+    out, diag = _sanitize('{"data":{"config_entry":{"data":{"password":12345,"pin":1234,"token":"x"}}}}')
+    assert diag["data"]["config_entry"]["data"] == {"password": None, "pin": None, "token": None}
+    # a password with an escaped quote and a backslash neither survives nor breaks the file
+    secret = 'say "hi"' + "\\"
+    raw = json.dumps({"data": {"config_entry": {"entry_id": "01M284WWKZG4XTEG62NVW1DPVG", "data": {"password": secret, "host": "10.0.0.7"}}}})
+    out, diag = _sanitize(raw)
+    assert diag["data"]["config_entry"]["data"] == {"password": None, "host": "192.0.2.1"}
+    assert "hi" not in out and "01M284" not in out
+    # nested and list-valued places are walked too: the original id under setup_times and inside strings
+    out, diag = _sanitize(json.dumps({
+        "setup_times": {"01M284WWKZG4XTEG62NVW1DPVG": {"setup": 0.1}},
+        "data": {"config_entry": {"entry_id": "01M284WWKZG4XTEG62NVW1DPVG", "options": {"file_path": "/home/rossi/myhome.yaml"}},
+                 "issues": [{"note": "entry 01M284WWKZG4XTEG62NVW1DPVG at 192.168.1.9 mac 00:03:50:AB:CD:EF"}]},
+        "home_assistant": {"timezone": "Europe/Rome"},
+    }))
+    assert list(diag["setup_times"]) == ["01PLANTISSUE500F4540000000"]
+    assert diag["data"]["config_entry"]["options"]["file_path"] == "/config/myhome.yaml"
+    assert diag["data"]["issues"] == [{"note": "entry 01PLANTISSUE500F4540000000 at 192.0.2.1 mac 00:03:50:00:05:00"}]
+    assert diag["home_assistant"]["timezone"] == "UTC"
+    assert findings(out) == []
+
+
+def test_serializer_keeps_frames_one_per_line_and_round_trips():
+    from scripts.anonymize_plant_fixture import dump_json
+
+    value = {"a": {"b": [], "c": {}}, "frames": [{"raw": "*1*1*12##", "n": 1}, {"raw": "*1*0*12##", "n": 2}],
+             "nested": [{"x": [1, 2]}, 3], "s": 'é "q"'}
+    out = dump_json(value)
+    assert json.loads(out) == value
+    assert '  "frames": [\n    {"raw": "*1*1*12##", "n": 1},\n    {"raw": "*1*0*12##", "n": 2}\n  ]' in out
+    assert '"b": []' in out and '"c": {}' in out
