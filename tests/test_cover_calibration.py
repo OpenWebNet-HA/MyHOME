@@ -77,19 +77,19 @@ def gateway():
 
 
 def _make_cover(hass, gateway, **kwargs):
+    kwargs.setdefault("name", "Bedroom shutter")
+    kwargs.setdefault("entity_name", None)
+    kwargs.setdefault("device_id", "21")
+    kwargs.setdefault("who", "2")
+    kwargs.setdefault("where", "21")
+    kwargs.setdefault("interface", None)
+    kwargs.setdefault("advanced", False)
+    kwargs.setdefault("manufacturer", "BTicino")
+    kwargs.setdefault("model", "Shutter")
+    kwargs.setdefault("travel_time", 25)
     c = MyHOMECover(
         hass=hass,
-        name="Bedroom shutter",
-        entity_name=None,
-        device_id="21",
-        who="2",
-        where="21",
-        interface=None,
-        advanced=False,
-        manufacturer="BTicino",
-        model="Shutter",
         gateway=gateway,
-        travel_time=25,
         **kwargs,
     )
     c.hass = hass
@@ -588,3 +588,157 @@ async def test_reset_cover_travel_time(hass, gateway):
 
     stored = _stored_calibration(gateway.config_entry, cover._device_id)
     assert stored is None
+
+
+def test_calibration_lock_outside_running_loop(gateway):
+    """Acquiring calibration lock when no loop is running gracefully handles RuntimeError."""
+    from custom_components.myhome.cover import _CALIBRATION_LOCKS, _calibration_lock
+
+    key = gateway.mac
+    _CALIBRATION_LOCKS.pop(key, None)
+    with patch("asyncio.get_running_loop", side_effect=RuntimeError("no running loop")):
+        lock = _calibration_lock(gateway)
+        assert lock is not None
+
+
+async def test_stop_cover_calibration_filtering_and_error(hass, gateway):
+    """Stopping calibration ignores mismatched gateways and catches errors during stop."""
+    from custom_components.myhome.cover import _CALIBRATION_ACTIVE, async_stop_cover_calibration
+
+    cover = _make_cover(hass, gateway)
+    cover._calibrating = True
+    cover.async_stop_cover = AsyncMock(side_effect=RuntimeError("stop boom"))
+    _CALIBRATION_ACTIVE[gateway.mac] = cover
+
+    # 1. Stop for a different gateway should continue past this cover
+    assert await async_stop_cover_calibration(hass, gateway_mac="other_gw_mac") is False
+
+    # 2. Stop for this gateway catches the stop exception and logs a warning
+    assert await async_stop_cover_calibration(hass, gateway_mac=gateway.mac) is True
+    _CALIBRATION_ACTIVE.pop(gateway.mac, None)
+
+
+async def test_cover_async_stop_calibration_method(hass, gateway):
+    """Cover entity method async_stop_calibration delegates to gateway."""
+    cover = _make_cover(hass, gateway)
+    with patch("custom_components.myhome.cover.async_stop_cover_calibration", new_callable=AsyncMock) as mock_stop:
+        await cover.async_stop_calibration()
+        mock_stop.assert_awaited_once_with(hass, gateway_mac=gateway.mac)
+
+
+async def test_set_travel_time_validation(hass, gateway):
+    """Validate boundary checks and arguments for setting travel time."""
+    cover = _make_cover(hass, gateway)
+
+    # 1. Advanced cover cannot set travel time
+    adv_cover = _make_cover(hass, gateway, advanced=True)
+    with pytest.raises(HomeAssistantError, match="reports its position"):
+        await adv_cover.async_set_travel_time(travel_time=15)
+
+    # 2. No arguments specified
+    with pytest.raises(HomeAssistantError, match="At least travel_time or travel_time_down/up"):
+        await cover.async_set_travel_time()
+
+    # 3. down out of bounds
+    with pytest.raises(HomeAssistantError, match="travel_time_down must be between"):
+        await cover.async_set_travel_time(travel_time_down=0.5)
+    with pytest.raises(HomeAssistantError, match="travel_time_down must be between"):
+        await cover.async_set_travel_time(travel_time_down=350)
+
+    # 4. up out of bounds
+    with pytest.raises(HomeAssistantError, match="travel_time_up must be between"):
+        await cover.async_set_travel_time(travel_time_up=0.5)
+    with pytest.raises(HomeAssistantError, match="travel_time_up must be between"):
+        await cover.async_set_travel_time(travel_time_up=350)
+
+    # 5. Independent down and up setting
+    await cover.async_set_travel_time(travel_time_down=18.0)
+    assert cover._travel_time_down == 18.0
+    assert cover._travel_time_up == 25.0
+
+    await cover.async_set_travel_time(travel_time_up=22.0)
+    assert cover._travel_time_down == 18.0
+    assert cover._travel_time_up == 22.0
+
+
+async def test_reset_travel_time_advanced_and_yaml(hass, gateway):
+    """Reset travel time refuses advanced covers and honors YAML config."""
+    from custom_components.myhome.const import CONF_PLATFORMS, CONF_TRAVEL_TIME, DOMAIN
+
+    adv_cover = _make_cover(hass, gateway, advanced=True)
+    with pytest.raises(HomeAssistantError, match="reports its position"):
+        await adv_cover.async_reset_travel_time()
+
+    # With YAML configuration in hass.data
+    cover = _make_cover(hass, gateway)
+    hass.data[DOMAIN] = {
+        gateway.mac: {
+            CONF_PLATFORMS: {
+                "cover": {
+                    cover._device_id: {CONF_TRAVEL_TIME: 32.0}
+                }
+            }
+        }
+    }
+    await cover.async_reset_travel_time()
+    assert cover._travel_time_down == 32.0
+    assert cover._travel_time_up == 32.0
+    assert cover.extra_state_attributes["calibration_source"] == "yaml"
+
+
+async def test_calibration_ignores_general_frame_and_stop_closed_attr(hass, gateway):
+    """Calibration ignores general frames and stop events respect message.is_closed."""
+    cover = _make_cover(hass, gateway)
+    cover._calibrating = True
+
+    # General command is ignored during calibration
+    cover.handle_event(OWNEvent.parse("*2*1*0##"))
+    assert cover._calibrating is True
+
+    # Stop frame with is_closed attribute
+    cover._calibrating = False
+    stop_event = MagicMock(
+        spec=OWNEvent,
+        is_closed=True,
+        current_position=None,
+        is_opening=False,
+        is_closing=False,
+        where="21",
+        who=2,
+        what=0,
+        _what=0,
+        human_readable_log="Stop",
+        raw="*2*0*21##",
+    )
+    cover.handle_event(stop_event)
+    assert cover._attr_is_closed is True
+
+
+async def test_stop_cover_calibration_service_handler(hass, gateway):
+    """Domain service myhome.stop_cover_calibration delegates to handler."""
+    from custom_components.myhome.const import ATTR_GATEWAY, DOMAIN, SERVICE_STOP_COVER_CALIBRATION
+    from custom_components.myhome.services import async_setup_services
+
+    await async_setup_services(hass)
+    with patch("custom_components.myhome.cover.async_stop_cover_calibration", new_callable=AsyncMock, return_value=True) as mock_stop:
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_STOP_COVER_CALIBRATION,
+            {ATTR_GATEWAY: gateway.mac},
+            blocking=True,
+        )
+        mock_stop.assert_awaited_once_with(hass, gateway_mac=gateway.mac)
+
+
+async def test_websocket_cover_calibration_trace(hass):
+    """WebSocket endpoint myhome/cover/calibration_trace returns traces."""
+    from custom_components.myhome.websocket import ws_cover_calibration_trace
+
+    conn = MagicMock()
+    msg = {"id": 42, "type": "myhome/cover/calibration_trace"}
+    ws_cover_calibration_trace(hass, conn, msg)
+    await asyncio.sleep(0)
+    conn.send_result.assert_called_once()
+    args = conn.send_result.call_args[0]
+    assert args[0] == 42
+    assert "frames" in args[1]
