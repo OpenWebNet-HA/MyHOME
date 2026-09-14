@@ -194,7 +194,7 @@ def test_manual_model_contradicted_by_official_code_is_corrected(dev_reg, issues
 
 
 def test_manual_model_contradicted_by_observed_code_is_only_questioned(dev_reg, issues):
-    """thedarkwizard's case (#292/#297): manual F454, device reports 200 (seen on MyHOMEServer1)."""
+    """The #292/#297 reporter's case: manual F454, device reports 200 (seen on MyHOMEServer1)."""
     create, delete, corrected = issues
     h = _handler({"name": "F454"}, title="F454 Gateway")
     h.gateway.model_name = "F454"
