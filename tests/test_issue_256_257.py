@@ -532,6 +532,7 @@ async def test_climate_f422_interface_naming(hass, mock_gateway):
     # Frame with interface: *#4*2#4#02*0*0230##
     event = OWNHeatingEvent("*#4*2#4#02*0*0230##")
     async_dispatcher_send(hass, f"myhome_message_{mac}", event)
+    await hass.async_block_till_done()  # let the handler finish its zone dispatch
 
     assert len(added_entities) == 1
     assert added_entities[0].name == "Climate Zone 2I02"

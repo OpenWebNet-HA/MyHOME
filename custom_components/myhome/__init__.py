@@ -268,6 +268,20 @@ async def async_setup(hass, config):
     return False
 
 
+def _device_for_identifier(
+    device_registry: dr.DeviceRegistry, entry: ConfigEntry, identifier: tuple[str, str]
+) -> dr.DeviceEntry | None:
+    """Return the entry's device carrying ``identifier``.
+
+    Identifiers are only unique per config entry since core 2026.8, so the
+    lookup is scoped to this entry (``async_get_device`` is deprecated).
+    """
+    for device in dr.async_entries_for_config_entry(device_registry, entry.entry_id):
+        if identifier in device.identifiers:
+            return device
+    return None
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     if not await async_ensure_ownd_engine(hass):
         ownd_ver = await hass.async_add_executor_job(get_ownd_version)
@@ -483,8 +497,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                 # Also migrate matching device in device_registry if present so custom device names and areas are preserved
                 device_registry = dr.async_get(hass)
                 old_device = (
-                    device_registry.async_get_device(identifiers={(DOMAIN, f"{_mac}-{where_part}")})
-                    or device_registry.async_get_device(identifiers={(DOMAIN, f"{entry.data[CONF_MAC]}-{where_part}")})
+                    _device_for_identifier(device_registry, entry, (DOMAIN, f"{_mac}-{where_part}"))
+                    or _device_for_identifier(device_registry, entry, (DOMAIN, f"{entry.data[CONF_MAC]}-{where_part}"))
                     or (device_registry.async_get(reg_entry.device_id) if reg_entry.device_id else None)
                 )
                 if old_device:

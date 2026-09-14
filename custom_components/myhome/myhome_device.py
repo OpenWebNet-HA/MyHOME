@@ -13,7 +13,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, LOGGER
 
 __all__ = ["Entity", "MyHOMEEntity"]
 
@@ -62,6 +62,22 @@ class MyHOMEEntity(RestoreEntity):
             self._attr_device_info["via_device_id"] = gateway.device_registry_id
         else:
             self._attr_device_info["via_device"] = (DOMAIN, gateway.unique_id)
+
+    def _publish_state(self) -> None:
+        """Write the entity state once the entity is live in Home Assistant.
+
+        Discovery seeds an entity with the frame that revealed it before the
+        entity platform has added it; there is nothing to write then (the
+        platform writes the initial state when it adds the entity, and current
+        cores warn about writes from entities without a platform).
+        """
+        if self.hass is None or self.platform is None or not self.entity_id:
+            return
+        try:
+            self.async_schedule_update_ha_state()
+        except RuntimeError as err:
+            # A frame can still arrive for an entity that is being removed.
+            LOGGER.debug("%s: state not written (%s)", self.entity_id, err)
 
     @property
     def via_device_id(self) -> str:

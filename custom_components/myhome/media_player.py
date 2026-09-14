@@ -788,8 +788,4 @@ class MyHOMEMediaPlayer(MyHOMEEntity, MediaPlayerEntity):
             elif message.volume > 0 and self._attr_is_volume_muted:
                 self._attr_is_volume_muted = False
 
-        if self.hass is not None or hasattr(self.async_schedule_update_ha_state, "assert_called"):
-            try:
-                self.async_schedule_update_ha_state()
-            except RuntimeError:
-                pass
+        self._publish_state()

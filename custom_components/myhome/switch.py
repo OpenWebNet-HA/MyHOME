@@ -340,8 +340,4 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
         self._attr_is_on = message.is_on
         if self._off_icon is not None and self._on_icon is not None:
             self._attr_icon = self._on_icon if self._attr_is_on else self._off_icon
-        if self.hass is not None or hasattr(self.async_schedule_update_ha_state, "assert_called"):
-            try:
-                self.async_schedule_update_ha_state()
-            except RuntimeError:
-                pass
+        self._publish_state()

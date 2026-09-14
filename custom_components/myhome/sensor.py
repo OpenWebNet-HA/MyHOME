@@ -566,11 +566,7 @@ class MyHOMEPowerSensor(MyHOMEEntity, SensorEntity):
             message.human_readable_log,
         )
         self._attr_native_value = message.active_power
-        if self.hass is not None or hasattr(self.async_schedule_update_ha_state, "assert_called"):
-            try:
-                self.async_schedule_update_ha_state()
-            except RuntimeError:
-                pass
+        self._publish_state()
 
     async def start_sending_instant_power(self, duration):
         """Request automatic instant power."""
@@ -713,11 +709,7 @@ class MyHOMEEnergySensor(MyHOMEEntity, SensorEntity):
                 message.human_readable_log,
             )
             self._attr_native_value = message.current_day_partial_consumption
-        if self.hass is not None or hasattr(self.async_schedule_update_ha_state, "assert_called"):
-            try:
-                self.async_schedule_update_ha_state()
-            except RuntimeError:
-                pass
+        self._publish_state()
 
 
 class MyHOMETemperatureSensor(MyHOMEEntity, SensorEntity):
@@ -842,11 +834,7 @@ class MyHOMETemperatureSensor(MyHOMEEntity, SensorEntity):
                     message.human_readable_log,
                 )
             self._attr_native_value = val
-            if self.hass is not None or hasattr(self.async_schedule_update_ha_state, "assert_called"):
-                try:
-                    self.async_schedule_update_ha_state()
-                except RuntimeError:
-                    pass
+            self._publish_state()
 
 
 class MyHOMEIlluminanceSensor(MyHOMEEntity, SensorEntity):
@@ -950,11 +938,4 @@ class MyHOMEIlluminanceSensor(MyHOMEEntity, SensorEntity):
             message.human_readable_log,
         )
         self._attr_native_value = message.illuminance
-        if self.hass is not None or hasattr(self.async_schedule_update_ha_state, "assert_called"):
-            try:
-                self.async_write_ha_state()
-            except Exception:
-                try:
-                    self.async_schedule_update_ha_state()
-                except Exception:
-                    pass
+        self._publish_state()
