@@ -56,7 +56,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             entity_name=cfg.get(CONF_ENTITY_NAME),
             icon=cfg.get(CONF_ICON),
             icon_on=cfg.get(CONF_ICON_ON),
-            device_id=ctx.key if ctx.source != "yaml" else ctx.address.clean_key,
+            device_id=ctx.key,
             who=ctx.who,
             where=ctx.address.where,
             interface=ctx.address.interface,
