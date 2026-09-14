@@ -931,11 +931,11 @@ async def test_binary_sensor_duplicate_exceptions_and_padded_where(hass):
 @pytest.mark.asyncio
 async def test_moving_device_class_dry_contact_restoration_and_deduplication(hass):
     """Test that dry contacts with class moving (Issue #247) strip suffix properly and do not duplicate."""
-    mac = "00:03:50:a4:11:2e"
+    mac = "00:03:50:00:11:2e"
     mock_gateway = MagicMock()
     mock_gateway.mac = mac
-    mock_gateway.serial = "00:03:50:a4:11:2e"
-    mock_gateway.unique_id = "00:03:50:a4:11:2e"
+    mock_gateway.serial = "00:03:50:00:11:2e"
+    mock_gateway.unique_id = "00:03:50:00:11:2e"
     mock_gateway.device_registry_id = "test_gw_dev_reg_id"
 
     hass.data[DOMAIN] = {
@@ -1000,11 +1000,11 @@ async def test_moving_device_class_dry_contact_restoration_and_deduplication(has
 @pytest.mark.asyncio
 async def test_who9_auxiliary_sensor_with_motion_device_class_restoration(hass):
     """Test that WHO 9 auxiliary sensors with device_class motion (Issue #247) restore as MyHOMEAuxiliary and avoid collision."""
-    mac = "00:03:50:a4:11:2e"
+    mac = "00:03:50:00:11:2e"
     mock_gateway = MagicMock()
     mock_gateway.mac = mac
-    mock_gateway.serial = "00:03:50:a4:11:2e"
-    mock_gateway.unique_id = "00:03:50:a4:11:2e"
+    mock_gateway.serial = "00:03:50:00:11:2e"
+    mock_gateway.unique_id = "00:03:50:00:11:2e"
     mock_gateway.device_registry_id = "test_gw_dev_reg_id"
 
     hass.data[DOMAIN] = {

@@ -403,6 +403,15 @@ A major CI infrastructure enhancement introduced for beta testing is the **Trace
 - **In Home Assistant**: Call service `myhome.sweep_bus` -> Download Diagnostics (or copy trace from Bus Card).
 - **Standalone CLI**: Run `python scripts/record_gateway_trace.py --host <IP> --password <PASS> --model <MODEL>` to record an isolated gateway on a test bench directly into a ready-to-test fixture.
 
+#### Privacy: fixtures are synthetic
+A diagnostics download describes a home: room and family names in `myhome.yaml`, the LAN address and MAC of the gateway, the config-entry id, sometimes a password. None of that is needed to replay a bus - only the addresses, platforms, options and frames are - so **every fixture is anonymized before it is committed**, and `tests/test_fixture_privacy.py` fails the build if one is not:
+
+```bash
+python scripts/anonymize_plant_fixture.py tests/fixtures/plants/issue_<n>_<model>
+```
+
+Devices become `light_10` / `Light 10` (the address is the name), IPs move to the `192.0.2.0/24` documentation range, MACs to `00:03:50:00:<issue>`, the entry id to a synthetic one, passwords to `null`. The script prints the old → new entity-id mapping for the test you write against the fixture. Name the directory after the issue and the gateway model, not after the reporter.
+
 ---
 
 ## 🛠️ Development & Quality Standards
