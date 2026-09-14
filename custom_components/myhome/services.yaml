@@ -107,7 +107,7 @@ sweep_bus:
     gateway:
       name: Gateway
       description: The gateway's MAC address (optional; defaults to all active gateways).
-      example: "00:03:50:20:00:01"
+      example: "00:03:50:00:00:01"
       selector:
         text:
 

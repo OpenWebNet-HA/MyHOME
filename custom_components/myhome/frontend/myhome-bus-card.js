@@ -807,7 +807,6 @@ class MyHomeBusCard extends HTMLElement {
     const gw = this._gatewayInfo || {};
     const integrationVersion = gw.integration_version || "2.0.0b8";
     const owndVersion = gw.ownd_version || "Unknown";
-    const userAgent = (typeof navigator !== "undefined" && navigator.userAgent) ? navigator.userAgent : "Unknown";
     const timestamp = new Date().toISOString();
 
     const model = gw.model || "Unknown";
@@ -817,11 +816,13 @@ class MyHomeBusCard extends HTMLElement {
       gw.mac_prefix ||
       (this._config && this._config.mac ? this._config.mac.substring(0, 8) : "Unknown");
 
+    // The bundle is meant to be pasted into a public issue: name the transport,
+    // never the address (LAN IP / port, serial device path) or the browser.
     let conn = "Unknown";
     if (gw.serial_port) {
-      conn = `USB / Serial (${gw.serial_port})`;
+      conn = "USB / Serial";
     } else if (gw.host) {
-      conn = `Ethernet TCP (${gw.host}:${gw.port || 20000})`;
+      conn = "Ethernet TCP";
     }
 
     const queuePacing = gw.queue_pacing != null ? `${gw.queue_pacing}s` : "0.0s";
@@ -863,7 +864,6 @@ class MyHomeBusCard extends HTMLElement {
 - **Home Assistant Version:** ${haVersion}
 - **Integration Version:** ${integrationVersion}
 - **OWNd Protocol Engine:** ${owndVersion}
-- **Browser / User Agent:** ${userAgent}
 - **Timestamp:** ${timestamp}
 
 **Active Gateway Configuration:**
@@ -979,7 +979,6 @@ ${framesText}
         integration_version: integrationVersion,
         ownd_version: owndVersion,
         exported_at: timestampIso,
-        user_agent: navigator.userAgent,
       },
       gateway: {
         model: (this._gatewayInfo && this._gatewayInfo.model) || "Unknown",
