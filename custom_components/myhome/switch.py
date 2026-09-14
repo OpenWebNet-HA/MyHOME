@@ -12,7 +12,6 @@ from homeassistant.const import (
 )
 from homeassistant.core import callback
 from homeassistant.helpers import entity_platform
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from OWNd.message import (
     OWNLightingCommand,
     OWNLightingEvent,
@@ -157,27 +156,6 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
             self._attr_icon = self._off_icon
 
         self._attr_is_on = None
-
-    async def async_added_to_hass(self):
-        """Run when entity about to be added to hass."""
-        target_hass = self.hass or self._hass
-        if target_hass is not None:
-            self.async_on_remove(
-                async_dispatcher_connect(
-                    target_hass,
-                    f"myhome_update_{self._gateway_handler.mac}_1_{self._full_where}",
-                    self.handle_event,
-                )
-            )
-            if self._full_where != self._where:
-                self.async_on_remove(
-                    async_dispatcher_connect(
-                        target_hass,
-                        f"myhome_update_{self._gateway_handler.mac}_1_{self._where}",
-                        self.handle_event,
-                    )
-                )
-        await super().async_added_to_hass()
 
     async def async_update(self):
         """Update the entity.

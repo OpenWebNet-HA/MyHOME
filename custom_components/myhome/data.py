@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import ConfigEntry
 
+from .router import FrameRouter
+
 if TYPE_CHECKING:
     from .bus_monitor import BusMonitor
     from .decoder_pool import DecoderPool
@@ -30,6 +32,8 @@ class MyHOMERuntimeData:
     entities: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Shared multi-room audio decoder pool (media_player), rebuilt on options update.
     decoder_pool: DecoderPool | None = None
+    # Delivers bus frames to the entities owning their addresses (see router.py).
+    router: FrameRouter = field(default_factory=FrameRouter)
 
     @property
     def mac(self) -> str:

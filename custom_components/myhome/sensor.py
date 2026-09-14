@@ -111,7 +111,7 @@ async def async_setup_entry(
 
     A meter is one address with one entity per reported measurement (power,
     total / daily / monthly energy), so its entities are keyed ``<where>-<measurement>``.
-    Sensor entities are fed directly: a frame reaches every entity of its address.
+    A frame reaches every entity of its address.
     """
     runtime = config_entry.runtime_data
     if PLATFORM not in runtime.platforms:
@@ -320,7 +320,7 @@ async def async_setup_entry(
 
     common_args: dict[str, Any] = dict(
         hass=hass, config_entry=config_entry, async_add_entities=async_add_entities, platform=PLATFORM,
-        route_keys=route_keys, direct=True, one_per_address=False,
+        route_keys=route_keys, one_per_address=False,
         general_is_device=True,  # sensor frames are never broadcasts; the address hooks decide
     )
     discovery_for["18"] = PlatformDiscovery(
@@ -770,22 +770,6 @@ class MyHOMEIlluminanceSensor(MyHOMEEntity, SensorEntity):
     async def async_added_to_hass(self):
         """When entity is added to hass."""
         self._register_entity_ref(self._attr_device_class)
-        target_hass = self.hass or self._hass
-        if target_hass is not None:
-            unsub = async_dispatcher_connect(
-                target_hass,
-                f"myhome_update_{self._gateway_handler.mac}_1_{self._where}",
-                self.handle_event,
-            )
-            self.async_on_remove(unsub)
-            norm_where = normalize_where(self._where)
-            if norm_where != self._where:
-                unsub2 = async_dispatcher_connect(
-                    target_hass,
-                    f"myhome_update_{self._gateway_handler.mac}_1_{norm_where}",
-                    self.handle_event,
-                )
-                self.async_on_remove(unsub2)
         await super().async_added_to_hass()
 
     async def async_will_remove_from_hass(self):
