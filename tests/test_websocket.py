@@ -591,3 +591,17 @@ def test_cached_ownd_version_without_domain_data(hass: HomeAssistant):
     assert _cached_ownd_version(hass) == "unknown"
     hass.data[DOMAIN] = "not-a-dict"
     assert _cached_ownd_version(hass) == "unknown"
+
+
+async def test_ws_cover_calibration_trace(hass: HomeAssistant, mock_ws_connection, attach_gateway):
+    """myhome/cover/calibration_trace returns the selected gateway's recorded frames, and names it."""
+    from custom_components.myhome.websocket import ws_cover_calibration_trace
+
+    gw = MagicMock()
+    gw.mac = "00:03:50:AA:BB:CC"
+    attach_gateway(gw.mac, gw)
+    with patch("custom_components.myhome.cover.get_last_calibration_trace", return_value=[{"raw": "*2*1*21##"}]) as trace:
+        ws_cover_calibration_trace(hass, mock_ws_connection, {"id": 77, "type": "myhome/cover/calibration_trace"})
+        await hass.async_block_till_done()
+    trace.assert_called_once_with(gateway_mac="00:03:50:aa:bb:cc")
+    mock_ws_connection.send_result.assert_called_once_with(77, {"mac": "00:03:50:aa:bb:cc", "frames": [{"raw": "*2*1*21##"}]})

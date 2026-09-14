@@ -117,3 +117,13 @@ async def test_sweep_bus_queries_sent(hass: HomeAssistant, attach_gateway) -> No
     assert "*#1*0##" not in sent_raw
 
 
+
+
+async def test_stop_cover_calibration_service_forwards_gateway(hass: HomeAssistant) -> None:
+    """myhome.stop_cover_calibration hands the optional gateway MAC to the cover helper."""
+    from unittest.mock import AsyncMock, patch
+
+    await async_setup_services(hass)
+    with patch("custom_components.myhome.cover.async_stop_cover_calibration", AsyncMock(return_value=True)) as stop:
+        await hass.services.async_call(DOMAIN, "stop_cover_calibration", {ATTR_GATEWAY: "00:03:50:aa:bb:cc"}, blocking=True)
+    stop.assert_awaited_once_with(hass, gateway_mac="00:03:50:aa:bb:cc")

@@ -945,7 +945,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             )
 
         down = travel_time_down if travel_time_down is not None else travel_time
-        up = travel_time_up if travel_time_up is not None else travel_time
+        up = travel_time_up if travel_time_up is not None else (travel_time if travel_time is not None else down)
 
         if down is None and up is None:
             raise ServiceValidationError(
@@ -956,8 +956,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         if down is None:
             down = self._travel_time_down
-        if up is None:
-            up = self._travel_time_up
 
         for field, value in (("travel_time_down", down), ("travel_time_up", up)):
             if not CALIBRATION_MIN_RUN <= value <= CALIBRATION_MAX_RUN:
