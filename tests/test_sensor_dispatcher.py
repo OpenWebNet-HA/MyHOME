@@ -109,7 +109,7 @@ async def test_discovered_entities_restore_names_and_disabled_defaults(hass):
     after = {item.unique_id: item for item in sensor_entries(hass, entry)}
     assert before.keys() == after.keys()
     assert after[power.unique_id].entity_id == "sensor.kitchen_power"
-    assert after[power.unique_id].name == "Kitchen power"
+    assert hass.states.get("sensor.kitchen_power").attributes["friendly_name"] == "Kitchen power"
     await dispatch(hass, "*#18*51*113*750##")
     assert hass.states.get("sensor.kitchen_power").state == "750"
     assert len(sensor_entries(hass, entry)) == 4
@@ -167,4 +167,4 @@ async def test_yaml_sensors_update_without_alias_duplicates(hass, tmp_path):
     await dispatch(hass, "*#18*52*113*789##")
     assert len(sensor_entries(hass, entry)) == 9
     assert f"{MAC}-18-52-power" not in entities
-    assert entities[f"{MAC}-18-51-power"].original_name == "House Power"
+    assert entities[f"{MAC}-18-51-power"].original_name == "Power"  # device "House" + entity "Power"

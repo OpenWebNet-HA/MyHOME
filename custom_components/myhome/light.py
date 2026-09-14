@@ -481,6 +481,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             manufacturer=manufacturer,
             model=model,
             gateway=gateway,
+            entity_name=entity_name,
         )
 
 

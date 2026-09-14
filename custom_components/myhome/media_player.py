@@ -253,6 +253,7 @@ class MyHOMEMediaPlayer(MyHOMEEntity, MediaPlayerEntity):
             manufacturer=manufacturer,
             model=model,
             gateway=gateway,
+            entity_name=entity_name,
         )
 
         # ── Base hardware state ────────────────────────────────────────────

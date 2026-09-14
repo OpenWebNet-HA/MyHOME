@@ -12,6 +12,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.typing import UNDEFINED
 
 from .const import CONF_ENTITIES, DOMAIN, LOGGER
 from .data import get_runtime_data
@@ -20,9 +21,24 @@ __all__ = ["Entity", "MyHOMEEntity"]
 
 
 class MyHOMEEntity(RestoreEntity):
+    """Base of every MyHOME entity.
+
+    Naming follows Home Assistant's device/entity model (``has_entity_name``):
+    ``name`` names the *device* (the actuator, probe or zone on the bus). The
+    entity's own name is the ``translation_key`` a subclass passes (buttons,
+    energy counters), or - for sensors and binary sensors - ``entity_name`` from
+    ``myhome.yaml`` and otherwise the device class, resolved by Home Assistant.
+    Every other entity *is* its device and carries no name of its own. Entity
+    ids are assigned by the entity registry; existing entries keep theirs.
+    """
+
     # Whether to request a status update from the bus right after being added.
     # Push-only devices set this to False to avoid a useless (NACKed) query.
     _poll_on_add: bool = True
+    # Sensors / binary sensors: let Home Assistant name the entity after its device class.
+    _name_from_device_class: bool = False
+
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -35,6 +51,8 @@ class MyHOMEEntity(RestoreEntity):
         manufacturer: str,
         model: str,
         gateway: MyHOMEGatewayHandler,
+        entity_name: str | None = None,
+        translation_key: str | None = None,
     ):
         self._hass = hass
         self._platform = platform
@@ -50,21 +68,52 @@ class MyHOMEEntity(RestoreEntity):
         self._model = model
         self._gateway_handler = gateway
         self._availability_listener_registered = False
-        self._attr_has_entity_name = False
-        self._attr_name = name
-        self.entity_id = f"{platform.lower()}.{name.lower().replace(' ', '_').replace('#', '')}"
+        self._device_name = name
+        if translation_key:
+            self._attr_translation_key = translation_key
+        elif not self._name_from_device_class:
+            # The entity is the device: light, switch, cover, climate, audio zone, alarm
+            # panel. entity_name has never named these and is ignored.
+            self._attr_name = None
+        elif entity_name and entity_name.strip().lower() == str(name).strip().lower():
+            # Sensors / binary sensors with entity_name equal to the device name (the
+            # old "same name twice" habit): the entity is the device.
+            self._attr_name = None
+        elif entity_name:
+            # Sensors / binary sensors: entity_name names the entity within its device.
+            self._attr_name = entity_name
+        # else: Home Assistant names the entity after its device class
 
         self._attr_entity_registry_enabled_default = True
         self._attr_should_poll = False
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{gateway.mac}-{self._who}-{clean_dev_id}")},
-            name=self._attr_name,
+            name=name,
             manufacturer=self._manufacturer,
             model=self._model,
         )
         # Link to the gateway device (via_device_id; via_device is gone since core 2026.8).
         self._attr_device_info["via_device_id"] = gateway.device_registry_id
+
+    @property
+    def _display_name(self) -> str:
+        """Device name plus entity name, for log lines and error messages.
+
+        Mirrors the friendly name Home Assistant builds; before the platform's
+        translations are loaded the entity part falls back to the translation
+        key or device class it will be named after.
+        """
+        try:
+            own = self.name
+        except AttributeError:  # translation lookup needs a platform; not added yet
+            own = UNDEFINED
+        if own is UNDEFINED or (own is None and not hasattr(self, "_attr_name")):
+            key = getattr(self, "_attr_translation_key", None)
+            device_class = getattr(self, "device_class", None) if self._name_from_device_class else None
+            raw = key or (str(device_class) if device_class else None)
+            own = raw.replace("_", " ").capitalize() if raw else None
+        return f"{self._device_name} {own}" if own else self._device_name
 
     def _publish_state(self) -> None:
         """Write the entity state once the entity is live in Home Assistant.

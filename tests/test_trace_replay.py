@@ -202,12 +202,12 @@ class TestTraceReplayHarness:
         assert cover_state.state in ("open", "closed")
 
         # 4. Dry contact (quiescent during trace): *25*... -> OFF
-        cancello_state = hass.states.get("binary_sensor.binary_sensor_31")
+        cancello_state = hass.states.get("binary_sensor.binary_sensor_31_opening")
         assert cancello_state is not None
         assert cancello_state.state == "off"
 
         # 5. Energy Meter: *#18*51*113*602## -> 602 W
-        power_state = hass.states.get("sensor.sensor_51")
+        power_state = hass.states.get("sensor.sensor_51_power")
         assert power_state is not None
         assert power_state.state == "602"
 

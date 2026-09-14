@@ -927,7 +927,7 @@ class TestEntityRegistryMigrationSafety:
         # Verify active runtime state machine retains custom entity IDs and names
         state_light = hass.states.get("light.keuken_lamp")
         assert state_light is not None
-        assert state_light.name == "Keuken Plafond"
+        assert state_light.attributes["friendly_name"] == "Keuken Plafond"
         assert hass.states.get("light.light_21") is None
 
         state_light_no_name = hass.states.get("light.gang_lamp")
@@ -936,12 +936,12 @@ class TestEntityRegistryMigrationSafety:
 
         state_cover = hass.states.get("cover.rolluik_salon")
         assert state_cover is not None
-        assert state_cover.name == "Zijraam Rolluik"
+        assert state_cover.attributes["friendly_name"] == "Zijraam Rolluik"
         assert hass.states.get("cover.cover_31") is None
 
         state_audio = hass.states.get("media_player.zone_living")
         assert state_audio is not None
-        assert state_audio.name == "Woonkamer Audio"
+        assert state_audio.attributes["friendly_name"] == "Woonkamer Audio"
         assert hass.states.get("media_player.media_player_1") is None
 
         await hass.config_entries.async_unload(entry.entry_id)
@@ -1041,7 +1041,7 @@ class TestEntityRegistryMigrationSafety:
         # Verify runtime state
         state_routed = hass.states.get("light.custom_light_spot")
         assert state_routed is not None
-        assert state_routed.name == "Custom Spot"
+        assert state_routed.attributes["friendly_name"] == "Custom Spot"
         assert hass.states.get("light.light_45") is None
 
         await hass.config_entries.async_unload(entry.entry_id)
@@ -1094,7 +1094,7 @@ class TestEntityRegistryMigrationSafety:
 
         state_eetkamer = hass.states.get("light.eetkamer_lamp")
         assert state_eetkamer is not None
-        assert state_eetkamer.name == "Eetkamer Lamp"
+        assert state_eetkamer.attributes["friendly_name"] == "Eetkamer Lamp"
 
         await hass.config_entries.async_unload(entry.entry_id)
 
@@ -1190,16 +1190,16 @@ class TestPhase1GoldenPlantSampleIssue247:
         assert ent_cu is not None
 
         # Dry contact binary sensors (WHO=25)
-        ent_cancello = entity_registry.async_get("binary_sensor.binary_sensor_31")
+        ent_cancello = entity_registry.async_get("binary_sensor.binary_sensor_31_opening")
         assert ent_cancello is not None
         assert ent_cancello.unique_id == f"{mac}-25-31-opening"
 
-        ent_moving = entity_registry.async_get("binary_sensor.binary_sensor_331")
+        ent_moving = entity_registry.async_get("binary_sensor.binary_sensor_331_moving")
         assert ent_moving is not None
         assert ent_moving.unique_id == f"{mac}-25-331-moving"
 
         # WHO=18 energy power sensors
-        ent_power = entity_registry.async_get("sensor.sensor_51")
+        ent_power = entity_registry.async_get("sensor.sensor_51_power")
         assert ent_power is not None
         assert ent_power.unique_id.startswith(f"{mac}-18-51")
 
@@ -1267,7 +1267,7 @@ class TestPhase1GoldenPlantSampleIssue247:
         msg_dry_closed = OWNMessage.parse("*25*31#1*31##")
         async_dispatcher_send(hass, f"myhome_message_{mac}", msg_dry_closed)
         await hass.async_block_till_done()
-        state_dry = hass.states.get("binary_sensor.binary_sensor_31")
+        state_dry = hass.states.get("binary_sensor.binary_sensor_31_opening")
         assert state_dry is not None
         assert state_dry.state == "on"
 
@@ -1275,7 +1275,7 @@ class TestPhase1GoldenPlantSampleIssue247:
         msg_energy = OWNMessage.parse("*#18*51*113*602##")
         async_dispatcher_send(hass, f"myhome_message_{mac}", msg_energy)
         await hass.async_block_till_done()
-        state_energy = hass.states.get("sensor.sensor_51")
+        state_energy = hass.states.get("sensor.sensor_51_power")
         assert state_energy is not None
         assert state_energy.state == "602"
 

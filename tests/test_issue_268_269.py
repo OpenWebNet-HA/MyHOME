@@ -403,7 +403,7 @@ async def test_issue_268_climate_friendly_name_restored_from_myhome_yaml(hass: H
     assert isinstance(climate_entity, MyHOMEClimate)
 
     # Name must be Soggiorno, NOT "Climate Zone 1"
-    assert climate_entity.name == "Soggiorno"
+    assert climate_entity._display_name == "Soggiorno"
     assert climate_entity.device_info["name"] == "Soggiorno"
     assert climate_entity.device_info["manufacturer"] == "BTicino"
     assert climate_entity.device_info["model"] == "KM4691"
@@ -472,7 +472,7 @@ async def test_issue_268_climate_discovery_preserves_name_via_bus_message(hass: 
 
     assert len(added_entities) == 1
     climate_entity = added_entities[0]
-    assert climate_entity.name == "Camera da letto"
+    assert climate_entity._display_name == "Camera da letto"
     assert climate_entity.device_info["name"] == "Camera da letto"
 
 
@@ -536,7 +536,7 @@ async def test_issue_268_climate_central_unit_name_restoration(hass: HomeAssista
 
     assert len(added_entities) == 1
     climate_entity = added_entities[0]
-    assert climate_entity.name == "Centrale Termica"
+    assert climate_entity._display_name == "Centrale Termica"
     assert climate_entity._central is True
 
 
