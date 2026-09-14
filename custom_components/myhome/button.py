@@ -24,22 +24,28 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import (
-    CONF_BUS_INTERFACE,
     CONF_DEVICE_MODEL,
     CONF_MANUFACTURER,
-    CONF_WHERE,
     CONF_WHO,
     DOMAIN,
     LOGGER,
     SERVICE_CALIBRATE_COVER,
 )
 from .data import get_runtime_data
+from .discovery import Address, parse_unique_id
 from .myhome_device import MyHOMEEntity
 
 PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
+    """Set up the buttons of a gateway: lock / unlock per actuator, calibrate per timed cover.
+
+    Buttons have no bus address of their own: they are created for every
+    actuator of the other platforms - from the registry at start, from
+    ``myhome.yaml``, and from the ``myhome_new_device`` announcements the
+    light, switch and cover platforms send when they discover one.
+    """
     runtime = get_runtime_data(config_entry)
     if runtime is None or PLATFORM not in runtime.platforms:
         return True
@@ -58,15 +64,15 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         if not device_id or device_id in known_calibration_covers:
             return []
         known_calibration_covers.add(device_id)
-        where, _, interface = device_id.partition("#4#")
+        address = Address.from_device_id(device_id)
         return [
             CalibrateCoverButtonEntity(
                 hass=hass,
                 platform=PLATFORM,
                 device_id=device_id,
-                where=where,
-                interface=interface or None,
-                name=name or f"Cover {where}",
+                where=address.where,
+                interface=address.interface,
+                name=name or f"Cover {address.where}",
                 gateway=gateway,
             )
         ]
@@ -78,8 +84,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         for reg_entry in er.async_entries_for_config_entry(registry, config_entry.entry_id):
             if reg_entry.domain != "cover" or not reg_entry.unique_id:
                 continue
-            after_mac = reg_entry.unique_id.replace(f"{gateway.mac}-", "", 1).replace(f"{mac}-", "", 1)
-            who, _, device_id = after_mac.partition("-")
+            who, device_id = parse_unique_id(reg_entry.unique_id, gateway.mac, mac)
             if who == "2" and device_id:
                 # The cover *is* its device, so its name lives on the device entry.
                 device = device_registry.async_get(reg_entry.device_id) if reg_entry.device_id else None
@@ -92,49 +97,30 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         _buttons.append(CalibrateAllCoversButtonEntity(hass=hass, config_entry=config_entry, gateway=gateway))
 
     def _create_buttons_for_device(dev_id, cfg):
+        """Lock and unlock buttons for one actuator (a yaml entry or an announcement)."""
         who = str(cfg.get(CONF_WHO, "1"))
-        where = str(cfg.get(CONF_WHERE, dev_id))
-        interface = cfg.get(CONF_BUS_INTERFACE) if CONF_BUS_INTERFACE in cfg else cfg.get("interface")
-        if not where or str(where).startswith("#"):
-            return []
+        address = Address.from_config(dev_id, cfg)
+        if not address.where or address.where.startswith("#"):
+            return []  # groups / general have no lock
 
-        actuator_key = f"{who}-{where}#4#{interface}" if interface else f"{who}-{where}"
+        actuator_key = f"{who}-{address.key}"
         if actuator_key in known_button_actuators:
             return []
         known_button_actuators.add(actuator_key)
 
-        name = cfg.get(CONF_NAME, f"Device {where}")
-        manufacturer = cfg.get(CONF_MANUFACTURER, "BTicino")
-        model = cfg.get(CONF_DEVICE_MODEL, "Actuator")
-        clean_where = where.split("-")[-1]
-        device_where_id = f"{clean_where}#4#{interface}" if interface else str(clean_where)
-        device_id = device_where_id
-
-        disable_button = DisableCommandButtonEntity(
+        common = dict(
             hass=hass,
             platform=PLATFORM,
-            device_id=device_id,
+            device_id=address.clean_key,
             who=who,
-            where=where,
-            interface=interface,
-            name=name,
-            manufacturer=manufacturer,
-            model=model,
+            where=address.where,
+            interface=address.interface,
+            name=cfg.get(CONF_NAME, f"Device {address.where}"),
+            manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
+            model=cfg.get(CONF_DEVICE_MODEL, "Actuator"),
             gateway=gateway,
         )
-        enable_button = EnableCommandButtonEntity(
-            hass=hass,
-            platform=PLATFORM,
-            device_id=device_id,
-            who=who,
-            where=where,
-            interface=interface,
-            name=name,
-            manufacturer=manufacturer,
-            model=model,
-            gateway=gateway,
-        )
-        return [disable_button, enable_button]
+        return [DisableCommandButtonEntity(**common), EnableCommandButtonEntity(**common)]
 
     for _button in list(_configured_buttons.keys()):
         _buttons.extend(_create_buttons_for_device(_button, _configured_buttons[_button]))

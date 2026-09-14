@@ -1,4 +1,7 @@
 """Support for MyHome heating."""
+from __future__ import annotations
+
+from typing import Any
 
 from homeassistant.components.climate import (
     DOMAIN as PLATFORM,
@@ -16,7 +19,6 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import callback
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from OWNd.message import (
     CLIMATE_MODE_AUTO,
@@ -37,7 +39,6 @@ from OWNd.message import (
 )
 
 from .const import (
-    CONF_BUS_INTERFACE,
     CONF_CENTRAL,
     CONF_COOLING_SUPPORT,
     CONF_DEVICE_MODEL,
@@ -45,12 +46,10 @@ from .const import (
     CONF_HEATING_SUPPORT,
     CONF_MANUFACTURER,
     CONF_STANDALONE,
-    CONF_WHERE,
-    CONF_WHO,
-    CONF_ZONE,
     LOGGER,
 )
 from .data import get_runtime_data
+from .discovery import Address, DeviceContext, PlatformDiscovery, config_for
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 
@@ -58,128 +57,40 @@ PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    """Set up the MyHOME climate platform dynamically via Discovery."""
+    """Set up the heating zones of a gateway (WHO=4): registry, myhome.yaml, then bus discovery.
+
+    A zone is WHERE 1-99 (the central unit is ``#0`` / ``#0#1``); WHERE >= 100
+    is a temperature probe, which belongs to the sensor platform. Heating
+    frames often carry the zone they concern in a parameter rather than in
+    WHERE (``*4*4001#5*0##``), so the address of a frame is derived here.
+    """
     runtime = get_runtime_data(config_entry)
     if runtime is None or PLATFORM not in runtime.platforms:
         return True
-    mac = runtime.mac
-
     gateway = runtime.gateway
+    configured = runtime.platforms.get(PLATFORM, {})
 
-    known_climates = set()
-
-    # 1. Restore previously registered climate entities from the Entity Registry
-    try:
-        entity_registry = er.async_get(hass)
-        existing_entries = er.async_entries_for_config_entry(entity_registry, config_entry.entry_id)
-    except Exception:
-        entity_registry = None
-        existing_entries = []
-
-    _configured_climate_devices = runtime.platforms.get(PLATFORM, {})
-
-    restored_climates = []
-    for entry in existing_entries:
-        if entry.domain == PLATFORM:
-            unique_id = entry.unique_id
-            # unique_id format: "{mac}-4-{device_id}"
-            after_mac = unique_id.replace(f"{gateway.mac}-", "", 1).replace(f"{mac}-", "", 1)
-            parts_who = after_mac.split("-", 1)
-            device_id = parts_who[-1] if len(parts_who) > 1 else after_mac
-            if "#4#" in device_id:
-                parts = device_id.split("#4#")
-                where = parts[0]
-                interface = parts[1] if len(parts) > 1 else None
-            else:
-                where = device_id
-                interface = None
-
-            clean_where = where.split("-")[-1].replace("#", "")
-            if clean_where.isdigit() and int(clean_where) >= 100:
-                LOGGER.debug("Skipping non-zone address %s for climate platform", where)
-                continue
-            default_suffix = f"{clean_where}I{interface}" if interface else clean_where
-            cfg = (
-                _configured_climate_devices.get(device_id)
-                or _configured_climate_devices.get(where)
-                or _configured_climate_devices.get(clean_where)
-                or _configured_climate_devices.get(f"4-{clean_where}")
-                or _configured_climate_devices.get(f"4-{where}")
-                or _configured_climate_devices.get(f"4-{device_id}")
-                or _configured_climate_devices.get(f"4-#{clean_where}")
-                or _configured_climate_devices.get(f"4-#{where}")
-                or _configured_climate_devices.get(f"#{clean_where}")
-                or _configured_climate_devices.get(f"#{where}")
-                or _configured_climate_devices.get(f"zone_{clean_where}")
-                or _configured_climate_devices.get(f"zone_{where}")
-                or {}
-            )
-
-            is_central = cfg.get(CONF_CENTRAL, clean_where in ("0", "01") or where in ("#0", "#0#1"))
-            _entry_name = getattr(entry, "name", None)
-            if not isinstance(_entry_name, str):
-                _entry_name = None
-            default_name = f"Central Unit {default_suffix}" if is_central else f"Climate Zone {default_suffix}"
-            _name = (
-                cfg.get(CONF_NAME)
-                or _entry_name
-                or default_name
-            )
-            default_model = "Central Unit (3550)" if where == "#0" else ("Central Unit (4695)" if where == "#0#1" else "Heating Zone")
-            _climate = MyHOMEClimate(
-                hass=hass,
-                device_id=device_id,
-                who="4",
-                where=where,
-                interface=interface,
-                name=_name,
-                heating=cfg.get(CONF_HEATING_SUPPORT, True),
-                cooling=cfg.get(CONF_COOLING_SUPPORT, True),
-                fan=cfg.get(CONF_FAN_SUPPORT, False),
-                standalone=cfg.get(CONF_STANDALONE, not is_central),
-                central=is_central,
-                manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
-                model=cfg.get(CONF_DEVICE_MODEL, default_model),
-                gateway=gateway,
-            )
-            known_climates.add(device_id)
-            known_climates.add(where)
-            if not interface:
-                known_climates.add(clean_where)
-            restored_climates.append(_climate)
-
-    # 2. Also instantiate any configured climate devices from myhome.yaml not yet in registry
-    seen_configured_where = set()
-    for dev_id, cfg in _configured_climate_devices.items():
-        where = str(cfg.get(CONF_ZONE, cfg.get(CONF_WHERE, dev_id)))
-        interface = cfg.get(CONF_BUS_INTERFACE) or cfg.get("bus_interface") or cfg.get("interface")
-        clean_where = where.split("-")[-1].replace("#", "")
-        if clean_where.isdigit() and int(clean_where) >= 100:
-            LOGGER.debug("Skipping non-zone address %s for climate platform", where)
-            continue
-        device_where_id = f"{where}#4#{interface}" if interface else str(where)
-        clean_unique_id = f"{clean_where}#4#{interface}" if interface else clean_where
-        default_suffix = f"{clean_where}I{interface}" if interface else clean_where
-
-        if (
-            clean_unique_id in seen_configured_where
-            or device_where_id in known_climates
-            or dev_id in known_climates
-            or where in known_climates
-        ):
-            continue
-        seen_configured_where.add(clean_unique_id)
-
-        is_central = cfg.get(CONF_CENTRAL, clean_where in ("0", "01") or where in ("#0", "#0#1"))
-        default_name = f"Central Unit {default_suffix}" if is_central else f"Climate Zone {default_suffix}"
-        default_model = "Central Unit (3550)" if where == "#0" else ("Central Unit (4695)" if where == "#0#1" else "Heating Zone")
-        _climate = MyHOMEClimate(
+    def build(ctx: DeviceContext) -> MyHOMEClimate:
+        where, interface = ctx.address.where, ctx.address.interface
+        zone = _zone_number(where)
+        cfg = _zone_config(configured, ctx.address, ctx.key) or ctx.cfg
+        suffix = f"{zone}I{interface}" if interface else zone
+        is_central = zone in ("0", "01") or where in ("#0", "#0#1")
+        if ctx.source != "bus":
+            is_central = cfg.get(CONF_CENTRAL, is_central)
+        default_name = f"Central Unit {suffix}" if is_central and ctx.source != "bus" else f"Climate Zone {suffix}"
+        registry_name = getattr(ctx.registry_entry, "name", None)
+        name = cfg.get(CONF_NAME) or (registry_name if isinstance(registry_name, str) else None) or default_name
+        default_model = (
+            "Central Unit (3550)" if where == "#0" else "Central Unit (4695)" if where == "#0#1" else "Heating Zone"
+        )
+        return MyHOMEClimate(
             hass=hass,
-            device_id=device_where_id,
-            who=str(cfg.get(CONF_WHO, "4")),
+            device_id=ctx.key,
+            who=ctx.who,
             where=where,
             interface=interface,
-            name=cfg.get(CONF_NAME) or default_name,
+            name=name,
             heating=cfg.get(CONF_HEATING_SUPPORT, True),
             cooling=cfg.get(CONF_COOLING_SUPPORT, True),
             fan=cfg.get(CONF_FAN_SUPPORT, False),
@@ -189,151 +100,97 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             model=cfg.get(CONF_DEVICE_MODEL, default_model),
             gateway=gateway,
         )
-        known_climates.add(device_where_id)
-        known_climates.add(dev_id)
-        known_climates.add(where)
-        if not interface:
-            known_climates.add(clean_where)
-        restored_climates.append(_climate)
 
-    if restored_climates:
-        async_add_entities(restored_climates)
+    def accept(ctx: DeviceContext) -> bool:
+        if _is_probe(ctx.address.where):
+            LOGGER.debug("Skipping non-zone address %s for climate platform", ctx.address.where)
+            return False
+        return True
 
-    @callback
-    def async_add_climate(message: OWNHeatingEvent):
-        """Add a climate zone from a discovered message."""
-        raw_where = getattr(message, "where", None)
-        zone = getattr(message, "zone", None)
-        interface = getattr(message, "interface", None)
+    def known_keys(ctx: DeviceContext) -> list[str]:
+        keys = [ctx.key, ctx.address.where, ctx.config_id or ""]
+        if not ctx.address.interface:
+            keys.append(_zone_number(ctx.address.where))
+        return [k for k in keys if k]
 
-        target_zone = zone
-        what = getattr(message, "what", None)
-        what_param = (
-            getattr(message, "what_param", None) or getattr(message, "_what_param", None) or []
-        )
-        where_param = (
-            getattr(message, "where_param", None) or getattr(message, "_where_param", None) or []
-        )
-
-        if not interface and where_param and len(where_param) > 1 and where_param[0] == "4":
-            interface = str(where_param[1])
-
-        calling_zones = []
-        if target_zone is not None and target_zone > 0:
-            calling_zones.append(str(target_zone))
-        if what in ("4001", "4002", 4001, 4002) and what_param:
-            try:
-                calling_zones.append(str(int(what_param[0])))
-            except (ValueError, TypeError):
-                pass
-        if where_param and where_param[0] != "4":
-            try:
-                calling_zones.append(str(int(where_param[0])))
-            except (ValueError, TypeError):
-                pass
-
-        if not calling_zones and raw_where and raw_where not in ("0", ""):
-            clean_raw = str(raw_where).split("-")[-1].replace("#", "")
-            if not (clean_raw.isdigit() and int(clean_raw) >= 100):
-                calling_zones.append(str(raw_where))
-
-        if not calling_zones and (not raw_where or raw_where == "0"):
-            # Broadcast frame with no specific zone; ignore for entity creation
-            pass
-        else:
-            primary_zone = calling_zones[0] if calling_zones else str(raw_where)
-            where = primary_zone
-            clean_where = where.split("-")[-1].replace("#", "")
-            unique_id = f"{where}#4#{interface}" if interface else str(where)
-            default_suffix = f"{clean_where}I{interface}" if interface else clean_where
-
-            if (
-                not (clean_where.isdigit() and int(clean_where) >= 100)
-                and unique_id not in known_climates
-                and clean_where not in known_climates
-                and where not in known_climates
-            ):
-                cfg = (
-                    _configured_climate_devices.get(unique_id)
-                    or _configured_climate_devices.get(where)
-                    or _configured_climate_devices.get(clean_where)
-                    or _configured_climate_devices.get(f"4-{clean_where}")
-                    or _configured_climate_devices.get(f"4-{where}")
-                    or _configured_climate_devices.get(f"4-{unique_id}")
-                    or _configured_climate_devices.get(f"4-#{clean_where}")
-                    or _configured_climate_devices.get(f"4-#{where}")
-                    or _configured_climate_devices.get(f"#{clean_where}")
-                    or _configured_climate_devices.get(f"#{where}")
-                    or _configured_climate_devices.get(f"zone_{clean_where}")
-                    or _configured_climate_devices.get(f"zone_{where}")
-                    or {}
-                )
-                is_central = clean_where in ("0", "01") or where in ("#0", "#0#1")
-                _name = cfg.get(CONF_NAME) or f"Climate Zone {default_suffix}"
-                default_model = "Central Unit (3550)" if where == "#0" else ("Central Unit (4695)" if where == "#0#1" else "Heating Zone")
-                _climate = MyHOMEClimate(
-                    hass=hass,
-                    device_id=unique_id,
-                    who=str(getattr(message, "who", "4")),
-                    where=where,
-                    interface=interface,
-                    name=_name,
-                    heating=cfg.get(CONF_HEATING_SUPPORT, True),
-                    cooling=cfg.get(CONF_COOLING_SUPPORT, True),
-                    fan=cfg.get(CONF_FAN_SUPPORT, False),
-                    standalone=cfg.get(CONF_STANDALONE, not is_central),
-                    central=is_central,
-                    manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
-                    model=cfg.get(CONF_DEVICE_MODEL, default_model),
-                    gateway=gateway,
-                )
-                known_climates.add(unique_id)
-                known_climates.add(where)
-                if not interface:
-                    known_climates.add(clean_where)
-                async_add_entities([_climate])
-                _climate.handle_event(message)
-
-        # Dispatch updates
-        zone_where = f"#{message.zone}" if message.zone == 0 else str(message.zone)
-        async_dispatcher_send(
-            hass,
-            f"myhome_update_{mac}_4_{zone_where}",
-            message,
-        )
-        if hasattr(message, "where") and message.where:
-            async_dispatcher_send(
-                hass,
-                f"myhome_update_{mac}_4_{message.where}",
-                message,
-            )
-        for z in calling_zones:
-            async_dispatcher_send(
-                hass,
-                f"myhome_update_{mac}_4_{z}",
-                message,
-            )
-            if interface:
-                async_dispatcher_send(
-                    hass,
-                    f"myhome_update_{mac}_4_{z}#4#{interface}",
-                    message,
-                )
-
-    @callback
-    def _handle_climate_message(msg):
-        """Filter and forward climate messages."""
-        if isinstance(msg, OWNHeatingEvent):
-            async_add_climate(msg)
-
-    config_entry.async_on_unload(
-        async_dispatcher_connect(
-            hass,
-            f"myhome_message_{mac}",
-            _handle_climate_message,
-        )
-    )
+    PlatformDiscovery(
+        hass, config_entry, async_add_entities,
+        platform=PLATFORM, who="4", event_type=OWNHeatingEvent, build=build,
+        accept=accept, known_keys=known_keys, address=_zone_address, route_keys=_zone_route_keys,
+        general_is_device=True,  # WHERE=0 frames name their zone in a parameter; _zone_address decides
+    ).start()
     return True
+
+
+def _zone_number(where: str) -> str:
+    """The zone without a legacy ``4-`` prefix or ``#``: ``"#0"`` -> ``"0"``, ``"4-12"`` -> ``"12"``."""
+    return where.split("-")[-1].replace("#", "")
+
+
+def _is_probe(where: str) -> bool:
+    zone = _zone_number(where)
+    return zone.isdigit() and int(zone) >= 100
+
+
+def _zone_config(configured: dict[str, Any], address: Address, key: str) -> dict[str, Any]:
+    """The ``myhome.yaml`` entry of a zone under every spelling older versions accepted."""
+    where, zone = address.where, _zone_number(address.where)
+    return config_for(
+        configured, address, key, zone,
+        f"4-{zone}", f"4-{where}", f"4-{key}", f"4-#{zone}", f"4-#{where}",
+        f"#{zone}", f"#{where}", f"zone_{zone}", f"zone_{where}",
+    )
+
+
+def _calling_zones(message: Any) -> tuple[list[str], str | None]:
+    """Zones a heating frame concerns, and the F422 interface it came through."""
+    raw_where = getattr(message, "where", None)
+    zone = getattr(message, "zone", None)
+    interface = getattr(message, "interface", None)
+    what = getattr(message, "what", None)
+    what_param = getattr(message, "what_param", None) or getattr(message, "_what_param", None) or []
+    where_param = getattr(message, "where_param", None) or getattr(message, "_where_param", None) or []
+    if not interface and len(where_param) > 1 and where_param[0] == "4":
+        interface = str(where_param[1])
+
+    zones: list[str] = []
+    if zone is not None and zone > 0:
+        zones.append(str(zone))
+    if what in ("4001", "4002", 4001, 4002) and what_param:
+        try:
+            zones.append(str(int(what_param[0])))
+        except (ValueError, TypeError):
+            pass
+    if where_param and where_param[0] != "4":
+        try:
+            zones.append(str(int(where_param[0])))
+        except (ValueError, TypeError):
+            pass
+    if not zones and raw_where and raw_where not in ("0", "") and not _is_probe(str(raw_where)):
+        zones.append(str(raw_where))
+    return zones, interface
+
+
+def _zone_address(message: Any) -> Address | None:
+    """The zone a frame discovers; ``None`` for broadcasts and probes."""
+    zones, interface = _calling_zones(message)
+    if not zones:
+        return None
+    return Address(zones[0], interface)
+
+
+def _zone_route_keys(message: Any, address: Address | None) -> list[str]:
+    """Every key a heating frame is delivered under: the zone, WHERE, and the calling zones."""
+    zones, interface = _calling_zones(message)
+    zone = getattr(message, "zone", None)
+    keys = [] if zone is None else [f"#{zone}" if zone == 0 else str(zone)]
+    if getattr(message, "where", None):
+        keys.append(str(message.where))
+    for z in zones:
+        keys.append(z)
+        if interface:
+            keys.append(f"{z}#4#{interface}")
+    return keys
 
 
 async def async_unload_entry(hass, config_entry):
@@ -364,7 +221,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         manufacturer: str,
         model: str,
         gateway: MyHOMEGatewayHandler,
-        interface: str = None,
+        interface: str | None = None,
     ):
         super().__init__(
             hass=hass,
