@@ -411,7 +411,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._attr_min_temp = 5
         self._attr_max_temp = 40
 
-        self._attr_supported_features = 0
+        # HVACMode.OFF is always available, so climate.turn_off / turn_on must be
+        # advertised explicitly (mandatory since core 2025.1).
+        self._attr_supported_features = ClimateEntityFeature.TURN_OFF | ClimateEntityFeature.TURN_ON
         self._attr_hvac_modes = [HVACMode.OFF]
         self._heating = heating
         self._cooling = cooling
@@ -824,8 +826,4 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             elif speed == 3:
                 self._attr_fan_mode = "high"
 
-        if self.hass is not None or hasattr(self.async_schedule_update_ha_state, "assert_called"):
-            try:
-                self.async_schedule_update_ha_state()
-            except RuntimeError:
-                pass
+        self._publish_state()

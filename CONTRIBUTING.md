@@ -133,21 +133,18 @@ To maintain production stability and protect our release pipelines, this reposit
 ## 4. Development & Testing Standards
 
 ### Environment Setup
-MyHOME requires **Python 3.12** or **3.11**. We strongly recommend developing inside a dedicated virtual environment:
+Home Assistant core 2026.3 and later requires **Python 3.14.2+**, and current cores only run on Linux/macOS (`homeassistant.runner` imports `fcntl`). On Windows use **WSL**. `pytest-homeassistant-custom-component` pins the exact core release it was built for, so installing it gives you the core users run:
 
 ```bash
-# Create virtual environment
-python -m venv .venv
-
-# Activate virtual environment
-# Windows (PowerShell):
-.venv\Scripts\Activate.ps1
-# Linux / macOS:
+# Python 3.14 without touching the system interpreter (uv fetches it into your profile)
+uv python install 3.14
+uv venv --python 3.14 .venv
 source .venv/bin/activate
 
-# Install development & test dependencies
+# Install development & test dependencies (pulls the pinned Home Assistant core)
 pip install --upgrade pip
-pip install -e ".[test]" homeassistant pytest-socket
+pip install -e ".[test]" pytest-socket
+python -c "import homeassistant.const as c; print(c.__version__)"
 ```
 
 ### Running the Test Suite

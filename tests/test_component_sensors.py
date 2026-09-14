@@ -86,7 +86,9 @@ class TestSensorsCoverage:
         unhandled_msg.message_type = "other_type"
         assert sensor.handle_event(unhandled_msg) is True
 
-        # handle_event: active power
+        # handle_event: active power (a live entity writes its state)
+        sensor.hass = mock_hass
+        sensor.platform = MagicMock()
         sensor.async_schedule_update_ha_state = MagicMock()
         power_msg = MagicMock()
         power_msg.message_type = MESSAGE_TYPE_ACTIVE_POWER

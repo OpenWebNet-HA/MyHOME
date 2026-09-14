@@ -433,6 +433,7 @@ async def test_illuminance_sensor_zero_padded_where_and_deduplication(hass: Home
         assert sensor._where == "0015"
 
         sensor.hass = hass
+        sensor.platform = MagicMock()  # added by an EntityPlatform
         sensor.async_write_ha_state = MagicMock()
         await sensor.async_added_to_hass()
 

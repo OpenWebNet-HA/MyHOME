@@ -392,7 +392,6 @@ async def test_p6_multi_gateway_scenario_trigger_isolation(hass: HomeAssistant):
         config_entry_id="config_gw1",
         identifiers={(DOMAIN, "00:03:50:aa:aa:aa-15-7")},
         name="CEN Button 7 GW1",
-        via_device=(DOMAIN, "00:03:50:aa:aa:aa"),
     )
 
     # Gateway 2 device & Scenario Button device on Gateway 2
@@ -405,7 +404,6 @@ async def test_p6_multi_gateway_scenario_trigger_isolation(hass: HomeAssistant):
         config_entry_id="config_gw2",
         identifiers={(DOMAIN, "00:03:50:bb:bb:bb-15-7")},
         name="CEN Button 7 GW2",
-        via_device=(DOMAIN, "00:03:50:bb:bb:bb"),
     )
 
     action_gw1 = AsyncMock()

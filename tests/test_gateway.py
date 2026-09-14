@@ -833,14 +833,19 @@ async def test_gateway_cen_event_and_auto_registration(gateway_handler: MyHOMEGa
                 )
 
                 # Check device registry auto-registration called once (deduplicated)
-                mock_dr.async_get_or_create.assert_called_once_with(
-                    config_entry_id="test_entry_123",
-                    identifiers={(DOMAIN, f"{gateway_handler.mac}-15-5")},
-                    name="CEN Unit 5",
-                    manufacturer="BTicino",
-                    model="CEN Scenario Control",
-                    via_device=(DOMAIN, gateway_handler.mac),
-                )
+                mock_dr.async_get_or_create.assert_called_once()
+                kwargs = mock_dr.async_get_or_create.call_args.kwargs
+                # The link to the gateway device is via_device_id on current cores
+                # (only once the gateway device exists) and via_device on old ones.
+                via = {k: kwargs.pop(k) for k in ("via_device", "via_device_id") if k in kwargs}
+                assert via in ({}, {"via_device": (DOMAIN, gateway_handler.mac)})
+                assert kwargs == {
+                    "config_entry_id": "test_entry_123",
+                    "identifiers": {(DOMAIN, f"{gateway_handler.mac}-15-5")},
+                    "name": "CEN Unit 5",
+                    "manufacturer": "BTicino",
+                    "model": "CEN Scenario Control",
+                }
 
 
 @pytest.mark.asyncio
@@ -889,14 +894,19 @@ async def test_gateway_cenplus_event_and_auto_registration(gateway_handler: MyHO
                 )
 
                 # Check device registry auto-registration
-                mock_dr.async_get_or_create.assert_called_once_with(
-                    config_entry_id="test_entry_456",
-                    identifiers={(DOMAIN, f"{gateway_handler.mac}-25-12")},
-                    name="CEN+ Unit 12",
-                    manufacturer="BTicino",
-                    model="CEN+ Scenario Control",
-                    via_device=(DOMAIN, gateway_handler.mac),
-                )
+                mock_dr.async_get_or_create.assert_called_once()
+                kwargs = mock_dr.async_get_or_create.call_args.kwargs
+                # The link to the gateway device is via_device_id on current cores
+                # (only once the gateway device exists) and via_device on old ones.
+                via = {k: kwargs.pop(k) for k in ("via_device", "via_device_id") if k in kwargs}
+                assert via in ({}, {"via_device": (DOMAIN, gateway_handler.mac)})
+                assert kwargs == {
+                    "config_entry_id": "test_entry_456",
+                    "identifiers": {(DOMAIN, f"{gateway_handler.mac}-25-12")},
+                    "name": "CEN+ Unit 12",
+                    "manufacturer": "BTicino",
+                    "model": "CEN+ Scenario Control",
+                }
 
 
 @pytest.mark.asyncio

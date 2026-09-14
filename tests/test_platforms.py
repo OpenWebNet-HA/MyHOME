@@ -204,6 +204,9 @@ class TestMediaPlayerEntity:
             )
             # Override the schedule_update method to avoid HA internals
             p.async_schedule_update_ha_state = MagicMock()
+            p.hass = mock_hass
+            p.platform = MagicMock()  # added by an EntityPlatform
+            p.entity_id = "media_player.audio_zone_1"
             return p
 
     def test_initial_state(self, player):

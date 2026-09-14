@@ -1197,7 +1197,7 @@ class TestPhase1GoldenPlantSampleIssue247:
         # 1. Device Registry Verification: Absolutely NO orphaned empty ghost devices
         device_registry = dr.async_get(hass)
         entity_registry = er.async_get(hass)
-        entry_devices = [d for d in device_registry.devices.values() if entry.entry_id in d.config_entries]
+        entry_devices = dr.async_entries_for_config_entry(device_registry, entry.entry_id)
         assert len(entry_devices) > 0, "Expected devices to be registered for the plant"
 
         for dev in entry_devices:

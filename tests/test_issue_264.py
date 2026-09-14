@@ -290,6 +290,8 @@ async def test_temperature_sensor_async_update_and_events(mock_gateway):
     mock_event.dimension_value = ["1", "0205", "0001"]
     mock_event.human_readable_log = "Probe reporting 20.5"
 
+    sensor.hass = hass  # a live entity writes its state
+    sensor.platform = MagicMock()
     sensor.async_schedule_update_ha_state = MagicMock()
     sensor.handle_event(mock_event)
     assert sensor._attr_native_value == 20.5

@@ -56,6 +56,7 @@ class TestClimateEntity:
             model="Thermostat",
             gateway=mock_gateway,
         )
+        c.platform = MagicMock()  # added by an EntityPlatform
         c.async_schedule_update_ha_state = MagicMock()
         return c
 
