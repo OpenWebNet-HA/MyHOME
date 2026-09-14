@@ -852,7 +852,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             raise HomeAssistantError(f"{self._attr_name} reports its position; travel time cannot be set")
 
         down = travel_time_down if travel_time_down is not None else travel_time
-        up = travel_time_up if travel_time_up is not None else (travel_time if travel_time is not None else down)
+        up = travel_time_up if travel_time_up is not None else travel_time
 
         if down is None and up is None:
             raise HomeAssistantError("At least travel_time or travel_time_down/up must be specified")
