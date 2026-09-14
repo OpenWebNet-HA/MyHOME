@@ -173,6 +173,6 @@
   dimension_values: ["10", "0", "001", "0"]
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Automation: Absolute position level 10% report for address 73 (Nicola Cavallo plant)"
+  mcp_notes: "Automation: Absolute position level 10% report for address 73 (issue #247 reporter plant)"
   roundtrip: true
 

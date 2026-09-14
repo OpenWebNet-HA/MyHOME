@@ -84,7 +84,7 @@ class TestTraceReplayHarness:
 
     @pytest.mark.asyncio
     async def test_real_world_trace_replay_issue_247(self, hass: HomeAssistant) -> None:
-        """Replay all 100 on-wire frames from Nicola Cavallo's production F454 gateway.
+        """Replay all 100 on-wire frames from the issue #247 MyHomeServer1 gateway.
 
         Verifies that every single frame across WHO 1, 2, 4, 13, 14, 16, 18 and
         ACK/NACK signals is cleanly processed without unhandled exceptions or state loss.

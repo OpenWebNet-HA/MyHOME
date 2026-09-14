@@ -34,6 +34,6 @@
   dimension_values: ["17", "33", "54", "002", "05", "11", "09", "2026"]
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Gateway Management: Set gateway internal datetime to 2026-09-11 17:33:54 (Nicola Cavallo plant)"
+  mcp_notes: "Gateway Management: Set gateway internal datetime to 2026-09-11 17:33:54 (issue #247 reporter plant)"
   roundtrip: true
 
