@@ -858,8 +858,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         if down is None:
             down = self._travel_time_down
-        if up is None:
-            up = self._travel_time_up
 
         for field, value in (("travel_time_down", down), ("travel_time_up", up)):
             if not CALIBRATION_MIN_RUN <= value <= CALIBRATION_MAX_RUN:

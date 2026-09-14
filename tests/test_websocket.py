@@ -591,3 +591,13 @@ def test_cached_ownd_version_without_domain_data(hass: HomeAssistant):
     assert _cached_ownd_version(hass) == "unknown"
     hass.data[DOMAIN] = "not-a-dict"
     assert _cached_ownd_version(hass) == "unknown"
+
+
+async def test_ws_cover_calibration_trace(hass: HomeAssistant, mock_ws_connection):
+    """myhome/cover/calibration_trace returns the recorded calibration frames."""
+    from custom_components.myhome.websocket import ws_cover_calibration_trace
+
+    with patch("custom_components.myhome.cover.get_last_calibration_trace", return_value=[{"raw": "*2*1*21##"}]):
+        ws_cover_calibration_trace(hass, mock_ws_connection, {"id": 77, "type": "myhome/cover/calibration_trace"})
+        await hass.async_block_till_done()
+    mock_ws_connection.send_result.assert_called_once_with(77, {"frames": [{"raw": "*2*1*21##"}]})
