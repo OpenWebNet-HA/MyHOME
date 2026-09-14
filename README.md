@@ -560,7 +560,7 @@ automated coverage and physical gateway verification steps.
 | :--- | :---: | :--- |
 | 🥉 Bronze | 18 / 20 | ⏳ next — blocked by `brands`, `has-entity-name` |
 | 🥈 Silver | 10 / 10 | ✅ all rules satisfied (waiting on lower tier) |
-| 🥇 Gold | 10 / 21 | ⬜ 11 rule(s) open |
+| 🥇 Gold | 16 / 21 | ⬜ 5 rule(s) open |
 | 🏆 Platinum | 2 / 3 | ⬜ 1 rule(s) open |
 
 _Self-audit of [`quality_scale.yaml`](custom_components/myhome/quality_scale.yaml) against the official [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/); a tier needs every rule of that tier and all lower tiers `done`/`exempt`. Updated by the [Integration Quality Scale workflow](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/quality-scale.yml); tiers are formally awarded only by Home Assistant core review._

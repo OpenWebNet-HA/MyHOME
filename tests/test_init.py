@@ -1243,3 +1243,46 @@ async def test_setup_entry_async_customize_yaml(hass: HomeAssistant, tmp_path):
 
         await hass.config_entries.async_unload(config_entry.entry_id)
         await hass.async_block_till_done()
+
+async def test_remove_config_entry_device_refuses_gateway_allows_others(hass: HomeAssistant):
+    """Quality-scale stale-devices: bus devices may be deleted, the gateway may not."""
+    from homeassistant.helpers import device_registry as dr
+
+    from custom_components.myhome import async_remove_config_entry_device
+
+    mac = "00:03:50:00:12:40"
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": mac, "host": "1.2.3.4", "port": 20000}, unique_id=mac)
+    entry.add_to_hass(hass)
+    gateway = MagicMock()
+    gateway.mac = mac
+    gateway.unique_id = mac
+    gateway.id = mac
+    attach_runtime(hass, entry, mac, gateway)
+
+    registry = dr.async_get(hass)
+    gateway_device = registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        connections={(dr.CONNECTION_NETWORK_MAC, mac)},
+        identifiers={(DOMAIN, mac)},
+        name="Gateway",
+    )
+    light_device = registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{mac}-1-12")},
+        name="Light 12",
+    )
+    mac_only_device = registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        connections={(dr.CONNECTION_NETWORK_MAC, mac.upper())},
+        identifiers={("other", "x")},
+        name="Gateway by MAC",
+    )
+
+    assert await async_remove_config_entry_device(hass, entry, gateway_device) is False
+    assert await async_remove_config_entry_device(hass, entry, mac_only_device) is False
+    assert await async_remove_config_entry_device(hass, entry, light_device) is True
+
+    # An entry that is not set up still allows removing bus devices, never the gateway
+    entry.runtime_data = None
+    assert await async_remove_config_entry_device(hass, entry, light_device) is True
+    assert await async_remove_config_entry_device(hass, entry, gateway_device) is False

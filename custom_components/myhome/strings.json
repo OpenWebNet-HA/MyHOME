@@ -220,5 +220,37 @@
       "title": "Gateway model corrected to {corrected}",
       "description": "The gateway was configured as {previous} but reports OpenWebNet device type {code}, which the BTicino specification defines as {corrected}. The model, gateway profile and device registry were updated to {corrected}. If that is wrong, use the reconfigure flow to set the model explicitly."
     }
+  },
+  "exceptions": {
+    "calibration_interrupted": {
+      "message": "{name}: {cause}"
+    },
+    "calibration_no_stop_status": {
+      "message": "{name}: no stop status from the actuator within {timeout} s - it may not report status; set travel_time manually"
+    },
+    "cover_reports_position": {
+      "message": "{name} reports its position; travel-time calibration does not apply to it"
+    },
+    "calibration_in_progress": {
+      "message": "{name} is already being calibrated"
+    },
+    "calibration_implausible_run": {
+      "message": "{name}: implausible {direction} run of {seconds} s; not stored"
+    },
+    "travel_time_missing": {
+      "message": "At least travel_time or travel_time_down/up must be specified"
+    },
+    "travel_time_out_of_range": {
+      "message": "{field} must be between {min} s and {max} s"
+    },
+    "cover_busy_calibrating": {
+      "message": "{entity_id} is being calibrated; try again when it has finished"
+    },
+    "decoders_busy": {
+      "message": "{entity_id}: all audio matrix inputs are currently in use by other rooms"
+    },
+    "decoder_start_failed": {
+      "message": "{entity_id}: decoder {decoder} failed to start playback: {error}"
+    }
   }
 }
