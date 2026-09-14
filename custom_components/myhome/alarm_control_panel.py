@@ -8,12 +8,10 @@ from homeassistant.components.alarm_control_panel import (
     AlarmControlPanelState,
 )
 from homeassistant.const import (
-    CONF_MAC,
     CONF_NAME,
 )
 from homeassistant.core import callback
-from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from OWNd.message import (
     OWNAlarmCommand,
     OWNAlarmEvent,
@@ -23,10 +21,9 @@ from .const import (
     CONF_DEVICE_MODEL,
     CONF_ENTITY_NAME,
     CONF_MANUFACTURER,
-    CONF_WHERE,
-    CONF_WHO,
     LOGGER,
 )
+from .discovery import DeviceContext, PlatformDiscovery
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 
@@ -39,107 +36,28 @@ STATE_TRIGGERED = AlarmControlPanelState.TRIGGERED
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    """Set up the MyHOME alarm_control_panel platform dynamically and from config."""
+    """Set up the burglar-alarm panels of a gateway (WHO=5): registry, myhome.yaml, then the bus."""
     runtime = config_entry.runtime_data
-    known_alarms = set()
 
-    entity_registry = er.async_get(hass)
-    existing_entries = er.async_entries_for_config_entry(entity_registry, config_entry.entry_id)
-    restored_alarms = []
-
-    gateway = runtime.gateway
-    _configured_alarms = runtime.platforms.get(PLATFORM, {})
-
-    for entry in existing_entries:
-        if entry.domain == PLATFORM:
-            unique_id = entry.unique_id
-            after_mac = unique_id.replace(f"{gateway.mac}-", "", 1).replace(f"{config_entry.data[CONF_MAC]}-", "", 1)
-            parts_who = after_mac.split("-", 1)
-            device_id = parts_who[-1] if len(parts_who) > 1 else after_mac
-            where = device_id
-            clean_where = where.split('-')[-1]
-            cfg = _configured_alarms.get(device_id) or _configured_alarms.get(where) or _configured_alarms.get(clean_where) or {}
-            _name = cfg.get(CONF_NAME, f"Alarm {clean_where}")
-            _alarm = MyHOMEAlarmControlPanel(
-                hass=hass,
-                name=_name,
-                entity_name=cfg.get(CONF_ENTITY_NAME),
-                device_id=device_id,
-                who="5",
-                where=where,
-                manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
-                model=cfg.get(CONF_DEVICE_MODEL, "Burglar Alarm"),
-                gateway=gateway,
-            )
-            known_alarms.add(device_id)
-            restored_alarms.append(_alarm)
-
-    seen_configured_where = set()
-    for dev_id, cfg in _configured_alarms.items():
-        where = str(cfg.get(CONF_WHERE, dev_id))
-        clean_where = where.split("-")[-1]
-        if clean_where in seen_configured_where or where in known_alarms or dev_id in known_alarms:
-            continue
-        seen_configured_where.add(clean_where)
-        _name = cfg.get(CONF_NAME, f"Alarm {clean_where}")
-        _alarm = MyHOMEAlarmControlPanel(
+    def build(ctx: DeviceContext) -> MyHOMEAlarmControlPanel:
+        cfg = ctx.cfg
+        return MyHOMEAlarmControlPanel(
             hass=hass,
-            name=_name,
+            name=cfg.get(CONF_NAME, f"Alarm {ctx.address.clean_where}"),
             entity_name=cfg.get(CONF_ENTITY_NAME),
-            device_id=where,
-            who=str(cfg.get(CONF_WHO, "5")),
-            where=where,
+            device_id=ctx.key,
+            who=ctx.who,
+            where=ctx.address.where,
             manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
             model=cfg.get(CONF_DEVICE_MODEL, "Burglar Alarm"),
-            gateway=gateway,
+            gateway=runtime.gateway,
         )
-        known_alarms.add(where)
-        restored_alarms.append(_alarm)
 
-    if restored_alarms:
-        async_add_entities(restored_alarms)
-
-    @callback
-    def async_add_alarm(message: OWNAlarmEvent):
-        """Add new alarm entity discovered dynamically on bus."""
-        where = str(message.where)
-        clean_where = where.split('-')[-1]
-        unique_id = str(where)
-
-        if unique_id not in known_alarms and clean_where not in known_alarms:
-            cfg = _configured_alarms.get(unique_id) or _configured_alarms.get(where) or _configured_alarms.get(clean_where) or {}
-            _name = cfg.get(CONF_NAME, f"Alarm {clean_where}")
-            _alarm = MyHOMEAlarmControlPanel(
-                hass=hass,
-                name=_name,
-                entity_name=cfg.get(CONF_ENTITY_NAME),
-                device_id=unique_id,
-                who="5",
-                where=where,
-                manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
-                model=cfg.get(CONF_DEVICE_MODEL, "Burglar Alarm"),
-                gateway=runtime.gateway,
-            )
-            known_alarms.add(unique_id)
-            known_alarms.add(clean_where)
-            async_add_entities([_alarm])
-            _alarm.handle_event(message)
-
-        async_dispatcher_send(hass, f"myhome_update_{config_entry.data[CONF_MAC]}_5_{unique_id}", message)
-
-    @callback
-    def _handle_alarm_message(msg):
-        """Filter and forward alarm messages."""
-        if isinstance(msg, OWNAlarmEvent):
-            async_add_alarm(msg)
-
-    config_entry.async_on_unload(
-        async_dispatcher_connect(
-            hass,
-            f"myhome_message_{config_entry.data[CONF_MAC]}",
-            _handle_alarm_message,
-        )
-    )
+    # WHERE=0 is the central unit, a real device on this subsystem.
+    PlatformDiscovery(
+        hass, config_entry, async_add_entities,
+        platform=PLATFORM, who="5", event_type=OWNAlarmEvent, build=build, general_is_device=True,
+    ).start()
 
 
 async def async_unload_entry(hass, config_entry):  # pylint: disable=unused-argument

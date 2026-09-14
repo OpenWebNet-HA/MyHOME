@@ -328,8 +328,8 @@ class TestPlatformServiceRegistration:
         mock_platform = MagicMock()
         token = entity_platform.current_platform.set(mock_platform)
         try:
-            with patch("custom_components.myhome.light.er.async_entries_for_config_entry", return_value=[]), \
-                 patch("custom_components.myhome.light.er.async_get", return_value=MagicMock()):
+            with patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]), \
+                 patch("custom_components.myhome.discovery.er.async_get", return_value=MagicMock()):
                 attach_runtime(hass, config_entry)
                 await async_setup_light_entry(hass, config_entry, MagicMock())
 
@@ -353,8 +353,8 @@ class TestPlatformServiceRegistration:
         mock_platform = MagicMock()
         token = entity_platform.current_platform.set(mock_platform)
         try:
-            with patch("custom_components.myhome.switch.er.async_entries_for_config_entry", return_value=[]), \
-                 patch("custom_components.myhome.switch.er.async_get", return_value=MagicMock()):
+            with patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]), \
+                 patch("custom_components.myhome.discovery.er.async_get", return_value=MagicMock()):
                 attach_runtime(hass, config_entry)
                 await async_setup_switch_entry(hass, config_entry, MagicMock())
 
