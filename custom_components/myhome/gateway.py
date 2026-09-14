@@ -1,9 +1,10 @@
 """Code to handle a MyHome Gateway."""
 import asyncio
 import time
-from typing import Any, Dict, List
+from typing import Any, List
 
 import OWNd.message as _ownd_msg
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONF_FRIENDLY_NAME,
     CONF_HOST,
@@ -12,7 +13,7 @@ from homeassistant.const import (
     CONF_PASSWORD,
     CONF_PORT,
 )
-from homeassistant.core import callback
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later
@@ -78,7 +79,7 @@ def _compat_gateway_timezone(values: list[str]) -> str:
     """Compatibility wrapper for OWNd < 2.0.0b7: accept 999 as unconfigured timezone."""
     if len(values) > 3 and values[3] == "999":
         return ""
-    return _orig_gw_tz(values)
+    return str(_orig_gw_tz(values))
 
 
 _ownd_msg._gateway_timezone = _compat_gateway_timezone
@@ -110,7 +111,7 @@ class MyHOMEGatewayHandler:
     # Device registry id of the gateway device; set once the entry's device exists.
     device_registry_id: str | None = None
 
-    def __init__(self, hass, config_entry, generate_events=False):
+    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry, generate_events: bool = False) -> None:
         build_info = {
             "address": config_entry.data.get(CONF_HOST),
             "port": config_entry.data.get(CONF_PORT, 20000),
@@ -134,17 +135,17 @@ class MyHOMEGatewayHandler:
         self._terminate_sender = False
         self.is_connected = False
         self._available = False
-        self._unavailable_timer = None
+        self._unavailable_timer: CALLBACK_TYPE | None = None
         self._event_session_ready = asyncio.Event()
         self._sender_stop = asyncio.Event()
-        self.listening_worker: asyncio.tasks.Task = None
-        self.sending_workers: List[asyncio.tasks.Task] = []
+        self.listening_worker: asyncio.Task[None] | None = None
+        self.sending_workers: List[asyncio.Task[None]] = []
         queue_max_size = (
             self.gateway.profile.max_queue_size
             if hasattr(self.gateway, "profile") and self.gateway.profile
             else 250
         )
-        self.send_buffer = asyncio.Queue(maxsize=queue_max_size)
+        self.send_buffer: asyncio.Queue[Any] = asyncio.Queue(maxsize=queue_max_size)
         self.bus_monitor = BusMonitor()
         self.device_registry_id = None
         self._cen_devices: set[tuple[int, Any]] = set()
@@ -241,7 +242,7 @@ class MyHOMEGatewayHandler:
 
     @property
     def log_id(self) -> str:
-        return self.gateway.log_id
+        return str(self.gateway.log_id)
 
     @property
     def manufacturer(self) -> str:
@@ -256,17 +257,17 @@ class MyHOMEGatewayHandler:
 
     @property
     def model(self) -> str:
-        return self.gateway.model_name
+        return str(self.gateway.model_name)
 
     @property
-    def firmware(self) -> str:
+    def firmware(self) -> str | None:
         fw = self.gateway.firmware
         if isinstance(fw, (list, tuple)):
             return ".".join(str(x) for x in fw) if fw else None
         return str(fw) if fw else None
 
     @property
-    def profile(self):
+    def profile(self) -> Any:
         return self.gateway.profile
 
     @property
@@ -279,8 +280,9 @@ class MyHOMEGatewayHandler:
         """Return the dispatcher signal for availability changes."""
         return f"{DOMAIN}_{self.mac}_availability"
 
-    async def test(self) -> Dict:
-        return await OWNSession(gateway=self.gateway, logger=LOGGER).test_connection()
+    async def test(self) -> dict[str, Any]:
+        result: dict[str, Any] = await OWNSession(gateway=self.gateway, logger=LOGGER).test_connection()
+        return result
 
     @callback
     def _on_event_connection_state_change(self, connected: bool) -> None:
@@ -314,7 +316,7 @@ class MyHOMEGatewayHandler:
             )
 
     @callback
-    def _mark_unavailable(self, _now) -> None:
+    def _mark_unavailable(self, _now: Any) -> None:
         """Mark the gateway unavailable after the reconnect grace period."""
         self._unavailable_timer = None
         if self.is_connected or not self._available:
@@ -332,7 +334,7 @@ class MyHOMEGatewayHandler:
         """Notify all entities bound to this gateway."""
         async_dispatcher_send(self.hass, self.availability_signal)
 
-    async def listening_loop(self):
+    async def listening_loop(self) -> None:
         self._terminate_listener = False
         self._event_session_ready.clear()
 
@@ -760,10 +762,10 @@ class MyHOMEGatewayHandler:
             return
         dev_reg = dr.async_get(self.hass)
         device = dev_reg.async_get(self.device_registry_id)
-        if device is not None and device.model != model:
+        if device is not None and getattr(device, "model", None) != model:
             dev_reg.async_update_device(self.device_registry_id, model=model)
 
-    async def sending_loop(self, worker_id: int):
+    async def sending_loop(self, worker_id: int) -> None:
         self._terminate_sender = False
 
         LOGGER.debug(

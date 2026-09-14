@@ -32,7 +32,7 @@ Typical values
 """
 import asyncio
 
-from homeassistant.components.media_player import MediaPlayerState
+from homeassistant.components.media_player.const import MediaPlayerState
 from homeassistant.core import HomeAssistant
 
 from .const import LOGGER
@@ -53,7 +53,7 @@ class DecoderPool:
     # HA states that mean "this decoder is available for claiming".
     # UNAVAILABLE is intentionally excluded: treat an offline Cambridge as busy
     # rather than risking a claim on a device that cannot actually play.
-    _IDLE_STATES: frozenset = frozenset({
+    _IDLE_STATES: frozenset[MediaPlayerState | None] = frozenset({
         MediaPlayerState.IDLE,
         MediaPlayerState.OFF,
         None,  # entity not yet registered / state unknown
