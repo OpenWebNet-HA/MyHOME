@@ -52,9 +52,15 @@ PARALLEL_UPDATES = 0
 # motor starts (~0.55 s on a MyHOMEServer1). Frames for this cover inside the
 # window are treated as echoes of our command, not as keypad presses.
 ECHO_WINDOW = 1.5
+# Time from the write of a direction frame to the motor start when the gateway
+# never relays the direction status (measured 0.55 s on a MyHOMEServer1, #302).
+MOTOR_START_DELAY = 0.55
 # Upper bound on how long we wait for the send queue to write our frame before
-# falling back to "now" as the motion anchor.
-WRITE_TIMEOUT = 10.0
+# falling back to "now" as the motion anchor. #302 measured the *queue*: with
+# twelve covers the last frame goes out 1.5-12 s after enqueue (the ~1.6 s often
+# quoted is the per-frame wait), and a reconnect after the 15 s idle close adds
+# the handshake on top.
+WRITE_TIMEOUT = 30.0
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
@@ -328,10 +334,16 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     # ── Echo model helpers ───────────────────────────────────────────────
 
     def _begin_command(self, cmd: str) -> None:
-        """Open an echo window for a command we are about to queue."""
+        """Open an echo window for a command we are about to queue.
+
+        Until the write time is known the window is bounded from enqueue by the
+        worst queue wait plus the echo window: a frame that is never written
+        (queue flushed on shutdown, refused connection) must not leave the
+        window open, or every later stop frame would be taken for an echo.
+        """
         self._run_generation += 1
         self._pending_cmd = cmd
-        self._echo_until = float("inf")  # until the write time is known
+        self._echo_until = time.monotonic() + WRITE_TIMEOUT + ECHO_WINDOW
         self._motor_started = asyncio.Event()
 
     def _track_write(self, written) -> None:
@@ -346,7 +358,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         @callback
         def _on_written(fut: asyncio.Future) -> None:
-            if generation != self._run_generation or fut.cancelled() or fut.exception() is not None:
+            if generation != self._run_generation:
+                return
+            if fut.cancelled() or fut.exception() is not None:
+                # The frame never reached the bus: nothing to echo. Close the
+                # window so the next frame for this cover is handled as what
+                # it is (a wall switch, a scenario, a status).
+                self._end_echo_window()
                 return
             write_ts = fut.result()
             self._echo_until = write_ts + ECHO_WINDOW
@@ -358,6 +376,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 # Motion stops within ~0.1 s of the write, not at enqueue time.
                 self._freeze_position(write_ts)
                 self._motor_started.set()
+            # The estimate changed (clock started, or frozen): show it. Not every
+            # gateway relays the stop status that would otherwise repaint it.
+            self._publish_state()
 
         written.add_done_callback(_on_written)
 
@@ -391,18 +412,30 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if the gateway relayed one inside the window, else the write time,
         else (no delivery within WRITE_TIMEOUT) now.
         """
+        write_ts: float | None = None
         if isinstance(written, asyncio.Future):
             try:
-                await asyncio.wait_for(asyncio.shield(written), WRITE_TIMEOUT)
-            except (TimeoutError, asyncio.CancelledError):
-                pass
-        deadline = self._echo_until if self._echo_until not in (None, float("inf")) else time.monotonic() + ECHO_WINDOW
+                write_ts = await asyncio.wait_for(asyncio.shield(written), WRITE_TIMEOUT)
+            except TimeoutError:
+                self._end_echo_window()  # never written within the bound: no echo to expect
+            except asyncio.CancelledError:
+                if not written.cancelled():
+                    raise  # our own task was cancelled (new command, entity removed): stop here
+                # the *delivery* was cancelled (queue flushed): no echo, anchor on "now" below
+                self._end_echo_window()
+        # The window ends ECHO_WINDOW after the write; computed here from the write
+        # time itself, as this task may run before the future's callbacks did.
+        deadline = (write_ts if write_ts is not None else time.monotonic()) + ECHO_WINDOW
         remaining = deadline - time.monotonic()
         if remaining > 0 and not self._motor_started.is_set():
             try:
                 await asyncio.wait_for(self._motor_started.wait(), remaining)
             except TimeoutError:
                 pass
+        if not self._motor_started.is_set() and write_ts is not None and self._move_start_time == write_ts:
+            # No direction status relayed (not every gateway does): the motor
+            # started a measured MOTOR_START_DELAY after the write, not at it.
+            self._move_start_time = write_ts + MOTOR_START_DELAY
         if self._move_start_time is None:
             self._move_start_time = time.monotonic()
         return self._move_start_time
@@ -496,6 +529,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def async_will_remove_from_hass(self):
         """Run when entity will be removed from hass."""
+        self._run_generation += 1  # a run in flight must not act on a removed entity
         self._cancel_stop_task()
         await super().async_will_remove_from_hass()
 

@@ -14,7 +14,12 @@ import pytest
 from homeassistant.components.cover import ATTR_POSITION
 from OWNd.message import OWNEvent
 
-from custom_components.myhome.cover import ECHO_WINDOW, MyHOMECover
+from custom_components.myhome.cover import (
+    ECHO_WINDOW,
+    MOTOR_START_DELAY,
+    WRITE_TIMEOUT,
+    MyHOMECover,
+)
 from custom_components.myhome.gateway import MyHOMEGatewayHandler
 
 
@@ -316,7 +321,8 @@ async def test_close_listener_cancels_undelivered_futures(handler):
 
 
 async def test_no_motor_echo_anchors_on_write_time(cover, gateway, clock, fake_time, sleeps):
-    """Gateways that never relay the direction status: the run anchors on the write."""
+    """Gateways that never relay the direction status: the run anchors on the write
+    plus the measured motor-start delay, so the run is not ~0.55 s too long."""
     await cover.async_set_cover_position(**{ATTR_POSITION: 50})
     _, written = gateway.deliveries[0]
     clock.now = 1.0
@@ -328,8 +334,8 @@ async def test_no_motor_echo_anchors_on_write_time(cover, gateway, clock, fake_t
             await asyncio.wait_for(asyncio.Event().wait(), 0.3)
         except TimeoutError:
             pass
-    # The 5 s run was measured from the write (1.0), then the stop was queued
-    assert sleeps and sleeps[-1] == pytest.approx(5.0)
+    # The 5 s run was measured from the motor start (write + MOTOR_START_DELAY), then the stop was queued
+    assert sleeps and sleeps[-1] == pytest.approx(5.0 + MOTOR_START_DELAY)
     assert [f for f, _ in gateway.deliveries] == ["*2*2*21##", "*2*0*21##"]
 
 
@@ -370,3 +376,135 @@ async def test_echo_path_tolerates_state_write_runtime_error(cover, gateway, clo
     cover.async_schedule_update_ha_state = MagicMock(side_effect=RuntimeError("no loop"))
     cover.handle_event(OWNEvent.parse("*2*0*21##"))  # echo inside the window
     assert cover.is_opening is True
+
+
+# ── review of #318 ───────────────────────────────────────────────────────
+
+
+async def test_write_timeout_covers_the_measured_queue():
+    """#302: with twelve covers the last frame goes out up to 12 s after enqueue."""
+    assert WRITE_TIMEOUT >= 12.0
+
+
+async def test_echo_window_is_bounded_from_enqueue_and_closes_when_delivery_fails(cover, gateway, clock, fake_time):
+    """A frame that never reaches the bus must not leave the window open: the next stop is real."""
+    clock.now = 100.0
+    await cover.async_open_cover()
+    assert cover._echo_until == pytest.approx(100.0 + WRITE_TIMEOUT + ECHO_WINDOW)  # bounded, not infinite
+    _, written = gateway.deliveries[0]
+    written.cancel()
+    await _yield()
+    assert cover._echo_until is None and cover._pending_cmd is None
+    # the wall switch stops the cover: handled, not swallowed as an echo
+    cover.handle_event(OWNEvent.parse("*2*0*21##"))
+    assert cover.is_opening is False
+
+    # the same when delivery fails with an exception
+    clock.now = 200.0
+    await cover.async_close_cover()
+    _, written = gateway.deliveries[1]
+    written.set_exception(RuntimeError("socket gone"))
+    await _yield()
+    assert cover._echo_until is None
+    cover.handle_event(OWNEvent.parse("*2*0*21##"))
+    assert cover.is_closing is False
+
+
+async def test_write_that_never_happens_times_the_run_from_now(cover, gateway, clock, fake_time, sleeps):
+    """The wait for the write is bounded: past WRITE_TIMEOUT the run is timed from now
+    and the echo window is closed, so a later stop status is handled as real."""
+    clock.now = 10.0
+    with patch("custom_components.myhome.cover.WRITE_TIMEOUT", 0.05), patch("custom_components.myhome.cover.ECHO_WINDOW", 0.0):
+        await cover.async_set_cover_position(**{ATTR_POSITION: 50})
+        _, written = gateway.deliveries[0]
+        try:
+            await asyncio.wait_for(asyncio.Event().wait(), 0.3)  # real timer: the fake clock stands still
+        except TimeoutError:
+            pass
+    assert not written.done()  # still stuck in the queue ...
+    assert sleeps and sleeps[-1] == pytest.approx(5.0)  # ... the run measured from "now"
+    assert [f for f, _ in gateway.deliveries] == ["*2*2*21##", "*2*0*21##"]
+    # the open command's window (10.05) is gone; the one left is the stop's own, opened at its enqueue
+    assert cover._echo_until == pytest.approx(clock.now + 0.05)
+
+
+async def test_write_confirmation_repaints_the_estimate(cover, gateway, clock, fake_time):
+    """The clock starts / freezes at the write: the state is written then, without waiting for a status frame."""
+    cover.platform = MagicMock()
+    cover.entity_id = "cover.shutter_21"
+    await cover.async_close_cover()
+    _, written = gateway.deliveries[0]
+    cover.async_schedule_update_ha_state.reset_mock()
+    clock.now = 2.0
+    written.set_result(2.0)
+    await _yield()
+    assert cover._move_start_time == 2.0
+    cover.async_schedule_update_ha_state.assert_called()
+
+    cover.async_schedule_update_ha_state.reset_mock()
+    clock.now = 4.0
+    await cover.async_stop_cover()
+    _, written = gateway.deliveries[1]
+    written.set_result(4.0)
+    await _yield()
+    assert cover._move_start_time is None  # frozen at the write
+    cover.async_schedule_update_ha_state.assert_called()
+
+
+async def test_cancelling_the_run_task_really_stops_it(cover, gateway, clock, fake_time, sleeps):
+    """Cancellation of the auto-stop task (a newer command, entity removal) is not swallowed."""
+    await cover.async_set_cover_position(**{ATTR_POSITION: 50})
+    task = cover._stop_task
+    _, written = gateway.deliveries[0]
+    await _yield()  # the task is now waiting for the write
+    await cover.async_will_remove_from_hass()
+    await _yield()
+    assert task.cancelled() or task.done()
+    generation = cover._run_generation
+    written.set_result(1.0)  # the frame goes out after all: nothing must act on it
+    await _yield(5)
+    assert [f for f, _ in gateway.deliveries] == ["*2*2*21##"]  # no stop was queued
+    assert cover._run_generation == generation
+
+
+async def test_send_future_is_stamped_after_reconnect_and_cancelled_on_failure(handler):
+    """The write time is taken once the command session is open, after any reconnect; a frame
+    that OWNd could not deliver cancels its future instead of starting a run."""
+    import time as _time
+
+    handler._event_session_ready.set()
+    with patch("custom_components.myhome.gateway.OWNCommandSession") as session_cls:
+        session = MagicMock()
+        session.is_connected = False
+        connected_at = []
+
+        async def _connect():
+            await asyncio.sleep(0.05)
+            connected_at.append(_time.monotonic())
+            session.is_connected = True
+            return {"Success": True}
+
+        async def _send(**_kwargs):
+            call = session.send.await_count
+            if call == 1:
+                session.is_connected = False  # the gateway closed the socket after this frame
+                return True
+            return True if call == 2 else None  # 2: delivered after the reconnect, 3: not delivered
+
+        session.connect = AsyncMock(side_effect=_connect)
+        session.send = AsyncMock(side_effect=_send)
+        session.close = AsyncMock()
+        session_cls.return_value = session
+
+        from OWNd.message import OWNAutomationCommand
+
+        first = await handler.send(OWNAutomationCommand.raise_shutter("21"))
+        after_reconnect = await handler.send(OWNAutomationCommand.lower_shutter("21"))
+        undelivered = await handler.send(OWNAutomationCommand.stop_shutter("21"))
+        await handler.send_buffer.put(None)
+        await handler.sending_loop(0)
+
+    assert session.connect.await_count == 2  # start-up, then the explicit reconnect
+    assert first.result() >= connected_at[0]
+    assert after_reconnect.result() >= connected_at[1]  # stamped after the handshake, not before it
+    assert undelivered.cancelled()
