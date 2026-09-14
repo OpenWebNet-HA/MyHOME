@@ -29,6 +29,10 @@ def test_committed_fixture_is_synthetic(plant):
     entry_data = diag["data"]["config_entry"]["data"]
     assert entry_data.get("password") is None
     assert diag["data"]["config_entry"]["entry_id"].startswith("01PLANT")
+    assert all(u.startswith("01PLANT") for u in re.findall(r"\b01[A-Z0-9]{24}\b", text))  # also as setup_times keys
+    # no local paths (a Windows path carries the user name), no list of what else the home runs
+    assert not re.search(r"[A-Za-z]:\\\\|/home/|/Users/", text), "a local path leaked into the fixture"
+    assert set(diag.get("custom_components", {})) <= {"myhome"}
     # every configured device is named after its address, never after a room or a person
     raw_names = re.findall(r"^\s+name: (.+)$", (plant_dir / "myhome.yaml").read_text(encoding="utf-8"), re.M)
     names = [n.strip().strip("\"'") for n in raw_names]
@@ -66,15 +70,18 @@ def test_anonymizer_rewrites_a_contributed_plant(tmp_path):
     )
     (plant / "diagnostic_summary.json").write_text(json.dumps({
         "home_assistant": {"timezone": "Europe/Rome", "version": "2026.9.1"},
+        "custom_components": {"energy_supplier": {"version": "1.0"}, "myhome": {"version": "2.0.0b12"}},
+        "setup_times": {"01REALULIDFROMTHEUSERSHOME": {"setup": 0.1}},
         "data": {
             "config_entry": {
                 "entry_id": "01REALULIDFROMTHEUSERSHOME",
                 "data": {"host": "192.168.1.35", "mac": "00:03:50:AB:CD:EF", "id": "00:03:50:AB:CD:EF",
                          "password": "12345", "ssdp_location": "http://192.168.1.35:49153/description.xml"},
+                "options": {"file_path": "C:" + "\\Users\\someone\\myhome.yaml"},
             },
             "bus_monitor": {"recent_frames": [{"raw": "*1*1*12##"}]},
         },
-    }), encoding="utf-8")
+    }, indent=2), encoding="utf-8")
 
     a = anonymize(plant)
 
@@ -100,6 +107,9 @@ def test_anonymizer_rewrites_a_contributed_plant(tmp_path):
     assert entry["data"]["mac"] == "00:03:50:00:09:99"
     assert diag["home_assistant"]["timezone"] == "UTC"
     assert diag["data"]["bus_monitor"]["recent_frames"] == [{"raw": "*1*1*12##"}]  # frames are untouched
+    assert diag["custom_components"] == {"myhome": {"version": "2.0.0b12"}}  # what else the home runs is dropped
+    assert list(diag["setup_times"]) == ["01PLANTISSUE999F4540000000"]  # the old id is gone everywhere
+    assert entry["options"]["file_path"] == "/config/myhome.yaml"
 
     # a second MAC in the same plant counts up; the same input maps to the same output
     b = Anonymizer("issue_999_f454")

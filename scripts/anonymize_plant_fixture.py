@@ -170,15 +170,35 @@ class Anonymizer:
     # ── diagnostics ──────────────────────────────────────────────────
 
     def json_text(self, text: str) -> str:
-        """Scrub addresses and secrets in place; the frames and the layout are untouched."""
+        """Scrub addresses, secrets and the household's installation; frames and layout are untouched."""
         text = self.scrub_text(text)
         entry_id = f"01PLANT{slugify(self.plant).upper().replace('_', '')}".ljust(26, "0")[:26]
-        text = re.sub(r'("entry_id":\s*)"[^"]*"', rf'\g<1>"{entry_id}"', text, count=1)
+        original = re.search(r'"entry_id":\s*"([^"]*)"', text)
+        if original:  # the id also keys setup_times
+            text = text.replace(original.group(1), entry_id)
         text = re.sub(r'("timezone":\s*)"[^"]*"', r'\g<1>"UTC"', text)
+        text = re.sub(r'("file_path":\s*)"[^"]*"', r'\g<1>"/config/myhome.yaml"', text)
         for secret in ("password", "UDN", "friendly_name"):
             text = re.sub(rf'("{secret}":\s*)(?:"[^"]*"|null)', r"\g<1>null", text)
+        text = self._only_this_integration(text)
         json.loads(text)  # still valid JSON
         return text
+
+    @staticmethod
+    def _only_this_integration(text: str) -> str:
+        """Keep only ``myhome`` under ``custom_components``: what else a home runs is nobody's business."""
+        start = re.search(r'^(\s*)"custom_components":\s*\{\s*$', text, re.M)
+        if start is None:
+            return text
+        indent = start.group(1)
+        end = re.compile(rf"^{indent}\}}(,?)\s*$", re.M).search(text, start.end())
+        if end is None:
+            return text
+        block = json.loads("{" + text[start.end():end.start()] + "}")
+        kept = {"myhome": block["myhome"]} if "myhome" in block else {}
+        body = json.dumps(kept, indent=2)
+        body = "\n".join(indent + line if line else line for line in body.splitlines())
+        return f'{text[:start.start()]}{indent}"custom_components": {body[len(indent):]}{end.group(1)}{text[end.end():]}'
 
 
 def anonymize(plant_dir: Path) -> Anonymizer:
