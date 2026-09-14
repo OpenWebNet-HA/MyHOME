@@ -31,7 +31,7 @@ rules:
     comment: OWNd is published on PyPI from the public OpenWebNet-HA/OWNd repository with CI; MIT/GPL licensed.
   docs-actions:
     status: done
-    comment: docs/configuration/services.md documents every service and its fields.
+    comment: docs/configuration/services.md documents all nine services and their fields (services.yaml, strings.json and icons.json list the same nine).
   docs-triggers:
     status: done
     comment: docs/configuration/cen_cenplus.md documents CEN / CEN+ device triggers.
@@ -121,20 +121,20 @@ rules:
     status: done
     comment: docs/configuration/lovelace_recipes.md and the CEN / CEN+ automation blueprints.
   docs-known-limitations:
-    status: todo
-    comment: No dedicated known-limitations section yet.
+    status: done
+    comment: docs/configuration/known_limitations.md - per subsystem, with the reason and the workaround.
   docs-supported-devices:
     status: done
     comment: README.md "Supported Hardware" lists gateways and device families.
   docs-supported-functions:
-    status: todo
-    comment: Not audited against the rule's checklist yet.
+    status: done
+    comment: docs/configuration/supported_functions.md - per WHO and per platform, each function marked supported, read-only, via service, or not supported.
   docs-troubleshooting:
-    status: todo
-    comment: README covers one loader error; no general troubleshooting section yet.
+    status: done
+    comment: docs/configuration/troubleshooting.md - symptom, the identifying log line or frame, and the fix; linked from the README.
   docs-use-cases:
-    status: todo
-    comment: Not written yet.
+    status: done
+    comment: docs/configuration/use_cases.md - nine end-to-end scenarios with the configuration or automation for each.
   dynamic-devices:
     status: done
     comment: Dynamic discovery wires bus devices to Home Assistant without static configuration.
