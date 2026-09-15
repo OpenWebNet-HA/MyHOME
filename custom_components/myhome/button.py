@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -20,7 +21,10 @@ from homeassistant.const import (
     EntityCategory,
 )
 from homeassistant.core import callback
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.util import slugify
 
 from .const import (
     CONF_BUS_INTERFACE,
@@ -35,6 +39,11 @@ from .const import (
 from .myhome_device import MyHOMEEntity
 
 PARALLEL_UPDATES = 0
+
+
+def _valid_device_address(address: str) -> bool:
+    """Accept numeric WHERE and optional bus routing, without rewriting either."""
+    return re.fullmatch(r"[0-9]+(?:#4#[0-9]+)?", address) is not None
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
@@ -97,6 +106,84 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     for _button in list(_configured_buttons.keys()):
         _buttons.extend(_create_buttons_for_device(_button, _configured_buttons[_button]))
+
+    # Discovered actuators are restored by their platforms from the registry.
+    # They no longer emit a new-device signal, so rebuild their buttons here too.
+    # Use parent actuators rather than stale button entries: a deleted actuator
+    # must not be resurrected just because its old buttons remain registered.
+    registry = er.async_get(hass)
+    registered_entries = er.async_entries_for_config_entry(registry, config_entry.entry_id)
+    mac_prefixes = (f"{gateway.mac}-", f"{mac}-")
+
+    def _registered_id(registered):
+        if registered.platform == DOMAIN:
+            for prefix in mac_prefixes:
+                if registered.unique_id.startswith(prefix):
+                    return registered.unique_id[len(prefix):]
+        return ""
+
+    # Platform setup order is not guaranteed. Determine sensor/switch ownership
+    # before restoring any lights, rather than waiting for light.py's cleanup.
+    # Include the interface in every key: equal WHEREs on different buses differ.
+    non_light_addresses = set()
+    for registered in registered_entries:
+        registered_id = _registered_id(registered)
+        if registered.domain == "switch" and registered_id.startswith("1-"):
+            address = registered_id[2:]
+        elif registered.domain in ("sensor", "binary_sensor"):
+            if registered_id.startswith("1-"):
+                address = registered_id[2:].split("-", 1)[0]
+            elif registered_id.endswith(("-motion", "-illuminance")):
+                # Legacy sensor IDs omitted WHO; other WHO prefixes remain
+                # non-numeric and fail validation below.
+                address = registered_id.rsplit("-", 1)[0]
+            else:
+                continue
+        else:
+            continue
+        if _valid_device_address(address):
+            non_light_addresses.add(address)
+
+    configured_platforms = hass.data[DOMAIN][mac].get(CONF_PLATFORMS, {})
+    for domain, default_who in (("switch", "1"), ("sensor", "1"), ("binary_sensor", "25")):
+        for dev_id, cfg in configured_platforms.get(domain, {}).items():
+            if str(cfg.get(CONF_WHO, default_who)) != "1":
+                continue
+            address = str(cfg.get(CONF_WHERE, dev_id)).removeprefix("1-")
+            interface = cfg.get(CONF_BUS_INTERFACE) if CONF_BUS_INTERFACE in cfg else cfg.get("interface")
+            if interface is not None and "#4#" not in address:
+                address = f"{address}#4#{interface}"
+            if _valid_device_address(address):
+                non_light_addresses.add(address)
+
+    devices = None
+    for registered in registered_entries:
+        who = {"light": "1", "switch": "1", "cover": "2"}.get(registered.domain)
+        if who is None:
+            continue
+        registered_id = _registered_id(registered)
+        if not registered_id.startswith(f"{who}-"):
+            continue
+        device_id = registered_id[len(who) + 1:]
+        # Do not turn corrupted IDs such as MAC-1-1-06 into command WHERE=1-06.
+        if not _valid_device_address(device_id):
+            continue
+        if registered.domain == "light" and device_id in non_light_addresses:
+            continue
+        where, _, interface = device_id.partition("#4#")
+        default_suffix = f"{where}I{interface}" if interface else where
+        if registered.device_id and devices is None:
+            devices = dr.async_get(hass)
+        device = devices.async_get(registered.device_id) if registered.device_id else None
+        _buttons.extend(_create_buttons_for_device(device_id, {
+            CONF_WHO: who,
+            CONF_WHERE: where,
+            CONF_BUS_INTERFACE: interface or None,
+            CONF_NAME: (device.name if device else None) or registered.original_name
+            or f"{registered.domain.title()} {default_suffix}",
+            CONF_MANUFACTURER: (device.manufacturer if device else None) or "BTicino",
+            CONF_DEVICE_MODEL: (device.model if device else None) or "Actuator",
+        }))
 
     if _buttons:
         async_add_entities(_buttons)
@@ -166,7 +253,10 @@ class DisableCommandButtonEntity(ButtonEntity, MyHOMEEntity):
         self._attr_entity_category = EntityCategory.CONFIG
 
         self._attr_unique_id = f"{gateway.mac}-{self._who}-{self._device_id}-disable"
-        self.entity_id = f"{platform.lower()}.{name.lower().replace(' ', '_')}_lock"
+        clean_name = slugify(name) if name else ""
+        if not clean_name:
+            clean_name = slugify(f"device_{where}") or "device"
+        self.entity_id = f"{platform.lower()}.{clean_name}_lock"
         self._interface = interface
         self._full_where = (
             f"{self._where}#4#{self._interface}"
@@ -238,7 +328,10 @@ class EnableCommandButtonEntity(ButtonEntity, MyHOMEEntity):
         self._attr_entity_category = EntityCategory.CONFIG
 
         self._attr_unique_id = f"{gateway.mac}-{self._who}-{self._device_id}-enable"
-        self.entity_id = f"{platform.lower()}.{name.lower().replace(' ', '_')}_unlock"
+        clean_name = slugify(name) if name else ""
+        if not clean_name:
+            clean_name = slugify(f"device_{where}") or "device"
+        self.entity_id = f"{platform.lower()}.{clean_name}_unlock"
         self._interface = interface
         self._full_where = (
             f"{self._where}#4#{self._interface}"

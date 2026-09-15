@@ -12,6 +12,8 @@ panel implementation or propose copying another fork wholesale. The original
 comparison used our panel 0.9.0 at `02ce199` and Interstellar0verdrive's fork at
 `229b1eb`. Our side is pinned to `9e96d6a` (panel 0.19.0); `0f4993d` remains the
 preceding 0.18.0 implementation baseline.
+The branch also integrates `v2-phase1-architecture` through `db95d1f` (2026-09-15).
+This alignment retains panel 0.19.0 and its storage v4/export v2 contracts.
 The backend from
 upstream #349 is compared separately. The calibration-fork column still describes
 its pinned baseline, not a fresh audit of its moving `master`.
@@ -34,6 +36,7 @@ independent of opening the panel.
 | Implementation | Exact baseline | Relevant evidence |
 | --- | --- | --- |
 | Our `feat/myhome-sidepanel`, panel 0.19.0 | [`9e96d6a`](https://github.com/xtimmy86x/MyHOME/tree/9e96d6a6d62d548d1cedae155700abc5d5c7b342) | [Implemented API](panel-websocket-api.md), `panel.py`, `cover_profiles.py`, `cover_profile_provenance.py`, `cover_profile_export.py`, `cover_calibration.py`, `cover_calibration_automatic.py`, `cover_calibration_batch.py`, `frontend/panel/` |
+| Integrated `v2-phase1-architecture` base | [`db95d1f`](https://github.com/xtimmy86x/MyHOME/tree/db95d1f349036229b2965341622cf0f2ed3859cc) | Restored actuator lock/unlock buttons with stale-registration filtering; safe entity IDs for names with apostrophes; F454 alarm replay and keepalive/reconnect regression tests |
 | Interstellar0verdrive's `MyHOME-stability`, `master` | [`229b1eb`](https://github.com/Interstellar0verdrive/MyHOME-stability/tree/229b1eb30558012674e1e7f5c2059a58300f09df) | [API reference](https://github.com/Interstellar0verdrive/MyHOME-stability/blob/229b1eb30558012674e1e7f5c2059a58300f09df/docs/panel-websocket-api.md), `websocket_api.py`, `panel_data.py`, `panel_write.py`, `panel_schemas.py`, `panel_src/` |
 | Upstream #349, backend only | [`e807e99`](https://github.com/OpenWebNet-HA/MyHOME/tree/e807e9986ca9e09e8f3c516bd9c5d8b55e076485) | [PR #349](https://github.com/OpenWebNet-HA/MyHOME/pull/349), `cover.py`, services, [runtime/service documentation](https://github.com/OpenWebNet-HA/MyHOME/blob/e807e9986ca9e09e8f3c516bd9c5d8b55e076485/docs/configuration/services.md) |
 
@@ -466,8 +469,9 @@ sequential targets, whole-group interruption, queue tokens, atomic failure cases
 restart persistence and preservation of review names. It covers automatic run ordering, cutoff boundaries,
 missing start/stop feedback, cancellation during pauses/queued dispatch, shared
 ownership, persistence failure, source migration, UI confirmation and explicit Save.
-The full local suite passed **1,501 Python tests (1 skipped), with 100% line
-coverage**. CI results are recorded with the implementation in the panel PR.
+After integrating `db95d1f`, the full local suite passed **1,535 Python tests
+(1 skipped), with 100% line coverage**, and all **75 frontend tests passed**.
+The alignment merged without conflicts; Ruff and HA architectural checks passed. CI results are recorded with the implementation in the panel PR.
 These checks are not proof of interoperability with upstream services or of
 physical actuator feedback accuracy. The user confirmed the preceding 0.16.0
 provenance and 0.18.0 single-cover automatic behavior in their installation;

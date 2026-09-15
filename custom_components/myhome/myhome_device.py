@@ -12,6 +12,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.util import slugify
 
 from .const import DOMAIN, LOGGER
 
@@ -47,7 +48,10 @@ class MyHOMEEntity(RestoreEntity):
         self._availability_listener_registered = False
         self._attr_has_entity_name = False
         self._attr_name = name
-        self.entity_id = f"{platform.lower()}.{name.lower().replace(' ', '_').replace('#', '')}"
+        clean_name = slugify(name) if name else ""
+        if not clean_name:
+            clean_name = slugify(f"device_{where}") or "device"
+        self.entity_id = f"{platform.lower()}.{clean_name}"
 
         self._attr_entity_registry_enabled_default = True
         self._attr_should_poll = False

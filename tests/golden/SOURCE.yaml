@@ -80,7 +80,14 @@ authorities:
         date: "2026-09-11"
         gateway: "BTicino MyHomeServer1"
         devices: "Full installation: F428, F482V12 dry contacts, 4-digit lighting (0910/1000s), LN4661M2 shutters, 3550 99-zone climate, F52X energy management"
+      - name: "Physical Bus Capture (BTicino F454 + Burglar Alarm WHO 5)"
+        reference: "https://github.com/OpenWebNet-HA/MyHOME/issues/311"
+        author: "Giovanni (@gimprota76)"
+        date: "2026-09-15"
+        gateway: "BTicino F454"
+        devices: "Burglar alarm central unit (WHO 5) 8 zones, auxiliary channels (WHO 9)"
     role: "Provides authentic on-wire bus frames and status replies captured from live physical hardware."
+
 
   sut:
     name: "OWNd / MyHOME Integration v2"

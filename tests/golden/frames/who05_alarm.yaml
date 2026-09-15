@@ -41,3 +41,81 @@
   mcp_valid: true
   mcp_notes: "Burglar Alarm: Zone #2 alarm event"
   roundtrip: true
+
+- id: alarm.event.activation.cu
+  frame: "*5*1*0##"
+  direction: event
+  who: 5
+  what: 1
+  where: "0"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Burglar Alarm: Central unit activation (arm away)"
+  roundtrip: true
+
+- id: alarm.event.engage.cu
+  frame: "*5*8*0##"
+  direction: event
+  who: 5
+  what: 8
+  where: "0"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Burglar Alarm: Central unit system engaged"
+  roundtrip: true
+
+- id: alarm.event.disengage.cu
+  frame: "*5*9*0##"
+  direction: event
+  who: 5
+  what: 9
+  where: "0"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Burglar Alarm: Central unit system disengaged"
+  roundtrip: true
+
+- id: alarm.event.active.zone1
+  frame: "*5*11*#1##"
+  direction: event
+  who: 5
+  what: 11
+  where: "#1"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Burglar Alarm: Zone #1 active partition"
+  roundtrip: true
+
+- id: alarm.event.inactive.zone5
+  frame: "*5*18*#5##"
+  direction: event
+  who: 5
+  what: 18
+  where: "#5"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Burglar Alarm: Zone #5 non-active partition"
+  roundtrip: true
+
+- id: alarm.event.intrusion.zone3
+  frame: "*5*15*#3##"
+  direction: event
+  who: 5
+  what: 15
+  where: "#3"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Burglar Alarm: Zone #3 intrusion alarm event"
+  roundtrip: true
+
+- id: alarm.req.status.zone_cu_1
+  frame: "*#5*#1##"
+  direction: status_request
+  who: 5
+  what: null
+  where: "#1"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Burglar Alarm: Status request for central unit zone #1"
+  roundtrip: true
+

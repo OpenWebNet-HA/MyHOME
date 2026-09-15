@@ -324,3 +324,83 @@ async def test_button_additional_edge_coverage(hass):
         {"who": "1", "where": "21", "name": "Light 21", "device_id": "21"},
     )
     assert len(added_entities) == 2
+
+
+async def test_button_entity_id_sanitization_issue_347(hass):
+    """Verify lock and unlock buttons sanitize device names containing apostrophes and accents (Issue #347)."""
+    from homeassistant.core import valid_entity_id
+
+    mock_gateway = MagicMock()
+    mock_gateway.mac = "00:03:50:81:17:76"
+
+    test_cases = [
+        ("Chambre d'amis Groupe de volets", "11", "button.chambre_d_amis_groupe_de_volets_lock", "button.chambre_d_amis_groupe_de_volets_unlock"),
+        ("Chambre d'amis Volets arrière", "12", "button.chambre_d_amis_volets_arriere_lock", "button.chambre_d_amis_volets_arriere_unlock"),
+        ("Chambre d'amis Volets avant", "13", "button.chambre_d_amis_volets_avant_lock", "button.chambre_d_amis_volets_avant_unlock"),
+        ("L'Éclairage Salon", "14", "button.l_eclairage_salon_lock", "button.l_eclairage_salon_unlock"),
+        ("Salon / Salle à manger", "15", "button.salon_salle_a_manger_lock", "button.salon_salle_a_manger_unlock"),
+        ("", "16", "button.device_16_lock", "button.device_16_unlock"),
+    ]
+
+    for name, where, expected_lock, expected_unlock in test_cases:
+        lock_btn = DisableCommandButtonEntity(
+            hass=hass,
+            platform="button",
+            name=name,
+            device_id=where,
+            who="2",
+            where=where,
+            interface=None,
+            manufacturer="BTicino",
+            model="Actuator",
+            gateway=mock_gateway,
+        )
+        unlock_btn = EnableCommandButtonEntity(
+            hass=hass,
+            platform="button",
+            name=name,
+            device_id=where,
+            who="2",
+            where=where,
+            interface=None,
+            manufacturer="BTicino",
+            model="Actuator",
+            gateway=mock_gateway,
+        )
+
+        assert lock_btn.entity_id == expected_lock, f"Failed lock entity_id for {name}"
+        assert unlock_btn.entity_id == expected_unlock, f"Failed unlock entity_id for {name}"
+        assert valid_entity_id(lock_btn.entity_id), f"Invalid lock entity_id: {lock_btn.entity_id}"
+        assert valid_entity_id(unlock_btn.entity_id), f"Invalid unlock entity_id: {unlock_btn.entity_id}"
+
+    # Also verify through the dispatcher / platform setup
+    hass.data = {
+        DOMAIN: {
+            "mac_issue_347": {
+                "platforms": {"button": {}},
+                "entity": mock_gateway,
+            }
+        }
+    }
+    config_entry = MagicMock()
+    config_entry.data = {"mac": "mac_issue_347"}
+    added_buttons = []
+    await async_setup_entry(hass, config_entry, lambda ents: added_buttons.extend(ents))
+
+    from homeassistant.helpers.dispatcher import async_dispatcher_send
+    async_dispatcher_send(
+        hass,
+        "myhome_new_device_mac_issue_347",
+        {
+            "who": "2",
+            "where": "31",
+            "name": "Chambre d'amis Groupe de volets",
+            "device_id": "31",
+        },
+    )
+    assert len(added_buttons) == 2
+    assert added_buttons[0].entity_id == "button.chambre_d_amis_groupe_de_volets_lock"
+    assert added_buttons[1].entity_id == "button.chambre_d_amis_groupe_de_volets_unlock"
+    assert valid_entity_id(added_buttons[0].entity_id)
+    assert valid_entity_id(added_buttons[1].entity_id)
+
