@@ -270,3 +270,53 @@ async def test_brightness_restore_does_not_downgrade_color_light(hass, mock_gate
     await light.async_added_to_hass()
     assert light.supported_color_modes == {ColorMode.HS}
     assert light.color_mode == ColorMode.HS
+
+
+# ── Startup discovery honours the gateway profile (MH200N NACKs *#16*0##) ──
+
+
+async def test_discovery_skips_unsupported_who(gateway_handler):
+    """An MH200N profile (no audio) must not be asked *#16*0## at startup."""
+    from OWNd.profiles import get_gateway_profile
+
+    gateway_handler.gateway.profile = get_gateway_profile("MH200N")
+    with patch("custom_components.myhome.gateway.OWNEventSession") as session_cls:
+        session = MagicMock()
+        session.connect = AsyncMock(return_value={"Success": True})
+        session.get_next = AsyncMock(side_effect=asyncio.CancelledError())
+        session_cls.return_value = session
+        with pytest.raises(asyncio.CancelledError):
+            await gateway_handler.listening_loop()
+
+    queued = []
+    while not gateway_handler.send_buffer.empty():
+        queued.append(str(gateway_handler.send_buffer.get_nowait()["message"]))
+    assert queued == ["*#2*0##", "*#4*0##"]
+
+
+def test_profile_supports_who_defaults_to_true_without_profile(gateway_handler):
+    """Unknown or foreign profile objects never suppress discovery."""
+    gateway_handler.gateway.profile = None
+    assert gateway_handler._profile_supports_who(16) is True
+    gateway_handler.gateway.profile = object()
+    assert gateway_handler._profile_supports_who(16) is True
+
+
+def test_gateway_info_normalises_none_firmware():
+    """A stringified None firmware from OWNd/SSDP is reported as empty, not 'None'."""
+    from custom_components.myhome.websocket import _extract_gateway_info
+
+    gw = MagicMock()
+    gw.gateway.model_name = "MH200N"
+    gw.gateway.manufacturer = "BTicino S.p.A."
+    gw.gateway.firmware = "None"
+    gw.gateway.host = "192.0.2.40"
+    gw.gateway.port = 20000
+    gw.mac = "00:03:50:00:48:71"
+    gw.sending_workers = []
+    gw.send_buffer = None
+    gw.config_entry.data = {"firmware": "null"}
+    assert _extract_gateway_info(gw)["firmware"] == ""
+
+    gw.config_entry.data = {"firmware": "1.0.42"}
+    assert _extract_gateway_info(gw)["firmware"] == "1.0.42"

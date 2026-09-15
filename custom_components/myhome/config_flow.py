@@ -53,6 +53,7 @@ from .const import (
     CONF_WORKER_COUNT,
     DEFAULT_TRANSITION_MODE,
     DOMAIN,
+    IDENTIFICATION_MANUAL,
     LOGGER,
     SUPPORTED_GATEWAY_MODELS,
 )
@@ -262,7 +263,7 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
                     self._custom_port = user_input.get("port", 20000)
                     return await self.async_step_custom_manual()
 
-        address_suggestion = user_input["address"] if user_input is not None and user_input.get("address") else "192.168.1.135"
+        address_suggestion = user_input["address"] if user_input is not None and user_input.get("address") else "192.168.1.100"
         port_suggestion = user_input["port"] if user_input is not None and user_input.get("port") else 20000
 
         return self.async_show_form(
@@ -313,7 +314,7 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
                 self._abort_if_unique_id_configured()
                 return await self.async_step_test_connection()
 
-        address_val = getattr(self, "_custom_address", "192.168.1.135")
+        address_val = getattr(self, "_custom_address", "192.168.1.100")
         port_val = getattr(self, "_custom_port", 20000)
         serial_number_suggestion = user_input["serialNumber"] if user_input is not None and user_input.get("serialNumber") else "00:03:50:00:00:00"
         model_name_suggestion = user_input["modelName"] if user_input is not None and user_input.get("modelName") else "MyHomeServer1"
@@ -741,6 +742,9 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
                 _model_update = False
                 if CONF_NAME in user_input and user_input[CONF_NAME] != self.data.get(CONF_NAME):
                     self.data[CONF_NAME] = user_input[CONF_NAME]
+                    # An explicit choice is authoritative: drop any earlier WHO=13 label so
+                    # the next device-type reply cannot overwrite it (see gateway.py).
+                    self.data["model_source"] = IDENTIFICATION_MANUAL
                     _model_update = True
 
                 _data_update = not (

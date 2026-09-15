@@ -997,6 +997,9 @@ ${framesText}
         connection_type: (this._gatewayInfo && this._gatewayInfo.connection_type) || "tcp",
         queue_pacing: (this._gatewayInfo && this._gatewayInfo.queue_pacing) || "standard",
         is_connected: (this._gatewayInfo && this._gatewayInfo.is_connected) !== false,
+        // How the model label was established (ssdp / manual / serial / who13) and the
+        // WHO=13 evidence behind it - so a trace never hides a mislabelled gateway.
+        identification: (this._gatewayInfo && this._gatewayInfo.identification) || null,
       },
       telemetry: {
         total_rx: this._stats.total_rx,
@@ -1007,12 +1010,15 @@ ${framesText}
       },
       frames: this._frames.map((f) => ({
         timestamp: f.timestamp,
-        direction: f.dir,
+        iso_time: f.iso_time || null,
+        direction: f.direction || null,
         raw: f.raw,
         who: f.who,
         what: f.what,
         where: f.where,
-        description: f.desc || "",
+        dimension: f.dimension != null ? f.dimension : null,
+        is_ack: !!f.is_ack,
+        is_nack: !!f.is_nack,
       })),
     };
 

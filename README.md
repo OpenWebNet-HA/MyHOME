@@ -4,6 +4,8 @@
 [![HACS Validation](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/validate.yml/badge.svg)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/validate.yml)
 [![test-coverage](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/test-coverage.yaml/badge.svg)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/test-coverage.yaml)
 [![Coverage](coverage.svg)](https://app.codecov.io/gh/OpenWebNet-HA/MyHOME/tree/v2-phase2-architecture)
+[![Integration Quality Scale](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/quality-scale.yml/badge.svg)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/quality-scale.yml)
+[![Quality scale tier](quality_scale.svg)](custom_components/myhome/quality_scale.yaml)
 [![Codecov](https://codecov.io/gh/OpenWebNet-HA/MyHOME/branch/v2-phase2-architecture/graph/badge.svg)](https://app.codecov.io/gh/OpenWebNet-HA/MyHOME/tree/v2-phase2-architecture)
 [![PyPI Standards & Packaging](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/pypi_standards.yml/badge.svg?branch=v2-phase2-architecture)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/pypi_standards.yml?query=branch%3Av2-phase2-architecture)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
@@ -101,10 +103,20 @@ We now maintain a comprehensive, community-curated **[GitHub Wiki](https://githu
 
 ## 📦 Installation & Updating
 
+> [!CAUTION]
+> **⚠️ Never store backup copies inside `/config/custom_components/` (e.g. `myhome.backup`)!**  
+> Home Assistant automatically discovers **all** subdirectories containing `manifest.json` under `/config/custom_components/`. If you create a backup folder like `/config/custom_components/myhome.backup` or rename the old directory in place:  
+> 1. Home Assistant registers `custom_components.myhome.backup` as the integration module path for domain `myhome`.  
+> 2. Python treats dots (`.`) as module delimiters, attempting to load `backup.py` from `custom_components.myhome`, which does not exist.  
+> 3. Home Assistant startup fails with:  
+>    `Setup failed for custom integration 'myhome': Unable to import component: No module named 'custom_components.myhome.backup'`  
+> 
+> **Rule:** Always keep safety backups **outside** the `custom_components/` folder (e.g. in `/config/myhome_backup/`).
+
 > [!WARNING]
 > **⚠️ Do NOT use HACS to install beta / pre-release versions!**  
-> In **HACS 2.0+**, pre-release access was moved to Home Assistant entity switches (`switch.myhome_pre_release`) that are disabled by default. Due to upstream Home Assistant registry caching, enabling these switches frequently gets stuck in an *"unavailable"* loop or reverts to *"disabled"*. Furthermore, because pre-releases are built on the Phase 1 feature branch (`v2-phase1-architecture`) while the default branch is `master`, HACS download validation frequently fails with:  
-> `The version 2.0.0b5 for this integration can not be used with HACS`  
+> In **HACS 2.0+**, pre-release access was moved to Home Assistant entity switches (`switch.myhome_pre_release`) that are disabled by default. Due to upstream Home Assistant registry caching, enabling these switches frequently gets stuck in an *"unavailable"* loop or reverts to *"disabled"*. Furthermore, because pre-releases are built on the active development branch (`v2-phase1-architecture`) while the default branch is `master`, HACS download validation frequently fails with:  
+> `The version 2.0.0b12 for this integration can not be used with HACS`  
 > 
 > **To avoid frustration, please use Method 1 (Terminal & SSH) or Method 2 (Manual) below — they take less than 10 seconds and preserve all existing devices, entities, and settings 100% safely.**
 
@@ -116,8 +128,13 @@ If you have the **Terminal & SSH** add-on enabled in Home Assistant, open **Term
 
 ```bash
 cd /config/custom_components
-wget -O myhome_beta.zip $(curl -s https://api.github.com/repos/OpenWebNet-HA/MyHOME/releases | grep -m1 -o 'https://[^"]*myhome\.zip')
+# Move any legacy in-place backup out of custom_components to prevent loader crashes:
+[ -d myhome.backup ] && mv myhome.backup /config/myhome_backup_old
+# Create a safety backup in /config (outside custom_components) before updating:
+[ -d myhome ] && rm -rf /config/myhome_backup && cp -r myhome /config/myhome_backup
+# Download and install the latest v2.0.0b12 release:
 rm -rf myhome
+wget -O myhome_beta.zip https://github.com/OpenWebNet-HA/MyHOME/releases/download/2.0.0b12/myhome.zip
 unzip -q myhome_beta.zip -d myhome
 rm myhome_beta.zip
 ha core restart
@@ -125,7 +142,7 @@ ha core restart
 
 *(For **Home Assistant Container / Docker**, run on your Docker host:)*
 ```bash
-docker exec -it homeassistant bash -c 'cd /config/custom_components && wget -O myhome_beta.zip $(curl -s https://api.github.com/repos/OpenWebNet-HA/MyHOME/releases | grep -m1 -o "https://[^\"]*myhome\.zip") && rm -rf myhome && unzip -q myhome_beta.zip -d myhome && rm myhome_beta.zip'
+docker exec -it homeassistant bash -c 'cd /config/custom_components && [ -d myhome.backup ] && mv myhome.backup /config/myhome_backup_old; [ -d myhome ] && rm -rf /config/myhome_backup && cp -r myhome /config/myhome_backup; rm -rf myhome && wget -O myhome_beta.zip https://github.com/OpenWebNet-HA/MyHOME/releases/download/2.0.0b12/myhome.zip && unzip -q myhome_beta.zip -d myhome && rm myhome_beta.zip'
 docker restart homeassistant
 ```
 
@@ -137,10 +154,11 @@ docker restart homeassistant
 ### Method 2: Manual Installation (Archive / Samba)
 
 1. Download the release package:  
-   👉 **[Download myhome.zip (GitHub Releases)](https://github.com/OpenWebNet-HA/MyHOME/releases)** (or direct [v2.0.0b8 download](https://github.com/OpenWebNet-HA/MyHOME/releases/download/2.0.0b8/myhome.zip))
+   👉 **[Download myhome.zip (v2.0.0b12)](https://github.com/OpenWebNet-HA/MyHOME/releases/download/2.0.0b12/myhome.zip)** (or browse all [GitHub Releases](https://github.com/OpenWebNet-HA/MyHOME/releases))
 2. Open your Home Assistant configuration directory (via **Samba Share**, **Studio Code Server**, or **File Editor** add-on).
-3. Extract `myhome.zip` directly into `/config/custom_components/myhome/` (overwriting the existing files).
-4. Restart Home Assistant (**Settings → System → Restart**).
+3. **Important:** If you wish to back up your existing `myhome` folder first, copy it to `/config/myhome_backup/` (**outside** `custom_components/`). **Never rename or copy it to `custom_components/myhome.backup`.**
+4. Extract `myhome.zip` directly into `/config/custom_components/myhome/` (overwriting the existing files).
+5. Restart Home Assistant (**Settings → System → Restart**).
 
 ---
 
@@ -170,6 +188,20 @@ docker restart homeassistant
 2. Click the blue **Download** button (or `⋮` → **Redownload**).
 3. Select the version and click **Download**.
 4. Restart Home Assistant (**Settings → System → Restart**).
+
+---
+
+### 🩹 Troubleshooting: "No module named 'custom_components.myhome.backup'"
+
+If Home Assistant fails to load with the log error:
+```text
+Setup failed for custom integration 'myhome': Unable to import component: No module named 'custom_components.myhome.backup'
+```
+This is caused by a backup folder (`myhome.backup`) residing inside `/config/custom_components/`. Fix it by running:
+```bash
+mv /config/custom_components/myhome.backup /config/myhome_backup
+ha core restart
+```
 
 ---
 
@@ -499,6 +531,24 @@ automated coverage and physical gateway verification steps.
 - **`ha-upstream-compat`**: Continuous integration testing against upstream Home Assistant Stable, Beta, and Dev channels.
 - **`ha_standards`**: Automated architectural standards enforcement (`verify_ha_standards.py` / `test_ha_standards.py`) ensuring user-confirmed discovery flows, complete step translations, no deprecated constants, and no blocking calls in async coroutines.
 - **`pypi_standards`**: Strict wheel hygiene, metadata verification, and packaging checks.
+- **`quality-scale`**: Self-audit of `quality_scale.yaml` against the official Home Assistant Integration Quality Scale (`quality_scale_report.py`); reports the tier reached, refreshes the badge and the table below.
+
+### 🏅 Home Assistant Integration Quality Scale
+
+<!-- START_QUALITY_SCALE -->
+
+**Tier reached: — none yet**
+
+| Tier | Rules satisfied | Status |
+| :--- | :---: | :--- |
+| 🥉 Bronze | 16 / 20 | ⏳ next — blocked by `brands`, `docs-removal-instructions`, `has-entity-name`, `runtime-data` |
+| 🥈 Silver | 10 / 10 | ✅ all rules satisfied (waiting on lower tier) |
+| 🥇 Gold | 10 / 21 | ⬜ 11 rule(s) open |
+| 🏆 Platinum | 2 / 3 | ⬜ 1 rule(s) open |
+
+_Self-audit of [`quality_scale.yaml`](custom_components/myhome/quality_scale.yaml) against the official [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/); a tier needs every rule of that tier and all lower tiers `done`/`exempt`. Updated by the [Integration Quality Scale workflow](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/quality-scale.yml); tiers are formally awarded only by Home Assistant core review._
+
+<!-- END_QUALITY_SCALE -->
 
 ### 📊 Code Coverage & Quality Assurance
 

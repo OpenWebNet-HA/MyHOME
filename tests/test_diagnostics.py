@@ -211,6 +211,7 @@ async def test_redaction_is_scoped_to_the_config_entry(hass: HomeAssistant):
     mock_handler = MagicMock()
     mock_handler.gateway, mock_handler.is_connected, mock_handler.sending_workers = mock_gw, True, []
     mock_handler.send_buffer, mock_handler.bus_monitor = None, bus_mon
+    mock_handler.identification.return_value = {"model": "F454", "source": "manual", "conflict": None}
     hass.data[DOMAIN] = {mac: {CONF_ENTITY: mock_handler, CONF_ENTITIES: {"light": [MagicMock()]}}}
 
     diag = await async_get_config_entry_diagnostics(hass, mock_entry)
@@ -222,7 +223,8 @@ async def test_redaction_is_scoped_to_the_config_entry(hass: HomeAssistant):
     assert mock_entry.data[CONF_MAC] == mac  # redacted on a copy, the entry itself is untouched
     # the gateway side: found through the raw MAC, delivered as built
     assert diag["gateway"] == {"model_name": "F454", "manufacturer": "BTicino S.p.A.", "firmware": "1.0",
-                               "is_connected": True, "send_workers": 0}
+                               "is_connected": True, "send_workers": 0,
+                               "identification": {"model": "F454", "source": "manual", "conflict": None}}
     assert diag["platforms"] == {"light": 1}
     frame = diag["bus_monitor"]["recent_frames"][0]
     assert (frame["raw"], frame["who"], frame["where"], frame["what"]) == ("*1*1*12##", "1", "12", "1")

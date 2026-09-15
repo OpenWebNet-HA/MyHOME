@@ -82,7 +82,6 @@
       "reconfigure_successful": "Gateway connection reconfigured successfully."
     }
   },
-
   "options": {
     "step": {
       "user": {
@@ -208,6 +207,14 @@
     "bus_collision_storm": {
       "title": "High SCS bus collision rate detected ({count} NACKs)",
       "description": "An unusually high rate of bus collisions or NACK frames was detected on the SCS bus. Please check actuator wiring and physical bus termination."
+    },
+    "gateway_identity_mismatch": {
+      "title": "Gateway model mismatch for {configured}",
+      "description": "The gateway is configured as {configured} (source: {source}) but reports OpenWebNet device type {code}, which identifies {reported} according to {basis}. The configured model is kept; traces and diagnostics carry both values. If {reported} is what you own, open the integration's options (Configure) and pick the correct model; if {configured} is right, ignore this and please attach a trace to an issue so the code can be documented."
+    },
+    "gateway_identity_corrected": {
+      "title": "Gateway model corrected to {corrected}",
+      "description": "The gateway was configured as {previous} but reports OpenWebNet device type {code}, which the BTicino specification defines as {corrected}. The model, gateway profile and device registry were updated to {corrected}. If that is wrong, open the integration's options (Configure) and set the model explicitly."
     }
   }
 }
