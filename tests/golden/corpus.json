@@ -438,6 +438,27 @@
     "_file": "who01_lighting.yaml"
   },
   {
+    "id": "light.dim.req.hsv.broadcast",
+    "frame": "*#1*0*12##",
+    "direction": "dimension_request",
+    "who": 1,
+    "what": null,
+    "where": "0",
+    "dimension": 12,
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: General status request for Dimension 12 (HSV) across all ballasts",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "get_hsv_color",
+      "args": [
+        "0"
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
     "id": "light.dim.reply.hsv.valid",
     "frame": "*#1*25#4#02*12*255*100*50##",
     "direction": "dimension_response",
