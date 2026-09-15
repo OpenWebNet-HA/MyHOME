@@ -9,7 +9,8 @@ import pytest
 
 from scripts.anonymize_plant_fixture import Anonymizer, anonymize, check, findings, main
 
-PLANTS = Path(__file__).resolve().parent / "fixtures" / "plants"
+TESTS = Path(__file__).resolve().parent
+PLANTS = TESTS / "fixtures" / "plants"
 PRIVATE_IP = re.compile(r"\b(10\.\d+|172\.(1[6-9]|2\d|3[01])|192\.168)\.\d+\.\d+\b")
 IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 MAC = re.compile(r"\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b")
@@ -134,7 +135,28 @@ def test_cli_writes_the_mapping(tmp_path, capsys):
 
 def test_nothing_in_the_test_tree_looks_personal():
     """The same rules, over every data and source file under tests/ - wherever a dump lands."""
-    assert check([PLANTS.parent]) == 0
+    assert check([TESTS]) == 0
+
+
+def test_the_scan_covers_the_whole_test_tree_not_only_the_fixtures(tmp_path, capsys):
+    """Review of #335: the root was tests/fixtures, so a dump under golden/ or frontend/ went unchecked."""
+    tree = tmp_path / "tests"
+    (tree / "fixtures" / "plants" / "issue_1_f454").mkdir(parents=True)
+    (tree / "fixtures" / "plants" / "issue_1_f454" / "diagnostic_summary.json").write_text(
+        json.dumps({"host": "192.0.2.1", "mac": "00:03:50:00:00:01"}), encoding="utf-8")
+    (tree / "golden").mkdir()
+    (tree / "golden" / "issue_1_f454.json").write_text(json.dumps({"host": "192.168.1.35"}), encoding="utf-8")
+    (tree / "frontend").mkdir()
+    (tree / "frontend" / "trace.yaml").write_text("mac: 00:03:50:AB:CD:EF" + chr(10), encoding="utf-8")
+    (tree / "test_something.py").write_text("PATH = '/home/alice/.homeassistant'" + chr(10), encoding="utf-8")
+
+    assert check([tree / "fixtures"]) == 0  # the old root: everything above it is invisible
+    assert check([tree]) == 1
+    out = capsys.readouterr().out
+    assert f"{tree / 'golden' / 'issue_1_f454.json'}: LAN address" in out
+    assert f"{tree / 'frontend' / 'trace.yaml'}: non-synthetic MAC" in out
+    assert f"{tree / 'test_something.py'}: local path" in out
+    assert "4 files checked, 3 with personal data" in out
 
 
 def test_check_reports_and_rejects(tmp_path, capsys):
