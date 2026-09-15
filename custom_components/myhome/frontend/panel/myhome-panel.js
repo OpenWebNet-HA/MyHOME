@@ -424,12 +424,12 @@ class MyHomePanel extends HTMLElement {
       <header class="device-group-header"><button class="device-group-title" data-action="toggle-device" data-group="${escapeHtml(key)}" aria-expanded="${expanded}" aria-controls="${listId}"><ha-icon class="device-chevron" icon="mdi:chevron-down" aria-hidden="true"></ha-icon><span class="device-label">
         <span class="device-name">${escapeHtml(device ? this._itemName(device) : this._t("unassignedEntities"))}</span>
         <span class="muted">${escapeHtml([area, gateway].filter(Boolean).join(" · "))}</span>
-        ${device && primary.length ? `<span class="device-states">${primary.map((entity) => `<span class="device-state" title="${escapeHtml(this._itemName(entity))}">
+      </span><span class="count">${entities.length} ${escapeHtml(this._t("entities"))}</span></button>
+      ${device ? `<div class="device-actions"><button class="icon-button" data-action="edit-device" data-id="${escapeHtml(device.id)}" title="${escapeHtml(this._t("edit"))}" aria-label="${escapeHtml(this._t("edit"))}: ${escapeHtml(this._itemName(device))}"><ha-icon icon="mdi:pencil-outline" aria-hidden="true"></ha-icon></button><a class="button icon-button" href="${escapeHtml(deviceUrl(device.id))}" title="${escapeHtml(this._t("openDevice"))}" aria-label="${escapeHtml(this._t("openDevice"))}: ${escapeHtml(this._itemName(device))}"><ha-icon icon="mdi:open-in-new" aria-hidden="true"></ha-icon></a></div>` : ""}
+      ${device && primary.length ? `<div class="device-states">${primary.map((entity) => `<span class="device-state" title="${escapeHtml(this._itemName(entity))}">
           ${primary.length > 1 ? `<span class="device-state-name">${escapeHtml(this._itemName(entity))}:</span>` : ""}
           <span data-state="${escapeHtml(entity.entity_id)}" aria-label="${escapeHtml(this._t("state"))}: ${escapeHtml(this._itemName(entity))}"></span>
-        </span>`).join("")}</span>` : ""}
-      </span><span class="count">${entities.length} ${escapeHtml(this._t("entities"))}</span></button>
-      ${device ? `<div class="device-actions"><button data-action="edit-device" data-id="${escapeHtml(device.id)}">${escapeHtml(this._t("edit"))}</button><a class="button" href="${escapeHtml(deviceUrl(device.id))}">${escapeHtml(this._t("openDevice"))}</a></div>` : ""}
+        </span>`).join("")}</div>` : ""}
       ${sharedAddress ? this._addressDetails({ address: sharedAddress }) : !entities.length && device ? this._addressDetails(device) : ""}</header>
       <div class="entity-list" id="${listId}" ${expanded ? "" : "hidden"}>${primary.map((entity) => this._entityRow(entity, device, sharedAddress)).join("")}
         ${secondary.length ? `<section class="secondary-entities" aria-label="${escapeHtml(this._t("secondaryEntities"))}"><h3>${escapeHtml(this._t("secondaryEntities"))}</h3><div class="secondary-grid">${secondary.map((entity) => this._entityRow(entity, device, sharedAddress, true)).join("")}</div></section>` : ""}
@@ -454,7 +454,7 @@ class MyHomePanel extends HTMLElement {
       ${isButton ? "" : `<p class="state" data-state="${id}" aria-label="${t("state")}"></p>`}
       <div class="actions"><button data-action="edit-entity" data-id="${id}" aria-label="${t("edit")}: ${name}" title="${t("edit")}: ${name}">${secondary ? '<ha-icon icon="mdi:pencil-outline" aria-hidden="true"></ha-icon>' : t("edit")}</button>
         ${secondary ? "" : `<button data-action="details" data-id="${id}">${t("details")}</button>`}
-        ${item.domain === "cover" && item.who === "2" ? `<button data-action="cover-profile" data-id="${id}">${t("coverProfiles")}</button><span class="muted" data-cover-profile="${id}"></span>` : ""}</div></article>`;
+        ${item.domain === "cover" && item.who === "2" ? `<span class="chip profile-chip" data-cover-profile="${id}" title="${t("coverProfiles")}"></span><button data-action="cover-profile" data-id="${id}"><ha-icon icon="mdi:timer-outline" aria-hidden="true"></ha-icon>${t("coverProfiles")}</button>` : ""}</div></article>`;
   }
 
   _addressDetails(item) {
