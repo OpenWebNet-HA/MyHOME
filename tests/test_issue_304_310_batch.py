@@ -5,10 +5,13 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from OWNd.message import OWNEvent, OWNHeatingEvent
+from homeassistant.components.light import ColorMode
+from homeassistant.core import State
+from OWNd.message import OWNEvent, OWNHeatingEvent, OWNLightingEvent
 
 from custom_components.myhome.const import DOMAIN
 from custom_components.myhome.gateway import MyHOMEGatewayHandler, _registry_supports_via_device_id
+from custom_components.myhome.light import MyHOMELight
 from custom_components.myhome.sensor import SCAN_INTERVAL, MyHOMETemperatureSensor
 
 
@@ -188,3 +191,82 @@ async def test_probe_sensor_polls_only_when_push_stream_is_silent(hass, mock_gat
     await probe.async_update()
     mock_gateway.send_status_request.assert_awaited_once()
 
+
+# ── #307: DALI DT8 reports both HSV and tunable white ────────────────────
+
+
+def _make_light(hass, gateway):
+    return MyHOMELight(
+        hass=hass,
+        name="DALI DT8",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="25#4#02",
+        who="1",
+        where="25",
+        interface="02",
+        dimmable=False,
+        manufacturer="BTicino",
+        model="DALI Gateway",
+        gateway=gateway,
+    )
+
+
+def test_color_modes_accumulate_instead_of_toggling(hass, mock_gateway):
+    """Dimension 12 then 14 (and back) must leave both HS and COLOR_TEMP supported (#307)."""
+    light = _make_light(hass, mock_gateway)
+    light.hass = hass
+    light.async_schedule_update_ha_state = MagicMock()
+    assert light.supported_color_modes == {ColorMode.ONOFF}
+
+    light.handle_event(OWNLightingEvent("*#1*25#4#02*12*120*50*80##"))
+    assert light.supported_color_modes == {ColorMode.HS}
+    assert light.color_mode == ColorMode.HS
+
+    light.handle_event(OWNLightingEvent("*#1*25#4#02*14*300##"))
+    assert light.supported_color_modes == {ColorMode.HS, ColorMode.COLOR_TEMP}
+    assert light.color_mode == ColorMode.COLOR_TEMP
+
+    light.handle_event(OWNLightingEvent("*#1*25#4#02*12*10*90*40##"))
+    assert light.supported_color_modes == {ColorMode.HS, ColorMode.COLOR_TEMP}
+    assert light.color_mode == ColorMode.HS
+    assert light.hs_color == (10.0, 90.0)
+
+
+async def test_color_modes_restored_together(hass, mock_gateway):
+    """Restoring a light that had both modes keeps both and the last active mode (#307)."""
+    light = _make_light(hass, mock_gateway)
+    light.hass = hass
+    light.async_schedule_update_ha_state = MagicMock()
+    light.async_get_last_state = AsyncMock(
+        return_value=State(
+            "light.dali_dt8",
+            "on",
+            {
+                "supported_color_modes": ["hs", "color_temp"],
+                "color_mode": "color_temp",
+                "brightness": 200,
+                "color_temp_kelvin": 4000,
+            },
+        )
+    )
+    await light.async_added_to_hass()
+    assert light.supported_color_modes == {ColorMode.HS, ColorMode.COLOR_TEMP}
+    assert light.color_mode == ColorMode.COLOR_TEMP
+    assert light.brightness == 200
+
+
+async def test_brightness_restore_does_not_downgrade_color_light(hass, mock_gateway):
+    """A stale brightness-only attribute never strips color capabilities."""
+    light = _make_light(hass, mock_gateway)
+    light.hass = hass
+    light.async_schedule_update_ha_state = MagicMock()
+    light.async_get_last_state = AsyncMock(
+        return_value=State(
+            "light.dali_dt8", "on", {"supported_color_modes": ["hs", "brightness"], "color_mode": "hs"}
+        )
+    )
+    await light.async_added_to_hass()
+    assert light.supported_color_modes == {ColorMode.HS}
+    assert light.color_mode == ColorMode.HS
