@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
 
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
@@ -42,7 +42,7 @@ class MyHOMEEntity(RestoreEntity):
 
     def __init__(
         self,
-        hass,
+        hass: HomeAssistant | None,
         name: str,
         platform: str,
         device_id: str,
@@ -94,7 +94,8 @@ class MyHOMEEntity(RestoreEntity):
             model=self._model,
         )
         # Link to the gateway device (via_device_id; via_device is gone since core 2026.8).
-        self._attr_device_info["via_device_id"] = gateway.device_registry_id
+        if gateway.device_registry_id:
+            self._attr_device_info["via_device_id"] = gateway.device_registry_id
 
     @property
     def _display_name(self) -> str:
@@ -130,7 +131,8 @@ class MyHOMEEntity(RestoreEntity):
         except RuntimeError as err:
             # A frame can still arrive for an entity that is being removed.
             LOGGER.debug("%s: state not written (%s)", self.entity_id, err)
-    def _device_config(self) -> dict | None:
+
+    def _device_config(self) -> dict[str, Any] | None:
         """Return this device's configuration mapping from the entry's runtime data.
 
         ``None`` when the entity is not attached to a config-entry platform (or the
@@ -194,7 +196,7 @@ class MyHOMEEntity(RestoreEntity):
         )
         self._availability_listener_registered = True
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
         self._register_availability_listener()
         await super().async_added_to_hass()
@@ -207,20 +209,22 @@ class MyHOMEEntity(RestoreEntity):
         if self._poll_on_add:
             await self.async_update()
 
-    async def async_restore_last_state(self, last_state) -> None:
+    async def async_update(self) -> None:
+        """Request the device's status from the bus; platforms override."""
+
+    async def async_restore_last_state(self, last_state: State) -> None:
         """Hook for entities to restore specific attributes and modes."""
-        if hasattr(self, "_attr_is_on") and self._attr_is_on is None:
+        if hasattr(self, "_attr_is_on") and getattr(self, "_attr_is_on") is None:
             if last_state.state == "on":
-                self._attr_is_on = True
+                setattr(self, "_attr_is_on", True)
             elif last_state.state == "off":
-                self._attr_is_on = False
-        if hasattr(self, "_attr_native_value") and self._attr_native_value is None:
+                setattr(self, "_attr_is_on", False)
+        if hasattr(self, "_attr_native_value") and getattr(self, "_attr_native_value") is None:
             if last_state.state not in ("unknown", "unavailable"):
                 try:
-                    self._attr_native_value = float(last_state.state)
+                    setattr(self, "_attr_native_value", float(last_state.state))
                 except (ValueError, TypeError):
-                    self._attr_native_value = last_state.state
+                    setattr(self, "_attr_native_value", last_state.state)
 
-    async def async_will_remove_from_hass(self):
+    async def async_will_remove_from_hass(self) -> None:
         """When entity is removed from hass."""
-        pass

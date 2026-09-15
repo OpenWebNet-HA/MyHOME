@@ -227,6 +227,10 @@
         "travel_time_up": {
           "name": "Travel time up",
           "description": "Seconds for a full opening run (1-180)."
+        },
+        "copied_from": {
+          "name": "Copied from",
+          "description": "The cover these times were taken from; the source is then reported as \"copied\" instead of \"manual\"."
         }
       }
     },

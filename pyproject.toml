@@ -72,6 +72,25 @@ exclude_lines = [
     "if TYPE_CHECKING:",
 ]
 
+[tool.check-wheel-contents]
+# W002 (duplicate files): Home Assistant requires strings.json and translations/en.json
+# as two files with identical content; that duplication is by design.
+ignore = ["W002"]
+
+[tool.mypy]
+# Integration Quality Scale rule strict-typing. The ceiling per module lives in
+# mypy_baseline.json and is ratcheted down by scripts/typing_ratchet.py.
+python_version = "3.14"
+strict = true
+warn_unreachable = true
+show_error_codes = true
+files = ["custom_components/myhome"]
+
+[[tool.mypy.overrides]]
+# OWNd does not ship py.typed yet; Platinum needs an OWNd release that does.
+module = ["OWNd.*", "serial_asyncio", "serial_asyncio.*"]
+ignore_missing_imports = true
+
 [tool.ruff]
 target-version = "py312"
 line-length = 100

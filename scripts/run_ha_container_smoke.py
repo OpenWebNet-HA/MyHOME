@@ -26,9 +26,9 @@ def run_cmd(cmd: list[str], check: bool = True, capture_output: bool = False) ->
     return subprocess.run(cmd, check=check, capture_output=capture_output, text=True)
 
 
-def test_ha_container(channel: str = "stable") -> bool:
+def test_ha_container(channel: str = "stable", registry: str = "ghcr.io/home-assistant") -> bool:
     """Run container smoke test against specified Home Assistant channel."""
-    image = f"ghcr.io/home-assistant/home-assistant:{channel}"
+    image = f"{registry}/home-assistant:{channel}"
     print(f"\n{'='*70}")
     print(f"Starting Home Assistant Container Smoke Test: {image}")
     print(f"{'='*70}")
@@ -164,12 +164,17 @@ def main():
         default="stable",
         help="Home Assistant image tag/channel to test (default: stable)",
     )
+    parser.add_argument(
+        "--registry",
+        default="ghcr.io/home-assistant",
+        help="Image registry/namespace (default: ghcr.io/home-assistant; docker.io/homeassistant is the Docker Hub mirror)",
+    )
     args = parser.parse_args()
 
     channels = ["stable", "beta", "dev"] if args.channel == "all" else [args.channel]
     success = True
     for ch in channels:
-        if not test_ha_container(ch):
+        if not test_ha_container(ch, args.registry):
             success = False
             if ch != "dev":
                 break

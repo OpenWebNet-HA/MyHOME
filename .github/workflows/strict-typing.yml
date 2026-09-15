@@ -1,0 +1,38 @@
+name: strict-typing
+
+# Integration Quality Scale rule strict-typing: `mypy --strict` over the integration,
+# ratcheted per module by scripts/typing_ratchet.py against mypy_baseline.json.
+# A module may only ever get cleaner; the run fails when any module regresses.
+
+on:
+  push:
+    branches: [main, master, "v2-*"]
+  pull_request:
+
+jobs:
+  mypy-ratchet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install Home Assistant (pinned by pytest-homeassistant-custom-component) and mypy
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest-homeassistant-custom-component mypy
+          python -c "import homeassistant.const as c; print('Home Assistant', c.__version__)"
+
+      - name: mypy --strict ratchet
+        run: python scripts/typing_ratchet.py | tee mypy-ratchet.txt
+
+      - name: Summary
+        if: always()
+        run: |
+          echo '## 🧷 strict-typing ratchet' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat mypy-ratchet.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
