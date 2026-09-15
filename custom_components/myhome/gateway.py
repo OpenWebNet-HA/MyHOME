@@ -88,6 +88,30 @@ _ownd_msg._gateway_timezone = _compat_gateway_timezone
 EVENT_READY_TIMEOUT = 120
 
 
+def _resolve_written(task: dict[str, Any], when: float) -> None:
+    """Complete a queued frame's delivery future with the write timestamp."""
+    written = task.get("written")
+    if isinstance(written, asyncio.Future) and not written.done():
+        written.set_result(when)
+
+
+def _session_is_open(session: Any) -> bool:
+    """Whether the command session has an open socket.
+
+    Not ``is_connected``: OWNd's ``close()`` only drops the streams and leaves
+    that flag as ``connect()`` last set it, so after the idle close it still
+    reads ``True``. The streams are what ``send()`` would reopen.
+    """
+    return getattr(session, "_stream_reader", None) is not None and getattr(session, "_stream_writer", None) is not None
+
+
+def _cancel_written(task: dict[str, Any]) -> None:
+    """Cancel a queued frame's delivery future (the frame will never be written)."""
+    written = task.get("written")
+    if isinstance(written, asyncio.Future) and not written.done():
+        written.cancel()
+
+
 @lru_cache(maxsize=1)
 def _registry_supports_via_device_id() -> bool:
     """Return True when this Home Assistant accepts ``via_device_id`` (2026.x+).
@@ -801,15 +825,8 @@ class MyHOMEGatewayHandler:
 
         _command_session = OWNCommandSession(gateway=self.gateway, logger=LOGGER)
         res = await _command_session.connect()
-        if isinstance(res, dict) and not res.get("Success", True):
-            if res.get("Message") in ("password_error", "password_required", "negotiation_refused", "connection_refused"):
-                LOGGER.error(
-                    "%s Command session authentication or connection refused (%s). Terminating sending worker %s to prevent gateway lockout.",
-                    self.log_id,
-                    res.get("Message"),
-                    worker_id,
-                )
-                return
+        if self._connect_refused(res, worker_id):
+            return
 
         while not self._terminate_sender:
             try:
@@ -818,7 +835,7 @@ class MyHOMEGatewayHandler:
                     timeout=COMMAND_SESSION_IDLE_TIMEOUT,
                 )
             except TimeoutError:
-                if _command_session and _command_session.is_connected:
+                if _session_is_open(_command_session):
                     LOGGER.debug(
                         "%s Command session idle for %ss; closing socket to release gateway resource.",
                         self.log_id,
@@ -844,7 +861,38 @@ class MyHOMEGatewayHandler:
                 raw=str(task["message"]),
                 parsed=task["message"] if isinstance(task["message"], OWNMessage) else None,
             )
+            # The delivery future carries the time the frame reached the bus. The
+            # session is closed after COMMAND_SESSION_IDLE_TIMEOUT, so reconnect
+            # (and handshake) explicitly *before* taking the timestamp; OWNd's
+            # send() would otherwise do it after our stamp. The future is resolved
+            # only once send() reports the frame written and acknowledged, and
+            # cancelled when it was not: a frame that never reached the bus must
+            # not start a timed run.
+            if not _session_is_open(_command_session):
+                res = await _command_session.connect()
+                if self._connect_refused(res, worker_id):
+                    # As at start-up: no further negotiation with a gateway that
+                    # refused us. The frame was not written and never will be.
+                    _cancel_written(task)
+                    self.send_buffer.task_done()
+                    return
+                if not _session_is_open(_command_session):
+                    # connect() gave up after its retries; send() would only run
+                    # the same cycle again. Drop this frame and try the next.
+                    LOGGER.warning(
+                        "%s Command session unavailable; message `%s` not sent.",
+                        self.log_id,
+                        task["message"],
+                    )
+                    _cancel_written(task)
+                    self.send_buffer.task_done()
+                    continue
+            written_at = time.monotonic()
             collected = await _command_session.send(message=task["message"], is_status_request=task["is_status_request"])
+            if collected is None:
+                _cancel_written(task)
+            else:
+                _resolve_written(task, written_at)
             if collected and isinstance(collected, list):
                 for resp in collected:
                     raw_resp = str(resp)
@@ -870,6 +918,23 @@ class MyHOMEGatewayHandler:
             worker_id,
         )
 
+    def _connect_refused(self, result: Any, worker_id: int) -> bool:
+        """A command-session ``connect()`` result the worker must not retry on.
+
+        A refused negotiation (wrong password, refused connection) is final;
+        negotiating again on every queued frame is what locks a gateway out.
+        """
+        if isinstance(result, dict) and not result.get("Success", True):
+            if result.get("Message") in ("password_error", "password_required", "negotiation_refused", "connection_refused"):
+                LOGGER.error(
+                    "%s Command session authentication or connection refused (%s). Terminating sending worker %s to prevent gateway lockout.",
+                    self.log_id,
+                    result.get("Message"),
+                    worker_id,
+                )
+                return True
+        return False
+
     async def close_listener(self) -> bool:
         LOGGER.info("%s Closing event listener", self.log_id)
         self._terminate_sender = True
@@ -883,6 +948,16 @@ class MyHOMEGatewayHandler:
         self._sender_stop.set()
 
 
+        # Nothing queued will be written any more: tell the callers waiting on delivery
+        while True:
+            try:
+                task = self.send_buffer.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            if task is not None:
+                _cancel_written(task)
+            self.send_buffer.task_done()
+
         # Unblock any sending workers waiting on send_buffer
         for _ in range(max(1, len(self.sending_workers))):
             try:
@@ -892,18 +967,33 @@ class MyHOMEGatewayHandler:
 
         return True
 
-    async def send(self, message: OWNCommand):
-        await self.send_buffer.put({"message": message, "is_status_request": False})
-        LOGGER.debug(
-            "%s Message `%s` was successfully queued.",
-            self.log_id,
-            message,
-        )
+    async def send(self, message: OWNCommand) -> asyncio.Future[float]:
+        """Queue a command; the returned future resolves to the monotonic write time."""
+        return await self._enqueue(message, is_status_request=False)
 
-    async def send_status_request(self, message: OWNCommand):
-        await self.send_buffer.put({"message": message, "is_status_request": True})
+    async def send_status_request(self, message: OWNCommand) -> asyncio.Future[float]:
+        """Queue a status request; the returned future resolves to the monotonic write time."""
+        return await self._enqueue(message, is_status_request=True)
+
+    async def _enqueue(self, message: OWNCommand, *, is_status_request: bool) -> asyncio.Future[float]:
+        """Put a frame on the send queue and hand back its delivery future.
+
+        The future completes with ``time.monotonic()`` taken by the sending
+        worker immediately before the frame is written to an already open
+        command session - queue wait and reconnect included - once the
+        gateway has acknowledged it, so callers that model physical motion
+        (timed covers) can start their clock at the real write instead of
+        at enqueue. It is cancelled when the frame was not delivered (send
+        failed, NACK) or if the gateway shuts down
+        before the frame leaves.
+        """
+        written: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+        await self.send_buffer.put(
+            {"message": message, "is_status_request": is_status_request, "written": written}
+        )
         LOGGER.debug(
             "%s Message `%s` was successfully queued.",
             self.log_id,
             message,
         )
+        return written
