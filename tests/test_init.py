@@ -482,6 +482,12 @@ async def test_setup_entry_duplicate_and_timeout(hass: HomeAssistant):
         with pytest.raises(ConfigEntryNotReady):
             await async_setup_entry(hass, timeout_entry)
 
+    # A retry must not expose the half-initialised gateway or bus monitor to
+    # services / WebSocket consumers while the entry is not loaded.
+    failed_gateway_data = hass.data[DOMAIN][timeout_entry.data["mac"]]
+    assert "entity" not in failed_gateway_data
+    assert "bus_monitor" not in failed_gateway_data
+
 
 async def test_register_frontend_branches(hass: HomeAssistant):
     """Test _async_register_frontend static path and frontend script registration."""

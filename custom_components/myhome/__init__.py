@@ -463,6 +463,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         tests_results = None
 
     if tests_results is None:
+        # The gateway was added to the legacy mapping before the connection
+        # test so existing platform code can still use it after setup.  Do not
+        # leave that half-initialised instance visible while HA retries.
+        hass.data[DOMAIN][entry.data[CONF_MAC]].pop(CONF_ENTITY, None)
+        hass.data[DOMAIN][entry.data[CONF_MAC]].pop("bus_monitor", None)
         raise ConfigEntryNotReady(
             f"Gateway could not be reached or connection failed at {entry.data[CONF_HOST]}. Home Assistant will natively retry caching."
         )
@@ -518,6 +523,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     # runtime_data is the source of truth; hass.data is kept for legacy readers.
     entry.runtime_data = gateway
+
+    # Start consumers before the platforms enqueue their initial status
+    # requests.  With a bounded command queue, forwarding a large plant before
+    # a sending worker exists can otherwise block setup indefinitely.
+    gateway.listening_worker = entry.async_create_background_task(
+        hass, gateway.listening_loop(), name=f"myhome_{entry.entry_id}_listen"
+    )
+    for i in range(_command_worker_count):
+        gateway.sending_workers.append(
+            entry.async_create_background_task(
+                hass, gateway.sending_loop(i), name=f"myhome_{entry.entry_id}_send_{i}"
+            )
+        )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -604,16 +622,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         async_dispatcher_send(hass, f"myhome_pool_updated_{mac}")
 
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
-
-    gateway.listening_worker = entry.async_create_background_task(
-        hass, gateway.listening_loop(), name=f"myhome_{entry.entry_id}_listen"
-    )
-    for i in range(_command_worker_count):
-        gateway.sending_workers.append(
-            entry.async_create_background_task(
-                hass, gateway.sending_loop(i), name=f"myhome_{entry.entry_id}_send_{i}"
-            )
-        )
 
     return True
 
