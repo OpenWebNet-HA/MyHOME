@@ -20,6 +20,8 @@ from homeassistant.const import (
     EntityCategory,
 )
 from homeassistant.core import callback
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import (
@@ -31,6 +33,8 @@ from .const import (
     CONF_WHERE,
     CONF_WHO,
     DOMAIN,
+    LOGGER,
+    SERVICE_CALIBRATE_COVER,
 )
 from .myhome_device import MyHOMEEntity
 
@@ -49,6 +53,42 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     gateway = hass.data[DOMAIN][mac].get(CONF_ENTITY)
 
     known_button_actuators = set()
+    known_calibration_covers: set[str] = set()
+
+    def _calibration_button_for_cover(device_id, name):
+        """One 'Calibrate travel time' button per timed cover, on the cover's device."""
+        device_id = str(device_id)
+        if not device_id or device_id in known_calibration_covers:
+            return []
+        known_calibration_covers.add(device_id)
+        where, _, interface = device_id.partition("#4#")
+        return [
+            CalibrateCoverButtonEntity(
+                hass=hass,
+                platform=PLATFORM,
+                device_id=device_id,
+                where=where,
+                interface=interface or None,
+                name=name or f"Cover {where}",
+                gateway=gateway,
+            )
+        ]
+
+    # Covers already in the entity registry (restored before the cover platform re-announces them)
+    try:
+        registry = er.async_get(hass)
+        for reg_entry in er.async_entries_for_config_entry(registry, config_entry.entry_id):
+            if reg_entry.domain != "cover" or not reg_entry.unique_id:
+                continue
+            after_mac = reg_entry.unique_id.replace(f"{gateway.mac}-", "", 1).replace(f"{mac}-", "", 1)
+            who, _, device_id = after_mac.partition("-")
+            if who == "2" and device_id:
+                _buttons.extend(_calibration_button_for_cover(device_id, reg_entry.original_name or reg_entry.name))
+    except Exception as err:  # pragma: no cover - registry unavailable in some test harnesses
+        LOGGER.debug("Could not enumerate covers for calibration buttons: %s", err)
+
+    if gateway is not None:
+        _buttons.append(CalibrateAllCoversButtonEntity(hass=hass, config_entry=config_entry, gateway=gateway))
 
     def _create_buttons_for_device(dev_id, cfg):
         who = str(cfg.get(CONF_WHO, "1"))
@@ -103,8 +143,10 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     @callback
     def _async_new_device_listener(dev_info):
-        """Add lock/unlock buttons dynamically for newly discovered or configured devices."""
+        """Add lock/unlock (and, for covers, calibration) buttons for newly discovered or configured devices."""
         new_btns = _create_buttons_for_device(dev_info.get("device_id"), dev_info)
+        if str(dev_info.get("who", "")) == "2":
+            new_btns.extend(_calibration_button_for_cover(dev_info.get("device_id"), dev_info.get("name")))
         if new_btns:
             async_add_entities(new_btns)
 
@@ -276,3 +318,79 @@ class EnableCommandButtonEntity(ButtonEntity, MyHOMEEntity):
     async def async_press(self) -> None:
         """Press the button."""
         await self._gateway_handler.send(f"*14*1*{self._full_where}##")
+
+
+class CalibrateCoverButtonEntity(ButtonEntity, MyHOMEEntity):
+    """Measure a timed cover's up/down travel times on the bus (myhome.calibrate_cover)."""
+
+    def __init__(self, hass, platform: str, device_id: str, where: str, interface: str | None, name: str, gateway):
+        super().__init__(
+            hass=hass,
+            name=name,
+            platform=platform,
+            device_id=device_id,
+            who="2",
+            where=where,
+            manufacturer="BTicino",
+            model="Shutter / Cover",
+            gateway=gateway,
+        )
+        self._attr_name = "Calibrate travel time"
+        self._attr_has_entity_name = True
+        self._attr_icon = "mdi:ruler-square-compass"
+        self._attr_entity_category = EntityCategory.CONFIG
+        self._attr_unique_id = f"{gateway.mac}-2-{device_id}-calibrate"
+        self.entity_id = f"{platform.lower()}.{name.lower().replace(' ', '_').replace('#', '')}_calibrate_travel_time"
+        self._interface = interface
+        self._poll_on_add = False
+
+    async def async_update(self):
+        """Buttons have no state to request."""
+
+    async def async_press(self) -> None:
+        cover_entity_id = er.async_get(self.hass).async_get_entity_id("cover", DOMAIN, f"{self._gateway_handler.mac}-2-{self._device_id}")
+        if not cover_entity_id:
+            LOGGER.warning("No cover entity found for %s; cannot calibrate.", self._device_id)
+            return
+        await self.hass.services.async_call(
+            DOMAIN, SERVICE_CALIBRATE_COVER, {"entity_id": cover_entity_id}, blocking=False
+        )
+
+
+class CalibrateAllCoversButtonEntity(ButtonEntity):
+    """Run myhome.calibrate_cover for every timed cover of this gateway, one after another."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Calibrate all covers"
+    _attr_icon = "mdi:window-shutter-settings"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_should_poll = False
+
+    def __init__(self, hass, config_entry, gateway):
+        self.hass = hass
+        self._config_entry = config_entry
+        self._gateway_handler = gateway
+        self._attr_unique_id = f"{gateway.mac}-calibrate-all-covers"
+        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, gateway.unique_id)})
+
+    @property
+    def available(self) -> bool:
+        return bool(getattr(self._gateway_handler, "available", True))
+
+    def _cover_entity_ids(self) -> list[str]:
+        registry = er.async_get(self.hass)
+        return sorted(
+            e.entity_id
+            for e in er.async_entries_for_config_entry(registry, self._config_entry.entry_id)
+            if e.domain == "cover" and not e.disabled
+        )
+
+    async def async_press(self) -> None:
+        entity_ids = self._cover_entity_ids()
+        if not entity_ids:
+            LOGGER.warning("%s No cover entities to calibrate.", self._gateway_handler.log_id)
+            return
+        LOGGER.info("%s Calibrating %d covers sequentially.", self._gateway_handler.log_id, len(entity_ids))
+        # The entity service runs the covers concurrently; the per-gateway lock serializes them.
+        await self.hass.services.async_call(DOMAIN, SERVICE_CALIBRATE_COVER, {"entity_id": entity_ids}, blocking=False)
+

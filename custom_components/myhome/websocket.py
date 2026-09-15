@@ -33,6 +33,12 @@ WS_TYPE_STREAM = "myhome/bus_monitor/stream"
 WS_TYPE_SEND = "myhome/bus_monitor/send"
 WS_TYPE_CLEAR = "myhome/bus_monitor/clear"
 WS_TYPE_INFO = "myhome/bus_monitor/info"
+WS_TYPE_CALIBRATION_TRACE = "myhome/cover/calibration_trace"
+
+SCHEMA_WS_CALIBRATION_TRACE = {
+    vol.Required("type"): WS_TYPE_CALIBRATION_TRACE,
+    vol.Optional("mac"): vol.Any(cv.string, None),
+}
 
 SCHEMA_WS_INFO = {
     vol.Required("type"): WS_TYPE_INFO,
@@ -444,6 +450,36 @@ async def ws_bus_monitor_info(
     )
 
 
+@websocket_api.websocket_command(SCHEMA_WS_CALIBRATION_TRACE)
+@websocket_api.async_response
+async def ws_cover_calibration_trace(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return the calibration trace frames of one gateway.
+
+    ``mac`` selects the gateway exactly as for the other commands: given, only
+    that gateway (unknown -> ``not_found``); omitted, the primary gateway. The
+    reply names the gateway it was filtered on so the export is self-describing.
+    """
+    from .cover import get_last_calibration_trace
+
+    gw, _ = _get_gateway_and_monitor(hass, msg.get("mac"))
+    if gw is None:
+        connection.send_error(
+            msg["id"],
+            websocket_api.ERR_NOT_FOUND,
+            "No active MyHOME gateway found",
+        )
+        return
+    mac = dr.format_mac(str(getattr(gw, "mac", "") or ""))
+    connection.send_result(
+        msg["id"],
+        {"mac": mac, "frames": get_last_calibration_trace(gateway_mac=mac)},
+    )
+
+
 @callback
 def async_setup_websocket_api(hass: HomeAssistant) -> None:
     """Register all MyHOME WebSocket commands."""
@@ -457,6 +493,7 @@ def async_setup_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_bus_monitor_send)
     websocket_api.async_register_command(hass, ws_bus_monitor_clear)
     websocket_api.async_register_command(hass, ws_bus_monitor_info)
+    websocket_api.async_register_command(hass, ws_cover_calibration_trace)
 
     domain_data["_ws_registered"] = True
     _LOGGER.info("Registered MyHOME WebSocket API commands for Bus Monitor")

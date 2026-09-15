@@ -14,6 +14,9 @@
     },
     "sweep_bus": {
       "service": "mdi:radar"
+    },
+    "calibrate_cover": {
+      "service": "mdi:ruler-square-compass"
     }
   }
 }

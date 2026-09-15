@@ -111,3 +111,14 @@ sweep_bus:
       selector:
         text:
 
+calibrate_cover:
+  name: Calibrate cover travel time
+  description: >-
+    Measures a timed cover's up and down travel times on the SCS bus and stores them.
+    The cover is driven fully up, then fully down (timed), then fully up again (timed).
+    Covers are calibrated one at a time per gateway. Do not run while the shutter must stay put.
+  target:
+    entity:
+      domain: cover
+      integration: myhome
+
