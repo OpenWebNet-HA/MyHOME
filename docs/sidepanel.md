@@ -15,6 +15,14 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Developer contracts
+
+- [Implemented panel/profile API (0.9.0)](panel-websocket-api.md): current commands,
+  snapshots, validation, revisions, errors and refresh limitations.
+- [Shared panel contract proposal](panel-shared-contract.md): pinned comparison with
+  the calibration fork, proposed gateway/texts/refresh/error contracts, review
+  decisions and the sequence before porting guided calibration. Draft only.
+
 ## Panel versioning
 
 The panel has an independent version, currently **0.9.0**, defined by
@@ -322,8 +330,9 @@ Each advanced section should follow the bus adapter's ownership boundaries:
    revision, and commit them atomically. Reject stale revisions. An undo request
    must also check the current revision before restoring previous values.
 6. Distinguish stored profile changes from physical calibration. A preview must
-   not move covers. Use the existing calibration Options Flow until its backend
-   behavior has a supported panel API; avoid private frontend dialog internals.
+   not move covers. The calibration fork has a guided Options Flow; our 0.9.0
+   branch does not. Port its behavior only through an agreed backend session API;
+   avoid private frontend dialog internals.
    Show per-device outcomes for physical operations, which cannot be described
    as an atomic storage transaction.
 
