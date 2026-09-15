@@ -30,7 +30,7 @@ def _handler(data_overrides=None, *, title="MH200 Gateway"):
     entry.entry_id = "entry_ident"
     entry.title = title
     entry.data = {
-        "host": "192.168.1.40",
+        "host": "192.0.2.40",
         "port": 20000,
         "password": "x",
         "mac": "00:03:50:00:48:71",
@@ -100,7 +100,7 @@ def test_model_family(model, family):
 
 
 def test_identification_source_precedence():
-    assert _handler({"ssdp_location": "http://192.168.1.40:49153/desc.xml"}).identification_source == IDENTIFICATION_SSDP
+    assert _handler({"ssdp_location": "http://192.0.2.40:49153/desc.xml"}).identification_source == IDENTIFICATION_SSDP
     assert _handler({"UDN": "uuid:1234"}).identification_source == IDENTIFICATION_SSDP
     assert _handler({"transport_type": "serial", "name": "Legrand 3578 USB Gateway"}).identification_source == IDENTIFICATION_SERIAL
     assert _handler().identification_source == IDENTIFICATION_MANUAL
@@ -146,7 +146,7 @@ def test_variant_suffix_is_not_a_conflict(dev_reg, issues):
 
 def test_ssdp_model_never_relabelled_and_conflict_raises_repair(dev_reg, issues):
     create, delete, corrected = issues
-    h = _handler({"name": "F454", "ssdp_location": "http://192.168.1.40:49153/desc.xml"})
+    h = _handler({"name": "F454", "ssdp_location": "http://192.0.2.40:49153/desc.xml"})
     h.gateway.model_name = "F454"
     dev_reg.async_get.return_value = MagicMock(model="F454")
 
@@ -332,7 +332,7 @@ def test_firmware_kernel_distribution_are_recorded(dev_reg):
 def test_websocket_gateway_info_carries_identification_without_location():
     from custom_components.myhome.websocket import _extract_gateway_info
 
-    h = _handler({"ssdp_location": "http://192.168.1.40:49153/desc.xml"})
+    h = _handler({"ssdp_location": "http://192.0.2.40:49153/desc.xml"})
     h._who13["code"] = "4"
     info = _extract_gateway_info(h, "2.0.0b6")
     assert info["identification"]["source"] == IDENTIFICATION_SSDP
