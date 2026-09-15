@@ -12,13 +12,55 @@ from homeassistant.core import HomeAssistant
 from OWNd.message import OWNCommand, OWNEvent, OWNLightingEvent
 
 from custom_components.myhome.const import (
-    CONF_AUTO_PROMOTE,
     CONF_COLOR_TEMP,
     CONF_DIMMABLE,
+    CONF_LOCK_FEATURES,
     CONF_RGB,
     DOMAIN,
 )
 from custom_components.myhome.light import MyHOMELight, async_setup_entry
+from custom_components.myhome.validate import config_schema
+
+FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "plants" / "issue_288_f461_dali_dt8"
+GATEWAY_MAC = "00:03:50:00:02:88"
+
+
+def _light_platform_from_yaml(yaml_text: str) -> dict:
+    """Run a myhome.yaml snippet through the real validator, as __init__ does."""
+    from homeassistant.util.yaml.loader import parse_yaml
+
+    validated = config_schema(parse_yaml(yaml_text))
+    return validated[GATEWAY_MAC]["platforms"]["light"]
+
+
+def _hass_with_lights(hass: HomeAssistant, lights: dict) -> MagicMock:
+    mock_gateway = MagicMock()
+    mock_gateway.mac = GATEWAY_MAC
+    mock_gateway.send = AsyncMock()
+    mock_gateway.log_id = "GATEWAY"
+    hass.data = {DOMAIN: {GATEWAY_MAC: {"entity": mock_gateway, "platforms": {"light": lights}}}}
+    return mock_gateway
+
+
+async def _setup_lights(hass: HomeAssistant) -> list[MyHOMELight]:
+    config_entry = MagicMock()
+    config_entry.data = {"mac": GATEWAY_MAC}
+    config_entry.entry_id = "test_entry"
+    with patch(
+        "custom_components.myhome.light.er.async_entries_for_config_entry",
+        return_value=[],
+    ), patch(
+        "custom_components.myhome.light.er.async_get",
+        return_value=MagicMock(),
+    ):
+        async_add_entities = MagicMock()
+        await async_setup_entry(hass, config_entry, async_add_entities)
+    async_add_entities.assert_called_once()
+    entities = list(async_add_entities.call_args[0][0])
+    for entity in entities:
+        entity.hass = hass
+        entity.async_schedule_update_ha_state = MagicMock()
+    return entities
 
 
 def test_feature_lock_tunable_white_ignores_dim12_hsv(hass: HomeAssistant) -> None:
@@ -153,8 +195,8 @@ def test_feature_lock_relay_ignores_all_promotions(hass: HomeAssistant) -> None:
     assert light.brightness is None
 
 
-def test_disallowed_color_modes_explicit_rgb_false(hass: HomeAssistant) -> None:
-    """Test that explicit rgb: false disables HS auto-promotion while allowing CT."""
+def test_locked_tunable_white_rejects_hsv_but_tracks_ct(hass: HomeAssistant) -> None:
+    """A light locked to tunable white ignores Dim 12 but still follows Dim 14."""
     mock_gateway = MagicMock()
     mock_gateway.send = AsyncMock()
     mock_gateway.log_id = "GATEWAY"
@@ -169,10 +211,10 @@ def test_disallowed_color_modes_explicit_rgb_false(hass: HomeAssistant) -> None:
         who="1",
         where="25",
         interface="02",
-        dimmable=False,
-        color_temp=False,
+        dimmable=True,
+        color_temp=True,
         rgb=False,
-        disallowed_color_modes={ColorMode.HS},
+        lock_features=True,
         manufacturer="BTicino",
         model="DALI",
         gateway=mock_gateway,
@@ -183,11 +225,13 @@ def test_disallowed_color_modes_explicit_rgb_false(hass: HomeAssistant) -> None:
     # Dim 12 is rejected
     light.handle_event(OWNEvent.parse("*#1*25#4#02*12*350*80*80##"))
     assert ColorMode.HS not in light.supported_color_modes
+    assert light.hs_color is None
 
-    # Dim 14 is accepted and auto-promotes
+    # Dim 14 is the declared capability and is tracked
     light.handle_event(OWNEvent.parse("*#1*25#4#02*14*153##"))
-    assert ColorMode.COLOR_TEMP in light.supported_color_modes
+    assert light.supported_color_modes == {ColorMode.COLOR_TEMP}
     assert light.color_mode == ColorMode.COLOR_TEMP
+    assert light.color_temp == 153
 
 
 async def test_async_update_queries_both_hs_and_ct_for_rgbw(hass: HomeAssistant) -> None:
@@ -335,72 +379,23 @@ def test_translation_frame_ignored(hass: HomeAssistant) -> None:
 
 
 async def test_issue_288_f461_dali_trace_replay(hass: HomeAssistant) -> None:
-    """Replay authentic F461 DALI DT8 trace against locked and unlocked entities."""
-    fixture_path = (
-        Path(__file__).resolve().parent
-        / "fixtures"
-        / "plants"
-        / "issue_288_f461_dali_dt8"
-        / "diagnostic_summary.json"
-    )
-    assert fixture_path.is_file()
+    """Replay the physical F461 trace against the plant's own myhome.yaml.
 
-    with open(fixture_path, "r", encoding="utf-8") as f:
+    Light 25 is the RGBW ballast the reporter drives from the app (HSV writes
+    and tunable-white writes); 26-29 only ever answer the HSV sentinel.  All
+    five are locked, so the entities must end up exactly as declared.
+    """
+    from homeassistant.util.yaml.loader import load_yaml
+
+    with open(FIXTURE_DIR / "diagnostic_summary.json", "r", encoding="utf-8") as f:
         diag = json.load(f)
-
     frames = diag["data"]["bus_monitor"]["recent_frames"]
     assert len(frames) == 46
 
-    mock_gateway = MagicMock()
-    mock_gateway.log_id = "GATEWAY"
-    mock_gateway.send = AsyncMock()
+    validated = config_schema(load_yaml(str(FIXTURE_DIR / "myhome.yaml")))
+    _hass_with_lights(hass, validated[GATEWAY_MAC]["platforms"]["light"])
+    lights = {light._where: light for light in await _setup_lights(hass)}
 
-    # Light 25 is Tunable White with feature lock
-    light_25 = MyHOMELight(
-        hass=hass,
-        name="Light 25",
-        entity_name="Light 25",
-        icon="mdi:lightbulb",
-        icon_on="mdi:lightbulb-on",
-        device_id="25#4#02",
-        who="1",
-        where="25",
-        interface="02",
-        dimmable=True,
-        color_temp=True,
-        rgb=False,
-        lock_features=True,
-        manufacturer="BTicino",
-        model="F461 DALI Ballast",
-        gateway=mock_gateway,
-    )
-    light_25.hass = hass
-    light_25.async_schedule_update_ha_state = MagicMock()
-
-    # Lights 26, 27, 28, 29 are standard dimmers / relays
-    other_lights = {}
-    for addr in ("26", "27", "28", "29"):
-        other_light = MyHOMELight(
-            hass=hass,
-            name=f"Light {addr}",
-            entity_name=f"Light {addr}",
-            icon="mdi:lightbulb",
-            icon_on="mdi:lightbulb-on",
-            device_id=f"{addr}#4#02",
-            who="1",
-            where=addr,
-            interface="02",
-            dimmable=False,
-            lock_features=True,
-            manufacturer="BTicino",
-            model="F461 DALI Ballast",
-            gateway=mock_gateway,
-        )
-        other_light.hass = hass
-        other_light.async_schedule_update_ha_state = MagicMock()
-        other_lights[addr] = other_light
-
-    # Replay all frames
     for item in frames:
         raw = item["raw"]
         parsed = OWNEvent.parse(raw)
@@ -408,29 +403,28 @@ async def test_issue_288_f461_dali_trace_replay(hass: HomeAssistant) -> None:
             parsed = OWNCommand.parse(raw)
         if parsed is None:
             continue
+        # OWNd splits "25#4#02" into where="25" and interface="02"
+        if getattr(parsed, "interface", None) != "02":
+            continue
+        addr = getattr(parsed, "where", None)
+        if addr in lights:
+            lights[addr].handle_event(parsed)
 
-        target_where = getattr(parsed, "where", None)
-        if target_where == "25#4#02" or target_where == "25":
-            light_25.handle_event(parsed)
-        elif target_where and "#4#02" in target_where:
-            addr = target_where.split("#4#02")[0]
-            if addr in other_lights:
-                other_lights[addr].handle_event(parsed)
-
-    # Verify final states
-    # Light 25 should remain ColorMode.COLOR_TEMP and NEVER have promoted to HS
-    assert light_25.supported_color_modes == {ColorMode.COLOR_TEMP}
-    assert light_25.color_mode == ColorMode.COLOR_TEMP
-    assert light_25.hs_color is None
-    # CT was set by *#1*25#4#02*14*153## -> 153 mireds
+    light_25 = lights["25"]
+    assert light_25.supported_color_modes == {ColorMode.HS, ColorMode.COLOR_TEMP}
+    # The last Dim 12 status on the wire is *#1*25#4#02*12*53*10*74##
+    assert light_25.hs_color == (53.0, 10.0)
+    assert light_25.color_mode == ColorMode.HS
+    # The last Dim 14 status is *#1*25#4#02*14*153## -> 153 mireds
     assert light_25.color_temp == 153
-    # Brightness was set by *#1*25#4#02*1*174*5## -> 74%
+    # The last dimmer level is *#1*25#4#02*1*174*5## -> 74%
     assert light_25._attr_brightness_pct == 74
 
-    # Other lights (26-29) received sentinels and stayed ONOFF
-    for addr, other_light in other_lights.items():
-        assert other_light.supported_color_modes == {ColorMode.ONOFF}
-        assert other_light.color_mode == ColorMode.ONOFF
+    # 26-29 received only the sentinel and stayed relays
+    for addr in ("26", "27", "28", "29"):
+        assert lights[addr].supported_color_modes == {ColorMode.ONOFF}
+        assert lights[addr].color_mode == ColorMode.ONOFF
+        assert lights[addr].hs_color is None
 
 
 def test_rgb_locked_light_allowed_modes(hass: HomeAssistant) -> None:
@@ -488,54 +482,113 @@ def test_promote_color_mode_direct_call_forbidden(hass: HomeAssistant) -> None:
     assert ColorMode.HS not in light.supported_color_modes
 
 
-async def test_setup_yaml_light_feature_lock_and_disallowed(hass: HomeAssistant) -> None:
-    """Test async_setup_entry with YAML light having auto_promote: false and explicit false booleans."""
-    mock_gateway = MagicMock()
-    mock_gateway.mac = "00:03:50:00:02:88"
-    hass.data = {
-        DOMAIN: {
-            "00:03:50:00:02:88": {
-                "entity": mock_gateway,
-                "platforms": {
-                    "light": {
-                        "30": {
-                            "where": "30",
-                            CONF_NAME: "Light 30",
-                            CONF_AUTO_PROMOTE: False,
-                            CONF_RGB: False,
-                            CONF_COLOR_TEMP: False,
-                            CONF_DIMMABLE: False,
-                        }
-                    }
-                },
-            }
-        }
-    }
-    config_entry = MagicMock()
-    config_entry.data = {"mac": "00:03:50:00:02:88"}
-    config_entry.entry_id = "test_entry"
-
-    with patch(
-        "custom_components.myhome.light.er.async_entries_for_config_entry",
-        return_value=[],
-    ), patch(
-        "custom_components.myhome.light.er.async_get",
-        return_value=MagicMock(),
-    ):
-        async_add_entities = MagicMock()
-        await async_setup_entry(hass, config_entry, async_add_entities)
-        async_add_entities.assert_called_once()
-        entities = async_add_entities.call_args[0][0]
-        assert len(entities) == 1
-        light_entity = entities[0]
-        assert light_entity._lock_features is True
-        assert ColorMode.HS in light_entity._disallowed_color_modes
-        assert ColorMode.COLOR_TEMP in light_entity._disallowed_color_modes
-        assert ColorMode.BRIGHTNESS in light_entity._disallowed_color_modes
+def test_light_schema_accepts_dali_capability_keys() -> None:
+    """myhome.yaml may declare color_temp / rgb / hs / lock_features on a light."""
+    lights = _light_platform_from_yaml(
+        f"""
+        "{GATEWAY_MAC}":
+          light:
+            l25:
+              where: "25"
+              interface: "02"
+              name: "Light 25"
+              dimmable: true
+              color_temp: true
+              rgb: true
+              lock_features: true
+            l26:
+              where: "26"
+              name: "Light 26"
+        """
+    )
+    l25 = lights["1-25#4#02"]
+    assert l25[CONF_DIMMABLE] is True
+    assert l25[CONF_COLOR_TEMP] is True
+    assert l25[CONF_RGB] is True
+    assert l25[CONF_LOCK_FEATURES] is True
+    # A light that does not mention the DALI keys keeps the same shape as before
+    l26 = lights["1-26"]
+    assert l26[CONF_DIMMABLE] is False
+    assert CONF_COLOR_TEMP not in l26
+    assert CONF_RGB not in l26
+    assert CONF_LOCK_FEATURES not in l26
 
 
-async def test_setup_restored_light_feature_lock_and_disallowed(hass: HomeAssistant) -> None:
-    """Test async_setup_entry with restored light having auto_promote: false and explicit false booleans."""
+def test_issue_288_fixture_yaml_passes_the_validator() -> None:
+    """The golden plant's myhome.yaml is a configuration a user can actually load."""
+    from homeassistant.util.yaml.loader import load_yaml
+
+    validated = config_schema(load_yaml(str(FIXTURE_DIR / "myhome.yaml")))
+    lights = validated[GATEWAY_MAC]["platforms"]["light"]
+    assert lights["1-25#4#02"][CONF_RGB] is True
+    assert lights["1-25#4#02"][CONF_COLOR_TEMP] is True
+    assert all(lights[f"1-{w}#4#02"][CONF_LOCK_FEATURES] is True for w in ("25", "26", "27", "28", "29"))
+
+
+async def test_plain_yaml_light_still_learns_dimming_from_the_bus(hass: HomeAssistant) -> None:
+    """Regression: the schema stamps dimmable=False on every light; that is not an opt-out."""
+    lights = _light_platform_from_yaml(
+        f"""
+        "{GATEWAY_MAC}":
+          light:
+            l30:
+              where: "30"
+              name: "Light 30"
+        """
+    )
+    assert lights["1-30"][CONF_DIMMABLE] is False
+    _hass_with_lights(hass, lights)
+    (light,) = await _setup_lights(hass)
+    assert light._lock_features is False
+    assert light.supported_color_modes == {ColorMode.ONOFF}
+
+    light.handle_event(OWNEvent.parse("*#1*30*1*150*5##"))
+    assert light.supported_color_modes == {ColorMode.BRIGHTNESS}
+    light.handle_event(OWNEvent.parse("*#1*30*14*153##"))
+    assert ColorMode.COLOR_TEMP in light.supported_color_modes
+
+
+async def test_setup_yaml_locked_relay_never_promotes(hass: HomeAssistant) -> None:
+    """A locked light with no capability flags is a relay, whatever the bus says."""
+    lights = _light_platform_from_yaml(
+        f"""
+        "{GATEWAY_MAC}":
+          light:
+            l30:
+              where: "30"
+              name: "Light 30"
+              lock_features: true
+        """
+    )
+    _hass_with_lights(hass, lights)
+    (light,) = await _setup_lights(hass)
+    assert light._lock_features is True
+    assert light._allowed_color_modes == {ColorMode.ONOFF}
+
+    light.handle_event(OWNEvent.parse("*#1*30*1*150*5##"))
+    light.handle_event(OWNEvent.parse("*#1*30*12*350*80*80##"))
+    light.handle_event(OWNEvent.parse("*#1*30*14*153##"))
+    assert light.supported_color_modes == {ColorMode.ONOFF}
+    assert light.color_mode == ColorMode.ONOFF
+
+
+async def test_setup_yaml_locked_rgbw_keeps_both_colour_modes(hass: HomeAssistant) -> None:
+    """The fixture's light 25 (RGBW, locked) exposes HS and CT and nothing else."""
+    from homeassistant.util.yaml.loader import load_yaml
+
+    validated = config_schema(load_yaml(str(FIXTURE_DIR / "myhome.yaml")))
+    _hass_with_lights(hass, validated[GATEWAY_MAC]["platforms"]["light"])
+    lights = {light._where: light for light in await _setup_lights(hass)}
+    assert set(lights) == {"25", "26", "27", "28", "29"}
+    assert lights["25"].supported_color_modes == {ColorMode.HS, ColorMode.COLOR_TEMP}
+    assert lights["25"]._allowed_color_modes == {ColorMode.HS, ColorMode.COLOR_TEMP, ColorMode.BRIGHTNESS}
+    for where in ("26", "27", "28", "29"):
+        assert lights[where]._lock_features is True
+        assert lights[where].supported_color_modes == {ColorMode.ONOFF}
+
+
+async def test_setup_restored_light_feature_lock(hass: HomeAssistant) -> None:
+    """A light restored from the entity registry picks up lock_features from myhome.yaml."""
     mock_gateway = MagicMock()
     mock_gateway.mac = "00:03:50:00:02:88"
     hass.data = {
@@ -547,7 +600,7 @@ async def test_setup_restored_light_feature_lock_and_disallowed(hass: HomeAssist
                         "31": {
                             "where": "31",
                             CONF_NAME: "Light 31",
-                            CONF_AUTO_PROMOTE: False,
+                            CONF_LOCK_FEATURES: True,
                             CONF_RGB: False,
                             CONF_COLOR_TEMP: False,
                             CONF_DIMMABLE: False,
@@ -579,9 +632,10 @@ async def test_setup_restored_light_feature_lock_and_disallowed(hass: HomeAssist
         assert len(entities) == 1
         light_entity = entities[0]
         assert light_entity._lock_features is True
-        assert ColorMode.HS in light_entity._disallowed_color_modes
-        assert ColorMode.COLOR_TEMP in light_entity._disallowed_color_modes
-        assert ColorMode.BRIGHTNESS in light_entity._disallowed_color_modes
+        assert light_entity._allowed_color_modes == {ColorMode.ONOFF}
+        assert light_entity._is_mode_forbidden(ColorMode.HS)
+        assert light_entity._is_mode_forbidden(ColorMode.COLOR_TEMP)
+        assert light_entity._is_mode_forbidden(ColorMode.BRIGHTNESS)
 
 
 async def test_async_add_light_feature_lock_and_translation(hass: HomeAssistant) -> None:
@@ -599,10 +653,7 @@ async def test_async_add_light_feature_lock_and_translation(hass: HomeAssistant)
             },
             "customizations": {
                 "light.light_33": {
-                    "auto_promote": False,
-                    "rgb": False,
-                    "color_temp": False,
-                    "dimmable": False,
+                    "lock_features": True,
                 }
             },
         }
@@ -628,14 +679,17 @@ async def test_async_add_light_feature_lock_and_translation(hass: HomeAssistant)
     msg_trans.is_translation = True
     async_dispatcher_send(hass, "myhome_message_00:03:50:00:02:88", msg_trans)
 
-    # 2. Dynamic light discovery with feature lock
-    msg_light = OWNEvent.parse("*1*1*33##")
+    # 2. Dynamic light discovery with feature lock: the first frame is a dimmer
+    #    level, which an unlocked light would take as proof of dimming.  A locked
+    #    light without `dimmable: true` must stay a relay - the same entity would
+    #    be rebuilt as a relay after a restart, so learning it here would only
+    #    make the capability flicker between restarts.
+    msg_light = OWNEvent.parse("*#1*33*1*150*5##")
     async_dispatcher_send(hass, "myhome_message_00:03:50:00:02:88", msg_light)
 
     assert async_add_entities.call_count == 1
     added_entities = async_add_entities.call_args[0][0]
     discovered = added_entities[0]
     assert discovered._lock_features is True
-    assert ColorMode.HS in discovered._disallowed_color_modes
-    assert ColorMode.COLOR_TEMP in discovered._disallowed_color_modes
-    assert ColorMode.BRIGHTNESS in discovered._disallowed_color_modes
+    assert discovered._allowed_color_modes == {ColorMode.ONOFF}
+    assert discovered.supported_color_modes == {ColorMode.ONOFF}
