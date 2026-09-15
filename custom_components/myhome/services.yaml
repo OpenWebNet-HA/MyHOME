@@ -179,6 +179,14 @@ set_cover_travel_time:
           step: 0.1
           unit_of_measurement: s
           mode: box
+    copied_from:
+      name: Copied from
+      description: The cover these times were taken from; the source is then reported as "copied" instead of "manual".
+      example: cover.living_room_west
+      selector:
+        entity:
+          domain: cover
+          integration: myhome
 
 reset_cover_travel_time:
   name: Reset cover travel time
