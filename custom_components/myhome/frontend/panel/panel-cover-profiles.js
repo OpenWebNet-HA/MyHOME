@@ -34,10 +34,16 @@ export class CoverProfileEditor {
         <div class="dialog-head-text"><h2 id="profile-title">${esc(t("coverProfiles"))}</h2>
         <p class="muted">${esc(entity.name || entity.original_name || entity.entity_id)}</p></div></header>
       <div id="profile-body"><p class="muted" role="status">${esc(t("loading"))}</p></div>
-      <div class="actions dialog-foot"><button type="button" id="profile-close">${esc(t("cancel"))}</button></div>
+      <footer class="dialog-foot">
+        <p class="muted">${esc(t("profileExportHelp"))}</p>
+        <p id="profile-export-status" role="status" class="muted"></p>
+        <div class="actions"><button type="button" id="profile-export"><ha-icon icon="mdi:download" aria-hidden="true"></ha-icon><span>${esc(t("profileExport"))}</span></button>
+          <button type="button" id="profile-close">${esc(t("cancel"))}</button></div>
+      </footer>
     </dialog>`;
     this.dialog = host.querySelector("dialog");
     host.querySelector("#profile-close").onclick = () => this.close();
+    host.querySelector("#profile-export").onclick = () => this._export();
     this.dialog.oncancel = (event) => { event.preventDefault(); this.close(); };
     this.dialog.showModal();
     this._visibility = () => { if (!document.hidden) this._refresh(true); };
@@ -129,6 +135,39 @@ export class CoverProfileEditor {
     const { t } = this._context;
     const key = `profileError_${error.code}`;
     return t(key) === key ? t("profileError") : t(key);
+  }
+
+  async _export() {
+    const { hass, entity, generation, t } = this._context;
+    if (this._exporting === generation) return;
+    this._exporting = generation;
+    const button = this.dialog.querySelector("#profile-export");
+    const status = this.dialog.querySelector("#profile-export-status");
+    button.disabled = true;
+    status.textContent = t("profileExporting");
+    try {
+      const data = await hass.callWS({ type: "myhome/cover_profiles/export", entry_id: entity.entry_id });
+      if (!this._current(generation)) return;
+      const blob = new Blob([JSON.stringify(data, null, 2) + "\n"], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      try {
+        link.href = url;
+        link.download = `myhome-calibration-${entity.entry_id.replace(/[^a-zA-Z0-9_-]/g, "_")}-r${data.revision}.json`;
+        document.body.append(link);
+        link.click();
+      } finally {
+        link.remove();
+        // Allow browsers to start the download before releasing its object URL.
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+      status.textContent = t("profileExported");
+    } catch {
+      if (this._current(generation)) status.textContent = t("profileExportError");
+    } finally {
+      if (this._exporting === generation) this._exporting = null;
+      if (this._current(generation)) button.disabled = false;
+    }
   }
 
   _renderProvenance(profile) {

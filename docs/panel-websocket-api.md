@@ -1,6 +1,6 @@
 # MyHOME panel API: implemented reference
 
-Status: **implemented through panel 0.16.0**. The original profile contract was reviewed against
+Status: **implemented through panel 0.17.0**. The original profile contract was reviewed against
 [`02ce199`](https://github.com/xtimmy86x/MyHOME/tree/02ce19908787297c1a6e2a65d56a289e766c0695).
 Panel 0.10.0 adds a [guided-measurement session API](cover-calibration.md) and
 `calibration_busy` refusals on profile writes while a measurement is active. The
@@ -40,6 +40,7 @@ This experimental API may evolve through an explicitly documented migration.
 | --- | --- | --- |
 | `myhome/panel/inventory` | All configured gateways and native inventory; no `entry_id` parameter | `panel.py`, `ws_panel_inventory` |
 | `myhome/cover_profiles/read` | One explicit gateway and native cover; complete profile snapshot | `cover_profiles.py`, `ws_read` |
+| `myhome/cover_profiles/export` | `entry_id`; versioned saved profiles, provenance and assignments | `cover_profile_export.py`, `ws_export` |
 | `myhome/cover_profiles/write` | Same target; `save`, `assign` or `delete`; updated snapshot | `cover_profiles.py`, `ws_write` |
 | `myhome/cover_profiles/subscribe` | Explicit gateway; initial/persisted revision invalidations | `cover_profiles.py`, `ws_subscribe` |
 | `config/device_registry/update` | Native device name/area changes | HA; called by `myhome-panel.js` |
@@ -380,3 +381,57 @@ gateway ownership, revision races, profile deletion, rename/restart persistence,
 directional timing, in-flight stops and editor drafts/lifecycle. They do not yet
 constitute a machine-readable shared-contract parity suite. That is a proposed
 acceptance gate in the companion document, not a capability added by these docs.
+
+
+## Calibration export (0.17.0)
+
+Admin-only request (extra fields are rejected):
+
+```json
+{"id":20,"type":"myhome/cover_profiles/export","entry_id":"ENTRY"}
+```
+
+The result is the JSON document to download, not a file URL. Its envelope is:
+
+```json
+{
+  "format": "myhome.cover_calibration",
+  "format_version": 1,
+  "exported_at": "2026-09-15T12:00:00+00:00",
+  "gateway": {"entry_id": "ENTRY", "name": "Home"},
+  "revision": 4,
+  "covers": [{"id": "cover-1", "registry_id": "REGISTRY_ID", "entity_id": "cover.kitchen", "name": "Kitchen"}],
+  "profiles": [{
+    "id": "PROFILE_ID", "name": "Kitchen", "opening_time": 25, "closing_time": 31,
+    "provenance": {
+      "opening": {"source": "guided", "recorded_at": "2026-09-14T10:00:00+00:00", "origin_cover_id": "cover-1"},
+      "closing": {"source": "manual", "recorded_at": "2026-09-15T11:00:00+00:00", "origin_cover_id": "cover-1"}
+    }
+  }],
+  "assignments": [{"cover_id": "cover-1", "profile_id": "PROFILE_ID"}]
+}
+```
+
+- Format version 1 is independent of profile storage version 3 and panel releases.
+- Times are full-travel seconds. Sources are `guided`, `manual` or `unknown`;
+  unknown evidence has null `recorded_at` and `origin_cover_id`.
+- `covers[].id` references are local to this document and must not be treated as
+  stable identifiers across exports. `registry_id` is the current HA registry ID;
+  entity IDs and names are resolved at export time. Removed covers keep a distinct
+  local reference with null registry ID, entity ID and name.
+- All assignments and all saved profiles (including unused profiles) are included.
+  Only covers referenced by assignments or provenance appear in `covers`.
+  Inheritance can be determined by comparing assignment and provenance cover IDs;
+  the target-dependent UI `inherited` flag is not serialized.
+- One gateway lock covers load, entry revalidation and snapshot creation. The
+  export uses the most recent committed revision after acquiring the lock. It
+  does not increment revision, send notifications or modify runtime settings.
+  Existing storage migration may still occur during initial load.
+- Live availability, effective/pending timings, session values, editor drafts,
+  credentials, network settings and internal cover unique IDs are excluded.
+- Empty stores export empty arrays. Unloaded/disabled/offline gateways can export
+  stored data. Unknown, foreign-domain or removed config entries return
+  `target_not_found`; invalid storage returns `invalid_profile`; load failures
+  return `storage_error`. Non-admin callers are rejected before store access.
+- Import and restore are not implemented. This document is not an HA backup or an
+  import format agreed with the separate automatic calibration backend.

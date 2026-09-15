@@ -15,6 +15,27 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Calibration export (0.17.0)
+
+Open a cover's **Travel profile** dialog and choose **Export calibration** in the
+footer. The JSON file contains all saved profiles and assignments for that cover's
+gateway, including unused profiles and references to removed covers. Opening and
+closing provenance is included separately. The file name identifies the config
+entry and saved revision: `myhome-calibration-<entry_id>-r<revision>.json`.
+
+Every click requests a fresh consistent backend snapshot. Unsaved editor changes,
+unfinished wizard measurements, YAML/default times and pending runtime state are
+not exported. A saved profile awaiting runtime application is exported with its
+saved values. Downloads do not modify profiles, interrupt calibration, or move
+covers, and remain available when the cover is offline or read-only. Navigating
+away before the response arrives cancels the download.
+
+The document has its own format version, independent of storage and panel versions.
+It contains user-defined names and entity IDs, but no gateway credentials, network
+settings, or internal MAC-bearing cover unique IDs. It is a calibration record;
+there is no import/restore action yet and it does not replace a Home Assistant
+backup. See [the export contract](panel-websocket-api.md#calibration-export-0170).
+
 ## Origin and date of saved travel times (0.16.0)
 
 The profile editor shows opening and closing evidence separately: guided wizard
@@ -172,7 +193,7 @@ requirements, limits and real-gateway validation steps.
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.16.0**, defined by
+The panel has an independent version, currently **0.17.0**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.

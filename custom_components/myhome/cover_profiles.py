@@ -380,6 +380,9 @@ async def ws_subscribe(hass, connection, msg):
 
 @callback
 def register_api(hass: HomeAssistant):
+    from .cover_profile_export import ws_export
+
+    websocket_api.async_register_command(hass, ws_export)
     websocket_api.async_register_command(hass, ws_read)
     websocket_api.async_register_command(hass, ws_write)
     websocket_api.async_register_command(hass, ws_subscribe)

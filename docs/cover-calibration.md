@@ -195,3 +195,7 @@ both directions with `source: guided` and their original confirmation dates.
 Interrupting the session clears unsaved evidence along with measured times.
 The profile editor shows that evidence after saving; it is not an automatic
 calibration or an automatic-save feature.
+
+The panel 0.17.0 export action downloads saved profiles for the gateway. It may be
+used while the wizard is open, but unfinished measurements are excluded and the
+active session is left intact. Save the measured profile first to include it.

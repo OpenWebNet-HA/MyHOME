@@ -1,6 +1,7 @@
 """Profile persistence, gateway isolation and the real timed-cover runtime contract."""
 import asyncio
 import copy
+import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -20,6 +21,7 @@ from pytest_socket import socket_enabled  # noqa: F401 (socket plugin disabled i
 
 from custom_components.myhome.const import DOMAIN
 from custom_components.myhome.cover import MyHOMECover
+from custom_components.myhome.cover_profile_export import WS_EXPORT, export_profiles, ws_export
 from custom_components.myhome.cover_profile_provenance import unknown_provenance, utc_timestamp
 from custom_components.myhome.cover_profiles import (
     DATA_KEY,
@@ -326,7 +328,7 @@ def test_invalid_times_cannot_reach_runtime(value):
         travel_time(value)
 
 
-@pytest.mark.parametrize("handler", [ws_read, ws_write, ws_subscribe])
+@pytest.mark.parametrize("handler", [ws_read, ws_write, ws_subscribe, ws_export])
 @pytest.mark.parametrize("user", [None, SimpleNamespace(is_admin=False)])
 async def test_api_requires_admin_before_storage_access(hass, handler, user):
     with pytest.raises(Unauthorized):
@@ -371,6 +373,14 @@ async def test_websocket_round_trip_validation_and_errors(hass, plant, hass_ws_c
                 "name": "Directional", "opening_time": 22.5, "closing_time": 44.5})})
             assert result["result"]["effective_opening_time"] == 22.5
             assert result["result"]["effective_closing_time"] == 44.5
+            result = await send({"id": 11, "type": WS_EXPORT, "entry_id": plant.entries[0].entry_id})
+            assert result["result"]["format_version"] == 1
+            assert result["result"]["profiles"][0]["closing_time"] == 44.5
+            result = await send({"id": 12, "type": WS_EXPORT, "entry_id": "missing"})
+            assert result["error"]["code"] == "target_not_found"
+            with patch.object(store, "load", side_effect=OSError("disk")):
+                result = await send({"id": 13, "type": WS_EXPORT, "entry_id": plant.entries[0].entry_id})
+                assert result["error"]["code"] == "storage_error"
         finally:
             await client.close()
 
@@ -661,3 +671,88 @@ async def test_subscription_closed_while_waiting_for_store_does_not_leak(hass, p
     connection.send_result.assert_not_called()
     connection.send_event.assert_not_called()
     assert not connection.subscriptions
+
+
+async def test_export_preserves_saved_profiles_orphans_and_origins_without_runtime_or_secrets(hass, plant):
+    first = await write_profile(hass, message(plant, profile={"name": "Kitchen", "opening_time": 25, "closing_time": 31}))
+    profile_id = first["assigned_profile_id"]
+    await write_profile(hass, message(plant, 1, index=1, action="assign", profile_id=profile_id))
+    await write_profile(hass, message(plant, index=2, profile={"name": "Other gateway", "travel_time": 42}))
+    await write_profile(hass, message(plant, 2, action="assign", profile_id=None))
+    entry_id = plant.entries[0].entry_id
+    store = get_store(hass, entry_id)
+    # Keep an unassigned legacy profile as well as a shared profile with a removed origin.
+    store.data["profiles"]["old"] = {"name": "Unused", "opening_time": 20, "closing_time": 22,
+                                     "provenance": unknown_provenance()}
+    await store.store.async_save(store.data)
+    er.async_get(hass).async_remove(plant.records[0].entity_id)
+    plant.gateways[0].available = False
+    store.calibration = SimpleNamespace(active=True, values={"opening_time": 99})
+    before = copy.deepcopy(store.data)
+    result = await export_profiles(hass, entry_id)
+    assert result["format"] == "myhome.cover_calibration" and result["format_version"] == 1
+    assert result["revision"] == 3
+    assert datetime.fromisoformat(result["exported_at"]).utcoffset().total_seconds() == 0
+    assert len(result["profiles"]) == 2
+    profile = next(p for p in result["profiles"] if p["id"] == profile_id)
+    assert (profile["opening_time"], profile["closing_time"]) == (25, 31)
+    origin = profile["provenance"]["opening"]
+    assert origin["source"] == "manual"
+    missing = next(c for c in result["covers"] if c["id"] == origin["origin_cover_id"])
+    assert missing == {"id": missing["id"], "registry_id": None, "entity_id": None, "name": None}
+    assigned = next(c for c in result["covers"] if c["entity_id"] == plant.records[1].entity_id)
+    assert assigned["registry_id"] == plant.records[1].id
+    assert result["assignments"] == [{"cover_id": assigned["id"], "profile_id": profile_id}]
+    legacy = next(p for p in result["profiles"] if p["id"] == "old")
+    assert legacy["provenance"]["closing"] == {"source": "unknown", "recorded_at": None, "origin_cover_id": None}
+    serialized = json.dumps(result)
+    assert "Other gateway" not in serialized and "origin_unique_id" not in serialized
+    assert all(g.mac not in serialized for g in plant.gateways)
+    assert store.data == before
+    for gateway in plant.gateways:
+        gateway.send.assert_not_called()
+    # Missing assignments remain representable, independently of a missing origin.
+    er.async_get(hass).async_remove(plant.records[1].entity_id)
+    orphan = await export_profiles(hass, entry_id)
+    assert orphan["assignments"] == result["assignments"]
+    assert all(c["entity_id"] is None for c in orphan["covers"])
+    result["profiles"][0]["provenance"]["opening"]["source"] = "changed by caller"
+    assert store.data == before
+
+
+async def test_export_empty_gateway_and_removed_entry_during_load(hass, plant):
+    entry_id = plant.entries[0].entry_id
+    result = await export_profiles(hass, entry_id)
+    assert result["profiles"] == result["assignments"] == result["covers"] == []
+    store = get_store(hass, entry_id)
+    with patch.object(store, "load", side_effect=lambda: None):
+        with patch.object(hass.config_entries, "async_get_entry", side_effect=[plant.entries[0], None]):
+            with pytest.raises(ProfileError, match="target_not_found"):
+                await export_profiles(hass, entry_id)
+    alien = MockConfigEntry(domain="other", data={})
+    alien.add_to_hass(hass)
+    with pytest.raises(ProfileError, match="target_not_found"):
+        await export_profiles(hass, alien.entry_id)
+    assert alien.entry_id not in hass.data[DATA_KEY]
+
+
+async def test_export_waits_for_committed_revision_without_publishing_a_write(hass, plant):
+    store = get_store(hass, plant.entries[0].entry_id)
+    entered, release = asyncio.Event(), asyncio.Event()
+    original_save = store.store.async_save
+    async def save(data):
+        entered.set()
+        await release.wait()
+        await original_save(data)
+    with patch.object(store.store, "async_save", side_effect=save):
+        writer = asyncio.create_task(write_profile(hass, message(plant)))
+        await entered.wait()
+        reader = asyncio.create_task(export_profiles(hass, plant.entries[0].entry_id))
+        await asyncio.sleep(0)
+        assert not reader.done()
+        release.set()
+        await writer
+        result = await reader
+    assert result["revision"] == 1
+    assert result["profiles"][0]["opening_time"] == 42.5
+    assert store.data["revision"] == 1

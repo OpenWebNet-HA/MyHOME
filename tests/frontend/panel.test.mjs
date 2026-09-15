@@ -28,7 +28,7 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
-    panel_version: "0.16.0",
+    panel_version: "0.17.0",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
@@ -171,7 +171,7 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
-  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.16.0");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.17.0");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
   root.querySelector('[data-view="entities"]').click();
   assert.equal(root.querySelectorAll(".device-group").length, 3);
@@ -734,7 +734,7 @@ function coverProfileData(extra = {}) {
   };
 }
 
-async function mountProfiles({ read, write } = {}) {
+async function mountProfiles({ read, write, exportProfiles } = {}) {
   return mount({ prepare: (data) => {
     data.devices.push({ id: "shutter", entry_ids: ["one"], name: "Tapparella", who: "2" });
     data.entities.push({ entity_id: "cover.shutter", device_id: "shutter", entry_id: "one",
@@ -743,6 +743,7 @@ async function mountProfiles({ read, write } = {}) {
     if (message.type === "myhome/panel/inventory") return structuredClone(data);
     if (message.type === "myhome/cover_profiles/read") return read ? read(message) : coverProfileData();
     if (message.type === "myhome/cover_profiles/write") return write ? write(message) : coverProfileData({ revision: 4 });
+    if (message.type === "myhome/cover_profiles/export") return exportProfiles(message);
     throw new Error(`Unexpected command: ${message.type}`);
   } });
 }
@@ -751,6 +752,75 @@ const openProfile = (root) => {
   root.querySelector('.device-group[data-device="shutter"] [data-action="toggle-device"]').click();
   root.querySelector('[data-action="cover-profile"]').click();
 };
+
+function captureDownloads(t) {
+  const blobs = [], downloads = [], revoked = [];
+  t.mock.method(URL, "createObjectURL", (blob) => { blobs.push(blob); return "blob:test-export"; });
+  t.mock.method(URL, "revokeObjectURL", (url) => revoked.push(url));
+  t.mock.method(dom.window.HTMLAnchorElement.prototype, "click", function () {
+    downloads.push({ name: this.download, href: this.href, connected: this.isConnected });
+  });
+  return { blobs, downloads, revoked };
+}
+
+test("calibration download uses a fresh committed gateway export and preserves the editor draft", async (t) => {
+  const { blobs, downloads, revoked } = captureDownloads(t);
+  const exported = { format: "myhome.cover_calibration", format_version: 1, revision: 9,
+    profiles: [{ name: "Saved", opening_time: 25, closing_time: 31 }], assignments: [], covers: [] };
+  const { root, calls } = await mountProfiles({ exportProfiles: () => exported });
+  openProfile(root); await tick();
+  const form = root.querySelector("#profile-form");
+  form.elements.profile_name.value = "Unsaved draft";
+  form.elements.opening_time.value = "99";
+  root.querySelector("#profile-export").click();
+  await tick();
+  assert.deepEqual(calls.find((m) => m.type.endsWith("/export")), {
+    type: "myhome/cover_profiles/export", entry_id: "one",
+  });
+  assert.equal(blobs[0].type, "application/json");
+  assert.deepEqual(JSON.parse(await blobs[0].text()), exported);
+  assert.deepEqual(downloads, [{ name: "myhome-calibration-one-r9.json", href: "blob:test-export", connected: true }]);
+  assert.equal(document.querySelector('a[download]'), null);
+  assert.equal(form.elements.profile_name.value, "Unsaved draft");
+  assert.equal(form.elements.opening_time.value, "99");
+  assert.equal(calls.filter((m) => m.type.endsWith("/write")).length, 0);
+  assert.match(root.querySelector("#profile-export-status").textContent, /Download avviato/);
+  await new Promise((resolve) => setTimeout(resolve, 1100));
+  assert.deepEqual(revoked, ["blob:test-export"]);
+});
+
+test("calibration export prevents duplicate downloads and discards results after gateway navigation", async (t) => {
+  const { downloads } = captureDownloads(t);
+  const pending = deferred();
+  const { root, calls } = await mountProfiles({ exportProfiles: () => pending.promise });
+  openProfile(root); await tick();
+  const button = root.querySelector("#profile-export");
+  button.click(); button.click();
+  assert.equal(button.disabled, true);
+  assert.equal(calls.filter((m) => m.type.endsWith("/export")).length, 1);
+  change(root.getElementById("gateway"), "two");
+  pending.resolve({ revision: 3 });
+  await tick();
+  assert.equal(downloads.length, 0);
+  assert.equal(root.querySelector("#profile-export"), null);
+});
+
+test("read-only gateways can export empty saved data and failed requests allow retry", async (t) => {
+  const { downloads } = captureDownloads(t);
+  let attempts = 0;
+  const { root } = await mountProfiles({ read: () => coverProfileData({ writable: false, reason: "cover_unavailable" }),
+    exportProfiles: () => { if (!attempts++) throw new Error("offline"); return { revision: 0, profiles: [], covers: [], assignments: [] }; } });
+  openProfile(root); await tick();
+  const button = root.querySelector("#profile-export");
+  assert.equal(button.disabled, false);
+  button.click(); await tick();
+  assert.match(root.querySelector("#profile-export-status").textContent, /non riuscita/);
+  assert.equal(button.disabled, false);
+  assert.equal(downloads.length, 0);
+  button.click(); await tick();
+  assert.equal(downloads.length, 1);
+  await new Promise((resolve) => setTimeout(resolve, 1100));
+});
 
 test("WHO 2 editor saves a single cover profile with explicit gateway and revision, including decimals", async () => {
   const { root, calls } = await mountProfiles({ write: () => coverProfileData({ revision: 4, pending: true }) });
