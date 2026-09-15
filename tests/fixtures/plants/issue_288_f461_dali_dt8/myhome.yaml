@@ -1,0 +1,36 @@
+f461:
+  mac: "00:03:50:00:02:88"
+
+  light:
+    light_25:
+      where: "25"
+      interface: "02"
+      name: "Light 25"
+      dimmable: true
+      color_temp: true
+      rgb: false
+      lock_features: true
+    light_26:
+      where: "26"
+      interface: "02"
+      name: "Light 26"
+      dimmable: false
+      lock_features: true
+    light_27:
+      where: "27"
+      interface: "02"
+      name: "Light 27"
+      dimmable: false
+      lock_features: true
+    light_28:
+      where: "28"
+      interface: "02"
+      name: "Light 28"
+      dimmable: false
+      lock_features: true
+    light_29:
+      where: "29"
+      interface: "02"
+      name: "Light 29"
+      dimmable: false
+      lock_features: true
