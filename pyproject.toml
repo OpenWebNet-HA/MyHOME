@@ -48,6 +48,11 @@ include = ["custom_components*"]
 [tool.setuptools.package-data]
 "*" = ["*.json", "*.yaml", "translations/*.json"]
 
+[tool.check-wheel-contents]
+# W002 flags byte-identical files. strings.json and translations/en.json are
+# meant to be identical (HA reads the former, the frontend the latter).
+ignore = ["W002"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
