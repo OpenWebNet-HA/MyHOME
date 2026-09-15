@@ -1,6 +1,6 @@
 # MyHOME panel API: implemented reference
 
-Status: **implemented through panel 0.14.0**. The original profile contract was reviewed against
+Status: **implemented through panel 0.15.0**. The original profile contract was reviewed against
 [`02ce199`](https://github.com/xtimmy86x/MyHOME/tree/02ce19908787297c1a6e2a65d56a289e766c0695).
 Panel 0.10.0 adds a [guided-measurement session API](cover-calibration.md) and
 `calibration_busy` refusals on profile writes while a measurement is active. The

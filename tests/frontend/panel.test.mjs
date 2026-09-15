@@ -28,7 +28,7 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
-    panel_version: "0.14.0",
+    panel_version: "0.15.0",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
@@ -171,7 +171,7 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
-  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.14.0");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.15.0");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
   root.querySelector('[data-view="entities"]').click();
   assert.equal(root.querySelectorAll(".device-group").length, 3);
@@ -370,6 +370,9 @@ test("device headers collapse independently and preserve their state through ref
   const toggle = (id) => group(id).querySelector('[data-action="toggle-device"]');
   assert.equal(root.querySelector('[data-view="devices"]'), null);
   assert.ok([...root.querySelectorAll(".entity-list")].every((list) => list.hidden));
+  assert.equal(group("device-one").querySelector('.device-states [data-state="light.sala"]').textContent, "on");
+  assert.equal(group("device-two").querySelector('.device-states [data-state="light.garage"]').textContent, "Disabilitato");
+  assert.equal(group("cen").querySelector(".device-states"), null);
   toggle("device-one").click();
   assert.equal(toggle("device-one").getAttribute("aria-expanded"), "true");
   assert.equal(group("device-one").querySelector(".entity-list").hidden, false);
@@ -393,7 +396,11 @@ test("device headers collapse independently and preserve their state through ref
   root.querySelector('[data-view="bus"]').click();
   root.querySelector('[data-view="entities"]').click();
   assert.equal(group("device-one").querySelector(".entity-list").hidden, true);
+  const header = toggle("device-one"); header.focus();
   panel.hass = { ...hass, states: { "light.sala": { state: "off", attributes: {} } } };
+  assert.equal(group("device-one").querySelector('.device-states [data-state="light.sala"]').textContent, "off");
+  assert.equal(group("device-one").querySelector(".entity-list").hidden, true);
+  assert.equal(root.activeElement, header);
   toggle("device-one").click();
   assert.equal(toggle("device-one").getAttribute("aria-expanded"), "true");
   assert.equal(group("device-one").querySelector(".entity-list").hidden, false);
@@ -404,6 +411,40 @@ test("device headers collapse independently and preserve their state through ref
   assert.ok(group("cen").querySelector('[data-action="edit-device"]'));
   toggle("cen").click();
   assert.equal(group("cen").querySelector(".entity-list").hidden, false);
+});
+
+test("header states label multiple primary entities and respect secondary categories and gateway filters", async () => {
+  const { panel, root, hass } = await mount({ prepare: (data) => {
+    const first = data.entities[0];
+    data.devices[0].entry_ids.push("two");
+    data.entities.push(
+      { ...first, entity_id: "sensor.level", domain: "sensor", name: "Livello <sala>" },
+      { ...first, entity_id: "sensor.diagnostic", domain: "sensor", entity_category: "diagnostic" },
+      { ...first, entity_id: "button.lock", domain: "button" },
+      { ...first, entity_id: "switch.config", domain: "switch", entity_category: "config" },
+      { ...first, entity_id: "light.other", entry_id: "two", name: "Altro gateway" },
+      { ...first, entity_id: "sensor.orphan", device_id: null, domain: "sensor" },
+    );
+  } });
+  const group = () => root.querySelector('.device-group[data-device="device-one"][data-entry="one"]');
+  assert.deepEqual([...group().querySelectorAll('.device-states [data-state]')].map(el => el.dataset.state), ["sensor.level", "light.sala"]);
+  assert.deepEqual([...group().querySelectorAll('.device-state-name')].map(el => el.textContent), ["Livello <sala>:", "Luce sala:"]);
+  assert.equal(group().querySelector('.device-state-name sala'), null);
+  assert.equal(root.querySelector('.device-group[data-device=""] .device-states'), null);
+  panel.hass = { ...hass, states: { ...hass.states, "sensor.level": { state: "42", attributes: { unit_of_measurement: "%" } } } };
+  assert.equal(group().querySelector('.device-states [data-state="sensor.level"]').textContent, "42 %");
+  panel.hass = { ...hass, states: {}, formatEntityState: (state) => `HA: ${state.state}` };
+  assert.equal(group().querySelector('.device-states [data-state="light.sala"]').textContent, "Non disponibile");
+  panel.hass = { ...panel.hass, states: { "light.sala": { state: "<off>", attributes: {} } } };
+  assert.equal(group().querySelector('.device-states [data-state="light.sala"]').textContent, "HA: <off>");
+  assert.equal(group().querySelector('.device-states off'), null);
+  change(root.getElementById("gateway"), "two");
+  assert.equal(root.querySelector('.device-states [data-state="light.sala"]'), null);
+  assert.ok(root.querySelector('.device-states [data-state="light.other"]'));
+  change(root.getElementById("gateway"), "one");
+  change(root.getElementById("category"), "button");
+  assert.equal(root.querySelector('.device-states'), null);
+  assert.ok(root.querySelector('[data-id="button.lock"]'));
 });
 
 test("entity editor saves through the native API without overwriting an externally changed area", async () => {

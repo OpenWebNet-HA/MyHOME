@@ -15,6 +15,16 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Live state in device headers (0.15.0)
+
+Device headers show the current state of their primary entities even while
+collapsed, using the same Home Assistant state formatting as the expanded rows.
+If multiple primary entities match the current filters, each state is labeled
+with its entity name. Buttons and registry config/diagnostic entities stay in the
+secondary section and are not promoted to the header. Trigger-only devices and
+entities without a registered device have no device-state summary. Updates keep
+the card's open/closed state and keyboard focus intact.
+
 ## Compact secondary entities (0.14.0)
 
 Within each device and gateway, main entities appear first. Buttons and entities
@@ -142,7 +152,7 @@ requirements, limits and real-gateway validation steps.
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.14.0**, defined by
+The panel has an independent version, currently **0.15.0**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.
