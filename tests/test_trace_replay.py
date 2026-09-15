@@ -44,49 +44,52 @@ FIXTURES_PLANTS_DIR = Path(__file__).resolve().parent / "fixtures" / "plants"
 
 
 def get_plant_fixture_dirs() -> list[Path]:
-    """Always run the synthetic fixture, plus any locally supplied captures."""
-    fixtures = [Path(__file__).resolve().parent / "fixtures" / "synthetic"]
-    if FIXTURES_PLANTS_DIR.is_dir():
-        fixtures.extend(
-            p for p in FIXTURES_PLANTS_DIR.iterdir()
-            if p.is_dir() and (p / "diagnostic_summary.json").is_file()
-        )
-    return fixtures
+    """Discover all plant fixture directories containing diagnostic traces."""
+    if not FIXTURES_PLANTS_DIR.is_dir():
+        return []
+    return [
+        p
+        for p in FIXTURES_PLANTS_DIR.iterdir()
+        if p.is_dir() and (p / "diagnostic_summary.json").is_file()
+    ]
 
 
 class TestTraceReplayHarness:
     """Test suite executing frozen real-world gateway bus captures."""
 
-    @pytest.mark.parametrize("plant_dir", get_plant_fixture_dirs(), ids=lambda p: p.name)
-    def test_fixture_discovery_and_schema(self, plant_dir: Path) -> None:
+    def test_fixture_discovery_and_schema(self) -> None:
         """Verify plant fixture directories contain valid diagnostic summaries."""
-        diag_file = plant_dir / "diagnostic_summary.json"
-        assert diag_file.is_file()
-        with open(diag_file, "r", encoding="utf-8") as f:
-            payload = json.load(f)
+        fixtures = get_plant_fixture_dirs()
+        assert len(fixtures) >= 1, (
+            "Expected at least one real-world plant fixture in tests/fixtures/plants"
+        )
 
-        # Validate standard HA diagnostic & bus card structure
-        assert "data" in payload, f"Missing 'data' in {diag_file}"
-        data = payload["data"]
-        assert "bus_monitor" in data, f"Missing 'bus_monitor' in {diag_file}"
-        recent_frames = data["bus_monitor"].get("recent_frames", [])
-        assert len(recent_frames) > 0, f"No frames recorded in {diag_file}"
+        for plant_dir in fixtures:
+            diag_file = plant_dir / "diagnostic_summary.json"
+            assert diag_file.is_file()
+            with open(diag_file, "r", encoding="utf-8") as f:
+                payload = json.load(f)
 
-        for frame in recent_frames:
-            assert "raw" in frame
-            assert "direction" in frame
-            assert frame["direction"] in ("rx", "tx")
+            # Validate standard HA diagnostic & bus card structure
+            assert "data" in payload, f"Missing 'data' in {diag_file}"
+            data = payload["data"]
+            assert "bus_monitor" in data, f"Missing 'bus_monitor' in {diag_file}"
+            recent_frames = data["bus_monitor"].get("recent_frames", [])
+            assert len(recent_frames) > 0, f"No frames recorded in {diag_file}"
+
+            for frame in recent_frames:
+                assert "raw" in frame
+                assert "direction" in frame
+                assert frame["direction"] in ("rx", "tx")
 
     @pytest.mark.asyncio
-    @pytest.mark.skipif(not (FIXTURES_PLANTS_DIR / "issue_247_nicolacavallo84").is_dir(),
-                        reason="Optional installation capture is not distributed")
     async def test_real_world_trace_replay_issue_247(self, hass: HomeAssistant) -> None:
-        """Replay all 100 on-wire frames from Nicola Cavallo's production F454 gateway.
+        """Replay all 100 on-wire frames from the issue #247 MyHomeServer1 gateway.
 
         Verifies that every single frame across WHO 1, 2, 4, 13, 14, 16, 18 and
         ACK/NACK signals is cleanly processed without unhandled exceptions or state loss.
         """
-        plant_dir = FIXTURES_PLANTS_DIR / "issue_247_nicolacavallo84"
+        plant_dir = FIXTURES_PLANTS_DIR / "issue_247_myhomeserver1"
         plant_yaml = plant_dir / "myhome.yaml"
         diag_json = plant_dir / "diagnostic_summary.json"
 
@@ -99,15 +102,15 @@ class TestTraceReplayHarness:
         raw_frames = diag_data["data"]["bus_monitor"]["recent_frames"]
         assert len(raw_frames) == 100, f"Expected 100 frames in trace, found {len(raw_frames)}"
 
-        mac = "00:03:50:24:70:01"
+        mac = "00:03:50:00:02:47"
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
-                CONF_HOST: "192.168.1.50",
+                CONF_HOST: "192.0.2.1",
                 CONF_PORT: 20000,
                 CONF_PASSWORD: "pass",
                 CONF_MAC: mac,
-                CONF_SSDP_LOCATION: "http://192.168.1.50:49153/description.xml",
+                CONF_SSDP_LOCATION: "http://192.0.2.1:49153/description.xml",
                 CONF_SSDP_ST: "urn:schemas-upnp-org:device:Basic:1",
                 CONF_DEVICE_TYPE: "urn:schemas-upnp-org:device:Basic:1",
                 CONF_FRIENDLY_NAME: "MyHomeServer1",
@@ -169,42 +172,42 @@ class TestTraceReplayHarness:
 
         # Verify key entity states reflecting on-wire status changes from trace
         # 1. Lighting: *1*0*1002## -> OFF
-        light_state = hass.states.get("light.luci_vialetto_lontano")
+        light_state = hass.states.get("light.light_1002")
         assert light_state is not None
         assert light_state.state == "off"
 
         # 2. Configured Lighting: *1*0*92## -> OFF
-        light_scala = hass.states.get("light.luce_scala_esterna")
+        light_scala = hass.states.get("light.light_92")
         assert light_scala is not None
         assert light_scala.state == "off"
 
         # 3. Configured Switch (F522): *1*1*24## -> ON
-        switch_clima = hass.states.get("switch.interruttore_climatizzatori_zona_notte")
+        switch_clima = hass.states.get("switch.switch_24")
         assert switch_clima is not None
         assert switch_clima.state == "on"
 
         # 4. Configured Switch: *1*1*0910## -> ON
-        switch_prese = hass.states.get("switch.prese_esterne")
+        switch_prese = hass.states.get("switch.switch_0910")
         assert switch_prese is not None
         assert switch_prese.state == "on"
 
         # 5. Configured Switch: *1*1*14## -> ON
-        switch_forno = hass.states.get("switch.presa_forno")
+        switch_forno = hass.states.get("switch.switch_14")
         assert switch_forno is not None
         assert switch_forno.state == "on"
 
         # 3. Automation / Covers: *2*0*42## -> STOPPED
-        cover_state = hass.states.get("cover.tapparella_bagno_piccolo")
+        cover_state = hass.states.get("cover.cover_34")
         assert cover_state is not None
         assert cover_state.state in ("open", "closed")
 
         # 4. Dry contact (quiescent during trace): *25*... -> OFF
-        cancello_state = hass.states.get("binary_sensor.cancello")
+        cancello_state = hass.states.get("binary_sensor.binary_sensor_31")
         assert cancello_state is not None
         assert cancello_state.state == "off"
 
         # 5. Energy Meter: *#18*51*113*602## -> 602 W
-        power_state = hass.states.get("sensor.consumo_energia")
+        power_state = hass.states.get("sensor.sensor_51")
         assert power_state is not None
         assert power_state.state == "602"
 
@@ -212,8 +215,6 @@ class TestTraceReplayHarness:
         await hass.config_entries.async_unload(entry.entry_id)
 
     @pytest.mark.asyncio
-    @pytest.mark.skipif(not (FIXTURES_PLANTS_DIR / "mh200_physical_plant").is_dir(),
-                        reason="Optional installation capture is not distributed")
     async def test_real_world_trace_replay_mh200_physical_plant(
         self, hass: HomeAssistant
     ) -> None:
@@ -237,11 +238,11 @@ class TestTraceReplayHarness:
         raw_frames = diag_data["data"]["bus_monitor"]["recent_frames"]
         assert len(raw_frames) >= 100, f"Expected at least 100 frames, found {len(raw_frames)}"
 
-        mac = "00:03:50:20:00:01"
+        mac = "00:03:50:00:02:00"
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
-                CONF_HOST: "192.168.1.50",
+                CONF_HOST: "192.0.2.1",
                 CONF_PORT: 20000,
                 CONF_PASSWORD: "pass",
                 CONF_MAC: mac,
@@ -290,28 +291,28 @@ class TestTraceReplayHarness:
         assert replayed_count >= 80
 
         # Verify active states from the real physical MH200 plant
-        # 1. Keuken Wasbak (where: 57) -> ON (*1*1*57##)
-        light_wasbak = hass.states.get("light.keuken_wasbak")
+        # 1. Light 57 (where: 57) -> ON (*1*1*57##)
+        light_wasbak = hass.states.get("light.light_57")
         assert light_wasbak is not None
         assert light_wasbak.state == "on"
 
-        # 2. Keuken Tafel (where: 69, dimmable) -> ON (*1*9*69##)
-        light_tafel = hass.states.get("light.keuken_tafel")
+        # 2. Light 69 (where: 69, dimmable) -> ON (*1*9*69##)
+        light_tafel = hass.states.get("light.light_69")
         assert light_tafel is not None
         assert light_tafel.state == "on"
 
-        # 3. Keuken Plafond (where: 67) -> ON (*1*10*67##)
-        light_plafond = hass.states.get("light.keuken_plafond")
+        # 3. Light 67 (where: 67) -> ON (*1*10*67##)
+        light_plafond = hass.states.get("light.light_67")
         assert light_plafond is not None
         assert light_plafond.state == "on"
 
         # 4. Stopcontact Bed (where: 84) -> ON (*1*1*84##)
-        switch_bed = hass.states.get("switch.stopcontact_bed")
+        switch_bed = hass.states.get("switch.switch_84")
         assert switch_bed is not None
         assert switch_bed.state == "on"
 
-        # 5. Covers with F422 interface (e.g. Gordijn Woonkamer West: 11#4#02)
-        cover_west = hass.states.get("cover.gordijn_woonkamer_west")
+        # 5. Covers with F422 interface (e.g. Cover 11I02: 11#4#02)
+        cover_west = hass.states.get("cover.cover_11i02")
         assert cover_west is not None
 
         # Unload cleanly
@@ -347,7 +348,7 @@ class TestTraceReplayHarness:
         entry_dict = dict(config_entry_data.get("data", {}))
 
         mac = entry_dict.get(CONF_MAC) or "00:03:50:99:99:99"
-        entry_dict[CONF_HOST] = entry_dict.get(CONF_HOST, "192.168.1.50")
+        entry_dict[CONF_HOST] = entry_dict.get(CONF_HOST, "192.0.2.1")
         entry_dict[CONF_PORT] = entry_dict.get(CONF_PORT, 20000)
         entry_dict[CONF_PASSWORD] = "pass"
         entry_dict[CONF_MAC] = mac
@@ -460,14 +461,14 @@ class TestTraceReplayHarness:
     @pytest.mark.asyncio
     async def test_trace_replay_high_frequency_burst(self, hass: HomeAssistant) -> None:
         """Stress-test dispatcher with 50 frames fired in rapid burst without per-frame awaits."""
-        mac = "00:03:50:00:00:01"
-        plant_dir = Path(__file__).resolve().parent / "fixtures" / "synthetic"
+        mac = "00:03:50:24:70:88"
+        plant_dir = FIXTURES_PLANTS_DIR / "issue_247_myhomeserver1"
         plant_yaml = plant_dir / "myhome.yaml"
 
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
-                CONF_HOST: "192.168.1.50",
+                CONF_HOST: "192.0.2.1",
                 CONF_PORT: 20000,
                 CONF_PASSWORD: "pass",
                 CONF_MAC: mac,
@@ -519,7 +520,7 @@ class TestTraceReplayHarness:
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
-                CONF_HOST: "192.168.1.50",
+                CONF_HOST: "192.0.2.1",
                 CONF_PORT: 20000,
                 CONF_PASSWORD: "pass",
                 CONF_MAC: mac,
@@ -563,10 +564,8 @@ class TestTraceReplayHarness:
         await hass.config_entries.async_unload(entry.entry_id)
 
     @pytest.mark.asyncio
-    @pytest.mark.skipif(not (FIXTURES_PLANTS_DIR / "issue_292_thedarkwizard").is_dir(),
-                        reason="Optional installation capture is not distributed")
-    async def test_real_world_trace_replay_issue_292_thedarkwizard(self, hass: HomeAssistant) -> None:
-        """Replay all 50 on-wire frames from @TheDarkWizard's MyHomeServer1 gateway trace (Issue #292).
+    async def test_real_world_trace_replay_issue_292_myhomeserver1(self, hass: HomeAssistant) -> None:
+        """Replay all 50 on-wire frames from the issue #292 MyHomeServer1 gateway trace (Issue #292).
 
         Verifies:
         1. All 50 frames are parsed and dispatched cleanly across 20 lights and 5 covers.
@@ -575,7 +574,7 @@ class TestTraceReplayHarness:
            to MyHomeServer1 and sets inter-frame pacing to 0.02s.
         4. WHO=13 Dimension 16 updates the firmware version.
         """
-        plant_dir = FIXTURES_PLANTS_DIR / "issue_292_thedarkwizard"
+        plant_dir = FIXTURES_PLANTS_DIR / "issue_292_myhomeserver1"
         plant_yaml = plant_dir / "myhome.yaml"
         diag_json = plant_dir / "diagnostic_summary.json"
 
@@ -588,12 +587,12 @@ class TestTraceReplayHarness:
         raw_frames = diag_data["data"]["bus_monitor"]["recent_frames"]
         assert len(raw_frames) == 50, f"Expected 50 frames in trace, found {len(raw_frames)}"
 
-        mac = "00:03:50:30:13:34"
+        mac = "00:03:50:00:02:92"
         # Configured as F454 initially (reproducing the issue where manual entry defaulted to F454)
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
-                CONF_HOST: "192.168.30.134",
+                CONF_HOST: "192.0.2.1",
                 CONF_PORT: 20000,
                 CONF_PASSWORD: None,
                 CONF_MAC: mac,
@@ -690,10 +689,8 @@ class TestTraceReplayHarness:
         await hass.config_entries.async_unload(entry.entry_id)
 
     @pytest.mark.asyncio
-    @pytest.mark.skipif(not (FIXTURES_PLANTS_DIR / "issue_297_thedarkwizard").is_dir(),
-                        reason="Optional installation capture is not distributed")
-    async def test_real_world_trace_replay_issue_297_f454_thedarkwizard(self, hass: HomeAssistant) -> None:
-        """Replay all 127 on-wire frames from @TheDarkWizard's F454 gateway trace (Issue #297).
+    async def test_real_world_trace_replay_issue_297_f454(self, hass: HomeAssistant) -> None:
+        """Replay all 127 on-wire frames from the issue #297 F454 gateway trace (Issue #297).
 
         Verifies:
         1. All 127 frames are parsed cleanly without crashing on timezone sentinel 999.
@@ -702,7 +699,7 @@ class TestTraceReplayHarness:
         4. BusMonitor sliding-window deduplication and has_frame_since suppress redundant frames.
         5. Light and cover entities are populated and updated correctly.
         """
-        plant_dir = FIXTURES_PLANTS_DIR / "issue_297_thedarkwizard"
+        plant_dir = FIXTURES_PLANTS_DIR / "issue_297_f454"
         plant_yaml = plant_dir / "myhome.yaml"
         diag_json = plant_dir / "diagnostic_summary.json"
 
@@ -715,11 +712,11 @@ class TestTraceReplayHarness:
         raw_frames = diag_data["data"]["bus_monitor"]["recent_frames"]
         assert len(raw_frames) == 127, f"Expected 127 frames in trace, found {len(raw_frames)}"
 
-        mac = "00:03:50:30:13:34"
+        mac = "00:03:50:00:02:97"
         entry = MockConfigEntry(
             domain=DOMAIN,
             data={
-                CONF_HOST: "192.168.30.134",
+                CONF_HOST: "192.0.2.1",
                 CONF_PORT: 20000,
                 CONF_PASSWORD: None,
                 CONF_MAC: mac,

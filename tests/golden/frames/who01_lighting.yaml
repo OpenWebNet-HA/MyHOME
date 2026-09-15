@@ -410,7 +410,7 @@
   where: "0910"
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Lighting: Turn ON point-to-point at 4-digit zero-padded address 0910 (Nicola Cavallo plant)"
+  mcp_notes: "Lighting: Turn ON point-to-point at 4-digit zero-padded address 0910 (issue #247 reporter plant)"
   roundtrip: true
 
 - id: light.event.off.point_1002
@@ -421,7 +421,7 @@
   where: "1002"
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Lighting: Turn OFF point-to-point at 4-digit address 1002 (Nicola Cavallo plant)"
+  mcp_notes: "Lighting: Turn OFF point-to-point at 4-digit address 1002 (issue #247 reporter plant)"
   roundtrip: true
 
 - id: light.cmd.timed_preset_0_5s.ptp.21

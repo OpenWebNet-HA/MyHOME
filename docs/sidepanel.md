@@ -251,22 +251,22 @@ a visual check in a real Home Assistant frontend.
 
 ## CI alignment with the current architecture branch
 
-The sidepanel branch includes `v2-phase1-architecture` through `96d86a8`.
+The sidepanel branch includes `v2-phase1-architecture` through `fea3764` (PR #316).
 The gateway-model options regression now enters the native Configure menu before
 opening Gateway settings, while retaining model, title and reload assertions.
 The new panel labels are also included in upstream's `strings.json`.
 
-That upstream revision removes the real installation fixtures. Mandatory YAML
-import, registry cleanliness, state-dispatch, burst and generic replay checks now
-use a small invented installation in `tests/fixtures/synthetic`. The four replay
-tests tied to specific real captures run when those capture directories are
-supplied locally, and are explicitly skipped otherwise. Their original assertions
-remain intact; the removed capture files have not been restored.
+PR #316 supplies anonymized plant fixtures, their sanitizer and privacy checks.
+The architecture and replay tests now use those upstream fixtures, including all
+four capture-specific replay cases. The temporary small synthetic fixture and
+its conditional skips have been removed. The Configure-menu regression still
+checks the panel's native navigation before testing gateway settings.
 
-Validation on HA 2025.1.4 / Python 3.12 / OWNd 2.0.0b6: 1,332 tests passed,
-5 skipped (four unavailable captures and one pre-existing skip), five snapshots
-passed, and all 28 integration modules retain 100% line coverage (5,472 statements).
-All 18 frontend tests, Ruff, architecture checks and the strict coverage gate pass.
+Validation after merging PR #316 on HA 2025.1.4 / Python 3.12.14 / OWNd 2.0.0b6:
+**1,359 backend tests passed, one existing skip**, five snapshots passed and
+**100% line coverage** across all 28 integration modules (5,477 statements).
+All **22 frontend tests** and Ruff on the resolved tests pass. The panel remains
+at 0.7.1: this merge changes test fixtures and documentation, not its runtime code.
 
 
 ## Panel 0.7.1: foundation for advanced sections
@@ -283,7 +283,7 @@ All 18 frontend tests, Ruff, architecture checks and the strict coverage gate pa
   and content hash. The shell still owns navigation, gateway selection and HA
   connection changes; the bus adapter owns only the selected monitor instance.
 
-Validation for 0.7.1: Home Assistant 2025.1.4, Python 3.12.14, OWNd 2.0.0b6,
+Validation for 0.7.1 before the PR #316 merge: Home Assistant 2025.1.4, Python 3.12.14, OWNd 2.0.0b6,
 pytest-asyncio 0.24.0. The full backend suite passes **1,344 tests**, with the same
 five skips (four unavailable capture fixtures and one existing skip), five
 snapshots and **100% line coverage** across all 28 modules (5,477 statements).
