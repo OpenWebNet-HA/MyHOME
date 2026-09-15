@@ -5,9 +5,10 @@ const assetUrl = (name) => {
   url.search = new URL(import.meta.url).search;
   return url.href;
 };
-const [{ translations }, model, { escapeHtml, replacePreservingFocus }, { BusMonitorSection }] = await Promise.all([
+const [{ translations }, model, { escapeHtml, replacePreservingFocus }, { BusMonitorSection }, { CoverProfileEditor }] = await Promise.all([
   import(assetUrl("panel-translations.js")), import(assetUrl("panel-model.js")),
   import(assetUrl("panel-dom.js")), import(assetUrl("panel-bus-monitor.js")),
+  import(assetUrl("panel-cover-profiles.js")),
 ]);
 const SETTINGS_URL = "/config/integrations/integration/myhome";
 const CATEGORY_VIEW_STORAGE_KEY = "myhome-panel-category-view-v1";
@@ -32,6 +33,7 @@ class MyHomePanel extends HTMLElement {
     this._session = 0;
     this._unsubs = [];
     this._busMonitor = new BusMonitorSection();
+    this._profileEditor = new CoverProfileEditor();
     this._visibilityChanged = () => this._updatePolling();
     this._locationChanged = () => this._syncGatewayFromUrl();
   }
@@ -113,6 +115,7 @@ class MyHomePanel extends HTMLElement {
   }
 
   _stop() {
+    this._profileEditor.close();
     this._started = false;
     document.removeEventListener("visibilitychange", this._visibilityChanged);
     window.removeEventListener("popstate", this._locationChanged);
@@ -164,6 +167,7 @@ class MyHomePanel extends HTMLElement {
     const entryId = new URL(window.location.href).searchParams.get("entry_id");
     if (this._entryQuery === entryId) return;
     this._entryQuery = entryId;
+    this._profileEditor.close();
     this._entryId = entryId || "";
     this._selectedInitially = entryId !== null;
     this._view = "entities";
@@ -200,6 +204,7 @@ class MyHomePanel extends HTMLElement {
   }
 
   _buildShell() {
+    this._profileEditor.close();
     this._removeMonitor();
     const t = (key) => escapeHtml(this._t(key));
     this.shadowRoot.innerHTML = `
@@ -236,6 +241,7 @@ class MyHomePanel extends HTMLElement {
         <p id="version" class="muted"></p>
       </main><div id="dialog-host"></div>`;
     this.shadowRoot.getElementById("gateway").onchange = (event) => {
+      this._profileEditor.close();
       this._entryId = event.target.value;
       this._selectedInitially = true;
       const url = new URL(window.location.href);
@@ -356,7 +362,7 @@ class MyHomePanel extends HTMLElement {
     root.getElementById("discovery-help").hidden = isBus || !this._data.gateways.length;
     root.getElementById("items").hidden = isBus;
     root.getElementById("monitor").hidden = !isBus;
-    if (isBus) { this._renderMonitor(); return; }
+    if (isBus) { this._profileEditor.close(); this._renderMonitor(); return; }
     this._removeMonitor();
     if (!this._data.gateways.length) {
       root.getElementById("items").innerHTML = this._empty(this._t("noGateways"), this._t("noGatewaysHelp"));
@@ -429,7 +435,8 @@ class MyHomePanel extends HTMLElement {
       ${sharedAddress ? "" : this._addressDetails(item)}</div>
       <p class="state" data-state="${id}" aria-label="${t("state")}"></p>
       <div class="actions"><button data-action="edit-entity" data-id="${id}">${t("edit")}</button>
-        <button data-action="details" data-id="${id}">${t("details")}</button></div></article>`;
+        <button data-action="details" data-id="${id}">${t("details")}</button>
+        ${item.domain === "cover" && item.who === "2" ? `<button data-action="cover-profile" data-id="${id}">${t("coverProfiles")}</button><span class="muted" data-cover-profile="${id}"></span>` : ""}</div></article>`;
   }
 
   _addressDetails(item) {
@@ -443,6 +450,7 @@ class MyHomePanel extends HTMLElement {
 
   _updateStates() {
     if (!this._data) return;
+    this._profileEditor.updateState(this._hass);
     for (const element of this.shadowRoot.querySelectorAll("[data-state]")) {
       const entity = this._data.entities.find((item) => item.entity_id === element.dataset.state);
       const state = this._hass?.states?.[element.dataset.state];
@@ -451,6 +459,22 @@ class MyHomePanel extends HTMLElement {
           : `${this._t(state.state)}${state.attributes?.unit_of_measurement ? ` ${state.attributes.unit_of_measurement}` : ""}`;
       if (element.textContent !== text) element.textContent = text;
     }
+    for (const element of this.shadowRoot.querySelectorAll("[data-cover-profile]")) {
+      const attrs = this._hass?.states?.[element.dataset.coverProfile]?.attributes;
+      element.textContent = attrs?.cover_profile_pending ? this._t("profilePending")
+        : attrs?.cover_profile || (attrs?.travel_time != null ? this._t("profileDefault") : "");
+    }
+  }
+
+  _openCoverProfile(id) {
+    const entity = this._data.entities.find((item) => item.entity_id === id);
+    if (!entity) return;
+    this.shadowRoot.querySelector("dialog")?.close();
+    this._profileEditor.open({
+      host: this.shadowRoot.getElementById("dialog-host"), hass: this._hass, entity,
+      t: (key) => this._t(key),
+      onSaved: (message) => { this.shadowRoot.getElementById("toast").textContent = message; this._refresh(); },
+    });
   }
 
   _onClick(event) {
@@ -480,6 +504,8 @@ class MyHomePanel extends HTMLElement {
     } else if (target.dataset.action === "refresh") {
       this._refresh();
       if (this._view === "bus" && !this._busMonitor.card) { this._removeMonitor(); this._renderMonitor(); }
+    } else if (target.dataset.action === "cover-profile") {
+      this._openCoverProfile(target.dataset.id);
     } else if (target.dataset.action?.startsWith("edit-")) {
       this._openEditor(target.dataset.action.slice(5), target.dataset.id);
     } else if (["details", "entity-settings"].includes(target.dataset.action)) {
@@ -494,6 +520,7 @@ class MyHomePanel extends HTMLElement {
   }
 
   _openEditor(kind, id) {
+    this._profileEditor.close();
     const item = kind === "device" ? this._data.devices.find((entry) => entry.id === id)
       : this._data.entities.find((entry) => entry.entity_id === id);
     if (!item) return;

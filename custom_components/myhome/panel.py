@@ -1,7 +1,7 @@
 """MyHOME administration panel backed by Home Assistant's native registries.
 
-The panel stores only its shared sidebar preference. Its only custom WebSocket
-command is a read-only inventory; edits use Home Assistant's registry APIs directly.
+Native names and areas use Home Assistant registry APIs. The inventory is read
+only; travel profiles use their own gateway-scoped backend store and API.
 """
 
 from __future__ import annotations
@@ -23,9 +23,10 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 
 from .const import CONF_ENTITY, CONF_FIRMWARE, DOMAIN, INTEGRATION_VERSION, is_apl_address
+from .cover_profiles import register_api
 
 PANEL_URL = "myhome"
-PANEL_VERSION = "0.7.1"
+PANEL_VERSION = "0.8.0"
 PANEL_STATIC_URL = "/myhome_panel"
 WS_INVENTORY = "myhome/panel/inventory"
 _PANEL_REGISTERED = "_panel_registered"
@@ -263,6 +264,7 @@ async def async_setup_panel(hass: HomeAssistant, bus_card_url: str) -> None:
     data = hass.data.setdefault(DOMAIN, {})
     if not data.get(_WS_REGISTERED):
         websocket_api.async_register_command(hass, ws_panel_inventory)
+        register_api(hass)
         data[_WS_REGISTERED] = True
     if "frontend" not in hass.config.components or not getattr(hass, "http", None):
         return

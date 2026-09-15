@@ -28,7 +28,7 @@ test("first mount recovers HA properties assigned before definition, including d
       callWS: async (message) => {
         calls.push(message);
         return {
-          version: "2.0.0b9", panel_version: "0.7.1",
+          version: "2.0.0b9", panel_version: "0.8.0",
           gateways: [{ entry_id: id, title: id, state: "loaded", connected: true }],
           devices: [], areas: [],
           entities: [{ entity_id: "light.test", entry_id: id, domain: "light", who: "1", unique_id: "test" }],
@@ -37,7 +37,7 @@ test("first mount recovers HA properties assigned before definition, including d
     };
     const element = document.createElement("myhome-panel");
     // Match HA's assignment to a still-undefined custom element.
-    element.panel = { config: { panel_version: "0.7.1", bus_card_url: `/card-${id}.js` } };
+    element.panel = { config: { panel_version: "0.8.0", bus_card_url: `/card-${id}.js` } };
     if (id !== "delayed-hass") element.hass = hass;
     element.narrow = true;
     element.route = { path: "" };
@@ -56,7 +56,7 @@ test("first mount recovers HA properties assigned before definition, including d
     assert.equal(calls.length, 1, "first mount must load without navigating away");
     assert.equal(calls[0].type, "myhome/panel/inventory");
     assert.equal(element.shadowRoot.querySelectorAll(".item-card").length, 1);
-    assert.equal(element.shadowRoot.getElementById("panel-version").textContent, "Pannello v0.7.1");
+    assert.equal(element.shadowRoot.getElementById("panel-version").textContent, "Pannello v0.8.0");
     for (const property of ["hass", "panel", "narrow", "route"]) assert.equal(Object.hasOwn(element, property), false);
     assert.equal(element.shadowRoot.querySelector("ha-menu-button").narrow, true);
     assert.equal(element._panel.config.bus_card_url, `/card-${element._entryId}.js`);

@@ -113,3 +113,9 @@ dialog a { color: var(--panel-accent); font-size: 13px; }
 @media (any-pointer: coarse) {
   button, a.button { min-height: 44px; }
 }
+
+.cover-profile-dialog .actions { flex-wrap: wrap; margin-top: 12px; }
+.cover-profile-dialog button { white-space: normal; }
+.cover-profile-dialog select, .cover-profile-dialog input { width: 100%; min-width: 0; box-sizing: border-box; }
+.entity-row .actions { flex-wrap: wrap; }
+.entity-row [data-cover-profile] { flex-basis: 100%; font-size: 12px; }

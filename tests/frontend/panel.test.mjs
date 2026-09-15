@@ -28,7 +28,7 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
-    panel_version: "0.7.1",
+    panel_version: "0.8.0",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
@@ -106,7 +106,7 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
-  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.7.1");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.8.0");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
   root.querySelector('[data-view="entities"]').click();
   assert.equal(root.querySelectorAll(".device-group").length, 3);
@@ -622,4 +622,152 @@ test("bus section drops a late import and isolates gateway subscriptions after n
   root.querySelector('[data-view="entities"]').click();
   assert.equal(streams[1].stopped, true);
   assert.equal(root.querySelector("myhome-openwebnet-bus-monitor"), null);
+});
+
+function coverProfileData(extra = {}) {
+  return {
+    entry_id: "one", entity_id: "cover.shutter", revision: 3,
+    assigned_profile_id: "timed", profiles: [{ id: "timed", name: "Standard", travel_time: 35, uses: 1 }],
+    writable: true, reason: null, default_travel_time: 30, effective_travel_time: 35, pending: false,
+    ...extra,
+  };
+}
+
+async function mountProfiles({ read, write } = {}) {
+  return mount({ prepare: (data) => {
+    data.devices.push({ id: "shutter", entry_ids: ["one"], name: "Tapparella", who: "2" });
+    data.entities.push({ entity_id: "cover.shutter", device_id: "shutter", entry_id: "one",
+      domain: "cover", who: "2", original_name: "Tapparella", unique_id: "00:03:50:00:00:01-2-11" });
+  }, callWS: async (message, data) => {
+    if (message.type === "myhome/panel/inventory") return structuredClone(data);
+    if (message.type === "myhome/cover_profiles/read") return read ? read(message) : coverProfileData();
+    if (message.type === "myhome/cover_profiles/write") return write ? write(message) : coverProfileData({ revision: 4 });
+    throw new Error(`Unexpected command: ${message.type}`);
+  } });
+}
+
+const openProfile = (root) => {
+  root.querySelector('.device-group[data-device="shutter"] [data-action="toggle-device"]').click();
+  root.querySelector('[data-action="cover-profile"]').click();
+};
+
+test("WHO 2 editor saves a single cover profile with explicit gateway and revision, including decimals", async () => {
+  const { root, calls } = await mountProfiles({ write: () => coverProfileData({ revision: 4, pending: true }) });
+  openProfile(root);
+  await tick();
+  const form = root.querySelector("#profile-form");
+  assert.equal(form.elements.travel_time.value, "35");
+  form.elements.profile_name.value = "Preciso";
+  form.elements.travel_time.value = "42.5";
+  form.querySelector('[data-profile-action="update"]').click();
+  await tick();
+  assert.deepEqual(calls.find((call) => call.type === "myhome/cover_profiles/write"), {
+    type: "myhome/cover_profiles/write", entry_id: "one", entity_id: "cover.shutter",
+    revision: 3, action: "save", profile_id: "timed", profile: { name: "Preciso", travel_time: 42.5 },
+  });
+  assert.match(root.querySelector(".cover-profile-dialog").textContent, /quando la tapparella si ferma/);
+  assert.equal(root.querySelector("dialog").open, true);
+  root.querySelector("#profile-close").click();
+  assert.equal(root.querySelector("dialog"), null);
+});
+
+test("shared profiles require an explicit new copy and the default choice removes the assignment", async () => {
+  const { root, calls } = await mountProfiles({ read: () => coverProfileData({ profiles: [
+    { id: "timed", name: '<img src=x onerror="alert(1)">', travel_time: 35, uses: 2 },
+  ] }) });
+  openProfile(root);
+  await tick();
+  let form = root.querySelector("#profile-form");
+  assert.equal(root.querySelector("img"), null);
+  assert.equal(form.querySelector('[data-profile-action="update"]').hidden, true);
+  form.elements.profile_name.value = "Copia";
+  form.querySelector('[data-profile-action="new"]').click();
+  await tick();
+  const create = calls.find((call) => call.type === "myhome/cover_profiles/write");
+  assert.equal(create.profile_id, null);
+  assert.equal(create.profile.name, "Copia");
+  form = root.querySelector("#profile-form");
+  change(form.elements.profile, "");
+  form.querySelector('[data-profile-action="assign"]').click();
+  await tick();
+  const reset = calls.filter((call) => call.type === "myhome/cover_profiles/write").at(-1);
+  assert.equal(reset.profile_id, null);
+  assert.equal(reset.action, "assign");
+  assert.equal(reset.revision, 4);
+  assert.equal("profile" in reset, false);
+});
+
+test("profile conflicts retain the draft and require reload before another write", async () => {
+  let revision = 3;
+  const { root, calls } = await mountProfiles({ read: () => coverProfileData({ revision }), write: () => {
+    revision = 4;
+    throw { code: "revision_conflict" };
+  } });
+  openProfile(root);
+  await tick();
+  const form = root.querySelector("#profile-form");
+  form.elements.profile_name.value = "Unsaved";
+  form.elements.travel_time.value = "52";
+  form.querySelector('[data-profile-action="update"]').click();
+  await tick();
+  assert.equal(form.elements.profile_name.value, "Unsaved");
+  assert.match(form.querySelector("#profile-error").textContent, /bozza è conservata/);
+  assert.equal(form.querySelector('[data-profile-action="update"]').disabled, true);
+  form.querySelector('[data-profile-action="update"]').click();
+  assert.equal(calls.filter((call) => call.type.endsWith("/write")).length, 1);
+  form.querySelector("#profile-reload").click();
+  await tick();
+  assert.equal(root.querySelector("#profile-form").elements.profile_name.value, "Standard");
+  assert.equal(root.querySelector('[data-profile-action="update"]').disabled, false);
+});
+
+test("late profile reads and saves cannot overwrite another gateway or survive disconnect", async () => {
+  const pendingRead = deferred();
+  const pendingSave = deferred();
+  let reads = 0;
+  const { panel, root } = await mountProfiles({ read: () => ++reads === 1 ? pendingRead.promise : coverProfileData(),
+    write: () => pendingSave.promise });
+  openProfile(root);
+  change(root.getElementById("gateway"), "two");
+  pendingRead.resolve(coverProfileData());
+  await tick();
+  assert.equal(root.querySelector("dialog"), null);
+  change(root.getElementById("gateway"), "one");
+  root.querySelector('[data-action="cover-profile"]').click();
+  await tick();
+  root.querySelector('[data-profile-action="update"]').click();
+  panel.remove();
+  pendingSave.resolve(coverProfileData({ revision: 99 }));
+  await tick();
+  assert.equal(root.querySelector("dialog"), null);
+  assert.equal(root.querySelector("#toast").textContent, "");
+});
+
+test("unavailable and advanced covers show a read-only explanation", async () => {
+  for (const reason of ["cover_unavailable", "advanced_cover"]) {
+    const { panel, root, calls } = await mountProfiles({ read: () => coverProfileData({ writable: false, reason }) });
+    openProfile(root);
+    await tick();
+    assert.equal(root.querySelector('[data-profile-action="assign"]').disabled, true);
+    assert.equal(root.querySelector('[data-profile-action="new"]').disabled, true);
+    assert.equal(root.querySelector('[data-profile-action="update"]').hidden, true);
+    assert.match(root.querySelector(".cover-profile-dialog .notice").textContent, reason === "advanced_cover" ? /feedback/ : /gateway/);
+    assert.equal(calls.filter((call) => call.type.endsWith("/write")).length, 0);
+    panel.remove();
+  }
+});
+
+test("live profile application updates pending status without replacing an editor draft", async () => {
+  const { panel, root, hass } = await mountProfiles({ read: () => coverProfileData({ pending: true }) });
+  openProfile(root);
+  await tick();
+  const input = root.querySelector('#profile-form input[name="profile_name"]');
+  input.value = "My next edit";
+  input.focus();
+  panel.hass = { ...hass, states: { ...hass.states, "cover.shutter": { state: "open",
+    attributes: { travel_time: 42.5, cover_profile: "Standard", cover_profile_pending: false } } } };
+  assert.equal(root.querySelector("#profile-effective").textContent, "42.5");
+  assert.equal(root.querySelector("#profile-pending").hidden, true);
+  assert.equal(input.value, "My next edit");
+  assert.equal(root.activeElement, input);
 });

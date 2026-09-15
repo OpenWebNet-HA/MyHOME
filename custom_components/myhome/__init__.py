@@ -728,3 +728,5 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     from .panel import async_remove_panel_if_last_entry
 
     async_remove_panel_if_last_entry(hass, entry)
+    from .cover_profiles import remove_entry
+    await remove_entry(hass, entry.entry_id)

@@ -17,7 +17,7 @@ and provides English and Italian labels, with English fallback for other languag
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.7.1**, defined by
+The panel has an independent version, currently **0.8.0**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.
@@ -93,13 +93,13 @@ integration settings remain the place to add and configure gateways.
 | Entity values and availability | Home Assistant frontend state updates |
 | Bus traffic | Existing `myhome/bus_monitor/*` APIs |
 
-The only new backend command, `myhome/panel/inventory`, is an admin-only read
+The inventory command, `myhome/panel/inventory`, is an admin-only read
 operation. It returns an explicit allowlist of gateway, device, entity, and area
 fields, including IP/MAC information needed by administrators. It does not return
 gateway passwords, full Config Entry data/options, or runtime objects.
 
 Gateway and device configuration is not duplicated and needs no migration. The
-only extra HA-managed store, `myhome_panel` (version 1), contains the global
+HA-managed store `myhome_panel` (version 1) contains the global
 `show_sidebar` presentation preference. It is saved by the native Options Flow
 and retained across restarts and gateway deletion/recreation. WHO view preferences
 remain browser-local. Edits submit
@@ -296,8 +296,9 @@ Real HA browser behavior and physical gateways still need manual validation.
 ### Contract for the next sections (design, not implemented APIs)
 
 The target is one MyHOME panel with inventory, bus diagnostics and cover
-profiles/calibration sections. This patch does not add cover profile endpoints,
-new hardware probes, or calibration commands.
+profiles/calibration sections. The 0.7.1 foundation did not add profile endpoints;
+0.8.0 below introduces timed profiles. Hardware probes and guided calibration
+remain future work.
 
 Each advanced section should follow the bus adapter's ownership boundaries:
 
@@ -332,3 +333,74 @@ captures and supported OWNd decoding before exposing probe controls. Retire the
 standalone bus card only once its current inspection, filtering, sending, sweep
 and export functions are available and verified inside the panel; the adapter
 allows that migration without coupling the other sections to card internals.
+
+
+## Panel 0.8.0: travel profiles in WHO 2
+
+Expand a WHO 2 device and choose **Travel profile** on its cover row. The dialog
+shows the assigned profile, current full travel time, and the original YAML/default
+time. Standard timed covers support one full travel time, shared by opening and
+closing; values from 1 to 600 seconds, including fractions, are accepted.
+
+- **Save new profile and assign** creates a profile for this gateway and assigns it
+  to this cover. Its name can contain spaces (maximum 64 characters).
+- **Apply selected profile** reuses an existing profile. Selecting **Use YAML /
+  default settings** removes the assignment and restores the original runtime value.
+- **Update this profile** edits a profile assigned exclusively to this cover. Shared
+  profiles require an explicit new copy, so a single-cover edit cannot change another
+  cover. Profiles are scoped to their gateway, with a limit of 200 stored profiles.
+- Offline, unloaded or disabled covers are read-only. Covers configured for advanced
+  hardware position feedback show an explanation; timed profiles do not apply.
+- Saving never sends a bus command or reloads the gateway. A moving cover keeps its
+  current travel time and scheduled stop. The saved change is pending until a stop
+  or stationary-position event, and survives restart even if the entity unloads
+  during the save. The next mount resolves the stored assignment before status reads.
+- Registry renames keep assignments because storage uses the native unique ID,
+  together with the config entry. Removing the config entry deletes its profile store.
+
+The authoritative store is `myhome.cover_profiles.<entry_id>` (version 1), containing
+`revision`, `profiles` and `assignments`. An explicit assignment overrides
+`travel_time` from YAML/defaults; removing it restores that source. Nothing rewrites
+`myhome.yaml`, native names/areas, or gateway credentials. Writes use one gateway
+lock, an expected revision and atomic storage; failed persistence is reported and
+never published to the running cover. A stale editor keeps its draft and asks for an
+explicit reload before saving again. The frontend module owns its dialog lifetime
+and ignores late responses after navigation, disconnects or connection replacement.
+
+### WebSocket contract
+
+Both commands require an administrator and explicit `entry_id` / `entity_id`.
+The entity must be a native MyHOME cover belonging to exactly that entry.
+
+```json
+{"type":"myhome/cover_profiles/read","entry_id":"ENTRY","entity_id":"cover.shutter"}
+```
+
+Create and assign a new profile:
+
+```json
+{"type":"myhome/cover_profiles/write","entry_id":"ENTRY","entity_id":"cover.shutter","revision":0,"action":"save","profile_id":null,"profile":{"name":"Bedroom","travel_time":32.5}}
+```
+
+Use `action: "assign"` with an existing `profile_id`, or `null` to restore defaults.
+Use `action: "save"` with the currently assigned exclusive profile ID to update it.
+Responses include the new revision, assigned profile ID, profile list with usage
+counts, default/effective times, pending status, writability and a reason code.
+
+This adapts the persistence/resolution separation of
+[Interstellar0verdrive's calibration store](https://github.com/Interstellar0verdrive/MyHOME-stability/blob/229b1eb30558012674e1e7f5c2059a58300f09df/custom_components/myhome/calibration_store.py)
+to the existing MyHOME cover runtime. It does **not** import that fork's height,
+roll, slat or separate opening/closing model, and its storage/API is deliberately
+separate from `myhome.calibration.*`. Guided calibration, batch editing and deletion
+of unused profiles are later steps. No profile is presented as physically calibrated.
+
+
+Validation for 0.8.0: **1,379 backend tests passed, one existing skip**, five
+snapshots passed and **100% Python line coverage** (5,660 statements) on HA
+2025.1.4 / Python 3.12.14 / OWNd 2.0.0b6. All **28 frontend tests** pass. On HA
+2026.9.1 / Python 3.14.7, all **48 profile, cover and panel tests** pass, including
+the real storage implementation and authenticated WebSocket transport. The profile
+suite verifies failed disk writes, concurrent edits, disabled/offline covers,
+rename/restart persistence, shared-profile isolation, and an already scheduled
+position stop retaining its original duration. Ruff and architecture checks pass.
+Physical-gateway behavior and layout in a real HA browser still need manual testing.

@@ -41,6 +41,7 @@ from .const import (
     DOMAIN,
     LOGGER,
 )
+from .cover_profiles import bind_cover
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 
@@ -278,6 +279,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._full_where = f"{self._where}#4#{self._interface}" if self._interface is not None else self._where
         self._advanced = advanced
         self._travel_time = travel_time
+        self._default_travel_time = travel_time
+        self._pending_profile = None
 
         # Both advanced and standard covers support SET_POSITION (standard via travel time estimation)
         self._attr_supported_features = (
@@ -305,6 +308,23 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._move_start_time = None
         self._start_position = 50
         self._stop_task = None
+
+    @callback
+    def async_apply_cover_profile(self, profile):
+        """Apply only when stopped, preserving the timing of an in-flight movement."""
+        if self._attr_is_opening or self._attr_is_closing or self._move_start_time is not None:
+            self._pending_profile = (profile,)
+            self._attr_extra_state_attributes["cover_profile_pending"] = True
+            return
+        self._pending_profile = None
+        self._travel_time = profile["travel_time"] if profile else self._default_travel_time
+        self._attr_extra_state_attributes["travel_time"] = self._travel_time
+        self._attr_extra_state_attributes["cover_profile"] = profile["name"] if profile else None
+        self._attr_extra_state_attributes["cover_profile_pending"] = False
+
+    def _apply_pending_cover_profile(self):
+        if self._pending_profile is not None:
+            self.async_apply_cover_profile(self._pending_profile[0])
 
     def _cancel_stop_task(self):
         """Cancel any running scheduled auto-stop task."""
@@ -347,6 +367,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Run when entity about to be added to hass."""
         target_hass = self.hass or self._hass
         if target_hass is not None:
+            await bind_cover(target_hass, self)
             self.async_on_remove(
                 async_dispatcher_connect(
                     target_hass,
@@ -501,6 +522,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             if self._attr_current_cover_position is not None:
                 self._attr_is_closed = (self._attr_current_cover_position == 0)
         await self._gateway_handler.send(OWNAutomationCommand.stop_shutter(self._full_where))
+        self._apply_pending_cover_profile()
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -563,6 +585,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             elif self._attr_current_cover_position is not None:
                 self._attr_is_closed = (self._attr_current_cover_position == 0)
 
+        self._apply_pending_cover_profile()
         if self.hass is not None or hasattr(self.async_schedule_update_ha_state, "assert_called"):
             try:
                 self.async_schedule_update_ha_state()

@@ -517,8 +517,9 @@ class TestCoverEntity:
             msg_handler(valid_msg)
 
     @pytest.mark.asyncio
-    async def test_cover_async_added_to_hass(self, cover, mock_hass):
-        cover.hass = mock_hass
+    async def test_cover_async_added_to_hass(self, cover, hass):
+        # Startup now resolves profiles through the real HA entity registry.
+        cover.hass = hass
         cover.async_on_remove = MagicMock()
         await cover.async_added_to_hass()
         assert cover.async_on_remove.call_count == 3
