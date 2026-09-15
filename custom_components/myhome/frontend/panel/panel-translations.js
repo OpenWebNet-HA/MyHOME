@@ -1,6 +1,21 @@
 /** Panel strings are independent from Config Flow / Options Flow schemas. */
 export const translations = {
   en: {
+    calBatchTitle: "Calibrate a selection",
+    calBatchSelectHelp: "Select the covers of this gateway explicitly. They will run one at a time in the listed order; nothing moves before the next confirmation.",
+    calBatchContinue: "Review selection",
+    calBatchEmpty: "No covers found for this gateway.",
+    calBatchLimit: "Maximum covers per selection",
+    calBatchHelp: "Every selected cover runs open/close/open in sequence. Stop, Cancel or a measurement error discards the entire unsaved group. At the end, review opening / closing seconds and save one new profile per cover in a single operation.",
+    calBatchSave: "Save and assign all new profiles",
+    calBatchCurrent: "Current cover",
+    calBatchWaiting: "Waiting",
+    calBatchDiscarded: "Measurement discarded",
+    calPhase_between_covers: "Waiting before the next selected cover.",
+    profileError_invalid_selection: "Choose distinct covers from this gateway only.",
+    calReason_calibration_moving: "The next selected cover is moving or has pending work. The group was interrupted.",
+    calReason_advanced_cover: "A selected cover no longer supports timed calibration. The group was interrupted.",
+
     calTitle: "Calibrate travel times",
     calMode: "Measurement mode",
     calGuided: "Guided measurement",
@@ -150,6 +165,21 @@ export const translations = {
     unavailable: "Unavailable", hidden: "Hidden", state: "State", device: "Device", firmware: "Firmware",
   },
   it: {
+    calBatchTitle: "Calibra una selezione",
+    calBatchSelectHelp: "Seleziona esplicitamente le tapparelle di questo gateway. Si muoveranno una alla volta nell’ordine indicato; nessun movimento prima della prossima conferma.",
+    calBatchContinue: "Rivedi la selezione",
+    calBatchEmpty: "Nessuna tapparella trovata per questo gateway.",
+    calBatchLimit: "Numero massimo di tapparelle per selezione",
+    calBatchHelp: "Ogni tapparella selezionata esegue apertura/chiusura/apertura in sequenza. Stop, Annulla o un errore di misura scartano l’intero gruppo non salvato. Alla fine verifica i secondi di apertura / chiusura e salva un nuovo profilo per tapparella con un’unica operazione.",
+    calBatchSave: "Salva e assegna tutti i nuovi profili",
+    calBatchCurrent: "Tapparella attuale",
+    calBatchWaiting: "In attesa",
+    calBatchDiscarded: "Misura scartata",
+    calPhase_between_covers: "Pausa prima della prossima tapparella selezionata.",
+    profileError_invalid_selection: "Scegli tapparelle distinte appartenenti a questo gateway.",
+    calReason_calibration_moving: "La prossima tapparella è in movimento o ha operazioni in attesa. Il gruppo è stato interrotto.",
+    calReason_advanced_cover: "Una tapparella selezionata non supporta più la calibrazione temporizzata. Il gruppo è stato interrotto.",
+
     calTitle: "Calibra i tempi di corsa",
     calMode: "Modalità di misura",
     calGuided: "Misura guidata",

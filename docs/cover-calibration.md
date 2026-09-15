@@ -1,4 +1,4 @@
-# Guided and automatic travel measurement — panel 0.18.0
+# Guided and automatic travel measurement — panel 0.19.0
 
 This experimental wizard measures **one standard cover's full opening and closing
 times**. It extends our linear timing profiles; it is not the calibration fork's
@@ -142,6 +142,45 @@ If cancellation races a save that has already entered persistence, that accepted
 save may finish; closing the wizard does not roll it back. Reopen the profile
 editor to see the authoritative assignment after an uncertain response.
 
+## Selected-cover automatic measurement (0.19.0)
+
+**Travel profile → Calibrate a selection** lists this gateway's native covers.
+Select 1–20 eligible covers explicitly; no box is initially checked. Continue to
+review the selection, then confirm the cycle. Execution follows the displayed
+entity-ID order, one cover at a time, using the same automatic open/close/open
+cycle and feedback rules described above. There is a one-second pause between
+covers as well as between runs. This is a transient selection, not a saved group.
+
+One socket-bound session owns the gateway from confirmation through final review.
+Only its current cover is attached to the calibration controller. Every target
+is validated before session creation, before its turn, and before final Save;
+rebinding a selected entity to another cover instance aborts or refuses the work.
+Each queued movement also has a distinct token so an old command cannot become
+valid again when another cover reaches the same phase.
+
+A measurement error, Stop, Cancel, lease expiry, socket loss or HA shutdown aborts
+the entire group and clears all provisional results. The next cover does not
+start. The final review appears only when every cover succeeds. Each result has
+its own editable new-profile name; measured times and evidence remain owned by
+the backend. One Save validates the whole group, creates and assigns one new
+profile per cover, and persists the complete mutation once. Previous profiles
+are retained, the revision increments once, and one change notification follows
+persistence. There is no partial save. Capacity is checked at start and Save.
+Save errors retain the review while connected; an already accepted disk save may
+finish after closing, under the common semantics above.
+
+The new [WebSocket extension](panel-websocket-api.md#selected-cover-automatic-extension-0190)
+adds target discovery and batch start while reusing actions and session cleanup.
+Storage v4 and export v2 are unchanged; only committed results enter exports.
+
+For a supervised physical check, select two covers and confirm that the second
+starts only after the first completes. Check both directional times and Save;
+reopen both profiles to verify their separate automatic origins and dates. In a
+second attempt, use Stop during the first cover or the between-cover pause:
+verify that no following cover moves and the previous saved profiles remain.
+Single-cover automatic operation was confirmed by the user; this group check is
+still pending.
+
 ## Experimental WebSocket contract
 
 The following two commands are implemented in 0.10.0. They are separate from the
@@ -181,7 +220,8 @@ not modify that configuration revision.
 ```
 
 Actions: `run` (automatic only), `open`, `close`, `endpoint`, `stop`, `cancel`, `save`, `heartbeat`.
-`save` additionally accepts `name`; it does **not** accept browser-supplied times.
+`save` additionally accepts `name` for one cover or ordered `names` for a batch;
+it does **not** accept browser-supplied times.
 The response is the current session state inside HA's ordinary result envelope.
 A push may arrive before the response; the client ignores lower sequences.
 

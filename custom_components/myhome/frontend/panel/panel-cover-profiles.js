@@ -101,7 +101,7 @@ export class CoverProfileEditor {
     error.textContent = this._context.t("profileChanged");
     error.hidden = false;
     this.dialog.querySelector("#profile-reload").hidden = false;
-    for (const button of this.dialog.querySelectorAll("[data-profile-action], #profile-delete, #profile-calibrate")) button.disabled = true;
+    for (const button of this.dialog.querySelectorAll("[data-profile-action], #profile-delete, #profile-calibrate, #profile-calibrate-batch")) button.disabled = true;
   }
 
   async _refresh(force = false) {
@@ -135,6 +135,45 @@ export class CoverProfileEditor {
     const { t } = this._context;
     const key = `profileError_${error.code}`;
     return t(key) === key ? t("profileError") : t(key);
+  }
+
+  async _selectBatch() {
+    if (this._calibrating || this._saving === this._generation || this._stale) return;
+    this._calibrating = true;
+    const context = this._context;
+    const { hass, entity, t, generation } = context;
+    const host = this.dialog.querySelector("#profile-body");
+    host.innerHTML = `<h3>${esc(t("calBatchTitle"))}</h3><p>${esc(t("calBatchSelectHelp"))}</p>
+      <p id="batch-error" role="alert"></p><div id="batch-selection">${esc(t("loading"))}</div>
+      <div class="actions"><button type="button" id="batch-continue" disabled>${esc(t("calBatchContinue"))}</button>
+      <button type="button" id="batch-back">${esc(t("cancel"))}</button></div>`;
+    host.querySelector("#batch-back").onclick = () => this.open(context);
+    try {
+      const data = await hass.callWS({ type: "myhome/cover_calibration/targets", entry_id: entity.entry_id });
+      if (!this._current(generation)) return;
+      const list = host.querySelector("#batch-selection");
+      list.innerHTML = data.targets.map((item) => `<label class="batch-target"><input type="checkbox" value="${esc(item.entity_id)}" ${item.reason ? "disabled" : ""}>
+        <span>${esc(item.name)}<small class="muted">${esc(item.entity_id)}${item.reason ? ` · ${esc(t(`profileError_${item.reason}`))}` : ""}</small></span></label>`).join("") || esc(t("calBatchEmpty"));
+      const selected = () => [...list.querySelectorAll("input:checked:not(:disabled)")].map((input) => input.value);
+      const next = host.querySelector("#batch-continue");
+      list.onchange = () => {
+        const count = selected().length;
+        next.disabled = count === 0 || count > data.max_batch;
+        host.querySelector("#batch-error").textContent = count > data.max_batch ? `${t("calBatchLimit")}: ${data.max_batch}` : "";
+      };
+      next.onclick = () => {
+        const ids = selected();
+        if (next.disabled || !ids.length || ids.length > data.max_batch) return;
+        next.disabled = true;
+        this._calibration.open({ ...context, host, mode: "automatic", entity_ids: ids, revision: data.revision,
+          onCancel: () => this.open(context), onSaved: () => { context.onSaved(t("saved")); this.open(context); } });
+      };
+    } catch (error) {
+      if (this._current(generation)) {
+        host.querySelector("#batch-selection").textContent = "";
+        host.querySelector("#batch-error").textContent = this._error(error);
+      }
+    }
   }
 
   async _export() {
@@ -212,6 +251,7 @@ export class CoverProfileEditor {
       ${!data.writable ? `<p class="notice">${esc(t(`profileError_${data.reason}`))}</p>` : ""}
       <label>${esc(t("calMode"))}<select id="cal-mode" ${disabled}><option value="guided">${esc(t("calGuided"))}</option><option value="automatic">${esc(t("calAutomatic"))}</option></select></label>
       <button type="button" id="profile-calibrate" class="profile-calibrate" ${disabled}><ha-icon icon="mdi:timer-outline" aria-hidden="true"></ha-icon><span>${esc(t("calTitle"))}</span></button>
+      <button type="button" id="profile-calibrate-batch" ${disabled}>${esc(t("calBatchTitle"))}</button>
       <form id="profile-form">
         <fieldset class="profile-section"><legend>${esc(t("profileSectionAssign"))}</legend>
           <div class="profile-assign-row">
@@ -247,6 +287,7 @@ export class CoverProfileEditor {
         <p id="profile-error" class="error" role="alert" hidden></p>
         <button type="button" id="profile-reload" hidden><ha-icon icon="mdi:reload" aria-hidden="true"></ha-icon><span>${esc(t("profileReload"))}</span></button>
       </form>`;
+    host.querySelector("#profile-calibrate-batch").onclick = () => this._selectBatch();
     host.querySelector("#profile-calibrate").onclick = () => {
       if (this._saving === this._generation || !data.writable || this._stale) return;
       this._calibrating = true;

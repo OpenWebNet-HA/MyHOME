@@ -36,6 +36,7 @@ export class CoverCalibration {
         <li data-step="review"><span class="cal-step-index">3</span><span>${esc(t("calStepReview"))}</span></li>
       </ol>
       <p class="muted cal-help">${esc(t(automatic ? "calAutomaticHelp" : "calHelp"))}</p>
+      ${context.entity_ids ? `<p class="notice">${esc(t("calBatchHelp"))}</p><ol id="cal-targets"></ol>` : ""}
       <div class="cal-status">
         <p id="cal-phase" role="status">${esc(t("loading"))}</p>
         <p id="cal-elapsed" class="cal-elapsed"></p>
@@ -49,8 +50,9 @@ export class CoverCalibration {
         <button type="button" class="primary" data-cal-action="endpoint" hidden></button>
       </div>
       <form id="cal-save" class="profile-section cal-save" hidden><p id="cal-values" class="cal-values"></p>
-        <label>${esc(t("profileName"))}<input name="profile_name" required maxlength="64"></label>
-        <button type="submit" class="primary">${esc(t("calSave"))}</button>
+        <label ${context.entity_ids ? "hidden" : ""}>${esc(t("profileName"))}<input name="profile_name" required maxlength="64" ${context.entity_ids ? "disabled" : ""}></label>
+        <div id="cal-batch-review"></div>
+        <button type="submit" class="primary">${esc(t(context.entity_ids ? "calBatchSave" : "calSave"))}</button>
       </form>
       <div class="actions calibration-safety-actions"><button type="button" id="cal-stop" disabled><ha-icon icon="mdi:stop-circle-outline" aria-hidden="true"></ha-icon><span>${esc(t("calStop"))}</span></button>
         <button type="button" id="cal-cancel">${esc(t("calCancel"))}</button></div>
@@ -63,13 +65,17 @@ export class CoverCalibration {
     host.querySelector("#cal-save").onsubmit = (event) => {
       event.preventDefault();
       const form = event.currentTarget;
-      if (form.reportValidity()) this._perform("save", { name: form.elements.profile_name.value.trim() });
+      if (form.reportValidity()) this._perform("save", context.entity_ids
+        ? { names: [...form.querySelectorAll("[data-batch-name]")].map((input) => input.value.trim()) }
+        : { name: form.elements.profile_name.value.trim() });
     };
     try {
       const unsubscribe = await hass.connection.subscribeMessage((state) => {
         if (!this._current(generation)) return;
         this._accept(state);
-      }, { type: "myhome/cover_calibration/start", entry_id: entity.entry_id, entity_id: entity.entity_id, revision, ...(automatic ? { mode: "automatic" } : {}) });
+      }, context.entity_ids
+        ? { type: "myhome/cover_calibration/batch_start", entry_id: entity.entry_id, entity_ids: context.entity_ids, revision }
+        : { type: "myhome/cover_calibration/start", entry_id: entity.entry_id, entity_id: entity.entity_id, revision, ...(automatic ? { mode: "automatic" } : {}) });
       if (!this._current(generation)) { Promise.resolve(unsubscribe()).catch(() => {}); return; }
       this._unsubscribe = unsubscribe;
       this._heartbeat = setInterval(() => this._perform("heartbeat"), 5000);
@@ -116,6 +122,19 @@ export class CoverCalibration {
     host.querySelector("#cal-save").hidden = state.phase !== "review";
     host.querySelector('#cal-save button').disabled = this._busy || this._lost;
     host.querySelector("#cal-values").textContent = `${t("profileOpeningTime")}: ${state.values.opening_time ?? "—"} · ${t("profileClosingTime")}: ${state.values.closing_time ?? "—"}`;
+    host.querySelector("#cal-values").hidden = !!state.batch;
+    if (state.batch) {
+      host.querySelector("#cal-targets").innerHTML = state.targets.map((item, index) => {
+        const result = state.results.find((row) => row.index === index);
+        const status = ["interrupted", "cancelled"].includes(state.phase) ? t("calBatchDiscarded") : result ? `${result.values.opening_time} / ${result.values.closing_time} s` : t(index === state.cover_index ? "calBatchCurrent" : "calBatchWaiting");
+        return `<li>${esc(item.name)} · ${esc(status)}</li>`;
+      }).join("");
+      const review = host.querySelector("#cal-batch-review");
+      if (state.phase === "review" && !review.children.length) {
+        review.innerHTML = state.results.map((result) => `<label>${esc(state.targets[result.index].name)} · ${esc(result.values.opening_time)} / ${esc(result.values.closing_time)} s
+          <span class="muted">${esc(t("profileName"))}</span><input data-batch-name="${result.index}" required maxlength="64" value="${esc(state.targets[result.index].name.slice(0, 64))}"></label>`).join("");
+      }
+    }
   }
 
   _error(error) {

@@ -1,6 +1,6 @@
 # MyHOME panel API: implemented reference
 
-Status: **implemented through panel 0.18.0**. The original profile contract was reviewed against
+Status: **implemented through panel 0.19.0**. The original profile contract was reviewed against
 [`02ce199`](https://github.com/xtimmy86x/MyHOME/tree/02ce19908787297c1a6e2a65d56a289e766c0695).
 Panel 0.10.0 adds a [guided-measurement session API](cover-calibration.md) and
 `calibration_busy` refusals on profile writes while a measurement is active. The
@@ -450,4 +450,71 @@ explicit Save semantics remain unchanged. See [the calibration contract](cover-c
 Automatic dates describe receipt of actuator stop feedback, not proof of physical
 endpoints. Their values remain provisional until saved into the same profile store;
 export excludes those unsaved session values. No #349 options-store import, native
-service adapter or multi-cover automatic queue is introduced by this extension.
+service adapter is introduced by this extension. Selected-cover execution is
+added separately in 0.19.0 below.
+
+
+## Selected-cover automatic extension (0.19.0)
+
+Both new commands require administrator authorization before store access.
+
+### Discover eligible targets
+
+```json
+{"id":30,"type":"myhome/cover_calibration/targets","entry_id":"ENTRY"}
+```
+
+The result is a fresh gateway snapshot:
+
+```json
+{"entry_id":"ENTRY","revision":4,"max_batch":20,"targets":[{"entity_id":"cover.bedroom","name":"Bedroom","reason":null},{"entity_id":"cover.kitchen","name":"Kitchen","reason":"calibration_moving"}]}
+```
+
+Only native MyHOME covers belonging to that entry are returned, sorted by entity
+ID. `reason: null` means currently eligible; other reasons use the existing
+profile/calibration error codes. This read reserves nothing and sends no commands.
+The UI starts with all boxes unchecked. A missing/non-MyHOME entry is rejected.
+
+### Start and subscribe to a selection
+
+```json
+{"id":31,"type":"myhome/cover_calibration/batch_start","entry_id":"ENTRY","entity_ids":["cover.bedroom","cover.kitchen"],"revision":4}
+```
+
+`entity_ids` must contain 1–20 distinct eligible covers of that gateway; duplicates
+produce `invalid_selection`. The backend validates the entire selection, revision,
+profile capacity and gateway ownership before creating a session. Request order
+is execution order. Acknowledgement and subscription cleanup follow `start`.
+The initial phase is `confirm_automatic`; only explicit `run` starts motion.
+
+Events retain the ordinary session fields and add:
+
+| Field | Meaning |
+| --- | --- |
+| `batch` | Always `true` for this session |
+| `cover_index` | Zero-based current cover in the selected order |
+| `targets` | Ordered `{entity_id, name}` labels from the current registry |
+| `results` | Completed `{index, entity_id, values}` records; values contain opening/closing seconds |
+
+Top-level `entity_id`, `values`, `elapsed` and `run_index` describe the current
+cover. `between_covers` is the one-second pause before moving to the next target.
+A single gateway owner, socket and heartbeat lease cover the entire selection;
+there is no independent child session. Only the current cover is controlled.
+Targets are revalidated before their turn and Save. A measurement failure or
+interruption clears all provisional results and prevents later covers starting.
+
+### Review and save together
+
+```json
+{"id":32,"type":"myhome/cover_calibration/action","entry_id":"ENTRY","session_id":"OPAQUE_SESSION_ID","sequence":19,"action":"save","names":["Bedroom measured","Kitchen measured"]}
+```
+
+Save requires `review` after every selected cover succeeds, the current sequence,
+and exactly one valid name per cover in selection order. It accepts no target
+changes or browser-supplied measurements. All profiles and assignments are
+validated before one disk write; existing profiles remain. Revision increases
+once and subscribers receive one committed invalidation. A validation/storage
+error applies none of the proposed changes and retains review while connected.
+Closing during an accepted disk write does not roll it back. Stop/Cancel, socket
+cleanup, HA shutdown and lease behavior otherwise use the shared session contract.
+Storage remains v4 and export remains v2, containing only committed profiles.

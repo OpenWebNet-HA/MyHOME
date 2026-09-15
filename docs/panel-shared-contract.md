@@ -1,16 +1,17 @@
 # Shared MyHOME panel contract — proposal for review
 
-**Updated: 2026-09-15, panel 0.18.0. Shared contract: draft, not jointly approved
+**Updated: 2026-09-15, panel 0.19.0. Shared contract: draft, not jointly approved
 or implemented under the proposed common names.** Our panel already implements
 profiles, guided measurement, profile revision subscriptions, per-direction
-provenance, calibration export and optional single-cover automatic measurement; these are
+provenance, calibration export and optional single-cover and selected-cover automatic measurement; these are
 documented in the [implemented API](panel-websocket-api.md) and
 [guided-calibration reference](cover-calibration.md).
 
 This document continues the existing source comparison; it does not restart the
 panel implementation or propose copying another fork wholesale. The original
 comparison used our panel 0.9.0 at `02ce199` and Interstellar0verdrive's fork at
-`229b1eb`. Our side is pinned to `0f4993d` (panel 0.18.0); `65f17c1` remains the preceding 0.17.0 baseline.
+`229b1eb`. Our current side is panel 0.19.0 on `feat/myhome-sidepanel`; `0f4993d` remains the
+preceding 0.18.0 implementation baseline.
 The backend from
 upstream #349 is compared separately. The calibration-fork column still describes
 its pinned baseline, not a fresh audit of its moving `master`.
@@ -32,7 +33,7 @@ independent of opening the panel.
 
 | Implementation | Exact baseline | Relevant evidence |
 | --- | --- | --- |
-| Our `feat/myhome-sidepanel`, panel 0.18.0 | [`0f4993d`](https://github.com/xtimmy86x/MyHOME/tree/0f4993d2c7739f8eaeb4fd339fdab0f2a918c532) | [Implemented API](panel-websocket-api.md), `panel.py`, `cover_profiles.py`, `cover_profile_provenance.py`, `cover_profile_export.py`, `cover_calibration.py`, `cover_calibration_automatic.py`, `frontend/panel/` |
+| Our `feat/myhome-sidepanel`, panel 0.19.0 | Current implementation in this branch | [Implemented API](panel-websocket-api.md), `panel.py`, `cover_profiles.py`, `cover_profile_provenance.py`, `cover_profile_export.py`, `cover_calibration.py`, `cover_calibration_automatic.py`, `cover_calibration_batch.py`, `frontend/panel/` |
 | Interstellar0verdrive's `MyHOME-stability`, `master` | [`229b1eb`](https://github.com/Interstellar0verdrive/MyHOME-stability/tree/229b1eb30558012674e1e7f5c2059a58300f09df) | [API reference](https://github.com/Interstellar0verdrive/MyHOME-stability/blob/229b1eb30558012674e1e7f5c2059a58300f09df/docs/panel-websocket-api.md), `websocket_api.py`, `panel_data.py`, `panel_write.py`, `panel_schemas.py`, `panel_src/` |
 | Upstream #349, backend only | [`e807e99`](https://github.com/OpenWebNet-HA/MyHOME/tree/e807e9986ca9e09e8f3c516bd9c5d8b55e076485) | [PR #349](https://github.com/OpenWebNet-HA/MyHOME/pull/349), `cover.py`, services, [runtime/service documentation](https://github.com/OpenWebNet-HA/MyHOME/blob/e807e9986ca9e09e8f3c516bd9c5d8b55e076485/docs/configuration/services.md) |
 
@@ -59,6 +60,7 @@ runtime. It is not simply a JSON-schema or documentation parity test.
 | 0.16.0 | Backend-owned opening/closing provenance and UTC dates; manual/guided/unknown sources; copies and assignments preserve unchanged evidence; version-1/2 storage migrates to version 3 |
 | 0.17.0 | Admin-only gateway-wide `myhome/cover_profiles/export`; versioned JSON of committed profiles, provenance and assignments, including unused profiles and removed covers; panel download preserves drafts |
 | 0.18.0 | Optional single-cover automatic open/close/open cycle in the existing socket session; bus feedback, one-second pauses, 59–65 s cutoff rejection, 180 s timeout; explicit review/Save; automatic provenance; storage v4 and export v2 |
+| 0.19.0 | Explicit selection of 1–20 covers in one gateway; sequential automatic cycles in one session; whole-group interruption; final review and one atomic new-profile/assignment save; storage v4/export v2 unchanged |
 
 The current profile model uses version-4 storage with opaque profile IDs,
 native unique-ID assignments and two linear directional times. Writes are
@@ -75,7 +77,7 @@ operation may still finish after the UI closes.
 
 ## Concrete differences
 
-| Area | Our panel 0.18.0 | Calibration fork at `229b1eb` | Proposed shared direction |
+| Area | Our panel 0.19.0 | Calibration fork at `229b1eb` | Proposed shared direction |
 | --- | --- | --- | --- |
 | Scope | Whole-installation inventory, primary header states, compact secondary entities, native monitor, profiles, guided/automatic measurement and export | Gateway overview with profile groups and detailed calibration | Keep the common shell; mount calibration as a section |
 | Gateway | Profile reads/writes require exact `entry_id`; inventory lists all | `overview` and `subscribe` allow omission and choose first loaded entry | Shell lists gateways; all module reads/writes/subscriptions use explicit entry |
@@ -106,7 +108,7 @@ panel branch. Its new card UI is separated into
 [draft #355](https://github.com/OpenWebNet-HA/MyHOME/pull/355), intended for panel
 integration rather than the next beta.
 
-| Concern | Our panel 0.18.0 | #349 at `e807e99` | Remaining shared-contract decision |
+| Concern | Our panel 0.19.0 | #349 at `e807e99` | Remaining shared-contract decision |
 | --- | --- | --- | --- |
 | Entry point | Experimental `myhome/cover_calibration/start` and `action` WebSockets, owned by one socket | `myhome.calibrate_cover`, native buttons, set/reset/stop operations | One backend session/controller with explicit ownership and cancellation semantics for both socket and service clients |
 | Completion | Guided endpoints remain operator-confirmed; optional automatic open/close/open completes each run on actuator stop, then requires review/Save | Automatic sequence: open to establish position, close and measure, open and measure; actuator stop ends each run | Define supported automatic/manual completion modes and their interruption rules |
@@ -198,10 +200,23 @@ all provisional evidence. The initial open is positioning only; close and final
 open enter review. Nothing is saved automatically. Automatic provenance dates
 come from the stop feedback and do not establish physical endpoints.
 
+Panel 0.19.0 adds `myhome/cover_calibration/targets` and `batch_start`. Selection
+starts empty, is limited to 1–20 eligible covers in one gateway, and executes in
+displayed entity-ID order. After explicit confirmation, each cover completes the
+same open/close/open cycle, with a one-second pause between covers. One session,
+socket, lease and gateway owner span the whole group; only the current cover is
+attached to the controller. Each queued move has its own token. Targets are
+validated before start, before their turn, and before Save. A measurement error
+or interruption discards all provisional group results and prevents later moves.
+Final review offers one new-profile name per cover; one atomic write creates and
+assigns every result, retains older profiles, increments revision once and emits
+one change notification. Validation or disk failure applies none of the group.
+An already accepted save may finish after the browser closes. Storage v4 and
+export v2 are unchanged. Physical group testing is pending.
+
 This is a local adaptation of the cycle, not a completed adapter for #349’s native
 services/buttons or its options store. Import/restore, #349 persistence migration,
-selected-cover batches and a single-direction quick measurement remain
-unimplemented. The local APIs are not jointly agreed common endpoints. A JSON
+and a single-direction quick measurement remain unimplemented. The local APIs are not jointly agreed common endpoints. A JSON
 export is a record of calibration data, not an HA backup or a migration adapter.
 Guided and automatic panel modes now share one session lifecycle and persistence
 path. Convergence with the upstream services/options store remains separate work
@@ -445,20 +460,23 @@ original fork audit. Keep unrelated inventory and monitor improvements moving
 while the common calibration boundary is discussed. No reviewer deadline is
 assumed.
 
-Panel 0.18.0 targeted validation includes **113 profile/calibration backend tests
-and 71 frontend tests passed**. It covers automatic run ordering, cutoff boundaries,
+Panel 0.19.0 targeted validation includes **139 profile/calibration backend tests
+and 75 frontend tests passed**. New coverage includes explicit gateway selection,
+sequential targets, whole-group interruption, queue tokens, atomic failure cases,
+restart persistence and preservation of review names. It covers automatic run ordering, cutoff boundaries,
 missing start/stop feedback, cancellation during pauses/queued dispatch, shared
 ownership, persistence failure, source migration, UI confirmation and explicit Save.
-The full local suite passed **1,475 Python tests (1 skipped), with 100% line
+The full local suite passed **1,501 Python tests (1 skipped), with 100% line
 coverage**. CI results are recorded with the implementation in the panel PR.
 These checks are not proof of interoperability with upstream services or of
 physical actuator feedback accuracy. The user confirmed the preceding 0.16.0
-provenance behavior in their installation; automatic physical testing is pending.
+provenance and 0.18.0 single-cover automatic behavior in their installation;
+selected-cover physical testing is pending.
 Real-browser visual validation and the guided-calibration reference's remaining
 physical-gateway/feedback cases retain their separate scope.
 
-This document accompanies the panel 0.18.0 automatic-mode implementation, storage
-v4 migration and export v2 extension described above.
+This document accompanies the panel 0.19.0 selected-cover implementation; storage
+v4 and export v2 remain unchanged from 0.18.0.
 The calibration-fork assessment remains pinned to `229b1eb` and the #349 backend
 comparison to `e807e99`; neither external implementation was freshly audited for
 this documentation update. Newer changes require a focused delta review.

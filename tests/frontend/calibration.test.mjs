@@ -11,7 +11,7 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
 const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
 const t = (key) => translations.it[key] || translations.en[key] || key;
 
-async function mount({ call, subscribe, mode = "guided" } = {}) {
+async function mount({ call, subscribe, entity_ids, mode = "guided" } = {}) {
   const host = document.createElement("section");
   document.body.append(host);
   const controller = new CoverCalibration();
@@ -20,6 +20,8 @@ async function mount({ call, subscribe, mode = "guided" } = {}) {
   let callback, stopped = 0, saved = 0, cancelled = 0;
   let state = { entry_id: "one", entity_id: "cover.bedroom", session_id: "session-one", sequence: 1,
     revision: 4, mode, run_index: 0, phase: mode === "automatic" ? "confirm_automatic" : "confirm_closed", reason: null, values: {}, elapsed: null, stop_requested: false };
+  if (entity_ids) Object.assign(state, { batch: true, cover_index: 0, results: [],
+    targets: entity_ids.map((id) => ({ entity_id: id, name: id })) });
   const push = (extra) => { state = { ...state, sequence: state.sequence + 1, ...extra }; callback(state); };
   const hass = { connection: { subscribeMessage: async (cb, request) => {
     callback = cb; starts.push(request); cb(state);
@@ -31,7 +33,7 @@ async function mount({ call, subscribe, mode = "guided" } = {}) {
     return { ...state, sequence: state.sequence + (message.action === "heartbeat" ? 0 : 1),
       phase: phases[message.action] || state.phase };
   } };
-  await controller.open({ host, hass, entity: { entry_id: "one", entity_id: "cover.bedroom" }, revision: 4, mode,
+  await controller.open({ host, hass, entity: { entry_id: "one", entity_id: "cover.bedroom" }, revision: 4, mode, entity_ids,
     t, onSaved: () => { saved++; }, onCancel: () => { cancelled++; } });
   return { host, controller, calls, starts, push, counts: () => ({ stopped, saved, cancelled }) };
 }
@@ -178,4 +180,52 @@ test("automatic cutoff removes save controls and retains Stop and Cancel", async
   assert.equal(host.querySelector("#cal-stop").disabled, false);
   host.querySelector("#cal-cancel").click(); await tick();
   assert.ok(calls.some((c) => c.action === "cancel"));
+});
+
+
+test("batch review preserves profile names through heartbeat and failed atomic save", async () => {
+  let fail = true;
+  const ids = ["cover.kitchen", "cover.bedroom"];
+  const { host, starts, calls, push, controller } = await mount({ mode: "automatic", entity_ids: ids,
+    call: (message, state) => {
+      if (message.action === "save" && fail) throw { code: "storage_error" };
+      return { ...state, phase: message.action === "save" ? "saved" : state.phase };
+    } });
+  assert.deepEqual(starts[0], { type: "myhome/cover_calibration/batch_start", entry_id: "one", entity_ids: ids, revision: 4 });
+  assert.equal(calls.length, 0);
+  assert.match(host.querySelector("#cal-targets").textContent, /cover.kitchen.*cover.bedroom/);
+  push({ phase: "between_covers", results: [{ index: 0, values: { opening_time: 20, closing_time: 22 } }] });
+  assert.match(host.querySelector("#cal-phase").textContent, /prossima tapparella/);
+  assert.equal(host.querySelector("#cal-save").hidden, true);
+  push({ phase: "review", cover_index: 1, results: [
+    { index: 0, values: { opening_time: 20, closing_time: 22 } },
+    { index: 1, values: { opening_time: 21, closing_time: 23 } },
+  ] });
+  const form = host.querySelector("#cal-save");
+  const inputs = [...form.querySelectorAll("[data-batch-name]")];
+  assert.equal(inputs.length, 2);
+  assert.equal(form.elements.profile_name.disabled, true);
+  inputs[0].value = "Cucina"; inputs[1].value = "Camera"; inputs[1].focus();
+  await controller._perform("heartbeat");
+  assert.equal(document.activeElement, inputs[1]);
+  form.dispatchEvent(new dom.window.Event("submit", { cancelable: true })); await tick();
+  assert.equal(form.hidden, false);
+  assert.equal(inputs[1].value, "Camera");
+  const saved = calls.find((call) => call.action === "save");
+  assert.deepEqual(saved.names, ["Cucina", "Camera"]);
+  assert.equal("values" in saved, false); assert.equal("entity_ids" in saved, false);
+  fail = false;
+  form.dispatchEvent(new dom.window.Event("submit", { cancelable: true })); await tick();
+  assert.equal(calls.filter((call) => call.action === "save").length, 2);
+});
+
+test("batch interruptions discard the review and escape target names", async () => {
+  const { host, push } = await mount({ mode: "automatic", entity_ids: ["cover.one"] });
+  push({ targets: [{ entity_id: "cover.one", name: "<img src=x onerror=alert(1)>" }],
+    phase: "review", results: [{ index: 0, values: { opening_time: 20, closing_time: 22 } }] });
+  assert.equal(host.querySelector("img"), null);
+  push({ phase: "interrupted", reason: "automatic_cutoff", results: [], values: {}, stop_requested: true });
+  assert.equal(host.querySelector("#cal-save").hidden, true);
+  assert.match(host.querySelector("#cal-targets").textContent, /Misura scartata/);
+  assert.equal(host.querySelector("#cal-stop").disabled, false);
 });

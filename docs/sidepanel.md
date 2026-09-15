@@ -15,6 +15,34 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Automatic calibration of a selection (0.19.0)
+
+In a standard cover's **Travel profile**, choose **Calibrate a selection**
+(**Calibra una selezione** in Italian). The list contains only native covers of
+that gateway. Every checkbox starts unchecked; unavailable, moving and advanced
+covers show a reason and cannot be selected. Choose 1–20 covers, then continue.
+The displayed entity-ID order is the execution order. Confirm the automatic cycle
+on the next screen before any movement starts.
+
+Each selected cover runs open/close/open in sequence, with a one-second pause
+between covers. The panel shows the current cover and completed opening/closing
+measurements. Stop, Cancel, a measurement error or loss of the session aborts the
+whole group and discards its provisional results. No following cover starts.
+Only the current cover is under calibration control; targets are checked again
+before their turn and all are checked again before saving.
+
+After every cover succeeds, review the times and edit each profile name. One
+explicit Save creates and assigns a new profile for each selected cover in one
+atomic write, increasing the gateway revision once. Existing profiles remain in
+the store. A validation or disk-write failure applies no part of the group and
+keeps the review available while the session remains connected. An already
+accepted disk save may finish if the browser closes; reopening shows saved data.
+
+This uses the existing session, lease, provenance, storage v4 and export v2.
+The user has confirmed single-cover automatic measurement on their installation;
+the selection workflow still needs a supervised physical test with two covers.
+The standalone card remains supported.
+
 ## Optional automatic calibration (0.18.0)
 
 In **Travel profile**, choose Guided or Automatic measurement, then open calibration.
@@ -28,8 +56,8 @@ shared with the guided wizard; there is no second timing store or automatic save
 
 Actuator run time may differ from physical travel. Observe the cover and check
 both results before saving. See [the calibration guide](cover-calibration.md) for
-limits and the supervised physical test procedure. Multi-cover batches and a
-single-direction quick measurement remain future work; the standalone card stays.
+limits and the supervised physical test procedure. Selected-cover batches are
+available in 0.19.0 above; a single-direction quick measurement remains future work.
 
 Storage migrates versions 1/2/3 to version 4, preserving recorded evidence and
 assignments, to support the new automatic source. Older integration versions
@@ -215,7 +243,7 @@ requirements, limits and real-gateway validation steps.
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.18.0**, defined by
+The panel has an independent version, currently **0.19.0**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.
@@ -617,8 +645,10 @@ This adapts the persistence/resolution separation of
 [Interstellar0verdrive's calibration store](https://github.com/Interstellar0verdrive/MyHOME-stability/blob/229b1eb30558012674e1e7f5c2059a58300f09df/custom_components/myhome/calibration_store.py)
 to the existing MyHOME cover runtime. It does **not** import that fork's height,
 roll or slat mechanics; directional timing extends our own linear runtime. Its
-storage/API is deliberately separate from `myhome.calibration.*`. Guided calibration
-and batch editing are later steps. No profile is presented as physically calibrated.
+storage/API is deliberately separate from `myhome.calibration.*`. At the 0.9.0
+baseline, guided calibration and batch editing were later steps. Guided and
+selected-cover measurement are now available as described above; their evidence
+does not assert automatic physical endpoint detection.
 
 
 Validation for 0.9.0: **1,398 backend tests passed, one existing skip**, five

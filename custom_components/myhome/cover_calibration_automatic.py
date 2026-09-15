@@ -50,7 +50,7 @@ class AutomaticCalibrationSession(guided.CalibrationSession):
                 self.values[f"{direction}_time"] = round(elapsed, 2)
                 self.provenance[direction] = evidence("automatic", self.cover.unique_id)
             if self.run_index == 2:
-                self.phase = "review"
+                self.finish_measurement()
             else:
                 self.run_index += 1
                 self.phase = "settling"
@@ -58,6 +58,9 @@ class AutomaticCalibrationSession(guided.CalibrationSession):
             self.emit()
             return
         super().on_event(event)
+
+    def finish_measurement(self):
+        self.phase = "review"
 
     def next_run(self):
         """Revalidate after the pause; no cancelled or unavailable session can move."""

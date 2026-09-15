@@ -159,6 +159,7 @@ class CalibrationSession:
 
     def queue_move(self, direction):
         """Use the same guarded queue for guided and automatic movements."""
+        token = self._motion_token = object()
         self.phase = f"starting_{direction}"
         self.armed = False
         self.started_at = None
@@ -167,7 +168,7 @@ class CalibrationSession:
         self.arm_deadline(START_SECONDS, "start_timeout")
 
         def guard():
-            if self.phase != f"starting_{direction}" or monotonic() > expires:
+            if self._motion_token is not token or self.phase != f"starting_{direction}" or monotonic() > expires:
                 return False
             self.armed = True
             return True
@@ -266,21 +267,41 @@ class CalibrationSession:
             self.phase = "saving"
             self.emit()
             try:
-                result = await write_profile(self.hass, {
-                    "entry_id": self.entry_id, "entity_id": self.cover.entity_id,
-                    "revision": self.revision, "action": "save", "profile_id": None,
-                    "profile": {"name": msg.get("name", ""), **self.values},
-                }, calibration=self)
+                revision = await self.save_profiles(msg)
             except (ProfileError, vol.Invalid, OSError):
                 if self.store.calibration is self:
                     self.phase = "review"
                     self.emit()
                 raise
-            self.revision = result["revision"]
+            self.revision = revision
             self.phase = "saved"
             self.emit()
             self.close()
         return self.view()
+
+
+    async def save_profiles(self, msg):
+        result = await write_profile(self.hass, {
+            "entry_id": self.entry_id, "entity_id": self.cover.entity_id,
+            "revision": self.revision, "action": "save", "profile_id": None,
+            "profile": {"name": msg.get("name", ""), **self.values},
+        }, calibration=self)
+        return result["revision"]
+
+
+def ready_cover(hass, store, entry_id, entity_id):
+    """Validate the same target and stationary state for every calibration mode."""
+    entry, entity = target(hass, entry_id, entity_id)
+    view = snapshot(hass, store, entry, entity)
+    if hass.state in (CoreState.stopping, CoreState.final_write, CoreState.stopped):
+        raise ProfileError("cover_unavailable")
+    if not view["writable"]:
+        raise ProfileError(view["reason"])
+    cover = store.covers[entity.unique_id]
+    if (cover._attr_is_opening or cover._attr_is_closing or cover._move_start_time is not None
+            or cover._pending_profile or cover._stop_task):
+        raise ProfileError("calibration_moving")
+    return cover
 
 
 async def begin(hass, connection, msg):
@@ -288,20 +309,11 @@ async def begin(hass, connection, msg):
     store = get_store(hass, entry.entry_id)
     async with store.lock:
         await store.load()
-        entry, entity = target(hass, msg["entry_id"], msg["entity_id"])
-        view = snapshot(hass, store, entry, entity)
-        if hass.state in (CoreState.stopping, CoreState.final_write, CoreState.stopped):
-            raise ProfileError("cover_unavailable")
-        if not view["writable"]:
-            raise ProfileError(view["reason"])
+        cover = ready_cover(hass, store, entry.entry_id, msg["entity_id"])
         if store.calibration is not None:
             raise ProfileError("calibration_busy")
         if msg["revision"] != store.data["revision"]:
             raise ProfileError("revision_conflict")
-        cover = store.covers[entity.unique_id]
-        if (cover._attr_is_opening or cover._attr_is_closing or cover._move_start_time is not None
-                or cover._pending_profile or cover._stop_task):
-            raise ProfileError("calibration_moving")
         session_type = CalibrationSession
         if msg.get("mode", "guided") == "automatic":
             from .cover_calibration_automatic import AutomaticCalibrationSession
@@ -340,6 +352,7 @@ def send_error(connection, msg, error):
     vol.Required("action"): vol.In(["run", "open", "close", "endpoint", "stop", "cancel", "save", "heartbeat"]),
     vol.Optional("sequence"): vol.All(int, vol.Range(min=0)),
     vol.Optional("name"): str,
+    vol.Optional("names"): vol.All([str], vol.Length(min=1, max=20)),
 })
 @websocket_api.require_admin
 @websocket_api.async_response
@@ -359,5 +372,8 @@ async def ws_action(hass, connection, msg):
 
 @callback
 def register_api(hass):
+    from .cover_calibration_batch import ws_batch_start, ws_targets
+    websocket_api.async_register_command(hass, ws_batch_start)
+    websocket_api.async_register_command(hass, ws_targets)
     websocket_api.async_register_command(hass, ws_start)
     websocket_api.async_register_command(hass, ws_action)

@@ -28,7 +28,7 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
-    panel_version: "0.18.0",
+    panel_version: "0.19.0",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
@@ -171,7 +171,7 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
-  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.18.0");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.19.0");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
   root.querySelector('[data-view="entities"]').click();
   assert.equal(root.querySelectorAll(".device-group").length, 3);
@@ -734,7 +734,7 @@ function coverProfileData(extra = {}) {
   };
 }
 
-async function mountProfiles({ read, write, exportProfiles } = {}) {
+async function mountProfiles({ read, write, exportProfiles, targets } = {}) {
   return mount({ prepare: (data) => {
     data.devices.push({ id: "shutter", entry_ids: ["one"], name: "Tapparella", who: "2" });
     data.entities.push({ entity_id: "cover.shutter", device_id: "shutter", entry_id: "one",
@@ -743,6 +743,7 @@ async function mountProfiles({ read, write, exportProfiles } = {}) {
     if (message.type === "myhome/panel/inventory") return structuredClone(data);
     if (message.type === "myhome/cover_profiles/read") return read ? read(message) : coverProfileData();
     if (message.type === "myhome/cover_profiles/write") return write ? write(message) : coverProfileData({ revision: 4 });
+    if (message.type === "myhome/cover_calibration/targets") return targets(message);
     if (message.type === "myhome/cover_profiles/export") return exportProfiles(message);
     throw new Error(`Unexpected command: ${message.type}`);
   } });
@@ -1133,4 +1134,39 @@ test("profile editor passes the selected automatic mode without starting movemen
   assert.equal(request.type, "myhome/cover_calibration/start");
   assert.equal(request.mode, "automatic");
   assert.equal(calls.filter((c) => c.type === "myhome/cover_calibration/action").length, 0);
+});
+
+
+test("batch selector is explicit, gateway-scoped, bounded and submits only chosen eligible covers", async () => {
+  const { root, hass, calls } = await mountProfiles({ targets: () => ({ revision: 8, max_batch: 1,
+    targets: [ { entity_id: "cover.one", name: "Kitchen", reason: null },
+      { entity_id: "cover.two", name: "Bedroom", reason: null },
+      { entity_id: "cover.offline", name: "Offline", reason: "cover_unavailable" } ] }) });
+  let subscribed;
+  hass.connection.subscribeMessage = async (_cb, request) => { subscribed = request; return () => {}; };
+  openProfile(root); await tick();
+  root.querySelector("#profile-calibrate-batch").click(); await tick();
+  assert.deepEqual(calls.find((c) => c.type.endsWith("/targets")), { type: "myhome/cover_calibration/targets", entry_id: "one" });
+  const checks = [...root.querySelectorAll(".batch-target input")];
+  assert.equal(checks.length, 3); assert.ok(checks.every((c) => !c.checked));
+  assert.equal(checks[2].disabled, true);
+  const next = root.querySelector("#batch-continue"); assert.equal(next.disabled, true);
+  checks[0].click(); checks[1].click();
+  assert.equal(next.disabled, true);
+  assert.match(root.querySelector("#batch-error").textContent, /massimo/);
+  checks[0].click();
+  assert.equal(next.disabled, false);
+  next.click(); await tick();
+  assert.deepEqual(subscribed, { type: "myhome/cover_calibration/batch_start", entry_id: "one", entity_ids: ["cover.two"], revision: 8 });
+  assert.equal(calls.filter((c) => c.type.endsWith("/action")).length, 0);
+});
+
+test("batch selector ignores a late target response after navigation", async () => {
+  const pending = deferred();
+  const { root } = await mountProfiles({ targets: () => pending.promise });
+  openProfile(root); await tick();
+  root.querySelector("#profile-calibrate-batch").click();
+  change(root.querySelector("#gateway"), "two");
+  pending.resolve({ targets: [], max_batch: 20, revision: 3 }); await tick();
+  assert.equal(root.querySelector("dialog"), null);
 });

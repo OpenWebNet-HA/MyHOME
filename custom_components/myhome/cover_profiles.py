@@ -245,19 +245,25 @@ async def write_profile(hass, msg, *, calibration=None):
             data["assignments"].pop(entity.unique_id, None)
         else:
             data["assignments"][entity.unique_id] = profile_id
-        data["revision"] += 1
-        await store.store.async_save(data)
-        store.data = data
-        async_dispatcher_send(hass, f"{WS_SUBSCRIBE}:{entry_id}", {
-            "entry_id": entry_id, "revision": data["revision"], "kind": "changed",
-        })
-        # The entity may have unloaded while storage was writing. Its next mount
-        # resolves the persisted assignment. Never send a bus command or reload HA.
-        cover = store.covers.get(entity.unique_id)
-        if cover is not None and msg["action"] != "delete":
-            cover.async_apply_cover_profile(store.profile(entity.unique_id))
-            cover.async_write_ha_state()
+        await commit_profiles(hass, store, entry_id, data,
+                              [entity.unique_id] if msg["action"] != "delete" else [])
         return snapshot(hass, store, entry, entity)
+
+
+async def commit_profiles(hass, store, entry_id, data, affected):
+    """Caller holds the store lock and has validated the entire mutation."""
+    data["revision"] += 1
+    await store.store.async_save(data)
+    store.data = data
+    async_dispatcher_send(hass, f"{WS_SUBSCRIBE}:{entry_id}", {
+        "entry_id": entry_id, "revision": data["revision"], "kind": "changed",
+    })
+    # Unloaded covers restore on bind; moving covers retain pending semantics.
+    for unique_id in affected:
+        cover = store.covers.get(unique_id)
+        if cover is not None:
+            cover.async_apply_cover_profile(store.profile(unique_id))
+            cover.async_write_ha_state()
 
 
 async def bind_cover(hass, cover):

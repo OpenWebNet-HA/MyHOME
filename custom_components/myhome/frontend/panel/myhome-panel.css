@@ -410,3 +410,10 @@ button.danger-solid:hover { background: color-mix(in srgb, var(--panel-error) 85
 .profile-origin-grid p { font-size: 12px; margin: 3px 0 0; overflow-wrap: anywhere; }
 .profile-origin-inherited { font-weight: 600; }
 @media (max-width: 600px) { .profile-origin-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.batch-target { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+.batch-target input { width: auto; flex: 0 0 auto; }
+.batch-target span { min-width: 0; overflow-wrap: anywhere; }
+.batch-target small { display: block; }
+#cal-targets li { padding: 6px 0; overflow-wrap: anywhere; }
+#cal-batch-review { display: grid; gap: 12px; }
