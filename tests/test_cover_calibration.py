@@ -9,12 +9,21 @@ from OWNd.message import OWNEvent
 
 from custom_components.myhome.const import CONF_COVER_TRAVEL_TIMES, EVENT_COVER_CALIBRATION
 from custom_components.myhome.cover import (
+    _LAST_CALIBRATION_TRACE,
     CalibrationInterrupted,
     MyHOMECover,
     _stored_calibration,
     async_stop_cover_calibration,
     get_last_calibration_trace,
 )
+
+
+@pytest.fixture(autouse=True)
+def _fresh_calibration_trace():
+    """The trace buffer is module-level; one test's runs must not leak into another's export."""
+    _LAST_CALIBRATION_TRACE.clear()
+    yield
+    _LAST_CALIBRATION_TRACE.clear()
 
 
 class Clock:
@@ -730,15 +739,204 @@ async def test_stop_cover_calibration_service_handler(hass, gateway):
         mock_stop.assert_awaited_once_with(hass, gateway_mac=gateway.mac)
 
 
-async def test_websocket_cover_calibration_trace(hass):
-    """WebSocket endpoint myhome/cover/calibration_trace returns traces."""
+# ── calibration trace is scoped to one gateway (#319 review) ──────────────
+
+
+def _second_gateway(gateway):
+    other = MagicMock()
+    other.mac = "00:03:50:00:00:02"
+    other.log_id = "[MH200 gateway - other]"
+    other.availability_signal = gateway.availability_signal
+    other.available = True
+    other.device_registry_id = None
+    other.config_entry = MagicMock()
+    other.config_entry.options = {}
+    other.deliveries = []
+
+    async def _send(message):
+        fut = asyncio.get_running_loop().create_future()
+        other.deliveries.append((str(message), fut))
+        return fut
+
+    other.send = AsyncMock(side_effect=_send)
+    return other
+
+
+async def _calibrate_on(hass, gateway, clock, *, entity_id, run):
+    cover = _make_cover(hass, gateway)
+    cover.entity_id = entity_id
+    task = asyncio.create_task(cover.async_calibrate())
+    for direction_frame in ("1", "2", "1"):
+        await _drive_run(cover, gateway, clock, direction_frame=direction_frame, write_delay=0.1, motor_delay=0.5, run=run)
+    await asyncio.wait_for(task, 5)
+    return cover
+
+
+async def test_calibration_trace_frames_carry_their_gateway(hass, gateway, clock, fake_time, sleeps):
+    """Two gateways calibrate; each frame names the gateway that recorded it and reads filter on it."""
+    other = _second_gateway(gateway)
+    await _calibrate_on(hass, gateway, clock, entity_id="cover.a_shutter", run=20.0)
+    await _calibrate_on(hass, other, clock, entity_id="cover.b_shutter", run=30.0)
+
+    everything = get_last_calibration_trace()
+    macs = {f["gateway_mac"] for f in everything}
+    assert macs == {"00:03:50:00:00:01", "00:03:50:00:00:02"}
+
+    only_a = get_last_calibration_trace(gateway_mac="00:03:50:00:00:01")
+    assert only_a and all(f["gateway_mac"] == "00:03:50:00:00:01" for f in only_a)
+    assert {f["entity_id"] for f in only_a} == {"cover.a_shutter"}
+    # any spelling of the MAC selects the same frames
+    assert get_last_calibration_trace(gateway_mac="000350000001") == only_a
+    only_b = get_last_calibration_trace(gateway_mac="00:03:50:00:00:02")
+    assert {f["entity_id"] for f in only_b} == {"cover.b_shutter"}
+    assert len(only_a) + len(only_b) == len(everything)
+    # a gateway without a MAC is not "all gateways"
+    assert get_last_calibration_trace(gateway_mac="") == []
+
+
+async def _ws_trace(hass, msg):
     from custom_components.myhome.websocket import ws_cover_calibration_trace
 
     conn = MagicMock()
-    msg = {"id": 42, "type": "myhome/cover/calibration_trace"}
-    ws_cover_calibration_trace(hass, conn, msg)
-    await asyncio.sleep(0)
-    conn.send_result.assert_called_once()
-    args = conn.send_result.call_args[0]
-    assert args[0] == 42
-    assert "frames" in args[1]
+    ws_cover_calibration_trace(hass, conn, {"type": "myhome/cover/calibration_trace", **msg})
+    await hass.async_block_till_done()
+    return conn
+
+
+async def test_websocket_calibration_trace_is_scoped_to_the_requested_gateway(
+    hass, gateway, clock, fake_time, sleeps, attach_gateway
+):
+    """Exporting for gateway A never carries gateway B's frames; omitted mac is the primary gateway; unknown is not_found."""
+    other = _second_gateway(gateway)
+    attach_gateway(gateway.mac, gateway)
+    attach_gateway(other.mac, other)
+    await _calibrate_on(hass, gateway, clock, entity_id="cover.a_shutter", run=20.0)
+    await _calibrate_on(hass, other, clock, entity_id="cover.b_shutter", run=30.0)
+
+    conn = await _ws_trace(hass, {"id": 1, "mac": other.mac})
+    msg_id, result = conn.send_result.call_args[0]
+    assert msg_id == 1 and result["mac"] == "00:03:50:00:00:02"
+    assert result["frames"] and {f["entity_id"] for f in result["frames"]} == {"cover.b_shutter"}
+    assert all(f["gateway_mac"] == "00:03:50:00:00:02" for f in result["frames"])
+
+    conn = await _ws_trace(hass, {"id": 2, "mac": "000350000001"})
+    _, result = conn.send_result.call_args[0]
+    assert result["mac"] == "00:03:50:00:00:01"
+    assert {f["entity_id"] for f in result["frames"]} == {"cover.a_shutter"}
+
+    # mac omitted: the primary (first configured) gateway, as for every other command
+    conn = await _ws_trace(hass, {"id": 3})
+    _, result = conn.send_result.call_args[0]
+    assert result["mac"] == "00:03:50:00:00:01"
+    assert {f["entity_id"] for f in result["frames"]} == {"cover.a_shutter"}
+
+    # unknown mac: an error, never a substitute gateway's frames
+    conn = await _ws_trace(hass, {"id": 4, "mac": "00:03:50:ff:ff:ff"})
+    conn.send_result.assert_not_called()
+    assert conn.send_error.call_args[0][:2] == (4, "not_found")
+
+
+async def test_websocket_calibration_trace_without_a_gateway_is_not_found(hass):
+    conn = await _ws_trace(hass, {"id": 42})
+    conn.send_result.assert_not_called()
+    assert conn.send_error.call_args[0][0] == 42
+
+
+# ── the actuator's 60 s run-time limit is refused, not stored (#319 review) ─
+
+
+async def test_run_ending_at_the_actuator_cutoff_fails_at_once(hass, gateway, clock, fake_time, sleeps):
+    """A 14 s shutter on an actuator with the 60 s limit: the first 61.5 s run fails, nothing is stored, no more runs."""
+    cover = _make_cover(hass, gateway)
+    events = []
+    hass.bus.async_listen(EVENT_COVER_CALIBRATION, lambda ev: events.append(ev.data))
+    task = asyncio.create_task(cover.async_calibrate())
+    await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.3, motor_delay=0.55, run=61.5)
+    with pytest.raises(HomeAssistantError, match="60 s run-time limit") as err:
+        await asyncio.wait_for(task, 5)
+    assert "61.5 s" in str(err.value) and "stopwatch" in str(err.value)
+
+    assert [f for f, _ in gateway.deliveries] == ["*2*1*21##"]  # no second and third run
+    assert cover.extra_state_attributes["calibration_source"] == "default"
+    assert cover._travel_time_down == 25.0 and cover._travel_time_up == 25.0
+    assert cover._calibrating is False
+    await hass.async_block_till_done()
+    assert events[-1]["phase"] == "failed" and "60 s run-time limit" in events[-1]["error"]
+
+
+async def test_run_just_outside_the_cutoff_window_is_stored(hass, gateway, clock, fake_time, sleeps):
+    """A genuine 58 s or 66 s run is a long shutter, not the limit."""
+    cover = _make_cover(hass, gateway)
+    task = asyncio.create_task(cover.async_calibrate())
+    await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.1, motor_delay=0.5, run=30.0)
+    await _drive_run(cover, gateway, clock, direction_frame="2", write_delay=0.1, motor_delay=0.5, run=58.0)
+    await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.1, motor_delay=0.5, run=66.0)
+    result = await asyncio.wait_for(task, 5)
+    assert result["down"] == pytest.approx(58.0) and result["up"] == pytest.approx(66.0)
+
+
+# ── the backend measures every run for the stopwatch (#319 review) ─────────
+
+
+async def test_plain_run_is_measured_from_motor_start_to_stop_write(hass, gateway, clock, fake_time):
+    """open_cover then stop_cover: motion_started_at is the anchor, last_run_seconds the run to the stop's write."""
+    cover = _make_cover(hass, gateway)
+    attrs = cover.extra_state_attributes
+    assert attrs["motion_started_at"] is None and attrs["last_run_seconds"] is None
+
+    await cover.async_open_cover()
+    assert cover.extra_state_attributes["motion_started_at"] is None  # not this run's anchor yet
+    _, written = gateway.deliveries[-1]
+    clock.now += 2.0  # queue wait: the click is 2 s before the write
+    written.set_result(clock.now)
+    await _yield()
+    clock.now += 0.55
+    cover.handle_event(OWNEvent.parse("*2*1*21##"))  # motor-start echo re-anchors
+    await _yield()
+    anchored = cover.extra_state_attributes["motion_started_at"]
+    assert anchored and anchored.endswith("+00:00")
+
+    clock.now += 14.0
+    await cover.async_stop_cover()
+    _, stop_written = gateway.deliveries[-1]
+    clock.now += 1.0  # the stop frame leaves the queue a second after the click
+    stop_written.set_result(clock.now)
+    await _yield()
+
+    attrs = cover.extra_state_attributes
+    assert attrs["last_run_seconds"] == pytest.approx(15.0)  # motor start -> stop write, not click -> click
+    assert attrs["last_run_direction"] == "open"
+    assert attrs["last_run_ended_at"] and attrs["motion_started_at"] is None
+
+
+async def test_actuator_stop_status_ends_the_measured_run(hass, gateway, clock, fake_time):
+    """Without a stop command the actuator's own stop status ends the run."""
+    cover = _make_cover(hass, gateway)
+    await cover.async_close_cover()
+    _, written = gateway.deliveries[-1]
+    written.set_result(clock.now)
+    await _yield()
+    clock.now += 0.55
+    cover.handle_event(OWNEvent.parse("*2*2*21##"))
+    clock.now += 18.4
+    cover.handle_event(OWNEvent.parse("*2*0*21##"))
+    attrs = cover.extra_state_attributes
+    assert attrs["last_run_seconds"] == pytest.approx(18.4) and attrs["last_run_direction"] == "close"
+
+
+async def test_set_position_re_anchor_does_not_shorten_the_measured_run(hass, gateway, clock, fake_time, sleeps):
+    """set_position re-anchors the estimate at the target; the measured run still starts at the motor start."""
+    cover = _make_cover(hass, gateway)
+    cover._attr_current_cover_position = 100
+    cover._start_position = 100
+    await cover.async_set_cover_position(**{ATTR_POSITION: 50})
+    _, written = gateway.deliveries[-1]
+    written.set_result(clock.now)
+    cover._motor_started.set()
+    await _yield(6)
+    # the auto-stop slept the half travel (12.5 s) and wrote the stop
+    _, stop_written = gateway.deliveries[-1]
+    assert stop_written is not written
+    stop_written.set_result(clock.now)
+    await _yield()
+    assert cover.extra_state_attributes["last_run_seconds"] == pytest.approx(12.5, abs=0.6)

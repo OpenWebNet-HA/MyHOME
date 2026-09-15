@@ -88,6 +88,11 @@ CALIBRATION_RUN_TIMEOUT = 180.0  # s to wait for the actuator's stop status per 
 CALIBRATION_MIN_RUN = 1.0        # s: anything shorter is not a full travel
 CALIBRATION_MAX_RUN = 300.0      # s: anything longer is an actuator with no run-time limit
 CALIBRATION_SETTLE = 1.0         # s pause between runs so the actuator relay settles
+# An actuator with the factory 60 s run-time limit stops itself, not at the end
+# stop: measured 61.5 s for a 14 s shutter on a MyHOMEServer1 (#319). A run that
+# ends inside this window measured the actuator, not the shutter, and is refused.
+CALIBRATION_CUTOFF_MIN = 59.0
+CALIBRATION_CUTOFF_MAX = 65.0
 WHO_BURGLAR_ALARM = "5"
 PLATFORM_ALARM = "alarm_control_panel"
 
