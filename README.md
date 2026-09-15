@@ -406,7 +406,7 @@ A major CI infrastructure enhancement introduced for beta testing is the **Trace
 │  (F454, MyHomeServer1, MH202, etc.)  │
 └──────────────────┬───────────────────┘
                    │
-                   │ 1-Click "📋 Report Issue / Copy Trace" in Bus Monitor Card
+                   │ 1-Click "📋 Copy Capture" in Bus Monitor Card
                    ▼
 ┌──────────────────────────────────────┐
 │  diagnostic_summary.json             │
@@ -424,7 +424,7 @@ A major CI infrastructure enhancement introduced for beta testing is the **Trace
 ```
 
 #### How it Works:
-1. **Zero Hardware Needed for Bug Triage**: Legrand and BTicino manufacture dozens of gateway models (F454, MyHomeServer1, MH200N, MH202, 3578 USB) and modular DIN actuators with subtle firmware timing variations. When a beta tester reports unexpected behavior, clicking **"📋 Report Issue / Copy Trace"** on the Bus Monitor card (or downloading HA Diagnostics) packages the last 100 on-wire OpenWebNet frames with precise microsecond timestamps.
+1. **Zero Hardware Needed for Bug Triage**: Legrand and BTicino manufacture dozens of gateway models (F454, MyHomeServer1, MH200N, MH202, 3578 USB) and modular DIN actuators with subtle firmware timing variations. When a beta tester reports unexpected behavior, clicking **"📋 Copy Capture"** on the Bus Monitor card (or downloading HA Diagnostics) packages the last 100 on-wire OpenWebNet frames with precise microsecond timestamps.
 2. **Automated Discovery & Plant Setup**: Pytest automatically scans `tests/fixtures/plants/*/` for any directory containing `diagnostic_summary.json` and `myhome.yaml`.
 3. **Sequential On-Wire Replay**: The harness initializes a simulated gateway session and streams the frozen frames sequentially into Home Assistant's internal event dispatcher (`f"myhome_message_{mac}"`), exercising the exact same message routing path as physical hardware.
 4. **End-to-End State Verification**: Verifies that every single frame across Lighting (`WHO=1`), Automation (`WHO=2`), Thermoregulation (`WHO=4`), Audio (`WHO=16`), Energy (`WHO=18`), Dry Contacts (`WHO=25`), and ACK/NACK control signals updates entity states accurately with zero unhandled exceptions.

@@ -76,23 +76,63 @@ The card interface provides a live telemetry stream and controls:
 - **Direction Filter**: Switch between `All`, `RX Only` (bus events), or `TX Only` (commands sent from Home Assistant).
 - **Free-Text & Regex Search**: Search for specific addresses (e.g. `*1*1*12##` or `12#1`).
 
-### 3. Diagnostic Actions
-- **🧹 Sweep Bus**: A 1-click button that invokes the `myhome.sweep_bus` service. It queries the current status of all lighting actuators, shutters, climate probes, and gateway clocks to immediately hydrate the ring buffer with fresh data.
-- **💾 Export Trace**: Generates and downloads a structured `.json` diagnostic file containing all captured frames with timestamps, parsed semantic attributes, direction flags, and ACK/NACK status.
+### 3. Capturing: Start Trace vs Sweep Bus
 
-### 4. Time stamps
+Two ways to begin a capture. **Both are harmless** — neither can switch a load, move a shutter or touch the alarm.
+
+- **🔴 Start Trace / ⏹ Stop Trace**: clears the buffer and records what the bus says while you reproduce a problem (press a wall switch, run an automation, move a cover); the badge shows **● REC**. Nothing is sent. **Stop Trace** freezes the buffer (same as Pause) so the export is exactly what you reproduced; **Resume** returns to the live view. Use this for bug reports about behaviour.
+- **🧹 Sweep Bus**: clears the buffer and invokes `myhome.sweep_bus`, which sends one read-only status request per subsystem; every device answers with its current state, so the buffer becomes a **device inventory**. Use this for "which devices does the integration see" questions (duplicates, missing zones).
+- **Clear** returns to trace mode. Without pressing anything, the live buffer is a trace.
+- The blue **ⓘ** button in the title row (next to the LIVE / REC / PAUSED badge) opens this explanation inside the card; it turns amber while open.
+
+### 4. Export / Copy
+- **💾 Export Trace / Export Sweep**: downloads the frames **currently shown** (active WHO / WHERE / direction filters applied) as a structured `.json` file with timestamps, parsed attributes, direction and ACK/NACK flags. The label follows the capture kind you chose, and so does the file name:
+
+  ```
+  myhome_<kind>_<gateway model>_<filter>_<UTC timestamp>.json
+  myhome_trace_MH200N_all_2026-09-13T11-52-19.json        passive capture, no filter
+  myhome_trace_MH200N_who2-rx_2026-09-13T11-53-07.json    passive capture, WHO=2 + RX filter
+  myhome_sweep_MH200N_all_2026-09-13T11-52-19.json        buffer populated by a Sweep Bus click
+  ```
+
+  Clear the filters first if you want the whole buffer.
+- **📋 Copy Trace / Copy Sweep**: copies the same shown frames as a markdown diagnostic bundle (environment, gateway, capture kind, active filter, frames) to the clipboard and opens the GitHub issue form.
+
+### 5. Transmit frame (⚠️ direct bus command)
+
+The bar at the bottom writes a raw OpenWebNet frame to the SCS bus exactly as typed. That **can** switch loads, move shutters, or arm/disarm the burglar alarm, so it is disabled until you tick **I understand the risk** in the orange bar above it; the bar turns red while armed. Untick it when you are done. Start Trace and Sweep Bus never use this path. (The backend additionally refuses the command for non-administrator users.)
+
+### 6. Time stamps
 
 Frames are stamped in **UTC** by the integration (`timestamp` / `iso_time`) and rendered by the card in the **browser's local time zone**, so they line up with the Home Assistant logbook. Exports keep the UTC values. *(#305)*
 
-### 5. Permissions
+### 7. Permissions
 
 Reading the stream, history and gateway info is available to any signed-in user. **Send frame** and **Clear buffer** require an **administrator** user: a non-admin (or a kiosk/long-lived token created by one) gets `Unauthorized`, because a raw `*5*…##` frame can arm or disarm the burglar alarm.
 
 ---
 
-## 📄 Exported Frame Data Format
+## 📄 Exported Capture Format
 
-When exporting traces or inspecting WebSocket frames, each frame adheres to the following JSON schema (`direction`, `dimension` and the ACK/NACK flags are included in exports since 2.0.0b13):
+Every export starts with a `capture` block describing what the file is, so it stays self-explanatory even after it is renamed:
+
+```json
+"capture": {
+  "kind": "sweep",
+  "started_at": "2026-09-13T11:52:15.104Z",
+  "filters": { "who": "2", "where": null, "direction": "rx" },
+  "window": {
+    "first": "2026-09-13T11:49:44.845Z",
+    "last": "2026-09-13T11:52:18.911Z",
+    "frames": 37,
+    "buffer_frames": 200,
+    "buffer_depth": 200,
+    "truncated": true
+  }
+}
+```
+
+`truncated: true` means the ring buffer had already wrapped when you exported — the first frame of a sequence you are looking for may have been evicted. Then follow `environment`, `gateway`, `telemetry` and `frames`; each frame adheres to the following schema (`direction`, `dimension` and the ACK/NACK flags are included in exports since 2.0.0b13):
 
 ```json
 {
