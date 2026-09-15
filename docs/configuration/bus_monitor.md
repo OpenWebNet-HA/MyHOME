@@ -98,19 +98,15 @@ Two ways to begin a capture. **Both are harmless** — neither can switch a load
   Clear the filters first if you want the whole buffer.
 - **📋 Copy Trace / Copy Sweep**: copies the same shown frames as a markdown diagnostic bundle (environment, gateway, capture kind, active filter, frames) to the clipboard and opens the GitHub issue form.
 
-### 5. 🪟 Covers — calibrate travel times
-
-Opens a panel listing every timed MyHOME cover with its current up/down travel times, where they came from (`measured` / `yaml` / `default`) and when they were measured. **Calibrate** runs [`myhome.calibrate_cover`](services.md#6-myhomecalibrate_cover) for one cover, **Calibrate all covers** for all of them one after another; both ask for confirmation and state how long the shutters will be moving. Progress and results appear live in the panel's status column. Nothing moves until you confirm.
-
-### 6. Transmit frame (⚠️ direct bus command)
+### 5. Transmit frame (⚠️ direct bus command)
 
 The bar at the bottom writes a raw OpenWebNet frame to the SCS bus exactly as typed. That **can** switch loads, move shutters, or arm/disarm the burglar alarm, so it is disabled until you tick **I understand the risk** in the orange bar above it; the bar turns red while armed. Untick it when you are done. Start Trace and Sweep Bus never use this path. (The backend additionally refuses the command for non-administrator users.)
 
-### 7. Time stamps
+### 6. Time stamps
 
 Frames are stamped in **UTC** by the integration (`timestamp` / `iso_time`) and rendered by the card in the **browser's local time zone**, so they line up with the Home Assistant logbook. Exports keep the UTC values. *(#305)*
 
-### 8. Permissions
+### 7. Permissions
 
 Reading the stream, history and gateway info is available to any signed-in user. **Send frame** and **Clear buffer** require an **administrator** user: a non-admin (or a kiosk/long-lived token created by one) gets `Unauthorized`, because a raw `*5*…##` frame can arm or disarm the burglar alarm.
 
