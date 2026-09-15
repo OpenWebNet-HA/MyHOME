@@ -44,6 +44,7 @@ from homeassistant.components.media_player import (
     DOMAIN as PLATFORM,
 )
 from homeassistant.components.media_player import (
+    MediaPlayerDeviceClass,
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
     MediaPlayerState,
@@ -61,10 +62,10 @@ from .const import (
     CONF_DECODER_PRE_GAIN,
     CONF_DECODER_SLOTS,
     CONF_DECODER_SOURCE,
-    CONF_ENTITY,
     DOMAIN,
     LOGGER,
 )
+from .data import get_runtime_data
 from .decoder_pool import DecoderPool
 from .myhome_device import MyHOMEEntity
 
@@ -103,11 +104,12 @@ def _build_pool(hass: HomeAssistant, config_entry) -> DecoderPool:
 
 async def async_setup_entry(hass: HomeAssistant, config_entry, async_add_entities):
     """Set up the MyHOME media player platform and initialise the decoder pool."""
+    runtime = config_entry.runtime_data
     known_media_players: set[str] = set()
 
     # ── Build and store the decoder pool ─────────────────────────────────────
     pool = _build_pool(hass, config_entry)
-    hass.data[DOMAIN][config_entry.data[CONF_MAC]]["decoder_pool"] = pool
+    runtime.decoder_pool = pool
 
     LOGGER.info(
         "MyHOME media player: decoder pool initialised with %d decoder(s)",
@@ -119,7 +121,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry, async_add_entitie
     existing_entries = er.async_entries_for_config_entry(entity_registry, config_entry.entry_id)
     restored_players: list[MyHOMEMediaPlayer] = []
 
-    gateway = hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY]
+    gateway = runtime.gateway
 
     for entry in existing_entries:
         if entry.domain == PLATFORM:
@@ -185,7 +187,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry, async_add_entitie
                 where=zone,
                 manufacturer="BTicino",
                 model="Audio System",
-                gateway=hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY],
+                gateway=runtime.gateway,
             )
             known_media_players.add(unique_id)
             async_add_entities([_player])
@@ -224,6 +226,9 @@ class MyHOMEMediaPlayer(MyHOMEEntity, MediaPlayerEntity):
     Without decoders configured it behaves exactly like the original entity —
     full WHO=16 hardware control with no streaming features advertised.
     """
+
+    # Audio zones are amplified speaker outputs of the SCS sound system.
+    _attr_device_class = MediaPlayerDeviceClass.SPEAKER
 
     def __init__(
         self,
@@ -275,13 +280,14 @@ class MyHOMEMediaPlayer(MyHOMEEntity, MediaPlayerEntity):
     # ── Pool helpers ──────────────────────────────────────────────────────────
 
     def _get_pool(self) -> DecoderPool | None:
-        """Return the shared :class:`DecoderPool` from ``hass.data``.
+        """Return the shared :class:`DecoderPool` from the entry's runtime data.
 
         Returns ``None`` if the pool has not yet been initialised (e.g.
         during early startup) or if no decoders are configured.
         """
-        mac_data = self.hass.data.get(DOMAIN, {}).get(self._gateway_handler.mac, {})
-        return mac_data.get("decoder_pool")
+        entry = getattr(getattr(self, "platform", None), "config_entry", None)
+        runtime = get_runtime_data(entry) if entry is not None else None
+        return runtime.decoder_pool if runtime is not None else None
 
     # ── Dynamic feature flags ─────────────────────────────────────────────────
 
@@ -384,7 +390,10 @@ class MyHOMEMediaPlayer(MyHOMEEntity, MediaPlayerEntity):
         result = await pool.claim(self.entity_id)
         if result is None:
             raise HomeAssistantError(
-                f"{self.entity_id}: All audio matrix inputs are currently in use by other rooms!"
+                f"{self.entity_id}: All audio matrix inputs are currently in use by other rooms!",
+                translation_domain=DOMAIN,
+                translation_key="decoders_busy",
+                translation_placeholders={"entity_id": str(self.entity_id)},
             )
         decoder_id, source_num = result
         self._active_decoder = decoder_id
@@ -450,7 +459,12 @@ class MyHOMEMediaPlayer(MyHOMEEntity, MediaPlayerEntity):
             await pool.release(self.entity_id)
             self._active_decoder = None
             raise HomeAssistantError(
-                f"{self.entity_id}: decoder {decoder_id} failed to start playback: {err}"
+                f"{self.entity_id}: decoder {decoder_id} failed to start playback: {err}",
+                translation_domain=DOMAIN,
+                translation_key="decoder_start_failed",
+                translation_placeholders={
+                    "entity_id": str(self.entity_id), "decoder": str(decoder_id), "error": str(err),
+                },
             ) from err
 
         self.async_schedule_update_ha_state()

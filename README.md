@@ -63,6 +63,13 @@ We now maintain a comprehensive, community-curated **[GitHub Wiki](https://githu
 - **[Bus Monitor Lovelace Card](https://github.com/OpenWebNet-HA/MyHOME/wiki/Bus-Monitor-Lovelace-Card)**: Bus card installation, live frame decoding, diagnostic logging, and syntax injector reference.
 - **[Community Contribution Guide](https://github.com/OpenWebNet-HA/MyHOME/wiki/OpenWebNet-Protocol-&-WHO-Specifications#how-to-contribute-specifications)**: How to cross-check documentation versions and contribute missing WHO PDF specifications.
 
+### In-repo guides (`docs/configuration/`)
+- **[Supported Functions](docs/configuration/supported_functions.md)** — what each WHO subsystem and platform does, read-only or not at all.
+- **[Known Limitations](docs/configuration/known_limitations.md)** — what is not supported, why, and the workaround.
+- **[Troubleshooting](docs/configuration/troubleshooting.md)** — symptoms → log lines / bus frames → fix.
+- **[Use Cases](docs/configuration/use_cases.md)** — end-to-end scenarios with the automations that make them work.
+- **[Services](docs/configuration/services.md)**, **[Gateways](docs/configuration/gateways.md)**, **[Runtime Behaviour](docs/configuration/runtime_behaviour.md)**, **[Bus Monitor](docs/configuration/bus_monitor.md)**, **[Sound System](docs/configuration/media_player.md)**, **[CEN / CEN+](docs/configuration/cen_cenplus.md)**, **[Lovelace Recipes](docs/configuration/lovelace_recipes.md)**.
+
 ---
 
 ## 🏛️ Supported Hardware
@@ -102,6 +109,8 @@ We now maintain a comprehensive, community-curated **[GitHub Wiki](https://githu
 ---
 
 ## 📦 Installation & Updating
+
+> **Requires Home Assistant 2026.3 or newer** (Python 3.14 cores). Older cores stay on 2.0.0b12; see [Known Limitations](docs/configuration/known_limitations.md).
 
 > [!CAUTION]
 > **⚠️ Never store backup copies inside `/config/custom_components/` (e.g. `myhome.backup`)!**  
@@ -193,6 +202,8 @@ docker restart homeassistant
 
 ### 🩹 Troubleshooting: "No module named 'custom_components.myhome.backup'"
 
+> More symptoms and fixes: [Troubleshooting guide](docs/configuration/troubleshooting.md).
+
 If Home Assistant fails to load with the log error:
 ```text
 Setup failed for custom integration 'myhome': Unable to import component: No module named 'custom_components.myhome.backup'
@@ -218,6 +229,23 @@ If you ever need to revert to the legacy codebase (`0.9.4`):
   rm myhome_legacy.zip
   ha core restart
   ```
+
+### 🗑️ Removing the Integration
+
+1. Go to **Settings → Devices & services → MyHOME**, open the gateway entry's `⋮` menu and choose **Delete**. Repeat for every configured gateway. This closes the bus sessions, unloads all platforms and removes the gateway's devices and entities from the registries.
+2. Restart Home Assistant if you also want to remove the code:
+   - **HACS:** open **MyHome** in HACS → `⋮` → **Remove**.
+   - **Manual / one-liner installs:** delete the folder:
+     ```bash
+     rm -rf /config/custom_components/myhome
+     ha core restart
+     ```
+3. Optional clean-up the integration does not touch on its own:
+   - `/config/myhome.yaml` — the legacy platform configuration file, if you used one.
+   - **Settings → Dashboards → Resources**: the auto-registered `/myhome_static/myhome-bus-card.js` resource, and any `custom:myhome-openwebnet-bus-monitor` cards on your dashboards.
+   - Automations and blueprints that reference `myhome.*` services or the `myhome_*` events (`myhome_cen_event`, `myhome_cenplus_event`, `myhome_message_event`, `myhome_cover_calibration`, …).
+
+The gateway itself is not modified by installing or removing the integration; nothing needs to be reset on the OpenWebNet side.
 
 ---
 
@@ -541,9 +569,9 @@ automated coverage and physical gateway verification steps.
 
 | Tier | Rules satisfied | Status |
 | :--- | :---: | :--- |
-| 🥉 Bronze | 16 / 20 | ⏳ next — blocked by `brands`, `docs-removal-instructions`, `has-entity-name`, `runtime-data` |
+| 🥉 Bronze | 18 / 20 | ⏳ next — blocked by `brands`, `has-entity-name` |
 | 🥈 Silver | 10 / 10 | ✅ all rules satisfied (waiting on lower tier) |
-| 🥇 Gold | 10 / 21 | ⬜ 11 rule(s) open |
+| 🥇 Gold | 20 / 21 | ⬜ 1 rule(s) open |
 | 🏆 Platinum | 2 / 3 | ⬜ 1 rule(s) open |
 
 _Self-audit of [`quality_scale.yaml`](custom_components/myhome/quality_scale.yaml) against the official [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/); a tier needs every rule of that tier and all lower tiers `done`/`exempt`. Updated by the [Integration Quality Scale workflow](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/quality-scale.yml); tiers are formally awarded only by Home Assistant core review._

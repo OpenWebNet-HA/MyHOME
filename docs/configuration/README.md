@@ -19,8 +19,12 @@ This directory provides comprehensive, step-by-step guides for connecting, confi
 | [**CEN & CEN+ Device Triggers**](cen_cenplus.md) | Scenario Pushbuttons | `WHO = 15`, `WHO = 25` | Native Home Assistant UI Device Triggers, physical button numbers 0–31, short press, long press, release, rotary dials, and automation blueprints. |
 | [**Lovelace Bus Monitor Card**](bus_monitor.md) | In-Band Diagnostic Monitor | All WHOs | Native Lovelace card (`custom:myhome-bus-card`), 500-frame circular ring buffer, real-time live streaming, WHO filtering, 1-click **Sweep Bus**, and 1-click **Export Trace**. |
 | [**Lovelace Dashboard Recipes**](lovelace_recipes.md) | UI & Dashboard Showcase | All WHOs | Dynamic auto-collapsing active lights, multiroom audio player cards, perimeter security status, and equipment runtime tracker. |
-| [**Integration Services Reference**](services.md) | Integration Actions | All WHOs | Reference for `myhome.send_message`, `myhome.turn_on_timed` (hardware SCS timers), `myhome.sync_time`, `myhome.start_sending_instant_power`, and `myhome.sweep_bus`. |
+| [**Integration Services Reference**](services.md) | Integration Actions | All WHOs | Reference for all nine services: `send_message`, `turn_on_timed` (hardware SCS timers), `sync_time`, `start_sending_instant_power`, `sweep_bus`, `calibrate_cover`, `stop_cover_calibration`, `set_cover_travel_time`, `reset_cover_travel_time`. |
 | [**Runtime Behaviour Notes**](runtime_behaviour.md) | Polling, discovery & runtime learning | `WHO = 1, 2, 4, 13, 15, 25` | Profile-gated startup discovery, silent reconnect cycles, reauth flow, timed-cover echo model (`travel_time`), push-driven temperature probes (`WHERE ≥ 100`), additive light colour modes (DALI DT8), `via_device_id` links, OWNd version handling. |
+| [**Supported Functions**](supported_functions.md) | Feature matrix | All WHOs | What every subsystem and platform supports, read-only, or does not support. |
+| [**Known Limitations**](known_limitations.md) | Boundaries & workarounds | All WHOs | Single-session gateways, WHO 1 group sync, timed-cover position, alarm zones, naming, with the reason and workaround for each. |
+| [**Troubleshooting**](troubleshooting.md) | Symptoms → fixes | All WHOs | Setup / reauth failures, wrong gateway model, unknown lights, NACK storms, cover calibration, card not loading, how to attach diagnostics. |
+| [**Use Cases**](use_cases.md) | End-to-end scenarios | All WHOs | Existing plant onboarding, CEN+ buttons driving other devices, calibrated shutters, hardware timers, Music Assistant multiroom, central-unit heating, alarm, energy dashboard. |
 
 ---
 
@@ -36,7 +40,7 @@ This directory provides comprehensive, step-by-step guides for connecting, confi
 Once the gateway is added:
 - The integration connects to the gateway event session (`*99*1##`) and command session (`*99*0##`).
 - Existing configured entities (lights, covers, climate probes, switches) are discovered and created automatically.
-- Diagnostic entities (reconnection counters, latency, firmware version, uptime) are exposed under the Gateway device.
+- The gateway itself is a device (model, firmware, identification source); connection and queue telemetry is in the diagnostics download and the bus-monitor card, not in entities.
 
 ### 3. Adjust Options
 Access **Configure** on the integration card to fine-tune:

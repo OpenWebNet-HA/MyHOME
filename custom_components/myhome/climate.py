@@ -12,7 +12,6 @@ from homeassistant.components.climate.const import (
     HVACMode,
 )
 from homeassistant.const import (
-    CONF_MAC,
     CONF_NAME,
     UnitOfTemperature,
 )
@@ -42,18 +41,16 @@ from .const import (
     CONF_CENTRAL,
     CONF_COOLING_SUPPORT,
     CONF_DEVICE_MODEL,
-    CONF_ENTITY,
     CONF_FAN_SUPPORT,
     CONF_HEATING_SUPPORT,
     CONF_MANUFACTURER,
-    CONF_PLATFORMS,
     CONF_STANDALONE,
     CONF_WHERE,
     CONF_WHO,
     CONF_ZONE,
-    DOMAIN,
     LOGGER,
 )
+from .data import get_runtime_data
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 
@@ -62,15 +59,12 @@ PARALLEL_UPDATES = 0
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
     """Set up the MyHOME climate platform dynamically via Discovery."""
-    mac = config_entry.data.get(CONF_MAC)
-    if not mac or mac not in hass.data.get(DOMAIN, {}):
+    runtime = get_runtime_data(config_entry)
+    if runtime is None or PLATFORM not in runtime.platforms:
         return True
-    if PLATFORM not in hass.data[DOMAIN][mac].get(CONF_PLATFORMS, {}):
-        return True
+    mac = runtime.mac
 
-    gateway = hass.data[DOMAIN][mac].get(CONF_ENTITY)
-    if not gateway:
-        return True
+    gateway = runtime.gateway
 
     known_climates = set()
 
@@ -82,7 +76,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         entity_registry = None
         existing_entries = []
 
-    _configured_climate_devices = hass.data[DOMAIN][mac].get(CONF_PLATFORMS, {}).get(PLATFORM, {})
+    _configured_climate_devices = runtime.platforms.get(PLATFORM, {})
 
     restored_climates = []
     for entry in existing_entries:
@@ -122,15 +116,12 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             )
 
             is_central = cfg.get(CONF_CENTRAL, clean_where in ("0", "01") or where in ("#0", "#0#1"))
-            _customs = hass.data.get(DOMAIN, {}).get("customizations", {})
-            _custom_entry = _customs.get(entry.entity_id, {})
             _entry_name = getattr(entry, "name", None)
             if not isinstance(_entry_name, str):
                 _entry_name = None
             default_name = f"Central Unit {default_suffix}" if is_central else f"Climate Zone {default_suffix}"
             _name = (
                 cfg.get(CONF_NAME)
-                or _custom_entry.get("friendly_name")
                 or _entry_name
                 or default_name
             )
@@ -278,14 +269,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                     or {}
                 )
                 is_central = clean_where in ("0", "01") or where in ("#0", "#0#1")
-                _customs = hass.data.get(DOMAIN, {}).get("customizations", {})
-                _predicted_id = f"climate.climate_zone_{default_suffix.lower().replace(' ', '_')}"
-                _custom_entry = _customs.get(_predicted_id, {})
-                _name = (
-                    cfg.get(CONF_NAME)
-                    or _custom_entry.get("friendly_name")
-                    or f"Climate Zone {default_suffix}"
-                )
+                _name = cfg.get(CONF_NAME) or f"Climate Zone {default_suffix}"
                 default_model = "Central Unit (3550)" if where == "#0" else ("Central Unit (4695)" if where == "#0#1" else "Heating Zone")
                 _climate = MyHOMEClimate(
                     hass=hass,
@@ -353,16 +337,14 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
 
 async def async_unload_entry(hass, config_entry):
-    mac = config_entry.data.get(CONF_MAC)
-    if not mac or mac not in hass.data.get(DOMAIN, {}):
-        return True
-    if PLATFORM not in hass.data[DOMAIN][mac].get(CONF_PLATFORMS, {}):
+    runtime = get_runtime_data(config_entry)
+    if runtime is None or PLATFORM not in runtime.platforms:
         return True
 
-    _configured_climate_devices = hass.data[DOMAIN][mac][CONF_PLATFORMS][PLATFORM]
+    _configured_climate_devices = runtime.platforms[PLATFORM]
 
     for _climate_device in list(_configured_climate_devices.keys()):
-        del hass.data[DOMAIN][mac][CONF_PLATFORMS][PLATFORM][_climate_device]
+        del runtime.platforms[PLATFORM][_climate_device]
     return True
 
 

@@ -16,6 +16,7 @@ from custom_components.myhome.cover import (
     async_stop_cover_calibration,
     get_last_calibration_trace,
 )
+from tests.conftest import attach_runtime, bind_entity
 
 
 @pytest.fixture(autouse=True)
@@ -401,6 +402,7 @@ async def test_button_platform_creates_calibration_buttons_for_registered_and_di
     hass.data[DOMAIN] = {gateway.mac: {CONF_PLATFORMS: {"button": {}}, CONF_ENTITY: gateway}}
 
     added = []
+    attach_runtime(hass, entry)
     await async_setup_entry(hass, entry, lambda ents: added.extend(ents))
     calib = [e for e in added if isinstance(e, CalibrateCoverButtonEntity)]
     assert sorted(e.unique_id for e in calib) == sorted([f"{gateway.mac}-2-21-calibrate", f"{gateway.mac}-2-22#4#02-calibrate"])
@@ -635,41 +637,6 @@ async def test_cover_async_stop_calibration_method(hass, gateway):
         mock_stop.assert_awaited_once_with(hass, gateway_mac=gateway.mac)
 
 
-async def test_set_travel_time_validation(hass, gateway):
-    """Validate boundary checks and arguments for setting travel time."""
-    cover = _make_cover(hass, gateway)
-
-    # 1. Advanced cover cannot set travel time
-    adv_cover = _make_cover(hass, gateway, advanced=True)
-    with pytest.raises(HomeAssistantError, match="reports its position"):
-        await adv_cover.async_set_travel_time(travel_time=15)
-
-    # 2. No arguments specified
-    with pytest.raises(HomeAssistantError, match="At least travel_time or travel_time_down/up"):
-        await cover.async_set_travel_time()
-
-    # 3. down out of bounds
-    with pytest.raises(HomeAssistantError, match="travel_time_down must be between"):
-        await cover.async_set_travel_time(travel_time_down=0.5)
-    with pytest.raises(HomeAssistantError, match="travel_time_down must be between"):
-        await cover.async_set_travel_time(travel_time_down=350)
-
-    # 4. up out of bounds
-    with pytest.raises(HomeAssistantError, match="travel_time_up must be between"):
-        await cover.async_set_travel_time(travel_time_up=0.5)
-    with pytest.raises(HomeAssistantError, match="travel_time_up must be between"):
-        await cover.async_set_travel_time(travel_time_up=350)
-
-    # 5. Independent down and up setting
-    await cover.async_set_travel_time(travel_time_down=18.0)
-    assert cover._travel_time_down == 18.0
-    assert cover._travel_time_up == 25.0
-
-    await cover.async_set_travel_time(travel_time_up=22.0)
-    assert cover._travel_time_down == 18.0
-    assert cover._travel_time_up == 22.0
-
-
 async def test_reset_travel_time_advanced_and_yaml(hass, gateway):
     """Reset travel time refuses advanced covers and honors YAML config."""
     from custom_components.myhome.const import CONF_PLATFORMS, CONF_TRAVEL_TIME, DOMAIN
@@ -678,7 +645,7 @@ async def test_reset_travel_time_advanced_and_yaml(hass, gateway):
     with pytest.raises(HomeAssistantError, match="reports its position"):
         await adv_cover.async_reset_travel_time()
 
-    # With YAML configuration in hass.data
+    # With YAML configuration on the entry's runtime data (seeded through the legacy mapping)
     cover = _make_cover(hass, gateway)
     hass.data[DOMAIN] = {
         gateway.mac: {
@@ -689,6 +656,7 @@ async def test_reset_travel_time_advanced_and_yaml(hass, gateway):
             }
         }
     }
+    bind_entity(hass, cover, gateway.mac, gateway)
     await cover.async_reset_travel_time()
     assert cover._travel_time_down == 32.0
     assert cover._travel_time_up == 32.0
@@ -940,3 +908,165 @@ async def test_set_position_re_anchor_does_not_shorten_the_measured_run(hass, ga
     stop_written.set_result(clock.now)
     await _yield()
     assert cover.extra_state_attributes["last_run_seconds"] == pytest.approx(12.5, abs=0.6)
+
+
+# ── exception translations (quality-scale exception-translations) ────────
+
+
+async def test_set_travel_time_validation_raises_translated_service_errors(hass, gateway):
+    """Bad service input is a ServiceValidationError carrying a translation key."""
+    from homeassistant.exceptions import ServiceValidationError
+
+    cover = _make_cover(hass, gateway)
+
+    with pytest.raises(ServiceValidationError, match="must be specified") as err:
+        await cover.async_set_travel_time()
+    assert err.value.translation_key == "travel_time_missing"
+
+    with pytest.raises(ServiceValidationError, match="travel_time_down must be between") as err:
+        await cover.async_set_travel_time(travel_time_down=0.2, travel_time_up=20)
+    assert err.value.translation_placeholders["field"] == "travel_time_down"
+
+    with pytest.raises(ServiceValidationError, match="travel_time_up must be between") as err:
+        await cover.async_set_travel_time(travel_time_down=20, travel_time_up=999)
+    assert err.value.translation_placeholders["field"] == "travel_time_up"
+
+    advanced = MyHOMECover(hass=hass, name="Pos", entity_name=None, device_id="31", who="2", where="31",
+                           interface=None, advanced=True, manufacturer="BTicino", model="F401", gateway=gateway)
+    for coro in (advanced.async_set_travel_time(travel_time=10), advanced.async_reset_travel_time()):
+        with pytest.raises(HomeAssistantError) as err:
+            await coro
+        assert err.value.translation_key == "cover_reports_position"
+
+
+def test_every_raised_translation_key_is_defined():
+    """Every literal translation_key used by a raised exception exists in strings.json and en.json."""
+    import json
+    import re
+    from pathlib import Path
+
+    root = Path("custom_components/myhome")
+    # Repair issues pass their keys as constants; literal keys are only used by exceptions.
+    raised = {
+        key
+        for source in root.glob("*.py")
+        for key in re.findall(r'translation_key="([a-z_]+)"', source.read_text(encoding="utf-8"))
+    }
+    assert raised, "no translated exceptions found"
+    for name in ("strings.json", "translations/en.json"):
+        defined = set(json.loads((root / name).read_text(encoding="utf-8"))["exceptions"])
+        missing = raised - defined
+        assert not missing, f"{name} lacks exception translations for {sorted(missing)}"
+
+
+# ── coverage of the stop / manual travel-time paths ──────────────────────
+
+
+def test_calibration_lock_outside_an_event_loop(gateway):
+    """The per-gateway lock can be created from sync code (no running loop)."""
+    from custom_components.myhome.cover import _CALIBRATION_LOCKS, _calibration_lock
+
+    _CALIBRATION_LOCKS.pop(gateway.mac, None)
+    lock = _calibration_lock(gateway)
+    assert lock is _calibration_lock(gateway)
+
+
+async def test_stop_cover_calibration_targets_one_gateway_and_survives_stop_errors(hass, gateway, clock, fake_time, sleeps, caplog):
+    """A MAC filter leaves other gateways alone; a failing stop command is logged, not raised."""
+    cover = _make_cover(hass, gateway)
+    task = asyncio.create_task(cover.async_calibrate())
+    await _yield()
+    assert cover._calibrating is True
+
+    _, written = gateway.deliveries[-1]
+    written.set_result(clock.now)
+    await _yield()
+
+    # Another gateway's MAC: nothing is stopped
+    assert await async_stop_cover_calibration(hass, "00:03:50:ff:ff:ff") is False
+    assert cover._calibrating is True
+
+    # This gateway, but the stop command fails on the bus
+    with patch.object(cover, "async_stop_cover", AsyncMock(side_effect=RuntimeError("bus down"))):
+        assert await async_stop_cover_calibration(hass, gateway.mac) is True
+    assert "Error stopping cover" in caplog.text
+    with pytest.raises(CalibrationInterrupted):
+        await asyncio.wait_for(task, 2)
+
+
+async def test_entity_stop_calibration_service_targets_its_gateway(hass, gateway):
+    """cover.async_stop_calibration forwards the gateway MAC to the stop helper."""
+    cover = _make_cover(hass, gateway)
+    with patch("custom_components.myhome.cover.async_stop_cover_calibration", AsyncMock(return_value=True)) as stop:
+        await cover.async_stop_calibration()
+    stop.assert_awaited_once_with(hass, gateway_mac=gateway.mac)
+
+
+async def test_set_travel_time_one_direction(hass, gateway):
+    """Only up given keeps the current down; only down given applies to both."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.const import DOMAIN
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": gateway.mac}, unique_id="entry_one_dir", options={})
+    entry.add_to_hass(hass)
+    gateway.config_entry = entry
+    cover = _make_cover(hass, gateway)
+
+    res = await cover.async_set_travel_time(travel_time_up=19.0)
+    assert res["down"] == 25.0 and res["up"] == 19.0
+    # Only "down" given: "up" follows it (there is no separate default for up)
+    res = await cover.async_set_travel_time(travel_time_down=17.0)
+    assert res["down"] == 17.0 and res["up"] == 17.0
+
+
+async def test_reset_travel_time_returns_to_yaml_value(hass, gateway):
+    """Reset falls back to the myhome.yaml travel_time when the device has one."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.const import CONF_TRAVEL_TIME, DOMAIN
+    from tests.conftest import bind_entity
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": gateway.mac}, unique_id="entry_yaml_reset", options={})
+    entry.add_to_hass(hass)
+    gateway.config_entry = entry
+    cover = _make_cover(hass, gateway)
+    bound = bind_entity(hass, cover, gateway.mac, gateway)
+    bound.runtime_data.platforms.setdefault("cover", {})["21"] = {CONF_TRAVEL_TIME: 31}
+
+    await cover.async_set_travel_time(travel_time=12.0)
+    await cover.async_reset_travel_time()
+    assert cover._travel_time_down == 31.0 and cover._travel_time_up == 31.0
+    assert cover.extra_state_attributes["calibration_source"] == "yaml"
+
+
+async def test_general_frames_are_ignored_while_calibrating(hass, gateway, clock, fake_time, sleeps):
+    """A general (WHERE=0) command during calibration does not interrupt the run."""
+    cover = _make_cover(hass, gateway)
+    task = asyncio.create_task(cover.async_calibrate())
+    await _yield()
+    assert cover._calibrating is True
+    cover.handle_event(OWNEvent.parse("*2*2*0##"))  # general close from a wall switch
+    await _yield()
+    assert cover._calibration_interrupted is None
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+def test_stop_frame_derives_is_closed_from_position(hass, gateway):
+    """A stop status without an explicit closed flag uses the tracked position."""
+    cover = _make_cover(hass, gateway)
+    cover._attr_current_cover_position = 0
+    cover.handle_event(OWNEvent.parse("*2*0*21##"))
+    assert cover.is_closed is True
+    cover._attr_current_cover_position = 40
+    cover.handle_event(OWNEvent.parse("*2*0*21##"))
+    assert cover.is_closed is False
+    # A dimension-10 position report at 0 % carries an explicit closed flag
+    cover.handle_event(OWNEvent.parse("*#2*21*10*10*0*001*0##"))
+    assert cover.is_closed is True
+    # A WHAT=10 status (stopped, position known to the actuator) says "not closed" explicitly
+    cover._attr_current_cover_position = 40
+    cover.handle_event(OWNEvent.parse("*2*10*21##"))
+    assert cover._attr_is_closed is False

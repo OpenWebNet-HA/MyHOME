@@ -7,6 +7,8 @@ import platform
 import subprocess
 import sys
 import warnings
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 # Python 3.13 compatibility for pytest-homeassistant-custom-component:
 # In Python 3.13, HassEventLoopPolicy.get_event_loop() raises RuntimeError when
@@ -237,15 +239,70 @@ def snapshot(snapshot: SnapshotAssertion) -> SnapshotAssertion:
 
 
 
+def attach_runtime(hass, config_entry, mac=None, gateway=None):
+    """Bind a ``MyHOMERuntimeData`` to ``config_entry`` from a seeded legacy mapping.
+
+    Many tests describe a gateway as ``hass.data[DOMAIN][mac] = {"entity": gw,
+    "platforms": {...}}`` the way the integration stored it before the
+    ``runtime-data`` migration. Production code only reads
+    ``entry.runtime_data`` now, so this builds the typed container over the
+    *same* dict objects (mutations stay visible through both paths) and attaches
+    it to the entry. Returns the runtime data.
+    """
+    from custom_components.myhome.const import CONF_ENTITIES, CONF_ENTITY, CONF_PLATFORMS, DOMAIN
+    from custom_components.myhome.data import MyHOMERuntimeData
+
+    if mac is None:
+        mac = config_entry.data.get("mac")
+    domain_data = hass.data.setdefault(DOMAIN, {}) if isinstance(hass.data, dict) else {}
+    legacy = domain_data.setdefault(mac, {}) if mac is not None else {}
+    if gateway is None:
+        gateway = legacy.get(CONF_ENTITY)
+    if gateway is None:
+        gateway = MagicMock()
+        gateway.mac = mac
+    legacy.setdefault(CONF_ENTITY, gateway)
+    runtime = MyHOMERuntimeData(
+        gateway=gateway,
+        platforms=legacy.setdefault(CONF_PLATFORMS, {}),
+        entities=legacy.setdefault(CONF_ENTITIES, {}),
+        decoder_pool=legacy.get("decoder_pool"),
+    )
+    config_entry.runtime_data = runtime
+    return runtime
+
+
+def attach_platform(entity, config_entry):
+    """Give a directly constructed entity the platform link HA would set.
+
+    Entities reach their runtime data through ``self.platform.config_entry``;
+    tests that instantiate entities without an EntityPlatform use this to
+    provide it.
+    """
+    entity.platform = SimpleNamespace(config_entry=config_entry)
+    return entity
+
+
+def bind_entity(hass, entity, mac=None, gateway=None):
+    """Attach a directly built entity to a config entry backed by the seeded legacy mapping.
+
+    Combines :func:`attach_runtime` and :func:`attach_platform`; returns the entry.
+    """
+    entry = MagicMock()
+    entry.data = {"mac": mac if mac is not None else getattr(entity._gateway_handler, "mac", None)}
+    attach_runtime(hass, entry, entry.data["mac"], gateway or entity._gateway_handler)
+    attach_platform(entity, entry)
+    return entry
+
+
 @pytest.fixture
 def attach_gateway(hass):
     """Return a helper that registers a gateway the way async_setup_entry does.
 
     Creates a config entry for ``mac`` and exposes ``gateway`` through
-    ``entry.runtime_data`` (the source of truth) and, unless ``legacy_only``
-    is False, the backwards-compatible ``hass.data[DOMAIN][mac]`` mapping.
-    ``legacy_only=True`` leaves ``runtime_data`` unset to exercise the
-    fallback path for entries that have not been migrated yet.
+    ``entry.runtime_data`` (the only source of truth) and the deprecated
+    ``hass.data[DOMAIN][mac]`` alias. ``legacy_only=True`` leaves
+    ``runtime_data`` unset, i.e. an entry that is not set up.
     """
     from homeassistant.const import CONF_MAC
     from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -260,7 +317,7 @@ def attach_gateway(hass):
         domain_data = hass.data.setdefault(DOMAIN, {})
         domain_data[mac] = {CONF_ENTITY: gateway, "bus_monitor": getattr(gateway, "bus_monitor", None)}
         if not legacy_only:
-            entry.runtime_data = gateway
+            attach_runtime(hass, entry, mac, gateway)
         return entry
 
     return _attach

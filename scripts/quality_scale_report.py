@@ -229,6 +229,9 @@ def main(argv: list[str] | None = None) -> int:
     result = audit(manifest)
     report = markdown(result)
     if not args.quiet:
+        # The report carries tier medals; a cp1252 console (Windows default) cannot encode them.
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         print(report)
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:

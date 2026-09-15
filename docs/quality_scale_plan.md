@@ -1,16 +1,16 @@
 # Integration Quality Scale plan: MyHOME → 🏆 Platinum
 
-_Status on 2026-09-13 (`scripts/quality_scale_report.py`): **no tier reached yet** — 38/54 rules satisfied. 🥈 Silver is 10/10, but 🥉 Bronze is blocked by 4 rules, so nothing is awarded. There is no "Diamond" tier in the official scale; the top is 🏆 Platinum. Tiers are formally awarded only by Home Assistant core review — this plan gets the self-audit there, which is the precondition for the upstream submission in ROADMAP Phase 5._
+_Status on 2026-09-14 (`scripts/quality_scale_report.py`): **no tier reached yet** — 50/54 rules satisfied (Bronze 18/20, Silver 10/10, Gold 20/21, Platinum 2/3). Phases 0–4 are done except the two decisions below; 🥉 Bronze is blocked by `brands` and `has-entity-name`, so nothing is awarded yet. There is no "Diamond" tier in the official scale; the top is 🏆 Platinum. Tiers are formally awarded only by Home Assistant core review — this plan gets the self-audit there, which is the precondition for the upstream submission in ROADMAP Phase 5._
 
 Reference: <https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/>  
 Manifest: [`custom_components/myhome/quality_scale.yaml`](../custom_components/myhome/quality_scale.yaml)
 
-## Phase 0 — Land what's in flight (prerequisite)
+## Phase 0 — Land what's in flight (prerequisite) — ✅ done
 
 - Finish, test and merge `feat/cover-calibration` (`cover.py`, the bus-monitor card, `services.py`). It adds new services and ~10 new `HomeAssistantError` raises that Phases 2–4 must cover (`docs-actions`, `exception-translations`); doing quality work on an unmerged branch means doing it twice.
 - Fix the local crash in `scripts/quality_scale_report.py` (cp1252 `UnicodeEncodeError` on Windows — `sys.stdout.reconfigure(encoding="utf-8")`) so the report is runnable locally, not only in CI.
 
-## Phase 1 — 🥉 Bronze (4 rules → the tier appears on the badge)
+## Phase 1 — 🥉 Bronze (4 rules → the tier appears on the badge) — 2 of 4 done
 
 | Rule | Work | Size |
 |---|---|---|
@@ -19,7 +19,7 @@ Manifest: [`custom_components/myhome/quality_scale.yaml`](../custom_components/m
 | `has-entity-name` | **Decision first, then code.** `myhome_device.py` sets `_attr_has_entity_name = False`; buttons already set `True`. Existing installs keep their `entity_id` (the registry keys on `unique_id`, it does not rename), so the breakage is limited to new installs / `myhome.yaml` users relying on generated ids. Proposal: close the community RFC with "migrate in 2.0.0 final, document the naming change"; set `_attr_name = None` on primary entities (one device = one entity), drop manual `self.entity_id` overrides, ship a migration note. | L |
 | `brands` | Open the PR to `home-assistant/brands` (icon + logo, 256/512 px). External latency — open it in week 1 so it is not the last blocker. | S (+ wait) |
 
-## Phase 2 — 🥇 Gold: documentation (4 rules, no code risk)
+## Phase 2 — 🥇 Gold: documentation (4 rules, no code risk) — ✅ done
 
 - `docs-known-limitations` — consolidate the deferred items in ROADMAP (RFC #248 list), gateway-profile gaps and `protocol_conformance_matrix.md` into one page.
 - `docs-troubleshooting` — generalise the README "🩹 Troubleshooting" loader-error section: connection/password failures, NACKs, bus-monitor permissions, log lines to look for.
@@ -28,7 +28,7 @@ Manifest: [`custom_components/myhome/quality_scale.yaml`](../custom_components/m
 
 Most material already exists (`runtime_behaviour.md`, `protocol_conformance_matrix.md`, ROADMAP); this is mostly consolidation.
 
-## Phase 3 — 🥇 Gold: entity audit (3 `in_progress` rules)
+## Phase 3 — 🥇 Gold: entity audit (3 `in_progress` rules) — ✅ done (`tests/test_entity_audit.py`)
 
 One pass over the 9 platforms producing a table `platform × entity → device_class / entity_category / enabled_by_default`:
 
@@ -38,7 +38,7 @@ One pass over the 9 platforms producing a table `platform × entity → device_c
 
 Add a parametrised test that asserts the table so it cannot regress.
 
-## Phase 4 — 🥇 Gold: code rules (4 rules)
+## Phase 4 — 🥇 Gold: code rules (4 rules) — 3 of 4 done (`entity-translations` waits for Phase 1)
 
 | Rule | Work |
 |---|---|
