@@ -86,6 +86,12 @@ authorities:
         date: "2026-09-15"
         gateway: "BTicino F454"
         devices: "Burglar alarm central unit (WHO 5) 8 zones, auxiliary channels (WHO 9)"
+      - name: "Physical Bus Capture (BTicino MyHomeServer1 + Climate Actuator WHO 4)"
+        reference: "https://github.com/OpenWebNet-HA/MyHOME/issues/333"
+        author: "issue #333 reporter (anonymized plant fixture)"
+        date: "2026-09-15"
+        gateway: "BTicino MyHomeServer1"
+        devices: "Thermoregulation 3550 central unit (#0), 6 zones (LN4691), F430R8 actuators"
     role: "Provides authentic on-wire bus frames and status replies captured from live physical hardware."
 
 

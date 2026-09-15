@@ -1237,6 +1237,93 @@
     "_file": "who04_thermo.yaml"
   },
   {
+    "id": "thermo.resp.actuator.status.on.zone2.act1",
+    "frame": "*#4*2#1*20*1##",
+    "direction": "dimension_response",
+    "who": 4,
+    "what": null,
+    "where": "2",
+    "dimension": 20,
+    "dimension_values": [
+      "1"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Thermoregulation: Zone 2 actuator 1 status ON (heating)",
+    "roundtrip": true,
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.resp.actuator.status.off.zone2.act1",
+    "frame": "*#4*2#1*20*0##",
+    "direction": "dimension_response",
+    "who": 4,
+    "what": null,
+    "where": "2",
+    "dimension": 20,
+    "dimension_values": [
+      "0"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Thermoregulation: Zone 2 actuator 1 status OFF (idle)",
+    "roundtrip": true,
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.resp.probe.status.zone2.heat.280",
+    "frame": "*#4*2*12*0280*3##",
+    "direction": "dimension_response",
+    "who": 4,
+    "what": null,
+    "where": "2",
+    "dimension": 12,
+    "dimension_values": [
+      "0280",
+      "3"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Thermoregulation: Zone 2 complete probe status target 28.0\u00b0C in Heating mode",
+    "roundtrip": true,
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.resp.setpoint.zone2.heat.280",
+    "frame": "*#4*2*14*0280*3##",
+    "direction": "dimension_response",
+    "who": 4,
+    "what": null,
+    "where": "2",
+    "dimension": 14,
+    "dimension_values": [
+      "0280",
+      "3"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Thermoregulation: Zone 2 probe setpoint 28.0\u00b0C in Heating mode",
+    "roundtrip": true,
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.resp.temp.zone2.262",
+    "frame": "*#4*2*0*0262##",
+    "direction": "dimension_response",
+    "who": 4,
+    "what": null,
+    "where": "2",
+    "dimension": 0,
+    "dimension_values": [
+      "0262"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Thermoregulation: Zone 2 measured temperature 26.2\u00b0C",
+    "roundtrip": true,
+    "_file": "who04_thermo.yaml"
+  },
+  {
     "id": "alarm.req.status.zone2",
     "frame": "*#5*2##",
     "direction": "status_request",
