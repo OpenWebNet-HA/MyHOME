@@ -310,7 +310,7 @@ def test_gateway_info_normalises_none_firmware():
     gw.gateway.model_name = "MH200N"
     gw.gateway.manufacturer = "BTicino S.p.A."
     gw.gateway.firmware = "None"
-    gw.gateway.host = "192.168.1.40"
+    gw.gateway.host = "192.0.2.40"
     gw.gateway.port = 20000
     gw.mac = "00:03:50:00:48:71"
     gw.sending_workers = []
