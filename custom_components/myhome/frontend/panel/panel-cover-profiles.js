@@ -250,6 +250,8 @@ export class CoverProfileEditor {
       </section>
       ${!data.writable ? `<p class="notice">${esc(t(`profileError_${data.reason}`))}</p>` : ""}
       <label>${esc(t("calMode"))}<select id="cal-mode" ${disabled}><option value="guided">${esc(t("calGuided"))}</option><option value="automatic">${esc(t("calAutomatic"))}</option></select></label>
+      <label>${esc(t("calScope"))}<select id="cal-direction" ${disabled}><option value="">${esc(t("calBothDirections"))}</option><option value="opening" ${assigned ? "" : "disabled"}>${esc(t("calOnlyOpening"))}</option><option value="closing" ${assigned ? "" : "disabled"}>${esc(t("calOnlyClosing"))}</option></select></label>
+      <p class="muted">${esc(t("calQuickRequirement"))}</p>
       <button type="button" id="profile-calibrate" class="profile-calibrate" ${disabled}><ha-icon icon="mdi:timer-outline" aria-hidden="true"></ha-icon><span>${esc(t("calTitle"))}</span></button>
       <button type="button" id="profile-calibrate-batch" ${disabled}>${esc(t("calBatchTitle"))}</button>
       <form id="profile-form">
@@ -288,11 +290,18 @@ export class CoverProfileEditor {
         <button type="button" id="profile-reload" hidden><ha-icon icon="mdi:reload" aria-hidden="true"></ha-icon><span>${esc(t("profileReload"))}</span></button>
       </form>`;
     host.querySelector("#profile-calibrate-batch").onclick = () => this._selectBatch();
+    host.querySelector("#cal-mode").onchange = () => {
+      const scope = host.querySelector("#cal-direction");
+      scope.disabled = !data.writable || host.querySelector("#cal-mode").value === "automatic";
+      if (scope.disabled) scope.value = "";
+    };
     host.querySelector("#profile-calibrate").onclick = () => {
       if (this._saving === this._generation || !data.writable || this._stale) return;
       this._calibrating = true;
       const context = this._context;
-      this._calibration.open({ ...context, mode: host.querySelector("#cal-mode").value, host: host.querySelector("#profile-body"), revision: data.revision,
+      const mode = host.querySelector("#cal-mode").value;
+      const direction = mode === "guided" && assigned ? host.querySelector("#cal-direction").value : "";
+      this._calibration.open({ ...context, mode, direction, host: host.querySelector("#profile-body"), revision: data.revision,
         onCancel: () => this.open(context), onSaved: () => { context.onSaved(t("saved")); this.open(context); } });
     };
     const form = host.querySelector("#profile-form");

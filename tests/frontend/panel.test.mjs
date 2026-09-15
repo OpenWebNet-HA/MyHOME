@@ -28,7 +28,7 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
-    panel_version: "0.19.0",
+    panel_version: "0.20.0",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
@@ -171,7 +171,7 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
-  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.19.0");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.20.0");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
   root.querySelector('[data-view="entities"]').click();
   assert.equal(root.querySelectorAll(".device-group").length, 3);
@@ -1169,4 +1169,33 @@ test("batch selector ignores a late target response after navigation", async () 
   change(root.querySelector("#gateway"), "two");
   pending.resolve({ targets: [], max_batch: 20, revision: 3 }); await tick();
   assert.equal(root.querySelector("dialog"), null);
+});
+
+
+test("single-direction choice uses saved assignment and resets when switching to automatic", async () => {
+  const { root, hass, calls } = await mountProfiles();
+  let request;
+  hass.connection.subscribeMessage = async (_callback, message) => { request = message; return () => {}; };
+  openProfile(root); await tick();
+  const scope = root.querySelector("#cal-direction");
+  assert.equal(scope.value, "");
+  change(scope, "closing"); change(root.querySelector("#cal-mode"), "automatic");
+  assert.equal(scope.value, ""); assert.equal(scope.disabled, true);
+  change(root.querySelector("#cal-mode"), "guided");
+  assert.equal(scope.disabled, false); change(scope, "opening");
+  // An unsaved editor draft never becomes the calibration source.
+  root.querySelector('#profile-form [name="closing_time"]').value = "99";
+  root.querySelector("#profile-calibrate").click(); await tick();
+  assert.equal(request.direction, "opening"); assert.equal(request.revision, 3);
+  assert.equal("profile" in request, false); assert.equal("values" in request, false);
+  assert.equal(calls.filter((c) => c.type === "myhome/cover_calibration/action").length, 0);
+});
+
+test("single-direction options require an assigned saved profile", async () => {
+  const { root } = await mountProfiles({ read: () => coverProfileData({ assigned_profile_id: null }) });
+  openProfile(root); await tick();
+  const scope = root.querySelector("#cal-direction");
+  assert.equal(scope.querySelector('[value="opening"]').disabled, true);
+  assert.equal(scope.querySelector('[value="closing"]').disabled, true);
+  assert.equal(scope.querySelector('[value=""]').disabled, false);
 });

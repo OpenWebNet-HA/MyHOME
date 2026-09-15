@@ -11,7 +11,7 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
 const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
 const t = (key) => translations.it[key] || translations.en[key] || key;
 
-async function mount({ call, subscribe, entity_ids, mode = "guided" } = {}) {
+async function mount({ call, subscribe, entity_ids, direction, mode = "guided" } = {}) {
   const host = document.createElement("section");
   document.body.append(host);
   const controller = new CoverCalibration();
@@ -20,6 +20,8 @@ async function mount({ call, subscribe, entity_ids, mode = "guided" } = {}) {
   let callback, stopped = 0, saved = 0, cancelled = 0;
   let state = { entry_id: "one", entity_id: "cover.bedroom", session_id: "session-one", sequence: 1,
     revision: 4, mode, run_index: 0, phase: mode === "automatic" ? "confirm_automatic" : "confirm_closed", reason: null, values: {}, elapsed: null, stop_requested: false };
+  if (direction) Object.assign(state, { direction, phase: direction === "closing" ? "confirm_open" : "confirm_closed",
+    values: direction === "closing" ? { opening_time: 25.5 } : { closing_time: 32.25 } });
   if (entity_ids) Object.assign(state, { batch: true, cover_index: 0, results: [],
     targets: entity_ids.map((id) => ({ entity_id: id, name: id })) });
   const push = (extra) => { state = { ...state, sequence: state.sequence + 1, ...extra }; callback(state); };
@@ -33,7 +35,7 @@ async function mount({ call, subscribe, entity_ids, mode = "guided" } = {}) {
     return { ...state, sequence: state.sequence + (message.action === "heartbeat" ? 0 : 1),
       phase: phases[message.action] || state.phase };
   } };
-  await controller.open({ host, hass, entity: { entry_id: "one", entity_id: "cover.bedroom" }, revision: 4, mode, entity_ids,
+  await controller.open({ host, hass, entity: { entry_id: "one", entity_id: "cover.bedroom" }, revision: 4, mode, entity_ids, direction,
     t, onSaved: () => { saved++; }, onCancel: () => { cancelled++; } });
   return { host, controller, calls, starts, push, counts: () => ({ stopped, saved, cancelled }) };
 }
@@ -229,3 +231,29 @@ test("batch interruptions discard the review and escape target names", async () 
   assert.match(host.querySelector("#cal-targets").textContent, /Misura scartata/);
   assert.equal(host.querySelector("#cal-stop").disabled, false);
 });
+
+
+for (const direction of ["opening", "closing"]) {
+  test(`quick ${direction} confirms only the selected leg and distinguishes the retained value`, async () => {
+    const { host, starts, calls, push } = await mount({ direction });
+    assert.equal(starts[0].direction, direction);
+    assert.equal(calls.length, 0);
+    assert.equal(host.querySelector(".cal-steps").hidden, true);
+    assert.match(host.querySelector(".cal-help").textContent, direction === "opening" ? /completamente chiusa/ : /completamente aperta/);
+    assert.equal(host.querySelector('[data-cal-action="open"]').hidden, direction !== "opening");
+    assert.equal(host.querySelector('[data-cal-action="close"]').hidden, direction !== "closing");
+    push({ phase: direction, elapsed: 12.75 });
+    host.querySelector('[data-cal-action="endpoint"]').click(); await tick();
+    assert.equal(calls[0].action, "endpoint");
+    push({ phase: "review", values: { opening_time: 12.75, closing_time: 32.25 } });
+    assert.match(host.querySelector("#cal-values").textContent, /Misurato in questa sessione/);
+    assert.match(host.querySelector("#cal-values").textContent, /Conservato dal profilo assegnato/);
+    assert.equal(host.querySelector('[data-cal-action="open"]').hidden, true);
+    assert.equal(host.querySelector('[data-cal-action="close"]').hidden, true);
+    const form = host.querySelector("#cal-save"); form.elements.profile_name.value = "Nuova copia";
+    form.dispatchEvent(new dom.window.Event("submit", { cancelable: true })); await tick();
+    const save = calls.find((message) => message.action === "save");
+    assert.equal(save.name, "Nuova copia");
+    assert.equal("values" in save, false); assert.equal("direction" in save, false);
+  });
+}

@@ -1,6 +1,6 @@
 # MyHOME panel API: implemented reference
 
-Status: **implemented through panel 0.19.0**. The original profile contract was reviewed against
+Status: **implemented through panel 0.20.0**. The original profile contract was reviewed against
 [`02ce199`](https://github.com/xtimmy86x/MyHOME/tree/02ce19908787297c1a6e2a65d56a289e766c0695).
 Panel 0.10.0 adds a [guided-measurement session API](cover-calibration.md) and
 `calibration_busy` refusals on profile writes while a measurement is active. The
@@ -518,3 +518,35 @@ error applies none of the proposed changes and retains review while connected.
 Closing during an accepted disk write does not roll it back. Stop/Cancel, socket
 cleanup, HA shutdown and lease behavior otherwise use the shared session contract.
 Storage remains v4 and export remains v2, containing only committed profiles.
+
+
+## Single-direction guided extension (0.20.0)
+
+The existing admin-only `myhome/cover_calibration/start` accepts optional
+`direction: opening` or `direction: closing` in guided mode:
+
+```json
+{"id":40,"type":"myhome/cover_calibration/start","entry_id":"ENTRY","entity_id":"cover.bedroom","revision":4,"direction":"closing"}
+```
+
+Omitting `direction` retains the full two-direction wizard. Combining it with
+`mode: automatic` is refused with `invalid_profile`; batch start does not accept
+this field. Under the profile lock, start validates the revision and target and
+requires an assigned saved profile (`calibration_profile_required` otherwise).
+No browser-supplied profile ID, time or evidence determines the retained value.
+Starting reserves the session and emits its initial state without any movement.
+
+Single-direction states add `direction` to the ordinary session fields. Initial
+`values` contains only the retained opposite time, copied from the assigned
+profile along with its backend-only provenance. `closing` starts in `confirm_open`;
+`opening` starts in `confirm_closed`. The matching `close` or `open` action confirms
+the physical starting endpoint, bus feedback starts the clock, and `endpoint`
+records guided evidence and requests Stop. The next phase is immediately `review`.
+The other leg cannot be started from review. The UI identifies which value was
+measured and which was retained.
+
+Save uses the existing action with `name` and current sequence. It creates and
+assigns a new profile with both times, preserving the opposite evidence exactly
+(including inherited origins or unknown metadata). Existing/shared profiles remain
+unchanged. Storage v4, export v2, revision/ownership checks, error handling and
+session cancellation semantics are unchanged. Unsaved values never enter export.

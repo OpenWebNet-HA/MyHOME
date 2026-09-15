@@ -1,4 +1,4 @@
-# Guided and automatic travel measurement — panel 0.19.0
+# Guided and automatic travel measurement — panel 0.20.0
 
 This experimental wizard measures **one standard cover's full opening and closing
 times**. It extends our linear timing profiles; it is not the calibration fork's
@@ -142,6 +142,38 @@ If cancellation races a save that has already entered persistence, that accepted
 save may finish; closing the wizard does not roll it back. Reopen the profile
 editor to see the authoritative assignment after an uncertain response.
 
+## Measure one direction (0.20.0)
+
+In **Travel profile**, select **Guided measurement**, then **Opening only** or
+**Closing only** under **Directions to measure**. A saved profile must already be
+assigned to this cover. Save any intended profile edits before opening the wizard;
+the backend takes the opposite direction from the assigned, committed profile.
+The single-direction options are disabled without an assignment. Automatic mode
+uses the complete cycle and resets the direction selector to both directions.
+
+For opening, first position the cover fully closed and stopped; for closing,
+start fully open and stopped. Confirm the starting endpoint to request movement,
+then record the opposite physical endpoint with the existing guided control.
+Timing starts at matching bus feedback and includes operator reaction delay at
+the endpoint. The wizard requests Stop and goes directly to review after that
+one leg. It never starts the other direction. The review labels the measured time
+and the retained time separately.
+
+The retained value keeps its original source, date and origin, including inherited
+or unknown evidence. Only the measured direction gets new guided provenance.
+Explicit Save creates and assigns a new profile copy; the original profile and
+other covers using it are untouched. Stop, Cancel, errors or connection loss
+before Save discard the provisional copy. Shared ownership, revision checks,
+lease, queue guards and persistence semantics remain in force. A save error keeps
+review available while connected; an accepted disk write may finish after closing.
+Storage v4 and export v2 are unchanged.
+
+For the physical check, note the assigned closing time and its origin/date, measure
+opening only, and save. Verify that only opening changed, that closing evidence
+is identical, and that another cover using the old profile is unchanged. Repeat
+with closing only starting fully open; also cancel an attempt before saving.
+Single-direction physical validation is pending.
+
 ## Selected-cover automatic measurement (0.19.0)
 
 **Travel profile → Calibrate a selection** lists this gateway's native covers.
@@ -178,14 +210,15 @@ starts only after the first completes. Check both directional times and Save;
 reopen both profiles to verify their separate automatic origins and dates. In a
 second attempt, use Stop during the first cover or the between-cover pause:
 verify that no following cover moves and the previous saved profiles remain.
-Single-cover automatic operation was confirmed by the user; this group check is
-still pending.
+The user has confirmed both single-cover and selected-cover automatic operation
+on their installation.
 
 ## Experimental WebSocket contract
 
 The following two commands are implemented in 0.10.0. They are separate from the
 unimplemented `myhome/covers/*` names in the [shared proposal](panel-shared-contract.md).
-Both require administrator authorization before their handlers run.
+Both require administrator authorization before their handlers run. Single-direction
+requests extend `start` as documented in the [0.20.0 API extension](panel-websocket-api.md#single-direction-guided-extension-0200).
 
 ### Start and subscribe
 

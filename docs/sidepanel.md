@@ -15,6 +15,38 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Measure one direction (0.20.0)
+
+In **Travel profile**, select **Guided measurement**, then **Opening only** or
+**Closing only** under **Directions to measure**. A saved profile must already be
+assigned to this cover. Save any intended profile edits before opening the wizard;
+the backend takes the opposite direction from the assigned, committed profile.
+The single-direction options are disabled without an assignment. Automatic mode
+uses the complete cycle and resets the direction selector to both directions.
+
+For opening, first position the cover fully closed and stopped; for closing,
+start fully open and stopped. Confirm the starting endpoint to request movement,
+then record the opposite physical endpoint with the existing guided control.
+Timing starts at matching bus feedback and includes operator reaction delay at
+the endpoint. The wizard requests Stop and goes directly to review after that
+one leg. It never starts the other direction. The review labels the measured time
+and the retained time separately.
+
+The retained value keeps its original source, date and origin, including inherited
+or unknown evidence. Only the measured direction gets new guided provenance.
+Explicit Save creates and assigns a new profile copy; the original profile and
+other covers using it are untouched. Stop, Cancel, errors or connection loss
+before Save discard the provisional copy. Shared ownership, revision checks,
+lease, queue guards and persistence semantics remain in force. A save error keeps
+review available while connected; an accepted disk write may finish after closing.
+Storage v4 and export v2 are unchanged.
+
+For the physical check, note the assigned closing time and its origin/date, measure
+opening only, and save. Verify that only opening changed, that closing evidence
+is identical, and that another cover using the old profile is unchanged. Repeat
+with closing only starting fully open; also cancel an attempt before saving.
+Single-direction physical validation is pending.
+
 ## Automatic calibration of a selection (0.19.0)
 
 In a standard cover's **Travel profile**, choose **Calibrate a selection**
@@ -39,8 +71,8 @@ keeps the review available while the session remains connected. An already
 accepted disk save may finish if the browser closes; reopening shows saved data.
 
 This uses the existing session, lease, provenance, storage v4 and export v2.
-The user has confirmed single-cover automatic measurement on their installation;
-the selection workflow still needs a supervised physical test with two covers.
+The user has confirmed both single-cover and selected-cover automatic measurement
+on their installation.
 The standalone card remains supported.
 
 ## Optional automatic calibration (0.18.0)
@@ -57,7 +89,7 @@ shared with the guided wizard; there is no second timing store or automatic save
 Actuator run time may differ from physical travel. Observe the cover and check
 both results before saving. See [the calibration guide](cover-calibration.md) for
 limits and the supervised physical test procedure. Selected-cover batches are
-available in 0.19.0 above; a single-direction quick measurement remains future work.
+available in 0.19.0; guided single-direction measurement is available in 0.20.0.
 
 Storage migrates versions 1/2/3 to version 4, preserving recorded evidence and
 assignments, to support the new automatic source. Older integration versions
@@ -243,7 +275,7 @@ requirements, limits and real-gateway validation steps.
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.19.0**, defined by
+The panel has an independent version, currently **0.20.0**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.

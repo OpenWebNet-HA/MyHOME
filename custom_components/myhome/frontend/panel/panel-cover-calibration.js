@@ -28,14 +28,15 @@ export class CoverCalibration {
     const generation = this._generation;
     const { host, hass, entity, revision, t } = context;
     const automatic = context.mode === "automatic";
+    const quick = context.direction;
     host.innerHTML = `<div class="cal-panel" data-phase="loading">
       <h3 class="cal-title"><ha-icon icon="mdi:timer-outline" aria-hidden="true"></ha-icon>${esc(t(automatic ? "calAutomatic" : "calGuided"))}</h3>
-      <ol class="cal-steps" aria-hidden="true" ${automatic ? "hidden" : ""}>
+      <ol class="cal-steps" aria-hidden="true" ${automatic || quick ? "hidden" : ""}>
         <li data-step="opening"><span class="cal-step-index">1</span><span>${esc(t("calStepOpening"))}</span></li>
         <li data-step="closing"><span class="cal-step-index">2</span><span>${esc(t("calStepClosing"))}</span></li>
         <li data-step="review"><span class="cal-step-index">3</span><span>${esc(t("calStepReview"))}</span></li>
       </ol>
-      <p class="muted cal-help">${esc(t(automatic ? "calAutomaticHelp" : "calHelp"))}</p>
+      <p class="muted cal-help">${esc(t(quick ? (quick === "opening" ? "calQuickOpeningHelp" : "calQuickClosingHelp") : automatic ? "calAutomaticHelp" : "calHelp"))}</p>
       ${context.entity_ids ? `<p class="notice">${esc(t("calBatchHelp"))}</p><ol id="cal-targets"></ol>` : ""}
       <div class="cal-status">
         <p id="cal-phase" role="status">${esc(t("loading"))}</p>
@@ -75,7 +76,7 @@ export class CoverCalibration {
         this._accept(state);
       }, context.entity_ids
         ? { type: "myhome/cover_calibration/batch_start", entry_id: entity.entry_id, entity_ids: context.entity_ids, revision }
-        : { type: "myhome/cover_calibration/start", entry_id: entity.entry_id, entity_id: entity.entity_id, revision, ...(automatic ? { mode: "automatic" } : {}) });
+        : { type: "myhome/cover_calibration/start", entry_id: entity.entry_id, entity_id: entity.entity_id, revision, ...(automatic ? { mode: "automatic" } : {}), ...(quick ? { direction: quick } : {}) });
       if (!this._current(generation)) { Promise.resolve(unsubscribe()).catch(() => {}); return; }
       this._unsubscribe = unsubscribe;
       this._heartbeat = setInterval(() => this._perform("heartbeat"), 5000);
@@ -103,7 +104,7 @@ export class CoverCalibration {
     const automatic = state.mode === "automatic";
     host.querySelector("#cal-phase").textContent = automatic && ["starting_open", "starting_close", "opening", "closing", "settling"].includes(state.phase)
       ? `${t("calAutomaticRun")} ${state.run_index + 1}/3 · ${t(`calAutoPhase_${state.phase}`)}`
-      : t(`calPhase_${state.phase}`);
+      : t(state.direction && state.phase === "review" ? "calQuickReview" : `calPhase_${state.phase}`);
     host.querySelector("#cal-elapsed").textContent = state.elapsed == null ? "" : `${t("calElapsed")}: ${state.elapsed} s`;
     host.querySelector("#cal-stop-status").hidden = !state.stop_requested;
     const reason = host.querySelector("#cal-reason");
@@ -122,6 +123,10 @@ export class CoverCalibration {
     host.querySelector("#cal-save").hidden = state.phase !== "review";
     host.querySelector('#cal-save button').disabled = this._busy || this._lost;
     host.querySelector("#cal-values").textContent = `${t("profileOpeningTime")}: ${state.values.opening_time ?? "—"} · ${t("profileClosingTime")}: ${state.values.closing_time ?? "—"}`;
+    if (state.direction) {
+      host.querySelector("#cal-values").textContent = ["opening", "closing"].map((direction) =>
+        `${t(direction === "opening" ? "profileOpeningTime" : "profileClosingTime")}: ${state.values[`${direction}_time`] ?? "—"} s · ${t(direction === state.direction ? "calQuickMeasured" : "calQuickRetained")}`).join(" · ");
+    }
     host.querySelector("#cal-values").hidden = !!state.batch;
     if (state.batch) {
       host.querySelector("#cal-targets").innerHTML = state.targets.map((item, index) => {

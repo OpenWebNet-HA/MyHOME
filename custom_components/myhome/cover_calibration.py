@@ -6,6 +6,7 @@ A queued Stop is never represented as an acknowledged or physically verified sto
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 from time import monotonic
 from uuid import uuid4
@@ -45,7 +46,7 @@ class CalibrationSession:
     travel_seconds = MAX_TRAVEL_SECONDS
     travel_reason = "travel_timeout"
 
-    def __init__(self, hass, store, entry, cover, connection, subscription_id):
+    def __init__(self, hass, store, entry, cover, connection, subscription_id, *, direction=None, profile=None):
         self.hass, self.store, self.cover = hass, store, cover
         self.entry_id = entry.entry_id
         self.connection = connection
@@ -57,6 +58,12 @@ class CalibrationSession:
         self.reason = None
         self.values = {}
         self.provenance = {}
+        self.direction = direction
+        if direction:
+            retained = "closing" if direction == "opening" else "opening"
+            self.values[f"{retained}_time"] = profile[f"{retained}_time"]
+            self.provenance[retained] = copy.deepcopy(profile["provenance"][retained])
+            self.phase = "confirm_closed" if direction == "opening" else "confirm_open"
         self.started_at = None
         self.armed = False
         self.stop_requested = False
@@ -82,7 +89,8 @@ class CalibrationSession:
                 "session_id": self.id, "sequence": self.sequence, "revision": self.revision,
                 "phase": self.phase, "mode": self.mode, "reason": self.reason, "values": dict(self.values),
                 "elapsed": round(monotonic() - self.started_at, 2) if self.started_at is not None else None,
-                "stop_requested": self.stop_requested}
+                "stop_requested": self.stop_requested,
+                **({"direction": self.direction} if self.direction else {})}
 
     def emit(self):
         self.sequence += 1
@@ -214,7 +222,7 @@ class CalibrationSession:
             raise ProfileError("invalid_profile") from error
         self.values[f"{direction}_time"] = elapsed
         self.provenance[direction] = evidence("guided", self.cover.unique_id)
-        self.phase = "confirm_open" if direction == "opening" else "review"
+        self.phase = "confirm_open" if direction == "opening" and not self.direction else "review"
         self.started_at = None
         self.deadline.cancel()
         self.queue_stop()
@@ -314,11 +322,20 @@ async def begin(hass, connection, msg):
             raise ProfileError("calibration_busy")
         if msg["revision"] != store.data["revision"]:
             raise ProfileError("revision_conflict")
+        options = {}
+        if "direction" in msg:
+            direction = vol.In(["opening", "closing"])(msg["direction"])
+            if msg.get("mode", "guided") != "guided":
+                raise ProfileError("invalid_profile")
+            profile = store.profile(cover.unique_id)
+            if profile is None:
+                raise ProfileError("calibration_profile_required")
+            options = {"direction": direction, "profile": profile}
         session_type = CalibrationSession
         if msg.get("mode", "guided") == "automatic":
             from .cover_calibration_automatic import AutomaticCalibrationSession
             session_type = AutomaticCalibrationSession
-        session = session_type(hass, store, entry, cover, connection, msg["id"])
+        session = session_type(hass, store, entry, cover, connection, msg["id"], **options)
         store.calibration = cover._calibration = session
         connection.subscriptions[msg["id"]] = session.close
         return session
@@ -328,6 +345,7 @@ async def begin(hass, connection, msg):
     vol.Required("type"): WS_START, vol.Required("entry_id"): str,
     vol.Required("entity_id"): str, vol.Required("revision"): vol.All(int, vol.Range(min=0)),
     vol.Optional("mode"): vol.In(["guided", "automatic"]),
+    vol.Optional("direction"): vol.In(["opening", "closing"]),
 })
 @websocket_api.require_admin
 @websocket_api.async_response

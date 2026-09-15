@@ -1,6 +1,18 @@
 /** Panel strings are independent from Config Flow / Options Flow schemas. */
 export const translations = {
   en: {
+    calQuickReview: "Review the measured time and the retained time before saving a new assigned copy.",
+    calScope: "Directions to measure",
+    calBothDirections: "Opening and closing",
+    calOnlyOpening: "Opening only",
+    calOnlyClosing: "Closing only",
+    calQuickRequirement: "Measuring one direction requires guided mode and a profile already assigned to this cover. The other time and its origin/date come from that saved profile; save any intended profile edits first.",
+    calQuickOpeningHelp: "Start fully closed and stopped. Confirm to open, then record the endpoint when fully open. Only opening is measured; closing time and its origin/date are retained from the assigned profile. Review both values before saving a new assigned copy.",
+    calQuickClosingHelp: "Start fully open and stopped. Confirm to close, then record the endpoint when fully closed. Only closing is measured; opening time and its origin/date are retained from the assigned profile. Review both values before saving a new assigned copy.",
+    calQuickMeasured: "Measured in this session",
+    calQuickRetained: "Retained from assigned profile",
+    profileError_calibration_profile_required: "Assign a saved travel profile before measuring a single direction.",
+
     calBatchTitle: "Calibrate a selection",
     calBatchSelectHelp: "Select the covers of this gateway explicitly. They will run one at a time in the listed order; nothing moves before the next confirmation.",
     calBatchContinue: "Review selection",
@@ -165,6 +177,18 @@ export const translations = {
     unavailable: "Unavailable", hidden: "Hidden", state: "State", device: "Device", firmware: "Firmware",
   },
   it: {
+    calQuickReview: "Rivedi il tempo misurato e quello conservato prima di salvare e assegnare una nuova copia.",
+    calScope: "Direzioni da misurare",
+    calBothDirections: "Apertura e chiusura",
+    calOnlyOpening: "Solo apertura",
+    calOnlyClosing: "Solo chiusura",
+    calQuickRequirement: "La misura di una direzione richiede la modalità guidata e un profilo già assegnato alla tapparella. Il tempo opposto e la sua origine/data provengono da quel profilo salvato; salva prima eventuali modifiche al profilo.",
+    calQuickOpeningHelp: "Parti dalla tapparella completamente chiusa e ferma. Conferma per aprire, poi registra il fine corsa quando è completamente aperta. Misuri solo l’apertura; tempo di chiusura e relativa origine/data vengono conservati dal profilo assegnato. Rivedi entrambi i valori prima di salvare e assegnare una nuova copia.",
+    calQuickClosingHelp: "Parti dalla tapparella completamente aperta e ferma. Conferma per chiudere, poi registra il fine corsa quando è completamente chiusa. Misuri solo la chiusura; tempo di apertura e relativa origine/data vengono conservati dal profilo assegnato. Rivedi entrambi i valori prima di salvare e assegnare una nuova copia.",
+    calQuickMeasured: "Misurato in questa sessione",
+    calQuickRetained: "Conservato dal profilo assegnato",
+    profileError_calibration_profile_required: "Assegna un profilo di viaggio salvato prima di misurare una sola direzione.",
+
     calBatchTitle: "Calibra una selezione",
     calBatchSelectHelp: "Seleziona esplicitamente le tapparelle di questo gateway. Si muoveranno una alla volta nell’ordine indicato; nessun movimento prima della prossima conferma.",
     calBatchContinue: "Rivedi la selezione",
