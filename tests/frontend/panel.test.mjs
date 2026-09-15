@@ -28,7 +28,7 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
-    panel_version: "0.10.0",
+    panel_version: "0.11.0",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
@@ -55,6 +55,7 @@ async function mount(options = {}) {
     language: "it",
     states: { "light.sala": { state: "on", attributes: { friendly_name: "Luce sala" } } },
     connection: {
+      subscribeMessage: async () => () => {},
       subscribeEvents: async (callback, type) => {
         const subscription = { callback, type, stopped: false };
         subscriptions.push(subscription);
@@ -106,7 +107,7 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
-  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.10.0");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.11.0");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
   root.querySelector('[data-view="entities"]').click();
   assert.equal(root.querySelectorAll(".device-group").length, 3);
@@ -875,6 +876,7 @@ test("profile dialog mounts calibration and gateway navigation cancels only its 
   const state = { entry_id: "one", entity_id: "cover.shutter", session_id: "measuring-one", sequence: 1,
     phase: "confirm_closed", revision: 3, values: {}, reason: null, stop_requested: false };
   hass.connection.subscribeMessage = async (callback, request) => {
+    if (request.type === "myhome/cover_profiles/subscribe") return () => {};
     requests.push(request); callback(state); return () => { stopped++; };
   };
   const original = hass.callWS;

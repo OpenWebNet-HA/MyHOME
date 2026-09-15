@@ -15,6 +15,24 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Profile synchronization (0.11.0)
+
+Open profile editors now follow saves, assignments and unused-profile deletions
+made in other tabs on the same gateway. An untouched editor refreshes automatically.
+An unsaved draft stays intact, with a warning and an explicit reload before further
+writes. The same protection applies to changed selections and deletion confirmations.
+Guided calibration remains in place while a measurement is active.
+
+If live subscription setup is unavailable, the dialog explains that it will check
+saved profiles every 15 seconds while visible. Reopening or returning to a visible
+tab also reconciles saved data. See the [implemented API](panel-websocket-api.md).
+
+Manual check: open the same cover in two tabs, change/save a profile in one and
+verify the other refreshes. Then type an unsaved name/time in the second tab and
+save another change in the first: the second must retain its draft, show the
+warning and block writes until explicit reload. Repeat with another gateway to
+verify isolation, and close/reopen the dialog to check subscription cleanup.
+
 ## Guided travel measurement (0.10.0)
 
 The WHO 2 **Travel profile** dialog now opens **Guided travel measurement** for one
@@ -27,15 +45,15 @@ requirements, limits and real-gateway validation steps.
 
 ## Developer contracts
 
-- [Implemented panel/profile API (0.9.0)](panel-websocket-api.md): current commands,
-  snapshots, validation, revisions, errors and refresh limitations.
+- [Implemented panel/profile API (0.11.0)](panel-websocket-api.md): current commands,
+  snapshots, validation, revisions, errors and revision subscriptions.
 - [Shared panel contract proposal](panel-shared-contract.md): pinned comparison with
   the calibration fork, proposed gateway/texts/refresh/error contracts, review
   decisions and the sequence before porting guided calibration. Draft only.
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.10.0**, defined by
+The panel has an independent version, currently **0.11.0**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.

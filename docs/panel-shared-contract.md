@@ -5,7 +5,10 @@
 Our later panel 0.10.0 adds [experimental single-cover guided measurement](cover-calibration.md)
 under `myhome/cover_calibration/*`. It does not implement the proposed common
 `myhome/covers/*` or texts/refresh APIs below. The pinned comparison remains a
-record of the 0.9.0 baseline.
+record of the 0.9.0 baseline. Panel 0.11.0 additionally implements revision
+invalidations at `myhome/cover_profiles/subscribe`, with draft preservation and
+visible-only fallback reads. See the [implemented reference](panel-websocket-api.md);
+this does not make the common namespace below jointly approved or implemented.
 
 Agreement on the product direction does not imply agreement on the endpoint names,
 payloads or migration choices proposed here.

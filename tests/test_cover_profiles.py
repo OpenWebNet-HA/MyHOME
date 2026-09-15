@@ -23,6 +23,7 @@ from custom_components.myhome.cover_profiles import (
     DATA_KEY,
     PROFILE,
     WS_READ,
+    WS_SUBSCRIBE,
     WS_WRITE,
     ProfileError,
     ProfileStorage,
@@ -34,6 +35,7 @@ from custom_components.myhome.cover_profiles import (
     travel_time,
     write_profile,
     ws_read,
+    ws_subscribe,
     ws_write,
 )
 
@@ -234,7 +236,7 @@ def test_invalid_times_cannot_reach_runtime(value):
         travel_time(value)
 
 
-@pytest.mark.parametrize("handler", [ws_read, ws_write])
+@pytest.mark.parametrize("handler", [ws_read, ws_write, ws_subscribe])
 @pytest.mark.parametrize("user", [None, SimpleNamespace(is_admin=False)])
 async def test_api_requires_admin_before_storage_access(hass, handler, user):
     with pytest.raises(Unauthorized):
@@ -482,3 +484,89 @@ async def test_delete_racing_an_assignment_cannot_remove_an_assigned_profile(has
     assert read["profiles"][0]["assigned_to"] == [{"entity_id": None, "name": None}]
     with pytest.raises(ProfileError, match="profile_in_use"):
         await write_profile(hass, message(plant, 3, action="delete", profile_id=profile_id))
+
+
+async def test_profile_subscriptions_publish_only_commits_and_isolate_gateways(hass, plant, hass_ws_client):
+    """Two real sockets reconcile changes, and unsubscribe/disconnect remove listeners."""
+    from homeassistant.helpers.dispatcher import async_dispatcher_send
+
+    register_api(hass)
+    entry_id = plant.entries[0].entry_id
+    store = get_store(hass, entry_id)
+    with patch("aiohttp.connector.DefaultResolver", ThreadedResolver):
+        first, second = await hass_ws_client(hass), await hass_ws_client(hass)
+        try:
+            for client in (first, second):
+                await client.send_json({"id": 1, "type": WS_SUBSCRIBE, "entry_id": entry_id})
+                assert (await client.receive_json())["success"]
+                assert (await client.receive_json())["event"] == {
+                    "entry_id": entry_id, "revision": 0, "kind": "ready"}
+            await write_profile(hass, message(plant, index=2))  # Other gateway: no event.
+            with patch.object(store.store, "async_save", side_effect=OSError("full")):
+                with pytest.raises(OSError):
+                    await write_profile(hass, message(plant))
+            result = await write_profile(hass, message(plant))
+            profile_id = result["assigned_profile_id"]
+            for client in (first, second):
+                assert (await client.receive_json())["event"] == {
+                    "entry_id": entry_id, "revision": 1, "kind": "changed"}
+            # No extra notifications preceded the successful mutation.
+            await first.send_json({"id": 2, "type": "unsubscribe_events", "subscription": 1})
+            assert (await first.receive_json())["success"]
+            await write_profile(hass, message(plant, 1, action="assign", profile_id=None))
+            assert (await second.receive_json())["event"]["revision"] == 2
+            await write_profile(hass, message(plant, 2, action="delete", profile_id=profile_id))
+            assert (await second.receive_json())["event"]["revision"] == 3
+            await remove_entry(hass, entry_id)
+            assert (await second.receive_json())["event"]["kind"] == "removed"
+            await second.close()
+            await hass.async_block_till_done()
+            async_dispatcher_send(hass, f"{WS_SUBSCRIBE}:{entry_id}", {})
+            await first.send_json({"id": 3, "type": "ping"})
+            assert (await first.receive_json())["type"] == "pong"
+        finally:
+            await first.close()
+            await second.close()
+
+
+async def test_subscribe_validation_storage_failure_and_removed_while_loading(hass, plant):
+    store = get_store(hass, plant.entries[0].entry_id)
+    connection = MagicMock(user=SimpleNamespace(is_admin=True), subscriptions={})
+    msg = {"id": 1, "type": WS_SUBSCRIBE, "entry_id": "missing"}
+    ws_subscribe(hass, connection, msg)
+    await hass.async_block_till_done()
+    assert connection.send_error.call_args.args[1] == "target_not_found"
+    assert "missing" not in hass.data[DATA_KEY]
+    msg["entry_id"] = plant.entries[0].entry_id
+    for error, code in [(OSError("disk"), "storage_error"), (vol.Invalid("bad"), "invalid_profile")]:
+        with patch.object(store, "load", side_effect=error):
+            ws_subscribe(hass, connection, msg)
+            await hass.async_block_till_done()
+        assert connection.send_error.call_args.args[1] == code
+    original = hass.config_entries.async_get_entry
+    reads = 0
+    def lookup(entry_id):
+        nonlocal reads
+        reads += 1
+        return original(entry_id) if reads == 1 else None
+    with patch.object(hass.config_entries, "async_get_entry", side_effect=lookup):
+        ws_subscribe(hass, connection, msg)
+        await hass.async_block_till_done()
+    assert connection.send_error.call_args.args[1] == "target_not_found"
+    assert not connection.subscriptions
+
+
+async def test_subscription_closed_while_waiting_for_store_does_not_leak(hass, plant):
+    connection = MagicMock(user=SimpleNamespace(is_admin=True), subscriptions={})
+    entry_id = plant.entries[0].entry_id
+    store = get_store(hass, entry_id)
+    await store.lock.acquire()
+    ws_subscribe(hass, connection, {"id": 1, "type": WS_SUBSCRIBE, "entry_id": entry_id})
+    await asyncio.sleep(0)
+    connection.subscriptions.pop(1)()  # HA socket cleanup before disk/lock is ready.
+    store.lock.release()
+    await hass.async_block_till_done()
+    await write_profile(hass, message(plant))
+    connection.send_result.assert_not_called()
+    connection.send_event.assert_not_called()
+    assert not connection.subscriptions

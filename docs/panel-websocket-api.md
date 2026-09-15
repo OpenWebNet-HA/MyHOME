@@ -1,10 +1,11 @@
 # MyHOME panel API: implemented reference
 
-Status: **implemented in panel 0.9.0**, reviewed against
+Status: **implemented through panel 0.11.0**. The original profile contract was reviewed against
 [`02ce199`](https://github.com/xtimmy86x/MyHOME/tree/02ce19908787297c1a6e2a65d56a289e766c0695).
 Panel 0.10.0 adds a [guided-measurement session API](cover-calibration.md) and
 `calibration_busy` refusals on profile writes while a measurement is active. The
-profile payload/storage format below remains the 0.9.0 contract.
+profile payload/storage format below remains the 0.9.0 contract. Panel 0.11.0 adds
+`myhome/cover_profiles/subscribe` invalidations, documented below.
 
 This reference describes the prototype on `feat/myhome-sidepanel`, not an upstream
 v2.1 commitment. The [shared-contract proposal](panel-shared-contract.md) is separate
@@ -26,7 +27,7 @@ use HA's own authorization and schemas. The backend owns validation, persistence
 and motion timing. Names and areas remain in HA registries; a profile name is the
 label of a reusable timing configuration, not an entity name.
 
-Profile storage version **2**, panel version **0.9.0**, and any future API contract
+Profile storage version **2**, panel version **0.11.0**, and any future API contract
 version are different concepts. There is currently no API version negotiation.
 This experimental API may evolve through an explicitly documented migration.
 
@@ -37,6 +38,7 @@ This experimental API may evolve through an explicitly documented migration.
 | `myhome/panel/inventory` | All configured gateways and native inventory; no `entry_id` parameter | `panel.py`, `ws_panel_inventory` |
 | `myhome/cover_profiles/read` | One explicit gateway and native cover; complete profile snapshot | `cover_profiles.py`, `ws_read` |
 | `myhome/cover_profiles/write` | Same target; `save`, `assign` or `delete`; updated snapshot | `cover_profiles.py`, `ws_write` |
+| `myhome/cover_profiles/subscribe` | Explicit gateway; initial/persisted revision invalidations | `cover_profiles.py`, `ws_subscribe` |
 | `config/device_registry/update` | Native device name/area changes | HA; called by `myhome-panel.js` |
 | `config/entity_registry/update` | Native entity name/area changes | HA; called by `myhome-panel.js` |
 | `myhome/bus_monitor/info`, `/history`, `/stream`, `/send`, `/clear` | Existing bus diagnostics; panel adapter supplies selected gateway MAC | `websocket.py` |
@@ -260,11 +262,68 @@ The inventory listens to native entity/device/area registry events, debounced by
 resume. HA state updates refresh entity values and the open profile dialog's
 effective timing/pending indicators without overwriting its draft.
 
-The profile list/revision is fetched when opening or explicitly reloading the
-dialog, and replaced by successful writes from that dialog. **Inventory polling
-is not profile polling.** Another tab's profile edit/delete does not refresh the
-open profile list automatically; the next write detects the revision conflict.
-There is no profile subscribe endpoint, no preview and no undo.
+Panel 0.11.0 subscribes before reading the profile snapshot. A successful save,
+assignment, reset or deletion (including a guided-calibration save) invalidates
+other open editors on that gateway. Clean editors fetch the current snapshot and
+refresh their choices, assignments and usage counts. If a draft, changed selection
+or deletion confirmation is present, it stays in place with a translated warning;
+write/calibration actions require **Reload saved data (discard draft)** first.
+The draft's inputs, focus and selection are preserved; no automatic merge occurs.
+
+Events during a save are reconciled after its response. Duplicate/older revisions
+are ignored, events arriving during a read trigger another read when necessary,
+and profile refresh cannot replace an active calibration wizard. A new initial
+event after HA reconnect and a visible-tab resume reconcile missed changes.
+If subscription setup fails, a visible notice explains the fallback: check profiles
+every 15 seconds while the tab is visible. A failed refresh preserves the current
+view and offers explicit reload. Closing the dialog clears subscriptions, fallback
+timers and visibility listeners, including late subscription completions.
+**Inventory polling is separate from profile refresh.** No preview or undo exists.
+
+## Profile revision subscription (0.11.0)
+
+This is an implemented experimental endpoint, separate from the proposed shared
+`myhome/covers/subscribe`. It uses the existing authenticated HA socket, requires
+an administrator and an explicit MyHOME config-entry ID, and creates no bus traffic:
+
+```json
+{"id":20,"type":"myhome/cover_profiles/subscribe","entry_id":"ENTRY"}
+```
+
+The backend validates the entry, loads storage under the same lock as writes,
+registers the listener, acknowledges the subscription, and sends an initial event:
+
+```json
+{"id":20,"type":"result","success":true,"result":null}
+```
+
+```json
+{"id":20,"type":"event","event":{"entry_id":"ENTRY","revision":4,"kind":"ready"}}
+```
+
+Subsequent events have the same envelope, with `kind: "changed"` and the persisted
+revision. They carry no profiles, entity objects, credentials or timing samples.
+A client reads `myhome/cover_profiles/read` for its selected cover to reconcile.
+Notifications are sent only after storage succeeds, never on rejected/failed
+writes. Do not assume ordering between a writer's response and its notification.
+The revision is shared by all covers on that gateway; a different gateway cannot
+invalidate this subscription. Ordinary cover state changes use native HA updates.
+
+Entry removal emits `kind: "removed"` with the last in-memory revision; process
+this terminal event regardless of revision equality and close the editor.
+HA's `unsubscribe_events` command and socket closure release the listener. A
+placeholder cleanup callback also handles disconnect while waiting for storage.
+
+```json
+{"id":21,"type":"unsubscribe_events","subscription":20}
+```
+
+Setup errors are `target_not_found` for missing/non-MyHOME entries (also rechecked
+after loading), `invalid_profile` for invalid stored data, and `storage_error` for
+storage failures. HA handles authentication and schema validation. A config-entry
+reload does not reset this stored revision or transfer the subscription to another
+gateway. There is no event history or API version negotiation; initial `ready`
+plus a fresh read provides synchronization.
 
 Gateway changes, connection replacement and unmount invalidate outstanding dialog
 responses. Closing the dialog does not cancel an accepted storage write. Native

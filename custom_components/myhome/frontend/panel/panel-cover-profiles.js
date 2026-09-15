@@ -13,6 +13,10 @@ export class CoverProfileEditor {
   close() {
     this._calibration.close();
     this._generation++;
+    Promise.resolve(this._unsubscribe?.()).catch(() => {});
+    this._unsubscribe = null;
+    clearInterval(this._fallback);
+    document.removeEventListener("visibilitychange", this._visibility);
     this.dialog?.close();
     this.dialog?.remove();
     this.dialog = null;
@@ -22,6 +26,9 @@ export class CoverProfileEditor {
     this.close();
     const generation = this._generation;
     this._context = { host, hass, entity, t, onSaved, generation };
+    this._data = null;
+    this._noticedRevision = -1;
+    this._stale = this._calibrating = this._syncFailed = false;
     host.innerHTML = `<dialog class="cover-profile-dialog" aria-labelledby="profile-title">
       <h2 id="profile-title">${esc(t("coverProfiles"))}</h2>
       <p>${esc(entity.name || entity.original_name || entity.entity_id)}</p>
@@ -32,11 +39,30 @@ export class CoverProfileEditor {
     host.querySelector("#profile-close").onclick = () => this.close();
     this.dialog.oncancel = (event) => { event.preventDefault(); this.close(); };
     this.dialog.showModal();
+    this._visibility = () => { if (!document.hidden) this._refresh(true); };
+    document.addEventListener("visibilitychange", this._visibility);
     try {
+      // Subscribe first: an edit between subscription and read cannot be missed.
+      try {
+        const unsubscribe = await hass.connection.subscribeMessage((event) => {
+          if (!this._current(generation) || event.entry_id !== entity.entry_id) return;
+          if (event.kind === "removed") { this.close(); return; }
+          if (!Number.isInteger(event.revision) || event.revision < 0) return;
+          this._noticedRevision = Math.max(this._noticedRevision, event.revision);
+          this._refresh();
+        }, { type: "myhome/cover_profiles/subscribe", entry_id: entity.entry_id });
+        if (!this._current(generation)) { await unsubscribe(); return; }
+        this._unsubscribe = unsubscribe;
+      } catch {
+        if (!this._current(generation)) return;
+        this._syncFailed = true;
+        this._fallback = setInterval(() => { if (!document.hidden) this._refresh(true); }, 15000);
+      }
       const data = await hass.callWS({ type: "myhome/cover_profiles/read", entry_id: entity.entry_id, entity_id: entity.entity_id });
       if (!this._current(generation)) return;
       this._data = data;
       this._render();
+      this._refresh();
     } catch (error) {
       if (this._current(generation)) host.querySelector("#profile-body").textContent = this._error(error);
     }
@@ -55,6 +81,49 @@ export class CoverProfileEditor {
   }
 
   _current(generation) { return generation === this._generation && this.dialog?.isConnected; }
+
+  _draft() {
+    const form = this.dialog?.querySelector("#profile-form");
+    return form ? JSON.stringify([...["profile", "profile_name", "opening_time", "closing_time"]
+      .map((name) => form.elements[name].value), !form.querySelector("#profile-delete-confirmation").hidden]) : null;
+  }
+
+  _markStale() {
+    this._stale = true;
+    const error = this.dialog.querySelector("#profile-error");
+    error.textContent = this._context.t("profileChanged");
+    error.hidden = false;
+    this.dialog.querySelector("#profile-reload").hidden = false;
+    for (const button of this.dialog.querySelectorAll("[data-profile-action], #profile-delete, #profile-calibrate")) button.disabled = true;
+  }
+
+  async _refresh(force = false) {
+    const { generation, hass, entity } = this._context;
+    if (!this._current(generation) || !this._data || this._calibrating || this._stale
+        || this._saving === generation || this._refreshing === generation
+        || (!force && this._noticedRevision <= this._data.revision)) return;
+    let failed = false;
+    this._refreshing = generation;
+    try {
+      const data = await hass.callWS({ type: "myhome/cover_profiles/read", entry_id: entity.entry_id, entity_id: entity.entity_id });
+      if (!this._current(generation) || this._calibrating || this._saving === generation || data.revision <= this._data.revision) return;
+      if (this._draft() !== this._baseline) { this._markStale(); return; }
+      this._data = data;
+      this._render();
+    } catch (error) {
+      failed = true;
+      if (!this._current(generation) || this._calibrating) return;
+      const box = this.dialog.querySelector("#profile-error");
+      box.textContent = this._error(error);
+      box.hidden = false;
+      this.dialog.querySelector("#profile-reload").hidden = false;
+    } finally {
+      if (this._current(generation)) {
+        this._refreshing = null;
+        if (!failed && this._noticedRevision > this._data.revision) this._refresh();
+      }
+    }
+  }
   _error(error) {
     const { t } = this._context;
     const key = `profileError_${error.code}`;
@@ -67,6 +136,7 @@ export class CoverProfileEditor {
     const assigned = data.profiles.find((profile) => profile.id === data.assigned_profile_id);
     host.querySelector("#profile-body").innerHTML = `
       <p class="muted">${esc(t("profileScope"))}</p>
+      ${this._syncFailed ? `<p class="notice">${esc(t("profileSyncFallback"))}</p>` : ""}
       <p>${esc(t("profileAssigned"))}: <strong>${esc(assigned?.name || t("profileDefault"))}</strong></p>
       <p>${esc(t("profileEffectiveOpening"))}: <span id="profile-effective-opening">${esc(data.effective_opening_time ?? data.effective_travel_time ?? "—")}</span> s</p>
       <p>${esc(t("profileEffectiveClosing"))}: <span id="profile-effective-closing">${esc(data.effective_closing_time ?? data.effective_travel_time ?? "—")}</span> s</p>
@@ -100,7 +170,8 @@ export class CoverProfileEditor {
         <button type="button" id="profile-reload" hidden>${esc(t("profileReload"))}</button>
       </form>`;
     host.querySelector("#profile-calibrate").onclick = () => {
-      if (this._saving === this._generation || !data.writable) return;
+      if (this._saving === this._generation || !data.writable || this._stale) return;
+      this._calibrating = true;
       const context = this._context;
       this._calibration.open({ ...context, host: host.querySelector("#profile-body"), revision: data.revision,
         onCancel: () => this.open(context), onSaved: () => { context.onSaved(t("saved")); this.open(context); } });
@@ -133,6 +204,7 @@ export class CoverProfileEditor {
       form.querySelector("#profile-delete").focus();
     };
     select();
+    this._baseline = this._draft();
     form.elements.profile.onchange = select;
     form.onsubmit = (event) => event.preventDefault();
     for (const button of form.querySelectorAll("[data-profile-action]")) button.onclick = () => this._save(button.dataset.profileAction);
@@ -141,7 +213,7 @@ export class CoverProfileEditor {
 
   async _save(action) {
     const { hass, entity, host, onSaved, generation, t } = this._context;
-    if (this._saving === generation || !this._data.writable) return;
+    if (this._saving === generation || !this._data.writable || this._stale) return;
     const form = host.querySelector("#profile-form");
     const savingProfile = action === "new" || action === "update";
     if (savingProfile && !form.reportValidity()) return;
@@ -180,6 +252,7 @@ export class CoverProfileEditor {
       if (this._current(generation)) {
         this._saving = null;
         for (const control of controls) control.disabled = !this._data.writable && control.id !== "profile-reload";
+        this._refresh();
       }
     }
   }

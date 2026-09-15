@@ -16,6 +16,7 @@ from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import CoreState, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.storage import Store
 from homeassistant.util.file import WriteError
 from homeassistant.util.json import SerializationError
@@ -25,6 +26,7 @@ from .const import DOMAIN
 DATA_KEY = f"{DOMAIN}_cover_profile_stores"
 WS_READ = "myhome/cover_profiles/read"
 WS_WRITE = "myhome/cover_profiles/write"
+WS_SUBSCRIBE = "myhome/cover_profiles/subscribe"
 MAX_PROFILES = 200
 
 
@@ -215,6 +217,9 @@ async def write_profile(hass, msg, *, calibration=None):
         data["revision"] += 1
         await store.store.async_save(data)
         store.data = data
+        async_dispatcher_send(hass, f"{WS_SUBSCRIBE}:{entry_id}", {
+            "entry_id": entry_id, "revision": data["revision"], "kind": "changed",
+        })
         # The entity may have unloaded while storage was writing. Its next mount
         # resolves the persisted assignment. Never send a bus command or reload HA.
         cover = store.covers.get(entity.unique_id)
@@ -249,6 +254,9 @@ async def remove_entry(hass, entry_id):
     store = get_store(hass, entry_id)
     async with store.lock:
         await store.store.async_remove()
+        async_dispatcher_send(hass, f"{WS_SUBSCRIBE}:{entry_id}", {
+            "entry_id": entry_id, "revision": store.data["revision"], "kind": "removed",
+        })
         hass.data[DATA_KEY].pop(entry_id, None)
 
 
@@ -288,9 +296,60 @@ async def ws_write(hass, connection, msg):
     await respond(hass, connection, msg, write_profile(hass, msg))
 
 
+@websocket_api.websocket_command({
+    vol.Required("type"): WS_SUBSCRIBE, vol.Required("entry_id"): str,
+})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_subscribe(hass, connection, msg):
+    """Send revision invalidations, registering before the initial synchronization."""
+    entry_id = msg["entry_id"]
+    entry = hass.config_entries.async_get_entry(entry_id)
+    if entry is None or entry.domain != DOMAIN:
+        connection.send_error(msg["id"], "target_not_found", "Gateway not found")
+        return
+    store = get_store(hass, entry_id)
+    active = True
+    unsubscribe = None
+
+    @callback
+    def cancel():
+        nonlocal active
+        active = False
+        if unsubscribe is not None:
+            unsubscribe()
+
+    # HA can close the socket while this handler is waiting for disk/the lock.
+    connection.subscriptions[msg["id"]] = cancel
+    try:
+        async with store.lock:
+            await store.load()
+            if not active:
+                return
+            if hass.config_entries.async_get_entry(entry_id) is not entry:
+                raise ProfileError("target_not_found")
+
+            @callback
+            def changed(event):
+                connection.send_event(msg["id"], event)
+
+            unsubscribe = async_dispatcher_connect(
+                hass, f"{WS_SUBSCRIBE}:{entry_id}", changed
+            )
+            connection.send_result(msg["id"])
+            changed({"entry_id": entry_id, "revision": store.data["revision"], "kind": "ready"})
+    except (ProfileError, vol.Invalid, OSError) as error:
+        connection.subscriptions.pop(msg["id"], None)
+        cancel()
+        code = (str(error) if isinstance(error, ProfileError) else
+                "invalid_profile" if isinstance(error, vol.Invalid) else "storage_error")
+        connection.send_error(msg["id"], code, code)
+
+
 @callback
 def register_api(hass: HomeAssistant):
     websocket_api.async_register_command(hass, ws_read)
     websocket_api.async_register_command(hass, ws_write)
+    websocket_api.async_register_command(hass, ws_subscribe)
     from .cover_calibration import register_api as register_calibration
     register_calibration(hass)

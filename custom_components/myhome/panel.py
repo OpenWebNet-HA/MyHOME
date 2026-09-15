@@ -26,7 +26,7 @@ from .const import CONF_ENTITY, CONF_FIRMWARE, DOMAIN, INTEGRATION_VERSION, is_a
 from .cover_profiles import register_api
 
 PANEL_URL = "myhome"
-PANEL_VERSION = "0.10.0"
+PANEL_VERSION = "0.11.0"
 PANEL_STATIC_URL = "/myhome_panel"
 WS_INVENTORY = "myhome/panel/inventory"
 _PANEL_REGISTERED = "_panel_registered"
