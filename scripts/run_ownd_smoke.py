@@ -2,7 +2,7 @@
 """OWNd Protocol Engine Smoke Test Runner.
 
 Verifies the integration and protocol engine health of OWNd across:
-1. Pinned release (manifest.json / const.py REQUIRED_OWND_VERSION)
+1. Pinned release (the exact OWNd== pin in manifest.json)
 2. Latest published PyPI release (pip install --pre -U OWNd)
 3. Upstream development version (git+https://github.com/OpenWebNet-HA/OWNd.git@master)
 
@@ -34,17 +34,18 @@ if hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
-CONST_PY = REPO_ROOT / "custom_components" / "myhome" / "const.py"
 MANIFEST_JSON = REPO_ROOT / "custom_components" / "myhome" / "manifest.json"
 
 
 def get_pinned_version() -> str:
-    """Extract required OWNd version from const.py and manifest.json."""
-    const_text = CONST_PY.read_text(encoding="utf-8")
-    m = re.search(r'REQUIRED_OWND_VERSION\s*=\s*["\']([^"\']+)["\']', const_text)
-    if not m:
-        raise ValueError("Could not find REQUIRED_OWND_VERSION in const.py")
-    return m.group(1)
+    """Extract the exact OWNd pin from manifest.json (the single source of truth)."""
+    manifest = json.loads(MANIFEST_JSON.read_text(encoding="utf-8"))
+    pins = [r for r in manifest.get("requirements", []) if re.fullmatch(r"OWNd==[0-9][0-9A-Za-z.]*", r)]
+    if len(pins) != 1:
+        raise ValueError(
+            f"manifest.json must contain exactly one exact OWNd== pin, found: {manifest.get('requirements')}"
+        )
+    return pins[0].split("==", 1)[1]
 
 
 def run_cmd(cmd: List[str], check: bool = True) -> subprocess.CompletedProcess:

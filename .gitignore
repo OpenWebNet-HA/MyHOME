@@ -146,4 +146,14 @@ design-light-transitions.md
 
 # Release archives
 myhome.zip
-*.zip
+*.zip
+
+# Local build / test artefacts
+htmlcov/
+coverage.xml
+junit.xml
+myhome.zip
+job_*.log
+pdf_output.txt
+venv/
+.venv/

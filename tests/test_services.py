@@ -15,12 +15,11 @@ from custom_components.myhome.services import (
     SERVICE_SYNC_TIME,
     _get_gateway_handler,
     async_setup_services,
-    async_unload_services,
 )
 
 
-async def test_services_setup_and_unload(hass: HomeAssistant) -> None:
-    """Test setting up and unloading services idempotently."""
+async def test_services_setup_is_idempotent(hass: HomeAssistant) -> None:
+    """Services are registered once in async_setup and never unregistered."""
     assert not hass.services.has_service(DOMAIN, SERVICE_SYNC_TIME)
     assert not hass.services.has_service(DOMAIN, SERVICE_SEND_MESSAGE)
     assert not hass.services.has_service(DOMAIN, SERVICE_SWEEP_BUS)
@@ -33,12 +32,6 @@ async def test_services_setup_and_unload(hass: HomeAssistant) -> None:
     # Idempotent re-setup
     await async_setup_services(hass)
     assert hass.services.has_service(DOMAIN, SERVICE_SYNC_TIME)
-
-    # Unload
-    await async_unload_services(hass)
-    assert not hass.services.has_service(DOMAIN, SERVICE_SYNC_TIME)
-    assert not hass.services.has_service(DOMAIN, SERVICE_SEND_MESSAGE)
-    assert not hass.services.has_service(DOMAIN, SERVICE_SWEEP_BUS)
 
 
 async def test_get_gateway_handler_helper(hass: HomeAssistant) -> None:
