@@ -30,10 +30,11 @@ export class CoverProfileEditor {
     this._noticedRevision = -1;
     this._stale = this._calibrating = this._syncFailed = false;
     host.innerHTML = `<dialog class="cover-profile-dialog" aria-labelledby="profile-title">
-      <h2 id="profile-title">${esc(t("coverProfiles"))}</h2>
-      <p>${esc(entity.name || entity.original_name || entity.entity_id)}</p>
-      <div id="profile-body"><p role="status">${esc(t("loading"))}</p></div>
-      <div class="actions"><button type="button" id="profile-close">${esc(t("cancel"))}</button></div>
+      <header class="dialog-head"><div class="dialog-icon" aria-hidden="true"><ha-icon icon="mdi:window-shutter-settings"></ha-icon></div>
+        <div class="dialog-head-text"><h2 id="profile-title">${esc(t("coverProfiles"))}</h2>
+        <p class="muted">${esc(entity.name || entity.original_name || entity.entity_id)}</p></div></header>
+      <div id="profile-body"><p class="muted" role="status">${esc(t("loading"))}</p></div>
+      <div class="actions dialog-foot"><button type="button" id="profile-close">${esc(t("cancel"))}</button></div>
     </dialog>`;
     this.dialog = host.querySelector("dialog");
     host.querySelector("#profile-close").onclick = () => this.close();
@@ -134,40 +135,55 @@ export class CoverProfileEditor {
     const { host, t } = this._context;
     const data = this._data;
     const assigned = data.profiles.find((profile) => profile.id === data.assigned_profile_id);
+    const disabled = data.writable ? "" : "disabled";
     host.querySelector("#profile-body").innerHTML = `
       <p class="muted">${esc(t("profileScope"))}</p>
       ${this._syncFailed ? `<p class="notice">${esc(t("profileSyncFallback"))}</p>` : ""}
-      <p>${esc(t("profileAssigned"))}: <strong>${esc(assigned?.name || t("profileDefault"))}</strong></p>
-      <p>${esc(t("profileEffectiveOpening"))}: <span id="profile-effective-opening">${esc(data.effective_opening_time ?? data.effective_travel_time ?? "—")}</span> s</p>
-      <p>${esc(t("profileEffectiveClosing"))}: <span id="profile-effective-closing">${esc(data.effective_closing_time ?? data.effective_travel_time ?? "—")}</span> s</p>
-      <p id="profile-pending" role="status" ${data.pending ? "" : "hidden"}>${esc(t("profilePending"))}</p>
-      ${!data.writable ? `<p class="notice">${esc(t(`profileError_${data.reason}`))}</p>` : ""}
-      <button type="button" id="profile-calibrate" ${data.writable ? "" : "disabled"}>${esc(t("calTitle"))}</button>
-      <form id="profile-form">
-        <label>${esc(t("profileChoose"))}<select name="profile" ${data.writable ? "" : "disabled"}>
-          <option value="">${esc(t("profileDefault"))}</option>
-          ${data.profiles.map((profile) => `<option value="${esc(profile.id)}">${esc(profile.name)} · ${esc(profile.opening_time ?? profile.travel_time)} / ${esc(profile.closing_time ?? profile.travel_time)} s</option>`).join("")}
-        </select></label>
-        <button type="button" data-profile-action="assign" ${data.writable ? "" : "disabled"}>${esc(t("profileAssign"))}</button>
-        <label>${esc(t("profileName"))}<input name="profile_name" maxlength="64" required ${data.writable ? "" : "disabled"}></label>
-        <label>${esc(t("profileOpeningTime"))}<input name="opening_time" type="number" min="1" max="600" step="any" required ${data.writable ? "" : "disabled"}></label>
-        <label>${esc(t("profileClosingTime"))}<input name="closing_time" type="number" min="1" max="600" step="any" required ${data.writable ? "" : "disabled"}></label>
-        <p class="muted">${esc(t("profileSharedHelp"))}</p>
-        <div class="actions">
-          <button type="button" data-profile-action="update">${esc(t("profileUpdate"))}</button>
-          <button type="button" data-profile-action="new" ${data.writable ? "" : "disabled"}>${esc(t("profileCreate"))}</button>
+      <section class="profile-summary" aria-label="${esc(t("profileSectionStatus"))}">
+        <div class="profile-assigned"><span class="muted">${esc(t("profileAssigned"))}</span><strong>${esc(assigned?.name || t("profileDefault"))}</strong></div>
+        <div class="profile-stats">
+          <div class="profile-stat"><ha-icon icon="mdi:arrow-up-bold-outline" aria-hidden="true"></ha-icon><span class="muted">${esc(t("profileEffectiveOpening"))}</span>
+            <span class="profile-stat-value"><span id="profile-effective-opening">${esc(data.effective_opening_time ?? data.effective_travel_time ?? "—")}</span><small>s</small></span></div>
+          <div class="profile-stat"><ha-icon icon="mdi:arrow-down-bold-outline" aria-hidden="true"></ha-icon><span class="muted">${esc(t("profileEffectiveClosing"))}</span>
+            <span class="profile-stat-value"><span id="profile-effective-closing">${esc(data.effective_closing_time ?? data.effective_travel_time ?? "—")}</span><small>s</small></span></div>
         </div>
+        <p id="profile-pending" class="profile-pending" role="status" ${data.pending ? "" : "hidden"}>${esc(t("profilePending"))}</p>
+      </section>
+      ${!data.writable ? `<p class="notice">${esc(t(`profileError_${data.reason}`))}</p>` : ""}
+      <button type="button" id="profile-calibrate" class="profile-calibrate" ${disabled}><ha-icon icon="mdi:timer-outline" aria-hidden="true"></ha-icon><span>${esc(t("calTitle"))}</span></button>
+      <form id="profile-form">
+        <fieldset class="profile-section"><legend>${esc(t("profileSectionAssign"))}</legend>
+          <div class="profile-assign-row">
+            <label>${esc(t("profileChoose"))}<select name="profile" ${disabled}>
+              <option value="">${esc(t("profileDefault"))}</option>
+              ${data.profiles.map((profile) => `<option value="${esc(profile.id)}">${esc(profile.name)} · ${esc(profile.opening_time ?? profile.travel_time)} / ${esc(profile.closing_time ?? profile.travel_time)} s</option>`).join("")}
+            </select></label>
+            <button type="button" class="primary" data-profile-action="assign" ${disabled}>${esc(t("profileAssign"))}</button>
+          </div>
+        </fieldset>
+        <fieldset class="profile-section"><legend>${esc(t("profileSectionEdit"))}</legend>
+          <label>${esc(t("profileName"))}<input name="profile_name" maxlength="64" required ${disabled}></label>
+          <div class="profile-times">
+            <label>${esc(t("profileOpeningTime"))}<span class="input-suffix"><input name="opening_time" type="number" min="1" max="600" step="any" inputmode="decimal" required ${disabled}><span>s</span></span></label>
+            <label>${esc(t("profileClosingTime"))}<span class="input-suffix"><input name="closing_time" type="number" min="1" max="600" step="any" inputmode="decimal" required ${disabled}><span>s</span></span></label>
+          </div>
+          <p class="muted">${esc(t("profileSharedHelp"))}</p>
+          <div class="actions">
+            <button type="button" data-profile-action="update">${esc(t("profileUpdate"))}</button>
+            <button type="button" class="primary" data-profile-action="new" ${disabled}>${esc(t("profileCreate"))}</button>
+          </div>
+        </fieldset>
         <p id="profile-usage" class="muted"></p>
-        <button type="button" id="profile-delete">${esc(t("profileDelete"))}</button>
-        <div id="profile-delete-confirmation" hidden>
+        <button type="button" id="profile-delete" class="danger"><ha-icon icon="mdi:delete-outline" aria-hidden="true"></ha-icon><span>${esc(t("profileDelete"))}</span></button>
+        <div id="profile-delete-confirmation" class="profile-confirm" hidden>
           <p id="profile-delete-prompt"></p>
           <div class="actions">
-            <button type="button" data-profile-action="delete">${esc(t("profileDeleteConfirm"))}</button>
+            <button type="button" class="danger-solid" data-profile-action="delete">${esc(t("profileDeleteConfirm"))}</button>
             <button type="button" id="profile-delete-cancel">${esc(t("cancel"))}</button>
           </div>
         </div>
         <p id="profile-error" class="error" role="alert" hidden></p>
-        <button type="button" id="profile-reload" hidden>${esc(t("profileReload"))}</button>
+        <button type="button" id="profile-reload" hidden><ha-icon icon="mdi:reload" aria-hidden="true"></ha-icon><span>${esc(t("profileReload"))}</span></button>
       </form>`;
     host.querySelector("#profile-calibrate").onclick = () => {
       if (this._saving === this._generation || !data.writable || this._stale) return;

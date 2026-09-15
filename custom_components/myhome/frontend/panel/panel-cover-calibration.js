@@ -27,21 +27,32 @@ export class CoverCalibration {
     this._busy = false;
     const generation = this._generation;
     const { host, hass, entity, revision, t } = context;
-    host.innerHTML = `<h3>${esc(t("calTitle"))}</h3><p>${esc(t("calHelp"))}</p>
-      <p id="cal-phase" role="status">${esc(t("loading"))}</p>
-      <p id="cal-elapsed"></p><p id="cal-stop-status" class="notice" hidden>${esc(t("calStopRequested"))}</p>
-      <p id="cal-reason" class="error" role="alert" hidden></p>
-      <div class="actions">
-        <button type="button" data-cal-action="open" hidden>${esc(t("calOpen"))}</button>
-        <button type="button" data-cal-action="close" hidden>${esc(t("calClose"))}</button>
-        <button type="button" data-cal-action="endpoint" hidden></button>
+    host.innerHTML = `<div class="cal-panel" data-phase="loading">
+      <h3 class="cal-title"><ha-icon icon="mdi:timer-outline" aria-hidden="true"></ha-icon>${esc(t("calTitle"))}</h3>
+      <ol class="cal-steps" aria-hidden="true">
+        <li data-step="opening"><span class="cal-step-index">1</span><span>${esc(t("calStepOpening"))}</span></li>
+        <li data-step="closing"><span class="cal-step-index">2</span><span>${esc(t("calStepClosing"))}</span></li>
+        <li data-step="review"><span class="cal-step-index">3</span><span>${esc(t("calStepReview"))}</span></li>
+      </ol>
+      <p class="muted cal-help">${esc(t("calHelp"))}</p>
+      <div class="cal-status">
+        <p id="cal-phase" role="status">${esc(t("loading"))}</p>
+        <p id="cal-elapsed" class="cal-elapsed"></p>
       </div>
-      <form id="cal-save" hidden><p id="cal-values"></p>
+      <p id="cal-stop-status" class="notice" hidden>${esc(t("calStopRequested"))}</p>
+      <p id="cal-reason" class="error" role="alert" hidden></p>
+      <div class="actions cal-actions">
+        <button type="button" class="primary" data-cal-action="open" hidden><ha-icon icon="mdi:arrow-up-bold" aria-hidden="true"></ha-icon><span>${esc(t("calOpen"))}</span></button>
+        <button type="button" class="primary" data-cal-action="close" hidden><ha-icon icon="mdi:arrow-down-bold" aria-hidden="true"></ha-icon><span>${esc(t("calClose"))}</span></button>
+        <button type="button" class="primary" data-cal-action="endpoint" hidden></button>
+      </div>
+      <form id="cal-save" class="profile-section cal-save" hidden><p id="cal-values" class="cal-values"></p>
         <label>${esc(t("profileName"))}<input name="profile_name" required maxlength="64"></label>
-        <button type="submit">${esc(t("calSave"))}</button>
+        <button type="submit" class="primary">${esc(t("calSave"))}</button>
       </form>
-      <div class="actions calibration-safety-actions"><button type="button" id="cal-stop" disabled>${esc(t("calStop"))}</button>
-        <button type="button" id="cal-cancel">${esc(t("calCancel"))}</button></div>`;
+      <div class="actions calibration-safety-actions"><button type="button" id="cal-stop" disabled><ha-icon icon="mdi:stop-circle-outline" aria-hidden="true"></ha-icon><span>${esc(t("calStop"))}</span></button>
+        <button type="button" id="cal-cancel">${esc(t("calCancel"))}</button></div>
+    </div>`;
     for (const button of host.querySelectorAll("[data-cal-action]")) {
       button.onclick = () => this._perform(button.dataset.calAction);
     }
@@ -80,6 +91,7 @@ export class CoverCalibration {
   _render() {
     const { host, t } = this._context;
     const state = this._state;
+    host.querySelector(".cal-panel").dataset.phase = state.phase;
     host.querySelector("#cal-phase").textContent = t(`calPhase_${state.phase}`);
     host.querySelector("#cal-elapsed").textContent = state.elapsed == null ? "" : `${t("calElapsed")}: ${state.elapsed} s`;
     host.querySelector("#cal-stop-status").hidden = !state.stop_requested;
