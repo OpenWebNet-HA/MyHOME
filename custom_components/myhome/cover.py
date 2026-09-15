@@ -26,6 +26,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers import entity_registry as er
@@ -317,6 +318,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         vol.Optional("travel_time"): vol.Coerce(float),
         vol.Optional("travel_time_down"): vol.Coerce(float),
         vol.Optional("travel_time_up"): vol.Coerce(float),
+        vol.Optional("copied_from"): cv.string,
     }
 
     platform = entity_platform.current_platform.get()
@@ -463,12 +465,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._travel_time_up = base_travel
         self._calibration_source = travel_time_source
         self._calibrated_at: str | None = None
+        self._copied_from: str | None = None
         if calibration and calibration.get("down") and calibration.get("up"):
             self._travel_time_down = float(calibration["down"])
             self._travel_time_up = float(calibration["up"])
             self._travel_time = int(round(self._travel_time_down))
-            self._calibration_source = "measured"
+            self._calibration_source = str(calibration.get("source") or "measured")
             self._calibrated_at = calibration.get("measured_at")
+            self._copied_from = calibration.get("copied_from") or None
         self._calibrating = False
         self._calibration_interrupted: str | None = None
         self._stopped_event: asyncio.Event = asyncio.Event()
@@ -537,6 +541,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         attrs["last_run_seconds"] = self._last_run.get("seconds")
         attrs["last_run_direction"] = self._last_run.get("direction")
         attrs["last_run_ended_at"] = self._last_run.get("ended_at")
+        attrs["copied_from"] = self._copied_from
 
     # ── Echo model helpers ───────────────────────────────────────────────
 
@@ -904,6 +909,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._travel_time_up = round(up, 2)
         self._travel_time = int(round(down))
         self._calibration_source = "measured"
+        self._copied_from = None
         self._calibrated_at = dt_util.utcnow().isoformat(timespec="seconds")
         # The sequence ends with the cover fully open.
         self._attr_current_cover_position = 100
@@ -935,8 +941,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         travel_time: float | None = None,
         travel_time_down: float | None = None,
         travel_time_up: float | None = None,
+        copied_from: str | None = None,
     ) -> dict:
-        """Manually set physical travel times for this timed cover."""
+        """Set the physical travel times by hand, or copy them from another cover.
+
+        ``copied_from`` records the entity the times were taken from; the source
+        is then reported as ``copied`` instead of ``manual``.
+        """
         if self._advanced:
             raise HomeAssistantError(
                 f"{self._display_name} reports its position; travel time cannot be set",
@@ -972,15 +983,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._travel_time_down = round(float(down), 2)
         self._travel_time_up = round(float(up), 2)
         self._travel_time = int(round(self._travel_time_down))
-        self._calibration_source = "manual"
+        self._copied_from = str(copied_from) if copied_from else None
+        self._calibration_source = "copied" if self._copied_from else "manual"
         self._calibrated_at = dt_util.utcnow().isoformat(timespec="seconds")
 
         result = {
             "down": self._travel_time_down,
             "up": self._travel_time_up,
             "measured_at": self._calibrated_at,
-            "source": "manual",
+            "source": self._calibration_source,
         }
+        if self._copied_from:
+            result["copied_from"] = self._copied_from
         self._persist_calibration(result)
         self._refresh_travel_attributes()
         if self.hass is not None:
@@ -988,8 +1002,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         self._fire_calibration_event("done", **result)
         LOGGER.info(
-            "%s Cover %s manual travel time set: down %.1f s, up %.1f s.",
-            self._gateway_handler.log_id, self._full_where, self._travel_time_down, self._travel_time_up,
+            "%s Cover %s %s travel time set: down %.1f s, up %.1f s.",
+            self._gateway_handler.log_id, self._full_where, self._calibration_source,
+            self._travel_time_down, self._travel_time_up,
         )
         return result
 
@@ -1026,6 +1041,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._travel_time = int(round(base_travel))
         self._calibration_source = source
         self._calibrated_at = None
+        self._copied_from = None
 
         self._refresh_travel_attributes()
         if self.hass is not None:
