@@ -26,7 +26,6 @@ from homeassistant.const import (
 from homeassistant.core import callback
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.util.color import (
     color_hs_to_RGB,
     color_RGB_to_hs,
@@ -122,14 +121,18 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     @callback
     def route_foreign(message, address: Address, known) -> bool:
-        """Sensor frames, and frames for switch / sensor addresses, go to their own platforms."""
+        """Frames of switch / sensor addresses are never lights.
+
+        Motion and illuminance frames are delivered by the binary_sensor and
+        sensor platforms themselves; switches do not listen to the bus, so
+        their frames are published from here.
+        """
         if foreign.is_sensor_frame(message):
             foreign.mark_sensor(address)
             known.discard(address.key)
-            _route_who1(hass, mac, message, address)
             return True
         if foreign.owns(address, address.key):
-            _route_who1(hass, mac, message, address)
+            runtime.router.publish("1", (address.key, address.where, normalize_where(address.where)), message)
             return True
         return False
 
@@ -151,17 +154,6 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             },
             "async_turn_on_timed",
         )
-
-
-@callback
-def _route_who1(hass, mac: str, message, address: Address) -> None:
-    """Forward a WHO=1 frame under every key a switch or sensor entity may listen on."""
-    norm_where = normalize_where(address.where)
-    async_dispatcher_send(hass, f"myhome_update_{mac}_1_{address.key}", message)
-    if address.key != address.where:
-        async_dispatcher_send(hass, f"myhome_update_{mac}_1_{address.where}", message)
-    if norm_where != address.where:
-        async_dispatcher_send(hass, f"myhome_update_{mac}_1_{norm_where}", message)
 
 
 class _ForeignAddresses:
@@ -337,19 +329,6 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         accessor so the mired value stays inspectable alongside the Kelvin one.
         """
         return self._attr_color_temp
-
-    async def async_added_to_hass(self):
-        """Run when entity about to be added to hass."""
-        target_hass = self.hass or self._hass
-        if target_hass is not None:
-            self.async_on_remove(
-                async_dispatcher_connect(
-                    target_hass,
-                    f"myhome_update_{self._gateway_handler.mac}_1_{self._full_where}",
-                    self.handle_event,
-                )
-            )
-        await super().async_added_to_hass()
 
     def _promote_color_mode(self, mode: ColorMode) -> None:
         """Add a color capability learned from the bus without dropping others.

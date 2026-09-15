@@ -775,9 +775,9 @@ async def test_light_switch_collision_and_interface_dispatch(hass):
         received_unique = []
         received_base = []
 
-        from homeassistant.helpers.dispatcher import async_dispatcher_connect
-        async_dispatcher_connect(hass, "myhome_update_mac_1_16#4#01", lambda msg: received_unique.append(msg))
-        async_dispatcher_connect(hass, "myhome_update_mac_1_16", lambda msg: received_base.append(msg))
+        router = config_entry.runtime_data.router
+        router.subscribe("1", ["16#4#01"], lambda msg: received_unique.append(msg))
+        router.subscribe("1", ["16"], lambda msg: received_base.append(msg))
 
         from OWNd.message import OWNEvent
         msg = OWNEvent.parse("*1*1*16#4#01##")
@@ -989,7 +989,7 @@ async def test_light_async_added_to_hass_requests_initial_state(hass):
 
     with patch.object(light, "async_on_remove") as mock_on_remove:
         await light.async_added_to_hass()
-        assert mock_on_remove.call_count == 2
+        assert mock_on_remove.call_count == 1  # availability; frames come via the router
         mock_gateway.send_status_request.assert_called_once()
 
     # Verify dimmable light requests brightness status

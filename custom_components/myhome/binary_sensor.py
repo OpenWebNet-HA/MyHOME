@@ -424,22 +424,6 @@ class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
     async def async_added_to_hass(self):
         """When entity is added to hass."""
         self._register_entity_ref(self._attr_device_class)
-        target_hass = self.hass or self._hass
-        if target_hass is not None:
-            unsub = async_dispatcher_connect(
-                target_hass,
-                f"myhome_update_{self._gateway_handler.mac}_25_{self._where}",
-                self.handle_event,
-            )
-            self.async_on_remove(unsub)
-            norm_where = normalize_where(self._where)
-            if norm_where != self._where:
-                unsub2 = async_dispatcher_connect(
-                    target_hass,
-                    f"myhome_update_{self._gateway_handler.mac}_25_{norm_where}",
-                    self.handle_event,
-                )
-                self.async_on_remove(unsub2)
         await super().async_added_to_hass()
 
     async def async_will_remove_from_hass(self):
@@ -517,14 +501,6 @@ class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
     async def async_added_to_hass(self):
         """When entity is added to hass."""
         self._register_entity_ref(self._attr_device_class)
-        target_hass = self.hass or self._hass
-        if target_hass is not None:
-            unsub = async_dispatcher_connect(
-                target_hass,
-                f"myhome_update_{self._gateway_handler.mac}_9_{self._where}",
-                self.handle_event,
-            )
-            self.async_on_remove(unsub)
         await super().async_added_to_hass()
 
     async def async_will_remove_from_hass(self):
@@ -607,22 +583,6 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
     async def async_added_to_hass(self):
         """When entity is added to hass."""
         self._register_entity_ref(self._attr_device_class)
-        target_hass = self.hass or self._hass
-        if target_hass is not None:
-            unsub = async_dispatcher_connect(
-                target_hass,
-                f"myhome_update_{self._gateway_handler.mac}_1_{self._where}",
-                self.handle_event,
-            )
-            self.async_on_remove(unsub)
-            norm_where = normalize_where(self._where)
-            if norm_where != self._where:
-                unsub2 = async_dispatcher_connect(
-                    target_hass,
-                    f"myhome_update_{self._gateway_handler.mac}_1_{norm_where}",
-                    self.handle_event,
-                )
-                self.async_on_remove(unsub2)
         await self._gateway_handler.send_status_request(OWNLightingCommand.get_pir_sensitivity(self._where))
         await self._gateway_handler.send_status_request(OWNLightingCommand.get_motion_timeout(self._where))
         await super().async_added_to_hass()

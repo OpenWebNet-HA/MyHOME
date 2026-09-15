@@ -18,7 +18,6 @@ from custom_components.myhome.discovery import (
     PlatformDiscovery,
     config_for,
     parse_unique_id,
-    update_signal,
 )
 from tests.conftest import attach_runtime
 
@@ -57,7 +56,6 @@ def test_config_lookup_and_known_devices():
     assert "12" in known and "13" in known and None not in known and len(known) == 2
     known.discard("12")
     assert sorted(known) == ["13"]
-    assert update_signal(MAC, "1", "12#4#01") == f"myhome_update_{MAC}_1_12#4#01"
 
 
 def _entry(hass, platforms):
@@ -87,7 +85,7 @@ async def test_skeleton_configures_discovers_and_routes(hass):
         return _entity(ctx.cfg.get("name", f"Light {ctx.suffix}"))
 
     async_dispatcher_connect(hass, f"myhome_new_device_{MAC}", announced.append)
-    async_dispatcher_connect(hass, update_signal(MAC, "1", "12"), routed.append)
+    entry.runtime_data.router.subscribe("1", ["12"], routed.append)
 
     discovery = PlatformDiscovery(
         hass, entry, added.extend, platform="light", who="1", event_type=OWNLightingEvent, build=build, announce=True,
@@ -106,7 +104,8 @@ async def test_skeleton_configures_discovers_and_routes(hass):
     discovery.handle_message(OWNEvent.parse("*1*1*13##"))
     assert built[-1].source == "bus" and built[-1].key == "13" and "13" in discovery.known
     assert added[-1]._device_name == "Light 13"
-    added[-1].handle_event.assert_called_once()
+    added[-1].handle_event.assert_called_once()  # subscribed before the frame is published: it is the first state
+    added[-1].async_on_remove.assert_called_once()  # ... and unsubscribed with the entity
 
     # a declined address is not remembered, so it can be offered again later
     discovery.handle_message(OWNEvent.parse("*1*1*99##"))
@@ -215,11 +214,11 @@ async def test_build_may_return_several_entities_or_none(hass):
 
     discovery = PlatformDiscovery(
         hass, entry, lambda ents: None, platform="sensor", who="18", event_type=None, build=build,
-        direct=True, route_keys=lambda msg, address: [str(msg.where)],
+        route_keys=lambda msg, address: [str(msg.where)],
     )
     entities = discovery.start(listen=False)
     assert len(entities) == 2 and "51" in discovery.known and "52" not in discovery.known
-    assert [e._device_name for e in discovery.entities["51"]] == ["Power", "Energy"]
+    assert entry.runtime_data.router.subscribers("18", "51") == 2
     discovery.handle_message(MagicMock(where="51", interface=None, is_translation=False))
     assert fed == [("a", "51"), ("b", "51")]  # both entities of the address, once each
     discovery.handle_message(MagicMock(where="53", interface=None, is_translation=False))  # discovered: fed once

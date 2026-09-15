@@ -302,10 +302,8 @@ class TestSwitchEntity:
         sw_interface.async_on_remove = MagicMock()
         sw_interface.async_update = AsyncMock()
 
-        with patch("custom_components.myhome.discovery.async_dispatcher_connect"):
-            await sw_interface.async_added_to_hass()
-        # Connected to both full_where and base where
-        assert sw_interface.async_on_remove.call_count == 3
+        await sw_interface.async_added_to_hass()
+        assert sw_interface.async_on_remove.call_count == 1  # availability; frames come via the router
 
         # 4. Unload
         attach_runtime(mock_hass, config_entry)
@@ -541,7 +539,7 @@ class TestCoverEntity:
         cover.entity_id = cover.entity_id or "test.cover"
         cover.async_on_remove = MagicMock()
         await cover.async_added_to_hass()
-        assert cover.async_on_remove.call_count == 3
+        assert cover.async_on_remove.call_count == 1  # availability; frames come via the router
 
 
 # ── Button Entities ────────────────────────────────────────────────────────
