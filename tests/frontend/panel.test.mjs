@@ -28,7 +28,7 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
-    panel_version: "0.9.0",
+    panel_version: "0.10.0",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
@@ -106,7 +106,7 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
-  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.9.0");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.10.0");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
   root.querySelector('[data-view="entities"]').click();
   assert.equal(root.querySelectorAll(".device-group").length, 3);
@@ -866,4 +866,31 @@ test("failed deletion keeps the profile and displays storage or concurrent assig
       code === "storage_error" ? /Salvataggio fallito/ : code === "profile_in_use" ? /ancora assegnato/ : /bozza è conservata/);
     panel.remove();
   }
+});
+
+test("profile dialog mounts calibration and gateway navigation cancels only its session", async () => {
+  const { root, hass } = await mountProfiles();
+  const requests = [];
+  let stopped = 0;
+  const state = { entry_id: "one", entity_id: "cover.shutter", session_id: "measuring-one", sequence: 1,
+    phase: "confirm_closed", revision: 3, values: {}, reason: null, stop_requested: false };
+  hass.connection.subscribeMessage = async (callback, request) => {
+    requests.push(request); callback(state); return () => { stopped++; };
+  };
+  const original = hass.callWS;
+  hass.callWS = async (message) => {
+    if (message.type === "myhome/cover_calibration/action") { requests.push(message); return state; }
+    return original(message);
+  };
+  openProfile(root);
+  await tick();
+  root.querySelector("#profile-calibrate").click();
+  await tick();
+  assert.match(root.querySelector("#cal-phase").textContent, /completamente chiusa/);
+  assert.deepEqual(requests[0], { type: "myhome/cover_calibration/start", entry_id: "one", entity_id: "cover.shutter", revision: 3 });
+  change(root.querySelector("#gateway"), "two");
+  await tick();
+  assert.equal(root.querySelector("dialog"), null);
+  assert.equal(stopped, 1);
+  assert.deepEqual(requests[1], { type: "myhome/cover_calibration/action", entry_id: "one", session_id: "measuring-one", action: "cancel" });
 });

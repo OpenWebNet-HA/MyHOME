@@ -119,3 +119,6 @@ dialog a { color: var(--panel-accent); font-size: 13px; }
 .cover-profile-dialog select, .cover-profile-dialog input { width: 100%; min-width: 0; box-sizing: border-box; }
 .entity-row .actions { flex-wrap: wrap; }
 .entity-row [data-cover-profile] { flex-basis: 100%; font-size: 12px; }
+
+.calibration-safety-actions { position: sticky; bottom: 0; padding: 12px 0; background: var(--card-background-color, #fff); border-top: 1px solid var(--panel-border); z-index: 1; }
+.calibration-safety-actions #cal-stop { color: var(--error-color, #db4437); border-color: currentColor; }

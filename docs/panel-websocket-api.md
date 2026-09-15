@@ -2,6 +2,10 @@
 
 Status: **implemented in panel 0.9.0**, reviewed against
 [`02ce199`](https://github.com/xtimmy86x/MyHOME/tree/02ce19908787297c1a6e2a65d56a289e766c0695).
+Panel 0.10.0 adds a [guided-measurement session API](cover-calibration.md) and
+`calibration_busy` refusals on profile writes while a measurement is active. The
+profile payload/storage format below remains the 0.9.0 contract.
+
 This reference describes the prototype on `feat/myhome-sidepanel`, not an upstream
 v2.1 commitment. The [shared-contract proposal](panel-shared-contract.md) is separate
 and its new endpoints are **not implemented**.

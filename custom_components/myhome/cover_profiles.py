@@ -89,6 +89,8 @@ class CoverProfileStore:
         self.loaded = False
         self.data = {"revision": 0, "profiles": {}, "assignments": {}}
         self.covers = {}
+        self.calibration = None
+        self.calibration_command_lock = asyncio.Lock()
 
     async def load(self):
         """Caller holds lock; invalid storage must not silently overwrite saved data."""
@@ -165,7 +167,7 @@ async def read_profile(hass, entry_id, entity_id):
         return snapshot(hass, store, entry, entity)
 
 
-async def write_profile(hass, msg):
+async def write_profile(hass, msg, *, calibration=None):
     """Change one cover; shared profiles are copied explicitly instead of edited globally."""
     entry_id, entity_id = msg["entry_id"], msg["entity_id"]
     # Validate before allocating storage and again after any wait for the lock/load.
@@ -179,6 +181,10 @@ async def write_profile(hass, msg):
         current = snapshot(hass, store, entry, entity)
         if not current["writable"]:
             raise ProfileError(current["reason"])
+        if store.calibration and store.calibration.active and store.calibration is not calibration:
+            raise ProfileError("calibration_busy")
+        if calibration is not None and not calibration.active:
+            raise ProfileError("calibration_expired")
         if msg["revision"] != store.data["revision"]:
             raise ProfileError("revision_conflict")
         data = copy.deepcopy(store.data)
@@ -286,3 +292,5 @@ async def ws_write(hass, connection, msg):
 def register_api(hass: HomeAssistant):
     websocket_api.async_register_command(hass, ws_read)
     websocket_api.async_register_command(hass, ws_write)
+    from .cover_calibration import register_api as register_calibration
+    register_calibration(hass)

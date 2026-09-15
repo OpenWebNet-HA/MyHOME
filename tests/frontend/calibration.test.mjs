@@ -1,0 +1,145 @@
+import assert from "node:assert/strict";
+import { after, afterEach, test } from "node:test";
+import { JSDOM } from "jsdom";
+import { CoverCalibration } from "../../custom_components/myhome/frontend/panel/panel-cover-calibration.js";
+import { translations } from "../../custom_components/myhome/frontend/panel/panel-translations.js";
+
+const dom = new JSDOM("<!doctype html><body></body>", { pretendToBeVisual: true });
+const { document } = dom.window;
+const instances = [];
+const tick = () => new Promise((resolve) => setImmediate(resolve));
+const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
+const t = (key) => translations.it[key] || translations.en[key] || key;
+
+async function mount({ call, subscribe } = {}) {
+  const host = document.createElement("section");
+  document.body.append(host);
+  const controller = new CoverCalibration();
+  instances.push(controller);
+  const calls = [], starts = [];
+  let callback, stopped = 0, saved = 0, cancelled = 0;
+  let state = { entry_id: "one", entity_id: "cover.bedroom", session_id: "session-one", sequence: 1,
+    revision: 4, phase: "confirm_closed", reason: null, values: {}, elapsed: null, stop_requested: false };
+  const push = (extra) => { state = { ...state, sequence: state.sequence + 1, ...extra }; callback(state); };
+  const hass = { connection: { subscribeMessage: async (cb, request) => {
+    callback = cb; starts.push(request); cb(state);
+    return subscribe ? subscribe(() => { stopped++; }) : () => { stopped++; };
+  } }, callWS: async (message) => {
+    calls.push(message);
+    if (call) return call(message, state);
+    const phases = { open: "starting_open", close: "starting_close", save: "saved", cancel: "cancelled", stop: "interrupted" };
+    return { ...state, sequence: state.sequence + (message.action === "heartbeat" ? 0 : 1),
+      phase: phases[message.action] || state.phase };
+  } };
+  await controller.open({ host, hass, entity: { entry_id: "one", entity_id: "cover.bedroom" }, revision: 4,
+    t, onSaved: () => { saved++; }, onCancel: () => { cancelled++; } });
+  return { host, controller, calls, starts, push, counts: () => ({ stopped, saved, cancelled }) };
+}
+
+afterEach(() => { for (const controller of instances.splice(0)) controller.close(); document.body.replaceChildren(); });
+after(() => dom.window.close());
+
+test("wizard starts a gateway-scoped subscription and waits for backend movement feedback", async () => {
+  const { host, starts, calls, push } = await mount();
+  assert.deepEqual(starts, [{ type: "myhome/cover_calibration/start", entry_id: "one", entity_id: "cover.bedroom", revision: 4 }]);
+  assert.equal(calls.length, 0);
+  host.querySelector('[data-cal-action="open"]').click();
+  await tick();
+  assert.deepEqual(calls[0], { type: "myhome/cover_calibration/action", entry_id: "one", session_id: "session-one", sequence: 1, action: "open" });
+  assert.equal(host.querySelector('[data-cal-action="endpoint"]').hidden, true);
+  push({ phase: "opening", elapsed: 12.25 });
+  assert.equal(host.querySelector('[data-cal-action="endpoint"]').hidden, false);
+  assert.match(host.querySelector("#cal-elapsed").textContent, /12.25/);
+  assert.match(host.querySelector('[data-cal-action="endpoint"]').textContent, /Completamente aperta/);
+});
+
+test("review shows server times and only saves after explicit named confirmation", async () => {
+  const { host, calls, push, counts } = await mount();
+  push({ phase: "review", values: { opening_time: 20.5, closing_time: 40.5 }, stop_requested: true });
+  assert.equal(calls.length, 0);
+  assert.match(host.querySelector("#cal-values").textContent, /20.5.*40.5/);
+  assert.equal(host.querySelector("#cal-stop-status").hidden, false);
+  const form = host.querySelector("#cal-save");
+  form.elements.profile_name.value = "Camera";
+  form.dispatchEvent(new dom.window.Event("submit", { cancelable: true }));
+  await tick();
+  const save = calls.find((call) => call.action === "save");
+  assert.equal(save.name, "Camera");
+  assert.equal("values" in save, false);
+  assert.equal(counts().saved, 1);
+  assert.equal(counts().stopped, 1);
+});
+
+test("Stop stays available while another action waits and heartbeat cannot clear its busy state", async () => {
+  const waiting = deferred();
+  const { host, calls, controller, push } = await mount({ call: (message, state) =>
+    message.action === "open" ? waiting.promise : Promise.resolve({ ...state }) });
+  host.querySelector('[data-cal-action="open"]').click();
+  await controller._perform("heartbeat");
+  assert.equal(host.querySelector('[data-cal-action="open"]').disabled, true);
+  host.querySelector("#cal-stop").click();
+  await tick();
+  assert.ok(calls.some((call) => call.action === "stop"));
+  push({ phase: "interrupted", reason: "stopped", sequence: 5, values: {}, stop_requested: true });
+  waiting.resolve({ entry_id: "one", session_id: "session-one", sequence: 2, phase: "starting_open", values: {} });
+  await tick();
+  assert.match(host.querySelector("#cal-phase").textContent, /interrotta/);
+});
+
+test("storage failure preserves the review and the user's draft", async () => {
+  const { host, push } = await mount({ call: (message, state) => {
+    if (message.action === "save") throw { code: "storage_error" };
+    return state;
+  } });
+  push({ phase: "review", values: { opening_time: 20, closing_time: 40 } });
+  const form = host.querySelector("#cal-save");
+  form.elements.profile_name.value = "Da riprovare";
+  form.elements.profile_name.focus();
+  form.dispatchEvent(new dom.window.Event("submit", { cancelable: true }));
+  await tick();
+  assert.equal(form.elements.profile_name.value, "Da riprovare");
+  assert.equal(document.activeElement, form.elements.profile_name);
+  assert.match(host.querySelector("#cal-reason").textContent, /Salvataggio fallito/);
+  assert.equal(form.hidden, false);
+});
+
+test("cancel invalidates a late subscription and queued responses", async () => {
+  const waiting = deferred();
+  // open() waits for subscribe; exercise the lifetime without awaiting that completion.
+  const host = document.createElement("section"); document.body.append(host);
+  const controller = new CoverCalibration(); instances.push(controller);
+  let stopped = 0, saved = 0;
+  const opening = controller.open({ host, entity: { entry_id: "one", entity_id: "cover.bedroom" }, revision: 0, t,
+    hass: { connection: { subscribeMessage: () => waiting.promise }, callWS: async () => ({}) },
+    onCancel: () => {}, onSaved: () => { saved++; } });
+  controller.close();
+  waiting.resolve(() => { stopped++; });
+  await opening;
+  assert.equal(stopped, 1);
+  assert.equal(saved, 0);
+  assert.equal(controller._heartbeat, null);
+});
+
+test("lost heartbeat disables movement and retains Stop and Cancel", async () => {
+  const { host, controller, calls, counts } = await mount({ call: (message, state) => {
+    if (message.action === "heartbeat") throw { code: "disconnected" };
+    return state;
+  } });
+  await controller._perform("heartbeat");
+  assert.equal(host.querySelector('[data-cal-action="open"]').disabled, true);
+  assert.equal(host.querySelector("#cal-stop").disabled, false);
+  assert.match(host.querySelector("#cal-reason").textContent, /Connessione/);
+  host.querySelector("#cal-cancel").click();
+  await tick();
+  assert.ok(calls.some((call) => call.action === "cancel"));
+  assert.equal(counts().cancelled, 1);
+  assert.equal(counts().stopped, 1);
+});
+
+test("every backend phase/refusal has English and Italian text", () => {
+  for (const language of ["it", "en"]) {
+    for (const key of Object.keys(translations.en).filter((key) => key.startsWith("cal") || key.includes("calibration_"))) {
+      assert.ok(translations[language][key], `${language}.${key}`);
+    }
+  }
+});

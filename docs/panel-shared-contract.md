@@ -2,6 +2,11 @@
 
 **Status: draft, not implemented or jointly approved.** Prepared after the
 [agreement on one panel](https://github.com/orgs/OpenWebNet-HA/discussions/270#discussioncomment-18447590).
+Our later panel 0.10.0 adds [experimental single-cover guided measurement](cover-calibration.md)
+under `myhome/cover_calibration/*`. It does not implement the proposed common
+`myhome/covers/*` or texts/refresh APIs below. The pinned comparison remains a
+record of the 0.9.0 baseline.
+
 Agreement on the product direction does not imply agreement on the endpoint names,
 payloads or migration choices proposed here.
 
@@ -265,8 +270,8 @@ API, migration or calibration control and does not claim those cases all exist t
 ## Resume the calibration work
 
 The original feature sequence has completed separate opening/closing times and
-profile deletion in 0.9.0. The next feature is guided measurement for a single cover.
-Before writing its UI, define the backend session contract: explicit target,
+profile deletion in 0.9.0. Panel 0.10.0 now implements an experimental single-cover measurement session
+([workflow and current contract](cover-calibration.md)) with: explicit target,
 endpoint confirmations, measured opening/closing durations, always available Stop
 and Cancel, result preview and explicit save. Measurements should remain unsaved
 until accepted, and normal discovery must continue working independently.
@@ -274,5 +279,5 @@ until accepted, and normal discovery must continue working independently.
 Also settle timeout, disconnect/unload and restart behavior, external wall-control
 interference, command failures, and who owns a running session. A browser timer
 cannot be authoritative. Do not silently claim success when a stop was merely sent.
-This is the next scoped design/implementation task after agreeing the common
-boundary; it does not require importing nonlinear roll calibration at the same time.
+The next joint integration task is to adapt that session to the agreed common
+boundary after physical validation; nonlinear roll calibration can follow separately.

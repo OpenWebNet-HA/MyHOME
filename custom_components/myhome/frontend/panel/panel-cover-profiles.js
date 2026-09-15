@@ -3,10 +3,15 @@ const url = new URL("panel-dom.js", import.meta.url);
 url.search = new URL(import.meta.url).search;
 const { escapeHtml: esc } = await import(url.href);
 
+const calibrationUrl = new URL("panel-cover-calibration.js", import.meta.url);
+calibrationUrl.search = url.search;
+const { CoverCalibration } = await import(calibrationUrl.href);
+
 export class CoverProfileEditor {
-  constructor() { this._generation = 0; }
+  constructor() { this._generation = 0; this._calibration = new CoverCalibration(); }
 
   close() {
+    this._calibration.close();
     this._generation++;
     this.dialog?.close();
     this.dialog?.remove();
@@ -67,6 +72,7 @@ export class CoverProfileEditor {
       <p>${esc(t("profileEffectiveClosing"))}: <span id="profile-effective-closing">${esc(data.effective_closing_time ?? data.effective_travel_time ?? "—")}</span> s</p>
       <p id="profile-pending" role="status" ${data.pending ? "" : "hidden"}>${esc(t("profilePending"))}</p>
       ${!data.writable ? `<p class="notice">${esc(t(`profileError_${data.reason}`))}</p>` : ""}
+      <button type="button" id="profile-calibrate" ${data.writable ? "" : "disabled"}>${esc(t("calTitle"))}</button>
       <form id="profile-form">
         <label>${esc(t("profileChoose"))}<select name="profile" ${data.writable ? "" : "disabled"}>
           <option value="">${esc(t("profileDefault"))}</option>
@@ -93,6 +99,12 @@ export class CoverProfileEditor {
         <p id="profile-error" class="error" role="alert" hidden></p>
         <button type="button" id="profile-reload" hidden>${esc(t("profileReload"))}</button>
       </form>`;
+    host.querySelector("#profile-calibrate").onclick = () => {
+      if (this._saving === this._generation || !data.writable) return;
+      const context = this._context;
+      this._calibration.open({ ...context, host: host.querySelector("#profile-body"), revision: data.revision,
+        onCancel: () => this.open(context), onSaved: () => { context.onSaved(t("saved")); this.open(context); } });
+    };
     const form = host.querySelector("#profile-form");
     form.elements.profile.value = data.assigned_profile_id || "";
     const select = () => {

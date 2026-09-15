@@ -1,6 +1,7 @@
 """Code to handle a MyHome Gateway."""
 import asyncio
 import time
+from contextlib import nullcontext
 from typing import Any, Dict, List
 
 import OWNd.message as _ownd_msg
@@ -662,25 +663,31 @@ class MyHOMEGatewayHandler:
                 task["message"],
                 worker_id,
             )
-            task_start = time.time()
-            self.bus_monitor.record_frame(
-                direction="tx",
-                raw=str(task["message"]),
-                parsed=task["message"] if isinstance(task["message"], OWNMessage) else None,
-            )
-            collected = await _command_session.send(message=task["message"], is_status_request=task["is_status_request"])
-            if collected and isinstance(collected, list):
-                for resp in collected:
-                    raw_resp = str(resp)
-                    if self.bus_monitor.has_frame_since(task_start, direction="rx", raw=raw_resp):
-                        continue
-                    frame = self.bus_monitor.record_frame(
-                        direction="rx",
-                        raw=raw_resp,
-                        parsed=resp if isinstance(resp, OWNMessage) else None,
-                    )
-                    if not getattr(frame, "is_duplicate", False) and isinstance(resp, OWNMessage):
-                        async_dispatcher_send(self.hass, f"myhome_message_{self.mac}", resp)
+            # Calibration jobs share a lock across workers and sessions. Recheck
+            # their lease after waiting: cancelled queued motion must never run.
+            async with task.get("command_lock", nullcontext()):
+                if "guard" in task and not task["guard"]():
+                    self.send_buffer.task_done()
+                    continue
+                task_start = time.time()
+                self.bus_monitor.record_frame(
+                    direction="tx",
+                    raw=str(task["message"]),
+                    parsed=task["message"] if isinstance(task["message"], OWNMessage) else None,
+                )
+                collected = await _command_session.send(message=task["message"], is_status_request=task["is_status_request"])
+                if collected and isinstance(collected, list):
+                    for resp in collected:
+                        raw_resp = str(resp)
+                        if self.bus_monitor.has_frame_since(task_start, direction="rx", raw=raw_resp):
+                            continue
+                        frame = self.bus_monitor.record_frame(
+                            direction="rx",
+                            raw=raw_resp,
+                            parsed=resp if isinstance(resp, OWNMessage) else None,
+                        )
+                        if not getattr(frame, "is_duplicate", False) and isinstance(resp, OWNMessage):
+                            async_dispatcher_send(self.hass, f"myhome_message_{self.mac}", resp)
             self.send_buffer.task_done()
 
             if hasattr(self.gateway, "profile") and self.gateway.profile.command_queue_delay > 0:
@@ -715,6 +722,11 @@ class MyHOMEGatewayHandler:
                 pass
 
         return True
+
+    def async_queue_calibration(self, message, guard, command_lock):
+        """Queue a short-lived calibration job without opening another connection."""
+        self.send_buffer.put_nowait({"message": message, "is_status_request": False,
+                                    "guard": guard, "command_lock": command_lock})
 
     async def send(self, message: OWNCommand):
         await self.send_buffer.put({"message": message, "is_status_request": False})

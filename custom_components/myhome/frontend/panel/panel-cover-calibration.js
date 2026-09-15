@@ -1,0 +1,132 @@
+/** Socket-owned guided measurement; the browser never computes or saves timings. */
+const url = new URL("panel-dom.js", import.meta.url);
+url.search = new URL(import.meta.url).search;
+const { escapeHtml: esc } = await import(url.href);
+
+export class CoverCalibration {
+  constructor() { this._generation = 0; }
+
+  close() {
+    this._generation++;
+    clearInterval(this._heartbeat);
+    this._heartbeat = null;
+    const state = this._state;
+    if (state && !["saved", "cancelled"].includes(state.phase)) {
+      this._context.hass.callWS({ type: "myhome/cover_calibration/action", entry_id: state.entry_id,
+        session_id: state.session_id, action: "cancel" }).catch(() => {});
+    }
+    Promise.resolve(this._unsubscribe?.()).catch(() => {});
+    this._unsubscribe = null;
+    this._state = null;
+  }
+
+  async open(context) {
+    this.close();
+    this._context = context;
+    this._lost = false;
+    this._busy = false;
+    const generation = this._generation;
+    const { host, hass, entity, revision, t } = context;
+    host.innerHTML = `<h3>${esc(t("calTitle"))}</h3><p>${esc(t("calHelp"))}</p>
+      <p id="cal-phase" role="status">${esc(t("loading"))}</p>
+      <p id="cal-elapsed"></p><p id="cal-stop-status" class="notice" hidden>${esc(t("calStopRequested"))}</p>
+      <p id="cal-reason" class="error" role="alert" hidden></p>
+      <div class="actions">
+        <button type="button" data-cal-action="open" hidden>${esc(t("calOpen"))}</button>
+        <button type="button" data-cal-action="close" hidden>${esc(t("calClose"))}</button>
+        <button type="button" data-cal-action="endpoint" hidden></button>
+      </div>
+      <form id="cal-save" hidden><p id="cal-values"></p>
+        <label>${esc(t("profileName"))}<input name="profile_name" required maxlength="64"></label>
+        <button type="submit">${esc(t("calSave"))}</button>
+      </form>
+      <div class="actions calibration-safety-actions"><button type="button" id="cal-stop" disabled>${esc(t("calStop"))}</button>
+        <button type="button" id="cal-cancel">${esc(t("calCancel"))}</button></div>`;
+    for (const button of host.querySelectorAll("[data-cal-action]")) {
+      button.onclick = () => this._perform(button.dataset.calAction);
+    }
+    host.querySelector("#cal-stop").onclick = () => this._perform("stop");
+    host.querySelector("#cal-cancel").onclick = () => { this.close(); context.onCancel(); };
+    host.querySelector("#cal-save").onsubmit = (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      if (form.reportValidity()) this._perform("save", { name: form.elements.profile_name.value.trim() });
+    };
+    try {
+      const unsubscribe = await hass.connection.subscribeMessage((state) => {
+        if (!this._current(generation)) return;
+        this._accept(state);
+      }, { type: "myhome/cover_calibration/start", entry_id: entity.entry_id, entity_id: entity.entity_id, revision });
+      if (!this._current(generation)) { Promise.resolve(unsubscribe()).catch(() => {}); return; }
+      this._unsubscribe = unsubscribe;
+      this._heartbeat = setInterval(() => this._perform("heartbeat"), 5000);
+    } catch (error) {
+      if (this._current(generation)) this._error(error);
+    }
+  }
+
+  _current(generation) { return generation === this._generation && this._context.host.isConnected; }
+
+  _accept(state) {
+    if (this._state && state.sequence < this._state.sequence) return;
+    this._state = state;
+    this._render();
+    if (state.phase === "saved") {
+      this.close();
+      this._context.onSaved();
+    }
+  }
+
+  _render() {
+    const { host, t } = this._context;
+    const state = this._state;
+    host.querySelector("#cal-phase").textContent = t(`calPhase_${state.phase}`);
+    host.querySelector("#cal-elapsed").textContent = state.elapsed == null ? "" : `${t("calElapsed")}: ${state.elapsed} s`;
+    host.querySelector("#cal-stop-status").hidden = !state.stop_requested;
+    const reason = host.querySelector("#cal-reason");
+    if (state.reason) {
+      reason.hidden = false;
+      reason.textContent = t(`calReason_${state.reason}`);
+    }
+    for (const action of ["open", "close", "endpoint"]) {
+      const button = host.querySelector(`[data-cal-action="${action}"]`);
+      button.hidden = action === "open" ? state.phase !== "confirm_closed" : action === "close"
+        ? state.phase !== "confirm_open" : !["opening", "closing"].includes(state.phase);
+      button.disabled = this._busy || this._lost;
+    }
+    host.querySelector('[data-cal-action="endpoint"]').textContent = t(state.phase === "opening" ? "calEndpointOpen" : "calEndpointClose");
+    host.querySelector("#cal-stop").disabled = ["saved", "cancelled"].includes(state.phase);
+    host.querySelector("#cal-save").hidden = state.phase !== "review";
+    host.querySelector('#cal-save button').disabled = this._busy || this._lost;
+    host.querySelector("#cal-values").textContent = `${t("profileOpeningTime")}: ${state.values.opening_time ?? "—"} · ${t("profileClosingTime")}: ${state.values.closing_time ?? "—"}`;
+  }
+
+  _error(error) {
+    const { host, t } = this._context;
+    const key = `profileError_${error.code}`;
+    const box = host.querySelector("#cal-reason");
+    box.textContent = t(key) === key ? t("calConnectionError") : t(key);
+    box.hidden = false;
+  }
+
+  async _perform(action, extra = {}) {
+    if (!this._state || (this._busy && !["stop", "heartbeat"].includes(action))) return;
+    const generation = this._generation;
+    const { hass } = this._context;
+    const state = this._state;
+    const ownsBusy = !["heartbeat", "stop"].includes(action);
+    if (ownsBusy) this._busy = true;
+    this._render();
+    try {
+      const result = await hass.callWS({ type: "myhome/cover_calibration/action", entry_id: state.entry_id,
+        session_id: state.session_id, sequence: state.sequence, action, ...extra });
+      if (this._current(generation)) this._accept(result);
+    } catch (error) {
+      if (!this._current(generation)) return;
+      if (action === "heartbeat") this._lost = true;
+      this._error(error);
+    } finally {
+      if (this._current(generation)) { if (ownsBusy) this._busy = false; this._render(); }
+    }
+  }
+}

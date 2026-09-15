@@ -1156,3 +1156,28 @@ def test_compat_gateway_timezone():
 
 
 
+
+
+async def test_calibration_jobs_recheck_guard_after_worker_lock(gateway_handler):
+    """A cancelled queued movement never reaches the wire, even after a lock wait."""
+    gateway_handler._event_session_ready.set()
+    command_lock = asyncio.Lock()
+    await command_lock.acquire()
+    allowed = [True]
+    movement = MagicMock(spec=OWNCommand)
+    stop = MagicMock(spec=OWNCommand)
+    gateway_handler.async_queue_calibration(movement, lambda: allowed[0], command_lock)
+    gateway_handler.async_queue_calibration(stop, lambda: True, command_lock)
+    gateway_handler.send_buffer.put_nowait(None)
+    with patch("custom_components.myhome.gateway.OWNCommandSession") as factory:
+        session = factory.return_value
+        session.connect = AsyncMock(return_value={"Success": True})
+        session.close = AsyncMock()
+        session.send = AsyncMock(return_value=[])
+        worker = asyncio.create_task(gateway_handler.sending_loop(0))
+        await asyncio.sleep(0)
+        allowed[0] = False
+        command_lock.release()
+        await worker
+    session.send.assert_awaited_once_with(message=stop, is_status_request=False)
+    assert gateway_handler.send_buffer.empty()

@@ -15,6 +15,16 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Guided travel measurement (0.10.0)
+
+The WHO 2 **Travel profile** dialog now opens **Guided travel measurement** for one
+standard cover. It measures separate opening/closing times from bus movement
+feedback, requires physical endpoint confirmations and an explicit save to a new
+profile. Stop and Cancel remain available; timeouts/disconnects discard provisional
+measurements. A queued Stop is shown as a request, not a confirmed motor stop.
+See the [wizard and session API guide](cover-calibration.md) for the workflow,
+requirements, limits and real-gateway validation steps.
+
 ## Developer contracts
 
 - [Implemented panel/profile API (0.9.0)](panel-websocket-api.md): current commands,
@@ -25,7 +35,7 @@ and provides English and Italian labels, with English fallback for other languag
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.9.0**, defined by
+The panel has an independent version, currently **0.10.0**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.

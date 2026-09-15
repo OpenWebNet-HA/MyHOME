@@ -282,6 +282,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._closing_time = travel_time
         self._default_travel_time = travel_time
         self._pending_profile = None
+        self._calibration = None
 
         # Both advanced and standard covers support SET_POSITION (standard via travel time estimation)
         self._attr_supported_features = (
@@ -427,7 +428,15 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     async def async_will_remove_from_hass(self):
         """Run when entity will be removed from hass."""
         self._cancel_stop_task()
+        if self._calibration:
+            self._calibration.close("cover_unavailable")
         await super().async_will_remove_from_hass()
+
+    @callback
+    def _handle_availability_update(self):
+        super()._handle_availability_update()
+        if self._calibration and not self.available:
+            self._calibration.interrupt("cover_unavailable")
 
     async def async_update(self):
         """Update the entity.
@@ -445,6 +454,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def async_open_cover(self, **kwargs):  # pylint: disable=unused-argument
         """Open the cover."""
+        if self._calibration:
+            self._calibration.interrupt("external_command")
         self._cancel_stop_task()
         if not self._advanced:
             self._start_position = self.current_cover_position if self.current_cover_position is not None else 0
@@ -458,6 +469,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def async_close_cover(self, **kwargs):  # pylint: disable=unused-argument
         """Close cover."""
+        if self._calibration:
+            self._calibration.interrupt("external_command")
         self._cancel_stop_task()
         if not self._advanced:
             self._start_position = self.current_cover_position if self.current_cover_position is not None else 100
@@ -470,6 +483,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def async_set_cover_position(self, **kwargs):
         """Move the cover to a specific position."""
+        if self._calibration:
+            self._calibration.interrupt("external_command")
         if ATTR_POSITION not in kwargs:
             return
         target_position = kwargs[ATTR_POSITION]
@@ -516,6 +531,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def async_stop_cover(self, **kwargs):  # pylint: disable=unused-argument
         """Stop the cover."""
+        if self._calibration:
+            self._calibration.interrupt("external_command")
         self._cancel_stop_task()
         if not self._advanced:
             if self._move_start_time is not None:
@@ -541,6 +558,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Handle an event message."""
         if getattr(message, "is_translation", None) is True:
             return
+        if self._calibration:
+            self._calibration.on_event(message)
         LOGGER.debug(
             "%s %s",
             self._gateway_handler.log_id,
