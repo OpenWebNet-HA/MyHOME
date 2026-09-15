@@ -101,6 +101,16 @@ test("Clear returns to trace mode and ends a running trace", async () => {
   assert.deepEqual(labels(), ["🔴 Start Trace", "💾 Export Trace", "📋 Copy Trace"]);
 });
 
+test("regression: an export after Clear does not carry the previous trace's start time", async () => {
+  const card = create();
+  await card._handleStartTrace();
+  assert.ok(card._traceStartedAt);
+  await card._clearBuffer();
+  assert.equal(card._traceStartedAt, null);
+  await card._handleExportTrace();
+  assert.equal(downloads.at(-1).payload.capture.started_at, null);
+});
+
 test("export is named after the chosen kind, gateway and filter, and describes itself", async () => {
   const card = create({ model: "MH200N" });
   card._frames = [
