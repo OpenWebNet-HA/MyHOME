@@ -932,6 +932,7 @@ class MyHomeBusCard extends HTMLElement {
 
   async _clearBuffer() {
     this._frames = [];
+    this._traceStartedAt = null;
     this._lastSweepAt = null;
     this._setTracing(false);
     this._setCaptureMode("trace");
