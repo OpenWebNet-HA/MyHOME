@@ -235,7 +235,11 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 calling_zones.append(str(int(what_param[0])))
             except (ValueError, TypeError):
                 pass
-        if where_param and where_param[0] != "4":
+        # WHERE ``<zone>#<n>`` names the zone's actuator (``*#4*2#1*20*1##`` =
+        # zone 2, actuator 1 is on), not another zone: routing it to zone <n>
+        # made zone 1 "heat" whenever any zone's actuator 1 opened (#333). The
+        # parameter is the zone only on a WHERE=0 frame (``*#4*0#5*...``).
+        if where_param and where_param[0] != "4" and str(raw_where) in ("0", ""):
             try:
                 calling_zones.append(str(int(where_param[0])))
             except (ValueError, TypeError):
