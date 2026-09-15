@@ -1,4 +1,5 @@
 """Plant fixtures carry no personal data, and the anonymizer keeps it that way."""
+# privacy-check: allow-samples - the inputs below are what the check must catch
 import json
 import re
 import shutil
@@ -6,9 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from scripts.anonymize_plant_fixture import Anonymizer, anonymize, main
+from scripts.anonymize_plant_fixture import Anonymizer, anonymize, check, findings, main
 
-PLANTS = Path(__file__).resolve().parent / "fixtures" / "plants"
+TESTS = Path(__file__).resolve().parent
+PLANTS = TESTS / "fixtures" / "plants"
 PRIVATE_IP = re.compile(r"\b(10\.\d+|172\.(1[6-9]|2\d|3[01])|192\.168)\.\d+\.\d+\b")
 IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 MAC = re.compile(r"\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b")
@@ -131,6 +133,52 @@ def test_cli_writes_the_mapping(tmp_path, capsys):
     assert (plant / "myhome.yaml").read_text(encoding="utf-8") == (src / "myhome.yaml").read_text(encoding="utf-8")
 
 
+def test_nothing_in_the_test_tree_looks_personal():
+    """The same rules, over every data and source file under tests/ - wherever a dump lands."""
+    assert check([TESTS]) == 0
+
+
+def test_the_scan_covers_the_whole_test_tree_not_only_the_fixtures(tmp_path, capsys):
+    """Review of #335: the root was tests/fixtures, so a dump under golden/ or frontend/ went unchecked."""
+    tree = tmp_path / "tests"
+    (tree / "fixtures" / "plants" / "issue_1_f454").mkdir(parents=True)
+    (tree / "fixtures" / "plants" / "issue_1_f454" / "diagnostic_summary.json").write_text(
+        json.dumps({"host": "192.0.2.1", "mac": "00:03:50:00:00:01"}), encoding="utf-8")
+    (tree / "golden").mkdir()
+    (tree / "golden" / "issue_1_f454.json").write_text(json.dumps({"host": "192.168.1.35"}), encoding="utf-8")
+    (tree / "frontend").mkdir()
+    (tree / "frontend" / "trace.yaml").write_text("mac: 00:03:50:AB:CD:EF" + chr(10), encoding="utf-8")
+    (tree / "test_something.py").write_text("PATH = '/home/alice/.homeassistant'" + chr(10), encoding="utf-8")
+
+    assert check([tree / "fixtures"]) == 0  # the old root: everything above it is invisible
+    assert check([tree]) == 1
+    out = capsys.readouterr().out
+    assert f"{tree / 'golden' / 'issue_1_f454.json'}: LAN address" in out
+    assert f"{tree / 'frontend' / 'trace.yaml'}: non-synthetic MAC" in out
+    assert f"{tree / 'test_something.py'}: local path" in out
+    assert "4 files checked, 3 with personal data" in out
+
+
+def test_check_reports_and_rejects(tmp_path, capsys):
+    dump = tmp_path / "diagnostics.json"
+    dump.write_text(json.dumps({"host": "192.168.1.35", "mac": "00:03:50:AB:CD:EF", "password": "12345",
+                                "entry_id": "01M284WWKZG4XTEG62NVW1DPVG", "file_path": "C:/Users/someone/x"}), encoding="utf-8")
+    assert findings(dump.read_text(encoding="utf-8")) == ["LAN address", "non-synthetic MAC", "secret value", "local path", "config-entry id"]
+    assert findings("mac = '00:03:50:aa:bb:cc'; password = '123'", data_file=False) == []  # placeholders in source are fine
+    assert findings("x = '/home/alice/.homeassistant'", data_file=False) == ["local path"]  # a user name is not
+    assert findings("192.168.1.1  # privacy-check: allow-samples") == []
+    assert check([dump]) == 1
+    assert "diagnostics.json: LAN address" in capsys.readouterr().out
+    assert main(["--check", str(dump)]) == 1
+
+
+def test_card_exports_carry_no_fingerprint_or_address():
+    """The issue bundle and the JSON export name the transport and the model, never the browser or the address."""
+    card = (Path(__file__).resolve().parents[1] / "custom_components" / "myhome" / "frontend" / "myhome-bus-card.js").read_text(encoding="utf-8")
+    assert "userAgent" not in card and "user_agent" not in card
+    assert "${gw.host}" not in card and "${gw.port" not in card and "${gw.serial_port}" not in card
+
+
 def _sanitize(text: str) -> tuple[str, dict]:
     out = Anonymizer("issue_500_f454").json_text(text)
     return out, json.loads(out)  # valid JSON, whatever came in
@@ -161,7 +209,7 @@ def test_diagnostics_are_sanitized_structurally_not_textually():
     assert diag["data"]["config_entry"]["options"]["file_path"] == "/config/myhome.yaml"
     assert diag["data"]["issues"] == [{"note": "entry 01PLANTISSUE500F4540000000 at 192.0.2.1 mac 00:03:50:00:05:00"}]
     assert diag["home_assistant"]["timezone"] == "UTC"
-    assert not PRIVATE_IP.search(out) and "Europe" not in out and "rossi" not in out
+    assert findings(out) == []
 
 
 def test_serializer_keeps_frames_one_per_line_and_round_trips():

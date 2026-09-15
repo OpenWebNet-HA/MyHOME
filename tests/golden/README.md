@@ -61,10 +61,10 @@ docs/
 
 To validate all YAML fixtures against `schema.json` and synchronize `corpus.json`:
 ```powershell
-& "C:\Users\laurensvdb\Documents\GitHub\MyHOME\.venv\Scripts\python.exe" tools/golden/validate_corpus.py
+python tools/golden/validate_corpus.py
 ```
 
 To run the automated pytest conformance suite (zero external dependencies required):
 ```powershell
-& "C:\Users\laurensvdb\Documents\GitHub\MyHOME\.venv\Scripts\python.exe" -m pytest tests/test_golden_conformance.py -v
+python -m pytest tests/test_golden_conformance.py -v
 ```

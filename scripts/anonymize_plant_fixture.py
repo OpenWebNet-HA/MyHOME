@@ -30,7 +30,9 @@ Run it on every contributed fixture before committing::
     python scripts/anonymize_plant_fixture.py tests/fixtures/plants/issue_999_f454
 
 It prints the mapping old entity id -> new entity id so tests can be updated,
-and the same input always yields the same output.
+and the same input always yields the same output. ``--check`` reports personal
+data in files or directories instead of rewriting (the pre-commit hook and
+``tests/test_fixture_privacy.py`` run it over the whole test tree).
 """
 from __future__ import annotations
 
@@ -248,11 +250,71 @@ def anonymize(plant_dir: Path) -> Anonymizer:
     return a
 
 
+PRIVATE_IP = re.compile(r"\b(10\.\d+|172\.(1[6-9]|2\d|3[01])|192\.168)\.\d+\.\d+\b")
+LOCAL_PATH = re.compile(r"[A-Za-z]:[\\/]+Users[\\/]+[A-Za-z]|/home/[a-z][a-z0-9_-]*/|/Users/[A-Za-z][a-z0-9_-]*/")
+SECRET = re.compile(
+    r'"(password|pin|token|secret)":\s*"(?!\*\*REDACTED)[^"]*\d[^"]*"|^\s*(password|pin|token|secret):\s*["\']?[^"\'\s]*\d',
+    re.I | re.M,
+)
+#: A file may carry deliberate samples of what the check looks for (its own tests)
+ALLOW_SAMPLES = "privacy-check: allow-samples"
+
+
+DATA_SUFFIXES = (".json", ".yaml", ".yml")
+
+
+def findings(text: str, data_file: bool = True) -> list[str]:
+    """What in ``text`` looks like personal data (empty when clean).
+
+    Data files (JSON / YAML) get the full rule set: a diagnostics download or a
+    plant configuration pasted into the tree lands there. Source files keep
+    placeholder addresses and passwords on purpose, so only the strong signals
+    apply to them: a local path with a user name, a real config-entry id.
+    """
+    found: list[str] = []
+    if ALLOW_SAMPLES in text:
+        return found
+    if data_file and PRIVATE_IP.search(text):
+        found.append("LAN address")
+    if data_file and any(not m.lower().startswith("00:03:50:00:") for m in MAC.findall(text)):
+        found.append("non-synthetic MAC")
+    if data_file and SECRET.search(text):
+        found.append("secret value")
+    if LOCAL_PATH.search(text):
+        found.append("local path")
+    if any(not u.startswith("01PLANT") for u in re.findall(r"\b01[A-Z0-9]{24}\b", text)):
+        found.append("config-entry id")
+    return found
+
+
+def check(paths: list[Path]) -> int:
+    """Report personal data in the given files or directories; exit 1 when any is found."""
+    files = [
+        f for path in paths for f in (path.rglob("*") if path.is_dir() else [path])
+        if f.suffix in DATA_SUFFIXES + (".py", ".md", ".js", ".ambr") and "translations" not in f.parts
+    ]
+    dirty = 0
+    for f in sorted(files):
+        try:
+            text = f.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        hits = findings(text, data_file=f.suffix in DATA_SUFFIXES)
+        if hits:
+            dirty += 1
+            print(f"{f}: {', '.join(hits)}")
+    print(f"{len(files)} files checked, {dirty} with personal data")
+    return 1 if dirty else 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("plant", type=Path, nargs="+", help="fixture directory (tests/fixtures/plants/<plant>)")
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
+    parser.add_argument("plant", type=Path, nargs="+", help="fixture directory (tests/fixtures/plants/<plant>), or files/directories with --check")
     parser.add_argument("--mapping", type=Path, help="write the old -> new entity id / address mapping as JSON")
+    parser.add_argument("--check", action="store_true", help="report personal data instead of rewriting; exit 1 when any is found")
     args = parser.parse_args(argv)
+    if args.check:
+        return check(args.plant)
     mapping: dict[str, Any] = {}
     for plant in args.plant:
         a = anonymize(plant)
