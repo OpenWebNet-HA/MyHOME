@@ -24,6 +24,12 @@ from OWNd.message import (
     CLIMATE_MODE_COOL,
     CLIMATE_MODE_HEAT,
     CLIMATE_MODE_OFF,
+    LOCAL_CONTROL_NORMAL,
+    LOCAL_CONTROL_OFF,
+    LOCAL_CONTROL_OFFSET,
+    LOCAL_CONTROL_OVERRIDE,
+    LOCAL_CONTROL_PROTECTION,
+    LOCAL_CONTROL_UNKNOWN,
     MESSAGE_TYPE_ACTION,
     MESSAGE_TYPE_FAN_SPEED,
     MESSAGE_TYPE_LOCAL_OFFSET,
@@ -436,6 +442,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._attr_current_humidity = None
         self._target_temperature = None
         self._local_offset = 0
+        self._knob_pos = "UNKNOWN"
         self._local_target_temperature = None
 
         self._attr_hvac_mode = None
@@ -446,6 +453,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         """Return device specific attributes."""
         attrs = {
             "local_offset": self._local_offset,
+            "local_target_temperature": self._local_target_temperature,
+            "knob_pos": self._knob_pos,
         }
         if self._fan:
             attrs["fan_mode"] = self._attr_fan_mode
@@ -691,7 +700,21 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._gateway_handler.log_id,
                 message.human_readable_log,
             )
-            self._local_offset = message.local_offset
+            self._local_offset = message.local_offset if message.local_offset is not None else 0
+            if message.local_control_state in (LOCAL_CONTROL_UNKNOWN, None):
+                self._knob_pos = "UNKNOWN"
+            elif message.local_control_state == LOCAL_CONTROL_OFFSET:
+                self._knob_pos = f"{message.local_offset:+d}"
+            elif message.local_control_state == LOCAL_CONTROL_NORMAL:
+                self._knob_pos = "0"
+            elif message.local_control_state == LOCAL_CONTROL_OFF:
+                self._knob_pos = "OFF"
+            elif message.local_control_state == LOCAL_CONTROL_PROTECTION:
+                self._knob_pos = "*"
+            elif message.local_control_state == LOCAL_CONTROL_OVERRIDE:
+                self._knob_pos = "?"
+            else:
+                self._knob_pos = "UNKNOWN"
             if self._target_temperature is not None:
                 self._local_target_temperature = self._target_temperature + self._local_offset
         elif message.message_type == MESSAGE_TYPE_LOCAL_TARGET_TEMPERATURE:
