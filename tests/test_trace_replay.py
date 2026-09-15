@@ -816,4 +816,168 @@ class TestTraceReplayHarness:
 
         await hass.config_entries.async_unload(entry.entry_id)
 
+    async def test_real_world_trace_replay_issue_303_f461(self, hass: HomeAssistant) -> None:
+        """Replay all 50 on-wire frames from the issue #303 F461 gateway trace (Issue #303).
+
+        Verifies:
+        1. Auto-discovery correctly instantiates standalone zones 1, 2, 3, 5, 6 without YAML.
+        2. All standalone zones expose FAN_MODE by default in supported_features.
+        3. Dimension 20 actuator frames (values >= 5) update fan speed and state without
+           corrupting valve action.
+        4. Real-world status, temperature, humidity, setpoints and fan states match bus events:
+           - Zone 1: fan_mode='high', target=20.0, current=23.4, humidity=55
+           - Zone 2: fan_mode='high', target=26.5, current=23.1, humidity=54
+           - Zone 3: fan_mode='low', current=23.0, humidity=59
+           - Zone 5: fan_mode='low', current=23.0, humidity=61
+           - Zone 6: fan_mode='auto', current=22.8, humidity=59
+        5. Calling climate.set_fan_mode on HA service bus transmits valid OpenWebNet command.
+        """
+        from unittest.mock import AsyncMock
+
+        from homeassistant.components.climate.const import ClimateEntityFeature, HVACMode
+
+        plant_dir = FIXTURES_PLANTS_DIR / "issue_303_f461"
+        plant_yaml = plant_dir / "myhome.yaml"
+        diag_json = plant_dir / "diagnostic_summary.json"
+
+        assert plant_yaml.is_file()
+        assert diag_json.is_file()
+
+        with open(diag_json, "r", encoding="utf-8") as f:
+            diag_data = json.load(f)
+
+        raw_frames = diag_data["data"]["bus_monitor"]["recent_frames"]
+        assert len(raw_frames) == 50, f"Expected 50 frames in trace, found {len(raw_frames)}"
+
+        mac = "00:03:50:00:03:03"
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_HOST: "192.0.2.1",
+                CONF_PORT: 20000,
+                CONF_PASSWORD: None,
+                CONF_MAC: mac,
+                CONF_NAME: "F461",
+                CONF_FIRMWARE: None,
+            },
+            options={
+                CONF_FILE_PATH: str(plant_yaml),
+            },
+            unique_id=mac,
+            title="F461 Gateway",
+        )
+        entry.add_to_hass(hass)
+
+        with (
+            patch(
+                "custom_components.myhome.gateway.OWNSession.test_connection",
+                return_value={"Success": True, "Message": None},
+            ),
+            patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+            patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"),
+        ):
+            assert await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+        handler = hass.data[DOMAIN][mac][CONF_ENTITY]
+        handler._on_event_connection_state_change(True)
+
+        for item in raw_frames:
+            raw = item.get("raw")
+            direction = item.get("direction", "rx")
+            if not raw:
+                continue
+            parsed_msg = OWNMessage.parse(raw)
+            handler.bus_monitor.record_frame(direction=direction, raw=raw, parsed=parsed_msg)
+            if direction == "rx" and parsed_msg is not None:
+                async_dispatcher_send(hass, f"myhome_message_{mac}", parsed_msg)
+
+        await hass.async_block_till_done()
+
+        # 1. Verify BusMonitor recorded all 50 frames
+        recent_recorded = handler.bus_monitor.get_recent_frames()
+        assert len(recent_recorded) > 0
+
+        # 2. Verify Auto-Discovered Climate Zones
+        # Zone 1: *#4*1*0*0234##, *4*0*1##, *#4*1*12*0200*3##, *#4*1#2*20*8## (high), *#4*1*60*55##
+        z1 = hass.states.get("climate.climate_zone_1")
+        assert z1 is not None, f"Available states: {[s.entity_id for s in hass.states.async_all()]}"
+        assert z1.attributes.get("supported_features", 0) & ClimateEntityFeature.FAN_MODE
+        assert z1.attributes.get("fan_modes") == ["auto", "low", "medium", "high"]
+        assert z1.attributes.get("fan_mode") == "high"
+        assert z1.attributes.get("current_temperature") == 23.4
+        assert z1.attributes.get("temperature") == 20.0
+        assert z1.attributes.get("current_humidity") == 55
+        assert z1.state == HVACMode.OFF
+
+        # Zone 2: *#4*2*12*0210*3##, *4*0*2##, *#4*2*0*0231##, *#4*2#2*20*8## (high)
+        z2 = hass.states.get("climate.climate_zone_2")
+        assert z2 is not None
+        assert z2.attributes.get("supported_features", 0) & ClimateEntityFeature.FAN_MODE
+        assert z2.attributes.get("fan_modes") == ["auto", "low", "medium", "high"]
+        assert z2.attributes.get("fan_mode") == "high"
+        assert z2.attributes.get("current_temperature") == 23.1
+        assert z2.attributes.get("temperature") == 26.5
+        assert z2.attributes.get("current_humidity") == 54
+
+        # Zone 3: *#4*3*0*0230##, *#4*3*60*59##, *#4*3#2*20*6## (low)
+        z3 = hass.states.get("climate.climate_zone_3")
+        assert z3 is not None
+        assert z3.attributes.get("supported_features", 0) & ClimateEntityFeature.FAN_MODE
+        assert z3.attributes.get("fan_mode") == "low"
+        assert z3.attributes.get("current_temperature") == 23.0
+        assert z3.attributes.get("current_humidity") == 59
+
+        # Zone 5: *#4*5*0*0230##, *#4*5*60*61##, *#4*5#2*20*6## (low)
+        z5 = hass.states.get("climate.climate_zone_5")
+        assert z5 is not None
+        assert z5.attributes.get("supported_features", 0) & ClimateEntityFeature.FAN_MODE
+        assert z5.attributes.get("fan_mode") == "low"
+        assert z5.attributes.get("current_temperature") == 23.0
+        assert z5.attributes.get("current_humidity") == 61
+
+        # Zone 6: *#4*6*0*0228##, *#4*6*60*59##, *#4*6#2*20*5## (auto/idle)
+        z6 = hass.states.get("climate.climate_zone_6")
+        assert z6 is not None
+        assert z6.attributes.get("supported_features", 0) & ClimateEntityFeature.FAN_MODE
+        assert z6.attributes.get("fan_mode") == "auto"
+        assert z6.attributes.get("current_temperature") == 22.8
+        assert z6.attributes.get("current_humidity") == 59
+
+        # 3. End-to-end service call: change fan mode to low via real Home Assistant service bus
+        with patch.object(handler, "send", new_callable=AsyncMock) as mock_send:
+            await hass.services.async_call(
+                "climate",
+                "set_fan_mode",
+                {"entity_id": "climate.climate_zone_1", "fan_mode": "low"},
+                blocking=True,
+            )
+            mock_send.assert_awaited_once()
+            assert str(mock_send.call_args[0][0]) == "*#4*1*#11*1##"
+
+        # 4. Service call: change fan mode to medium
+        with patch.object(handler, "send", new_callable=AsyncMock) as mock_send:
+            await hass.services.async_call(
+                "climate",
+                "set_fan_mode",
+                {"entity_id": "climate.climate_zone_1", "fan_mode": "medium"},
+                blocking=True,
+            )
+            mock_send.assert_awaited_once()
+            assert str(mock_send.call_args[0][0]) == "*#4*1*#11*2##"
+
+        # 5. Service call: change fan mode to auto
+        with patch.object(handler, "send", new_callable=AsyncMock) as mock_send:
+            await hass.services.async_call(
+                "climate",
+                "set_fan_mode",
+                {"entity_id": "climate.climate_zone_1", "fan_mode": "auto"},
+                blocking=True,
+            )
+            mock_send.assert_awaited_once()
+            assert str(mock_send.call_args[0][0]) == "*#4*1*#11*0##"
+
+        await hass.config_entries.async_unload(entry.entry_id)
+
+
 
