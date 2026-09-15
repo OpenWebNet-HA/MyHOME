@@ -79,12 +79,19 @@ export function loadCard() {
     body: { appendChild() {}, removeChild() {} },
   };
 
-  // The card installs a module-level 45 s registry watchdog (setInterval) plus
-  // UI banner timeouts. Unref them so the test process exits when the tests do;
-  // node still sees them, so a timer-related crash would surface.
+  // The card installs a module-level 45 s registry watchdog (setInterval), UI
+  // banner / flash timeouts (1.5-6 s) and a 100 ms stopwatch interval. Unref the
+  // intervals and the long timeouts so the test process exits when the tests do;
+  // node still sees them, so a timer-related crash would surface. Short timeouts
+  // stay referenced: a test that awaits `setTimeout(r, 0)` must not find the loop
+  // already drained (node 22 then cancels every remaining test).
   const realSetTimeout = globalThis.setTimeout;
   const realSetInterval = globalThis.setInterval;
-  globalThis.setTimeout = (fn, ms, ...args) => { const t = realSetTimeout(fn, ms, ...args); t.unref?.(); return t; };
+  globalThis.setTimeout = (fn, ms, ...args) => {
+    const t = realSetTimeout(fn, ms, ...args);
+    if ((ms || 0) >= 1000) t.unref?.();
+    return t;
+  };
   globalThis.setInterval = (fn, ms, ...args) => { const t = realSetInterval(fn, ms, ...args); t.unref?.(); return t; };
 
   const silence = { info() {}, debug() {}, log() {}, warn() {}, error() {} };
