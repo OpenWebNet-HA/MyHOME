@@ -457,9 +457,27 @@ async def ws_cover_calibration_trace(
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Return recent cover calibration trace frames."""
+    """Return the calibration trace frames of one gateway.
+
+    ``mac`` selects the gateway exactly as for the other commands: given, only
+    that gateway (unknown -> ``not_found``); omitted, the primary gateway. The
+    reply names the gateway it was filtered on so the export is self-describing.
+    """
     from .cover import get_last_calibration_trace
-    connection.send_result(msg["id"], {"frames": get_last_calibration_trace()})
+
+    gw, _ = _get_gateway_and_monitor(hass, msg.get("mac"))
+    if gw is None:
+        connection.send_error(
+            msg["id"],
+            websocket_api.ERR_NOT_FOUND,
+            "No active MyHOME gateway found",
+        )
+        return
+    mac = dr.format_mac(str(getattr(gw, "mac", "") or ""))
+    connection.send_result(
+        msg["id"],
+        {"mac": mac, "frames": get_last_calibration_trace(gateway_mac=mac)},
+    )
 
 
 @callback

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import time
+from datetime import timedelta
 from typing import Any
 
 import voluptuous as vol
@@ -25,6 +26,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
@@ -35,6 +37,8 @@ from OWNd.message import (
 )
 
 from .const import (
+    CALIBRATION_CUTOFF_MAX,
+    CALIBRATION_CUTOFF_MIN,
     CALIBRATION_MAX_RUN,
     CALIBRATION_MIN_RUN,
     CALIBRATION_RUN_TIMEOUT,
@@ -112,20 +116,38 @@ def _calibration_lock(gateway) -> asyncio.Lock:
     return lock
 
 
-def _record_calibration_frame(direction: str, raw: str, **extra: Any) -> None:
+def _normalize_mac(mac: Any) -> str | None:
+    """One spelling for a gateway MAC so frames and requests compare equal."""
+    if mac is None or str(mac).strip() == "":
+        return None
+    return dr.format_mac(str(mac))
+
+
+def _record_calibration_frame(gateway, direction: str, raw: str, **extra: Any) -> None:
     now = dt_util.utcnow()
     _LAST_CALIBRATION_TRACE.append({
         "timestamp": time.time(),
         "iso_time": now.isoformat(),
+        "gateway_mac": _normalize_mac(getattr(gateway, "mac", None)),
         "direction": direction,
         "raw": str(raw).strip(),
         **extra,
     })
 
 
-def get_last_calibration_trace() -> list[dict[str, Any]]:
-    """Return in-memory trace frames captured during recent cover calibrations."""
-    return list(_LAST_CALIBRATION_TRACE)
+def get_last_calibration_trace(gateway_mac: str | None = None) -> list[dict[str, Any]]:
+    """Return in-memory trace frames captured during recent cover calibrations.
+
+    The buffer is shared by every gateway; each frame carries the MAC of the
+    gateway that recorded it. With ``gateway_mac`` only that gateway's frames
+    are returned, so an export for one gateway never carries another's runs
+    (``None`` is the only unfiltered read; a gateway without a MAC gets the
+    frames recorded without one).
+    """
+    if gateway_mac is None:
+        return list(_LAST_CALIBRATION_TRACE)
+    wanted = _normalize_mac(gateway_mac)
+    return [f for f in _LAST_CALIBRATION_TRACE if f.get("gateway_mac") == wanted]
 
 
 async def async_stop_cover_calibration(hass, gateway_mac: str | None = None) -> bool:
@@ -443,6 +465,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._calibration_interrupted: str | None = None
         self._stopped_event: asyncio.Event = asyncio.Event()
         self._last_stop_at: float | None = None
+        self._last_run: dict[str, Any] = {}  # the last completed run as measured, see _freeze_position
+        self._motion_started_at: str | None = None
 
         # Both advanced and standard covers support SET_POSITION (standard via travel time estimation)
         self._attr_supported_features = (
@@ -468,6 +492,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._attr_is_closed = False
 
         self._move_start_time = None
+        # Anchor of the current run (motor start), untouched by the set_position
+        # re-anchor: the last completed run is measured from it (stopwatch).
+        self._run_started_at: float | None = None
         self._start_position = 50
         self._stop_task = None
 
@@ -493,6 +520,15 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         attrs["travel_time_up"] = round(self._travel_time_up, 2)
         attrs["calibration_source"] = self._calibration_source
         attrs["calibrated_at"] = self._calibrated_at
+        # The motor-start anchor of the current run (wall clock) and the last
+        # completed run as the backend measured it, motor start to stop write /
+        # actuator stop: the card's stopwatch anchors on the former and saves the
+        # latter, so the number never includes the queue wait or the
+        # click-to-stop-frame delay.
+        attrs["motion_started_at"] = self._motion_started_at
+        attrs["last_run_seconds"] = self._last_run.get("seconds")
+        attrs["last_run_direction"] = self._last_run.get("direction")
+        attrs["last_run_ended_at"] = self._last_run.get("ended_at")
 
     # ── Echo model helpers ───────────────────────────────────────────────
 
@@ -534,7 +570,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             if self._pending_cmd in ("open", "close") and not self._motor_started.is_set():
                 # Provisional anchor: the motor starts shortly after the write.
                 # The direction echo re-anchors precisely if the gateway relays it.
-                self._move_start_time = write_ts
+                self._anchor_run(write_ts)
             elif self._pending_cmd == "stop":
                 # Motion stops within ~0.1 s of the write, not at enqueue time.
                 self._freeze_position(write_ts)
@@ -552,8 +588,25 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._pending_cmd = None
         self._echo_until = None
 
+    def _anchor_run(self, at: float) -> None:
+        """Anchor the running estimate and the run measurement on the motor start."""
+        self._move_start_time = at
+        self._run_started_at = at
+        started = dt_util.utcnow() - timedelta(seconds=max(0.0, time.monotonic() - at))
+        self._motion_started_at = started.isoformat(timespec="milliseconds")
+        self._refresh_travel_attributes()
+
     def _freeze_position(self, at: float) -> None:
         """Turn the running estimate into a fixed position as of ``at``."""
+        if self._run_started_at is not None:
+            self._last_run = {
+                "seconds": round(max(0.0, at - self._run_started_at), 2),
+                "direction": "open" if self._attr_is_opening else "close" if self._attr_is_closing else None,
+                "ended_at": dt_util.utcnow().isoformat(timespec="milliseconds"),
+            }
+            self._run_started_at = None
+            self._motion_started_at = None
+            self._refresh_travel_attributes()
         if self._move_start_time is not None:
             elapsed = max(0.0, at - self._move_start_time)
             delta = (elapsed / self._travel_for(self._attr_is_opening)) * 100
@@ -598,9 +651,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if not self._motor_started.is_set() and write_ts is not None and self._move_start_time == write_ts:
             # No direction status relayed (not every gateway does): the motor
             # started a measured MOTOR_START_DELAY after the write, not at it.
-            self._move_start_time = write_ts + MOTOR_START_DELAY
+            self._anchor_run(write_ts + MOTOR_START_DELAY)
         if self._move_start_time is None:
-            self._move_start_time = time.monotonic()
+            self._anchor_run(time.monotonic())
         return self._move_start_time
 
     def _cancel_stop_task(self):
@@ -707,6 +760,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         extra = dict(data)
         run_direction = extra.pop("direction", None)
         _record_calibration_frame(
+            self._gateway_handler,
             direction="event",
             raw=f"phase:{phase}",
             phase=phase,
@@ -756,6 +810,15 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 )
                 self._stopped_event.clear()
                 continue
+            if CALIBRATION_CUTOFF_MIN <= elapsed <= CALIBRATION_CUTOFF_MAX:
+                # The actuator stopped itself at its run-time limit, not at the end
+                # stop: storing this would make a 14 s shutter a 61 s one (#319).
+                # Fail now rather than after three such runs.
+                raise HomeAssistantError(
+                    f"{self._attr_name}: the {direction} run ended after {elapsed:.1f} s, at the actuator's "
+                    "60 s run-time limit, not at the end stop; the actuator cannot measure this shutter "
+                    "- use the stopwatch (Stop & Save) or set travel_time manually"
+                )
             return elapsed
 
     async def async_calibrate(self) -> dict:
@@ -990,13 +1053,16 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             # The clock starts when the frame is written (see _track_write),
             # not now: with a busy queue the motor is still idle for a while.
             self._move_start_time = None
+            self._run_started_at = None
+            self._motion_started_at = None  # the previous run's anchor is not this run's
+            self._refresh_travel_attributes()
             self._attr_is_opening = direction == "open"
             self._attr_is_closing = direction == "close"
             self._attr_is_closed = False
             self._begin_command(direction)
         written = await self._gateway_handler.send(command)
         if self._calibrating or any(getattr(c, "_calibrating", False) for c in _CALIBRATION_ACTIVE.values() if c):
-            _record_calibration_frame("tx", str(command), direction_action=direction, entity_id=self.entity_id)
+            _record_calibration_frame(self._gateway_handler, "tx", str(command), direction_action=direction, entity_id=self.entity_id)
         if not self._advanced:
             self._track_write(written)
         if self.hass is not None:
@@ -1070,7 +1136,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         cmd = OWNAutomationCommand.stop_shutter(self._full_where)
         written = await self._gateway_handler.send(cmd)
         if self._calibrating or any(getattr(c, "_calibrating", False) for c in _CALIBRATION_ACTIVE.values() if c):
-            _record_calibration_frame("tx", str(cmd), action="stop", entity_id=self.entity_id)
+            _record_calibration_frame(self._gateway_handler, "tx", str(cmd), action="stop", entity_id=self.entity_id)
         if not self._advanced:
             self._track_write(written)
             if not isinstance(written, asyncio.Future):
@@ -1092,7 +1158,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             )
             if matches:
                 # The relayed direction status marks the real motor start.
-                self._move_start_time = now
+                self._anchor_run(now)
                 self._motor_started.set()
                 self._end_echo_window()
                 LOGGER.debug("%s Motor start echo for %s; clock anchored.", self._gateway_handler.log_id, self._full_where)
@@ -1131,6 +1197,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         # Record frame to recent calibration trace if calibration is active
         if self._calibrating or any(getattr(c, "_calibrating", False) for c in _CALIBRATION_ACTIVE.values() if c):
             _record_calibration_frame(
+                self._gateway_handler,
                 direction="rx",
                 raw=str(getattr(message, "raw", getattr(message, "_raw", str(message)))),
                 who=getattr(message, "who", getattr(message, "_who", 2)),
@@ -1168,7 +1235,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._run_generation += 1
             if not self._advanced and not self._attr_is_opening:
                 self._start_position = self.current_cover_position if self.current_cover_position is not None else 0
-                self._move_start_time = now
+                self._anchor_run(now)
             self._attr_is_opening = True
             self._attr_is_closing = False
             self._attr_is_closed = False
@@ -1180,7 +1247,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._run_generation += 1
             if not self._advanced and not self._attr_is_closing:
                 self._start_position = self.current_cover_position if self.current_cover_position is not None else 100
-                self._move_start_time = now
+                self._anchor_run(now)
             self._attr_is_opening = False
             self._attr_is_closing = True
         else:
