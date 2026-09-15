@@ -15,6 +15,16 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Compact secondary entities (0.14.0)
+
+Within each device and gateway, main entities appear first. Buttons and entities
+marked `config` or `diagnostic` in the Home Assistant entity registry follow in a
+compact section. Their names open Home Assistant's native entity details and
+controls; the pencil still opens the name/area editor. Button timestamps are not
+rendered or updated. Other entities keep their live state, including diagnostic
+sensors. Names wrap on narrow screens; search, filters and disabled/hidden flags
+continue to include secondary entities even when no main entity matches.
+
 ## Monitor language (0.13.0)
 
 The native monitor and existing card follow `hass.language`, with Italian and
@@ -132,7 +142,7 @@ requirements, limits and real-gateway validation steps.
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.13.0**, defined by
+The panel has an independent version, currently **0.14.0**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.

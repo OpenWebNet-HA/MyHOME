@@ -28,7 +28,7 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
-    panel_version: "0.13.0",
+    panel_version: "0.14.0",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
@@ -91,6 +91,70 @@ const change = (element, value) => {
 afterEach(() => { document.body.replaceChildren(); delete document.hidden; window.localStorage.clear(); window.history.replaceState(null, "", "/"); });
 after(() => dom.window.close());
 
+test("secondary entities follow the main entity and buttons never render or format timestamps", async () => {
+  const { panel, root, hass } = await mount({ prepare: (data) => {
+    const first = data.entities[0];
+    data.entities.push(
+      { ...first, entity_id: "button.lock", domain: "button", name: "Blocca <sala>", entity_category: "config" },
+      { ...first, entity_id: "button.unlock", domain: "button", name: "Sblocca", entity_category: "config" },
+      { ...first, entity_id: "sensor.signal", domain: "sensor", name: "Segnale", entity_category: "diagnostic" },
+    );
+  } });
+  const group = root.querySelector('.device-group[data-device="device-one"]');
+  group.querySelector('[data-action="toggle-device"]').click();
+  assert.equal(group.querySelector('.entity-list > .entity-row [data-action="details"]').dataset.id, "light.sala");
+  assert.equal(group.querySelectorAll(".secondary-entities .entity-row").length, 3);
+  const name = group.querySelector('[data-action="details"][data-id="button.lock"]');
+  assert.equal(name.textContent, "Blocca <sala>"); assert.equal(name.querySelector("sala"), null);
+  assert.equal(group.querySelectorAll('.is-button [data-state]').length, 0);
+  let details;
+  panel.addEventListener("hass-more-info", (event) => { details = event.detail; });
+  name.click(); assert.equal(details.entityId, "button.lock");
+  name.focus();
+  const formatted = [];
+  panel.hass = { ...hass, states: { ...hass.states,
+    "button.lock": { state: "2026-09-15T12:34:56Z", attributes: {} },
+    "button.unlock": { state: "unknown", attributes: {} },
+    "sensor.signal": { state: "72", attributes: { unit_of_measurement: "%" } },
+  }, formatEntityState: (state) => { formatted.push(state.state); return state.state; } };
+  assert.equal(root.activeElement, name);
+  assert.equal(group.querySelector('[data-state="sensor.signal"]').textContent, "72");
+  assert.equal(group.querySelector('[data-state="light.sala"]').textContent, "on");
+  assert.equal(formatted.includes("2026-09-15T12:34:56Z"), false);
+  assert.equal(formatted.includes("unknown"), false);
+  assert.doesNotMatch(group.textContent, /2026-09-15/);
+  group.querySelector('[data-action="edit-entity"][data-id="button.lock"]').click();
+  assert.equal(root.querySelector("dialog").open, true);
+  assert.equal(root.querySelector('input[name="name"]').value, "Blocca <sala>");
+});
+
+test("secondary-only searches retain disabled flags, area overrides and gateway separation", async () => {
+  const { panel, root, hass } = await mount({ prepare: (data) => {
+    const first = data.entities[0];
+    data.entities.push(
+      { ...first, entity_id: "button.one", domain: "button", name: "Comando", area_id: "outside", disabled_by: "user", hidden_by: "user" },
+      { ...first, entity_id: "button.two", entry_id: "two", domain: "button", name: "Comando" },
+      { ...first, entity_id: "button.orphan", device_id: null, domain: "button", name: "Comando" },
+      { ...first, entity_id: "switch.setting", domain: "switch", name: "Impostazione", entity_category: "config" },
+    );
+  } });
+  change(root.getElementById("category"), "button");
+  assert.equal(root.querySelectorAll(".entity-secondary").length, 3);
+  assert.equal(root.querySelectorAll(".entity-list > .entity-row").length, 0);
+  const other = root.querySelector('[data-id="button.two"]').closest(".device-group");
+  assert.equal(other.dataset.entry, "two");
+  change(root.getElementById("gateway"), "one");
+  change(root.getElementById("search"), "button.one");
+  assert.equal(root.querySelectorAll(".entity-row").length, 1);
+  const row = root.querySelector(".entity-secondary");
+  for (const text of ["Disabilitato", "Nascosta", "Esterno"]) assert.ok(row.textContent.includes(text));
+  panel.hass = { ...hass, language: "en" };
+  assert.equal(root.querySelector(".secondary-entities h3").textContent, "Additional entities");
+  assert.equal(root.querySelectorAll('[data-state^="button."]').length, 0);
+  change(root.getElementById("search"), ""); change(root.getElementById("category"), "switch");
+  assert.ok(root.querySelector('.entity-secondary [data-state="switch.setting"]'));
+});
+
 test("gateway, category and inherited area filters retain trigger-only and disabled items", () => {
   const data = inventory();
   const one = scopedInventory(data, "one");
@@ -107,7 +171,7 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
-  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.13.0");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.14.0");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
   root.querySelector('[data-view="entities"]').click();
   assert.equal(root.querySelectorAll(".device-group").length, 3);

@@ -417,6 +417,9 @@ class MyHomePanel extends HTMLElement {
     const key = JSON.stringify([entryId, device?.id || null]);
     const listId = escapeHtml(`device-entities-${encodeURIComponent(JSON.stringify([key, who]))}`);
     const expanded = this._expandedDevices.has(key);
+    const isSecondary = (entity) => entity.domain === "button" || ["config", "diagnostic"].includes(entity.entity_category);
+    const primary = entities.filter((entity) => !isSecondary(entity));
+    const secondary = entities.filter(isSecondary);
     return `<section class="device-group" data-device="${escapeHtml(device?.id || "")}" data-entry="${escapeHtml(entryId)}">
       <header class="device-group-header"><button class="device-group-title" data-action="toggle-device" data-group="${escapeHtml(key)}" aria-expanded="${expanded}" aria-controls="${listId}"><ha-icon class="device-chevron" icon="mdi:chevron-down" aria-hidden="true"></ha-icon><span class="device-label">
         <span class="device-name">${escapeHtml(device ? this._itemName(device) : this._t("unassignedEntities"))}</span>
@@ -424,25 +427,29 @@ class MyHomePanel extends HTMLElement {
       </span><span class="count">${entities.length} ${escapeHtml(this._t("entities"))}</span></button>
       ${device ? `<div class="device-actions"><button data-action="edit-device" data-id="${escapeHtml(device.id)}">${escapeHtml(this._t("edit"))}</button><a class="button" href="${escapeHtml(deviceUrl(device.id))}">${escapeHtml(this._t("openDevice"))}</a></div>` : ""}
       ${sharedAddress ? this._addressDetails({ address: sharedAddress }) : !entities.length && device ? this._addressDetails(device) : ""}</header>
-      <div class="entity-list" id="${listId}" ${expanded ? "" : "hidden"}>${entities.map((entity) => this._entityRow(entity, device, sharedAddress)).join("") || `<p class="muted no-entities">${escapeHtml(this._t("noEntities"))}</p>`}</div>
+      <div class="entity-list" id="${listId}" ${expanded ? "" : "hidden"}>${primary.map((entity) => this._entityRow(entity, device, sharedAddress)).join("")}
+        ${secondary.length ? `<section class="secondary-entities" aria-label="${escapeHtml(this._t("secondaryEntities"))}"><h3>${escapeHtml(this._t("secondaryEntities"))}</h3><div class="secondary-grid">${secondary.map((entity) => this._entityRow(entity, device, sharedAddress, true)).join("")}</div></section>` : ""}
+        ${!entities.length ? `<p class="muted no-entities">${escapeHtml(this._t("noEntities"))}</p>` : ""}</div>
     </section>`;
   }
 
-  _entityRow(item, device, sharedAddress) {
+  _entityRow(item, device, sharedAddress, secondary = false) {
     const t = (key) => escapeHtml(this._t(key));
     const id = escapeHtml(item.entity_id);
     const areaId = model.effectiveArea(item, this._data.devices);
     const area = this._data.areas.find((area) => area.id === areaId)?.name || this._t("noArea");
-    return `<article class="item-card entity-row"><div class="entity-info">
-      <h4>${escapeHtml(this._itemName(item))}</h4><p class="muted">${id}</p>
-      <div class="chips"><span class="chip">${t(item.domain)}</span>
+    const name = escapeHtml(this._itemName(item));
+    const isButton = item.domain === "button";
+    return `<article class="item-card entity-row${secondary ? " entity-secondary" : ""}${isButton ? " is-button" : ""}"><div class="entity-info">
+      <h4>${secondary ? `<button class="secondary-name" data-action="details" data-id="${id}" title="${name} · ${id}" aria-label="${t("details")}: ${name}">${name}</button>` : name}</h4>${secondary ? "" : `<p class="muted">${id}</p>`}
+      <div class="chips">${secondary ? "" : `<span class="chip">${t(item.domain)}</span>`}
         ${!device || areaId !== (device.area_id || "") ? `<span class="chip">${escapeHtml(area)}</span>` : ""}
         ${item.disabled_by ? `<span class="badge">${t("disabled")}</span>` : ""}
         ${item.hidden_by ? `<span class="chip">${t("hidden")}</span>` : ""}</div>
       ${sharedAddress ? "" : this._addressDetails(item)}</div>
-      <p class="state" data-state="${id}" aria-label="${t("state")}"></p>
-      <div class="actions"><button data-action="edit-entity" data-id="${id}">${t("edit")}</button>
-        <button data-action="details" data-id="${id}">${t("details")}</button>
+      ${isButton ? "" : `<p class="state" data-state="${id}" aria-label="${t("state")}"></p>`}
+      <div class="actions"><button data-action="edit-entity" data-id="${id}" aria-label="${t("edit")}: ${name}" title="${t("edit")}: ${name}">${secondary ? '<ha-icon icon="mdi:pencil-outline" aria-hidden="true"></ha-icon>' : t("edit")}</button>
+        ${secondary ? "" : `<button data-action="details" data-id="${id}">${t("details")}</button>`}
         ${item.domain === "cover" && item.who === "2" ? `<button data-action="cover-profile" data-id="${id}">${t("coverProfiles")}</button><span class="muted" data-cover-profile="${id}"></span>` : ""}</div></article>`;
   }
 

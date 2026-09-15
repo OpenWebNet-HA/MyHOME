@@ -1,12 +1,14 @@
 # MyHOME panel API: implemented reference
 
-Status: **implemented through panel 0.13.0**. The original profile contract was reviewed against
+Status: **implemented through panel 0.14.0**. The original profile contract was reviewed against
 [`02ce199`](https://github.com/xtimmy86x/MyHOME/tree/02ce19908787297c1a6e2a65d56a289e766c0695).
 Panel 0.10.0 adds a [guided-measurement session API](cover-calibration.md) and
 `calibration_busy` refusals on profile writes while a measurement is active. The
 profile payload/storage format below remains the 0.9.0 contract. Panel 0.11.0 adds
 `myhome/cover_profiles/subscribe` invalidations, documented below. Panel 0.12.0
 loads the bus monitor as a native view; bus endpoint payloads remain unchanged.
+Panel 0.14.0 uses the existing `entity_category` and `domain` inventory fields
+to present compact secondary entities; no API payload changes are needed.
 
 This reference describes the prototype on `feat/myhome-sidepanel`, not an upstream
 v2.1 commitment. The [shared-contract proposal](panel-shared-contract.md) is separate

@@ -215,6 +215,22 @@ label { display: grid; gap: 6px; font-size: 12px; font-weight: 500; color: var(-
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
 .state { font-size: 19px; font-weight: 500; margin: 10px 0 0; overflow-wrap: anywhere; }
 
+/* Secondary entities share a compact area beneath the main device controls. */
+.secondary-entities { padding: 10px 16px 14px; border-top: 1px solid var(--panel-border); }
+.secondary-entities h3 { margin: 0 0 8px; color: var(--panel-text-2); font-size: 12px; font-weight: 500; }
+.secondary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 6px; }
+.entity-row.entity-secondary { grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 4px 8px; padding: 5px 8px; border: 1px solid var(--panel-border); border-radius: 9px; }
+.entity-row.entity-secondary.is-button { grid-template-columns: minmax(0, 1fr) auto; }
+.entity-secondary h4 { margin: 0; font-size: 13px; }
+.entity-secondary .secondary-name { justify-content: flex-start; min-height: 32px; max-width: 100%; padding: 4px; border: 0; background: transparent; font-size: inherit; text-align: start; white-space: normal; overflow-wrap: anywhere; }
+.entity-secondary .secondary-name:hover { color: var(--panel-accent); background: var(--panel-accent-soft); }
+.entity-secondary .chips { margin: 2px 4px; }
+.entity-secondary .chips:not(:has(*)) { display: none; }
+.entity-row.entity-secondary .state { grid-column: 2; grid-row: 1; align-self: center; font-size: 12px; max-width: 100px; padding: 4px 7px; }
+.entity-row.entity-secondary .actions { grid-column: -2 / -1; grid-row: 1; align-self: center; }
+.entity-secondary .actions button { min-width: 32px; min-height: 32px; padding: 4px; }
+.entity-secondary .actions ha-icon { --mdc-icon-size: 18px; }
+
 /* ---------- Empty & feedback ---------- */
 .empty { border: 1px dashed var(--panel-border); border-radius: var(--panel-radius); padding: 48px 24px; text-align: center; grid-column: 1 / -1; background: color-mix(in srgb, var(--panel-surface) 60%, transparent); }
 .empty h2 { margin-bottom: 8px; font-size: 16px; }
@@ -271,10 +287,14 @@ dialog a { color: var(--panel-accent); font-size: 13px; }
   .device-group-header, .entity-row { padding: 12px; }
   .entity-row { grid-template-columns: minmax(0, 1fr); }
   .entity-row .state { justify-self: start; text-align: start; max-width: 100%; }
+  .secondary-entities { padding: 8px 12px 12px; }
+  .secondary-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (any-pointer: coarse) {
   button, a.button { min-height: 44px; }
   .entity-row .actions button, .device-actions button, .device-actions a.button { min-height: 40px; }
+  .entity-secondary .secondary-name, .entity-secondary .actions button { min-height: 44px; }
+  .entity-secondary .actions button { min-width: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
