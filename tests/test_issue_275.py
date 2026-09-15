@@ -1,5 +1,4 @@
 """Unit tests for Issue #275: WHO=5 filter support and generalized card field filtering."""
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -26,38 +25,8 @@ def mock_ws_connection():
     return conn
 
 
-def test_card_js_contains_who_5_and_generalization():
-    """Verify frontend custom card contains WHO=5 Burglar Alarm and generalized field handling."""
-    card_path = Path("custom_components/myhome/frontend/myhome-bus-card.js")
-    assert card_path.exists(), "myhome-bus-card.js must exist"
-
-    content = card_path.read_text(encoding="utf-8")
-
-    # 1. Verify WHO_CATALOG contains WHO=5
-    assert '"5": { name: "Burglar Alarm"' in content
-    assert 'class: "who-alarm"' in content
-
-    # 2. Verify CSS styling for .who-alarm exists
-    assert ".who-alarm" in content
-
-    # 3. Verify dynamic WHO auto-registration method exists
-    assert "_ensureWhoRegistered" in content
-
-    # 4. Verify generalized multi-field search logic exists
-    assert 'q.startsWith("where:")' in content or 'query.startsWith("where:")' in content
-    assert 'q.startsWith("what:")' in content or 'query.startsWith("what:")' in content
-    assert 'q.startsWith("dim:")' in content or 'query.startsWith("dim:")' in content
-    assert 'q.startsWith("raw:")' in content or 'query.startsWith("raw:")' in content
-
-    # 5. Verify ACK and NACK options in direction filter
-    assert 'value="ack"' in content
-    assert 'value="nack"' in content
-
-    # 6. Verify single canonical card registration without duplicate alias in window.customCards
-    assert 'type: "myhome-openwebnet-bus-monitor"' in content
-    assert 'filter((c) => c.type !== "myhome-bus-card")' in content
-    assert 'customElements.define("myhome-bus-card"' in content
-    assert 'name: "MyHOME Bus Card (Alias)"' not in content
+# Frontend regression coverage lives in tests/frontend/bus-monitor.test.mjs,
+# where the shared view and both legacy card names are exercised in the DOM.
 
 
 def test_backend_filter_matches_who_5():

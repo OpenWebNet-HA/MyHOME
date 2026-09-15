@@ -35,6 +35,40 @@ after(() => dom.window.close());
 
 const filter = (root, id, value) => { const control = root.getElementById(id); control.value = value; control.dispatchEvent(new dom.window.Event(control.tagName === "SELECT" ? "change" : "input")); };
 
+// Issue #275: exercise filtering through the controls, independent of module layout.
+function checkAlarmFilters(root, emit) {
+  const alarm = frame(1, { who: "5", what: "7", where: "42", raw: "*5*7*42##" });
+  const dimension = frame(2, { who: "4", what: null, where: "8", dimension: "15", raw: "*#4*8*15*0243##" });
+  emit(alarm); emit(dimension);
+  const visible = () => [...root.querySelectorAll(".frame-line .col-raw")].map((el) => el.textContent);
+  assert.equal(root.querySelector('.who-alarm').textContent, "Burglar Alarm");
+  assert.match(root.querySelector('#filter-who option[value="5"]').textContent, /Burglar Alarm/);
+  filter(root, "filter-who", "5"); assert.deepEqual(visible(), [alarm.raw]);
+  filter(root, "filter-who", "all");
+  for (const separator of [":", "="]) {
+    for (const [key, value, expected] of [["where", "42", alarm.raw], ["what", "7", alarm.raw], ["dim", "15", dimension.raw], ["raw", "*5*", alarm.raw]]) {
+      filter(root, "filter-where", `${key}${separator}${value}`);
+      assert.deepEqual(visible(), [expected], `${key}${separator}${value}`);
+    }
+  }
+  filter(root, "filter-where", "where:missing"); assert.deepEqual(visible(), []);
+  filter(root, "filter-where", "");
+  emit(frame(3, { who: "999", raw: "*999*1*3##" }));
+  emit(frame(4, { who: "999", raw: "*999*1*4##" }));
+  assert.equal(root.querySelectorAll('#filter-who option[value="999"]').length, 1);
+  filter(root, "filter-who", "999"); assert.deepEqual(visible(), ["*999*1*3##", "*999*1*4##"]);
+  filter(root, "filter-who", "all");
+  emit(frame(5, { who: null, is_ack: true, raw: "*#*1##" }));
+  emit(frame(6, { who: null, is_nack: true, raw: "*#*0##" }));
+  filter(root, "filter-dir", "ack"); assert.deepEqual(visible(), ["*#*1##"]);
+  filter(root, "filter-dir", "nack"); assert.deepEqual(visible(), ["*#*0##"]);
+}
+
+test("WHO 5, unknown subsystems, field searches and ACK/NACK remain available in the native monitor", async () => {
+  const { root, streams } = mount(); await tick();
+  checkAlarmFilters(root, streams[0].callback);
+});
+
 test("native monitor imports without Lovelace registration and retains bounded stream, filters and pause", async () => {
   assert.equal(window.customCards, undefined); assert.equal(customElements.get("myhome-openwebnet-bus-monitor"), undefined);
   const { view, root, streams } = mount({ history: { frames: [frame(1)] } }); await tick();
@@ -121,13 +155,20 @@ test("legacy card adapter uses the same view and keeps both names and Lovelace c
   const core = new URL("../../custom_components/myhome/frontend/panel/panel-bus-monitor-view.js?v=0.13.0", import.meta.url).href;
   const source = await readFile(new URL("../../custom_components/myhome/frontend/myhome-bus-card.js", import.meta.url), "utf8");
   assert.match(source, /from "\/myhome_static\/panel\/panel-bus-monitor-view.js\?v=0.13.0"/);
+  window.customCards = [{ type: "myhome-bus-card" }, { type: "myhome-openwebnet-bus-monitor" }, { type: "unrelated-card" }];
   await import(`data:text/javascript,${encodeURIComponent(source.replace('/myhome_static/panel/panel-bus-monitor-view.js?v=0.13.0', core))}`);
   for (const tag of ["myhome-openwebnet-bus-monitor", "myhome-bus-card"]) {
     const card = document.createElement(tag); views.push(card); card.setConfig({ title: "Existing dashboard" });
     assert.equal(card._config.title, "Existing dashboard"); assert.equal(card.getCardSize(), 6);
     assert.ok(card.shadowRoot.getElementById("btn-export")); assert.ok(card.constructor.getStubConfig());
+    let receive;
+    document.body.append(card);
+    card.hass = { connection: { subscribeMessage: async (callback) => { receive = callback; return () => {}; } }, callWS: async () => ({ frames: [] }) };
+    await tick(); checkAlarmFilters(card.shadowRoot, receive);
   }
   assert.equal(window.customCards.filter((card) => card.type === "myhome-openwebnet-bus-monitor").length, 1);
+  assert.equal(window.customCards.filter((card) => card.type === "myhome-bus-card").length, 0);
+  assert.equal(window.customCards.filter((card) => card.type === "unrelated-card").length, 1);
 });
 
 test("Italian and regional language changes preserve monitor input, filters, capture and pause", async () => {
