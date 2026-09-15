@@ -53,6 +53,7 @@ from .const import (
     CONF_WORKER_COUNT,
     DEFAULT_TRANSITION_MODE,
     DOMAIN,
+    IDENTIFICATION_MANUAL,
     LOGGER,
     SUPPORTED_GATEWAY_MODELS,
 )
@@ -741,6 +742,9 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
                 _model_update = False
                 if CONF_NAME in user_input and user_input[CONF_NAME] != self.data.get(CONF_NAME):
                     self.data[CONF_NAME] = user_input[CONF_NAME]
+                    # An explicit choice is authoritative: drop any earlier WHO=13 label so
+                    # the next device-type reply cannot overwrite it (see gateway.py).
+                    self.data["model_source"] = IDENTIFICATION_MANUAL
                     _model_update = True
 
                 _data_update = not (

@@ -106,6 +106,7 @@ def test_identification_source_precedence():
     assert _handler().identification_source == IDENTIFICATION_MANUAL
     assert _handler({"name": "Generic"}).identification_source == IDENTIFICATION_UNKNOWN
     assert _handler({"name": "MH200", "model_source": "who13"}).identification_source == IDENTIFICATION_WHO13
+    assert _handler({"name": "MH200N", "model_source": "manual"}).identification_source == IDENTIFICATION_MANUAL
 
 
 # ── a manually configured MH200 that reports type 4 (the live case) ─────
@@ -269,6 +270,45 @@ def test_who13_label_is_not_repeated_when_already_applied(dev_reg, issues):
     _who13(h, "6")
     h.hass.config_entries.async_update_entry.assert_not_called()
     dev_reg.async_update_device.assert_not_called()
+
+
+def test_manual_selection_outranks_an_earlier_who13_label(dev_reg, issues):
+    """PR #345 review: an entry labelled MH200 by WHO=13, then switched to MH200N in the
+    options flow, must not be flipped back by the next device-type 4 reply."""
+    create, delete, corrected = issues
+    # Before the options flow: the entry was labelled from WHO=13 and would be relabelled.
+    h = _handler({"name": "MH200N", "model_source": "who13"})
+    h.gateway.model_name = "MH200N"
+    _who13(h, "4")
+    assert h.gateway.model_name == "MH200"  # the bug the review reproduced
+    # After the options flow: the selection is recorded as manual and stays intact.
+    h = _handler({"name": "MH200N", "model_source": "manual"})
+    h.gateway.model_name = "MH200N"
+    dev_reg.async_get.return_value = MagicMock(model="MH200N")
+    _who13(h, "4")
+    assert h.gateway.model_name == "MH200N"
+    assert h.config_entry.data["name"] == "MH200N"
+    assert h._identity_conflict is None
+    h.hass.config_entries.async_update_entry.assert_not_called()
+    create.assert_not_called()
+    corrected.assert_not_called()
+
+
+def test_stale_identity_issue_is_cleared_by_a_fresh_handler(dev_reg, issues):
+    """PR #345 review: a reload creates a handler with no conflict in memory, but the
+    previous instance's warning is still in the issue registry; a matching reply must remove it."""
+    create, delete, corrected = issues
+    first = _handler()  # manual MH200
+    _who13(first, "200")  # observed-only MyHomeServer1 code: questioned, issue created
+    assert first._identity_conflict is not None
+    create.assert_called_once()
+    delete.assert_not_called()
+
+    second = _handler()  # the integration reloaded: same entry, new handler, no conflict in memory
+    assert second._identity_conflict is None
+    _who13(second, "4")  # MH200 per the 2006 table: matches the configured model
+    assert second._identity_conflict is None
+    delete.assert_called_once_with(second.hass, "entry_ident")
 
 
 # ── corroborating dimensions ─────────────────────────────────────────────
