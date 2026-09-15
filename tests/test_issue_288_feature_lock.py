@@ -427,6 +427,70 @@ async def test_issue_288_f461_dali_trace_replay(hass: HomeAssistant) -> None:
         assert lights[addr].hs_color is None
 
 
+def _locked_light(hass: HomeAssistant, **capabilities) -> MyHOMELight:
+    mock_gateway = MagicMock()
+    mock_gateway.send = AsyncMock()
+    mock_gateway.log_id = "GATEWAY"
+    light = MyHOMELight(
+        hass=hass,
+        name="Light 26",
+        entity_name="Light 26",
+        icon="mdi:lightbulb",
+        icon_on="mdi:lightbulb-on",
+        device_id="26#4#02",
+        who="1",
+        where="26",
+        interface="02",
+        lock_features=True,
+        manufacturer="BTicino",
+        model="DALI",
+        gateway=mock_gateway,
+        **capabilities,
+    )
+    light.hass = hass
+    light.async_schedule_update_ha_state = MagicMock()
+    return light
+
+
+def test_locked_out_dimension_is_discarded_whole_and_logged(hass: HomeAssistant, caplog) -> None:
+    """A remembered Dim 12 value on a locked dimmer is not this light's brightness either."""
+    light = _locked_light(hass, dimmable=True)
+    light.handle_event(OWNEvent.parse("*#1*26#4#02*1*174*5##"))
+    assert light._attr_brightness_pct == 74
+
+    with caplog.at_level("DEBUG", logger="custom_components.myhome"):
+        light.handle_event(OWNEvent.parse("*#1*26#4#02*12*353*74*80##"))
+
+    # neither the colour nor the HSV "value" (80) reached the entity
+    assert light.supported_color_modes == {ColorMode.BRIGHTNESS}
+    assert light.hs_color is None
+    assert light._attr_brightness_pct == 74
+    assert "locked to ['brightness']" in caplog.text
+    assert "Dimension 12" in caplog.text
+
+
+def test_locked_relay_ignores_level_but_keeps_on_off(hass: HomeAssistant, caplog) -> None:
+    """A locked relay takes is_on from a Dimension 1 frame but never its level."""
+    light = _locked_light(hass, dimmable=False)
+    with caplog.at_level("DEBUG", logger="custom_components.myhome"):
+        light.handle_event(OWNEvent.parse("*#1*26#4#02*1*174*5##"))
+    assert light.is_on is True
+    assert light.supported_color_modes == {ColorMode.ONOFF}
+    assert light.brightness is None
+    assert "Dimension 1 frame" in caplog.text
+
+
+def test_locked_tunable_white_without_dimmable_still_tracks_level(hass: HomeAssistant) -> None:
+    """color_temp implies brightness; the level on Dimension 1 is never locked out."""
+    light = _locked_light(hass, dimmable=False, color_temp=True)
+    assert ColorMode.BRIGHTNESS in light._allowed_color_modes
+    light.handle_event(OWNEvent.parse("*#1*26#4#02*14*153##"))
+    light.handle_event(OWNEvent.parse("*#1*26#4#02*1*174*5##"))
+    assert light.supported_color_modes == {ColorMode.COLOR_TEMP}
+    assert light.color_temp == 153
+    assert light._attr_brightness_pct == 74
+
+
 def test_rgb_locked_light_allowed_modes(hass: HomeAssistant) -> None:
     """Test that a light with lock_features=True and rgb=True has ColorMode.HS in allowed modes."""
     mock_gateway = MagicMock()

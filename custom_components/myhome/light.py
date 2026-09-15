@@ -523,7 +523,9 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 self._allowed_color_modes.add(ColorMode.HS)
             if color_temp:
                 self._allowed_color_modes.add(ColorMode.COLOR_TEMP)
-            if dimmable:
+            if dimmable or rgb or color_temp:
+                # A colour mode implies brightness in the HA light model, and
+                # the level arrives on Dimension 1 whatever the colour mode.
                 self._allowed_color_modes.add(ColorMode.BRIGHTNESS)
             if not self._allowed_color_modes:
                 self._allowed_color_modes.add(ColorMode.ONOFF)
@@ -596,6 +598,16 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
     def _is_mode_forbidden(self, mode: ColorMode) -> bool:
         """Return whether lock_features keeps this light from adopting ``mode``."""
         return self._lock_features and mode not in self._allowed_color_modes
+
+    def _log_locked_out(self, message: OWNLightingEvent, dimension: str) -> None:
+        LOGGER.debug(
+            "%s light %s is locked to %s; ignoring Dimension %s frame %s",
+            self._gateway_handler.log_id,
+            self._full_where,
+            sorted(mode.value for mode in self._allowed_color_modes),
+            dimension,
+            message,
+        )
 
     def _promote_color_mode(self, mode: ColorMode) -> None:
         """Add a color capability learned from the bus without dropping others.
@@ -1069,10 +1081,27 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         if is_fading and not self._attr_is_on:
             self._cancel_fade_if_active()
 
-        # Auto-promote to HS when HSV color data is received (Dimension 12)
         has_hs = isinstance(getattr(message, "hs", None), (tuple, list)) and len(message.hs) == 2
         has_rgb = isinstance(getattr(message, "rgb", None), (tuple, list)) and len(message.rgb) == 3
-        if (has_hs or has_rgb) and not self._is_mode_forbidden(ColorMode.HS):
+        has_color_temp = isinstance(getattr(message, "color_temp", None), int)
+        has_level = message.brightness is not None or message.brightness_preset is not None
+
+        # A dimension the light is locked out of carries no truth in any of its
+        # fields: the gateway is replaying a value once written to an address
+        # that cannot use it, so even the HSV "value" is not this light's
+        # brightness.  The real level always arrives on Dimension 1.
+        if (has_hs or has_rgb) and self._is_mode_forbidden(ColorMode.HS):
+            self._log_locked_out(message, "12")
+            has_hs = has_rgb = False
+        elif has_color_temp and self._is_mode_forbidden(ColorMode.COLOR_TEMP):
+            self._log_locked_out(message, "14")
+            has_color_temp = False
+        elif has_level and self._is_mode_forbidden(ColorMode.BRIGHTNESS):
+            self._log_locked_out(message, "1")
+            has_level = False
+
+        # Auto-promote to HS when HSV color data is received (Dimension 12)
+        if has_hs or has_rgb:
             if ColorMode.HS not in self._attr_supported_color_modes:
                 LOGGER.info(
                     "Auto-detected HSV color for light %s, adding HS mode.",
@@ -1096,7 +1125,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     self._last_brightness_pct = int(message.value)
 
         # Auto-promote to tunable white when color temperature data is received
-        elif isinstance(getattr(message, "color_temp", None), int) and not self._is_mode_forbidden(ColorMode.COLOR_TEMP):
+        elif has_color_temp:
             if ColorMode.COLOR_TEMP not in self._attr_supported_color_modes:
                 LOGGER.info(
                     "Auto-detected tunable white for light %s, adding COLOR_TEMP mode.",
@@ -1107,7 +1136,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             self._attr_color_temp_kelvin = color_temperature_mired_to_kelvin(message.color_temp)
 
         # Auto-promote to dimmable when brightness data is received (always)
-        elif (message.brightness is not None or message.brightness_preset is not None) and not self._is_mode_forbidden(ColorMode.BRIGHTNESS):
+        elif has_level:
             if (
                 ColorMode.BRIGHTNESS not in self._attr_supported_color_modes
                 and ColorMode.COLOR_TEMP not in self._attr_supported_color_modes
@@ -1125,7 +1154,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             or ColorMode.COLOR_TEMP in self._attr_supported_color_modes
             or ColorMode.HS in self._attr_supported_color_modes
             or ColorMode.RGB in self._attr_supported_color_modes
-        ) and message.brightness is not None:
+        ) and has_level and message.brightness is not None:
             if is_fading:
                 # Precise policy during fade: only apply significant physical changes
                 current_opt = self._attr_brightness_pct or 0
