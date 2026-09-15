@@ -161,8 +161,8 @@ async def test_dynamic_discovery_rejects_command_translation(hass):
     def mock_add_entities(entities):
         added_entities.extend(entities)
 
-    with patch("custom_components.myhome.light.er.async_entries_for_config_entry", return_value=[]), \
-         patch("custom_components.myhome.light.er.async_get"):
+    with patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]), \
+         patch("custom_components.myhome.discovery.er.async_get"):
         await async_setup_light(hass, config_entry, mock_add_entities)
 
     dispatcher_signal = f"myhome_message_{config_entry.data[CONF_MAC]}"
@@ -311,8 +311,8 @@ async def test_cover_dynamic_discovery_rejects_command_translation(hass):
     def mock_add_entities(entities):
         added_entities.extend(entities)
 
-    with patch("custom_components.myhome.cover.er.async_entries_for_config_entry", return_value=[]), \
-         patch("custom_components.myhome.cover.er.async_get"):
+    with patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]), \
+         patch("custom_components.myhome.discovery.er.async_get"):
         await async_setup_cover(hass, config_entry, mock_add_entities)
 
     dispatcher_signal = f"myhome_message_{config_entry.data[CONF_MAC]}"
