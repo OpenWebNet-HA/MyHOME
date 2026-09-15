@@ -46,7 +46,7 @@ class MyHomePanel extends HTMLElement {
       this._stop();
       this._start();
     } else if (previous.language !== value.language) {
-      this._buildShell();
+      this._buildShell(true);
       this._renderInventory();
     } else {
       this._updateStates();
@@ -203,9 +203,11 @@ class MyHomePanel extends HTMLElement {
     if (integration) integration.textContent = this._data?.version ? `${this._t("integrationVersion")} v${this._data.version}` : "";
   }
 
-  _buildShell() {
+  _buildShell(preserveMonitor = false) {
     this._profileEditor.close();
-    this._removeMonitor();
+    const monitor = preserveMonitor ? this._busMonitor.view : null;
+    const focused = monitor?.shadowRoot.activeElement;
+    if (!monitor) this._removeMonitor();
     const t = (key) => escapeHtml(this._t(key));
     this.shadowRoot.innerHTML = `
       <link rel="stylesheet" href="${escapeHtml(assetUrl("myhome-panel.css"))}">
@@ -240,6 +242,10 @@ class MyHomePanel extends HTMLElement {
         <p id="toast" class="muted" role="status"></p>
         <p id="version" class="muted"></p>
       </main><div id="dialog-host"></div>`;
+    if (monitor) {
+      this.shadowRoot.getElementById("monitor").append(monitor);
+      focused?.focus();
+    }
     this.shadowRoot.getElementById("gateway").onchange = (event) => {
       this._profileEditor.close();
       this._entryId = event.target.value;

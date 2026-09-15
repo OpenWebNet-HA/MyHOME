@@ -1,6 +1,6 @@
 # MyHOME panel API: implemented reference
 
-Status: **implemented through panel 0.12.0**. The original profile contract was reviewed against
+Status: **implemented through panel 0.13.0**. The original profile contract was reviewed against
 [`02ce199`](https://github.com/xtimmy86x/MyHOME/tree/02ce19908787297c1a6e2a65d56a289e766c0695).
 Panel 0.10.0 adds a [guided-measurement session API](cover-calibration.md) and
 `calibration_busy` refusals on profile writes while a measurement is active. The
@@ -28,7 +28,7 @@ use HA's own authorization and schemas. The backend owns validation, persistence
 and motion timing. Names and areas remain in HA registries; a profile name is the
 label of a reusable timing configuration, not an entity name.
 
-Profile storage version **2**, panel version **0.12.0**, and any future API contract
+Profile storage version **2**, panel version **0.13.0**, and any future API contract
 version are different concepts. There is currently no API version negotiation.
 This experimental API may evolve through an explicitly documented migration.
 
@@ -256,7 +256,10 @@ HA's WebSocket layer and are not normalized by this module.
 
 `panel-translations.js` contains English and Italian texts. The shell takes the
 user's `hass.language`, selects its primary hyphen-separated subtag, then falls
-back per key to English and finally the key. There is **no texts endpoint**.
+back per key to English and finally the key. The shared monitor has its own
+`panel-bus-translations.js` English/Italian UI catalog from 0.13.0, also selected
+from `hass.language`, with regional-tag and per-key English fallback. There is
+**no texts endpoint**. Diagnostic exports retain their existing support format.
 
 The inventory listens to native entity/device/area registry events, debounced by
 150 ms, and polls every 15 seconds while visible. It refreshes after visible-tab

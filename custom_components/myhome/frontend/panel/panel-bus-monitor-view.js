@@ -2,6 +2,10 @@
  * No card registration or registry watchdog runs when this module is imported.
  */
 
+const textsUrl = new URL("panel-bus-translations.js", import.meta.url);
+textsUrl.search = new URL(import.meta.url).search;
+const { busText, busLanguage } = await import(textsUrl.href);
+
 const WHO_CATALOG = {
   "0": { name: "Scenarios (Basic)", short: "Scenario", class: "who-cen" },
   "1": { name: "Lighting / Switches", short: "Light/Switch", class: "who-light" },
@@ -77,6 +81,8 @@ export class BusMonitorView extends HTMLElement {
   set hass(hass) {
     const oldHass = this._hass;
     this._hass = hass;
+    const language = busLanguage(hass?.language);
+    if (language !== this._language) { this._language = language; this._localize(); }
 
     // Connect stream once hass is available
     if (!oldHass && hass) {
@@ -85,6 +91,46 @@ export class BusMonitorView extends HTMLElement {
       this.disconnectedCallback();
       this._subscribeStream();
     }
+  }
+
+  setHeading(title) {
+    if (this._config.title === title) return;
+    this._config.title = title;
+    this._localize();
+  }
+
+  _t(key, values) { return busText(this._language, key, values); }
+
+  _label(key) { return `<span data-bus-text="${key}">${this._escapeHtml(this._t(key))}</span>`; }
+
+  _buttonText(button, key) {
+    if (!button) return;
+    button.dataset.busText = key;
+    button.textContent = this._t(key);
+  }
+
+  _localize() {
+    const root = this.shadowRoot;
+    if (!root?.getElementById("stream")) return;
+    for (const el of root.querySelectorAll("[data-bus-text]")) el.textContent = this._t(el.dataset.busText);
+    for (const el of root.querySelectorAll("[data-bus-title]")) el.title = this._t(el.dataset.busTitle);
+    for (const el of root.querySelectorAll("[data-bus-placeholder]")) {
+      el.placeholder = this._t(el.dataset.busPlaceholder);
+      el.setAttribute("aria-label", el.placeholder);
+    }
+    for (const option of root.getElementById("filter-who").options) {
+      const who = option.value;
+      option.textContent = who === "all" ? this._t("allWho")
+        : `${this._t(WHO_CATALOG[who] ? `whoName_${who}` : "subsystem")} (WHO=${who})`;
+    }
+    root.getElementById("filter-who").setAttribute("aria-label", this._t("allWho"));
+    root.getElementById("filter-dir").setAttribute("aria-label", this._t("allDirections"));
+    const title = root.getElementById("monitor-title");
+    if (title) title.textContent = `📡 ${this._config.title === "MyHOME OpenWebNet Bus Monitor" ? this._t("defaultTitle") : this._config.title}`;
+    this._buttonText(root.getElementById("btn-pause"), this._isPaused ? "resume" : "pause");
+    this._updateBadge();
+    this._updateFrameList();
+    this._updateStats();
   }
 
   connectedCallback() {
@@ -106,6 +152,15 @@ export class BusMonitorView extends HTMLElement {
       this._unsub = null;
     }
     this._isSubscribing = false;
+    // A retained view can be reattached when the shell language changes. Pending
+    // operation callbacks were invalidated, so do not retain their busy buttons.
+    for (const [id, key] of [["btn-sweep", "sweep"], ["btn-export", "export"], ["btn-report", "report"]]) {
+      const button = this.shadowRoot.getElementById(id);
+      this._buttonText(button, key);
+      if (button) button.disabled = false;
+    }
+    const banner = this.shadowRoot.getElementById("feedback-banner");
+    if (banner) banner.style.display = "none";
   }
 
   _later(callback, delay) {
@@ -220,16 +275,16 @@ export class BusMonitorView extends HTMLElement {
     if (!badge) return;
 
     if (this._isPaused) {
-      badge.textContent = "PAUSED";
+      badge.textContent = this._t("paused");
       badge.className = "badge badge-paused";
     } else if (this._connectionStatus === "connected") {
-      badge.textContent = "LIVE";
+      badge.textContent = this._t("live");
       badge.className = "badge badge-live";
     } else if (this._connectionStatus === "connecting") {
-      badge.textContent = "CONNECTING...";
+      badge.textContent = this._t("connecting");
       badge.className = "badge badge-connecting";
     } else if (this._connectionStatus === "disconnected") {
-      badge.textContent = "DISCONNECTED";
+      badge.textContent = this._t("disconnected");
       badge.className = "badge badge-disconnected";
     }
   }
@@ -238,17 +293,17 @@ export class BusMonitorView extends HTMLElement {
     const container = this.shadowRoot && this.shadowRoot.getElementById("stream");
     if (!container) return;
     if (isFiltered) {
-      container.innerHTML = `<div class="placeholder-msg">No bus frames match the active filter.</div>`;
+      container.innerHTML = `<div class="placeholder-msg">${this._escapeHtml(this._t("noMatch"))}</div>`;
       return;
     }
     if (this._frames.length === 0) {
-      let msg = "Waiting for OpenWebNet bus frames...";
+      let msg = this._t("waiting");
       if (this._connectionStatus === "connecting") {
-        msg = "Connecting to MyHOME gateway stream...";
+        msg = this._t("connectingHelp");
       } else if (this._connectionStatus === "disconnected") {
-        msg = `Disconnected from MyHOME gateway. Reconnecting in ${Math.round(this._retryDelay / 1000)}s...`;
+        msg = this._t("reconnecting", { seconds: Math.round(this._retryDelay / 1000) });
       }
-      container.innerHTML = `<div class="placeholder-msg">${msg}</div>`;
+      container.innerHTML = `<div class="placeholder-msg">${this._escapeHtml(msg)}</div>`;
     }
   }
 
@@ -264,8 +319,8 @@ export class BusMonitorView extends HTMLElement {
 
     const catalogEntry = WHO_CATALOG[whoStr];
     const label = catalogEntry
-      ? `${catalogEntry.name} (WHO=${whoStr})`
-      : `Subsystem (WHO=${whoStr})`;
+      ? `${this._t(`whoName_${whoStr}`)} (WHO=${whoStr})`
+      : `${this._t("subsystem")} (WHO=${whoStr})`;
 
     const opt = document.createElement("option");
     opt.value = whoStr;
@@ -359,11 +414,11 @@ export class BusMonitorView extends HTMLElement {
   }
 
   _formatWho(who) {
-    if (who == null || String(who).trim() === "") return "Sys";
+    if (who == null || String(who).trim() === "") return this._t("system");
     const strWho = String(who).trim();
     const entry = WHO_CATALOG[strWho];
-    if (entry && entry.short) return entry.short;
-    if (entry && entry.name) return entry.name;
+    if (entry && entry.short) return this._t(`whoShort_${strWho}`);
+    if (entry && entry.name) return this._t(`whoName_${strWho}`);
     return `WHO=${strWho}`;
   }
 
@@ -430,6 +485,8 @@ export class BusMonitorView extends HTMLElement {
         }
         .header {
           display: flex;
+          flex-wrap: wrap;
+          gap: 12px;
           justify-content: space-between;
           align-items: center;
           margin-bottom: 12px;
@@ -472,6 +529,7 @@ export class BusMonitorView extends HTMLElement {
         }
         .stats-bar {
           display: flex;
+          flex-wrap: wrap;
           gap: 16px;
           font-size: 0.8rem;
           color: var(--secondary-text-color);
@@ -566,7 +624,7 @@ export class BusMonitorView extends HTMLElement {
           gap: 8px;
           margin-top: 12px;
         }
-        .sender-bar input { flex-grow: 1; }
+        .sender-bar input { flex-grow: 1; min-width: 0; }
         .actions {
           display: flex;
           gap: 6px;
@@ -641,31 +699,31 @@ export class BusMonitorView extends HTMLElement {
       <ha-card>
         <div class="header">
           <div class="title">
-            <span>📡 ${this._escapeHtml(this._config.title)}</span>
+            <span id="monitor-title">📡 ${this._escapeHtml(this._config.title)}</span>
             <span id="badge" class="badge badge-connecting">CONNECTING...</span>
           </div>
           <div class="actions">
-            <button id="btn-sweep" class="btn-sweep" title="Safely query all bus subsystems to discover all devices and populate trace buffer">
+            <button data-bus-text="sweep" id="btn-sweep" class="btn-sweep" data-bus-title="sweepTitle" title="${this._escapeHtml(this._t("sweepTitle"))}">
               🧹 Sweep Bus
             </button>
-            <button id="btn-export" class="btn-export" title="Download sanitized gateway trace JSON file">
+            <button data-bus-text="export" id="btn-export" class="btn-export" data-bus-title="exportTitle" title="${this._escapeHtml(this._t("exportTitle"))}">
               💾 Export Trace
             </button>
-            <button id="btn-report" class="btn-report" title="Copy diagnostic markdown to clipboard and open GitHub issue form">
+            <button data-bus-text="report" id="btn-report" class="btn-report" data-bus-title="reportTitle" title="${this._escapeHtml(this._t("reportTitle"))}">
               📋 Copy Trace
             </button>
-            <button id="btn-pause" class="btn-secondary">Pause</button>
-            <button id="btn-clear" class="btn-secondary">Clear</button>
+            <button data-bus-text="pause" id="btn-pause" class="btn-secondary">Pause</button>
+            <button data-bus-text="clear" id="btn-clear" class="btn-secondary">Clear</button>
           </div>
         </div>
 
         <div id="feedback-banner" class="feedback-banner"></div>
 
         <div class="stats-bar">
-          <div>Buffered: <span id="stat-buffer" class="stat-val">0</span>/<span id="stat-max">${this._maxDisplayFrames}</span></div>
+          <div>${this._label("buffered")}: <span id="stat-buffer" class="stat-val">0</span>/<span id="stat-max">${this._maxDisplayFrames}</span></div>
           <div>RX: <span id="stat-rx" class="stat-val">0</span></div>
           <div>TX: <span id="stat-tx" class="stat-val">0</span></div>
-          <div>Queue: <span id="stat-queue" class="stat-val">0</span></div>
+          <div>${this._label("queue")}: <span id="stat-queue" class="stat-val">0</span></div>
           <div style="margin-left: auto; font-size: 0.75rem; opacity: 0.85;">MyHOME <span id="stat-version" class="stat-val">v2.0.0b12</span></div>
         </div>
 
@@ -674,12 +732,12 @@ export class BusMonitorView extends HTMLElement {
             ${whoOptionsHtml}
           </select>
 
-          <input type="text" id="filter-where" placeholder="Filter WHERE / WHAT / Raw..." value="${this._escapeHtml(this._filterWhere)}" style="width: 170px;" />
+          <input type="text" id="filter-where" data-bus-placeholder="filterText" placeholder="${this._escapeHtml(this._t("filterText"))}" value="${this._escapeHtml(this._filterWhere)}" style="width: 170px;" />
 
           <select id="filter-dir">
-            <option value="all"${this._filterDir === "all" ? " selected" : ""}>All Directions</option>
-            <option value="rx"${this._filterDir === "rx" ? " selected" : ""}>RX (Bus Traffic)</option>
-            <option value="tx"${this._filterDir === "tx" ? " selected" : ""}>TX (Commands)</option>
+            <option data-bus-text="allDirections" value="all"${this._filterDir === "all" ? " selected" : ""}>All Directions</option>
+            <option data-bus-text="rx" value="rx"${this._filterDir === "rx" ? " selected" : ""}>RX (Bus Traffic)</option>
+            <option data-bus-text="tx" value="tx"${this._filterDir === "tx" ? " selected" : ""}>TX (Commands)</option>
             <option value="ack"${this._filterDir === "ack" ? " selected" : ""}>ACK (*#*1##)</option>
             <option value="nack"${this._filterDir === "nack" ? " selected" : ""}>NACK (*#*0##)</option>
           </select>
@@ -688,15 +746,14 @@ export class BusMonitorView extends HTMLElement {
         <div id="stream" class="stream-container"></div>
 
         <div class="sender-bar">
-          <input type="text" id="send-frame" placeholder="Transmit frame (e.g. *1*1*12##)..." />
-          <button id="btn-send">Send</button>
+          <input type="text" id="send-frame" data-bus-placeholder="sendPlaceholder" placeholder="${this._escapeHtml(this._t("sendPlaceholder"))}" />
+          <button data-bus-text="send" id="btn-send">Send</button>
         </div>
       </ha-card>
     `;
 
     this._bindEvents();
-    this._updateBadge();
-    this._updateFrameList();
+    this._localize();
   }
 
   _bindEvents() {
@@ -729,7 +786,7 @@ export class BusMonitorView extends HTMLElement {
     this._isPaused = !this._isPaused;
     const btn = this.shadowRoot.getElementById("btn-pause");
     if (btn) {
-      btn.textContent = this._isPaused ? "Resume" : "Pause";
+      this._buttonText(btn, this._isPaused ? "resume" : "pause");
     }
     this._updateBadge();
   }
@@ -764,7 +821,7 @@ export class BusMonitorView extends HTMLElement {
       if (input) input.value = "";
     } catch (err) {
       if (generation !== this._subscriptionGeneration) return;
-      alert(`Error sending frame: ${err.message || err}`);
+      alert(this._t("sendError", { error: err.message || err }));
     }
   }
 
@@ -911,9 +968,8 @@ ${framesText}
   async _handleSweepBus() {
     const generation = this._subscriptionGeneration;
     const btn = this.shadowRoot.getElementById("btn-sweep");
-    const origText = btn ? btn.innerHTML : "🧹 Sweep Bus";
     if (btn) {
-      btn.innerHTML = "⏳ Sweeping...";
+      this._buttonText(btn, "sweeping");
       btn.disabled = true;
     }
 
@@ -931,7 +987,7 @@ ${framesText}
         if (banner) {
           banner.className = "feedback-banner banner-success";
           banner.innerHTML = `
-            <span><strong>🧹 Bus sweep initiated!</strong> Querying all lighting, automation, heating, and diagnostic states across the bus.</span>
+            <span><strong>${this._label("sweepStarted")}</strong> ${this._label("sweepHelp")}</span>
           `;
           banner.style.display = "flex";
           this._bannerTimeout = this._later(() => {
@@ -944,7 +1000,7 @@ ${framesText}
         if (banner) {
           banner.className = "feedback-banner banner-warning";
           banner.innerHTML = `
-            <span><strong>⚠️ Bus sweep failed:</strong> ${this._escapeHtml(err.message || String(err))}</span>
+            <span><strong>${this._label("sweepFailed")}</strong> ${this._escapeHtml(err.message || String(err))}</span>
           `;
           banner.style.display = "flex";
           this._bannerTimeout = this._later(() => {
@@ -956,7 +1012,7 @@ ${framesText}
 
     this._later(() => {
       if (btn) {
-        btn.innerHTML = origText;
+        this._buttonText(btn, "sweep");
         btn.disabled = false;
       }
     }, 3000);
@@ -965,8 +1021,7 @@ ${framesText}
   async _handleExportTrace() {
     const generation = this._subscriptionGeneration;
     const btn = this.shadowRoot.getElementById("btn-export");
-    const origText = btn ? btn.innerHTML : "💾 Export Trace";
-    if (btn) btn.innerHTML = "⏳ Exporting...";
+    if (btn) this._buttonText(btn, "exporting");
 
     if (this._hass) {
       try {
@@ -1053,10 +1108,10 @@ ${framesText}
       banner.className = "feedback-banner banner-success";
       banner.innerHTML = `
         <div style="display: flex; flex-direction: column; gap: 4px;">
-          <span><strong>✅ Exported trace:</strong> <code>${fileName}</code></span>
-          <span style="font-size: 0.75rem; opacity: 0.9;">Attach this file directly to GitHub Discussion #291 or a bug report.</span>
+          <span><strong>${this._label("exportedTrace")}</strong> <code>${fileName}</code></span>
+          <span style="font-size: 0.75rem; opacity: 0.9;">${this._label("attachHelp")}</span>
         </div>
-        <a href="https://github.com/orgs/OpenWebNet-HA/discussions/291" target="_blank" rel="noopener noreferrer" class="banner-link">Open Discussion #291 ↗</a>
+        <a href="https://github.com/orgs/OpenWebNet-HA/discussions/291" target="_blank" rel="noopener noreferrer" class="banner-link">${this._label("openDiscussion")}</a>
       `;
       banner.style.display = "flex";
       this._bannerTimeout = this._later(() => {
@@ -1065,9 +1120,9 @@ ${framesText}
     }
 
     if (btn) {
-      btn.innerHTML = "✅ Exported!";
+      this._buttonText(btn, "exported");
       this._later(() => {
-        if (btn) btn.innerHTML = origText;
+        if (btn) this._buttonText(btn, "export");
       }, 3000);
     }
   }
@@ -1075,8 +1130,7 @@ ${framesText}
   async _handleReportIssue() {
     const generation = this._subscriptionGeneration;
     const btn = this.shadowRoot.getElementById("btn-report");
-    const origText = btn ? btn.innerHTML : "📋 Copy Trace";
-    if (btn) btn.innerHTML = "⏳ Generating...";
+    if (btn) this._buttonText(btn, "generating");
 
     // Try fetching the freshest gateway & buffer telemetry from backend
     if (this._hass) {
@@ -1123,20 +1177,20 @@ ${framesText}
         banner.className = "feedback-banner banner-success";
         banner.innerHTML = `
           <div style="display: flex; flex-direction: column; gap: 4px;">
-            <span><strong>✅ Copied diagnostic payload to clipboard!</strong> Opening GitHub issue form...</span>
-            <span style="font-size: 0.75rem; opacity: 0.9;">Paste the clipboard contents directly into the <em>Bus Monitor Diagnostic Payload / Bus Trace</em> field.</span>
-            <span style="font-size: 0.72rem; opacity: 0.85;">💡 <em>Tip: Also download and drag &amp; drop your HA log (Settings &rarr; System &rarr; Logs &rarr; Download full log) into the issue!</em></span>
+            <span><strong>${this._label("copied")}</strong> ${this._label("openingIssue")}</span>
+            <span style="font-size: 0.75rem; opacity: 0.9;">${this._label("pasteHelp")}</span>
+            <span style="font-size: 0.72rem; opacity: 0.85;">${this._label("logHelp")}</span>
           </div>
-          <a href="${issueUrl}" target="_blank" rel="noopener noreferrer" class="banner-link">Open GitHub Form ↗</a>
+          <a href="${issueUrl}" target="_blank" rel="noopener noreferrer" class="banner-link">${this._label("openIssue")}</a>
         `;
       } else {
         banner.className = "feedback-banner banner-warning";
         banner.innerHTML = `
           <div style="display: flex; flex-direction: column; gap: 4px;">
-            <span><strong>⚠️ Clipboard write failed.</strong> Diagnostic payload printed to browser console.</span>
-            <span style="font-size: 0.75rem; opacity: 0.9;">Copy the payload from your browser console (F12) and open the issue form below.</span>
+            <span><strong>${this._label("clipboardFailed")}</strong> ${this._label("consolePayload")}</span>
+            <span style="font-size: 0.75rem; opacity: 0.9;">${this._label("consoleHelp")}</span>
           </div>
-          <a href="${issueUrl}" target="_blank" rel="noopener noreferrer" class="banner-link">Open GitHub Form ↗</a>
+          <a href="${issueUrl}" target="_blank" rel="noopener noreferrer" class="banner-link">${this._label("openIssue")}</a>
         `;
         console.log("MyHOME Diagnostic Payload:\n", payload);
       }
@@ -1147,9 +1201,9 @@ ${framesText}
     }
 
     if (btn) {
-      btn.innerHTML = copied ? "✅ Copied & Opened!" : "⚠️ Check Console";
+      this._buttonText(btn, copied ? "copiedOpened" : "checkConsole");
       this._later(() => {
-        if (btn) btn.innerHTML = origText;
+        if (btn) this._buttonText(btn, "report");
       }, 3000);
     }
 

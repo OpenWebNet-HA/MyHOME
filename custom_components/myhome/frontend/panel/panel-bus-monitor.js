@@ -23,7 +23,10 @@ export class BusMonitorSection {
 
   async render({ container, entry, t, empty }) {
     const key = JSON.stringify([entry?.entry_id, entry?.mac, entry?.monitor_available]);
-    if (key === this._key) return;
+    if (key === this._key) {
+      this.view?.setHeading(`${t("bus")} · ${entry.title}`);
+      return;
+    }
     this.clear();
     this._key = key;
     if (!entry?.monitor_available || !entry?.mac?.trim()) {

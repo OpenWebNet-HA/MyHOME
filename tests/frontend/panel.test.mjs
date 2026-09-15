@@ -28,7 +28,7 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
-    panel_version: "0.12.0",
+    panel_version: "0.13.0",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
@@ -107,7 +107,7 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
-  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.12.0");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.13.0");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
   root.querySelector('[data-view="entities"]').click();
   assert.equal(root.querySelectorAll(".device-group").length, 3);
@@ -890,4 +890,21 @@ test("profile dialog mounts calibration and gateway navigation cancels only its 
   assert.equal(root.querySelector("dialog"), null);
   assert.equal(stopped, 1);
   assert.deepEqual(requests[1], { type: "myhome/cover_calibration/action", entry_id: "one", session_id: "measuring-one", action: "cancel" });
+});
+
+test("panel language changes keep the native monitor capture and command draft", async () => {
+  const { panel, root, hass } = await mount({ callWS: async (message, data) => message.type === "myhome/panel/inventory" ? structuredClone(data) : { frames: [] } });
+  change(root.getElementById("gateway"), "one"); root.querySelector('[data-view="bus"]').click(); await tick();
+  const view = root.querySelector("myhome-panel-bus-monitor");
+  const input = view.shadowRoot.getElementById("send-frame"); input.value = "*1*0*11##";
+  view._onNewFrame({ raw: "*1*1*11##", who: "1", timestamp: 100, direction: "rx" });
+  const pending = deferred(); hass.callService = () => pending.promise;
+  const sweeping = view._handleSweepBus();
+  assert.equal(view.shadowRoot.getElementById("btn-sweep").disabled, true);
+  panel.hass = { ...hass, language: "en" }; await tick();
+  pending.resolve(); await sweeping;
+  assert.equal(view.shadowRoot.getElementById("btn-sweep").disabled, false);
+  assert.equal(root.querySelector("myhome-panel-bus-monitor"), view);
+  assert.equal(view._frames.length, 1); assert.equal(view.shadowRoot.getElementById("send-frame"), input);
+  assert.equal(input.value, "*1*0*11##"); assert.equal(view.shadowRoot.getElementById("btn-clear").textContent, "Clear");
 });

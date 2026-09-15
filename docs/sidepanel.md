@@ -15,6 +15,29 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Monitor language (0.13.0)
+
+The native monitor and existing card follow `hass.language`, with Italian and
+English UI catalogs and English fallback for unsupported languages or missing
+keys. Regional tags such as `it-IT` and `it_IT` select Italian. Controls, tooltips,
+WHO labels, connection states, empty views, progress messages and feedback are
+translated. Custom titles, raw frames and protocol filter syntax stay intact.
+
+Changing the shared view's language updates text in place, preserving filters,
+paused state, input focus/selection and unsent command text. The panel's translated
+shell keeps the same monitor view and capture; reattaching it renews the stream
+and resets invalidated action indicators. Late operations cannot leave a retained
+button permanently busy. Layout wrapping accommodates longer translated labels.
+
+JSON field names and copied diagnostic Markdown retain their existing support
+format (English) so reports remain directly usable in GitHub discussions. There is
+no new backend translation endpoint; the versioned module can later consume the
+agreed shared contract.
+
+The standalone card remains supported. Its removal is explicitly deferred to a
+separate future PR, as requested; this PR does not remove its registrations or
+existing dashboard support.
+
 ## Native bus monitor (0.12.0)
 
 The panel now imports `panel-bus-monitor-view.js` directly through its versioned
@@ -47,17 +70,16 @@ shared view; the integration still hashes the adapter for Lovelace cache busting
 | Export Trace | JSON download, preserving frame RX/TX and description; gateway credentials omitted |
 | Copy Trace | Diagnostic Markdown and existing GitHub issue-form link |
 
-No protocol commands, discovery behavior or backend API schemas change. The
-existing monitor controls retain their current English texts; common translation
-API work remains separate.
+No protocol commands, discovery behavior or backend API schemas change. The monitor gained Italian UI texts in 0.13.0; common translation API work remains
+separate.
 
 Before removing the compatibility card, validate the native view on a real gateway:
 compare live capture and filters, pause/resume and clear; check an exported JSON
 file and copied diagnostic report; verify gateway switching and repeated entry/exit
 leave a single active stream. Verify frame send and sweep only on the intended
-selected gateway. Then remove automatic Lovelace registration and provide an
-explicit transition for dashboards referencing the old card. The adapter remains
-until that parity check has been confirmed.
+selected gateway. Removal of automatic Lovelace registration and the transition for dashboards
+referencing the old card will be handled in a separate PR. The card is retained
+in this PR even after the parity check.
 
 Automated validation uses the actual shared view and compatibility adapter: native
 imports without Lovelace registration, capture/filters/actions/export, stale
@@ -110,7 +132,7 @@ requirements, limits and real-gateway validation steps.
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.12.0**, defined by
+The panel has an independent version, currently **0.13.0**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.

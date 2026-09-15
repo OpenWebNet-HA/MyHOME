@@ -5,6 +5,7 @@ import { JSDOM } from "jsdom";
 
 const dom = new JSDOM("<!doctype html><body></body>", { url: "http://localhost/", pretendToBeVisual: true });
 for (const key of ["window", "document", "HTMLElement", "customElements"]) globalThis[key] = key === "window" ? dom.window : dom.window[key];
+globalThis.alert = () => {};
 const { BusMonitorView } = await import("../../custom_components/myhome/frontend/panel/panel-bus-monitor-view.js");
 const { BusMonitorSection } = await import("../../custom_components/myhome/frontend/panel/panel-bus-monitor.js");
 customElements.define("test-native-monitor", class extends BusMonitorView {});
@@ -117,14 +118,62 @@ test("stream failure retries once while mounted and removal cancels its timer", 
 
 test("legacy card adapter uses the same view and keeps both names and Lovelace configuration", async () => {
   // Resolve the HA static route to the actual local module for this Node test.
-  const core = new URL("../../custom_components/myhome/frontend/panel/panel-bus-monitor-view.js?v=0.12.0", import.meta.url).href;
+  const core = new URL("../../custom_components/myhome/frontend/panel/panel-bus-monitor-view.js?v=0.13.0", import.meta.url).href;
   const source = await readFile(new URL("../../custom_components/myhome/frontend/myhome-bus-card.js", import.meta.url), "utf8");
-  assert.match(source, /from "\/myhome_static\/panel\/panel-bus-monitor-view.js\?v=0.12.0"/);
-  await import(`data:text/javascript,${encodeURIComponent(source.replace('/myhome_static/panel/panel-bus-monitor-view.js?v=0.12.0', core))}`);
+  assert.match(source, /from "\/myhome_static\/panel\/panel-bus-monitor-view.js\?v=0.13.0"/);
+  await import(`data:text/javascript,${encodeURIComponent(source.replace('/myhome_static/panel/panel-bus-monitor-view.js?v=0.13.0', core))}`);
   for (const tag of ["myhome-openwebnet-bus-monitor", "myhome-bus-card"]) {
     const card = document.createElement(tag); views.push(card); card.setConfig({ title: "Existing dashboard" });
     assert.equal(card._config.title, "Existing dashboard"); assert.equal(card.getCardSize(), 6);
     assert.ok(card.shadowRoot.getElementById("btn-export")); assert.ok(card.constructor.getStubConfig());
   }
   assert.equal(window.customCards.filter((card) => card.type === "myhome-openwebnet-bus-monitor").length, 1);
+});
+
+test("Italian and regional language changes preserve monitor input, filters, capture and pause", async () => {
+  const { view, root, hass, streams } = mount(); await tick();
+  streams[0].callback(frame(1)); filter(root, "filter-who", "1");
+  filter(root, "filter-where", "what:1"); root.getElementById("btn-pause").click();
+  const input = root.getElementById("send-frame"); input.value = "*1*0*11##"; input.focus(); input.setSelectionRange(2, 4);
+  view.hass = { ...hass, language: "it-IT" };
+  assert.equal(root.getElementById("btn-export").textContent, "💾 Esporta traccia");
+  assert.equal(root.getElementById("btn-pause").textContent, "Riprendi"); assert.equal(root.getElementById("badge").textContent, "IN PAUSA");
+  assert.match(root.getElementById("filter-who").selectedOptions[0].textContent, /Illuminazione/);
+  assert.equal(root.getElementById("send-frame"), input); assert.equal(input.value, "*1*0*11##"); assert.equal(root.activeElement, input); assert.equal(input.selectionStart, 2);
+  assert.equal(view._frames.length, 1); assert.equal(view._filterWhere, "what:1"); assert.equal(streams.length, 1);
+  view.hass = { ...hass, language: "de-DE" }; assert.equal(root.getElementById("btn-export").textContent, "💾 Export Trace");
+  assert.equal(input.value, "*1*0*11##");
+});
+
+test("async feedback and button completion use the current language without inserting error HTML", async (context) => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const pending = deferred(); const { view, root, hass } = mount(); await tick();
+  hass.callService = () => pending.promise;
+  view.hass = { ...hass, language: "it" };
+  const sweep = view._handleSweepBus(); assert.match(root.getElementById("btn-sweep").textContent, /Scansione in corso/);
+  view.hass = { ...hass, language: "en" }; assert.match(root.getElementById("btn-sweep").textContent, /Sweeping/);
+  pending.resolve(); await sweep; assert.match(root.getElementById("feedback-banner").textContent, /Bus sweep initiated/);
+  view.hass = { ...hass, language: "it" }; assert.match(root.getElementById("feedback-banner").textContent, /Scansione bus avviata/);
+  context.mock.timers.tick(3000); assert.equal(root.getElementById("btn-sweep").textContent, "🧹 Scansione bus");
+  view.hass.callService = async () => { throw new Error('<img src=x onerror="bad()">'); };
+  await view._handleSweepBus(); assert.match(root.getElementById("feedback-banner").textContent, /Scansione bus non riuscita/);
+  assert.equal(root.getElementById("feedback-banner").querySelector("img"), null);
+  let alertText; context.mock.method(globalThis, "alert", (text) => { alertText = text; });
+  root.getElementById("send-frame").value = "*1*0*11##";
+  view.hass.callWS = async () => { throw new Error("offline"); }; await view._sendCustomFrame(); assert.match(alertText, /Errore durante l’invio: offline/);
+});
+
+test("monitor text catalogs have matching keys and fallback, and diagnostics keep the support format", async () => {
+  const { busTranslations, busText } = await import("../../custom_components/myhome/frontend/panel/panel-bus-translations.js");
+  assert.deepEqual(Object.keys(busTranslations.it).sort(), Object.keys(busTranslations.en).sort());
+  assert.equal(busText("it_IT", "clear"), "Svuota"); assert.equal(busText("fr", "clear"), "Clear"); assert.equal(busText("it", "missing"), "missing");
+  assert.equal(busText("it", "reconnecting", { seconds: 4 }).includes("4 s"), true);
+  const source = await readFile(new URL("../../custom_components/myhome/frontend/panel/panel-bus-monitor-view.js", import.meta.url), "utf8");
+  const keys = [...source.matchAll(/(?:_t|_label)\("([^"$]+)"/g)].map((match) => match[1]);
+  for (const key of keys) assert.ok(busTranslations.en[key], key);
+  const { view, hass, root } = mount(); await tick(); view.hass = { ...hass, language: "it" };
+  view._ensureWhoRegistered(999); assert.match([...root.getElementById("filter-who").options].at(-1).textContent, /Sottosistema|Diagnostica/);
+  assert.match(view._generateDiagnosticPayload(), /### MyHOME Diagnostic Bundle/);
+  const card = document.createElement("myhome-openwebnet-bus-monitor"); views.push(card); card.setConfig({}); card.hass = { language: "it" };
+  assert.equal(card.shadowRoot.getElementById("btn-clear").textContent, "Svuota");
 });
