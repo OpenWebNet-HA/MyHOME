@@ -8,6 +8,7 @@ Sequence measured by the reporter after a direction command is queued:
   stop command: motor stops 0.08 s after the stop frame is written.
 """
 import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -467,44 +468,113 @@ async def test_cancelling_the_run_task_really_stops_it(cover, gateway, clock, fa
     assert cover._run_generation == generation
 
 
-async def test_send_future_is_stamped_after_reconnect_and_cancelled_on_failure(handler):
-    """The write time is taken once the command session is open, after any reconnect; a frame
-    that OWNd could not deliver cancels its future instead of starting a run."""
-    import time as _time
+def _ownd_like_session(session_cls, send_results, connect_results=None):
+    """A command session that behaves like OWNd 2.0.0b6: ``close()`` drops the
+    streams and leaves ``is_connected`` as ``connect()`` last set it; ``send()``
+    reopens the streams itself when they are gone. ``connect_results`` lists the
+    result of each ``connect()`` call (default: success)."""
+    session = MagicMock()
+    session._stream_reader = session._stream_writer = None
+    session.is_connected = False
+    connected_at: list[float] = []
+    connects = list(connect_results or [])
 
-    handler._event_session_ready.set()
-    with patch("custom_components.myhome.gateway.OWNCommandSession") as session_cls:
-        session = MagicMock()
-        session.is_connected = False
-        connected_at = []
-
-        async def _connect():
-            await asyncio.sleep(0.05)
-            connected_at.append(_time.monotonic())
+    async def _connect():
+        await asyncio.sleep(0.05)  # the TCP open + handshake
+        result = connects.pop(0) if connects else {"Success": True}
+        if isinstance(result, dict) and result.get("Success"):
+            session._stream_reader = session._stream_writer = object()
             session.is_connected = True
-            return {"Success": True}
+        connected_at.append(time.monotonic())
+        return result
 
-        async def _send(**_kwargs):
-            call = session.send.await_count
-            if call == 1:
-                session.is_connected = False  # the gateway closed the socket after this frame
-                return True
-            return True if call == 2 else None  # 2: delivered after the reconnect, 3: not delivered
+    async def _close():
+        session._stream_reader = session._stream_writer = None  # is_connected stays as it was
 
-        session.connect = AsyncMock(side_effect=_connect)
-        session.send = AsyncMock(side_effect=_send)
-        session.close = AsyncMock()
-        session_cls.return_value = session
+    async def _send(**_kwargs):
+        if session._stream_writer is None:  # what OWNd's send() does with a closed session
+            await _connect()
+        return send_results.pop(0)
 
+    session.connect = AsyncMock(side_effect=_connect)
+    session.close = AsyncMock(side_effect=_close)
+    session.send = AsyncMock(side_effect=_send)
+    session_cls.return_value = session
+    return session, connected_at
+
+
+async def test_send_future_is_stamped_after_reconnect_and_cancelled_on_failure(handler):
+    """After the idle close the worker itself reopens the session and only then
+    takes the write time: OWNd's ``send()`` would reconnect *after* our stamp, and
+    ``is_connected`` still reads True after ``close()``. A frame OWNd could not
+    deliver cancels its future instead of starting a run."""
+    handler._event_session_ready.set()
+    with patch("custom_components.myhome.gateway.OWNCommandSession") as session_cls, patch(
+        "custom_components.myhome.gateway.COMMAND_SESSION_IDLE_TIMEOUT", 0.1
+    ):
+        session, connected_at = _ownd_like_session(session_cls, send_results=[True, True, None])
         from OWNd.message import OWNAutomationCommand
 
         first = await handler.send(OWNAutomationCommand.raise_shutter("21"))
+        worker = asyncio.ensure_future(handler.sending_loop(0))
+        await asyncio.sleep(0.3)  # the frame goes out, then the idle timeout closes the socket
+        assert session.close.await_count == 1 and session.is_connected  # closed, flag still True
+        assert session.connect.await_count == 1
+
         after_reconnect = await handler.send(OWNAutomationCommand.lower_shutter("21"))
         undelivered = await handler.send(OWNAutomationCommand.stop_shutter("21"))
         await handler.send_buffer.put(None)
-        await handler.sending_loop(0)
+        await worker
 
-    assert session.connect.await_count == 2  # start-up, then the explicit reconnect
+    assert session.connect.await_count == 2  # start-up, then the worker's explicit reopen
     assert first.result() >= connected_at[0]
     assert after_reconnect.result() >= connected_at[1]  # stamped after the handshake, not before it
     assert undelivered.cancelled()
+
+
+async def test_worker_gives_up_on_a_frame_when_reconnect_fails(handler):
+    """``connect()`` returning None (gateway unreachable after its retries) is not
+    followed by ``send()`` running the same cycle again: the frame's future is
+    cancelled and the next frame gets its own chance."""
+    handler._event_session_ready.set()
+    with patch("custom_components.myhome.gateway.OWNCommandSession") as session_cls, patch(
+        "custom_components.myhome.gateway.COMMAND_SESSION_IDLE_TIMEOUT", 0.1
+    ):
+        session, _ = _ownd_like_session(session_cls, send_results=[True, True], connect_results=[{"Success": True}, None])
+        from OWNd.message import OWNAutomationCommand
+
+        await handler.send(OWNAutomationCommand.raise_shutter("21"))
+        worker = asyncio.ensure_future(handler.sending_loop(0))
+        await asyncio.sleep(0.3)  # idle close
+
+        dropped = await handler.send(OWNAutomationCommand.lower_shutter("21"))
+        delivered = await handler.send(OWNAutomationCommand.stop_shutter("21"))
+        await handler.send_buffer.put(None)
+        await worker
+
+    assert dropped.cancelled()
+    assert delivered.done() and not delivered.cancelled()
+    assert session.send.await_count == 2  # send() never ran for the dropped frame
+
+
+async def test_worker_terminates_when_the_gateway_refuses_the_reconnect(handler):
+    """A refused negotiation on the reopen (wrong password) terminates the worker
+    as the start-up path does, instead of negotiating again on every frame."""
+    handler._event_session_ready.set()
+    with patch("custom_components.myhome.gateway.OWNCommandSession") as session_cls, patch(
+        "custom_components.myhome.gateway.COMMAND_SESSION_IDLE_TIMEOUT", 0.1
+    ):
+        session, _ = _ownd_like_session(
+            session_cls, send_results=[True], connect_results=[{"Success": True}, {"Success": False, "Message": "password_error"}]
+        )
+        from OWNd.message import OWNAutomationCommand
+
+        await handler.send(OWNAutomationCommand.raise_shutter("21"))
+        worker = asyncio.ensure_future(handler.sending_loop(0))
+        await asyncio.sleep(0.3)  # idle close
+
+        refused = await handler.send(OWNAutomationCommand.lower_shutter("21"))
+        await asyncio.wait_for(worker, 2)  # returned on its own: no sentinel was queued
+
+    assert refused.cancelled()
+    assert session.send.await_count == 1
