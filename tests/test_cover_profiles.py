@@ -21,9 +21,11 @@ from custom_components.myhome.const import DOMAIN
 from custom_components.myhome.cover import MyHOMECover
 from custom_components.myhome.cover_profiles import (
     DATA_KEY,
+    PROFILE,
     WS_READ,
     WS_WRITE,
     ProfileError,
+    ProfileStorage,
     bind_cover,
     get_store,
     read_profile,
@@ -254,6 +256,7 @@ async def test_websocket_round_trip_validation_and_errors(hass, plant, hass_ws_c
             assert result["result"]["revision"] == 0
             result = await send({"id": 2, "type": WS_WRITE, **message(plant)})
             assert result["result"]["effective_travel_time"] == 42.5
+            profile_id = result["result"]["assigned_profile_id"]
             result = await send({"id": 3, "type": WS_WRITE, **message(plant)})
             assert result["error"]["code"] == "revision_conflict"
             with patch.object(store.store, "async_save", side_effect=OSError("disk")):
@@ -266,6 +269,16 @@ async def test_websocket_round_trip_validation_and_errors(hass, plant, hass_ws_c
             del msg["profile"]
             result = await send({"id": 6, "type": WS_WRITE, **msg})
             assert result["error"]["code"] == "invalid_profile"
+            result = await send({"id": 7, "type": WS_WRITE, **message(plant, 1, action="delete", profile_id=profile_id)})
+            assert result["error"]["code"] == "profile_in_use"
+            result = await send({"id": 8, "type": WS_WRITE, **message(plant, 1, action="assign", profile_id=None)})
+            assert result["success"]
+            result = await send({"id": 9, "type": WS_WRITE, **message(plant, 2, action="delete", profile_id=profile_id)})
+            assert result["result"]["profiles"] == []
+            result = await send({"id": 10, "type": WS_WRITE, **message(plant, 3, profile={
+                "name": "Directional", "opening_time": 22.5, "closing_time": 44.5})})
+            assert result["result"]["effective_opening_time"] == 22.5
+            assert result["result"]["effective_closing_time"] == 44.5
         finally:
             await client.close()
 
@@ -314,3 +327,158 @@ async def test_registered_cover_startup_resolves_profile_before_status_request(h
     await cover.async_added_to_hass()
     gateway.send_status_request.assert_awaited_once()
     assert get_store(hass, entry_id).covers[cover.unique_id] is cover
+
+
+async def test_version_one_store_migrates_without_changing_assignments_or_timing(hass, plant):
+    entry_id = plant.entries[0].entry_id
+    unique_id = plant.records[0].unique_id
+    legacy = {"revision": 7, "profiles": {"old": {"name": "Legacy", "travel_time": 32.5}},
+              "assignments": {unique_id: "old"}}
+    await Store(hass, 1, f"myhome.cover_profiles.{entry_id}").async_save(legacy)
+    hass.data[DATA_KEY].pop(entry_id)
+    await bind_cover(hass, plant.covers[0])
+    store = get_store(hass, entry_id)
+    assert store.data == {**legacy, "profiles": {"old": {
+        "name": "Legacy", "opening_time": 32.5, "closing_time": 32.5}}}
+    assert plant.covers[0]._travel_time == plant.covers[0]._closing_time == 32.5
+    assert await ProfileStorage(hass, 2, store.store.key).async_load() == store.data
+    with pytest.raises(NotImplementedError):
+        await store.store._async_migrate_func(3, 1, legacy)
+    plant.gateways[0].send.assert_not_called()
+
+
+@pytest.mark.parametrize("direction", ["opening_time", "closing_time"])
+@pytest.mark.parametrize("value", [0, 601, float("nan"), float("inf"), True, "30"])
+def test_directional_times_reject_invalid_values(direction, value):
+    with pytest.raises(vol.Invalid):
+        PROFILE({"name": "Invalid", "opening_time": 20, "closing_time": 40, direction: value})
+
+
+async def test_directional_profile_restart_and_command_reversal(hass, plant):
+    cover = plant.covers[0]
+    await write_profile(hass, message(plant, profile={"name": "Two times", "opening_time": 20, "closing_time": 40}))
+    hass.data[DATA_KEY].pop(plant.entries[0].entry_id)
+    await bind_cover(hass, cover)
+    assert cover.extra_state_attributes["opening_time"] == 20
+    assert cover.extra_state_attributes["closing_time"] == 40
+    cover._attr_current_cover_position = 0
+    with patch("custom_components.myhome.cover.time.monotonic", return_value=100):
+        await cover.async_open_cover()
+    with patch("custom_components.myhome.cover.time.monotonic", return_value=110):
+        assert cover.current_cover_position == 50
+        await cover.async_close_cover()
+        assert cover._start_position == 50
+    with patch("custom_components.myhome.cover.time.monotonic", return_value=120):
+        assert cover.current_cover_position == 25
+        await cover.async_stop_cover()
+        assert cover.current_cover_position == 25
+    result = await write_profile(hass, message(plant, 1, action="assign", profile_id=None))
+    assert result["effective_opening_time"] == result["effective_closing_time"] == 30
+
+
+async def test_bus_reversal_and_pending_directional_edit_use_original_times(hass, plant):
+    cover = plant.covers[0]
+    first = await write_profile(hass, message(plant, profile={"name": "Two times", "opening_time": 20, "closing_time": 40}))
+    cover._attr_current_cover_position = 100
+    with patch("custom_components.myhome.cover.time.monotonic", return_value=100):
+        cover.handle_event(OWNMessage.parse("*2*2*11##"))
+    with patch("custom_components.myhome.cover.time.monotonic", return_value=110):
+        assert cover.current_cover_position == 75
+        edited = await write_profile(hass, message(plant, 1, profile_id=first["assigned_profile_id"],
+                                                   profile={"name": "Changed", "opening_time": 30, "closing_time": 60}))
+        assert edited["pending"]
+        assert edited["effective_closing_time"] == 40
+        cover.handle_event(OWNMessage.parse("*2*1*11##"))
+        assert cover._start_position == 75
+    with patch("custom_components.myhome.cover.time.monotonic", return_value=112):
+        assert cover.current_cover_position == 85
+        cover.handle_event(OWNMessage.parse("*2*0*11##"))
+        assert cover.current_cover_position == 85
+    assert (cover._travel_time, cover._closing_time) == (30, 60)
+    with patch("custom_components.myhome.cover.time.monotonic", return_value=120):
+        cover.handle_event(OWNMessage.parse("*2*2*11##"))
+    with patch("custom_components.myhome.cover.time.monotonic", return_value=126):
+        cover.handle_event(OWNMessage.parse("*2*0*11##"))
+        assert cover.current_cover_position == 75
+
+
+@pytest.mark.parametrize(("start", "target", "duration"), [(0, 50, 10), (100, 50, 20)])
+async def test_directional_scheduled_stop_keeps_time_during_profile_reset(hass, plant, start, target, duration):
+    cover = plant.covers[0]
+    await write_profile(hass, message(plant, profile={"name": "Two times", "opening_time": 20, "closing_time": 40}))
+    cover._attr_current_cover_position = start
+    release, scheduled = asyncio.Event(), asyncio.Event()
+    durations = []
+    async def timer(seconds):
+        durations.append(seconds)
+        scheduled.set()
+        await release.wait()
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=timer):
+        await cover.async_set_cover_position(position=target)
+        task = cover._stop_task
+        await scheduled.wait()
+        await write_profile(hass, message(plant, 1, action="assign", profile_id=None))
+        assert durations == [duration]
+        assert (cover._travel_time, cover._closing_time) == (20, 40)
+        release.set()
+        await task
+    assert cover.current_cover_position == target
+    assert (cover._travel_time, cover._closing_time) == (30, 30)
+
+
+async def test_delete_protects_assignments_and_is_atomic_persistent_and_gateway_scoped(hass, plant):
+    first = await write_profile(hass, message(plant))
+    profile_id = first["assigned_profile_id"]
+    assert first["profiles"][0]["assigned_to"][0]["entity_id"] == plant.records[0].entity_id
+    delete = dict(action="delete", profile_id=profile_id)
+    with pytest.raises(ProfileError, match="profile_in_use"):
+        await write_profile(hass, message(plant, 1, **delete))
+    with pytest.raises(ProfileError, match="profile_not_found"):
+        await write_profile(hass, message(plant, 1, action="delete", profile_id=None))
+    with pytest.raises(ProfileError, match="profile_not_found"):
+        await write_profile(hass, message(plant, 0, index=2, **delete))
+    cover = plant.covers[0]
+    await cover.async_close_cover()
+    await write_profile(hass, message(plant, 1, action="assign", profile_id=None))
+    assert cover._pending_profile == (None,)
+    store = get_store(hass, plant.entries[0].entry_id)
+    before = copy.deepcopy(store.data)
+    with patch.object(Store, "_async_write_data", side_effect=WriteError("full")):
+        with pytest.raises(OSError):
+            await write_profile(hass, message(plant, 2, **delete))
+    assert store.data == before
+    with pytest.raises(ProfileError, match="revision_conflict"):
+        await write_profile(hass, message(plant, 1, **delete))
+    result = await write_profile(hass, message(plant, 2, **delete))
+    assert result["profiles"] == []
+    assert result["assigned_profile_id"] is None
+    assert result["revision"] == 3
+    assert cover._pending_profile == (None,)
+    assert cover._closing_time == 42.5
+    plant.gateways[0].send.assert_awaited_once()  # Only the explicit close command.
+    hass.data[DATA_KEY].pop(plant.entries[0].entry_id)
+    restored = get_store(hass, plant.entries[0].entry_id)
+    await restored.load()
+    assert restored.data == {"revision": 3, "profiles": {}, "assignments": {}}
+    await cover.async_stop_cover()
+    assert cover._closing_time == 30
+
+
+async def test_delete_racing_an_assignment_cannot_remove_an_assigned_profile(hass, plant):
+    first = await write_profile(hass, message(plant))
+    profile_id = first["assigned_profile_id"]
+    await write_profile(hass, message(plant, 1, action="assign", profile_id=None))
+    results = await asyncio.gather(
+        write_profile(hass, message(plant, 2, index=1, action="assign", profile_id=profile_id)),
+        write_profile(hass, message(plant, 2, action="delete", profile_id=profile_id)),
+        return_exceptions=True,
+    )
+    assert isinstance(results[1], ProfileError)
+    state = get_store(hass, plant.entries[0].entry_id).data
+    assert all(value in state["profiles"] for value in state["assignments"].values())
+    # Missing registry rows remain counted, never silently orphaned by a delete.
+    er.async_get(hass).async_remove(plant.records[1].entity_id)
+    read = await read_profile(hass, plant.entries[0].entry_id, plant.records[0].entity_id)
+    assert read["profiles"][0]["assigned_to"] == [{"entity_id": None, "name": None}]
+    with pytest.raises(ProfileError, match="profile_in_use"):
+        await write_profile(hass, message(plant, 3, action="delete", profile_id=profile_id))

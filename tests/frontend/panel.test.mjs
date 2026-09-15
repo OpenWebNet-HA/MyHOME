@@ -28,7 +28,7 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
-    panel_version: "0.8.0",
+    panel_version: "0.9.0",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
@@ -106,7 +106,7 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
-  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.8.0");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.9.0");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
   root.querySelector('[data-view="entities"]').click();
   assert.equal(root.querySelectorAll(".device-group").length, 3);
@@ -656,14 +656,14 @@ test("WHO 2 editor saves a single cover profile with explicit gateway and revisi
   openProfile(root);
   await tick();
   const form = root.querySelector("#profile-form");
-  assert.equal(form.elements.travel_time.value, "35");
+  assert.equal(form.elements.opening_time.value, "35");
   form.elements.profile_name.value = "Preciso";
-  form.elements.travel_time.value = "42.5";
+  form.elements.opening_time.value = "42.5";
   form.querySelector('[data-profile-action="update"]').click();
   await tick();
   assert.deepEqual(calls.find((call) => call.type === "myhome/cover_profiles/write"), {
     type: "myhome/cover_profiles/write", entry_id: "one", entity_id: "cover.shutter",
-    revision: 3, action: "save", profile_id: "timed", profile: { name: "Preciso", travel_time: 42.5 },
+    revision: 3, action: "save", profile_id: "timed", profile: { name: "Preciso", opening_time: 42.5, closing_time: 35 },
   });
   assert.match(root.querySelector(".cover-profile-dialog").textContent, /quando la tapparella si ferma/);
   assert.equal(root.querySelector("dialog").open, true);
@@ -707,7 +707,7 @@ test("profile conflicts retain the draft and require reload before another write
   await tick();
   const form = root.querySelector("#profile-form");
   form.elements.profile_name.value = "Unsaved";
-  form.elements.travel_time.value = "52";
+  form.elements.opening_time.value = "52";
   form.querySelector('[data-profile-action="update"]').click();
   await tick();
   assert.equal(form.elements.profile_name.value, "Unsaved");
@@ -766,8 +766,104 @@ test("live profile application updates pending status without replacing an edito
   input.focus();
   panel.hass = { ...hass, states: { ...hass.states, "cover.shutter": { state: "open",
     attributes: { travel_time: 42.5, cover_profile: "Standard", cover_profile_pending: false } } } };
-  assert.equal(root.querySelector("#profile-effective").textContent, "42.5");
+  assert.equal(root.querySelector("#profile-effective-opening").textContent, "42.5");
   assert.equal(root.querySelector("#profile-pending").hidden, true);
   assert.equal(input.value, "My next edit");
   assert.equal(root.activeElement, input);
+});
+
+test("directional profile fields keep distinct saved values and live timings", async () => {
+  const { panel, root, calls, hass } = await mountProfiles({ read: () => coverProfileData({
+    profiles: [{ id: "timed", name: "Different", opening_time: 20, closing_time: 40, uses: 1 }],
+    effective_opening_time: 20, effective_closing_time: 40,
+  }) });
+  openProfile(root);
+  await tick();
+  const form = root.querySelector("#profile-form");
+  assert.equal(form.elements.opening_time.value, "20");
+  assert.equal(form.elements.closing_time.value, "40");
+  form.elements.closing_time.value = "45.5";
+  panel.hass = { ...hass, states: { ...hass.states, "cover.shutter": { state: "open",
+    attributes: { opening_time: 21, closing_time: 41, cover_profile_pending: false } } } };
+  assert.equal(root.querySelector("#profile-effective-opening").textContent, "21");
+  assert.equal(root.querySelector("#profile-effective-closing").textContent, "41");
+  assert.equal(form.elements.closing_time.value, "45.5");
+  form.querySelector('[data-profile-action="update"]').click();
+  await tick();
+  assert.deepEqual(calls.find((call) => call.type.endsWith("/write")).profile,
+    { name: "Different", opening_time: 20, closing_time: 45.5 });
+});
+
+const unusedProfile = { id: "unused", name: '<img src=x onerror="alert(1)">', opening_time: 22,
+  closing_time: 44, uses: 0, assigned_to: [] };
+
+test("unused profile deletion requires confirmation and leaves the current assignment intact", async () => {
+  const { root, calls } = await mountProfiles({ read: () => coverProfileData({ profiles: [
+    ...coverProfileData().profiles, unusedProfile,
+  ] }) });
+  openProfile(root);
+  await tick();
+  const form = root.querySelector("#profile-form");
+  assert.equal(form.querySelector("#profile-delete").hidden, true);
+  change(form.elements.profile, "unused");
+  form.elements.profile_name.value = ""; // Deletion must not validate unsaved timing/name edits.
+  assert.equal(form.querySelector("#profile-delete").hidden, false);
+  form.querySelector('[data-profile-action="delete"]').click();
+  assert.equal(calls.filter((call) => call.type.endsWith("/write")).length, 0);
+  form.querySelector("#profile-delete").click();
+  assert.equal(form.querySelector("#profile-delete-confirmation").hidden, false);
+  assert.match(form.querySelector("#profile-delete-prompt").textContent, /<img/);
+  assert.equal(root.querySelector("img"), null);
+  form.querySelector("#profile-delete-cancel").click();
+  assert.equal(form.querySelector("#profile-delete-confirmation").hidden, true);
+  form.querySelector("#profile-delete").click();
+  form.querySelector('[data-profile-action="delete"]').click();
+  await tick();
+  assert.deepEqual(calls.find((call) => call.type.endsWith("/write")), {
+    type: "myhome/cover_profiles/write", entry_id: "one", entity_id: "cover.shutter",
+    revision: 3, action: "delete", profile_id: "unused",
+  });
+  assert.equal(root.querySelector("#profile-form").elements.profile.value, "timed");
+  assert.equal(root.querySelector('option[value="unused"]'), null);
+  assert.match(root.querySelector("#toast").textContent, /Profilo eliminato/);
+});
+
+test("profile usage explains deletion blocks and changing selection cancels confirmation", async () => {
+  const { root, calls } = await mountProfiles({ read: () => coverProfileData({ profiles: [
+    { ...coverProfileData().profiles[0], uses: 2, assigned_to: [
+      { entity_id: "cover.living", name: "Soggiorno" }, { entity_id: "cover.kitchen", name: "Cucina" },
+    ] }, unusedProfile,
+  ] }) });
+  openProfile(root);
+  await tick();
+  const form = root.querySelector("#profile-form");
+  assert.match(form.querySelector("#profile-usage").textContent, /Soggiorno, Cucina/);
+  assert.equal(form.querySelector("#profile-delete").hidden, true);
+  form.querySelector("#profile-delete").click();
+  assert.equal(form.querySelector("#profile-delete-confirmation").hidden, true);
+  change(form.elements.profile, "unused");
+  form.querySelector("#profile-delete").click();
+  change(form.elements.profile, "timed");
+  assert.equal(form.querySelector("#profile-delete-confirmation").hidden, true);
+  form.querySelector('[data-profile-action="delete"]').click();
+  assert.equal(calls.filter((call) => call.type.endsWith("/write")).length, 0);
+});
+
+test("failed deletion keeps the profile and displays storage or concurrent assignment errors", async () => {
+  for (const code of ["storage_error", "profile_in_use", "revision_conflict"]) {
+    const { panel, root } = await mountProfiles({ read: () => coverProfileData({ profiles: [unusedProfile] }),
+      write: () => { throw { code }; } });
+    openProfile(root);
+    await tick();
+    const form = root.querySelector("#profile-form");
+    change(form.elements.profile, "unused");
+    form.querySelector("#profile-delete").click();
+    form.querySelector('[data-profile-action="delete"]').click();
+    await tick();
+    assert.ok(form.querySelector('option[value="unused"]'));
+    assert.equal(form.querySelector("#profile-error").hidden, false);
+    assert.match(form.querySelector("#profile-error").textContent,
+      code === "storage_error" ? /Salvataggio fallito/ : code === "profile_in_use" ? /ancora assegnato/ : /bozza è conservata/);
+    panel.remove();
+  }
 });

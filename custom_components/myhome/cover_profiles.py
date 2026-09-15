@@ -1,8 +1,8 @@
 """Gateway-scoped travel-time profiles for the existing timed-cover runtime.
 
 The storage/resolution split follows Interstellar0verdrive's calibration-store
-approach. This contract deliberately supports only the current linear travel_time
-model; it does not claim compatibility with the fork's roll/height calibration.
+approach. This contract supports a linear model with separate opening and closing
+times; it does not claim compatibility with the fork's roll/height calibration.
 """
 from __future__ import annotations
 
@@ -35,10 +35,22 @@ def travel_time(value):
     return float(value)
 
 
-PROFILE = vol.Schema({
+LEGACY_PROFILE = vol.Schema({
     vol.Required("name"): vol.All(str, vol.Strip, vol.Length(min=1, max=64)),
     vol.Required("travel_time"): travel_time,
 })
+
+def directional_profile(profile):
+    """Upgrade a validated legacy profile without changing its motion timing."""
+    return {"name": profile["name"], "opening_time": profile["travel_time"],
+            "closing_time": profile["travel_time"]}
+
+
+PROFILE = vol.Any(vol.Schema({
+    vol.Required("name"): vol.All(str, vol.Strip, vol.Length(min=1, max=64)),
+    vol.Required("opening_time"): travel_time,
+    vol.Required("closing_time"): travel_time,
+}), vol.All(LEGACY_PROFILE, directional_profile))
 STORED = vol.Schema({
     vol.Required("revision"): vol.All(int, vol.Range(min=0)),
     vol.Required("profiles"): {str: PROFILE},
@@ -54,6 +66,11 @@ class ProfileError(Exception):
 class ProfileStorage(Store):
     """Surface write failures: HA's default Store logs them and returns success."""
 
+    async def _async_migrate_func(self, old_major_version, old_minor_version, old_data):
+        if old_major_version != 1:
+            raise NotImplementedError
+        return STORED(old_data)
+
     async def _async_write_data(self, *args):
         try:
             await super()._async_write_data(*args)
@@ -66,7 +83,7 @@ class CoverProfileStore:
 
     def __init__(self, hass, entry_id):
         self.store = ProfileStorage(
-            hass, 1, f"{DOMAIN}.cover_profiles.{entry_id}", atomic_writes=True
+            hass, 2, f"{DOMAIN}.cover_profiles.{entry_id}", atomic_writes=True
         )
         self.lock = asyncio.Lock()
         self.loaded = False
@@ -107,7 +124,7 @@ def target(hass, entry_id, entity_id):
     return entry, entity
 
 
-def snapshot(store, entry, entity):
+def snapshot(hass, store, entry, entity):
     """An allowlisted view; never expose gateway credentials or runtime objects."""
     cover = store.covers.get(entity.unique_id)
     writable = bool(entry.state == ConfigEntryState.LOADED and entry.disabled_by is None
@@ -116,15 +133,26 @@ def snapshot(store, entry, entity):
     if cover and cover._advanced:
         writable, reason = False, "advanced_cover"
     assigned = store.profile(entity.unique_id)
+    records = {record.unique_id: record for record in
+               er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
+               if record.domain == "cover" and record.platform == DOMAIN}
+    def assignments(profile_id):
+        return [{"entity_id": records[unique].entity_id if unique in records else None,
+                 "name": (records[unique].name or records[unique].original_name
+                          or records[unique].entity_id) if unique in records else None}
+                for unique, value in store.data["assignments"].items() if value == profile_id]
     return {
         "entry_id": entry.entry_id, "entity_id": entity.entity_id,
         "revision": store.data["revision"], "assigned_profile_id": assigned["id"] if assigned else None,
         "profiles": [{"id": key, **value,
-                      "uses": list(store.data["assignments"].values()).count(key)}
+                      "uses": list(store.data["assignments"].values()).count(key),
+                      "assigned_to": assignments(key)}
                      for key, value in store.data["profiles"].items()],
         "writable": writable, "reason": reason,
         "default_travel_time": cover._default_travel_time if cover else None,
         "effective_travel_time": cover._travel_time if cover else None,
+        "effective_opening_time": cover._travel_time if cover else None,
+        "effective_closing_time": cover._closing_time if cover else None,
         "pending": bool(cover and cover._pending_profile is not None),
     }
 
@@ -134,7 +162,7 @@ async def read_profile(hass, entry_id, entity_id):
     store = get_store(hass, entry_id)
     async with store.lock:
         await store.load()
-        return snapshot(store, entry, entity)
+        return snapshot(hass, store, entry, entity)
 
 
 async def write_profile(hass, msg):
@@ -148,7 +176,7 @@ async def write_profile(hass, msg):
         entry, entity = target(hass, entry_id, entity_id)
         if hass.state in (CoreState.stopping, CoreState.final_write, CoreState.stopped):
             raise ProfileError("cover_unavailable")
-        current = snapshot(store, entry, entity)
+        current = snapshot(hass, store, entry, entity)
         if not current["writable"]:
             raise ProfileError(current["reason"])
         if msg["revision"] != store.data["revision"]:
@@ -168,7 +196,13 @@ async def write_profile(hass, msg):
                     raise ProfileError("profile_limit")
                 profile_id = uuid4().hex
             data["profiles"][profile_id] = profile
-        if profile_id is None:
+        if msg["action"] == "delete":
+            if profile_id is None:
+                raise ProfileError("profile_not_found")
+            if profile_id in data["assignments"].values():
+                raise ProfileError("profile_in_use")
+            del data["profiles"][profile_id]
+        elif profile_id is None:
             data["assignments"].pop(entity.unique_id, None)
         else:
             data["assignments"][entity.unique_id] = profile_id
@@ -178,10 +212,10 @@ async def write_profile(hass, msg):
         # The entity may have unloaded while storage was writing. Its next mount
         # resolves the persisted assignment. Never send a bus command or reload HA.
         cover = store.covers.get(entity.unique_id)
-        if cover is not None:
+        if cover is not None and msg["action"] != "delete":
             cover.async_apply_cover_profile(store.profile(entity.unique_id))
             cover.async_write_ha_state()
-        return snapshot(store, entry, entity)
+        return snapshot(hass, store, entry, entity)
 
 
 async def bind_cover(hass, cover):
@@ -235,7 +269,7 @@ async def ws_read(hass, connection, msg):
 @websocket_api.websocket_command({
     vol.Required("type"): WS_WRITE, **TARGET,
     vol.Required("revision"): vol.All(int, vol.Range(min=0)),
-    vol.Required("action"): vol.In(["assign", "save"]),
+    vol.Required("action"): vol.In(["assign", "save", "delete"]),
     vol.Optional("profile_id"): vol.Any(str, None),
     vol.Optional("profile"): PROFILE,
 })

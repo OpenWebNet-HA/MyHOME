@@ -279,6 +279,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._full_where = f"{self._where}#4#{self._interface}" if self._interface is not None else self._where
         self._advanced = advanced
         self._travel_time = travel_time
+        self._closing_time = travel_time
         self._default_travel_time = travel_time
         self._pending_profile = None
 
@@ -299,6 +300,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._attr_extra_state_attributes["Int"] = self._interface
         if not self._advanced:
             self._attr_extra_state_attributes["travel_time"] = self._travel_time
+            self._attr_extra_state_attributes["opening_time"] = self._travel_time
+            self._attr_extra_state_attributes["closing_time"] = self._closing_time
 
         self._attr_current_cover_position = 50
         self._attr_is_opening = False
@@ -317,7 +320,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._attr_extra_state_attributes["cover_profile_pending"] = True
             return
         self._pending_profile = None
-        self._travel_time = profile["travel_time"] if profile else self._default_travel_time
+        self._travel_time = profile["opening_time"] if profile else self._default_travel_time
+        self._closing_time = profile["closing_time"] if profile else self._default_travel_time
+        self._attr_extra_state_attributes["opening_time"] = self._travel_time
+        self._attr_extra_state_attributes["closing_time"] = self._closing_time
         self._attr_extra_state_attributes["travel_time"] = self._travel_time
         self._attr_extra_state_attributes["cover_profile"] = profile["name"] if profile else None
         self._attr_extra_state_attributes["cover_profile_pending"] = False
@@ -325,6 +331,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     def _apply_pending_cover_profile(self):
         if self._pending_profile is not None:
             self.async_apply_cover_profile(self._pending_profile[0])
+
+    def _movement_travel_time(self):
+        """Use the current direction before snapshotting a stop or reversal."""
+        return self._closing_time if self._attr_is_closing else self._travel_time
 
     def _cancel_stop_task(self):
         """Cancel any running scheduled auto-stop task."""
@@ -339,7 +349,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Return current cover position (interpolated if moving)."""
         if not self._advanced and self._move_start_time is not None:
             elapsed = time.monotonic() - self._move_start_time
-            delta = (elapsed / self._travel_time) * 100
+            delta = (elapsed / self._movement_travel_time()) * 100
             if self._attr_is_opening:
                 return min(100, int(round(self._start_position + delta)))
             if self._attr_is_closing:
@@ -483,7 +493,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             return
 
         travel_fraction = abs(diff) / 100.0
-        run_duration = travel_fraction * self._travel_time
+        run_duration = travel_fraction * (self._travel_time if diff > 0 else self._closing_time)
 
         if diff > 0:
             await self.async_open_cover()
@@ -510,7 +520,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if not self._advanced:
             if self._move_start_time is not None:
                 elapsed = time.monotonic() - self._move_start_time
-                delta = (elapsed / self._travel_time) * 100
+                delta = (elapsed / self._movement_travel_time()) * 100
                 if self._attr_is_opening:
                     self._attr_current_cover_position = min(100, int(round(self._start_position + delta)))
                 elif self._attr_is_closing:
@@ -571,7 +581,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             if not self._advanced:
                 if self._move_start_time is not None:
                     elapsed = time.monotonic() - self._move_start_time
-                    delta = (elapsed / self._travel_time) * 100
+                    delta = (elapsed / self._movement_travel_time()) * 100
                     if self._attr_is_opening:
                         self._attr_current_cover_position = min(100, int(round(self._start_position + delta)))
                     elif self._attr_is_closing:

@@ -17,7 +17,7 @@ and provides English and Italian labels, with English fallback for other languag
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.8.0**, defined by
+The panel has an independent version, currently **0.9.0**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.
@@ -335,12 +335,14 @@ and export functions are available and verified inside the panel; the adapter
 allows that migration without coupling the other sections to card internals.
 
 
-## Panel 0.8.0: travel profiles in WHO 2
+## Panel 0.9.0: directional travel profiles and deletion in WHO 2
 
 Expand a WHO 2 device and choose **Travel profile** on its cover row. The dialog
-shows the assigned profile, current full travel time, and the original YAML/default
-time. Standard timed covers support one full travel time, shared by opening and
-closing; values from 1 to 600 seconds, including fractions, are accepted.
+shows the assigned profile and current full opening and closing times. Each time
+accepts values from 1 to 600 seconds, including fractions. The original YAML/default
+`travel_time` supplies both directions when no profile is assigned. Position
+estimation, command/bus reversals and scheduled position stops use the relevant
+direction. This remains a linear estimate without physical calibration.
 
 - **Save new profile and assign** creates a profile for this gateway and assigns it
   to this cover. Its name can contain spaces (maximum 64 characters).
@@ -349,17 +351,30 @@ closing; values from 1 to 600 seconds, including fractions, are accepted.
 - **Update this profile** edits a profile assigned exclusively to this cover. Shared
   profiles require an explicit new copy, so a single-cover edit cannot change another
   cover. Profiles are scoped to their gateway, with a limit of 200 stored profiles.
+- **Delete selected profile** is available for unused profiles. Select the profile,
+  choose Delete, and confirm its name in the dialog. This does not change the current
+  assignment or runtime timing. Profiles in use show their assigned covers and
+  instructions: choose another profile or restore defaults on each of those covers,
+  then return and delete the now-unused profile. The server rejects deletion while
+  any assignment remains, including an assignment to a removed registry entity.
+  Registry-removed assignments currently require restoring that entity to unassign
+  it; deleting the gateway removes its entire profile store.
 - Offline, unloaded or disabled covers are read-only. Covers configured for advanced
   hardware position feedback show an explanation; timed profiles do not apply.
 - Saving never sends a bus command or reloads the gateway. A moving cover keeps its
-  current travel time and scheduled stop. The saved change is pending until a stop
+  current opening/closing times and scheduled stop. The saved change is pending until a stop
   or stationary-position event, and survives restart even if the entity unloads
   during the save. The next mount resolves the stored assignment before status reads.
 - Registry renames keep assignments because storage uses the native unique ID,
   together with the config entry. Removing the config entry deletes its profile store.
 
-The authoritative store is `myhome.cover_profiles.<entry_id>` (version 1), containing
-`revision`, `profiles` and `assignments`. An explicit assignment overrides
+The authoritative store is `myhome.cover_profiles.<entry_id>` (version 2), containing
+`revision`, `profiles` and `assignments`. Version 1 profiles migrate automatically:
+`travel_time` becomes both `opening_time` and `closing_time`, preserving IDs,
+assignments and revision. Migration validates and persists the upgraded store before
+binding the runtime; failures do not silently replace saved data. Version 2 storage
+requires the updated integration (an older panel release cannot read that format).
+An explicit assignment overrides
 `travel_time` from YAML/defaults; removing it restores that source. Nothing rewrites
 `myhome.yaml`, native names/areas, or gateway credentials. Writes use one gateway
 lock, an expected revision and atomic storage; failed persistence is reported and
@@ -379,23 +394,46 @@ The entity must be a native MyHOME cover belonging to exactly that entry.
 Create and assign a new profile:
 
 ```json
-{"type":"myhome/cover_profiles/write","entry_id":"ENTRY","entity_id":"cover.shutter","revision":0,"action":"save","profile_id":null,"profile":{"name":"Bedroom","travel_time":32.5}}
+{"type":"myhome/cover_profiles/write","entry_id":"ENTRY","entity_id":"cover.shutter","revision":0,"action":"save","profile_id":null,"profile":{"name":"Bedroom","opening_time":32.5,"closing_time":30.5}}
 ```
 
 Use `action: "assign"` with an existing `profile_id`, or `null` to restore defaults.
 Use `action: "save"` with the currently assigned exclusive profile ID to update it.
+Use `action: "delete"` with an unused profile ID to delete it. This uses the same
+administrator, exact gateway/cover, writability and revision checks as other writes.
+An assignment racing a deletion cannot leave a dangling reference: both operations
+hold the gateway lock and only one can succeed at the expected revision.
+
 Responses include the new revision, assigned profile ID, profile list with usage
-counts, default/effective times, pending status, writability and a reason code.
+counts and `assigned_to` (native entity IDs/names), default/effective times, pending
+status, writability and a reason code. Profiles contain `name`, `opening_time` and
+`closing_time`. Legacy `{name, travel_time}` writes remain accepted and set both
+directions equally. `effective_travel_time` and the entity's `travel_time` attribute
+remain opening-time aliases for compatibility; use `effective_opening_time` /
+`effective_closing_time` and state attributes `opening_time` / `closing_time` for
+direction-aware clients.
 
 This adapts the persistence/resolution separation of
 [Interstellar0verdrive's calibration store](https://github.com/Interstellar0verdrive/MyHOME-stability/blob/229b1eb30558012674e1e7f5c2059a58300f09df/custom_components/myhome/calibration_store.py)
 to the existing MyHOME cover runtime. It does **not** import that fork's height,
-roll, slat or separate opening/closing model, and its storage/API is deliberately
-separate from `myhome.calibration.*`. Guided calibration, batch editing and deletion
-of unused profiles are later steps. No profile is presented as physically calibrated.
+roll or slat mechanics; directional timing extends our own linear runtime. Its
+storage/API is deliberately separate from `myhome.calibration.*`. Guided calibration
+and batch editing are later steps. No profile is presented as physically calibrated.
 
 
-Validation for 0.8.0: **1,379 backend tests passed, one existing skip**, five
+Validation for 0.9.0: **1,398 backend tests passed, one existing skip**, five
+snapshots passed on HA 2025.1.4 / Python 3.12.14 / OWNd 2.0.0b6. The final
+coverage gate passes with **100% Python line coverage** (5,684 statements), after
+rerunning the 39 profile cases against the final source. All **32 frontend tests**
+pass, as do **67 profile, cover and panel tests** on HA 2026.9.1 / Python 3.14.7.
+New cases cover real version-1 storage migration, distinct timing after restart,
+command and bus reversals, both directional scheduled stops during a pending reset,
+atomic deletion/persistence failures, assignment/deletion races, authenticated
+WebSocket deletion, UI confirmation/cancellation and errors. Ruff and architecture
+checks pass. Version 0.9.0 still needs testing on a physical gateway and in the real
+HA frontend.
+
+Historical validation for 0.8.0: **1,379 backend tests passed, one existing skip**, five
 snapshots passed and **100% Python line coverage** (5,660 statements) on HA
 2025.1.4 / Python 3.12.14 / OWNd 2.0.0b6. All **28 frontend tests** pass. On HA
 2026.9.1 / Python 3.14.7, all **48 profile, cover and panel tests** pass, including

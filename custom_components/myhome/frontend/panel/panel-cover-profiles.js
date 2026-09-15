@@ -40,8 +40,11 @@ export class CoverProfileEditor {
   updateState(hass) {
     const attrs = hass?.states?.[this._context?.entity.entity_id]?.attributes;
     if (!this.dialog || !attrs) return;
-    const effective = this.dialog.querySelector("#profile-effective");
-    if (effective && attrs.travel_time != null) effective.textContent = attrs.travel_time;
+    for (const direction of ["opening", "closing"]) {
+      const effective = this.dialog.querySelector(`#profile-effective-${direction}`);
+      const value = attrs[`${direction}_time`] ?? attrs.travel_time;
+      if (effective && value != null) effective.textContent = value;
+    }
     const pending = this.dialog.querySelector("#profile-pending");
     if (pending && typeof attrs.cover_profile_pending === "boolean") pending.hidden = !attrs.cover_profile_pending;
   }
@@ -60,21 +63,32 @@ export class CoverProfileEditor {
     host.querySelector("#profile-body").innerHTML = `
       <p class="muted">${esc(t("profileScope"))}</p>
       <p>${esc(t("profileAssigned"))}: <strong>${esc(assigned?.name || t("profileDefault"))}</strong></p>
-      <p>${esc(t("profileEffective"))}: <span id="profile-effective">${esc(data.effective_travel_time ?? "—")}</span> s</p>
+      <p>${esc(t("profileEffectiveOpening"))}: <span id="profile-effective-opening">${esc(data.effective_opening_time ?? data.effective_travel_time ?? "—")}</span> s</p>
+      <p>${esc(t("profileEffectiveClosing"))}: <span id="profile-effective-closing">${esc(data.effective_closing_time ?? data.effective_travel_time ?? "—")}</span> s</p>
       <p id="profile-pending" role="status" ${data.pending ? "" : "hidden"}>${esc(t("profilePending"))}</p>
       ${!data.writable ? `<p class="notice">${esc(t(`profileError_${data.reason}`))}</p>` : ""}
       <form id="profile-form">
         <label>${esc(t("profileChoose"))}<select name="profile" ${data.writable ? "" : "disabled"}>
           <option value="">${esc(t("profileDefault"))}</option>
-          ${data.profiles.map((profile) => `<option value="${esc(profile.id)}">${esc(profile.name)} · ${esc(profile.travel_time)} s</option>`).join("")}
+          ${data.profiles.map((profile) => `<option value="${esc(profile.id)}">${esc(profile.name)} · ${esc(profile.opening_time ?? profile.travel_time)} / ${esc(profile.closing_time ?? profile.travel_time)} s</option>`).join("")}
         </select></label>
         <button type="button" data-profile-action="assign" ${data.writable ? "" : "disabled"}>${esc(t("profileAssign"))}</button>
         <label>${esc(t("profileName"))}<input name="profile_name" maxlength="64" required ${data.writable ? "" : "disabled"}></label>
-        <label>${esc(t("profileTravelTime"))}<input name="travel_time" type="number" min="1" max="600" step="any" required ${data.writable ? "" : "disabled"}></label>
+        <label>${esc(t("profileOpeningTime"))}<input name="opening_time" type="number" min="1" max="600" step="any" required ${data.writable ? "" : "disabled"}></label>
+        <label>${esc(t("profileClosingTime"))}<input name="closing_time" type="number" min="1" max="600" step="any" required ${data.writable ? "" : "disabled"}></label>
         <p class="muted">${esc(t("profileSharedHelp"))}</p>
         <div class="actions">
           <button type="button" data-profile-action="update">${esc(t("profileUpdate"))}</button>
           <button type="button" data-profile-action="new" ${data.writable ? "" : "disabled"}>${esc(t("profileCreate"))}</button>
+        </div>
+        <p id="profile-usage" class="muted"></p>
+        <button type="button" id="profile-delete">${esc(t("profileDelete"))}</button>
+        <div id="profile-delete-confirmation" hidden>
+          <p id="profile-delete-prompt"></p>
+          <div class="actions">
+            <button type="button" data-profile-action="delete">${esc(t("profileDeleteConfirm"))}</button>
+            <button type="button" id="profile-delete-cancel">${esc(t("cancel"))}</button>
+          </div>
         </div>
         <p id="profile-error" class="error" role="alert" hidden></p>
         <button type="button" id="profile-reload" hidden>${esc(t("profileReload"))}</button>
@@ -84,9 +98,27 @@ export class CoverProfileEditor {
     const select = () => {
       const profile = data.profiles.find((item) => item.id === form.elements.profile.value);
       form.elements.profile_name.value = profile?.name || "";
-      form.elements.travel_time.value = profile?.travel_time ?? data.default_travel_time ?? "";
+      for (const direction of ["opening", "closing"]) {
+        form.elements[`${direction}_time`].value = profile?.[`${direction}_time`] ?? profile?.travel_time ?? data.default_travel_time ?? "";
+      }
+      form.querySelector("#profile-delete-confirmation").hidden = true;
+      form.querySelector("#profile-delete").hidden = !data.writable || !profile || profile.uses !== 0;
+      form.querySelector("#profile-usage").textContent = profile?.uses > 0
+        ? `${t("profileInUse")}: ${(profile.assigned_to || []).map((item) => item.name || item.entity_id || t("profileMissingCover")).join(", ") || profile.uses}. ${t("profileDeleteHelp")}`
+        : profile ? t("profileUnused") : "";
       form.querySelector('[data-profile-action="update"]').hidden = !data.writable || !profile
         || profile.id !== data.assigned_profile_id || profile.uses > 1;
+    };
+    form.querySelector("#profile-delete").onclick = () => {
+      const profile = data.profiles.find((item) => item.id === form.elements.profile.value);
+      if (!data.writable || !profile || profile.uses !== 0) return;
+      form.querySelector("#profile-delete-prompt").textContent = `${t("profileDeletePrompt")} “${profile.name}”?`;
+      form.querySelector("#profile-delete-confirmation").hidden = false;
+      form.querySelector('[data-profile-action="delete"]').focus();
+    };
+    form.querySelector("#profile-delete-cancel").onclick = () => {
+      form.querySelector("#profile-delete-confirmation").hidden = true;
+      form.querySelector("#profile-delete").focus();
     };
     select();
     form.elements.profile.onchange = select;
@@ -99,13 +131,22 @@ export class CoverProfileEditor {
     const { hass, entity, host, onSaved, generation, t } = this._context;
     if (this._saving === generation || !this._data.writable) return;
     const form = host.querySelector("#profile-form");
-    if (action !== "assign" && !form.reportValidity()) return;
+    const savingProfile = action === "new" || action === "update";
+    if (savingProfile && !form.reportValidity()) return;
+    if (action === "delete") {
+      const selected = this._data.profiles.find((item) => item.id === form.elements.profile.value);
+      if (!selected || selected.uses !== 0 || form.querySelector("#profile-delete-confirmation").hidden) return;
+    }
     const message = {
       type: "myhome/cover_profiles/write", entry_id: entity.entry_id, entity_id: entity.entity_id,
-      revision: this._data.revision, action: action === "assign" ? "assign" : "save",
+      revision: this._data.revision, action: savingProfile ? "save" : action,
       profile_id: action === "new" ? null : form.elements.profile.value || null,
     };
-    if (action !== "assign") message.profile = { name: form.elements.profile_name.value.trim(), travel_time: Number(form.elements.travel_time.value) };
+    if (savingProfile) message.profile = {
+      name: form.elements.profile_name.value.trim(),
+      opening_time: Number(form.elements.opening_time.value),
+      closing_time: Number(form.elements.closing_time.value),
+    };
     this._saving = generation;
     const controls = [...form.querySelectorAll("input, select, button")];
     for (const control of controls) control.disabled = true;
@@ -116,7 +157,7 @@ export class CoverProfileEditor {
       if (!this._current(generation)) return;
       this._data = data;
       this._render();
-      onSaved(data.pending ? t("profilePending") : t("saved"));
+      onSaved(action === "delete" ? t("profileDeleted") : data.pending ? t("profilePending") : t("saved"));
     } catch (error) {
       if (!this._current(generation)) return;
       errorBox.textContent = this._error(error);
