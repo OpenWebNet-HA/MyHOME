@@ -10,7 +10,7 @@ documented in the [implemented API](panel-websocket-api.md) and
 This document continues the existing source comparison; it does not restart the
 panel implementation or propose copying another fork wholesale. The original
 comparison used our panel 0.9.0 at `02ce199` and Interstellar0verdrive's fork at
-`229b1eb`. Our side now includes panel 0.18.0; `65f17c1` remains the preceding 0.17.0 baseline.
+`229b1eb`. Our side is pinned to `0f4993d` (panel 0.18.0); `65f17c1` remains the preceding 0.17.0 baseline.
 The backend from
 upstream #349 is compared separately. The calibration-fork column still describes
 its pinned baseline, not a fresh audit of its moving `master`.
@@ -32,7 +32,7 @@ independent of opening the panel.
 
 | Implementation | Exact baseline | Relevant evidence |
 | --- | --- | --- |
-| Our `feat/myhome-sidepanel`, panel 0.18.0 | [Current implementation](../custom_components/myhome/cover_calibration_automatic.py) | [Implemented API](panel-websocket-api.md), `panel.py`, `cover_profiles.py`, `cover_profile_provenance.py`, `cover_profile_export.py`, `cover_calibration.py`, `cover_calibration_automatic.py`, `frontend/panel/` |
+| Our `feat/myhome-sidepanel`, panel 0.18.0 | [`0f4993d`](https://github.com/xtimmy86x/MyHOME/tree/0f4993d2c7739f8eaeb4fd339fdab0f2a918c532) | [Implemented API](panel-websocket-api.md), `panel.py`, `cover_profiles.py`, `cover_profile_provenance.py`, `cover_profile_export.py`, `cover_calibration.py`, `cover_calibration_automatic.py`, `frontend/panel/` |
 | Interstellar0verdrive's `MyHOME-stability`, `master` | [`229b1eb`](https://github.com/Interstellar0verdrive/MyHOME-stability/tree/229b1eb30558012674e1e7f5c2059a58300f09df) | [API reference](https://github.com/Interstellar0verdrive/MyHOME-stability/blob/229b1eb30558012674e1e7f5c2059a58300f09df/docs/panel-websocket-api.md), `websocket_api.py`, `panel_data.py`, `panel_write.py`, `panel_schemas.py`, `panel_src/` |
 | Upstream #349, backend only | [`e807e99`](https://github.com/OpenWebNet-HA/MyHOME/tree/e807e9986ca9e09e8f3c516bd9c5d8b55e076485) | [PR #349](https://github.com/OpenWebNet-HA/MyHOME/pull/349), `cover.py`, services, [runtime/service documentation](https://github.com/OpenWebNet-HA/MyHOME/blob/e807e9986ca9e09e8f3c516bd9c5d8b55e076485/docs/configuration/services.md) |
 
