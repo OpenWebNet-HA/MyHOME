@@ -5,12 +5,10 @@ const assetUrl = (name) => {
   url.search = new URL(import.meta.url).search;
   return url.href;
 };
-const [{ translations }, model] = await Promise.all([
+const [{ translations }, model, { escapeHtml, replacePreservingFocus }, { BusMonitorSection }] = await Promise.all([
   import(assetUrl("panel-translations.js")), import(assetUrl("panel-model.js")),
+  import(assetUrl("panel-dom.js")), import(assetUrl("panel-bus-monitor.js")),
 ]);
-const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
-  "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-})[char]);
 const SETTINGS_URL = "/config/integrations/integration/myhome";
 const CATEGORY_VIEW_STORAGE_KEY = "myhome-panel-category-view-v1";
 const deviceUrl = (id) => `/config/devices/device/${encodeURIComponent(id)}`;
@@ -33,7 +31,8 @@ class MyHomePanel extends HTMLElement {
     } catch { /* Navigation remains available when browser storage is blocked. */ }
     this._session = 0;
     this._unsubs = [];
-    this._monitorToken = 0;
+    this._busMonitor = new BusMonitorSection();
+    this._visibilityChanged = () => this._updatePolling();
     this._locationChanged = () => this._syncGatewayFromUrl();
   }
 
@@ -51,7 +50,7 @@ class MyHomePanel extends HTMLElement {
       this._updateStates();
     }
     this._updateMenu();
-    if (this._monitor) this._monitor.hass = value;
+    this._busMonitor.hass = value;
   }
 
   get hass() { return this._hass; }
@@ -80,19 +79,20 @@ class MyHomePanel extends HTMLElement {
   }
 
   _start() {
-    if (this._timer) return;
+    if (this._started) return;
+    this._started = true;
+    this._busMonitor.hass = this._hass;
     this._syncGatewayFromUrl();
     window.addEventListener("popstate", this._locationChanged);
     window.addEventListener("location-changed", this._locationChanged);
     this._buildShell();
     this._renderInventory();
-    this._refresh();
-    // Registry events update configuration; polling also catches runtime status
-    // and missed events after reconnects without adding a custom event protocol.
-    this._timer = setInterval(() => this._refresh(), 15000);
+    document.addEventListener("visibilitychange", this._visibilityChanged);
+    this._updatePolling();
     const session = this._session;
     for (const type of ["entity_registry_updated", "device_registry_updated", "area_registry_updated"]) {
       this._hass.connection.subscribeEvents(() => {
+        if (session !== this._session || !this.isConnected || document.hidden) return;
         clearTimeout(this._refreshTimer);
         this._refreshTimer = setTimeout(() => this._refresh(), 150);
       }, type).then((unsub) => {
@@ -102,7 +102,19 @@ class MyHomePanel extends HTMLElement {
     }
   }
 
+  _updatePolling() {
+    clearInterval(this._timer);
+    clearTimeout(this._refreshTimer);
+    this._timer = null;
+    if (!this._started || document.hidden) return;
+    // Reconcile runtime status and any registry events missed while hidden.
+    this._refresh();
+    this._timer = setInterval(() => this._refresh(), 15000);
+  }
+
   _stop() {
+    this._started = false;
+    document.removeEventListener("visibilitychange", this._visibilityChanged);
     window.removeEventListener("popstate", this._locationChanged);
     window.removeEventListener("location-changed", this._locationChanged);
     this._session++;
@@ -117,7 +129,7 @@ class MyHomePanel extends HTMLElement {
   }
 
   async _refresh() {
-    if (!this.isConnected || !this._hass) return;
+    if (!this.isConnected || !this._hass || document.hidden) return;
     if (this._loading) { this._refreshAgain = true; return; }
     const session = this._session;
     this._loading = true;
@@ -363,7 +375,7 @@ class MyHomePanel extends HTMLElement {
       ...model.filterItems(this._data, { ...scope, devices: emptyDevices, entities: [] }, "devices", filters, this._hass),
     ];
     items.sort((a, b) => this._itemName(a).localeCompare(this._itemName(b)));
-    root.getElementById("items").innerHTML = model.groupByWho(items).map(([who, members]) => `
+    replacePreservingFocus(root.getElementById("items"), model.groupByWho(items).map(([who, members]) => `
       <section class="who-group" data-who="${escapeHtml(who)}" aria-labelledby="who-title-${escapeHtml(who)}">
         <div class="who-heading"><h2 id="who-title-${escapeHtml(who)}">${escapeHtml(this._whoLabel(who))}</h2>
           <span class="count">${escapeHtml(this._inventoryCount(members))}</span></div>
@@ -375,7 +387,7 @@ class MyHomePanel extends HTMLElement {
         ]
             .sort((a, b) => a.device ? (b.device ? this._itemName(a.device).localeCompare(this._itemName(b.device)) : -1) : b.device ? 1 : 0)
             .map((group) => this._entityGroup(group, scope, who)).join("")}</div>
-      </section>`).join("") || this._empty(this._t("noResults"), this._t("noResultsHelp"));
+      </section>`).join("") || this._empty(this._t("noResults"), this._t("noResultsHelp")));
     this._updateStates();
   }
 
@@ -467,7 +479,7 @@ class MyHomePanel extends HTMLElement {
       this._setCategoryView(this._categoryMode === "all" ? "single" : "all");
     } else if (target.dataset.action === "refresh") {
       this._refresh();
-      if (this._view === "bus" && !this._monitor) { this._monitorKey = null; this._renderMonitor(); }
+      if (this._view === "bus" && !this._busMonitor.card) { this._removeMonitor(); this._renderMonitor(); }
     } else if (target.dataset.action?.startsWith("edit-")) {
       this._openEditor(target.dataset.action.slice(5), target.dataset.id);
     } else if (["details", "entity-settings"].includes(target.dataset.action)) {
@@ -533,43 +545,17 @@ class MyHomePanel extends HTMLElement {
     dialog.showModal();
   }
 
-  _removeMonitor() {
-    this._monitorToken++;
-    this._monitor?.remove();
-    this._monitor = null;
-    this._monitorKey = null;
-  }
+  _removeMonitor() { this._busMonitor.clear(); }
 
-  async _renderMonitor() {
+  _renderMonitor() {
     if (!this._data) return;
-    const entry = this._data.gateways.find((item) => item.entry_id === this._entryId);
-    const key = `${entry?.entry_id || "all"}:${entry?.monitor_available}`;
-    if (key === this._monitorKey) return;
-    this._removeMonitor();
-    this._monitorKey = key;
-    const container = this.shadowRoot.getElementById("monitor");
-    if (!entry || !entry.monitor_available) {
-      container.innerHTML = this._empty(this._t(entry ? "monitorOffline" : "monitorSelect"));
-      return;
-    }
-    const token = this._monitorToken;
-    container.innerHTML = this._empty(this._t("monitorLoading"));
-    try {
-      // Import the same content-versioned resource registered by the integration.
-      // A separate card instance per gateway isolates history and subscriptions.
-      await import(this._panel?.config?.bus_card_url || "/myhome_static/myhome-bus-card.js");
-      if (!this.isConnected || token !== this._monitorToken) return;
-      const card = document.createElement("myhome-openwebnet-bus-monitor");
-      card.setConfig({ mac: entry.mac, title: `${this._t("bus")} · ${entry.title}`, max_frames: 200 });
-      container.replaceChildren(card);
-      this._monitor = card;
-      card.hass = this._hass;
-    } catch (error) {
-      if (token === this._monitorToken) {
-        container.innerHTML = this._empty(this._t("monitorError"));
-        this._monitorKey = null;
-      }
-    }
+    return this._busMonitor.render({
+      container: this.shadowRoot.getElementById("monitor"),
+      entry: this._data.gateways.find((item) => item.entry_id === this._entryId),
+      resourceUrl: this._panel?.config?.bus_card_url || "/myhome_static/myhome-bus-card.js",
+      t: (key) => this._t(key),
+      empty: (title) => this._empty(title),
+    });
   }
 }
 

@@ -28,7 +28,7 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
-    panel_version: "0.7.0",
+    panel_version: "0.7.1",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
@@ -87,7 +87,7 @@ const change = (element, value) => {
   element.value = value;
   element.dispatchEvent(new Event(element.type === "search" ? "input" : "change", { bubbles: true }));
 };
-afterEach(() => { document.body.replaceChildren(); window.localStorage.clear(); window.history.replaceState(null, "", "/"); });
+afterEach(() => { document.body.replaceChildren(); delete document.hidden; window.localStorage.clear(); window.history.replaceState(null, "", "/"); });
 after(() => dom.window.close());
 
 test("gateway, category and inherited area filters retain trigger-only and disabled items", () => {
@@ -106,7 +106,7 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
-  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.7.0");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.7.1");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
   root.querySelector('[data-view="entities"]').click();
   assert.equal(root.querySelectorAll(".device-group").length, 3);
@@ -499,4 +499,127 @@ test("unknown gateway links never fall back to another installation", async () =
   assert.equal(panel._entryId, "removed");
   change(root.getElementById("gateway"), "one");
   assert.equal(root.querySelectorAll(".device-group").length, 2);
+});
+
+test("inventory updates retain keyboard focus on the same WHO, gateway and action", async () => {
+  const { panel, root, data } = await mount({ prepare: (data) => {
+    data.devices[0].entry_ids.push("two");
+    data.entities.push({ ...data.entities[0], entity_id: "sensor.other_who", domain: "sensor", who: "18" });
+    data.entities.push({ ...data.entities[0], entity_id: "light.other_gateway", entry_id: "two" });
+  } });
+  const select = '[data-who="18"] [data-entry="one"] [data-action="edit-device"]';
+  root.querySelector(select).focus();
+  data.devices[0].name_by_user = "Updated name";
+  await panel._refresh();
+  assert.equal(root.activeElement, root.querySelector(select));
+  const toggle = root.querySelector('[data-who="1"] [data-entry="one"] [data-action="toggle-device"]');
+  toggle.click();
+  const entityAction = '[data-action="details"][data-id="light.sala"]';
+  root.querySelector(entityAction).focus();
+  data.entities[0].name = "Updated entity";
+  await panel._refresh();
+  assert.equal(root.activeElement, root.querySelector(entityAction));
+  assert.equal(root.activeElement.closest(".entity-list").hidden, false);
+  root.querySelector('[data-action="edit-entity"][data-id="light.sala"]').click();
+  const input = root.querySelector('dialog input');
+  input.value = "Unsaved draft";
+  input.focus();
+  data.devices[0].name_by_user = "Changed elsewhere";
+  await panel._refresh();
+  assert.equal(root.activeElement, input);
+  assert.equal(input.value, "Unsaved draft");
+  root.getElementById("cancel").click();
+  root.querySelector(entityAction).focus();
+  data.entities = data.entities.filter((entity) => entity.entity_id !== "light.sala");
+  await panel._refresh();
+  assert.equal(root.activeElement, null, "a removed action must not move focus to another entity");
+});
+
+test("hidden tabs suspend polling and debounced refreshes, then reconcile once visible", async (context) => {
+  context.mock.timers.enable({ apis: ["setInterval", "setTimeout"] });
+  let hidden = false;
+  Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+  const { panel, calls, subscriptions, root, data } = await mount();
+  assert.equal(calls.length, 1);
+  subscriptions[0].callback();
+  hidden = true;
+  document.dispatchEvent(new Event("visibilitychange"));
+  data.devices[0].name_by_user = "Changed while hidden";
+  subscriptions[1].callback();
+  context.mock.timers.tick(60000);
+  await panel._refresh();
+  assert.equal(calls.length, 1);
+  hidden = false;
+  document.dispatchEvent(new Event("visibilitychange"));
+  await tick();
+  assert.equal(calls.length, 2);
+  assert.match(root.getElementById("items").textContent, /Changed while hidden/);
+  context.mock.timers.tick(15000);
+  await tick();
+  assert.equal(calls.length, 3);
+  panel.remove();
+  document.dispatchEvent(new Event("visibilitychange"));
+  subscriptions[0].callback(); // A queued callback from the old connection.
+  context.mock.timers.tick(60000);
+  assert.equal(calls.length, 3);
+  assert.ok(subscriptions.every((subscription) => subscription.stopped));
+});
+
+test("a panel mounted hidden starts once on visibility and ignores an old connection response", async () => {
+  let hidden = true;
+  Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+  const pending = deferred();
+  const { panel, root, hass, calls, subscriptions } = await mount({ callWS: () => pending.promise });
+  panel.connectedCallback();
+  assert.equal(calls.length, 0);
+  assert.equal(subscriptions.length, 3);
+  hidden = false;
+  document.dispatchEvent(new Event("visibilitychange"));
+  assert.equal(calls.length, 1);
+  const fresh = inventory();
+  fresh.devices[0].name_by_user = "New connection";
+  let reads = 0;
+  panel.hass = {
+    ...hass,
+    connection: { subscribeEvents: async () => () => {} },
+    callWS: async () => { reads++; return fresh; },
+  };
+  await tick();
+  assert.equal(reads, 1);
+  pending.resolve(inventory());
+  await tick();
+  assert.match(root.getElementById("items").textContent, /New connection/);
+  assert.ok(subscriptions.every((subscription) => subscription.stopped));
+});
+
+test("bus section drops a late import and isolates gateway subscriptions after navigation", async () => {
+  const pending = deferred();
+  globalThis.__panelBusImport = pending.promise;
+  const resourceUrl = 'data:text/javascript,await globalThis.__panelBusImport;';
+  const streams = [];
+  const { panel, root, hass } = await mount({ prepare: (data) => {
+    data.gateways[1].monitor_available = true;
+    data.gateways[1].state = "loaded";
+  }, callWS: async (message, data) => message.type === "myhome/panel/inventory" ? structuredClone(data) : { frames: [] } });
+  hass.connection.subscribeMessage = async (_callback, message) => {
+    const stream = { mac: message.mac, stopped: false };
+    streams.push(stream);
+    return () => { stream.stopped = true; };
+  };
+  panel.panel = { config: { bus_card_url: resourceUrl } };
+  change(root.getElementById("gateway"), "one");
+  root.querySelector('[data-view="bus"]').click();
+  change(root.getElementById("gateway"), "two");
+  pending.resolve();
+  await import(resourceUrl);
+  await tick();
+  delete globalThis.__panelBusImport;
+  assert.deepEqual(streams.map((stream) => stream.mac), ["00:03:50:00:00:02"]);
+  change(root.getElementById("gateway"), "one");
+  await tick();
+  assert.equal(streams[0].stopped, true);
+  assert.equal(streams[1].mac, "00:03:50:00:00:01");
+  root.querySelector('[data-view="entities"]').click();
+  assert.equal(streams[1].stopped, true);
+  assert.equal(root.querySelector("myhome-openwebnet-bus-monitor"), null);
 });

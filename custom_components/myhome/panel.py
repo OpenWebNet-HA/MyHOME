@@ -25,7 +25,7 @@ from homeassistant.helpers.storage import Store
 from .const import CONF_ENTITY, CONF_FIRMWARE, DOMAIN, INTEGRATION_VERSION, is_apl_address
 
 PANEL_URL = "myhome"
-PANEL_VERSION = "0.7.0"
+PANEL_VERSION = "0.7.1"
 PANEL_STATIC_URL = "/myhome_panel"
 WS_INVENTORY = "myhome/panel/inventory"
 _PANEL_REGISTERED = "_panel_registered"

@@ -17,7 +17,7 @@ and provides English and Italian labels, with English fallback for other languag
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.7.0**, defined by
+The panel has an independent version, currently **0.7.1**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.
@@ -104,7 +104,11 @@ only extra HA-managed store, `myhome_panel` (version 1), contains the global
 and retained across restarts and gateway deletion/recreation. WHO view preferences
 remain browser-local. Edits submit
 only changed fields through native registry APIs. Changes made elsewhere are
-reflected through registry events; gateway status also refreshes every 15 seconds.
+reflected through registry events; gateway status also refreshes every 15 seconds
+while the browser tab is visible. Background tabs suspend inventory polling and
+debounced registry refreshes, then reconcile immediately when visible again.
+An active bus stream remains connected while the tab is hidden so its capture
+continues. Leaving the bus section or disconnecting the panel closes that stream.
 The panel remains accessible while a gateway is unloaded or offline, and is
 removed when the last gateway is deleted. Static routes are registered once and
 can be reused after reload or reconfiguration. Frontend-less installations skip
@@ -114,6 +118,12 @@ On its first load, the panel also handles HA properties assigned before its
 custom element is defined. Once the JavaScript finishes loading, those values
 are replayed through the component setters so the inventory starts immediately.
 This avoids a blank first visit that previously required navigating away and back.
+
+All five bus monitor WebSocket commands (`history`, `stream`, `send`, `clear`,
+`info`) now require an administrator, enforced by Home Assistant before gateway
+lookup or any bus/buffer access. This also applies to the standalone Lovelace
+monitor card: non-admin accounts receive `unauthorized`. Normal Home Assistant
+entity controls are unaffected.
 
 The bus API now returns “not found” when an explicitly requested gateway does
 not exist, rather than silently selecting another bus. Requests with no gateway
@@ -257,3 +267,68 @@ Validation on HA 2025.1.4 / Python 3.12 / OWNd 2.0.0b6: 1,332 tests passed,
 5 skipped (four unavailable captures and one pre-existing skip), five snapshots
 passed, and all 28 integration modules retain 100% line coverage (5,472 statements).
 All 18 frontend tests, Ruff, architecture checks and the strict coverage gate pass.
+
+
+## Panel 0.7.1: foundation for advanced sections
+
+- Preserve keyboard focus on the same inventory action across registry refreshes,
+  including devices shared across gateways or WHO sections. Removed actions do
+  not transfer focus to another device. Open editor drafts keep their focus.
+- Pause background inventory refreshes and reconcile on return. Connection changes
+  invalidate outstanding requests and callbacks; remounting starts one set of
+  subscriptions.
+- Enforce administrator access on all bus monitor WebSocket endpoints.
+- Move bus rendering and stream lifecycle into `panel-bus-monitor.js`, with shared
+  escaping/focus helpers in `panel-dom.js`. All assets retain the panel's version
+  and content hash. The shell still owns navigation, gateway selection and HA
+  connection changes; the bus adapter owns only the selected monitor instance.
+
+Validation for 0.7.1: Home Assistant 2025.1.4, Python 3.12.14, OWNd 2.0.0b6,
+pytest-asyncio 0.24.0. The full backend suite passes **1,344 tests**, with the same
+five skips (four unavailable capture fixtures and one existing skip), five
+snapshots and **100% line coverage** across all 28 modules (5,477 statements).
+All **22 frontend tests**, Ruff and the architectural validator pass. The new
+WebSocket tests authenticate real admin/read-only clients over loopback and
+verify that denied commands have no bus or buffer side effects. Frontend tests
+cover focus, hidden-tab refreshes, reconnects and delayed bus-module loading.
+Real HA browser behavior and physical gateways still need manual validation.
+
+### Contract for the next sections (design, not implemented APIs)
+
+The target is one MyHOME panel with inventory, bus diagnostics and cover
+profiles/calibration sections. This patch does not add cover profile endpoints,
+new hardware probes, or calibration commands.
+
+Each advanced section should follow the bus adapter's ownership boundaries:
+
+1. Receive the selected gateway explicitly from the shell. A write needs exactly
+   one config entry and must fail if it is unavailable or no longer exists; it
+   must never fall back to another gateway. The legacy bus API still uses a MAC,
+   translated from the selected entry by its adapter.
+2. Use the current HA connection. A gateway/connection change or unmount must
+   invalidate pending reads, subscriptions and previews. Closing a section only
+   cancels its UI work; it must not imply that an already accepted backend write
+   or physical movement was undone.
+3. Keep gateway configuration in the existing Config Entry/Options Flow and
+   names/areas in native registries. The backend owns profile validation,
+   persistence, application and revision numbers. The frontend owns selection,
+   draft values and preview presentation.
+4. Add administrator checks and gateway/device validation to each backend command,
+   independently of the panel route. Return structured results/errors and expose
+   only fields needed by that section.
+5. For batch profile changes, preview and validate the entire proposed mutation
+   before saving. Send assignments and ordering together with an expected
+   revision, and commit them atomically. Reject stale revisions. An undo request
+   must also check the current revision before restoring previous values.
+6. Distinguish stored profile changes from physical calibration. A preview must
+   not move covers. Use the existing calibration Options Flow until its backend
+   behavior has a supported panel API; avoid private frontend dialog internals.
+   Show per-device outcomes for physical operations, which cannot be described
+   as an atomic storage transaction.
+
+Reuse and adapt the cover-profile backend after checking these guarantees, then
+add its UI inside this shell. WHO 1004/1018 hardware diagnostics need validated
+captures and supported OWNd decoding before exposing probe controls. Retire the
+standalone bus card only once its current inspection, filtering, sending, sweep
+and export functions are available and verified inside the panel; the adapter
+allows that migration without coupling the other sections to card internals.
