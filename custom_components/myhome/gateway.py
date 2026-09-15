@@ -223,8 +223,13 @@ class MyHOMEGatewayHandler:
             return IDENTIFICATION_SERIAL
         if data.get(CONF_SSDP_LOCATION) or data.get(CONF_UDN):
             return IDENTIFICATION_SSDP
-        if data.get("model_source") == IDENTIFICATION_WHO13:
+        model_source = data.get("model_source")
+        if model_source == IDENTIFICATION_WHO13:
             return IDENTIFICATION_WHO13
+        if model_source == IDENTIFICATION_MANUAL:
+            # The owner picked the model in the options flow; that choice outranks
+            # any WHO=13 label applied earlier.
+            return IDENTIFICATION_MANUAL
         model = data.get(CONF_NAME)
         if model and str(model).strip().lower() not in ("", "generic", "gateway", "unknown"):
             return IDENTIFICATION_MANUAL
@@ -765,18 +770,21 @@ class MyHOMEGatewayHandler:
 
     def _set_conflict(self, conflict: str | None, entry_id: str | None, **issue: Any) -> None:
         """Track the identity conflict and keep the repair issue in step with it."""
-        if conflict == self._identity_conflict:
-            return
+        changed = conflict != self._identity_conflict
         self._identity_conflict = conflict
         if not entry_id:
             return
         if conflict:
-            async_create_identity_issue(
-                self.hass, entry_id, str(self.gateway.model_name or ""), issue["who13_model"],
-                issue["raw_code"], issue["source"], issue["official"],
-            )
-        else:
-            async_delete_identity_issue(self.hass, entry_id)
+            if changed:
+                async_create_identity_issue(
+                    self.hass, entry_id, str(self.gateway.model_name or ""), issue["who13_model"],
+                    issue["raw_code"], issue["source"], issue["official"],
+                )
+            return
+        # Always clear on the no-conflict path: a fresh handler (after a reload) starts
+        # with no conflict in memory while the previous instance's warning may still
+        # sit in the issue registry. Deleting an absent issue is a no-op.
+        async_delete_identity_issue(self.hass, entry_id)
 
     def _sync_device_registry_model(self, model: str) -> None:
         """Keep the device registry model in step (repairs entries mislabelled by earlier releases)."""
