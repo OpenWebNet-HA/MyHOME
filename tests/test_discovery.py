@@ -29,7 +29,7 @@ def test_ssdp_response():
         "HTTP/1.1 200 OK\r\n"
         "CACHE-CONTROL: max-age=1800\r\n"
         "EXT:\r\n"
-        "LOCATION: http://192.168.1.135:49153/description.xml\r\n"
+        "LOCATION: http://192.0.2.10:49153/description.xml\r\n"
         "SERVER: Linux/2.6.14.0 UPnP/1.0 DLNADOC/1.00\r\n"
         "ST: upnp:rootdevice\r\n"
         "USN: uuid:upnp-Basic gateway-1_0-1234567890001::upnp:rootdevice\r\n"
@@ -40,12 +40,12 @@ def test_ssdp_response():
     assert resp.version == "HTTP/1.1"
     assert resp.status_code == 200
     assert resp.reason == "OK"
-    assert resp.headers_dictionary["LOCATION"] == "http://192.168.1.135:49153/description.xml"
+    assert resp.headers_dictionary["LOCATION"] == "http://192.0.2.10:49153/description.xml"
     assert resp.headers_dictionary["ST"] == "upnp:rootdevice"
 
     output = str(resp)
     assert "HTTP/1.1 200 OK" in output
-    assert "LOCATION: http://192.168.1.135:49153/description.xml" in output
+    assert "LOCATION: http://192.0.2.10:49153/description.xml" in output
 
     encoded = bytes(resp)
     assert b"HTTP/1.1 200 OK\r\n" in encoded
@@ -82,16 +82,16 @@ async def test_simple_service_discovery_protocol():
 
     valid_data = (
         "HTTP/1.1 200 OK\r\n"
-        "LOCATION: http://192.168.1.135:49153/description.xml\r\n"
+        "LOCATION: http://192.0.2.10:49153/description.xml\r\n"
         "ST: upnp:rootdevice\r\n"
         "USN: uuid:upnp-Basic gateway-1_0-1234567890001::upnp:rootdevice\r\n"
         "\r\n"
     ).encode()
 
-    protocol.datagram_received(valid_data, ("192.168.1.135", 1900))
+    protocol.datagram_received(valid_data, ("192.0.2.10", 1900))
     result = await recvq.get()
-    assert result["address"] == "192.168.1.135"
-    assert result["ssdp_location"] == "http://192.168.1.135:49153/description.xml"
+    assert result["address"] == "192.0.2.10"
+    assert result["ssdp_location"] == "http://192.0.2.10:49153/description.xml"
     assert result["ssdp_st"] == "upnp:rootdevice"
 
     invalid_data = (
@@ -161,19 +161,19 @@ async def test_get_port_success():
     provider = MockSessionProvider(xml_data)
 
     with patch('aiohttp.ClientSession', return_value=provider):
-        port = await get_port("http://192.168.1.135:80/description.xml")
+        port = await get_port("http://192.0.2.10:80/description.xml")
         assert port == 20000
 
 @pytest.mark.asyncio
 async def test_get_port_exceptions():
     provider_1 = MockSessionProvider(post_side_effect=client_exceptions.ServerDisconnectedError(message="Disconnected"))
     with patch('aiohttp.ClientSession', return_value=provider_1):
-        port = await get_port("http://192.168.1.135:80/description.xml")
+        port = await get_port("http://192.0.2.10:80/description.xml")
         assert port == 20000  # Fallback
 
     provider_2 = MockSessionProvider(post_side_effect=client_exceptions.ClientOSError())
     with patch('aiohttp.ClientSession', return_value=provider_2):
-        port = await get_port("http://192.168.1.135:80/description.xml")
+        port = await get_port("http://192.0.2.10:80/description.xml")
         assert port == 20000  # Fallback
 
 @pytest.mark.asyncio
@@ -195,7 +195,7 @@ async def test_get_scpd_details():
     with patch('aiohttp.ClientSession', return_value=provider), \
          patch('OWNd.discovery.get_port', return_value=20000):
 
-        details = await _get_scpd_details("http://192.168.1.135:80/description.xml")
+        details = await _get_scpd_details("http://192.0.2.10:80/description.xml")
 
         assert details["deviceType"] == "urn:schemas-upnp-org:device:Basic:1"
         assert details["friendlyName"] == "F454"
@@ -215,8 +215,8 @@ async def test_find_gateways():
         protocol = protocol_factory()
         # Simulate an incoming packet!
         protocol._recvq.put_nowait({
-            "address": "192.168.1.135",
-            "ssdp_location": "http://192.168.1.135:80/description.xml",
+            "address": "192.0.2.10",
+            "ssdp_location": "http://192.0.2.10:80/description.xml",
             "ssdp_st": "upnp:rootdevice"
         })
         return mock_transport, protocol
@@ -230,7 +230,7 @@ async def test_find_gateways():
         gateways = await find_gateways()
 
         assert len(gateways) == 1
-        assert gateways[0]["address"] == "192.168.1.135"
+        assert gateways[0]["address"] == "192.0.2.10"
         assert gateways[0]["modelName"] == "F454"
         assert gateways[0]["port"] == 20000
         mock_transport.sendto.assert_called_once()
@@ -239,7 +239,7 @@ async def test_find_gateways():
 @pytest.mark.asyncio
 async def test_get_gateway():
     mock_gateways = [
-        {"address": "192.168.1.135", "modelName": "F454"},
+        {"address": "192.0.2.10", "modelName": "F454"},
         {"address": "192.168.1.136", "modelName": "MH200N"}
     ]
     with patch('OWNd.discovery._get_scpd_details', side_effect=Exception("no network")), \

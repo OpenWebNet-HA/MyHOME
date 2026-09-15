@@ -11,7 +11,7 @@ from custom_components.myhome.const import DOMAIN
 async def test_form(hass: HomeAssistant) -> None:
     """Test the full config flow: user -> custom (auto-discover) -> test_connection creates an entry."""
     mock_discovered = {
-        "address": "192.168.1.135",
+        "address": "192.0.2.10",
         "port": 20000,
         "serialNumber": "00:03:50:00:12:34",
         "modelName": "F454",
@@ -56,7 +56,7 @@ async def test_form(hass: HomeAssistant) -> None:
         result3 = await hass.config_entries.flow.async_configure(
             result2["flow_id"],
             {
-                "address": "192.168.1.135",
+                "address": "192.0.2.10",
                 "port": 20000,
             },
         )
@@ -94,7 +94,7 @@ async def test_form_cannot_connect(hass: HomeAssistant) -> None:
         result3 = await hass.config_entries.flow.async_configure(
             result2["flow_id"],
             {
-                "address": "192.168.1.135",
+                "address": "192.0.2.10",
                 "port": 20000,
             },
         )
@@ -122,7 +122,7 @@ async def test_form_already_configured(hass: HomeAssistant) -> None:
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
-            "host": "192.168.1.135",
+            "host": "192.0.2.10",
             "port": 20000,
             "mac": "00:03:50:00:12:34",
         },
@@ -153,7 +153,7 @@ async def test_form_already_configured(hass: HomeAssistant) -> None:
         result3 = await hass.config_entries.flow.async_configure(
             result2["flow_id"],
             {
-                "address": "192.168.1.135",
+                "address": "192.0.2.10",
                 "port": 20000,
             },
         )
@@ -176,7 +176,7 @@ async def test_form_discovery(hass: HomeAssistant) -> None:
     """Test user selecting a discovered gateway."""
     mock_discovery = {
         "00:03:50:00:12:34": {
-            "address": "192.168.1.135",
+            "address": "192.0.2.10",
             "port": 20000,
             "serialNumber": "00:03:50:00:12:34",
             "modelName": "F454"
@@ -216,7 +216,7 @@ async def test_form_discovery_already_configured(hass: HomeAssistant) -> None:
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
-            "host": "192.168.1.135",
+            "host": "192.0.2.10",
             "port": 20000,
             "mac": "00:03:50:00:12:34",
         },
@@ -226,7 +226,7 @@ async def test_form_discovery_already_configured(hass: HomeAssistant) -> None:
 
     mock_discovery = {
         "00:03:50:00:12:34": {
-            "address": "192.168.1.135",
+            "address": "192.0.2.10",
             "port": 20000,
             "serialNumber": "00:03:50:00:12:34",
             "modelName": "F454"
@@ -265,11 +265,11 @@ async def test_options_flow(mock_sending, mock_listening, mock_test_connection, 
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
-            "host": "192.168.1.135",
+            "host": "192.0.2.10",
             "port": 20000,
             "password": "pass",
             "mac": "00:03:50:00:12:34",
-            "ssdp_location": "http://192.168.1.135:49153/description.xml",
+            "ssdp_location": "http://192.0.2.10:49153/description.xml",
             "ssdp_st": "urn:schemas-upnp-org:device:Basic:1",
             "deviceType": "urn:schemas-upnp-org:device:Basic:1",
             "friendly_name": "MyHOME Gateway",
@@ -338,7 +338,7 @@ async def test_ssdp_discovery(hass: HomeAssistant) -> None:
     ssdp_info = SsdpServiceInfo(
         ssdp_usn="mock_usn",
         ssdp_st="mock_st",
-        ssdp_location="http://192.168.1.135:49153/description.xml",
+        ssdp_location="http://192.0.2.10:49153/description.xml",
         upnp={
             "modelName": "F454",
             "serialNumber": "00:03:50:00:12:34",
@@ -346,7 +346,7 @@ async def test_ssdp_discovery(hass: HomeAssistant) -> None:
             "UDN": "uuid",
             "modelNumber": "2.0"
         },
-        ssdp_headers={"_host": "192.168.1.135"}
+        ssdp_headers={"_host": "192.0.2.10"}
     )
 
     # Step 1: SSDP discovery initiates flow -> shows discovery_confirm form (not auto-created)
@@ -356,20 +356,22 @@ async def test_ssdp_discovery(hass: HomeAssistant) -> None:
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "discovery_confirm"
     assert result["description_placeholders"]["name"] == "F454"
-    assert result["description_placeholders"]["host"] == "192.168.1.135"
+    assert result["description_placeholders"]["host"] == "192.0.2.10"
 
-    # Step 2: User confirms -> tests connection and creates entry
+    # Step 2: User confirms -> tests connection and creates entry. Creating the entry
+    # sets it up straight away, so keep the gateway loops from opening a real socket.
     with patch(
         "custom_components.myhome.config_flow.OWNSession.test_connection",
         return_value={"Success": True},
-    ):
+    ), patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),          patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"):
         result2 = await hass.config_entries.flow.async_configure(
             result["flow_id"],
             user_input={},
         )
+        await hass.async_block_till_done()
 
     assert result2["type"] == FlowResultType.CREATE_ENTRY
-    assert result2["data"]["host"] == "192.168.1.135"
+    assert result2["data"]["host"] == "192.0.2.10"
 
 
 async def test_ssdp_discovery_already_configured(hass: HomeAssistant) -> None:
@@ -379,7 +381,7 @@ async def test_ssdp_discovery_already_configured(hass: HomeAssistant) -> None:
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
-            "host": "192.168.1.135",
+            "host": "192.0.2.10",
             "port": 20000,
             "mac": "00:03:50:00:12:34",
         },
@@ -398,7 +400,7 @@ async def test_ssdp_discovery_already_configured(hass: HomeAssistant) -> None:
     ssdp_info = SsdpServiceInfo(
         ssdp_usn="mock_usn",
         ssdp_st="mock_st",
-        ssdp_location="http://192.168.1.135:49153/description.xml",
+        ssdp_location="http://192.0.2.10:49153/description.xml",
         upnp={
             "modelName": "F454",
             "serialNumber": "00:03:50:00:12:34",
@@ -406,7 +408,7 @@ async def test_ssdp_discovery_already_configured(hass: HomeAssistant) -> None:
             "UDN": "uuid",
             "modelNumber": "2.0"
         },
-        ssdp_headers={"_host": "192.168.1.135"}
+        ssdp_headers={"_host": "192.0.2.10"}
     )
 
     result = await hass.config_entries.flow.async_init(
@@ -424,7 +426,7 @@ async def test_reauth_flow(hass: HomeAssistant) -> None:
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
-            "host": "192.168.1.135",
+            "host": "192.0.2.10",
             "mac": "00:03:50:00:12:34",
             "password": "wrong"
         },
@@ -436,7 +438,7 @@ async def test_reauth_flow(hass: HomeAssistant) -> None:
         "custom_components.myhome.config_flow.MyHOMEGatewayHandler"
     ) as mock_gateway_handler:
         # Provide the mock gateway host/serial properties
-        mock_gateway_handler.return_value.gateway.host = "192.168.1.135"
+        mock_gateway_handler.return_value.gateway.host = "192.0.2.10"
         mock_gateway_handler.return_value.gateway.model = "F454"
         mock_gateway_handler.return_value.gateway.serial = "00:03:50:00:12:34"
         mock_gateway_handler.return_value.gateway.password = "wrong"
@@ -499,7 +501,7 @@ async def test_password_required_and_error(hass: HomeAssistant) -> None:
         result3 = await hass.config_entries.flow.async_configure(
             result2["flow_id"],
             {
-                "address": "192.168.1.135",
+                "address": "192.0.2.10",
                 "port": 20000,
             },
         )
@@ -822,7 +824,7 @@ async def test_custom_manual_entry_manufacturer_type(hass: HomeAssistant) -> Non
         )
         result3 = await hass.config_entries.flow.async_configure(
             result2["flow_id"],
-            {"address": "192.168.1.135", "port": 20000},
+            {"address": "192.0.2.10", "port": 20000},
         )
         result4 = await hass.config_entries.flow.async_configure(
             result3["flow_id"],
@@ -858,7 +860,7 @@ async def test_options_flow_update_gateway_model(hass: HomeAssistant) -> None:
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
-            CONF_HOST: "192.168.1.135",
+            CONF_HOST: "192.0.2.10",
             CONF_PORT: 20000,
             CONF_MAC: "00:03:50:00:12:34",
             CONF_NAME: "CustomUnlistedModel",
@@ -875,7 +877,7 @@ async def test_options_flow_update_gateway_model(hass: HomeAssistant) -> None:
 
     with patch.object(hass.config_entries, "async_reload", return_value=True) as mock_reload:
         res = await opt_flow.async_step_user({
-            CONF_ADDRESS: "192.168.1.135",
+            CONF_ADDRESS: "192.0.2.10",
             CONF_NAME: "MyHomeServer1",
             CONF_OWN_PASSWORD: None,
             CONF_WORKER_COUNT: 2,
@@ -917,7 +919,7 @@ async def test_options_flow_model_selection_survives_reload_and_next_who13(hass:
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
-            CONF_HOST: "192.168.1.135",
+            CONF_HOST: "192.0.2.10",
             CONF_PORT: 20000,
             CONF_MAC: "00:03:50:00:12:34",
             CONF_NAME: "MH200",
@@ -937,7 +939,7 @@ async def test_options_flow_model_selection_survives_reload_and_next_who13(hass:
     await opt_flow.async_step_init()
     with patch.object(hass.config_entries, "async_reload", return_value=True) as mock_reload:
         res = await opt_flow.async_step_user({
-            CONF_ADDRESS: "192.168.1.135",
+            CONF_ADDRESS: "192.0.2.10",
             CONF_NAME: "MH200N",
             CONF_OWN_PASSWORD: None,
             CONF_WORKER_COUNT: 1,
