@@ -9,6 +9,8 @@ from homeassistant.const import CONF_MAC, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 
 from .const import (
+    CONF_DECODER_ENTITY,
+    CONF_DECODER_SLOTS,
     CONF_ENTITIES,
     CONF_ENTITY,
     DOMAIN,
@@ -30,6 +32,10 @@ from .const import (
 # the gateway's formatted MAC (the same identity as ``mac``), ``friendly_name``
 # is the name the gateway advertises over SSDP, and a download describes one
 # entry and one gateway - so no anonymized reference is needed to relate them.
+# The one user-named value in the options, the media_player behind a decoder
+# slot, is the exception: it becomes ``media_player.decoder_<slot>`` so the
+# slot -> source / gain mapping stays readable without the room it is named
+# after.
 TO_REDACT = {
     CONF_PASSWORD,
     "password",
@@ -52,6 +58,10 @@ async def async_get_config_entry_diagnostics(
     """Return diagnostics for a MyHOME config entry."""
     entry_data = async_redact_data(dict(entry.data), TO_REDACT)
     entry_options = async_redact_data(dict(entry.options), TO_REDACT)
+    for slot in range(1, CONF_DECODER_SLOTS + 1):
+        key = CONF_DECODER_ENTITY.format(slot)
+        if entry_options.get(key):  # an empty slot stays empty: configured or not is diagnostics
+            entry_options[key] = f"media_player.decoder_{slot}"
 
     mac = entry.data.get(CONF_MAC, "")
     domain_data = hass.data.get(DOMAIN, {}).get(mac, {})
