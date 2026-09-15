@@ -1,13 +1,15 @@
 """Regression tests for the September 2026 issue batch (#304, #307, #308, #310)."""
 import asyncio
 import logging
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from OWNd.message import OWNEvent
+from OWNd.message import OWNEvent, OWNHeatingEvent
 
 from custom_components.myhome.const import DOMAIN
 from custom_components.myhome.gateway import MyHOMEGatewayHandler, _registry_supports_via_device_id
+from custom_components.myhome.sensor import SCAN_INTERVAL, MyHOMETemperatureSensor
 
 
 @pytest.fixture
@@ -121,4 +123,68 @@ def test_registry_probe_matches_installed_core():
     assert _registry_supports_via_device_id.cache_info().hits == 0
     _registry_supports_via_device_id()
     assert _registry_supports_via_device_id.cache_info().hits == 1
+
+
+# ── #308: external probes are push-driven, poll only as a fallback ───────
+
+
+def _make_temp_sensor(hass, gateway, where):
+    return MyHOMETemperatureSensor(
+        hass=hass,
+        name=f"Probe {where}",
+        device_id=f"temp_{where}",
+        who="4",
+        where=where,
+        device_class="temperature",
+        manufacturer="BTicino",
+        model="3455",
+        gateway=gateway,
+    )
+
+
+async def test_probe_sensor_starts_receive_only(hass, mock_gateway):
+    """A ZPP >= 100 probe sends no *#4*ZPP*15## on add; a zone sensor still polls (#308)."""
+    hass.data[DOMAIN] = {mock_gateway.mac: {"platforms": {"sensor": {}}}}
+
+    probe = _make_temp_sensor(hass, mock_gateway, "101")
+    probe.hass = hass
+    probe.async_get_last_state = AsyncMock(return_value=None)
+    await probe.async_added_to_hass()
+    mock_gateway.send_status_request.assert_not_awaited()
+    assert probe._is_probe is True
+
+    zone = _make_temp_sensor(hass, mock_gateway, "1")
+    zone.hass = hass
+    zone.async_get_last_state = AsyncMock(return_value=None)
+    await zone.async_added_to_hass()
+    mock_gateway.send_status_request.assert_awaited_once()
+    assert str(mock_gateway.send_status_request.call_args.args[0]) == "*#4*1*0##"
+    assert zone._is_probe is False
+
+
+async def test_probe_sensor_polls_only_when_push_stream_is_silent(hass, mock_gateway):
+    """Fresh unsolicited readings suppress the periodic poll; silence re-enables it (#308)."""
+    probe = _make_temp_sensor(hass, mock_gateway, "101")
+    probe.hass = hass
+    probe.async_schedule_update_ha_state = MagicMock()
+
+    # Nothing received yet -> the periodic update polls the probe
+    await probe.async_update()
+    mock_gateway.send_status_request.assert_awaited_once()
+    assert str(mock_gateway.send_status_request.call_args.args[0]) == "*#4*101*15##"
+
+    # Unsolicited frame from the F454 / L4577 (dimension 0, secondary sensor)
+    probe.handle_event(OWNHeatingEvent("*#4*101*0*0215*3##"))
+    assert probe.native_value == 21.5
+    assert probe._push_is_fresh() is True
+
+    mock_gateway.send_status_request.reset_mock()
+    await probe.async_update()
+    mock_gateway.send_status_request.assert_not_awaited()
+
+    # Push stream goes quiet for a full interval -> poll again
+    probe._last_push_at = time.monotonic() - SCAN_INTERVAL.total_seconds() - 1
+    assert probe._push_is_fresh() is False
+    await probe.async_update()
+    mock_gateway.send_status_request.assert_awaited_once()
 
