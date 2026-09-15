@@ -16,6 +16,7 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import CoreState, callback
 from OWNd.message import OWNAutomationCommand
 
+from .cover_profile_provenance import evidence
 from .cover_profiles import (
     DATA_KEY,
     ProfileError,
@@ -51,6 +52,7 @@ class CalibrationSession:
         self.phase = "confirm_closed"
         self.reason = None
         self.values = {}
+        self.provenance = {}
         self.started_at = None
         self.armed = False
         self.stop_requested = False
@@ -111,6 +113,7 @@ class CalibrationSession:
             return
         self.phase, self.reason = "interrupted", reason
         self.values.clear()
+        self.provenance.clear()
         self.started_at = None
         if self.deadline:
             self.deadline.cancel()
@@ -198,6 +201,7 @@ class CalibrationSession:
             self.interrupt("invalid_measurement")
             raise ProfileError("invalid_profile") from error
         self.values[f"{direction}_time"] = elapsed
+        self.provenance[direction] = evidence("guided", self.cover.unique_id)
         self.phase = "confirm_open" if direction == "opening" else "review"
         self.started_at = None
         self.deadline.cancel()

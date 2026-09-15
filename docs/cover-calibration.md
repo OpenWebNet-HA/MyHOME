@@ -186,3 +186,12 @@ rerunning the 29 calibration cases against the final endpoint-baseline adjustmen
 All **40 frontend tests** pass. On HA 2026.9.1 / Python 3.14.7, all **128 calibration,
 profile, cover, gateway and panel tests** pass. Ruff, architectural checks,
 documented request-schema validation and local documentation links pass.
+
+## Measurement evidence (panel 0.16.0)
+
+Each confirmed endpoint records backend UTC wall-clock evidence independently of
+the monotonic clock used for elapsed travel time. Explicit profile save persists
+both directions with `source: guided` and their original confirmation dates.
+Interrupting the session clears unsaved evidence along with measured times.
+The profile editor shows that evidence after saving; it is not an automatic
+calibration or an automatic-save feature.

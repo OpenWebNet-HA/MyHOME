@@ -28,7 +28,7 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
-    panel_version: "0.15.0",
+    panel_version: "0.16.0",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
@@ -171,7 +171,7 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
-  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.15.0");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.16.0");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
   root.querySelector('[data-view="entities"]').click();
   assert.equal(root.querySelectorAll(".device-group").length, 3);
@@ -787,6 +787,8 @@ test("shared profiles require an explicit new copy and the default choice remove
   const create = calls.find((call) => call.type === "myhome/cover_profiles/write");
   assert.equal(create.profile_id, null);
   assert.equal(create.profile.name, "Copia");
+  assert.equal(create.copy_from_profile_id, "timed");
+  assert.equal("provenance" in create.profile, false);
   form = root.querySelector("#profile-form");
   change(form.elements.profile, "");
   form.querySelector('[data-profile-action="assign"]').click();
@@ -796,6 +798,42 @@ test("shared profiles require an explicit new copy and the default choice remove
   assert.equal(reset.action, "assign");
   assert.equal(reset.revision, 4);
   assert.equal("profile" in reset, false);
+});
+
+test("profile provenance distinguishes inherited measurements and manual values without relabeling drafts", async () => {
+  const date = "2026-09-15T10:00:00+00:00";
+  const { root, hass } = await mountProfiles({ read: () => coverProfileData({ profiles: [
+    { id: "timed", name: "Kitchen copy", opening_time: 20, closing_time: 40, uses: 1,
+      provenance: {
+        opening: { source: "guided", recorded_at: date, inherited: true,
+          origin_entity_id: "cover.kitchen", origin_name: "<img src=x onerror=alert(1)>" },
+        closing: { source: "manual", recorded_at: date, inherited: false,
+          origin_entity_id: "cover.shutter", origin_name: "Bedroom" },
+      } },
+    { id: "old", name: "Legacy", opening_time: 21, closing_time: 41, uses: 0 },
+  ] }) });
+  openProfile(root);
+  await tick();
+  const opening = root.querySelector('[data-origin-direction="opening"]');
+  const closing = root.querySelector('[data-origin-direction="closing"]');
+  assert.match(opening.textContent, /Misurata con il wizard guidato/);
+  assert.match(opening.textContent, /Ereditata dal profilo: Kitchen copy/);
+  assert.match(opening.textContent, /<img src=x/);
+  assert.equal(root.querySelector("img"), null);
+  const formattedDate = new Intl.DateTimeFormat(hass.language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(date));
+  assert.ok(opening.textContent.includes(formattedDate));
+  assert.match(closing.textContent, /Inserita manualmente/);
+  assert.doesNotMatch(closing.textContent, /Ereditata/);
+  const form = root.querySelector("#profile-form");
+  const savedEvidence = opening.textContent;
+  change(form.elements.opening_time, "55");
+  assert.equal(opening.textContent, savedEvidence);
+  change(form.elements.profile, "old");
+  const unknown = root.querySelector("#profile-provenance").textContent;
+  assert.match(unknown, /Origine non disponibile/);
+  assert.doesNotMatch(unknown, /2026|Misurata il|Modificata il/);
+  change(form.elements.profile, "");
+  assert.match(root.querySelector("#profile-provenance").textContent, /Configurazione YAML \/ predefinita/);
 });
 
 test("profile conflicts retain the draft and require reload before another write", async () => {

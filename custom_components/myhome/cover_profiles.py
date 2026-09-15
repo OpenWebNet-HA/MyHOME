@@ -22,6 +22,13 @@ from homeassistant.util.file import WriteError
 from homeassistant.util.json import SerializationError
 
 from .const import DOMAIN
+from .cover_profile_provenance import (
+    DIRECTIONS,
+    PROVENANCE,
+    evidence,
+    public_provenance,
+    unknown_provenance,
+)
 
 DATA_KEY = f"{DOMAIN}_cover_profile_stores"
 WS_READ = "myhome/cover_profiles/read"
@@ -48,14 +55,20 @@ def directional_profile(profile):
             "closing_time": profile["travel_time"]}
 
 
-PROFILE = vol.Any(vol.Schema({
+DIRECTIONAL_PROFILE = vol.Schema({
     vol.Required("name"): vol.All(str, vol.Strip, vol.Length(min=1, max=64)),
     vol.Required("opening_time"): travel_time,
     vol.Required("closing_time"): travel_time,
-}), vol.All(LEGACY_PROFILE, directional_profile))
+})
+PROFILE = vol.Any(DIRECTIONAL_PROFILE, vol.All(LEGACY_PROFILE, directional_profile))
+STORED_DIRECTIONAL_PROFILE = DIRECTIONAL_PROFILE.extend({
+    vol.Optional("provenance", default=unknown_provenance): PROVENANCE,
+})
+STORED_PROFILE = vol.Any(STORED_DIRECTIONAL_PROFILE,
+                         vol.All(LEGACY_PROFILE, directional_profile, STORED_DIRECTIONAL_PROFILE))
 STORED = vol.Schema({
     vol.Required("revision"): vol.All(int, vol.Range(min=0)),
-    vol.Required("profiles"): {str: PROFILE},
+    vol.Required("profiles"): {str: STORED_PROFILE},
     vol.Required("assignments"): {str: str},
 })
 TARGET = {vol.Required("entry_id"): str, vol.Required("entity_id"): str}
@@ -69,7 +82,7 @@ class ProfileStorage(Store):
     """Surface write failures: HA's default Store logs them and returns success."""
 
     async def _async_migrate_func(self, old_major_version, old_minor_version, old_data):
-        if old_major_version != 1:
+        if old_major_version not in (1, 2):
             raise NotImplementedError
         return STORED(old_data)
 
@@ -85,7 +98,7 @@ class CoverProfileStore:
 
     def __init__(self, hass, entry_id):
         self.store = ProfileStorage(
-            hass, 2, f"{DOMAIN}.cover_profiles.{entry_id}", atomic_writes=True
+            hass, 3, f"{DOMAIN}.cover_profiles.{entry_id}", atomic_writes=True
         )
         self.lock = asyncio.Lock()
         self.loaded = False
@@ -149,6 +162,7 @@ def snapshot(hass, store, entry, entity):
         "entry_id": entry.entry_id, "entity_id": entity.entity_id,
         "revision": store.data["revision"], "assigned_profile_id": assigned["id"] if assigned else None,
         "profiles": [{"id": key, **value,
+                      "provenance": public_provenance(value, records, entity.unique_id),
                       "uses": list(store.data["assignments"].values()).count(key),
                       "assigned_to": assignments(key)}
                      for key, value in store.data["profiles"].items()],
@@ -195,6 +209,12 @@ async def write_profile(hass, msg, *, calibration=None):
             raise ProfileError("profile_not_found")
         if msg["action"] == "save":
             profile = PROFILE(msg["profile"])
+            source_id = msg.get("copy_from_profile_id")
+            if source_id is not None and profile_id is not None:
+                raise ProfileError("invalid_profile")
+            if source_id is not None and source_id not in data["profiles"]:
+                raise ProfileError("profile_not_found")
+            previous = data["profiles"].get(source_id or profile_id)
             if profile_id is not None:
                 if (data["assignments"].get(entity.unique_id) != profile_id
                         or list(data["assignments"].values()).count(profile_id) > 1):
@@ -203,7 +223,18 @@ async def write_profile(hass, msg, *, calibration=None):
                 if len(data["profiles"]) >= MAX_PROFILES:
                     raise ProfileError("profile_limit")
                 profile_id = uuid4().hex
+            if calibration is not None:
+                profile["provenance"] = copy.deepcopy(PROVENANCE(calibration.provenance))
+            else:
+                profile["provenance"] = {
+                    direction: copy.deepcopy(previous["provenance"][direction])
+                    if previous and previous[f"{direction}_time"] == profile[f"{direction}_time"]
+                    else evidence("manual", entity.unique_id)
+                    for direction in DIRECTIONS
+                }
             data["profiles"][profile_id] = profile
+        elif "copy_from_profile_id" in msg:
+            raise ProfileError("invalid_profile")
         if msg["action"] == "delete":
             if profile_id is None:
                 raise ProfileError("profile_not_found")
@@ -285,6 +316,7 @@ async def ws_read(hass, connection, msg):
     vol.Required("revision"): vol.All(int, vol.Range(min=0)),
     vol.Required("action"): vol.In(["assign", "save", "delete"]),
     vol.Optional("profile_id"): vol.Any(str, None),
+    vol.Optional("copy_from_profile_id"): str,
     vol.Optional("profile"): PROFILE,
 })
 @websocket_api.require_admin

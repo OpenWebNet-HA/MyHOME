@@ -1,6 +1,7 @@
 """Profile persistence, gateway isolation and the real timed-cover runtime contract."""
 import asyncio
 import copy
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -19,6 +20,7 @@ from pytest_socket import socket_enabled  # noqa: F401 (socket plugin disabled i
 
 from custom_components.myhome.const import DOMAIN
 from custom_components.myhome.cover import MyHOMECover
+from custom_components.myhome.cover_profile_provenance import unknown_provenance, utc_timestamp
 from custom_components.myhome.cover_profiles import (
     DATA_KEY,
     PROFILE,
@@ -72,6 +74,94 @@ def message(plant, revision=0, index=0, **extra):
             "entity_id": plant.records[index].entity_id,
             "revision": revision, "action": "save",
             "profile": {"name": "Living room", "travel_time": 42.5}, **extra}
+
+
+async def test_provenance_survives_rename_assignment_copy_and_directional_edits(hass, plant):
+    clock = "custom_components.myhome.cover_profile_provenance.dt_util.utcnow"
+    with patch(clock, return_value=datetime(2026, 9, 15, 10, tzinfo=UTC)):
+        first = await write_profile(hass, message(plant))
+    original = copy.deepcopy(first["profiles"][0]["provenance"])
+    profile_id = first["assigned_profile_id"]
+    assert original["opening"]["source"] == "manual"
+    assert original["opening"]["recorded_at"] == "2026-09-15T10:00:00+00:00"
+    assert original["opening"]["inherited"] is False
+    assert "origin_unique_id" not in original["opening"]
+    with patch(clock, return_value=datetime(2026, 9, 16, 10, tzinfo=UTC)):
+        renamed = await write_profile(hass, message(plant, 1, profile_id=profile_id,
+                                      profile={"name": "Renamed", "travel_time": 42.5}))
+        assert renamed["profiles"][0]["provenance"] == original
+        edited = await write_profile(hass, message(plant, 2, profile_id=profile_id,
+                                     profile={"name": "Renamed", "opening_time": 42.5, "closing_time": 50}))
+    changed = edited["profiles"][0]["provenance"]
+    assert changed["opening"] == original["opening"]
+    assert changed["closing"]["recorded_at"] == "2026-09-16T10:00:00+00:00"
+    shared = await write_profile(hass, message(plant, 3, index=1, action="assign", profile_id=profile_id))
+    assert shared["profiles"][0]["provenance"]["opening"]["inherited"] is True
+    copied = await write_profile(hass, message(plant, 4, index=1, copy_from_profile_id=profile_id,
+                                 profile={"name": "Copy", "opening_time": 42.5, "closing_time": 55}))
+    copied_profile = next(p for p in copied["profiles"] if p["id"] == copied["assigned_profile_id"])
+    assert copied_profile["provenance"]["opening"]["inherited"] is True
+    assert copied_profile["provenance"]["opening"]["recorded_at"] == original["opening"]["recorded_at"]
+    assert copied_profile["provenance"]["closing"]["inherited"] is False
+    assert plant.covers[0]._closing_time == 50
+    store = get_store(hass, plant.entries[0].entry_id)
+    persisted = copy.deepcopy(store.data)
+    hass.data[DATA_KEY].pop(plant.entries[0].entry_id)
+    await bind_cover(hass, plant.covers[1])
+    assert get_store(hass, plant.entries[0].entry_id).data == persisted
+    registry = er.async_get(hass)
+    registry.async_update_entity(plant.records[0].entity_id, name="Kitchen", new_entity_id="cover.kitchen")
+    after = await read_profile(hass, plant.entries[0].entry_id, plant.covers[1].entity_id)
+    origin = next(p for p in after["profiles"] if p["id"] == copied["assigned_profile_id"])["provenance"]["opening"]
+    assert origin["origin_name"] == "Kitchen"
+    assert origin["origin_entity_id"] == "cover.kitchen"
+    registry.async_remove("cover.kitchen")
+    missing = await read_profile(hass, plant.entries[0].entry_id, plant.covers[1].entity_id)
+    origin = next(p for p in missing["profiles"] if p["id"] == copied["assigned_profile_id"])["provenance"]["opening"]
+    assert origin["origin_entity_id"] is None and origin["inherited"] is True
+
+
+async def test_version_two_profiles_gain_unknown_evidence_without_changing_values(hass, plant):
+    entry_id = plant.entries[0].entry_id
+    saved = {"revision": 12, "profiles": {"old": {"name": "Existing", "opening_time": 21, "closing_time": 34}},
+             "assignments": {plant.records[0].unique_id: "old"}}
+    await Store(hass, 2, f"myhome.cover_profiles.{entry_id}").async_save(saved)
+    hass.data[DATA_KEY].pop(entry_id)
+    await bind_cover(hass, plant.covers[0])
+    store = get_store(hass, entry_id)
+    assert store.data["revision"] == 12
+    assert store.data["assignments"] == saved["assignments"]
+    assert store.data["profiles"]["old"]["provenance"] == unknown_provenance()
+    assert (plant.covers[0]._travel_time, plant.covers[0]._closing_time) == (21, 34)
+    await write_profile(hass, message(plant, 12, profile_id="old",
+                        profile={"name": "Renamed", "opening_time": 21, "closing_time": 34}))
+    assert store.data["profiles"]["old"]["provenance"] == unknown_provenance()
+
+
+async def test_provenance_cannot_be_supplied_by_client_or_copied_across_gateways(hass, plant):
+    with pytest.raises(vol.Invalid):
+        await write_profile(hass, message(plant, profile={"name": "Forged", "travel_time": 20,
+                            "provenance": unknown_provenance()}))
+    first = await write_profile(hass, message(plant))
+    profile_id = first["assigned_profile_id"]
+    with pytest.raises(ProfileError, match="profile_not_found"):
+        await write_profile(hass, message(plant, index=2, copy_from_profile_id=profile_id))
+    for extra in ({"profile_id": profile_id}, {"action": "assign"}):
+        with pytest.raises(ProfileError, match="invalid_profile"):
+            await write_profile(hass, message(plant, 1, copy_from_profile_id=profile_id, **extra))
+    store = get_store(hass, plant.entries[0].entry_id)
+    before = copy.deepcopy(store.data)
+    with patch.object(Store, "_async_write_data", side_effect=WriteError("disk full")):
+        with pytest.raises(OSError):
+            await write_profile(hass, message(plant, 1, profile_id=profile_id,
+                                profile={"name": "Failed", "travel_time": 99}))
+    assert store.data == before and plant.covers[0]._travel_time == 42.5
+
+
+@pytest.mark.parametrize("value", [None, "invalid", "2026-09-15T12:00:00", "2026-09-15T12:00:00+02:00"])
+def test_invalid_provenance_dates_are_rejected(value):
+    with pytest.raises(vol.Invalid):
+        utc_timestamp(value)
 
 
 async def test_profile_create_share_copy_reset_and_restart(hass, plant):
@@ -341,11 +431,12 @@ async def test_version_one_store_migrates_without_changing_assignments_or_timing
     await bind_cover(hass, plant.covers[0])
     store = get_store(hass, entry_id)
     assert store.data == {**legacy, "profiles": {"old": {
-        "name": "Legacy", "opening_time": 32.5, "closing_time": 32.5}}}
+        "name": "Legacy", "opening_time": 32.5, "closing_time": 32.5,
+        "provenance": unknown_provenance()}}}
     assert plant.covers[0]._travel_time == plant.covers[0]._closing_time == 32.5
-    assert await ProfileStorage(hass, 2, store.store.key).async_load() == store.data
+    assert await ProfileStorage(hass, 3, store.store.key).async_load() == store.data
     with pytest.raises(NotImplementedError):
-        await store.store._async_migrate_func(3, 1, legacy)
+        await store.store._async_migrate_func(4, 1, legacy)
     plant.gateways[0].send.assert_not_called()
 
 

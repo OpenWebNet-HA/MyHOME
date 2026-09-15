@@ -400,3 +400,13 @@ button.danger-solid:hover { background: color-mix(in srgb, var(--panel-error) 85
   .profile-stats, .profile-times { grid-template-columns: 1fr; }
   .cal-steps li span:last-child { display: none; }
 }
+
+/* Saved calibration evidence is separate from editable and effective values. */
+.profile-provenance { display: grid; gap: 8px; min-width: 0; }
+.profile-provenance h3 { font-size: 13px; margin: 0; }
+.profile-origin-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.profile-origin-grid section { padding: 10px; border-radius: 9px; background: var(--panel-surface-2); min-width: 0; }
+.profile-origin-grid h4 { font-size: 12px; margin: 0 0 6px; overflow-wrap: anywhere; }
+.profile-origin-grid p { font-size: 12px; margin: 3px 0 0; overflow-wrap: anywhere; }
+.profile-origin-inherited { font-weight: 600; }
+@media (max-width: 600px) { .profile-origin-grid { grid-template-columns: minmax(0, 1fr); } }

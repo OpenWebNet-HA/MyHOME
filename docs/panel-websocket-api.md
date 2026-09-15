@@ -1,6 +1,6 @@
 # MyHOME panel API: implemented reference
 
-Status: **implemented through panel 0.15.0**. The original profile contract was reviewed against
+Status: **implemented through panel 0.16.0**. The original profile contract was reviewed against
 [`02ce199`](https://github.com/xtimmy86x/MyHOME/tree/02ce19908787297c1a6e2a65d56a289e766c0695).
 Panel 0.10.0 adds a [guided-measurement session API](cover-calibration.md) and
 `calibration_busy` refusals on profile writes while a measurement is active. The
@@ -140,6 +140,30 @@ not imply writability. Advanced covers are readable but return
 control hardware position feedback. Offline, unloaded and disabled targets are
 read-only with `cover_unavailable`.
 
+## Per-direction provenance (0.16.0)
+
+Each profile includes `provenance.opening` and `provenance.closing`. Each contains:
+
+| Field | Meaning |
+| --- | --- |
+| `source` | `guided`, `manual`, or `unknown` |
+| `recorded_at` | Backend UTC ISO timestamp; null for unknown evidence |
+| `origin_entity_id`, `origin_name` | Current registry identity of the original cover, or null if missing |
+| `inherited` | Whether the recorded origin differs from this read request's target cover |
+
+The wizard timestamps each confirmed endpoint. Manual creation or a changed
+numeric time records the backend save time for that direction. Renames,
+assignments, and unchanged numeric values preserve evidence, including unknown
+legacy evidence. These fields describe saved profile values, not pending runtime
+values or unsaved edits. The client cannot submit provenance inside `profile`.
+Internal stable origin unique IDs are stored but never exposed in this response.
+
+Store major version 3 migrates versions 1 and 2, preserving revision, IDs,
+assignments and times, and adding unknown evidence with null dates/origins.
+Older integration versions cannot read version 3; downgrade requires restoring
+a compatible backup. This is a local panel contract extension, not an assertion
+of interoperability with the proposed automatic calibration backend.
+
 ## Write actions
 
 Every write requires `entry_id`, `entity_id`, `revision` and `action`.
@@ -154,7 +178,12 @@ on an `assign` or `delete` request is accepted but ignored; clients should omit 
 ```
 
 This creates a new profile and assigns it to the target in one persisted mutation.
-It also serves as the explicit copy operation for a shared profile. There is no
+To preserve evidence when copying a selected profile, include the optional
+top-level `copy_from_profile_id` with an existing profile ID from the same gateway.
+Only unchanged direction values inherit that profile's evidence; changed values
+become manual evidence originating at the target cover. Omit this field for a
+fresh manual profile. It is invalid with a non-null `profile_id` or any action
+other than `save`. Missing/cross-gateway source IDs return `profile_not_found`. There is no
 create-without-assignment action. Maximum: 200 stored profiles per gateway.
 
 ### Update an exclusive profile

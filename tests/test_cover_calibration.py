@@ -87,6 +87,26 @@ async def test_measurement_uses_bus_start_and_explicit_endpoints_before_save(has
     cal.plant.gateways[0].send.assert_not_called()
 
 
+async def test_guided_evidence_records_endpoint_dates_and_survives_later_save(hass, calibration):
+    from datetime import UTC, datetime
+
+    from custom_components.myhome.cover_profiles import read_profile
+
+    cal = calibration
+    clock = "custom_components.myhome.cover_profile_provenance.dt_util.utcnow"
+    with patch(clock, return_value=datetime(2026, 9, 15, 11, tzinfo=UTC)):
+        await measured(cal)
+    assert cal.session.store.data["profiles"] == {}
+    with patch(clock, return_value=datetime(2026, 9, 16, 12, tzinfo=UTC)):
+        await act(cal, "save", name="Measured")
+    result = await read_profile(hass, cal.session.entry_id, cal.cover.entity_id)
+    for meta in result["profiles"][0]["provenance"].values():
+        assert meta["source"] == "guided"
+        assert meta["recorded_at"] == "2026-09-15T11:00:00+00:00"
+        assert meta["origin_entity_id"] == cal.cover.entity_id
+        assert meta["inherited"] is False
+
+
 @pytest.mark.parametrize("action", ["open", "close", "endpoint", "save"])
 async def test_stale_steps_and_invalid_phase_never_move_or_save(calibration, action):
     cal = calibration
@@ -150,6 +170,7 @@ async def test_travel_and_heartbeat_timeout_discard_values(calibration):
     cal.session.deadline._run()
     assert cal.session.reason == "travel_timeout"
     assert cal.session.values == {}
+    assert cal.session.provenance == {}
     cal.session.lease._run()
     assert cal.session.reason == "heartbeat_timeout"
     assert cal.cover._calibration is None

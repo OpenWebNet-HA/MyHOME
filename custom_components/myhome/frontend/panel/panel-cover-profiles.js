@@ -131,6 +131,27 @@ export class CoverProfileEditor {
     return t(key) === key ? t("profileError") : t(key);
   }
 
+  _renderProvenance(profile) {
+    const { t, hass } = this._context;
+    const host = this.dialog.querySelector("#profile-provenance");
+    const dateText = (value) => {
+      if (!value || Number.isNaN(new Date(value).getTime())) return t("profileDateUnknown");
+      try { return new Intl.DateTimeFormat(hass.language || "en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)); }
+      catch { return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)); }
+    };
+    host.innerHTML = `<h3>${esc(t("profileProvenance"))}</h3><div class="profile-origin-grid">${["opening", "closing"].map((direction) => {
+      const meta = profile?.provenance?.[direction];
+      const source = profile ? (["manual", "guided"].includes(meta?.source) ? meta.source : "unknown") : "configured";
+      const value = profile?.[`${direction}_time`] ?? profile?.travel_time ?? this._data.default_travel_time ?? "—";
+      return `<section data-origin-direction="${direction}"><h4>${esc(t(direction === "opening" ? "profileOpeningTime" : "profileClosingTime"))}: ${esc(value)} s</h4>
+        ${meta?.inherited ? `<p class="profile-origin-inherited">${esc(t("profileInherited"))}: ${esc(profile.name)}</p>` : ""}
+        <p>${esc(t(`profileSource_${source}`))}</p>
+        ${meta?.origin_entity_id || meta?.inherited ? `<p class="muted">${esc(t("profileOriginCover"))}: ${esc(meta.origin_name || meta.origin_entity_id || t("profileMissingCover"))}</p>` : ""}
+        ${["manual", "guided"].includes(source) ? `<p class="muted">${esc(t(source === "guided" ? "profileMeasuredAt" : "profileModifiedAt"))}: ${esc(dateText(meta.recorded_at))}</p>` : ""}
+      </section>`;
+    }).join("")}</div><p class="muted">${esc(t("profileProvenanceHelp"))}</p>`;
+  }
+
   _render() {
     const { host, t } = this._context;
     const data = this._data;
@@ -167,6 +188,7 @@ export class CoverProfileEditor {
             <label>${esc(t("profileOpeningTime"))}<span class="input-suffix"><input name="opening_time" type="number" min="1" max="600" step="any" inputmode="decimal" required ${disabled}><span>s</span></span></label>
             <label>${esc(t("profileClosingTime"))}<span class="input-suffix"><input name="closing_time" type="number" min="1" max="600" step="any" inputmode="decimal" required ${disabled}><span>s</span></span></label>
           </div>
+          <div id="profile-provenance" class="profile-provenance"></div>
           <p class="muted">${esc(t("profileSharedHelp"))}</p>
           <div class="actions">
             <button type="button" data-profile-action="update">${esc(t("profileUpdate"))}</button>
@@ -200,6 +222,7 @@ export class CoverProfileEditor {
       for (const direction of ["opening", "closing"]) {
         form.elements[`${direction}_time`].value = profile?.[`${direction}_time`] ?? profile?.travel_time ?? data.default_travel_time ?? "";
       }
+      this._renderProvenance(profile);
       form.querySelector("#profile-delete-confirmation").hidden = true;
       form.querySelector("#profile-delete").hidden = !data.writable || !profile || profile.uses !== 0;
       form.querySelector("#profile-usage").textContent = profile?.uses > 0
@@ -247,6 +270,7 @@ export class CoverProfileEditor {
       opening_time: Number(form.elements.opening_time.value),
       closing_time: Number(form.elements.closing_time.value),
     };
+    if (action === "new" && form.elements.profile.value) message.copy_from_profile_id = form.elements.profile.value;
     this._saving = generation;
     const controls = [...form.querySelectorAll("input, select, button")];
     for (const control of controls) control.disabled = true;

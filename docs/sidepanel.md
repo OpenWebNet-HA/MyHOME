@@ -15,6 +15,26 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Origin and date of saved travel times (0.16.0)
+
+The profile editor shows opening and closing evidence separately: guided wizard
+measurement, manually entered value, or unknown origin for older profiles.
+Dates come from the backend in UTC and are displayed in the browser's local time.
+A wizard measurement is dated when its endpoint is confirmed, not when saved.
+
+Renaming or assigning a profile preserves its evidence. Copying a selected profile
+preserves evidence for unchanged directions; editing a time records a new manual
+value for that direction only. Inherited times show the original cover when it
+still exists. Assigning a kitchen profile to a bedroom never claims that the
+bedroom was measured. These labels describe saved profile values; edits remain
+drafts until saved, and pending runtime timings still apply only after stopping.
+
+Existing profiles migrate without invented dates or origins. Without a profile,
+the editor labels the time as YAML/default because those two sources cannot be
+distinguished reliably from the current configuration. Storage migrates to major
+version 3; older integration versions cannot read that store. Back up before
+upgrading if a downgrade may be needed. The standalone card remains supported.
+
 ## Live state in device headers (0.15.0)
 
 Device headers show the current state of their primary entities even while
@@ -152,7 +172,7 @@ requirements, limits and real-gateway validation steps.
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.15.0**, defined by
+The panel has an independent version, currently **0.16.0**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.
@@ -504,12 +524,13 @@ direction. This remains a linear estimate without physical calibration.
 - Registry renames keep assignments because storage uses the native unique ID,
   together with the config entry. Removing the config entry deletes its profile store.
 
-The authoritative store is `myhome.cover_profiles.<entry_id>` (version 2), containing
+The authoritative store is `myhome.cover_profiles.<entry_id>` (version 3), containing
 `revision`, `profiles` and `assignments`. Version 1 profiles migrate automatically:
 `travel_time` becomes both `opening_time` and `closing_time`, preserving IDs,
 assignments and revision. Migration validates and persists the upgraded store before
-binding the runtime; failures do not silently replace saved data. Version 2 storage
-requires the updated integration (an older panel release cannot read that format).
+binding the runtime; failures do not silently replace saved data. Version 1 and 2
+profiles gain unknown provenance with null dates and origin IDs. Version 3 storage
+requires the updated integration (older integration versions cannot read that format).
 An explicit assignment overrides
 `travel_time` from YAML/defaults; removing it restores that source. Nothing rewrites
 `myhome.yaml`, native names/areas, or gateway credentials. Writes use one gateway
