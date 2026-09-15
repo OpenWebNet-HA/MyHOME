@@ -615,8 +615,4 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._attr_is_closed = (self._attr_current_cover_position == 0)
 
         self._apply_pending_cover_profile()
-        if self.hass is not None or hasattr(self.async_schedule_update_ha_state, "assert_called"):
-            try:
-                self.async_schedule_update_ha_state()
-            except RuntimeError:
-                pass
+        self._publish_state()

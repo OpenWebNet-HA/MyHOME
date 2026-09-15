@@ -805,13 +805,13 @@ async def test_empty_orphaned_device_pruning(hass: HomeAssistant):
             identifiers={(DOMAIN, "00:03:50:00:88:99-orphan")},
             name="Orphaned Old Device",
         )
-        assert orphan_device.id in dev_reg.devices
+        assert dev_reg.async_get(orphan_device.id) is not None
 
         assert await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
         # The orphan device with 0 entities should have been pruned
-        assert orphan_device.id not in dev_reg.devices
+        assert dev_reg.async_get(orphan_device.id) is None
 
         await hass.config_entries.async_unload(config_entry.entry_id)
         await hass.async_block_till_done()
@@ -866,49 +866,11 @@ async def test_setup_entry_prunes_empty_devices_but_preserves_cen(hass: HomeAssi
         await hass.async_block_till_done()
 
         # The orphan device and empty dry contact with 0 entities should have been pruned
-        assert orphan_device.id not in dev_reg.devices
-        assert empty_dry_contact.id not in dev_reg.devices
+        assert dev_reg.async_get(orphan_device.id) is None
+        assert dev_reg.async_get(empty_dry_contact.id) is None
         # The CEN and CEN+ devices must be preserved
-        assert cen_device.id in dev_reg.devices
-        assert cenplus_device.id in dev_reg.devices
-
-        await hass.config_entries.async_unload(config_entry.entry_id)
-        await hass.async_block_till_done()
-
-
-async def test_setup_entry_async_customize_yaml(hass: HomeAssistant, tmp_path):
-    """Test customize.yaml is loaded asynchronously using async_add_executor_job without blocking the loop."""
-    custom_yaml_path = tmp_path / "customize.yaml"
-    custom_yaml_path.write_text("light.living:\n  friendly_name: Living Spot\n", encoding="utf-8")
-
-    with patch.object(hass.config, "path", return_value=str(custom_yaml_path)), patch(
-        "custom_components.myhome.gateway.OWNSession.test_connection",
-        return_value={"Success": True, "Message": None},
-    ), patch(
-        "custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"
-    ), patch(
-        "custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"
-    ), patch.object(
-        hass, "async_add_executor_job", wraps=hass.async_add_executor_job
-    ) as mock_executor:
-        config_entry = MockConfigEntry(
-            domain=DOMAIN,
-            data={
-                "host": "192.168.0.35",
-                "port": 20000,
-                "password": "pass",
-                "mac": "00:03:50:00:12:88",
-            },
-            unique_id="00:03:50:00:12:88",
-        )
-        config_entry.add_to_hass(hass)
-
-        assert await hass.config_entries.async_setup(config_entry.entry_id)
-        await hass.async_block_till_done()
-
-        # Verify async_add_executor_job was called to load customize.yaml
-        assert mock_executor.called
-        assert hass.data[DOMAIN]["customizations"].get("light.living", {}).get("friendly_name") == "Living Spot"
+        assert dev_reg.async_get(cen_device.id) is not None
+        assert dev_reg.async_get(cenplus_device.id) is not None
 
         await hass.config_entries.async_unload(config_entry.entry_id)
         await hass.async_block_till_done()
@@ -941,7 +903,7 @@ async def test_setup_entry_manufacturer_tuple_normalization(hass: HomeAssistant)
         await hass.async_block_till_done()
 
         dev_reg = dr.async_get(hass)
-        gw_device = dev_reg.async_get_device(identifiers={(DOMAIN, "00:03:50:00:12:99")})
+        gw_device = next(d for d in dr.async_entries_for_config_entry(dev_reg, config_entry.entry_id) if (DOMAIN, "00:03:50:00:12:99") in d.identifiers)
         assert gw_device is not None
         assert isinstance(gw_device.manufacturer, str)
         assert gw_device.manufacturer == "BTicino S.p.A."
@@ -1011,7 +973,7 @@ async def test_setup_entry_sw_version_list_normalization(hass: HomeAssistant):
         await hass.async_block_till_done()
 
         dev_reg = dr.async_get(hass)
-        gw_device = dev_reg.async_get_device(identifiers={(DOMAIN, "00:03:50:00:55:44")})
+        gw_device = next(d for d in dr.async_entries_for_config_entry(dev_reg, config_entry.entry_id) if (DOMAIN, "00:03:50:00:55:44") in d.identifiers)
         assert gw_device is not None
         assert isinstance(gw_device.sw_version, str)
         assert gw_device.sw_version == "2.1.0"
@@ -1266,3 +1228,40 @@ async def test_async_setup_entry_uses_executor_for_ownd_version(hass: HomeAssist
 
     assert get_ownd_version in executor_targets
 
+
+async def test_setup_entry_async_customize_yaml(hass: HomeAssistant, tmp_path):
+    """Test customize.yaml is loaded asynchronously using async_add_executor_job without blocking the loop."""
+    custom_yaml_path = tmp_path / "customize.yaml"
+    custom_yaml_path.write_text("light.living:\n  friendly_name: Living Spot\n", encoding="utf-8")
+
+    with patch.object(hass.config, "path", return_value=str(custom_yaml_path)), patch(
+        "custom_components.myhome.gateway.OWNSession.test_connection",
+        return_value={"Success": True, "Message": None},
+    ), patch(
+        "custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"
+    ), patch(
+        "custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"
+    ), patch.object(
+        hass, "async_add_executor_job", wraps=hass.async_add_executor_job
+    ) as mock_executor:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                "host": "192.168.0.35",
+                "port": 20000,
+                "password": "pass",
+                "mac": "00:03:50:00:12:88",
+            },
+            unique_id="00:03:50:00:12:88",
+        )
+        config_entry.add_to_hass(hass)
+
+        assert await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        # Verify async_add_executor_job was called to load customize.yaml
+        assert mock_executor.called
+        assert hass.data[DOMAIN]["customizations"].get("light.living", {}).get("friendly_name") == "Living Spot"
+
+        await hass.config_entries.async_unload(config_entry.entry_id)
+        await hass.async_block_till_done()

@@ -478,7 +478,9 @@ class TestQueueMechanics:
             handler._event_session_ready.set()
 
             worker_task = asyncio.create_task(handler.sending_loop(0))
-            await asyncio.sleep(0.08)
+            # Wait for the queue itself, not for a wall-clock guess: a loaded
+            # runner under coverage takes longer than any fixed sleep.
+            await asyncio.wait_for(handler.send_buffer.join(), timeout=2.0)
 
             # Signal shutdown via sentinel None
             await handler.close_listener()
@@ -535,8 +537,9 @@ class TestQueueMechanics:
             t2 = asyncio.create_task(handler.sending_loop(2))
             handler.sending_workers = [t0, t1, t2]
 
-            # Wait until queue drains
-            await asyncio.sleep(0.15)
+            # Wait until the queue drains (every item task_done), not for a
+            # wall-clock guess that a loaded runner under coverage can miss
+            await asyncio.wait_for(handler.send_buffer.join(), timeout=2.0)
             assert handler.send_buffer.qsize() == 0
             assert len(sent_messages) == 6
 
@@ -1199,7 +1202,7 @@ class TestPhase1GoldenPlantSampleIssue247:
         # 1. Device Registry Verification: Absolutely NO orphaned empty ghost devices
         device_registry = dr.async_get(hass)
         entity_registry = er.async_get(hass)
-        entry_devices = [d for d in device_registry.devices.values() if entry.entry_id in d.config_entries]
+        entry_devices = dr.async_entries_for_config_entry(device_registry, entry.entry_id)
         assert len(entry_devices) > 0, "Expected devices to be registered for the plant"
 
         for dev in entry_devices:

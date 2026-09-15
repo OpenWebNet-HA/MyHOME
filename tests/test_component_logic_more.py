@@ -51,6 +51,8 @@ class TestLightEntity:
             model="Dimmer",
             gateway=mock_gateway,
         )
+        light_entity.hass = mock_hass
+        light_entity.platform = MagicMock()  # added by an EntityPlatform
         light_entity.async_schedule_update_ha_state = MagicMock()
         return light_entity
 
@@ -104,6 +106,8 @@ class TestSwitchEntity:
             model="Relay",
             gateway=mock_gateway,
         )
+        s.hass = mock_hass
+        s.platform = MagicMock()  # added by an EntityPlatform
         s.async_schedule_update_ha_state = MagicMock()
         return s
 

@@ -521,7 +521,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._attr_min_color_temp_kelvin = 2000
         self._attr_max_color_temp_kelvin = 6535
         self._attr_color_temp_kelvin: int | None = None
-        self._attr_color_temp: int | None = None
+        self._attr_color_temp: int | None = None  # mireds, what the bus speaks (dimension 14)
         self._attr_hs_color: tuple[float, float] | None = None
         self._attr_rgb_color: tuple[int, int, int] | None = None
 
@@ -989,6 +989,15 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         # plain off (preserved)
         return await self._gateway_handler.send(OWNLightingCommand.switch_off(self._full_where))
 
+    @property
+    def color_temp(self) -> int | None:
+        """Colour temperature in mireds, as carried on the bus (dimension 14).
+
+        Current cores no longer expose LightEntity.color_temp; keep the
+        accessor so the mired value stays inspectable alongside the Kelvin one.
+        """
+        return self._attr_color_temp
+
     @callback
     def handle_event(self, message: OWNLightingEvent):
         """Handle an event message.
@@ -1097,8 +1106,4 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         if self._off_icon is not None and self._on_icon is not None:
             self._attr_icon = self._on_icon if self._attr_is_on else self._off_icon
 
-        if self.hass is not None or hasattr(self.async_schedule_update_ha_state, "assert_called"):
-            try:
-                self.async_schedule_update_ha_state()
-            except RuntimeError:
-                pass
+        self._publish_state()

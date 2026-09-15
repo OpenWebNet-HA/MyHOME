@@ -11,13 +11,14 @@ license = "GPL-3.0-or-later"
 authors = [
     {name = "MyHOME Integration Contributors"}
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Home Automation",
 ]
 
@@ -27,7 +28,7 @@ test = [
     "pytest-cov>=4.0.0",
     "pytest-asyncio>=0.23.0",
     "pytest-homeassistant-custom-component>=0.13.100",
-    "syrupy>=4.6.0,<5.0.0",
+    "syrupy>=4.6.0",
     "build>=1.0.0",
     "twine>=5.0.0",
     "check-wheel-contents>=0.6.0",

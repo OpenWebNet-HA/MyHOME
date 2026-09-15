@@ -414,3 +414,23 @@ async def test_explicit_missing_gateway_never_uses_another_bus(hass, installatio
     assert _get_gateway_and_monitor(hass, "00:03:50:99:99:99") == (None, None)
     gateway, _ = _get_gateway_and_monitor(hass)
     assert gateway is hass.data[DOMAIN][installation.entries[0].data["mac"]][CONF_ENTITY]
+
+
+@pytest.mark.parametrize("second_who", ["1", "2"])
+async def test_legacy_shared_device_snapshot_keeps_gateway_metadata_ambiguous(hass, installation, second_who):
+    """Current HA cannot create a shared device; model the older registry read contract."""
+    from attr import evolve
+
+    first, second = installation.entries[:2]
+    shared = evolve(installation.devices[0], identifiers={
+        (DOMAIN, f"{first.data['mac']}-1-0015"),
+        (DOMAIN, f"{second.data['mac']}-{second_who}-15#4#02"),
+    })
+    with patch("custom_components.myhome.panel.dr.async_entries_for_config_entry", return_value=[shared]):
+        payload = async_panel_inventory(hass)
+    assert len(payload["devices"]) == 1
+    device = payload["devices"][0]
+    assert device["id"] == shared.id
+    assert device["entry_ids"] == [first.entry_id, second.entry_id]
+    assert device["address"] is None
+    assert device["who"] == ("1" if second_who == "1" else None)

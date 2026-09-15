@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.components.switch import SwitchDeviceClass
 from homeassistant.const import CONF_MAC
+from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import OWNMessage
 
@@ -200,6 +201,7 @@ async def test_gateway_bus_monitor_and_message_event_retain_translation(hass):
 
     fired_events = []
 
+    @callback
     def _event_listener(event):
         fired_events.append(event)
 
@@ -217,6 +219,9 @@ async def test_gateway_bus_monitor_and_message_event_retain_translation(hass):
             await handler.listening_loop()
         except asyncio.CancelledError:
             pass
+    # The bus delivers to listeners on the loop, not inline: let it, or the
+    # assertion below races the delivery on a loaded runner.
+    await hass.async_block_till_done()
 
     # Verify event was fired on Home Assistant event bus
     assert len(fired_events) == 1
