@@ -95,6 +95,16 @@ def _resolve_written(task: dict[str, Any], when: float) -> None:
         written.set_result(when)
 
 
+def _session_is_open(session: Any) -> bool:
+    """Whether the command session has an open socket.
+
+    Not ``is_connected``: OWNd's ``close()`` only drops the streams and leaves
+    that flag as ``connect()`` last set it, so after the idle close it still
+    reads ``True``. The streams are what ``send()`` would reopen.
+    """
+    return getattr(session, "_stream_reader", None) is not None and getattr(session, "_stream_writer", None) is not None
+
+
 def _cancel_written(task: dict[str, Any]) -> None:
     """Cancel a queued frame's delivery future (the frame will never be written)."""
     written = task.get("written")
@@ -815,15 +825,8 @@ class MyHOMEGatewayHandler:
 
         _command_session = OWNCommandSession(gateway=self.gateway, logger=LOGGER)
         res = await _command_session.connect()
-        if isinstance(res, dict) and not res.get("Success", True):
-            if res.get("Message") in ("password_error", "password_required", "negotiation_refused", "connection_refused"):
-                LOGGER.error(
-                    "%s Command session authentication or connection refused (%s). Terminating sending worker %s to prevent gateway lockout.",
-                    self.log_id,
-                    res.get("Message"),
-                    worker_id,
-                )
-                return
+        if self._connect_refused(res, worker_id):
+            return
 
         while not self._terminate_sender:
             try:
@@ -832,7 +835,7 @@ class MyHOMEGatewayHandler:
                     timeout=COMMAND_SESSION_IDLE_TIMEOUT,
                 )
             except TimeoutError:
-                if _command_session and _command_session.is_connected:
+                if _session_is_open(_command_session):
                     LOGGER.debug(
                         "%s Command session idle for %ss; closing socket to release gateway resource.",
                         self.log_id,
@@ -865,8 +868,25 @@ class MyHOMEGatewayHandler:
             # only once send() reports the frame written and acknowledged, and
             # cancelled when it was not: a frame that never reached the bus must
             # not start a timed run.
-            if not _command_session.is_connected:
-                await _command_session.connect()
+            if not _session_is_open(_command_session):
+                res = await _command_session.connect()
+                if self._connect_refused(res, worker_id):
+                    # As at start-up: no further negotiation with a gateway that
+                    # refused us. The frame was not written and never will be.
+                    _cancel_written(task)
+                    self.send_buffer.task_done()
+                    return
+                if not _session_is_open(_command_session):
+                    # connect() gave up after its retries; send() would only run
+                    # the same cycle again. Drop this frame and try the next.
+                    LOGGER.warning(
+                        "%s Command session unavailable; message `%s` not sent.",
+                        self.log_id,
+                        task["message"],
+                    )
+                    _cancel_written(task)
+                    self.send_buffer.task_done()
+                    continue
             written_at = time.monotonic()
             collected = await _command_session.send(message=task["message"], is_status_request=task["is_status_request"])
             if collected is None:
@@ -897,6 +917,23 @@ class MyHOMEGatewayHandler:
             self.log_id,
             worker_id,
         )
+
+    def _connect_refused(self, result: Any, worker_id: int) -> bool:
+        """A command-session ``connect()`` result the worker must not retry on.
+
+        A refused negotiation (wrong password, refused connection) is final;
+        negotiating again on every queued frame is what locks a gateway out.
+        """
+        if isinstance(result, dict) and not result.get("Success", True):
+            if result.get("Message") in ("password_error", "password_required", "negotiation_refused", "connection_refused"):
+                LOGGER.error(
+                    "%s Command session authentication or connection refused (%s). Terminating sending worker %s to prevent gateway lockout.",
+                    self.log_id,
+                    result.get("Message"),
+                    worker_id,
+                )
+                return True
+        return False
 
     async def close_listener(self) -> bool:
         LOGGER.info("%s Closing event listener", self.log_id)
