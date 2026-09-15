@@ -15,6 +15,55 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Native bus monitor (0.12.0)
+
+The panel now imports `panel-bus-monitor-view.js` directly through its versioned
+bundle. It no longer imports `myhome-bus-card.js`, creates a Lovelace card, or
+uses the legacy `bus_card_url` panel configuration field. The view module has no
+card-picker registration, global card class or registry watchdog.
+
+`panel-bus-monitor.js` owns one view for the selected loaded gateway. A missing
+MAC cannot fall back to another gateway. Gateway/connection changes and navigation
+invalidate old subscriptions, history and pending export/report responses. Closing
+the view clears retries and feedback timers. Clearing capture also invalidates any
+history request that was already in flight.
+
+The former card implementation is now a small compatibility adapter importing the
+same view. Existing `myhome-openwebnet-bus-monitor` and `myhome-bus-card` dashboard
+configurations, settings and automatic resource registration remain supported
+through this transition. Its `/local/myhome-bus-card.js` fallback imports the view
+from `/myhome_static/panel/`, so it needs no second copy of the module in `www`.
+The adapter's dependency URL version must follow panel releases that change the
+shared view; the integration still hashes the adapter for Lovelace cache busting.
+
+| Function | Native panel behavior |
+| --- | --- |
+| Capture and initial history | Existing WebSocket stream, bounded buffer and deduplication |
+| Filtering | WHO, WHERE/WHAT/DIM/raw text, RX/TX and ACK/NACK |
+| Pause/resume | Existing local display pause behavior |
+| Clear | Clear local capture and the selected gateway's backend buffer |
+| Frame send | Existing backend validation and selected gateway MAC |
+| Sweep | Existing `myhome.sweep_bus` service with explicit gateway |
+| Export Trace | JSON download, preserving frame RX/TX and description; gateway credentials omitted |
+| Copy Trace | Diagnostic Markdown and existing GitHub issue-form link |
+
+No protocol commands, discovery behavior or backend API schemas change. The
+existing monitor controls retain their current English texts; common translation
+API work remains separate.
+
+Before removing the compatibility card, validate the native view on a real gateway:
+compare live capture and filters, pause/resume and clear; check an exported JSON
+file and copied diagnostic report; verify gateway switching and repeated entry/exit
+leave a single active stream. Verify frame send and sweep only on the intended
+selected gateway. Then remove automatic Lovelace registration and provide an
+explicit transition for dashboards referencing the old card. The adapter remains
+until that parity check has been confirmed.
+
+Automated validation uses the actual shared view and compatibility adapter: native
+imports without Lovelace registration, capture/filters/actions/export, stale
+responses, retries, missing gateway identity, late module loads and both legacy
+card names. No real gateway/browser layout test is claimed by these DOM tests.
+
 ## Calibration cleanup fix (0.11.1)
 
 A calibration session now releases its shutdown listener only once. Home Assistant
@@ -61,7 +110,7 @@ requirements, limits and real-gateway validation steps.
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.11.1**, defined by
+The panel has an independent version, currently **0.12.0**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.
@@ -115,8 +164,8 @@ parameters. This refreshes assets independently from integration releases.
   (for example CEN triggers), so there is no separate Devices tab.
 - Open the native device page, entity details, advanced entity settings, and
   the MyHOME integration settings page.
-- Open the existing bus monitor for one selected, loaded gateway. Switching
-  gateways creates a separate card instance and closes the previous stream.
+- Open the native bus monitor for one selected, loaded gateway. Switching
+  gateways creates a separate monitor view and closes the previous stream.
   **Sweep Bus** queries only that gateway; **Export Trace** downloads the trace
   displayed in its monitor as JSON.
 

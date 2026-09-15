@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import { after, afterEach, test } from "node:test";
 import { JSDOM } from "jsdom";
 
@@ -16,7 +15,8 @@ for (const key of ["window", "document", "HTMLElement", "customElements", "Custo
 dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
 dom.window.HTMLDialogElement.prototype.close = function () { this.open = false; };
 await import("../../custom_components/myhome/frontend/panel/myhome-panel.js");
-dom.window.eval(await readFile(new URL("../../custom_components/myhome/frontend/myhome-bus-card.js", import.meta.url), "utf8"));
+const { BusMonitorView } = await import("../../custom_components/myhome/frontend/panel/panel-bus-monitor-view.js");
+customElements.define("myhome-panel-bus-monitor", class extends BusMonitorView {});
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const deferred = () => {
@@ -28,7 +28,7 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
-    panel_version: "0.11.1",
+    panel_version: "0.12.0",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
@@ -107,7 +107,7 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
-  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.11.1");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.12.0");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
   root.querySelector('[data-view="entities"]').click();
   assert.equal(root.querySelectorAll(".device-group").length, 3);
@@ -415,11 +415,11 @@ test("bus selection never opens the monitor for an unloaded or ambiguous gateway
   assert.match(root.getElementById("monitor").textContent, /Seleziona un gateway/);
   change(root.getElementById("gateway"), "two");
   assert.match(root.getElementById("monitor").textContent, /non è caricato/);
-  assert.equal(root.querySelector("myhome-openwebnet-bus-monitor"), null);
+  assert.equal(root.querySelector("myhome-panel-bus-monitor"), null);
 });
 
-test("bus card unsubscribes a late stream after removal and can reconnect", async () => {
-  const card = document.createElement("myhome-openwebnet-bus-monitor");
+test("bus view unsubscribes a late stream after removal and can reconnect", async () => {
+  const card = document.createElement("myhome-panel-bus-monitor");
   const pending = deferred();
   let unsubscribed = 0;
   let requests = 0;
@@ -427,7 +427,7 @@ test("bus card unsubscribes a late stream after removal and can reconnect", asyn
     connection: { subscribeMessage: async () => { requests++; return pending.promise; } },
     callWS: async () => ({ frames: [] }),
   };
-  card.setConfig({ mac: "00:03:50:00:00:01" });
+  card.configure({ mac: "00:03:50:00:00:01" });
   card.hass = hass;
   assert.equal(requests, 0); // Do not subscribe until attached.
   document.body.append(card);
@@ -444,11 +444,11 @@ test("bus card unsubscribes a late stream after removal and can reconnect", asyn
 });
 
 test("bus sweep follows the selected gateway and preserves unscoped Lovelace usage", async () => {
-  const card = document.createElement("myhome-openwebnet-bus-monitor");
+  const card = document.createElement("myhome-panel-bus-monitor");
   const calls = [];
   card.hass = { callService: async (...args) => { calls.push(structuredClone(args)); } };
   for (const mac of [" 00:03:50:00:00:01 ", "00:03:50:00:00:02", null]) {
-    card.setConfig({ mac });
+    card.configure({ mac });
     assert.ok(card.shadowRoot.getElementById("btn-export"));
     card.shadowRoot.getElementById("btn-sweep").click();
     await tick();
@@ -593,10 +593,8 @@ test("a panel mounted hidden starts once on visibility and ignores an old connec
   assert.ok(subscriptions.every((subscription) => subscription.stopped));
 });
 
-test("bus section drops a late import and isolates gateway subscriptions after navigation", async () => {
-  const pending = deferred();
-  globalThis.__panelBusImport = pending.promise;
-  const resourceUrl = 'data:text/javascript,await globalThis.__panelBusImport;';
+test("native bus section ignores the legacy resource and isolates gateway subscriptions after navigation", async () => {
+  const resourceUrl = "https://invalid.example/removed-card.js";
   const streams = [];
   const { panel, root, hass } = await mount({ prepare: (data) => {
     data.gateways[1].monitor_available = true;
@@ -611,10 +609,7 @@ test("bus section drops a late import and isolates gateway subscriptions after n
   change(root.getElementById("gateway"), "one");
   root.querySelector('[data-view="bus"]').click();
   change(root.getElementById("gateway"), "two");
-  pending.resolve();
-  await import(resourceUrl);
   await tick();
-  delete globalThis.__panelBusImport;
   assert.deepEqual(streams.map((stream) => stream.mac), ["00:03:50:00:00:02"]);
   change(root.getElementById("gateway"), "one");
   await tick();
@@ -622,7 +617,7 @@ test("bus section drops a late import and isolates gateway subscriptions after n
   assert.equal(streams[1].mac, "00:03:50:00:00:01");
   root.querySelector('[data-view="entities"]').click();
   assert.equal(streams[1].stopped, true);
-  assert.equal(root.querySelector("myhome-openwebnet-bus-monitor"), null);
+  assert.equal(root.querySelector("myhome-panel-bus-monitor"), null);
 });
 
 function coverProfileData(extra = {}) {

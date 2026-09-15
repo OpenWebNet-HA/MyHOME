@@ -1,11 +1,12 @@
 # MyHOME panel API: implemented reference
 
-Status: **implemented through panel 0.11.0**. The original profile contract was reviewed against
+Status: **implemented through panel 0.12.0**. The original profile contract was reviewed against
 [`02ce199`](https://github.com/xtimmy86x/MyHOME/tree/02ce19908787297c1a6e2a65d56a289e766c0695).
 Panel 0.10.0 adds a [guided-measurement session API](cover-calibration.md) and
 `calibration_busy` refusals on profile writes while a measurement is active. The
 profile payload/storage format below remains the 0.9.0 contract. Panel 0.11.0 adds
-`myhome/cover_profiles/subscribe` invalidations, documented below.
+`myhome/cover_profiles/subscribe` invalidations, documented below. Panel 0.12.0
+loads the bus monitor as a native view; bus endpoint payloads remain unchanged.
 
 This reference describes the prototype on `feat/myhome-sidepanel`, not an upstream
 v2.1 commitment. The [shared-contract proposal](panel-shared-contract.md) is separate
@@ -27,7 +28,7 @@ use HA's own authorization and schemas. The backend owns validation, persistence
 and motion timing. Names and areas remain in HA registries; a profile name is the
 label of a reusable timing configuration, not an entity name.
 
-Profile storage version **2**, panel version **0.11.0**, and any future API contract
+Profile storage version **2**, panel version **0.12.0**, and any future API contract
 version are different concepts. There is currently no API version negotiation.
 This experimental API may evolve through an explicitly documented migration.
 

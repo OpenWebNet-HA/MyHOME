@@ -1,47 +1,52 @@
-/** Bus section adapter. The shell owns navigation; this module owns its stream. */
+/** Native bus section. The shell owns navigation; this module owns its view/stream. */
+const viewUrl = new URL("panel-bus-monitor-view.js", import.meta.url);
+viewUrl.search = new URL(import.meta.url).search;
 export class BusMonitorSection {
-  constructor() {
+  constructor(loadView = () => import(viewUrl.href)) {
+    this._loadView = loadView;
     this._generation = 0;
-    this.card = null;
+    this.view = null;
     this._key = null;
   }
 
   set hass(value) {
     this._hass = value;
-    if (this.card) this.card.hass = value;
+    if (this.view) this.view.hass = value;
   }
 
   clear() {
     this._generation++;
-    this.card?.remove();
-    this.card = null;
+    this.view?.remove();
+    this.view = null;
     this._key = null;
   }
 
-  async render({ container, entry, resourceUrl, t, empty }) {
-    const key = JSON.stringify([entry?.entry_id, entry?.mac, entry?.monitor_available, resourceUrl]);
+  async render({ container, entry, t, empty }) {
+    const key = JSON.stringify([entry?.entry_id, entry?.mac, entry?.monitor_available]);
     if (key === this._key) return;
     this.clear();
     this._key = key;
-    if (!entry?.monitor_available) {
+    if (!entry?.monitor_available || !entry?.mac?.trim()) {
       container.innerHTML = empty(t(entry ? "monitorOffline" : "monitorSelect"));
       return;
     }
     const generation = this._generation;
     container.innerHTML = empty(t("monitorLoading"));
     try {
-      // Reuse the integration's versioned resource until its standalone card retires.
-      await import(resourceUrl);
+      const { BusMonitorView } = await this._loadView();
       if (generation !== this._generation || !container.isConnected) return;
-      const card = document.createElement("myhome-openwebnet-bus-monitor");
-      card.setConfig({ mac: entry.mac, title: `${t("bus")} · ${entry.title}`, max_frames: 200 });
-      container.replaceChildren(card);
-      this.card = card;
-      card.hass = this._hass;
+      if (!customElements.get("myhome-panel-bus-monitor")) {
+        customElements.define("myhome-panel-bus-monitor", class extends BusMonitorView {});
+      }
+      const view = document.createElement("myhome-panel-bus-monitor");
+      view.configure({ mac: entry.mac, title: `${t("bus")} · ${entry.title}`, max_frames: 200 });
+      container.replaceChildren(view);
+      this.view = view;
+      view.hass = this._hass;
     } catch {
       if (generation === this._generation && container.isConnected) {
-        this.card?.remove();
-        this.card = null;
+        this.view?.remove();
+        this.view = null;
         container.innerHTML = empty(t("monitorError"));
         this._key = null;
       }

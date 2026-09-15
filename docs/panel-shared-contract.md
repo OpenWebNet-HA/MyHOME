@@ -9,6 +9,8 @@ record of the 0.9.0 baseline. Panel 0.11.0 additionally implements revision
 invalidations at `myhome/cover_profiles/subscribe`, with draft preservation and
 visible-only fallback reads. See the [implemented reference](panel-websocket-api.md);
 this does not make the common namespace below jointly approved or implemented.
+Panel 0.12.0 extracts a shared bus-monitor view loaded directly by the panel.
+The standalone card is now a temporary compatibility adapter over that view.
 
 Agreement on the product direction does not imply agreement on the endpoint names,
 payloads or migration choices proposed here.

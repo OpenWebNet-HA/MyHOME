@@ -579,7 +579,6 @@ class MyHomePanel extends HTMLElement {
     return this._busMonitor.render({
       container: this.shadowRoot.getElementById("monitor"),
       entry: this._data.gateways.find((item) => item.entry_id === this._entryId),
-      resourceUrl: this._panel?.config?.bus_card_url || "/myhome_static/myhome-bus-card.js",
       t: (key) => this._t(key),
       empty: (title) => this._empty(title),
     });
