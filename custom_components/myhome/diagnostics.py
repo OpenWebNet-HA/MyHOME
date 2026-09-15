@@ -21,6 +21,15 @@ from .const import (
 # the LAN, its MAC, the SSDP/UDN identity, the path of the user's config file.
 # The bus frames, the model, the firmware and the queue figures are what a bug
 # report needs, and they carry none of that.
+#
+# Scope: these keys are redacted, recursively, in the config entry's ``data``
+# and ``options`` only. The gateway, profile, queue, platforms and bus_monitor
+# blocks are assembled from named fields below and never pass through the
+# redaction, so a frame's ``where`` / ``who`` / ``what`` and the counters stay
+# intact. Nothing in the download refers back to a redacted value: ``id`` is
+# the gateway's formatted MAC (the same identity as ``mac``), ``friendly_name``
+# is the name the gateway advertises over SSDP, and a download describes one
+# entry and one gateway - so no anonymized reference is needed to relate them.
 TO_REDACT = {
     CONF_PASSWORD,
     "password",
