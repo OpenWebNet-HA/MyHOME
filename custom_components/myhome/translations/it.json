@@ -32,6 +32,19 @@
           "serialNumber": "Indirizzo MAC",
           "modelName": "Tipo di gateway"
         }
+      },
+      "discovery_confirm": {
+        "title": "Gateway MyHOME rilevato",
+        "description": "Vuoi configurare il gateway {name} ({host})?"
+      },
+      "serial": {
+        "title": "Gateway USB / Seriale",
+        "description": "Configura il tuo gateway USB o seriale Legrand 3578 / OpenZigBee.",
+        "data": {
+          "port": "Porta seriale",
+          "baudrate": "Baudrate",
+          "friendly_name": "Nome descrittivo"
+        }
       }
     },
     "error": {
@@ -111,6 +124,46 @@
         "duration": {
           "name": "Duration",
           "description": "For how long the instant power information will be sent."
+        }
+      }
+    },
+    "turn_on_timed": {
+      "name": "Accendi a tempo",
+      "description": "Accendi una luce o un interruttore con un timer hardware SCS sul bus che si spegne automaticamente anche in caso di riavvio di Home Assistant.",
+      "fields": {
+        "duration": {
+          "name": "Durata",
+          "description": "Durata in secondi prima dello spegnimento automatico del dispositivo."
+        },
+        "hours": {
+          "name": "Ore",
+          "description": "Ore opzionali per la durata del timer personalizzato (0-255)."
+        },
+        "minutes": {
+          "name": "Minuti",
+          "description": "Minuti opzionali per la durata del timer personalizzato (0-59)."
+        },
+        "seconds": {
+          "name": "Secondi",
+          "description": "Secondi opzionali per la durata del timer personalizzato (0-59)."
+        },
+        "brightness": {
+          "name": "Luminosità",
+          "description": "Livello di luminosità opzionale (1-255) per le luci."
+        },
+        "brightness_pct": {
+          "name": "Percentuale luminosità",
+          "description": "Percentuale di luminosità opzionale (1-100%) per le luci."
+        }
+      }
+    },
+    "sweep_bus": {
+      "name": "Scansione stato bus",
+      "description": "Esegue una richiesta di stato in sola lettura su tutti i sottosistemi del bus (luci, tapparelle, termoregolazione, orologio e diagnostica del gateway) per popolare il buffer circolare di diagnostica.",
+      "fields": {
+        "gateway": {
+          "name": "Gateway",
+          "description": "Indirizzo MAC del gateway (opzionale; predefinito per tutti i gateway attivi)."
         }
       }
     }

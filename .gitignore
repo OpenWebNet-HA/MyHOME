@@ -16,6 +16,7 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
+dist/
 develop-eggs/
 downloads/
 eggs/
@@ -52,6 +53,7 @@ htmlcov/
 .cache
 nosetests.xml
 coverage.xml
+junit.xml
 *.cover
 *.py,cover
 .hypothesis/
@@ -136,3 +138,12 @@ dmypy.json
 
 #Pylint
 .pylintrc
+
+# Research & Scratch files
+openhab-addons/
+pdf_text.txt
+design-light-transitions.md
+
+# Release archives
+myhome.zip
+*.zip

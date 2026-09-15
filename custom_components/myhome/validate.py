@@ -1,57 +1,65 @@
 """Validator for the MyHome configuration file."""
 import re
 
-from voluptuous import (
-    Schema,
-    Optional,
-    Required,
-    Coerce,
-    Boolean,
-    Any,
-    All,
-    In,
-    Invalid,
+from homeassistant.components.alarm_control_panel import DOMAIN as ALARM_CONTROL_PANEL
+from homeassistant.components.binary_sensor import (
+    DOMAIN as BINARY_SENSOR,
 )
-from homeassistant.helpers.device_registry import format_mac as ha_format_mac
-from homeassistant.components.light import DOMAIN as LIGHT
-from homeassistant.components.switch import (
-    SwitchDeviceClass,
-    DOMAIN as SWITCH,
-)
-from homeassistant.components.button import DOMAIN as BUTTON
-from homeassistant.components.cover import DOMAIN as COVER
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
-    DOMAIN as BINARY_SENSOR,
+)
+from homeassistant.components.button import DOMAIN as BUTTON
+from homeassistant.components.climate import DOMAIN as CLIMATE
+from homeassistant.components.cover import DOMAIN as COVER
+from homeassistant.components.light import DOMAIN as LIGHT
+from homeassistant.components.sensor import (
+    DOMAIN as SENSOR,
 )
 from homeassistant.components.sensor import (
     SensorDeviceClass,
-    DOMAIN as SENSOR,
 )
-from homeassistant.components.climate import DOMAIN as CLIMATE
-from homeassistant.const import CONF_NAME, CONF_MAC
+from homeassistant.components.switch import (
+    DOMAIN as SWITCH,
+)
+from homeassistant.components.switch import (
+    SwitchDeviceClass,
+)
+from homeassistant.const import CONF_MAC, CONF_NAME
+from homeassistant.helpers.device_registry import format_mac as ha_format_mac
+from voluptuous import (
+    All,
+    Any,
+    Boolean,
+    Coerce,
+    In,
+    Invalid,
+    Optional,
+    Required,
+    Schema,
+)
 
 from .const import (
-    CONF_PLATFORMS,
-    CONF_WHO,
-    CONF_WHERE,
+    CONF_ADVANCED_SHUTTER,
     CONF_BUS_INTERFACE,
+    CONF_CENTRAL,
+    CONF_COOLING_SUPPORT,
+    CONF_DEVICE_CLASS,
+    CONF_DEVICE_MODEL,
+    CONF_DIMMABLE,
     CONF_ENTITIES,
     CONF_ENTITY_NAME,
+    CONF_FAN_SUPPORT,
+    CONF_HEATING_SUPPORT,
     CONF_ICON,
     CONF_ICON_ON,
-    CONF_ZONE,
-    CONF_FAN_SUPPORT,
-    CONF_MANUFACTURER,
-    CONF_DEVICE_MODEL,
-    CONF_DEVICE_CLASS,
-    CONF_DIMMABLE,
-    CONF_ADVANCED_SHUTTER,
     CONF_INVERTED,
-    CONF_HEATING_SUPPORT,
-    CONF_COOLING_SUPPORT,
+    CONF_MANUFACTURER,
+    CONF_PLATFORMS,
     CONF_STANDALONE,
-    CONF_CENTRAL,
+    CONF_TRAVEL_TIME,
+    CONF_WHERE,
+    CONF_WHO,
+    CONF_ZONE,
 )
 
 
@@ -82,7 +90,7 @@ class General(object):
         self.msg = msg
 
     def __call__(self, v):
-        if type(v) == str and v == "0":
+        if isinstance(v, str) and v == "0":
             return v
         else:
             raise Invalid(f"Invalid General WHERE {v}, it must be 0.")
@@ -96,7 +104,7 @@ class Area(object):
         self.msg = msg
 
     def __call__(self, v):
-        if type(v) == str and v in ["00", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]:
+        if isinstance(v, str) and v in ["00", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]:
             return v
         else:
             raise Invalid(f"Invalid Area WHERE {v}, it must be a string in [00, 1-9, 10].")
@@ -110,7 +118,7 @@ class Group(object):
         self.msg = msg
 
     def __call__(self, v):
-        if type(v) == str and v.startswith("#") and v[1:].isdigit() and int(v[1:]) >= 1 and int(v[1:]) <= 255:
+        if isinstance(v, str) and v.startswith("#") and v[1:].isdigit() and int(v[1:]) >= 1 and int(v[1:]) <= 255:
             return f"#{int(v[1:])}"
         else:
             raise Invalid(f"Invalid Group WHERE {v}, it must be a string like '#[1-255]'.")
@@ -124,7 +132,7 @@ class PointToPoint(object):
         self.msg = msg
 
     def __call__(self, v):
-        if type(v) == str and v.isdigit():
+        if isinstance(v, str) and v.isdigit():
             _length = len(v)
             if _length == 2 or _length == 4:
                 _a = v[0 : _length // 2]
@@ -147,7 +155,7 @@ class SpecialWhere(object):
         self.msg = msg
 
     def __call__(self, v):
-        if type(v) == str and v.isdigit():
+        if isinstance(v, str) and v.isdigit():
             return v
         else:
             raise Invalid(f"Invalid WHERE {v}, it must be a string of digits.")
@@ -161,7 +169,7 @@ class BusInterface(object):
         self.msg = msg
 
     def __call__(self, v):
-        if type(v) == str and v.isdigit() and len(v) == 2:
+        if isinstance(v, str) and v.isdigit() and len(v) == 2:
             if int(v) > 15:
                 raise Invalid(f"Invalid Bus Interface number {v}, it must be between 00 and 15.")
         elif v is not None:
@@ -177,30 +185,31 @@ class MyHomeConfigSchema(Schema):
         data = super().__call__(data)
         _rekeyed_data = {}
         for gateway in data:
-            _rekeyed_data[data[gateway][CONF_MAC]] = {}
-            _rekeyed_data[data[gateway][CONF_MAC]][CONF_PLATFORMS] = {}
+            gateway_mac = data[gateway].get(CONF_MAC) or format_mac(gateway) or gateway
+            _rekeyed_data[gateway_mac] = {}
+            _rekeyed_data[gateway_mac][CONF_PLATFORMS] = {}
             for platform in data[gateway]:
                 if platform != CONF_MAC:
-                    _rekeyed_data[data[gateway][CONF_MAC]][CONF_PLATFORMS][platform] = data[gateway][platform]
+                    _rekeyed_data[gateway_mac][CONF_PLATFORMS][platform] = data[gateway][platform]
 
             if (
-                (LIGHT in _rekeyed_data[data[gateway][CONF_MAC]][CONF_PLATFORMS])
-                or (SWITCH in _rekeyed_data[data[gateway][CONF_MAC]][CONF_PLATFORMS])
-                or (COVER in _rekeyed_data[data[gateway][CONF_MAC]][CONF_PLATFORMS])
+                (LIGHT in _rekeyed_data[gateway_mac][CONF_PLATFORMS])
+                or (SWITCH in _rekeyed_data[gateway_mac][CONF_PLATFORMS])
+                or (COVER in _rekeyed_data[gateway_mac][CONF_PLATFORMS])
             ):
-                _rekeyed_data[data[gateway][CONF_MAC]][CONF_PLATFORMS][BUTTON] = {}
-                if LIGHT in _rekeyed_data[data[gateway][CONF_MAC]][CONF_PLATFORMS]:
-                    for key, value in _rekeyed_data[data[gateway][CONF_MAC]][CONF_PLATFORMS][LIGHT].items():
+                _rekeyed_data[gateway_mac][CONF_PLATFORMS][BUTTON] = {}
+                if LIGHT in _rekeyed_data[gateway_mac][CONF_PLATFORMS]:
+                    for key, value in _rekeyed_data[gateway_mac][CONF_PLATFORMS][LIGHT].items():
                         if not value[CONF_WHERE].startswith("#"):
-                            _rekeyed_data[data[gateway][CONF_MAC]][CONF_PLATFORMS][BUTTON][key] = value
-                if SWITCH in _rekeyed_data[data[gateway][CONF_MAC]][CONF_PLATFORMS]:
-                    for key, value in _rekeyed_data[data[gateway][CONF_MAC]][CONF_PLATFORMS][SWITCH].items():
+                            _rekeyed_data[gateway_mac][CONF_PLATFORMS][BUTTON][key] = value
+                if SWITCH in _rekeyed_data[gateway_mac][CONF_PLATFORMS]:
+                    for key, value in _rekeyed_data[gateway_mac][CONF_PLATFORMS][SWITCH].items():
                         if not value[CONF_WHERE].startswith("#"):
-                            _rekeyed_data[data[gateway][CONF_MAC]][CONF_PLATFORMS][BUTTON][key] = value
-                if COVER in _rekeyed_data[data[gateway][CONF_MAC]][CONF_PLATFORMS]:
-                    for key, value in _rekeyed_data[data[gateway][CONF_MAC]][CONF_PLATFORMS][COVER].items():
+                            _rekeyed_data[gateway_mac][CONF_PLATFORMS][BUTTON][key] = value
+                if COVER in _rekeyed_data[gateway_mac][CONF_PLATFORMS]:
+                    for key, value in _rekeyed_data[gateway_mac][CONF_PLATFORMS][COVER].items():
                         if not value[CONF_WHERE].startswith("#"):
-                            _rekeyed_data[data[gateway][CONF_MAC]][CONF_PLATFORMS][BUTTON][key] = value
+                            _rekeyed_data[gateway_mac][CONF_PLATFORMS][BUTTON][key] = value
 
         return _rekeyed_data
 
@@ -226,6 +235,11 @@ class MyHomeDeviceSchema(Schema):
                     data[device][CONF_NAME] if CONF_NAME in data[device] else "Central unit" if data[device][CONF_ZONE].startswith("#0") else f"Zone {data[device][CONF_ZONE]}"
                 )
                 _rekeyed_data[_new_key] = data[device]
+                _rekeyed_data[str(device)] = data[device]
+                clean_zone = str(data[device][CONF_ZONE]).split("#")[-1]
+                _rekeyed_data[clean_zone] = data[device]
+                _rekeyed_data[str(data[device][CONF_ZONE])] = data[device]
+                _rekeyed_data[f"zone_{clean_zone}"] = data[device]
             if CONF_DEVICE_MODEL not in data[device]:
                 data[device][CONF_DEVICE_MODEL] = None
             if CONF_ICON not in data[device]:
@@ -234,6 +248,12 @@ class MyHomeDeviceSchema(Schema):
                 data[device][CONF_ICON_ON] = None
             if CONF_ENTITY_NAME not in data[device]:
                 data[device][CONF_ENTITY_NAME] = None
+            if "advanced_shutter" in data[device] and data[device]["advanced_shutter"]:
+                data[device][CONF_ADVANCED_SHUTTER] = True
+            if "device_class" in data[device] and CONF_DEVICE_CLASS not in data[device]:
+                data[device][CONF_DEVICE_CLASS] = data[device]["device_class"]
+            if CONF_DEVICE_CLASS not in data[device]:
+                data[device][CONF_DEVICE_CLASS] = SwitchDeviceClass.SWITCH
 
         return _rekeyed_data
 
@@ -313,7 +333,13 @@ switch_schema = MyHomeDeviceSchema(
             Optional(CONF_ENTITY_NAME): str,
             Optional(CONF_ICON): str,
             Optional(CONF_ICON_ON): str,
-            Optional(CONF_DEVICE_CLASS, default=SwitchDeviceClass.SWITCH): In(
+            Optional(CONF_DEVICE_CLASS): In(
+                [
+                    SwitchDeviceClass.OUTLET,
+                    SwitchDeviceClass.SWITCH,
+                ]
+            ),
+            Optional("device_class"): In(
                 [
                     SwitchDeviceClass.OUTLET,
                     SwitchDeviceClass.SWITCH,
@@ -336,6 +362,8 @@ cover_schema = MyHomeDeviceSchema(
             Required(CONF_NAME): str,
             Optional(CONF_ENTITY_NAME): str,
             Optional(CONF_ADVANCED_SHUTTER, default=False): Boolean(),
+            Optional("advanced_shutter", default=False): Boolean(),
+            Optional(CONF_TRAVEL_TIME, default=25): Coerce(int),
             Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
             Optional(CONF_DEVICE_MODEL): Coerce(str),
         }
@@ -351,6 +379,34 @@ binary_sensor_schema = MyHomeDeviceSchema(
             Optional(CONF_ENTITY_NAME): str,
             Optional(CONF_INVERTED, default=False): Boolean(),
             Optional(CONF_DEVICE_CLASS): In(
+                [
+                    BinarySensorDeviceClass.BATTERY,
+                    BinarySensorDeviceClass.BATTERY_CHARGING,
+                    BinarySensorDeviceClass.COLD,
+                    BinarySensorDeviceClass.CONNECTIVITY,
+                    BinarySensorDeviceClass.DOOR,
+                    BinarySensorDeviceClass.GARAGE_DOOR,
+                    BinarySensorDeviceClass.GAS,
+                    BinarySensorDeviceClass.HEAT,
+                    BinarySensorDeviceClass.LIGHT,
+                    BinarySensorDeviceClass.LOCK,
+                    BinarySensorDeviceClass.MOISTURE,
+                    BinarySensorDeviceClass.MOTION,
+                    BinarySensorDeviceClass.MOVING,
+                    BinarySensorDeviceClass.OCCUPANCY,
+                    BinarySensorDeviceClass.OPENING,
+                    BinarySensorDeviceClass.PLUG,
+                    BinarySensorDeviceClass.POWER,
+                    BinarySensorDeviceClass.PRESENCE,
+                    BinarySensorDeviceClass.PROBLEM,
+                    BinarySensorDeviceClass.SAFETY,
+                    BinarySensorDeviceClass.SMOKE,
+                    BinarySensorDeviceClass.SOUND,
+                    BinarySensorDeviceClass.VIBRATION,
+                    BinarySensorDeviceClass.WINDOW,
+                ]
+            ),
+            Optional("device_class"): In(
                 [
                     BinarySensorDeviceClass.BATTERY,
                     BinarySensorDeviceClass.BATTERY_CHARGING,
@@ -421,6 +477,19 @@ climate_schema = MyHomeDeviceSchema(
     }
 )
 
+alarm_control_panel_schema = MyHomeDeviceSchema(
+    {
+        Required(str): {
+            Optional(CONF_WHO, default="5"): "5",
+            Required(CONF_WHERE): All(Coerce(str), Any(General(), Area(), Group(), PointToPoint(), SpecialWhere())),
+            Required(CONF_NAME): str,
+            Optional(CONF_ENTITY_NAME): str,
+            Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
+            Optional(CONF_DEVICE_MODEL, default="F4201"): Coerce(str),
+        }
+    }
+)
+
 # The device schemas are Schema subclasses whose overridden __call__ performs
 # post-processing (rekeying to "who-where" and injecting default keys). Nested
 # schema instances are not guaranteed to be invoked through __call__ by the
@@ -429,13 +498,14 @@ climate_schema = MyHomeDeviceSchema(
 # them in plain callables to force the subclass __call__ to run.
 gateway_schema = Schema(
     {
-        Required(CONF_MAC): MacAddress(),
+        Optional(CONF_MAC): MacAddress(),
         Optional(LIGHT): lambda v: light_schema(v),
         Optional(SWITCH): lambda v: switch_schema(v),
         Optional(COVER): lambda v: cover_schema(v),
         Optional(BINARY_SENSOR): lambda v: binary_sensor_schema(v),
         Optional(SENSOR): lambda v: sensor_schema(v),
         Optional(CLIMATE): lambda v: climate_schema(v),
+        Optional(ALARM_CONTROL_PANEL): lambda v: alarm_control_panel_schema(v),
     }
 )
 

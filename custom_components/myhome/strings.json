@@ -1,0 +1,212 @@
+{
+  "title": "MyHome",
+  "config": {
+    "flow_title": "MyHome {name} Gateway ({host})",
+    "step": {
+      "user": {
+        "title": "Pick your \"MyHome\" gateway",
+        "data": {
+          "host": "IP address"
+        }
+      },
+      "port": {
+        "title": "Gateway's service port",
+        "description": "Provide the port used for OpenWebNet communication with the {name} gateway {host}",
+        "data": {
+          "port": "Port"
+        }
+      },
+      "password": {
+        "title": "Gateway's password",
+        "description": "Provide the OpenWebNet password for the {name} gateway {host}",
+        "data": {
+          "password": "Password"
+        }
+      },
+      "custom": {
+        "title": "Manual gateway entry",
+        "description": "Enter the gateway IP address and port. The MAC address and model will be auto-discovered.",
+        "data": {
+          "address": "IP address",
+          "port": "Port"
+        }
+      },
+      "custom_manual": {
+        "title": "Manual gateway entry (discovery failed)",
+        "description": "Could not auto-discover the gateway at {host}:{port}. Please enter the MAC address and model manually.",
+        "data": {
+          "serialNumber": "MAC address",
+          "modelName": "Device type"
+        }
+      },
+      "discovery_confirm": {
+        "title": "Discovered MyHOME gateway",
+        "description": "Do you want to set up the {name} gateway ({host})?"
+      },
+      "serial": {
+        "title": "USB / Serial Gateway",
+        "description": "Configure your Legrand 3578 / OpenZigBee USB or serial gateway.",
+        "data": {
+          "port": "Serial port",
+          "baudrate": "Baudrate",
+          "friendly_name": "Friendly name"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure MyHome {name} Gateway",
+        "description": "Update connection settings or credentials for your {name} gateway.",
+        "data": {
+          "host": "IP address",
+          "port": "Port / Baudrate",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_port": "Invalid port",
+      "invalid_ip": "Invalid IP address",
+      "invalid_mac": "Invalid MAC address",
+      "invalid_password": "Invalid password",
+      "password_retry": "Gateway refusing password negotiation, wait 60s before retrying.",
+      "password_error": "Invalid password"
+    },
+    "abort": {
+      "discover_timeout": "Unable to discover MyHome gateways",
+      "no_gateways": "No MyHome gateways discovered",
+      "all_configured": "All MyHome gateways are already configured",
+      "unknown": "An unknown error occured",
+      "cannot_connect": "Cannot connect to the gateway",
+      "already_configured": "This gateway is already configured",
+      "already_in_progress": "The configuration of this gateway is already in progress",
+      "reauth_successful": "Password change successful",
+      "reconfigure_successful": "Gateway connection reconfigured successfully."
+    }
+  },
+  "options": {
+    "step": {
+      "user": {
+        "title": "MyHome options",
+        "description": "Advanced system settings and streaming decoder mapping",
+        "data": {
+          "address": "IP address",
+          "password": "Password",
+          "config_file_path": "Configuration file path",
+          "command_worker_count": "Number of concurrent command sessions",
+          "generate_events": "Generate events in Home Assistant for each message received",
+          "transition_mode": "Brightness transition method",
+          "decoder_1_entity": "Decoder 1 — Media player entity (e.g. media_player.cambridge_audio_cxn)",
+          "decoder_1_source": "Decoder 1 — BTicino source input number (1–4)",
+          "decoder_1_pre_gain": "Decoder 1 — Pre-gain offset % (0 = Cambridge with Pre-Amp OFF, 20 = squeezelite)",
+          "decoder_2_entity": "Decoder 2 — Media player entity",
+          "decoder_2_source": "Decoder 2 — BTicino source input number (1–4)",
+          "decoder_2_pre_gain": "Decoder 2 — Pre-gain offset %",
+          "decoder_3_entity": "Decoder 3 — Media player entity",
+          "decoder_3_source": "Decoder 3 — BTicino source input number (1–4)",
+          "decoder_3_pre_gain": "Decoder 3 — Pre-gain offset %",
+          "decoder_4_entity": "Decoder 4 — Media player entity",
+          "decoder_4_source": "Decoder 4 — BTicino source input number (1–4)",
+          "decoder_4_pre_gain": "Decoder 4 — Pre-gain offset %"
+        }
+      }
+    },
+    "error": {
+      "invalid_ip": "Invalid IP address",
+      "invalid_worker_count": "Workers must be between 1 and 10",
+      "invalid_config_path": "Configuration file does not exist at this path",
+      "invalid_password": "Invalid password",
+      "password_error": "Invalid password",
+      "not_a_media_player": "Must be a media_player entity (e.g. media_player.cambridge_audio_cxn)",
+      "mass_entity_not_allowed": "Infinite Loop Protection: Do not select Music Assistant clones! Select the original hardware entity instead."
+    }
+  },
+  "services": {
+    "sync_time": {
+      "name": "Syncronize time",
+      "description": "Syncronize gateway's time to HA local time.",
+      "fields": {
+        "gateway": {
+          "name": "Gateway",
+          "description": "The gateway's MAC address, as present in the config."
+        }
+      }
+    },
+    "send_message": {
+      "name": "Send message",
+      "description": "Send an arbitrary (but valid) OpenWebNet message to the gateway.",
+      "fields": {
+        "gateway": {
+          "name": "Gateway",
+          "description": "The gateway's MAC address, as present in the config."
+        },
+        "message": {
+          "name": "Message",
+          "description": "Valid OpenWebNet message."
+        }
+      }
+    },
+    "start_sending_instant_power": {
+      "name": "Start sending instant power",
+      "description": "Get automatic instant power draw updates for a sensor.",
+      "fields": {
+        "entity_id": {
+          "name": "Entity",
+          "description": "Name(s) of entities that will start sending instant power information."
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "For how long the instant power information will be sent."
+        }
+      }
+    },
+    "turn_on_timed": {
+      "name": "Turn on timed",
+      "description": "Turn on a light or switch with a hardware-offloaded SCS bus timer that turns off automatically even if Home Assistant restarts.",
+      "fields": {
+        "duration": {
+          "name": "Duration",
+          "description": "Duration in seconds before the device turns off automatically."
+        },
+        "hours": {
+          "name": "Hours",
+          "description": "Optional hours component for custom timer duration (0-255)."
+        },
+        "minutes": {
+          "name": "Minutes",
+          "description": "Optional minutes component for custom timer duration (0-59)."
+        },
+        "seconds": {
+          "name": "Seconds",
+          "description": "Optional seconds component for custom timer duration (0-59)."
+        },
+        "brightness": {
+          "name": "Brightness",
+          "description": "Optional brightness level (1-255) for lights."
+        },
+        "brightness_pct": {
+          "name": "Brightness percentage",
+          "description": "Optional brightness percentage (1-100%) for lights."
+        }
+      }
+    },
+    "sweep_bus": {
+      "name": "Sweep bus status",
+      "description": "Triggers an active read-only status query across all bus subsystems (lighting, covers, thermoregulation, clock, and gateway diagnostics) to populate the diagnostic bus monitor ring buffer.",
+      "fields": {
+        "gateway": {
+          "name": "Gateway",
+          "description": "The gateway's MAC address (optional; defaults to all active gateways)."
+        }
+      }
+    }
+  },
+  "issues": {
+    "gateway_authentication_failed": {
+      "title": "Authentication failed for MyHOME gateway {gateway}",
+      "description": "The MyHOME gateway refused the configured OpenWebNet password or HMAC negotiation. Please check your credentials using the reconfigure flow."
+    },
+    "bus_collision_storm": {
+      "title": "High SCS bus collision rate detected ({count} NACKs)",
+      "description": "An unusually high rate of bus collisions or NACK frames was detected on the SCS bus. Please check actuator wiring and physical bus termination."
+    }
+  }
+}
