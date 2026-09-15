@@ -212,8 +212,10 @@ class MyHomePanel extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <link rel="stylesheet" href="${escapeHtml(assetUrl("myhome-panel.css"))}">
       <header class="topbar"><ha-menu-button></ha-menu-button>
-        <div class="brand-group"><div class="brand">My<span>HOME</span></div><span class="version" id="panel-version"></span></div>
-        <a class="button" href="${SETTINGS_URL}">${t("settings")}</a>
+        <div class="brand-group"><div class="brand-mark" aria-hidden="true"><ha-icon icon="mdi:home-lightning-bolt"></ha-icon></div>
+          <div class="brand-text"><div class="brand">My<span>HOME</span></div>
+            <div class="versions"><span id="panel-version"></span><span id="version"></span></div></div></div>
+        <a class="button" href="${SETTINGS_URL}"><ha-icon icon="mdi:cog-outline" aria-hidden="true"></ha-icon><span>${t("settings")}</span></a>
       </header>
       <main>
         <div class="heading"><div><h1>${t("subtitle")}</h1><p class="muted" id="totals"></p></div>
@@ -222,8 +224,8 @@ class MyHomePanel extends HTMLElement {
         <div id="error" class="notice error" role="alert" hidden></div>
         <section id="gateways" class="gateway-grid" aria-label="${t("gateway")}"></section>
         <nav class="tabs" aria-label="MyHOME">
-          ${["entities", "bus"].map((view) => `<button data-view="${view}" aria-pressed="${view === this._view}">${t(view)} <span class="count" id="count-${view}" ${view === "bus" ? "hidden" : ""}></span></button>`).join("")}
-          <button data-action="refresh">${t("refresh")}</button>
+          ${[["entities", "mdi:view-list-outline"], ["bus", "mdi:swap-horizontal"]].map(([view, icon]) => `<button data-view="${view}" aria-pressed="${view === this._view}"><ha-icon icon="${icon}" aria-hidden="true"></ha-icon>${t(view)} <span class="count" id="count-${view}" ${view === "bus" ? "hidden" : ""}></span></button>`).join("")}
+          <button data-action="refresh" class="ghost" title="${t("refresh")}" aria-label="${t("refresh")}"><ha-icon icon="mdi:refresh" aria-hidden="true"></ha-icon></button>
         </nav>
         <section id="who-navigation" class="who-navigation" hidden>
           <div class="who-toolbar"><p id="category-view-label" class="muted" aria-live="polite"></p>
@@ -240,7 +242,6 @@ class MyHomePanel extends HTMLElement {
         <section id="items" class="who-groups"></section>
         <section id="monitor" hidden></section>
         <p id="toast" class="muted" role="status"></p>
-        <p id="version" class="muted"></p>
       </main><div id="dialog-host"></div>`;
     if (monitor) {
       this.shadowRoot.getElementById("monitor").append(monitor);
@@ -290,11 +291,11 @@ class MyHomePanel extends HTMLElement {
       const status = item.disabled_by ? "disabled" : item.state === "loaded" ? (item.connected ? "connected" : "disconnected") : item.state;
       const devices = data.devices.filter((device) => device.entry_ids.includes(item.entry_id)).length;
       const entities = data.entities.filter((entity) => entity.entry_id === item.entry_id).length;
-      return `<article class="gateway-card"><div class="card-head"><h2>${escapeHtml(item.title)}</h2>
+      return `<article class="gateway-card"><div class="card-head"><h2><ha-icon icon="${item.serial_port ? "mdi:serial-port" : "mdi:router-network"}" aria-hidden="true"></ha-icon>${escapeHtml(item.title)}</h2>
         <span class="badge ${item.connected ? "online" : "offline"}">${t(status)}</span></div>
         <p class="muted">${escapeHtml([item.model, item.host ? `${item.host}${item.port ? `:${item.port}` : ""}` : item.serial_port].filter(Boolean).join(" · "))}</p>
-        <div class="gateway-meta"><span>${devices} ${t("devices")}</span><span>${entities} ${t("entities")}</span>
-        ${item.firmware ? `<span>${t("firmware")} ${escapeHtml(item.firmware)}</span>` : ""}</div></article>`;
+        <div class="gateway-meta"><span><ha-icon icon="mdi:devices" aria-hidden="true"></ha-icon>${devices} ${t("devices")}</span><span><ha-icon icon="mdi:shape-outline" aria-hidden="true"></ha-icon>${entities} ${t("entities")}</span>
+        ${item.firmware ? `<span><ha-icon icon="mdi:chip" aria-hidden="true"></ha-icon>${t("firmware")} ${escapeHtml(item.firmware)}</span>` : ""}</div></article>`;
     }).join("");
     root.getElementById("count-entities").textContent = scope.entities.length;
     const categories = [...new Set(scope.entities.map((item) => item.domain))].sort();
