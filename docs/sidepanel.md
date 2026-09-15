@@ -15,6 +15,14 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Calibration cleanup fix (0.11.1)
+
+A calibration session now releases its shutdown listener only once. Home Assistant
+removes a one-shot listener before invoking it; the session no longer attempts to
+remove it again from inside the shutdown callback. Repeated socket/entity cleanup
+is also idempotent, avoiding duplicate events and preserving the original close
+reason. This fixes the `Unable to remove unknown job listener` log during shutdown.
+
 ## Profile synchronization (0.11.0)
 
 Open profile editors now follow saves, assignments and unused-profile deletions
@@ -53,7 +61,7 @@ requirements, limits and real-gateway validation steps.
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.11.0**, defined by
+The panel has an independent version, currently **0.11.1**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.

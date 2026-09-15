@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import voluptuous as vol
 from aiohttp.resolver import ThreadedResolver
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import CoreState
 from homeassistant.exceptions import Unauthorized
 from OWNd.message import OWNMessage
@@ -339,3 +340,28 @@ async def test_websocket_session_subscription_actions_and_disconnect(hass, plant
     await hass.async_block_till_done()
     assert get_store(hass, plant.entries[0].entry_id).calibration is None
     assert str(queued[-1][0]) == "*2*0*11##"
+
+
+@pytest.mark.parametrize("shutdown_first", [True, False])
+async def test_shutdown_and_repeated_cleanup_remove_listener_only_once(hass, calibration, caplog, shutdown_first):
+    cal = calibration
+    await act(cal, "open")
+    move_guard = cal.queue[0][1]
+    if not shutdown_first:
+        cal.session.close()
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STOP)
+    await hass.async_block_till_done()
+    assert "Unable to remove unknown job listener" not in caplog.text
+    assert cal.session.reason == ("shutdown" if shutdown_first else "cancelled")
+    state = cal.session.view()
+    cal.connection.subscriptions[77]()  # Socket cleanup after shutdown/cancel.
+    cal.session.close()  # Entity unload or another cleanup path.
+    assert cal.session.view() == state
+    assert "Unable to remove unknown job listener" not in caplog.text
+    assert cal.session.shutdown is None
+    assert cal.session.lease.cancelled()
+    assert cal.session.deadline.cancelled()
+    assert not move_guard()
+    assert len(cal.queue) == 2  # One queued Open, one Stop; no duplicate Stop.
+    assert cal.session.store.calibration is None
+    assert cal.cover._calibration is None

@@ -57,8 +57,14 @@ class CalibrationSession:
         self.listener = True
         self.lease = None
         self.deadline = None
-        self.shutdown = hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, lambda _: self.close("shutdown"))
+        self.shutdown = hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, self._on_shutdown)
         self.touch()
+
+    @callback
+    def _on_shutdown(self, _event):
+        # HA removes a one-shot listener before invoking its callback.
+        self.shutdown = None
+        self.close("shutdown")
 
     @property
     def active(self):
@@ -113,6 +119,8 @@ class CalibrationSession:
         self.emit()
 
     def close(self, reason="cancelled"):
+        if not self.listener:
+            return
         # Invalidate queued motion before releasing the socket/store ownership.
         self.interrupt(reason)
         if self.phase != "saved":
@@ -123,7 +131,9 @@ class CalibrationSession:
             self.lease.cancel()
         if self.deadline:
             self.deadline.cancel()
-        self.shutdown()
+        if self.shutdown is not None:
+            unsubscribe, self.shutdown = self.shutdown, None
+            unsubscribe()
         if self.store.calibration is self:
             self.store.calibration = None
         if self.cover._calibration is self:
