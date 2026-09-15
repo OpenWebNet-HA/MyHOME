@@ -162,7 +162,12 @@ async def test_diagnostics_carry_no_household_identity(hass: HomeAssistant):
         CONF_PASSWORD: "12345",
         "name": "MyHomeServer1",
     }
-    mock_entry.options = {"file_path": "C:/Users/rossi/myhome.yaml", "command_worker_count": 1}
+    mock_entry.options = {
+        "file_path": "C:/Users/rossi/myhome.yaml", "command_worker_count": 1,
+        # decoder slots: the media_player is named after a room, its slot -> source mapping is diagnostics
+        "decoder_1_entity": "media_player.rossi_living_room", "decoder_1_source": 2, "decoder_1_pre_gain": 10,
+        "decoder_2_entity": "", "decoder_2_source": 2, "decoder_2_pre_gain": 0,
+    }
     hass.data[DOMAIN] = {}
 
     diag = await async_get_config_entry_diagnostics(hass, mock_entry)
@@ -172,6 +177,10 @@ async def test_diagnostics_carry_no_household_identity(hass: HomeAssistant):
         assert data[key] == "**REDACTED**", key
     assert options["file_path"] == "**REDACTED**"
     assert data["port"] == 20000 and data["name"] == "MyHomeServer1" and options["command_worker_count"] == 1
+    assert options["decoder_1_entity"] == "media_player.decoder_1"  # the slot, not the room
+    assert options["decoder_1_source"] == 2 and options["decoder_1_pre_gain"] == 10
+    assert options["decoder_2_entity"] == ""  # an unused slot is still visibly unused
+    assert mock_entry.options["decoder_1_entity"] == "media_player.rossi_living_room"  # the entry is untouched
     assert diag["config_entry"]["entry_id"] == "**REDACTED**"
     assert diag["config_entry"]["title"] == "MyHOME Gateway"
     text = str(diag)
