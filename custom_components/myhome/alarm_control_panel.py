@@ -172,9 +172,9 @@ class MyHOMEAlarmControlPanel(MyHOMEEntity, AlarmControlPanelEntity):
             manufacturer=manufacturer,
             model=model,
             gateway=gateway,
+            entity_name=entity_name,
         )
 
-        self._attr_name = entity_name if entity_name else name
         self._gateway_handler = gateway
         self._attr_supported_features = (
             AlarmControlPanelEntityFeature.ARM_AWAY

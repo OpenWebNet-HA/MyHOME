@@ -62,12 +62,12 @@ async def test_setup_and_unload_entry(hass):
 
     # Each device gets 1 disable and 1 enable button
     assert len(entities) == 4
-    entity_ids = [e.entity_id for e in entities]
+    entity_ids = [e._display_name for e in entities]
     assert entity_ids == [
-        "button.light_12_lock",
-        "button.light_12_unlock",
-        "button.light_13_lock",
-        "button.light_13_unlock",
+        "Light 12 Lock",
+        "Light 12 Unlock",
+        "Light 13 Lock",
+        "Light 13 Unlock",
     ]
 
     # Test unload
@@ -111,8 +111,8 @@ async def test_disable_button_entity(hass):
         gateway=mock_gateway,
     )
 
-    assert btn1.name == "Lock"
-    assert btn1.entity_id == "button.device_lock"
+    assert btn1._display_name == "Device Lock"
+    assert btn1.translation_key == "lock"
     assert btn1.unique_id == "mac-1-device_1-disable"
     bind_entity(hass, btn1, "mac", mock_gateway)
     assert btn1.extra_state_attributes["A"] == "1"
@@ -184,8 +184,8 @@ async def test_enable_button_entity(hass):
         gateway=mock_gateway,
     )
 
-    assert btn1.name == "Unlock"
-    assert btn1.entity_id == "button.device_unlock"
+    assert btn1._display_name == "Device Unlock"
+    assert btn1.translation_key == "unlock"
     assert btn1.unique_id == "mac-1-device_1-enable"
     bind_entity(hass, btn1, "mac", mock_gateway)
 

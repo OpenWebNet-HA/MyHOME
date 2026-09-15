@@ -202,6 +202,7 @@ async def test_p4_central_unit_3550_initialization_and_commands(hass: HomeAssist
         model="Central Unit (3550)",
         gateway=gateway,
     )
+    cu99.entity_id = "climate.cu99"  # assigned by the registry in real Home Assistant
 
     assert cu99._central is True
     assert cu99._standalone is False
@@ -262,6 +263,7 @@ async def test_p4_central_unit_4695_four_zone(hass: HomeAssistant):
         model="Central Unit (4695)",
         gateway=gateway,
     )
+    cu4.entity_id = "climate.cu4"  # assigned by the registry in real Home Assistant
 
     assert cu4._central is True
     assert cu4._standalone is False
@@ -297,6 +299,7 @@ async def test_p4_master_seasonal_mode_propagation_to_subordinate_zones(hass: Ho
         model="Central Unit (3550)",
         gateway=gateway,
     )
+    cu.entity_id = "climate.cu"  # assigned by the registry in real Home Assistant
 
     # Subordinate Zone 1 (non-standalone, follows central)
     zone1 = MyHOMEClimate(
@@ -315,6 +318,7 @@ async def test_p4_master_seasonal_mode_propagation_to_subordinate_zones(hass: Ho
         model="Heating Zone",
         gateway=gateway,
     )
+    zone1.entity_id = "climate.zone1"  # assigned by the registry in real Home Assistant
 
     # Standalone Zone 2 (independent thermostat)
     zone2_standalone = MyHOMEClimate(
@@ -333,6 +337,7 @@ async def test_p4_master_seasonal_mode_propagation_to_subordinate_zones(hass: Ho
         model="Heating Zone",
         gateway=gateway,
     )
+    zone2_standalone.entity_id = "climate.zone2_standalone"  # assigned by the registry in real Home Assistant
 
     # Register to Home Assistant
     await cu.async_added_to_hass()
@@ -504,6 +509,7 @@ async def test_p6_multi_gateway_central_unit_isolation(hass: HomeAssistant):
         model="Central Unit (3550)",
         gateway=gw1,
     )
+    cu_gw1.entity_id = "climate.cu_gw1"  # assigned by the registry in real Home Assistant
 
     # Subordinate Zone on Gateway 2 (separate physical plant)
     zone_gw2 = MyHOMEClimate(
@@ -522,6 +528,7 @@ async def test_p6_multi_gateway_central_unit_isolation(hass: HomeAssistant):
         model="Heating Zone",
         gateway=gw2,
     )
+    zone_gw2.entity_id = "climate.zone_gw2"  # assigned by the registry in real Home Assistant
 
     await cu_gw1.async_added_to_hass()
     await zone_gw2.async_added_to_hass()
@@ -560,6 +567,7 @@ async def test_p4_climate_central_unit_bus_events_and_auto_mode(hass: HomeAssist
         model="Central Unit (3550)",
         gateway=gw,
     )
+    cu.entity_id = "climate.cu"  # assigned by the registry in real Home Assistant
     zone = MyHOMEClimate(
         hass=hass,
         device_id="zone",
@@ -576,6 +584,7 @@ async def test_p4_climate_central_unit_bus_events_and_auto_mode(hass: HomeAssist
         model="Heating Zone",
         gateway=gw,
     )
+    zone.entity_id = "climate.zone"  # assigned by the registry in real Home Assistant
     await cu.async_added_to_hass()
     await zone.async_added_to_hass()
 

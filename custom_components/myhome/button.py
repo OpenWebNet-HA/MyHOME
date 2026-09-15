@@ -18,6 +18,7 @@ from homeassistant.const import (
     EntityCategory,
 )
 from homeassistant.core import callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -73,13 +74,17 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     # Covers already in the entity registry (restored before the cover platform re-announces them)
     try:
         registry = er.async_get(hass)
+        device_registry = dr.async_get(hass)
         for reg_entry in er.async_entries_for_config_entry(registry, config_entry.entry_id):
             if reg_entry.domain != "cover" or not reg_entry.unique_id:
                 continue
             after_mac = reg_entry.unique_id.replace(f"{gateway.mac}-", "", 1).replace(f"{mac}-", "", 1)
             who, _, device_id = after_mac.partition("-")
             if who == "2" and device_id:
-                _buttons.extend(_calibration_button_for_cover(device_id, reg_entry.original_name or reg_entry.name))
+                # The cover *is* its device, so its name lives on the device entry.
+                device = device_registry.async_get(reg_entry.device_id) if reg_entry.device_id else None
+                cover_name = (device.name_by_user or device.name) if device else None
+                _buttons.extend(_calibration_button_for_cover(device_id, cover_name or reg_entry.name))
     except Exception as err:  # pragma: no cover - registry unavailable in some test harnesses
         LOGGER.debug("Could not enumerate covers for calibration buttons: %s", err)
 
@@ -194,15 +199,13 @@ class DisableCommandButtonEntity(ButtonEntity, MyHOMEEntity):
             manufacturer=manufacturer,
             model=model,
             gateway=gateway,
+            translation_key="lock",
         )
-        self._attr_name = "Lock"
-        self._attr_has_entity_name = True
         self._attr_icon = "mdi:lock-alert"
 
         self._attr_entity_category = EntityCategory.CONFIG
 
         self._attr_unique_id = f"{gateway.mac}-{self._who}-{self._device_id}-disable"
-        self.entity_id = f"{platform.lower()}.{name.lower().replace(' ', '_')}_lock"
         self._interface = interface
         self._full_where = (
             f"{self._where}#4#{self._interface}"
@@ -255,15 +258,13 @@ class EnableCommandButtonEntity(ButtonEntity, MyHOMEEntity):
             manufacturer=manufacturer,
             model=model,
             gateway=gateway,
+            translation_key="unlock",
         )
-        self._attr_name = "Unlock"
-        self._attr_has_entity_name = True
         self._attr_icon = "mdi:lock-open-variant-outline"
 
         self._attr_entity_category = EntityCategory.CONFIG
 
         self._attr_unique_id = f"{gateway.mac}-{self._who}-{self._device_id}-enable"
-        self.entity_id = f"{platform.lower()}.{name.lower().replace(' ', '_')}_unlock"
         self._interface = interface
         self._full_where = (
             f"{self._where}#4#{self._interface}"
@@ -306,13 +307,11 @@ class CalibrateCoverButtonEntity(ButtonEntity, MyHOMEEntity):
             manufacturer="BTicino",
             model="Shutter / Cover",
             gateway=gateway,
+            translation_key="calibrate_travel_time",
         )
-        self._attr_name = "Calibrate travel time"
-        self._attr_has_entity_name = True
         self._attr_icon = "mdi:ruler-square-compass"
         self._attr_entity_category = EntityCategory.CONFIG
         self._attr_unique_id = f"{gateway.mac}-2-{device_id}-calibrate"
-        self.entity_id = f"{platform.lower()}.{name.lower().replace(' ', '_').replace('#', '')}_calibrate_travel_time"
         self._interface = interface
         self._poll_on_add = False
 
@@ -333,7 +332,7 @@ class CalibrateAllCoversButtonEntity(ButtonEntity):
     """Run myhome.calibrate_cover for every timed cover of this gateway, one after another."""
 
     _attr_has_entity_name = True
-    _attr_name = "Calibrate all covers"
+    _attr_translation_key = "calibrate_all_covers"
     _attr_icon = "mdi:window-shutter-settings"
     _attr_entity_category = EntityCategory.CONFIG
     _attr_should_poll = False

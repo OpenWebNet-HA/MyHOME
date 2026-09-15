@@ -55,7 +55,7 @@ class TestSensorsCoverage:
             model="Meter",
             gateway=mock_gateway,
         )
-        assert sensor.name == "Test Pwr Power"
+        assert sensor._display_name == "Test Pwr Power"
         assert sensor.unique_id == "01:02:03:04:05:06-sensor_pwr-power"
         assert sensor.native_unit_of_measurement == UnitOfPower.WATT
         assert sensor.extra_state_attributes == {"Sensor": "(5)1"}
@@ -90,6 +90,7 @@ class TestSensorsCoverage:
 
         # handle_event: active power (a live entity writes its state)
         sensor.hass = mock_hass
+        sensor.entity_id = sensor.entity_id or "test.sensor"
         sensor.platform = MagicMock()
         sensor.async_schedule_update_ha_state = MagicMock()
         power_msg = MagicMock()
@@ -121,7 +122,7 @@ class TestSensorsCoverage:
             model="Meter",
             gateway=mock_gateway,
         )
-        assert sensor_total.name == "Test En Energy"
+        assert sensor_total._display_name == "Test En Energy"
         assert sensor_total.entity_registry_enabled_default is True
 
         # 2. Daily energy
@@ -137,7 +138,7 @@ class TestSensorsCoverage:
             model="Meter",
             gateway=mock_gateway,
         )
-        assert sensor_daily.name == "Test En Energy (today)"
+        assert sensor_daily.translation_key == "energy_today"  # "Energy (today)" once translations load
         assert sensor_daily.entity_registry_enabled_default is False
 
         # 3. Monthly energy
@@ -153,7 +154,7 @@ class TestSensorsCoverage:
             model="Meter",
             gateway=mock_gateway,
         )
-        assert sensor_monthly.name == "Test En Energy (current month)"
+        assert sensor_monthly.translation_key == "energy_month"  # "Energy (current month)" once translations load
         assert sensor_monthly.entity_registry_enabled_default is False
 
         # 4. Custom entity_specific_id
@@ -169,7 +170,7 @@ class TestSensorsCoverage:
             model="Meter",
             gateway=mock_gateway,
         )
-        assert sensor_custom.name == "Test En Custom energy"
+        assert sensor_custom._display_name == "Test En Custom energy"
         assert sensor_custom.entity_registry_enabled_default is True
 
         # async_added_to_hass and async_will_remove_from_hass
@@ -239,7 +240,7 @@ class TestSensorsCoverage:
             model="Meter",
             gateway=mock_gateway,
         )
-        assert sensor.name == "Test Temp Temperature"
+        assert sensor._display_name == "Test Temp Temperature"
         assert sensor.native_unit_of_measurement == UnitOfTemperature.CELSIUS
         assert sensor.extra_state_attributes == {"Sensor": "(5)1"}
 
@@ -301,7 +302,7 @@ class TestSensorsCoverage:
             model="Meter",
             gateway=mock_gateway,
         )
-        assert sensor.name == "Test Illum Illuminance"
+        assert sensor._display_name == "Test Illum Illuminance"
         assert sensor.extra_state_attributes == {"A": "1", "PL": "2"}
 
         # async_added_to_hass & async_will_remove_from_hass

@@ -150,7 +150,9 @@ class TestMyHOMECoverEntity:
                 model="Shutter",
                 gateway=mock_gateway,
             )
+            cover.entity_id = "cover.cover"  # assigned by the registry in real Home Assistant
             cover.hass = hass
+            cover.entity_id = cover.entity_id or "test.cover"
             cover.async_schedule_update_ha_state = MagicMock()
             return cover
 
@@ -170,7 +172,9 @@ class TestMyHOMECoverEntity:
                 model="Advanced Shutter",
                 gateway=mock_gateway,
             )
+            cover.entity_id = "cover.cover"  # assigned by the registry in real Home Assistant
             cover.hass = hass
+            cover.entity_id = cover.entity_id or "test.cover"
             cover.async_schedule_update_ha_state = MagicMock()
             return cover
 
@@ -420,6 +424,7 @@ class TestMyHOMECoverEntity:
             model="F401",
             gateway=mock_gateway,
         )
+        cover.entity_id = "cover.cover"  # assigned by the registry in real Home Assistant
         await cover.async_update()
         mock_gateway.send_status_request.assert_awaited_once()
         assert str(mock_gateway.send_status_request.call_args[0][0]) == "*#2*21*10##"
@@ -592,6 +597,7 @@ async def test_cover_general_commands_update_all_covers(hass: HomeAssistant, moc
             gateway=mock_gateway,
             travel_time=25,
         )
+        cover1.entity_id = "cover.cover1"  # assigned by the registry in real Home Assistant
         cover2 = MyHOMECover(
             hass=hass,
             name="Cover 22",
@@ -606,9 +612,12 @@ async def test_cover_general_commands_update_all_covers(hass: HomeAssistant, moc
             gateway=mock_gateway,
             travel_time=25,
         )
+        cover2.entity_id = "cover.cover2"  # assigned by the registry in real Home Assistant
 
     cover1.hass = hass
+    cover1.entity_id = cover1.entity_id or "test.cover1"
     cover2.hass = hass
+    cover2.entity_id = cover2.entity_id or "test.cover2"
     cover1.async_schedule_update_ha_state = MagicMock()
     cover2.async_schedule_update_ha_state = MagicMock()
 
@@ -749,7 +758,9 @@ async def test_cover_gateway_general_message_updates_all_active_entities(hass: H
     assert len(added_entities) == 2
     cover1, cover2 = added_entities[0], added_entities[1]
     cover1.hass = hass
+    cover1.entity_id = cover1.entity_id or "test.cover1"
     cover2.hass = hass
+    cover2.entity_id = cover2.entity_id or "test.cover2"
     cover1.async_schedule_update_ha_state = MagicMock()
     cover2.async_schedule_update_ha_state = MagicMock()
 

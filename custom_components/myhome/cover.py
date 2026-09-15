@@ -449,6 +449,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             manufacturer=manufacturer,
             model=model,
             gateway=gateway,
+            entity_name=entity_name,
         )
 
         self._interface = interface
@@ -779,7 +780,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         bus = getattr(getattr(self, "hass", None), "bus", None)
         if bus is None:
             return
-        payload = {"entity_id": self.entity_id, "where": self._full_where, "name": self._attr_name, "phase": phase, **data}
+        payload = {"entity_id": self.entity_id, "where": self._full_where, "name": self._display_name, "phase": phase, **data}
         try:
             bus.async_fire(EVENT_COVER_CALIBRATION, payload)
         except Exception as err:  # pragma: no cover - defensive
@@ -793,7 +794,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         written = await self._async_move(direction)
         anchor = await self._await_motion_anchor(written)
         if self._calibration_interrupted:
-            raise CalibrationInterrupted(self._attr_name, self._calibration_interrupted)
+            raise CalibrationInterrupted(self._display_name, self._calibration_interrupted)
         deadline = time.monotonic() + CALIBRATION_RUN_TIMEOUT
         while True:
             remaining = max(0.01, deadline - time.monotonic())
@@ -801,14 +802,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 await asyncio.wait_for(self._stopped_event.wait(), remaining)
             except TimeoutError as err:
                 raise HomeAssistantError(
-                    f"{self._attr_name}: no stop status from the actuator within {CALIBRATION_RUN_TIMEOUT:.0f} s "
+                    f"{self._display_name}: no stop status from the actuator within {CALIBRATION_RUN_TIMEOUT:.0f} s "
                     "- it may not report status; set travel_time manually",
                     translation_domain=DOMAIN,
                     translation_key="calibration_no_stop_status",
-                    translation_placeholders={"name": self._attr_name, "timeout": f"{CALIBRATION_RUN_TIMEOUT:.0f}"},
+                    translation_placeholders={"name": self._display_name, "timeout": f"{CALIBRATION_RUN_TIMEOUT:.0f}"},
                 ) from err
             if self._calibration_interrupted:
-                raise CalibrationInterrupted(self._attr_name, self._calibration_interrupted)
+                raise CalibrationInterrupted(self._display_name, self._calibration_interrupted)
             stop_at = self._last_stop_at if self._last_stop_at is not None else time.monotonic()
             elapsed = max(0.0, stop_at - anchor)
             # If a stop frame arrives less than 0.15s after anchor (e.g. trailing relay echo on MH200),
@@ -841,17 +842,17 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """
         if self._advanced:
             raise HomeAssistantError(
-                f"{self._attr_name} reports its position; calibration is not needed",
+                f"{self._display_name} reports its position; calibration is not needed",
                 translation_domain=DOMAIN,
                 translation_key="cover_reports_position",
-                translation_placeholders={"name": self._attr_name},
+                translation_placeholders={"name": self._display_name},
             )
         if self._calibrating:
             raise HomeAssistantError(
-                f"{self._attr_name} is already being calibrated",
+                f"{self._display_name} is already being calibrated",
                 translation_domain=DOMAIN,
                 translation_key="calibration_in_progress",
-                translation_placeholders={"name": self._attr_name},
+                translation_placeholders={"name": self._display_name},
             )
 
         gw_key = _gateway_key(self._gateway_handler)
@@ -868,7 +869,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 _CALIBRATION_QUEUED.setdefault(gw_key, set()).discard(self)
                 if self._calibration_interrupted:
                     self._fire_calibration_event("failed", error=self._calibration_interrupted)
-                    raise CalibrationInterrupted(self._attr_name, self._calibration_interrupted)
+                    raise CalibrationInterrupted(self._display_name, self._calibration_interrupted)
                 _CALIBRATION_ACTIVE[gw_key] = self
                 self._calibrating = True
                 self._cancel_stop_task()
@@ -890,13 +891,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         for label, value in (("down", down), ("up", up)):
             if not CALIBRATION_MIN_RUN <= value <= CALIBRATION_MAX_RUN:
-                msg = f"{self._attr_name}: implausible {label} run of {value:.1f} s; not stored"
+                msg = f"{self._display_name}: implausible {label} run of {value:.1f} s; not stored"
                 self._fire_calibration_event("failed", error=msg)
                 raise HomeAssistantError(
                     msg,
                     translation_domain=DOMAIN,
                     translation_key="calibration_implausible_run",
-                    translation_placeholders={"name": self._attr_name, "direction": label, "seconds": f"{value:.1f}"},
+                    translation_placeholders={"name": self._display_name, "direction": label, "seconds": f"{value:.1f}"},
                 )
 
         self._travel_time_down = round(down, 2)
@@ -938,10 +939,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Manually set physical travel times for this timed cover."""
         if self._advanced:
             raise HomeAssistantError(
-                f"{self._attr_name} reports its position; travel time cannot be set",
+                f"{self._display_name} reports its position; travel time cannot be set",
                 translation_domain=DOMAIN,
                 translation_key="cover_reports_position",
-                translation_placeholders={"name": self._attr_name},
+                translation_placeholders={"name": self._display_name},
             )
 
         down = travel_time_down if travel_time_down is not None else travel_time
@@ -996,10 +997,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Reset travel times back to default or YAML configuration."""
         if self._advanced:
             raise HomeAssistantError(
-                f"{self._attr_name} reports its position; calibration is not applicable",
+                f"{self._display_name} reports its position; calibration is not applicable",
                 translation_domain=DOMAIN,
                 translation_key="cover_reports_position",
-                translation_placeholders={"name": self._attr_name},
+                translation_placeholders={"name": self._display_name},
             )
 
         entry = getattr(self._gateway_handler, "config_entry", None)

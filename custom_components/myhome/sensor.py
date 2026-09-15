@@ -483,6 +483,8 @@ async def async_unload_entry(hass, config_entry):
 
 
 class MyHOMEPowerSensor(MyHOMEEntity, SensorEntity):
+    _name_from_device_class = True
+
     def __init__(
         self,
         hass,
@@ -507,8 +509,6 @@ class MyHOMEPowerSensor(MyHOMEEntity, SensorEntity):
             gateway=gateway,
         )
 
-        self._entity_specific_name = "Power"
-        self._attr_name = f"{name} {self._entity_specific_name}"
 
         self._attr_device_class = device_class
         self._attr_unique_id = (
@@ -560,6 +560,8 @@ class MyHOMEPowerSensor(MyHOMEEntity, SensorEntity):
 
 
 class MyHOMEEnergySensor(MyHOMEEntity, SensorEntity):
+    _name_from_device_class = True
+
     def __init__(
         self,
         hass,
@@ -588,18 +590,16 @@ class MyHOMEEnergySensor(MyHOMEEntity, SensorEntity):
         self._entity_specific_id = entity_specific_id
         normalized_id = entity_specific_id.replace("_", "-")
         if normalized_id == "daily-energy":
-            self._entity_specific_name = "Energy (today)"
+            self._attr_translation_key = "energy_today"
             self._attr_entity_registry_enabled_default = False
         elif normalized_id == "monthly-energy":
-            self._entity_specific_name = "Energy (current month)"
+            self._attr_translation_key = "energy_month"
             self._attr_entity_registry_enabled_default = False
         elif normalized_id == "total-energy":
-            self._entity_specific_name = "Energy"
-            self._attr_entity_registry_enabled_default = True
+            self._attr_entity_registry_enabled_default = True  # named "Energy" after its device class
         else:
-            self._entity_specific_name = entity_specific_id.replace("_", " ").capitalize()
+            self._attr_name = entity_specific_id.replace("_", " ").capitalize()
             self._attr_entity_registry_enabled_default = True
-        self._attr_name = f"{name} {self._entity_specific_name}"
 
         self._attr_unique_id = (
             f"{gateway.mac}-{self._device_id}-{self._entity_specific_id}"
@@ -686,6 +686,8 @@ class MyHOMEEnergySensor(MyHOMEEntity, SensorEntity):
 
 
 class MyHOMETemperatureSensor(MyHOMEEntity, SensorEntity):
+    _name_from_device_class = True
+
     def __init__(
         self,
         hass,
@@ -710,8 +712,6 @@ class MyHOMETemperatureSensor(MyHOMEEntity, SensorEntity):
             gateway=gateway,
         )
 
-        self._entity_specific_name = "Temperature"
-        self._attr_name = f"{name} {self._entity_specific_name}"
 
         self._attr_device_class = device_class
         self._attr_unique_id = (
@@ -820,6 +820,8 @@ class MyHOMETemperatureSensor(MyHOMEEntity, SensorEntity):
 
 
 class MyHOMEIlluminanceSensor(MyHOMEEntity, SensorEntity):
+    _name_from_device_class = True
+
     def __init__(
         self,
         hass,
@@ -844,8 +846,6 @@ class MyHOMEIlluminanceSensor(MyHOMEEntity, SensorEntity):
             gateway=gateway,
         )
 
-        self._entity_specific_name = "Illuminance"
-        self._attr_name = f"{name} {self._entity_specific_name}"
 
         self._attr_device_class = device_class
         self._attr_unique_id = (

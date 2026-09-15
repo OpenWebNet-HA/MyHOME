@@ -520,6 +520,8 @@ async def async_unload_entry(hass, config_entry):
 
 
 class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
+    _name_from_device_class = True
+
     def __init__(
         self,
         hass,
@@ -545,12 +547,12 @@ class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
             manufacturer=manufacturer,
             model=model,
             gateway=gateway,
+            entity_name=entity_name,
         )
 
         self._inverted = inverted
 
         self._attr_device_class = device_class
-        self._attr_name = entity_name if entity_name else self._attr_device_class.replace("_", " ").capitalize()
 
         self._attr_unique_id = f"{gateway.mac}-{self._device_id}-{self._attr_device_class}"
 
@@ -608,6 +610,8 @@ class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
 
 
 class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
+    _name_from_device_class = True
+
     def __init__(
         self,
         hass,
@@ -632,17 +636,14 @@ class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
             manufacturer=manufacturer,
             model=model,
             gateway=gateway,
+            entity_name=entity_name,
         )
 
         self._inverted = inverted
 
         self._attr_device_class = device_class
-        if entity_name:
-            self._attr_name = entity_name
-        elif self._attr_device_class:
-            self._attr_name = self._attr_device_class.replace("_", " ").capitalize()
-        else:
-            self._attr_name = name
+        if not device_class and not entity_name:
+            self._attr_name = None  # no class to name it after: the entity is the device
 
         if self._attr_device_class:
             self._attr_unique_id = f"{gateway.mac}-{self._device_id}-{self._attr_device_class}"
@@ -690,6 +691,8 @@ class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
 
 
 class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
+    _name_from_device_class = True
+
     def __init__(
         self,
         hass,
@@ -715,6 +718,7 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
             manufacturer=manufacturer,
             model=model,
             gateway=gateway,
+            entity_name=entity_name,
         )
 
         self._inverted = inverted
@@ -723,7 +727,6 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
         self._timeout = timedelta(seconds=315)
 
         self._attr_device_class = device_class
-        self._attr_name = entity_name if entity_name else self._attr_device_class.replace("_", " ").capitalize()
 
         self._attr_unique_id = f"{gateway.mac}-{self._device_id}-{self._attr_device_class}"
         self._attr_should_poll = True
