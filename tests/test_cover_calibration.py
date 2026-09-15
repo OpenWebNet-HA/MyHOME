@@ -27,13 +27,14 @@ plant = plant_fixture
 
 
 @pytest.fixture
-async def calibration(hass, plant):
+async def calibration(hass, plant, request):
+    mode = getattr(request, "param", "guided")
     queue = []
     for gateway in plant.gateways:
         gateway.async_queue_calibration = lambda message, guard, lock: queue.append((message, guard, lock))
     connection = MagicMock(subscriptions={}, user=SimpleNamespace(is_admin=True))
     request = {"id": 77, "entry_id": plant.entries[0].entry_id,
-               "entity_id": plant.records[0].entity_id, "revision": 0}
+               "entity_id": plant.records[0].entity_id, "revision": 0, "mode": mode}
     clock = [100.0]
     with patch("custom_components.myhome.cover_calibration.monotonic", side_effect=lambda: clock[0]):
         session = await begin(hass, connection, request)
@@ -119,6 +120,7 @@ async def test_stale_steps_and_invalid_phase_never_move_or_save(calibration, act
     assert cal.session.store.data["revision"] == 0
 
 
+@pytest.mark.parametrize("calibration", ["guided", "automatic"], indirect=True)
 async def test_profile_writes_and_second_tab_blocked_while_session_active(hass, calibration):
     cal = calibration
     with pytest.raises(ProfileError, match="calibration_busy"):
@@ -132,9 +134,10 @@ async def test_profile_writes_and_second_tab_blocked_while_session_active(hass, 
     assert cal.queue == []
 
 
+@pytest.mark.parametrize("calibration", ["guided", "automatic"], indirect=True)
 async def test_queued_movement_invalid_after_disconnect_and_stop_has_expiry(calibration):
     cal = calibration
-    await act(cal, "open")
+    await act(cal, "run" if cal.session.mode == "automatic" else "open")
     pending = cal.queue[-1]
     cal.connection.subscriptions[77]()  # HA unsubscribes on socket close.
     assert not pending[1]()
@@ -336,24 +339,25 @@ async def test_calibration_api_requires_admin(hass, handler):
         handler(hass, MagicMock(user=SimpleNamespace(is_admin=False)), {"id": 1})
 
 
-async def test_websocket_session_subscription_actions_and_disconnect(hass, plant, hass_ws_client):
+@pytest.mark.parametrize("mode", ["guided", "automatic"])
+async def test_websocket_session_subscription_actions_and_disconnect(hass, plant, hass_ws_client, mode):
     register_api(hass)
     queued = []
     plant.gateways[0].async_queue_calibration = lambda *args: queued.append(args)
     with patch("aiohttp.connector.DefaultResolver", ThreadedResolver):
         client = await hass_ws_client(hass)
         try:
-            request = {"entry_id": plant.entries[0].entry_id, "entity_id": plant.records[0].entity_id, "revision": 0}
+            request = {"entry_id": plant.entries[0].entry_id, "entity_id": plant.records[0].entity_id, "revision": 0, "mode": mode}
             await client.send_json({"id": 1, "type": WS_START, **request})
             assert (await client.receive_json())["success"]
             event = (await client.receive_json())["event"]
-            assert event["phase"] == "confirm_closed"
+            assert event["phase"] == ("confirm_automatic" if mode == "automatic" else "confirm_closed")
             await client.send_json({"id": 2, "type": WS_ACTION, "entry_id": request["entry_id"],
                                     "session_id": event["session_id"], "action": "close", "sequence": event["sequence"]})
             assert (await client.receive_json())["error"]["code"] == "calibration_step"
             await client.send_json({"id": 3, "type": WS_ACTION, "entry_id": request["entry_id"],
                                     "session_id": event["session_id"], "action": "heartbeat"})
-            assert (await client.receive_json())["result"]["phase"] == "confirm_closed"
+            assert (await client.receive_json())["result"]["phase"] == ("confirm_automatic" if mode == "automatic" else "confirm_closed")
             await client.send_json({"id": 4, "type": WS_START, **request})
             assert (await client.receive_json())["error"]["code"] == "calibration_busy"
         finally:
@@ -364,9 +368,10 @@ async def test_websocket_session_subscription_actions_and_disconnect(hass, plant
 
 
 @pytest.mark.parametrize("shutdown_first", [True, False])
+@pytest.mark.parametrize("calibration", ["guided", "automatic"], indirect=True)
 async def test_shutdown_and_repeated_cleanup_remove_listener_only_once(hass, calibration, caplog, shutdown_first):
     cal = calibration
-    await act(cal, "open")
+    await act(cal, "run" if cal.session.mode == "automatic" else "open")
     move_guard = cal.queue[0][1]
     if not shutdown_first:
         cal.session.close()
@@ -386,3 +391,175 @@ async def test_shutdown_and_repeated_cleanup_remove_listener_only_once(hass, cal
     assert len(cal.queue) == 2  # One queued Open, one Stop; no duplicate Stop.
     assert cal.session.store.calibration is None
     assert cal.cover._calibration is None
+
+
+def automatic_run(cal, direction, duration):
+    assert cal.queue[-1][1]()
+    cal.clock[0] += 2  # Queue wait is excluded from the measurement.
+    bus(cal, "*2*1*11##" if direction == "open" else "*2*2*11##")
+    cal.clock[0] += duration
+    bus(cal, "*2*0*11##")
+
+
+def automatic_next(cal):
+    cal.clock[0] += 1
+    handle = cal.session.settle
+    callback = handle._callback
+    handle.cancel()
+    callback()
+
+
+@pytest.mark.parametrize("calibration", ["automatic"], indirect=True)
+async def test_automatic_three_runs_review_save_provenance_and_export(hass, calibration):
+    from custom_components.myhome.cover_profile_export import export_profiles
+
+    cal = calibration
+    assert cal.session.phase == "confirm_automatic" and cal.queue == []
+    assert cal.session.view()["mode"] == "automatic"
+    await act(cal, "run")
+    automatic_run(cal, "open", 0.5)  # Initial positioning may be a partial run.
+    assert cal.session.values == {} and cal.session.phase == "settling"
+    automatic_next(cal)
+    automatic_run(cal, "close", 22.5)
+    assert cal.session.values == {"closing_time": 22.5}
+    automatic_next(cal)
+    automatic_run(cal, "open", 20.5)
+    assert cal.session.phase == "review"
+    assert cal.session.values == {"closing_time": 22.5, "opening_time": 20.5}
+    assert cal.cover._travel_time == cal.cover._closing_time == 30
+    assert (await export_profiles(hass, cal.session.entry_id))["profiles"] == []
+    assert len(cal.queue) == 3  # Exactly open/close/open, no automatic persistence or Stop.
+    with patch.object(cal.session.store.store, "async_save", side_effect=OSError("disk")):
+        with pytest.raises(OSError):
+            await act(cal, "save", name="Automatic")
+    assert cal.session.phase == "review" and cal.session.store.data["revision"] == 0
+    await act(cal, "save", name="Automatic")
+    assert cal.session.phase == "saved" and len(cal.queue) == 3
+    assert (cal.cover._travel_time, cal.cover._closing_time) == (20.5, 22.5)
+    result = await export_profiles(hass, cal.session.entry_id)
+    assert result["format_version"] == 2
+    assert all(meta["source"] == "automatic" and meta["recorded_at"]
+               for meta in result["profiles"][0]["provenance"].values())
+
+
+@pytest.mark.parametrize("calibration", ["automatic"], indirect=True)
+@pytest.mark.parametrize("duration,reason", [(59, "automatic_cutoff"), (61.5, "automatic_cutoff"),
+                                             (65, "automatic_cutoff"), (181, "automatic_invalid")])
+async def test_automatic_rejects_cutoff_and_excessive_runs_before_another_move(calibration, duration, reason):
+    cal = calibration
+    await act(cal, "run")
+    automatic_run(cal, "open", duration)
+    assert cal.session.phase == "interrupted" and cal.session.reason == reason
+    assert cal.session.values == cal.session.provenance == {}
+    assert len(cal.queue) == 2 and cal.session.stop_requested  # Open + defensive Stop.
+    assert cal.session.store.data["revision"] == 0
+
+
+@pytest.mark.parametrize("calibration", ["automatic"], indirect=True)
+@pytest.mark.parametrize("duration", [58, 66])
+async def test_automatic_accepts_runs_outside_factory_cutoff_without_claiming_physical_endpoints(calibration, duration):
+    cal = calibration
+    await act(cal, "run")
+    automatic_run(cal, "open", duration)
+    automatic_next(cal)
+    automatic_run(cal, "close", duration)
+    automatic_next(cal)
+    automatic_run(cal, "open", duration)
+    assert cal.session.phase == "review"
+    assert cal.session.store.data["profiles"] == {}
+
+
+@pytest.mark.parametrize("calibration", ["automatic"], indirect=True)
+async def test_automatic_short_measured_run_discards_previous_evidence(calibration):
+    cal = calibration
+    await act(cal, "run")
+    automatic_run(cal, "open", 5)
+    automatic_next(cal)
+    automatic_run(cal, "close", 20)
+    automatic_next(cal)
+    automatic_run(cal, "open", 0.5)
+    assert cal.session.reason == "automatic_invalid"
+    assert cal.session.values == cal.session.provenance == {}
+
+
+@pytest.mark.parametrize("calibration", ["automatic"], indirect=True)
+async def test_automatic_feedback_required_echo_ignored_and_stop_timeout(calibration):
+    cal = calibration
+    await act(cal, "run")
+    assert cal.queue[-1][1]()
+    bus(cal, "*2*0*11##")  # Pre-movement echo cannot anchor or complete a run.
+    assert cal.session.phase == "starting_open"
+    bus(cal, "*2*1*11##")
+    cal.clock[0] += 0.1
+    bus(cal, "*2*0*11##")
+    assert cal.session.phase == "opening" and cal.session.started_at == 100
+    assert cal.session.travel_seconds == 180
+    cal.session.deadline._run()
+    assert cal.session.reason == "automatic_timeout" and cal.session.stop_requested
+
+
+@pytest.mark.parametrize("calibration", ["automatic"], indirect=True)
+@pytest.mark.parametrize("action", ["stop", "cancel"])
+async def test_automatic_cancel_during_settle_or_queue_never_restarts(calibration, action):
+    cal = calibration
+    await act(cal, "run")
+    guard = cal.queue[-1][1]
+    automatic_run(cal, "open", 5)
+    handle = cal.session.settle
+    callback = handle._callback
+    await act(cal, action)
+    assert handle.cancelled()
+    before = len(cal.queue)
+    callback()  # A late callback is harmless even after ownership was released.
+    assert len(cal.queue) == before
+    assert not guard()
+    assert cal.session.values == {}
+
+
+@pytest.mark.parametrize("calibration", ["automatic"], indirect=True)
+@pytest.mark.parametrize("change", ["offline", "removed", "shutdown", "queue_full", "opposite", "position"])
+async def test_automatic_next_run_revalidates_and_unexpected_feedback_interrupts(hass, calibration, change):
+    cal = calibration
+    await act(cal, "run")
+    if change == "opposite":
+        assert cal.queue[-1][1]()
+        bus(cal, "*2*2*11##")
+    elif change == "position":
+        cal.session.on_event(SimpleNamespace(current_position=50))
+    else:
+        automatic_run(cal, "open", 5)
+        if change == "offline":
+            cal.plant.gateways[0].available = False
+            automatic_next(cal)
+        elif change == "removed":
+            with patch("custom_components.myhome.cover_calibration_automatic.target", side_effect=ProfileError("target_not_found")):
+                automatic_next(cal)
+        elif change == "shutdown":
+            with patch.object(hass, "state", CoreState.stopping):
+                automatic_next(cal)
+        else:
+            with patch.object(cal.cover._gateway_handler, "async_queue_calibration", side_effect=asyncio.QueueFull):
+                automatic_next(cal)
+    assert cal.session.phase == "interrupted"
+    assert cal.session.store.data["profiles"] == {}
+
+
+@pytest.mark.parametrize("calibration", ["automatic"], indirect=True)
+async def test_automatic_rejects_manual_actions_and_requires_sequence(calibration):
+    cal = calibration
+    for action in ("open", "close", "endpoint", "save"):
+        with pytest.raises(ProfileError, match="calibration_step"):
+            await act(cal, action)
+    with pytest.raises(ProfileError, match="calibration_step"):
+        await cal.session.action({"action": "run", "sequence": -1})
+    await act(cal, "run")
+    with pytest.raises(ProfileError, match="calibration_step"):
+        await act(cal, "run")
+    cal.session.deadline._run()
+    assert cal.session.reason == "start_timeout"
+    assert not cal.queue[0][1]()
+
+
+async def test_guided_session_rejects_automatic_start(calibration):
+    with pytest.raises(ProfileError, match="calibration_step"):
+        await act(calibration, "run")

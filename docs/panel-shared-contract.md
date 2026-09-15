@@ -1,16 +1,17 @@
 # Shared MyHOME panel contract — proposal for review
 
-**Updated: 2026-09-15, panel 0.17.0. Shared contract: draft, not jointly approved
+**Updated: 2026-09-15, panel 0.18.0. Shared contract: draft, not jointly approved
 or implemented under the proposed common names.** Our panel already implements
 profiles, guided measurement, profile revision subscriptions, per-direction
-provenance and calibration export; these are
+provenance, calibration export and optional single-cover automatic measurement; these are
 documented in the [implemented API](panel-websocket-api.md) and
 [guided-calibration reference](cover-calibration.md).
 
 This document continues the existing source comparison; it does not restart the
 panel implementation or propose copying another fork wholesale. The original
 comparison used our panel 0.9.0 at `02ce199` and Interstellar0verdrive's fork at
-`229b1eb`. Our side is updated below to `65f17c1` (0.17.0), and the backend from
+`229b1eb`. Our side now includes panel 0.18.0; `65f17c1` remains the preceding 0.17.0 baseline.
+The backend from
 upstream #349 is compared separately. The calibration-fork column still describes
 its pinned baseline, not a fresh audit of its moving `master`.
 
@@ -31,7 +32,7 @@ independent of opening the panel.
 
 | Implementation | Exact baseline | Relevant evidence |
 | --- | --- | --- |
-| Our `feat/myhome-sidepanel`, panel 0.17.0 | [`65f17c1`](https://github.com/xtimmy86x/MyHOME/tree/65f17c122b328d7b6ee56eac4b15b03524e862a8) | [Implemented API](panel-websocket-api.md), `panel.py`, `cover_profiles.py`, `cover_profile_provenance.py`, `cover_profile_export.py`, `cover_calibration.py`, `frontend/panel/` |
+| Our `feat/myhome-sidepanel`, panel 0.18.0 | [Current implementation](../custom_components/myhome/cover_calibration_automatic.py) | [Implemented API](panel-websocket-api.md), `panel.py`, `cover_profiles.py`, `cover_profile_provenance.py`, `cover_profile_export.py`, `cover_calibration.py`, `cover_calibration_automatic.py`, `frontend/panel/` |
 | Interstellar0verdrive's `MyHOME-stability`, `master` | [`229b1eb`](https://github.com/Interstellar0verdrive/MyHOME-stability/tree/229b1eb30558012674e1e7f5c2059a58300f09df) | [API reference](https://github.com/Interstellar0verdrive/MyHOME-stability/blob/229b1eb30558012674e1e7f5c2059a58300f09df/docs/panel-websocket-api.md), `websocket_api.py`, `panel_data.py`, `panel_write.py`, `panel_schemas.py`, `panel_src/` |
 | Upstream #349, backend only | [`e807e99`](https://github.com/OpenWebNet-HA/MyHOME/tree/e807e9986ca9e09e8f3c516bd9c5d8b55e076485) | [PR #349](https://github.com/OpenWebNet-HA/MyHOME/pull/349), `cover.py`, services, [runtime/service documentation](https://github.com/OpenWebNet-HA/MyHOME/blob/e807e9986ca9e09e8f3c516bd9c5d8b55e076485/docs/configuration/services.md) |
 
@@ -57,8 +58,9 @@ runtime. It is not simply a JSON-schema or documentation parity test.
 | 0.15.0 | Live primary-entity state in collapsed device headers; multiple primary states labeled by entity, secondary buttons remain compact |
 | 0.16.0 | Backend-owned opening/closing provenance and UTC dates; manual/guided/unknown sources; copies and assignments preserve unchanged evidence; version-1/2 storage migrates to version 3 |
 | 0.17.0 | Admin-only gateway-wide `myhome/cover_profiles/export`; versioned JSON of committed profiles, provenance and assignments, including unused profiles and removed covers; panel download preserves drafts |
+| 0.18.0 | Optional single-cover automatic open/close/open cycle in the existing socket session; bus feedback, one-second pauses, 59–65 s cutoff rejection, 180 s timeout; explicit review/Save; automatic provenance; storage v4 and export v2 |
 
-The current profile model uses version-3 storage with opaque profile IDs,
+The current profile model uses version-4 storage with opaque profile IDs,
 native unique-ID assignments and two linear directional times. Writes are
 revision-checked and persisted before in-memory publication; HA storage write and
 serialization failures are surfaced through the existing error path. Saved profile
@@ -73,15 +75,15 @@ operation may still finish after the UI closes.
 
 ## Concrete differences
 
-| Area | Our panel 0.17.0 | Calibration fork at `229b1eb` | Proposed shared direction |
+| Area | Our panel 0.18.0 | Calibration fork at `229b1eb` | Proposed shared direction |
 | --- | --- | --- | --- |
-| Scope | Whole-installation inventory, primary header states, compact secondary entities, native monitor, profiles, guided measurement and export | Gateway overview with profile groups and detailed calibration | Keep the common shell; mount calibration as a section |
+| Scope | Whole-installation inventory, primary header states, compact secondary entities, native monitor, profiles, guided/automatic measurement and export | Gateway overview with profile groups and detailed calibration | Keep the common shell; mount calibration as a section |
 | Gateway | Profile reads/writes require exact `entry_id`; inventory lists all | `overview` and `subscribe` allow omission and choose first loaded entry | Shell lists gateways; all module reads/writes/subscriptions use explicit entry |
 | Cover identity | Request uses native `entity_id`; assignments store native unique ID | Requests use `cover_unique_id`; row may lack an entity ID | Module identity is `(entry_id, cover_unique_id)`; native entity ID is nullable navigation metadata |
 | Profile identity | Opaque UUID ID; freely editable display name | Name is the key and appears in assignments/YAML | Opaque stable ID in shared payload; backend adapter handles legacy name mapping |
 | Runtime model | Two linear full-travel times | Height scaling, slats, directional roll, per-cover overrides/provenance | Advertise supported model/operations; never interpret nonlinear values as linear |
-| Defaults and sources | Assignment overrides YAML/default time; saved direction values have manual/guided/unknown provenance and inherited origin; YAML versus default remains indistinguishable | Resolver combines file, profile, height and own measurements | Backend exposes effective configuration and provenance; browser never resolves precedence |
-| Calibration export | Gateway-wide saved JSON, format version 1; origin references and assignments; no import | Not reassessed for export in this pinned comparison | Agree a portable format and identity/conflict rules before implementing import; do not confuse export with store migration |
+| Defaults and sources | Assignment overrides YAML/default time; saved direction values have manual/guided/automatic/unknown provenance and inherited origin; YAML versus default remains indistinguishable | Resolver combines file, profile, height and own measurements | Backend exposes effective configuration and provenance; browser never resolves precedence |
+| Calibration export | Gateway-wide saved JSON, format version 2; origin references and assignments; no import | Not reassessed for export in this pinned comparison | Agree a portable format and identity/conflict rules before implementing import; do not confuse export with store migration |
 | Texts | Bundled shell and shared-monitor EN/IT catalogs; regional/per-key fallback; no texts endpoint | `myhome/calibration/texts` reads translation files | User-language texts service, module namespace, per-key fallback |
 | Changes | Profile revision invalidations, draft-safe refresh and visible fallback reads; native HA updates for runtime state | Initial/after-write overview pushes, separate measuring event | Shared subscription semantics, initial synchronization and explicit lifecycle |
 | Concurrency | Gateway write lock, expected persisted revision and one socket-owned calibration session per gateway | Refuses overlapping writes / active calibration; no expected revision in documented write payloads | Retain revision conflict protection and calibration busy state |
@@ -104,21 +106,22 @@ panel branch. Its new card UI is separated into
 [draft #355](https://github.com/OpenWebNet-HA/MyHOME/pull/355), intended for panel
 integration rather than the next beta.
 
-| Concern | Our panel at `65f17c1` | #349 at `e807e99` | Remaining shared-contract decision |
+| Concern | Our panel 0.18.0 | #349 at `e807e99` | Remaining shared-contract decision |
 | --- | --- | --- | --- |
 | Entry point | Experimental `myhome/cover_calibration/start` and `action` WebSockets, owned by one socket | `myhome.calibrate_cover`, native buttons, set/reset/stop operations | One backend session/controller with explicit ownership and cancellation semantics for both socket and service clients |
-| Completion | User confirms each physical endpoint; a premature bus stop interrupts the session | Automatic sequence: open to establish position, close and measure, open and measure; actuator stop ends each run | Define supported automatic/manual completion modes and their interruption rules |
-| Measurement boundary | Clock starts on matching bus movement feedback; duration is captured when HA handles the endpoint confirmation, **before** queuing Stop | Motion anchor to actuator stop status; ordinary manually stopped runs expose duration to the Stop write through `last_run_seconds` | Agree one definition of the reported duration; retain manual endpoint evidence separately from physical Stop acknowledgement |
-| Persistence | `myhome.cover_profiles.<entry_id>` HA storage v3, opaque profiles, native unique-ID assignments, per-direction evidence and revision checks | Config-entry options `cover_travel_times`, keyed by the cover's device ID; directional times and source metadata | Define identity mapping, conflict policy and one authoritative persistence path |
+| Completion | Guided endpoints remain operator-confirmed; optional automatic open/close/open completes each run on actuator stop, then requires review/Save | Automatic sequence: open to establish position, close and measure, open and measure; actuator stop ends each run | Define supported automatic/manual completion modes and their interruption rules |
+| Measurement boundary | Matching bus feedback is required; guided duration ends at operator confirmation, automatic duration at standard actuator stop (`state == 0`); no write-clock fallback | Motion anchor to actuator stop status; ordinary manually stopped runs expose duration to the Stop write through `last_run_seconds` | Agree one definition of the reported duration; retain manual endpoint evidence separately from physical Stop acknowledgement |
+| Persistence | `myhome.cover_profiles.<entry_id>` HA storage v4, opaque profiles, native unique-ID assignments, per-direction evidence and revision checks | Config-entry options `cover_travel_times`, keyed by the cover's device ID; directional times and source metadata | Define identity mapping, conflict policy and one authoritative persistence path |
 | Saving | Review then explicitly save a new assigned profile | Automatic calibration stores its result; manual set service also persists values | Decide when automatic modes may save and how all writers update the same revision/notifications |
 | Device support | Standard timed covers; advanced hardware-position covers read-only | Automatic calibration rejects advanced covers | Use capability checks; actuator stop feedback does not itself imply an advanced cover |
-| Guard | Manual endpoint flow, start/lease/travel deadlines; no automatic 59–65 s cutoff test | Rejects an automatic run in the 59–65 s window | Keep the automatic-mode guard and document its limits without implying automatic physical endstop detection |
+| Guard | Automatic 59–65 s rejection on every run, 180 s stop timeout, 10 s feedback deadline; shared lease and cancellation | Rejects an automatic run in the 59–65 s window | Keep the automatic-mode guard and document its limits without implying automatic physical endstop detection |
 
 **Timing is not yet identical.** Our endpoint-confirmation duration includes
 operator reaction and the request's trip to HA, but excludes the later wait for
 the Stop write. #349's ordinary-run duration ends at that write or the actuator's
-stop status. Both use backend timing, but that alone does not make their values
-interchangeable. Queue delay, bus feedback latency, endpoint evidence and Stop
+stop status. Our automatic mode shares the bus-start/actuator-stop boundary when that feedback
+is available, but does not use #349’s write-time fallback. This does not make all
+values from the two implementations interchangeable. Queue delay, bus feedback latency, endpoint evidence and Stop
 confirmation need explicit acceptance cases.
 
 The #349 guard detects the approximately 60-second factory cutoff only. A
@@ -146,7 +149,7 @@ Before connecting both clients, define and verify:
   or collapse unrelated covers with identical bus addresses.
 - Choose the authoritative store and an idempotent, versioned migration that
   preserves the original data until successful completion. Define recovery and
-  downgrade behavior; profile storage v1/v2-to-v3 migration already exists, but
+  downgrade behavior; profile storage v1/v2/v3-to-v4 migration already exists, but
   no #349-to-profile migration exists at the pinned panel revision.
 - Route panel, service and button writes through the same validation, revision,
   persistence and notification path. Retain pending-versus-effective behavior
@@ -167,13 +170,14 @@ for a new copy in the same gateway; clients cannot supply provenance metadata.
 The read API resolves current origin entity IDs/names and a target-dependent
 `inherited` flag. Assigning a kitchen profile to a bedroom does not claim that
 the bedroom was measured. Existing profiles migrate with `unknown` source and
-null origin/date. Storage version 3 requires the updated integration; downgrading
+null origin/date. Storage version 4 adds the automatic source and preserves existing version-3
+evidence; it requires the updated integration; downgrading
 requires a compatible backup. Evidence describes saved values separately from
 pending/effective runtime values and unsaved editor drafts.
 
 Panel 0.17.0 exports all saved profiles and assignments for one explicit gateway,
 using the existing lock to capture a single committed revision. The document has
-`format: myhome.cover_calibration` and `format_version: 1`, independent of panel
+`format: myhome.cover_calibration` and, since panel 0.18.0, `format_version: 2`, independent of panel
 and storage versions. It retains separate directional evidence, unused profiles
 and references to removed covers. Local cover references preserve relationships;
 current HA registry IDs, entity IDs and names identify surviving covers. Export
@@ -183,12 +187,25 @@ does not increment revision or send bus commands, and is available for offline
 or read-only targets. Closing/changing the UI before a response discards the
 pending download. See the [exact export contract](panel-websocket-api.md#calibration-export-0170).
 
-These are implemented local APIs, not agreed common endpoints. Import/restore,
-#349 persistence migration, automatic calibration, selected-cover batches and a
-single-direction quick measurement remain unimplemented in this panel. A JSON
+Panel 0.18.0 adapts #349’s three-run sequence into `AutomaticCalibrationSession`,
+a mode of the existing panel session. Starting reserves ownership but sends no
+movement until explicit `run`. Both modes share socket/gateway ownership, lease,
+queue guard, profile revision, Stop/Cancel and atomic Save. Automatic intermediate
+states include one-second `settling` pauses; every next run revalidates the target
+and HA state. A matching bus start is mandatory, standard stop feedback ends the
+run, and suspected 59–65-second cutoff or missing stop within 180 seconds discards
+all provisional evidence. The initial open is positioning only; close and final
+open enter review. Nothing is saved automatically. Automatic provenance dates
+come from the stop feedback and do not establish physical endpoints.
+
+This is a local adaptation of the cycle, not a completed adapter for #349’s native
+services/buttons or its options store. Import/restore, #349 persistence migration,
+selected-cover batches and a single-direction quick measurement remain
+unimplemented. The local APIs are not jointly agreed common endpoints. A JSON
 export is a record of calibration data, not an HA backup or a migration adapter.
-The next calibration extension still needs one shared session/controller and
-persistence path; it must retain the existing safety and revision behavior.
+Guided and automatic panel modes now share one session lifecycle and persistence
+path. Convergence with the upstream services/options store remains separate work
+and must retain these safety and revision guarantees.
 
 ## Shell/module boundary
 
@@ -368,7 +385,7 @@ credentials, unfiltered store objects or raw configuration in error placeholders
 | 1. Compare | Existing comparison, current panel and pinned #349 delta | Explicit gateway scope, stable cover/profile identity, supported models |
 | 2. Agree refresh/texts | Small request/result/event schemas and error map | Namespaces, invalidation vs snapshot push, language blocks, revision rules |
 | 3. Implement adapters | Existing profiles, guided session and subscriptions through the agreed interface | One session/controller, duration semantics, persistence ownership and explicit #349 migration |
-| 4. Extend calibration | Agreed automatic/manual modes and optional resolver extensions; adapt existing provenance/export | Capability-gated height/slat/roll scope; runtime parity and mutation atomicity |
+| 4. Extend calibration | Adapt implemented guided/automatic panel modes and provenance/export to agreed service/backend boundaries | Capability-gated height/slat/roll scope; runtime parity and mutation atomicity |
 | 5. Retire standalone card (separate future PR) | Existing native monitor validated for full parity; compatibility retained until then | Explicit removal decision, keyboard/mobile checks and migration notice |
 
 The first two steps can proceed while Interstellar0verdrive is unavailable. This
@@ -406,12 +423,15 @@ The required cases are:
   unused profiles, excludes drafts/session values, and neither mutates storage
   nor sends bus commands. Unauthorized requests fail before storage access;
   frontend retries and late responses preserve the current editor/navigation.
+- Automatic mode performs exactly open/close/open without a save until review,
+  rejects cutoff runs immediately, discards all provisional values on failure,
+  and never starts a later run after Stop, cancellation, lease expiry or unload.
 - A guided measurement makes the appropriate configuration scope busy; ordinary
   motion instead defers application. Stop/cancel outcomes remain explicit.
 
 Several cases already have regressions in our panel (profile migration/failure,
 revision races, subscription lifecycle, guided-session cleanup, gateway scoping,
-per-direction provenance and saved calibration export).
+per-direction provenance, saved calibration export and the automatic cycle).
 The future gate is to run them through the **agreed common adapters**, plus add the
 new migration, automatic/manual timing and optional nonlinear cases. Existing tests
 do not yet establish interoperability with #349 or the calibration fork.
@@ -425,18 +445,20 @@ original fork audit. Keep unrelated inventory and monitor improvements moving
 while the common calibration boundary is discussed. No reviewer deadline is
 assumed.
 
-The panel 0.17.0 implementation at `65f17c1` passed **1,450 Python tests
-(1 skipped), 68 frontend tests and 100% Python line coverage** locally. All CI
-workflows on that implementation commit passed, including HA stable/beta/dev
-compatibility. These are recorded implementation checks, not tests rerun for this
-documentation-only update and not proof of shared-contract interoperability.
-The user confirmed the 0.16.0 provenance behavior in their installation; that does
-not establish broad browser or physical-gateway coverage for every feature.
+Panel 0.18.0 targeted validation includes **113 profile/calibration backend tests
+and 71 frontend tests passed**. It covers automatic run ordering, cutoff boundaries,
+missing start/stop feedback, cancellation during pauses/queued dispatch, shared
+ownership, persistence failure, source migration, UI confirmation and explicit Save.
+The full local suite passed **1,475 Python tests (1 skipped), with 100% line
+coverage**. CI results are recorded with the implementation in the panel PR.
+These checks are not proof of interoperability with upstream services or of
+physical actuator feedback accuracy. The user confirmed the preceding 0.16.0
+provenance behavior in their installation; automatic physical testing is pending.
 Real-browser visual validation and the guided-calibration reference's remaining
 physical-gateway/feedback cases retain their separate scope.
 
-This update checks the pinned local implementation and documentation links. It
-changes no runtime, frontend asset, panel version, storage format or callable API.
+This document accompanies the panel 0.18.0 automatic-mode implementation, storage
+v4 migration and export v2 extension described above.
 The calibration-fork assessment remains pinned to `229b1eb` and the #349 backend
 comparison to `e807e99`; neither external implementation was freshly audited for
 this documentation update. Newer changes require a focused delta review.

@@ -41,6 +41,10 @@ TERMINAL = {"interrupted", "cancelled", "saved"}
 class CalibrationSession:
     """One live controller; transient measurements never survive restart."""
 
+    mode = "guided"
+    travel_seconds = MAX_TRAVEL_SECONDS
+    travel_reason = "travel_timeout"
+
     def __init__(self, hass, store, entry, cover, connection, subscription_id):
         self.hass, self.store, self.cover = hass, store, cover
         self.entry_id = entry.entry_id
@@ -59,6 +63,7 @@ class CalibrationSession:
         self.listener = True
         self.lease = None
         self.deadline = None
+        self.settle = None
         self.shutdown = hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, self._on_shutdown)
         self.touch()
 
@@ -75,7 +80,7 @@ class CalibrationSession:
     def view(self):
         return {"entry_id": self.entry_id, "entity_id": self.cover.entity_id,
                 "session_id": self.id, "sequence": self.sequence, "revision": self.revision,
-                "phase": self.phase, "reason": self.reason, "values": dict(self.values),
+                "phase": self.phase, "mode": self.mode, "reason": self.reason, "values": dict(self.values),
                 "elapsed": round(monotonic() - self.started_at, 2) if self.started_at is not None else None,
                 "stop_requested": self.stop_requested}
 
@@ -117,6 +122,8 @@ class CalibrationSession:
         self.started_at = None
         if self.deadline:
             self.deadline.cancel()
+        if self.settle:
+            self.settle.cancel()
         if send_stop:
             self.queue_stop()
         self.emit()
@@ -148,6 +155,10 @@ class CalibrationSession:
             raise ProfileError("calibration_step")
         # The action itself confirms the starting endpoint and stationary state.
         self.confirm_position(0 if direction == "open" else 100)
+        self.queue_move(direction)
+
+    def queue_move(self, direction):
+        """Use the same guarded queue for guided and automatic movements."""
         self.phase = f"starting_{direction}"
         self.armed = False
         self.started_at = None
@@ -183,7 +194,7 @@ class CalibrationSession:
             if expected and self.armed:
                 self.phase = "opening" if opening else "closing"
                 self.started_at = monotonic()
-                self.arm_deadline(MAX_TRAVEL_SECONDS, "travel_timeout")
+                self.arm_deadline(self.travel_seconds, self.travel_reason)
                 self.emit()
             elif expected or opposite:
                 self.interrupt("unexpected_movement")
@@ -239,7 +250,13 @@ class CalibrationSession:
         if not snapshot(self.hass, self.store, entry, entity)["writable"]:
             self.interrupt("cover_unavailable")
             raise ProfileError("cover_unavailable")
-        if action in {"open", "close"}:
+        if action == "run":
+            if self.mode != "automatic" or self.phase != "confirm_automatic":
+                raise ProfileError("calibration_step")
+            self.queue_move("open")
+        elif action in {"open", "close", "endpoint"} and self.mode != "guided":
+            raise ProfileError("calibration_step")
+        elif action in {"open", "close"}:
             self.move(action)
         elif action == "endpoint":
             self.endpoint()
@@ -285,7 +302,11 @@ async def begin(hass, connection, msg):
         if (cover._attr_is_opening or cover._attr_is_closing or cover._move_start_time is not None
                 or cover._pending_profile or cover._stop_task):
             raise ProfileError("calibration_moving")
-        session = CalibrationSession(hass, store, entry, cover, connection, msg["id"])
+        session_type = CalibrationSession
+        if msg.get("mode", "guided") == "automatic":
+            from .cover_calibration_automatic import AutomaticCalibrationSession
+            session_type = AutomaticCalibrationSession
+        session = session_type(hass, store, entry, cover, connection, msg["id"])
         store.calibration = cover._calibration = session
         connection.subscriptions[msg["id"]] = session.close
         return session
@@ -294,6 +315,7 @@ async def begin(hass, connection, msg):
 @websocket_api.websocket_command({
     vol.Required("type"): WS_START, vol.Required("entry_id"): str,
     vol.Required("entity_id"): str, vol.Required("revision"): vol.All(int, vol.Range(min=0)),
+    vol.Optional("mode"): vol.In(["guided", "automatic"]),
 })
 @websocket_api.require_admin
 @websocket_api.async_response
@@ -315,7 +337,7 @@ def send_error(connection, msg, error):
 @websocket_api.websocket_command({
     vol.Required("type"): WS_ACTION, vol.Required("entry_id"): str,
     vol.Required("session_id"): str,
-    vol.Required("action"): vol.In(["open", "close", "endpoint", "stop", "cancel", "save", "heartbeat"]),
+    vol.Required("action"): vol.In(["run", "open", "close", "endpoint", "stop", "cancel", "save", "heartbeat"]),
     vol.Optional("sequence"): vol.All(int, vol.Range(min=0)),
     vol.Optional("name"): str,
 })

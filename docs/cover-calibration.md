@@ -1,15 +1,16 @@
-# Guided travel measurement — panel 0.10.0
+# Guided and automatic travel measurement — panel 0.18.0
 
 This experimental wizard measures **one standard cover's full opening and closing
 times**. It extends our linear timing profiles; it is not the calibration fork's
 height/roll/slat model or the still-proposed shared API. The operator confirms
-physical endpoints; no automatic endstop detection is claimed.
+physical endpoints in guided mode; automatic mode measures actuator feedback.
+Neither mode claims automatic physical endstop detection.
 
-## Using it
+## Using guided measurement
 
 1. With the normal controls, put the cover fully closed and stopped.
 2. In the MyHOME panel, expand its WHO 2 device, open **Travel profile**, and choose
-   **Guided travel measurement**. The session starts without moving the cover.
+   **Guided measurement**, then **Calibrate travel times**. The session starts without moving the cover.
 3. Confirm it is fully closed to request opening. The wizard waits for opening
    feedback on the bus; only that feedback starts the backend's monotonic timer.
 4. As soon as it is fully open, select **Fully open: record time and request Stop**.
@@ -35,6 +36,59 @@ updates elapsed time with its five-second heartbeat; this display cadence does n
 set measurement precision. If the gateway/device does not produce movement feedback,
 the wizard times out and the ordinary manual profile editor remains usable.
 
+## Using automatic measurement (0.18.0)
+
+Choose **Automatic measurement** in the Travel profile dialog, then open the
+calibration view. Starting the session does not move anything. Read the notice,
+check the cover is stopped and the travel area is clear, then explicitly select
+**Confirm and start the automatic cycle**. The backend performs three runs:
+initial open for positioning, close for the closing time, and open for the opening
+time, with one-second pauses between runs. Only the latter two are saved after
+review. The panel shows run/phase, backend elapsed time, Stop and Cancel.
+
+This adapts #349's sequence and 59–65-second guard into the existing socket-owned
+session and guarded command queue. It does not import #349's config-entry timing
+store or native calibration services/buttons. Both panel modes share ownership,
+lease, revision checks, profile persistence and interruption/cleanup behavior.
+
+Each run requires matching bus movement feedback within 10 seconds of its request.
+There is no command-write or browser-clock fallback. Only a standard actuator
+stop status (`state == 0`) completes an automatic run. A stop within 0.15 seconds
+of the movement anchor is ignored as a possible echo; the deadline remains active.
+A run in the inclusive 59–65-second window interrupts the entire cycle immediately.
+No stop within 180 seconds also interrupts and requests Stop. Measured closing and
+opening runs must be at least one second; the initial positioning run may be
+shorter. All provisional times and provenance are discarded on interruption.
+
+An actuator stop is not physical endpoint proof. A 30-second actuator timer on a
+14-second shutter may still produce a 30-second result; the factory-cutoff guard
+does not detect arbitrary installer timers. A wall-button stop may be
+indistinguishable from an actuator stop. Do not use other controls during the run;
+observe the motion and reject implausible results. Advanced covers remain excluded.
+No endpoint-confirmation action is accepted in automatic mode, and no physical
+0/100 position is asserted by the automatic controller.
+
+After the third run the session enters **review**, with no profile changes yet.
+Explicit Save creates and assigns a new profile using the common atomic store.
+Each measured direction has `source: automatic` and a UTC date captured on its
+stop feedback. Copy/edit/assignment and export retain the existing provenance
+rules. Save failure preserves the review. Stop/Cancel or socket/lease loss during
+any run or pause invalidates subsequent queued movement and cancels pending pauses.
+Before another run, the controller revalidates the gateway/cover and HA state.
+
+For the API, pass `mode: automatic` to the existing `start` request (omission
+remains guided), then send `action: run` with the current sequence from
+`confirm_automatic`. Intermediate states are `starting_open`, `opening`,
+`settling`, `starting_close`, `closing` and finally `review`. `run` is rejected in
+guided mode; `open`, `close` and `endpoint` are rejected in automatic mode.
+New interruption reasons are `automatic_cutoff`, `automatic_timeout`,
+`automatic_invalid` and `target_not_found` if the target disappears during a pause.
+
+Validate on one supervised physical cover: compare both times with a stopwatch,
+check that the actuator reports start/stop, cancel during motion and a pause, and
+confirm there is no subsequent run or saved profile. Automated simulated-bus tests
+do not establish compatibility with a particular actuator's endpoint reporting.
+
 ## Lifetime and persistence
 
 A session belongs to one HA WebSocket connection and one config entry/cover. There
@@ -43,7 +97,7 @@ that gateway are rejected with `calibration_busy`. Other gateways remain indepen
 The current profile read response still reports normal target writability; the
 backend enforces the calibration lock on writes/start requests.
 
-Session phases are:
+Guided session phases are:
 
 | Phase | Allowed progression |
 | --- | --- |
@@ -67,10 +121,11 @@ The frontend sends a heartbeat every **5 seconds**. The backend cancels after
 **20 seconds** without one. Closing/navigating away unsubscribes and requests
 cancellation; socket loss, cover unload and HA shutdown also release ownership.
 A hidden/suspended browser may lose its lease. Nothing automatically resumes on
-reconnect or restart. Measurements and sessions are never persisted.
+reconnect or restart. Unsaved measurements and live sessions are never persisted.
 
 Movement must be dispatched and produce bus start feedback within **10 seconds**
-of the request; a measured leg is limited to **600 seconds**. Movement queue jobs
+of the request; a guided leg is limited to **600 seconds**, an automatic leg to
+**180 seconds**. Movement queue jobs
 carry a validity guard checked immediately before sending, after taking a shared
 calibration-command lock across workers. Cancelled/expired queued movement is
 skipped. Stop queue jobs have a **30-second dispatch expiry** to avoid replaying
@@ -108,10 +163,11 @@ its first state. No bus command is queued until an explicit movement action.
 Example event:
 
 ```json
-{"id":20,"type":"event","event":{"entry_id":"ENTRY","entity_id":"cover.bedroom","session_id":"OPAQUE_SESSION_ID","sequence":1,"revision":4,"phase":"confirm_closed","reason":null,"values":{},"elapsed":null,"stop_requested":false}}
+{"id":20,"type":"event","event":{"entry_id":"ENTRY","entity_id":"cover.bedroom","session_id":"OPAQUE_SESSION_ID","sequence":1,"revision":4,"phase":"confirm_closed","mode":"guided","reason":null,"values":{},"elapsed":null,"stop_requested":false}}
 ```
 
-Every state includes those fields. `values` progressively contains `opening_time`
+Every state includes those fields. `mode` is `guided` or `automatic`; automatic
+states also contain zero-based `run_index` (0: positioning open, 1: close, 2: open). `values` progressively contains `opening_time`
 and `closing_time`, as finite seconds from 1 to 600. `elapsed` is the current leg's
 backend duration or null. `sequence` increases on state notifications; heartbeats
 return the latest state without increasing it. `revision` is the profile-store
@@ -124,12 +180,12 @@ not modify that configuration revision.
 {"id":21,"type":"myhome/cover_calibration/action","entry_id":"ENTRY","session_id":"OPAQUE_SESSION_ID","sequence":1,"action":"open"}
 ```
 
-Actions: `open`, `close`, `endpoint`, `stop`, `cancel`, `save`, `heartbeat`.
+Actions: `run` (automatic only), `open`, `close`, `endpoint`, `stop`, `cancel`, `save`, `heartbeat`.
 `save` additionally accepts `name`; it does **not** accept browser-supplied times.
 The response is the current session state inside HA's ordinary result envelope.
 A push may arrive before the response; the client ignores lower sequences.
 
-`open`, `close`, `endpoint` and `save` require the current `sequence` and valid
+`run`, `open`, `close`, `endpoint` and `save` require the current `sequence` and valid
 phase. The other actions ignore sequence. The same connection must own the session;
 knowing its ID from another tab does not grant control. Other administrators can
 still use HA's normal cover Stop service. Native entity renames retain the bound

@@ -180,13 +180,13 @@ export class CoverProfileEditor {
     };
     host.innerHTML = `<h3>${esc(t("profileProvenance"))}</h3><div class="profile-origin-grid">${["opening", "closing"].map((direction) => {
       const meta = profile?.provenance?.[direction];
-      const source = profile ? (["manual", "guided"].includes(meta?.source) ? meta.source : "unknown") : "configured";
+      const source = profile ? (["manual", "guided", "automatic"].includes(meta?.source) ? meta.source : "unknown") : "configured";
       const value = profile?.[`${direction}_time`] ?? profile?.travel_time ?? this._data.default_travel_time ?? "—";
       return `<section data-origin-direction="${direction}"><h4>${esc(t(direction === "opening" ? "profileOpeningTime" : "profileClosingTime"))}: ${esc(value)} s</h4>
         ${meta?.inherited ? `<p class="profile-origin-inherited">${esc(t("profileInherited"))}: ${esc(profile.name)}</p>` : ""}
         <p>${esc(t(`profileSource_${source}`))}</p>
         ${meta?.origin_entity_id || meta?.inherited ? `<p class="muted">${esc(t("profileOriginCover"))}: ${esc(meta.origin_name || meta.origin_entity_id || t("profileMissingCover"))}</p>` : ""}
-        ${["manual", "guided"].includes(source) ? `<p class="muted">${esc(t(source === "guided" ? "profileMeasuredAt" : "profileModifiedAt"))}: ${esc(dateText(meta.recorded_at))}</p>` : ""}
+        ${["manual", "guided", "automatic"].includes(source) ? `<p class="muted">${esc(t(source !== "manual" ? "profileMeasuredAt" : "profileModifiedAt"))}: ${esc(dateText(meta.recorded_at))}</p>` : ""}
       </section>`;
     }).join("")}</div><p class="muted">${esc(t("profileProvenanceHelp"))}</p>`;
   }
@@ -210,6 +210,7 @@ export class CoverProfileEditor {
         <p id="profile-pending" class="profile-pending" role="status" ${data.pending ? "" : "hidden"}>${esc(t("profilePending"))}</p>
       </section>
       ${!data.writable ? `<p class="notice">${esc(t(`profileError_${data.reason}`))}</p>` : ""}
+      <label>${esc(t("calMode"))}<select id="cal-mode" ${disabled}><option value="guided">${esc(t("calGuided"))}</option><option value="automatic">${esc(t("calAutomatic"))}</option></select></label>
       <button type="button" id="profile-calibrate" class="profile-calibrate" ${disabled}><ha-icon icon="mdi:timer-outline" aria-hidden="true"></ha-icon><span>${esc(t("calTitle"))}</span></button>
       <form id="profile-form">
         <fieldset class="profile-section"><legend>${esc(t("profileSectionAssign"))}</legend>
@@ -250,7 +251,7 @@ export class CoverProfileEditor {
       if (this._saving === this._generation || !data.writable || this._stale) return;
       this._calibrating = true;
       const context = this._context;
-      this._calibration.open({ ...context, host: host.querySelector("#profile-body"), revision: data.revision,
+      this._calibration.open({ ...context, mode: host.querySelector("#cal-mode").value, host: host.querySelector("#profile-body"), revision: data.revision,
         onCancel: () => this.open(context), onSaved: () => { context.onSaved(t("saved")); this.open(context); } });
     };
     const form = host.querySelector("#profile-form");

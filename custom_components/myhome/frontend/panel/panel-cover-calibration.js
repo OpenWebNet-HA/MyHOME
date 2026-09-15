@@ -1,4 +1,4 @@
-/** Socket-owned guided measurement; the browser never computes or saves timings. */
+/** Socket-owned guided or automatic measurement; the browser never computes or saves timings. */
 const url = new URL("panel-dom.js", import.meta.url);
 url.search = new URL(import.meta.url).search;
 const { escapeHtml: esc } = await import(url.href);
@@ -27,14 +27,15 @@ export class CoverCalibration {
     this._busy = false;
     const generation = this._generation;
     const { host, hass, entity, revision, t } = context;
+    const automatic = context.mode === "automatic";
     host.innerHTML = `<div class="cal-panel" data-phase="loading">
-      <h3 class="cal-title"><ha-icon icon="mdi:timer-outline" aria-hidden="true"></ha-icon>${esc(t("calTitle"))}</h3>
-      <ol class="cal-steps" aria-hidden="true">
+      <h3 class="cal-title"><ha-icon icon="mdi:timer-outline" aria-hidden="true"></ha-icon>${esc(t(automatic ? "calAutomatic" : "calGuided"))}</h3>
+      <ol class="cal-steps" aria-hidden="true" ${automatic ? "hidden" : ""}>
         <li data-step="opening"><span class="cal-step-index">1</span><span>${esc(t("calStepOpening"))}</span></li>
         <li data-step="closing"><span class="cal-step-index">2</span><span>${esc(t("calStepClosing"))}</span></li>
         <li data-step="review"><span class="cal-step-index">3</span><span>${esc(t("calStepReview"))}</span></li>
       </ol>
-      <p class="muted cal-help">${esc(t("calHelp"))}</p>
+      <p class="muted cal-help">${esc(t(automatic ? "calAutomaticHelp" : "calHelp"))}</p>
       <div class="cal-status">
         <p id="cal-phase" role="status">${esc(t("loading"))}</p>
         <p id="cal-elapsed" class="cal-elapsed"></p>
@@ -42,6 +43,7 @@ export class CoverCalibration {
       <p id="cal-stop-status" class="notice" hidden>${esc(t("calStopRequested"))}</p>
       <p id="cal-reason" class="error" role="alert" hidden></p>
       <div class="actions cal-actions">
+        <button type="button" class="primary" data-cal-action="run" hidden>${esc(t("calAutomaticStart"))}</button>
         <button type="button" class="primary" data-cal-action="open" hidden><ha-icon icon="mdi:arrow-up-bold" aria-hidden="true"></ha-icon><span>${esc(t("calOpen"))}</span></button>
         <button type="button" class="primary" data-cal-action="close" hidden><ha-icon icon="mdi:arrow-down-bold" aria-hidden="true"></ha-icon><span>${esc(t("calClose"))}</span></button>
         <button type="button" class="primary" data-cal-action="endpoint" hidden></button>
@@ -67,7 +69,7 @@ export class CoverCalibration {
       const unsubscribe = await hass.connection.subscribeMessage((state) => {
         if (!this._current(generation)) return;
         this._accept(state);
-      }, { type: "myhome/cover_calibration/start", entry_id: entity.entry_id, entity_id: entity.entity_id, revision });
+      }, { type: "myhome/cover_calibration/start", entry_id: entity.entry_id, entity_id: entity.entity_id, revision, ...(automatic ? { mode: "automatic" } : {}) });
       if (!this._current(generation)) { Promise.resolve(unsubscribe()).catch(() => {}); return; }
       this._unsubscribe = unsubscribe;
       this._heartbeat = setInterval(() => this._perform("heartbeat"), 5000);
@@ -92,7 +94,10 @@ export class CoverCalibration {
     const { host, t } = this._context;
     const state = this._state;
     host.querySelector(".cal-panel").dataset.phase = state.phase;
-    host.querySelector("#cal-phase").textContent = t(`calPhase_${state.phase}`);
+    const automatic = state.mode === "automatic";
+    host.querySelector("#cal-phase").textContent = automatic && ["starting_open", "starting_close", "opening", "closing", "settling"].includes(state.phase)
+      ? `${t("calAutomaticRun")} ${state.run_index + 1}/3 · ${t(`calAutoPhase_${state.phase}`)}`
+      : t(`calPhase_${state.phase}`);
     host.querySelector("#cal-elapsed").textContent = state.elapsed == null ? "" : `${t("calElapsed")}: ${state.elapsed} s`;
     host.querySelector("#cal-stop-status").hidden = !state.stop_requested;
     const reason = host.querySelector("#cal-reason");
@@ -100,10 +105,10 @@ export class CoverCalibration {
       reason.hidden = false;
       reason.textContent = t(`calReason_${state.reason}`);
     }
-    for (const action of ["open", "close", "endpoint"]) {
+    for (const action of ["run", "open", "close", "endpoint"]) {
       const button = host.querySelector(`[data-cal-action="${action}"]`);
-      button.hidden = action === "open" ? state.phase !== "confirm_closed" : action === "close"
-        ? state.phase !== "confirm_open" : !["opening", "closing"].includes(state.phase);
+      button.hidden = action === "run" ? !automatic || state.phase !== "confirm_automatic" : automatic || (action === "open" ? state.phase !== "confirm_closed" : action === "close"
+        ? state.phase !== "confirm_open" : !["opening", "closing"].includes(state.phase));
       button.disabled = this._busy || this._lost;
     }
     host.querySelector('[data-cal-action="endpoint"]').textContent = t(state.phase === "opening" ? "calEndpointOpen" : "calEndpointClose");

@@ -82,7 +82,7 @@ class ProfileStorage(Store):
     """Surface write failures: HA's default Store logs them and returns success."""
 
     async def _async_migrate_func(self, old_major_version, old_minor_version, old_data):
-        if old_major_version not in (1, 2):
+        if old_major_version not in (1, 2, 3):
             raise NotImplementedError
         return STORED(old_data)
 
@@ -98,7 +98,7 @@ class CoverProfileStore:
 
     def __init__(self, hass, entry_id):
         self.store = ProfileStorage(
-            hass, 3, f"{DOMAIN}.cover_profiles.{entry_id}", atomic_writes=True
+            hass, 4, f"{DOMAIN}.cover_profiles.{entry_id}", atomic_writes=True
         )
         self.lock = asyncio.Lock()
         self.loaded = False

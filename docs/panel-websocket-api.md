@@ -1,6 +1,6 @@
 # MyHOME panel API: implemented reference
 
-Status: **implemented through panel 0.17.0**. The original profile contract was reviewed against
+Status: **implemented through panel 0.18.0**. The original profile contract was reviewed against
 [`02ce199`](https://github.com/xtimmy86x/MyHOME/tree/02ce19908787297c1a6e2a65d56a289e766c0695).
 Panel 0.10.0 adds a [guided-measurement session API](cover-calibration.md) and
 `calibration_busy` refusals on profile writes while a measurement is active. The
@@ -147,7 +147,7 @@ Each profile includes `provenance.opening` and `provenance.closing`. Each contai
 
 | Field | Meaning |
 | --- | --- |
-| `source` | `guided`, `manual`, or `unknown` |
+| `source` | `guided`, `automatic`, `manual`, or `unknown` |
 | `recorded_at` | Backend UTC ISO timestamp; null for unknown evidence |
 | `origin_entity_id`, `origin_name` | Current registry identity of the original cover, or null if missing |
 | `inherited` | Whether the recorded origin differs from this read request's target cover |
@@ -159,9 +159,9 @@ legacy evidence. These fields describe saved profile values, not pending runtime
 values or unsaved edits. The client cannot submit provenance inside `profile`.
 Internal stable origin unique IDs are stored but never exposed in this response.
 
-Store major version 3 migrates versions 1 and 2, preserving revision, IDs,
+Store major version 4 migrates versions 1, 2 and 3, preserving revision, IDs,
 assignments and times, and adding unknown evidence with null dates/origins.
-Older integration versions cannot read version 3; downgrade requires restoring
+Version 3 evidence is preserved. Older integration versions cannot read version 4; downgrade requires restoring
 a compatible backup. This is a local panel contract extension, not an assertion
 of interoperability with the proposed automatic calibration backend.
 
@@ -396,7 +396,7 @@ The result is the JSON document to download, not a file URL. Its envelope is:
 ```json
 {
   "format": "myhome.cover_calibration",
-  "format_version": 1,
+  "format_version": 2,
   "exported_at": "2026-09-15T12:00:00+00:00",
   "gateway": {"entry_id": "ENTRY", "name": "Home"},
   "revision": 4,
@@ -412,8 +412,9 @@ The result is the JSON document to download, not a file URL. Its envelope is:
 }
 ```
 
-- Format version 1 is independent of profile storage version 3 and panel releases.
-- Times are full-travel seconds. Sources are `guided`, `manual` or `unknown`;
+- Format version 2 adds `automatic` provenance to version 1; document structure is
+  unchanged. It is independent of profile storage version 4 and panel releases.
+- Times are full-travel seconds. Sources are `guided`, `automatic`, `manual` or `unknown`;
   unknown evidence has null `recorded_at` and `origin_cover_id`.
 - `covers[].id` references are local to this document and must not be treated as
   stable identifiers across exports. `registry_id` is the current HA registry ID;
@@ -435,3 +436,18 @@ The result is the JSON document to download, not a file URL. Its envelope is:
   return `storage_error`. Non-admin callers are rejected before store access.
 - Import and restore are not implemented. This document is not an HA backup or an
   import format agreed with the separate automatic calibration backend.
+
+
+## Automatic session extension (0.18.0)
+
+The existing calibration `start` accepts optional `mode: automatic` (default:
+`guided`). Its initial state is `confirm_automatic`; explicit action `run` with
+the current sequence starts open/close/open. Events include `mode` and automatic
+`run_index` (0, 1, 2), with `settling` between runs. Manual `open`/`close`/`endpoint`
+actions are rejected for automatic sessions. Shared Stop, Cancel, heartbeat and
+explicit Save semantics remain unchanged. See [the calibration contract](cover-calibration.md#using-automatic-measurement-0180).
+
+Automatic dates describe receipt of actuator stop feedback, not proof of physical
+endpoints. Their values remain provisional until saved into the same profile store;
+export excludes those unsaved session values. No #349 options-store import, native
+service adapter or multi-cover automatic queue is introduced by this extension.

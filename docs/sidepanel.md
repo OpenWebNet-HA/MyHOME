@@ -15,6 +15,27 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Optional automatic calibration (0.18.0)
+
+In **Travel profile**, choose Guided or Automatic measurement, then open calibration.
+Automatic mode waits for explicit confirmation before running open/close/open, with
+one-second pauses. It requires bus start feedback and actuator stop feedback,
+rejects the 59–65-second factory-timer signature and uses a 180-second run timeout.
+Stop and Cancel remain available. Results enter review and are saved only when you
+explicitly create/assign a profile. Provenance identifies these as automatic
+actuator-feedback measurements. All session, lease and persistence protections are
+shared with the guided wizard; there is no second timing store or automatic save.
+
+Actuator run time may differ from physical travel. Observe the cover and check
+both results before saving. See [the calibration guide](cover-calibration.md) for
+limits and the supervised physical test procedure. Multi-cover batches and a
+single-direction quick measurement remain future work; the standalone card stays.
+
+Storage migrates versions 1/2/3 to version 4, preserving recorded evidence and
+assignments, to support the new automatic source. Older integration versions
+cannot read this version; a downgrade needs a compatible backup. The export now
+uses format version 2 to advertise the additional source; its structure is unchanged.
+
 ## Calibration export (0.17.0)
 
 Open a cover's **Travel profile** dialog and choose **Export calibration** in the
@@ -52,8 +73,9 @@ drafts until saved, and pending runtime timings still apply only after stopping.
 
 Existing profiles migrate without invented dates or origins. Without a profile,
 the editor labels the time as YAML/default because those two sources cannot be
-distinguished reliably from the current configuration. Storage migrates to major
-version 3; older integration versions cannot read that store. Back up before
+distinguished reliably from the current configuration. This feature introduced storage
+version 3; panel 0.18.0 now migrates it to version 4. Older integration versions
+cannot read that store. Back up before
 upgrading if a downgrade may be needed. The standalone card remains supported.
 
 ## Live state in device headers (0.15.0)
@@ -193,7 +215,7 @@ requirements, limits and real-gateway validation steps.
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.17.0**, defined by
+The panel has an independent version, currently **0.18.0**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.
@@ -545,12 +567,12 @@ direction. This remains a linear estimate without physical calibration.
 - Registry renames keep assignments because storage uses the native unique ID,
   together with the config entry. Removing the config entry deletes its profile store.
 
-The authoritative store is `myhome.cover_profiles.<entry_id>` (version 3), containing
+The authoritative store is `myhome.cover_profiles.<entry_id>` (version 4), containing
 `revision`, `profiles` and `assignments`. Version 1 profiles migrate automatically:
 `travel_time` becomes both `opening_time` and `closing_time`, preserving IDs,
 assignments and revision. Migration validates and persists the upgraded store before
 binding the runtime; failures do not silently replace saved data. Version 1 and 2
-profiles gain unknown provenance with null dates and origin IDs. Version 3 storage
+profiles gain unknown provenance with null dates and origin IDs. Version 3 evidence is preserved. Version 4 storage
 requires the updated integration (older integration versions cannot read that format).
 An explicit assignment overrides
 `travel_time` from YAML/defaults; removing it restores that source. Nothing rewrites

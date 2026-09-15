@@ -22,7 +22,7 @@ def utc_timestamp(value):
 
 EVIDENCE = vol.Any(
     vol.Schema({
-        vol.Required("source"): vol.In(("manual", "guided")),
+        vol.Required("source"): vol.In(("manual", "guided", "automatic")),
         vol.Required("recorded_at"): utc_timestamp,
         vol.Required("origin_unique_id"): vol.All(str, vol.Length(min=1)),
     }),

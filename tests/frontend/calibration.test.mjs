@@ -11,7 +11,7 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
 const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
 const t = (key) => translations.it[key] || translations.en[key] || key;
 
-async function mount({ call, subscribe } = {}) {
+async function mount({ call, subscribe, mode = "guided" } = {}) {
   const host = document.createElement("section");
   document.body.append(host);
   const controller = new CoverCalibration();
@@ -19,7 +19,7 @@ async function mount({ call, subscribe } = {}) {
   const calls = [], starts = [];
   let callback, stopped = 0, saved = 0, cancelled = 0;
   let state = { entry_id: "one", entity_id: "cover.bedroom", session_id: "session-one", sequence: 1,
-    revision: 4, phase: "confirm_closed", reason: null, values: {}, elapsed: null, stop_requested: false };
+    revision: 4, mode, run_index: 0, phase: mode === "automatic" ? "confirm_automatic" : "confirm_closed", reason: null, values: {}, elapsed: null, stop_requested: false };
   const push = (extra) => { state = { ...state, sequence: state.sequence + 1, ...extra }; callback(state); };
   const hass = { connection: { subscribeMessage: async (cb, request) => {
     callback = cb; starts.push(request); cb(state);
@@ -27,11 +27,11 @@ async function mount({ call, subscribe } = {}) {
   } }, callWS: async (message) => {
     calls.push(message);
     if (call) return call(message, state);
-    const phases = { open: "starting_open", close: "starting_close", save: "saved", cancel: "cancelled", stop: "interrupted" };
+    const phases = { run: "starting_open", open: "starting_open", close: "starting_close", save: "saved", cancel: "cancelled", stop: "interrupted" };
     return { ...state, sequence: state.sequence + (message.action === "heartbeat" ? 0 : 1),
       phase: phases[message.action] || state.phase };
   } };
-  await controller.open({ host, hass, entity: { entry_id: "one", entity_id: "cover.bedroom" }, revision: 4,
+  await controller.open({ host, hass, entity: { entry_id: "one", entity_id: "cover.bedroom" }, revision: 4, mode,
     t, onSaved: () => { saved++; }, onCancel: () => { cancelled++; } });
   return { host, controller, calls, starts, push, counts: () => ({ stopped, saved, cancelled }) };
 }
@@ -142,4 +142,40 @@ test("every backend phase/refusal has English and Italian text", () => {
       assert.ok(translations[language][key], `${language}.${key}`);
     }
   }
+});
+
+
+test("automatic mode requires explicit start, follows bus phases and never saves before review", async () => {
+  const { host, starts, calls, push } = await mount({ mode: "automatic" });
+  assert.equal(starts[0].mode, "automatic");
+  assert.equal(calls.length, 0);
+  const run = host.querySelector('[data-cal-action="run"]');
+  assert.equal(run.hidden, false);
+  assert.match(host.querySelector(".cal-help").textContent, /59.*65/);
+  run.click(); await tick();
+  assert.equal(calls[0].action, "run");
+  push({ phase: "opening", run_index: 0, elapsed: 5 });
+  assert.match(host.querySelector("#cal-phase").textContent, /1\/3/);
+  assert.equal(host.querySelector('[data-cal-action="endpoint"]').hidden, true);
+  push({ phase: "settling", run_index: 1, elapsed: null });
+  assert.match(host.querySelector("#cal-phase").textContent, /Pausa/);
+  push({ phase: "closing", run_index: 1, elapsed: 12 });
+  assert.match(host.querySelector("#cal-phase").textContent, /2\/3/);
+  push({ phase: "review", run_index: 2, elapsed: null, values: { opening_time: 20, closing_time: 22 } });
+  assert.equal(host.querySelector("#cal-save").hidden, false);
+  assert.equal(calls.filter((c) => c.action === "save").length, 0);
+  const form = host.querySelector("#cal-save"); form.elements.profile_name.value = "Automatica";
+  form.dispatchEvent(new dom.window.Event("submit", { cancelable: true })); await tick();
+  assert.equal(calls.find((c) => c.action === "save").name, "Automatica");
+});
+
+test("automatic cutoff removes save controls and retains Stop and Cancel", async () => {
+  const { host, calls, push } = await mount({ mode: "automatic" });
+  push({ phase: "interrupted", reason: "automatic_cutoff", values: {}, stop_requested: true });
+  assert.match(host.querySelector("#cal-reason").textContent, /Misure scartate/);
+  assert.equal(host.querySelector("#cal-save").hidden, true);
+  assert.equal(host.querySelector('[data-cal-action="run"]').hidden, true);
+  assert.equal(host.querySelector("#cal-stop").disabled, false);
+  host.querySelector("#cal-cancel").click(); await tick();
+  assert.ok(calls.some((c) => c.action === "cancel"));
 });

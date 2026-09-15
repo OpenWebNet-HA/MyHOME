@@ -38,7 +38,7 @@ async def export_profiles(hass, entry_id):
                            "entity_id": record.entity_id if record else None,
                            "name": (record.name or record.original_name or record.entity_id) if record else None})
         return {
-            "format": "myhome.cover_calibration", "format_version": 1,
+            "format": "myhome.cover_calibration", "format_version": 2,
             "exported_at": dt_util.utcnow().isoformat(),
             "gateway": {"entry_id": entry_id, "name": entry.title},
             "revision": data["revision"], "covers": covers,

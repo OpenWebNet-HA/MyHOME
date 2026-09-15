@@ -28,7 +28,7 @@ const deferred = () => {
 function inventory() {
   return {
     version: "2.0.0b9",
-    panel_version: "0.17.0",
+    panel_version: "0.18.0",
     gateways: [
       { entry_id: "one", title: "Casa", mac: "00:03:50:00:00:01", model: "F454", host: "192.0.2.1", state: "loaded", connected: true, monitor_available: true },
       { entry_id: "two", title: "Garage", mac: "00:03:50:00:00:02", model: "F453", host: "192.0.2.2", state: "setup_retry", connected: false, monitor_available: false },
@@ -171,7 +171,7 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
   const { root } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
-  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.17.0");
+  assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.18.0");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
   root.querySelector('[data-view="entities"]').click();
   assert.equal(root.querySelectorAll(".device-group").length, 3);
@@ -1120,4 +1120,17 @@ test("panel language changes keep the native monitor capture and command draft",
   assert.equal(root.querySelector("myhome-panel-bus-monitor"), view);
   assert.equal(view._frames.length, 1); assert.equal(view.shadowRoot.getElementById("send-frame"), input);
   assert.equal(input.value, "*1*0*11##"); assert.equal(view.shadowRoot.getElementById("btn-clear").textContent, "Clear");
+});
+
+
+test("profile editor passes the selected automatic mode without starting movement", async () => {
+  const { root, hass, calls } = await mountProfiles();
+  let request;
+  hass.connection.subscribeMessage = async (_callback, message) => { request = message; return () => {}; };
+  openProfile(root); await tick();
+  change(root.querySelector("#cal-mode"), "automatic");
+  root.querySelector("#profile-calibrate").click(); await tick();
+  assert.equal(request.type, "myhome/cover_calibration/start");
+  assert.equal(request.mode, "automatic");
+  assert.equal(calls.filter((c) => c.type === "myhome/cover_calibration/action").length, 0);
 });
