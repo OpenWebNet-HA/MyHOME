@@ -235,3 +235,32 @@ def snapshot(snapshot: SnapshotAssertion) -> SnapshotAssertion:
     """Return snapshot assertion fixture with the Home Assistant extension."""
     return snapshot.use_extension(PatchedHomeAssistantSnapshotExtension)
 
+
+
+@pytest.fixture
+def attach_gateway(hass):
+    """Return a helper that registers a gateway the way async_setup_entry does.
+
+    Creates a config entry for ``mac`` and exposes ``gateway`` through
+    ``entry.runtime_data`` (the source of truth) and, unless ``legacy_only``
+    is False, the backwards-compatible ``hass.data[DOMAIN][mac]`` mapping.
+    ``legacy_only=True`` leaves ``runtime_data`` unset to exercise the
+    fallback path for entries that have not been migrated yet.
+    """
+    from homeassistant.const import CONF_MAC
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.const import CONF_ENTITY, DOMAIN
+
+    def _attach(mac, gateway, monitor=None, *, legacy_only=False):
+        if monitor is not None:
+            gateway.bus_monitor = monitor
+        entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: mac}, unique_id=mac)
+        entry.add_to_hass(hass)
+        domain_data = hass.data.setdefault(DOMAIN, {})
+        domain_data[mac] = {CONF_ENTITY: gateway, "bus_monitor": getattr(gateway, "bus_monitor", None)}
+        if not legacy_only:
+            entry.runtime_data = gateway
+        return entry
+
+    return _attach
