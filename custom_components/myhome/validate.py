@@ -42,6 +42,7 @@ from .const import (
     CONF_ADVANCED_SHUTTER,
     CONF_BUS_INTERFACE,
     CONF_CENTRAL,
+    CONF_COLOR_TEMP,
     CONF_COOLING_SUPPORT,
     CONF_DEVICE_CLASS,
     CONF_DEVICE_MODEL,
@@ -50,11 +51,14 @@ from .const import (
     CONF_ENTITY_NAME,
     CONF_FAN_SUPPORT,
     CONF_HEATING_SUPPORT,
+    CONF_HS,
     CONF_ICON,
     CONF_ICON_ON,
     CONF_INVERTED,
+    CONF_LOCK_FEATURES,
     CONF_MANUFACTURER,
     CONF_PLATFORMS,
+    CONF_RGB,
     CONF_STANDALONE,
     CONF_TRAVEL_TIME,
     CONF_WHERE,
@@ -315,6 +319,14 @@ light_schema = MyHomeDeviceSchema(
             Optional(CONF_ICON): str,
             Optional(CONF_ICON_ON): str,
             Optional(CONF_DIMMABLE, default=False): Boolean(),
+            # DALI DT8 capabilities (issue #273 / #288).  Without lock_features
+            # these are only the starting point: the light still learns
+            # dimming, tunable white and HSV colour from the bus.  With
+            # lock_features the three flags are the whole truth.
+            Optional(CONF_COLOR_TEMP): Boolean(),
+            Optional(CONF_RGB): Boolean(),
+            Optional(CONF_HS): Boolean(),
+            Optional(CONF_LOCK_FEATURES): Boolean(),
             Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
             Optional(CONF_DEVICE_MODEL): Coerce(str),
         }
