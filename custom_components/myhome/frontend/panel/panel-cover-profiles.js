@@ -32,16 +32,29 @@ export class CoverProfileEditor {
     host.innerHTML = `<dialog class="cover-profile-dialog" aria-labelledby="profile-title">
       <header class="dialog-head"><div class="dialog-icon" aria-hidden="true"><ha-icon icon="mdi:window-shutter-settings"></ha-icon></div>
         <div class="dialog-head-text"><h2 id="profile-title">${esc(t("coverProfiles"))}</h2>
-        <p class="muted">${esc(entity.name || entity.original_name || entity.entity_id)}</p></div></header>
+        <p class="muted">${esc(entity.name || entity.original_name || entity.entity_id)}</p></div>
+        <button type="button" id="profile-export" class="icon-button" title="${esc(t("profileExport"))}" aria-label="${esc(t("profileExport"))}" aria-describedby="profile-export-help"><ha-icon icon="mdi:download-outline" aria-hidden="true"></ha-icon></button>
+        <button type="button" class="help" data-help="profile-scope-help" aria-expanded="false" aria-controls="profile-scope-help" title="${esc(t("help"))}" aria-label="${esc(t("help"))}">?</button></header>
+      <p id="profile-scope-help" class="help-text muted" hidden>${esc(t("profileScope"))}</p>
+      <p id="profile-export-help" hidden>${esc(t("profileExportHelp"))}</p>
       <div id="profile-body"><p class="muted" role="status">${esc(t("loading"))}</p></div>
       <footer class="dialog-foot">
-        <p class="muted">${esc(t("profileExportHelp"))}</p>
         <p id="profile-export-status" role="status" class="muted"></p>
-        <div class="actions"><button type="button" id="profile-export"><ha-icon icon="mdi:download" aria-hidden="true"></ha-icon><span>${esc(t("profileExport"))}</span></button>
-          <button type="button" id="profile-close">${esc(t("cancel"))}</button></div>
+        <button type="button" id="profile-close">${esc(t("close"))}</button>
       </footer>
     </dialog>`;
     this.dialog = host.querySelector("dialog");
+    this.dialog.addEventListener("click", (event) => {
+      const trigger = event.target.closest("[data-help]");
+      if (!trigger) return;
+      event.preventDefault();
+      const text = this.dialog.querySelector(`#${trigger.dataset.help}`);
+      if (!text) return;
+      text.hidden = !text.hidden;
+      trigger.setAttribute("aria-expanded", String(!text.hidden));
+      const details = trigger.closest("details");
+      if (details && !text.hidden) details.open = true;
+    });
     host.querySelector("#profile-close").onclick = () => this.close();
     host.querySelector("#profile-export").onclick = () => this._export();
     this.dialog.oncancel = (event) => { event.preventDefault(); this.close(); };
@@ -217,17 +230,22 @@ export class CoverProfileEditor {
       try { return new Intl.DateTimeFormat(hass.language || "en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)); }
       catch { return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)); }
     };
-    host.innerHTML = `<h3>${esc(t("profileProvenance"))}</h3><div class="profile-origin-grid">${["opening", "closing"].map((direction) => {
+    const icons = { manual: "mdi:pencil-outline", guided: "mdi:timer-outline", automatic: "mdi:robot-outline", unknown: "mdi:help-circle-outline", configured: "mdi:file-code-outline" };
+    const wasOpen = !host.querySelector("#profile-provenance-help")?.hidden;
+    host.innerHTML = `<div class="profile-origin-head"><span class="muted">${esc(t("profileProvenance"))}</span>
+      <button type="button" class="help" data-help="profile-provenance-help" aria-expanded="${wasOpen}" aria-controls="profile-provenance-help" title="${esc(t("help"))}" aria-label="${esc(t("help"))}">?</button></div>
+      <p id="profile-provenance-help" class="help-text muted" ${wasOpen ? "" : "hidden"}>${esc(t("profileProvenanceHelp"))}</p>
+      <div class="profile-origin-grid">${["opening", "closing"].map((direction) => {
       const meta = profile?.provenance?.[direction];
       const source = profile ? (["manual", "guided", "automatic"].includes(meta?.source) ? meta.source : "unknown") : "configured";
-      const value = profile?.[`${direction}_time`] ?? profile?.travel_time ?? this._data.default_travel_time ?? "—";
-      return `<section data-origin-direction="${direction}"><h4>${esc(t(direction === "opening" ? "profileOpeningTime" : "profileClosingTime"))}: ${esc(value)} s</h4>
-        ${meta?.inherited ? `<p class="profile-origin-inherited">${esc(t("profileInherited"))}: ${esc(profile.name)}</p>` : ""}
-        <p>${esc(t(`profileSource_${source}`))}</p>
-        ${meta?.origin_entity_id || meta?.inherited ? `<p class="muted">${esc(t("profileOriginCover"))}: ${esc(meta.origin_name || meta.origin_entity_id || t("profileMissingCover"))}</p>` : ""}
-        ${["manual", "guided", "automatic"].includes(source) ? `<p class="muted">${esc(t(source !== "manual" ? "profileMeasuredAt" : "profileModifiedAt"))}: ${esc(dateText(meta.recorded_at))}</p>` : ""}
-      </section>`;
-    }).join("")}</div><p class="muted">${esc(t("profileProvenanceHelp"))}</p>`;
+      const parts = [
+        `<span class="profile-origin-source">${esc(t(`profileSource_${source}`))}</span>`,
+        meta?.inherited ? `<span>${esc(t("profileInherited"))}: ${esc(profile.name)}</span>` : "",
+        meta?.origin_entity_id || meta?.inherited ? `<span>${esc(t("profileOriginCover"))}: ${esc(meta.origin_name || meta.origin_entity_id || t("profileMissingCover"))}</span>` : "",
+        ["manual", "guided", "automatic"].includes(source) ? `<span>${esc(t(source !== "manual" ? "profileMeasuredAt" : "profileModifiedAt"))}: ${esc(dateText(meta.recorded_at))}</span>` : "",
+      ].filter(Boolean);
+      return `<p class="profile-origin" data-origin-direction="${direction}"><ha-icon icon="${icons[source]}" aria-hidden="true"></ha-icon><span class="profile-origin-text">${parts.join("")}</span></p>`;
+    }).join("")}</div>`;
   }
 
   _render() {
@@ -235,8 +253,12 @@ export class CoverProfileEditor {
     const data = this._data;
     const assigned = data.profiles.find((profile) => profile.id === data.assigned_profile_id);
     const disabled = data.writable ? "" : "disabled";
+    this._sections ??= new Set(["calibration"]);
+    const open = (name) => this._sections.has(name) ? "open" : "";
+    const chevron = `<ha-icon class="section-chevron" icon="mdi:chevron-down" aria-hidden="true"></ha-icon>`;
+    const help = (id) => `<button type="button" class="help" data-help="${id}" aria-expanded="false" aria-controls="${id}" title="${esc(t("help"))}" aria-label="${esc(t("help"))}">?</button>`;
+    const helpText = (id, key) => `<p id="${id}" class="help-text muted" hidden>${esc(t(key))}</p>`;
     host.querySelector("#profile-body").innerHTML = `
-      <p class="muted">${esc(t("profileScope"))}</p>
       ${this._syncFailed ? `<p class="notice">${esc(t("profileSyncFallback"))}</p>` : ""}
       <section class="profile-summary" aria-label="${esc(t("profileSectionStatus"))}">
         <div class="profile-assigned"><span class="muted">${esc(t("profileAssigned"))}</span><strong>${esc(assigned?.name || t("profileDefault"))}</strong></div>
@@ -249,11 +271,6 @@ export class CoverProfileEditor {
         <p id="profile-pending" class="profile-pending" role="status" ${data.pending ? "" : "hidden"}>${esc(t("profilePending"))}</p>
       </section>
       ${!data.writable ? `<p class="notice">${esc(t(`profileError_${data.reason}`))}</p>` : ""}
-      <label>${esc(t("calMode"))}<select id="cal-mode" ${disabled}><option value="guided">${esc(t("calGuided"))}</option><option value="automatic">${esc(t("calAutomatic"))}</option></select></label>
-      <label>${esc(t("calScope"))}<select id="cal-direction" ${disabled}><option value="">${esc(t("calBothDirections"))}</option><option value="opening" ${assigned ? "" : "disabled"}>${esc(t("calOnlyOpening"))}</option><option value="closing" ${assigned ? "" : "disabled"}>${esc(t("calOnlyClosing"))}</option></select></label>
-      <p class="muted">${esc(t("calQuickRequirement"))}</p>
-      <button type="button" id="profile-calibrate" class="profile-calibrate" ${disabled}><ha-icon icon="mdi:timer-outline" aria-hidden="true"></ha-icon><span>${esc(t("calTitle"))}</span></button>
-      <button type="button" id="profile-calibrate-batch" ${disabled}>${esc(t("calBatchTitle"))}</button>
       <form id="profile-form">
         <fieldset class="profile-section"><legend>${esc(t("profileSectionAssign"))}</legend>
           <div class="profile-assign-row">
@@ -264,37 +281,73 @@ export class CoverProfileEditor {
             <button type="button" class="primary" data-profile-action="assign" ${disabled}>${esc(t("profileAssign"))}</button>
           </div>
         </fieldset>
-        <fieldset class="profile-section"><legend>${esc(t("profileSectionEdit"))}</legend>
-          <label>${esc(t("profileName"))}<input name="profile_name" maxlength="64" required ${disabled}></label>
-          <div class="profile-times">
-            <label>${esc(t("profileOpeningTime"))}<span class="input-suffix"><input name="opening_time" type="number" min="1" max="600" step="any" inputmode="decimal" required ${disabled}><span>s</span></span></label>
-            <label>${esc(t("profileClosingTime"))}<span class="input-suffix"><input name="closing_time" type="number" min="1" max="600" step="any" inputmode="decimal" required ${disabled}><span>s</span></span></label>
+        <details class="profile-details" data-section="calibration" ${open("calibration")}>
+          <summary><span class="profile-details-title">${esc(t("profileSectionCalibrate"))} ${help("cal-help-text")}</span><span class="profile-details-hint" id="cal-hint"></span>${chevron}</summary>
+          <div class="profile-details-body">
+            ${helpText("cal-help-text", "calQuickRequirement")}
+            <div class="profile-times">
+              <label>${esc(t("calMode"))}<select id="cal-mode" ${disabled}><option value="guided">${esc(t("calGuided"))}</option><option value="automatic">${esc(t("calAutomatic"))}</option></select></label>
+              <label>${esc(t("calScope"))}<select id="cal-direction" ${disabled}><option value="">${esc(t("calBothDirections"))}</option><option value="opening" ${assigned ? "" : "disabled"}>${esc(t("calOnlyOpening"))}</option><option value="closing" ${assigned ? "" : "disabled"}>${esc(t("calOnlyClosing"))}</option></select></label>
+            </div>
+            <button type="button" id="profile-calibrate" class="primary profile-calibrate" ${disabled}><ha-icon icon="mdi:timer-outline" aria-hidden="true"></ha-icon><span id="cal-label">${esc(t("calTitle"))}</span></button>
+            <button type="button" id="profile-calibrate-batch" class="ghost profile-calibrate-batch" ${disabled}><ha-icon icon="mdi:select-group" aria-hidden="true"></ha-icon><span>${esc(t("calBatchTitle"))}</span></button>
           </div>
-          <div id="profile-provenance" class="profile-provenance"></div>
-          <p class="muted">${esc(t("profileSharedHelp"))}</p>
-          <div class="actions">
-            <button type="button" data-profile-action="update">${esc(t("profileUpdate"))}</button>
-            <button type="button" class="primary" data-profile-action="new" ${disabled}>${esc(t("profileCreate"))}</button>
+        </details>
+        <details class="profile-details" data-section="edit" ${open("edit")}>
+          <summary><span class="profile-details-title">${esc(t("profileSectionEdit"))} ${help("edit-help-text")}</span><span class="profile-details-hint" id="edit-hint"></span>${chevron}</summary>
+          <div class="profile-details-body">
+            ${helpText("edit-help-text", "profileSharedHelp")}
+            <label>${esc(t("profileName"))}<input name="profile_name" maxlength="64" required ${disabled}></label>
+            <div class="profile-times">
+              <label>${esc(t("profileOpeningTime"))}<span class="input-suffix"><input name="opening_time" type="number" min="1" max="600" step="any" inputmode="decimal" required ${disabled}><span>s</span></span></label>
+              <label>${esc(t("profileClosingTime"))}<span class="input-suffix"><input name="closing_time" type="number" min="1" max="600" step="any" inputmode="decimal" required ${disabled}><span>s</span></span></label>
+            </div>
+            <div id="profile-provenance" class="profile-provenance"></div>
+            <div class="actions">
+              <button type="button" data-profile-action="update">${esc(t("profileUpdate"))}</button>
+              <button type="button" class="primary" data-profile-action="new" ${disabled}>${esc(t("profileCreate"))}</button>
+            </div>
           </div>
-        </fieldset>
-        <p id="profile-usage" class="muted"></p>
-        <button type="button" id="profile-delete" class="danger"><ha-icon icon="mdi:delete-outline" aria-hidden="true"></ha-icon><span>${esc(t("profileDelete"))}</span></button>
-        <div id="profile-delete-confirmation" class="profile-confirm" hidden>
-          <p id="profile-delete-prompt"></p>
-          <div class="actions">
-            <button type="button" class="danger-solid" data-profile-action="delete">${esc(t("profileDeleteConfirm"))}</button>
-            <button type="button" id="profile-delete-cancel">${esc(t("cancel"))}</button>
+        </details>
+        <details class="profile-details" data-section="advanced" ${open("advanced")}>
+          <summary><span class="profile-details-title">${esc(t("profileSectionAdvanced"))}</span><span class="profile-details-hint">${esc(t("profileDelete"))}</span>${chevron}</summary>
+          <div class="profile-details-body">
+            <p id="profile-usage" class="muted profile-usage"></p>
+            <button type="button" id="profile-delete" class="danger"><ha-icon icon="mdi:delete-outline" aria-hidden="true"></ha-icon><span>${esc(t("profileDelete"))}</span></button>
+            <div id="profile-delete-confirmation" class="profile-confirm" hidden>
+              <p id="profile-delete-prompt"></p>
+              <div class="actions">
+                <button type="button" class="danger-solid" data-profile-action="delete">${esc(t("profileDeleteConfirm"))}</button>
+                <button type="button" id="profile-delete-cancel">${esc(t("cancel"))}</button>
+              </div>
+            </div>
           </div>
-        </div>
+        </details>
         <p id="profile-error" class="error" role="alert" hidden></p>
         <button type="button" id="profile-reload" hidden><ha-icon icon="mdi:reload" aria-hidden="true"></ha-icon><span>${esc(t("profileReload"))}</span></button>
       </form>`;
+    for (const section of host.querySelectorAll(".profile-details")) {
+      section.addEventListener("toggle", () => {
+        if (section.open) this._sections.add(section.dataset.section);
+        else this._sections.delete(section.dataset.section);
+      });
+    }
+    const updateCalibrationLabels = () => {
+      const mode = host.querySelector("#cal-mode").value;
+      const scope = host.querySelector("#cal-direction");
+      const scopeLabel = scope.selectedOptions[0]?.textContent || t("calBothDirections");
+      host.querySelector("#cal-label").textContent = mode === "automatic" ? t("calAutomatic") : `${t("calMeasure")}: ${scopeLabel.toLocaleLowerCase()}`;
+      host.querySelector("#cal-hint").textContent = `${t(mode === "automatic" ? "calAutomatic" : "calGuided")} · ${scopeLabel.toLocaleLowerCase()}`;
+    };
     host.querySelector("#profile-calibrate-batch").onclick = () => this._selectBatch();
     host.querySelector("#cal-mode").onchange = () => {
       const scope = host.querySelector("#cal-direction");
       scope.disabled = !data.writable || host.querySelector("#cal-mode").value === "automatic";
       if (scope.disabled) scope.value = "";
+      updateCalibrationLabels();
     };
+    host.querySelector("#cal-direction").onchange = updateCalibrationLabels;
+    updateCalibrationLabels();
     host.querySelector("#profile-calibrate").onclick = () => {
       if (this._saving === this._generation || !data.writable || this._stale) return;
       this._calibrating = true;
@@ -313,8 +366,12 @@ export class CoverProfileEditor {
         form.elements[`${direction}_time`].value = profile?.[`${direction}_time`] ?? profile?.travel_time ?? data.default_travel_time ?? "";
       }
       this._renderProvenance(profile);
+      form.querySelector("#edit-hint").textContent = profile
+        ? `${profile.name} · ${profile.opening_time ?? profile.travel_time} / ${profile.closing_time ?? profile.travel_time} s`
+        : t("profileDefault");
       form.querySelector("#profile-delete-confirmation").hidden = true;
       form.querySelector("#profile-delete").hidden = !data.writable || !profile || profile.uses !== 0;
+      form.querySelector("#profile-usage").classList.toggle("is-warning", profile?.uses > 0);
       form.querySelector("#profile-usage").textContent = profile?.uses > 0
         ? `${t("profileInUse")}: ${(profile.assigned_to || []).map((item) => item.name || item.entity_id || t("profileMissingCover")).join(", ") || profile.uses}. ${t("profileDeleteHelp")}`
         : profile ? t("profileUnused") : "";
@@ -362,7 +419,7 @@ export class CoverProfileEditor {
     };
     if (action === "new" && form.elements.profile.value) message.copy_from_profile_id = form.elements.profile.value;
     this._saving = generation;
-    const controls = [...form.querySelectorAll("input, select, button")];
+    const controls = [...form.querySelectorAll("input, select, button:not(.help)")];
     for (const control of controls) control.disabled = true;
     const errorBox = form.querySelector("#profile-error");
     errorBox.hidden = true;
