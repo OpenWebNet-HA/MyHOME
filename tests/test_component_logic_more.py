@@ -54,6 +54,7 @@ class TestLightEntity:
             gateway=mock_gateway,
         )
         light_entity.hass = mock_hass
+        light_entity.entity_id = light_entity.entity_id or "test.light_entity"
         light_entity.platform = MagicMock()  # added by an EntityPlatform
         light_entity.async_schedule_update_ha_state = MagicMock()
         return light_entity
@@ -109,6 +110,7 @@ class TestSwitchEntity:
             gateway=mock_gateway,
         )
         s.hass = mock_hass
+        s.entity_id = s.entity_id or "test.s"
         s.platform = MagicMock()  # added by an EntityPlatform
         s.async_schedule_update_ha_state = MagicMock()
         return s
@@ -296,6 +298,7 @@ class TestSwitchEntity:
             gateway=mock_gateway,
         )
         sw_interface.hass = mock_hass
+        sw_interface.entity_id = sw_interface.entity_id or "test.sw_interface"
         sw_interface.async_on_remove = MagicMock()
         sw_interface.async_update = AsyncMock()
 
@@ -535,6 +538,7 @@ class TestCoverEntity:
     @pytest.mark.asyncio
     async def test_cover_async_added_to_hass(self, cover, mock_hass):
         cover.hass = mock_hass
+        cover.entity_id = cover.entity_id or "test.cover"
         cover.async_on_remove = MagicMock()
         await cover.async_added_to_hass()
         assert cover.async_on_remove.call_count == 3

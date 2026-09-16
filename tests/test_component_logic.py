@@ -57,6 +57,7 @@ class TestClimateEntity:
             gateway=mock_gateway,
         )
         c.platform = MagicMock()  # added by an EntityPlatform
+        c.entity_id = c.entity_id or "climate.test"  # assigned by the registry in real Home Assistant
         c.async_schedule_update_ha_state = MagicMock()
         return c
 

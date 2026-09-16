@@ -330,7 +330,7 @@ async def test_calibrate_button_calls_the_service_for_its_cover(hass, gateway):
     btn = CalibrateCoverButtonEntity(hass=hass, platform="button", device_id="21", where="21", interface=None, name="Bedroom shutter", gateway=gateway)
     btn.hass = hass
     assert btn.unique_id == f"{gateway.mac}-2-21-calibrate"
-    assert btn.entity_id == "button.bedroom_shutter_calibrate_travel_time"
+    assert btn.translation_key == "calibrate_travel_time"
     await btn.async_update()  # no-op
 
     calls = []
@@ -954,7 +954,10 @@ def test_every_raised_translation_key_is_defined():
     }
     assert raised, "no translated exceptions found"
     for name in ("strings.json", "translations/en.json"):
-        defined = set(json.loads((root / name).read_text(encoding="utf-8"))["exceptions"])
+        data = json.loads((root / name).read_text(encoding="utf-8"))
+        defined = set(data["exceptions"]) | {
+            key for platform in data["entity"].values() for key in platform
+        }
         missing = raised - defined
         assert not missing, f"{name} lacks exception translations for {sorted(missing)}"
 

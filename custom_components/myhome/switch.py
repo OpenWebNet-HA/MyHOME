@@ -219,6 +219,7 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
             manufacturer=manufacturer,
             model=model,
             gateway=gateway,
+            entity_name=entity_name,
         )
 
         self._interface = interface
