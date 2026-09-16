@@ -15,6 +15,17 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Partial measurement selector (0.22.1)
+
+The direction selector remains available after selecting automatic measurement.
+Choosing opening only or closing only switches the visible mode to guided, as
+explained beside the selector. Selecting automatic again resets the scope to both
+directions. Nothing moves until the existing measurement confirmation. A saved
+profile must still be assigned; when absent, the reason is now visible next to
+the selector. Backend measurement, override and persistence semantics are unchanged.
+Validated with 100 frontend tests and 35 targeted panel/partial-calibration Python
+tests. The two selector regressions fail before this fix and pass afterwards.
+
 ## Current v2 alignment (0.22.0)
 
 The branch integrates official v2 through `c2e6424`, including the public OWNd
@@ -331,7 +342,7 @@ requirements, limits and real-gateway validation steps.
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.22.0**, defined by
+The panel has an independent version, currently **0.22.1**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.

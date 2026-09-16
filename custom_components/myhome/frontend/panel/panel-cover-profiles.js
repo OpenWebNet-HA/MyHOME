@@ -292,8 +292,9 @@ export class CoverProfileEditor {
             ${helpText("cal-help-text", "calQuickRequirement")}
             <div class="profile-times">
               <label>${esc(t("calMode"))}<select id="cal-mode" ${disabled}><option value="guided">${esc(t("calGuided"))}</option><option value="automatic">${esc(t("calAutomatic"))}</option></select></label>
-              <label>${esc(t("calScope"))}<select id="cal-direction" ${disabled}><option value="">${esc(t("calBothDirections"))}</option><option value="opening" ${assigned ? "" : "disabled"}>${esc(t("calOnlyOpening"))}</option><option value="closing" ${assigned ? "" : "disabled"}>${esc(t("calOnlyClosing"))}</option></select></label>
+              <label>${esc(t("calScope"))}<select id="cal-direction" aria-describedby="cal-scope-help" ${disabled}><option value="">${esc(t("calBothDirections"))}</option><option value="opening" ${assigned ? "" : "disabled"}>${esc(t("calOnlyOpening"))}</option><option value="closing" ${assigned ? "" : "disabled"}>${esc(t("calOnlyClosing"))}</option></select></label>
             </div>
+            <p id="cal-scope-help" class="muted" role="status">${esc(t(assigned ? "calSingleDirectionGuided" : "profileError_calibration_profile_required"))}</p>
             <button type="button" id="profile-calibrate" class="primary profile-calibrate" ${disabled}><ha-icon icon="mdi:timer-outline" aria-hidden="true"></ha-icon><span id="cal-label">${esc(t("calTitle"))}</span></button>
             <button type="button" id="profile-calibrate-batch" class="ghost profile-calibrate-batch" ${disabled}><ha-icon icon="mdi:select-group" aria-hidden="true"></ha-icon><span>${esc(t("calBatchTitle"))}</span></button>
           </div>
@@ -359,11 +360,15 @@ export class CoverProfileEditor {
     host.querySelector("#profile-calibrate-batch").onclick = () => this._selectBatch();
     host.querySelector("#cal-mode").onchange = () => {
       const scope = host.querySelector("#cal-direction");
-      scope.disabled = !data.writable || host.querySelector("#cal-mode").value === "automatic";
-      if (scope.disabled) scope.value = "";
+      if (host.querySelector("#cal-mode").value === "automatic") scope.value = "";
       updateCalibrationLabels();
     };
-    host.querySelector("#cal-direction").onchange = updateCalibrationLabels;
+    host.querySelector("#cal-direction").onchange = () => {
+      // A partial measurement uses the guided protocol; keep the choice accessible
+      // even when the operator selected automatic measurement first.
+      if (host.querySelector("#cal-direction").value) host.querySelector("#cal-mode").value = "guided";
+      updateCalibrationLabels();
+    };
     updateCalibrationLabels();
     host.querySelector("#profile-calibrate").onclick = () => {
       if (this._saving === this._generation || !data.writable || this._stale) return;

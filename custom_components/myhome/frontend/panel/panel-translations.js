@@ -3,6 +3,7 @@ export const translations = {
   en: {
     calQuickReview: "Review the measured time and the retained time before saving a new assigned copy.",
     calScope: "Directions to measure",
+    calSingleDirectionGuided: "Selecting opening only or closing only switches to guided measurement. Automatic measurement runs both directions.",
     calBothDirections: "Opening and closing",
     calOnlyOpening: "Opening only",
     calOnlyClosing: "Closing only",
@@ -196,6 +197,7 @@ export const translations = {
   it: {
     calQuickReview: "Rivedi il tempo misurato e quello conservato prima di salvare e assegnare una nuova copia.",
     calScope: "Direzioni da misurare",
+    calSingleDirectionGuided: "Selezionando solo apertura o solo chiusura si passa alla misura guidata. La misura automatica esegue entrambe le direzioni.",
     calBothDirections: "Apertura e chiusura",
     calOnlyOpening: "Solo apertura",
     calOnlyClosing: "Solo chiusura",

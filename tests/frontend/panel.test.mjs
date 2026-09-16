@@ -1182,7 +1182,7 @@ test("single-direction choice uses saved assignment and resets when switching to
   const scope = root.querySelector("#cal-direction");
   assert.equal(scope.value, "");
   change(scope, "closing"); change(root.querySelector("#cal-mode"), "automatic");
-  assert.equal(scope.value, ""); assert.equal(scope.disabled, true);
+  assert.equal(scope.value, ""); assert.equal(scope.disabled, false);
   change(root.querySelector("#cal-mode"), "guided");
   assert.equal(scope.disabled, false); change(scope, "opening");
   // An unsaved editor draft never becomes the calibration source.
@@ -1200,4 +1200,26 @@ test("single-direction options require an assigned saved profile", async () => {
   assert.equal(scope.querySelector('[value="opening"]').disabled, true);
   assert.equal(scope.querySelector('[value="closing"]').disabled, true);
   assert.equal(scope.querySelector('[value=""]').disabled, false);
+  assert.match(root.querySelector("#cal-scope-help").textContent, /Assegna un profilo/);
 });
+
+for (const direction of ["opening", "closing"]) {
+  test(`single-direction ${direction} remains selectable from automatic mode and starts guided review`, async () => {
+    const { root, hass, calls } = await mountProfiles();
+    let request;
+    hass.connection.subscribeMessage = async (_callback, message) => { request = message; return () => {}; };
+    openProfile(root); await tick();
+    change(root.querySelector("#cal-mode"), "automatic");
+    const scope = root.querySelector("#cal-direction");
+    assert.equal(scope.disabled, false);
+    assert.equal(scope.querySelector(`[value="${direction}"]`).disabled, false);
+    change(scope, direction);
+    assert.equal(root.querySelector("#cal-mode").value, "guided");
+    assert.match(root.querySelector("#cal-scope-help").textContent, /guidata/);
+    assert.match(root.querySelector("#cal-hint").textContent, /guidata/);
+    root.querySelector("#profile-calibrate").click(); await tick();
+    assert.equal(request.direction, direction);
+    assert.equal(request.mode, undefined); // Guided is the default WS mode.
+    assert.equal(calls.filter((call) => call.type === "myhome/cover_calibration/action").length, 0);
+  });
+}
