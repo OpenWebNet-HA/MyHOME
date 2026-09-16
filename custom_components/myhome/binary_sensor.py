@@ -1,6 +1,8 @@
 """Support for MyHome binary sensors (dry contacts and motion sensors)."""
+from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from homeassistant.components.binary_sensor import (
     DOMAIN as PLATFORM,
@@ -10,14 +12,13 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.const import (
-    CONF_ENTITIES,
     CONF_MAC,
     CONF_NAME,
     STATE_ON,
 )
 from homeassistant.core import callback
-from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.entity import Entity
 from OWNd.message import (
     MESSAGE_TYPE_MOTION,
     MESSAGE_TYPE_MOTION_TIMEOUT,
@@ -32,17 +33,15 @@ from OWNd.message import (
 from .const import (
     CONF_DEVICE_CLASS,
     CONF_DEVICE_MODEL,
-    CONF_ENTITY,
     CONF_ENTITY_NAME,
     CONF_INVERTED,
     CONF_MANUFACTURER,
-    CONF_PLATFORMS,
     CONF_WHERE,
     CONF_WHO,
-    DOMAIN,
     LOGGER,
     normalize_where,
 )
+from .discovery import Address, DeviceContext, PlatformDiscovery
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 
@@ -95,436 +94,295 @@ ALL_DEVICE_CLASS_SUFFIXES = tuple(
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    gateway = hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY]
-    _configured_binary_sensors = hass.data[DOMAIN][config_entry.data[CONF_MAC]].get(CONF_PLATFORMS, {}).get(PLATFORM, {})
+    """Set up the binary sensors of a gateway: dry contacts (WHO=25), auxiliary
+    channels (WHO=9) and motion sensors (WHO=1), each restored from the registry,
+    then created from myhome.yaml, then discovered from the bus.
 
-    _binary_sensors = []
-    known_sensors = set()
-    known_device_ids = set()
+    Unique ids carry the device class (``{mac}-25-31-opening``), and the same
+    contact may be spelled ``0031`` or ``31``: every entity is remembered under
+    all of its spellings, and frames are routed under all of theirs.
+    """
+    runtime = config_entry.runtime_data
+    gateway = runtime.gateway
+    mac = config_entry.data[CONF_MAC]
+    configured = runtime.platforms.get(PLATFORM, {})
 
-    # Restore previously discovered entities from Entity Registry so they persist across restarts
-    try:
-        entity_registry = er.async_get(hass)
-        existing_entries = er.async_entries_for_config_entry(entity_registry, config_entry.entry_id)
-    except Exception:
-        entity_registry = None
-        existing_entries = []
+    def registry_address(who: str):
+        def address_of(entry) -> Address | None:
+            classified = _classify_registry_entry(entry, gateway.mac, mac)
+            if classified is None or classified[0] != who:
+                return None
+            return Address(classified[1])
 
-    for entry in existing_entries:
-        if entry.domain != PLATFORM:
-            continue
-        unique_id = entry.unique_id
-        after_mac = unique_id.replace(f"{gateway.mac}-", "", 1).replace(f"{config_entry.data[CONF_MAC]}-", "", 1)
+        return address_of
 
-        # WHO 9: Auxiliary binary sensors (must be checked before motion check since aux can have motion device class)
-        if after_mac.startswith("9-") or "-9-" in unique_id:
-            raw_id = after_mac.replace("9-", "", 1) if after_mac.startswith("9-") else after_mac
-            candidate_id = raw_id
-            for s in ALL_DEVICE_CLASS_SUFFIXES:
-                if candidate_id.endswith(s):
-                    candidate_id = candidate_id[:-len(s)]
-                    break
-            clean_candidate = candidate_id.split("-")[-1]
+    def duplicate(entry, ctx: DeviceContext) -> bool:
+        # A second registry entry for a contact already restored under another spelling
+        return any(key in ctx_discovery[ctx.who].known for key in _spellings(ctx.address.where))
 
-            cfg = (
-                _configured_binary_sensors.get(f"9-{candidate_id}")
-                or _configured_binary_sensors.get(f"9-{clean_candidate}")
-                or _configured_binary_sensors.get(candidate_id)
-                or _configured_binary_sensors.get(clean_candidate)
-                or {}
+    ctx_discovery: dict[str, PlatformDiscovery] = {}
+
+    # ── WHO 25: dry contacts ────────────────────────────────────────────
+    def build_dry_contact(ctx: DeviceContext) -> MyHOMEDryContact:
+        if ctx.source == "yaml":
+            cfg, where = ctx.cfg, ctx.address.where
+            device_id, device_class = ctx.config_id or ctx.key, cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class")
+            name, model = cfg[CONF_NAME], "Dry Contact"
+        elif ctx.source == "registry":
+            candidate = ctx.address.where
+            clean_candidate = candidate.split("-")[-1]
+            cfg = _first_config(
+                configured, f"25-{candidate}", candidate, clean_candidate,
+                normalize_where(candidate), normalize_where(clean_candidate),
             )
-            actual_where = str(cfg.get(CONF_WHERE, clean_candidate or candidate_id))
-            clean_where = actual_where.split("-")[-1]
+            where = str(cfg.get(CONF_WHERE, candidate))
+            norm_where, clean_norm = normalize_where(where), normalize_where(where.split("-")[-1])
+            device_id = candidate if candidate in configured else (norm_where or clean_norm or where.split("-")[-1])
+            device_class = cfg.get(CONF_DEVICE_CLASS, getattr(ctx.registry_entry, "original_device_class", None) or BinarySensorDeviceClass.OPENING)
+            name, model = cfg.get(CONF_NAME, f"Dry Contact {clean_norm or where.split('-')[-1]}"), "Dry Contact Interface"
+        else:
+            cfg, where = {}, ctx.address.where
+            device_id, device_class = where, BinarySensorDeviceClass.OPENING
+            name, model = f"Dry Contact {where}", "Dry Contact Interface"
+        contact = MyHOMEDryContact(
+            hass=hass,
+            device_id=device_id,
+            who="25",
+            where=normalize_where(where) or where,
+            name=name,
+            entity_name=cfg.get(CONF_ENTITY_NAME),
+            inverted=cfg.get(CONF_INVERTED, False),
+            device_class=device_class or BinarySensorDeviceClass.OPENING,
+            manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
+            model=cfg.get(CONF_DEVICE_MODEL, model),
+            gateway=gateway,
+        )
+        if ctx.registry_entry is not None:
+            contact._attr_unique_id = ctx.registry_entry.unique_id
+        return contact
 
-            if any(f"9_{x}" in known_sensors for x in (actual_where, clean_where, candidate_id, clean_candidate, f"9-{actual_where}", f"9-{clean_where}", f"9-{candidate_id}", f"9-{clean_candidate}")):
-                if entity_registry:
-                    try:
-                        entity_registry.async_remove(entry.entity_id)
-                        LOGGER.info("Removed duplicate auxiliary registry entry: %s", entry.entity_id)
-                    except Exception:
-                        pass
-                continue
-
-            device_class = cfg.get(CONF_DEVICE_CLASS) or entry.original_device_class
-            device_id = clean_where or clean_candidate or candidate_id
-            bs = MyHOMEAuxiliary(
-                hass=hass,
-                device_id=device_id,
-                who="9",
-                where=actual_where,
-                name=cfg.get(CONF_NAME, f"Auxiliary Channel {clean_where}"),
-                entity_name=cfg.get(CONF_ENTITY_NAME),
-                inverted=cfg.get(CONF_INVERTED, False),
-                device_class=device_class,
-                manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
-                model=cfg.get(CONF_DEVICE_MODEL, "Auxiliary Channel"),
-                gateway=gateway,
-            )
-            bs._attr_unique_id = entry.unique_id
-            for x in (actual_where, clean_where, candidate_id, clean_candidate, device_id, f"9-{actual_where}", f"9-{clean_where}", f"9-{candidate_id}", f"9-{clean_candidate}"):
-                known_sensors.add(f"9_{x}")
-            known_device_ids.add(device_id)
-            known_device_ids.add(actual_where)
-            known_device_ids.add(clean_where)
-            known_device_ids.add(candidate_id)
-            known_device_ids.add(clean_candidate)
-            known_device_ids.add(f"9-{actual_where}")
-            known_device_ids.add(f"9-{clean_where}")
-            known_device_ids.add(f"9-{candidate_id}")
-            known_device_ids.add(f"9-{clean_candidate}")
-            _binary_sensors.append(bs)
-
-        # WHO 25: Dry Contact binary sensors
-        elif (
-            after_mac.startswith("25-")
-            or "-25-" in unique_id
-            or entry.original_device_class in (
-                BinarySensorDeviceClass.OPENING,
-                BinarySensorDeviceClass.DOOR,
-                BinarySensorDeviceClass.GARAGE_DOOR,
-                BinarySensorDeviceClass.WINDOW,
-                BinarySensorDeviceClass.MOVING,
-            )
-            or any(unique_id.endswith(s) for s in ALL_DEVICE_CLASS_SUFFIXES if s != "-motion")
-        ):
-            raw_id = after_mac.replace("25-", "", 1) if after_mac.startswith("25-") else after_mac
-            candidate_id = raw_id
-            for s in ALL_DEVICE_CLASS_SUFFIXES:
-                if candidate_id.endswith(s):
-                    candidate_id = candidate_id[:-len(s)]
-                    break
-            clean_candidate = candidate_id.split("-")[-1]
-
-            cfg = (
-                _configured_binary_sensors.get(f"25-{candidate_id}")
-                or _configured_binary_sensors.get(candidate_id)
-                or _configured_binary_sensors.get(clean_candidate)
-                or _configured_binary_sensors.get(normalize_where(candidate_id))
-                or _configured_binary_sensors.get(normalize_where(clean_candidate))
-                or {}
-            )
-            actual_where = str(cfg.get(CONF_WHERE, candidate_id))
-            norm_where = normalize_where(actual_where)
-            clean_where = actual_where.split("-")[-1]
-            clean_norm = normalize_where(clean_where)
-
-            is_dup = (
-                any(f"25_{x}" in known_sensors for x in (actual_where, norm_where, clean_where, clean_norm, candidate_id, clean_candidate, f"25-{actual_where}", f"25-{norm_where}", f"25-{candidate_id}"))
-                or candidate_id in known_device_ids
-                or actual_where in known_device_ids
-                or norm_where in known_device_ids
-                or clean_candidate in known_device_ids
-                or f"25-{actual_where}" in known_device_ids
-                or f"25-{norm_where}" in known_device_ids
-                or f"25-{candidate_id}" in known_device_ids
-            )
-            if is_dup:
-                if entity_registry:
-                    try:
-                        entity_registry.async_remove(entry.entity_id)
-                        LOGGER.info("Removed duplicate dry contact registry entry: %s", entry.entity_id)
-                    except Exception:
-                        pass
-                continue
-
-            device_id = candidate_id if candidate_id in _configured_binary_sensors else (norm_where or clean_norm or clean_where)
-            device_class = cfg.get(CONF_DEVICE_CLASS, entry.original_device_class or BinarySensorDeviceClass.OPENING)
-            bs = MyHOMEDryContact(
-                hass=hass,
-                device_id=device_id,
-                who="25",
-                where=norm_where or actual_where,
-                name=cfg.get(CONF_NAME, f"Dry Contact {clean_norm or clean_where}"),
-                entity_name=cfg.get(CONF_ENTITY_NAME),
-                inverted=cfg.get(CONF_INVERTED, False),
-                device_class=device_class,
-                manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
-                model=cfg.get(CONF_DEVICE_MODEL, "Dry Contact Interface"),
-                gateway=gateway,
-            )
-            bs._attr_unique_id = entry.unique_id
-            for x in (actual_where, norm_where, clean_where, clean_norm, candidate_id, clean_candidate, device_id, f"25-{actual_where}", f"25-{norm_where}", f"25-{candidate_id}"):
-                known_sensors.add(f"25_{x}")
-            known_device_ids.add(candidate_id)
-            known_device_ids.add(clean_candidate)
-            known_device_ids.add(device_id)
-            known_device_ids.add(actual_where)
-            known_device_ids.add(norm_where)
-            known_device_ids.add(f"25-{actual_where}")
-            known_device_ids.add(f"25-{norm_where}")
-            known_device_ids.add(f"25-{candidate_id}")
-            _binary_sensors.append(bs)
-
-        # WHO 1: Motion sensors
-        elif "-motion" in unique_id or entry.original_device_class == BinarySensorDeviceClass.MOTION:
-            where = after_mac.replace("-motion", "")
-            parts_who = where.split("-", 1)
-            where = parts_who[-1] if len(parts_who) > 1 else where
+    # ── WHO 9: auxiliary channels (configured or restored, never discovered) ──
+    def build_auxiliary(ctx: DeviceContext) -> MyHOMEAuxiliary:
+        if ctx.source == "yaml":
+            cfg, where, device_id = ctx.cfg, ctx.address.where, ctx.config_id or ctx.key
+            device_class, name = cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class"), cfg[CONF_NAME]
+        else:
+            candidate = ctx.address.where
+            clean_candidate = candidate.split("-")[-1]
+            cfg = _first_config(configured, f"9-{candidate}", f"9-{clean_candidate}", candidate, clean_candidate)
+            where = str(cfg.get(CONF_WHERE, clean_candidate or candidate))
             clean_where = where.split("-")[-1]
-            norm_where = normalize_where(where)
-            clean_norm = normalize_where(clean_where)
+            device_id = clean_where or clean_candidate or candidate
+            device_class = cfg.get(CONF_DEVICE_CLASS) or getattr(ctx.registry_entry, "original_device_class", None)
+            name = cfg.get(CONF_NAME, f"Auxiliary Channel {clean_where}")
+        auxiliary = MyHOMEAuxiliary(
+            hass=hass,
+            device_id=device_id,
+            who="9",
+            where=where,
+            name=name,
+            entity_name=cfg.get(CONF_ENTITY_NAME),
+            inverted=cfg.get(CONF_INVERTED, False),
+            device_class=device_class,
+            manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
+            model=cfg.get(CONF_DEVICE_MODEL, "Auxiliary Channel"),
+            gateway=gateway,
+        )
+        if ctx.registry_entry is not None:
+            auxiliary._attr_unique_id = ctx.registry_entry.unique_id
+        return auxiliary
 
-            if any(f"1_{x}" in known_sensors for x in (where, norm_where, clean_where, clean_norm, f"1-{where}", f"1-{norm_where}")):
-                if entity_registry:
-                    try:
-                        entity_registry.async_remove(entry.entity_id)
-                        LOGGER.info("Removed duplicate motion sensor registry entry: %s", entry.entity_id)
-                    except Exception:
-                        pass
-                continue
+    # ── WHO 1: motion sensors ───────────────────────────────────────────
+    def build_motion(ctx: DeviceContext) -> MyHOMEMotionSensor:
+        if ctx.source == "yaml":
+            cfg, where, device_id = ctx.cfg, ctx.address.where, ctx.config_id or ctx.key
+            name = cfg[CONF_NAME]
+        elif ctx.source == "registry":
+            raw = ctx.address.where
+            clean_raw = raw.split("-")[-1]
+            norm_raw, clean_norm = normalize_where(raw), normalize_where(clean_raw)
+            cfg = _first_config(configured, f"1-{norm_raw}", f"1-{raw}", norm_raw, raw, clean_norm, clean_raw)
+            where = str(cfg.get(CONF_WHERE, norm_raw or raw))
+            device_id = norm_raw or clean_norm or clean_raw
+            name = cfg.get(CONF_NAME, f"Motion Sensor {clean_norm or clean_raw}")
+        else:
+            cfg, where, device_id = {}, ctx.address.where, ctx.address.where
+            name = f"Motion Sensor {where}"
+        motion = MyHOMEMotionSensor(
+            hass=hass,
+            device_id=device_id,
+            who="1",
+            where=normalize_where(where) or where,
+            name=name,
+            entity_name=cfg.get(CONF_ENTITY_NAME),
+            inverted=cfg.get(CONF_INVERTED, False),
+            device_class=BinarySensorDeviceClass.MOTION,
+            manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
+            model=cfg.get(CONF_DEVICE_MODEL, "Motion Sensor"),
+            gateway=gateway,
+        )
+        if ctx.registry_entry is not None:
+            motion._attr_unique_id = ctx.registry_entry.unique_id
+        return motion
 
-            cfg = (
-                _configured_binary_sensors.get(f"1-{norm_where}")
-                or _configured_binary_sensors.get(f"1-{where}")
-                or _configured_binary_sensors.get(norm_where)
-                or _configured_binary_sensors.get(where)
-                or _configured_binary_sensors.get(clean_norm)
-                or _configured_binary_sensors.get(clean_where)
-                or {}
-            )
-            actual_where = str(cfg.get(CONF_WHERE, norm_where or where))
-            norm_actual = normalize_where(actual_where)
-            dev_id = norm_where or clean_norm or clean_where
-            bs = MyHOMEMotionSensor(
-                hass=hass,
-                device_id=dev_id,
-                who="1",
-                where=norm_actual or actual_where,
-                name=cfg.get(CONF_NAME, f"Motion Sensor {clean_norm or clean_where}"),
-                entity_name=cfg.get(CONF_ENTITY_NAME),
-                inverted=cfg.get(CONF_INVERTED, False),
-                device_class=BinarySensorDeviceClass.MOTION,
-                manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
-                model=cfg.get(CONF_DEVICE_MODEL, "Motion Sensor"),
-                gateway=gateway,
-            )
-            bs._attr_unique_id = entry.unique_id
-            for x in (where, norm_where, clean_where, clean_norm, actual_where, norm_actual, dev_id, f"1-{where}", f"1-{norm_where}", f"1-{actual_where}", f"1-{norm_actual}"):
-                known_sensors.add(f"1_{x}")
-            known_device_ids.add(dev_id)
-            known_device_ids.add(where)
-            known_device_ids.add(norm_where)
-            known_device_ids.add(actual_where)
-            known_device_ids.add(norm_actual)
-            known_device_ids.add(f"1-{dev_id}")
-            known_device_ids.add(f"1-{where}")
-            known_device_ids.add(f"1-{norm_where}")
-            _binary_sensors.append(bs)
+    def yaml_who(who: int, device_class=None):
+        def accept(ctx: DeviceContext) -> bool:
+            if ctx.source == "yaml":
+                cfg = ctx.cfg
+                return int(cfg[CONF_WHO]) == who and (
+                    device_class is None or (cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class")) == device_class
+                )
+            return ctx.source == "registry" or who != 9  # aux channels are never discovered
 
-    # Also instantiate any configured binary sensors not yet in registry
-    for _binary_sensor_key, dev_cfg in _configured_binary_sensors.items():
-        _who = int(dev_cfg[CONF_WHO])
-        _device_class = dev_cfg.get(CONF_DEVICE_CLASS) or dev_cfg.get("device_class")
-        where = str(dev_cfg[CONF_WHERE])
-        norm_where = normalize_where(where)
-        clean_where = where.split("-")[-1]
-        clean_norm = normalize_where(clean_where)
+        return accept
 
-        if (
-            any(f"{_who}_{x}" in known_sensors for x in (where, norm_where, clean_where, clean_norm, _binary_sensor_key, f"{_who}-{where}", f"{_who}-{norm_where}"))
-            or _binary_sensor_key in known_device_ids
-            or where in known_device_ids
-            or norm_where in known_device_ids
-            or clean_where in known_device_ids
-            or clean_norm in known_device_ids
-            or f"{_who}-{where}" in known_device_ids
-            or f"{_who}-{norm_where}" in known_device_ids
-        ):
-            continue
+    def known_keys(ctx: DeviceContext) -> list[str]:
+        """Every spelling of the contact: the frame's, the configured, the normalized, the entity's."""
+        keys = [ctx.key, ctx.config_id or "", *_spellings(ctx.address.where)]
+        cfg_where = ctx.cfg.get(CONF_WHERE) if ctx.source != "bus" else None
+        if cfg_where:
+            keys.extend(_spellings(str(cfg_where)))
+        return [k for k in keys if k]
 
-        if _who == 25:
-            bs = MyHOMEDryContact(
-                hass=hass,
-                device_id=_binary_sensor_key,
-                who=dev_cfg[CONF_WHO],
-                where=norm_where or where,
-                name=dev_cfg[CONF_NAME],
-                entity_name=dev_cfg.get(CONF_ENTITY_NAME),
-                inverted=dev_cfg.get(CONF_INVERTED, False),
-                device_class=_device_class or BinarySensorDeviceClass.OPENING,
-                manufacturer=dev_cfg.get(CONF_MANUFACTURER, "BTicino"),
-                model=dev_cfg.get(CONF_DEVICE_MODEL, "Dry Contact"),
-                gateway=gateway,
-            )
-            for x in (where, norm_where, clean_where, clean_norm, _binary_sensor_key, f"25-{where}", f"25-{norm_where}"):
-                known_sensors.add(f"25_{x}")
-            known_device_ids.add(_binary_sensor_key)
-            known_device_ids.add(where)
-            known_device_ids.add(norm_where)
-            known_device_ids.add(clean_where)
-            known_device_ids.add(clean_norm)
-            known_device_ids.add(f"25-{where}")
-            known_device_ids.add(f"25-{norm_where}")
-            _binary_sensors.append(bs)
-        elif _who == 9:
-            bs = MyHOMEAuxiliary(
-                hass=hass,
-                device_id=_binary_sensor_key,
-                who=dev_cfg[CONF_WHO],
-                where=where,
-                name=dev_cfg[CONF_NAME],
-                entity_name=dev_cfg.get(CONF_ENTITY_NAME),
-                inverted=dev_cfg.get(CONF_INVERTED, False),
-                device_class=_device_class,
-                manufacturer=dev_cfg.get(CONF_MANUFACTURER, "BTicino"),
-                model=dev_cfg.get(CONF_DEVICE_MODEL, "Auxiliary Channel"),
-                gateway=gateway,
-            )
-            for x in (where, clean_where, _binary_sensor_key, f"9-{where}", f"9-{clean_where}"):
-                known_sensors.add(f"9_{x}")
-            known_device_ids.add(_binary_sensor_key)
-            known_device_ids.add(where)
-            known_device_ids.add(clean_where)
-            known_device_ids.add(f"9-{where}")
-            known_device_ids.add(f"9-{clean_where}")
-            _binary_sensors.append(bs)
-        elif _who == 1 and _device_class == BinarySensorDeviceClass.MOTION:
-            bs = MyHOMEMotionSensor(
-                hass=hass,
-                device_id=_binary_sensor_key,
-                who=dev_cfg[CONF_WHO],
-                where=norm_where or where,
-                name=dev_cfg[CONF_NAME],
-                entity_name=dev_cfg.get(CONF_ENTITY_NAME),
-                inverted=dev_cfg.get(CONF_INVERTED, False),
-                device_class=_device_class,
-                manufacturer=dev_cfg.get(CONF_MANUFACTURER, "BTicino"),
-                model=dev_cfg.get(CONF_DEVICE_MODEL, "Motion Sensor"),
-                gateway=gateway,
-            )
-            for x in (where, norm_where, clean_where, clean_norm, _binary_sensor_key, f"1-{where}", f"1-{norm_where}"):
-                known_sensors.add(f"1_{x}")
-            known_device_ids.add(_binary_sensor_key)
-            known_device_ids.add(where)
-            known_device_ids.add(norm_where)
-            known_device_ids.add(clean_where)
-            known_device_ids.add(clean_norm)
-            known_device_ids.add(f"1-{where}")
-            known_device_ids.add(f"1-{norm_where}")
-            _binary_sensors.append(bs)
+    def route_keys(message, address: Address | None) -> list[str]:
+        return _spellings(address.where) if address is not None else []
 
-    if _binary_sensors:
-        async_add_entities(_binary_sensors)
+    common = dict(hass=hass, config_entry=config_entry, async_add_entities=async_add_entities, platform=PLATFORM)
+    ctx_discovery["25"] = PlatformDiscovery(
+        who="25", event_type=OWNDryContactEvent, build=build_dry_contact,
+        registry_address=registry_address("25"), reject_registry_entry=duplicate, accept=yaml_who(25),
+        known_keys=known_keys, route_keys=route_keys, address=_contact_address, **common,
+    )
+    ctx_discovery["9"] = PlatformDiscovery(
+        who="9", event_type=OWNAuxEvent, build=build_auxiliary,
+        registry_address=registry_address("9"), reject_registry_entry=duplicate, accept=yaml_who(9),
+        known_keys=known_keys, route_keys=route_keys, address=_aux_address, **common,
+    )
+    ctx_discovery["1"] = PlatformDiscovery(
+        who="1", event_type=OWNLightingEvent, build=build_motion,
+        registry_address=registry_address("1"), reject_registry_entry=duplicate,
+        accept=yaml_who(1, BinarySensorDeviceClass.MOTION),
+        known_keys=known_keys, route_keys=route_keys, address=_motion_address, **common,
+    )
+
+    entities: list[Entity] = []
+    for discovery in ctx_discovery.values():
+        entities.extend(discovery.start(listen=False, add=False))
+    if entities:
+        async_add_entities(entities)
 
     @callback
     def _handle_binary_sensor_message(msg):
         """Forward incoming bus messages to binary sensor entities."""
-        if isinstance(msg, OWNDryContactEvent):
-            where = str(msg.where)
-            norm_where = normalize_where(where)
-            clean_where = where.split("-")[-1]
-            clean_norm = normalize_where(clean_where)
-
-            if not any(f"25_{x}" in known_sensors for x in (where, norm_where, clean_where, clean_norm)):
-                primary_where = norm_where or clean_norm or clean_where
-                name = f"Dry Contact {clean_norm or clean_where}"
-                bs = MyHOMEDryContact(
-                    hass=hass,
-                    device_id=primary_where,
-                    who="25",
-                    where=primary_where,
-                    name=name,
-                    entity_name=None,
-                    inverted=False,
-                    device_class=BinarySensorDeviceClass.OPENING,
-                    manufacturer="BTicino",
-                    model="Dry Contact Interface",
-                    gateway=gateway,
-                )
-                for x in (where, norm_where, clean_where, clean_norm, primary_where):
-                    known_sensors.add(f"25_{x}")
-                known_device_ids.add(primary_where)
-                async_add_entities([bs])
-                bs.handle_event(msg)
-
-            for target in set((where, norm_where, clean_where, clean_norm)):
-                async_dispatcher_send(
-                    hass,
-                    f"myhome_update_{config_entry.data[CONF_MAC]}_25_{target}",
-                    msg,
-                )
-        elif isinstance(msg, OWNAuxEvent):
-            where = str(msg.channel)
-            clean_where = where.split("-")[-1]
-            for target in set((where, clean_where)):
-                async_dispatcher_send(
-                    hass,
-                    f"myhome_update_{config_entry.data[CONF_MAC]}_9_{target}",
-                    msg,
-                )
-        elif isinstance(msg, OWNLightingEvent):
-            is_motion = (
-                getattr(msg, "is_sensor", False) is True
-                or getattr(msg, "motion", False) is True
-                or getattr(msg, "message_type", None) in (
-                    MESSAGE_TYPE_MOTION,
-                    MESSAGE_TYPE_MOTION_TIMEOUT,
-                    MESSAGE_TYPE_PIR_SENSITIVITY,
-                )
-                or getattr(msg, "dimension", None) in (5, 7)
-                or getattr(msg, "_state", None) == 34
-            )
-            if is_motion and hasattr(msg, "where") and msg.where is not None:
-                where = str(msg.where)
-                norm_where = normalize_where(where)
-                clean_where = where.split("-")[-1]
-                clean_norm = normalize_where(clean_where)
-
-                if not any(f"1_{x}" in known_sensors for x in (where, norm_where, clean_where, clean_norm)):
-                    primary_where = norm_where or clean_norm or clean_where
-                    name = f"Motion Sensor {clean_norm or clean_where}"
-                    bs = MyHOMEMotionSensor(
-                        hass=hass,
-                        name=name,
-                        entity_name=None,
-                        device_id=primary_where,
-                        who="1",
-                        where=primary_where,
-                        inverted=False,
-                        device_class=BinarySensorDeviceClass.MOTION,
-                        manufacturer="BTicino",
-                        model="Motion Sensor",
-                        gateway=gateway,
-                    )
-                    for x in (where, norm_where, clean_where, clean_norm, primary_where):
-                        known_sensors.add(f"1_{x}")
-                    known_device_ids.add(primary_where)
-                    async_add_entities([bs])
-                    bs.handle_event(msg)
-
-                for target in set((where, norm_where, clean_where, clean_norm)):
-                    async_dispatcher_send(
-                        hass,
-                        f"myhome_update_{config_entry.data[CONF_MAC]}_1_{target}",
-                        msg,
-                    )
+        for discovery in ctx_discovery.values():
+            discovery.handle_message(msg)
 
     config_entry.async_on_unload(
-        async_dispatcher_connect(
-            hass,
-            f"myhome_message_{config_entry.data[CONF_MAC]}",
-            _handle_binary_sensor_message,
-        )
+        async_dispatcher_connect(hass, f"myhome_message_{mac}", _handle_binary_sensor_message)
     )
     return True
 
 
+def _spellings(where: str) -> list[str]:
+    """``0031`` may also appear as ``31``, and a legacy ``25-0031`` as either."""
+    clean = where.split("-")[-1]
+    return list(dict.fromkeys(k for k in (where, normalize_where(where), clean, normalize_where(clean)) if k))
+
+
+def _first_config(configured: dict[str, Any], *keys: str) -> dict[str, Any]:
+    for key in keys:
+        cfg = configured.get(key)
+        if cfg:
+            return dict(cfg)
+    return {}
+
+
+def _strip_class_suffix(candidate: str) -> str:
+    for suffix in ALL_DEVICE_CLASS_SUFFIXES:
+        if candidate.endswith(suffix):
+            return candidate[: -len(suffix)]
+    return candidate
+
+
+def _classify_registry_entry(entry, gateway_mac: str, entry_mac: str) -> tuple[str, str] | None:
+    """``(who, candidate id)`` of a registry entry, from its unique id or device class.
+
+    Auxiliary channels first (an aux channel may carry the motion class), then
+    dry contacts, then motion sensors.
+    """
+    unique_id = entry.unique_id
+    after_mac = unique_id.replace(f"{gateway_mac}-", "", 1).replace(f"{entry_mac}-", "", 1)
+    if after_mac.startswith("9-") or "-9-" in unique_id:
+        raw = after_mac.replace("9-", "", 1) if after_mac.startswith("9-") else after_mac
+        return "9", _strip_class_suffix(raw)
+    if (
+        after_mac.startswith("25-")
+        or "-25-" in unique_id
+        or entry.original_device_class in (
+            BinarySensorDeviceClass.OPENING,
+            BinarySensorDeviceClass.DOOR,
+            BinarySensorDeviceClass.GARAGE_DOOR,
+            BinarySensorDeviceClass.WINDOW,
+            BinarySensorDeviceClass.MOVING,
+        )
+        or any(unique_id.endswith(s) for s in ALL_DEVICE_CLASS_SUFFIXES if s != "-motion")
+    ):
+        raw = after_mac.replace("25-", "", 1) if after_mac.startswith("25-") else after_mac
+        return "25", _strip_class_suffix(raw)
+    if "-motion" in unique_id or entry.original_device_class == BinarySensorDeviceClass.MOTION:
+        where = after_mac.replace("-motion", "")
+        parts = where.split("-", 1)
+        return "1", parts[-1] if len(parts) > 1 else where
+    return None
+
+
+def _primary(where: str) -> str:
+    clean = where.split("-")[-1]
+    return normalize_where(where) or normalize_where(clean) or clean
+
+
+def _contact_address(message) -> Address | None:
+    return Address(_primary(str(message.where)))
+
+
+def _aux_address(message) -> Address | None:
+    return Address(str(message.channel))
+
+
+def _motion_address(message) -> Address | None:
+    """Motion / PIR frames of a WHO=1 sensor; ``None`` for anything else on WHO=1."""
+    is_motion = (
+        getattr(message, "is_sensor", False) is True
+        or getattr(message, "motion", False) is True
+        or getattr(message, "message_type", None) in (MESSAGE_TYPE_MOTION, MESSAGE_TYPE_MOTION_TIMEOUT, MESSAGE_TYPE_PIR_SENSITIVITY)
+        or getattr(message, "dimension", None) in (5, 7)
+        or getattr(message, "_state", None) == 34
+    )
+    if not is_motion or getattr(message, "where", None) is None:
+        return None
+    return Address(_primary(str(message.where)))
+
+
 async def async_unload_entry(hass, config_entry):
-    if PLATFORM not in hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_PLATFORMS]:
+    runtime = config_entry.runtime_data
+
+    if PLATFORM not in runtime.platforms:
         return True
 
-    _configured_binary_sensors = hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_PLATFORMS][PLATFORM]
+    _configured_binary_sensors = runtime.platforms[PLATFORM]
 
     for _binary_sensor in list(_configured_binary_sensors.keys()):
-        del hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_PLATFORMS][PLATFORM][_binary_sensor]
+        del runtime.platforms[PLATFORM][_binary_sensor]
 
 
 class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
+    _name_from_device_class = True
+
     def __init__(
         self,
         hass,
         name: str,
-        entity_name: str,
+        entity_name: str | None,
         device_id: str,
         who: str,
         where: str,
@@ -545,12 +403,12 @@ class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
             manufacturer=manufacturer,
             model=model,
             gateway=gateway,
+            entity_name=entity_name,
         )
 
         self._inverted = inverted
 
         self._attr_device_class = device_class
-        self._attr_name = entity_name if entity_name else self._attr_device_class.replace("_", " ").capitalize()
 
         self._attr_unique_id = f"{gateway.mac}-{self._device_id}-{self._attr_device_class}"
 
@@ -565,13 +423,7 @@ class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
 
     async def async_added_to_hass(self):
         """When entity is added to hass."""
-        try:
-            device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
-            if CONF_ENTITIES not in device_dict or not isinstance(device_dict[CONF_ENTITIES], dict):
-                device_dict[CONF_ENTITIES] = {}
-            device_dict[CONF_ENTITIES][self._attr_device_class] = self
-        except (KeyError, TypeError):
-            pass
+        self._register_entity_ref(self._attr_device_class)
         target_hass = self.hass or self._hass
         if target_hass is not None:
             unsub = async_dispatcher_connect(
@@ -592,12 +444,7 @@ class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
 
     async def async_will_remove_from_hass(self):
         """When entity is removed from hass."""
-        try:
-            device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
-            if CONF_ENTITIES in device_dict and isinstance(device_dict[CONF_ENTITIES], dict) and self._attr_device_class in device_dict[CONF_ENTITIES]:
-                del device_dict[CONF_ENTITIES][self._attr_device_class]
-        except (KeyError, TypeError):
-            pass
+        self._unregister_entity_ref(self._attr_device_class)
 
     async def async_update(self):
         """Update the entity.
@@ -619,16 +466,18 @@ class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
 
 
 class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
+    _name_from_device_class = True
+
     def __init__(
         self,
         hass,
         name: str,
-        entity_name: str,
+        entity_name: str | None,
         device_id: str,
         who: str,
         where: str,
         inverted: bool,
-        device_class: str,
+        device_class: str | None,
         manufacturer: str,
         model: str,
         gateway: MyHOMEGatewayHandler,
@@ -643,17 +492,14 @@ class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
             manufacturer=manufacturer,
             model=model,
             gateway=gateway,
+            entity_name=entity_name,
         )
 
         self._inverted = inverted
 
         self._attr_device_class = device_class
-        if entity_name:
-            self._attr_name = entity_name
-        elif self._attr_device_class:
-            self._attr_name = self._attr_device_class.replace("_", " ").capitalize()
-        else:
-            self._attr_name = name
+        if not device_class and not entity_name:
+            self._attr_name = None  # no class to name it after: the entity is the device
 
         if self._attr_device_class:
             self._attr_unique_id = f"{gateway.mac}-{self._device_id}-{self._attr_device_class}"
@@ -670,13 +516,7 @@ class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
 
     async def async_added_to_hass(self):
         """When entity is added to hass."""
-        try:
-            device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
-            if CONF_ENTITIES not in device_dict or not isinstance(device_dict[CONF_ENTITIES], dict):
-                device_dict[CONF_ENTITIES] = {}
-            device_dict[CONF_ENTITIES][self._attr_device_class] = self
-        except (KeyError, TypeError):
-            pass
+        self._register_entity_ref(self._attr_device_class)
         target_hass = self.hass or self._hass
         if target_hass is not None:
             unsub = async_dispatcher_connect(
@@ -689,12 +529,7 @@ class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
 
     async def async_will_remove_from_hass(self):
         """When entity is removed from hass."""
-        try:
-            device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
-            if CONF_ENTITIES in device_dict and isinstance(device_dict[CONF_ENTITIES], dict) and self._attr_device_class in device_dict[CONF_ENTITIES]:
-                del device_dict[CONF_ENTITIES][self._attr_device_class]
-        except (KeyError, TypeError):
-            pass
+        self._unregister_entity_ref(self._attr_device_class)
 
     async def async_update(self):
         """AUX sensors are read only and cannot be queried, no async_update implementation."""
@@ -712,11 +547,13 @@ class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
 
 
 class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
+    _name_from_device_class = True
+
     def __init__(
         self,
         hass,
         name: str,
-        entity_name: str,
+        entity_name: str | None,
         device_id: str,
         who: str,
         where: str,
@@ -737,6 +574,7 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
             manufacturer=manufacturer,
             model=model,
             gateway=gateway,
+            entity_name=entity_name,
         )
 
         self._inverted = inverted
@@ -745,7 +583,6 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
         self._timeout = timedelta(seconds=315)
 
         self._attr_device_class = device_class
-        self._attr_name = entity_name if entity_name else self._attr_device_class.replace("_", " ").capitalize()
 
         self._attr_unique_id = f"{gateway.mac}-{self._device_id}-{self._attr_device_class}"
         self._attr_should_poll = True
@@ -769,13 +606,7 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
 
     async def async_added_to_hass(self):
         """When entity is added to hass."""
-        try:
-            device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
-            if CONF_ENTITIES not in device_dict or not isinstance(device_dict[CONF_ENTITIES], dict):
-                device_dict[CONF_ENTITIES] = {}
-            device_dict[CONF_ENTITIES][self._attr_device_class] = self
-        except (KeyError, TypeError):
-            pass
+        self._register_entity_ref(self._attr_device_class)
         target_hass = self.hass or self._hass
         if target_hass is not None:
             unsub = async_dispatcher_connect(
@@ -798,12 +629,7 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
 
     async def async_will_remove_from_hass(self):
         """When entity is removed from hass."""
-        try:
-            device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
-            if CONF_ENTITIES in device_dict and isinstance(device_dict[CONF_ENTITIES], dict) and self._attr_device_class in device_dict[CONF_ENTITIES]:
-                del device_dict[CONF_ENTITIES][self._attr_device_class]
-        except (KeyError, TypeError):
-            pass
+        self._unregister_entity_ref(self._attr_device_class)
 
     async def async_update(self):
         """Update the entity.

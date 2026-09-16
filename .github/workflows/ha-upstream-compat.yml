@@ -49,6 +49,9 @@ jobs:
               echo "installed=false" >> $GITHUB_OUTPUT
               exit 0
             fi
+            # The git tree has no translations/en.json (generated at release time);
+            # without it, entities named after their device class have no name.
+            python scripts/seed_core_translations.py
           else
             pip install ${{ matrix.pip-install }}
           fi

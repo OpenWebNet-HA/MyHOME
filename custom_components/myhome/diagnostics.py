@@ -5,23 +5,48 @@ from typing import Any
 
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_MAC, CONF_PASSWORD
+from homeassistant.const import CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 
 from .const import (
-    CONF_ENTITIES,
-    CONF_ENTITY,
-    DOMAIN,
+    CONF_DECODER_ENTITY,
+    CONF_DECODER_SLOTS,
     INTEGRATION_VERSION,
     get_ownd_version,
 )
+from .data import get_runtime_data
 
+# A diagnostics download is meant to be attached to a public issue. Secrets go
+# without saying; the rest identifies a household - where the gateway lives on
+# the LAN, its MAC, the SSDP/UDN identity, the path of the user's config file.
+# The bus frames, the model, the firmware and the queue figures are what a bug
+# report needs, and they carry none of that.
+#
+# Scope: these keys are redacted, recursively, in the config entry's ``data``
+# and ``options`` only. The gateway, profile, queue, platforms and bus_monitor
+# blocks are assembled from named fields below and never pass through the
+# redaction, so a frame's ``where`` / ``who`` / ``what`` and the counters stay
+# intact. Nothing in the download refers back to a redacted value: ``id`` is
+# the gateway's formatted MAC (the same identity as ``mac``), ``friendly_name``
+# is the name the gateway advertises over SSDP, and a download describes one
+# entry and one gateway - so no anonymized reference is needed to relate them.
+# The one user-named value in the options, the media_player behind a decoder
+# slot, is the exception: it becomes ``media_player.decoder_<slot>`` so the
+# slot -> source / gain mapping stays readable without the room it is named
+# after.
 TO_REDACT = {
     CONF_PASSWORD,
     "password",
     "pin",
     "token",
     "secret",
+    "host",
+    "mac",
+    "id",
+    "UDN",
+    "ssdp_location",
+    "friendly_name",
+    "file_path",
 }
 
 
@@ -31,10 +56,13 @@ async def async_get_config_entry_diagnostics(
     """Return diagnostics for a MyHOME config entry."""
     entry_data = async_redact_data(dict(entry.data), TO_REDACT)
     entry_options = async_redact_data(dict(entry.options), TO_REDACT)
+    for slot in range(1, CONF_DECODER_SLOTS + 1):
+        key = CONF_DECODER_ENTITY.format(slot)
+        if entry_options.get(key):  # an empty slot stays empty: configured or not is diagnostics
+            entry_options[key] = f"media_player.decoder_{slot}"
 
-    mac = entry.data.get(CONF_MAC, "")
-    domain_data = hass.data.get(DOMAIN, {}).get(mac, {})
-    gateway_handler = domain_data.get(CONF_ENTITY)
+    runtime = get_runtime_data(entry)
+    gateway_handler = runtime.gateway if runtime is not None else None
 
     gw_info: dict[str, Any] = {}
     profile_info: dict[str, Any] = {}
@@ -51,6 +79,9 @@ async def async_get_config_entry_diagnostics(
                 "is_connected": getattr(gateway_handler, "is_connected", False),
                 "send_workers": len(getattr(gateway_handler, "sending_workers", [])),
             }
+            identification = getattr(gateway_handler, "identification", None)
+            if callable(identification):
+                gw_info["identification"] = async_redact_data(identification(), TO_REDACT)
             if hasattr(gw, "profile") and gw.profile:
                 profile = gw.profile
                 profile_info = {
@@ -76,7 +107,7 @@ async def async_get_config_entry_diagnostics(
 
     # Count loaded entities per platform
     platforms_info: dict[str, int] = {}
-    entities_dict = domain_data.get(CONF_ENTITIES, {})
+    entities_dict = runtime.entities if runtime is not None else {}
     for platform_name, entities in entities_dict.items():
         platforms_info[platform_name] = len(entities)
 
@@ -84,10 +115,11 @@ async def async_get_config_entry_diagnostics(
         "integration_version": INTEGRATION_VERSION,
         "ownd_version": await hass.async_add_executor_job(get_ownd_version),
         "config_entry": {
-            "entry_id": entry.entry_id,
+            # The entry id and the user's title are identity, not diagnostics
+            "entry_id": "**REDACTED**",
             "version": entry.version,
             "domain": entry.domain,
-            "title": entry.title,
+            "title": f"{gw_info.get('model_name') or 'MyHOME'} Gateway",
             "data": entry_data,
             "options": entry_options,
         },

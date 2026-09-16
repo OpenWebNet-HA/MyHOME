@@ -8,7 +8,14 @@ from OWNd.message import (
     CLIMATE_MODE_COOL,
     CLIMATE_MODE_HEAT,
     CLIMATE_MODE_OFF,
+    LOCAL_CONTROL_NORMAL,
+    LOCAL_CONTROL_OFF,
+    LOCAL_CONTROL_OFFSET,
+    LOCAL_CONTROL_OVERRIDE,
+    LOCAL_CONTROL_PROTECTION,
+    LOCAL_CONTROL_UNKNOWN,
     MESSAGE_TYPE_ACTION,
+    MESSAGE_TYPE_FAN_SPEED,
     MESSAGE_TYPE_LOCAL_OFFSET,
     MESSAGE_TYPE_LOCAL_TARGET_TEMPERATURE,
     MESSAGE_TYPE_MAIN_HUMIDITY,
@@ -24,6 +31,7 @@ from custom_components.myhome.climate import (
     async_setup_entry,
     async_unload_entry,
 )
+from tests.conftest import attach_runtime
 
 
 async def test_setup_and_unload_entry(hass):
@@ -58,6 +66,7 @@ async def test_setup_and_unload_entry(hass):
     config_entry.data = {"mac": "mac"}
 
     async_add_entities = MagicMock()
+    attach_runtime(hass, config_entry)
     await async_setup_entry(hass, config_entry, async_add_entities)
 
     async_add_entities.assert_called_once()
@@ -69,6 +78,7 @@ async def test_setup_and_unload_entry(hass):
     assert climate_entity.device_info["name"] == "Zone 1"
 
     # Test unload
+    attach_runtime(hass, config_entry)
     await async_unload_entry(hass, config_entry)
     assert "device_1" not in hass.data["myhome"]["mac"]["platforms"]["climate"]
 
@@ -92,6 +102,7 @@ async def test_climate_properties_and_hvac_modes(hass):
         model="M",
         gateway=gateway,
     )
+    climate.entity_id = "climate.climate"  # assigned by the registry in real Home Assistant
 
     assert climate.temperature_unit == UnitOfTemperature.CELSIUS
     assert HVACMode.AUTO in climate.hvac_modes
@@ -146,6 +157,7 @@ async def test_climate_set_temperature(hass):
         model="M",
         gateway=gateway,
     )
+    climate.entity_id = "climate.climate"  # assigned by the registry in real Home Assistant
 
     # Set temperature when in HEAT mode
     climate._attr_hvac_mode = HVACMode.HEAT
@@ -188,6 +200,7 @@ async def test_climate_handle_events(hass):
         model="M",
         gateway=gateway,
     )
+    climate.entity_id = "climate.climate"  # assigned by the registry in real Home Assistant
     climate.async_schedule_update_ha_state = MagicMock()
 
     # Event: MAIN_TEMPERATURE
@@ -269,6 +282,7 @@ async def test_climate_async_update(hass):
         model="M",
         gateway=gateway,
     )
+    climate.entity_id = "climate.climate"  # assigned by the registry in real Home Assistant
 
     await climate.async_update()
     gateway.send_status_request.assert_called_once()
@@ -286,7 +300,9 @@ async def test_setup_and_unload_entry_platform_not_configured(hass):
     config_entry = MagicMock()
     config_entry.data = {"mac": "mac"}
 
+    attach_runtime(hass, config_entry)
     assert await async_setup_entry(hass, config_entry, MagicMock()) is True
+    attach_runtime(hass, config_entry)
     assert await async_unload_entry(hass, config_entry) is True
 
 
@@ -310,6 +326,7 @@ async def test_climate_edge_cases_and_properties(hass):
         model="M",
         gateway=gateway,
     )
+    climate.entity_id = "climate.climate"  # assigned by the registry in real Home Assistant
 
     # target_temperature fallback when _local_target_temperature is None
     climate._local_target_temperature = None
@@ -351,6 +368,7 @@ async def test_climate_handle_events_mode_and_target_transitions(hass):
         model="M",
         gateway=gateway,
     )
+    climate.entity_id = "climate.climate"  # assigned by the registry in real Home Assistant
     climate.async_schedule_update_ha_state = MagicMock()
 
     # MESSAGE_TYPE_LOCAL_OFFSET when _target_temperature is None
@@ -441,6 +459,7 @@ async def test_climate_handle_events_action_variations_and_runtime_error(hass):
         model="M",
         gateway=gateway,
     )
+    climate_dual.entity_id = "climate.climate_dual"  # assigned by the registry in real Home Assistant
     climate_dual.async_schedule_update_ha_state = MagicMock()
 
     event = MagicMock(spec=OWNHeatingEvent)
@@ -478,6 +497,7 @@ async def test_climate_handle_events_action_variations_and_runtime_error(hass):
         model="M",
         gateway=gateway,
     )
+    climate_heat.entity_id = "climate.climate_heat"  # assigned by the registry in real Home Assistant
     climate_heat.async_schedule_update_ha_state = MagicMock()
     event.is_active.return_value = True
     climate_heat.handle_event(event)
@@ -499,6 +519,7 @@ async def test_climate_handle_events_action_variations_and_runtime_error(hass):
         model="M",
         gateway=gateway,
     )
+    climate_cool.entity_id = "climate.climate_cool"  # assigned by the registry in real Home Assistant
     climate_cool.async_schedule_update_ha_state = MagicMock()
     event.is_active.return_value = True
     climate_cool.handle_event(event)
@@ -532,16 +553,18 @@ async def test_climate_fan_mode_and_attributes(hass):
         model="Fancoil Unit",
         gateway=gateway,
     )
+    climate_fancoil.entity_id = "climate.climate_fancoil"  # assigned by the registry in real Home Assistant
     climate_fancoil.hass = hass
+    climate_fancoil.entity_id = climate_fancoil.entity_id or "test.climate_fancoil"
     climate_fancoil.async_schedule_update_ha_state = MagicMock()
 
     assert climate_fancoil.supported_features & ClimateEntityFeature.FAN_MODE
-    assert climate_fancoil.fan_modes == ["auto", "low", "medium", "high"]
+    assert climate_fancoil.fan_modes == ["auto", "low", "medium", "high", "off"]
     assert climate_fancoil.fan_mode == "auto"
     assert climate_fancoil.extra_state_attributes["local_offset"] == 0
     assert climate_fancoil.extra_state_attributes["fan_mode"] == "auto"
 
-    # Test setting fan modes: low (1), medium (2), high (3), auto (0)
+    # Test setting fan modes: low (1), medium (2), high (3), auto (0), off (4)
     await climate_fancoil.async_set_fan_mode("low")
     assert climate_fancoil.fan_mode == "low"
     assert str(gateway.send.call_args[0][0]) == "*#4*#5*#11*1##"
@@ -554,6 +577,10 @@ async def test_climate_fan_mode_and_attributes(hass):
     assert climate_fancoil.fan_mode == "high"
     assert str(gateway.send.call_args[0][0]) == "*#4*#5*#11*3##"
 
+    await climate_fancoil.async_set_fan_mode("off")
+    assert climate_fancoil.fan_mode == "off"
+    assert str(gateway.send.call_args[0][0]) == "*#4*#5*#11*4##"
+
     await climate_fancoil.async_set_fan_mode("auto")
     assert climate_fancoil.fan_mode == "auto"
     assert str(gateway.send.call_args[0][0]) == "*#4*#5*#11*0##"
@@ -564,7 +591,6 @@ async def test_climate_fan_mode_and_attributes(hass):
     gateway.send.assert_not_called()
 
     # Event handling for fan speeds
-    from OWNd.message import MESSAGE_TYPE_FAN_SPEED
     event = MagicMock()
     event.message_type = MESSAGE_TYPE_FAN_SPEED
     event.human_readable_log = "Fan speed event"
@@ -581,7 +607,13 @@ async def test_climate_fan_mode_and_attributes(hass):
     climate_fancoil.handle_event(event)
     assert climate_fancoil.fan_mode == "high"
 
+    event.fan_speed = None
+    event.fan_on = False
+    climate_fancoil.handle_event(event)
+    assert climate_fancoil.fan_mode == "off"
+
     event.fan_speed = 0
+    event.fan_on = True
     climate_fancoil.handle_event(event)
     assert climate_fancoil.fan_mode == "auto"
 
@@ -592,3 +624,56 @@ async def test_climate_fan_mode_and_attributes(hass):
     assert str(gateway.send_status_request.call_args[0][0]) == "*#4*5##"
 
 
+async def test_climate_knob_positions_coverage(hass):
+    """Test climate knob"""
+    gateway_mock = MagicMock()
+    gateway_mock.mac = "00:11:22:33:44:55"
+
+    entity = MyHOMEClimate(
+        hass=hass,
+        name="Test Climate",
+        device_id="4-1",
+        who="4",
+        where="1",
+        heating=True,
+        cooling=False,
+        fan=False,
+        standalone=True,
+        central=False,
+        manufacturer="BTicino",
+        model="Heating Zone",
+        gateway=gateway_mock,
+    )
+    entity.hass = hass
+
+    test_cases = [
+        (None, "UNKNOWN"),
+        (LOCAL_CONTROL_NORMAL, "0"),
+        (LOCAL_CONTROL_OFF, "OFF"),
+        (LOCAL_CONTROL_PROTECTION, "*"),
+        (LOCAL_CONTROL_OVERRIDE, "?"),
+        (LOCAL_CONTROL_UNKNOWN, "UNKNOWN"),
+        ("else", "UNKNOWN"),
+    ]
+
+    mock_event = MagicMock()
+    mock_event.message_type = MESSAGE_TYPE_LOCAL_OFFSET
+    mock_event.local_offset = 0
+    mock_event.human_readable_log = "Mock Log"
+    for control_state, expected_knob_pos in test_cases:
+        mock_event.local_control_state = control_state
+        entity.handle_event(mock_event)
+        assert entity._knob_pos == expected_knob_pos
+
+    mock_event.local_offset = 2
+    mock_event.local_control_state = LOCAL_CONTROL_OFFSET
+    entity.handle_event(mock_event)
+    assert entity._knob_pos == "+2"
+
+    # Test real frame with OFF state (where OWNd sets local_offset to None)
+    entity._target_temperature = 20.0
+    event_off = OWNHeatingEvent("*#4*1*13*4##")
+    entity.handle_event(event_off)
+    assert entity._knob_pos == "OFF"
+    assert entity._local_offset == 0
+    assert entity._local_target_temperature == 20.0

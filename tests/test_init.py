@@ -9,6 +9,7 @@ from homeassistant.helpers import device_registry as dr
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome.const import CONF_PLATFORMS, DOMAIN
+from tests.conftest import attach_runtime
 
 
 async def test_setup_entry_success(hass: HomeAssistant):
@@ -55,11 +56,12 @@ async def test_setup_entry_success(hass: HomeAssistant):
         assert config_entry.state is ConfigEntryState.NOT_LOADED
 
 
-async def test_setup_entry_connection_failed(hass: HomeAssistant):
-    """Test failing setup due to bad password or timeout."""
+@pytest.mark.parametrize("reason", ["password_error", "password_required"])
+async def test_setup_entry_auth_failed_starts_reauth(hass: HomeAssistant, reason: str):
+    """A rejected password raises ConfigEntryAuthFailed and HA opens the reauth flow."""
     with patch(
         "custom_components.myhome.gateway.OWNSession.test_connection",
-        return_value={"Success": False, "Message": "password_error"}
+        return_value={"Success": False, "Message": reason}
     ):
         config_entry = MockConfigEntry(
             domain=DOMAIN,
@@ -85,9 +87,60 @@ async def test_setup_entry_connection_failed(hass: HomeAssistant):
         result = await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        # Should return False
         assert not result
         assert config_entry.state is ConfigEntryState.SETUP_ERROR
+        # Home Assistant itself started the reauth flow for this entry
+        flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+        assert [f["context"]["source"] for f in flows] == ["reauth"]
+        assert flows[0]["context"]["entry_id"] == config_entry.entry_id
+        # Nothing was published for the entry: no runtime data, no legacy alias
+        assert getattr(config_entry, "runtime_data", None) is None
+        assert config_entry.data["mac"] not in hass.data[DOMAIN]
+
+
+async def test_setup_entry_generic_test_failure_retries(hass: HomeAssistant):
+    """A non-auth connection test failure raises ConfigEntryNotReady (retry)."""
+    with patch(
+        "custom_components.myhome.gateway.OWNSession.test_connection",
+        return_value={"Success": False, "Message": "negotiation_refused"}
+    ):
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={"host": "192.168.0.35", "port": 20000, "mac": "00:03:50:00:12:36", "name": "F454"},
+            unique_id="00:03:50:00:12:36",
+        )
+        config_entry.add_to_hass(hass)
+        assert not await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+        assert config_entry.state is ConfigEntryState.SETUP_RETRY
+        assert not hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+
+
+async def test_unload_entry_keeps_state_when_platform_unload_fails(hass: HomeAssistant):
+    """If a platform refuses to unload, runtime data and the gateway stay intact."""
+    from custom_components.myhome import async_unload_entry
+    from custom_components.myhome.const import CONF_ENTITY
+
+    mac = "00:03:50:00:12:37"
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": mac, "host": "1.2.3.4", "port": 20000}, unique_id=mac)
+    entry.add_to_hass(hass)
+    gateway = MagicMock()
+    gateway.close_listener = AsyncMock(return_value=True)
+    hass.data.setdefault(DOMAIN, {})[mac] = {CONF_ENTITY: gateway}
+    runtime = attach_runtime(hass, entry, mac, gateway)
+
+    with patch.object(hass.config_entries, "async_unload_platforms", AsyncMock(return_value=False)):
+        assert await async_unload_entry(hass, entry) is False
+    assert hass.data[DOMAIN][mac][CONF_ENTITY] is gateway
+    assert entry.runtime_data is runtime
+    gateway.close_listener.assert_not_awaited()
+
+    with patch.object(hass.config_entries, "async_unload_platforms", AsyncMock(return_value=True)):
+        assert await async_unload_entry(hass, entry) is True
+    assert mac not in hass.data[DOMAIN]
+    assert entry.runtime_data is None
+    gateway.close_listener.assert_awaited_once()
+
 
 async def test_setup_yaml(hass: HomeAssistant):
     """Test setup from yaml configurations returns false."""
@@ -213,9 +266,10 @@ async def test_services(hass: HomeAssistant):
             )
         gateway.send.assert_not_called()
 
-        # Test sync_time, send_message, and sweep_bus when no gateways exist in hass.data[DOMAIN]
-        saved_data = hass.data[DOMAIN]
-        hass.data[DOMAIN] = {}
+        # Test sync_time, send_message, and sweep_bus when no gateway is set up
+        # (an entry without runtime_data does not count as a gateway)
+        saved_runtime = config_entry.runtime_data
+        config_entry.runtime_data = None
         try:
             await hass.services.async_call(
                 DOMAIN, "sync_time", {}, blocking=True
@@ -227,7 +281,8 @@ async def test_services(hass: HomeAssistant):
                 DOMAIN, "sweep_bus", {}, blocking=True
             )
         finally:
-            hass.data[DOMAIN] = saved_data
+            config_entry.runtime_data = saved_runtime
+        gateway.send.assert_not_called()
 
 
 async def test_options_update_rebuilds_decoder_pool(hass: HomeAssistant):
@@ -270,7 +325,7 @@ async def test_options_update_rebuilds_decoder_pool(hass: HomeAssistant):
         hass.config_entries.async_update_entry(config_entry, options=new_options)
         await hass.async_block_till_done()
 
-        pool = hass.data[DOMAIN]["00:03:50:00:12:34"]["decoder_pool"]
+        pool = config_entry.runtime_data.decoder_pool
         assert pool is not None
         assert pool.is_configured is True
         assert "media_player.zone1" in pool._decoder_map
@@ -410,6 +465,11 @@ async def test_setup_entry_duplicate_and_timeout(hass: HomeAssistant):
         unique_id="00:03:50:00:99:77",
     )
     timeout_entry.add_to_hass(hass)
+    # A mapping left under the legacy alias (an out-of-tree reader, an earlier
+    # attempt) must not keep a half-initialised gateway visible during retries.
+    hass.data.setdefault(DOMAIN, {})[timeout_entry.data["mac"]] = {
+        "entity": MagicMock(), "bus_monitor": MagicMock(),
+    }
     from custom_components.myhome import async_setup_entry
     real_isfile = os.path.isfile
 
@@ -430,6 +490,12 @@ async def test_setup_entry_duplicate_and_timeout(hass: HomeAssistant):
     ):
         with pytest.raises(ConfigEntryNotReady):
             await async_setup_entry(hass, timeout_entry)
+
+    # A retry must not expose the half-initialised gateway or bus monitor to
+    # services / WebSocket consumers while the entry is not loaded.
+    failed_gateway_data = hass.data[DOMAIN].get(timeout_entry.data["mac"], {})
+    assert "entity" not in failed_gateway_data
+    assert "bus_monitor" not in failed_gateway_data
 
 
 async def test_register_frontend_branches(hass: HomeAssistant):
@@ -464,32 +530,19 @@ async def test_register_frontend_branches(hass: HomeAssistant):
     await _async_register_frontend(hass)
     mock_http.async_register_static_paths.assert_not_called()
 
-    # 4. Fallback to register_static_path and exception handling
+    # 4. add_extra_js_url failing is logged, registration still completes
     hass.data[DOMAIN]["_frontend_registered"] = False
-    del mock_http.async_register_static_paths
-    mock_http.register_static_path = MagicMock()
     with patch("homeassistant.components.frontend.add_extra_js_url", side_effect=Exception("Frontend error")):
         await _async_register_frontend(hass)
         assert hass.data[DOMAIN]["_frontend_registered"] is True
-        assert mock_http.register_static_path.call_count >= 1
 
-    # 5. async_register_static_paths raises exception and falls back to register_static_path
+    # 5. async_register_static_paths raising (already registered after a reload) is tolerated
     hass.data[DOMAIN]["_frontend_registered"] = False
     mock_http.async_register_static_paths = AsyncMock(side_effect=Exception("Async static paths failed"))
-    mock_http.register_static_path.reset_mock()
     with patch("homeassistant.components.http.StaticPathConfig", create=True):
         await _async_register_frontend(hass)
     assert hass.data[DOMAIN]["_frontend_registered"] is True
-    assert mock_http.register_static_path.call_count >= 1
-
-    # 5b. When static_path_cls is None, falls back to register_static_path even if async_register_static_paths exists
-    hass.data[DOMAIN]["_frontend_registered"] = False
     mock_http.async_register_static_paths = AsyncMock()
-    mock_http.register_static_path.reset_mock()
-    with patch("homeassistant.components.http.StaticPathConfig", None, create=True):
-        await _async_register_frontend(hass)
-    assert hass.data[DOMAIN]["_frontend_registered"] is True
-    assert mock_http.register_static_path.call_count >= 1
 
     # 6. Lovelace resource auto-registration (lines 69-78)
     hass.data[DOMAIN]["_frontend_registered"] = False
@@ -629,23 +682,6 @@ async def test_register_frontend_branches(hass: HomeAssistant):
     assert _get_card_url("/non/existent/path/card.js") == "/myhome_static/myhome-bus-card.js"
     with patch("builtins.open", side_effect=Exception("Read error")):
         assert _get_card_url(card_path) == "/myhome_static/myhome-bus-card.js"
-
-    # 17. Test _sync_www_card helper directly
-    import tempfile
-
-    from custom_components.myhome import _sync_www_card
-    with tempfile.TemporaryDirectory() as tmpdir:
-        src = os.path.join(tmpdir, "src.js")
-        dst = os.path.join(tmpdir, "sub", "dst.js")
-        with open(src, "w") as f:
-            f.write("test")
-        _sync_www_card(src, dst)
-        assert os.path.isfile(dst)
-        with open(dst, "r") as f:
-            assert f.read() == "test"
-        # Exception branch
-        with patch("shutil.copy2", side_effect=Exception("Copy error")):
-            _sync_www_card(src, dst)
 
 
 async def test_setup_entry_myhome_yaml_loading(hass: HomeAssistant):
@@ -982,32 +1018,6 @@ async def test_setup_entry_sw_version_list_normalization(hass: HomeAssistant):
         await hass.async_block_till_done()
 
 
-async def test_async_register_lovelace_resource_dict_storage_collection(hass: HomeAssistant):
-    """Test auto-registering lovelace resource when hass.data['lovelace'] is a dictionary (real HA Core structure)."""
-    from custom_components.myhome import _async_register_lovelace_resource
-
-    mock_resources = MagicMock()
-    mock_resources.loaded = False
-    mock_resources.async_load = AsyncMock()
-    mock_resources.async_items.return_value = []
-    mock_resources.async_create_item = AsyncMock()
-
-    hass.data["lovelace"] = {
-        "mode": "storage",
-        "dashboards": {},
-        "resources": mock_resources,
-    }
-
-    result = await _async_register_lovelace_resource(hass, "/myhome_static/myhome-bus-card.js")
-    assert result is True
-    mock_resources.async_load.assert_awaited_once()
-    assert mock_resources.loaded is True
-    mock_resources.async_create_item.assert_awaited_once_with({
-        "res_type": "module",
-        "url": "/myhome_static/myhome-bus-card.js",
-    })
-
-
 async def test_setup_entry_mfg_fw_fallbacks_and_pruning_branches(hass: HomeAssistant):
     """Test setup_entry manufacturer/firmware fallbacks and device pruning edge cases."""
     with patch(
@@ -1120,86 +1130,25 @@ def test_get_ownd_version():
     get_ownd_version.cache_clear()
 
 
-async def test_async_ensure_ownd_engine_fast_path(hass: HomeAssistant):
-    """Test async_ensure_ownd_engine fast-path when version matches."""
-    from custom_components.myhome import async_ensure_ownd_engine
-    from custom_components.myhome.const import REQUIRED_OWND_VERSION
+async def test_ownd_version_resolved_once_off_loop(hass: HomeAssistant):
+    """The OWNd version is read from disk once in the executor and cached in hass.data."""
+    from custom_components.myhome import _async_resolve_ownd_version
+    from custom_components.myhome.const import DATA_OWND_VERSION, get_ownd_version
 
-    with patch("homeassistant.util.package.is_installed", return_value=True), \
-         patch("custom_components.myhome.get_ownd_version", return_value=REQUIRED_OWND_VERSION):
-        result = await async_ensure_ownd_engine(hass)
-        assert result is True
+    executor_targets = []
+    real_executor = hass.async_add_executor_job
 
+    async def track_executor(target, *args, **kwargs):
+        executor_targets.append(target)
+        return await real_executor(target, *args, **kwargs)
 
-async def test_async_ensure_ownd_engine_auto_install_success(hass: HomeAssistant):
-    """Test async_ensure_ownd_engine self-heals by installing missing requirement."""
-    from custom_components.myhome import async_ensure_ownd_engine
-    from custom_components.myhome.const import REQUIRED_OWND_VERSION
+    hass.data.pop(DOMAIN, None)
+    with patch.object(hass, "async_add_executor_job", side_effect=track_executor):
+        first = await _async_resolve_ownd_version(hass)
+        second = await _async_resolve_ownd_version(hass)
+    assert first == second == hass.data[DOMAIN][DATA_OWND_VERSION]
+    assert executor_targets == [get_ownd_version]
 
-    installed_status = [False, True]
-    def mock_is_installed(req):
-        return installed_status.pop(0) if installed_status else True
-
-    with patch("homeassistant.util.package.is_installed", side_effect=mock_is_installed), \
-         patch("homeassistant.requirements.async_process_requirements", new_callable=AsyncMock) as mock_proc, \
-         patch("importlib.reload") as mock_reload, \
-         patch("importlib.invalidate_caches"), \
-         patch("custom_components.myhome.get_ownd_version", side_effect=["2.0.0b2", REQUIRED_OWND_VERSION]):
-        result = await async_ensure_ownd_engine(hass)
-        assert result is True
-        mock_proc.assert_awaited_once_with(hass, "myhome", [f"OWNd=={REQUIRED_OWND_VERSION}"])
-        assert mock_reload.called
-
-
-async def test_async_ensure_ownd_engine_install_failed(hass: HomeAssistant):
-    """Test async_ensure_ownd_engine handles install failure and creates notification."""
-    from custom_components.myhome import async_ensure_ownd_engine
-
-    with patch("homeassistant.util.package.is_installed", return_value=False), \
-         patch("homeassistant.requirements.async_process_requirements", side_effect=RuntimeError("Pip network timeout")), \
-         patch("custom_components.myhome.get_ownd_version", return_value="2.0.0b2"), \
-         patch("homeassistant.components.persistent_notification.async_create") as mock_notify:
-        result = await async_ensure_ownd_engine(hass)
-        assert result is False
-        mock_notify.assert_called_once()
-
-    # And when notification creation itself raises
-    with patch("homeassistant.util.package.is_installed", return_value=False), \
-         patch("homeassistant.requirements.async_process_requirements", side_effect=RuntimeError("Pip network timeout")), \
-         patch("custom_components.myhome.get_ownd_version", return_value="2.0.0b2"), \
-         patch("homeassistant.components.persistent_notification.async_create", side_effect=RuntimeError("Notification error")):
-        result = await async_ensure_ownd_engine(hass)
-        assert result is False
-
-
-async def test_async_ensure_ownd_engine_reload_error(hass: HomeAssistant):
-    """Test async_ensure_ownd_engine logs and survives reload failures."""
-    from custom_components.myhome import async_ensure_ownd_engine
-    from custom_components.myhome.const import REQUIRED_OWND_VERSION
-
-    installed_status = [False, True]
-    def mock_is_installed(req):
-        return installed_status.pop(0) if installed_status else True
-
-    with patch("homeassistant.util.package.is_installed", side_effect=mock_is_installed), \
-         patch("homeassistant.requirements.async_process_requirements", new_callable=AsyncMock), \
-         patch("importlib.reload", side_effect=RuntimeError("Module reload failure")), \
-         patch("importlib.invalidate_caches"), \
-         patch("custom_components.myhome.get_ownd_version", side_effect=["2.0.0b2", REQUIRED_OWND_VERSION]):
-        result = await async_ensure_ownd_engine(hass)
-        assert result is True
-
-
-async def test_async_setup_entry_engine_mismatch_raises_not_ready(hass: HomeAssistant):
-    """Test async_setup_entry raises ConfigEntryNotReady when engine cannot be synchronized."""
-    from homeassistant.exceptions import ConfigEntryNotReady
-
-    from custom_components.myhome import async_setup_entry
-
-    entry = MockConfigEntry(domain=DOMAIN, data={"mac": "00:03:50:00:12:99", "host": "1.2.3.4", "port": 20000}, unique_id="00:03:50:00:12:99")
-    with patch("custom_components.myhome.async_ensure_ownd_engine", return_value=False):
-        with pytest.raises(ConfigEntryNotReady):
-            await async_setup_entry(hass, entry)
 
 async def test_async_setup_entry_uses_executor_for_ownd_version(hass: HomeAssistant):
     """Test async_setup_entry offloads get_ownd_version to executor to prevent loop blocking."""
@@ -1219,6 +1168,7 @@ async def test_async_setup_entry_uses_executor_for_ownd_version(hass: HomeAssist
         executor_targets.append(target)
         return await real_executor(target, *args, **kwargs)
 
+    hass.data.pop(DOMAIN, None)
     with patch(
         "custom_components.myhome.gateway.OWNSession.test_connection",
         side_effect=asyncio.TimeoutError("Timeout"),
@@ -1229,39 +1179,45 @@ async def test_async_setup_entry_uses_executor_for_ownd_version(hass: HomeAssist
     assert get_ownd_version in executor_targets
 
 
-async def test_setup_entry_async_customize_yaml(hass: HomeAssistant, tmp_path):
-    """Test customize.yaml is loaded asynchronously using async_add_executor_job without blocking the loop."""
-    custom_yaml_path = tmp_path / "customize.yaml"
-    custom_yaml_path.write_text("light.living:\n  friendly_name: Living Spot\n", encoding="utf-8")
+async def test_remove_config_entry_device_refuses_gateway_allows_others(hass: HomeAssistant):
+    """Quality-scale stale-devices: bus devices may be deleted, the gateway may not."""
+    from homeassistant.helpers import device_registry as dr
 
-    with patch.object(hass.config, "path", return_value=str(custom_yaml_path)), patch(
-        "custom_components.myhome.gateway.OWNSession.test_connection",
-        return_value={"Success": True, "Message": None},
-    ), patch(
-        "custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"
-    ), patch(
-        "custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"
-    ), patch.object(
-        hass, "async_add_executor_job", wraps=hass.async_add_executor_job
-    ) as mock_executor:
-        config_entry = MockConfigEntry(
-            domain=DOMAIN,
-            data={
-                "host": "192.168.0.35",
-                "port": 20000,
-                "password": "pass",
-                "mac": "00:03:50:00:12:88",
-            },
-            unique_id="00:03:50:00:12:88",
-        )
-        config_entry.add_to_hass(hass)
+    from custom_components.myhome import async_remove_config_entry_device
 
-        assert await hass.config_entries.async_setup(config_entry.entry_id)
-        await hass.async_block_till_done()
+    mac = "00:03:50:00:12:40"
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": mac, "host": "1.2.3.4", "port": 20000}, unique_id=mac)
+    entry.add_to_hass(hass)
+    gateway = MagicMock()
+    gateway.mac = mac
+    gateway.unique_id = mac
+    gateway.id = mac
+    attach_runtime(hass, entry, mac, gateway)
 
-        # Verify async_add_executor_job was called to load customize.yaml
-        assert mock_executor.called
-        assert hass.data[DOMAIN]["customizations"].get("light.living", {}).get("friendly_name") == "Living Spot"
+    registry = dr.async_get(hass)
+    gateway_device = registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        connections={(dr.CONNECTION_NETWORK_MAC, mac)},
+        identifiers={(DOMAIN, mac)},
+        name="Gateway",
+    )
+    light_device = registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{mac}-1-12")},
+        name="Light 12",
+    )
+    mac_only_device = registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        connections={(dr.CONNECTION_NETWORK_MAC, mac.upper())},
+        identifiers={("other", "x")},
+        name="Gateway by MAC",
+    )
 
-        await hass.config_entries.async_unload(config_entry.entry_id)
-        await hass.async_block_till_done()
+    assert await async_remove_config_entry_device(hass, entry, gateway_device) is False
+    assert await async_remove_config_entry_device(hass, entry, mac_only_device) is False
+    assert await async_remove_config_entry_device(hass, entry, light_device) is True
+
+    # An entry that is not set up still allows removing bus devices, never the gateway
+    entry.runtime_data = None
+    assert await async_remove_config_entry_device(hass, entry, light_device) is True
+    assert await async_remove_config_entry_device(hass, entry, gateway_device) is False

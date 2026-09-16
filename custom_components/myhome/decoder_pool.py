@@ -9,8 +9,8 @@ forwards the stream URL to the backend decoder.
 Architecture
 ------------
 - One ``DecoderPool`` instance per gateway, keyed by MAC address in
-  ``hass.data[DOMAIN][mac]["decoder_pool"]``.
-- Survives entity reloads (lives in hass.data, not inside an entity).
+  ``entry.runtime_data.decoder_pool``.
+- Survives entity reloads (lives on the config entry, not inside an entity).
 - Thread-safe: all claim/release operations are serialised with a single
   ``asyncio.Lock`` to prevent race conditions when multiple zones compete for
   the last available decoder.
@@ -32,7 +32,7 @@ Typical values
 """
 import asyncio
 
-from homeassistant.components.media_player import MediaPlayerState
+from homeassistant.components.media_player.const import MediaPlayerState
 from homeassistant.core import HomeAssistant
 
 from .const import LOGGER
@@ -53,7 +53,7 @@ class DecoderPool:
     # HA states that mean "this decoder is available for claiming".
     # UNAVAILABLE is intentionally excluded: treat an offline Cambridge as busy
     # rather than risking a claim on a device that cannot actually play.
-    _IDLE_STATES: frozenset = frozenset({
+    _IDLE_STATES: frozenset[MediaPlayerState | None] = frozenset({
         MediaPlayerState.IDLE,
         MediaPlayerState.OFF,
         None,  # entity not yet registered / state unknown

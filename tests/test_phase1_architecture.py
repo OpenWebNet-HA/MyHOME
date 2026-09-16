@@ -516,7 +516,10 @@ class TestQueueMechanics:
             def create_mock_session(*args, **kwargs):
                 s = MagicMock()
                 s.connect = AsyncMock(return_value=True)
-                async def mock_send(message, is_status_request=False):
+                async def mock_send(
+                    message, is_status_request=False, retry_after_lost_ack=False
+                ):
+                    assert retry_after_lost_ack is True
                     sent_messages.append(str(message))
                     await asyncio.sleep(0.01)
                     return True
@@ -932,7 +935,7 @@ class TestEntityRegistryMigrationSafety:
         # Verify active runtime state machine retains custom entity IDs and names
         state_light = hass.states.get("light.keuken_lamp")
         assert state_light is not None
-        assert state_light.name == "Keuken Plafond"
+        assert state_light.attributes["friendly_name"] == "Keuken Plafond"
         assert hass.states.get("light.light_21") is None
 
         state_light_no_name = hass.states.get("light.gang_lamp")
@@ -941,12 +944,12 @@ class TestEntityRegistryMigrationSafety:
 
         state_cover = hass.states.get("cover.rolluik_salon")
         assert state_cover is not None
-        assert state_cover.name == "Zijraam Rolluik"
+        assert state_cover.attributes["friendly_name"] == "Zijraam Rolluik"
         assert hass.states.get("cover.cover_31") is None
 
         state_audio = hass.states.get("media_player.zone_living")
         assert state_audio is not None
-        assert state_audio.name == "Woonkamer Audio"
+        assert state_audio.attributes["friendly_name"] == "Woonkamer Audio"
         assert hass.states.get("media_player.media_player_1") is None
 
         await hass.config_entries.async_unload(entry.entry_id)
@@ -1046,7 +1049,7 @@ class TestEntityRegistryMigrationSafety:
         # Verify runtime state
         state_routed = hass.states.get("light.custom_light_spot")
         assert state_routed is not None
-        assert state_routed.name == "Custom Spot"
+        assert state_routed.attributes["friendly_name"] == "Custom Spot"
         assert hass.states.get("light.light_45") is None
 
         await hass.config_entries.async_unload(entry.entry_id)
@@ -1099,58 +1102,9 @@ class TestEntityRegistryMigrationSafety:
 
         state_eetkamer = hass.states.get("light.eetkamer_lamp")
         assert state_eetkamer is not None
-        assert state_eetkamer.name == "Eetkamer Lamp"
+        assert state_eetkamer.attributes["friendly_name"] == "Eetkamer Lamp"
 
         await hass.config_entries.async_unload(entry.entry_id)
-
-    @pytest.mark.asyncio
-    async def test_customize_yaml_dimmable_with_custom_entity_id(self, hass: HomeAssistant):
-        mac = "00:03:50:00:12:34"
-        entry = MockConfigEntry(
-            domain=DOMAIN,
-            data={
-                CONF_HOST: "192.168.0.35",
-                CONF_PORT: 20000,
-                CONF_PASSWORD: "pass",
-                CONF_MAC: mac,
-                CONF_SSDP_LOCATION: "http://192.168.0.35:49153/description.xml",
-                CONF_SSDP_ST: "urn:schemas-upnp-org:device:Basic:1",
-                CONF_DEVICE_TYPE: "urn:schemas-upnp-org:device:Basic:1",
-                CONF_FRIENDLY_NAME: "MyHOME Gateway",
-                CONF_MANUFACTURER: "BTicino",
-                CONF_MANUFACTURER_URL: "http://www.bticino.com",
-                CONF_NAME: "F454",
-                CONF_FIRMWARE: "2.0.0",
-                CONF_UDN: "uuid:12345678",
-            },
-            unique_id=mac,
-        )
-        entry.add_to_hass(hass)
-
-        entity_registry = er.async_get(hass)
-        entity_registry.async_get_or_create("light", DOMAIN, f"{mac}-1-21", config_entry=entry, suggested_object_id="keuken_dimmer")
-
-        # Mock customize.yaml containing dimmable: true under custom entity_id
-        fake_customs = {"light.keuken_dimmer": {"dimmable": True}}
-        import os as _os
-        orig_isfile = _os.path.isfile
-        with patch("custom_components.myhome.gateway.OWNSession.test_connection", return_value={"Success": True, "Message": None}), \
-             patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"), \
-             patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"), \
-             patch("os.path.isfile", side_effect=lambda p: True if "customize.yaml" in str(p) else orig_isfile(p)), \
-             patch("homeassistant.util.yaml.loader.load_yaml", return_value=fake_customs):
-            assert await hass.config_entries.async_setup(entry.entry_id)
-            await hass.async_block_till_done()
-
-        state = hass.states.get("light.keuken_dimmer")
-        assert state is not None
-        # Brightness color mode should be supported because dimmable is True from custom entity_id in customize.yaml
-        assert "brightness" in state.attributes.get("supported_color_modes", [])
-
-        await hass.config_entries.async_unload(entry.entry_id)
-
-
-# ── 7. Golden Plant Sample Conformance (issue #247 plant) ──────
 
 class TestPhase1GoldenPlantSampleIssue247:
     """End-to-end golden plant conformance tests using real production data from Issue #247.
@@ -1244,16 +1198,16 @@ class TestPhase1GoldenPlantSampleIssue247:
         assert ent_cu is not None
 
         # Dry contact binary sensors (WHO=25)
-        ent_cancello = entity_registry.async_get("binary_sensor.binary_sensor_31")
+        ent_cancello = entity_registry.async_get("binary_sensor.binary_sensor_31_opening")
         assert ent_cancello is not None
         assert ent_cancello.unique_id == f"{mac}-25-31-opening"
 
-        ent_moving = entity_registry.async_get("binary_sensor.binary_sensor_331")
+        ent_moving = entity_registry.async_get("binary_sensor.binary_sensor_331_moving")
         assert ent_moving is not None
         assert ent_moving.unique_id == f"{mac}-25-331-moving"
 
         # WHO=18 energy power sensors
-        ent_power = entity_registry.async_get("sensor.sensor_51")
+        ent_power = entity_registry.async_get("sensor.sensor_51_power")
         assert ent_power is not None
         assert ent_power.unique_id.startswith(f"{mac}-18-51")
 
@@ -1321,7 +1275,7 @@ class TestPhase1GoldenPlantSampleIssue247:
         msg_dry_closed = OWNMessage.parse("*25*31#1*31##")
         async_dispatcher_send(hass, f"myhome_message_{mac}", msg_dry_closed)
         await hass.async_block_till_done()
-        state_dry = hass.states.get("binary_sensor.binary_sensor_31")
+        state_dry = hass.states.get("binary_sensor.binary_sensor_31_opening")
         assert state_dry is not None
         assert state_dry.state == "on"
 
@@ -1329,10 +1283,9 @@ class TestPhase1GoldenPlantSampleIssue247:
         msg_energy = OWNMessage.parse("*#18*51*113*602##")
         async_dispatcher_send(hass, f"myhome_message_{mac}", msg_energy)
         await hass.async_block_till_done()
-        state_energy = hass.states.get("sensor.sensor_51")
+        state_energy = hass.states.get("sensor.sensor_51_power")
         assert state_energy is not None
         assert state_energy.state == "602"
 
         await hass.config_entries.async_unload(entry.entry_id)
-
 

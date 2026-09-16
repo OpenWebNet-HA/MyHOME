@@ -11,7 +11,12 @@ from OWNd.message import OWNEvent
 from pytest_socket import socket_enabled  # noqa: F401 (socket plugin disabled in pyproject)
 
 from custom_components.myhome.bus_monitor import BusFrame, BusMonitor
-from custom_components.myhome.const import CONF_ENTITY, DOMAIN, INTEGRATION_VERSION
+from custom_components.myhome.const import (
+    CONF_ENTITY,
+    DATA_OWND_VERSION,
+    DOMAIN,
+    INTEGRATION_VERSION,
+)
 from custom_components.myhome.websocket import (
     _extract_gateway_info,
     _get_gateway_and_monitor,
@@ -64,7 +69,7 @@ async def test_bus_diagnostics_reject_non_admins_before_access(
 
 @pytest.mark.parametrize("admin", [True, False])
 async def test_bus_diagnostics_websocket_authorization(
-    hass, hass_ws_client, hass_access_token, hass_read_only_access_token, admin
+    hass, hass_ws_client, hass_access_token, hass_read_only_access_token, admin, attach_gateway
 ):
     """The actual WebSocket dispatcher reports unauthorized without bus side effects."""
     gateway = MagicMock(send=AsyncMock())
@@ -72,9 +77,7 @@ async def test_bus_diagnostics_websocket_authorization(
     monitor.maxlen = 10
     monitor.get_recent_frames.return_value = []
     monitor.get_stats.return_value = {}
-    hass.data[DOMAIN] = {"00:03:50:00:00:01": {
-        CONF_ENTITY: gateway, "bus_monitor": monitor,
-    }}
+    attach_gateway("00:03:50:00:00:01", gateway, monitor)
     async_setup_websocket_api(hass)
     token = hass_access_token if admin else hass_read_only_access_token
     with patch("aiohttp.connector.DefaultResolver", ThreadedResolver):
@@ -185,26 +188,39 @@ async def test_websocket_schemas_validation():
     assert res_null_stream["direction"] is None
 
 
-def test_get_gateway_and_monitor_with_bus_monitor_only(hass: HomeAssistant):
-    """Test fallback finds entry when bus_monitor exists without CONF_ENTITY."""
+def test_get_gateway_and_monitor_runtime_data_first(hass: HomeAssistant, attach_gateway):
+    """runtime_data is the source of truth; hass.data is only a legacy fallback."""
     monitor = BusMonitor(maxlen=10)
-    hass.data[DOMAIN] = {
-        "some_entry": {
-            "bus_monitor": monitor,
-        }
-    }
-    gw, bm = _get_gateway_and_monitor(hass)
-    assert gw is None
-    assert bm is monitor
+    gw = MagicMock()
+    attach_gateway("00:03:50:aa:bb:cc", gw, monitor)
+    # Poison the legacy mapping: it must not be consulted when runtime_data is set
+    hass.data[DOMAIN]["00:03:50:aa:bb:cc"][CONF_ENTITY] = "stale"
 
-    # Test MAC normalization match (e.g. unformatted hex or alternate casing)
-    hass.data[DOMAIN]["000350aabbcc"] = {
-        CONF_ENTITY: "custom_gw",
-        "bus_monitor": monitor,
-    }
-    gw_found, bm_found = _get_gateway_and_monitor(hass, "00:03:50:AA:BB:CC")
-    assert gw_found == "custom_gw"
-    assert bm_found is monitor
+    assert _get_gateway_and_monitor(hass) == (gw, monitor)
+    assert _get_gateway_and_monitor(hass, "00:03:50:AA:BB:CC") == (gw, monitor)
+    assert _get_gateway_and_monitor(hass, "000350aabbcc") == (gw, monitor)
+
+
+def test_get_gateway_and_monitor_ignores_entries_not_set_up(hass: HomeAssistant, attach_gateway):
+    """An entry without runtime_data is not set up; the legacy hass.data alias is never consulted."""
+    monitor = BusMonitor(maxlen=10)
+    gw = MagicMock()
+    attach_gateway("00:03:50:aa:bb:cc", gw, monitor, legacy_only=True)
+    assert _get_gateway_and_monitor(hass, "00:03:50:aa:bb:cc") == (None, None)
+    assert _get_gateway_and_monitor(hass) == (None, None)
+
+
+def test_get_gateway_and_monitor_never_substitutes_gateway(hass: HomeAssistant, attach_gateway):
+    """A MAC filter must return that gateway or nothing, never another bus."""
+    gw_a, gw_b = MagicMock(), MagicMock()
+    attach_gateway("00:03:50:00:00:0a", gw_a, BusMonitor(maxlen=5))
+    attach_gateway("00:03:50:00:00:0b", gw_b, BusMonitor(maxlen=5))
+
+    assert _get_gateway_and_monitor(hass, "00:03:50:00:00:0b")[0] is gw_b
+    assert _get_gateway_and_monitor(hass, "00:03:50:00:00:0a")[0] is gw_a
+    assert _get_gateway_and_monitor(hass, "00:03:50:ff:ff:ff") == (None, None)
+    # No filter -> first configured gateway
+    assert _get_gateway_and_monitor(hass)[0] is gw_a
 
 
 async def test_ws_history_no_gateway(hass: HomeAssistant, mock_ws_connection):
@@ -217,17 +233,10 @@ async def test_ws_history_no_gateway(hass: HomeAssistant, mock_ws_connection):
     )
 
 
-async def test_ws_history_with_frames_and_filters(hass: HomeAssistant, mock_ws_connection):
+async def test_ws_history_with_frames_and_filters(hass: HomeAssistant, mock_ws_connection, attach_gateway):
     """Test history request returns frames filtered by who, where, and direction."""
     monitor = BusMonitor(maxlen=100)
-    gateway = MagicMock()
-    mac = "00:03:50:00:12:34"
-    hass.data[DOMAIN] = {
-        mac: {
-            CONF_ENTITY: gateway,
-            "bus_monitor": monitor,
-        }
-    }
+    attach_gateway("00:03:50:00:12:34", MagicMock(), monitor)
 
     # Record some frames
     ev1 = OWNEvent.parse("*1*1*12##")
@@ -264,17 +273,10 @@ async def test_ws_history_with_frames_and_filters(hass: HomeAssistant, mock_ws_c
     assert all(f["who"] == "1" and f["where"] == "12" and f["direction"] == "rx" for f in result["frames"])
 
 
-async def test_ws_stream_subscription_and_dispatch(hass: HomeAssistant, mock_ws_connection):
+async def test_ws_stream_subscription_and_dispatch(hass: HomeAssistant, mock_ws_connection, attach_gateway):
     """Test real-time bus stream subscription, frame dispatching, and filtering."""
     monitor = BusMonitor(maxlen=50)
-    gateway = MagicMock()
-    mac = "00:03:50:00:12:34"
-    hass.data[DOMAIN] = {
-        mac: {
-            CONF_ENTITY: gateway,
-            "bus_monitor": monitor,
-        }
-    }
+    attach_gateway("00:03:50:00:12:34", MagicMock(), monitor)
 
     # Subscribe with filter: who=1
     ws_bus_monitor_stream(
@@ -318,15 +320,11 @@ async def test_ws_stream_no_gateway(hass: HomeAssistant, mock_ws_connection):
     )
 
 
-async def test_ws_send_frame(hass: HomeAssistant, mock_ws_connection):
+async def test_ws_send_frame(hass: HomeAssistant, mock_ws_connection, attach_gateway):
     """Test transmitting an OpenWebNet frame via the WebSocket API."""
     gateway = MagicMock()
     gateway.send = AsyncMock()
-    hass.data[DOMAIN] = {
-        "00:03:50:00:12:34": {
-            CONF_ENTITY: gateway,
-        }
-    }
+    attach_gateway("00:03:50:00:12:34", gateway)
 
     # 1. Successful frame send
     ws_bus_monitor_send(
@@ -390,18 +388,13 @@ async def test_ws_send_no_gateway(hass: HomeAssistant, mock_ws_connection):
     )
 
 
-async def test_ws_clear_buffer(hass: HomeAssistant, mock_ws_connection):
+async def test_ws_clear_buffer(hass: HomeAssistant, mock_ws_connection, attach_gateway):
     """Test clearing the bus monitor ring buffer."""
     monitor = BusMonitor(maxlen=50)
     monitor.record_frame("rx", "*1*1*12##")
     assert monitor.get_stats()["captured"] == 1
 
-    hass.data[DOMAIN] = {
-        "00:03:50:00:12:34": {
-            CONF_ENTITY: MagicMock(),
-            "bus_monitor": monitor,
-        }
-    }
+    entry = attach_gateway("00:03:50:00:12:34", MagicMock(), monitor)
 
     ws_bus_monitor_clear(hass, mock_ws_connection, {"id": 30, "type": "myhome/bus_monitor/clear"})
     await hass.async_block_till_done()
@@ -409,6 +402,7 @@ async def test_ws_clear_buffer(hass: HomeAssistant, mock_ws_connection):
     assert monitor.get_stats()["captured"] == 0
 
     # Test error when no gateway
+    entry.runtime_data = None
     hass.data[DOMAIN] = {}
     mock_ws_connection.send_error.reset_mock()
     ws_bus_monitor_clear(hass, mock_ws_connection, {"id": 31, "type": "myhome/bus_monitor/clear"})
@@ -416,38 +410,6 @@ async def test_ws_clear_buffer(hass: HomeAssistant, mock_ws_connection):
     mock_ws_connection.send_error.assert_called_once_with(
         31, websocket_api.ERR_NOT_FOUND, "No active MyHOME gateway or bus monitor found"
     )
-
-
-def test_get_gateway_and_monitor_edge_cases(hass: HomeAssistant):
-    """Test _get_gateway_and_monitor with MAC lookups and non-dict domain data."""
-    # 1. Non-dict domain data
-    hass.data[DOMAIN] = "not_a_dict"
-    gw, bm = _get_gateway_and_monitor(hass)
-    assert gw is None and bm is None
-
-    # 2. Lookup with unformatted MAC
-    mock_gw = MagicMock()
-    mock_bm = MagicMock()
-    hass.data[DOMAIN] = {
-        "00:03:50:00:12:34": {
-            CONF_ENTITY: mock_gw,
-            "bus_monitor": mock_bm,
-        }
-    }
-    gw, bm = _get_gateway_and_monitor(hass, mac="000350001234")
-    assert gw is mock_gw
-    assert bm is mock_bm
-
-    # 3. Format MAC exception branch
-    with patch("homeassistant.helpers.device_registry.format_mac", side_effect=ValueError("Bad MAC")):
-        gw, bm = _get_gateway_and_monitor(hass, mac="00:03:50:00:12:34")
-        assert gw is mock_gw
-        assert bm is mock_bm
-
-    # 4. Lookup when no gateway in domain data
-    hass.data[DOMAIN] = {}
-    gw, bm = _get_gateway_and_monitor(hass, mac="invalid_mac")
-    assert gw is None and bm is None
 
 
 def test_matches_filter_helpers():
@@ -464,7 +426,7 @@ def test_matches_filter_helpers():
     assert _matches_filter(frame_dict, who=4) is False
 
 
-async def test_ws_history_returns_gateway_info(hass: HomeAssistant, mock_ws_connection):
+async def test_ws_history_returns_gateway_info(hass: HomeAssistant, mock_ws_connection, attach_gateway):
     """Test history request returns enriched gateway parameters."""
     monitor = BusMonitor(maxlen=100)
     mock_gw = MagicMock()
@@ -483,14 +445,8 @@ async def test_ws_history_returns_gateway_info(hass: HomeAssistant, mock_ws_conn
     mock_send_buffer.qsize.return_value = 2
     mock_gw.send_buffer = mock_send_buffer
     mock_gw.config_entry.data = {}
-
-    mac = "00:03:50:ab:cd:ef"
-    hass.data[DOMAIN] = {
-        mac: {
-            CONF_ENTITY: mock_gw,
-            "bus_monitor": monitor,
-        }
-    }
+    attach_gateway("00:03:50:ab:cd:ef", mock_gw, monitor)
+    hass.data[DOMAIN][DATA_OWND_VERSION] = "9.9.9"
 
     ws_bus_monitor_history(
         hass,
@@ -513,9 +469,11 @@ async def test_ws_history_returns_gateway_info(hass: HomeAssistant, mock_ws_conn
     assert gw_info["worker_count"] == 1
     assert gw_info["queue_depth"] == 2
     assert gw_info["is_connected"] is True
+    assert gw_info["ownd_version"] == "9.9.9"
+    assert gw_info["integration_version"] == INTEGRATION_VERSION
 
 
-async def test_ws_info_endpoint(hass: HomeAssistant, mock_ws_connection):
+async def test_ws_info_endpoint(hass: HomeAssistant, mock_ws_connection, attach_gateway):
     """Test ws_bus_monitor_info endpoint returns runtime stats and gateway info."""
     monitor = BusMonitor(maxlen=100)
     monitor.record_frame("rx", "*1*1*12##")
@@ -529,14 +487,7 @@ async def test_ws_info_endpoint(hass: HomeAssistant, mock_ws_connection):
     mock_gw.sending_workers = [MagicMock(), MagicMock()]
     mock_gw.send_buffer = None
     mock_gw.config_entry.data = {}
-
-    mac = "00:03:50:11:22:33"
-    hass.data[DOMAIN] = {
-        mac: {
-            CONF_ENTITY: mock_gw,
-            "bus_monitor": monitor,
-        }
-    }
+    attach_gateway("00:03:50:11:22:33", mock_gw, monitor)
 
     ws_bus_monitor_info(
         hass,
@@ -550,6 +501,8 @@ async def test_ws_info_endpoint(hass: HomeAssistant, mock_ws_connection):
     assert result["stats"]["captured"] == 1
     assert result["gateway"]["model"] == "MH200N"
     assert result["gateway"]["worker_count"] == 2
+    # No cached version resolved at setup -> "unknown", never a disk read on the loop
+    assert result["gateway"]["ownd_version"] == "unknown"
 
 
 async def test_ws_info_no_gateway(hass: HomeAssistant, mock_ws_connection):
@@ -672,3 +625,53 @@ def test_extract_gateway_info_edge_cases():
     gw_port_str.gateway = None
     gw_port_str.config_entry.data = {"port": "/dev/ttyACM0"}
     assert _extract_gateway_info(gw_port_str)["serial_port"] == "/dev/ttyACM0"
+
+
+async def test_mutating_commands_require_admin(hass: HomeAssistant, attach_gateway):
+    """Injecting frames onto the bus and wiping the buffer are admin-only."""
+    from homeassistant.exceptions import Unauthorized
+
+    gateway = MagicMock()
+    gateway.send = AsyncMock()
+    attach_gateway("00:03:50:00:12:34", gateway, BusMonitor(maxlen=5))
+
+    conn = MagicMock(spec=websocket_api.ActiveConnection)
+    conn.user.is_admin = False
+    for handler, msg in (
+        (ws_bus_monitor_send, {"id": 1, "type": "myhome/bus_monitor/send", "frame": "*5*2*0##"}),
+        (ws_bus_monitor_clear, {"id": 2, "type": "myhome/bus_monitor/clear"}),
+    ):
+        with pytest.raises(Unauthorized):
+            handler(hass, conn, msg)
+    gateway.send.assert_not_awaited()
+
+    # The panel keeps diagnostics administrator-only, including history and stream.
+    for handler, command in [(ws_bus_monitor_history, "history"),
+                             (ws_bus_monitor_info, "info"), (ws_bus_monitor_stream, "stream")]:
+        with pytest.raises(Unauthorized):
+            handler(hass, conn, {"id": 3, "type": f"myhome/bus_monitor/{command}"})
+    assert conn.send_result.call_count == 0
+
+
+def test_cached_ownd_version_without_domain_data(hass: HomeAssistant):
+    """The cached version helper never touches the filesystem, even when unset."""
+    from custom_components.myhome.websocket import _cached_ownd_version
+
+    hass.data.pop(DOMAIN, None)
+    assert _cached_ownd_version(hass) == "unknown"
+    hass.data[DOMAIN] = "not-a-dict"
+    assert _cached_ownd_version(hass) == "unknown"
+
+
+async def test_ws_cover_calibration_trace(hass: HomeAssistant, mock_ws_connection, attach_gateway):
+    """myhome/cover/calibration_trace returns the selected gateway's recorded frames, and names it."""
+    from custom_components.myhome.websocket import ws_cover_calibration_trace
+
+    gw = MagicMock()
+    gw.mac = "00:03:50:AA:BB:CC"
+    attach_gateway(gw.mac, gw)
+    with patch("custom_components.myhome.cover.get_last_calibration_trace", return_value=[{"raw": "*2*1*21##"}]) as trace:
+        ws_cover_calibration_trace(hass, mock_ws_connection, {"id": 77, "type": "myhome/cover/calibration_trace"})
+        await hass.async_block_till_done()
+    trace.assert_called_once_with(gateway_mac="00:03:50:aa:bb:cc")
+    mock_ws_connection.send_result.assert_called_once_with(77, {"mac": "00:03:50:aa:bb:cc", "frames": [{"raw": "*2*1*21##"}]})

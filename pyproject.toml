@@ -38,15 +38,20 @@ test = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/anotherjulien/MyHOME"
-Documentation = "https://github.com/anotherjulien/MyHOME"
-Issues = "https://github.com/anotherjulien/MyHOME/issues"
+Homepage = "https://github.com/OpenWebNet-HA/MyHOME"
+Documentation = "https://github.com/OpenWebNet-HA/MyHOME"
+Issues = "https://github.com/OpenWebNet-HA/MyHOME/issues"
 
 [tool.setuptools.packages.find]
 include = ["custom_components*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.json", "*.yaml", "translations/*.json", "frontend/*.js", "frontend/panel/*.js", "frontend/panel/*.css"]
+
+[tool.check-wheel-contents]
+# W002 flags byte-identical files. strings.json and translations/en.json are
+# meant to be identical (HA reads the former, the frontend the latter).
+ignore = ["W002"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -71,6 +76,20 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
 ]
+
+[tool.mypy]
+# Integration Quality Scale rule strict-typing. The ceiling per module lives in
+# mypy_baseline.json and is ratcheted down by scripts/typing_ratchet.py.
+python_version = "3.14"
+strict = true
+warn_unreachable = true
+show_error_codes = true
+files = ["custom_components/myhome"]
+
+[[tool.mypy.overrides]]
+# OWNd does not ship py.typed yet; Platinum needs an OWNd release that does.
+module = ["OWNd.*", "serial_asyncio", "serial_asyncio.*"]
+ignore_missing_imports = true
 
 [tool.ruff]
 target-version = "py312"

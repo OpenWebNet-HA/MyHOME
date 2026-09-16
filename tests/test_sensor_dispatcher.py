@@ -1,12 +1,12 @@
 """Exercise sensor discovery and updates through real Home Assistant platforms."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from OWNd.message import OWNMessage
+from OWNd.message import OWNEnergyEvent, OWNMessage
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome.const import CONF_ENTITY, CONF_FILE_PATH, DOMAIN
@@ -109,7 +109,7 @@ async def test_discovered_entities_restore_names_and_disabled_defaults(hass):
     after = {item.unique_id: item for item in sensor_entries(hass, entry)}
     assert before.keys() == after.keys()
     assert after[power.unique_id].entity_id == "sensor.kitchen_power"
-    assert after[power.unique_id].name == "Kitchen power"
+    assert hass.states.get("sensor.kitchen_power").attributes["friendly_name"] == "Kitchen power"
     await dispatch(hass, "*#18*51*113*750##")
     assert hass.states.get("sensor.kitchen_power").state == "750"
     assert len(sensor_entries(hass, entry)) == 4
@@ -167,4 +167,14 @@ async def test_yaml_sensors_update_without_alias_duplicates(hass, tmp_path):
     await dispatch(hass, "*#18*52*113*789##")
     assert len(sensor_entries(hass, entry)) == 9
     assert f"{MAC}-18-52-power" not in entities
-    assert entities[f"{MAC}-18-51-power"].original_name == "House Power"
+    assert entities[f"{MAC}-18-51-power"].original_name == "Power"  # device "House" + entity "Power"
+
+
+async def test_frames_of_other_kinds_create_no_sensor(hass):
+    """Motion frames pass the WHO 1 filter and unknown energy dimensions pass WHO 18; neither is a sensor."""
+    entry = await setup_gateway(hass)
+    await dispatch(hass, "*1*34*12##")  # motion detected: binary_sensor, not illuminance
+    energy = MagicMock(spec=OWNEnergyEvent, who="18", where="51", message_type="something_new")
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", energy)
+    await hass.async_block_till_done()
+    assert sensor_entries(hass, entry) == []

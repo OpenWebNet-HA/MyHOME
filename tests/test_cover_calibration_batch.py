@@ -129,8 +129,8 @@ async def test_batch_sequences_selected_covers_and_saves_one_atomic_revision(has
         assert session.store.data["profiles"][old_id] == old_profile
     for index, cover in enumerate(batch.plant.covers[:2]):
         profile = session.store.profile(cover.unique_id)
-        assert profile["opening_time"] == cover._travel_time == 20 + index
-        assert profile["closing_time"] == cover._closing_time == 22 + index
+        assert profile["opening_time"] == cover._travel_time_up == 20 + index
+        assert profile["closing_time"] == cover._travel_time_down == 22 + index
         assert profile["provenance"]["opening"]["origin_unique_id"] == cover.unique_id
         assert profile["provenance"]["closing"]["source"] == "automatic"
         assert cover._calibration is None
@@ -177,8 +177,8 @@ async def test_batch_save_failure_never_partially_changes_profiles(hass, batch, 
         with pytest.raises((profiles.ProfileError, OSError, vol.Invalid)):
             await action(batch, "save", names=names)
     assert session.store.data == before
-    assert batch.plant.covers[0]._travel_time == 42.5
-    assert batch.plant.covers[1]._travel_time == 30
+    assert batch.plant.covers[0]._travel_time_up == 42.5
+    assert batch.plant.covers[1]._travel_time_up == 30
     assert len(batch.queue) == 6
 
 

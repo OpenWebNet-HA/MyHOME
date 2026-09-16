@@ -2,6 +2,10 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from homeassistant.components.device_automation import (
+    DeviceAutomationType,
+    async_get_device_automations,
+)
 from homeassistant.const import (
     CONF_DEVICE_ID,
     CONF_DOMAIN,
@@ -9,6 +13,8 @@ from homeassistant.const import (
     CONF_TYPE,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome.const import (
     CONF_LONG_PRESS,
@@ -157,6 +163,24 @@ async def test_async_get_triggers_cenplus_device(hass: HomeAssistant):
         for trigger in triggers:
             assert trigger[CONF_ADDRESS] == 12
             assert trigger[CONF_DEVICE_ID] == "cenplus_device_id"
+
+
+@pytest.mark.asyncio
+async def test_home_assistant_discovers_cenplus_device_triggers(hass: HomeAssistant):
+    """Test CEN+ triggers are discoverable through Home Assistant's device UI path."""
+    entry = MockConfigEntry(domain=DOMAIN)
+    entry.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "00:03:50:ae:9b:9c-25-1")},
+        name="CEN+ Unit 1",
+    )
+
+    triggers = await async_get_device_automations(
+        hass, DeviceAutomationType.TRIGGER, [device.id]
+    )
+
+    assert len(triggers[device.id]) == len(TRIGGER_TYPES) * len(TRIGGER_SUBTYPES)
 
 
 @pytest.mark.asyncio
@@ -366,5 +390,3 @@ def test_get_cen_info_from_device_branches():
     is_cen, addr = _get_cen_info_from_device(dev4)
     assert is_cen is False
     assert addr is None
-
-

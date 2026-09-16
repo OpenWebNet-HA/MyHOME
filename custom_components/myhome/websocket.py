@@ -10,6 +10,8 @@ from typing import Any, Optional
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
+from homeassistant.components.websocket_api import ActiveConnection
+from homeassistant.components.websocket_api.decorators import require_admin
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PORT
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
@@ -18,13 +20,13 @@ from OWNd.message import OWNMessage
 
 from .bus_monitor import BusFrame, BusMonitor
 from .const import (
-    CONF_ENTITY,
     CONF_FIRMWARE,
     CONF_WORKER_COUNT,
+    DATA_OWND_VERSION,
     DOMAIN,
     INTEGRATION_VERSION,
-    get_ownd_version,
 )
+from .data import get_runtime_data
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,6 +35,12 @@ WS_TYPE_STREAM = "myhome/bus_monitor/stream"
 WS_TYPE_SEND = "myhome/bus_monitor/send"
 WS_TYPE_CLEAR = "myhome/bus_monitor/clear"
 WS_TYPE_INFO = "myhome/bus_monitor/info"
+WS_TYPE_CALIBRATION_TRACE = "myhome/cover/calibration_trace"
+
+SCHEMA_WS_CALIBRATION_TRACE = {
+    vol.Required("type"): WS_TYPE_CALIBRATION_TRACE,
+    vol.Optional("mac"): vol.Any(cv.string, None),
+}
 
 SCHEMA_WS_INFO = {
     vol.Required("type"): WS_TYPE_INFO,
@@ -68,7 +76,7 @@ SCHEMA_WS_CLEAR = {
 }
 
 
-def _extract_gateway_info(gw: Optional[Any]) -> dict[str, Any]:
+def _extract_gateway_info(gw: Optional[Any], ownd_version: str = "unknown") -> dict[str, Any]:
     """Safely extract JSON-serializable gateway runtime and hardware configuration."""
     if gw is None:
         return {}
@@ -91,7 +99,7 @@ def _extract_gateway_info(gw: Optional[Any]) -> dict[str, Any]:
         if isinstance(m_manuf, str):
             manufacturer = m_manuf
         m_fw = getattr(raw_gw, "firmware", None)
-        if isinstance(m_fw, str):
+        if isinstance(m_fw, str) and m_fw.strip().lower() not in ("", "none", "null", "unknown"):
             firmware = m_fw
         m_host = getattr(raw_gw, "host", None)
         if isinstance(m_host, str):
@@ -117,8 +125,9 @@ def _extract_gateway_info(gw: Optional[Any]) -> dict[str, Any]:
         host = config_data[CONF_HOST]
     if port == 20000 and isinstance(config_data.get(CONF_PORT), int):
         port = config_data[CONF_PORT]
-    if not firmware and isinstance(config_data.get(CONF_FIRMWARE), str):
-        firmware = config_data[CONF_FIRMWARE]
+    cfg_fw = config_data.get(CONF_FIRMWARE)
+    if not firmware and isinstance(cfg_fw, str) and cfg_fw.strip().lower() not in ("", "none", "null", "unknown"):
+        firmware = cfg_fw
 
     transport_type = config_data.get("transport_type") or getattr(gw, "transport_type", None)
     is_serial = isinstance(transport_type, str) and transport_type == "serial"
@@ -180,6 +189,16 @@ def _extract_gateway_info(gw: Optional[Any]) -> dict[str, Any]:
 
     is_connected = bool(getattr(gw, "is_connected", False))
 
+    identification: dict[str, Any] = {}
+    ident_fn = getattr(gw, "identification", None)
+    if callable(ident_fn):
+        try:
+            raw_ident = ident_fn()
+            if isinstance(raw_ident, dict):
+                identification = {k: v for k, v in raw_ident.items() if k != "ssdp_location"}
+        except Exception:  # pragma: no cover - defensive against mocks
+            identification = {}
+
     return {
         "model": model,
         "manufacturer": manufacturer,
@@ -192,52 +211,39 @@ def _extract_gateway_info(gw: Optional[Any]) -> dict[str, Any]:
         "worker_count": worker_count,
         "queue_depth": queue_depth,
         "is_connected": is_connected,
+        "identification": identification,
         "integration_version": INTEGRATION_VERSION,
-        "ownd_version": get_ownd_version(),
+        "ownd_version": ownd_version,
     }
 
 
 def _get_gateway_and_monitor(
     hass: HomeAssistant, mac: Optional[str] = None
 ) -> tuple[Optional[Any], Optional[BusMonitor]]:
-    """Retrieve the gateway handler and bus monitor for a given MAC or the primary gateway."""
-    domain_data = hass.data.get(DOMAIN, {})
-    if not isinstance(domain_data, dict):
-        return None, None
+    """Retrieve the gateway handler and bus monitor for a given MAC or the primary gateway.
 
-    # If MAC is provided, look up specifically
-    if mac:
-        try:
-            formatted_mac = dr.format_mac(mac)
-        except Exception:
-            formatted_mac = mac
+    Only entries that are set up (``entry.runtime_data`` present) qualify. When
+    ``mac`` is given only that gateway is returned, never a substitute.
+    """
+    wanted = dr.format_mac(mac) if mac else None
 
-        for key, val in domain_data.items():
-            if isinstance(val, dict):
-                norm_key = key
-                if isinstance(key, str) and (":" in key or len(key) == 12):
-                    try:
-                        norm_key = dr.format_mac(key)
-                    except Exception:
-                        norm_key = key
-                if key == mac or key == formatted_mac or norm_key == formatted_mac:
-                    gw = val.get(CONF_ENTITY)
-                    bm = val.get("bus_monitor") or getattr(gw, "bus_monitor", None)
-                    if gw or bm:
-                        return gw, bm
-
-        # An explicit selection must never fall back to a different gateway.
-        return None, None
-
-    # Fallback to the first available gateway entry
-    for key, val in domain_data.items():
-        if isinstance(val, dict) and (CONF_ENTITY in val or "bus_monitor" in val):
-            gw = val.get(CONF_ENTITY)
-            bm = val.get("bus_monitor") or getattr(gw, "bus_monitor", None)
-            if gw or bm:
-                return gw, bm
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if wanted and dr.format_mac(entry.data.get(CONF_MAC, "")) != wanted:
+            continue
+        runtime = get_runtime_data(entry)
+        if runtime is None:
+            continue
+        return runtime.gateway, runtime.bus_monitor
 
     return None, None
+
+
+def _cached_ownd_version(hass: HomeAssistant) -> str:
+    """Return the OWNd version resolved off the event loop during setup."""
+    domain_data = hass.data.get(DOMAIN)
+    if isinstance(domain_data, dict):
+        return str(domain_data.get(DATA_OWND_VERSION, "unknown"))
+    return "unknown"
 
 
 def _matches_filter(
@@ -274,11 +280,11 @@ def _matches_filter(
 
 
 @websocket_api.websocket_command(SCHEMA_WS_HISTORY)
-@websocket_api.require_admin
+@require_admin
 @websocket_api.async_response
 async def ws_bus_monitor_history(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    connection: ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Return historical bus frames from the circular ring buffer."""
@@ -310,17 +316,17 @@ async def ws_bus_monitor_history(
         {
             "frames": filtered,
             "stats": monitor.get_stats(),
-            "gateway": _extract_gateway_info(gw),
+            "gateway": _extract_gateway_info(gw, _cached_ownd_version(hass)),
         },
     )
 
 
 @websocket_api.websocket_command(SCHEMA_WS_STREAM)
-@websocket_api.require_admin
+@require_admin
 @websocket_api.async_response
 async def ws_bus_monitor_stream(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    connection: ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Subscribe to real-time bus monitor frames."""
@@ -350,11 +356,11 @@ async def ws_bus_monitor_stream(
 
 
 @websocket_api.websocket_command(SCHEMA_WS_SEND)
-@websocket_api.require_admin
+@require_admin
 @websocket_api.async_response
 async def ws_bus_monitor_send(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    connection: ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Send an OpenWebNet diagnostic frame directly to the gateway."""
@@ -397,11 +403,11 @@ async def ws_bus_monitor_send(
 
 
 @websocket_api.websocket_command(SCHEMA_WS_CLEAR)
-@websocket_api.require_admin
+@require_admin
 @websocket_api.async_response
 async def ws_bus_monitor_clear(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    connection: ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Clear the in-memory bus monitor ring buffer."""
@@ -419,11 +425,11 @@ async def ws_bus_monitor_clear(
 
 
 @websocket_api.websocket_command(SCHEMA_WS_INFO)
-@websocket_api.require_admin
+@require_admin
 @websocket_api.async_response
 async def ws_bus_monitor_info(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    connection: ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Return runtime gateway telemetry and buffer stats."""
@@ -440,8 +446,38 @@ async def ws_bus_monitor_info(
         msg["id"],
         {
             "stats": monitor.get_stats() if monitor else {},
-            "gateway": _extract_gateway_info(gw),
+            "gateway": _extract_gateway_info(gw, _cached_ownd_version(hass)),
         },
+    )
+
+
+@websocket_api.websocket_command(SCHEMA_WS_CALIBRATION_TRACE)
+@websocket_api.async_response
+async def ws_cover_calibration_trace(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return the calibration trace frames of one gateway.
+
+    ``mac`` selects the gateway exactly as for the other commands: given, only
+    that gateway (unknown -> ``not_found``); omitted, the primary gateway. The
+    reply names the gateway it was filtered on so the export is self-describing.
+    """
+    from .cover import get_last_calibration_trace
+
+    gw, _ = _get_gateway_and_monitor(hass, msg.get("mac"))
+    if gw is None:
+        connection.send_error(
+            msg["id"],
+            websocket_api.ERR_NOT_FOUND,
+            "No active MyHOME gateway found",
+        )
+        return
+    mac = dr.format_mac(str(getattr(gw, "mac", "") or ""))
+    connection.send_result(
+        msg["id"],
+        {"mac": mac, "frames": get_last_calibration_trace(gateway_mac=mac)},
     )
 
 
@@ -458,6 +494,7 @@ def async_setup_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_bus_monitor_send)
     websocket_api.async_register_command(hass, ws_bus_monitor_clear)
     websocket_api.async_register_command(hass, ws_bus_monitor_info)
+    websocket_api.async_register_command(hass, ws_cover_calibration_trace)
 
     domain_data["_ws_registered"] = True
     _LOGGER.info("Registered MyHOME WebSocket API commands for Bus Monitor")

@@ -1,8 +1,14 @@
 """Versioned export of committed travel profiles, independent of live sessions."""
 from __future__ import annotations
 
+from typing import Any
+
 import voluptuous as vol
-from homeassistant.components import websocket_api
+from homeassistant.components.websocket_api.decorators import (
+    async_response,
+    require_admin,
+    websocket_command,
+)
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
@@ -12,7 +18,7 @@ from .cover_profiles import ProfileError, get_store, respond
 WS_EXPORT = "myhome/cover_profiles/export"
 
 
-async def export_profiles(hass, entry_id):
+async def export_profiles(hass: Any, entry_id: str) -> Any:
     """Take one consistent saved revision without reading runtime or draft values."""
     entry = hass.config_entries.async_get_entry(entry_id)
     if entry is None or entry.domain != DOMAIN:
@@ -54,8 +60,8 @@ async def export_profiles(hass, entry_id):
         }
 
 
-@websocket_api.websocket_command({vol.Required("type"): WS_EXPORT, vol.Required("entry_id"): str})
-@websocket_api.require_admin
-@websocket_api.async_response
-async def ws_export(hass, connection, msg):
+@websocket_command({vol.Required("type"): WS_EXPORT, vol.Required("entry_id"): str})
+@require_admin
+@async_response
+async def ws_export(hass: Any, connection: Any, msg: dict[str, Any]) -> None:
     await respond(hass, connection, msg, export_profiles(hass, msg["entry_id"]))

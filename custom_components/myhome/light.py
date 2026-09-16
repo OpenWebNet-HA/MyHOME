@@ -1,6 +1,7 @@
 """Support for MyHome lights."""
 import asyncio
 
+import voluptuous as vol
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ATTR_BRIGHTNESS_PCT,
@@ -15,12 +16,6 @@ from homeassistant.components.light import (
     LightEntity,
     LightEntityFeature,
 )
-
-try:
-    from homeassistant.components.light import ATTR_COLOR_TEMP
-except ImportError:  # pragma: no cover
-    ATTR_COLOR_TEMP = "color_temp"
-import voluptuous as vol
 from homeassistant.components.light import (
     DOMAIN as PLATFORM,
 )
@@ -44,24 +39,20 @@ from OWNd.message import (
 )
 
 from .const import (
-    CONF_BUS_INTERFACE,
     CONF_COLOR_TEMP,
     CONF_DEVICE_MODEL,
     CONF_DIMMABLE,
-    CONF_ENTITY,
     CONF_ENTITY_NAME,
     CONF_HS,
     CONF_ICON,
     CONF_ICON_ON,
+    CONF_LOCK_FEATURES,
     CONF_MANUFACTURER,
-    CONF_PLATFORMS,
     CONF_RGB,
     CONF_TRANSITION_MODE,
-    CONF_WHERE,
     CONF_WHO,
     CONF_WORKER_COUNT,
     DEFAULT_TRANSITION_MODE,
-    DOMAIN,
     LOGGER,
     SERVICE_TURN_ON_TIMED,
     SOFTWARE_TRANSITION_MAX_STEPS,
@@ -73,232 +64,84 @@ from .const import (
     build_timed_turn_on_command,
     normalize_where,
 )
+from .discovery import Address, DeviceContext, PlatformDiscovery, parse_unique_id
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 
 PARALLEL_UPDATES = 0
 
+# Legacy mired attribute of stored states (core dropped ATTR_COLOR_TEMP in 2025).
+ATTR_COLOR_TEMP = "color_temp"
+
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    """Set up the MyHOME light platform dynamically via Discovery."""
-    known_lights = set()
+    """Set up the lights of a gateway (WHO=1): registry, myhome.yaml, then bus discovery.
 
-    # Restore previously discovered entities from the Entity Registry so they
-    # are available immediately on restart, even before the gateway responds.
-    try:
-        entity_registry = er.async_get(hass)
-        existing_entries = er.async_entries_for_config_entry(entity_registry, config_entry.entry_id)
-    except Exception:
-        entity_registry = None
-        existing_entries = []
-    restored_lights = []
+    WHO=1 is shared with switches (configured relays) and with motion /
+    illuminance sensors, so the light platform owns the WHO=1 discovery and
+    routes frames for those addresses to their platforms instead of creating
+    a light for them.
+    """
+    runtime = config_entry.runtime_data
+    mac = config_entry.data[CONF_MAC]
+    gateway = runtime.gateway
 
-    gateway = hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY]
-    _configured_lights = hass.data[DOMAIN][config_entry.data[CONF_MAC]].get(CONF_PLATFORMS, {}).get(PLATFORM, {})
+    foreign = _ForeignAddresses(hass, config_entry, gateway.mac, mac)
 
-    # Collect all WHERE addresses configured or registered as switches so dynamic discovery
-    # of WHO=1 never auto-creates a duplicate Light entity for switch/outlet devices.
-    switch_wheres = set()
-    _configured_switches = hass.data[DOMAIN][config_entry.data[CONF_MAC]].get(CONF_PLATFORMS, {}).get("switch", {})
-    for dev_id, sw_cfg in _configured_switches.items():
-        sw_where = str(sw_cfg.get(CONF_WHERE, dev_id))
-        sw_clean = sw_where.split("-")[-1]
-        sw_interface = sw_cfg.get(CONF_BUS_INTERFACE) if CONF_BUS_INTERFACE in sw_cfg else sw_cfg.get("interface")
-        sw_dev_where = f"{sw_clean}#4#{sw_interface}" if sw_interface else str(sw_clean)
-        switch_wheres.add(str(dev_id))
-        switch_wheres.add(str(sw_where))
-        switch_wheres.add(sw_dev_where)
-        switch_wheres.add(sw_clean)
-
-    for entry in existing_entries:
-        if entry.domain == "switch":
-            unique_id = entry.unique_id
-            after_mac = unique_id.replace(f"{gateway.mac}-", "", 1).replace(f"{config_entry.data[CONF_MAC]}-", "", 1)
-            parts_who = after_mac.split("-", 1)
-            dev_id = parts_who[-1] if len(parts_who) > 1 else after_mac
-            clean_sw = dev_id.split("#4#")[0].split("-")[-1]
-            switch_wheres.add(dev_id)
-            switch_wheres.add(clean_sw)
-
-    # Collect all WHERE addresses configured or registered as sensors/binary_sensors so dynamic discovery
-    # of WHO=1 never auto-creates a duplicate Light entity for motion/illuminance sensors.
-    sensor_wheres = set()
-    _configured_bs = hass.data[DOMAIN][config_entry.data[CONF_MAC]].get(CONF_PLATFORMS, {}).get("binary_sensor", {})
-    for dev_id, bs_cfg in _configured_bs.items():
-        if str(bs_cfg.get(CONF_WHO, "25")) == "1":
-            bs_where = str(bs_cfg.get(CONF_WHERE, dev_id))
-            bs_clean = bs_where.split("-")[-1]
-            sensor_wheres.add(str(dev_id))
-            sensor_wheres.add(str(bs_where))
-            sensor_wheres.add(bs_clean)
-            sensor_wheres.add(normalize_where(bs_where))
-            sensor_wheres.add(normalize_where(bs_clean))
-
-    _configured_s = hass.data[DOMAIN][config_entry.data[CONF_MAC]].get(CONF_PLATFORMS, {}).get("sensor", {})
-    for dev_id, s_cfg in _configured_s.items():
-        if str(s_cfg.get(CONF_WHO, "1")) == "1":
-            s_where = str(s_cfg.get(CONF_WHERE, dev_id))
-            s_clean = s_where.split("-")[-1]
-            sensor_wheres.add(str(dev_id))
-            sensor_wheres.add(str(s_where))
-            sensor_wheres.add(s_clean)
-            sensor_wheres.add(normalize_where(s_where))
-            sensor_wheres.add(normalize_where(s_clean))
-
-    for entry in existing_entries:
-        if entry.domain in ("binary_sensor", "sensor"):
-            unique_id = entry.unique_id
-            after_mac = unique_id.replace(f"{gateway.mac}-", "", 1).replace(f"{config_entry.data[CONF_MAC]}-", "", 1)
-            parts_who = after_mac.split("-", 1)
-            if len(parts_who) > 1 and parts_who[0] == "1":
-                dev_id = parts_who[1].split("-")[0]
-                clean_s = dev_id.split("#4#")[0].split("-")[-1]
-                sensor_wheres.add(dev_id)
-                sensor_wheres.add(clean_s)
-                sensor_wheres.add(normalize_where(dev_id))
-                sensor_wheres.add(normalize_where(clean_s))
-            elif "-motion" in unique_id or "-illuminance" in unique_id:
-                # E.g. {mac}-{device_id}-{device_class}
-                dev_id = after_mac.split("-")[0]
-                clean_s = dev_id.split("#4#")[0].split("-")[-1]
-                sensor_wheres.add(dev_id)
-                sensor_wheres.add(clean_s)
-                sensor_wheres.add(normalize_where(dev_id))
-                sensor_wheres.add(normalize_where(clean_s))
-
-    for entry in existing_entries:
-        if entry.domain == PLATFORM:
-            unique_id = entry.unique_id
-            # unique_id format: "{mac}-{who}-{device_id}"
-            # device_id is "{where}" or "{where}#4#{interface}"
-            after_mac = unique_id.replace(f"{gateway.mac}-", "", 1).replace(f"{config_entry.data[CONF_MAC]}-", "", 1)
-            # Strip the WHO prefix: "1-55" -> "55", "1-18#4#02" -> "18#4#02"
-            parts_who = after_mac.split("-", 1)
-            device_id = parts_who[-1] if len(parts_who) > 1 else after_mac
-            if "#4#" in device_id:
-                parts = device_id.split("#4#")
-                where = parts[0]
-                interface = parts[1] if len(parts) > 1 else None
-            else:
-                where = device_id
-                interface = None
-
-            clean_where = where.split('-')[-1]
-            norm_where = normalize_where(where)
-            clean_norm = normalize_where(clean_where)
-            if (
-                clean_where in switch_wheres
-                or device_id in switch_wheres
-                or where in switch_wheres
-                or clean_where in sensor_wheres
-                or device_id in sensor_wheres
-                or where in sensor_wheres
-                or norm_where in sensor_wheres
-                or clean_norm in sensor_wheres
-            ):
-                # Ghost light erroneously created in a previous session for a switch or sensor device
-                if entity_registry:
-                    entity_registry.async_remove(entry.entity_id)
-                continue
-
-            cfg = _configured_lights.get(device_id) or _configured_lights.get(where) or _configured_lights.get(clean_where) or {}
-
-            default_suffix = f"{clean_where}I{interface}" if interface else clean_where
-            _customs = hass.data.get(DOMAIN, {}).get("customizations", {})
-            _predicted_id = f"light.light_{default_suffix.lower().replace(' ', '_')}"
-            _custom_entry = _customs.get(entry.entity_id, {}) or _customs.get(_predicted_id, {})
-            _is_dimmable = cfg.get(CONF_DIMMABLE, _custom_entry.get("dimmable", False))
-            _is_color_temp = cfg.get(CONF_COLOR_TEMP, _custom_entry.get("color_temp", False))
-            _is_rgb = cfg.get(CONF_RGB, _custom_entry.get("rgb", False)) or cfg.get(CONF_HS, _custom_entry.get("hs", False))
-            _name = cfg.get(CONF_NAME, f"Light {default_suffix}")
-            _entity_name = cfg.get(CONF_ENTITY_NAME)
-            _icon = cfg.get(CONF_ICON)
-            _icon_on = cfg.get(CONF_ICON_ON)
-            _manufacturer = cfg.get(CONF_MANUFACTURER, "BTicino")
-            _model = cfg.get(CONF_DEVICE_MODEL, "Lighting Device")
-
-            _light = MyHOMELight(
-                hass=hass,
-                name=_name,
-                entity_name=_entity_name,
-                icon=_icon,
-                icon_on=_icon_on,
-                device_id=device_id,
-                who="1",
-                where=where,
-                interface=interface,
-                dimmable=_is_dimmable,
-                manufacturer=_manufacturer,
-                model=_model,
-                gateway=gateway,
-                color_temp=_is_color_temp,
-                rgb=_is_rgb,
-            )
-            known_lights.add(device_id)
-            restored_lights.append(_light)
-
-    # Also instantiate any configured lights from myhome.yaml not yet in registry
-    seen_configured_where = set()
-    for dev_id, cfg in _configured_lights.items():
-        where = str(cfg.get(CONF_WHERE, dev_id))
-        interface = cfg.get(CONF_BUS_INTERFACE)
-        device_where_id = f"{where}#4#{interface}" if interface else str(where)
-        clean_where = where.split("-")[-1]
-        clean_unique_id = f"{clean_where}#4#{interface}" if interface else clean_where
-        default_suffix = f"{clean_where}I{interface}" if interface else clean_where
-
-        if clean_unique_id in seen_configured_where or device_where_id in known_lights or dev_id in known_lights:
-            continue
-        if (
-            clean_where in switch_wheres
-            or device_where_id in switch_wheres
-            or dev_id in switch_wheres
-            or clean_where in sensor_wheres
-            or device_where_id in sensor_wheres
-            or dev_id in sensor_wheres
-        ):
-            continue
-        seen_configured_where.add(clean_unique_id)
-
-        _name = cfg.get(CONF_NAME, f"Light {default_suffix}")
-        _light = MyHOMELight(
+    def build(ctx: DeviceContext) -> MyHOMELight:
+        cfg = ctx.cfg
+        # With lock_features the light is exactly what myhome.yaml declares and
+        # never learns another mode from the bus (#288 / #307).
+        lock_features = cfg.get(CONF_LOCK_FEATURES, False)
+        dimmable = cfg.get(CONF_DIMMABLE, False)
+        if ctx.source == "bus" and not dimmable and not lock_features:
+            # Auto-detect a dimmer from the first frame that carries a level
+            dimmable = ctx.message.brightness is not None or ctx.message.brightness_preset is not None
+        kwargs = {"lock_features": lock_features}
+        if ctx.source != "bus":
+            kwargs |= {"color_temp": cfg.get(CONF_COLOR_TEMP, False), "rgb": cfg.get(CONF_RGB, False) or cfg.get(CONF_HS, False)}
+        return MyHOMELight(
             hass=hass,
-            name=_name,
+            name=cfg.get(CONF_NAME, f"Light {ctx.suffix}"),
             entity_name=cfg.get(CONF_ENTITY_NAME),
             icon=cfg.get(CONF_ICON),
             icon_on=cfg.get(CONF_ICON_ON),
-            device_id=device_where_id,
-            who=str(cfg.get(CONF_WHO, "1")),
-            where=where,
-            interface=interface,
-            dimmable=cfg.get(CONF_DIMMABLE, False),
+            device_id=ctx.key,
+            who=ctx.who,
+            where=ctx.address.where,
+            interface=ctx.address.interface,
+            dimmable=dimmable,
             manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
             model=cfg.get(CONF_DEVICE_MODEL, "Lighting Device"),
             gateway=gateway,
-            color_temp=cfg.get(CONF_COLOR_TEMP, False),
-            rgb=cfg.get(CONF_RGB, False) or cfg.get(CONF_HS, False),
-        )
-        known_lights.add(device_where_id)
-        known_lights.add(dev_id)
-        if not interface:
-            known_lights.add(clean_where)
-        restored_lights.append(_light)
-
-        # Signal button platform to create Lock/Unlock buttons
-        async_dispatcher_send(
-            hass,
-            f"myhome_new_device_{config_entry.data[CONF_MAC]}",
-            {
-                "who": str(cfg.get(CONF_WHO, "1")),
-                "where": where,
-                "interface": interface,
-                "name": _name,
-                "device_id": device_where_id,
-            },
+            **kwargs,
         )
 
-    if restored_lights:
-        async_add_entities(restored_lights)
+    def ghost(entry, ctx: DeviceContext) -> bool:
+        # A light created in an earlier session for an address that is really a switch or sensor
+        return foreign.owns(ctx.address, ctx.key)
+
+    def accept(ctx: DeviceContext) -> bool:
+        return not foreign.owns(ctx.address, ctx.key)
+
+    @callback
+    def route_foreign(message, address: Address, known) -> bool:
+        """Sensor frames, and frames for switch / sensor addresses, go to their own platforms."""
+        if foreign.is_sensor_frame(message):
+            foreign.mark_sensor(address)
+            known.discard(address.key)
+            _route_who1(hass, mac, message, address)
+            return True
+        if foreign.owns(address, address.key):
+            _route_who1(hass, mac, message, address)
+            return True
+        return False
+
+    PlatformDiscovery(
+        hass, config_entry, async_add_entities,
+        platform=PLATFORM, who="1", event_type=OWNLightingEvent, build=build, announce=True,
+        reject_registry_entry=ghost, accept=accept, pre_message=route_foreign,
+    ).start()
 
     platform = entity_platform.current_platform.get()
     if platform is not None:
@@ -309,145 +152,86 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 vol.Optional("hours", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=255)),
                 vol.Optional("minutes", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=59)),
                 vol.Optional("seconds", default=0): vol.All(vol.Coerce(float), vol.Range(min=0, max=59)),
-                vol.Optional(ATTR_BRIGHTNESS): vol.All(vol.Coerce(int), vol.Range(min=1, max=255)),
-                vol.Optional(ATTR_BRIGHTNESS_PCT): vol.All(vol.Coerce(int), vol.Range(min=1, max=100)),
             },
             "async_turn_on_timed",
         )
 
-    @callback
-    def async_add_light(message):
-        """Add a light from a discovered message."""
-        if getattr(message, "is_translation", None) is True:
-            return
 
-        if not hasattr(message, "where") or not message.where:
-            return
+@callback
+def _route_who1(hass, mac: str, message, address: Address) -> None:
+    """Forward a WHO=1 frame under every key a switch or sensor entity may listen on."""
+    norm_where = normalize_where(address.where)
+    async_dispatcher_send(hass, f"myhome_update_{mac}_1_{address.key}", message)
+    if address.key != address.where:
+        async_dispatcher_send(hass, f"myhome_update_{mac}_1_{address.where}", message)
+    if norm_where != address.where:
+        async_dispatcher_send(hass, f"myhome_update_{mac}_1_{norm_where}", message)
 
-        # Skip groups, areas and general for now, as they represent many physical devices
-        if getattr(message, "is_group", False) or getattr(message, "is_area", False) or getattr(message, "is_general", False):
-            return
 
-        where = message.where
-        clean_where = where.split('-')[-1]
-        norm_where = normalize_where(where)
-        clean_norm = normalize_where(clean_where)
-        interface = getattr(message, "interface", None)
-        unique_id = f"{where}#4#{interface}" if interface else str(where)
+class _ForeignAddresses:
+    """WHO=1 addresses that belong to the switch or sensor platforms, not to a light."""
 
-        # Ignore sensor messages (motion, illuminance, sensitivity, timeout)
-        if (
+    SENSOR_MESSAGE_TYPES = ("motion_detected", "illuminance_value", "pir_sensitivity", "motion_timeout")
+
+    def __init__(self, hass, config_entry, gateway_mac: str, entry_mac: str) -> None:
+        runtime = config_entry.runtime_data
+        self.switches: set[str] = set()
+        self.sensors: set[str] = set()
+
+        for dev_id, cfg in runtime.platforms.get("switch", {}).items():
+            address = Address.from_config(dev_id, cfg)
+            self.switches.update({str(dev_id), address.where, address.clean_key, address.clean_where})
+        for platform, default_who in (("binary_sensor", "25"), ("sensor", "1")):
+            for dev_id, cfg in runtime.platforms.get(platform, {}).items():
+                if str(cfg.get(CONF_WHO, default_who)) != "1":
+                    continue
+                address = Address.from_config(dev_id, cfg)
+                self._add_sensor(str(dev_id), address.where, address.clean_where)
+
+        try:
+            registry = er.async_get(hass)
+            entries = er.async_entries_for_config_entry(registry, config_entry.entry_id)
+        except Exception:
+            entries = []
+        for entry in entries:
+            who, device_id = parse_unique_id(entry.unique_id or "", gateway_mac, entry_mac)
+            if entry.domain == "switch":
+                self.switches.update({device_id, device_id.split("#4#")[0].split("-")[-1]})
+            elif entry.domain in ("binary_sensor", "sensor"):
+                if who == "1":
+                    dev = device_id.split("-")[0]
+                elif "-motion" in entry.unique_id or "-illuminance" in entry.unique_id:
+                    dev = (entry.unique_id.replace(f"{gateway_mac}-", "", 1).replace(f"{entry_mac}-", "", 1)).split("-")[0]
+                else:
+                    continue
+                self._add_sensor(dev, dev.split("#4#")[0].split("-")[-1])
+
+    def _add_sensor(self, *wheres: str) -> None:
+        for where in wheres:
+            self.sensors.update({where, normalize_where(where)})
+
+    def mark_sensor(self, address: Address) -> None:
+        self._add_sensor(address.where, address.key, address.clean_where)
+
+    def owns(self, address: Address, key: str) -> bool:
+        candidates = {key, address.where, address.clean_where}
+        if candidates & self.switches:
+            return True
+        candidates |= {normalize_where(address.where), normalize_where(address.clean_where)}
+        return bool(candidates & self.sensors)
+
+    @classmethod
+    def is_sensor_frame(cls, message) -> bool:
+        """Motion / illuminance / PIR frames are never lights, whatever the address."""
+        return (
             getattr(message, "is_sensor", False) is True
             or getattr(message, "motion", False) is True
             or isinstance(getattr(message, "illuminance", None), int)
-            or getattr(message, "message_type", None) in (
-                "motion_detected",
-                "illuminance_value",
-                "pir_sensitivity",
-                "motion_timeout",
-            )
+            or getattr(message, "message_type", None) in cls.SENSOR_MESSAGE_TYPES
             or getattr(message, "dimension", None) in (5, 6, 7)
             or getattr(message, "_state", None) == 34
-        ):
-            sensor_wheres.add(where)
-            sensor_wheres.add(unique_id)
-            sensor_wheres.add(clean_where)
-            sensor_wheres.add(norm_where)
-            sensor_wheres.add(clean_norm)
-            if unique_id in known_lights:
-                known_lights.remove(unique_id)
-            async_dispatcher_send(hass, f"myhome_update_{config_entry.data[CONF_MAC]}_1_{unique_id}", message)
-            if unique_id != where:
-                async_dispatcher_send(hass, f"myhome_update_{config_entry.data[CONF_MAC]}_1_{where}", message)
-            if norm_where != where:
-                async_dispatcher_send(hass, f"myhome_update_{config_entry.data[CONF_MAC]}_1_{norm_where}", message)
-            return
-
-        if (
-            clean_where in switch_wheres
-            or unique_id in switch_wheres
-            or where in switch_wheres
-            or clean_where in sensor_wheres
-            or unique_id in sensor_wheres
-            or where in sensor_wheres
-            or norm_where in sensor_wheres
-            or clean_norm in sensor_wheres
-        ):
-            # Route to switch or sensor entities, do not auto-create a light entity
-            async_dispatcher_send(hass, f"myhome_update_{config_entry.data[CONF_MAC]}_1_{unique_id}", message)
-            if unique_id != where:
-                async_dispatcher_send(hass, f"myhome_update_{config_entry.data[CONF_MAC]}_1_{where}", message)
-            if norm_where != where:
-                async_dispatcher_send(hass, f"myhome_update_{config_entry.data[CONF_MAC]}_1_{norm_where}", message)
-            return
-
-        if unique_id not in known_lights:
-            # We found a new light!
-            clean_where = where.split('-')[-1]
-            default_suffix = f"{clean_where}I{interface}" if interface else clean_where
-            cfg = _configured_lights.get(unique_id) or _configured_lights.get(where) or _configured_lights.get(clean_where) or {}
-
-            _customs = hass.data.get(DOMAIN, {}).get("customizations", {})
-            _predicted_id = f"light.light_{default_suffix.lower().replace(' ', '_')}"
-            _custom_entry = _customs.get(_predicted_id, {})
-            _is_dimmable = cfg.get(CONF_DIMMABLE, _custom_entry.get("dimmable", False))
-
-            # Auto-detect dimmer from the first protocol message
-            if not _is_dimmable:
-                _is_dimmable = (
-                    message.brightness is not None
-                    or message.brightness_preset is not None
-                )
-
-            _name = cfg.get(CONF_NAME, f"Light {default_suffix}")
-            _entity_name = cfg.get(CONF_ENTITY_NAME)
-            _icon = cfg.get(CONF_ICON)
-            _icon_on = cfg.get(CONF_ICON_ON)
-            _manufacturer = cfg.get(CONF_MANUFACTURER, "BTicino")
-            _model = cfg.get(CONF_DEVICE_MODEL, "Lighting Device")
-
-            _light = MyHOMELight(
-                hass=hass,
-                name=_name,
-                entity_name=_entity_name,
-                icon=_icon,
-                icon_on=_icon_on,
-                device_id=unique_id,
-                who=str(message.who),
-                where=where,
-                interface=interface,
-                dimmable=_is_dimmable,
-                manufacturer=_manufacturer,
-                model=_model,
-                gateway=hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY],
-            )
-            known_lights.add(unique_id)
-            async_add_entities([_light])
-            _light.handle_event(message)
-
-            # Signal button platform to create Lock/Unlock buttons if not present
-            async_dispatcher_send(
-                hass,
-                f"myhome_new_device_{config_entry.data[CONF_MAC]}",
-                {"who": "1", "where": where, "interface": interface, "name": _name, "device_id": unique_id}
-            )
-
-        async_dispatcher_send(hass, f"myhome_update_{config_entry.data[CONF_MAC]}_1_{unique_id}", message)
-
-    @callback
-    def _handle_light_message(msg):
-        """Filter and forward light messages."""
-        if isinstance(msg, OWNLightingEvent):
-            async_add_light(msg)
-
-    # Listen to all incoming gateway messages
-    config_entry.async_on_unload(
-        async_dispatcher_connect(
-            hass,
-            f"myhome_message_{config_entry.data[CONF_MAC]}",
-            _handle_light_message,
         )
-    )
+
 
 async def async_unload_entry(hass, config_entry):
     """Unload light platform."""
@@ -480,6 +264,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         gateway: MyHOMEGatewayHandler,
         color_temp: bool = False,
         rgb: bool = False,
+        lock_features: bool = False,
     ):
         super().__init__(
             hass=hass,
@@ -491,12 +276,31 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             manufacturer=manufacturer,
             model=model,
             gateway=gateway,
+            entity_name=entity_name,
         )
-
-
 
         self._interface = interface
         self._full_where = f"{self._where}#4#{self._interface}" if self._interface is not None else self._where
+
+        # With lock_features the configuration is authoritative: the light
+        # supports exactly the modes declared (rgb / color_temp / dimmable) and
+        # never learns another one from the bus or from a restored state.  This
+        # is the answer to DALI gateways that keep replaying an HSV or tunable
+        # white value that was once written to a fixture that cannot use it
+        # (issue #288).
+        self._lock_features = bool(lock_features)
+        self._allowed_color_modes: set[ColorMode] = set()
+        if self._lock_features:
+            if rgb:
+                self._allowed_color_modes.add(ColorMode.HS)
+            if color_temp:
+                self._allowed_color_modes.add(ColorMode.COLOR_TEMP)
+            if dimmable or rgb or color_temp:
+                # A colour mode implies brightness in the HA light model, and
+                # the level arrives on Dimension 1 whatever the colour mode.
+                self._allowed_color_modes.add(ColorMode.BRIGHTNESS)
+            if not self._allowed_color_modes:
+                self._allowed_color_modes.add(ColorMode.ONOFF)
 
         self._attr_supported_features = 0
         self._attr_supported_color_modes: set[ColorMode] = set()
@@ -505,18 +309,20 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             self._attr_supported_color_modes.add(ColorMode.HS)
             self._attr_color_mode = ColorMode.HS
             self._attr_supported_features |= LightEntityFeature.TRANSITION
-        elif color_temp:
+        if color_temp:
             self._attr_supported_color_modes.add(ColorMode.COLOR_TEMP)
-            self._attr_color_mode = ColorMode.COLOR_TEMP
+            if ColorMode.HS not in self._attr_supported_color_modes:
+                self._attr_color_mode = ColorMode.COLOR_TEMP
             self._attr_supported_features |= LightEntityFeature.TRANSITION
-        elif dimmable:
-            self._attr_supported_color_modes.add(ColorMode.BRIGHTNESS)
-            self._attr_color_mode = ColorMode.BRIGHTNESS
-            self._attr_supported_features |= LightEntityFeature.TRANSITION
-        else:
-            self._attr_supported_color_modes.add(ColorMode.ONOFF)
-            self._attr_color_mode = ColorMode.ONOFF
-            self._attr_supported_features |= LightEntityFeature.FLASH
+        if not (self._attr_supported_color_modes & {ColorMode.HS, ColorMode.COLOR_TEMP}):
+            if dimmable:
+                self._attr_supported_color_modes.add(ColorMode.BRIGHTNESS)
+                self._attr_color_mode = ColorMode.BRIGHTNESS
+                self._attr_supported_features |= LightEntityFeature.TRANSITION
+            else:
+                self._attr_supported_color_modes.add(ColorMode.ONOFF)
+                self._attr_color_mode = ColorMode.ONOFF
+                self._attr_supported_features |= LightEntityFeature.FLASH
 
         self._attr_min_color_temp_kelvin = 2000
         self._attr_max_color_temp_kelvin = 6535
@@ -548,6 +354,15 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._cmd_lock: asyncio.Lock = asyncio.Lock()
         self._last_brightness_pct: int = 100
 
+    @property
+    def color_temp(self) -> int | None:
+        """Colour temperature in mireds, as carried on the bus (dimension 14).
+
+        Current cores no longer expose LightEntity.color_temp; keep the
+        accessor so the mired value stays inspectable alongside the Kelvin one.
+        """
+        return self._attr_color_temp
+
     async def async_added_to_hass(self):
         """Run when entity about to be added to hass."""
         target_hass = self.hass or self._hass
@@ -561,31 +376,53 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             )
         await super().async_added_to_hass()
 
+    def _is_mode_forbidden(self, mode: ColorMode) -> bool:
+        """Return whether lock_features keeps this light from adopting ``mode``."""
+        return self._lock_features and mode not in self._allowed_color_modes
+
+    def _log_locked_out(self, message: OWNLightingEvent, dimension: str) -> None:
+        LOGGER.debug(
+            "%s light %s is locked to %s; ignoring Dimension %s frame %s",
+            self._gateway_handler.log_id,
+            self._full_where,
+            sorted(mode.value for mode in self._allowed_color_modes),
+            dimension,
+            message,
+        )
+
+    def _promote_color_mode(self, mode: ColorMode) -> None:
+        """Add a color capability learned from the bus without dropping others.
+
+        DALI DT8 drivers report both HSV (dimension 12) and tunable white
+        (dimension 14); HS and COLOR_TEMP therefore coexist.  BRIGHTNESS and
+        ONOFF are subsumed by any color mode per the HA light model.
+        """
+        if self._is_mode_forbidden(mode):
+            return
+        if mode in (ColorMode.HS, ColorMode.COLOR_TEMP):
+            self._attr_supported_color_modes.discard(ColorMode.BRIGHTNESS)
+            self._attr_supported_color_modes.discard(ColorMode.ONOFF)
+        elif mode == ColorMode.BRIGHTNESS:
+            self._attr_supported_color_modes.discard(ColorMode.ONOFF)
+        self._attr_supported_color_modes.add(mode)
+        self._attr_color_mode = mode
+        self._attr_supported_features |= LightEntityFeature.TRANSITION
+        self._attr_supported_features &= ~LightEntityFeature.FLASH
+
     async def async_restore_last_state(self, last_state) -> None:
         """Restore previous state attributes and color modes."""
-        # 1. Restore color modes and features
-        last_modes = last_state.attributes.get("supported_color_modes")
-        if last_modes:
-            if (
-                ColorMode.HS in last_modes
-                or "hs" in last_modes
-                or ColorMode.RGB in last_modes
-                or "rgb" in last_modes
-            ):
-                self._attr_supported_color_modes = {ColorMode.HS}
-                self._attr_color_mode = ColorMode.HS
-                self._attr_supported_features |= LightEntityFeature.TRANSITION
-                self._attr_supported_features &= ~LightEntityFeature.FLASH
-            elif ColorMode.COLOR_TEMP in last_modes or "color_temp" in last_modes:
-                self._attr_supported_color_modes = {ColorMode.COLOR_TEMP}
-                self._attr_color_mode = ColorMode.COLOR_TEMP
-                self._attr_supported_features |= LightEntityFeature.TRANSITION
-                self._attr_supported_features &= ~LightEntityFeature.FLASH
-            elif ColorMode.BRIGHTNESS in last_modes or "brightness" in last_modes:
-                self._attr_supported_color_modes = {ColorMode.BRIGHTNESS}
-                self._attr_color_mode = ColorMode.BRIGHTNESS
-                self._attr_supported_features |= LightEntityFeature.TRANSITION
-                self._attr_supported_features &= ~LightEntityFeature.FLASH
+        # 1. Restore color modes and features (all of them, not just the "best")
+        last_modes = last_state.attributes.get("supported_color_modes") or []
+        if (ColorMode.HS in last_modes or "hs" in last_modes or ColorMode.RGB in last_modes or "rgb" in last_modes) and not self._is_mode_forbidden(ColorMode.HS):
+            self._promote_color_mode(ColorMode.HS)
+        if (ColorMode.COLOR_TEMP in last_modes or "color_temp" in last_modes) and not self._is_mode_forbidden(ColorMode.COLOR_TEMP):
+            self._promote_color_mode(ColorMode.COLOR_TEMP)
+        if (ColorMode.BRIGHTNESS in last_modes or "brightness" in last_modes) and not self._is_mode_forbidden(ColorMode.BRIGHTNESS):
+            if not self._attr_supported_color_modes & {ColorMode.HS, ColorMode.COLOR_TEMP}:
+                self._promote_color_mode(ColorMode.BRIGHTNESS)
+        last_mode = last_state.attributes.get("color_mode")
+        if last_mode in self._attr_supported_color_modes:
+            self._attr_color_mode = ColorMode(last_mode)
 
         # 2. Restore brightness
         last_brightness = last_state.attributes.get(ATTR_BRIGHTNESS)
@@ -634,6 +471,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 await self._gateway_handler.send_status_request(OWNLightingCommand.get_hsv_color(self._full_where))
             elif hasattr(OWNLightingCommand, "get_rgb_color"):  # pragma: no cover
                 await self._gateway_handler.send_status_request(OWNLightingCommand.get_rgb_color(self._full_where))
+            if ColorMode.COLOR_TEMP in self._attr_supported_color_modes:
+                await self._gateway_handler.send_status_request(OWNLightingCommand.get_color_temperature(self._full_where))
         elif ColorMode.COLOR_TEMP in self._attr_supported_color_modes:
             await self._gateway_handler.send_status_request(OWNLightingCommand.get_brightness(self._full_where))
             await self._gateway_handler.send_status_request(OWNLightingCommand.get_color_temperature(self._full_where))
@@ -989,15 +828,6 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         # plain off (preserved)
         return await self._gateway_handler.send(OWNLightingCommand.switch_off(self._full_where))
 
-    @property
-    def color_temp(self) -> int | None:
-        """Colour temperature in mireds, as carried on the bus (dimension 14).
-
-        Current cores no longer expose LightEntity.color_temp; keep the
-        accessor so the mired value stays inspectable alongside the Kelvin one.
-        """
-        return self._attr_color_temp
-
     @callback
     def handle_event(self, message: OWNLightingEvent):
         """Handle an event message.
@@ -1023,19 +853,33 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         if is_fading and not self._attr_is_on:
             self._cancel_fade_if_active()
 
-        # Auto-promote to HS when HSV color data is received (Dimension 12)
         has_hs = isinstance(getattr(message, "hs", None), (tuple, list)) and len(message.hs) == 2
         has_rgb = isinstance(getattr(message, "rgb", None), (tuple, list)) and len(message.rgb) == 3
+        has_color_temp = isinstance(getattr(message, "color_temp", None), int)
+        has_level = message.brightness is not None or message.brightness_preset is not None
+
+        # A dimension the light is locked out of carries no truth in any of its
+        # fields: the gateway is replaying a value once written to an address
+        # that cannot use it, so even the HSV "value" is not this light's
+        # brightness.  The real level always arrives on Dimension 1.
+        if (has_hs or has_rgb) and self._is_mode_forbidden(ColorMode.HS):
+            self._log_locked_out(message, "12")
+            has_hs = has_rgb = False
+        elif has_color_temp and self._is_mode_forbidden(ColorMode.COLOR_TEMP):
+            self._log_locked_out(message, "14")
+            has_color_temp = False
+        elif has_level and self._is_mode_forbidden(ColorMode.BRIGHTNESS):
+            self._log_locked_out(message, "1")
+            has_level = False
+
+        # Auto-promote to HS when HSV color data is received (Dimension 12)
         if has_hs or has_rgb:
             if ColorMode.HS not in self._attr_supported_color_modes:
                 LOGGER.info(
-                    "Auto-detected HSV color for light %s, upgrading to HS mode.",
+                    "Auto-detected HSV color for light %s, adding HS mode.",
                     self._where,
                 )
-                self._attr_supported_color_modes = {ColorMode.HS}
-                self._attr_color_mode = ColorMode.HS
-                self._attr_supported_features |= LightEntityFeature.TRANSITION
-                self._attr_supported_features &= ~LightEntityFeature.FLASH
+            self._promote_color_mode(ColorMode.HS)
             if has_hs:
                 self._attr_hs_color = (float(message.hue), float(message.saturation))
                 if has_rgb:
@@ -1053,21 +897,18 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     self._last_brightness_pct = int(message.value)
 
         # Auto-promote to tunable white when color temperature data is received
-        elif isinstance(getattr(message, "color_temp", None), int):
+        elif has_color_temp:
             if ColorMode.COLOR_TEMP not in self._attr_supported_color_modes:
                 LOGGER.info(
-                    "Auto-detected tunable white for light %s, upgrading to COLOR_TEMP mode.",
+                    "Auto-detected tunable white for light %s, adding COLOR_TEMP mode.",
                     self._where,
                 )
-                self._attr_supported_color_modes = {ColorMode.COLOR_TEMP}
-                self._attr_color_mode = ColorMode.COLOR_TEMP
-                self._attr_supported_features |= LightEntityFeature.TRANSITION
-                self._attr_supported_features &= ~LightEntityFeature.FLASH
+            self._promote_color_mode(ColorMode.COLOR_TEMP)
             self._attr_color_temp = message.color_temp
             self._attr_color_temp_kelvin = color_temperature_mired_to_kelvin(message.color_temp)
 
         # Auto-promote to dimmable when brightness data is received (always)
-        elif (message.brightness is not None or message.brightness_preset is not None):
+        elif has_level:
             if (
                 ColorMode.BRIGHTNESS not in self._attr_supported_color_modes
                 and ColorMode.COLOR_TEMP not in self._attr_supported_color_modes
@@ -1078,17 +919,14 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     "Auto-detected dimmer for light %s, upgrading to BRIGHTNESS mode.",
                     self._where,
                 )
-                self._attr_supported_color_modes = {ColorMode.BRIGHTNESS}
-                self._attr_color_mode = ColorMode.BRIGHTNESS
-                self._attr_supported_features |= LightEntityFeature.TRANSITION
-                self._attr_supported_features &= ~LightEntityFeature.FLASH
+                self._promote_color_mode(ColorMode.BRIGHTNESS)
 
         if (
             ColorMode.BRIGHTNESS in self._attr_supported_color_modes
             or ColorMode.COLOR_TEMP in self._attr_supported_color_modes
             or ColorMode.HS in self._attr_supported_color_modes
             or ColorMode.RGB in self._attr_supported_color_modes
-        ) and message.brightness is not None:
+        ) and has_level and message.brightness is not None:
             if is_fading:
                 # Precise policy during fade: only apply significant physical changes
                 current_opt = self._attr_brightness_pct or 0

@@ -15,6 +15,25 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Current v2 alignment (0.20.1)
+
+The panel integrates the official `v2-phase1-architecture` through `3f5e791`
+(2026-09-16), retaining the compact, collapsible profile editor from `8edd201`.
+Gateway inventory reads `entry.runtime_data`; cover movement uses v2's real-write
+and motor-start timing, echo handling and directional travel times.
+
+An assigned panel profile takes precedence over native saved timings. Removing
+its assignment restores the native saved opening/closing values, or YAML/defaults
+when none are stored. Native timing/calibration services reject changes while a
+panel profile owns that cover or a panel measurement/save owns that gateway.
+Panel measurements and profile writes likewise reject active or queued native
+calibration. Existing profile storage v4 and export v2 remain unchanged; this is
+coexistence with explicit ownership, not the proposed shared-backend migration.
+
+The shared native/legacy monitor includes upstream Start/Stop Trace, fresh Sweep
+captures, capture-specific exports, local timestamps and explicit arming before
+raw frame transmission. Exported diagnostics retain upstream privacy filtering.
+
 ## Measure one direction (0.20.0)
 
 In **Travel profile**, select **Guided measurement**, then **Opening only** or
@@ -275,7 +294,7 @@ requirements, limits and real-gateway validation steps.
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.20.0**, defined by
+The panel has an independent version, currently **0.20.1**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.

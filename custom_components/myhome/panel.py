@@ -10,10 +10,13 @@ import asyncio
 import hashlib
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import voluptuous as vol
-from homeassistant.components import frontend, http, panel_custom, websocket_api
+from homeassistant.components import frontend, panel_custom, websocket_api
+from homeassistant.components.http.server import StaticPathConfig
+from homeassistant.components.websocket_api.connection import ActiveConnection
+from homeassistant.components.websocket_api.decorators import require_admin, websocket_command
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PORT
 from homeassistant.core import HomeAssistant, callback
@@ -22,11 +25,12 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 
-from .const import CONF_ENTITY, CONF_FIRMWARE, DOMAIN, INTEGRATION_VERSION, is_apl_address
+from .const import CONF_FIRMWARE, DOMAIN, INTEGRATION_VERSION, is_apl_address
 from .cover_profiles import register_api
+from .data import get_runtime_data
 
 PANEL_URL = "myhome"
-PANEL_VERSION = "0.20.0"
+PANEL_VERSION = "0.20.1"
 PANEL_STATIC_URL = "/myhome_panel"
 WS_INVENTORY = "myhome/panel/inventory"
 _PANEL_REGISTERED = "_panel_registered"
@@ -42,7 +46,7 @@ class PanelPreferences:
     """One backend-owned presentation preference shared by every gateway."""
 
     def __init__(self, hass: HomeAssistant) -> None:
-        self.store = Store(hass, 1, PANEL_STORAGE_KEY)
+        self.store = Store[dict[str, Any]](hass, 1, PANEL_STORAGE_KEY)
         self.lock = asyncio.Lock()
         self.loaded = False
         self.show_sidebar = True
@@ -60,7 +64,7 @@ def _preferences(hass: HomeAssistant) -> PanelPreferences:
     data = hass.data.setdefault(DOMAIN, {})
     if _PREFERENCES not in data:
         data[_PREFERENCES] = PanelPreferences(hass)
-    return data[_PREFERENCES]
+    return cast(PanelPreferences, data[_PREFERENCES])
 
 
 async def async_get_panel_sidebar(hass: HomeAssistant) -> bool:
@@ -167,11 +171,11 @@ def async_panel_inventory(hass: HomeAssistant) -> dict[str, Any]:
     entities = er.async_get(hass)
     devices = dr.async_get(hass)
     gateways = []
-    device_payloads = {}
+    device_payloads: dict[str, Any] = {}
     entity_payloads = {}
     for entry in hass.config_entries.async_entries(DOMAIN):
-        runtime = hass.data.get(DOMAIN, {}).get(entry.data.get(CONF_MAC), {})
-        gateway = runtime.get(CONF_ENTITY)
+        runtime = get_runtime_data(entry)
+        gateway = runtime.gateway if runtime else None
         loaded = entry.state is ConfigEntryState.LOADED and entry.disabled_by is None
         # Never serialize ConfigEntry.data/options or runtime objects wholesale:
         # they contain gateway credentials and configuration unrelated to the UI.
@@ -188,7 +192,7 @@ def async_panel_inventory(hass: HomeAssistant) -> dict[str, Any]:
                 "state": entry.state.value,
                 "disabled_by": entry.disabled_by,
                 "connected": loaded and bool(getattr(gateway, "is_connected", False)),
-                "monitor_available": loaded and runtime.get("bus_monitor") is not None,
+                "monitor_available": loaded and runtime is not None and runtime.bus_monitor is not None,
                 "device_id": getattr(gateway, "device_registry_id", None) if loaded else None,
             }
         )
@@ -221,7 +225,7 @@ def async_panel_inventory(hass: HomeAssistant) -> dict[str, Any]:
         for entity in er.async_entries_for_config_entry(entities, entry.entry_id):
             if entity.platform != DOMAIN:
                 continue
-            who, address = entry_device_metadata.get(entity.device_id, (None, None))
+            who, address = entry_device_metadata.get(entity.device_id or "", (None, None))
             entity_payloads[entity.entity_id] = {
                 "entity_id": entity.entity_id,
                 "entry_id": entry.entry_id,
@@ -249,11 +253,11 @@ def async_panel_inventory(hass: HomeAssistant) -> dict[str, Any]:
     }
 
 
-@websocket_api.websocket_command({vol.Required("type"): WS_INVENTORY})
-@websocket_api.require_admin
+@websocket_command({vol.Required("type"): WS_INVENTORY})
+@require_admin
 @callback
 def ws_panel_inventory(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Read the native configuration without requiring a connected gateway."""
     connection.send_result(msg["id"], async_panel_inventory(hass))
@@ -277,11 +281,11 @@ async def async_setup_panel(hass: HomeAssistant, bus_card_url: str) -> None:
             if hasattr(hass.http, "async_register_static_paths"):
                 await hass.http.async_register_static_paths(
                     [
-                        http.StaticPathConfig(PANEL_STATIC_URL, path, cache_headers=False),
+                        StaticPathConfig(PANEL_STATIC_URL, path, cache_headers=False),
                     ]
                 )
             else:  # Home Assistant 2024.4–2024.6
-                hass.http.register_static_path(PANEL_STATIC_URL, path, cache_headers=False)
+                getattr(hass.http, "register_static_path")(PANEL_STATIC_URL, path, cache_headers=False)
             data[_STATIC_REGISTERED] = True
         preferences = _preferences(hass)
         async with preferences.lock:

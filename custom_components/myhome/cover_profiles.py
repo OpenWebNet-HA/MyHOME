@@ -9,10 +9,17 @@ from __future__ import annotations
 import asyncio
 import copy
 import math
+from collections.abc import Callable
+from typing import Any
 from uuid import uuid4
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
+from homeassistant.components.websocket_api.decorators import (
+    async_response,
+    require_admin,
+    websocket_command,
+)
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import CoreState, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
@@ -37,7 +44,7 @@ WS_SUBSCRIBE = "myhome/cover_profiles/subscribe"
 MAX_PROFILES = 200
 
 
-def travel_time(value):
+def travel_time(value: Any) -> Any:
     """Accept finite seconds, including fractions, without treating booleans as numbers."""
     if type(value) not in (int, float) or not math.isfinite(value) or not 1 <= value <= 600:
         raise vol.Invalid("travel_time must be between 1 and 600 seconds")
@@ -49,7 +56,7 @@ LEGACY_PROFILE = vol.Schema({
     vol.Required("travel_time"): travel_time,
 })
 
-def directional_profile(profile):
+def directional_profile(profile: dict[str, Any]) -> Any:
     """Upgrade a validated legacy profile without changing its motion timing."""
     return {"name": profile["name"], "opening_time": profile["travel_time"],
             "closing_time": profile["travel_time"]}
@@ -71,22 +78,22 @@ STORED = vol.Schema({
     vol.Required("profiles"): {str: STORED_PROFILE},
     vol.Required("assignments"): {str: str},
 })
-TARGET = {vol.Required("entry_id"): str, vol.Required("entity_id"): str}
+TARGET: dict[str | vol.Marker, Any] = {vol.Required("entry_id"): str, vol.Required("entity_id"): str}
 
 
 class ProfileError(Exception):
     """A stable error code for the panel to translate."""
 
 
-class ProfileStorage(Store):
+class ProfileStorage(Store[dict[str, Any]]):
     """Surface write failures: HA's default Store logs them and returns success."""
 
-    async def _async_migrate_func(self, old_major_version, old_minor_version, old_data):
+    async def _async_migrate_func(self, old_major_version: Any, old_minor_version: Any, old_data: Any) -> Any:
         if old_major_version not in (1, 2, 3):
             raise NotImplementedError
         return STORED(old_data)
 
-    async def _async_write_data(self, *args):
+    async def _async_write_data(self, *args: Any) -> None:
         try:
             await super()._async_write_data(*args)
         except (WriteError, SerializationError) as error:
@@ -96,18 +103,18 @@ class ProfileStorage(Store):
 class CoverProfileStore:
     """Persist a complete mutation before publishing its new revision in memory."""
 
-    def __init__(self, hass, entry_id):
+    def __init__(self, hass: Any, entry_id: str) -> None:
         self.store = ProfileStorage(
             hass, 4, f"{DOMAIN}.cover_profiles.{entry_id}", atomic_writes=True
         )
         self.lock = asyncio.Lock()
         self.loaded = False
-        self.data = {"revision": 0, "profiles": {}, "assignments": {}}
-        self.covers = {}
+        self.data: dict[str, Any] = {"revision": 0, "profiles": {}, "assignments": {}}
+        self.covers: dict[str, Any] = {}
         self.calibration = None
         self.calibration_command_lock = asyncio.Lock()
 
-    async def load(self):
+    async def load(self) -> None:
         """Caller holds lock; invalid storage must not silently overwrite saved data."""
         if not self.loaded:
             saved = await self.store.async_load()
@@ -115,14 +122,14 @@ class CoverProfileStore:
                 self.data = STORED(saved)
             self.loaded = True
 
-    def profile(self, unique_id):
+    def profile(self, unique_id: str) -> Any:
         """Resolve an explicit assignment, otherwise retain YAML/runtime defaults."""
         profile_id = self.data["assignments"].get(unique_id)
         profile = self.data["profiles"].get(profile_id)
         return {"id": profile_id, **profile} if profile else None
 
 
-def get_store(hass, entry_id):
+def get_store(hass: Any, entry_id: str) -> Any:
     """Share one store and lock per config entry, outside gateway runtime data."""
     stores = hass.data.setdefault(DATA_KEY, {})
     if entry_id not in stores:
@@ -130,7 +137,7 @@ def get_store(hass, entry_id):
     return stores[entry_id]
 
 
-def target(hass, entry_id, entity_id):
+def target(hass: Any, entry_id: str, entity_id: str) -> Any:
     """Resolve only a native MyHOME cover belonging to the exact requested gateway."""
     entry = hass.config_entries.async_get_entry(entry_id)
     entity = er.async_get(hass).async_get(entity_id)
@@ -141,7 +148,7 @@ def target(hass, entry_id, entity_id):
     return entry, entity
 
 
-def snapshot(hass, store, entry, entity):
+def snapshot(hass: Any, store: Any, entry: Any, entity: Any) -> Any:
     """An allowlisted view; never expose gateway credentials or runtime objects."""
     cover = store.covers.get(entity.unique_id)
     writable = bool(entry.state == ConfigEntryState.LOADED and entry.disabled_by is None
@@ -153,7 +160,7 @@ def snapshot(hass, store, entry, entity):
     records = {record.unique_id: record for record in
                er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
                if record.domain == "cover" and record.platform == DOMAIN}
-    def assignments(profile_id):
+    def assignments(profile_id: Any) -> Any:
         return [{"entity_id": records[unique].entity_id if unique in records else None,
                  "name": (records[unique].name or records[unique].original_name
                           or records[unique].entity_id) if unique in records else None}
@@ -168,14 +175,14 @@ def snapshot(hass, store, entry, entity):
                      for key, value in store.data["profiles"].items()],
         "writable": writable, "reason": reason,
         "default_travel_time": cover._default_travel_time if cover else None,
-        "effective_travel_time": cover._travel_time if cover else None,
-        "effective_opening_time": cover._travel_time if cover else None,
-        "effective_closing_time": cover._closing_time if cover else None,
+        "effective_travel_time": cover._travel_time_up if cover else None,
+        "effective_opening_time": cover._travel_time_up if cover else None,
+        "effective_closing_time": cover._travel_time_down if cover else None,
         "pending": bool(cover and cover._pending_profile is not None),
     }
 
 
-async def read_profile(hass, entry_id, entity_id):
+async def read_profile(hass: Any, entry_id: str, entity_id: str) -> Any:
     entry, entity = target(hass, entry_id, entity_id)
     store = get_store(hass, entry_id)
     async with store.lock:
@@ -183,7 +190,7 @@ async def read_profile(hass, entry_id, entity_id):
         return snapshot(hass, store, entry, entity)
 
 
-async def write_profile(hass, msg, *, calibration=None):
+async def write_profile(hass: Any, msg: dict[str, Any], *, calibration: Any=None) -> Any:
     """Change one cover; shared profiles are copied explicitly instead of edited globally."""
     entry_id, entity_id = msg["entry_id"], msg["entity_id"]
     # Validate before allocating storage and again after any wait for the lock/load.
@@ -197,6 +204,8 @@ async def write_profile(hass, msg, *, calibration=None):
         current = snapshot(hass, store, entry, entity)
         if not current["writable"]:
             raise ProfileError(current["reason"])
+        if store.covers[entity.unique_id].native_calibration_busy():
+            raise ProfileError("calibration_busy")
         if store.calibration and store.calibration.active and store.calibration is not calibration:
             raise ProfileError("calibration_busy")
         if calibration is not None and not calibration.active:
@@ -250,7 +259,7 @@ async def write_profile(hass, msg, *, calibration=None):
         return snapshot(hass, store, entry, entity)
 
 
-async def commit_profiles(hass, store, entry_id, data, affected):
+async def commit_profiles(hass: Any, store: Any, entry_id: str, data: Any, affected: Any) -> None:
     """Caller holds the store lock and has validated the entire mutation."""
     data["revision"] += 1
     await store.store.async_save(data)
@@ -266,7 +275,7 @@ async def commit_profiles(hass, store, entry_id, data, affected):
             cover.async_write_ha_state()
 
 
-async def bind_cover(hass, cover):
+async def bind_cover(hass: Any, cover: Any) -> None:
     """Restore a profile before the cover queries its initial bus state."""
     entity = er.async_get(hass).async_get(cover.entity_id)
     if entity is None or entity.platform != DOMAIN or not entity.config_entry_id:
@@ -279,14 +288,14 @@ async def bind_cover(hass, cover):
             cover.async_apply_cover_profile(store.profile(entity.unique_id))
 
     @callback
-    def unbind():
+    def unbind() -> None:
         if store.covers.get(entity.unique_id) is cover:
             store.covers.pop(entity.unique_id)
 
     cover.async_on_remove(unbind)
 
 
-async def remove_entry(hass, entry_id):
+async def remove_entry(hass: Any, entry_id: str) -> None:
     """Delete this gateway's stored assignments when its config entry is removed."""
     store = get_store(hass, entry_id)
     async with store.lock:
@@ -297,7 +306,7 @@ async def remove_entry(hass, entry_id):
         hass.data[DATA_KEY].pop(entry_id, None)
 
 
-async def respond(hass, connection, msg, operation):
+async def respond(hass: Any, connection: Any, msg: dict[str, Any], operation: Any) -> None:
     try:
         result = await operation
     except ProfileError as error:
@@ -310,14 +319,14 @@ async def respond(hass, connection, msg, operation):
         connection.send_result(msg["id"], result)
 
 
-@websocket_api.websocket_command({vol.Required("type"): WS_READ, **TARGET})
-@websocket_api.require_admin
-@websocket_api.async_response
-async def ws_read(hass, connection, msg):
+@websocket_command({vol.Required("type"): WS_READ, **TARGET})
+@require_admin
+@async_response
+async def ws_read(hass: Any, connection: Any, msg: dict[str, Any]) -> None:
     await respond(hass, connection, msg, read_profile(hass, msg["entry_id"], msg["entity_id"]))
 
 
-@websocket_api.websocket_command({
+@websocket_command({
     vol.Required("type"): WS_WRITE, **TARGET,
     vol.Required("revision"): vol.All(int, vol.Range(min=0)),
     vol.Required("action"): vol.In(["assign", "save", "delete"]),
@@ -325,21 +334,21 @@ async def ws_read(hass, connection, msg):
     vol.Optional("copy_from_profile_id"): str,
     vol.Optional("profile"): PROFILE,
 })
-@websocket_api.require_admin
-@websocket_api.async_response
-async def ws_write(hass, connection, msg):
+@require_admin
+@async_response
+async def ws_write(hass: Any, connection: Any, msg: dict[str, Any]) -> None:
     if msg["action"] == "save" and "profile" not in msg:
         connection.send_error(msg["id"], "invalid_profile", "Profile is required")
         return
     await respond(hass, connection, msg, write_profile(hass, msg))
 
 
-@websocket_api.websocket_command({
+@websocket_command({
     vol.Required("type"): WS_SUBSCRIBE, vol.Required("entry_id"): str,
 })
-@websocket_api.require_admin
-@websocket_api.async_response
-async def ws_subscribe(hass, connection, msg):
+@require_admin
+@async_response
+async def ws_subscribe(hass: Any, connection: Any, msg: dict[str, Any]) -> None:
     """Send revision invalidations, registering before the initial synchronization."""
     entry_id = msg["entry_id"]
     entry = hass.config_entries.async_get_entry(entry_id)
@@ -348,10 +357,10 @@ async def ws_subscribe(hass, connection, msg):
         return
     store = get_store(hass, entry_id)
     active = True
-    unsubscribe = None
+    unsubscribe: Callable[[], None] | None = None
 
     @callback
-    def cancel():
+    def cancel() -> None:
         nonlocal active
         active = False
         if unsubscribe is not None:
@@ -368,7 +377,7 @@ async def ws_subscribe(hass, connection, msg):
                 raise ProfileError("target_not_found")
 
             @callback
-            def changed(event):
+            def changed(event: Any) -> None:
                 connection.send_event(msg["id"], event)
 
             unsubscribe = async_dispatcher_connect(
@@ -385,7 +394,7 @@ async def ws_subscribe(hass, connection, msg):
 
 
 @callback
-def register_api(hass: HomeAssistant):
+def register_api(hass: HomeAssistant) -> None:
     from .cover_profile_export import ws_export
 
     websocket_api.async_register_command(hass, ws_export)

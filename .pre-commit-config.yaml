@@ -1,0 +1,15 @@
+# Optional for contributors (pip install pre-commit && pre-commit install); CI runs the same checks.
+repos:
+  - repo: local
+    hooks:
+      - id: fixture-privacy
+        name: no personal data in tests/ (plant fixtures, diagnostics dumps)
+        entry: python scripts/anonymize_plant_fixture.py --check
+        language: system
+        files: ^tests/
+        pass_filenames: true
+      - id: ruff
+        name: ruff
+        entry: ruff check
+        language: system
+        types: [python]

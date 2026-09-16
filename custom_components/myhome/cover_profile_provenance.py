@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from typing import Any
 
 import voluptuous as vol
 from homeassistant.util import dt as dt_util
@@ -9,7 +10,7 @@ from homeassistant.util import dt as dt_util
 DIRECTIONS = ("opening", "closing")
 
 
-def utc_timestamp(value):
+def utc_timestamp(value: Any) -> Any:
     """Accept timezone-aware UTC dates, never a local or fabricated fallback date."""
     try:
         parsed = datetime.fromisoformat(value)
@@ -35,19 +36,19 @@ EVIDENCE = vol.Any(
 PROVENANCE = vol.Schema({vol.Required(direction): EVIDENCE for direction in DIRECTIONS})
 
 
-def unknown_provenance():
+def unknown_provenance() -> Any:
     """Old profiles have no recorded evidence; migration must not invent any."""
     return {direction: {"source": "unknown", "recorded_at": None, "origin_unique_id": None}
             for direction in DIRECTIONS}
 
 
-def evidence(source, unique_id):
+def evidence(source: Any, unique_id: str) -> Any:
     """Record the backend wall clock separately from monotonic duration timing."""
     return {"source": source, "recorded_at": dt_util.utcnow().isoformat(),
             "origin_unique_id": unique_id}
 
 
-def public_provenance(profile, records, target_unique_id):
+def public_provenance(profile: dict[str, Any], records: Any, target_unique_id: Any) -> Any:
     """Resolve names through the registry without exposing internal unique IDs."""
     result = {}
     for direction, value in profile["provenance"].items():

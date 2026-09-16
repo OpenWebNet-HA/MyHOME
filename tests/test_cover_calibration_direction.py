@@ -12,8 +12,8 @@ from pytest_socket import socket_enabled  # noqa: F401
 from custom_components.myhome import cover_profiles as profiles
 from custom_components.myhome.cover_calibration import WS_START, begin, register_api
 from custom_components.myhome.cover_profile_provenance import unknown_provenance
-from tests.test_cover_calibration import act, bus
 from tests.test_cover_profiles import plant as plant_fixture
+from tests.test_panel_cover_calibration import act, bus
 
 plant = plant_fixture
 

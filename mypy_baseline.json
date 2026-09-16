@@ -1,0 +1,19 @@
+{
+  "_comment": "Strict-mypy error ceiling per module; lowered by scripts/typing_ratchet.py --update, never raised.",
+  "total": 507,
+  "modules": {
+    "custom_components/myhome/__init__.py": 27,
+    "custom_components/myhome/alarm_control_panel.py": 18,
+    "custom_components/myhome/binary_sensor.py": 43,
+    "custom_components/myhome/button.py": 27,
+    "custom_components/myhome/climate.py": 25,
+    "custom_components/myhome/config_flow.py": 105,
+    "custom_components/myhome/cover.py": 64,
+    "custom_components/myhome/light.py": 39,
+    "custom_components/myhome/media_player.py": 25,
+    "custom_components/myhome/sensor.py": 32,
+    "custom_components/myhome/switch.py": 15,
+    "custom_components/myhome/validate.py": 57,
+    "custom_components/myhome/websocket.py": 30
+  }
+}

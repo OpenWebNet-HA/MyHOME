@@ -229,6 +229,18 @@ async def test_gateway_send_and_send_status_request(gateway_handler):
 
 
 @pytest.mark.asyncio
+async def test_gateway_initial_discovery_queues_sweep(gateway_handler):
+    """The startup sweep queues covers, heating and audio status requests, never *#1*0##."""
+    await gateway_handler.initial_discovery()
+    queued = []
+    while not gateway_handler.send_buffer.empty():
+        item = gateway_handler.send_buffer.get_nowait()
+        assert item["is_status_request"] is True
+        queued.append(str(item["message"]))
+    assert queued == ["*#2*0##", "*#4*0##", "*#16*0##"]
+
+
+@pytest.mark.asyncio
 async def test_gateway_close_listener(gateway_handler):
     gateway_handler.sending_workers = [MagicMock(), MagicMock()]
     cancel_timer = MagicMock()
@@ -724,7 +736,8 @@ async def test_sending_loop(gateway_handler):
         ])
         gateway_handler.send_buffer = mock_queue
 
-        def mock_send(message, is_status_request):
+        def mock_send(message, is_status_request, retry_after_lost_ack):
+            assert retry_after_lost_ack is True
             if message == "msg2":
                 gateway_handler._terminate_sender = True
 
@@ -760,7 +773,10 @@ async def test_sending_loop_collected_responses_and_pacing(gateway_handler):
         resp_raw = "*#1*0##"
         concurrent_raw = "*#1*1##"
 
-        async def mock_send_with_concurrent_event(message, is_status_request):
+        async def mock_send_with_concurrent_event(
+            message, is_status_request, retry_after_lost_ack
+        ):
+            assert retry_after_lost_ack is True
             gateway_handler.bus_monitor.record_frame(direction="rx", raw=concurrent_raw, parsed=None)
             return [resp_msg, concurrent_raw, resp_raw]
 
@@ -781,7 +797,11 @@ async def test_sending_loop_collected_responses_and_pacing(gateway_handler):
         with patch("custom_components.myhome.gateway.async_dispatcher_send") as mock_dispatcher:
             await gateway_handler.sending_loop(0)
 
-            mock_cmd_session.send.assert_called_once_with(message=cmd, is_status_request=False)
+            mock_cmd_session.send.assert_called_once_with(
+                message=cmd,
+                is_status_request=False,
+                retry_after_lost_ack=True,
+            )
             mock_dispatcher.assert_called_once_with(
                 gateway_handler.hass,
                 f"myhome_message_{gateway_handler.mac}",
@@ -796,6 +816,7 @@ async def test_gateway_cen_event_and_auto_registration(gateway_handler: MyHOMEGa
     """Test receiving OWNCENEvent dispatches bus event and registers CEN scenario device."""
     mock_dr = MagicMock()
     gateway_handler.config_entry.entry_id = "test_entry_123"
+    gateway_handler.device_registry_id = "gateway_device_123"
 
     cen_msg = MagicMock(spec=OWNCENEvent)
     cen_msg.object = "5"
@@ -835,10 +856,9 @@ async def test_gateway_cen_event_and_auto_registration(gateway_handler: MyHOMEGa
                 # Check device registry auto-registration called once (deduplicated)
                 mock_dr.async_get_or_create.assert_called_once()
                 kwargs = mock_dr.async_get_or_create.call_args.kwargs
-                # The link to the gateway device is via_device_id on current cores
-                # (only once the gateway device exists) and via_device on old ones.
+                # The scenario control is attached to its gateway device.
                 via = {k: kwargs.pop(k) for k in ("via_device", "via_device_id") if k in kwargs}
-                assert via in ({}, {"via_device": (DOMAIN, gateway_handler.mac)})
+                assert via == {"via_device_id": "gateway_device_123"}
                 assert kwargs == {
                     "config_entry_id": "test_entry_123",
                     "identifiers": {(DOMAIN, f"{gateway_handler.mac}-15-5")},
@@ -853,6 +873,7 @@ async def test_gateway_cenplus_event_and_auto_registration(gateway_handler: MyHO
     """Test receiving OWNCENPlusEvent dispatches bus event and registers CEN+ scenario device."""
     mock_dr = MagicMock()
     gateway_handler.config_entry.entry_id = "test_entry_456"
+    gateway_handler.device_registry_id = "gateway_device_456"
 
     cenplus_msg = MagicMock(spec=OWNCENPlusEvent)
     cenplus_msg.object = "12"
@@ -896,10 +917,9 @@ async def test_gateway_cenplus_event_and_auto_registration(gateway_handler: MyHO
                 # Check device registry auto-registration
                 mock_dr.async_get_or_create.assert_called_once()
                 kwargs = mock_dr.async_get_or_create.call_args.kwargs
-                # The link to the gateway device is via_device_id on current cores
-                # (only once the gateway device exists) and via_device on old ones.
+                # The scenario control is attached to its gateway device.
                 via = {k: kwargs.pop(k) for k in ("via_device", "via_device_id") if k in kwargs}
-                assert via in ({}, {"via_device": (DOMAIN, gateway_handler.mac)})
+                assert via == {"via_device_id": "gateway_device_456"}
                 assert kwargs == {
                     "config_entry_id": "test_entry_456",
                     "identifiers": {(DOMAIN, f"{gateway_handler.mac}-25-12")},
@@ -952,70 +972,99 @@ def test_event_connection_state_controls_command_readiness(gateway_handler):
     assert gateway_handler._event_session_ready.is_set() is False
 
 
-async def test_sending_loop_idle_timeout_closes_session(gateway_handler, monkeypatch):
-    """Verify idle timeout in sending_loop closes command session to free gateway sockets."""
-    import custom_components.myhome.gateway as gw_module
-    monkeypatch.setattr(gw_module, "COMMAND_SESSION_IDLE_TIMEOUT", 0.01)
-
+async def test_sending_loop_accounts_for_failed_task_and_closes_session(
+    gateway_handler,
+):
+    """A failed send must not leak the queue item or command session."""
     with patch("custom_components.myhome.gateway.OWNCommandSession") as mock_cmd_class:
         mock_cmd_session = MagicMock()
         mock_cmd_session.connect = AsyncMock(return_value={"Success": True})
+        mock_cmd_session.send = AsyncMock(side_effect=RuntimeError("send failed"))
         mock_cmd_session.close = AsyncMock()
-        mock_cmd_session.is_connected = True
         mock_cmd_class.return_value = mock_cmd_session
 
         gateway_handler._event_session_ready.set()
         worker = asyncio.create_task(gateway_handler.sending_loop(0))
-
-        # Allow idle timeout to trigger
-        await asyncio.sleep(0.05)
-        mock_cmd_session.close.assert_called()
-
-        # Stop worker
+        await gateway_handler.send_buffer.put(
+            {"message": "*1*1*1##", "is_status_request": False}
+        )
+        await asyncio.wait_for(gateway_handler.send_buffer.join(), timeout=1)
         await gateway_handler.send_buffer.put(None)
         await asyncio.wait_for(worker, timeout=1)
 
+        mock_cmd_session.close.assert_called_once()
 
-async def test_issue_254_mh201_idle_disconnect_and_reconnection_e2e(gateway_handler, monkeypatch):
-    """Verify Issue #254: MH201 idle disconnect releases socket and reconnects for subsequent commands."""
-    from OWNd.message import OWNCommand
 
-    import custom_components.myhome.gateway as gw_module
-
-    # Set idle timeout short for testing
-    monkeypatch.setattr(gw_module, "COMMAND_SESSION_IDLE_TIMEOUT", 0.04)
-
+async def test_sending_loop_survives_initial_connect_error(gateway_handler):
+    """A command session that fails to connect must not kill the worker."""
     with patch("custom_components.myhome.gateway.OWNCommandSession") as mock_cmd_class:
         mock_cmd_session = MagicMock()
-        mock_cmd_session.connect = AsyncMock(return_value={"Success": True})
+        mock_cmd_session.connect = AsyncMock(side_effect=RuntimeError("connect failed"))
+        mock_cmd_session.send = AsyncMock(return_value=[])
         mock_cmd_session.close = AsyncMock()
-        mock_cmd_session.send = AsyncMock(return_value=True)
-        mock_cmd_session.is_connected = True
         mock_cmd_class.return_value = mock_cmd_session
 
         gateway_handler._event_session_ready.set()
         worker = asyncio.create_task(gateway_handler.sending_loop(0))
-
-        # 1. User sends cover command *2*1*14##
-        cmd1 = OWNCommand.parse("*2*1*14##")
-        await gateway_handler.send(cmd1)
-        await asyncio.sleep(0.08)
-        mock_cmd_session.send.assert_called_with(message=cmd1, is_status_request=False)
-
-        # 2. Simulate 49-minute idle period: idle timeout fires and releases socket
-        await asyncio.sleep(0.12)
-        assert mock_cmd_session.close.call_count >= 1
-
-        # 3. User sends another cover command after idle: *2*1*14##
-        mock_cmd_session.send.reset_mock()
-        cmd2 = OWNCommand.parse("*2*1*14##")
-        await gateway_handler.send(cmd2)
-        await asyncio.sleep(0.08)
-        mock_cmd_session.send.assert_called_with(message=cmd2, is_status_request=False)
-
-        # Clean shutdown
+        await gateway_handler.send_buffer.put(
+            {"message": "*1*1*1##", "is_status_request": False}
+        )
+        await asyncio.wait_for(gateway_handler.send_buffer.join(), timeout=1)
         await gateway_handler.send_buffer.put(None)
         await asyncio.wait_for(worker, timeout=1)
+
+        # The queued command is still handed over; the session reconnects on send.
+        mock_cmd_session.send.assert_awaited_once()
+        mock_cmd_session.close.assert_called_once()
+
+
+async def test_sending_loop_propagates_cancellation_while_connecting(gateway_handler):
+    """Cancelling the worker during connect is not swallowed as a connection error."""
+    with patch("custom_components.myhome.gateway.OWNCommandSession") as mock_cmd_class:
+        mock_cmd_session = MagicMock()
+        mock_cmd_session.connect = AsyncMock(side_effect=asyncio.CancelledError)
+        mock_cmd_session.close = AsyncMock()
+        mock_cmd_class.return_value = mock_cmd_session
+
+        gateway_handler._event_session_ready.set()
+        worker = asyncio.create_task(gateway_handler.sending_loop(0))
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(worker, timeout=1)
+
+        mock_cmd_session.close.assert_called_once()
+
+
+async def test_sending_loop_propagates_cancellation_while_sending(gateway_handler):
+    """Cancelling the worker mid-send re-raises instead of logging a send failure."""
+    with patch("custom_components.myhome.gateway.OWNCommandSession") as mock_cmd_class:
+        mock_cmd_session = MagicMock()
+        mock_cmd_session.connect = AsyncMock(return_value={"Success": True})
+        mock_cmd_session.send = AsyncMock(side_effect=asyncio.CancelledError)
+        mock_cmd_session.close = AsyncMock()
+        mock_cmd_class.return_value = mock_cmd_session
+
+        gateway_handler._event_session_ready.set()
+        worker = asyncio.create_task(gateway_handler.sending_loop(0))
+        await gateway_handler.send_buffer.put(
+            {"message": "*1*1*1##", "is_status_request": False}
+        )
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(worker, timeout=1)
+
+        # The interrupted item is still accounted for and the socket is released.
+        assert gateway_handler.send_buffer.empty()
+        mock_cmd_session.close.assert_called_once()
+
+
+async def test_event_eof_is_not_a_warning_or_bus_event(gateway_handler):
+    """A routine EOF is reported by reconnect handling, not as a bad frame."""
+    gateway_handler.generate_events = True
+    with patch("custom_components.myhome.gateway.LOGGER") as logger:
+        await gateway_handler._process_message(None)
+
+    logger.warning.assert_not_called()
+    logger.debug.assert_called_once()
+    gateway_handler.hass.bus.async_fire.assert_not_called()
 
 
 async def test_gateway_properties_and_cen_branches(gateway_handler):
@@ -1033,16 +1082,29 @@ async def test_gateway_properties_and_cen_branches(gateway_handler):
     gateway_handler.config_entry = MagicMock(spec=[])
     gateway_handler._cen_devices.clear()
     gateway_handler._ensure_cen_device(25, 1)
-    assert (25, 1) in gateway_handler._cen_devices
+    assert (25, 1) not in gateway_handler._cen_devices
+
+    gateway_handler.config_entry = MagicMock()
+    gateway_handler.config_entry.entry_id = "valid_entry_id"
+
+    # Registration is deferred while the gateway device does not exist yet, so
+    # the scenario control is not remembered and is retried on the next frame.
+    gateway_handler.device_registry_id = None
+    gateway_handler._ensure_cen_device(25, 2)
+    assert (25, 2) not in gateway_handler._cen_devices
+
+    gateway_handler.device_registry_id = "gateway_device_id"
 
     # CEN device with invalid non-integer object_id (triggers ValueError branch)
-    gateway_handler._ensure_cen_device(25, "not_an_int")
+    with patch("homeassistant.helpers.device_registry.async_get") as mock_registry:
+        gateway_handler._ensure_cen_device(25, "not_an_int")
+        mock_registry.return_value.async_get_or_create.assert_called_once()
+    assert (25, "not_an_int") in gateway_handler._cen_devices
 
     # CEN device when device_registry throws exception (triggers debug log branch)
     with patch("homeassistant.helpers.device_registry.async_get", side_effect=RuntimeError("dr_error")):
-        gateway_handler.config_entry = MagicMock()
-        gateway_handler.config_entry.entry_id = "valid_entry_id"
         gateway_handler._ensure_cen_device(25, 99)
+    assert (25, 99) not in gateway_handler._cen_devices
 
 
 async def test_gateway_listening_loop_unhandled_event_status(gateway_handler):
@@ -1058,17 +1120,18 @@ async def test_gateway_listening_loop_unhandled_event_status(gateway_handler):
         async def stop_listener(*args, **kwargs):
             gateway_handler._terminate_listener = True
 
-        with patch.object(gateway_handler, "send_status_request", side_effect=stop_listener) as mock_status:
+        mock_event_session.get_next = AsyncMock(side_effect=stop_listener)
+        with patch.object(gateway_handler, "send_status_request") as mock_status:
             await gateway_handler.listening_loop()
             assert gateway_handler.is_connected is False
-            assert mock_status.call_count >= 1
+            # The discovery sweep is queued by async_setup_entry, not the listener.
+            mock_status.assert_not_called()
 
 
 async def test_gateway_sending_loop_timeout_and_terminate_branches(gateway_handler, monkeypatch):
     """Test sending_loop timeout while waiting for event session and terminate while waiting."""
     import custom_components.myhome.gateway as gw_module
     monkeypatch.setattr(gw_module, "EVENT_READY_TIMEOUT", 0.01)
-    monkeypatch.setattr(gw_module, "COMMAND_SESSION_IDLE_TIMEOUT", 0.02)
 
     gateway_handler._event_session_ready.clear()
     gateway_handler._terminate_sender = False
@@ -1109,43 +1172,85 @@ async def test_gateway_sending_loop_timeout_and_terminate_branches(gateway_handl
 
 
 def test_handle_gateway_diagnostics_dimension_15_and_16(gateway_handler, mock_config_entry):
-    """Test dynamic model and firmware updates from WHO=13 diagnostics."""
+    """WHO=13 diagnostics: an announced model (UDN present -> SSDP) is never relabelled; firmware is tracked."""
     from OWNd.message import OWNEvent
 
     gateway_handler.device_registry_id = "dev_123"
+    gateway_handler.config_entry.entry_id = "entry_diag"
     mock_dev_reg = MagicMock()
+    registry_device = MagicMock()
+    registry_device.model = gateway_handler.gateway.model_name
+    mock_dev_reg.async_get.return_value = registry_device
 
-    with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dev_reg):
-        # 1. Dimension 15: Device Type 2 -> MyHomeServer1
+    def _track_model(_dev_id, **kwargs):
+        if "model" in kwargs:
+            registry_device.model = kwargs["model"]
+
+    mock_dev_reg.async_update_device.side_effect = _track_model
+
+    with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dev_reg),          patch("custom_components.myhome.gateway.async_create_identity_issue") as create_issue,          patch("custom_components.myhome.gateway.async_create_identity_corrected_issue"),          patch("custom_components.myhome.gateway.async_delete_identity_issue"):
+        # 1. Dimension 15: type 2 = MHServer (2006 table) contradicts the announced "MYHOME"
+        #    model -> flagged as a conflict, model untouched, entry not rewritten.
         msg_dim15 = OWNEvent.parse("*#13**15*2##")
         gateway_handler._handle_gateway_diagnostics(msg_dim15)
-
-        assert gateway_handler.model == "MyHomeServer1"
-        assert gateway_handler.gateway.model_name == "MyHomeServer1"
-        assert mock_dev_reg.async_update_device.called
-        assert mock_dev_reg.async_update_device.call_args[1]["model"] == "MyHomeServer1"
+        assert gateway_handler.model == "MYHOME"
+        assert gateway_handler._who13["model"] == "MHServer"
+        assert gateway_handler._identity_conflict is not None
+        create_issue.assert_called_once()
+        gateway_handler.hass.config_entries.async_update_entry.assert_not_called()
+        assert not mock_dev_reg.async_update_device.called
 
         # 2. Dimension 16: Firmware version 2.60.46
         msg_dim16 = OWNEvent.parse("*#13**16*2*60*46##")
         gateway_handler._handle_gateway_diagnostics(msg_dim16)
-
         assert gateway_handler.firmware == "2.60.46"
         assert mock_dev_reg.async_update_device.call_args[1]["sw_version"] == "2.60.46"
 
-        # 3. Dimension 15: Same model again (no duplicate update)
-        mock_dev_reg.reset_mock()
+        # 3. Same type again: no duplicate issue
         gateway_handler._handle_gateway_diagnostics(msg_dim15)
-        assert not mock_dev_reg.async_update_device.called
+        create_issue.assert_called_once()
 
-        # 4. Dimension 15: Unknown type (999) -> None
-        msg_dim15_unknown = OWNEvent.parse("*#13**15*999##")
-        gateway_handler._handle_gateway_diagnostics(msg_dim15_unknown)
-        assert not mock_dev_reg.async_update_device.called
+        # 4. Unknown type (999): recorded, nothing changes
+        mock_dev_reg.reset_mock()
+        gateway_handler._handle_gateway_diagnostics(OWNEvent.parse("*#13**15*999##"))
+        assert gateway_handler._who13["code"] == "999"
+        assert gateway_handler.model == "MYHOME"
 
-        # 5. Dimension 16: Same firmware again (no duplicate update)
+        # 5. Same firmware again (no duplicate update)
         mock_dev_reg.reset_mock()
         gateway_handler._handle_gateway_diagnostics(msg_dim16)
         assert not mock_dev_reg.async_update_device.called
+
+        # 6. Registry mislabelled by an earlier release: corrected to the configured model
+        registry_device.model = "MH200N"
+        gateway_handler._handle_gateway_diagnostics(msg_dim15)
+        mock_dev_reg.async_update_device.assert_called_once_with("dev_123", model="MYHOME")
+
+
+def test_device_type_4_is_mh200_not_mh200n(gateway_handler):
+    """WHO=13 device type 4 is the original MH200 (as OWNd decodes it), not the MH200N."""
+    from OWNd.message import OWNEvent
+
+    from custom_components.myhome.const import GATEWAY_DEVICE_TYPE_MAP
+
+    assert GATEWAY_DEVICE_TYPE_MAP["4"] == "MH200"
+    # every official code agrees with OWNd's own decoder (200 is field evidence only:
+    # OWNd still decodes it as F454, see WHO13_OBSERVED_DEVICE_TYPES)
+    from custom_components.myhome.const import WHO13_OFFICIAL_DEVICE_TYPES
+
+    for code, model in WHO13_OFFICIAL_DEVICE_TYPES.items():
+        decoded = OWNEvent.parse(f"*#13**15*{code}##")
+        ownd_name = getattr(decoded, "device_type", getattr(decoded, "_device_type", None))
+        assert ownd_name == model, (code, ownd_name, model)
+
+    gateway_handler.gateway.model_name = "MH200"
+    gateway_handler.device_registry_id = "dev_1"
+    mock_dev_reg = MagicMock()
+    mock_dev_reg.async_get.return_value = MagicMock(model="MH200")
+    with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dev_reg):
+        gateway_handler._handle_gateway_diagnostics(OWNEvent.parse("*#13**15*4##"))
+    assert gateway_handler.gateway.model_name == "MH200"
+    assert not mock_dev_reg.async_update_device.called
 
 
 def test_compat_gateway_timezone():
@@ -1189,5 +1294,31 @@ async def test_calibration_jobs_recheck_guard_after_worker_lock(gateway_handler)
         allowed[0] = False
         command_lock.release()
         await worker
-    session.send.assert_awaited_once_with(message=stop, is_status_request=False)
+    session.send.assert_awaited_once_with(message=stop, is_status_request=False, retry_after_lost_ack=True)
+    assert gateway_handler.send_buffer.empty()
+
+
+async def test_panel_job_cancelled_during_reconnect_never_reaches_bus(gateway_handler):
+    """A lease can expire while the updated v2 worker awaits a new socket."""
+    gateway_handler._event_session_ready.set()
+    allowed = [True]
+    gateway_handler.async_queue_calibration(MagicMock(spec=OWNCommand), lambda: allowed[0], asyncio.Lock())
+    gateway_handler.send_buffer.put_nowait(None)
+    attempts = []
+
+    async def connect():
+        attempts.append(True)
+        if len(attempts) == 2:
+            allowed[0] = False
+        return {"Success": True}
+
+    with patch("custom_components.myhome.gateway.OWNCommandSession") as factory, \
+         patch("custom_components.myhome.gateway._session_is_open", side_effect=[False, True]):
+        session = factory.return_value
+        session.connect = AsyncMock(side_effect=connect)
+        session.close = AsyncMock()
+        session.send = AsyncMock()
+        await gateway_handler.sending_loop(0)
+        session.send.assert_not_awaited()
+    assert len(attempts) == 2
     assert gateway_handler.send_buffer.empty()

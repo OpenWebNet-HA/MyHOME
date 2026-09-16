@@ -45,6 +45,7 @@ from custom_components.myhome.light import (
     eight_bits_to_percent,
     percent_to_eight_bits,
 )
+from tests.conftest import attach_runtime
 
 
 async def test_setup_configured_lights_from_yaml(hass):
@@ -82,13 +83,14 @@ async def test_setup_configured_lights_from_yaml(hass):
     config_entry.entry_id = "test_entry"
 
     with patch(
-        "custom_components.myhome.light.er.async_entries_for_config_entry",
+        "custom_components.myhome.discovery.er.async_entries_for_config_entry",
         return_value=[],
     ), patch(
-        "custom_components.myhome.light.er.async_get",
+        "custom_components.myhome.discovery.er.async_get",
         return_value=MagicMock(),
     ):
         async_add_entities = MagicMock()
+        attach_runtime(hass, config_entry)
         await async_setup_entry(hass, config_entry, async_add_entities)
         async_add_entities.assert_called_once()
         entities = async_add_entities.call_args[0][0]
@@ -118,13 +120,14 @@ async def test_setup_and_unload_entry(hass):
     mock_entry_2.unique_id = "mac-13#4#1"
 
     with patch(
-        "custom_components.myhome.light.er.async_entries_for_config_entry",
+        "custom_components.myhome.discovery.er.async_entries_for_config_entry",
         return_value=[mock_entry_1, mock_entry_2]
     ), patch(
-        "custom_components.myhome.light.er.async_get",
+        "custom_components.myhome.discovery.er.async_get",
         return_value=mock_er
     ):
         async_add_entities = MagicMock()
+        attach_runtime(hass, config_entry)
         await async_setup_entry(hass, config_entry, async_add_entities)
 
         async_add_entities.assert_called_once()
@@ -134,6 +137,7 @@ async def test_setup_and_unload_entry(hass):
         assert entities[0]._device_id == "12"
         assert entities[1]._device_id == "13#4#1"
 
+    attach_runtime(hass, config_entry)
     assert await async_unload_entry(hass, config_entry)
 
 
@@ -566,8 +570,9 @@ async def test_discovery_callback_message_filtering(hass):
     def mock_add_entities(entities):
         added_entities.extend(entities)
 
-    with patch("custom_components.myhome.light.er.async_entries_for_config_entry", return_value=[]), \
-         patch("custom_components.myhome.light.er.async_get"):
+    with patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]), \
+         patch("custom_components.myhome.discovery.er.async_get"):
+        attach_runtime(hass, config_entry)
         await async_setup_entry(hass, config_entry, mock_add_entities)
 
     dispatcher_signal = f"myhome_message_{config_entry.data['mac']}"
@@ -750,13 +755,14 @@ async def test_light_switch_collision_and_interface_dispatch(hass):
     mock_er = MagicMock()
 
     with patch(
-        "custom_components.myhome.light.er.async_entries_for_config_entry",
+        "custom_components.myhome.discovery.er.async_entries_for_config_entry",
         return_value=[sw_entry, light_ghost_entry],
     ), patch(
-        "custom_components.myhome.light.er.async_get",
+        "custom_components.myhome.discovery.er.async_get",
         return_value=mock_er,
     ):
         async_add_entities = MagicMock()
+        attach_runtime(hass, config_entry)
         await async_setup_entry(hass, config_entry, async_add_entities)
         mock_er.async_remove.assert_called_once_with("light.ghost_16")
         async_add_entities.assert_called_once()
@@ -801,10 +807,11 @@ async def test_light_setup_registry_exception(hass):
     config_entry.entry_id = "test_entry_err"
 
     with patch(
-        "custom_components.myhome.light.er.async_get",
+        "custom_components.myhome.discovery.er.async_get",
         side_effect=Exception("Registry unavailable"),
     ):
         async_add_entities = MagicMock()
+        attach_runtime(hass, config_entry)
         await async_setup_entry(hass, config_entry, async_add_entities)
         async_add_entities.assert_called_once()
         entities = async_add_entities.call_args[0][0]
@@ -866,16 +873,17 @@ async def test_light_suppresses_sensor_discovery_and_purges_registry(hass):
     mock_er = MagicMock()
 
     with patch(
-        "custom_components.myhome.light.er.async_entries_for_config_entry",
+        "custom_components.myhome.discovery.er.async_entries_for_config_entry",
         return_value=[bs_entry, s_entry, ghost_21, ghost_23, light_25],
     ), patch(
-        "custom_components.myhome.light.er.async_get",
+        "custom_components.myhome.discovery.er.async_get",
         return_value=mock_er,
     ):
         added = []
         def fake_add(entities):
             added.extend(entities)
 
+        attach_runtime(hass, config_entry)
         await async_setup_entry(hass, config_entry, fake_add)
 
         # Verify ghost lights are removed from registry
@@ -1349,13 +1357,14 @@ async def test_async_setup_entry_rgb_config(hass):
     }
 
     with patch(
-        "custom_components.myhome.light.er.async_entries_for_config_entry",
+        "custom_components.myhome.discovery.er.async_entries_for_config_entry",
         return_value=[],
     ), patch(
-        "custom_components.myhome.light.er.async_get",
+        "custom_components.myhome.discovery.er.async_get",
         return_value=MagicMock(),
     ):
         added_entities = []
+        attach_runtime(hass, config_entry)
         await async_setup_entry(hass, config_entry, lambda entities: added_entities.extend(entities))
 
         assert len(added_entities) == 1

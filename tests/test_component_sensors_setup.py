@@ -27,6 +27,7 @@ from custom_components.myhome.sensor import (
     async_setup_entry,
     async_unload_entry,
 )
+from tests.conftest import attach_runtime
 
 
 @pytest.fixture
@@ -79,12 +80,13 @@ async def test_async_setup_entry_power_migration(mock_hass, mock_config_entry):
 
     platform_token = entity_platform.current_platform.set(MagicMock())
     try:
-        with patch("custom_components.myhome.sensor.er.async_get") as mock_er_get:
+        with patch("custom_components.myhome.discovery.er.async_get") as mock_er_get:
             # Mock entity registry
             mock_registry = MagicMock()
             mock_registry.async_get_entity_id.return_value = "sensor.some_legacy_id"
             mock_er_get.return_value = mock_registry
 
+            attach_runtime(mock_hass, mock_config_entry)
             await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
 
             # Registry update should be called because we returned an existing legacy ID
@@ -100,7 +102,7 @@ async def test_async_setup_entry_power_migration(mock_hass, mock_config_entry):
 
             power_sens = [s for s in sensors_added if isinstance(s, MyHOMEPowerSensor)]
             assert len(power_sens) == 1
-            assert power_sens[0].name == "Power Sensor Power"
+            assert power_sens[0]._display_name == "Power Sensor Power"
     finally:
         entity_platform.current_platform.reset(platform_token)
 
@@ -110,12 +112,13 @@ async def test_async_setup_entry_no_migration(mock_hass, mock_config_entry):
 
     platform_token = entity_platform.current_platform.set(MagicMock())
     try:
-        with patch("custom_components.myhome.sensor.er.async_get") as mock_er_get:
+        with patch("custom_components.myhome.discovery.er.async_get") as mock_er_get:
             mock_registry = MagicMock()
             # No legacy entity id exists
             mock_registry.async_get_entity_id.return_value = None
             mock_er_get.return_value = mock_registry
 
+            attach_runtime(mock_hass, mock_config_entry)
             await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
 
             # Registry update should NOT be called
@@ -134,6 +137,7 @@ async def test_async_setup_entry_no_platform_data(mock_hass, mock_config_entry):
 
     mock_add_entities = MagicMock()
 
+    attach_runtime(mock_hass, mock_config_entry)
     result = await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
 
     assert result is True
@@ -173,12 +177,13 @@ async def test_async_setup_entry_temperature_illuminance_and_legacy_power(mock_h
     mock_platform = MagicMock()
     platform_token = entity_platform.current_platform.set(mock_platform)
     try:
-        with patch("custom_components.myhome.sensor.er.async_get") as mock_er_get:
+        with patch("custom_components.myhome.discovery.er.async_get") as mock_er_get:
             mock_registry = MagicMock()
             mock_registry.async_get_entity_id.return_value = None
             mock_er_get.return_value = mock_registry
 
             mock_add_entities = MagicMock()
+            attach_runtime(mock_hass, mock_config_entry)
             await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
 
             mock_add_entities.assert_called_once()
@@ -198,11 +203,13 @@ async def test_async_unload_entry(mock_hass, mock_config_entry):
 
     # 1. Unload when platform present
     assert "sensor_power_1" in mock_hass.data[DOMAIN]["00:11:22:33:44:55"][CONF_PLATFORMS]["sensor"]
+    attach_runtime(mock_hass, mock_config_entry)
     await async_unload_entry(mock_hass, mock_config_entry)
     assert len(mock_hass.data[DOMAIN]["00:11:22:33:44:55"][CONF_PLATFORMS]["sensor"]) == 0
 
     # 2. Unload when platform absent
     del mock_hass.data[DOMAIN]["00:11:22:33:44:55"][CONF_PLATFORMS]["sensor"]
+    attach_runtime(mock_hass, mock_config_entry)
     result = await async_unload_entry(mock_hass, mock_config_entry)
     assert result is True
 
@@ -275,23 +282,27 @@ async def test_async_setup_entry_illuminance_registry_and_discovery(hass, mock_c
     entry_invalid_energy.unique_id = f"{mac}-18-invalid"
 
     with patch(
-        "custom_components.myhome.sensor.er.async_entries_for_config_entry",
+        "custom_components.myhome.discovery.er.async_entries_for_config_entry",
         return_value=[entry_other_domain, entry_invalid_energy, entry_illum, entry_illum_disc, entry_energy_pwr, entry_energy_tot],
     ), patch(
-        "custom_components.myhome.sensor.er.async_get",
+        "custom_components.myhome.discovery.er.async_get",
         return_value=mock_registry,
     ):
         added = []
         def fake_add(entities):
             added.extend(entities)
 
+        attach_runtime(hass, mock_config_entry)
         assert await async_setup_entry(hass, mock_config_entry, fake_add) is True
-        # 4 entities added: 1 configured lux 12, 1 restored lux 14, 1 restored power 51, 1 restored total-energy 51
+        # 4 entities added - meters first (restored power 51, total-energy 51), then illuminance
+        # (restored lux 14, configured lux 12); the registry entry for configured 12 is dropped
         assert len(added) == 4
-        assert isinstance(added[0], MyHOMEIlluminanceSensor)
-        assert added[0]._where == "12"
-        assert isinstance(added[1], MyHOMEIlluminanceSensor)
-        assert added[1]._where == "14"
+        assert [type(e).__name__ for e in added[:2]] == ["MyHOMEPowerSensor", "MyHOMEEnergySensor"]
+        assert isinstance(added[2], MyHOMEIlluminanceSensor)
+        assert added[2]._where == "14"
+        assert isinstance(added[3], MyHOMEIlluminanceSensor)
+        assert added[3]._where == "12"
+        mock_registry.async_remove.assert_called_once_with(entry_illum.entity_id)
 
         # Dynamic discovery via *#1*21*6*500##
         illum_msg = OWNEvent.parse("*#1*21*6*500##")
@@ -304,6 +315,7 @@ async def test_async_setup_entry_illuminance_registry_and_discovery(hass, mock_c
 
         # Hook up entity to hass dispatcher
         added[4].hass = hass
+        added[4].entity_id = added[4].entity_id or "test.added_4"
         added[4].async_on_remove = MagicMock()
         await added[4].async_added_to_hass()
 
@@ -368,10 +380,11 @@ async def test_async_setup_entry_illuminance_registry_and_discovery(hass, mock_c
 async def test_sensor_setup_registry_exception(mock_hass, mock_config_entry):
     """Test registry exception fallback in sensor async_setup_entry."""
     with patch(
-        "custom_components.myhome.sensor.er.async_get",
+        "custom_components.myhome.discovery.er.async_get",
         side_effect=Exception("ER error"),
     ):
         added = []
+        attach_runtime(mock_hass, mock_config_entry)
         assert await async_setup_entry(mock_hass, mock_config_entry, lambda e: added.extend(e)) is True
 
 
@@ -419,13 +432,14 @@ async def test_illuminance_sensor_zero_padded_where_and_deduplication(hass: Home
     mock_er = MagicMock()
 
     with patch(
-        "custom_components.myhome.sensor.er.async_entries_for_config_entry",
+        "custom_components.myhome.discovery.er.async_entries_for_config_entry",
         return_value=[entry_dup],
     ), patch(
-        "custom_components.myhome.sensor.er.async_get",
+        "custom_components.myhome.discovery.er.async_get",
         return_value=mock_er,
     ):
         added = []
+        attach_runtime(hass, config_entry)
         assert await async_setup_entry(hass, config_entry, lambda e: added.extend(e)) is True
         mock_er.async_remove.assert_called_with("sensor.illuminance_0015_legacy")
         assert len(added) == 1
@@ -433,6 +447,7 @@ async def test_illuminance_sensor_zero_padded_where_and_deduplication(hass: Home
         assert sensor._where == "0015"
 
         sensor.hass = hass
+        sensor.entity_id = sensor.entity_id or "test.sensor"
         sensor.platform = MagicMock()  # added by an EntityPlatform
         sensor.async_write_ha_state = MagicMock()
         await sensor.async_added_to_hass()
@@ -488,19 +503,21 @@ async def test_async_setup_entry_illuminance_deduplication_exception_and_padded_
     mock_er.async_remove.side_effect = RuntimeError("Removal failed")
 
     with patch(
-        "custom_components.myhome.sensor.er.async_entries_for_config_entry",
+        "custom_components.myhome.discovery.er.async_entries_for_config_entry",
         return_value=[entry_dup],
     ), patch(
-        "custom_components.myhome.sensor.er.async_get",
+        "custom_components.myhome.discovery.er.async_get",
         return_value=mock_er,
     ):
         added = []
+        attach_runtime(hass, config_entry)
         assert await async_setup_entry(hass, config_entry, lambda e: added.extend(e)) is True
         assert len(added) == 1
         sensor = added[0]
         assert sensor._where == "021"
 
         sensor.hass = hass
+        sensor.entity_id = sensor.entity_id or "test.sensor"
         sensor.async_write_ha_state = MagicMock()
         sensor.async_on_remove = MagicMock()
         await sensor.async_added_to_hass()

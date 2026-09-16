@@ -97,4 +97,48 @@ The integration includes enterprise-grade connection reliability safeguards:
 - **Active Keep-Alive**: Periodically transmits diagnostic ping frames (`*#13**0##` or `*#13**22##`) to prevent gateway NAT socket closure.
 - **Backoff & Auto-Reconnect**: If a network glitch or gateway reboot occurs, the event and command workers automatically cycle through an exponential backoff reconnect loop.
 - **Availability Grace Period**: An entity availability grace timer (60 seconds) prevents entities from rapidly toggling to `Unavailable` during brief gateway reconnections or WiFi dropouts.
+- **Silent Reconnect Cycles**: the read cycle in which OWNd re-establishes the event socket produces no frame and is skipped at `DEBUG` level; `Event connection lost, reconnecting...` is OWNd's own log line and is normal on gateways that close idle sockets (MH200/MH201).
+- **Profile-Gated Discovery**: the startup status requests (`*#2*0##`, `*#4*0##`, `*#16*0##`) are only sent for subsystems the gateway profile advertises, so an MH200N is never asked for audio it does not have.
+- **Reauthentication**: a rejected OpenWebNet password raises `ConfigEntryAuthFailed`; Home Assistant shows *Reauthentication required* and opens the reauth flow. Other connection failures are retried with backoff (`ConfigEntryNotReady`).
+
+See [Runtime Behaviour Notes](runtime_behaviour.md) for the reasoning behind each of these.
+
+---
+
+## 🪪 How the gateway model is identified
+
+The model label decides the gateway profile (command sessions, pacing, queue size, which subsystems are queried) and appears in the entry title, the device registry, diagnostics and every bus-monitor export — so it must be right, and it must say *how* it was established.
+
+| Source | Meaning | Trust |
+| :--- | :--- | :--- |
+| `ssdp` | the gateway announced its own `modelName` over UPnP/SSDP | authoritative |
+| `serial` | USB/serial interface (Legrand 3578): model fixed by the transport | authoritative |
+| `manual` | you picked the model in the config flow | trusted, but correctable by certain evidence |
+| `who13` | no model was configured; labelled from the WHO=13 device-type reply | best effort |
+
+**WHO=13 dimension 15 ("MODEL REQUEST", `*#13**15*<code>##`)** is the only in-band identity signal. Its official table — BTicino *OpenWebNet_Community_2_device* v1.0.0, 13 June 2006, §1.2.6 — is complete at six entries: `2` MHServer, `4` MH200, `6` F452, `7` F452V, `11` MHServer2, `13` H4684. Every gateway sold since (F454, F455, MH200N, MH202, MyHOMEServer1…) is absent and reuses or invents codes, so the reply can **corroborate** an identity but never establish one for a modern gateway. Field evidence collected so far: code `200` on a self-identified MyHOMEServer1 (#292/#297).
+
+Rules applied when the reply arrives:
+
+- **Same family** (e.g. configured MH200N, code `4` = MH200): consistent, nothing changes. A variant suffix is never downgraded.
+- **`ssdp` / `serial` contradicted**: model kept; a repair issue *asks* you to confirm.
+- **`manual` contradicted by an official code**: model, profile and device registry are corrected and a repair issue tells you (the old manual flow defaulted to F454, which is how mislabelled entries came to exist).
+- **`manual` contradicted by an observed-only code**: model kept; a repair issue asks you to confirm.
+- **No model configured**: labelled from the code (official first, then observed); the entry records `model_source: who13`.
+- **Unknown code**: recorded, nothing changes — please attach a trace to an issue so the code can be documented.
+
+Every diagnostics download and bus-monitor export carries an `identification` block: the model, its `source`, the raw `who13_code`, what the specification (`who13_model_official`) and field evidence (`who13_model_observed`) say it means, firmware / kernel / distribution from dimensions 16 / 23 / 24, the active profile, and any `conflict`. A trace can therefore never hide a mislabelled gateway.
+
+## 📦 Manual Installation Pitfalls
+
+When installing a release `myhome.zip` by hand, the archive must be extracted **into** `/config/custom_components/myhome/` — never into `/config/custom_components/` itself:
+
+```bash
+unzip -q myhome.zip -d /config/custom_components/myhome     # correct
+unzip -q myhome.zip -d /config/custom_components            # wrong
+```
+
+A stray `__init__.py` / `manifest.json` in the root of `custom_components` turns that folder into a regular Python package whose init is the integration code. On Home Assistant 2026.9+ the loader then imports **no custom integration at all** — every custom integration shows *Not loaded*, the bus-monitor card 404s, and nothing is logged at `warning` level.
+
+Likewise keep backups **outside** `custom_components` (e.g. `/config/myhome_backup/`). A copy such as `custom_components/myhome_backup_2026…/` registers a second `myhome` domain: the loader logs *We found a custom integration myhome* twice and may load the backup instead of the real one (duplicate CEN units, stale code).
 - **Bus Monitor Tap**: Zero-overhead in-band packet tap that copies incoming and outgoing frames directly to the diagnostic Lovelace bus card without opening additional sockets.

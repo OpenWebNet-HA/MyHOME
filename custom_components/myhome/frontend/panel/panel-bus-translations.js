@@ -1,6 +1,8 @@
 /** Monitor UI texts. Diagnostic export schemas and support reports stay language-neutral/English. */
 export const busTranslations = {
   "en": {
+    "startTrace": "🔴 Start Trace", "stopTrace": "⏹ Stop Trace",
+    "exportSweep": "💾 Export Sweep", "reportSweep": "📋 Copy Sweep",
     "defaultTitle": "MyHOME OpenWebNet Bus Monitor",
     "paused": "PAUSED",
     "live": "LIVE",
@@ -95,6 +97,8 @@ export const busTranslations = {
     "whoShort_1013": "Diag Gateway"
   },
   "it": {
+    "startTrace": "🔴 Avvia traccia", "stopTrace": "⏹ Ferma traccia",
+    "exportSweep": "💾 Esporta scansione", "reportSweep": "📋 Copia scansione",
     "defaultTitle": "Monitor bus OpenWebNet MyHOME",
     "paused": "IN PAUSA",
     "live": "IN DIRETTA",

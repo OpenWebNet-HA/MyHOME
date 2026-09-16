@@ -212,6 +212,46 @@
           "description": "The gateway's MAC address (optional; defaults to all active gateways)."
         }
       }
+    },
+    "calibrate_cover": {
+      "name": "Calibrate cover travel time",
+      "description": "Measures a timed cover's up and down travel times on the SCS bus and stores them: the cover is driven fully up, then fully down (timed), then fully up again (timed). Covers are calibrated one at a time per gateway."
+    },
+    "stop_cover_calibration": {
+      "name": "Stop cover calibration",
+      "description": "Stops the running travel-time calibration and cancels the queued ones; the moving cover is stopped and nothing is stored.",
+      "fields": {
+        "gateway": {
+          "name": "Gateway",
+          "description": "The gateway's MAC address (optional; defaults to all gateways)."
+        }
+      }
+    },
+    "set_cover_travel_time": {
+      "name": "Set cover travel time",
+      "description": "Stores the physical travel times of a timed cover by hand instead of calibrating on the bus.",
+      "fields": {
+        "travel_time": {
+          "name": "Travel time",
+          "description": "Seconds for a full travel in both directions (1-180); used for whichever direction has no explicit value."
+        },
+        "travel_time_down": {
+          "name": "Travel time down",
+          "description": "Seconds for a full closing run (1-180)."
+        },
+        "travel_time_up": {
+          "name": "Travel time up",
+          "description": "Seconds for a full opening run (1-180)."
+        },
+        "copied_from": {
+          "name": "Copied from",
+          "description": "The cover these times were taken from; the source is then reported as \"copied\" instead of \"manual\"."
+        }
+      }
+    },
+    "reset_cover_travel_time": {
+      "name": "Reset cover travel time",
+      "description": "Forgets the measured or manually set travel times and returns to the myhome.yaml travel_time or the 25 s default."
     }
   },
   "issues": {
@@ -222,6 +262,73 @@
     "bus_collision_storm": {
       "title": "High SCS bus collision rate detected ({count} NACKs)",
       "description": "An unusually high rate of bus collisions or NACK frames was detected on the SCS bus. Please check actuator wiring and physical bus termination."
+    },
+    "gateway_identity_mismatch": {
+      "title": "Gateway model mismatch for {configured}",
+      "description": "The gateway is configured as {configured} (source: {source}) but reports OpenWebNet device type {code}, which identifies {reported} according to {basis}. The configured model is kept; traces and diagnostics carry both values. If {reported} is what you own, open the integration's options (Configure) and pick the correct model; if {configured} is right, ignore this and please attach a trace to an issue so the code can be documented."
+    },
+    "gateway_identity_corrected": {
+      "title": "Gateway model corrected to {corrected}",
+      "description": "The gateway was configured as {previous} but reports OpenWebNet device type {code}, which the BTicino specification defines as {corrected}. The model, gateway profile and device registry were updated to {corrected}. If that is wrong, open the integration's options (Configure) and set the model explicitly."
+    }
+  },
+  "exceptions": {
+    "calibration_interrupted": {
+      "message": "{name}: {cause}"
+    },
+    "calibration_no_stop_status": {
+      "message": "{name}: no stop status from the actuator within {timeout} s - it may not report status; set travel_time manually"
+    },
+    "cover_reports_position": {
+      "message": "{name} reports its position; travel-time calibration does not apply to it"
+    },
+    "calibration_in_progress": {
+      "message": "{name} is already being calibrated"
+    },
+    "calibration_implausible_run": {
+      "message": "{name}: implausible {direction} run of {seconds} s; not stored"
+    },
+    "travel_time_missing": {
+      "message": "At least travel_time or travel_time_down/up must be specified"
+    },
+    "travel_time_out_of_range": {
+      "message": "{field} must be between {min} s and {max} s"
+    },
+    "cover_busy_calibrating": {
+      "message": "{entity_id} is being calibrated; try again when it has finished"
+    },
+    "decoders_busy": {
+      "message": "{entity_id}: all audio matrix inputs are currently in use by other rooms"
+    },
+    "decoder_start_failed": {
+      "message": "{entity_id}: decoder {decoder} failed to start playback: {error}"
+    },
+    "panel_timing_managed": {
+      "message": "Travel times are managed by the MyHOME panel. Finish its measurement and remove the assigned travel profile before using native timing services."
+    }
+  },
+  "entity": {
+    "button": {
+      "lock": {
+        "name": "Lock"
+      },
+      "unlock": {
+        "name": "Unlock"
+      },
+      "calibrate_travel_time": {
+        "name": "Calibrate travel time"
+      },
+      "calibrate_all_covers": {
+        "name": "Calibrate all covers"
+      }
+    },
+    "sensor": {
+      "energy_today": {
+        "name": "Energy (today)"
+      },
+      "energy_month": {
+        "name": "Energy (current month)"
+      }
     }
   }
 }

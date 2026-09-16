@@ -204,8 +204,8 @@ class TestCommandGenerationFeasibility:
         )
 
         # 1. Rule: Entity IDs must strictly end with _lock and _unlock
-        assert lock_btn.entity_id == "button.office_light_lock"
-        assert unlock_btn.entity_id == "button.office_light_unlock"
+        # entity ids are assigned by the registry now; the buttons carry their translation keys
+        assert lock_btn.translation_key == "lock" and unlock_btn.translation_key == "unlock"
         assert lock_btn.entity_id != "button.office_light"
         assert unlock_btn.entity_id != "button.office_light_2"
 
@@ -273,8 +273,7 @@ class TestProbeAndStatusFeasibility:
             except asyncio.CancelledError:
                 pass
 
-        # send_status_request is called 3 times on initial active discovery (*#2*0##, *#4*0##, *#16*0##)
-        # but MUST NEVER be called for *#1*0##!
+        # send_status_request MUST NEVER be called for *#1*0##!
         for call_arg in handler.send_status_request.call_args_list:
             cmd = call_arg[0][0]
             assert str(cmd) != "*#1*0##", "General status request *#1*0## is invalid in OpenWebNet and must never be sent"

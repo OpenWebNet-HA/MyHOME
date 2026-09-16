@@ -178,7 +178,11 @@ async def test_commands_continue_after_event_reconnect(hass, f454_gateway_info):
         cmd1 = OWNLightingCommand.status("12")
         await handler.send_status_request(cmd1)
         await asyncio.sleep(0.05)
-        mock_cmd.send.assert_called_with(message=cmd1, is_status_request=True)
+        mock_cmd.send.assert_called_with(
+            message=cmd1,
+            is_status_request=True,
+            retry_after_lost_ack=True,
+        )
 
         # Event connection flaps (disconnect -> reconnect)
         handler._on_event_connection_state_change(False)
@@ -189,7 +193,11 @@ async def test_commands_continue_after_event_reconnect(hass, f454_gateway_info):
         cmd2 = OWNCommand.parse("*1*1*12##")
         await handler.send(cmd2)
         await asyncio.sleep(0.05)
-        mock_cmd.send.assert_called_with(message=cmd2, is_status_request=False)
+        mock_cmd.send.assert_called_with(
+            message=cmd2,
+            is_status_request=False,
+            retry_after_lost_ack=True,
+        )
 
         # Clean shutdown
         await handler.send_buffer.put(None)

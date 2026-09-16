@@ -31,6 +31,7 @@ from custom_components.myhome.const import (
     CONF_WHERE,
     DOMAIN,
 )
+from tests.conftest import attach_runtime
 
 
 @pytest.fixture
@@ -85,6 +86,7 @@ async def test_alarm_setup_restores_and_discovers(hass: HomeAssistant, mock_gate
         def fake_add_entities(entities):
             added_entities.extend(entities)
 
+        attach_runtime(hass, config_entry)
         await async_setup_entry(hass, config_entry, fake_add_entities)
 
         # Restored (0) + Configured from YAML (1) = 2 alarms
@@ -101,6 +103,7 @@ async def test_alarm_setup_restores_and_discovers(hass: HomeAssistant, mock_gate
         assert len(added_entities) == 3
 
         # Unload
+        attach_runtime(hass, config_entry)
         assert await async_unload_entry(hass, config_entry) is True
 
 
@@ -153,7 +156,7 @@ class TestMyHOMEAlarmEntity:
         assert alarm_central.state == STATE_DISARMED
         assert alarm_central.extra_state_attributes["where"] == "0"
         assert alarm_central.extra_state_attributes["raw_state"] == "disarmed"
-        assert alarm_zone1.name == "Zone 1 Burglar Alarm"
+        assert alarm_zone1._display_name == "Zone 1 Burglar Alarm"
 
     async def test_async_lifecycle_and_update(self, alarm_central, alarm_zone1):
         alarm_central.async_on_remove = MagicMock()
@@ -228,131 +231,15 @@ class TestMyHOMEAlarmEntity:
         assert alarm_central.extra_state_attributes["state_code"] == 15
 
 
-class _ModuleProxy:
-    """Proxy module to selectively mock or block attributes without mutating real modules."""
+def test_alarm_states_are_the_core_enum():
+    """Panel states come from AlarmControlPanelState (core 2024.11+), not string constants."""
+    from homeassistant.components.alarm_control_panel import AlarmControlPanelState
 
-    def __init__(self, mod, blocked=None, overrides=None):
-        self._mod = mod
-        self._blocked = set(blocked or [])
-        self._overrides = dict(overrides or {})
+    from custom_components.myhome import alarm_control_panel as mod
 
-    def __getattr__(self, name):
-        if name in self._overrides:
-            return self._overrides[name]
-        if name in self._blocked:
-            raise AttributeError(f"module has no attribute '{name}'")
-        return getattr(self._mod, name)
+    assert mod.STATE_DISARMED is AlarmControlPanelState.DISARMED
+    assert mod.STATE_ARMED_HOME is AlarmControlPanelState.ARMED_HOME
+    assert mod.STATE_ARMED_AWAY is AlarmControlPanelState.ARMED_AWAY
+    assert mod.STATE_TRIGGERED is AlarmControlPanelState.TRIGGERED
 
 
-def test_alarm_state_compatibility_modern_ha():
-    """Test compatibility when modern HA provides AlarmControlPanelState and omits STATE_ALARM_* constants (Issue #240)."""
-    import importlib
-    import sys
-    from enum import StrEnum
-
-    class MockAlarmControlPanelState(StrEnum):
-        DISARMED = "mock_disarmed"
-        ARMED_HOME = "mock_armed_home"
-        ARMED_AWAY = "mock_armed_away"
-        TRIGGERED = "mock_triggered"
-
-    orig_acp = sys.modules["homeassistant.components.alarm_control_panel"]
-    orig_const = sys.modules["homeassistant.const"]
-    blocked_consts = [
-        "STATE_ALARM_DISARMED",
-        "STATE_ALARM_ARMED_HOME",
-        "STATE_ALARM_ARMED_AWAY",
-        "STATE_ALARM_TRIGGERED",
-    ]
-
-    sys.modules["homeassistant.components.alarm_control_panel"] = _ModuleProxy(
-        orig_acp, overrides={"AlarmControlPanelState": MockAlarmControlPanelState}
-    )
-    sys.modules["homeassistant.const"] = _ModuleProxy(orig_const, blocked=blocked_consts)
-
-    try:
-        if "custom_components.myhome.alarm_control_panel" in sys.modules:
-            del sys.modules["custom_components.myhome.alarm_control_panel"]
-        mod = importlib.import_module("custom_components.myhome.alarm_control_panel")
-        assert mod.STATE_DISARMED == "mock_disarmed"
-        assert mod.STATE_ARMED_HOME == "mock_armed_home"
-        assert mod.STATE_ARMED_AWAY == "mock_armed_away"
-        assert mod.STATE_TRIGGERED == "mock_triggered"
-    finally:
-        sys.modules["homeassistant.components.alarm_control_panel"] = orig_acp
-        sys.modules["homeassistant.const"] = orig_const
-        if "custom_components.myhome.alarm_control_panel" in sys.modules:
-            del sys.modules["custom_components.myhome.alarm_control_panel"]
-        importlib.import_module("custom_components.myhome.alarm_control_panel")
-
-
-def test_alarm_state_compatibility_legacy_ha():
-    """Test compatibility when AlarmControlPanelState is absent and STATE_ALARM_* constants are used."""
-    import importlib
-    import sys
-
-    orig_acp = sys.modules["homeassistant.components.alarm_control_panel"]
-    orig_const = sys.modules["homeassistant.const"]
-
-    sys.modules["homeassistant.components.alarm_control_panel"] = _ModuleProxy(
-        orig_acp, blocked=["AlarmControlPanelState"]
-    )
-    sys.modules["homeassistant.const"] = _ModuleProxy(
-        orig_const,
-        overrides={
-            "STATE_ALARM_DISARMED": "legacy_disarmed",
-            "STATE_ALARM_ARMED_HOME": "legacy_armed_home",
-            "STATE_ALARM_ARMED_AWAY": "legacy_armed_away",
-            "STATE_ALARM_TRIGGERED": "legacy_triggered",
-        },
-    )
-
-    try:
-        if "custom_components.myhome.alarm_control_panel" in sys.modules:
-            del sys.modules["custom_components.myhome.alarm_control_panel"]
-        mod = importlib.import_module("custom_components.myhome.alarm_control_panel")
-        assert mod.STATE_DISARMED == "legacy_disarmed"
-        assert mod.STATE_ARMED_HOME == "legacy_armed_home"
-        assert mod.STATE_ARMED_AWAY == "legacy_armed_away"
-        assert mod.STATE_TRIGGERED == "legacy_triggered"
-    finally:
-        sys.modules["homeassistant.components.alarm_control_panel"] = orig_acp
-        sys.modules["homeassistant.const"] = orig_const
-        if "custom_components.myhome.alarm_control_panel" in sys.modules:
-            del sys.modules["custom_components.myhome.alarm_control_panel"]
-        importlib.import_module("custom_components.myhome.alarm_control_panel")
-
-
-def test_alarm_state_compatibility_fallback_strings():
-    """Test fallback when neither AlarmControlPanelState nor STATE_ALARM_* constants exist in HA."""
-    import importlib
-    import sys
-
-    orig_acp = sys.modules["homeassistant.components.alarm_control_panel"]
-    orig_const = sys.modules["homeassistant.const"]
-    blocked_consts = [
-        "STATE_ALARM_DISARMED",
-        "STATE_ALARM_ARMED_HOME",
-        "STATE_ALARM_ARMED_AWAY",
-        "STATE_ALARM_TRIGGERED",
-    ]
-
-    sys.modules["homeassistant.components.alarm_control_panel"] = _ModuleProxy(
-        orig_acp, blocked=["AlarmControlPanelState"]
-    )
-    sys.modules["homeassistant.const"] = _ModuleProxy(orig_const, blocked=blocked_consts)
-
-    try:
-        if "custom_components.myhome.alarm_control_panel" in sys.modules:
-            del sys.modules["custom_components.myhome.alarm_control_panel"]
-        mod = importlib.import_module("custom_components.myhome.alarm_control_panel")
-        assert mod.STATE_DISARMED == "disarmed"
-        assert mod.STATE_ARMED_HOME == "armed_home"
-        assert mod.STATE_ARMED_AWAY == "armed_away"
-        assert mod.STATE_TRIGGERED == "triggered"
-    finally:
-        sys.modules["homeassistant.components.alarm_control_panel"] = orig_acp
-        sys.modules["homeassistant.const"] = orig_const
-        if "custom_components.myhome.alarm_control_panel" in sys.modules:
-            del sys.modules["custom_components.myhome.alarm_control_panel"]
-        importlib.import_module("custom_components.myhome.alarm_control_panel")

@@ -86,7 +86,7 @@ test("native monitor imports without Lovelace registration and retains bounded s
 test("native actions scope commands, clear and sweep to the selected gateway", async () => {
   const { view, root, calls, streams } = mount(); await tick();
   streams[0].callback(frame(1)); root.getElementById("send-frame").value = "*2*0*11##";
-  await view._sendCustomFrame(); await view._handleSweepBus(); await view._clearBuffer();
+  view._toggleArmed(true); await view._sendCustomFrame(); await view._handleSweepBus(); await view._clearBuffer();
   assert.equal(root.getElementById("send-frame").value, ""); assert.equal(view._frames.length, 0);
   for (const call of calls.filter((call) => call.type)) assert.equal(call.mac, "00:03:50:00:00:01");
   assert.ok(calls.some((call) => call.type === "myhome/bus_monitor/send" && call.frame === "*2*0*11##"));
@@ -107,7 +107,7 @@ test("trace JSON preserves direction and description and excludes gateway creden
   await view._handleExportTrace(); const json = JSON.parse(await blobs[0].text());
   assert.equal(json.frames[0].direction, "tx"); assert.equal(json.frames[0].description, "Light on");
   assert.equal("host" in json.gateway, false); assert.equal("password" in json.gateway, false);
-  assert.match(downloads[0], /^myhome_gateway_trace_.*\.json$/);
+  assert.match(downloads[0], /^myhome_trace_F454_all_.*\.json$/);
   await view._handleReportIssue(); assert.match(copied, /\*1\*1\*1##/); assert.equal(copied.includes("secret"), false);
   assert.match(opened[0][0], /issues\/new/);
 });
@@ -152,11 +152,11 @@ test("stream failure retries once while mounted and removal cancels its timer", 
 
 test("legacy card adapter uses the same view and keeps both names and Lovelace configuration", async () => {
   // Resolve the HA static route to the actual local module for this Node test.
-  const core = new URL("../../custom_components/myhome/frontend/panel/panel-bus-monitor-view.js?v=0.13.0", import.meta.url).href;
+  const core = new URL("../../custom_components/myhome/frontend/panel/panel-bus-monitor-view.js?v=0.20.1", import.meta.url).href;
   const source = await readFile(new URL("../../custom_components/myhome/frontend/myhome-bus-card.js", import.meta.url), "utf8");
-  assert.match(source, /from "\/myhome_static\/panel\/panel-bus-monitor-view.js\?v=0.13.0"/);
+  assert.match(source, /from "\/myhome_static\/panel\/panel-bus-monitor-view.js\?v=0.20.1"/);
   window.customCards = [{ type: "myhome-bus-card" }, { type: "myhome-openwebnet-bus-monitor" }, { type: "unrelated-card" }];
-  await import(`data:text/javascript,${encodeURIComponent(source.replace('/myhome_static/panel/panel-bus-monitor-view.js?v=0.13.0', core))}`);
+  await import(`data:text/javascript,${encodeURIComponent(source.replace('/myhome_static/panel/panel-bus-monitor-view.js?v=0.20.1', core))}`);
   for (const tag of ["myhome-openwebnet-bus-monitor", "myhome-bus-card"]) {
     const card = document.createElement(tag); views.push(card); card.setConfig({ title: "Existing dashboard" });
     assert.equal(card._config.title, "Existing dashboard"); assert.equal(card.getCardSize(), 6);
@@ -175,7 +175,7 @@ test("Italian and regional language changes preserve monitor input, filters, cap
   const { view, root, hass, streams } = mount(); await tick();
   streams[0].callback(frame(1)); filter(root, "filter-who", "1");
   filter(root, "filter-where", "what:1"); root.getElementById("btn-pause").click();
-  const input = root.getElementById("send-frame"); input.value = "*1*0*11##"; input.focus(); input.setSelectionRange(2, 4);
+  view._toggleArmed(true); const input = root.getElementById("send-frame"); input.value = "*1*0*11##"; input.focus(); input.setSelectionRange(2, 4);
   view.hass = { ...hass, language: "it-IT" };
   assert.equal(root.getElementById("btn-export").textContent, "💾 Esporta traccia");
   assert.equal(root.getElementById("btn-pause").textContent, "Riprendi"); assert.equal(root.getElementById("badge").textContent, "IN PAUSA");
@@ -201,7 +201,7 @@ test("async feedback and button completion use the current language without inse
   assert.equal(root.getElementById("feedback-banner").querySelector("img"), null);
   let alertText; context.mock.method(globalThis, "alert", (text) => { alertText = text; });
   root.getElementById("send-frame").value = "*1*0*11##";
-  view.hass.callWS = async () => { throw new Error("offline"); }; await view._sendCustomFrame(); assert.match(alertText, /Errore durante l’invio: offline/);
+  view.hass.callWS = async () => { throw new Error("offline"); }; view._toggleArmed(true); await view._sendCustomFrame(); assert.match(alertText, /Errore durante l’invio: offline/);
 });
 
 test("monitor text catalogs have matching keys and fallback, and diagnostics keep the support format", async () => {

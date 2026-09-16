@@ -19,6 +19,7 @@ from pytest_socket import socket_enabled  # noqa: F401  (pyproject disables the 
 
 from custom_components.myhome import async_remove_entry
 from custom_components.myhome.const import CONF_ENTITY, DOMAIN
+from custom_components.myhome.data import MyHOMERuntimeData
 from custom_components.myhome.panel import (
     PANEL_URL,
     PANEL_VERSION,
@@ -101,6 +102,9 @@ def installation(hass):
             "bus_monitor": object(),
         },
     }
+    runtime = hass.data[DOMAIN][entries[0].data["mac"]]
+    runtime[CONF_ENTITY].bus_monitor = runtime["bus_monitor"]
+    entries[0].runtime_data = MyHOMERuntimeData(gateway=runtime[CONF_ENTITY])
     yield SimpleNamespace(entries=entries, devices=devices, entities=entities, area=area, cen=cen)
     # These entries describe runtime states but were not actually set up. Avoid
     # invoking integration unload against the deliberately minimal handlers.

@@ -22,6 +22,13 @@ from typing import List
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 CUSTOM_COMPONENTS_DIR = ROOT_DIR / "custom_components" / "myhome"
+
+# Modules that read per-config-entry state; audited by the runtime-data check.
+RUNTIME_DATA_READERS = [
+    "light.py", "switch.py", "cover.py", "climate.py", "binary_sensor.py", "sensor.py",
+    "media_player.py", "button.py", "alarm_control_panel.py",
+    "services.py", "websocket.py", "diagnostics.py", "myhome_device.py", "decoder_pool.py",
+]
 TRANSLATIONS_DIR = CUSTOM_COMPONENTS_DIR / "translations"
 
 DISCOVERY_STEPS = {
@@ -322,24 +329,23 @@ def check_manifest_requirements_rule(checker: StandardsChecker):
             f"Version mismatch: manifest.json ({manifest_version}) != const.py ({const_version})",
         )
 
-    ownd_match = re.search(r'REQUIRED_OWND_VERSION\s*=\s*["\']([^"\']+)["\']', const_content)
-    required_ownd_version = ownd_match.group(1) if ownd_match else manifest_version
-
+    # manifest.json is the single source of truth for the OWNd pin: Home Assistant
+    # installs it, so it must be an exact ``==`` pin (no runtime self-installer).
     requirements = manifest.get("requirements", [])
-    expected_req = f"OWNd=={required_ownd_version}"
-    if expected_req not in requirements:
+    ownd_pins = [r for r in requirements if re.fullmatch(r"OWNd==[0-9][0-9A-Za-z.]*", r)]
+    if len(ownd_pins) != 1:
         checker.log_error(
             "RULE_MANIFEST",
             manifest_file,
             1,
-            f"manifest.json requirements must contain '{expected_req}' to guarantee Home Assistant dependency updates. Found: {requirements}",
+            f"manifest.json requirements must contain exactly one exact 'OWNd==<version>' pin. Found: {requirements}",
         )
     else:
-        checker.log_ok(f"manifest.json requirements synchronization verified ({expected_req}).")
+        checker.log_ok(f"manifest.json requirements pin verified ({ownd_pins[0]}).")
 
 
 def check_quality_scale_rules(checker: StandardsChecker):
-    """Enforce Home Assistant Integration Quality Scale (Bronze, Silver, Gold, Platinum/Diamond)."""
+    """Enforce Home Assistant Integration Quality Scale (Bronze, Silver, Gold, Platinum)."""
     # 1. [BRONZE] Runtime Data
     init_file = CUSTOM_COMPONENTS_DIR / "__init__.py"
     if init_file.exists():
@@ -354,6 +360,30 @@ def check_quality_scale_rules(checker: StandardsChecker):
         else:
             checker.log_ok("[BRONZE] runtime_data entry mapping implemented.")
 
+    # Platforms, services, WebSocket API and diagnostics must read per-entry state from
+    # entry.runtime_data, never from the deprecated hass.data[DOMAIN][mac] alias.
+    per_entry_reader = re.compile(
+        r"hass\.data(?:\.get\(DOMAIN|\[DOMAIN\])\S*\b(?:CONF_ENTITY|CONF_PLATFORMS|CONF_ENTITIES|mac|CONF_MAC)\b"
+    )
+    offenders = []
+    for module in RUNTIME_DATA_READERS:
+        module_file = CUSTOM_COMPONENTS_DIR / module
+        if not module_file.exists():
+            continue
+        for lineno, line in enumerate(module_file.read_text(encoding="utf-8").splitlines(), 1):
+            if per_entry_reader.search(line):
+                offenders.append((module_file, lineno, line.strip()))
+    if offenders:
+        for module_file, lineno, line in offenders:
+            checker.log_error(
+                "RULE_IQS_BRONZE",
+                module_file,
+                lineno,
+                f"Quality Scale Bronze rule 'runtime-data': read entry.runtime_data instead of hass.data: {line}",
+            )
+    else:
+        checker.log_ok(f"[BRONZE] runtime-data: {len(RUNTIME_DATA_READERS)} modules read per-entry state from entry.runtime_data only.")
+
     # 2. [BRONZE] Services Extraction
     services_file = CUSTOM_COMPONENTS_DIR / "services.py"
     if not services_file.exists():
@@ -365,15 +395,19 @@ def check_quality_scale_rules(checker: StandardsChecker):
         )
     else:
         services_content = services_file.read_text(encoding="utf-8")
-        if "async_setup_services" not in services_content or "async_unload_services" not in services_content:
+        init_content = (CUSTOM_COMPONENTS_DIR / "__init__.py").read_text(encoding="utf-8")
+        setup_body = re.search(r"async def async_setup\(.*?(?=\nasync def |\ndef |\Z)", init_content, re.S)
+        registered_in_setup = bool(setup_body and "async_setup_services(" in setup_body.group(0))
+        if "async_setup_services" not in services_content or not registered_in_setup:
             checker.log_error(
                 "RULE_IQS_BRONZE",
                 services_file,
                 1,
-                "Quality Scale Bronze rule 'action-setup': services.py must define async_setup_services and async_unload_services",
+                "Quality Scale Bronze rule 'action-setup': services.py must define async_setup_services and "
+                "__init__.async_setup must call it (services stay registered independent of config entries)",
             )
         else:
-            checker.log_ok("[BRONZE] action-setup: services.py registered with setup and unload handlers.")
+            checker.log_ok("[BRONZE] action-setup: services registered once in async_setup.")
 
     # 3. [SILVER] Concurrency: PARALLEL_UPDATES = 0 across all platform files
     platform_files = [
@@ -482,7 +516,7 @@ def check_quality_scale_rules(checker: StandardsChecker):
     else:
         checker.log_ok("[GOLD] diagnostics: diagnostics.py platform implemented.")
 
-    # 9. [DIAMOND/PLATINUM] Async Dependency (No blocking libraries)
+    # 9. [PLATINUM] Async Dependency (No blocking libraries)
     manifest_file = CUSTOM_COMPONENTS_DIR / "manifest.json"
     if manifest_file.exists():
         try:
@@ -493,21 +527,21 @@ def check_quality_scale_rules(checker: StandardsChecker):
             found_blocking = [r for r in reqs if any(b in r.lower() for b in blocking_libs)]
             if found_blocking:
                 checker.log_error(
-                    "RULE_IQS_DIAMOND",
+                    "RULE_IQS_PLATINUM",
                     manifest_file,
                     1,
                     f"Quality Scale Platinum rule 'async-dependency': blocking library found in requirements: {found_blocking}",
                 )
             else:
-                checker.log_ok("[DIAMOND] async-dependency: zero blocking network libraries in manifest requirements.")
+                checker.log_ok("[PLATINUM] async-dependency: zero blocking network libraries in manifest requirements.")
         except Exception as e:
-            checker.log_error("RULE_IQS_DIAMOND", manifest_file, 1, f"Failed parsing manifest.json: {e}")
+            checker.log_error("RULE_IQS_PLATINUM", manifest_file, 1, f"Failed parsing manifest.json: {e}")
 
-    # 10. [DIAMOND/PLATINUM] Quality Scale Manifest Audit
+    # 10. [PLATINUM] Quality Scale Manifest Audit
     qs_file = CUSTOM_COMPONENTS_DIR / "quality_scale.yaml"
     if not qs_file.exists():
         checker.log_error(
-            "RULE_IQS_DIAMOND",
+            "RULE_IQS_PLATINUM",
             qs_file,
             1,
             "Quality Scale audit manifest quality_scale.yaml must exist in custom_components/myhome/",
@@ -522,16 +556,16 @@ def check_quality_scale_rules(checker: StandardsChecker):
             invalid_rules = [k for k, v in rules.items() if isinstance(v, dict) and v.get("status") not in valid_statuses]
             if invalid_rules:
                 checker.log_error(
-                    "RULE_IQS_DIAMOND",
+                    "RULE_IQS_PLATINUM",
                     qs_file,
                     1,
                     f"quality_scale.yaml has invalid status for rules: {invalid_rules}",
                 )
             else:
                 done_count = sum(1 for v in rules.values() if isinstance(v, dict) and v.get("status") in ("done", "exempt"))
-                checker.log_ok(f"[DIAMOND] quality_scale.yaml validated ({done_count}/{len(rules)} rules satisfied/exempt).")
+                checker.log_ok(f"[PLATINUM] quality_scale.yaml validated ({done_count}/{len(rules)} rules satisfied/exempt).")
         except Exception as e:
-            checker.log_error("RULE_IQS_DIAMOND", qs_file, 1, f"Failed parsing quality_scale.yaml: {e}")
+            checker.log_error("RULE_IQS_PLATINUM", qs_file, 1, f"Failed parsing quality_scale.yaml: {e}")
 
 
 def check_ownd_library_standards(checker: StandardsChecker):

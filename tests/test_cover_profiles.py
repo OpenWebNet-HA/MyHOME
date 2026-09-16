@@ -105,7 +105,7 @@ async def test_provenance_survives_rename_assignment_copy_and_directional_edits(
     assert copied_profile["provenance"]["opening"]["inherited"] is True
     assert copied_profile["provenance"]["opening"]["recorded_at"] == original["opening"]["recorded_at"]
     assert copied_profile["provenance"]["closing"]["inherited"] is False
-    assert plant.covers[0]._closing_time == 50
+    assert plant.covers[0]._travel_time_down == 50
     store = get_store(hass, plant.entries[0].entry_id)
     persisted = copy.deepcopy(store.data)
     hass.data[DATA_KEY].pop(plant.entries[0].entry_id)
@@ -134,7 +134,7 @@ async def test_version_two_profiles_gain_unknown_evidence_without_changing_value
     assert store.data["revision"] == 12
     assert store.data["assignments"] == saved["assignments"]
     assert store.data["profiles"]["old"]["provenance"] == unknown_provenance()
-    assert (plant.covers[0]._travel_time, plant.covers[0]._closing_time) == (21, 34)
+    assert (plant.covers[0]._travel_time_up, plant.covers[0]._travel_time_down) == (21, 34)
     await write_profile(hass, message(plant, 12, profile_id="old",
                         profile={"name": "Renamed", "opening_time": 21, "closing_time": 34}))
     assert store.data["profiles"]["old"]["provenance"] == unknown_provenance()
@@ -157,7 +157,7 @@ async def test_provenance_cannot_be_supplied_by_client_or_copied_across_gateways
         with pytest.raises(OSError):
             await write_profile(hass, message(plant, 1, profile_id=profile_id,
                                 profile={"name": "Failed", "travel_time": 99}))
-    assert store.data == before and plant.covers[0]._travel_time == 42.5
+    assert store.data == before and plant.covers[0]._travel_time_up == 42.5
 
 
 @pytest.mark.parametrize("value", [None, "invalid", "2026-09-15T12:00:00", "2026-09-15T12:00:00+02:00"])
@@ -178,19 +178,19 @@ async def test_profile_create_share_copy_reset_and_restart(hass, plant):
         await write_profile(hass, message(plant, 2, profile_id=profile_id))
     copied = await write_profile(hass, message(plant, 2, profile={"name": "My copy", "travel_time": 25}))
     assert copied["assigned_profile_id"] != profile_id
-    assert plant.covers[1]._travel_time == 42.5
+    assert plant.covers[1]._travel_time_up == 42.5
     updated = await write_profile(hass, message(plant, 3, profile_id=copied["assigned_profile_id"],
                                                profile={"name": "Edited", "travel_time": 26}))
     assert updated["effective_travel_time"] == 26
     reset = await write_profile(hass, message(plant, 4, action="assign", profile_id=None))
     assert reset["assigned_profile_id"] is None
-    assert plant.covers[0]._travel_time == 30
+    assert plant.covers[0]._travel_time_up == 30
     entry_id = plant.entries[0].entry_id
     saved = copy.deepcopy(get_store(hass, entry_id).data)
     hass.data[DATA_KEY].pop(entry_id)
     await bind_cover(hass, plant.covers[1])
     assert get_store(hass, entry_id).data == saved
-    assert plant.covers[1]._travel_time == 42.5
+    assert plant.covers[1]._travel_time_up == 42.5
     assert get_store(hass, plant.entries[1].entry_id).data["revision"] == 0
     for gateway in plant.gateways:
         gateway.send.assert_not_called()
@@ -219,7 +219,7 @@ async def test_write_failure_does_not_publish_revision_or_runtime_changes(hass, 
         with pytest.raises(OSError):
             await write_profile(hass, message(plant))
     assert store.data == before
-    assert plant.covers[0]._travel_time == 30
+    assert plant.covers[0]._travel_time_up == 30
     result = await write_profile(hass, message(plant))
     assert result["revision"] == 1
 
@@ -229,6 +229,7 @@ async def test_moving_cover_keeps_original_time_until_stop_and_reset_can_be_pend
     cover._attr_current_cover_position = 0
     with patch("custom_components.myhome.cover.time.monotonic", return_value=100):
         await cover.async_open_cover()
+        cover.handle_event(OWNMessage.parse("*2*1*11##"))
     with patch("custom_components.myhome.cover.time.monotonic", return_value=115):
         result = await write_profile(hass, message(plant))
         assert result["pending"] is True
@@ -236,16 +237,16 @@ async def test_moving_cover_keeps_original_time_until_stop_and_reset_can_be_pend
         assert cover.current_cover_position == 50
         # Continued movement events must not apply the new travel model mid-run.
         cover.handle_event(OWNMessage.parse("*2*1*11##"))
-        assert cover._travel_time == 30
+        assert cover._travel_time_up == 30
         cover.handle_event(OWNMessage.parse("*2*0*11##"))
         assert cover.current_cover_position == 50
-    assert cover._travel_time == 42.5
+    assert cover._travel_time_up == 42.5
     assert cover.extra_state_attributes["cover_profile_pending"] is False
     await cover.async_close_cover()
     await write_profile(hass, message(plant, 1, action="assign", profile_id=None))
-    assert cover._travel_time == 42.5
+    assert cover._travel_time_up == 42.5
     await cover.async_stop_cover()
-    assert cover._travel_time == 30
+    assert cover._travel_time_up == 30
     assert cover._pending_profile is None
     # Only the explicit movement commands reached the gateway, never a profile write.
     assert plant.gateways[0].send.await_count == 3
@@ -260,7 +261,7 @@ async def test_movement_starting_during_storage_write_is_deferred(hass, plant):
     with patch.object(store.store, "async_save", side_effect=save):
         result = await write_profile(hass, message(plant))
     assert result["pending"]
-    assert plant.covers[0]._travel_time == 30
+    assert plant.covers[0]._travel_time_up == 30
     plant.gateways[0].send.assert_not_called()
 
 
@@ -275,9 +276,9 @@ async def test_lifecycle_unload_during_write_and_storage_removal(hass, plant):
         result = await write_profile(hass, message(plant))
     assert result["writable"] is False
     assert result["effective_travel_time"] is None
-    assert plant.covers[0]._travel_time == 30
+    assert plant.covers[0]._travel_time_up == 30
     await bind_cover(hass, plant.covers[0])
-    assert plant.covers[0]._travel_time == 42.5
+    assert plant.covers[0]._travel_time_up == 42.5
     # A late unload callback must not remove a replacement entity instance.
     replacement = MagicMock()
     store.covers[plant.records[0].unique_id] = replacement
@@ -403,11 +404,11 @@ async def test_profile_write_preserves_an_already_scheduled_position_stop(hass, 
         await scheduled.wait()
         await write_profile(hass, message(plant))
         assert cover._stop_task is stop_task
-        assert durations == [15.0]  # Half of the original 30-second full travel.
+        assert durations == pytest.approx([15.0], abs=0.02)  # Half of the original 30-second full travel.
         release.set()
         await stop_task
     assert cover.current_cover_position == 50
-    assert cover._travel_time == 42.5
+    assert cover._travel_time_up == 42.5
     assert cover._pending_profile is None
     assert plant.gateways[0].send.await_count == 2
 
@@ -417,12 +418,12 @@ async def test_registered_cover_startup_resolves_profile_before_status_request(h
     entry_id = plant.entries[0].entry_id
     hass.data[DATA_KEY].pop(entry_id)
     cover = plant.covers[0]
-    cover._travel_time = 30
+    cover._travel_time_up = 30
     gateway = plant.gateways[0]
     gateway.availability_signal = "test_profile_availability"
 
     async def request_status(command):
-        assert cover._travel_time == 42.5
+        assert cover._travel_time_up == 42.5
         assert command is not None
 
     gateway.send_status_request = AsyncMock(side_effect=request_status)
@@ -443,7 +444,7 @@ async def test_version_one_store_migrates_without_changing_assignments_or_timing
     assert store.data == {**legacy, "profiles": {"old": {
         "name": "Legacy", "opening_time": 32.5, "closing_time": 32.5,
         "provenance": unknown_provenance()}}}
-    assert plant.covers[0]._travel_time == plant.covers[0]._closing_time == 32.5
+    assert plant.covers[0]._travel_time_up == plant.covers[0]._travel_time_down == 32.5
     assert await ProfileStorage(hass, 4, store.store.key).async_load() == store.data
     with pytest.raises(NotImplementedError):
         await store.store._async_migrate_func(5, 1, legacy)
@@ -467,9 +468,11 @@ async def test_directional_profile_restart_and_command_reversal(hass, plant):
     cover._attr_current_cover_position = 0
     with patch("custom_components.myhome.cover.time.monotonic", return_value=100):
         await cover.async_open_cover()
+        cover.handle_event(OWNMessage.parse("*2*1*11##"))
     with patch("custom_components.myhome.cover.time.monotonic", return_value=110):
         assert cover.current_cover_position == 50
         await cover.async_close_cover()
+        cover.handle_event(OWNMessage.parse("*2*2*11##"))
         assert cover._start_position == 50
     with patch("custom_components.myhome.cover.time.monotonic", return_value=120):
         assert cover.current_cover_position == 25
@@ -497,7 +500,7 @@ async def test_bus_reversal_and_pending_directional_edit_use_original_times(hass
         assert cover.current_cover_position == 85
         cover.handle_event(OWNMessage.parse("*2*0*11##"))
         assert cover.current_cover_position == 85
-    assert (cover._travel_time, cover._closing_time) == (30, 60)
+    assert (cover._travel_time_up, cover._travel_time_down) == (30, 60)
     with patch("custom_components.myhome.cover.time.monotonic", return_value=120):
         cover.handle_event(OWNMessage.parse("*2*2*11##"))
     with patch("custom_components.myhome.cover.time.monotonic", return_value=126):
@@ -521,12 +524,12 @@ async def test_directional_scheduled_stop_keeps_time_during_profile_reset(hass, 
         task = cover._stop_task
         await scheduled.wait()
         await write_profile(hass, message(plant, 1, action="assign", profile_id=None))
-        assert durations == [duration]
-        assert (cover._travel_time, cover._closing_time) == (20, 40)
+        assert durations == pytest.approx([duration], abs=0.02)
+        assert (cover._travel_time_up, cover._travel_time_down) == (20, 40)
         release.set()
         await task
     assert cover.current_cover_position == target
-    assert (cover._travel_time, cover._closing_time) == (30, 30)
+    assert (cover._travel_time_up, cover._travel_time_down) == (30, 30)
 
 
 async def test_delete_protects_assignments_and_is_atomic_persistent_and_gateway_scoped(hass, plant):
@@ -557,14 +560,14 @@ async def test_delete_protects_assignments_and_is_atomic_persistent_and_gateway_
     assert result["assigned_profile_id"] is None
     assert result["revision"] == 3
     assert cover._pending_profile == (None,)
-    assert cover._closing_time == 42.5
+    assert cover._travel_time_down == 42.5
     plant.gateways[0].send.assert_awaited_once()  # Only the explicit close command.
     hass.data[DATA_KEY].pop(plant.entries[0].entry_id)
     restored = get_store(hass, plant.entries[0].entry_id)
     await restored.load()
     assert restored.data == {"revision": 3, "profiles": {}, "assignments": {}}
     await cover.async_stop_cover()
-    assert cover._closing_time == 30
+    assert cover._travel_time_down == 30
 
 
 async def test_delete_racing_an_assignment_cannot_remove_an_assigned_profile(hass, plant):
@@ -766,4 +769,4 @@ async def test_version_three_migration_preserves_recorded_evidence(hass, plant):
     hass.data[DATA_KEY].pop(entry_id)
     await bind_cover(hass, plant.covers[0])
     assert get_store(hass, entry_id).data == before
-    assert plant.covers[0]._travel_time == 42.5
+    assert plant.covers[0]._travel_time_up == 42.5

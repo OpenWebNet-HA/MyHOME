@@ -147,6 +147,13 @@ pip install -e ".[test]" pytest-socket
 python -c "import homeassistant.const as c; print(c.__version__)"
 ```
 
+### Strict typing ratchet
+`mypy --strict` runs in CI against a per-module ceiling (`mypy_baseline.json`). It fails when a module gains errors; when you fix some, lock the progress in:
+
+```bash
+python scripts/typing_ratchet.py --update
+```
+
 ### Running the Test Suite
 Before opening a PR, execute the full test suite locally:
 
@@ -155,7 +162,7 @@ pytest tests/ --cov=custom_components.myhome --cov-report=term-missing
 ```
 
 ### Strict 100% Test Coverage Enforcement
-Our CI pipeline enforces zero-tolerance code coverage through [`scripts/verify_ownd_coverage.py`](file:///c:/Users/laurensvdb/Documents/GitHub/MyHOME/scripts/verify_ownd_coverage.py).
+Our CI pipeline enforces zero-tolerance code coverage through [`scripts/verify_ownd_coverage.py`](scripts/verify_ownd_coverage.py).
 
 > [!IMPORTANT]
 > **Every statement and branch in every module under `custom_components/myhome/` must maintain 100.0% test coverage.**

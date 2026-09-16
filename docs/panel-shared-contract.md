@@ -1,6 +1,6 @@
 # Shared MyHOME panel contract — proposal for review
 
-**Updated: 2026-09-15, panel 0.20.0. Shared contract: draft, not jointly approved
+**Updated: 2026-09-16, panel 0.20.1. Shared contract: draft, not jointly approved
 or implemented under the proposed common names.** Our panel already implements
 profiles, guided measurement, profile revision subscriptions, per-direction
 provenance, calibration export and optional single-cover and selected-cover automatic measurement, plus guided
@@ -13,8 +13,12 @@ panel implementation or propose copying another fork wholesale. The original
 comparison used our panel 0.9.0 at `02ce199` and Interstellar0verdrive's fork at
 `229b1eb`. Our side is pinned to `9b839be` (panel 0.20.0); `9e96d6a` remains the
 preceding 0.19.0 implementation baseline.
-The branch also integrates `v2-phase1-architecture` through `db95d1f` (2026-09-15).
-The current extension retains the aligned base and its storage v4/export v2 contracts.
+The branch also integrates `v2-phase1-architecture` through `3f5e791` (2026-09-16).
+The current alignment preserves the compact profile editor at `8edd201`, adds
+v2 runtime-data access and native/panel calibration ownership checks, and retains
+storage v4/export v2. The v2 directional runtime is shared, while profile storage
+and native option-based calibration remain distinct with explicit precedence.
+See [alignment behavior](sidepanel.md#current-v2-alignment-0201).
 The backend from
 upstream #349 is compared separately. The calibration-fork column still describes
 its pinned baseline, not a fresh audit of its moving `master`.
@@ -37,7 +41,7 @@ independent of opening the panel.
 | Implementation | Exact baseline | Relevant evidence |
 | --- | --- | --- |
 | Our `feat/myhome-sidepanel`, panel 0.20.0 | [`9b839be`](https://github.com/xtimmy86x/MyHOME/tree/9b839bedbbba05231557b7b0ba75a6ed7ea36e35) | [Implemented API](panel-websocket-api.md), `panel.py`, `cover_profiles.py`, `cover_profile_provenance.py`, `cover_profile_export.py`, `cover_calibration.py`, `cover_calibration_automatic.py`, `cover_calibration_batch.py`, `frontend/panel/` |
-| Integrated `v2-phase1-architecture` base | [`db95d1f`](https://github.com/xtimmy86x/MyHOME/tree/db95d1f349036229b2965341622cf0f2ed3859cc) | Restored actuator lock/unlock buttons with stale-registration filtering; safe entity IDs for names with apostrophes; F454 alarm replay and keepalive/reconnect regression tests |
+| Integrated `v2-phase1-architecture` base | [`3f5e791`](https://github.com/OpenWebNet-HA/MyHOME/tree/3f5e79128d5f7261b8e62060d093ec9c0d0c603a) | Runtime-data and discovery refactoring; cover motor-start/echo timing and native calibration; monitor capture workflow; gateway identification, climate fixes and light feature locking |
 | Interstellar0verdrive's `MyHOME-stability`, `master` | [`229b1eb`](https://github.com/Interstellar0verdrive/MyHOME-stability/tree/229b1eb30558012674e1e7f5c2059a58300f09df) | [API reference](https://github.com/Interstellar0verdrive/MyHOME-stability/blob/229b1eb30558012674e1e7f5c2059a58300f09df/docs/panel-websocket-api.md), `websocket_api.py`, `panel_data.py`, `panel_write.py`, `panel_schemas.py`, `panel_src/` |
 | Upstream #349, backend only | [`e807e99`](https://github.com/OpenWebNet-HA/MyHOME/tree/e807e9986ca9e09e8f3c516bd9c5d8b55e076485) | [PR #349](https://github.com/OpenWebNet-HA/MyHOME/pull/349), `cover.py`, services, [runtime/service documentation](https://github.com/OpenWebNet-HA/MyHOME/blob/e807e9986ca9e09e8f3c516bd9c5d8b55e076485/docs/configuration/services.md) |
 

@@ -4,6 +4,8 @@
 [![HACS Validation](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/validate.yml/badge.svg)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/validate.yml)
 [![test-coverage](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/test-coverage.yaml/badge.svg)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/test-coverage.yaml)
 [![Coverage](coverage.svg)](https://app.codecov.io/gh/OpenWebNet-HA/MyHOME/tree/v2-phase2-architecture)
+[![Integration Quality Scale](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/quality-scale.yml/badge.svg)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/quality-scale.yml)
+[![Quality scale tier](quality_scale.svg)](custom_components/myhome/quality_scale.yaml)
 [![Codecov](https://codecov.io/gh/OpenWebNet-HA/MyHOME/branch/v2-phase2-architecture/graph/badge.svg)](https://app.codecov.io/gh/OpenWebNet-HA/MyHOME/tree/v2-phase2-architecture)
 [![PyPI Standards & Packaging](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/pypi_standards.yml/badge.svg?branch=v2-phase2-architecture)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/pypi_standards.yml?query=branch%3Av2-phase2-architecture)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
@@ -62,6 +64,13 @@ We now maintain a comprehensive, community-curated **[GitHub Wiki](https://githu
 - **[Bus Monitor Lovelace Card](https://github.com/OpenWebNet-HA/MyHOME/wiki/Bus-Monitor-Lovelace-Card)**: Bus card installation, live frame decoding, diagnostic logging, and syntax injector reference.
 - **[Community Contribution Guide](https://github.com/OpenWebNet-HA/MyHOME/wiki/OpenWebNet-Protocol-&-WHO-Specifications#how-to-contribute-specifications)**: How to cross-check documentation versions and contribute missing WHO PDF specifications.
 
+### In-repo guides (`docs/configuration/`)
+- **[Supported Functions](docs/configuration/supported_functions.md)** — what each WHO subsystem and platform does, read-only or not at all.
+- **[Known Limitations](docs/configuration/known_limitations.md)** — what is not supported, why, and the workaround.
+- **[Troubleshooting](docs/configuration/troubleshooting.md)** — symptoms → log lines / bus frames → fix.
+- **[Use Cases](docs/configuration/use_cases.md)** — end-to-end scenarios with the automations that make them work.
+- **[Services](docs/configuration/services.md)**, **[Gateways](docs/configuration/gateways.md)**, **[Runtime Behaviour](docs/configuration/runtime_behaviour.md)**, **[Bus Monitor](docs/configuration/bus_monitor.md)**, **[Sound System](docs/configuration/media_player.md)**, **[CEN / CEN+](docs/configuration/cen_cenplus.md)**, **[Lovelace Recipes](docs/configuration/lovelace_recipes.md)**.
+
 ---
 
 ## 🏛️ Supported Hardware
@@ -102,10 +111,22 @@ We now maintain a comprehensive, community-curated **[GitHub Wiki](https://githu
 
 ## 📦 Installation & Updating
 
+> **Requires Home Assistant 2026.3 or newer** (Python 3.14 cores). Older cores stay on 2.0.0b12; see [Known Limitations](docs/configuration/known_limitations.md).
+
+> [!CAUTION]
+> **⚠️ Never store backup copies inside `/config/custom_components/` (e.g. `myhome.backup`)!**  
+> Home Assistant automatically discovers **all** subdirectories containing `manifest.json` under `/config/custom_components/`. If you create a backup folder like `/config/custom_components/myhome.backup` or rename the old directory in place:  
+> 1. Home Assistant registers `custom_components.myhome.backup` as the integration module path for domain `myhome`.  
+> 2. Python treats dots (`.`) as module delimiters, attempting to load `backup.py` from `custom_components.myhome`, which does not exist.  
+> 3. Home Assistant startup fails with:  
+>    `Setup failed for custom integration 'myhome': Unable to import component: No module named 'custom_components.myhome.backup'`  
+> 
+> **Rule:** Always keep safety backups **outside** the `custom_components/` folder (e.g. in `/config/myhome_backup/`).
+
 > [!WARNING]
 > **⚠️ Do NOT use HACS to install beta / pre-release versions!**  
-> In **HACS 2.0+**, pre-release access was moved to Home Assistant entity switches (`switch.myhome_pre_release`) that are disabled by default. Due to upstream Home Assistant registry caching, enabling these switches frequently gets stuck in an *"unavailable"* loop or reverts to *"disabled"*. Furthermore, because pre-releases are built on the Phase 1 feature branch (`v2-phase1-architecture`) while the default branch is `master`, HACS download validation frequently fails with:  
-> `The version 2.0.0b5 for this integration can not be used with HACS`  
+> In **HACS 2.0+**, pre-release access was moved to Home Assistant entity switches (`switch.myhome_pre_release`) that are disabled by default. Due to upstream Home Assistant registry caching, enabling these switches frequently gets stuck in an *"unavailable"* loop or reverts to *"disabled"*. Furthermore, because pre-releases are built on the active development branch (`v2-phase1-architecture`) while the default branch is `master`, HACS download validation frequently fails with:  
+> `The version 2.0.0b12 for this integration can not be used with HACS`  
 > 
 > **To avoid frustration, please use Method 1 (Terminal & SSH) or Method 2 (Manual) below — they take less than 10 seconds and preserve all existing devices, entities, and settings 100% safely.**
 
@@ -117,8 +138,13 @@ If you have the **Terminal & SSH** add-on enabled in Home Assistant, open **Term
 
 ```bash
 cd /config/custom_components
-wget -O myhome_beta.zip $(curl -s https://api.github.com/repos/OpenWebNet-HA/MyHOME/releases | grep -m1 -o 'https://[^"]*myhome\.zip')
+# Move any legacy in-place backup out of custom_components to prevent loader crashes:
+[ -d myhome.backup ] && mv myhome.backup /config/myhome_backup_old
+# Create a safety backup in /config (outside custom_components) before updating:
+[ -d myhome ] && rm -rf /config/myhome_backup && cp -r myhome /config/myhome_backup
+# Download and install the latest v2.0.0b12 release:
 rm -rf myhome
+wget -O myhome_beta.zip https://github.com/OpenWebNet-HA/MyHOME/releases/download/2.0.0b12/myhome.zip
 unzip -q myhome_beta.zip -d myhome
 rm myhome_beta.zip
 ha core restart
@@ -126,7 +152,7 @@ ha core restart
 
 *(For **Home Assistant Container / Docker**, run on your Docker host:)*
 ```bash
-docker exec -it homeassistant bash -c 'cd /config/custom_components && wget -O myhome_beta.zip $(curl -s https://api.github.com/repos/OpenWebNet-HA/MyHOME/releases | grep -m1 -o "https://[^\"]*myhome\.zip") && rm -rf myhome && unzip -q myhome_beta.zip -d myhome && rm myhome_beta.zip'
+docker exec -it homeassistant bash -c 'cd /config/custom_components && [ -d myhome.backup ] && mv myhome.backup /config/myhome_backup_old; [ -d myhome ] && rm -rf /config/myhome_backup && cp -r myhome /config/myhome_backup; rm -rf myhome && wget -O myhome_beta.zip https://github.com/OpenWebNet-HA/MyHOME/releases/download/2.0.0b12/myhome.zip && unzip -q myhome_beta.zip -d myhome && rm myhome_beta.zip'
 docker restart homeassistant
 ```
 
@@ -138,10 +164,11 @@ docker restart homeassistant
 ### Method 2: Manual Installation (Archive / Samba)
 
 1. Download the release package:  
-   👉 **[Download myhome.zip (GitHub Releases)](https://github.com/OpenWebNet-HA/MyHOME/releases)** (or direct [v2.0.0b8 download](https://github.com/OpenWebNet-HA/MyHOME/releases/download/2.0.0b8/myhome.zip))
+   👉 **[Download myhome.zip (v2.0.0b12)](https://github.com/OpenWebNet-HA/MyHOME/releases/download/2.0.0b12/myhome.zip)** (or browse all [GitHub Releases](https://github.com/OpenWebNet-HA/MyHOME/releases))
 2. Open your Home Assistant configuration directory (via **Samba Share**, **Studio Code Server**, or **File Editor** add-on).
-3. Extract `myhome.zip` directly into `/config/custom_components/myhome/` (overwriting the existing files).
-4. Restart Home Assistant (**Settings → System → Restart**).
+3. **Important:** If you wish to back up your existing `myhome` folder first, copy it to `/config/myhome_backup/` (**outside** `custom_components/`). **Never rename or copy it to `custom_components/myhome.backup`.**
+4. Extract `myhome.zip` directly into `/config/custom_components/myhome/` (overwriting the existing files).
+5. Restart Home Assistant (**Settings → System → Restart**).
 
 ---
 
@@ -174,6 +201,22 @@ docker restart homeassistant
 
 ---
 
+### 🩹 Troubleshooting: "No module named 'custom_components.myhome.backup'"
+
+> More symptoms and fixes: [Troubleshooting guide](docs/configuration/troubleshooting.md).
+
+If Home Assistant fails to load with the log error:
+```text
+Setup failed for custom integration 'myhome': Unable to import component: No module named 'custom_components.myhome.backup'
+```
+This is caused by a backup folder (`myhome.backup`) residing inside `/config/custom_components/`. Fix it by running:
+```bash
+mv /config/custom_components/myhome.backup /config/myhome_backup
+ha core restart
+```
+
+---
+
 ### 🔄 Safe Rollback
 
 If you ever need to revert to the legacy codebase (`0.9.4`):
@@ -187,6 +230,23 @@ If you ever need to revert to the legacy codebase (`0.9.4`):
   rm myhome_legacy.zip
   ha core restart
   ```
+
+### 🗑️ Removing the Integration
+
+1. Go to **Settings → Devices & services → MyHOME**, open the gateway entry's `⋮` menu and choose **Delete**. Repeat for every configured gateway. This closes the bus sessions, unloads all platforms and removes the gateway's devices and entities from the registries.
+2. Restart Home Assistant if you also want to remove the code:
+   - **HACS:** open **MyHome** in HACS → `⋮` → **Remove**.
+   - **Manual / one-liner installs:** delete the folder:
+     ```bash
+     rm -rf /config/custom_components/myhome
+     ha core restart
+     ```
+3. Optional clean-up the integration does not touch on its own:
+   - `/config/myhome.yaml` — the legacy platform configuration file, if you used one.
+   - **Settings → Dashboards → Resources**: the auto-registered `/myhome_static/myhome-bus-card.js` resource, and any `custom:myhome-openwebnet-bus-monitor` cards on your dashboards.
+   - Automations and blueprints that reference `myhome.*` services or the `myhome_*` events (`myhome_cen_event`, `myhome_cenplus_event`, `myhome_message_event`, `myhome_cover_calibration`, …).
+
+The gateway itself is not modified by installing or removing the integration; nothing needs to be reset on the OpenWebNet side.
 
 ---
 
@@ -248,6 +308,35 @@ f454:
     central_alarm:
       where: '0'
       name: Central Alarm
+```
+
+3. **How names work** (Home Assistant's device / entity model): `name` names the **device** on the bus. A light, switch, cover, thermostat, audio zone or alarm panel *is* its device, so its entity carries the device name (`light.living_room_light`, friendly name *Living Room Light*). Sensors and binary sensors are features of their device and are named after their device class — a power meter named `House` gives `sensor.house_power` (*House Power*) and `sensor.house_energy`; a dry contact named `Cancello` with `class: opening` gives `binary_sensor.cancello_opening` (*Cancello Opening*). Use `entity_name` on a sensor or binary sensor to name the feature yourself (`entity_name: Contact` → *Front Door Contact*); an `entity_name` equal to `name` means "the entity is the device". Lock/unlock and calibration buttons are named *Lock*, *Unlock*, *Calibrate travel time* under their device. Entity ids are assigned once by the entity registry: **existing installations keep every entity id and every name you set in the UI**, and deleting the integration by accident is safe — Home Assistant keeps the registry entries for 30 days and restores names, areas and ids when the gateway is added again.
+
+4. **DALI DT8 capabilities and `lock_features`**: a light learns dimming, tunable white (Dimension 14) and HSV colour (Dimension 12) from the bus as the frames arrive. BTicino DALI gateways (F429 / F461) remember any HSV or colour-temperature value that was ever written to an address - even to a fixture that cannot use it - and replay it on every status sweep, so a plain dimmer can end up with a colour wheel. Declare what the fixture really is and lock it:
+
+```yaml
+  light:
+    rgbw_spot:
+      where: '25'
+      interface: '02'
+      name: RGBW Spot
+      dimmable: true
+      color_temp: true      # Dimension 14 tunable white
+      rgb: true             # Dimension 12 HSV colour (alias: hs)
+      lock_features: true   # exactly these modes, never learn another one
+    hallway_relay:
+      where: '26'
+      interface: '02'
+      name: Hallway
+      lock_features: true   # on/off only, whatever the gateway replays
+```
+
+Without `lock_features` the three flags are only the starting point and auto-detection stays on. Uncommissioned sentinels (`*12*511*127*255##`, `*14*1##`) are filtered by the protocol layer and never promote a light, locked or not.
+
+**What a locked light does with a frame it is locked out of.** The frame is dropped as a whole - not just the colour, the HSV *value* (`*12*H*S*V##`) too. A dimension the gateway replays to an address that cannot use it carries no truth in any field: the value is whatever was once written, not the current level. Brightness is never affected by this, because it always arrives on Dimension 1 (`*#1*WHERE*1*<level>*<speed>##`), and a light declared with `rgb` or `color_temp` is implicitly dimmable. Every dropped frame is written to the log at `DEBUG` level - enable `custom_components.myhome: debug` in the logger configuration if a locked light does not follow the app the way you expect:
+
+```text
+GATEWAY light 26#4#02 is locked to ['onoff']; ignoring Dimension 12 frame *#1*26#4#02*12*353*74*80##
 ```
 
 ---
@@ -375,7 +464,7 @@ A major CI infrastructure enhancement introduced for beta testing is the **Trace
 │  (F454, MyHomeServer1, MH202, etc.)  │
 └──────────────────┬───────────────────┘
                    │
-                   │ 1-Click "📋 Report Issue / Copy Trace" in Bus Monitor Card
+                   │ 1-Click "📋 Copy Capture" in Bus Monitor Card
                    ▼
 ┌──────────────────────────────────────┐
 │  diagnostic_summary.json             │
@@ -393,7 +482,7 @@ A major CI infrastructure enhancement introduced for beta testing is the **Trace
 ```
 
 #### How it Works:
-1. **Zero Hardware Needed for Bug Triage**: Legrand and BTicino manufacture dozens of gateway models (F454, MyHomeServer1, MH200N, MH202, 3578 USB) and modular DIN actuators with subtle firmware timing variations. When a beta tester reports unexpected behavior, clicking **"📋 Report Issue / Copy Trace"** on the Bus Monitor card (or downloading HA Diagnostics) packages the last 100 on-wire OpenWebNet frames with precise microsecond timestamps.
+1. **Zero Hardware Needed for Bug Triage**: Legrand and BTicino manufacture dozens of gateway models (F454, MyHomeServer1, MH200N, MH202, 3578 USB) and modular DIN actuators with subtle firmware timing variations. When a beta tester reports unexpected behavior, clicking **"📋 Copy Capture"** on the Bus Monitor card (or downloading HA Diagnostics) packages the last 100 on-wire OpenWebNet frames with precise microsecond timestamps.
 2. **Automated Discovery & Plant Setup**: Pytest automatically scans `tests/fixtures/plants/*/` for any directory containing `diagnostic_summary.json` and `myhome.yaml`.
 3. **Sequential On-Wire Replay**: The harness initializes a simulated gateway session and streams the frozen frames sequentially into Home Assistant's internal event dispatcher (`f"myhome_message_{mac}"`), exercising the exact same message routing path as physical hardware.
 4. **End-to-End State Verification**: Verifies that every single frame across Lighting (`WHO=1`), Automation (`WHO=2`), Thermoregulation (`WHO=4`), Audio (`WHO=16`), Energy (`WHO=18`), Dry Contacts (`WHO=25`), and ACK/NACK control signals updates entity states accurately with zero unhandled exceptions.
@@ -412,6 +501,8 @@ python scripts/anonymize_plant_fixture.py tests/fixtures/plants/issue_<n>_<model
 ```
 
 Devices become `light_10` / `Light 10` (the address is the name), IPs move to the `192.0.2.0/24` documentation range, MACs to `00:03:50:00:<issue>`, the entry id to a synthetic one, passwords to `null`. The script prints the old → new entity-id mapping for the test you write against the fixture. Name the directory after the issue and the gateway model, not after the reporter.
+
+What the integration emits is clean at the source: the card's issue bundle and trace/sweep export name the transport and the gateway model, never the LAN address, the serial device or your browser; the diagnostics download redacts host, MAC, SSDP identity, config-file path, entry id and title, and names a decoder slot's media player `media_player.decoder_<n>` rather than after your room - in the config entry's `data` and `options` only; the gateway, profile, queue, platform and bus-monitor blocks are not touched, so every frame's `where` / `who` / `what` is there for triage. Two things still need the script: your `myhome.yaml` (it is your file, with your room names) and the envelope Home Assistant wraps around every diagnostics download (the list of installed integrations, `setup_times`), which is not ours to strip. `python scripts/anonymize_plant_fixture.py --check tests` reports anything personal under `tests/`; the pre-commit hook in `.pre-commit-config.yaml` runs it before a commit exists, CI runs it on every push.
 
 ---
 
@@ -481,7 +572,7 @@ python scripts/run_ownd_smoke.py --target all
 ```
 
 This runner executes 4 validation gates:
-1. **Metadata Lockstep**: Verifies that `manifest.json` and `const.py` (`REQUIRED_OWND_VERSION`) match the installed package.
+1. **Metadata Lockstep**: Verifies that the exact `OWNd==` pin in `manifest.json` matches the installed package.
 2. **Golden Corpus Conformance**: Runs 191 OpenWebNet frame fixtures (`tests/test_golden_conformance.py`) verifying parser extraction and builder parity.
 3. **Platform Clean Imports**: Verifies all 14 integration platform modules import cleanly without missing symbols or deprecation errors.
 4. **Mock Gateway TCP Loopback**: Boots a mock OpenWebNet TCP server, negotiates session handshake (`*99*0##`), dispatches commands, and verifies frame parsing end-to-end.
@@ -492,16 +583,35 @@ automated coverage and physical gateway verification steps.
 ### CI Workflows
 - **`hassfest`**: Official Home Assistant manifest, translation, and metadata validation.
 - **`validate`**: Official HACS compliance checks.
-- **`test-coverage`**: 1294 automated unit tests with snapshot matching and 100% line coverage enforcement on the `ownd` core package.
+- **`test-coverage`**: 1443 automated unit tests with snapshot matching and 100% line coverage enforcement on the `ownd` core package.
 - **`ha-container-smoke`**: Automated containerized smoke testing against official Home Assistant Docker images (`stable`, `beta`, `dev`) verifying `check_config`, clean platform module imports, and zero asyncio loop-blocking calls.
 - **`ownd-smoke`**: Automated smoke testing of the `OWNd` protocol engine across `pinned`, `latest`, and `upstream-dev` distributions on Python 3.14.
 - **`ha-upstream-compat`**: Continuous integration testing against upstream Home Assistant Stable, Beta, and Dev channels.
 - **`ha_standards`**: Automated architectural standards enforcement (`verify_ha_standards.py` / `test_ha_standards.py`) ensuring user-confirmed discovery flows, complete step translations, no deprecated constants, and no blocking calls in async coroutines.
 - **`pypi_standards`**: Strict wheel hygiene, metadata verification, and packaging checks.
+- **`quality-scale`**: Self-audit of `quality_scale.yaml` against the official Home Assistant Integration Quality Scale (`quality_scale_report.py`); reports the tier reached, refreshes the badge and the table below.
+- **`strict-typing`**: `mypy --strict` over the integration, ratcheted per module (`scripts/typing_ratchet.py`, `mypy_baseline.json`) — a module may only ever get cleaner (Platinum rule `strict-typing`).
+
+### 🏅 Home Assistant Integration Quality Scale
+
+<!-- START_QUALITY_SCALE -->
+
+**Tier reached: — none yet**
+
+| Tier | Rules satisfied | Status |
+| :--- | :---: | :--- |
+| 🥉 Bronze | 19 / 20 | ⏳ next — blocked by `brands` |
+| 🥈 Silver | 10 / 10 | ✅ all rules satisfied (waiting on lower tier) |
+| 🥇 Gold | 21 / 21 | ✅ all rules satisfied (waiting on lower tier) |
+| 🏆 Platinum | 2 / 3 | ⬜ 1 rule(s) open |
+
+_Self-audit of [`quality_scale.yaml`](custom_components/myhome/quality_scale.yaml) against the official [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/); a tier needs every rule of that tier and all lower tiers `done`/`exempt`. Updated by the [Integration Quality Scale workflow](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/quality-scale.yml); tiers are formally awarded only by Home Assistant core review._
+
+<!-- END_QUALITY_SCALE -->
 
 ### 📊 Code Coverage & Quality Assurance
 
-The integration maintains 1294 automated unit tests (100% line coverage across all modules) covering core protocol handling, hardware profiles, discovery, state reconciliation, and error boundaries.
+The integration maintains 1443 automated unit tests (100% line coverage across all modules) covering core protocol handling, hardware profiles, discovery, state reconciliation, and error boundaries.
 
 <!-- START_COVERAGE_TABLE -->
 
@@ -519,6 +629,7 @@ The integration maintains 1294 automated unit tests (100% line coverage across a
 | [`core/transport/serial.py`](custom_components/myhome/core/transport/serial.py) | **100%** | Async Serial/USB transport for Legrand 3578 / OpenZigBee |
 | [`core/transport/tcp.py`](custom_components/myhome/core/transport/tcp.py) | **100%** | Modular TCP/IP socket transport with framed stream parsing |
 | [`cover.py`](custom_components/myhome/cover.py) | **100%** | Motorized shutters, blinds, roll-ups with state tracking |
+| [`data.py`](custom_components/myhome/data.py) | **100%** | Core integration component |
 | [`decoder_pool.py`](custom_components/myhome/decoder_pool.py) | **100%** | Thread-safe streaming proxy audio pool |
 | [`device_trigger.py`](custom_components/myhome/device_trigger.py) | **100%** | Stateless CEN/CEN+ scenario device automation triggers |
 | [`diagnostics.py`](custom_components/myhome/diagnostics.py) | **100%** | Config entry diagnostics with sensitive data redaction |
@@ -526,7 +637,9 @@ The integration maintains 1294 automated unit tests (100% line coverage across a
 | [`light.py`](custom_components/myhome/light.py) | **100%** | Relays, auto-dimmer detection, and brightness transitions |
 | [`media_player.py`](custom_components/myhome/media_player.py) | **100%** | F441/F441M sound system zones, dynamic proxy, gain-staging |
 | [`myhome_device.py`](custom_components/myhome/myhome_device.py) | **100%** | Home Assistant device registry schema compliance |
+| [`repairs.py`](custom_components/myhome/repairs.py) | **100%** | Core integration component |
 | [`sensor.py`](custom_components/myhome/sensor.py) | **100%** | Power meters, energy counters, and pulse sensors |
+| [`services.py`](custom_components/myhome/services.py) | **100%** | Core integration component |
 | [`switch.py`](custom_components/myhome/switch.py) | **100%** | Relay actuators, auxiliary switches, socket controllers |
 | [`validate.py`](custom_components/myhome/validate.py) | **100%** | Device & gateway schemas, custom WHERE validators, sensor injections |
 | [`websocket.py`](custom_components/myhome/websocket.py) | **100%** | WebSocket API for real-time bus streaming, history, and diagnostics |

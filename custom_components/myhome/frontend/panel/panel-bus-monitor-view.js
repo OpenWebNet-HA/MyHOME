@@ -5,6 +5,8 @@
 const textsUrl = new URL("panel-bus-translations.js", import.meta.url);
 textsUrl.search = new URL(import.meta.url).search;
 const { busText, busLanguage } = await import(textsUrl.href);
+// Fallback only: the live value comes from the backend (bus_monitor/info -> integration_version).
+const CARD_VERSION = "2.0.0b12";
 
 const WHO_CATALOG = {
   "0": { name: "Scenarios (Basic)", short: "Scenario", class: "who-cen" },
@@ -40,6 +42,17 @@ export class BusMonitorView extends HTMLElement {
     this._filterWho = "all";
     this._filterWhere = "";
     this._filterDir = "all";
+    // Capture mode chosen by the user: "trace" (default, passive recording started
+    // with Start Trace or simply the live buffer) or "sweep" (buffer populated by
+    // Sweep Bus). Export / Copy follow it; Clear and Start Trace reset it.
+    this._captureMode = "trace";
+    this._lastSweepAt = null;
+    this._traceStartedAt = null;
+    // True between Start Trace and Stop Trace (or Pause / Clear / Sweep Bus).
+    this._tracing = false;
+    // Raw-frame transmission must be armed explicitly (see _toggleArmed).
+    this._sendArmed = false;
+    this._helpOpen = false;
     this._unsub = null;
     this._stats = { captured: 0, total_rx: 0, total_tx: 0 };
     this._gatewayInfo = {};
@@ -60,6 +73,10 @@ export class BusMonitorView extends HTMLElement {
       this._frames = [];
       this._stats = { captured: 0, total_rx: 0, total_tx: 0 };
       this._gatewayInfo = {};
+      this._sendArmed = false;
+      this._captureMode = "trace";
+      this._traceStartedAt = this._lastSweepAt = null;
+      this._tracing = false;
     }
     this._config = Object.assign(
       {
@@ -277,6 +294,9 @@ export class BusMonitorView extends HTMLElement {
     if (this._isPaused) {
       badge.textContent = this._t("paused");
       badge.className = "badge badge-paused";
+    } else if (this._tracing && this._connectionStatus === "connected") {
+      badge.textContent = "● REC";
+      badge.className = "badge badge-recording";
     } else if (this._connectionStatus === "connected") {
       badge.textContent = this._t("live");
       badge.className = "badge badge-live";
@@ -422,6 +442,20 @@ export class BusMonitorView extends HTMLElement {
     return `WHO=${strWho}`;
   }
 
+  _formatFrameTime(frame) {
+    // Frames are stamped in UTC by the backend; render them in the browser's
+    // local time zone (HH:MM:SS.mmm) so they line up with the HA logbook.
+    let date = null;
+    if (typeof frame.timestamp === "number" && frame.timestamp > 0) {
+      date = new Date(frame.timestamp * 1000);
+    } else if (frame.iso_time) {
+      date = new Date(frame.iso_time);
+    }
+    if (!date || Number.isNaN(date.getTime())) return "";
+    const pad = (n, w = 2) => String(n).padStart(w, "0");
+    return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}`;
+  }
+
   _getWhoClass(who) {
     if (who == null) return "who-default";
     const entry = WHO_CATALOG[String(who).trim()];
@@ -485,25 +519,56 @@ export class BusMonitorView extends HTMLElement {
         }
         .header {
           display: flex;
-          flex-wrap: wrap;
-          gap: 12px;
-          justify-content: space-between;
-          align-items: center;
+          flex-direction: column;
+          gap: 10px;
           margin-bottom: 12px;
         }
+        .title-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          min-height: 28px;
+        }
         .title {
+          flex: 1 1 auto;
+          min-width: 0;
           font-size: 1.15rem;
           font-weight: 600;
           color: var(--primary-text-color);
-          display: flex;
-          align-items: center;
-          gap: 8px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         .badge {
-          font-size: 0.75rem;
-          padding: 2px 8px;
+          flex-shrink: 0;
+          white-space: nowrap;
+          font-size: 0.72rem;
+          letter-spacing: 0.02em;
+          padding: 3px 9px;
           border-radius: 12px;
-          font-weight: 500;
+          font-weight: 600;
+          line-height: 1.2;
+        }
+        .toolbar {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 8px 14px;
+        }
+        .toolbar .group {
+          display: inline-flex;
+          gap: 6px;
+        }
+        .toolbar .group.stream { margin-left: auto; }
+        .toolbar button {
+          height: 32px;
+          padding: 0 12px;
+          font-size: 0.8rem;
+          font-weight: 600;
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          white-space: nowrap;
         }
         .badge-live {
           background: rgba(76, 175, 80, 0.15);
@@ -521,6 +586,12 @@ export class BusMonitorView extends HTMLElement {
           background: rgba(244, 67, 54, 0.15);
           color: #d32f2f;
         }
+        .badge-recording {
+          background: rgba(198, 40, 40, 0.2);
+          color: #ef5350;
+          animation: rec-blink 1.2s ease-in-out infinite;
+        }
+        @keyframes rec-blink { 50% { opacity: 0.45; } }
         .placeholder-msg {
           color: #888;
           font-style: italic;
@@ -625,20 +696,66 @@ export class BusMonitorView extends HTMLElement {
           margin-top: 12px;
         }
         .sender-bar input { flex-grow: 1; min-width: 0; }
-        .actions {
-          display: flex;
-          gap: 6px;
-          align-items: center;
-          flex-wrap: wrap;
+        .btn-trace {
+          background: #c62828;
+          color: #fff;
         }
+        .btn-trace:hover { opacity: 0.85; }
+        .btn-help {
+          flex-shrink: 0;
+          background: #0288d1;
+          color: #fff;
+          border: none;
+          border-radius: 50%;
+          width: 26px;
+          height: 26px;
+          padding: 0;
+          font-family: Georgia, "Times New Roman", serif;
+          font-style: italic;
+          font-weight: 700;
+          font-size: 0.9rem;
+          line-height: 26px;
+          text-align: center;
+          box-shadow: 0 0 0 2px rgba(2, 136, 209, 0.25);
+        }
+        .btn-help:hover { background: #039be5; opacity: 1; }
+        .btn-help.open { background: #ffb300; color: #212121; box-shadow: 0 0 0 2px rgba(255, 179, 0, 0.35); }
+        .help-panel {
+          display: none;
+          margin: 0 0 12px 0;
+          padding: 10px 14px;
+          border-radius: 6px;
+          border: 1px solid var(--divider-color, #555);
+          background: var(--secondary-background-color, #263238);
+          font-size: 0.82rem;
+          line-height: 1.5;
+        }
+        .help-panel h4 { margin: 8px 0 4px 0; font-size: 0.85rem; }
+        .help-panel p, .help-panel ul { margin: 4px 0; }
+        .help-panel ul { padding-left: 18px; }
+        .help-panel code { font-size: 0.78rem; }
+        .arm-bar {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 14px;
+          padding: 8px 12px;
+          border-radius: 6px;
+          border: 1px solid #ef6c00;
+          background: rgba(239, 108, 0, 0.12);
+          font-size: 0.8rem;
+          line-height: 1.4;
+        }
+        .arm-bar.armed {
+          border-color: #c62828;
+          background: rgba(198, 40, 40, 0.15);
+        }
+        .arm-bar label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 600; white-space: nowrap; }
+        .arm-bar .arm-text { flex-grow: 1; opacity: 0.9; }
+        .sender-bar button:disabled, .sender-bar input:disabled { opacity: 0.45; cursor: not-allowed; }
         .btn-sweep {
           background: #1976d2;
           color: #fff;
-          font-weight: 600;
-          font-size: 0.8rem;
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
         }
         .btn-sweep:hover {
           background: #1565c0;
@@ -646,11 +763,6 @@ export class BusMonitorView extends HTMLElement {
         .btn-export {
           background: #2e7d32;
           color: #fff;
-          font-weight: 600;
-          font-size: 0.8rem;
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
         }
         .btn-export:hover {
           background: #1b5e20;
@@ -658,11 +770,6 @@ export class BusMonitorView extends HTMLElement {
         .btn-report {
           background: #ff9800;
           color: #fff;
-          font-weight: 600;
-          font-size: 0.8rem;
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
         }
         .btn-report:hover {
           background: #f57c00;
@@ -698,23 +805,46 @@ export class BusMonitorView extends HTMLElement {
 
       <ha-card>
         <div class="header">
-          <div class="title">
-            <span id="monitor-title">📡 ${this._escapeHtml(this._config.title)}</span>
+          <div class="title-row">
+            <span class="title" id="monitor-title">📡 ${this._escapeHtml(this._config.title)}</span>
             <span id="badge" class="badge badge-connecting">CONNECTING...</span>
+            <button id="btn-help" class="btn-help" title="How this card works: Start Trace vs Sweep Bus, exports, transmit bar" aria-label="How this card works">i</button>
           </div>
-          <div class="actions">
-            <button data-bus-text="sweep" id="btn-sweep" class="btn-sweep" data-bus-title="sweepTitle" title="${this._escapeHtml(this._t("sweepTitle"))}">
-              🧹 Sweep Bus
-            </button>
-            <button data-bus-text="export" id="btn-export" class="btn-export" data-bus-title="exportTitle" title="${this._escapeHtml(this._t("exportTitle"))}">
-              💾 Export Trace
-            </button>
-            <button data-bus-text="report" id="btn-report" class="btn-report" data-bus-title="reportTitle" title="${this._escapeHtml(this._t("reportTitle"))}">
-              📋 Copy Trace
-            </button>
-            <button data-bus-text="pause" id="btn-pause" class="btn-secondary">Pause</button>
-            <button data-bus-text="clear" id="btn-clear" class="btn-secondary">Clear</button>
+          <div class="toolbar actions" role="toolbar" aria-label="Bus monitor actions">
+            <div class="group capture" aria-label="Capture">
+              <button data-bus-text="startTrace" id="btn-trace" class="btn-trace" title="Start a new passive trace: clears the buffer and records everything the bus says. Harmless - nothing is sent.">
+                🔴 Start Trace
+              </button>
+              <button data-bus-text="sweep" id="btn-sweep" class="btn-sweep" title="Start a new bus sweep: clears the buffer and asks every subsystem for its status. Harmless - only status requests are sent.">
+                🧹 Sweep Bus
+              </button>
+            </div>
+            <div class="group output" aria-label="Output">
+              <button data-bus-text="export" id="btn-export" class="btn-export" title="Download the frames currently shown (active filters applied) as a JSON file named after the capture kind">
+                💾 Export Trace
+              </button>
+              <button data-bus-text="report" id="btn-report" class="btn-report" title="Copy the shown frames as a diagnostic markdown bundle to the clipboard and open the GitHub issue form">
+                📋 Copy Trace
+              </button>
+            </div>
+            <div class="group stream" aria-label="Stream">
+              <button data-bus-text="pause" id="btn-pause" class="btn-secondary">Pause</button>
+              <button data-bus-text="clear" id="btn-clear" class="btn-secondary">Clear</button>
+            </div>
           </div>
+        </div>
+
+        <div id="help-panel" class="help-panel">
+          <p><strong>Two ways to capture, both harmless:</strong></p>
+          <h4>🔴 Start Trace / ⏹ Stop Trace</h4>
+          <p>Clears the buffer and records what the bus says while you reproduce a problem (press a wall switch, run an automation, move a cover). Nothing is sent to the bus. <em>Stop Trace</em> freezes the buffer; then <em>Export Trace</em> or <em>Copy Trace</em>. <em>Resume</em> returns to the live view.</p>
+          <h4>🧹 Sweep Bus</h4>
+          <p>Clears the buffer and sends one status request per subsystem (<code>*#1*0##</code>-style queries). Every device answers with its current state, so the buffer becomes a device inventory. Only read-only status requests are sent. Then <em>Export Sweep</em> / <em>Copy Sweep</em>.</p>
+          <h4>💾 Export / 📋 Copy</h4>
+          <p>Both use the frames <strong>currently shown</strong> (WHO / WHERE / direction filters applied). The file is named <code>myhome_&lt;trace|sweep&gt;_&lt;gateway&gt;_&lt;filter&gt;_&lt;time&gt;.json</code> and starts with a <code>capture</code> block describing what it is. Clear the filters to export the whole buffer.</p>
+          <h4>⚠️ Transmit frame</h4>
+          <p>The bar at the bottom writes a raw OpenWebNet frame to the bus - this <strong>can</strong> switch loads, move shutters, arm or disarm the alarm. It stays disabled until you tick <em>I understand the risk</em>. Trace and Sweep never use it.</p>
+          <p style="opacity:0.8">Time stamps are shown in your browser's local time; exports keep UTC.</p>
         </div>
 
         <div id="feedback-banner" class="feedback-banner"></div>
@@ -745,9 +875,13 @@ export class BusMonitorView extends HTMLElement {
 
         <div id="stream" class="stream-container"></div>
 
+        <div id="arm-bar" class="arm-bar">
+          <span class="arm-text"><strong>⚠️ Direct bus command.</strong> The frame below is written to the SCS bus as-is and can switch loads, move shutters or arm/disarm the alarm. <em>Start Trace</em> and <em>Sweep Bus</em> above are read-only and safe.</span>
+          <label><input type="checkbox" id="arm-send" /> I understand the risk</label>
+        </div>
         <div class="sender-bar">
-          <input type="text" id="send-frame" data-bus-placeholder="sendPlaceholder" placeholder="${this._escapeHtml(this._t("sendPlaceholder"))}" />
-          <button data-bus-text="send" id="btn-send">Send</button>
+          <input type="text" id="send-frame" data-bus-placeholder="sendPlaceholder" placeholder="${this._escapeHtml(this._t("sendPlaceholder"))}" disabled />
+          <button data-bus-text="send" id="btn-send" disabled>Send</button>
         </div>
       </ha-card>
     `;
@@ -759,7 +893,10 @@ export class BusMonitorView extends HTMLElement {
   _bindEvents() {
     const root = this.shadowRoot;
     if (!root) return;
+    root.getElementById("btn-trace")?.addEventListener("click", () => this._handleStartTrace());
     root.getElementById("btn-sweep")?.addEventListener("click", () => this._handleSweepBus());
+    root.getElementById("btn-help")?.addEventListener("click", () => this._toggleHelp());
+    root.getElementById("arm-send")?.addEventListener("change", (e) => this._toggleArmed(!!e.target.checked));
     root.getElementById("btn-export")?.addEventListener("click", () => this._handleExportTrace());
     root.getElementById("btn-report")?.addEventListener("click", () => this._handleReportIssue());
     root.getElementById("btn-pause")?.addEventListener("click", () => this._togglePause());
@@ -782,18 +919,97 @@ export class BusMonitorView extends HTMLElement {
     });
   }
 
+  _setCaptureMode(mode) {
+    this._captureMode = mode === "sweep" ? "sweep" : "trace";
+    this._refreshExportLabel();
+  }
+
+  _setTracing(on) {
+    this._tracing = !!on;
+    const btn = this.shadowRoot && this.shadowRoot.getElementById("btn-trace");
+    this._buttonText(btn, this._tracing ? "stopTrace" : "startTrace");
+    this._updateBadge();
+  }
+
+  async _handleStartTrace() {
+    const generation = this._subscriptionGeneration;
+    if (this._tracing) {
+      // Stop: freeze the buffer so the export is exactly what was reproduced.
+      this._setTracing(false);
+      if (!this._isPaused) this._togglePause();
+      this._showBanner(
+        "banner-success",
+        `<span><strong>⏹ Trace stopped.</strong> ${this._frames.length} frame(s) captured and frozen. Click <em>Export Trace</em> or <em>Copy Trace</em>; <em>Resume</em> goes back to the live view.</span>`,
+        8000
+      );
+      return;
+    }
+    await this._clearBuffer();
+    if (generation !== this._subscriptionGeneration) return;
+    this._traceStartedAt = Date.now() / 1000;
+    this._lastSweepAt = null;
+    this._setCaptureMode("trace");
+    if (this._isPaused) this._togglePause();
+    this._setTracing(true);
+    this._showBanner(
+      "banner-success",
+      `<span><strong>🔴 Trace running.</strong> Reproduce the problem now (wall switch, automation, cover...), then click <em>Stop Trace</em> and export. Nothing is sent to the bus.</span>`,
+      8000
+    );
+  }
+
+  _toggleHelp() {
+    this._helpOpen = !this._helpOpen;
+    const panel = this.shadowRoot.getElementById("help-panel");
+    if (panel) panel.style.display = this._helpOpen ? "block" : "none";
+    const btn = this.shadowRoot.getElementById("btn-help");
+    if (btn) btn.classList.toggle("open", this._helpOpen);
+  }
+
+  _toggleArmed(armed) {
+    this._sendArmed = !!armed;
+    const root = this.shadowRoot;
+    const input = root.getElementById("send-frame");
+    const btn = root.getElementById("btn-send");
+    const bar = root.getElementById("arm-bar");
+    if (input) input.disabled = !this._sendArmed;
+    if (btn) btn.disabled = !this._sendArmed;
+    if (bar) bar.classList.toggle("armed", this._sendArmed);
+    if (this._sendArmed && input) input.focus();
+  }
+
+  _showBanner(className, html, timeoutMs) {
+    const banner = this.shadowRoot.getElementById("feedback-banner");
+    if (!banner) return;
+    if (this._bannerTimeout) {
+      clearTimeout(this._bannerTimeout);
+      this._bannerTimeout = null;
+    }
+    banner.className = `feedback-banner ${className}`;
+    banner.innerHTML = html;
+    banner.style.display = "flex";
+    this._bannerTimeout = this._later(() => {
+      banner.style.display = "none";
+    }, timeoutMs);
+  }
+
   _togglePause() {
     this._isPaused = !this._isPaused;
     const btn = this.shadowRoot.getElementById("btn-pause");
     if (btn) {
       this._buttonText(btn, this._isPaused ? "resume" : "pause");
     }
+    if (this._isPaused && this._tracing) this._setTracing(false);
     this._updateBadge();
   }
 
   async _clearBuffer() {
     this._bufferRevision++;
     this._frames = [];
+    this._traceStartedAt = null;
+    this._lastSweepAt = null;
+    this._setTracing(false);
+    this._setCaptureMode("trace");
     this._updateFrameList();
     this._updateStats();
     if (this._hass) {
@@ -809,6 +1025,7 @@ export class BusMonitorView extends HTMLElement {
 
   async _sendCustomFrame() {
     const generation = this._subscriptionGeneration;
+    if (!this._sendArmed) return;
     const input = this.shadowRoot.getElementById("send-frame");
     const frame = input ? input.value.trim() : "";
     if (!frame || !this._hass) return;
@@ -840,7 +1057,7 @@ export class BusMonitorView extends HTMLElement {
     if (tx) tx.textContent = this._stats.total_tx;
     if (queue) queue.textContent = (this._gatewayInfo && this._gatewayInfo.queue_depth != null) ? this._gatewayInfo.queue_depth : 0;
     if (ver && this._gatewayInfo) {
-      const intVer = this._gatewayInfo.integration_version || "2.0.0b8";
+      const intVer = this._gatewayInfo.integration_version || CARD_VERSION;
       const owndVer = this._gatewayInfo.ownd_version;
       ver.textContent = owndVer && owndVer !== "unknown" ? `v${intVer} (OWNd ${owndVer})` : `v${intVer}`;
     }
@@ -879,9 +1096,8 @@ export class BusMonitorView extends HTMLElement {
       (this.hass && this.hass.config && this.hass.config.version) ||
       "Unknown";
     const gw = this._gatewayInfo || {};
-    const integrationVersion = gw.integration_version || "2.0.0b8";
+    const integrationVersion = gw.integration_version || CARD_VERSION;
     const owndVersion = gw.ownd_version || "Unknown";
-    const userAgent = (typeof navigator !== "undefined" && navigator.userAgent) ? navigator.userAgent : "Unknown";
     const timestamp = new Date().toISOString();
 
     const model = gw.model || "Unknown";
@@ -891,11 +1107,13 @@ export class BusMonitorView extends HTMLElement {
       gw.mac_prefix ||
       (this._config && this._config.mac ? this._config.mac.substring(0, 8) : "Unknown");
 
+    // The bundle is meant to be pasted into a public issue: name the transport,
+    // never the address (LAN IP / port, serial device path) or the browser.
     let conn = "Unknown";
     if (gw.serial_port) {
-      conn = `USB / Serial (${gw.serial_port})`;
+      conn = "USB / Serial";
     } else if (gw.host) {
-      conn = `Ethernet TCP (${gw.host}:${gw.port || 20000})`;
+      conn = "Ethernet TCP";
     }
 
     const queuePacing = gw.queue_pacing != null ? `${gw.queue_pacing}s` : "0.0s";
@@ -915,13 +1133,10 @@ export class BusMonitorView extends HTMLElement {
     if (this._filterDir !== "all") activeFilter.push(`DIR=${this._filterDir.toUpperCase()}`);
     const filterDesc = activeFilter.length > 0 ? activeFilter.join(", ") : "None (All frames)";
 
-    const frameLines = this._frames.map((f) => {
-      let timeStr = "";
-      if (f.iso_time && f.iso_time.includes("T")) {
-        timeStr = f.iso_time.split("T")[1].substring(0, 12);
-      } else if (f.timestamp) {
-        timeStr = new Date(f.timestamp * 1000).toISOString().split("T")[1].substring(0, 12);
-      }
+    const visible = this._visibleFrames();
+    const captureKind = this._captureKind();
+    const frameLines = visible.map((f) => {
+      const timeStr = this._formatFrameTime(f);
       const dir = (f.direction || "rx").toUpperCase();
       return `[${timeStr}] [${dir}] ${f.raw || ""}`;
     });
@@ -937,7 +1152,6 @@ export class BusMonitorView extends HTMLElement {
 - **Home Assistant Version:** ${haVersion}
 - **Integration Version:** ${integrationVersion}
 - **OWNd Protocol Engine:** ${owndVersion}
-- **Browser / User Agent:** ${userAgent}
 - **Timestamp:** ${timestamp}
 
 **Active Gateway Configuration:**
@@ -954,6 +1168,7 @@ export class BusMonitorView extends HTMLElement {
 - **Total TX Frames:** ${totalTx}
 - **Total Captured:** ${captured}
 - **Buffer Depth:** ${bufferDepth}
+- **Capture Kind:** ${captureKind === "sweep" ? "Bus sweep (device inventory)" : "Passive trace"}
 - **Gateway Queue Depth:** ${queueDepth}
 - **Active Card Filter:** ${filterDesc}
 
@@ -981,9 +1196,14 @@ ${framesText}
 
     if (this._hass) {
       try {
+        await this._clearBuffer();
+        if (generation !== this._subscriptionGeneration) return;
+        if (this._isPaused) this._togglePause();
         const mac = this._config?.mac == null ? "" : String(this._config.mac).trim();
         await this._hass.callService("myhome", "sweep_bus", mac ? { gateway: mac } : {});
         if (generation !== this._subscriptionGeneration) return;
+        this._lastSweepAt = Date.now() / 1000;
+        this._setCaptureMode("sweep");
         if (banner) {
           banner.className = "feedback-banner banner-success";
           banner.innerHTML = `
@@ -1018,6 +1238,42 @@ ${framesText}
     }, 3000);
   }
 
+  _visibleFrames() {
+    // What the user sees: the ring buffer with the active WHO / WHERE / direction filters applied.
+    return this._frames.filter((f) => this._matchesFilter(f));
+  }
+
+  _captureKind() {
+    // The kind is what the user chose: Start Trace / Clear -> "trace", Sweep Bus -> "sweep".
+    return this._captureMode === "sweep" ? "sweep" : "trace";
+  }
+
+  _captureFilters() {
+    return {
+      who: this._filterWho === "all" ? null : String(this._filterWho),
+      where: this._filterWhere ? this._filterWhere.trim() : null,
+      direction: this._filterDir === "all" ? null : this._filterDir,
+    };
+  }
+
+  _captureFilterSlug() {
+    const parts = [];
+    if (this._filterWho !== "all") parts.push(`who${this._filterWho}`);
+    if (this._filterDir !== "all") parts.push(this._filterDir);
+    if (this._filterWhere) parts.push(this._filterWhere.trim().replace(/[^a-z0-9]+/gi, "").slice(0, 12).toLowerCase());
+    return parts.length ? parts.join("-") : "all";
+  }
+
+  _refreshExportLabel() {
+    const root = this.shadowRoot;
+    if (!root) return;
+    const kind = this._captureKind();
+    const btn = root.getElementById("btn-export");
+    this._buttonText(btn, kind === "sweep" ? "exportSweep" : "export");
+    const reportBtn = root.getElementById("btn-report");
+    this._buttonText(reportBtn, kind === "sweep" ? "reportSweep" : "report");
+  }
+
   async _handleExportTrace() {
     const generation = this._subscriptionGeneration;
     const btn = this.shadowRoot.getElementById("btn-export");
@@ -1046,19 +1302,40 @@ ${framesText}
       (this._hass && this._hass.config && this._hass.config.version) ||
       (this.hass && this.hass.config && this.hass.config.version) ||
       "";
-    const integrationVersion = (this._gatewayInfo && this._gatewayInfo.integration_version) || "2.0.0b12";
+    const integrationVersion = (this._gatewayInfo && this._gatewayInfo.integration_version) || CARD_VERSION;
     const owndVersion = (this._gatewayInfo && this._gatewayInfo.ownd_version) || "Unknown";
 
     const timestampIso = new Date().toISOString();
     const timestampFile = timestampIso.replace(/[:.]/g, "-").slice(0, 19);
 
+    const frames = this._visibleFrames();
+    const kind = this._captureKind();
+    const firstTs = frames.length ? frames[0].timestamp : null;
+    const lastTs = frames.length ? frames[frames.length - 1].timestamp : null;
+    const modelSlug = String((this._gatewayInfo && this._gatewayInfo.model) || "gateway").replace(/[^a-z0-9]+/gi, "");
+
     const tracePayload = {
+      capture: {
+        kind,
+        started_at: kind === "sweep"
+          ? (this._lastSweepAt ? new Date(this._lastSweepAt * 1000).toISOString() : null)
+          : (this._traceStartedAt ? new Date(this._traceStartedAt * 1000).toISOString() : null),
+        filters: this._captureFilters(),
+        window: {
+          first: firstTs != null ? new Date(firstTs * 1000).toISOString() : null,
+          last: lastTs != null ? new Date(lastTs * 1000).toISOString() : null,
+          frames: frames.length,
+          buffer_frames: this._frames.length,
+          buffer_depth: this._maxDisplayFrames,
+          // the ring buffer had already wrapped: the true start of a sequence may be missing
+          truncated: this._frames.length >= this._maxDisplayFrames,
+        },
+      },
       environment: {
         home_assistant_version: haVersion,
         integration_version: integrationVersion,
         ownd_version: owndVersion,
         exported_at: timestampIso,
-        user_agent: navigator.userAgent,
       },
       gateway: {
         model: (this._gatewayInfo && this._gatewayInfo.model) || "Unknown",
@@ -1068,6 +1345,9 @@ ${framesText}
         connection_type: (this._gatewayInfo && this._gatewayInfo.connection_type) || "tcp",
         queue_pacing: (this._gatewayInfo && this._gatewayInfo.queue_pacing) || "standard",
         is_connected: (this._gatewayInfo && this._gatewayInfo.is_connected) !== false,
+        // How the model label was established (ssdp / manual / serial / who13) and the
+        // WHO=13 evidence behind it - so a trace never hides a mislabelled gateway.
+        identification: (this._gatewayInfo && this._gatewayInfo.identification) || null,
       },
       telemetry: {
         total_rx: this._stats.total_rx,
@@ -1076,21 +1356,25 @@ ${framesText}
         buffer_depth: this._maxDisplayFrames,
         queue_depth: this._stats.queue_depth || 0,
       },
-      frames: this._frames.map((f) => ({
+      frames: frames.map((f) => ({
         timestamp: f.timestamp,
-        direction: f.direction,
+        iso_time: f.iso_time || null,
+        direction: f.direction || null,
         raw: f.raw,
         who: f.who,
         what: f.what,
         where: f.where,
         description: f.description || f.desc || "",
+        dimension: f.dimension != null ? f.dimension : null,
+        is_ack: !!f.is_ack,
+        is_nack: !!f.is_nack,
       })),
     };
 
     const blob = new Blob([JSON.stringify(tracePayload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    const fileName = `myhome_gateway_trace_${timestampFile}.json`;
+    const fileName = `myhome_${kind}_${modelSlug}_${this._captureFilterSlug()}_${timestampFile}.json`;
     a.href = url;
     a.download = fileName;
     document.body.appendChild(a);
@@ -1122,7 +1406,7 @@ ${framesText}
     if (btn) {
       this._buttonText(btn, "exported");
       this._later(() => {
-        if (btn) this._buttonText(btn, "export");
+        this._refreshExportLabel();
       }, 3000);
     }
   }
@@ -1161,7 +1445,7 @@ ${framesText}
       (this._hass && this._hass.config && this._hass.config.version) ||
       (this.hass && this.hass.config && this.hass.config.version) ||
       "";
-    const integrationVersion = (this._gatewayInfo && this._gatewayInfo.integration_version) || "2.0.0b12";
+    const integrationVersion = (this._gatewayInfo && this._gatewayInfo.integration_version) || CARD_VERSION;
     const owndVersion = (this._gatewayInfo && this._gatewayInfo.ownd_version) || "Unknown";
 
     const issueUrl = `https://github.com/OpenWebNet-HA/MyHOME/issues/new?template=bug_report.yml&ha_version=${encodeURIComponent(haVersion)}&integration_version=${encodeURIComponent(integrationVersion)}&ownd_version=${encodeURIComponent(owndVersion)}`;
@@ -1203,7 +1487,7 @@ ${framesText}
     if (btn) {
       this._buttonText(btn, copied ? "copiedOpened" : "checkConsole");
       this._later(() => {
-        if (btn) this._buttonText(btn, "report");
+        this._refreshExportLabel();
       }, 3000);
     }
 
@@ -1258,9 +1542,7 @@ ${framesText}
     const div = document.createElement("div");
     div.className = "frame-line";
 
-    const timeStr = frame.iso_time && frame.iso_time.includes("T")
-      ? frame.iso_time.split("T")[1].substring(0, 12)
-      : (frame.timestamp ? new Date(frame.timestamp * 1000).toISOString().split("T")[1].substring(0, 12) : "");
+    const timeStr = this._formatFrameTime(frame);
     const dirClass = frame.direction === "rx" ? "dir-rx" : "dir-tx";
     const dirLabel = frame.direction ? frame.direction.toUpperCase() : "RX";
     const whoClass = this._getWhoClass(frame.who);

@@ -1,6 +1,8 @@
 """Constants for the MyHome component."""
 import logging
+import re
 from functools import lru_cache
+from typing import Any
 
 LOGGER = logging.getLogger(__package__)
 DOMAIN = "myhome"
@@ -8,12 +10,17 @@ DOMAIN = "myhome"
 ATTR_GATEWAY = "gateway"
 ATTR_MESSAGE = "message"
 INTEGRATION_VERSION = "2.0.0b12"
-REQUIRED_OWND_VERSION = "2.0.0b6"
+# hass.data[DOMAIN] key holding the OWNd version resolved off the event loop
+DATA_OWND_VERSION = "_ownd_version"
 
 
 @lru_cache(maxsize=1)
 def get_ownd_version() -> str:
-    """Return the installed version of the OWNd protocol engine."""
+    """Return the installed version of the OWNd protocol engine.
+
+    Reads package metadata from disk: call it via ``hass.async_add_executor_job``
+    (see ``_async_resolve_ownd_version``), never directly from the event loop.
+    """
     try:
         import importlib.metadata
 
@@ -50,6 +57,7 @@ CONF_DIMMABLE = "dimmable"
 CONF_COLOR_TEMP = "color_temp"
 CONF_RGB = "rgb"
 CONF_HS = "hs"
+CONF_LOCK_FEATURES = "lock_features"
 CONF_GATEWAY = "gateway"
 CONF_DEVICE_CLASS = "class"
 CONF_INVERTED = "inverted"
@@ -70,6 +78,23 @@ CONF_ROTARY_CCW_SLOW = "rotary_ccw_slow"
 CONF_ROTARY_CCW_FAST = "rotary_ccw_fast"
 CONF_TRAVEL_TIME = "travel_time"
 DEFAULT_TRAVEL_TIME = 25
+
+# Cover calibration (timed covers measure their own travel times on the bus)
+CONF_COVER_TRAVEL_TIMES = "cover_travel_times"  # config entry option: {device_id: {...}}
+SERVICE_CALIBRATE_COVER = "calibrate_cover"
+SERVICE_STOP_COVER_CALIBRATION = "stop_cover_calibration"
+SERVICE_SET_COVER_TRAVEL_TIME = "set_cover_travel_time"
+SERVICE_RESET_COVER_TRAVEL_TIME = "reset_cover_travel_time"
+EVENT_COVER_CALIBRATION = "myhome_cover_calibration"
+CALIBRATION_RUN_TIMEOUT = 180.0  # s to wait for the actuator's stop status per run
+CALIBRATION_MIN_RUN = 1.0        # s: anything shorter is not a full travel
+CALIBRATION_MAX_RUN = 300.0      # s: anything longer is an actuator with no run-time limit
+CALIBRATION_SETTLE = 1.0         # s pause between runs so the actuator relay settles
+# An actuator with the factory 60 s run-time limit stops itself, not at the end
+# stop: measured 61.5 s for a 14 s shutter on a MyHOMEServer1 (#319). A run that
+# ends inside this window measured the actuator, not the shutter, and is refused.
+CALIBRATION_CUTOFF_MIN = 59.0
+CALIBRATION_CUTOFF_MAX = 65.0
 WHO_BURGLAR_ALARM = "5"
 PLATFORM_ALARM = "alarm_control_panel"
 
@@ -176,15 +201,53 @@ SUPPORTED_GATEWAY_MODELS = [
     "Generic",
 ]
 
-GATEWAY_DEVICE_TYPE_MAP = {
-    "2": "MyHomeServer1",
-    "11": "MyHomeServer1",
-    "200": "F454",
-    "4": "MH200N",
+# WHO=13 dimension 15 ("MODEL REQUEST", *#13**15*MODEL##) device-type codes.
+#
+# Official table - BTicino "OpenWebNet_Community_2_device" v1.0.0 (2006-06-13),
+# section 1.2.6, reproduced completely. It predates every gateway sold after
+# 2006 (F454, F455, MH200N, MH202, MyHOMEServer1 ...), which therefore reuse or
+# invent codes: dimension 15 can CORROBORATE an identity, it can never establish
+# one for a modern gateway. Identification precedence lives in
+# MyHOMEGatewayHandler (SSDP announcement > user's choice > WHO=13).
+WHO13_OFFICIAL_DEVICE_TYPES = {
+    "2": "MHServer",
+    "4": "MH200",
     "6": "F452",
-    "7": "F452",
+    "7": "F452V",
+    "11": "MHServer2",
     "13": "H4684",
 }
+# Codes seen on real hardware but absent from the official document, with the
+# evidence. They label an entry that has no model, and otherwise only raise a
+# repair issue asking the owner to confirm - never an automatic relabel.
+#   200 -> MyHOMEServer1: issue #297 diagnostics from a self-identified
+#          MyHOMEServer1 owner (#292); the entry said F454 only because the
+#          manual flow defaulted to it. OWNd still decodes 200 as F454 (circular
+#          inference from that mislabel) - to be corrected upstream.
+WHO13_OBSERVED_DEVICE_TYPES = {
+    "200": "MyHomeServer1",
+}
+GATEWAY_DEVICE_TYPE_MAP = {**WHO13_OBSERVED_DEVICE_TYPES, **WHO13_OFFICIAL_DEVICE_TYPES}
+
+# How the configured gateway model was established.
+IDENTIFICATION_SSDP = "ssdp"        # the gateway announced its modelName over UPnP/SSDP
+IDENTIFICATION_MANUAL = "manual"    # the user picked the model in the config flow
+IDENTIFICATION_SERIAL = "serial"    # serial (USB) interface: model fixed by the transport
+IDENTIFICATION_WHO13 = "who13"      # no model configured; labelled from WHO=13 dimension 15
+IDENTIFICATION_UNKNOWN = "unknown"
+
+
+def gateway_model_family(model: str | None) -> str:
+    """Reduce a model name to its family for identity comparisons.
+
+    ``MH200N`` -> ``MH200``, ``F452V`` -> ``F452``, ``MyHomeServer1`` -> ``MYHOMESERVER1``.
+    Trailing letters are variant suffixes the 2006 code table cannot express.
+    """
+    if not model:
+        return ""
+    name = str(model).strip().upper().replace(" ", "").replace("-", "").replace("_", "")
+    m = re.match(r"^([A-Z]+\d+)[A-Z]*$", name)
+    return m.group(1) if m else name
 
 
 
@@ -195,7 +258,7 @@ def build_timed_turn_on_command(
     hours: int = 0,
     minutes: int = 0,
     seconds: float = 0,
-):
+) -> Any:
     """Build OpenWebNet hardware timer command for WHO=1."""
     from OWNd.message import OWNCommand
 

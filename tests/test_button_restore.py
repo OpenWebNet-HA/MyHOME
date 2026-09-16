@@ -14,8 +14,14 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome import button
 from custom_components.myhome.const import CONF_BUS_INTERFACE, DOMAIN
+from tests.conftest import attach_runtime
 
 MAC = "00:03:50:81:17:76"
+
+
+def _lock_unlock(entities):
+    """The lock / unlock buttons only: the cover calibration buttons are not under test here."""
+    return [e for e in entities if e.unique_id.endswith(("-disable", "-enable"))]
 
 
 @pytest.fixture
@@ -69,6 +75,7 @@ async def test_registered_actuator_buttons_survive_reload(hass, domain, who, add
     for _ in range(2):
         # Only the entity registry survives a fresh setup: no YAML/discovery cache.
         hass.data[DOMAIN] = {MAC: {"entity": gateway, "platforms": {"button": {}}}}
+        attach_runtime(hass, entry)
         platform = EntityPlatform(
             hass=hass, logger=logging.getLogger(__name__), domain="button",
             platform_name=DOMAIN, platform=button, scan_interval=timedelta(seconds=30),
@@ -77,7 +84,7 @@ async def test_registered_actuator_buttons_survive_reload(hass, domain, who, add
         assert await platform.async_setup_entry(entry)
         await hass.async_block_till_done()
         try:
-            assert set(platform.entities) == set(expected_ids)
+            assert {e.entity_id for e in _lock_unlock(platform.entities.values())} == set(expected_ids)
             assert devices.async_get(device.id).model == "Existing model"
             assert devices.async_get(device.id).manufacturer == "Legrand"
             for entity_id in expected_ids:
@@ -93,7 +100,7 @@ async def test_registered_actuator_buttons_survive_reload(hass, domain, who, add
                 "name": "Actuator", "device_id": address,
             })
             await hass.async_block_till_done()
-            assert set(platform.entities) == set(expected_ids)
+            assert {e.entity_id for e in _lock_unlock(platform.entities.values())} == set(expected_ids)
 
             gateway.available = False
             async_dispatcher_send(hass, gateway.availability_signal)
@@ -133,15 +140,17 @@ async def test_restore_filters_and_deduplicates_actuators(hass, unload_callbacks
             "configured": {"who": "1", "where": "01", "name": "Configured light"},
         }},
     }}
+    attach_runtime(hass, entry)
     added = []
     await button.async_setup_entry(hass, entry, added.extend)
     try:
-        assert {e.unique_id for e in added} == {
+        lock_unlock = _lock_unlock(added)
+        assert {e.unique_id for e in lock_unlock} == {
             f"{MAC}-{who}-01-{suffix}"
             for who in ("1", "2") for suffix in ("disable", "enable")
         }
-        assert len(added) == 4
-        assert added[0].entity_id == "button.configured_light_lock"
+        assert len(lock_unlock) == 4
+        assert lock_unlock[0]._display_name == "Configured light Lock"
     finally:
         unload_callbacks()
 
@@ -180,15 +189,17 @@ async def test_restore_before_parent_cleanup(hass, unload_callbacks, reverse, co
             "pir": {"who": "1", "where": "12", CONF_BUS_INTERFACE: "02"},
         }
     hass.data[DOMAIN] = {MAC: {"entity": gateway, "platforms": platforms}}
+    attach_runtime(hass, entry)
     added = []
     await button.async_setup_entry(hass, entry, added.extend)
     expected = {"1-06", "1-12#4#03", "1-0015", "1-21", "2-12#4#02"}
-    assert {e.unique_id for e in added} == {
+    lock_unlock = _lock_unlock(added)
+    assert {e.unique_id for e in lock_unlock} == {
         f"{MAC}-{address}-{suffix}"
         for address in expected for suffix in ("disable", "enable")
     }
-    assert len(added) == 2 * len(expected)
-    for entity in added:
+    assert len(lock_unlock) == 2 * len(expected)
+    for entity in lock_unlock:
         await entity.async_press()
     assert {call.args[0] for call in gateway.send.await_args_list} == {
         f"*14*{command}*{address.split('-', 1)[1]}##"
@@ -210,9 +221,10 @@ async def test_restore_accepts_configured_mac_prefix(hass, unload_callbacks):
         )
     gateway = MagicMock(mac=MAC, unique_id=MAC)
     hass.data[DOMAIN] = {raw_mac: {"entity": gateway, "platforms": {"button": {}}}}
+    attach_runtime(hass, entry)
     added = []
     await button.async_setup_entry(hass, entry, added.extend)
-    assert [e.unique_id for e in added] == [
+    assert [e.unique_id for e in _lock_unlock(added)] == [
         f"{MAC}-1-{where}-{suffix}"
         for where in ("01", "02") for suffix in ("disable", "enable")
     ]

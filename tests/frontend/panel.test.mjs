@@ -1116,6 +1116,8 @@ test("panel language changes keep the native monitor capture and command draft",
   const sweeping = view._handleSweepBus();
   assert.equal(view.shadowRoot.getElementById("btn-sweep").disabled, true);
   panel.hass = { ...hass, language: "en" }; await tick();
+  // The sweep starts a fresh capture; a response received during it survives localization.
+  view._onNewFrame({ raw: "*1*1*11##", who: "1", timestamp: 101, direction: "rx" });
   pending.resolve(); await sweeping;
   assert.equal(view.shadowRoot.getElementById("btn-sweep").disabled, false);
   assert.equal(root.querySelector("myhome-panel-bus-monitor"), view);

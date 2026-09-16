@@ -11,7 +11,7 @@ from custom_components.myhome.const import DOMAIN
 async def test_form(hass: HomeAssistant) -> None:
     """Test the full config flow: user -> custom (auto-discover) -> test_connection creates an entry."""
     mock_discovered = {
-        "address": "192.168.1.135",
+        "address": "192.0.2.10",
         "port": 20000,
         "serialNumber": "00:03:50:00:12:34",
         "modelName": "F454",
@@ -56,7 +56,7 @@ async def test_form(hass: HomeAssistant) -> None:
         result3 = await hass.config_entries.flow.async_configure(
             result2["flow_id"],
             {
-                "address": "192.168.1.135",
+                "address": "192.0.2.10",
                 "port": 20000,
             },
         )
@@ -94,7 +94,7 @@ async def test_form_cannot_connect(hass: HomeAssistant) -> None:
         result3 = await hass.config_entries.flow.async_configure(
             result2["flow_id"],
             {
-                "address": "192.168.1.135",
+                "address": "192.0.2.10",
                 "port": 20000,
             },
         )
@@ -122,7 +122,7 @@ async def test_form_already_configured(hass: HomeAssistant) -> None:
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
-            "host": "192.168.1.135",
+            "host": "192.0.2.10",
             "port": 20000,
             "mac": "00:03:50:00:12:34",
         },
@@ -153,7 +153,7 @@ async def test_form_already_configured(hass: HomeAssistant) -> None:
         result3 = await hass.config_entries.flow.async_configure(
             result2["flow_id"],
             {
-                "address": "192.168.1.135",
+                "address": "192.0.2.10",
                 "port": 20000,
             },
         )
@@ -176,7 +176,7 @@ async def test_form_discovery(hass: HomeAssistant) -> None:
     """Test user selecting a discovered gateway."""
     mock_discovery = {
         "00:03:50:00:12:34": {
-            "address": "192.168.1.135",
+            "address": "192.0.2.10",
             "port": 20000,
             "serialNumber": "00:03:50:00:12:34",
             "modelName": "F454"
@@ -216,7 +216,7 @@ async def test_form_discovery_already_configured(hass: HomeAssistant) -> None:
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
-            "host": "192.168.1.135",
+            "host": "192.0.2.10",
             "port": 20000,
             "mac": "00:03:50:00:12:34",
         },
@@ -226,7 +226,7 @@ async def test_form_discovery_already_configured(hass: HomeAssistant) -> None:
 
     mock_discovery = {
         "00:03:50:00:12:34": {
-            "address": "192.168.1.135",
+            "address": "192.0.2.10",
             "port": 20000,
             "serialNumber": "00:03:50:00:12:34",
             "modelName": "F454"
@@ -265,11 +265,11 @@ async def test_options_flow(mock_sending, mock_listening, mock_test_connection, 
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
-            "host": "192.168.1.135",
+            "host": "192.0.2.10",
             "port": 20000,
             "password": "pass",
             "mac": "00:03:50:00:12:34",
-            "ssdp_location": "http://192.168.1.135:49153/description.xml",
+            "ssdp_location": "http://192.0.2.10:49153/description.xml",
             "ssdp_st": "urn:schemas-upnp-org:device:Basic:1",
             "deviceType": "urn:schemas-upnp-org:device:Basic:1",
             "friendly_name": "MyHOME Gateway",
@@ -342,7 +342,7 @@ async def test_ssdp_discovery(hass: HomeAssistant) -> None:
     ssdp_info = SsdpServiceInfo(
         ssdp_usn="mock_usn",
         ssdp_st="mock_st",
-        ssdp_location="http://192.168.1.135:49153/description.xml",
+        ssdp_location="http://192.0.2.10:49153/description.xml",
         upnp={
             "modelName": "F454",
             "serialNumber": "00:03:50:00:12:34",
@@ -350,7 +350,7 @@ async def test_ssdp_discovery(hass: HomeAssistant) -> None:
             "UDN": "uuid",
             "modelNumber": "2.0"
         },
-        ssdp_headers={"_host": "192.168.1.135"}
+        ssdp_headers={"_host": "192.0.2.10"}
     )
 
     # Step 1: SSDP discovery initiates flow -> shows discovery_confirm form (not auto-created)
@@ -360,20 +360,22 @@ async def test_ssdp_discovery(hass: HomeAssistant) -> None:
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "discovery_confirm"
     assert result["description_placeholders"]["name"] == "F454"
-    assert result["description_placeholders"]["host"] == "192.168.1.135"
+    assert result["description_placeholders"]["host"] == "192.0.2.10"
 
-    # Step 2: User confirms -> tests connection and creates entry
+    # Step 2: User confirms -> tests connection and creates entry. Creating the entry
+    # sets it up straight away, so keep the gateway loops from opening a real socket.
     with patch(
         "custom_components.myhome.config_flow.OWNSession.test_connection",
         return_value={"Success": True},
-    ):
+    ), patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),          patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"):
         result2 = await hass.config_entries.flow.async_configure(
             result["flow_id"],
             user_input={},
         )
+        await hass.async_block_till_done()
 
     assert result2["type"] == FlowResultType.CREATE_ENTRY
-    assert result2["data"]["host"] == "192.168.1.135"
+    assert result2["data"]["host"] == "192.0.2.10"
 
 
 async def test_ssdp_discovery_already_configured(hass: HomeAssistant) -> None:
@@ -383,7 +385,7 @@ async def test_ssdp_discovery_already_configured(hass: HomeAssistant) -> None:
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
-            "host": "192.168.1.135",
+            "host": "192.0.2.10",
             "port": 20000,
             "mac": "00:03:50:00:12:34",
         },
@@ -402,7 +404,7 @@ async def test_ssdp_discovery_already_configured(hass: HomeAssistant) -> None:
     ssdp_info = SsdpServiceInfo(
         ssdp_usn="mock_usn",
         ssdp_st="mock_st",
-        ssdp_location="http://192.168.1.135:49153/description.xml",
+        ssdp_location="http://192.0.2.10:49153/description.xml",
         upnp={
             "modelName": "F454",
             "serialNumber": "00:03:50:00:12:34",
@@ -410,7 +412,7 @@ async def test_ssdp_discovery_already_configured(hass: HomeAssistant) -> None:
             "UDN": "uuid",
             "modelNumber": "2.0"
         },
-        ssdp_headers={"_host": "192.168.1.135"}
+        ssdp_headers={"_host": "192.0.2.10"}
     )
 
     result = await hass.config_entries.flow.async_init(
@@ -428,7 +430,7 @@ async def test_reauth_flow(hass: HomeAssistant) -> None:
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
-            "host": "192.168.1.135",
+            "host": "192.0.2.10",
             "mac": "00:03:50:00:12:34",
             "password": "wrong"
         },
@@ -440,7 +442,7 @@ async def test_reauth_flow(hass: HomeAssistant) -> None:
         "custom_components.myhome.config_flow.MyHOMEGatewayHandler"
     ) as mock_gateway_handler:
         # Provide the mock gateway host/serial properties
-        mock_gateway_handler.return_value.gateway.host = "192.168.1.135"
+        mock_gateway_handler.return_value.gateway.host = "192.0.2.10"
         mock_gateway_handler.return_value.gateway.model = "F454"
         mock_gateway_handler.return_value.gateway.serial = "00:03:50:00:12:34"
         mock_gateway_handler.return_value.gateway.password = "wrong"
@@ -503,7 +505,7 @@ async def test_password_required_and_error(hass: HomeAssistant) -> None:
         result3 = await hass.config_entries.flow.async_configure(
             result2["flow_id"],
             {
-                "address": "192.168.1.135",
+                "address": "192.0.2.10",
                 "port": 20000,
             },
         )
@@ -828,7 +830,7 @@ async def test_custom_manual_entry_manufacturer_type(hass: HomeAssistant) -> Non
         )
         result3 = await hass.config_entries.flow.async_configure(
             result2["flow_id"],
-            {"address": "192.168.1.135", "port": 20000},
+            {"address": "192.0.2.10", "port": 20000},
         )
         result4 = await hass.config_entries.flow.async_configure(
             result3["flow_id"],
@@ -864,7 +866,7 @@ async def test_options_flow_update_gateway_model(hass: HomeAssistant) -> None:
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
-            CONF_HOST: "192.168.1.135",
+            CONF_HOST: "192.0.2.10",
             CONF_PORT: 20000,
             CONF_MAC: "00:03:50:00:12:34",
             CONF_NAME: "CustomUnlistedModel",
@@ -885,7 +887,7 @@ async def test_options_flow_update_gateway_model(hass: HomeAssistant) -> None:
 
     with patch.object(hass.config_entries, "async_reload", return_value=True) as mock_reload:
         res = await opt_flow.async_step_user({
-            CONF_ADDRESS: "192.168.1.135",
+            CONF_ADDRESS: "192.0.2.10",
             CONF_NAME: "MyHomeServer1",
             CONF_OWN_PASSWORD: None,
             CONF_WORKER_COUNT: 2,
@@ -897,6 +899,82 @@ async def test_options_flow_update_gateway_model(hass: HomeAssistant) -> None:
     assert entry.data[CONF_NAME] == "MyHomeServer1"
     assert entry.title == "MyHomeServer1 Gateway"
     assert mock_reload.called
+
+
+async def test_options_flow_model_selection_survives_reload_and_next_who13(hass: HomeAssistant) -> None:
+    """PR #345 review: selecting a model in the options flow is authoritative.
+
+    An entry labelled MH200 from WHO=13 is switched to MH200N; after the reload the new
+    handler receives device type 4 (MH200) again and must keep MH200N. The reload also
+    clears a mismatch warning left in the issue registry by the previous handler.
+    """
+    from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PORT
+    from homeassistant.helpers import issue_registry as ir
+    from OWNd.message import OWNEvent
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.config_flow import MyhomeOptionsFlowHandler
+    from custom_components.myhome.const import (
+        CONF_ADDRESS,
+        CONF_GENERATE_EVENTS,
+        CONF_OWN_PASSWORD,
+        CONF_TRANSITION_MODE,
+        CONF_WORKER_COUNT,
+        IDENTIFICATION_MANUAL,
+        IDENTIFICATION_WHO13,
+    )
+    from custom_components.myhome.gateway import MyHOMEGatewayHandler
+    from custom_components.myhome.repairs import ISSUE_GATEWAY_IDENTITY, async_create_identity_issue
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_HOST: "192.0.2.10",
+            CONF_PORT: 20000,
+            CONF_MAC: "00:03:50:00:12:34",
+            CONF_NAME: "MH200",
+            "model_source": IDENTIFICATION_WHO13,
+        },
+        title="MH200 Gateway",
+        unique_id="00:03:50:00:12:34",
+    )
+    entry.add_to_hass(hass)
+    # A warning the previous handler raised and never cleared before the reload.
+    async_create_identity_issue(hass, entry.entry_id, "MH200", "MyHomeServer1", "200", "who13", False)
+    issue_id = f"{ISSUE_GATEWAY_IDENTITY}_{entry.entry_id}"
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is not None
+
+    opt_flow = MyhomeOptionsFlowHandler(entry)
+    opt_flow.hass = hass
+    await opt_flow.async_step_init()
+    with patch.object(hass.config_entries, "async_reload", return_value=True) as mock_reload:
+        res = await opt_flow.async_step_user({
+            CONF_ADDRESS: "192.0.2.10",
+            CONF_NAME: "MH200N",
+            CONF_OWN_PASSWORD: None,
+            CONF_WORKER_COUNT: 1,
+            CONF_GENERATE_EVENTS: False,
+            CONF_TRANSITION_MODE: "software_stepped",
+        })
+    assert res["type"] == FlowResultType.CREATE_ENTRY
+    assert mock_reload.called
+    assert entry.data[CONF_NAME] == "MH200N"
+    assert entry.data["model_source"] == IDENTIFICATION_MANUAL
+
+    # The reload builds a fresh handler from the updated entry ...
+    handler = MyHOMEGatewayHandler(hass, entry)
+    assert handler.gateway.model_name == "MH200N"
+    assert handler.identification_source == IDENTIFICATION_MANUAL
+    assert handler._identity_conflict is None
+
+    # ... and the next WHO=13 device-type 4 reply (MH200 per the 2006 table) leaves it alone.
+    handler._handle_gateway_diagnostics(OWNEvent.parse("*#13**15*4##"))
+    assert handler.gateway.model_name == "MH200N"
+    assert entry.data[CONF_NAME] == "MH200N"
+    assert entry.data["model_source"] == IDENTIFICATION_MANUAL
+    assert handler.identification()["conflict"] is None
+    # The stale warning from before the reload is gone.
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
 
 
 async def test_reconfigure_flow_ip_gateway_success(hass: HomeAssistant) -> None:
@@ -1067,6 +1145,15 @@ async def test_reconfigure_flow_missing_entry(hass: HomeAssistant) -> None:
     result_direct = await flow.async_step_reconfigure()
     assert result_direct["type"] == FlowResultType.ABORT
     assert result_direct["reason"] == "unknown"
+
+    # Newer cores raise UnknownEntry from _get_reconfigure_entry: still a clean abort
+    flow_raise = MyhomeFlowHandler()
+    flow_raise.hass = hass
+    flow_raise.context = dict(flow.context)
+    flow_raise._get_reconfigure_entry = MagicMock(side_effect=RuntimeError("UnknownEntry"))
+    result_raise = await flow_raise.async_step_reconfigure()
+    assert result_raise["type"] == FlowResultType.ABORT
+    assert result_raise["reason"] == "unknown"
 
     # Also test direct step invocation with invalid port to cover defensive error handling
     entry = MockConfigEntry(
