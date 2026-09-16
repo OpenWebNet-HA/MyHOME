@@ -249,6 +249,33 @@ f454:
       name: Central Alarm
 ```
 
+3. **DALI DT8 capabilities and `lock_features`**: a light learns dimming, tunable white (Dimension 14) and HSV colour (Dimension 12) from the bus as the frames arrive. BTicino DALI gateways (F429 / F461) remember any HSV or colour-temperature value that was ever written to an address - even to a fixture that cannot use it - and replay it on every status sweep, so a plain dimmer can end up with a colour wheel. Declare what the fixture really is and lock it:
+
+```yaml
+  light:
+    rgbw_spot:
+      where: '25'
+      interface: '02'
+      name: RGBW Spot
+      dimmable: true
+      color_temp: true      # Dimension 14 tunable white
+      rgb: true             # Dimension 12 HSV colour (alias: hs)
+      lock_features: true   # exactly these modes, never learn another one
+    hallway_relay:
+      where: '26'
+      interface: '02'
+      name: Hallway
+      lock_features: true   # on/off only, whatever the gateway replays
+```
+
+Without `lock_features` the three flags are only the starting point and auto-detection stays on. Uncommissioned sentinels (`*12*511*127*255##`, `*14*1##`) are filtered by the protocol layer and never promote a light, locked or not.
+
+**What a locked light does with a frame it is locked out of.** The frame is dropped as a whole - not just the colour, the HSV *value* (`*12*H*S*V##`) too. A dimension the gateway replays to an address that cannot use it carries no truth in any field: the value is whatever was once written, not the current level. Brightness is never affected by this, because it always arrives on Dimension 1 (`*#1*WHERE*1*<level>*<speed>##`), and a light declared with `rgb` or `color_temp` is implicitly dimmable. Every dropped frame is written to the log at `DEBUG` level - enable `custom_components.myhome: debug` in the logger configuration if a locked light does not follow the app the way you expect:
+
+```text
+GATEWAY light 26#4#02 is locked to ['onoff']; ignoring Dimension 12 frame *#1*26#4#02*12*353*74*80##
+```
+
 ---
 
 ### ⚡ Custom Services
