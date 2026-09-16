@@ -123,15 +123,6 @@ class MyHOMELightGroup(MyHOMEEntity, LightEntity):
         """Register callbacks."""
         await super().async_added_to_hass()
 
-        # Subscribe to group messages directly from the gateway bus
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass,
-                f"myhome_message_{self._gateway_handler.mac}",
-                self._handle_bus_message,
-            )
-        )
-
         # Resolve members if any
         if self._declared_members:
             registry = er.async_get(self.hass)
@@ -158,7 +149,7 @@ class MyHOMELightGroup(MyHOMEEntity, LightEntity):
         await self.async_update()
 
     @callback
-    def _handle_bus_message(self, msg: Any) -> None:
+    def handle_event(self, msg: Any) -> None:
         """Handle group messages from the bus (assumed-state mode only).
 
         With declared members the group's state is derived from those members'
