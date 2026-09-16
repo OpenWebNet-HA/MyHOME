@@ -15,6 +15,27 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Partial measurement without an assigned profile (0.22.2)
+
+Opening-only and closing-only no longer require a saved profile assignment.
+The previous fix left this second restriction in both the options and the start
+handler. The backend now resolves the retained opposite time from committed
+settings: personal override, assigned profile, native timing, then YAML/default.
+Unsaved browser edits are never used. The retained value is validated before a
+session starts; starting alone never requests movement. Mode, stationary-cover,
+revision and gateway ownership checks continue to apply.
+
+Existing profile/override evidence is retained. Native evidence is retained when
+it satisfies the profile evidence schema; incomplete/legacy evidence is reported
+as unknown in the new profile, without inventing an origin or measurement date.
+The original native fallback and its metadata remain unchanged. Review labels the
+opposite time as a retained configured value. Save and persistence failures follow
+the same atomic semantics as the complete measurement.
+
+Validation: 1,853 Python tests passed (one skip, five snapshots), 101 frontend
+tests passed, 100% line coverage (7,083 statements across 39 modules). The new
+regressions reproduce both the disabled options and backend refusal in 0.22.1.
+
 ## Partial measurement selector (0.22.1)
 
 The direction selector remains available after selecting automatic measurement.
@@ -342,7 +363,7 @@ requirements, limits and real-gateway validation steps.
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.22.1**, defined by
+The panel has an independent version, currently **0.22.2**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.

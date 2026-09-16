@@ -23,7 +23,7 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import CoreState, callback
 from OWNd.message import OWNAutomationCommand
 
-from .cover_profile_provenance import evidence
+from .cover_profile_provenance import EVIDENCE, evidence, unknown_provenance
 from .cover_profiles import (
     DATA_KEY,
     ProfileError,
@@ -336,14 +336,19 @@ async def begin(hass: Any, connection: Any, msg: dict[str, Any]) -> Any:
             direction = vol.In(["opening", "closing"])(msg["direction"])
             if msg.get("mode", "guided") != "guided":
                 raise ProfileError("invalid_profile")
-            profile = store.profile(cover.unique_id)
-            if profile is None:
-                raise ProfileError("calibration_profile_required")
-            profile = copy.deepcopy(profile)
-            for key, override in store.data["covers"].get(cover.unique_id, {}).get("overrides", {}).items():
-                profile[f"{key}_time"] = override["value"]
-                profile["provenance"][key] = override["provenance"]
-            options = {"direction": direction, "profile": profile}
+            retained = "closing" if direction == "opening" else "opening"
+            setting = cover.resolve_cover_settings(store.profile(cover.unique_id))[retained]
+            # Resolve committed values even without an assignment. A native record
+            # may lack the origin/date required by profile evidence; do not invent
+            # a measurement or overwrite that original fallback record.
+            try:
+                provenance = EVIDENCE(setting["provenance"])
+            except vol.Invalid:
+                provenance = unknown_provenance()[retained]
+            options = {"direction": direction, "profile": {
+                f"{retained}_time": travel_time(setting["value"]),
+                "provenance": {retained: provenance},
+            }}
         session_type: type[CalibrationSession] = CalibrationSession
         if msg.get("mode", "guided") == "automatic":
             from .cover_calibration_automatic import AutomaticCalibrationSession

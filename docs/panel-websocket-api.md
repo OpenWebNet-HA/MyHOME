@@ -1,7 +1,9 @@
 # MyHOME panel API: implemented reference
 
-> Current update — panel 0.22.0: [shared cover settings](cover-settings-backend.md)
+> Current update — panel 0.22.2: [shared cover settings](cover-settings-backend.md)
 > specifies storage v5, export v3 and `myhome/cover_profiles/overview` (schema v1).
+> Partial guided calibration now uses resolved cover settings without requiring
+> an assigned profile (see the single-direction extension below).
 > Write actions `overrides`, `preview` and `update_shared` add personal values
 > and revision-bound impact confirmation; their complete contract is linked above.
 > Existing endpoints remain available; native writes use the shared store and revision. Earlier release descriptions below remain historical where superseded.
@@ -540,13 +542,17 @@ The existing admin-only `myhome/cover_calibration/start` accepts optional
 Omitting `direction` retains the full two-direction wizard. Combining it with
 `mode: automatic` is refused with `invalid_profile`; batch start does not accept
 this field. Under the profile lock, start validates the revision and target and
-requires an assigned saved profile (`calibration_profile_required` otherwise).
+resolves the retained opposite time from committed cover settings. Since 0.22.2,
+an assigned profile is optional: overrides, native timings and YAML/default values
+also support a partial measurement. The retained value must be a valid travel time.
 No browser-supplied profile ID, time or evidence determines the retained value.
 Starting reserves the session and emits its initial state without any movement.
 
 Single-direction states add `direction` to the ordinary session fields. Initial
-`values` contains only the retained opposite time, copied from the assigned
-profile along with its backend-only provenance. `closing` starts in `confirm_open`;
+`values` contains only the retained opposite time from the backend resolver.
+Profile/override evidence is preserved; native evidence is preserved when complete
+and compatible with the profile schema, otherwise represented as unknown in the
+new profile. The original native fallback and metadata are never modified. `closing` starts in `confirm_open`;
 `opening` starts in `confirm_closed`. The matching `close` or `open` action confirms
 the physical starting endpoint, bus feedback starts the clock, and `endpoint`
 records guided evidence and requests Stop. The next phase is immediately `review`.
@@ -554,7 +560,7 @@ The other leg cannot be started from review. The UI identifies which value was
 measured and which was retained.
 
 Save uses the existing action with `name` and current sequence. It creates and
-assigns a new profile with both times, preserving the opposite evidence exactly
+assigns a new profile with both times, preserving supported opposite evidence
 (including inherited origins or unknown metadata). Existing/shared profiles remain
 unchanged. Storage v4, export v2, revision/ownership checks, error handling and
 session cancellation semantics are unchanged. Unsaved values never enter export.

@@ -166,7 +166,7 @@ async def test_quick_failure_preserves_original_configuration(quick, failure):
         assert quick.session.values == quick.session.provenance == {}
 
 
-async def test_quick_requires_saved_profile_and_guided_valid_direction(hass, plant):
+async def test_quick_requires_guided_mode_and_valid_direction(hass, plant):
     entry_id = plant.entries[0].entry_id
     msg = {
         "id": 1,
@@ -177,7 +177,6 @@ async def test_quick_requires_saved_profile_and_guided_valid_direction(hass, pla
     }
     connection = MagicMock(subscriptions={})
     for extra, error, code in [
-        ({}, profiles.ProfileError, "calibration_profile_required"),
         ({"mode": "automatic"}, profiles.ProfileError, "invalid_profile"),
         ({"direction": "sideways"}, vol.Invalid, "value must be one of"),
     ]:
@@ -196,7 +195,7 @@ async def test_quick_stale_revision_cannot_copy_outdated_assignment(hass, quick)
     assert quick.session.store.calibration is None
 
 
-async def test_quick_real_websocket_schema_requires_profile_before_session(
+async def test_quick_real_websocket_starts_without_assigned_profile(
     hass, plant, hass_ws_client
 ):
     from aiohttp.resolver import ThreadedResolver
@@ -215,7 +214,11 @@ async def test_quick_real_websocket_schema_requires_profile_before_session(
         }
     )
     response = await client.receive_json()
-    assert response["error"]["code"] == "calibration_profile_required"
+    assert response["success"]
+    event = await client.receive_json()
+    assert event["event"]["direction"] == "closing"
+    assert event["event"]["values"] == {"opening_time": 30}
+    assert profiles.get_store(hass, plant.entries[0].entry_id).data["assignments"] == {}
     await client.close()
 
 
@@ -242,3 +245,51 @@ async def test_one_leg_retains_other_override_and_new_profile_becomes_authoritat
     assert profile[f"{retained}_time"] == 47.25
     assert profile["provenance"][retained] == retained_evidence
     assert profile[f'{quick.request["direction"]}_time'] == 12.75
+
+
+@pytest.mark.parametrize("source", ["override", "native", "native_with_evidence", "default"])
+async def test_partial_measurement_without_profile_retains_configured_opposite_direction(hass, quick, source):
+    quick.session.close()
+    store, cover = quick.session.store, quick.cover
+    await profiles.write_profile(hass, {**quick.request, "action": "assign", "profile_id": None})
+    retained = "closing" if quick.request["direction"] == "opening" else "opening"
+    expected, provenance = 30, unknown_provenance()[retained]
+    if source == "override":
+        expected = 47.25
+        await profiles.write_profile(hass, {**quick.request, "revision": store.data["revision"],
+            "action": "overrides", "overrides": {retained: expected}})
+        provenance = copy.deepcopy(store.data["covers"][cover.unique_id]["overrides"][retained]["provenance"])
+    elif source.startswith("native"):
+        expected = 29 if retained == "opening" else 33
+        record = {"up": 29, "down": 33, "source": "manual", "measured_at": "2026-09-16T12:00:00+00:00"}
+        if source == "native_with_evidence":
+            provenance = {"source": "manual", "recorded_at": record["measured_at"], "origin_unique_id": cover.unique_id}
+            record["provenance"] = {key: copy.deepcopy(provenance) for key in ("opening", "closing")}
+        store.data["native_fallbacks"][cover._device_id] = record
+        await store.store.async_save(store.data)
+        cover.async_apply_cover_profile(None)
+    quick.request["revision"] = store.data["revision"]
+    before = copy.deepcopy(store.data)
+    queued_before = list(quick.queue)
+    quick.session = await begin(hass, quick.connection, quick.request)
+    assert quick.queue == queued_before  # Starting alone never queues motion.
+    assert quick.session.values == {f"{retained}_time": expected}
+    assert quick.session.provenance[retained] == provenance
+    assert store.data == before
+    await measure(quick)
+    with patch.object(store.store, "async_save", side_effect=OSError("full")):
+        with pytest.raises(OSError):
+            await act(quick, "save", name="Partial first profile")
+    assert store.data == before
+    await act(quick, "save", name="Partial first profile")
+    result = store.profile(cover.unique_id)
+    assert result[f"{retained}_time"] == expected
+    assert result["provenance"][retained] == provenance
+    assert result[f'{quick.request["direction"]}_time'] == 12.75
+    assert store.data["covers"] == {}
+    assert store.data["native_fallbacks"] == before["native_fallbacks"]
+    assert store.data["profiles"][quick.original_id] == before["profiles"][quick.original_id]
+    hass.data[profiles.DATA_KEY].pop(store.entry_id)
+    await profiles.bind_cover(hass, cover)
+    restored = profiles.get_store(hass, store.entry_id).profile(cover.unique_id)
+    assert restored == result

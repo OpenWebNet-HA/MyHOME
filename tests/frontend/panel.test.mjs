@@ -1193,15 +1193,27 @@ test("single-direction choice uses saved assignment and resets when switching to
   assert.equal(calls.filter((c) => c.type === "myhome/cover_calibration/action").length, 0);
 });
 
-test("single-direction options require an assigned saved profile", async () => {
-  const { root } = await mountProfiles({ read: () => coverProfileData({ assigned_profile_id: null }) });
-  openProfile(root); await tick();
-  const scope = root.querySelector("#cal-direction");
-  assert.equal(scope.querySelector('[value="opening"]').disabled, true);
-  assert.equal(scope.querySelector('[value="closing"]').disabled, true);
-  assert.equal(scope.querySelector('[value=""]').disabled, false);
-  assert.match(root.querySelector("#cal-scope-help").textContent, /Assegna un profilo/);
-});
+for (const direction of ["opening", "closing"]) {
+  test(`single-direction ${direction} works without any assigned profile`, async () => {
+    const { root, hass, calls } = await mountProfiles({ read: () => coverProfileData({
+      assigned_profile_id: null, profiles: [], configured: {
+        opening: { value: 22, origin: "override" }, closing: { value: 30, origin: "default" },
+      },
+    }) });
+    let request;
+    hass.connection.subscribeMessage = async (_callback, message) => { request = message; return () => {}; };
+    openProfile(root); await tick();
+    const scope = root.querySelector("#cal-direction");
+    assert.equal(scope.disabled, false);
+    assert.equal(scope.querySelector(`[value="${direction}"]`).disabled, false);
+    change(scope, direction);
+    root.querySelector("#profile-calibrate").click(); await tick();
+    assert.equal(request.direction, direction);
+    assert.equal("profile" in request, false);
+    assert.equal("values" in request, false);
+    assert.equal(calls.filter((call) => call.type === "myhome/cover_calibration/action").length, 0);
+  });
+}
 
 for (const direction of ["opening", "closing"]) {
   test(`single-direction ${direction} remains selectable from automatic mode and starts guided review`, async () => {

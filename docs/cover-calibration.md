@@ -1,4 +1,11 @@
-# Guided and automatic travel measurement — panel 0.22.0
+# Guided and automatic travel measurement — panel 0.22.2
+
+Panel 0.22.2 removes the assigned-profile prerequisite for measuring one direction.
+The opposite time comes from the backend resolver (override, profile, native or
+YAML/default). Its configured value is shown in review; incomplete native evidence
+is not presented as a new measurement. Complete existing evidence is retained and
+the original native fallback is untouched. The mode remains guided for a single
+leg. The frontend forwards the selected direction even when no profile is assigned.
 
 Panel 0.21.0 adds the [shared persistence/resolution backend](cover-settings-backend.md)
 (storage v5, export v3). The guided/automatic measurement sequence described here

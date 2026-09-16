@@ -247,7 +247,7 @@ for (const direction of ["opening", "closing"]) {
     assert.equal(calls[0].action, "endpoint");
     push({ phase: "review", values: { opening_time: 12.75, closing_time: 32.25 } });
     assert.match(host.querySelector("#cal-values").textContent, /Misurato in questa sessione/);
-    assert.match(host.querySelector("#cal-values").textContent, /Conservato dal profilo assegnato/);
+    assert.match(host.querySelector("#cal-values").textContent, /Valore configurato conservato/);
     assert.equal(host.querySelector('[data-cal-action="open"]').hidden, true);
     assert.equal(host.querySelector('[data-cal-action="close"]').hidden, true);
     const form = host.querySelector("#cal-save"); form.elements.profile_name.value = "Nuova copia";
