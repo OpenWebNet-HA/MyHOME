@@ -1,4 +1,8 @@
-# Guided and automatic travel measurement — panel 0.20.0
+# Guided and automatic travel measurement — panel 0.21.0
+
+Panel 0.21.0 adds the [shared persistence/resolution backend](cover-settings-backend.md)
+(storage v5, export v3). The guided/automatic measurement sequence described here
+is unchanged; native timing services now persist in the same store.
 
 This experimental wizard measures **one standard cover's full opening and closing
 times**. It extends our linear timing profiles; it is not the calibration fork's

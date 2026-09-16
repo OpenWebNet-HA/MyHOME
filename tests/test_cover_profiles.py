@@ -375,7 +375,7 @@ async def test_websocket_round_trip_validation_and_errors(hass, plant, hass_ws_c
             assert result["result"]["effective_opening_time"] == 22.5
             assert result["result"]["effective_closing_time"] == 44.5
             result = await send({"id": 11, "type": WS_EXPORT, "entry_id": plant.entries[0].entry_id})
-            assert result["result"]["format_version"] == 2
+            assert result["result"]["format_version"] == 3
             assert result["result"]["profiles"][0]["closing_time"] == 44.5
             result = await send({"id": 12, "type": WS_EXPORT, "entry_id": "missing"})
             assert result["error"]["code"] == "target_not_found"
@@ -441,13 +441,13 @@ async def test_version_one_store_migrates_without_changing_assignments_or_timing
     hass.data[DATA_KEY].pop(entry_id)
     await bind_cover(hass, plant.covers[0])
     store = get_store(hass, entry_id)
-    assert store.data == {**legacy, "profiles": {"old": {
+    assert store.data == {**legacy, "covers": {}, "native_fallbacks": {}, "profiles": {"old": {
         "name": "Legacy", "opening_time": 32.5, "closing_time": 32.5,
         "provenance": unknown_provenance()}}}
     assert plant.covers[0]._travel_time_up == plant.covers[0]._travel_time_down == 32.5
-    assert await ProfileStorage(hass, 4, store.store.key).async_load() == store.data
+    assert await ProfileStorage(hass, 5, store.store.key).async_load() == store.data
     with pytest.raises(NotImplementedError):
-        await store.store._async_migrate_func(5, 1, legacy)
+        await store.store._async_migrate_func(6, 1, legacy)
     plant.gateways[0].send.assert_not_called()
 
 
@@ -565,7 +565,7 @@ async def test_delete_protects_assignments_and_is_atomic_persistent_and_gateway_
     hass.data[DATA_KEY].pop(plant.entries[0].entry_id)
     restored = get_store(hass, plant.entries[0].entry_id)
     await restored.load()
-    assert restored.data == {"revision": 3, "profiles": {}, "assignments": {}}
+    assert restored.data == {"revision": 3, "profiles": {}, "assignments": {}, "covers": {}, "native_fallbacks": {}}
     await cover.async_stop_cover()
     assert cover._travel_time_down == 30
 
@@ -693,7 +693,7 @@ async def test_export_preserves_saved_profiles_orphans_and_origins_without_runti
     store.calibration = SimpleNamespace(active=True, values={"opening_time": 99})
     before = copy.deepcopy(store.data)
     result = await export_profiles(hass, entry_id)
-    assert result["format"] == "myhome.cover_calibration" and result["format_version"] == 2
+    assert result["format"] == "myhome.cover_calibration" and result["format_version"] == 3
     assert result["revision"] == 3
     assert datetime.fromisoformat(result["exported_at"]).utcoffset().total_seconds() == 0
     assert len(result["profiles"]) == 2
@@ -765,7 +765,8 @@ async def test_version_three_migration_preserves_recorded_evidence(hass, plant):
     await write_profile(hass, message(plant))
     entry_id = plant.entries[0].entry_id
     before = copy.deepcopy(get_store(hass, entry_id).data)
-    await Store(hass, 3, f"myhome.cover_profiles.{entry_id}").async_save(before)
+    await Store(hass, 3, f"myhome.cover_profiles.{entry_id}").async_save(
+        {key: value for key, value in before.items() if key in ("revision", "profiles", "assignments")})
     hass.data[DATA_KEY].pop(entry_id)
     await bind_cover(hass, plant.covers[0])
     assert get_store(hass, entry_id).data == before

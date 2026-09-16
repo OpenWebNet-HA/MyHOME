@@ -15,6 +15,16 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Shared cover backend (0.21.0)
+
+The first backend slice from discussion #270 is implemented. See the
+[shared cover settings contract](cover-settings-backend.md) for the version-5
+storage migration, native fallback precedence, atomic native service writes,
+gateway overview API and version-3 export. Existing timing-only profiles remain
+unscaled, and the assignment section explicitly explains that limitation.
+WHO navigation, device grouping and collapsible sections retain their layout.
+The following version sections describe earlier releases.
+
 ## Current v2 alignment (0.20.1)
 
 The panel integrates the official `v2-phase1-architecture` through `3f5e791`
@@ -299,7 +309,7 @@ requirements, limits and real-gateway validation steps.
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.20.1**, defined by
+The panel has an independent version, currently **0.21.0**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.
@@ -651,15 +661,18 @@ direction. This remains a linear estimate without physical calibration.
 - Registry renames keep assignments because storage uses the native unique ID,
   together with the config entry. Removing the config entry deletes its profile store.
 
-The authoritative store is `myhome.cover_profiles.<entry_id>` (version 4), containing
-`revision`, `profiles` and `assignments`. Version 1 profiles migrate automatically:
+The authoritative store is `myhome.cover_profiles.<entry_id>` (version 5), containing
+`revision`, `profiles`, `assignments`, `covers` and `native_fallbacks`.
+See [current migration and rollback semantics](cover-settings-backend.md#storage-and-migration).
+The profile migration history follows. Version 1 profiles migrate automatically:
 `travel_time` becomes both `opening_time` and `closing_time`, preserving IDs,
 assignments and revision. Migration validates and persists the upgraded store before
 binding the runtime; failures do not silently replace saved data. Version 1 and 2
 profiles gain unknown provenance with null dates and origin IDs. Version 3 evidence is preserved. Version 4 storage
 requires the updated integration (older integration versions cannot read that format).
 An explicit assignment overrides
-`travel_time` from YAML/defaults; removing it restores that source. Nothing rewrites
+native fallback timings and `travel_time` from YAML/defaults; removing it restores
+the native fallback when present, otherwise YAML/defaults. Nothing rewrites
 `myhome.yaml`, native names/areas, or gateway credentials. Writes use one gateway
 lock, an expected revision and atomic storage; failed persistence is reported and
 never published to the running cover. A stale editor keeps its draft and asks for an

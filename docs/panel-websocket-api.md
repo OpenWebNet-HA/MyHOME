@@ -1,5 +1,11 @@
 # MyHOME panel API: implemented reference
 
+> Current update — panel 0.21.0: [shared cover settings](cover-settings-backend.md)
+> specifies storage v5, export v3 and `myhome/cover_profiles/overview` (schema v1).
+> Existing endpoints remain available; native writes now use the shared store and
+> revision. Earlier release descriptions below remain historical where superseded.
+
+
 Status: **implemented through panel 0.20.0**. The original profile contract was reviewed against
 [`02ce199`](https://github.com/xtimmy86x/MyHOME/tree/02ce19908787297c1a6e2a65d56a289e766c0695).
 Panel 0.10.0 adds a [guided-measurement session API](cover-calibration.md) and
@@ -40,6 +46,7 @@ This experimental API may evolve through an explicitly documented migration.
 | --- | --- | --- |
 | `myhome/panel/inventory` | All configured gateways and native inventory; no `entry_id` parameter | `panel.py`, `ws_panel_inventory` |
 | `myhome/cover_profiles/read` | One explicit gateway and native cover; complete profile snapshot | `cover_profiles.py`, `ws_read` |
+| `myhome/cover_profiles/overview` | `entry_id`; profiles and cover values/origins in one gateway read | `cover_settings_api.py`, `ws_overview` |
 | `myhome/cover_profiles/export` | `entry_id`; versioned saved profiles, provenance and assignments | `cover_profile_export.py`, `ws_export` |
 | `myhome/cover_profiles/write` | Same target; `save`, `assign` or `delete`; updated snapshot | `cover_profiles.py`, `ws_write` |
 | `myhome/cover_profiles/subscribe` | Explicit gateway; initial/persisted revision invalidations | `cover_profiles.py`, `ws_subscribe` |

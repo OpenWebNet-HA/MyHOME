@@ -136,3 +136,12 @@ test("profile events leave guided calibration in place and refresh failures allo
   fail = true; other.push(1); await tick(); assert.equal(other.host.querySelector("#profile-reload").hidden, false);
   fail = false; other.host.querySelector("#profile-reload").click(); await tick(); assert.equal(form(other).elements.profile_name.value, "Saved 1");
 });
+
+test("unscaled timing profiles explain assignment limits in the existing section", async () => {
+  const view = setup({ read: () => ({ ...snapshot(), model: "linear_time", scaling: "unscaled" }) });
+  await view.open();
+  const note = view.host.querySelector("#profile-unscaled");
+  assert.match(note.textContent, /senza adattamento all’altezza/);
+  assert.equal(note.closest("fieldset"), form(view).querySelector("fieldset"));
+  assert.equal(view.host.querySelectorAll(".profile-details").length, 3);
+});

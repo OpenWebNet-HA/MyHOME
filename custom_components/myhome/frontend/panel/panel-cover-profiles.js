@@ -280,6 +280,7 @@ export class CoverProfileEditor {
             </select></label>
             <button type="button" class="primary" data-profile-action="assign" ${disabled}>${esc(t("profileAssign"))}</button>
           </div>
+          ${data.scaling === "unscaled" ? `<p class="muted" id="profile-unscaled">${esc(t("profileUnscaled"))}</p>` : ""}
         </fieldset>
         <details class="profile-details" data-section="calibration" ${open("calibration")}>
           <summary><span class="profile-details-title">${esc(t("profileSectionCalibrate"))} ${help("cal-help-text")}</span><span class="profile-details-hint" id="cal-hint"></span>${chevron}</summary>

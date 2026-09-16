@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import copy
-import math
 from collections.abc import Callable
 from typing import Any
 from uuid import uuid4
@@ -28,7 +27,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util.file import WriteError
 from homeassistant.util.json import SerializationError
 
-from .const import DOMAIN
+from .const import CONF_COVER_TRAVEL_TIMES, DOMAIN
 from .cover_profile_provenance import (
     DIRECTIONS,
     PROVENANCE,
@@ -36,19 +35,28 @@ from .cover_profile_provenance import (
     public_provenance,
     unknown_provenance,
 )
+from .cover_settings import (
+    COVER_RECORD,
+    KEYS,
+    MODEL,
+    NATIVE,
+    migrate,
+    native_provenance,
+    resolve,
+    seconds,
+)
 
 DATA_KEY = f"{DOMAIN}_cover_profile_stores"
 WS_READ = "myhome/cover_profiles/read"
 WS_WRITE = "myhome/cover_profiles/write"
 WS_SUBSCRIBE = "myhome/cover_profiles/subscribe"
+WS_OVERVIEW = "myhome/cover_profiles/overview"
 MAX_PROFILES = 200
 
 
 def travel_time(value: Any) -> Any:
     """Accept finite seconds, including fractions, without treating booleans as numbers."""
-    if type(value) not in (int, float) or not math.isfinite(value) or not 1 <= value <= 600:
-        raise vol.Invalid("travel_time must be between 1 and 600 seconds")
-    return float(value)
+    return seconds(value)
 
 
 LEGACY_PROFILE = vol.Schema({
@@ -73,10 +81,14 @@ STORED_DIRECTIONAL_PROFILE = DIRECTIONAL_PROFILE.extend({
 })
 STORED_PROFILE = vol.Any(STORED_DIRECTIONAL_PROFILE,
                          vol.All(LEGACY_PROFILE, directional_profile, STORED_DIRECTIONAL_PROFILE))
-STORED = vol.Schema({
+LEGACY_STORED = vol.Schema({
     vol.Required("revision"): vol.All(int, vol.Range(min=0)),
     vol.Required("profiles"): {str: STORED_PROFILE},
     vol.Required("assignments"): {str: str},
+})
+STORED = LEGACY_STORED.extend({
+    vol.Required("native_fallbacks"): {str: NATIVE},
+    vol.Required("covers"): {str: COVER_RECORD},
 })
 TARGET: dict[str | vol.Marker, Any] = {vol.Required("entry_id"): str, vol.Required("entity_id"): str}
 
@@ -89,9 +101,17 @@ class ProfileStorage(Store[dict[str, Any]]):
     """Surface write failures: HA's default Store logs them and returns success."""
 
     async def _async_migrate_func(self, old_major_version: Any, old_minor_version: Any, old_data: Any) -> Any:
-        if old_major_version not in (1, 2, 3):
+        if old_major_version not in (1, 2, 3, 4):
             raise NotImplementedError
-        return STORED(old_data)
+        data = migrate(LEGACY_STORED(old_data), self.native_options())
+        # Save the exact old payload/version before HA replaces the main file.
+        await ProfileStorage(self.hass, old_major_version, f"{self.key}.pre_shared", atomic_writes=True).async_save(old_data)
+        return STORED(data)
+
+    def native_options(self) -> Any:
+        entry_id = self.key.removeprefix(f"{DOMAIN}.cover_profiles.")
+        entry = self.hass.config_entries.async_get_entry(entry_id)
+        return entry.options.get(CONF_COVER_TRAVEL_TIMES, {}) if entry else {}
 
     async def _async_write_data(self, *args: Any) -> None:
         try:
@@ -104,12 +124,14 @@ class CoverProfileStore:
     """Persist a complete mutation before publishing its new revision in memory."""
 
     def __init__(self, hass: Any, entry_id: str) -> None:
+        self.hass, self.entry_id = hass, entry_id
         self.store = ProfileStorage(
-            hass, 4, f"{DOMAIN}.cover_profiles.{entry_id}", atomic_writes=True
+            hass, 5, f"{DOMAIN}.cover_profiles.{entry_id}", atomic_writes=True
         )
         self.lock = asyncio.Lock()
         self.loaded = False
-        self.data: dict[str, Any] = {"revision": 0, "profiles": {}, "assignments": {}}
+        self.data: dict[str, Any] = {"revision": 0, "profiles": {}, "assignments": {},
+                                    "covers": {}, "native_fallbacks": {}}
         self.covers: dict[str, Any] = {}
         self.calibration = None
         self.calibration_command_lock = asyncio.Lock()
@@ -118,8 +140,10 @@ class CoverProfileStore:
         """Caller holds lock; invalid storage must not silently overwrite saved data."""
         if not self.loaded:
             saved = await self.store.async_load()
-            if saved is not None:
-                self.data = STORED(saved)
+            if saved is None:
+                saved = migrate({"revision": 0, "profiles": {}, "assignments": {}}, self.store.native_options())
+                await self.store.async_save(saved)
+            self.data = STORED(saved)
             self.loaded = True
 
     def profile(self, unique_id: str) -> Any:
@@ -127,6 +151,18 @@ class CoverProfileStore:
         profile_id = self.data["assignments"].get(unique_id)
         profile = self.data["profiles"].get(profile_id)
         return {"id": profile_id, **profile} if profile else None
+
+    def native_identity(self, device_id: str) -> str | None:
+        """Use the same identity rule as MyHOMEEntity, scoped to this config entry."""
+        entry = self.hass.config_entries.async_get_entry(self.entry_id)
+        mac = entry.data.get("mac") if entry else None
+        return f"{mac}-2-{device_id.removeprefix('2-')}" if mac else None
+
+    def native_for(self, unique_id: str) -> Any:
+        for device_id, values in self.data["native_fallbacks"].items():
+            if self.native_identity(device_id) == unique_id:
+                return values
+        return None
 
 
 def get_store(hass: Any, entry_id: str) -> Any:
@@ -168,7 +204,8 @@ def snapshot(hass: Any, store: Any, entry: Any, entity: Any) -> Any:
     return {
         "entry_id": entry.entry_id, "entity_id": entity.entity_id,
         "revision": store.data["revision"], "assigned_profile_id": assigned["id"] if assigned else None,
-        "profiles": [{"id": key, **value,
+        "model": MODEL, "scaling": "unscaled", "accuracy": {"kind": "not_measured"},
+        "profiles": [{"id": key, **value, "model": MODEL, "scaling": "unscaled",
                       "provenance": public_provenance(value, records, entity.unique_id),
                       "uses": list(store.data["assignments"].values()).count(key),
                       "assigned_to": assignments(key)}
@@ -179,7 +216,31 @@ def snapshot(hass: Any, store: Any, entry: Any, entity: Any) -> Any:
         "effective_opening_time": cover._travel_time_up if cover else None,
         "effective_closing_time": cover._travel_time_down if cover else None,
         "pending": bool(cover and cover._pending_profile is not None),
+        "configured": public_settings(store, entity, records, active=False),
+        "effective": public_settings(store, entity, records, active=True),
     }
+
+
+def public_settings(store: Any, entity: Any, records: Any, *, active: bool) -> Any:
+    """Project the resolver/runtime snapshot without exposing registry unique IDs."""
+    cover = store.covers.get(entity.unique_id)
+    if cover and cover._advanced:
+        return None
+    if active:
+        values = cover._effective_cover_settings if cover else None
+    elif cover:
+        values = cover.resolve_cover_settings(store.profile(entity.unique_id))
+    else:
+        values = resolve(profile=store.profile(entity.unique_id), native=store.native_for(entity.unique_id),
+                         overrides=store.data["covers"].get(entity.unique_id, {}).get("overrides", {}),
+                         default=None, default_source="unavailable")
+    if values is None:
+        return None
+    provenance = public_provenance({"provenance": {
+        direction: item["provenance"] for direction, item in values.items()
+    }}, records, entity.unique_id)
+    return {direction: {**item, "provenance": provenance[direction]}
+            for direction, item in values.items()}
 
 
 async def read_profile(hass: Any, entry_id: str, entity_id: str) -> Any:
@@ -275,6 +336,31 @@ async def commit_profiles(hass: Any, store: Any, entry_id: str, data: Any, affec
             cover.async_write_ha_state()
 
 
+async def write_native_timing(hass: Any, entry: Any, cover: Any, result: Any) -> None:
+    """Native services share the same transaction and never rewrite legacy options."""
+    store = get_store(hass, entry.entry_id)
+    async with store.lock:
+        await store.load()
+        if hass.config_entries.async_get_entry(entry.entry_id) is not entry:
+            raise ProfileError("target_not_found")
+        cover._check_panel_timing_owner(lock_held=True)
+        data = copy.deepcopy(store.data)
+        if result is None:
+            data["native_fallbacks"].pop(str(cover._device_id), None)
+        else:
+            previous = data["native_fallbacks"].get(str(cover._device_id))
+            record = NATIVE(result)
+            record["provenance"] = {
+                direction: native_provenance(previous, direction)
+                if previous and previous[key] == record[key] and result.get("source") != "measured"
+                else native_provenance(record, direction)
+                for direction, key in KEYS.items()
+            }
+            data["native_fallbacks"][str(cover._device_id)] = record
+        await commit_profiles(hass, store, entry.entry_id, data, [])
+        cover._profile_store = store
+
+
 async def bind_cover(hass: Any, cover: Any) -> None:
     """Restore a profile before the cover queries its initial bus state."""
     entity = er.async_get(hass).async_get(cover.entity_id)
@@ -284,6 +370,7 @@ async def bind_cover(hass: Any, cover: Any) -> None:
     async with store.lock:
         await store.load()
         store.covers[entity.unique_id] = cover
+        cover._profile_store = store
         if not cover._advanced:
             cover.async_apply_cover_profile(store.profile(entity.unique_id))
 
@@ -300,6 +387,7 @@ async def remove_entry(hass: Any, entry_id: str) -> None:
     store = get_store(hass, entry_id)
     async with store.lock:
         await store.store.async_remove()
+        await Store(hass, 1, f"{store.store.key}.pre_shared").async_remove()
         async_dispatcher_send(hass, f"{WS_SUBSCRIBE}:{entry_id}", {
             "entry_id": entry_id, "revision": store.data["revision"], "kind": "removed",
         })
@@ -396,8 +484,10 @@ async def ws_subscribe(hass: Any, connection: Any, msg: dict[str, Any]) -> None:
 @callback
 def register_api(hass: HomeAssistant) -> None:
     from .cover_profile_export import ws_export
+    from .cover_settings_api import ws_overview
 
     websocket_api.async_register_command(hass, ws_export)
+    websocket_api.async_register_command(hass, ws_overview)
     websocket_api.async_register_command(hass, ws_read)
     websocket_api.async_register_command(hass, ws_write)
     websocket_api.async_register_command(hass, ws_subscribe)

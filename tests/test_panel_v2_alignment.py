@@ -24,6 +24,11 @@ async def test_panel_assignment_restores_native_directional_times_on_reset(hass,
     hass.config_entries.async_update_entry(entry, options={native.CONF_COVER_TRAVEL_TIMES: {
         cover._device_id: {"up": 24.5, "down": 18.5, "source": "manual", "measured_at": "2026-09-16T12:00:00+00:00"},
     }})
+    # Recreate the store to exercise first-load migration of the seeded native options.
+    from custom_components.myhome.cover_profiles import DATA_KEY
+    store = get_store(hass, entry.entry_id)
+    await store.store.async_remove()
+    hass.data[DATA_KEY].pop(entry.entry_id)
     await bind_cover(hass, cover)
     assert (cover._travel_time_up, cover._travel_time_down) == (24.5, 18.5)
     await write_profile(hass, message(plant, profile={"name": "Profile", "opening_time": 35, "closing_time": 25}))

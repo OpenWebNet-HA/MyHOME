@@ -1,24 +1,22 @@
-# Shared MyHOME panel contract — proposal for review
+# Shared MyHOME panel contract — implementation and proposal
 
-**Updated: 2026-09-16, panel 0.20.1. Shared contract: draft, not jointly approved
-or implemented under the proposed common names.** Our panel already implements
-profiles, guided measurement, profile revision subscriptions, per-direction
-provenance, calibration export and optional single-cover and selected-cover automatic measurement, plus guided
-single-direction measurement; these are
-documented in the [implemented API](panel-websocket-api.md) and
-[guided-calibration reference](cover-calibration.md).
+**Updated: 2026-09-16, panel 0.21.0.** The first shared backend slice is implemented:
+storage v5, migration of native v2 fallbacks, one directional resolver, native
+service persistence through the shared transaction, and gateway-wide read API.
+See [implemented schema, migration, API and limits](cover-settings-backend.md).
+The agreed proposal is pinned to [51ffaf7](https://github.com/Interstellar0verdrive/MyHOME-stability/blob/51ffaf73a3da3ac09246ee199751e613217e0a78/docs/calibration-contract-proposal.md).
+This is a review of that document; the historical fork-code comparison below stays
+pinned to `229b1eb` and is not a fresh audit of its runtime.
 
-This document continues the existing source comparison; it does not restart the
-panel implementation or propose copying another fork wholesale. The original
-comparison used our panel 0.9.0 at `02ce199` and Interstellar0verdrive's fork at
-`229b1eb`. Our side is pinned to `9b839be` (panel 0.20.0); `9e96d6a` remains the
-preceding 0.19.0 implementation baseline.
-The branch also integrates `v2-phase1-architecture` through `3f5e791` (2026-09-16).
-The current alignment preserves the compact profile editor at `8edd201`, adds
-v2 runtime-data access and native/panel calibration ownership checks, and retains
-storage v4/export v2. The v2 directional runtime is shared, while profile storage
-and native option-based calibration remain distinct with explicit precedence.
-See [alignment behavior](sidepanel.md#current-v2-alignment-0201).
+The current implementation is panel 0.21.0 on this branch, following `e472ff4`.
+The integrated v2 baseline remains `3f5e791`. Storage v5 and export v3 supersede
+the v4/v2 descriptions in the historical comparison below. The session behaviour
+remains that of panel 0.20.0; detached supervision, shared writes and nonlinear
+calibration are not implemented by this change. WHO layout and the standalone
+bus card remain supported.
+
+The original comparison used our panel 0.9.0 at `02ce199` and the calibration fork
+at `229b1eb`; `9b839be` pins the preceding single-direction guided measurement.
 The backend from
 upstream #349 is compared separately. The calibration-fork column still describes
 its pinned baseline, not a fresh audit of its moving `master`.

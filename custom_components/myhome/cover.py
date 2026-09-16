@@ -58,7 +58,8 @@ from .const import (
     SERVICE_SET_COVER_TRAVEL_TIME,
     SERVICE_STOP_COVER_CALIBRATION,
 )
-from .cover_profiles import bind_cover
+from .cover_profiles import bind_cover, write_native_timing
+from .cover_settings import resolve
 from .discovery import DeviceContext, PlatformDiscovery
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
@@ -317,6 +318,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._copied_from = calibration.get("copied_from") or None
         self._default_travel_time = base_travel
         self._default_travel_source = travel_time_source
+        self._profile_store: Any = None
+        self._effective_cover_settings = resolve(profile=None, native=calibration, overrides={},
+                                                 default=base_travel, default_source=travel_time_source)
         self._pending_profile: tuple[dict[str, Any] | None] | None = None
         self._calibration: Any = None
         self._active_cover_profile: dict[str, Any] | None = None
@@ -375,10 +379,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             return
         self._pending_profile = None
         self._active_cover_profile = profile
-        entry = getattr(self._gateway_handler, "config_entry", None)
-        baseline = _stored_calibration(entry, str(self._device_id)) if entry else None
-        self._travel_time_up = profile["opening_time"] if profile else float((baseline or {}).get("up", self._default_travel_time))
-        self._travel_time_down = profile["closing_time"] if profile else float((baseline or {}).get("down", self._default_travel_time))
+        baseline = self.native_cover_fallback()
+        self._effective_cover_settings = self.resolve_cover_settings(profile)
+        self._travel_time_up = self._effective_cover_settings["opening"]["value"]
+        self._travel_time_down = self._effective_cover_settings["closing"]["value"]
         self._travel_time = self._travel_time_down
         self._calibration_source = "panel_profile" if profile else (baseline or {}).get("source", "measured" if baseline else self._default_travel_source)
         self._calibrated_at = None if profile else (baseline or {}).get("measured_at")
@@ -386,6 +390,20 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._refresh_travel_attributes()
         self._attr_extra_state_attributes["cover_profile"] = profile["name"] if profile else None
         self._attr_extra_state_attributes["cover_profile_pending"] = False
+
+    def native_cover_fallback(self) -> dict[str, Any] | None:
+        """After binding, only the migrated store is authoritative."""
+        if self._profile_store is not None:
+            stored: dict[str, Any] | None = self._profile_store.data["native_fallbacks"].get(str(self._device_id))
+            return stored
+        entry = getattr(self._gateway_handler, "config_entry", None)
+        return _stored_calibration(entry, str(self._device_id)) if entry else None
+
+    def resolve_cover_settings(self, profile: dict[str, Any] | None) -> dict[str, Any]:
+        overrides = (self._profile_store.data["covers"].get(self.unique_id, {}).get("overrides", {})
+                     if self._profile_store is not None else {})
+        return resolve(profile=profile, native=self.native_cover_fallback(), overrides=overrides,
+                       default=self._default_travel_time, default_source=self._default_travel_source)
 
     def _apply_pending_cover_profile(self) -> None:
         if self._pending_profile is not None:
@@ -654,7 +672,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         key = _gateway_key(self._gateway_handler)
         return bool(_CALIBRATION_ACTIVE.get(key) or _CALIBRATION_QUEUED.get(key))
 
-    def _check_panel_timing_owner(self) -> None:
+    def _check_panel_timing_owner(self, *, lock_held: bool = False) -> None:
         """Native timing writes must not replace an assigned profile or its session."""
         from .cover_profiles import DATA_KEY
 
@@ -663,7 +681,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         store = hass.data.get(DATA_KEY, {}).get(getattr(entry, "entry_id", None)) if hass else None
         if (self._active_cover_profile is not None or self._pending_profile is not None
                 or self._calibration is not None
-                or (store and (store.calibration is not None or store.lock.locked()))):
+                or (store and (store.calibration is not None
+                            or (store.lock.locked() and not lock_held)
+                            or store.profile(self.unique_id) is not None
+                            or store.data["covers"].get(self.unique_id, {}).get("overrides")))):
             raise ServiceValidationError(
                 "Travel times are managed by the MyHOME panel. Finish its measurement "
                 "and remove the assigned travel profile before using native timing services.",
@@ -814,23 +835,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     translation_placeholders={"name": self._display_name, "direction": label, "seconds": f"{value:.1f}"},
                 )
 
-        self._travel_time_down = round(down, 2)
-        self._travel_time_up = round(up, 2)
-        self._travel_time = int(round(down))
-        self._calibration_source = "measured"
-        self._copied_from = None
-        self._calibrated_at = dt_util.utcnow().isoformat(timespec="seconds")
+        result = {"down": round(down, 2), "up": round(up, 2), "source": "measured",
+                  "measured_at": dt_util.utcnow().isoformat(timespec="seconds")}
+        await self._persist_calibration(result)
+        self.async_apply_cover_profile(None)
         # The sequence ends with the cover fully open.
         self._attr_current_cover_position = 100
         self._start_position = 100
         self._attr_is_closed = False
-        self._refresh_travel_attributes()
-        result = {
-            "down": self._travel_time_down,
-            "up": self._travel_time_up,
-            "measured_at": self._calibrated_at,
-        }
-        self._persist_calibration(result)
         if self.hass is not None:
             self.async_write_ha_state()
         self._fire_calibration_event("done", **result)
@@ -890,23 +902,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     },
                 )
 
-        self._travel_time_down = round(float(down), 2)
-        self._travel_time_up = round(float(up), 2)
-        self._travel_time = int(round(self._travel_time_down))
-        self._copied_from = str(copied_from) if copied_from else None
-        self._calibration_source = "copied" if self._copied_from else "manual"
-        self._calibrated_at = dt_util.utcnow().isoformat(timespec="seconds")
-
-        result = {
-            "down": self._travel_time_down,
-            "up": self._travel_time_up,
-            "measured_at": self._calibrated_at,
-            "source": self._calibration_source,
-        }
-        if self._copied_from:
-            result["copied_from"] = self._copied_from
-        self._persist_calibration(result)
-        self._refresh_travel_attributes()
+        result = {"down": round(float(down), 2), "up": round(float(up), 2),
+                  "measured_at": dt_util.utcnow().isoformat(timespec="seconds"),
+                  "source": "copied" if copied_from else "manual"}
+        if copied_from:
+            result["copied_from"] = str(copied_from)
+        await self._persist_calibration(result)
+        self.async_apply_cover_profile(None)
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -929,16 +931,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 translation_placeholders={"name": self._display_name},
             )
 
-        entry = getattr(self._gateway_handler, "config_entry", None)
-        hass = self.hass or self._hass
-        if entry is not None and getattr(entry, "entry_id", None) and hass is not None and hasattr(hass, "config_entries"):
-            options = dict(getattr(entry, "options", None) or {})
-            stored = dict(options.get(CONF_COVER_TRAVEL_TIMES) or {})
-            if str(self._device_id) in stored:
-                del stored[str(self._device_id)]
-                options[CONF_COVER_TRAVEL_TIMES] = stored
-                hass.config_entries.async_update_entry(entry, options=options)
-
         cfg = self._device_config() or {}
         if CONF_TRAVEL_TIME in cfg:
             base_travel = float(cfg[CONF_TRAVEL_TIME])
@@ -947,14 +939,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             base_travel = float(DEFAULT_TRAVEL_TIME)
             source = "default"
 
-        self._travel_time_down = base_travel
-        self._travel_time_up = base_travel
-        self._travel_time = int(round(base_travel))
-        self._calibration_source = source
-        self._calibrated_at = None
-        self._copied_from = None
-
-        self._refresh_travel_attributes()
+        await self._persist_calibration(None)
+        self._default_travel_time = base_travel
+        self._default_travel_source = source
+        self.async_apply_cover_profile(None)
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -969,20 +957,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._gateway_handler.log_id, self._full_where, source, base_travel,
         )
 
-    def _persist_calibration(self, result: dict) -> None:
-        """Store the measurement in the config entry options (survives restarts, applies to discovered covers)."""
+    async def _persist_calibration(self, result: dict[str, Any] | None) -> None:
+        """Publish native timings only after the shared transaction is durable."""
         entry = getattr(self._gateway_handler, "config_entry", None)
         hass = self.hass or self._hass
-        if entry is None or hass is None or not hasattr(hass, "config_entries"):
+        if entry is None or hass is None:
             return
-        try:
-            options = dict(getattr(entry, "options", None) or {})
-            stored = dict(options.get(CONF_COVER_TRAVEL_TIMES) or {})
-            stored[str(self._device_id)] = result
-            options[CONF_COVER_TRAVEL_TIMES] = stored
-            hass.config_entries.async_update_entry(entry, options=options)
-        except Exception as err:  # pragma: no cover - defensive
-            LOGGER.warning("%s Could not persist calibration for %s: %s", self._gateway_handler.log_id, self._full_where, err)
+        await write_native_timing(hass, entry, self, result)
 
     async def async_update(self):
         """Update the entity.
