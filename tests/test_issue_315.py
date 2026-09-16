@@ -181,7 +181,6 @@ async def test_commands_continue_after_event_reconnect(hass, f454_gateway_info):
         mock_cmd.send.assert_called_with(
             message=cmd1,
             is_status_request=True,
-            retry_after_lost_ack=True,
         )
 
         # Event connection flaps (disconnect -> reconnect)
@@ -196,7 +195,6 @@ async def test_commands_continue_after_event_reconnect(hass, f454_gateway_info):
         mock_cmd.send.assert_called_with(
             message=cmd2,
             is_status_request=False,
-            retry_after_lost_ack=True,
         )
 
         # Clean shutdown

@@ -1,6 +1,7 @@
 """Code to handle a MyHome Gateway."""
 import asyncio
 import contextlib
+import inspect
 import time
 from collections.abc import Callable
 from typing import Any, List
@@ -826,6 +827,12 @@ class MyHOMEGatewayHandler:
 
         _command_session = OWNCommandSession(gateway=self.gateway, logger=LOGGER)
         try:
+            # The pinned OWNd 2.0.0b6 has the two-argument send API. Newer
+            # engines can explicitly opt into replay after a lost ACK. Detect
+            # support before sending; retrying on TypeError could send twice.
+            send_options: dict[str, Any] = {}
+            if "retry_after_lost_ack" in inspect.signature(_command_session.send).parameters:
+                send_options["retry_after_lost_ack"] = True
             try:
                 res = await _command_session.connect()
             except asyncio.CancelledError:
@@ -898,7 +905,7 @@ class MyHOMEGatewayHandler:
                         collected = await _command_session.send(
                             message=task["message"],
                             is_status_request=task["is_status_request"],
-                            retry_after_lost_ack=True,
+                            **send_options,
                         )
                         if collected is None:
                             _cancel_written(task)

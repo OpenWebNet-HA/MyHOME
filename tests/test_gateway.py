@@ -736,8 +736,7 @@ async def test_sending_loop(gateway_handler):
         ])
         gateway_handler.send_buffer = mock_queue
 
-        def mock_send(message, is_status_request, retry_after_lost_ack):
-            assert retry_after_lost_ack is True
+        def mock_send(message, is_status_request):
             if message == "msg2":
                 gateway_handler._terminate_sender = True
 
@@ -774,9 +773,8 @@ async def test_sending_loop_collected_responses_and_pacing(gateway_handler):
         concurrent_raw = "*#1*1##"
 
         async def mock_send_with_concurrent_event(
-            message, is_status_request, retry_after_lost_ack
+            message, is_status_request
         ):
-            assert retry_after_lost_ack is True
             gateway_handler.bus_monitor.record_frame(direction="rx", raw=concurrent_raw, parsed=None)
             return [resp_msg, concurrent_raw, resp_raw]
 
@@ -800,7 +798,6 @@ async def test_sending_loop_collected_responses_and_pacing(gateway_handler):
             mock_cmd_session.send.assert_called_once_with(
                 message=cmd,
                 is_status_request=False,
-                retry_after_lost_ack=True,
             )
             mock_dispatcher.assert_called_once_with(
                 gateway_handler.hass,
@@ -1294,7 +1291,7 @@ async def test_calibration_jobs_recheck_guard_after_worker_lock(gateway_handler)
         allowed[0] = False
         command_lock.release()
         await worker
-    session.send.assert_awaited_once_with(message=stop, is_status_request=False, retry_after_lost_ack=True)
+    session.send.assert_awaited_once_with(message=stop, is_status_request=False)
     assert gateway_handler.send_buffer.empty()
 
 

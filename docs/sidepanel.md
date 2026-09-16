@@ -30,6 +30,11 @@ Panel measurements and profile writes likewise reject active or queued native
 calibration. Existing profile storage v4 and export v2 remain unchanged; this is
 coexistence with explicit ownership, not the proposed shared-backend migration.
 
+The command worker supports the two-argument `send()` API in the pinned
+OWNd 2.0.0b6. It passes `retry_after_lost_ack=True` only when the installed
+engine explicitly exposes that parameter; an internal `TypeError` never
+triggers a second send. The OWNd smoke matrix exercises the real send API.
+
 The shared native/legacy monitor includes upstream Start/Stop Trace, fresh Sweep
 captures, capture-specific exports, local timestamps and explicit arming before
 raw frame transmission. Exported diagnostics retain upstream privacy filtering.
