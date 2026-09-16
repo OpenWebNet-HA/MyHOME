@@ -218,14 +218,19 @@ WHO13_OFFICIAL_DEVICE_TYPES = {
     "13": "H4684",
 }
 # Codes seen on real hardware but absent from the official document, with the
-# evidence. They label an entry that has no model, and otherwise only raise a
-# repair issue asking the owner to confirm - never an automatic relabel.
-#   200 -> MyHOMEServer1: issue #297 diagnostics from a self-identified
-#          MyHOMEServer1 owner (#292); the entry said F454 only because the
-#          manual flow defaulted to it. OWNd still decodes 200 as F454 (circular
-#          inference from that mislabel) - to be corrected upstream.
-WHO13_OBSERVED_DEVICE_TYPES = {
-    "200": "MyHomeServer1",
+# evidence.
+#   200: Observed on both F454 (issue #370, confirmed physical device + SSDP)
+#        and MyHOMEServer1 (issue #292/#297). Because it is shared across multiple
+#        modern Linux-based gateway families, it cannot uniquely identify either
+#        model or overrule an authoritative announcement. It corroborates both
+#        F454 and MyHOMEServer1, but contradicts legacy gateways (e.g. MH200/F452).
+WHO13_OBSERVED_DEVICE_TYPES: dict[str, str] = {
+    "200": "F454 / MyHomeServer1",
+}
+# Codes known to be shared across multiple model families.
+# Maps code -> tuple of compatible family names (normalized via gateway_model_family).
+WHO13_AMBIGUOUS_DEVICE_TYPES: dict[str, tuple[str, ...]] = {
+    "200": ("F454", "MYHOMESERVER1"),
 }
 GATEWAY_DEVICE_TYPE_MAP = {**WHO13_OBSERVED_DEVICE_TYPES, **WHO13_OFFICIAL_DEVICE_TYPES}
 
@@ -248,6 +253,34 @@ def gateway_model_family(model: str | None) -> str:
     name = str(model).strip().upper().replace(" ", "").replace("-", "").replace("_", "")
     m = re.match(r"^([A-Z]+\d+)[A-Z]*$", name)
     return m.group(1) if m else name
+
+
+def is_who13_code_compatible(raw_code: str, model: str | None) -> bool | None:
+    """Check if a WHO=13 dimension 15 code is compatible with a gateway model.
+
+    Returns:
+        True: Confirmed compatible (matches official spec or known empirical family).
+        False: Confirmed contradiction (contradicts official 2006 OpenWebNet spec).
+        None: Compatibility unknown (observed/empirical code on an unverified model,
+              or unknown code; cannot prove contradiction).
+    """
+    if not model or not raw_code:
+        return False
+    family = gateway_model_family(model)
+    official = WHO13_OFFICIAL_DEVICE_TYPES.get(raw_code)
+    if official:
+        return family == gateway_model_family(official)
+    allowed_families = WHO13_AMBIGUOUS_DEVICE_TYPES.get(raw_code)
+    if allowed_families:
+        if family in allowed_families:
+            return True
+        return None
+    observed = WHO13_OBSERVED_DEVICE_TYPES.get(raw_code)
+    if observed:
+        if family == gateway_model_family(observed):
+            return True
+        return None
+    return None
 
 
 

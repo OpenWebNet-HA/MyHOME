@@ -14,7 +14,7 @@ from homeassistant.const import (
     CONF_DEVICE_ID,
     CONF_TYPE,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 
 try:
@@ -100,6 +100,7 @@ async def test_p2_gateway_cen_string_preservation_and_event_enrichment(hass: Hom
 
     fired_events = []
 
+    @callback
     def _event_listener(event):
         fired_events.append(event.data)
 

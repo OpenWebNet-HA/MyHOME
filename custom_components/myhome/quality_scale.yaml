@@ -15,8 +15,8 @@ rules:
     status: done
     comment: local_push; only temperature sensors poll (5 min) and probes (WHERE >= 100) are receive-only unless the push stream goes silent.
   brands:
-    status: todo
-    comment: No pull request to home-assistant/brands has been submitted yet.
+    status: done
+    comment: Listed in home-assistant/brands with icon and logo (PR home-assistant/brands#2052).
   common-modules:
     status: done
     comment: Base entity in myhome_device.py; gateway handler in gateway.py; shared constants in const.py; the restore / configure / discover / route platform skeleton in discovery.py (every entity platform; button creates its entities from the other platforms' announcements).

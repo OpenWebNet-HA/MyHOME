@@ -15,6 +15,14 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Current v2 alignment (0.22.0)
+
+The branch integrates official v2 through `c2e6424`, including the public OWNd
+`send(message, is_status_request)` contract, callback-safe tests and ambiguous
+WHO=13 device-type 200 handling for F454/MyHomeServer1. The worker retains panel
+calibration command locks and cancellation guards while leaving retry policy to
+OWNd. This supersedes the signature-probing compatibility described for 0.20.1.
+
 ## Personal cover values and shared profiles (0.22.0)
 
 The existing Advanced section lets you customize opening and closing independently.

@@ -5,7 +5,7 @@ from discussion #270, against
 [Interstellar0verdrive's proposal at 51ffaf7](https://github.com/Interstellar0verdrive/MyHOME-stability/blob/51ffaf73a3da3ac09246ee199751e613217e0a78/docs/calibration-contract-proposal.md).
 Current implementation: [`166b923`](https://github.com/xtimmy86x/MyHOME/commit/166b92324b714ad588f280ed1bd816d8e73c6017).
 Previous implementation (0.21.0): [`d40f02f`](https://github.com/xtimmy86x/MyHOME/commit/d40f02ff11d9bdbd34adcd870afa12cef0d71f0d).
-The preceding panel baseline is `e472ff4`; the integrated v2 base is `3f5e791`.
+The preceding panel baseline is `e472ff4`; the integrated v2 base is now `c2e6424` (previously `3f5e791`).
 The WHO navigation, device grouping and calibration screens retain their organisation.
 
 ## Supported contract
@@ -181,8 +181,13 @@ Local validation on Python 3.14 / Home Assistant 2026.9.1: **1,829 Python tests
 passed, one existing skip, five snapshots passed; 100% line coverage (7,065
 statements across 39 modules). All 98 frontend tests passed.** Ruff, the coverage
 enforcer, HA architecture checks and the strict typing ratchet passed without
-raising the baseline. The discovery regression test now waits for dispatcher
-callbacks before asserting their result, removing an executor scheduling race.
+raising the baseline. The discovery regression test incorporates upstream’s `@callback` listeners,
+removing the executor scheduling race.
+After merging official v2 `c2e6424` (command-session/F454 identification fixes),
+the complete suite passes **1,845 Python tests**, one skip and five snapshots,
+with **100% line coverage (7,084 statements across 39 modules)**. The 98 frontend
+tests remain passing; the merge does not change frontend files. Coverage enforcement,
+Ruff, HA architecture and the strict typing ratchet pass.
 GitHub Actions validates the published branch separately.
 
 The preceding release passed all 10 official PR workflows; the user reported

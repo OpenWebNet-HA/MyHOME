@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.components.cover import ATTR_POSITION
+from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from OWNd.message import OWNEvent
 
@@ -133,7 +134,12 @@ async def _drive_run(cover, gateway, clock, *, direction_frame: str, write_delay
 async def test_calibration_measures_down_and_up_and_persists(hass, gateway, clock, fake_time, sleeps):
     cover = _make_cover(hass, gateway)
     events = []
-    hass.bus.async_listen(EVENT_COVER_CALIBRATION, lambda ev: events.append(ev.data))
+
+    @callback
+    def _record_event(ev):
+        events.append(ev.data)
+
+    hass.bus.async_listen(EVENT_COVER_CALIBRATION, _record_event)
     task = asyncio.create_task(cover.async_calibrate())
 
     # run 1: up to the end stop (not timed), run 2: down 18.4 s, run 3: up 20.1 s
@@ -239,7 +245,12 @@ async def test_set_position_refused_while_calibrating(hass, gateway, clock, fake
 async def test_no_stop_status_times_out_with_a_clear_message(hass, gateway, clock, fake_time, sleeps):
     cover = _make_cover(hass, gateway)
     events = []
-    hass.bus.async_listen(EVENT_COVER_CALIBRATION, lambda ev: events.append(ev.data))
+
+    @callback
+    def _record_event(ev):
+        events.append(ev.data)
+
+    hass.bus.async_listen(EVENT_COVER_CALIBRATION, _record_event)
     with patch("custom_components.myhome.cover.CALIBRATION_RUN_TIMEOUT", 0.05):
         task = asyncio.create_task(cover.async_calibrate())
         await _yield()
@@ -288,7 +299,12 @@ async def test_calibrations_on_one_gateway_run_sequentially(hass, gateway, clock
     b.entity_id = "cover.other"
     b._device_id = "22"
     events = []
-    hass.bus.async_listen(EVENT_COVER_CALIBRATION, lambda ev: events.append((ev.data["entity_id"], ev.data["phase"])))
+
+    @callback
+    def _record_event(ev):
+        events.append((ev.data["entity_id"], ev.data["phase"]))
+
+    hass.bus.async_listen(EVENT_COVER_CALIBRATION, _record_event)
     t_a = asyncio.create_task(a.async_calibrate())
     t_b = asyncio.create_task(b.async_calibrate())
     await _yield()
@@ -562,7 +578,12 @@ async def test_set_cover_travel_time_manual(hass, gateway):
 
     cover = _make_cover(hass, gateway)
     events = []
-    hass.bus.async_listen(EVENT_COVER_CALIBRATION, lambda ev: events.append(ev.data))
+
+    @callback
+    def _record_event(ev):
+        events.append(ev.data)
+
+    hass.bus.async_listen(EVENT_COVER_CALIBRATION, _record_event)
 
     res = await cover.async_set_travel_time(travel_time=18.5, travel_time_up=19.2)
     assert res["down"] == 18.5
@@ -822,7 +843,12 @@ async def test_run_ending_at_the_actuator_cutoff_fails_at_once(hass, gateway, cl
     """A 14 s shutter on an actuator with the 60 s limit: the first 61.5 s run fails, nothing is stored, no more runs."""
     cover = _make_cover(hass, gateway)
     events = []
-    hass.bus.async_listen(EVENT_COVER_CALIBRATION, lambda ev: events.append(ev.data))
+
+    @callback
+    def _record_event(ev):
+        events.append(ev.data)
+
+    hass.bus.async_listen(EVENT_COVER_CALIBRATION, _record_event)
     task = asyncio.create_task(cover.async_calibrate())
     await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.3, motor_delay=0.55, run=61.5)
     with pytest.raises(HomeAssistantError, match="60 s run-time limit") as err:

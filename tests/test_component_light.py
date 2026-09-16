@@ -15,6 +15,7 @@ from homeassistant.components.light import (
     LightEntityFeature,
 )
 from homeassistant.const import CONF_NAME
+from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import (
     OWNEvent,
@@ -776,8 +777,17 @@ async def test_light_switch_collision_and_interface_dispatch(hass):
         received_base = []
 
         from homeassistant.helpers.dispatcher import async_dispatcher_connect
-        async_dispatcher_connect(hass, "myhome_update_mac_1_16#4#01", lambda msg: received_unique.append(msg))
-        async_dispatcher_connect(hass, "myhome_update_mac_1_16", lambda msg: received_base.append(msg))
+
+        @callback
+        def on_unique(msg):
+            received_unique.append(msg)
+
+        @callback
+        def on_base(msg):
+            received_base.append(msg)
+
+        async_dispatcher_connect(hass, "myhome_update_mac_1_16#4#01", on_unique)
+        async_dispatcher_connect(hass, "myhome_update_mac_1_16", on_base)
 
         from OWNd.message import OWNEvent
         msg = OWNEvent.parse("*1*1*16#4#01##")

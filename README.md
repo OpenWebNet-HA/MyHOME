@@ -596,14 +596,14 @@ automated coverage and physical gateway verification steps.
 
 <!-- START_QUALITY_SCALE -->
 
-**Tier reached: — none yet**
+**Tier reached: 🥇 Gold**
 
 | Tier | Rules satisfied | Status |
 | :--- | :---: | :--- |
-| 🥉 Bronze | 19 / 20 | ⏳ next — blocked by `brands` |
-| 🥈 Silver | 10 / 10 | ✅ all rules satisfied (waiting on lower tier) |
-| 🥇 Gold | 21 / 21 | ✅ all rules satisfied (waiting on lower tier) |
-| 🏆 Platinum | 2 / 3 | ⬜ 1 rule(s) open |
+| 🥉 Bronze | 20 / 20 | ✅ complete |
+| 🥈 Silver | 10 / 10 | ✅ complete |
+| 🥇 Gold | 21 / 21 | ✅ complete |
+| 🏆 Platinum | 2 / 3 | ⏳ next — blocked by `strict-typing` |
 
 _Self-audit of [`quality_scale.yaml`](custom_components/myhome/quality_scale.yaml) against the official [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/); a tier needs every rule of that tier and all lower tiers `done`/`exempt`. Updated by the [Integration Quality Scale workflow](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/quality-scale.yml); tiers are formally awarded only by Home Assistant core review._
 

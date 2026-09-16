@@ -16,9 +16,11 @@ from custom_components.myhome.const import (
     IDENTIFICATION_SSDP,
     IDENTIFICATION_UNKNOWN,
     IDENTIFICATION_WHO13,
+    WHO13_AMBIGUOUS_DEVICE_TYPES,
     WHO13_OBSERVED_DEVICE_TYPES,
     WHO13_OFFICIAL_DEVICE_TYPES,
     gateway_model_family,
+    is_who13_code_compatible,
 )
 from custom_components.myhome.gateway import MyHOMEGatewayHandler
 
@@ -77,9 +79,26 @@ def test_official_table_is_the_2006_document_verbatim():
     assert not set(WHO13_OBSERVED_DEVICE_TYPES) & set(WHO13_OFFICIAL_DEVICE_TYPES)
     assert GATEWAY_DEVICE_TYPE_MAP["4"] == "MH200"
     assert "MH200N" not in GATEWAY_DEVICE_TYPE_MAP.values()
-    # code 200: the only field evidence is a self-identified MyHOMEServer1 (#292 / #297)
-    assert WHO13_OBSERVED_DEVICE_TYPES == {"200": "MyHomeServer1"}
-    assert "F454" not in GATEWAY_DEVICE_TYPE_MAP.values()
+    # code 200: observed on both F454 (#370) and MyHOMEServer1 (#292 / #297)
+    assert WHO13_OBSERVED_DEVICE_TYPES == {"200": "F454 / MyHomeServer1"}
+    assert WHO13_AMBIGUOUS_DEVICE_TYPES == {"200": ("F454", "MYHOMESERVER1")}
+
+
+def test_is_who13_code_compatible():
+    assert is_who13_code_compatible("4", "MH200") is True
+    assert is_who13_code_compatible("4", "MH200N") is True
+    assert is_who13_code_compatible("4", "F454") is False
+    assert is_who13_code_compatible("200", "F454") is True
+    assert is_who13_code_compatible("200", "MyHomeServer1") is True
+    assert is_who13_code_compatible("200", "MH200") is None
+    assert is_who13_code_compatible("200", "F452") is None
+    assert is_who13_code_compatible("999", "F454") is None
+    assert is_who13_code_compatible("", "F454") is False
+    assert is_who13_code_compatible("200", None) is False
+
+    with patch.dict(WHO13_OBSERVED_DEVICE_TYPES, {"300": "MH200"}, clear=False):
+        assert is_who13_code_compatible("300", "MH200") is True
+        assert is_who13_code_compatible("300", "F454") is None
 
 
 def test_official_table_matches_ownd_decoder():
@@ -163,18 +182,45 @@ def test_ssdp_model_never_relabelled_and_conflict_raises_repair(dev_reg, issues)
     _who13(h, "4")
     create.assert_called_once()
 
-    # an observed-only code that contradicts is also only asked about
+    # code 200 is compatible with F454 per field evidence (#370): conflict cleared, issue deleted
     create.reset_mock()
     _who13(h, "200")
-    assert "per field evidence" in h._identity_conflict
-    assert create.call_args.args[1:] == ("entry_ident", "F454", "MyHomeServer1", "200", "ssdp", False)
+    assert h._identity_conflict is None
+    delete.assert_called_once_with(h.hass, "entry_ident")
     assert h.gateway.model_name == "F454"
+    create.assert_not_called()
+    ident = h.identification()
+    assert ident["who13_code"] == "200"
+    assert ident["who13_model_official"] is None
+    assert ident["who13_model_observed"] == "F454 / MyHomeServer1"
+    assert ident["conflict"] is None
 
     # a code outside both tables: conflict cleared, issue deleted, model kept
+    delete.reset_mock()
     _who13(h, "999")
     assert h._identity_conflict is None
     delete.assert_called_once_with(h.hass, "entry_ident")
     assert h.gateway.model_name == "F454"
+
+
+def test_f454_and_mhs1_with_code_200_have_no_conflict(dev_reg, issues):
+    """Both F454 (#370) and MyHomeServer1 (#292/#297) report code 200: no conflict for either."""
+    create, delete, corrected = issues
+    for model in ("F454", "MyHomeServer1"):
+        create.reset_mock()
+        delete.reset_mock()
+        h = _handler({"name": model}, title=f"{model} Gateway")
+        h.gateway.model_name = model
+        dev_reg.async_get.return_value = MagicMock(model=model)
+        _who13(h, "200")
+        assert h.gateway.model_name == model
+        assert h._identity_conflict is None
+        create.assert_not_called()
+        corrected.assert_not_called()
+        ident = h.identification()
+        assert ident["who13_code"] == "200"
+        assert ident["who13_model_observed"] == "F454 / MyHomeServer1"
+        assert ident["conflict"] is None
 
 
 def test_manual_model_contradicted_by_official_code_is_corrected(dev_reg, issues):
@@ -194,21 +240,39 @@ def test_manual_model_contradicted_by_official_code_is_corrected(dev_reg, issues
     dev_reg.async_update_device.assert_called_once_with("dev_gw", model="F452")
 
 
-def test_manual_model_contradicted_by_observed_code_is_only_questioned(dev_reg, issues):
-    """The #292/#297 reporter's case: manual F454, device reports 200 (seen on MyHOMEServer1)."""
+def test_manual_model_with_unverified_observed_code_keeps_model_without_conflict(dev_reg, issues):
+    """An observed code whose compatibility is unverified (e.g. manual MH200, reports 200) keeps the model without conflict."""
     create, delete, corrected = issues
-    h = _handler({"name": "F454"}, title="F454 Gateway")
-    h.gateway.model_name = "F454"
-    dev_reg.async_get.return_value = MagicMock(model="F454")
+    h = _handler({"name": "MH200"}, title="MH200 Gateway")
+    h.gateway.model_name = "MH200"
+    dev_reg.async_get.return_value = MagicMock(model="MH200")
 
     _who13(h, "200")
-    assert h.gateway.model_name == "F454"  # not overruled by field evidence alone
+    assert h.gateway.model_name == "MH200"  # not overruled by field evidence
     h.hass.config_entries.async_update_entry.assert_not_called()
     corrected.assert_not_called()
-    create.assert_called_once()
-    assert create.call_args.args[1:] == ("entry_ident", "F454", "MyHomeServer1", "200", "manual", False)
+    create.assert_not_called()
+    assert h._identity_conflict is None
     ident = h.identification()
-    assert ident["who13_model_official"] is None and ident["who13_model_observed"] == "MyHomeServer1"
+    assert ident["who13_model_official"] is None and ident["who13_model_observed"] == "F454 / MyHomeServer1"
+    assert ident["conflict"] is None
+
+
+def test_ssdp_model_with_unverified_observed_code_keeps_model_without_conflict(dev_reg, issues):
+    """An observed code whose compatibility is unverified on an SSDP gateway keeps the model without conflict."""
+    create, delete, corrected = issues
+    h = _handler({"name": "MH202", "ssdp_location": "http://192.168.1.40:49153/desc.xml"})
+    h.gateway.model_name = "MH202"
+    dev_reg.async_get.return_value = MagicMock(model="MH202")
+
+    _who13(h, "200")
+    assert h.gateway.model_name == "MH202"
+    assert h._identity_conflict is None
+    create.assert_not_called()
+    corrected.assert_not_called()
+    ident = h.identification()
+    assert ident["who13_model_observed"] == "F454 / MyHomeServer1"
+    assert ident["conflict"] is None
 
 
 def test_unknown_code_on_configured_gateway_is_recorded_not_applied(dev_reg, issues):
@@ -245,14 +309,18 @@ def test_unknown_entry_is_labelled_from_official_code(dev_reg, issues):
     dev_reg.async_update_device.assert_called_once_with("dev_gw", model="F452")
 
 
-def test_unknown_entry_is_labelled_from_observed_code(dev_reg, issues):
+def test_unknown_entry_with_ambiguous_code_stays_generic(dev_reg, issues):
+    """Code 200 is ambiguous between F454 and MyHomeServer1: cannot auto-label an unknown gateway."""
     _, _, corrected = issues
     h = _handler({"name": "Generic"}, title="Generic Gateway")
     h.gateway.model_name = "Generic"
     dev_reg.async_get.return_value = MagicMock(model="Generic")
     _who13(h, "200")
-    assert h.gateway.model_name == "MyHomeServer1"
-    corrected.assert_not_called()  # nothing was "corrected": there was no model to begin with
+    assert h.gateway.model_name == "Generic"
+    h.hass.config_entries.async_update_entry.assert_not_called()
+    dev_reg.async_update_device.assert_not_called()
+    corrected.assert_not_called()
+    assert h._identity_conflict is None
 
 
 def test_unknown_entry_with_unknown_code_stays_generic(dev_reg, issues):
@@ -298,13 +366,17 @@ def test_stale_identity_issue_is_cleared_by_a_fresh_handler(dev_reg, issues):
     """PR #345 review: a reload creates a handler with no conflict in memory, but the
     previous instance's warning is still in the issue registry; a matching reply must remove it."""
     create, delete, corrected = issues
-    first = _handler()  # manual MH200
-    _who13(first, "200")  # observed-only MyHomeServer1 code: questioned, issue created
+    first = _handler({"name": "MH200", "ssdp_location": "http://192.168.1.40:49153/desc.xml"})
+    first.gateway.model_name = "MH200"
+    dev_reg.async_get.return_value = MagicMock(model="MH200")
+    _who13(first, "6")  # official F452 code contradicts announced MH200: issue created
     assert first._identity_conflict is not None
     create.assert_called_once()
     delete.assert_not_called()
 
-    second = _handler()  # the integration reloaded: same entry, new handler, no conflict in memory
+    second = _handler({"name": "MH200", "ssdp_location": "http://192.168.1.40:49153/desc.xml"})
+    second.gateway.model_name = "MH200"
+    dev_reg.async_get.return_value = MagicMock(model="MH200")
     assert second._identity_conflict is None
     _who13(second, "4")  # MH200 per the 2006 table: matches the configured model
     assert second._identity_conflict is None

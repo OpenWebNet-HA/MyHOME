@@ -355,14 +355,21 @@ class TestOWNEventSession:
             raise asyncio.TimeoutError()
 
         session._stream_reader.readuntil.side_effect = mock_readuntil
+        session._stream_writer = MagicMock()
+        session._stream_writer.wait_closed = AsyncMock()
 
+        # Assert the observable outcome - the stale socket is released and a
+        # fresh connect follows - not which internal method released it:
+        # OWNd 2.0.0b6 recycles through close(), later versions through
+        # _close_streams() so that a routine reconnect does not flip
+        # is_connected. Both must satisfy this test.
         with patch('asyncio.sleep', return_value=None):
-            with patch.object(session, 'close', new_callable=AsyncMock) as mock_close:
-                with patch.object(session, 'connect', new_callable=AsyncMock) as mock_connect:
-                    msg = await session.get_next()
-                    assert msg is None
-                    mock_close.assert_called_once()
-                    mock_connect.assert_called_once()
+            with patch.object(session, 'connect', new_callable=AsyncMock) as mock_connect:
+                msg = await session.get_next()
+                assert msg is None
+                assert session._stream_reader is None
+                assert session._stream_writer is None
+                mock_connect.assert_called_once()
 
 class TestOWNCommandSession:
     @pytest.fixture

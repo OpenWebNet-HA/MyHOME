@@ -1607,6 +1607,73 @@
     "_file": "who13_gateway.yaml"
   },
   {
+    "id": "gateway.req.device_type",
+    "frame": "*#13**15##",
+    "direction": "dimension_request",
+    "who": 13,
+    "what": null,
+    "where": "",
+    "dimension": 15,
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Gateway Management: Request gateway model / device type (physical MH200 check)",
+    "roundtrip": true,
+    "_file": "who13_gateway.yaml"
+  },
+  {
+    "id": "gateway.resp.model.device_type.mh200",
+    "frame": "*#13**15*4##",
+    "direction": "dimension_response",
+    "who": 13,
+    "what": null,
+    "where": "",
+    "dimension": 15,
+    "dimension_values": [
+      "4"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Gateway Management: Gateway reports device type code 4 (MH200 physical gateway)",
+    "roundtrip": true,
+    "_file": "who13_gateway.yaml"
+  },
+  {
+    "id": "gateway.resp.firmware.version.2_1_0",
+    "frame": "*#13**16*2*1*0##",
+    "direction": "dimension_response",
+    "who": 13,
+    "what": null,
+    "where": "",
+    "dimension": 16,
+    "dimension_values": [
+      "2",
+      "1",
+      "0"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Gateway Management: Gateway reports firmware version 2.1.0 (MH200 physical gateway)",
+    "roundtrip": true,
+    "_file": "who13_gateway.yaml"
+  },
+  {
+    "id": "gateway.resp.model.device_type.200",
+    "frame": "*#13**15*200##",
+    "direction": "dimension_response",
+    "who": 13,
+    "what": null,
+    "where": "",
+    "dimension": 15,
+    "dimension_values": [
+      "200"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Gateway Management: Gateway reports device type code 200 (F454 / MyHomeServer1, issue #370)",
+    "roundtrip": true,
+    "_file": "who13_gateway.yaml"
+  },
+  {
     "id": "cen.event.short_press.btn2.11",
     "frame": "*15*1*11#2##",
     "direction": "event",

@@ -37,8 +37,8 @@ async def test_worker_uses_installed_ownd_send(gateway_handler, status_request):
 
 
 @pytest.mark.parametrize("error", [None, TypeError("internal transport failure")])
-async def test_worker_opts_in_only_for_explicit_new_api_without_retrying_typeerror(gateway_handler, error):
-    """New API keeps v2's option; a failure inside send never triggers a second call."""
+async def test_worker_keeps_library_retry_default_without_retrying_typeerror(gateway_handler, error):
+    """Optional retry settings stay with OWNd; an internal failure never triggers a second call."""
     calls = []
 
     class NewSession:
@@ -60,7 +60,7 @@ async def test_worker_opts_in_only_for_explicit_new_api_without_retrying_typeerr
     gateway_handler.send_buffer.put_nowait(None)
     with patch("custom_components.myhome.gateway.OWNCommandSession", return_value=session):
         await gateway_handler.sending_loop(0)
-    assert calls == [(command, False, True)]
+    assert calls == [(command, False, False)]
     assert written.cancelled() is (error is not None)
     if error is None:
         assert isinstance(written.result(), float)

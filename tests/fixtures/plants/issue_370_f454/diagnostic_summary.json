@@ -1,0 +1,49 @@
+{
+  "home_assistant": {
+    "installation_type": "Home Assistant OS",
+    "version": "2026.10.0.dev0",
+    "timezone": "UTC"
+  },
+  "data": {
+    "integration_version": "2.0.0b12",
+    "ownd_version": "2.0.0b6",
+    "config_entry": {
+      "entry_id": "01PLANTISSUE370F4540000000",
+      "version": 1,
+      "domain": "myhome",
+      "title": "F454 Gateway",
+      "data": {
+        "host": "192.0.2.1",
+        "id": "00:03:50:00:03:70",
+        "mac": "00:03:50:00:03:70",
+        "manufacturer": "BTicino S.p.A.",
+        "name": "F454",
+        "password": null,
+        "port": 20000
+      },
+      "options": {
+        "command_worker_count": 1
+      }
+    },
+    "gateway": {
+      "model_name": "F454",
+      "manufacturer": "BTicino S.p.A.",
+      "firmware": "2.0",
+      "is_connected": true,
+      "send_workers": 1
+    },
+    "bus_monitor": {
+      "stats": {
+        "capacity": 200,
+        "captured": 399,
+        "total_rx": 335,
+        "total_tx": 64,
+        "subscribers": 0
+      },
+      "recent_frames": [
+        {"raw": "*#13**15*200##", "direction": "rx", "iso_time": "2026-09-16T14:24:50.973Z"},
+        {"raw": "*#13**15*200##", "direction": "rx", "iso_time": "2026-09-16T14:25:50.974Z"}
+      ]
+    }
+  }
+}

@@ -666,9 +666,9 @@ class TestTraceReplayHarness:
         assert cover_02 is not None
 
         # 4. WHO=13 dimension 15: this MyHOMEServer1 really sends *#13**15*200## (issue #297
-        #    diagnostics; the owner self-identified the hardware in #292). Code 200 is not in
-        #    the 2006 specification, so a manually configured model is questioned, not overruled:
-        #    the model stays F454 and a repair issue asks the owner to confirm.
+        #    diagnostics; the owner self-identified the hardware in #292). Code 200 is
+        #    ambiguous (seen on both F454 and MyHomeServer1 per field evidence, issue #370).
+        #    Since the configured model F454 is compatible with code 200, no conflict is raised.
         from homeassistant.helpers import issue_registry as ir
 
         who13_dim15 = OWNMessage.parse("*#13**15*200##")
@@ -680,13 +680,11 @@ class TestTraceReplayHarness:
         ident = handler.identification()
         assert ident["source"] == "manual"
         assert ident["who13_code"] == "200"
-        assert ident["who13_model_observed"] == "MyHomeServer1"
+        assert ident["who13_model_observed"] == "F454 / MyHomeServer1"
         assert ident["who13_model_official"] is None
-        assert "MyHomeServer1" in ident["conflict"]
+        assert ident["conflict"] is None
         issue = ir.async_get(hass).async_get_issue(DOMAIN, f"gateway_identity_mismatch_{entry.entry_id}")
-        assert issue is not None
-        assert issue.translation_placeholders["reported"] == "MyHomeServer1"
-        assert issue.translation_placeholders["code"] == "200"
+        assert issue is None
 
         # 5. Verify WHO=13 Dimension 16 firmware auto-detection:
         who13_dim16 = OWNMessage.parse("*#13**16*2*40*12##")
