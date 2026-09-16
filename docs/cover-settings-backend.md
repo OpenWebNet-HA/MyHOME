@@ -1,8 +1,9 @@
-# Shared cover settings — first implementation (panel 0.21.0)
+# Shared cover settings — panel 0.22.0
 
-This implements the first backend slice agreed in discussion #270, against
+This implements shared persistence, individual overrides and shared-edit previews
+from discussion #270, against
 [Interstellar0verdrive's proposal at 51ffaf7](https://github.com/Interstellar0verdrive/MyHOME-stability/blob/51ffaf73a3da3ac09246ee199751e613217e0a78/docs/calibration-contract-proposal.md).
-Implementation: [`d40f02f`](https://github.com/xtimmy86x/MyHOME/commit/d40f02ff11d9bdbd34adcd870afa12cef0d71f0d).
+Previous implementation (0.21.0): [`d40f02f`](https://github.com/xtimmy86x/MyHOME/commit/d40f02ff11d9bdbd34adcd870afa12cef0d71f0d).
 The preceding panel baseline is `e472ff4`; the integrated v2 base is `3f5e791`.
 The WHO navigation, device grouping and calibration screens retain their organisation.
 
@@ -23,8 +24,8 @@ runtime and the API. Precedence is:
 
 A native fallback retains its own source and date, if recorded; migration does not
 claim that unknown evidence is a new measurement. The fallback remains below the
-profile, including after restart. The override schema/resolver exists; a public
-API for creating overrides and shared-profile edits is a subsequent step.
+profile, including after restart. Individual overrides and shared profile changes
+are now writable through the authenticated API documented below.
 
 ## Storage and migration
 
@@ -74,7 +75,8 @@ The new administrator-only request reads one gateway under the store lock:
 
 The response has `schema_version: 1`, `storage_version: 5`, `revision`, model,
 scaling, accuracy, `profiles`, `covers` and explicit capability flags.
-`height_scaling`, `nonlinear`, `override_write` and `shared_profile_write` are false.
+`override_write` and `shared_profile_write` are true. `height_scaling` and
+`nonlinear` remain false.
 Profile rows list follower entity IDs; removed followers remain null entries.
 Cover rows carry native names/entity IDs, profile assignment, availability,
 advanced/pending flags, and directional `configured` and `effective` values.
@@ -93,21 +95,106 @@ Use the existing gateway revision subscription to invalidate reads. Native write
 also increment that revision, so open editors reject stale writes. This subscription
 is not a stream of physical movement or registry changes; reread for runtime state.
 
+## Individual overrides and shared edits (0.22.0)
+
+All operations use administrator-only `myhome/cover_profiles/write`, with the
+existing `entry_id`, `entity_id` and optimistic `revision`. The common guards
+still reject foreign/disabled/advanced/unavailable targets, shutdown and active
+native/panel calibration ownership. Values are finite seconds in [1, 600]; clients
+cannot supply provenance. Successful mutations persist once, increment the gateway
+revision once and then update runtime/subscribers. Storage errors publish nothing.
+Storage remains v5 and export remains v3; no new migration is required.
+
+### Personal values
+
+```json
+{"id": 2, "type": "myhome/cover_profiles/write", "entry_id": "gateway-entry-id",
+ "entity_id": "cover.bedroom", "revision": 12, "action": "overrides",
+ "overrides": {"opening": 22.5, "closing": null}}
+```
+
+This patches opening only and removes any closing override. Omitted directions
+are untouched; `null` removes that key and reveals the assigned profile, then
+native/YAML/default fallback. An empty patch is invalid. Each changed value gets
+backend-generated manual provenance; identical values keep their evidence.
+Assignments and profiles are untouched, including when the last override is
+removed. Personal values also survive assignment changes and restarts. Read and
+overview already expose their values, origin and per-direction public evidence;
+legacy cover `calibration_source` now reports `panel_override` when applicable.
+
+The editor places these controls in its existing Advanced section. Check only the
+directions to personalize; uncheck and save to resume inheritance. A status note
+makes precedence explicit when assigning another profile. These controls are
+independent of the profile name/timing fields in the Edit section.
+
+### Shared profile preview and confirmation
+
+```json
+{"id": 3, "type": "myhome/cover_profiles/write", "entry_id": "gateway-entry-id",
+ "entity_id": "cover.bedroom", "revision": 13, "action": "preview",
+ "profile_id": "assigned-profile-id",
+ "profile": {"name": "Shared profile", "opening_time": 24, "closing_time": 28}}
+```
+
+A preview is read-only. The selected cover must be assigned to this profile.
+The response includes `revision`, `profile_id`, profile `before`/`after`, a
+`confirmation` string and every stored `follower`. Each follower has a native
+`entity_id`/`name` (null if removed), `available`, and directional `changes`:
+`before`, `after`, `overridden`. These are **configured** times, not an assertion
+of current movement timing. Masked directions explicitly retain the personal
+value; unavailable and orphan assignments are included rather than omitted.
+Native unique IDs are never returned.
+
+After reviewing, send the identical target, revision, profile ID and profile,
+with `action: "update_shared"` and the returned `confirmation`. The backend
+recomputes confirmation for that exact proposal. Missing/mismatched confirmation
+returns `preview_required`; intervening writes return `revision_conflict`.
+The confirmation is a proposal checksum, not an authorization credential.
+Administrator, target and ownership checks still run independently on every call.
+Native calibration on **any** loaded follower blocks the shared commit.
+
+Confirmation updates the existing profile and all its followers in one atomic
+transaction, preserves per-cover overrides and preserves provenance on unchanged
+profile directions. Stopped covers apply immediately; moving covers defer timing
+until stopping. Unloaded covers resolve the updated profile when they bind.
+The old `save` action still refuses globally editing a profile with multiple
+followers; callers must use the explicit preview/confirmation path.
+
+The editor shows the impact under the existing profile Edit section. Editing the
+proposal or cancelling hides and invalidates confirmation. A remote revision
+preserves the draft and requires reload; a late response cannot reopen a closed
+or replaced editor. WHO navigation and the three collapsible sections are unchanged.
+
+### Calibration interaction
+
+The current measurement save still creates and assigns a new profile. Review
+explicitly explains that prior personal values are removed **only after a successful
+save**, so they cannot mask the accepted measurement. This also applies to batch
+measurement. For a single-direction session, the other direction retains its
+configured value and provenance, including a pre-existing personal override.
+The original shared profile and its other followers remain unchanged.
+
 ## Verification and next steps
 
-Local validation on Python 3.14 / Home Assistant 2026.9.1: **1,810 Python tests
-passed, 1 existing skip, five snapshots passed; 100% line coverage (6,993
-statements across 38 modules). All 93 frontend tests passed.** Ruff, HA
-architectural checks and the strict typing ratchet passed without raising any
-baseline. GitHub Actions validates the published branch separately.
+Local validation on Python 3.14 / Home Assistant 2026.9.1: **1,829 Python tests
+passed, one existing skip, five snapshots passed; 100% line coverage (7,065
+statements across 39 modules). All 98 frontend tests passed.** Ruff, the coverage
+enforcer, HA architecture checks and the strict typing ratchet passed without
+raising the baseline. The discovery regression test now waits for dispatcher
+callbacks before asserting their result, removing an executor scheduling race.
+GitHub Actions validates the published branch separately.
 
-Regression coverage includes all four legacy profile versions, native fallback
-precedence, backup/failure/retry, reset/restart, orphan native records, native
-write failures, moving-cover parity, gateway isolation, public provenance,
-authenticated WebSockets, and version-3 exports. Frontend coverage checks the
-unscaled notice inside the existing assignment section.
+The preceding release passed all 10 official PR workflows; the user reported
+successful installation testing before this step. The new override/shared-edit
+flows still need physical installation testing.
 
-The physical timing model and session exit behaviour are not changed by this
-slice. Detached session supervision and gateway reservation, individual override
-writes, shared-edit previews, geometry/scaling and nonlinear calibration remain
-separate implementation steps. No numerical physical accuracy is claimed.
+Regression coverage now includes override patch/clear/restart and evidence,
+native fallback restoration, shared impact with masked/offline/orphan followers,
+exact-proposal confirmation, revision conflicts, durable-write failures, gateway
+and administrator isolation, moving-cover deferral, and single-direction
+calibration with pre-existing overrides. Frontend coverage exercises personal
+values, previews, confirmation, dirty drafts and delayed responses.
+
+Detached session supervision/gateway reservation, additional measurement-save
+choices (update assigned profile or keep cover-only values), geometry/scaling and
+nonlinear calibration remain separate steps. No numerical physical accuracy is claimed.

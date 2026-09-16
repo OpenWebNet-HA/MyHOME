@@ -140,7 +140,7 @@ async def test_overview_runtime_provenance_offline_advanced_and_gateway_isolatio
     entry, cover, _, _ = await seed_legacy(hass, plant)
     await bind_cover(hass, cover)
     store = get_store(hass, entry.entry_id)
-    # Exercise the schema/resolver's per-key record, without adding a public write API yet.
+    # Exercise the schema/resolver with existing guided evidence.
     data = copy.deepcopy(store.data)
     data["covers"][cover.unique_id] = {"overrides": {"closing": {"value": 28.0, "provenance": evidence("guided", cover.unique_id)}}}
     store.data = STORED(data)
@@ -154,7 +154,8 @@ async def test_overview_runtime_provenance_offline_advanced_and_gateway_isolatio
     assert row["effective"]["closing"]["provenance"]["origin_entity_id"] == cover.entity_id
     assert result["model"] == "linear_time" and result["scaling"] == "unscaled"
     assert result["accuracy"] == {"kind": "not_measured"}
-    assert not any(result["capabilities"].values())
+    assert result["capabilities"] == {"height_scaling": False, "nonlinear": False,
+                                      "override_write": True, "shared_profile_write": True}
     assert len(result["covers"]) == 2
     assert len((await overview(hass, plant.entries[1].entry_id))["covers"]) == 1
     assert "00:03:50" not in json.dumps(result).replace(cover.entity_id, "").replace(plant.covers[1].entity_id, "")

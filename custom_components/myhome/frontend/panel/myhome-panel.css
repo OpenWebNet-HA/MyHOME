@@ -346,6 +346,9 @@ dialog a { color: var(--panel-accent); font-size: 13px; }
 .profile-section .actions { margin: 0; padding: 0; }
 .profile-assign-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
 .profile-assign-row label { min-width: 0; }
+.profile-override-toggle { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.profile-override-toggle input { width: 20px; min-height: 20px; height: 20px; padding: 0; flex: 0 0 auto; accent-color: var(--panel-accent); }
+#profile-impact { overflow-wrap: anywhere; border-color: var(--panel-accent); background: var(--panel-accent-soft); }
 .profile-times { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .input-suffix { position: relative; display: block; }
 .input-suffix input { padding-inline-end: 34px; }

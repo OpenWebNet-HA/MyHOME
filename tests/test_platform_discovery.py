@@ -93,6 +93,7 @@ async def test_skeleton_configures_discovers_and_routes(hass):
         hass, entry, added.extend, platform="light", who="1", event_type=OWNLightingEvent, build=build, announce=True,
     )
     entities = discovery.start()
+    await hass.async_block_till_done()  # Dispatcher callbacks may run in the executor.
     # the yaml device is created (the non-dict entry skipped) and announced to the button platform
     assert len(entities) == 1 and built[0].source == "yaml" and built[0].cfg["name"] == "Kitchen"
     assert announced[-1]["device_id"] == "12" and announced[-1]["name"] == "Kitchen"
@@ -100,6 +101,7 @@ async def test_skeleton_configures_discovers_and_routes(hass):
 
     # a frame for a known address is routed, not re-created
     discovery.handle_message(OWNEvent.parse("*1*1*12##"))
+    await hass.async_block_till_done()
     assert len(routed) == 1 and len(built) == 1
 
     # an unknown address is discovered from its first frame, then routed

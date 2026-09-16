@@ -339,6 +339,10 @@ async def begin(hass: Any, connection: Any, msg: dict[str, Any]) -> Any:
             profile = store.profile(cover.unique_id)
             if profile is None:
                 raise ProfileError("calibration_profile_required")
+            profile = copy.deepcopy(profile)
+            for key, override in store.data["covers"].get(cover.unique_id, {}).get("overrides", {}).items():
+                profile[f"{key}_time"] = override["value"]
+                profile["provenance"][key] = override["provenance"]
             options = {"direction": direction, "profile": profile}
         session_type: type[CalibrationSession] = CalibrationSession
         if msg.get("mode", "guided") == "automatic":

@@ -53,6 +53,7 @@ export class CoverCalibration {
       <form id="cal-save" class="profile-section cal-save" hidden><p id="cal-values" class="cal-values"></p>
         <label ${context.entity_ids ? "hidden" : ""}>${esc(t("profileName"))}<input name="profile_name" required maxlength="64" ${context.entity_ids ? "disabled" : ""}></label>
         <div id="cal-batch-review"></div>
+        <p class="muted">${esc(t("calSaveOverrides"))}</p>
         <button type="submit" class="primary">${esc(t(context.entity_ids ? "calBatchSave" : "calSave"))}</button>
       </form>
       <div class="actions calibration-safety-actions"><button type="button" id="cal-stop" disabled><ha-icon icon="mdi:stop-circle-outline" aria-hidden="true"></ha-icon><span>${esc(t("calStop"))}</span></button>

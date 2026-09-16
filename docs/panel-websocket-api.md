@@ -1,9 +1,10 @@
 # MyHOME panel API: implemented reference
 
-> Current update — panel 0.21.0: [shared cover settings](cover-settings-backend.md)
+> Current update — panel 0.22.0: [shared cover settings](cover-settings-backend.md)
 > specifies storage v5, export v3 and `myhome/cover_profiles/overview` (schema v1).
-> Existing endpoints remain available; native writes now use the shared store and
-> revision. Earlier release descriptions below remain historical where superseded.
+> Write actions `overrides`, `preview` and `update_shared` add personal values
+> and revision-bound impact confirmation; their complete contract is linked above.
+> Existing endpoints remain available; native writes use the shared store and revision. Earlier release descriptions below remain historical where superseded.
 
 
 Status: **implemented through panel 0.20.0**. The original profile contract was reviewed against
@@ -18,7 +19,7 @@ to present compact secondary entities; no API payload changes are needed.
 
 This reference describes the prototype on `feat/myhome-sidepanel`, not an upstream
 v2.1 commitment. The [shared-contract proposal](panel-shared-contract.md) is separate
-and its new endpoints are **not implemented**.
+and any proposed features not listed in the current update remain unimplemented.
 
 ## Transport, ownership and scope
 

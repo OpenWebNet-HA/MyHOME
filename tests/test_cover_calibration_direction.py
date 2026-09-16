@@ -217,3 +217,28 @@ async def test_quick_real_websocket_schema_requires_profile_before_session(
     response = await client.receive_json()
     assert response["error"]["code"] == "calibration_profile_required"
     await client.close()
+
+
+async def test_one_leg_retains_other_override_and_new_profile_becomes_authoritative(hass, quick):
+    quick.session.close()
+    retained = "closing" if quick.request["direction"] == "opening" else "opening"
+    result = await profiles.write_profile(hass, {
+        "entry_id": quick.request["entry_id"], "entity_id": quick.cover.entity_id,
+        "revision": 2, "action": "overrides", "overrides": {retained: 47.25},
+    })
+    assert result["configured"][retained]["origin"] == "override"
+    quick.request["revision"] = 3
+    quick.session = await begin(hass, quick.connection, quick.request)
+    retained_evidence = copy.deepcopy(quick.session.provenance[retained])
+    assert quick.session.values[f"{retained}_time"] == 47.25
+    await measure(quick)
+    with patch.object(quick.session.store.store, "async_save", side_effect=OSError("full")):
+        with pytest.raises(OSError):
+            await act(quick, "save", name="One direction")
+    assert quick.session.store.data["covers"][quick.cover.unique_id]["overrides"][retained]["value"] == 47.25
+    await act(quick, "save", name="One direction")
+    assert quick.session.store.data["covers"] == {}
+    profile = quick.session.store.profile(quick.cover.unique_id)
+    assert profile[f"{retained}_time"] == 47.25
+    assert profile["provenance"][retained] == retained_evidence
+    assert profile[f'{quick.request["direction"]}_time'] == 12.75

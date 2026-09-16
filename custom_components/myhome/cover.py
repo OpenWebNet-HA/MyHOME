@@ -385,8 +385,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._travel_time_down = self._effective_cover_settings["closing"]["value"]
         self._travel_time = self._travel_time_down
         self._calibration_source = "panel_profile" if profile else (baseline or {}).get("source", "measured" if baseline else self._default_travel_source)
-        self._calibrated_at = None if profile else (baseline or {}).get("measured_at")
-        self._copied_from = None if profile else (baseline or {}).get("copied_from")
+        has_overrides = any(item["origin"] == "override" for item in self._effective_cover_settings.values())
+        if has_overrides:
+            self._calibration_source = "panel_override"
+        self._calibrated_at = None if profile or has_overrides else (baseline or {}).get("measured_at")
+        self._copied_from = None if profile or has_overrides else (baseline or {}).get("copied_from")
         self._refresh_travel_attributes()
         self._attr_extra_state_attributes["cover_profile"] = profile["name"] if profile else None
         self._attr_extra_state_attributes["cover_profile_pending"] = False

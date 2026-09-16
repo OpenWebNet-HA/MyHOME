@@ -252,7 +252,7 @@ async def read_profile(hass: Any, entry_id: str, entity_id: str) -> Any:
 
 
 async def write_profile(hass: Any, msg: dict[str, Any], *, calibration: Any=None) -> Any:
-    """Change one cover; shared profiles are copied explicitly instead of edited globally."""
+    """Persist validated edits; global changes require a revision-bound preview."""
     entry_id, entity_id = msg["entry_id"], msg["entity_id"]
     # Validate before allocating storage and again after any wait for the lock/load.
     target(hass, entry_id, entity_id)
@@ -273,6 +273,10 @@ async def write_profile(hass: Any, msg: dict[str, Any], *, calibration: Any=None
             raise ProfileError("calibration_expired")
         if msg["revision"] != store.data["revision"]:
             raise ProfileError("revision_conflict")
+        if msg["action"] in ("overrides", "preview", "update_shared"):
+            from .cover_profile_mutations import mutate_settings
+
+            return await mutate_settings(hass, store, entry, entity, msg)
         data = copy.deepcopy(store.data)
         profile_id = msg.get("profile_id")
         if profile_id is not None and profile_id not in data["profiles"]:
@@ -303,6 +307,10 @@ async def write_profile(hass: Any, msg: dict[str, Any], *, calibration: Any=None
                     for direction in DIRECTIONS
                 }
             data["profiles"][profile_id] = profile
+            if calibration is not None:
+                # The measured cover follows the new profile; old overrides must
+                # not silently mask the measurement just accepted in review.
+                data["covers"].pop(entity.unique_id, None)
         elif "copy_from_profile_id" in msg:
             raise ProfileError("invalid_profile")
         if msg["action"] == "delete":
@@ -417,10 +425,12 @@ async def ws_read(hass: Any, connection: Any, msg: dict[str, Any]) -> None:
 @websocket_command({
     vol.Required("type"): WS_WRITE, **TARGET,
     vol.Required("revision"): vol.All(int, vol.Range(min=0)),
-    vol.Required("action"): vol.In(["assign", "save", "delete"]),
+    vol.Required("action"): vol.In(["assign", "save", "delete", "overrides", "preview", "update_shared"]),
     vol.Optional("profile_id"): vol.Any(str, None),
     vol.Optional("copy_from_profile_id"): str,
     vol.Optional("profile"): PROFILE,
+    vol.Optional("overrides"): {vol.In(KEYS): vol.Any(None, seconds)},
+    vol.Optional("confirmation"): str,
 })
 @require_admin
 @async_response

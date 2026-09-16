@@ -1,18 +1,20 @@
 # Shared MyHOME panel contract — implementation and proposal
 
-**Updated: 2026-09-16, panel 0.21.0.** The first shared backend slice is implemented:
+**Updated: 2026-09-16, panel 0.22.0.** The shared backend now includes:
 storage v5, migration of native v2 fallbacks, one directional resolver, native
-service persistence through the shared transaction, and gateway-wide read API.
+service persistence through the shared transaction, gateway-wide read API,
+per-direction personal overrides and confirmed shared-profile impact previews.
 See [implemented schema, migration, API and limits](cover-settings-backend.md).
 The agreed proposal is pinned to [51ffaf7](https://github.com/Interstellar0verdrive/MyHOME-stability/blob/51ffaf73a3da3ac09246ee199751e613217e0a78/docs/calibration-contract-proposal.md).
 This is a review of that document; the historical fork-code comparison below stays
 pinned to `229b1eb` and is not a fresh audit of its runtime.
 
-The current implementation is panel 0.21.0 at [`d40f02f`](https://github.com/xtimmy86x/MyHOME/commit/d40f02ff11d9bdbd34adcd870afa12cef0d71f0d), following `e472ff4`.
+The preceding implementation was panel 0.21.0 at [`d40f02f`](https://github.com/xtimmy86x/MyHOME/commit/d40f02ff11d9bdbd34adcd870afa12cef0d71f0d), following `e472ff4`.
 The integrated v2 baseline remains `3f5e791`. Storage v5 and export v3 supersede
 the v4/v2 descriptions in the historical comparison below. The session behaviour
-remains that of panel 0.20.0; detached supervision, shared writes and nonlinear
-calibration are not implemented by this change. WHO layout and the standalone
+retains panel 0.20.0 ownership; detached supervision and nonlinear calibration
+remain future work. Measurement saves now clear old overrides, retaining the
+configured opposite direction during single-direction measurement. WHO layout and the standalone
 bus card remain supported.
 
 The original comparison used our panel 0.9.0 at `02ce199` and the calibration fork

@@ -1,8 +1,15 @@
-# Guided and automatic travel measurement — panel 0.21.0
+# Guided and automatic travel measurement — panel 0.22.0
 
 Panel 0.21.0 adds the [shared persistence/resolution backend](cover-settings-backend.md)
 (storage v5, export v3). The guided/automatic measurement sequence described here
 is unchanged; native timing services now persist in the same store.
+
+Panel 0.22.0 adds personal overrides in the existing editor. Saving a measured new
+profile removes that cover's old overrides only after persistence succeeds, so the
+cover follows its accepted measurement. Review explains this before saving.
+Single-direction measurement retains the other direction's configured value and
+evidence, including a previous override. Batch saves apply the same cleanup atomically.
+The measurement sequence and session ownership remain unchanged.
 
 This experimental wizard measures **one standard cover's full opening and closing
 times**. It extends our linear timing profiles; it is not the calibration fork's

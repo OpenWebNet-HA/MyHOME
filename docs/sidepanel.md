@@ -15,6 +15,20 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Personal cover values and shared profiles (0.22.0)
+
+The existing Advanced section lets you customize opening and closing independently.
+Uncheck a direction and save to inherit from the assigned profile or native/default
+settings again. Personal values take precedence even when assigning another profile.
+The Edit section now previews shared-profile changes, including every follower and
+any personal values that mask a change, before explicit confirmation. Concurrent
+changes require a fresh read/preview. Moving covers apply new timings after stopping.
+
+Measurement review explains that saving a new profile removes old personal values.
+Single-direction measurement retains the other direction's configured value and
+provenance. WHO navigation, device grouping and the three collapsible sections stay
+in place. See the [backend/API contract](cover-settings-backend.md) for details.
+
 ## Shared cover backend (0.21.0)
 
 The first backend slice from discussion #270 is implemented. See the
@@ -309,7 +323,7 @@ requirements, limits and real-gateway validation steps.
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.21.0**, defined by
+The panel has an independent version, currently **0.22.0**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.

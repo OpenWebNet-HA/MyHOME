@@ -123,6 +123,7 @@ class BatchCalibrationSession(AutomaticCalibrationSession):
                 profile_id = uuid4().hex
                 data["profiles"][profile_id] = profile
                 data["assignments"][cover.unique_id] = profile_id
+                data["covers"].pop(cover.unique_id, None)
             await profiles.commit_profiles(self.hass, self.store, self.entry_id, data,
                                            [cover.unique_id for cover in self.covers])
         return data["revision"]

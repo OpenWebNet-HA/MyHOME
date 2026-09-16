@@ -27,6 +27,7 @@ export class CoverProfileEditor {
     const generation = this._generation;
     this._context = { host, hass, entity, t, onSaved, generation };
     this._data = null;
+    this._preview = null;
     this._noticedRevision = -1;
     this._stale = this._calibrating = this._syncFailed = false;
     host.innerHTML = `<dialog class="cover-profile-dialog" aria-labelledby="profile-title">
@@ -104,8 +105,9 @@ export class CoverProfileEditor {
 
   _draft() {
     const form = this.dialog?.querySelector("#profile-form");
-    return form ? JSON.stringify([...["profile", "profile_name", "opening_time", "closing_time"]
-      .map((name) => form.elements[name].value), !form.querySelector("#profile-delete-confirmation").hidden]) : null;
+    return form ? JSON.stringify([...["profile", "profile_name", "opening_time", "closing_time", "override_opening", "override_closing"]
+      .map((name) => form.elements[name].value), !form.querySelector("#profile-delete-confirmation").hidden,
+      ...["opening", "closing"].map((direction) => form.elements[`use_${direction}`].checked), Boolean(this._preview)]) : null;
   }
 
   _markStale() {
@@ -251,6 +253,7 @@ export class CoverProfileEditor {
   _render() {
     const { host, t } = this._context;
     const data = this._data;
+    this._preview = null;
     const assigned = data.profiles.find((profile) => profile.id === data.assigned_profile_id);
     const disabled = data.writable ? "" : "disabled";
     this._sections ??= new Set(["calibration"]);
@@ -271,6 +274,7 @@ export class CoverProfileEditor {
         <p id="profile-pending" class="profile-pending" role="status" ${data.pending ? "" : "hidden"}>${esc(t("profilePending"))}</p>
       </section>
       ${!data.writable ? `<p class="notice">${esc(t(`profileError_${data.reason}`))}</p>` : ""}
+      <p class="muted" id="profile-override-status" ${Object.values(data.configured || {}).some((item) => item.origin === "override") ? "" : "hidden"}>${esc(t("profileOverridesActive"))}</p>
       <form id="profile-form">
         <fieldset class="profile-section"><legend>${esc(t("profileSectionAssign"))}</legend>
           <div class="profile-assign-row">
@@ -306,13 +310,25 @@ export class CoverProfileEditor {
             <div id="profile-provenance" class="profile-provenance"></div>
             <div class="actions">
               <button type="button" data-profile-action="update">${esc(t("profileUpdate"))}</button>
+              <button type="button" data-profile-action="shared">${esc(t("profileSharedPreview"))}</button>
               <button type="button" class="primary" data-profile-action="new" ${disabled}>${esc(t("profileCreate"))}</button>
             </div>
+            <div id="profile-impact" class="profile-confirm" hidden aria-live="polite"></div>
           </div>
         </details>
         <details class="profile-details" data-section="advanced" ${open("advanced")}>
-          <summary><span class="profile-details-title">${esc(t("profileSectionAdvanced"))}</span><span class="profile-details-hint">${esc(t("profileDelete"))}</span>${chevron}</summary>
+          <summary><span class="profile-details-title">${esc(t("profileSectionAdvanced"))}</span><span class="profile-details-hint">${esc(t("profilePersonalValues"))}</span>${chevron}</summary>
           <div class="profile-details-body">
+            <fieldset class="profile-section"><legend>${esc(t("profilePersonalValues"))}</legend>
+              <p class="muted">${esc(t("profileOverrideHelp"))}</p>
+              ${["opening", "closing"].map((direction) => {
+                const item = data.configured?.[direction];
+                const own = item?.origin === "override";
+                return `<label class="profile-override"><span class="profile-override-toggle"><input type="checkbox" name="use_${direction}" ${own ? "checked" : ""} ${disabled}> ${esc(t(direction === "opening" ? "profileEffectiveOpening" : "profileEffectiveClosing"))}</span>
+                  <span class="input-suffix"><input name="override_${direction}" aria-label="${esc(t("profilePersonalValues"))}: ${esc(t(direction === "opening" ? "profileEffectiveOpening" : "profileEffectiveClosing"))}" type="number" min="1" max="600" step="any" inputmode="decimal" value="${esc(item?.value ?? data.default_travel_time ?? "")}" ${data.writable && own ? "" : "disabled"}><span>s</span></span></label>`;
+              }).join("")}
+              <button type="button" data-profile-action="overrides" ${disabled}>${esc(t("profileSavePersonal"))}</button>
+            </fieldset>
             <p id="profile-usage" class="muted profile-usage"></p>
             <button type="button" id="profile-delete" class="danger"><ha-icon icon="mdi:delete-outline" aria-hidden="true"></ha-icon><span>${esc(t("profileDelete"))}</span></button>
             <div id="profile-delete-confirmation" class="profile-confirm" hidden>
@@ -360,7 +376,16 @@ export class CoverProfileEditor {
     };
     const form = host.querySelector("#profile-form");
     form.elements.profile.value = data.assigned_profile_id || "";
+    const clearPreview = () => { this._preview = null; form.querySelector("#profile-impact").hidden = true; };
+    form.addEventListener("input", clearPreview);
+    for (const direction of ["opening", "closing"]) {
+      form.elements[`use_${direction}`].onchange = () => {
+        form.elements[`override_${direction}`].disabled = !data.writable || !form.elements[`use_${direction}`].checked;
+        clearPreview();
+      };
+    }
     const select = () => {
+      clearPreview();
       const profile = data.profiles.find((item) => item.id === form.elements.profile.value);
       form.elements.profile_name.value = profile?.name || "";
       for (const direction of ["opening", "closing"]) {
@@ -376,6 +401,8 @@ export class CoverProfileEditor {
       form.querySelector("#profile-usage").textContent = profile?.uses > 0
         ? `${t("profileInUse")}: ${(profile.assigned_to || []).map((item) => item.name || item.entity_id || t("profileMissingCover")).join(", ") || profile.uses}. ${t("profileDeleteHelp")}`
         : profile ? t("profileUnused") : "";
+      form.querySelector('[data-profile-action="shared"]').hidden = !data.writable || !profile
+        || profile.id !== data.assigned_profile_id || profile.uses <= 1;
       form.querySelector('[data-profile-action="update"]').hidden = !data.writable || !profile
         || profile.id !== data.assigned_profile_id || profile.uses > 1;
     };
@@ -398,17 +425,37 @@ export class CoverProfileEditor {
     host.querySelector("#profile-reload").onclick = () => this.open(this._context);
   }
 
+  _renderImpact(data, message) {
+    const { t } = this._context;
+    this._preview = { message, confirmation: data.confirmation };
+    const box = this.dialog.querySelector("#profile-impact");
+    box.hidden = false;
+    box.innerHTML = `<h4>${esc(t("profileSharedPreview"))}</h4>
+      <p>${esc(data.before.name)} → ${esc(data.after.name)} · ${esc(data.before.opening_time)} / ${esc(data.before.closing_time)} s → ${esc(data.after.opening_time)} / ${esc(data.after.closing_time)} s</p>
+      <p>${esc(t("profileImpactHelp"))}</p>
+      <ul>${data.followers.map((item) => `<li><strong>${esc(item.name || item.entity_id || t("profileMissingCover"))}</strong>${item.available ? "" : ` · ${esc(t("profileUnavailableFollower"))}`}
+        <p>${["opening", "closing"].map((direction) => {
+          const change = item.changes[direction];
+          return `${esc(t(direction === "opening" ? "profileEffectiveOpening" : "profileEffectiveClosing"))}: ${esc(change.before)} → ${esc(change.after)} s${change.overridden ? ` (${esc(t("profilePersonalValue"))})` : ""}`;
+        }).join(" · ")}</p></li>`).join("")}</ul>
+      <div class="actions"><button type="button" class="primary" data-profile-action="confirm_shared">${esc(t("profileConfirmShared"))}</button>
+        <button type="button" id="profile-impact-cancel">${esc(t("cancel"))}</button></div>`;
+    box.querySelector('[data-profile-action="confirm_shared"]').onclick = () => this._save("confirm_shared");
+    box.querySelector("#profile-impact-cancel").onclick = () => { this._preview = null; box.hidden = true; };
+  }
+
   async _save(action) {
     const { hass, entity, host, onSaved, generation, t } = this._context;
     if (this._saving === generation || !this._data.writable || this._stale) return;
     const form = host.querySelector("#profile-form");
-    const savingProfile = action === "new" || action === "update";
-    if (savingProfile && !form.reportValidity()) return;
+    const savingProfile = ["new", "update", "shared"].includes(action);
+    if (savingProfile && !["profile_name", "opening_time", "closing_time"].every((key) => form.elements[key].reportValidity())) return;
+    if (action === "confirm_shared" && !this._preview) return;
     if (action === "delete") {
       const selected = this._data.profiles.find((item) => item.id === form.elements.profile.value);
       if (!selected || selected.uses !== 0 || form.querySelector("#profile-delete-confirmation").hidden) return;
     }
-    const message = {
+    let message = {
       type: "myhome/cover_profiles/write", entry_id: entity.entry_id, entity_id: entity.entity_id,
       revision: this._data.revision, action: savingProfile ? "save" : action,
       profile_id: action === "new" ? null : form.elements.profile.value || null,
@@ -419,14 +466,31 @@ export class CoverProfileEditor {
       closing_time: Number(form.elements.closing_time.value),
     };
     if (action === "new" && form.elements.profile.value) message.copy_from_profile_id = form.elements.profile.value;
+    if (action === "shared") message.action = "preview";
+    if (action === "confirm_shared") message = { ...this._preview.message, action: "update_shared", confirmation: this._preview.confirmation };
+    if (action === "overrides") {
+      message.overrides = {};
+      delete message.profile_id;
+      for (const direction of ["opening", "closing"]) {
+        const input = form.elements[`override_${direction}`];
+        const own = form.elements[`use_${direction}`].checked;
+        if (own && (!input.value || !input.reportValidity())) return;
+        message.overrides[direction] = own ? Number(input.value) : null;
+      }
+    }
     this._saving = generation;
     const controls = [...form.querySelectorAll("input, select, button:not(.help)")];
+    const disabledBefore = controls.map((control) => control.disabled);
     for (const control of controls) control.disabled = true;
     const errorBox = form.querySelector("#profile-error");
     errorBox.hidden = true;
     try {
       const data = await hass.callWS(message);
       if (!this._current(generation)) return;
+      if (action === "shared") {
+        this._renderImpact(data, message);
+        return;
+      }
       this._data = data;
       this._render();
       onSaved(action === "delete" ? t("profileDeleted") : data.pending ? t("profilePending") : t("saved"));
@@ -439,7 +503,7 @@ export class CoverProfileEditor {
     } finally {
       if (this._current(generation)) {
         this._saving = null;
-        for (const control of controls) control.disabled = !this._data.writable && control.id !== "profile-reload";
+        for (const [index, control] of controls.entries()) control.disabled = control.id === "profile-reload" ? false : disabledBefore[index] || !this._data.writable;
         this._refresh();
       }
     }

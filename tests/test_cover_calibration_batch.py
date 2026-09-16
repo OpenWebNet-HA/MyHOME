@@ -381,3 +381,23 @@ async def test_batch_websocket_start_action_and_disconnect(hass, plant, hass_ws_
     await hass.async_block_till_done()
     assert not queue[0][1]()
     assert profiles.get_store(hass, plant.entries[0].entry_id).calibration is None
+
+
+async def test_batch_new_profiles_replace_old_overrides_only_after_durable_save(hass, batch):
+    batch.session.close()
+    for index in range(2):
+        await profiles.write_profile(hass, message(batch.plant, index + 1, index=index,
+            action="overrides", overrides={"opening": 55, "closing": 65}))
+    batch.request["revision"] = 3
+    batch.session = await begin_batch(hass, batch.connection, batch.request)
+    before = copy.deepcopy(batch.session.store.data["covers"])
+    await measure(batch)
+    with patch.object(batch.session.store.store, "async_save", side_effect=OSError("full")):
+        with pytest.raises(OSError):
+            await action(batch, "save", names=["Kitchen", "Bedroom"])
+    assert batch.session.store.data["covers"] == before
+    await action(batch, "save", names=["Kitchen", "Bedroom"])
+    assert batch.session.store.data["covers"] == {}
+    for index, cover in enumerate(batch.plant.covers[:2]):
+        assert cover._travel_time_up == 20 + index
+        assert cover._travel_time_down == 22 + index

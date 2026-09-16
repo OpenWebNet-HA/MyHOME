@@ -145,3 +145,89 @@ test("unscaled timing profiles explain assignment limits in the existing section
   assert.equal(note.closest("fieldset"), form(view).querySelector("fieldset"));
   assert.equal(view.host.querySelectorAll(".profile-details").length, 3);
 });
+
+test("individual timings save without a profile name, retain assignment and clear each direction explicitly", async () => {
+  const view = setup(); await view.open();
+  const f = form(view);
+  f.elements.profile_name.value = "";
+  assert.equal(f.elements.override_opening.disabled, true);
+  f.elements.use_opening.checked = true; f.elements.use_opening.onchange();
+  f.elements.override_opening.value = "18.25";
+  await view.editor._save("overrides");
+  const request = view.calls.find((item) => item.action === "overrides");
+  assert.deepEqual(request.overrides, { opening: 18.25, closing: null });
+  assert.equal("profile_id" in request, false);
+  assert.equal("profile" in request, false);
+  assert.equal(form(view).elements.override_closing.disabled, true);
+});
+
+const impact = (request) => ({ revision: request.revision, confirmation: "proposal-token",
+  before: { name: "Saved 0", opening_time: 20, closing_time: 40 }, after: request.profile,
+  followers: [{ name: "Bedroom <one>", available: true,
+    changes: { opening: { before: 20, after: request.profile.opening_time, overridden: false }, closing: { before: 18, after: 18, overridden: true } } },
+  { name: null, entity_id: null, available: false,
+    changes: { opening: { before: 20, after: request.profile.opening_time, overridden: false }, closing: { before: 40, after: request.profile.closing_time, overridden: false } } }] });
+const sharedSnapshot = () => { const data = snapshot(); data.profiles[0].uses = 2; return data; };
+
+test("shared edits show affected covers and retained overrides before an explicit exact-proposal confirmation", async () => {
+  const view = setup({ read: sharedSnapshot, write: (request) => request.action === "preview" ? impact(request) : snapshot(1) });
+  await view.open();
+  assert.equal(view.host.querySelector('[data-profile-action="update"]').hidden, true);
+  assert.equal(view.host.querySelector('[data-profile-action="shared"]').hidden, false);
+  form(view).elements.opening_time.value = "25";
+  await view.editor._save("shared");
+  assert.equal(view.calls.filter((item) => item.type.endsWith("/write")).length, 1);
+  const box = view.host.querySelector("#profile-impact");
+  assert.equal(box.hidden, false);
+  assert.match(box.textContent, /Bedroom <one>/);
+  assert.equal(box.querySelector("one"), null);
+  assert.match(box.textContent, /Valore personale mantenuto/);
+  assert.match(box.textContent, /Non disponibile o rimossa/);
+  assert.match(box.textContent, /20 → 25 s/);
+  await view.editor._save("confirm_shared");
+  const request = view.calls.at(-1);
+  assert.equal(request.action, "update_shared"); assert.equal(request.confirmation, "proposal-token");
+  assert.equal(request.profile.opening_time, 25);
+  assert.equal(view.host.querySelector("#profile-impact").hidden, true);
+});
+
+test("editing or cancelling a preview invalidates confirmation and remote revisions preserve the draft", async () => {
+  const view = setup({ read: sharedSnapshot, write: impact }); await view.open();
+  await view.editor._save("shared");
+  form(view).elements.opening_time.value = "26";
+  form(view).elements.opening_time.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  assert.equal(view.host.querySelector("#profile-impact").hidden, true);
+  const count = view.calls.length; await view.editor._save("confirm_shared"); assert.equal(view.calls.length, count);
+  await view.editor._save("shared"); view.host.querySelector("#profile-impact-cancel").click();
+  assert.equal(view.editor._preview, null);
+  // An open preview counts as a draft even if none of its input values changed.
+  const other = setup({ write: impact }); await other.open(); await other.editor._save("shared");
+  other.push(1); await tick();
+  assert.equal(other.host.querySelector('[data-profile-action="confirm_shared"]').disabled, true);
+  const writes = other.calls.length; await other.editor._save("confirm_shared"); assert.equal(other.calls.length, writes);
+});
+
+test("personal timing drafts survive remote edits and storage failure leaves checkbox availability intact", async () => {
+  const view = setup(); await view.open();
+  form(view).elements.use_closing.checked = true; form(view).elements.use_closing.onchange();
+  form(view).elements.override_closing.value = "44";
+  view.push(1); await tick();
+  assert.equal(form(view).elements.override_closing.value, "44");
+  assert.equal(view.host.querySelector('[data-profile-action="overrides"]').disabled, true);
+  const other = setup({ write: () => { throw { code: "storage_error" }; } }); await other.open();
+  form(other).elements.use_opening.checked = true; form(other).elements.use_opening.onchange();
+  await other.editor._save("overrides");
+  assert.equal(form(other).elements.override_opening.disabled, false);
+  assert.equal(form(other).elements.override_closing.disabled, true);
+  assert.equal(other.host.querySelector("#profile-error").hidden, false);
+});
+
+test("late preview responses cannot replace a newly opened cover editor", async () => {
+  const pending = deferred(); const view = setup({ write: () => pending.promise }); await view.open();
+  const saving = view.editor._save("shared");
+  const request = view.calls.at(-1);
+  await view.open(); const current = form(view);
+  pending.resolve(impact(request)); await saving;
+  assert.equal(form(view), current);
+  assert.equal(view.host.querySelector("#profile-impact").hidden, true);
+});
