@@ -8,7 +8,7 @@ The agreed proposal is pinned to [51ffaf7](https://github.com/Interstellar0verdr
 This is a review of that document; the historical fork-code comparison below stays
 pinned to `229b1eb` and is not a fresh audit of its runtime.
 
-The current implementation is panel 0.21.0 on this branch, following `e472ff4`.
+The current implementation is panel 0.21.0 at [`d40f02f`](https://github.com/xtimmy86x/MyHOME/commit/d40f02ff11d9bdbd34adcd870afa12cef0d71f0d), following `e472ff4`.
 The integrated v2 baseline remains `3f5e791`. Storage v5 and export v3 supersede
 the v4/v2 descriptions in the historical comparison below. The session behaviour
 remains that of panel 0.20.0; detached supervision, shared writes and nonlinear

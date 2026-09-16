@@ -2,6 +2,7 @@
 
 This implements the first backend slice agreed in discussion #270, against
 [Interstellar0verdrive's proposal at 51ffaf7](https://github.com/Interstellar0verdrive/MyHOME-stability/blob/51ffaf73a3da3ac09246ee199751e613217e0a78/docs/calibration-contract-proposal.md).
+Implementation: [`d40f02f`](https://github.com/xtimmy86x/MyHOME/commit/d40f02ff11d9bdbd34adcd870afa12cef0d71f0d).
 The preceding panel baseline is `e472ff4`; the integrated v2 base is `3f5e791`.
 The WHO navigation, device grouping and calibration screens retain their organisation.
 
@@ -93,6 +94,12 @@ also increment that revision, so open editors reject stale writes. This subscrip
 is not a stream of physical movement or registry changes; reread for runtime state.
 
 ## Verification and next steps
+
+Local validation on Python 3.14 / Home Assistant 2026.9.1: **1,810 Python tests
+passed, 1 existing skip, five snapshots passed; 100% line coverage (6,993
+statements across 38 modules). All 93 frontend tests passed.** Ruff, HA
+architectural checks and the strict typing ratchet passed without raising any
+baseline. GitHub Actions validates the published branch separately.
 
 Regression coverage includes all four legacy profile versions, native fallback
 precedence, backup/failure/retry, reset/restart, orphan native records, native
