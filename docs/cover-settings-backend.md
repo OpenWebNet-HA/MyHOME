@@ -3,6 +3,7 @@
 This implements shared persistence, individual overrides and shared-edit previews
 from discussion #270, against
 [Interstellar0verdrive's proposal at 51ffaf7](https://github.com/Interstellar0verdrive/MyHOME-stability/blob/51ffaf73a3da3ac09246ee199751e613217e0a78/docs/calibration-contract-proposal.md).
+Current implementation: [`166b923`](https://github.com/xtimmy86x/MyHOME/commit/166b92324b714ad588f280ed1bd816d8e73c6017).
 Previous implementation (0.21.0): [`d40f02f`](https://github.com/xtimmy86x/MyHOME/commit/d40f02ff11d9bdbd34adcd870afa12cef0d71f0d).
 The preceding panel baseline is `e472ff4`; the integrated v2 base is `3f5e791`.
 The WHO navigation, device grouping and calibration screens retain their organisation.
