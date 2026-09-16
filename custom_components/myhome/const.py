@@ -2,6 +2,7 @@
 import logging
 import re
 from functools import lru_cache
+from typing import Any
 
 LOGGER = logging.getLogger(__package__)
 DOMAIN = "myhome"
@@ -256,7 +257,7 @@ def build_timed_turn_on_command(
     hours: int = 0,
     minutes: int = 0,
     seconds: float = 0,
-):
+) -> Any:
     """Build OpenWebNet hardware timer command for WHO=1."""
     from OWNd.message import OWNCommand
 

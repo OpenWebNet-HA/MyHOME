@@ -181,8 +181,9 @@ Stores the physical travel times of a timed cover **by hand** — the manual alt
 | `travel_time` | float | No* | Seconds for a full travel, both directions. | `24.5` |
 | `travel_time_down` | float | No* | Seconds for a full closing run. | `24.5` |
 | `travel_time_up` | float | No* | Seconds for a full opening run. | `26.0` |
+| `copied_from` | entity id | No | The cover the times were taken from; `calibration_source` becomes `copied` and `copied_from` is exposed as an attribute. | `cover.living_room_west` |
 
-\* at least one of the three is required.
+\* at least one of the time fields is required.
 
 ### Example YAML Call
 ```yaml

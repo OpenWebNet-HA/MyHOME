@@ -1073,3 +1073,36 @@ def test_stop_frame_derives_is_closed_from_position(hass, gateway):
     cover._attr_current_cover_position = 40
     cover.handle_event(OWNEvent.parse("*2*10*21##"))
     assert cover._attr_is_closed is False
+
+
+async def test_copied_travel_time_reports_its_source(hass, gateway):
+    """Times pushed from another cover are stored as `copied` with the source cover, and survive a restart as such."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.const import DOMAIN
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": gateway.mac}, unique_id="entry_copied", options={})
+    entry.add_to_hass(hass)
+    gateway.config_entry = entry
+    cover = _make_cover(hass, gateway)
+
+    res = await cover.async_set_travel_time(travel_time_down=28.3, travel_time_up=30.2, copied_from="cover.woonkamer_west")
+    assert res["source"] == "copied" and res["copied_from"] == "cover.woonkamer_west"
+    attrs = cover.extra_state_attributes
+    assert attrs["calibration_source"] == "copied"
+    assert attrs["copied_from"] == "cover.woonkamer_west"
+
+    stored = _stored_calibration(gateway.config_entry, cover._device_id)
+    assert stored["source"] == "copied" and stored["copied_from"] == "cover.woonkamer_west"
+
+    # A cover built from the stored calibration (restart) keeps the real source, not "measured"
+    restored = _make_cover(hass, gateway, calibration=stored)
+    assert restored.extra_state_attributes["calibration_source"] == "copied"
+    assert restored.extra_state_attributes["copied_from"] == "cover.woonkamer_west"
+
+    # A manual save afterwards drops the provenance; a reset clears everything
+    await cover.async_set_travel_time(travel_time=20)
+    assert cover.extra_state_attributes["calibration_source"] == "manual"
+    assert cover.extra_state_attributes["copied_from"] is None
+    await cover.async_reset_travel_time()
+    assert cover.extra_state_attributes["copied_from"] is None

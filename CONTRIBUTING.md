@@ -147,6 +147,13 @@ pip install -e ".[test]" pytest-socket
 python -c "import homeassistant.const as c; print(c.__version__)"
 ```
 
+### Strict typing ratchet
+`mypy --strict` runs in CI against a per-module ceiling (`mypy_baseline.json`). It fails when a module gains errors; when you fix some, lock the progress in:
+
+```bash
+python scripts/typing_ratchet.py --update
+```
+
 ### Running the Test Suite
 Before opening a PR, execute the full test suite locally:
 

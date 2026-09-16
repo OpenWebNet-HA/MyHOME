@@ -25,7 +25,7 @@ class AsyncTcpTransport(OWNTransport):
         self._logger = logger or _LOGGER
         self._event_session: Optional[OWNEventSession] = None
         self._command_session: Optional[OWNCommandSession] = None
-        self._listener_task: Optional[asyncio.Task] = None
+        self._listener_task: Optional[asyncio.Task[None]] = None
         self._is_connected = False
         self._terminate = False
 

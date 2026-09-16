@@ -63,54 +63,39 @@ async def async_setup_services(hass: HomeAssistant) -> None:
     if hass.services.has_service(DOMAIN, SERVICE_SYNC_TIME):
         return
 
-    async def handle_sync_time(call: ServiceCall) -> bool:
+    async def handle_sync_time(call: ServiceCall) -> None:
         """Handle time synchronization service call."""
         gateway = call.data.get(ATTR_GATEWAY, None)
         if gateway is None:
             if not _loaded_gateways(hass):
                 _LOGGER.error("No MyHOME gateways found, cannot sync time.")
-                return False
+                return
         else:
-            mac = dr.format_mac(gateway)
-            if mac is None:
-                _LOGGER.error(
-                    "Invalid gateway mac `%s`, could not send time synchronisation message.",
-                    gateway,
-                )
-                return False
-            gateway = mac
+            gateway = dr.format_mac(gateway)
 
         timezone = hass.config.as_dict().get("time_zone", "UTC")
         handler = _get_gateway_handler(hass, gateway)
         if handler is not None:
             from OWNd.message import OWNGatewayCommand
             await handler.send(OWNGatewayCommand.set_datetime_to_now(timezone))
-            return True
+            return
 
         _LOGGER.error(
             "Gateway `%s` not found, could not send time synchronisation message.",
             gateway,
         )
-        return False
+        return
 
-    async def handle_send_message(call: ServiceCall) -> bool:
+    async def handle_send_message(call: ServiceCall) -> None:
         """Handle sending an arbitrary OpenWebNet message."""
         gateway = call.data.get(ATTR_GATEWAY, None)
         message = call.data.get(ATTR_MESSAGE, None)
         if gateway is None:
             if not _loaded_gateways(hass):
                 _LOGGER.error("No MyHOME gateways found, cannot send message `%s`.", message)
-                return False
+                return
         else:
-            mac = dr.format_mac(gateway)
-            if mac is None:
-                _LOGGER.error(
-                    "Invalid gateway mac `%s`, could not send message `%s`.",
-                    gateway,
-                    message,
-                )
-                return False
-            gateway = mac
+            gateway = dr.format_mac(gateway)
 
         _LOGGER.debug("Handling message `%s` to be sent to `%s`", message, gateway)
         handler = _get_gateway_handler(hass, gateway)
@@ -125,20 +110,20 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                         own_message,
                     )
                     await handler.send(own_message)
-                    return True
+                    return
                 _LOGGER.error(
                     "Could not parse message `%s`, not sending it.", message
                 )
-                return False
+                return
             _LOGGER.error("No message specified to send.")
-            return False
+            return
 
         _LOGGER.error(
             "Gateway `%s` not found, could not send message `%s`.", gateway, message
         )
-        return False
+        return
 
-    async def handle_sweep_bus(call: ServiceCall) -> bool:
+    async def handle_sweep_bus(call: ServiceCall) -> None:
         """Trigger an active status query sweep across bus subsystems to populate the bus monitor."""
         from OWNd.message import OWNMessage
 
@@ -152,13 +137,13 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 target_gateways[mac] = handler
             else:
                 _LOGGER.error("Gateway `%s` not found for sweep_bus.", gateway)
-                return False
+                return
         else:
             target_gateways = gateways
 
         if not target_gateways:
             _LOGGER.warning("No active MyHOME gateways found to sweep.")
-            return False
+            return
 
         sweep_queries = [
             "*#13**0##",   # Gateway real-time clock
@@ -174,13 +159,13 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 await handler.send(OWNMessage.parse(query))
                 await asyncio.sleep(0.05)
 
-        return True
+        return
 
-    async def handle_stop_cover_calibration(call: ServiceCall) -> bool:
+    async def handle_stop_cover_calibration(call: ServiceCall) -> None:
         """Handle stopping active and queued cover calibrations."""
         from .cover import async_stop_cover_calibration
         gateway = call.data.get(ATTR_GATEWAY, None)
-        return await async_stop_cover_calibration(hass, gateway_mac=gateway)
+        await async_stop_cover_calibration(hass, gateway_mac=gateway)
 
     hass.services.async_register(DOMAIN, SERVICE_SYNC_TIME, handle_sync_time)
     hass.services.async_register(DOMAIN, SERVICE_SEND_MESSAGE, handle_send_message)
