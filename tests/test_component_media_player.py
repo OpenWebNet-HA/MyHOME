@@ -24,6 +24,7 @@ from custom_components.myhome.const import (
     CONF_ENTITY,
     DOMAIN,
 )
+from custom_components.myhome.data import MyHOMERuntimeData
 from custom_components.myhome.decoder_pool import DecoderPool
 from custom_components.myhome.media_player import (
     MyHOMEMediaPlayer,
@@ -31,6 +32,7 @@ from custom_components.myhome.media_player import (
     async_setup_entry,
     async_unload_entry,
 )
+from tests.conftest import attach_platform, attach_runtime
 
 
 @pytest.fixture
@@ -74,7 +76,17 @@ def player(hass, mock_gateway):
     )
     p.hass = hass
     p.entity_id = "media_player.audio_zone_1"
+    # Entities reach the decoder pool through self.platform.config_entry.runtime_data
+    entry = MagicMock()
+    entry.data = {CONF_MAC: mock_gateway.mac}
+    entry.runtime_data = MyHOMERuntimeData(gateway=mock_gateway)
+    attach_platform(p, entry)
     return p
+
+
+def _set_pool(player, pool):
+    """Install ``pool`` as the entry's decoder pool (None = not configured)."""
+    player.platform.config_entry.runtime_data.decoder_pool = pool
 
 
 def test_build_pool(hass, mock_config_entry):
@@ -108,6 +120,7 @@ async def test_setup_and_unload_entry_with_restored_entities(hass, mock_config_e
     with patch("homeassistant.helpers.entity_registry.async_get") as mock_er_get, \
          patch("homeassistant.helpers.entity_registry.async_entries_for_config_entry", return_value=[registry_entry]):
         mock_er_get.return_value = MagicMock()
+        attach_runtime(hass, mock_config_entry)
         await async_setup_entry(hass, mock_config_entry, async_add_entities)
 
     async_add_entities.assert_called_once()
@@ -116,6 +129,7 @@ async def test_setup_and_unload_entry_with_restored_entities(hass, mock_config_e
     assert entities[0].name == "Audio Zone 1"
 
     # Unload
+    attach_runtime(hass, mock_config_entry)
     assert await async_unload_entry(hass, mock_config_entry) is True
 
 
@@ -138,6 +152,7 @@ async def test_dynamic_discovery_listener(hass, mock_config_entry, mock_gateway)
 
     with patch("homeassistant.helpers.entity_registry.async_get"), \
          patch("homeassistant.helpers.entity_registry.async_entries_for_config_entry", return_value=[registry_entry]):
+        attach_runtime(hass, mock_config_entry)
         await async_setup_entry(hass, mock_config_entry, async_add_entities)
 
     mac = mock_config_entry.data[CONF_MAC]
@@ -181,7 +196,7 @@ async def test_dynamic_discovery_listener(hass, mock_config_entry, mock_gateway)
 @pytest.mark.asyncio
 async def test_media_player_features_with_and_without_pool(hass, player, mock_gateway):
     """Test feature advertisement depending on decoder pool configuration."""
-    hass.data = {DOMAIN: {mock_gateway.mac: {}}}
+    _set_pool(player, None)
     assert MediaPlayerEntityFeature.PLAY_MEDIA not in player.supported_features
     assert MediaPlayerEntityFeature.TURN_ON in player.supported_features
     assert MediaPlayerEntityFeature.SELECT_SOURCE in player.supported_features
@@ -189,7 +204,7 @@ async def test_media_player_features_with_and_without_pool(hass, player, mock_ga
     mock_pool = MagicMock(spec=DecoderPool)
     mock_pool.is_configured = True
     mock_pool.decoder_entity_ids = ["media_player.squeezelite_1"]
-    hass.data[DOMAIN][mock_gateway.mac]["decoder_pool"] = mock_pool
+    _set_pool(player, mock_pool)
 
     assert MediaPlayerEntityFeature.PLAY_MEDIA in player.supported_features
     assert MediaPlayerEntityFeature.PAUSE in player.supported_features
@@ -202,7 +217,7 @@ async def test_async_added_to_hass_and_pool_rebuild(hass, player, mock_gateway):
     mock_pool = MagicMock(spec=DecoderPool)
     mock_pool.is_configured = True
     mock_pool.decoder_entity_ids = ["media_player.squeezelite_1"]
-    hass.data = {DOMAIN: {mock_gateway.mac: {"decoder_pool": mock_pool}}}
+    _set_pool(player, mock_pool)
 
     player.async_write_ha_state = MagicMock()
 
@@ -216,7 +231,7 @@ async def test_async_added_to_hass_and_pool_rebuild(hass, player, mock_gateway):
 @pytest.mark.asyncio
 async def test_play_media_without_configured_pool(hass, player, mock_gateway):
     """Test play_media does nothing if pool is not configured."""
-    hass.data = {DOMAIN: {mock_gateway.mac: {}}}
+    _set_pool(player, None)
 
     await player.async_play_media("music", "http://stream.url")
     assert player._active_decoder is None
@@ -228,7 +243,7 @@ async def test_play_media_all_decoders_busy(hass, player, mock_gateway):
     mock_pool = MagicMock(spec=DecoderPool)
     mock_pool.is_configured = True
     mock_pool.claim = AsyncMock(return_value=None)
-    hass.data = {DOMAIN: {mock_gateway.mac: {"decoder_pool": mock_pool}}}
+    _set_pool(player, mock_pool)
 
     with pytest.raises(HomeAssistantError, match="All audio matrix inputs are currently in use"):
         await player.async_play_media("music", "http://stream.url")
@@ -243,7 +258,7 @@ async def test_play_media_success_and_wake_off_decoder(hass, player, mock_gatewa
     mock_pool = MagicMock(spec=DecoderPool)
     mock_pool.is_configured = True
     mock_pool.claim = AsyncMock(return_value=("media_player.squeezelite_1", 1))
-    hass.data = {DOMAIN: {mock_gateway.mac: {"decoder_pool": mock_pool}}}
+    _set_pool(player, mock_pool)
 
     hass.states.async_set("media_player.squeezelite_1", MediaPlayerState.OFF)
 
@@ -283,7 +298,7 @@ async def test_play_media_failure_releases_decoder(hass, player, mock_gateway):
     mock_pool.is_configured = True
     mock_pool.claim = AsyncMock(return_value=("media_player.squeezelite_1", 1))
     mock_pool.release = AsyncMock()
-    hass.data = {DOMAIN: {mock_gateway.mac: {"decoder_pool": mock_pool}}}
+    _set_pool(player, mock_pool)
 
     hass.states.async_set("media_player.squeezelite_1", MediaPlayerState.IDLE)
 
@@ -325,7 +340,7 @@ async def test_turn_on_and_turn_off_with_active_decoder(hass, player, mock_gatew
 
     mock_pool = MagicMock(spec=DecoderPool)
     mock_pool.release = AsyncMock()
-    hass.data = {DOMAIN: {mock_gateway.mac: {"decoder_pool": mock_pool}}}
+    _set_pool(player, mock_pool)
 
     # Turn on
     with patch("asyncio.sleep", return_value=None):
@@ -359,7 +374,7 @@ async def test_volume_controls_and_gain_staging(hass, player, mock_gateway):
     # Set volume with active decoder and pre-gain staging
     mock_pool = MagicMock(spec=DecoderPool)
     mock_pool.get_pre_gain.return_value = 20  # +20% pre-gain
-    hass.data = {DOMAIN: {mock_gateway.mac: {"decoder_pool": mock_pool}}}
+    _set_pool(player, mock_pool)
 
     player._active_decoder = "media_player.squeezelite_1"
     player._attr_is_volume_muted = True
@@ -443,7 +458,7 @@ def test_decoder_state_changed_reverse_sync(hass, player, mock_gateway):
 
     mock_pool = MagicMock(spec=DecoderPool)
     mock_pool.get_pre_gain.return_value = 10  # 10%
-    hass.data = {DOMAIN: {mock_gateway.mac: {"decoder_pool": mock_pool}}}
+    _set_pool(player, mock_pool)
 
     # Ignore if not active decoder (line 738)
     event_other = MagicMock()
@@ -486,7 +501,7 @@ async def test_handle_event_bus_messages(hass, player, mock_gateway):
     # Turn off event with active decoder
     mock_pool = MagicMock(spec=DecoderPool)
     mock_pool.release = AsyncMock()
-    hass.data = {DOMAIN: {mock_gateway.mac: {"decoder_pool": mock_pool}}}
+    _set_pool(player, mock_pool)
     player._active_decoder = "media_player.squeezelite_1"
 
     msg_off = MagicMock(spec=OWNSoundEvent, zone="1", is_on=False, is_off=True, volume=None)
@@ -519,7 +534,7 @@ async def test_play_media_decoder_fails_to_wake_warning(hass, player, mock_gatew
     mock_pool = MagicMock(spec=DecoderPool)
     mock_pool.is_configured = True
     mock_pool.claim = AsyncMock(return_value=("media_player.squeezelite_1", 1))
-    hass.data = {DOMAIN: {mock_gateway.mac: {"decoder_pool": mock_pool}}}
+    _set_pool(player, mock_pool)
 
     # Decoder stays off
     hass.states.async_set("media_player.squeezelite_1", MediaPlayerState.OFF)
@@ -538,7 +553,7 @@ async def test_turn_off_decoder_stop_error_handled(hass, player, mock_gateway):
 
     mock_pool = MagicMock(spec=DecoderPool)
     mock_pool.release = AsyncMock()
-    hass.data = {DOMAIN: {mock_gateway.mac: {"decoder_pool": mock_pool}}}
+    _set_pool(player, mock_pool)
 
     player._active_decoder = "media_player.squeezelite_1"
     player._attr_state = MediaPlayerState.ON
@@ -558,7 +573,7 @@ async def test_mute_volume_decoder_error_handled(hass, player, mock_gateway):
 
     mock_pool = MagicMock(spec=DecoderPool)
     mock_pool.get_pre_gain.return_value = 0
-    hass.data = {DOMAIN: {mock_gateway.mac: {"decoder_pool": mock_pool}}}
+    _set_pool(player, mock_pool)
 
     player._active_decoder = "media_player.squeezelite_1"
     hass.states.async_set("media_player.squeezelite_1", MediaPlayerState.PLAYING, {"is_volume_muted": False})

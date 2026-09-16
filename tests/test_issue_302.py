@@ -148,7 +148,7 @@ async def test_set_position_survives_relayed_stop_and_anchors_on_motor_start(cov
     await _yield()
 
     # Auto-stop slept the full run from the motor start, not from enqueue
-    assert sleeps and sleeps[-1] == pytest.approx(5.0)
+    assert [s for s in sleeps if s][-1] == pytest.approx(5.0)  # last real sleep is the 5 s run
     await _yield()
     assert clock.now == pytest.approx(7.15)
     stop_frame, stop_written = gateway.deliveries[-1]
@@ -336,7 +336,7 @@ async def test_no_motor_echo_anchors_on_write_time(cover, gateway, clock, fake_t
         except TimeoutError:
             pass
     # The 5 s run was measured from the motor start (write + MOTOR_START_DELAY), then the stop was queued
-    assert sleeps and sleeps[-1] == pytest.approx(5.0 + MOTOR_START_DELAY)
+    assert [s for s in sleeps if s][-1] == pytest.approx(5.0 + MOTOR_START_DELAY)  # last real sleep is the run
     assert [f for f, _ in gateway.deliveries] == ["*2*2*21##", "*2*0*21##"]
 
 

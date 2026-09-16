@@ -5,18 +5,16 @@ from typing import Any
 
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_MAC, CONF_PASSWORD
+from homeassistant.const import CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 
 from .const import (
     CONF_DECODER_ENTITY,
     CONF_DECODER_SLOTS,
-    CONF_ENTITIES,
-    CONF_ENTITY,
-    DOMAIN,
     INTEGRATION_VERSION,
     get_ownd_version,
 )
+from .data import get_runtime_data
 
 # A diagnostics download is meant to be attached to a public issue. Secrets go
 # without saying; the rest identifies a household - where the gateway lives on
@@ -63,9 +61,8 @@ async def async_get_config_entry_diagnostics(
         if entry_options.get(key):  # an empty slot stays empty: configured or not is diagnostics
             entry_options[key] = f"media_player.decoder_{slot}"
 
-    mac = entry.data.get(CONF_MAC, "")
-    domain_data = hass.data.get(DOMAIN, {}).get(mac, {})
-    gateway_handler = domain_data.get(CONF_ENTITY)
+    runtime = get_runtime_data(entry)
+    gateway_handler = runtime.gateway if runtime is not None else None
 
     gw_info: dict[str, Any] = {}
     profile_info: dict[str, Any] = {}
@@ -110,7 +107,7 @@ async def async_get_config_entry_diagnostics(
 
     # Count loaded entities per platform
     platforms_info: dict[str, int] = {}
-    entities_dict = domain_data.get(CONF_ENTITIES, {})
+    entities_dict = runtime.entities if runtime is not None else {}
     for platform_name, entities in entities_dict.items():
         platforms_info[platform_name] = len(entities)
 

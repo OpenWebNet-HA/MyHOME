@@ -32,6 +32,7 @@ from custom_components.myhome.cover import (
     async_setup_entry,
     async_unload_entry,
 )
+from tests.conftest import attach_runtime
 
 
 @pytest.fixture
@@ -96,6 +97,7 @@ async def test_cover_setup_restores_and_discovers(hass: HomeAssistant, mock_gate
         def fake_add_entities(entities):
             added_entities.extend(entities)
 
+        attach_runtime(hass, config_entry)
         await async_setup_entry(hass, config_entry, fake_add_entities)
 
         # Restored (21, 22#4#01) + Configured from YAML (33, 34#4#02) = 4 covers
@@ -125,6 +127,7 @@ async def test_cover_setup_restores_and_discovers(hass: HomeAssistant, mock_gate
         assert len(added_entities) == 6
 
         # Unload
+        attach_runtime(hass, config_entry)
         assert await async_unload_entry(hass, config_entry) is True
 
 
@@ -682,6 +685,7 @@ async def test_cover_setup_dispatches_general_messages_from_gateway(hass: HomeAs
 
     with patch("homeassistant.helpers.entity_registry.async_get", return_value=MagicMock()), \
          patch("homeassistant.helpers.entity_registry.async_entries_for_config_entry", return_value=[]):
+        attach_runtime(hass, config_entry)
         await async_setup_entry(hass, config_entry, lambda entities: None)
 
     dispatched = []
@@ -739,6 +743,7 @@ async def test_cover_gateway_general_message_updates_all_active_entities(hass: H
 
     with patch("homeassistant.helpers.entity_registry.async_get", return_value=MagicMock()), \
          patch("homeassistant.helpers.entity_registry.async_entries_for_config_entry", return_value=[]):
+        attach_runtime(hass, config_entry)
         await async_setup_entry(hass, config_entry, fake_add_entities)
 
     assert len(added_entities) == 2
@@ -800,6 +805,7 @@ async def test_cover_advanced_shutter_key_precedence(hass, mock_gateway):
     added = []
     with patch("homeassistant.helpers.entity_registry.async_entries_for_config_entry", return_value=[]), \
          patch("homeassistant.helpers.entity_registry.async_get", return_value=MagicMock()):
+        attach_runtime(hass, config_entry)
         await async_setup_entry(hass, config_entry, added.extend)
 
     assert len(added) == 1

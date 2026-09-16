@@ -22,6 +22,7 @@ from custom_components.myhome.sensor import (
     MyHOMEPowerSensor,
     MyHOMETemperatureSensor,
 )
+from tests.conftest import bind_entity
 
 
 @pytest.fixture
@@ -62,6 +63,7 @@ class TestSensorsCoverage:
         # async_added_to_hass with valid device dict
         device_dict = {}
         mock_hass.data["myhome"]["01:02:03:04:05:06"]["platforms"]["sensor"]["sensor_pwr"] = device_dict
+        bind_entity(mock_hass, sensor, "01:02:03:04:05:06", mock_gateway)
         await sensor.async_added_to_hass()
         assert device_dict["entities"]["power"] is sensor
 
@@ -173,6 +175,7 @@ class TestSensorsCoverage:
         # async_added_to_hass and async_will_remove_from_hass
         device_dict = {}
         mock_hass.data["myhome"]["01:02:03:04:05:06"]["platforms"]["sensor"]["sensor_energy"] = device_dict
+        bind_entity(mock_hass, sensor_total, "01:02:03:04:05:06", mock_gateway)
         await sensor_total.async_added_to_hass()
         assert device_dict["entities"]["total-energy"] is sensor_total
 
@@ -243,6 +246,7 @@ class TestSensorsCoverage:
         # async_added_to_hass & async_will_remove_from_hass
         device_dict = {}
         mock_hass.data["myhome"]["01:02:03:04:05:06"]["platforms"]["sensor"]["sensor_temp"] = device_dict
+        bind_entity(mock_hass, sensor, "01:02:03:04:05:06", mock_gateway)
         await sensor.async_added_to_hass()
         assert device_dict["entities"]["temperature"] is sensor
         await sensor.async_will_remove_from_hass()
@@ -303,6 +307,7 @@ class TestSensorsCoverage:
         # async_added_to_hass & async_will_remove_from_hass
         device_dict = {}
         mock_hass.data["myhome"]["01:02:03:04:05:06"]["platforms"]["sensor"]["sensor_lux"] = device_dict
+        bind_entity(mock_hass, sensor, "01:02:03:04:05:06", mock_gateway)
         await sensor.async_added_to_hass()
         assert device_dict["entities"]["illuminance"] is sensor
         await sensor.async_will_remove_from_hass()

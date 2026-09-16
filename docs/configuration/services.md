@@ -14,6 +14,9 @@ This document provides a comprehensive reference for all custom services registe
 | [`myhome.start_sending_instant_power`](#myhomestart_sending_instant_power) | `sensor` | Request a temporary continuous stream of instant power readings from an energy meter. |
 | [`myhome.sweep_bus`](#myhomesweep_bus) | Gateway | Actively poll status across all subsystems to populate diagnostic buffers. |
 | [`myhome.calibrate_cover`](#myhomecalibrate_cover) | `cover` | Measure a timed cover's up and down travel times on the bus and store them. |
+| [`myhome.stop_cover_calibration`](#myhomestop_cover_calibration) | Gateway | Stop the running calibration and cancel queued ones. |
+| [`myhome.set_cover_travel_time`](#myhomeset_cover_travel_time) | `cover` | Store stopwatch-measured travel times without driving the cover. |
+| [`myhome.reset_cover_travel_time`](#myhomereset_cover_travel_time) | `cover` | Forget measured / manual travel times; back to YAML or the default. |
 
 ---
 
@@ -147,4 +150,64 @@ target:
   entity_id:
     - cover.bedroom_shutter
     - cover.kitchen_shutter
+```
+
+---
+
+## 7. `myhome.stop_cover_calibration`
+
+Stops the calibration that is running and cancels every cover still queued behind it. The moving cover receives a stop command, its calibration event reports `phase: failed` with *Calibration stopped by user*, and nothing is stored. Without a `gateway` every gateway's queue is cleared. Also available as the **Stop** button in the card's Covers panel and as an entity service on any cover (targets that cover's gateway).
+
+### Fields
+| Parameter | Type | Required | Description | Example |
+| :--- | :---: | :---: | :--- | :--- |
+| `gateway` | string | No | Gateway MAC address; all gateways when omitted. | `00:03:50:20:00:01` |
+
+### Example YAML Call
+```yaml
+action: myhome.stop_cover_calibration
+```
+
+---
+
+## 8. `myhome.set_cover_travel_time`
+
+Stores the physical travel times of a timed cover **by hand** — the manual alternative to `calibrate_cover` for gateways that cannot calibrate reliably (MH200 / MH200N single-session pacing, or actuators with the 60 s safety cut-off). Measure the closing and opening runs with a stopwatch (the card's Covers panel has one built in) and pass them here. `travel_time` fills whichever direction has no explicit value. Values must lie between 1 s and 180 s; anything else is rejected before the entity is touched. The result is stored exactly like a measured calibration (`calibration_source: manual`).
+
+### Fields
+| Parameter | Type | Required | Description | Example |
+| :--- | :---: | :---: | :--- | :--- |
+| `entity_id` | target | Yes | One or more MyHOME timed cover entities. | `cover.bedroom_shutter` |
+| `travel_time` | float | No* | Seconds for a full travel, both directions. | `24.5` |
+| `travel_time_down` | float | No* | Seconds for a full closing run. | `24.5` |
+| `travel_time_up` | float | No* | Seconds for a full opening run. | `26.0` |
+
+\* at least one of the three is required.
+
+### Example YAML Call
+```yaml
+action: myhome.set_cover_travel_time
+target:
+  entity_id: cover.bedroom_shutter
+data:
+  travel_time_down: 24.5
+  travel_time_up: 26.0
+```
+
+---
+
+## 9. `myhome.reset_cover_travel_time`
+
+Forgets the measured or manually set travel times of a timed cover. The cover returns to the `travel_time` from `myhome.yaml` when one is configured, otherwise to the 25 s default, and `calibration_source` reports `yaml` / `default` again.
+
+### Fields
+| Parameter | Type | Required | Description | Example |
+| :--- | :---: | :---: | :--- | :--- |
+| `entity_id` | target | Yes | One or more MyHOME timed cover entities. | `cover.bedroom_shutter` |
+
+### Example YAML Call
+```yaml
+action: myhome.reset_cover_travel_time
+target:
+  entity_id: cover.bedroom_shutter
 ```

@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from OWNd.message import OWNEvent
 
+from tests.conftest import attach_runtime
+
 
 @pytest.fixture
 def mock_hass():
@@ -198,7 +200,9 @@ class TestSwitchEntity:
         # 0. Missing or unconfigured MAC -> returns True
         bad_entry = MagicMock()
         bad_entry.data = {"mac": "unknown_mac"}
+        attach_runtime(mock_hass, bad_entry)
         assert await async_setup_entry(mock_hass, bad_entry, MagicMock()) is True
+        attach_runtime(mock_hass, bad_entry)
         assert await async_unload_entry(mock_hass, bad_entry) is True
 
         # 1. PLATFORM not configured -> returns True
@@ -210,8 +214,10 @@ class TestSwitchEntity:
                 }
             }
         }
+        attach_runtime(mock_hass, config_entry)
         res_setup = await async_setup_entry(mock_hass, config_entry, MagicMock())
         assert res_setup is True
+        attach_runtime(mock_hass, config_entry)
         res_unload = await async_unload_entry(mock_hass, config_entry)
         assert res_unload is True
 
@@ -261,6 +267,7 @@ class TestSwitchEntity:
             return_value=[corrupt_entry, interface_entry, standard_entry],
         ):
             async_add_entities = MagicMock()
+            attach_runtime(mock_hass, config_entry)
             await async_setup_entry(mock_hass, config_entry, async_add_entities)
             mock_registry.async_remove.assert_called_once_with("switch.corrupt")
             async_add_entities.assert_called_once()
@@ -268,6 +275,7 @@ class TestSwitchEntity:
 
         # Test entity registry exception (lines 50-52)
         with patch("custom_components.myhome.switch.er.async_get", side_effect=Exception("Registry error")):
+            attach_runtime(mock_hass, config_entry)
             await async_setup_entry(mock_hass, config_entry, MagicMock())
 
         # 3. Test MyHOMESwitch async_added_to_hass with interface
@@ -297,6 +305,7 @@ class TestSwitchEntity:
         assert sw_interface.async_on_remove.call_count == 3
 
         # 4. Unload
+        attach_runtime(mock_hass, config_entry)
         await async_unload_entry(mock_hass, config_entry)
         assert "sw1" not in mock_hass.data[DOMAIN]["00:03:50:00:12:34"][CONF_PLATFORMS]["switch"]
 
@@ -437,6 +446,7 @@ class TestCoverEntity:
         with patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_er), \
              patch("homeassistant.helpers.entity_registry.async_entries_for_config_entry", return_value=[entry_with_int, entry_plain]):
             async_add_entities = MagicMock()
+            attach_runtime(mock_hass, config_entry)
             await async_setup_entry(mock_hass, config_entry, async_add_entities)
             async_add_entities.assert_called_once()
             restored = async_add_entities.call_args[0][0]
@@ -451,6 +461,7 @@ class TestCoverEntity:
             assert len(listeners) == 1
 
         # Test async_unload_entry
+        attach_runtime(mock_hass, config_entry)
         assert await async_unload_entry(mock_hass, config_entry) is True
 
     @pytest.mark.asyncio
@@ -481,6 +492,7 @@ class TestCoverEntity:
              patch("homeassistant.helpers.entity_registry.async_entries_for_config_entry", return_value=[]), \
              patch("custom_components.myhome.cover.async_dispatcher_connect", side_effect=fake_dispatcher_connect):
             async_add_entities = MagicMock()
+            attach_runtime(mock_hass, config_entry)
             await async_setup_entry(mock_hass, config_entry, async_add_entities)
 
             # Handler registered for myhome_message_00:03:50:00:12:34

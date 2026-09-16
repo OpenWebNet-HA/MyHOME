@@ -29,11 +29,26 @@ from .const import (
     LOGGER,
     get_ownd_version,
 )
+from .data import MyHOMEConfigEntry, MyHOMERuntimeData
 from .gateway import MyHOMEGatewayHandler
 from .services import async_setup_services
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 PLATFORMS = ["light", "switch", "cover", "climate", "binary_sensor", "sensor", "media_player", "button", "alarm_control_panel"]
+
+
+def _device_for_identifier(
+    device_registry: dr.DeviceRegistry, entry: ConfigEntry, identifier: tuple[str, str]
+) -> dr.DeviceEntry | None:
+    """Return the entry's device carrying ``identifier``.
+
+    Identifiers are only unique per config entry since core 2026.8, so the
+    lookup is scoped to this entry (``async_get_device`` is deprecated).
+    """
+    for device in dr.async_entries_for_config_entry(device_registry, entry.entry_id):
+        if identifier in device.identifiers:
+            return device
+    return None
 
 
 def _get_card_url(card_path: str, base_url: str = "/myhome_static/myhome-bus-card.js") -> str:
@@ -54,10 +69,7 @@ async def _async_register_lovelace_resource(hass: HomeAssistant, url_path: str) 
         lovelace = hass.data.get("lovelace")
         if not lovelace:
             return False
-        if isinstance(lovelace, dict):
-            resources = lovelace.get("resources")
-        else:
-            resources = getattr(lovelace, "resources", None)
+        resources = getattr(lovelace, "resources", None)
         if not resources:
             return False
         if hasattr(resources, "loaded") and not resources.loaded:
@@ -118,23 +130,15 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     if not domain_data.get("_frontend_registered"):
         if http is not None and os.path.isfile(card_path):
             frontend_dir = os.path.dirname(card_path)
-            import homeassistant.components.http as ha_http
+            from homeassistant.components.http import StaticPathConfig
 
-            static_path_cls = getattr(ha_http, "StaticPathConfig", None)
-
-            if static_path_cls is not None and hasattr(http, "async_register_static_paths"):
-                try:
-                    await http.async_register_static_paths([
-                        static_path_cls("/myhome_static", frontend_dir, False),
-                        static_path_cls(static_url, card_path, False),
-                    ])
-                except Exception:
-                    if hasattr(http, "register_static_path"):
-                        http.register_static_path("/myhome_static", frontend_dir, False)
-                        http.register_static_path(static_url, card_path, False)
-            elif hasattr(http, "register_static_path"):
-                http.register_static_path("/myhome_static", frontend_dir, False)
-                http.register_static_path(static_url, card_path, False)
+            try:
+                await http.async_register_static_paths([
+                    StaticPathConfig("/myhome_static", frontend_dir, False),
+                    StaticPathConfig(static_url, card_path, False),
+                ])
+            except Exception as err:  # already registered after a reload, or http not ready
+                LOGGER.debug("Static path registration for the bus-monitor card skipped: %s", err)
 
             try:
                 from homeassistant.components import frontend
@@ -193,21 +197,7 @@ async def async_setup(hass, config):
     return False
 
 
-def _device_for_identifier(
-    device_registry: dr.DeviceRegistry, entry: ConfigEntry, identifier: tuple[str, str]
-) -> dr.DeviceEntry | None:
-    """Return the entry's device carrying ``identifier``.
-
-    Identifiers are only unique per config entry since core 2026.8, so the
-    lookup is scoped to this entry (``async_get_device`` is deprecated).
-    """
-    for device in dr.async_entries_for_config_entry(device_registry, entry.entry_id):
-        if identifier in device.identifiers:
-            return device
-    return None
-
-
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
+async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry):
     """Set up a MyHOME gateway from a config entry."""
     LOGGER.info(
         "Setting up MyHOME gateway '%s' (v%s, OWNd v%s)",
@@ -216,11 +206,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         await _async_resolve_ownd_version(hass),
     )
 
-    if entry.data[CONF_MAC] not in hass.data[DOMAIN]:
-        hass.data[DOMAIN][entry.data[CONF_MAC]] = {
-            CONF_PLATFORMS: {p: {} for p in PLATFORMS},
-            CONF_ENTITIES: {p: {} for p in PLATFORMS},
-        }
+    # Per-platform device configurations and entity objects; myhome.yaml and bus
+    # discovery fill them, the platforms read them through entry.runtime_data.
+    # A mapping pre-seeded under the deprecated hass.data[DOMAIN][mac] alias (see
+    # below) is reused so its containers stay the live ones; dropped in 2.1.
+    _seeded = hass.data[DOMAIN].get(entry.data[CONF_MAC])
+    _seeded = _seeded if isinstance(_seeded, dict) else {}
+    configured_platforms: dict[str, dict[str, dict]] = _seeded.setdefault(CONF_PLATFORMS, {})
+    configured_entities: dict[str, dict] = _seeded.setdefault(CONF_ENTITIES, {})
+    for _platform in PLATFORMS:
+        configured_platforms.setdefault(_platform, {})
+        configured_entities.setdefault(_platform, {})
 
     # Load legacy myhome.yaml if present for seamless backward-compatibility
     _opt_path = entry.options.get(CONF_FILE_PATH) or entry.options.get("file_path")
@@ -280,18 +276,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                 if mac_key and mac_key in _validated:
                     yaml_platforms = _validated[mac_key].get(CONF_PLATFORMS, {})
                     for plat, devices in yaml_platforms.items():
-                        if plat in hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_PLATFORMS]:
+                        if plat in configured_platforms:
                             for d_id, d_cfg in devices.items():
-                                hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_PLATFORMS][plat][d_id] = d_cfg
+                                configured_platforms[plat][d_id] = d_cfg
                                 if isinstance(d_cfg, dict):
                                     if "where" in d_cfg:
-                                        hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_PLATFORMS][plat][str(d_cfg["where"])] = d_cfg
+                                        configured_platforms[plat][str(d_cfg["where"])] = d_cfg
                                     if CONF_ZONE in d_cfg or "zone" in d_cfg:
                                         z_val = str(d_cfg.get(CONF_ZONE) or d_cfg.get("zone"))
-                                        hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_PLATFORMS][plat][z_val] = d_cfg
+                                        configured_platforms[plat][z_val] = d_cfg
                                         clean_z = z_val.split("#")[-1]
-                                        hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_PLATFORMS][plat][clean_z] = d_cfg
-                                        hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_PLATFORMS][plat][f"zone_{clean_z}"] = d_cfg
+                                        configured_platforms[plat][clean_z] = d_cfg
+                                        configured_platforms[plat][f"zone_{clean_z}"] = d_cfg
                     LOGGER.info("Loaded legacy myhome.yaml configuration for gateway %s (%s platforms)", entry.data[CONF_MAC], len(yaml_platforms))
         except Exception as e:
             LOGGER.error("Failed to parse myhome.yaml from %s: %s", _config_file_path, e)
@@ -356,7 +352,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                                         who = id_parts[1]
                                         break
                     if not who:
-                        gw_platforms = hass.data.get(DOMAIN, {}).get(entry.data[CONF_MAC], {}).get(CONF_PLATFORMS, {})
+                        gw_platforms = configured_platforms
                         if "cover" in gw_platforms and (raw_where in gw_platforms["cover"] or f"2-{raw_where}" in gw_platforms["cover"]):
                             who = "2"
                         else:
@@ -435,26 +431,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                 except ValueError:
                     pass
 
-    # Hack to forcefully absorb customize.yaml for users who deleted their integrations
-    # and therefore lost the transparent entity_registry migration!
-    from homeassistant.util.yaml.loader import load_yaml
-
-    hass.data[DOMAIN]["customizations"] = {}
-    customize_file = hass.config.path("customize.yaml")
-    if os.path.isfile(customize_file):
-        try:
-            hass.data[DOMAIN]["customizations"] = (
-                await hass.async_add_executor_job(load_yaml, customize_file) or {}
-            )
-            LOGGER.info("Successfully loaded %s custom names from customize.yaml for recovery", len(hass.data[DOMAIN]["customizations"]))
-        except Exception as e:
-            LOGGER.error("Failed to parse customize.yaml for friendly_name recovery: %s", e)
-
     gateway = MyHOMEGatewayHandler(
         hass=hass, config_entry=entry, generate_events=_generate_events
     )
-    hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY] = gateway
-    hass.data[DOMAIN][entry.data[CONF_MAC]]["bus_monitor"] = gateway.bus_monitor
+    runtime = MyHOMERuntimeData(
+        gateway=gateway, platforms=configured_platforms, entities=configured_entities
+    )
 
     try:
         tests_results = await gateway.test()
@@ -468,8 +450,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         )
 
     if not tests_results.get("Success", False):
-        del hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY]
-        hass.data[DOMAIN][entry.data[CONF_MAC]].pop("bus_monitor", None)
         reason = tests_results.get("Message")
         if reason in ("password_error", "password_required"):
             # Home Assistant starts the reauth flow and shows the entry as
@@ -486,13 +466,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     entity_registry = er.async_get(hass)
     device_registry = dr.async_get(hass)
 
-    _mfg = hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].manufacturer
+    _mfg = gateway.manufacturer
     if isinstance(_mfg, (list, tuple)):
         _mfg = _mfg[0] if _mfg else "BTicino S.p.A."
     elif not _mfg:
         _mfg = "BTicino S.p.A."
 
-    _fw = hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].firmware
+    _fw = gateway.firmware
     if isinstance(_fw, (list, tuple)):
         _fw = ".".join(str(x) for x in _fw) if _fw else None
     elif _fw is not None:
@@ -503,28 +483,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     gateway_device_entry = device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
         connections={(dr.CONNECTION_NETWORK_MAC, entry.data[CONF_MAC])},
-        identifiers={
-            (DOMAIN, hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].unique_id)
-        },
+        identifiers={(DOMAIN, gateway.unique_id)},
         manufacturer=str(_mfg),
-        name=hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].name,
-        model=hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].model,
+        name=gateway.name,
+        model=gateway.model,
         sw_version=_fw,
     )
 
-    hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].device_registry_id = (
-        gateway_device_entry.id
-    )
+    gateway.device_registry_id = gateway_device_entry.id
 
-    # runtime_data is the source of truth; hass.data is kept for legacy readers.
-    entry.runtime_data = gateway
+    # entry.runtime_data is the only source of truth for the platforms. The
+    # hass.data[DOMAIN][mac] mapping is a deprecated alias sharing the same dict
+    # objects, kept for one release for out-of-tree readers; removed in 2.1.
+    entry.runtime_data = runtime
+    hass.data[DOMAIN][entry.data[CONF_MAC]] = {
+        CONF_ENTITY: gateway,
+        CONF_PLATFORMS: runtime.platforms,
+        CONF_ENTITIES: runtime.entities,
+        "bus_monitor": runtime.bus_monitor,
+    }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Prune orphaned devices with 0 entities from the device registry
     try:
         gateway_dev_id = getattr(gateway_device_entry, "id", None)
-        gateway_handler = hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY]
+        gateway_handler = gateway
         gateway_unique_id = getattr(gateway_handler, "unique_id", None)
         gateway_id = getattr(gateway_handler, "id", None)
         for dev in dr.async_entries_for_config_entry(device_registry, entry.entry_id):
@@ -576,7 +560,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         from .decoder_pool import DecoderPool
 
         mac = entry.data[CONF_MAC]
-        old_pool = hass.data.get(DOMAIN, {}).get(mac, {}).get("decoder_pool")
+        runtime_data = entry.runtime_data
+        old_pool = runtime_data.decoder_pool
         if old_pool:
             await old_pool.release_all()
 
@@ -592,7 +577,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                 pre_gain_map[entity_id] = int(pre_gain)
 
         pool = DecoderPool(hass, decoder_map, pre_gain_map)
-        hass.data[DOMAIN][mac]["decoder_pool"] = pool
+        runtime_data.decoder_pool = pool
         LOGGER.info(
             "MyHOME: decoder pool rebuilt after options update — %d decoder(s) configured",
             len(decoder_map),
@@ -618,15 +603,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: MyHOMEConfigEntry, device_entry: dr.DeviceEntry
+) -> bool:
+    """Let the user delete a device that is no longer on the bus (quality-scale stale-devices).
+
+    Devices are discovered from bus traffic, so a device that is still wired in
+    simply reappears on its next status frame; removing it is safe. Only the
+    gateway itself is refused: it is the config entry.
+    """
+    runtime = entry.runtime_data if isinstance(getattr(entry, "runtime_data", None), MyHOMERuntimeData) else None
+    gateway_ids = {getattr(runtime.gateway, "unique_id", None), getattr(runtime.gateway, "id", None)} if runtime else set()
+    if any(
+        ident[0] == DOMAIN and ident[1] in gateway_ids
+        for ident in device_entry.identifiers
+    ) or (dr.CONNECTION_NETWORK_MAC, str(entry.data.get(CONF_MAC, "")).lower()) in {
+        (kind, str(value).lower()) for kind, value in device_entry.connections
+    }:
+        LOGGER.debug("Refusing to remove gateway device %s", device_entry.id)
+        return False
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bool:
     """Unload a config entry."""
     LOGGER.info("Unloading MyHome entry.")
 
     if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         return False
 
-    gateway_handler = hass.data[DOMAIN][entry.data[CONF_MAC]].pop(CONF_ENTITY)
-    del hass.data[DOMAIN][entry.data[CONF_MAC]]
+    gateway_handler = entry.runtime_data.gateway
+    hass.data[DOMAIN].pop(entry.data[CONF_MAC], None)
     entry.runtime_data = None
 
     return await gateway_handler.close_listener()

@@ -10,7 +10,6 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.const import (
-    CONF_ENTITIES,
     CONF_MAC,
     CONF_NAME,
     STATE_ON,
@@ -32,14 +31,11 @@ from OWNd.message import (
 from .const import (
     CONF_DEVICE_CLASS,
     CONF_DEVICE_MODEL,
-    CONF_ENTITY,
     CONF_ENTITY_NAME,
     CONF_INVERTED,
     CONF_MANUFACTURER,
-    CONF_PLATFORMS,
     CONF_WHERE,
     CONF_WHO,
-    DOMAIN,
     LOGGER,
     normalize_where,
 )
@@ -95,8 +91,10 @@ ALL_DEVICE_CLASS_SUFFIXES = tuple(
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    gateway = hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY]
-    _configured_binary_sensors = hass.data[DOMAIN][config_entry.data[CONF_MAC]].get(CONF_PLATFORMS, {}).get(PLATFORM, {})
+    runtime = config_entry.runtime_data
+
+    gateway = runtime.gateway
+    _configured_binary_sensors = runtime.platforms.get(PLATFORM, {})
 
     _binary_sensors = []
     known_sensors = set()
@@ -510,13 +508,15 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
 
 async def async_unload_entry(hass, config_entry):
-    if PLATFORM not in hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_PLATFORMS]:
+    runtime = config_entry.runtime_data
+
+    if PLATFORM not in runtime.platforms:
         return True
 
-    _configured_binary_sensors = hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_PLATFORMS][PLATFORM]
+    _configured_binary_sensors = runtime.platforms[PLATFORM]
 
     for _binary_sensor in list(_configured_binary_sensors.keys()):
-        del hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_PLATFORMS][PLATFORM][_binary_sensor]
+        del runtime.platforms[PLATFORM][_binary_sensor]
 
 
 class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
@@ -565,13 +565,7 @@ class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
 
     async def async_added_to_hass(self):
         """When entity is added to hass."""
-        try:
-            device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
-            if CONF_ENTITIES not in device_dict or not isinstance(device_dict[CONF_ENTITIES], dict):
-                device_dict[CONF_ENTITIES] = {}
-            device_dict[CONF_ENTITIES][self._attr_device_class] = self
-        except (KeyError, TypeError):
-            pass
+        self._register_entity_ref(self._attr_device_class)
         target_hass = self.hass or self._hass
         if target_hass is not None:
             unsub = async_dispatcher_connect(
@@ -592,12 +586,7 @@ class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
 
     async def async_will_remove_from_hass(self):
         """When entity is removed from hass."""
-        try:
-            device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
-            if CONF_ENTITIES in device_dict and isinstance(device_dict[CONF_ENTITIES], dict) and self._attr_device_class in device_dict[CONF_ENTITIES]:
-                del device_dict[CONF_ENTITIES][self._attr_device_class]
-        except (KeyError, TypeError):
-            pass
+        self._unregister_entity_ref(self._attr_device_class)
 
     async def async_update(self):
         """Update the entity.
@@ -670,13 +659,7 @@ class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
 
     async def async_added_to_hass(self):
         """When entity is added to hass."""
-        try:
-            device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
-            if CONF_ENTITIES not in device_dict or not isinstance(device_dict[CONF_ENTITIES], dict):
-                device_dict[CONF_ENTITIES] = {}
-            device_dict[CONF_ENTITIES][self._attr_device_class] = self
-        except (KeyError, TypeError):
-            pass
+        self._register_entity_ref(self._attr_device_class)
         target_hass = self.hass or self._hass
         if target_hass is not None:
             unsub = async_dispatcher_connect(
@@ -689,12 +672,7 @@ class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
 
     async def async_will_remove_from_hass(self):
         """When entity is removed from hass."""
-        try:
-            device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
-            if CONF_ENTITIES in device_dict and isinstance(device_dict[CONF_ENTITIES], dict) and self._attr_device_class in device_dict[CONF_ENTITIES]:
-                del device_dict[CONF_ENTITIES][self._attr_device_class]
-        except (KeyError, TypeError):
-            pass
+        self._unregister_entity_ref(self._attr_device_class)
 
     async def async_update(self):
         """AUX sensors are read only and cannot be queried, no async_update implementation."""
@@ -769,13 +747,7 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
 
     async def async_added_to_hass(self):
         """When entity is added to hass."""
-        try:
-            device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
-            if CONF_ENTITIES not in device_dict or not isinstance(device_dict[CONF_ENTITIES], dict):
-                device_dict[CONF_ENTITIES] = {}
-            device_dict[CONF_ENTITIES][self._attr_device_class] = self
-        except (KeyError, TypeError):
-            pass
+        self._register_entity_ref(self._attr_device_class)
         target_hass = self.hass or self._hass
         if target_hass is not None:
             unsub = async_dispatcher_connect(
@@ -798,12 +770,7 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
 
     async def async_will_remove_from_hass(self):
         """When entity is removed from hass."""
-        try:
-            device_dict = self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id]
-            if CONF_ENTITIES in device_dict and isinstance(device_dict[CONF_ENTITIES], dict) and self._attr_device_class in device_dict[CONF_ENTITIES]:
-                del device_dict[CONF_ENTITIES][self._attr_device_class]
-        except (KeyError, TypeError):
-            pass
+        self._unregister_entity_ref(self._attr_device_class)
 
     async def async_update(self):
         """Update the entity.

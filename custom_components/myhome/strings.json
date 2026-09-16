@@ -201,6 +201,38 @@
     "calibrate_cover": {
       "name": "Calibrate cover travel time",
       "description": "Measures a timed cover's up and down travel times on the SCS bus and stores them: the cover is driven fully up, then fully down (timed), then fully up again (timed). Covers are calibrated one at a time per gateway."
+    },
+    "stop_cover_calibration": {
+      "name": "Stop cover calibration",
+      "description": "Stops the running travel-time calibration and cancels the queued ones; the moving cover is stopped and nothing is stored.",
+      "fields": {
+        "gateway": {
+          "name": "Gateway",
+          "description": "The gateway's MAC address (optional; defaults to all gateways)."
+        }
+      }
+    },
+    "set_cover_travel_time": {
+      "name": "Set cover travel time",
+      "description": "Stores the physical travel times of a timed cover by hand instead of calibrating on the bus.",
+      "fields": {
+        "travel_time": {
+          "name": "Travel time",
+          "description": "Seconds for a full travel in both directions (1-180); used for whichever direction has no explicit value."
+        },
+        "travel_time_down": {
+          "name": "Travel time down",
+          "description": "Seconds for a full closing run (1-180)."
+        },
+        "travel_time_up": {
+          "name": "Travel time up",
+          "description": "Seconds for a full opening run (1-180)."
+        }
+      }
+    },
+    "reset_cover_travel_time": {
+      "name": "Reset cover travel time",
+      "description": "Forgets the measured or manually set travel times and returns to the myhome.yaml travel_time or the 25 s default."
     }
   },
   "issues": {
@@ -219,6 +251,38 @@
     "gateway_identity_corrected": {
       "title": "Gateway model corrected to {corrected}",
       "description": "The gateway was configured as {previous} but reports OpenWebNet device type {code}, which the BTicino specification defines as {corrected}. The model, gateway profile and device registry were updated to {corrected}. If that is wrong, use the reconfigure flow to set the model explicitly."
+    }
+  },
+  "exceptions": {
+    "calibration_interrupted": {
+      "message": "{name}: {cause}"
+    },
+    "calibration_no_stop_status": {
+      "message": "{name}: no stop status from the actuator within {timeout} s - it may not report status; set travel_time manually"
+    },
+    "cover_reports_position": {
+      "message": "{name} reports its position; travel-time calibration does not apply to it"
+    },
+    "calibration_in_progress": {
+      "message": "{name} is already being calibrated"
+    },
+    "calibration_implausible_run": {
+      "message": "{name}: implausible {direction} run of {seconds} s; not stored"
+    },
+    "travel_time_missing": {
+      "message": "At least travel_time or travel_time_down/up must be specified"
+    },
+    "travel_time_out_of_range": {
+      "message": "{field} must be between {min} s and {max} s"
+    },
+    "cover_busy_calibrating": {
+      "message": "{entity_id} is being calibrated; try again when it has finished"
+    },
+    "decoders_busy": {
+      "message": "{entity_id}: all audio matrix inputs are currently in use by other rooms"
+    },
+    "decoder_start_failed": {
+      "message": "{entity_id}: decoder {decoder} failed to start playback: {error}"
     }
   }
 }

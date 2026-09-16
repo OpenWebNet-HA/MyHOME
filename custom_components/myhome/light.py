@@ -1,6 +1,7 @@
 """Support for MyHome lights."""
 import asyncio
 
+import voluptuous as vol
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ATTR_BRIGHTNESS_PCT,
@@ -15,12 +16,6 @@ from homeassistant.components.light import (
     LightEntity,
     LightEntityFeature,
 )
-
-try:
-    from homeassistant.components.light import ATTR_COLOR_TEMP
-except ImportError:  # pragma: no cover
-    ATTR_COLOR_TEMP = "color_temp"
-import voluptuous as vol
 from homeassistant.components.light import (
     DOMAIN as PLATFORM,
 )
@@ -48,20 +43,17 @@ from .const import (
     CONF_COLOR_TEMP,
     CONF_DEVICE_MODEL,
     CONF_DIMMABLE,
-    CONF_ENTITY,
     CONF_ENTITY_NAME,
     CONF_HS,
     CONF_ICON,
     CONF_ICON_ON,
     CONF_MANUFACTURER,
-    CONF_PLATFORMS,
     CONF_RGB,
     CONF_TRANSITION_MODE,
     CONF_WHERE,
     CONF_WHO,
     CONF_WORKER_COUNT,
     DEFAULT_TRANSITION_MODE,
-    DOMAIN,
     LOGGER,
     SERVICE_TURN_ON_TIMED,
     SOFTWARE_TRANSITION_MAX_STEPS,
@@ -78,9 +70,13 @@ from .myhome_device import MyHOMEEntity
 
 PARALLEL_UPDATES = 0
 
+# Legacy mired attribute of stored states (core dropped ATTR_COLOR_TEMP in 2025).
+ATTR_COLOR_TEMP = "color_temp"
+
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
     """Set up the MyHOME light platform dynamically via Discovery."""
+    runtime = config_entry.runtime_data
     known_lights = set()
 
     # Restore previously discovered entities from the Entity Registry so they
@@ -93,13 +89,13 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         existing_entries = []
     restored_lights = []
 
-    gateway = hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY]
-    _configured_lights = hass.data[DOMAIN][config_entry.data[CONF_MAC]].get(CONF_PLATFORMS, {}).get(PLATFORM, {})
+    gateway = runtime.gateway
+    _configured_lights = runtime.platforms.get(PLATFORM, {})
 
     # Collect all WHERE addresses configured or registered as switches so dynamic discovery
     # of WHO=1 never auto-creates a duplicate Light entity for switch/outlet devices.
     switch_wheres = set()
-    _configured_switches = hass.data[DOMAIN][config_entry.data[CONF_MAC]].get(CONF_PLATFORMS, {}).get("switch", {})
+    _configured_switches = runtime.platforms.get("switch", {})
     for dev_id, sw_cfg in _configured_switches.items():
         sw_where = str(sw_cfg.get(CONF_WHERE, dev_id))
         sw_clean = sw_where.split("-")[-1]
@@ -123,7 +119,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     # Collect all WHERE addresses configured or registered as sensors/binary_sensors so dynamic discovery
     # of WHO=1 never auto-creates a duplicate Light entity for motion/illuminance sensors.
     sensor_wheres = set()
-    _configured_bs = hass.data[DOMAIN][config_entry.data[CONF_MAC]].get(CONF_PLATFORMS, {}).get("binary_sensor", {})
+    _configured_bs = runtime.platforms.get("binary_sensor", {})
     for dev_id, bs_cfg in _configured_bs.items():
         if str(bs_cfg.get(CONF_WHO, "25")) == "1":
             bs_where = str(bs_cfg.get(CONF_WHERE, dev_id))
@@ -134,7 +130,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             sensor_wheres.add(normalize_where(bs_where))
             sensor_wheres.add(normalize_where(bs_clean))
 
-    _configured_s = hass.data[DOMAIN][config_entry.data[CONF_MAC]].get(CONF_PLATFORMS, {}).get("sensor", {})
+    _configured_s = runtime.platforms.get("sensor", {})
     for dev_id, s_cfg in _configured_s.items():
         if str(s_cfg.get(CONF_WHO, "1")) == "1":
             s_where = str(s_cfg.get(CONF_WHERE, dev_id))
@@ -204,12 +200,9 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             cfg = _configured_lights.get(device_id) or _configured_lights.get(where) or _configured_lights.get(clean_where) or {}
 
             default_suffix = f"{clean_where}I{interface}" if interface else clean_where
-            _customs = hass.data.get(DOMAIN, {}).get("customizations", {})
-            _predicted_id = f"light.light_{default_suffix.lower().replace(' ', '_')}"
-            _custom_entry = _customs.get(entry.entity_id, {}) or _customs.get(_predicted_id, {})
-            _is_dimmable = cfg.get(CONF_DIMMABLE, _custom_entry.get("dimmable", False))
-            _is_color_temp = cfg.get(CONF_COLOR_TEMP, _custom_entry.get("color_temp", False))
-            _is_rgb = cfg.get(CONF_RGB, _custom_entry.get("rgb", False)) or cfg.get(CONF_HS, _custom_entry.get("hs", False))
+            _is_dimmable = cfg.get(CONF_DIMMABLE, False)
+            _is_color_temp = cfg.get(CONF_COLOR_TEMP, False)
+            _is_rgb = cfg.get(CONF_RGB, False) or cfg.get(CONF_HS, False)
             _name = cfg.get(CONF_NAME, f"Light {default_suffix}")
             _entity_name = cfg.get(CONF_ENTITY_NAME)
             _icon = cfg.get(CONF_ICON)
@@ -387,10 +380,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             default_suffix = f"{clean_where}I{interface}" if interface else clean_where
             cfg = _configured_lights.get(unique_id) or _configured_lights.get(where) or _configured_lights.get(clean_where) or {}
 
-            _customs = hass.data.get(DOMAIN, {}).get("customizations", {})
-            _predicted_id = f"light.light_{default_suffix.lower().replace(' ', '_')}"
-            _custom_entry = _customs.get(_predicted_id, {})
-            _is_dimmable = cfg.get(CONF_DIMMABLE, _custom_entry.get("dimmable", False))
+            _is_dimmable = cfg.get(CONF_DIMMABLE, False)
 
             # Auto-detect dimmer from the first protocol message
             if not _is_dimmable:
@@ -419,7 +409,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 dimmable=_is_dimmable,
                 manufacturer=_manufacturer,
                 model=_model,
-                gateway=hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY],
+                gateway=runtime.gateway,
             )
             known_lights.add(unique_id)
             async_add_entities([_light])
@@ -547,6 +537,15 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._fade_id: int = 0
         self._cmd_lock: asyncio.Lock = asyncio.Lock()
         self._last_brightness_pct: int = 100
+
+    @property
+    def color_temp(self) -> int | None:
+        """Colour temperature in mireds, as carried on the bus (dimension 14).
+
+        Current cores no longer expose LightEntity.color_temp; keep the
+        accessor so the mired value stays inspectable alongside the Kelvin one.
+        """
+        return self._attr_color_temp
 
     async def async_added_to_hass(self):
         """Run when entity about to be added to hass."""
@@ -994,15 +993,6 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
 
         # plain off (preserved)
         return await self._gateway_handler.send(OWNLightingCommand.switch_off(self._full_where))
-
-    @property
-    def color_temp(self) -> int | None:
-        """Colour temperature in mireds, as carried on the bus (dimension 14).
-
-        Current cores no longer expose LightEntity.color_temp; keep the
-        accessor so the mired value stays inspectable alongside the Kelvin one.
-        """
-        return self._attr_color_temp
 
     @callback
     def handle_event(self, message: OWNLightingEvent):

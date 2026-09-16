@@ -24,6 +24,7 @@ from custom_components.myhome.climate import (
     async_setup_entry,
     async_unload_entry,
 )
+from tests.conftest import attach_runtime
 
 
 async def test_setup_and_unload_entry(hass):
@@ -58,6 +59,7 @@ async def test_setup_and_unload_entry(hass):
     config_entry.data = {"mac": "mac"}
 
     async_add_entities = MagicMock()
+    attach_runtime(hass, config_entry)
     await async_setup_entry(hass, config_entry, async_add_entities)
 
     async_add_entities.assert_called_once()
@@ -69,6 +71,7 @@ async def test_setup_and_unload_entry(hass):
     assert climate_entity.device_info["name"] == "Zone 1"
 
     # Test unload
+    attach_runtime(hass, config_entry)
     await async_unload_entry(hass, config_entry)
     assert "device_1" not in hass.data["myhome"]["mac"]["platforms"]["climate"]
 
@@ -286,7 +289,9 @@ async def test_setup_and_unload_entry_platform_not_configured(hass):
     config_entry = MagicMock()
     config_entry.data = {"mac": "mac"}
 
+    attach_runtime(hass, config_entry)
     assert await async_setup_entry(hass, config_entry, MagicMock()) is True
+    attach_runtime(hass, config_entry)
     assert await async_unload_entry(hass, config_entry) is True
 
 

@@ -5,35 +5,8 @@ from homeassistant.components.alarm_control_panel import (
 from homeassistant.components.alarm_control_panel import (
     AlarmControlPanelEntity,
     AlarmControlPanelEntityFeature,
+    AlarmControlPanelState,
 )
-
-try:
-    from homeassistant.components.alarm_control_panel import AlarmControlPanelState
-
-    STATE_DISARMED = AlarmControlPanelState.DISARMED
-    STATE_ARMED_HOME = AlarmControlPanelState.ARMED_HOME
-    STATE_ARMED_AWAY = AlarmControlPanelState.ARMED_AWAY
-    STATE_TRIGGERED = AlarmControlPanelState.TRIGGERED
-except ImportError:
-    try:
-        from homeassistant.const import (
-            STATE_ALARM_ARMED_AWAY as STATE_ARMED_AWAY,
-        )
-        from homeassistant.const import (
-            STATE_ALARM_ARMED_HOME as STATE_ARMED_HOME,
-        )
-        from homeassistant.const import (
-            STATE_ALARM_DISARMED as STATE_DISARMED,
-        )
-        from homeassistant.const import (
-            STATE_ALARM_TRIGGERED as STATE_TRIGGERED,
-        )
-    except ImportError:
-        STATE_DISARMED = "disarmed"
-        STATE_ARMED_HOME = "armed_home"
-        STATE_ARMED_AWAY = "armed_away"
-        STATE_TRIGGERED = "triggered"
-
 from homeassistant.const import (
     CONF_MAC,
     CONF_NAME,
@@ -48,13 +21,10 @@ from OWNd.message import (
 
 from .const import (
     CONF_DEVICE_MODEL,
-    CONF_ENTITY,
     CONF_ENTITY_NAME,
     CONF_MANUFACTURER,
-    CONF_PLATFORMS,
     CONF_WHERE,
     CONF_WHO,
-    DOMAIN,
     LOGGER,
 )
 from .gateway import MyHOMEGatewayHandler
@@ -62,17 +32,23 @@ from .myhome_device import MyHOMEEntity
 
 PARALLEL_UPDATES = 0
 
+STATE_DISARMED = AlarmControlPanelState.DISARMED
+STATE_ARMED_HOME = AlarmControlPanelState.ARMED_HOME
+STATE_ARMED_AWAY = AlarmControlPanelState.ARMED_AWAY
+STATE_TRIGGERED = AlarmControlPanelState.TRIGGERED
+
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
     """Set up the MyHOME alarm_control_panel platform dynamically and from config."""
+    runtime = config_entry.runtime_data
     known_alarms = set()
 
     entity_registry = er.async_get(hass)
     existing_entries = er.async_entries_for_config_entry(entity_registry, config_entry.entry_id)
     restored_alarms = []
 
-    gateway = hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY]
-    _configured_alarms = hass.data[DOMAIN][config_entry.data[CONF_MAC]].get(CONF_PLATFORMS, {}).get(PLATFORM, {})
+    gateway = runtime.gateway
+    _configured_alarms = runtime.platforms.get(PLATFORM, {})
 
     for entry in existing_entries:
         if entry.domain == PLATFORM:
@@ -142,7 +118,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 where=where,
                 manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
                 model=cfg.get(CONF_DEVICE_MODEL, "Burglar Alarm"),
-                gateway=hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY],
+                gateway=runtime.gateway,
             )
             known_alarms.add(unique_id)
             known_alarms.add(clean_where)

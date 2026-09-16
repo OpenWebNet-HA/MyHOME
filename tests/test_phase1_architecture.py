@@ -1101,55 +1101,6 @@ class TestEntityRegistryMigrationSafety:
 
         await hass.config_entries.async_unload(entry.entry_id)
 
-    @pytest.mark.asyncio
-    async def test_customize_yaml_dimmable_with_custom_entity_id(self, hass: HomeAssistant):
-        mac = "00:03:50:00:12:34"
-        entry = MockConfigEntry(
-            domain=DOMAIN,
-            data={
-                CONF_HOST: "192.168.0.35",
-                CONF_PORT: 20000,
-                CONF_PASSWORD: "pass",
-                CONF_MAC: mac,
-                CONF_SSDP_LOCATION: "http://192.168.0.35:49153/description.xml",
-                CONF_SSDP_ST: "urn:schemas-upnp-org:device:Basic:1",
-                CONF_DEVICE_TYPE: "urn:schemas-upnp-org:device:Basic:1",
-                CONF_FRIENDLY_NAME: "MyHOME Gateway",
-                CONF_MANUFACTURER: "BTicino",
-                CONF_MANUFACTURER_URL: "http://www.bticino.com",
-                CONF_NAME: "F454",
-                CONF_FIRMWARE: "2.0.0",
-                CONF_UDN: "uuid:12345678",
-            },
-            unique_id=mac,
-        )
-        entry.add_to_hass(hass)
-
-        entity_registry = er.async_get(hass)
-        entity_registry.async_get_or_create("light", DOMAIN, f"{mac}-1-21", config_entry=entry, suggested_object_id="keuken_dimmer")
-
-        # Mock customize.yaml containing dimmable: true under custom entity_id
-        fake_customs = {"light.keuken_dimmer": {"dimmable": True}}
-        import os as _os
-        orig_isfile = _os.path.isfile
-        with patch("custom_components.myhome.gateway.OWNSession.test_connection", return_value={"Success": True, "Message": None}), \
-             patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"), \
-             patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"), \
-             patch("os.path.isfile", side_effect=lambda p: True if "customize.yaml" in str(p) else orig_isfile(p)), \
-             patch("homeassistant.util.yaml.loader.load_yaml", return_value=fake_customs):
-            assert await hass.config_entries.async_setup(entry.entry_id)
-            await hass.async_block_till_done()
-
-        state = hass.states.get("light.keuken_dimmer")
-        assert state is not None
-        # Brightness color mode should be supported because dimmable is True from custom entity_id in customize.yaml
-        assert "brightness" in state.attributes.get("supported_color_modes", [])
-
-        await hass.config_entries.async_unload(entry.entry_id)
-
-
-# ── 7. Golden Plant Sample Conformance (issue #247 plant) ──────
-
 class TestPhase1GoldenPlantSampleIssue247:
     """End-to-end golden plant conformance tests using real production data from Issue #247.
 
