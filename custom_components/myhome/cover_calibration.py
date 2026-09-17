@@ -23,6 +23,7 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import CoreState, callback
 from OWNd.message import OWNAutomationCommand
 
+from .cover_calibration_reservation import CalibrationReservation
 from .cover_profile_provenance import EVIDENCE, evidence, unknown_provenance
 from .cover_profiles import (
     DATA_KEY,
@@ -83,6 +84,7 @@ class CalibrationSession:
         self.lease: asyncio.TimerHandle | None = None
         self.deadline: asyncio.TimerHandle | None = None
         self.settle: asyncio.TimerHandle | None = None
+        self.reservation = CalibrationReservation(self)
         self.shutdown = hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, self._on_shutdown)
         self.touch()
 
@@ -91,6 +93,7 @@ class CalibrationSession:
         # HA removes a one-shot listener before invoking its callback.
         self.shutdown = None
         self.close("shutdown")
+        self.reservation.completed()
 
     @property
     def active(self) -> Any:
@@ -102,7 +105,8 @@ class CalibrationSession:
                 "phase": self.phase, "mode": self.mode, "reason": self.reason, "values": dict(self.values),
                 "elapsed": round(monotonic() - self.started_at, 2) if self.started_at is not None else None,
                 "stop_requested": self.stop_requested,
-                **({"recoverable": True, "attached": self.listener, "attachment": self.attachment,
+                "waiting_for_stop": self.closed and self.reservation.pending,
+                **({"recoverable": not self.closed, "attached": self.listener and not self.closed, "attachment": self.attachment,
                     "recovery_seconds": RECOVERY_SECONDS} if self.client_id else {}),
                 "save_modes": ["new", "cover", "shared"] if self.store.profile(self.cover.unique_id) else ["new", "cover"],
                 **({"direction": self.direction} if self.direction else {})}
@@ -161,10 +165,15 @@ class CalibrationSession:
 
     def queue_stop(self) -> None:
         expires = monotonic() + STOP_QUEUE_SECONDS
+        generation = self.reservation.generation
         try:
             self.cover._gateway_handler.async_queue_calibration(
                 OWNAutomationCommand.stop_shutter(self.cover._full_where),
-                lambda: monotonic() <= expires, self.store.calibration_command_lock,
+                # During HA shutdown retain the best-effort Stop even after
+                # runtime ownership/timers have been cleaned up.
+                lambda: ((self.store.calibration is self or self.hass.state == CoreState.stopping)
+                         and generation == self.reservation.generation
+                         and monotonic() <= expires), self.store.calibration_command_lock,
             )
         except asyncio.QueueFull:
             self.stop_requested = False
@@ -207,13 +216,18 @@ class CalibrationSession:
                 self.deadline.cancel()
             if self.retention:
                 self.retention.cancel()
-            if self.shutdown is not None:
-                unsubscribe, self.shutdown = self.shutdown, None
-                unsubscribe()
-            if self.store.calibration is self:
-                self.store.calibration = None
-            if self.cover._calibration is self:
-                self.cover._calibration = None
+            if not self.reservation.pending:
+                self.release()
+
+    def release(self) -> None:
+        """Release a closed client only after its outstanding movement is bounded."""
+        if self.shutdown is not None:
+            unsubscribe, self.shutdown = self.shutdown, None
+            unsubscribe()
+        if self.store.calibration is self:
+            self.store.calibration = None
+        if self.cover._calibration is self:
+            self.cover._calibration = None
 
     def move(self, direction: Any) -> None:
         expected = "confirm_closed" if direction == "open" else "confirm_open"
@@ -226,6 +240,7 @@ class CalibrationSession:
     def queue_move(self, direction: Any) -> Any:
         """Use the same guarded queue for guided and automatic movements."""
         token = self._motion_token = object()
+        self.reservation.generation += 1
         self.phase = f"starting_{direction}"
         self.armed = False
         self.started_at = None
@@ -237,6 +252,7 @@ class CalibrationSession:
             if self._motion_token is not token or self.phase != f"starting_{direction}" or monotonic() > expires:
                 return False
             self.armed = True
+            self.reservation.dispatched()
             return True
 
         command = OWNAutomationCommand.raise_shutter if direction == "open" else OWNAutomationCommand.lower_shutter
@@ -250,6 +266,9 @@ class CalibrationSession:
         self.emit()
 
     def on_event(self, event: Any) -> None:
+        self.reservation.observe(event)
+        if self.closed:
+            return
         if self.phase not in {"starting_open", "starting_close", "opening", "closing"}:
             if self.active and (event.is_opening or event.is_closing):
                 self.interrupt("unexpected_movement")
@@ -346,7 +365,7 @@ class CalibrationSession:
             try:
                 revision = await self.save_profiles(msg)
             except (ProfileError, vol.Invalid, OSError):
-                if self.store.calibration is self:
+                if self.store.calibration is self and not self.closed:
                     self.phase = "review"
                     self.emit()
                 raise
@@ -391,12 +410,12 @@ async def begin(hass: Any, connection: Any, msg: dict[str, Any]) -> Any:
     store = get_store(hass, entry.entry_id)
     async with store.lock:
         await store.load()
-        if store.calibration is not None and msg.get("client_id") == store.calibration.client_id and msg.get("client_id"):
+        if store.calibration is not None and not store.calibration.closed and msg.get("client_id") == store.calibration.client_id and msg.get("client_id"):
             store.calibration.attach(connection, msg["id"], msg["client_id"])
             return store.calibration
-        cover = ready_cover(hass, store, entry.entry_id, msg["entity_id"])
         if store.calibration is not None:
             raise ProfileError("calibration_busy")
+        cover = ready_cover(hass, store, entry.entry_id, msg["entity_id"])
         if msg["revision"] != store.data["revision"]:
             raise ProfileError("revision_conflict")
         options = {}

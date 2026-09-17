@@ -208,7 +208,7 @@ def snapshot(hass: Any, store: Any, entry: Any, entity: Any) -> Any:
     return {
         "entry_id": entry.entry_id, "entity_id": entity.entity_id,
         "calibration": ({key: value for key, value in store.calibration.view().items()
-                         if key != "attachment"} if store.calibration and store.calibration.client_id else None),
+                         if key != "attachment"} if store.calibration and (store.calibration.client_id or store.calibration.closed) else None),
         "revision": store.data["revision"], "assigned_profile_id": assigned["id"] if assigned else None,
         "model": MODEL, "scaling": "unscaled", "accuracy": {"kind": "not_measured"},
         "profiles": [{"id": key, **value, "model": MODEL, "scaling": "unscaled",
@@ -273,7 +273,7 @@ async def write_profile(hass: Any, msg: dict[str, Any], *, calibration: Any=None
             raise ProfileError(current["reason"])
         if store.covers[entity.unique_id].native_calibration_busy():
             raise ProfileError("calibration_busy")
-        if store.calibration and store.calibration.active and store.calibration is not calibration:
+        if store.calibration and (store.calibration.active or store.calibration.reservation.pending) and store.calibration is not calibration:
             raise ProfileError("calibration_busy")
         if calibration is not None and not calibration.active:
             raise ProfileError("calibration_expired")

@@ -40,6 +40,7 @@ class AutomaticCalibrationSession(guided.CalibrationSession):
             elapsed = guided.monotonic() - cast(float, self.started_at)
             if elapsed < 0.15:  # Trailing relay echo, as in #349; keep the deadline.
                 return
+            self.reservation.observe(event)
             if CUTOFF_MIN <= elapsed <= CUTOFF_MAX:
                 self.interrupt("automatic_cutoff")
                 return

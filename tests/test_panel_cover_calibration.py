@@ -59,12 +59,14 @@ async def measured(cal):
     bus(cal, "*2*1*11##")
     cal.clock[0] += 20.5
     await act(cal, "endpoint")
+    bus(cal, "*2*0*11##")
     await act(cal, "close")
     assert cal.queue[-1][1]()
     cal.clock[0] += 3
     bus(cal, "*2*2*11##")
     cal.clock[0] += 40.5
     await act(cal, "endpoint")
+    bus(cal, "*2*0*11##")
 
 
 async def test_measurement_uses_bus_start_and_explicit_endpoints_before_save(hass, calibration):
@@ -145,7 +147,7 @@ async def test_queued_movement_invalid_after_disconnect_and_stop_has_expiry(cali
     assert cal.session.reason == "cancelled"
     stop = cal.queue[-1]
     assert str(stop[0]) == "*2*0*11##"
-    assert stop[1]()
+    assert not stop[1]()  # No movement dispatched: old Stop cannot affect a new owner.
     cal.clock[0] += 31
     assert not stop[1]()
     assert cal.session.store.data["profiles"] == {}
@@ -176,6 +178,8 @@ async def test_travel_and_heartbeat_timeout_discard_values(calibration):
     assert cal.session.provenance == {}
     cal.session.lease._run()
     assert cal.session.reason == "heartbeat_timeout"
+    assert cal.cover._calibration is cal.session  # Await Stop after closing the client.
+    bus(cal, "*2*0*11##")
     assert cal.cover._calibration is None
 
 

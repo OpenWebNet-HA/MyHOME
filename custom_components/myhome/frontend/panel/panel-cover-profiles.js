@@ -174,9 +174,9 @@ export class CoverProfileEditor {
     const { t } = this._context, data = this._data, session = data.calibration;
     const box = this.dialog.querySelector("#cal-recovery");
     box.hidden = !session;
-    box.querySelector("p").textContent = session ? `${session.entity_id} · ${t(session.attached ? "calAttachedElsewhere" : "calDetached")}` : "";
+    box.querySelector("p").textContent = session ? `${session.entity_id} · ${t(session.waiting_for_stop ? "calWaitingForStop" : session.attached ? "calAttachedElsewhere" : "calDetached")}` : "";
     const resume = box.querySelector("#cal-resume");
-    resume.hidden = !session || session.attached;
+    resume.hidden = !session || session.attached || session.waiting_for_stop || session.recoverable === false;
     resume.onclick = () => {
       this._calibrating = true;
       const context = this._context;

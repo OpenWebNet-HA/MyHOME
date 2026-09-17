@@ -147,6 +147,7 @@ const select = (host, id, checked = true) => {
 test('multi-cover assignment displays eligibility and preview, then confirms the exact selection', async () => {
   const { host, calls, counts } = await mount({ action: 'assign', read: assignOverview,
     call: message => message.action === 'preview_assign' ? assignedPreview : { revision: 5 } });
+  assert.match(host.querySelector('#catalogue-unscaled').textContent, /senza adattamento all’altezza/);
   assert.equal(host.querySelector('#catalogue-submit').disabled, true);
   for (const id of ['cover.one', 'cover.offline', 'cover.advanced']) assert.equal(host.querySelector(`[value="${id}"]`).disabled, true);
   assert.equal(host.querySelector('img'), null);
@@ -157,6 +158,7 @@ test('multi-cover assignment displays eligibility and preview, then confirms the
   assert.equal(calls.at(-1).action, 'preview_assign');
   assert.equal(counts().saved, 0);
   assert.match(host.querySelector('#catalogue-impact').textContent, /Legno → Alluminio/);
+  assert.equal(host.querySelector('#catalogue-unscaled').hidden, false);
   assert.match(host.querySelector('#catalogue-impact').textContent, /valore personale conservato/);
   assert.equal(host.querySelector('#catalogue-impact img'), null);
   submit(host); await tick();

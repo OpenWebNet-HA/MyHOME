@@ -41,6 +41,19 @@ after(() => dom.window.close());
 
 const form = (view) => view.host.querySelector("#profile-form");
 
+test("closed movement reservation blocks calibration without offering recovery until refresh confirms release", async () => {
+  let calibration = { entity_id: "cover.test", waiting_for_stop: true, recoverable: false, attached: false };
+  const view = setup({ read: () => ({ ...snapshot(), calibration }) });
+  await view.open();
+  assert.match(view.host.querySelector("#cal-recovery").textContent, /10 minuti/);
+  assert.equal(view.host.querySelector("#cal-resume").hidden, true);
+  assert.equal(view.host.querySelector("#profile-calibrate").disabled, true);
+  calibration = null;
+  view.host.querySelector("#cal-refresh").click(); await tick();
+  assert.equal(view.host.querySelector("#cal-recovery").hidden, true);
+  assert.equal(view.host.querySelector("#profile-calibrate").disabled, false);
+});
+
 test("two open editors reconcile a shared save, including usage, additions and deletion", async () => {
   const a = setup(), b = setup(); await a.open(); await b.open();
   assert.deepEqual(a.subscriptions[0].request, { type: "myhome/cover_profiles/subscribe", entry_id: "one" });
