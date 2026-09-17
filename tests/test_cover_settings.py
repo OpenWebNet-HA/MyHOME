@@ -154,7 +154,8 @@ async def test_overview_runtime_provenance_offline_advanced_and_gateway_isolatio
     assert row["effective"]["closing"]["provenance"]["origin_entity_id"] == cover.entity_id
     assert result["model"] == "per_cover" and result["scaling"] == "optional_height"
     assert result["accuracy"] == {"kind": "not_measured"}
-    assert result["capabilities"] == {"height_scaling": True, "nonlinear": True, "nonlinear_calibration": False, "geometry_overrides": False,
+    assert result["capabilities"] == {"height_scaling": True, "nonlinear": True, "nonlinear_calibration": True, "geometry_overrides": False,
+                                      "nonlinear_calibration_modes": ["basic_new_profile"], "independent_calibration_check": False,
                                       "profile_assignment": True, "profile_management": True, "override_write": True, "shared_profile_write": True}
     assert len(result["covers"]) == 2
     assert len((await overview(hass, plant.entries[1].entry_id))["covers"]) == 1

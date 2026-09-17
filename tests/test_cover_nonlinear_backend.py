@@ -61,7 +61,7 @@ async def test_saved_geometry_scaled_values_overrides_reload_export_and_isolatio
     store = get_store(hass, store.entry_id)
     assert store.data == saved and cover._motion.model.closing_roll == 3
     result = await overview(hass, store.entry_id)
-    assert result["capabilities"]["nonlinear"] and not result["capabilities"]["nonlinear_calibration"]
+    assert result["capabilities"]["nonlinear"] and result["capabilities"]["nonlinear_calibration"]
     assert result["profiles"][0]["geometry"] == nonlinear()["geometry"]
     assert result["covers"][0]["model"] == "slat_roll"
     assert plant.covers[1]._motion.model is None and plant.covers[2]._motion.model is None

@@ -152,11 +152,11 @@ test("stream failure retries once while mounted and removal cancels its timer", 
 
 test("legacy card adapter uses the same view and keeps both names and Lovelace configuration", async () => {
   // Resolve the HA static route to the actual local module for this Node test.
-  const core = new URL("../../custom_components/myhome/frontend/panel/panel-bus-monitor-view.js?v=0.30.0", import.meta.url).href;
+  const core = new URL("../../custom_components/myhome/frontend/panel/panel-bus-monitor-view.js?v=0.31.0", import.meta.url).href;
   const source = await readFile(new URL("../../custom_components/myhome/frontend/myhome-bus-card.js", import.meta.url), "utf8");
-  assert.match(source, /from "\/myhome_static\/panel\/panel-bus-monitor-view.js\?v=0.30.0"/);
+  assert.match(source, /from "\/myhome_static\/panel\/panel-bus-monitor-view.js\?v=0.31.0"/);
   window.customCards = [{ type: "myhome-bus-card" }, { type: "myhome-openwebnet-bus-monitor" }, { type: "unrelated-card" }];
-  await import(`data:text/javascript,${encodeURIComponent(source.replace('/myhome_static/panel/panel-bus-monitor-view.js?v=0.30.0', core))}`);
+  await import(`data:text/javascript,${encodeURIComponent(source.replace('/myhome_static/panel/panel-bus-monitor-view.js?v=0.31.0', core))}`);
   for (const tag of ["myhome-openwebnet-bus-monitor", "myhome-bus-card"]) {
     const card = document.createElement(tag); views.push(card); card.setConfig({ title: "Existing dashboard" });
     assert.equal(card._config.title, "Existing dashboard"); assert.equal(card.getCardSize(), 6);

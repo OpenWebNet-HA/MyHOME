@@ -1,5 +1,7 @@
 # Optional slat/roll profiles — panel 0.30.0
 
+Panel 0.31.0 adds [guided geometry measurement](cover-guided-geometry.md). The runtime and storage described here remain in use.
+
 The [mathematical foundation](cover-nonlinear-model.md) is now connected to profile
 storage, the shared resolver, impact previews and timed-cover commands. This
 implements the profile/runtime part of the

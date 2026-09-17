@@ -63,7 +63,7 @@ async def overview(hass: Any, entry_id: str) -> dict[str, Any]:
         return {"entry_id": entry_id, "revision": store.data["revision"], "schema_version": 1,
                 "storage_version": 8, "model": "per_cover", "models": [MODEL, NONLINEAR_MODEL], "scaling": "optional_height",
                 "accuracy": {"kind": "not_measured"},
-                "capabilities": {"height_scaling": True, "nonlinear": True, "nonlinear_calibration": False, "geometry_overrides": False,
+                "capabilities": {"height_scaling": True, "nonlinear": True, "nonlinear_calibration": True, "nonlinear_calibration_modes": ["basic_new_profile"], "independent_calibration_check": False, "geometry_overrides": False,
                                  "profile_assignment": True,
                                  "profile_management": True, "override_write": True, "shared_profile_write": True},
                 "profiles": profiles, "covers": covers}

@@ -1380,3 +1380,20 @@ test("profile assignment action uses the existing modal and includes inventory a
   assert.match(root.querySelector('#catalogue-body').textContent, /Indirizzo/);
   assert.equal(root.querySelector('#profile-calibrate'), null);
 });
+
+test("geometry calibration stays in the existing cover section and clears a single-direction scope", async () => {
+  const { root, hass, calls } = await mountProfiles();
+  let request;
+  hass.connection.subscribeMessage = async (_callback, message) => { request = message; return () => {}; };
+  openProfile(root); await tick();
+  const sectionCount = root.querySelectorAll(".profile-details").length;
+  change(root.querySelector("#cal-direction"), "closing");
+  change(root.querySelector("#cal-mode"), "geometry");
+  assert.equal(root.querySelector("#cal-direction").value, "");
+  assert.equal(root.querySelectorAll(".profile-details").length, sectionCount);
+  assert.match(root.querySelector("#cal-label").textContent, /Lamelle|Slats/);
+  root.querySelector("#profile-calibrate").click(); await tick();
+  assert.equal(request.mode, "geometry");
+  assert.equal("direction" in request, false);
+  assert.equal(calls.filter((c) => c.type === "myhome/cover_calibration/action").length, 0);
+});

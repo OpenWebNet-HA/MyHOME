@@ -36,14 +36,15 @@ export class CoverCalibration {
     const client_id = globalThis.crypto.getRandomValues(new Uint32Array(4)).join("-");
     const automatic = context.mode === "automatic";
     const quick = context.direction;
+    const geometry = context.mode === "geometry";
     host.innerHTML = `<div class="cal-panel" data-phase="loading">
-      <h3 class="cal-title"><ha-icon icon="mdi:timer-outline" aria-hidden="true"></ha-icon>${esc(t(automatic ? "calAutomatic" : "calGuided"))}</h3>
-      <ol class="cal-steps" aria-hidden="true" ${automatic || quick ? "hidden" : ""}>
+      <h3 class="cal-title"><ha-icon icon="mdi:timer-outline" aria-hidden="true"></ha-icon>${esc(t(geometry ? "calGeometry" : automatic ? "calAutomatic" : "calGuided"))}</h3>
+      <ol class="cal-steps" aria-hidden="true" ${automatic || quick || geometry ? "hidden" : ""}>
         <li data-step="opening"><span class="cal-step-index">1</span><span>${esc(t("calStepOpening"))}</span></li>
         <li data-step="closing"><span class="cal-step-index">2</span><span>${esc(t("calStepClosing"))}</span></li>
         <li data-step="review"><span class="cal-step-index">3</span><span>${esc(t("calStepReview"))}</span></li>
       </ol>
-      <p class="muted cal-help">${esc(t(quick ? (quick === "opening" ? "calQuickOpeningHelp" : "calQuickClosingHelp") : automatic ? "calAutomaticHelp" : "calHelp"))}</p>
+      <p class="muted cal-help">${esc(t(geometry ? "calGeometryHelp" : quick ? (quick === "opening" ? "calQuickOpeningHelp" : "calQuickClosingHelp") : automatic ? "calAutomaticHelp" : "calHelp"))}</p>
       <p class="muted">${esc(t("calRecoveryHelp"))}</p>
       ${context.resume ? `<p>${esc(context.resume.entity_id)}</p>` : ""}
       ${context.entity_ids ? `<p class="notice">${esc(t("calBatchHelp"))}</p><ol id="cal-targets"></ol>` : ""}
@@ -59,7 +60,15 @@ export class CoverCalibration {
         <button type="button" class="primary" data-cal-action="open" hidden><ha-icon icon="mdi:arrow-up-bold" aria-hidden="true"></ha-icon><span>${esc(t("calOpen"))}</span></button>
         <button type="button" class="primary" data-cal-action="close" hidden><ha-icon icon="mdi:arrow-down-bold" aria-hidden="true"></ha-icon><span>${esc(t("calClose"))}</span></button>
         <button type="button" class="primary" data-cal-action="endpoint" hidden></button>
+        <button type="button" class="primary" data-cal-action="next" hidden>${esc(t("calGeometryStart"))}</button>
+        <button type="button" class="primary" data-cal-action="lift" hidden>${esc(t("calLift"))}</button>
       </div>
+      <form id="cal-reading" hidden>
+        <label><span id="cal-reading-label"></span><input name="reading_cm" type="number" step="any" min="0" max="10000" required inputmode="decimal"></label>
+        <p id="cal-expected" class="muted"></p>
+        <button type="submit" class="primary">${esc(t("calReadingAccept"))}</button>
+      </form>
+      <button type="button" id="cal-repeat" hidden>${esc(t("calRepeat"))}</button>
       <form id="cal-save" class="profile-section cal-save" hidden><p id="cal-values" class="cal-values"></p>
         <label ${context.entity_ids ? "hidden" : ""}>${esc(t("calSaveDestination"))}<select id="cal-save-mode">
           <option value="new">${esc(t("calSaveNew"))}</option><option value="cover">${esc(t("calSaveCover"))}</option><option value="shared">${esc(t("calSaveShared"))}</option>
@@ -76,6 +85,11 @@ export class CoverCalibration {
     for (const button of host.querySelectorAll("[data-cal-action]")) {
       button.onclick = () => this._perform(button.dataset.calAction);
     }
+    host.querySelector("#cal-repeat").onclick = () => this._perform("repeat");
+    host.querySelector("#cal-reading").onsubmit = (event) => {
+      event.preventDefault();
+      if (event.currentTarget.reportValidity()) this._perform("reading", { reading_cm: Number(event.currentTarget.elements.reading_cm.value) });
+    };
     host.querySelector("#cal-stop").onclick = () => this._perform("stop");
     host.querySelector("#cal-cancel").onclick = async () => {
       await this.close({ cancel: true });
@@ -108,7 +122,7 @@ export class CoverCalibration {
         ? { type: "myhome/cover_calibration/resume", entry_id: entity.entry_id, session_id: context.resume.session_id, client_id }
         : context.entity_ids
           ? { type: "myhome/cover_calibration/batch_start", entry_id: entity.entry_id, entity_ids: context.entity_ids, revision, client_id }
-          : { type: "myhome/cover_calibration/start", entry_id: entity.entry_id, entity_id: entity.entity_id, revision, client_id, ...(automatic ? { mode: "automatic" } : {}), ...(quick ? { direction: quick } : {}) });
+          : { type: "myhome/cover_calibration/start", entry_id: entity.entry_id, entity_id: entity.entity_id, revision, client_id, ...(automatic || geometry ? { mode: context.mode } : {}), ...(quick ? { direction: quick } : {}) });
       if (!this._current(generation)) { Promise.resolve(unsubscribe()).catch(() => {}); return; }
       this._unsubscribe = unsubscribe;
       this._heartbeat = setInterval(() => this._perform("heartbeat"), 5000);
@@ -147,6 +161,7 @@ export class CoverCalibration {
     host.querySelector("#cal-cancel").disabled = false;
     host.querySelector(".cal-panel").dataset.phase = state.phase;
     const automatic = state.mode === "automatic";
+    const geometry = state.mode === "geometry";
     host.querySelector("#cal-phase").textContent = automatic && ["starting_open", "starting_close", "opening", "closing", "settling"].includes(state.phase)
       ? `${t("calAutomaticRun")} ${state.run_index + 1}/3 · ${t(`calAutoPhase_${state.phase}`)}`
       : t(state.direction && state.phase === "review" ? "calQuickReview" : `calPhase_${state.phase}`);
@@ -159,7 +174,7 @@ export class CoverCalibration {
     }
     for (const action of ["run", "open", "close", "endpoint"]) {
       const button = host.querySelector(`[data-cal-action="${action}"]`);
-      button.hidden = action === "run" ? !automatic || state.phase !== "confirm_automatic" : automatic || (action === "open" ? state.phase !== "confirm_closed" : action === "close"
+      button.hidden = geometry ? action !== "endpoint" || !["opening", "closing"].includes(state.phase) || !["home", "reset", "opening", "closing", "top"].includes(state.step) : action === "run" ? !automatic || state.phase !== "confirm_automatic" : automatic || (action === "open" ? state.phase !== "confirm_closed" : action === "close"
         ? state.phase !== "confirm_open" : !["opening", "closing"].includes(state.phase));
       button.disabled = this._busy || this._lost;
     }
@@ -172,6 +187,7 @@ export class CoverCalibration {
       host.querySelector("#cal-values").textContent = ["opening", "closing"].map((direction) =>
         `${t(direction === "opening" ? "profileOpeningTime" : "profileClosingTime")}: ${state.values[`${direction}_time`] ?? "—"} s · ${t(direction === state.direction ? "calQuickMeasured" : "calQuickRetained")}`).join(" · ");
     }
+    this._renderGeometry(geometry);
     host.querySelector("#cal-values").hidden = !!state.batch;
     if (state.batch) {
       host.querySelector("#cal-targets").innerHTML = state.targets.map((item, index) => {
@@ -185,6 +201,38 @@ export class CoverCalibration {
           ${state.targets[result.index].travel_cm != null ? `<span class="muted">${esc(t("profileReferenceTravel"))}: ${esc(state.targets[result.index].travel_cm)} cm</span>` : ""}
           <span class="muted">${esc(t("profileName"))}</span><input data-batch-name="${result.index}" required maxlength="64" value="${esc(state.targets[result.index].name.slice(0, 64))}"></label>`).join("");
       }
+    }
+  }
+
+  _renderGeometry(enabled) {
+    const { host, t } = this._context, state = this._state;
+    const disabled = this._busy || this._lost;
+    for (const [action, visible] of [["next", state.phase === "briefing"], ["lift", state.step === "lift" && state.phase === "opening"]]) {
+      const button = host.querySelector(`[data-cal-action="${action}"]`);
+      button.hidden = !enabled || !visible;
+      button.disabled = disabled;
+    }
+    const form = host.querySelector("#cal-reading");
+    form.hidden = !enabled || state.phase !== "reading";
+    for (const input of form.elements) input.disabled = disabled;
+    const repeat = host.querySelector("#cal-repeat");
+    repeat.hidden = !enabled || !state.can_repeat;
+    repeat.disabled = disabled;
+    if (!enabled) return;
+    if (["briefing", "opening", "closing", "reading", "geometry_wait_stop"].includes(state.phase)) {
+      const key = state.phase === "briefing" ? `calBrief_${state.step}` : state.phase === "geometry_wait_stop" ? "calGeometryWaitStop"
+        : state.phase === "reading" ? `calReading_${state.reading_kind}` : state.step === "lift" ? "calLiftRunning"
+          : state.step.startsWith("half_") ? "calHalfRunning" : "calEndpointRunning";
+      host.querySelector("#cal-phase").textContent = t(key);
+    }
+    if (form.dataset.step !== state.step) { form.elements.reading_cm.value = ""; form.dataset.step = state.step; }
+    form.elements.reading_cm.min = state.step === "lift" ? "0" : "0.1";
+    host.querySelector("#cal-reading-label").textContent = t(state.step === "opening" ? "profileCoverTravel" : "calHeightCm");
+    host.querySelector("#cal-expected").textContent = state.expected_cm == null ? "" : `${t("calExpectedRough")}: ${Number(state.expected_cm.toFixed(1))} cm. ${t("calExpectedHelp")}`;
+    if (state.phase === "review") {
+      host.querySelector("#cal-values").textContent += ` · ${t("profileCoverTravel")}: ${state.travel_cm} cm · ` +
+        ["slat_time_s", "opening_roll", "closing_roll"].map((key) => `${t(`calGeometry_${key}`)}: ${Number(state.geometry[key].toFixed(4))}`).join(" · ");
+      host.querySelector("#cal-save-help").textContent = t("calGeometryReview");
     }
   }
 

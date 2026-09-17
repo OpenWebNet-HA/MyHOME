@@ -173,7 +173,7 @@ async def test_override_restores_native_timing_and_calibration_save_follows_new_
     assert result["configured"]["opening"]["origin"] == "native_fallback"
     assert result["effective_opening_time"] == 23
     await write_profile(hass, message(plant, 2, action="overrides", overrides={"opening": 19}))
-    session = SimpleNamespace(active=True, provenance={key: evidence("guided", cover.unique_id) for key in ("opening", "closing")})
+    session = SimpleNamespace(active=True, geometry_provenance=None, provenance={key: evidence("guided", cover.unique_id) for key in ("opening", "closing")})
     await write_profile(hass, message(plant, 3), calibration=session)
     assert store.data["covers"] == {} and cover._travel_time_up == 42.5
 

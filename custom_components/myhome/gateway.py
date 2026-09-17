@@ -1101,10 +1101,12 @@ class MyHOMEGatewayHandler:
 
         return True
 
-    def async_queue_calibration(self, message: OWNCommand, guard: Callable[[], bool], command_lock: asyncio.Lock) -> None:
-        """Queue a leased panel command through the shared worker lifecycle."""
+    def async_queue_calibration(self, message: OWNCommand, guard: Callable[[], bool], command_lock: asyncio.Lock) -> asyncio.Future[float]:
+        """Queue a leased command and expose the worker's actual write timestamp."""
+        written: asyncio.Future[float] = asyncio.get_running_loop().create_future()
         self.send_buffer.put_nowait({"message": message, "is_status_request": False,
-                                    "guard": guard, "command_lock": command_lock})
+                                    "guard": guard, "command_lock": command_lock, "written": written})
+        return written
 
     async def send(self, message: OWNCommand) -> asyncio.Future[float]:
         """Queue a command; the returned future resolves to the monotonic write time."""

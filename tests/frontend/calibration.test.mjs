@@ -431,3 +431,67 @@ test("a late heartbeat error from the old attachment cannot disable the recovere
   assert.equal(host.querySelector("#cal-reconnect").hidden, true);
   assert.equal(host.querySelector("#cal-reason").hidden, true);
 });
+
+test("geometry wizard sends only user observations, waits for Stop, and keeps the reading draft", async () => {
+  const { host, push, calls, starts } = await mount({ mode: "geometry" });
+  assert.equal(starts[0].mode, "geometry");
+  push({ phase: "briefing", step: "lift", save_modes: ["new"], can_repeat: false });
+  assert.equal(host.querySelector('[data-cal-action="next"]').hidden, false);
+  assert.equal(host.querySelector('[data-cal-action="open"]').hidden, true);
+  assert.match(host.querySelector("#cal-phase").textContent, /lamelle/);
+  host.querySelector('[data-cal-action="next"]').click(); await tick();
+  assert.equal(calls.at(-1).action, "next");
+  push({ phase: "opening", step: "lift" });
+  assert.equal(host.querySelector('[data-cal-action="lift"]').hidden, false);
+  assert.equal(host.querySelector('[data-cal-action="endpoint"]').hidden, true);
+  host.querySelector('[data-cal-action="lift"]').click(); await tick();
+  assert.equal(calls.at(-1).action, "lift");
+  assert.equal("elapsed" in calls.at(-1), false);
+  push({ phase: "geometry_wait_stop", stop_requested: true });
+  assert.equal(host.querySelector("#cal-reading").hidden, true);
+  push({ phase: "reading", reading_kind: "lift", can_repeat: true });
+  const form = host.querySelector("#cal-reading");
+  assert.equal(form.hidden, false);
+  assert.equal(form.elements.reading_cm.min, "0");
+  form.elements.reading_cm.value = "2.5";
+  push({});
+  assert.equal(form.elements.reading_cm.value, "2.5");
+  form.dispatchEvent(new dom.window.Event("submit", { cancelable: true })); await tick();
+  assert.equal(calls.at(-1).action, "reading");
+  assert.equal(calls.at(-1).reading_cm, 2.5);
+  for (const key of ["geometry", "values", "elapsed", "provenance"]) assert.equal(key in calls.at(-1), false);
+  host.querySelector("#cal-repeat").click(); await tick();
+  assert.equal(calls.at(-1).action, "repeat");
+  push({ phase: "reading", step: "half_open", reading_kind: "half_open", expected_cm: 100 });
+  assert.equal(form.elements.reading_cm.value, "");
+  assert.equal(form.elements.reading_cm.min, "0.1");
+  assert.match(host.querySelector("#cal-expected").textContent, /100 cm/);
+  assert.match(host.querySelector("#cal-expected").textContent, /Non è un obiettivo/);
+});
+
+test("geometry review exposes all measured values, limits save destinations and names unverified accuracy", async () => {
+  const { host, push, calls } = await mount({ mode: "geometry" });
+  push({ phase: "review", step: "half_close", values: { opening_time: 22, closing_time: 20 },
+    geometry: { slat_time_s: 2, opening_roll: 2, closing_roll: 3 }, travel_cm: 200,
+    save_modes: ["new"], can_repeat: true, independent_check: false, accuracy: null });
+  assert.match(host.querySelector("#cal-values").textContent, /Tempo lamelle.*2.*Rullo in apertura.*2.*Rullo in chiusura.*3/);
+  assert.match(host.querySelector("#cal-save-help").textContent, /Precisione non verificata/);
+  assert.equal(host.querySelector('#cal-save-mode [value="cover"]').disabled, true);
+  assert.equal(host.querySelector('#cal-save-mode [value="shared"]').disabled, true);
+  host.querySelector('[name="profile_name"]').value = "Camera";
+  submitReview(host); await tick();
+  const save = calls.find((row) => row.action === "save");
+  assert.equal(save.name, "Camera");
+  assert.equal(save.save_mode, "new");
+  assert.equal("geometry" in save, false);
+});
+
+test("geometry recovery restores its reading screen without starting any movement", async () => {
+  const { host, starts, calls } = await mount({ resume: {
+    session_id: "geometry-session", mode: "geometry", step: "opening", phase: "reading",
+    reading_kind: "travel", save_modes: ["new"], can_repeat: true } });
+  assert.equal(starts[0].type, "myhome/cover_calibration/resume");
+  assert.equal(host.querySelector("#cal-reading").hidden, false);
+  assert.match(host.querySelector("#cal-phase").textContent, /corsa completa/);
+  assert.equal(calls.length, 0);
+});

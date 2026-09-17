@@ -53,6 +53,9 @@ class CalibrationSession:
     mode = "guided"
     travel_seconds = MAX_TRAVEL_SECONDS
     travel_reason = "travel_timeout"
+    geometry_provenance: dict[str, Any] | None = None
+    measured_travel: float | None = None
+    safe_phases = {"confirm_closed", "confirm_open", "confirm_automatic", "review", "saving"}
 
     def __init__(self, hass: Any, store: Any, entry: Any, cover: Any, connection: Any, subscription_id: Any, *, direction: Any=None, profile: dict[str, Any] | None=None, client_id: str | None=None) -> None:
         self.hass, self.store, self.cover = hass, store, cover
@@ -135,7 +138,7 @@ class CalibrationSession:
         if not self.client_id:
             self.close(reason)
             return
-        if self.phase not in {"confirm_closed", "confirm_open", "confirm_automatic", "review", "saving"}:
+        if self.phase not in self.safe_phases:
             self.interrupt(reason)
         self.listener = False
         # Notify a still-open socket when its heartbeat lease expires.
@@ -165,11 +168,11 @@ class CalibrationSession:
             self.deadline.cancel()
         self.deadline = self.hass.loop.call_later(seconds, self.interrupt, reason)
 
-    def queue_stop(self) -> None:
+    def queue_stop(self) -> Any:
         expires = monotonic() + STOP_QUEUE_SECONDS
         generation = self.reservation.generation
         try:
-            self.cover._gateway_handler.async_queue_calibration(
+            written = self.cover._gateway_handler.async_queue_calibration(
                 OWNAutomationCommand.stop_shutter(self.cover._full_where),
                 # During HA shutdown retain the best-effort Stop even after
                 # runtime ownership/timers have been cleaned up.
@@ -183,6 +186,7 @@ class CalibrationSession:
             LOGGER.warning("Calibration Stop could not be queued for %s; use the physical control", self.cover.entity_id)
         else:
             self.stop_requested = True
+            return written
 
     def interrupt(self, reason: str, send_stop: Any=True) -> None:
         if not self.active or self.phase == "saving":
@@ -259,13 +263,14 @@ class CalibrationSession:
 
         command = OWNAutomationCommand.raise_shutter if direction == "open" else OWNAutomationCommand.lower_shutter
         try:
-            self.cover._gateway_handler.async_queue_calibration(
+            written = self.cover._gateway_handler.async_queue_calibration(
                 command(self.cover._full_where), guard, self.store.calibration_command_lock,
             )
         except asyncio.QueueFull as error:
             self.interrupt("command_queue_full", send_stop=False)
             raise ProfileError("command_queue_full") from error
         self.emit()
+        return written
 
     def on_event(self, event: Any) -> None:
         self.reservation.observe(event)
@@ -342,7 +347,9 @@ class CalibrationSession:
         if not snapshot(self.hass, self.store, entry, entity)["writable"]:
             self.interrupt("cover_unavailable")
             raise ProfileError("cover_unavailable")
-        if action == "run":
+        if self.mode == "geometry" and action not in {"save", "preview_save"}:
+            self.geometry_action(msg)
+        elif action == "run":
             if self.mode != "automatic" or self.phase != "confirm_automatic":
                 raise ProfileError("calibration_step")
             self.queue_move("open")
@@ -352,6 +359,8 @@ class CalibrationSession:
             self.move(action)
         elif action == "endpoint":
             self.endpoint()
+        elif action in {"next", "lift", "reading", "repeat"}:
+            raise ProfileError("calibration_step")
         elif action == "preview_save":
             if self.phase != "review" or msg.get("save_mode") != "shared" or "shared" not in self.view()["save_modes"]:
                 raise ProfileError("calibration_step")
@@ -378,6 +387,10 @@ class CalibrationSession:
             self.close()
         return self.view()
 
+
+    def geometry_action(self, msg: dict[str, Any]) -> None:
+        """Only the geometry subclass implements these protocol actions."""
+        raise ProfileError("calibration_step")
 
     async def save_profiles(self, msg: dict[str, Any]) -> Any:
         if msg.get("save_mode", "new") != "new":
@@ -447,6 +460,9 @@ async def begin(hass: Any, connection: Any, msg: dict[str, Any]) -> Any:
         if msg.get("mode", "guided") == "automatic":
             from .cover_calibration_automatic import AutomaticCalibrationSession
             session_type = AutomaticCalibrationSession
+        if msg.get("mode") == "geometry":
+            from .cover_calibration_geometry import GeometryCalibrationSession
+            session_type = GeometryCalibrationSession
         session = session_type(hass, store, entry, cover, connection, msg["id"], client_id=msg.get("client_id"), **options)
         store.calibration = cover._calibration = session
         session.subscribe()
@@ -456,7 +472,7 @@ async def begin(hass: Any, connection: Any, msg: dict[str, Any]) -> Any:
 @websocket_command({
     vol.Required("type"): WS_START, vol.Required("entry_id"): str,
     vol.Required("entity_id"): str, vol.Required("revision"): vol.All(int, vol.Range(min=0)),
-    vol.Optional("mode"): vol.In(["guided", "automatic"]),
+    vol.Optional("mode"): vol.In(["guided", "automatic", "geometry"]),
     vol.Optional("direction"): vol.In(["opening", "closing"]),
     vol.Optional("client_id"): vol.All(str, vol.Length(min=1, max=64)),
 })
@@ -480,7 +496,8 @@ def send_error(connection: Any, msg: dict[str, Any], error: Any) -> None:
 @websocket_command({
     vol.Required("type"): WS_ACTION, vol.Required("entry_id"): str,
     vol.Required("session_id"): str,
-    vol.Required("action"): vol.In(["run", "open", "close", "endpoint", "stop", "cancel", "save", "preview_save", "heartbeat", "detach"]),
+    vol.Required("action"): vol.In(["run", "open", "close", "endpoint", "stop", "cancel", "save", "preview_save", "heartbeat", "detach", "next", "lift", "reading", "repeat"]),
+    vol.Optional("reading_cm"): vol.Any(int, float),
     vol.Optional("attachment"): str,
     vol.Optional("sequence"): vol.All(int, vol.Range(min=0)),
     vol.Optional("name"): str,

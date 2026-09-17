@@ -360,7 +360,7 @@ export class CoverProfileEditor {
               <button type="button" id="cal-refresh">${esc(t("calRefresh"))}</button>
             </div>
             <div class="profile-times">
-              <label>${esc(t("calMode"))}<select id="cal-mode" ${disabled}><option value="guided">${esc(t("calGuided"))}</option><option value="automatic">${esc(t("calAutomatic"))}</option></select></label>
+              <label>${esc(t("calMode"))}<select id="cal-mode" ${disabled}><option value="guided">${esc(t("calGuided"))}</option><option value="automatic">${esc(t("calAutomatic"))}</option><option value="geometry">${esc(t("calGeometry"))}</option></select></label>
               <label>${esc(t("calScope"))}<select id="cal-direction" aria-describedby="cal-scope-help" ${disabled}><option value="">${esc(t("calBothDirections"))}</option><option value="opening">${esc(t("calOnlyOpening"))}</option><option value="closing">${esc(t("calOnlyClosing"))}</option></select></label>
             </div>
             <p id="cal-scope-help" class="muted" role="status">${esc(t("calSingleDirectionGuided"))}</p>
@@ -426,13 +426,13 @@ export class CoverProfileEditor {
       const mode = host.querySelector("#cal-mode").value;
       const scope = host.querySelector("#cal-direction");
       const scopeLabel = scope.selectedOptions[0]?.textContent || t("calBothDirections");
-      host.querySelector("#cal-label").textContent = mode === "automatic" ? t("calAutomatic") : `${t("calMeasure")}: ${scopeLabel.toLocaleLowerCase()}`;
-      host.querySelector("#cal-hint").textContent = `${t(mode === "automatic" ? "calAutomatic" : "calGuided")} · ${scopeLabel.toLocaleLowerCase()}`;
+      host.querySelector("#cal-label").textContent = mode !== "guided" ? t(mode === "geometry" ? "calGeometry" : "calAutomatic") : `${t("calMeasure")}: ${scopeLabel.toLocaleLowerCase()}`;
+      host.querySelector("#cal-hint").textContent = `${t(mode === "geometry" ? "calGeometry" : mode === "automatic" ? "calAutomatic" : "calGuided")} · ${scopeLabel.toLocaleLowerCase()}`;
     };
     host.querySelector("#profile-calibrate-batch").onclick = () => this._selectBatch();
     host.querySelector("#cal-mode").onchange = () => {
       const scope = host.querySelector("#cal-direction");
-      if (host.querySelector("#cal-mode").value === "automatic") scope.value = "";
+      if (host.querySelector("#cal-mode").value !== "guided") scope.value = "";
       updateCalibrationLabels();
     };
     host.querySelector("#cal-direction").onchange = () => {

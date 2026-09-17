@@ -345,6 +345,9 @@ async def write_profile(hass: Any, msg: dict[str, Any], *, calibration: Any=None
                     for direction in DIRECTIONS
                 }
             stamp_geometry(profile, previous, entity.unique_id)
+            if calibration is not None and calibration.geometry_provenance is not None:
+                profile["geometry_provenance"] = copy.deepcopy(GEOMETRY_PROVENANCE(calibration.geometry_provenance))
+                data["covers"].setdefault(entity.unique_id, {})["travel_cm"] = calibration.measured_travel
             data["profiles"][profile_id] = profile
             if calibration is not None:
                 # The measured cover follows the new profile; old overrides must

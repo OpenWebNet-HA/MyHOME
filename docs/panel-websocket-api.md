@@ -1,6 +1,8 @@
 # MyHOME panel API: implemented reference
 
-> Current update — panel 0.30.0: [optional slat/roll profiles and runtime](cover-nonlinear-runtime.md)
+> Panel 0.31.0 adds [guided slat/roll measurement](cover-guided-geometry.md): basic new-profile path, backend tape fitting and atomic review/save.
+
+> Runtime baseline — panel 0.30.0: [optional slat/roll profiles and runtime](cover-nonlinear-runtime.md)
 > add storage v8, export v5, explicit geometry, model-aware previews and motor
 > tracking. Timing-only profiles remain linear; guided geometry measurement and
 > physical accuracy checks are still pending. Older release notes below are historical.

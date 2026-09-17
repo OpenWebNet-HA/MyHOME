@@ -1381,8 +1381,8 @@ async def test_calibration_jobs_recheck_guard_after_worker_lock(gateway_handler)
     allowed = [True]
     movement = MagicMock(spec=OWNCommand)
     stop = MagicMock(spec=OWNCommand)
-    gateway_handler.async_queue_calibration(movement, lambda: allowed[0], command_lock)
-    gateway_handler.async_queue_calibration(stop, lambda: True, command_lock)
+    movement_written = gateway_handler.async_queue_calibration(movement, lambda: allowed[0], command_lock)
+    stop_written = gateway_handler.async_queue_calibration(stop, lambda: True, command_lock)
     gateway_handler.send_buffer.put_nowait(None)
     with patch("custom_components.myhome.gateway.OWNCommandSession") as factory:
         session = factory.return_value
@@ -1394,6 +1394,8 @@ async def test_calibration_jobs_recheck_guard_after_worker_lock(gateway_handler)
         allowed[0] = False
         command_lock.release()
         await worker
+    assert movement_written.cancelled()
+    assert isinstance(stop_written.result(), float)
     session.send.assert_awaited_once_with(message=stop, is_status_request=False)
     assert gateway_handler.send_buffer.empty()
 
