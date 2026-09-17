@@ -274,6 +274,9 @@
     }
   },
   "exceptions": {
+    "cover_position_unknown": {
+      "message": "Complete a full opening or closing run before setting an intermediate position."
+    },
     "command_delivery_cancelled": {
       "message": "{name}: direction command delivery was cancelled before reaching the bus"
     },

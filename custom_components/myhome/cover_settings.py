@@ -1,7 +1,7 @@
-"""Shared linear timing schema and pure per-key resolution.
+"""Shared per-key resolution for linear timing and explicit profile geometry.
 
-Travel scaling is optional. Slat/roll fitting remains unsupported; absent
-measurements stay absent and personal timing values are never scaled.
+The same validated values drive storage previews, the API and timed covers.
+Personal directional times remain unscaled; absent geometry remains linear.
 """
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from typing import Any
 
 import voluptuous as vol
 
+from .cover_geometry import GEOMETRY_KEYS, UNKNOWN, merge_geometry, profile_motion
 from .cover_profile_provenance import EVIDENCE
 
 MODEL = "linear_time"
@@ -38,6 +39,7 @@ def reference_profile(profile: dict[str, Any], previous: dict[str, Any] | None =
         result["reference_travel_cm"] = previous["reference_travel_cm"]
     if result.get("reference_travel_cm", False) is None:
         result.pop("reference_travel_cm")
+    merge_geometry(result, previous)
     return result
 
 
@@ -87,6 +89,7 @@ def resolve(*, profile: dict[str, Any] | None, native: dict[str, Any] | None,
             default_source: str = "default", travel_cm: float | None = None) -> dict[str, Any]:
     """One resolver for runtime and API; no clock, registry or storage side effects."""
     result = {}
+    motion = profile_motion(profile, overrides, travel_cm) if profile else None
     for direction, native_key in KEYS.items():
         scaled = False
         if direction in overrides:
@@ -96,7 +99,8 @@ def resolve(*, profile: dict[str, Any] | None, native: dict[str, Any] | None,
             value, origin = profile[f"{direction}_time"], "profile"
             provenance = profile["provenance"][direction]
             if travel_cm is not None and profile.get("reference_travel_cm") is not None:
-                value = round(seconds(value * centimetres(travel_cm) / centimetres(profile["reference_travel_cm"])), 4)
+                value = (getattr(motion, f"{direction}_time_s") if motion else
+                         round(seconds(value * centimetres(travel_cm) / centimetres(profile["reference_travel_cm"])), 4))
                 scaled = True
         elif native is not None:
             value, origin = native[native_key], "native_fallback"
@@ -106,11 +110,20 @@ def resolve(*, profile: dict[str, Any] | None, native: dict[str, Any] | None,
             provenance = {"source": "unknown", "recorded_at": None, "origin_unique_id": None}
         result[direction] = {"value": value, "origin": origin,
                              "provenance": copy.deepcopy(provenance), "scaled": scaled}
+    if motion and profile:
+        for key in GEOMETRY_KEYS:
+            result[key] = {"value": getattr(motion, key), "origin": "profile",
+                           "provenance": copy.deepcopy(profile.get("geometry_provenance", {}).get(key, UNKNOWN)),
+                           "scaled": travel_cm is not None and profile.get("reference_travel_cm") is not None}
     return result
 
 
 def validate_scaling(data: dict[str, Any]) -> None:
     """Reject unsupported effective durations before persistence, including orphans."""
+    for profile in data["profiles"].values():
+        if "geometry_provenance" in profile and "geometry" not in profile:
+            raise vol.Invalid("Geometry evidence requires geometry")
+        profile_motion(profile)
     for unique, profile_id in data["assignments"].items():
         if profile_id not in data["profiles"]:
             raise vol.Invalid("Missing assigned profile")

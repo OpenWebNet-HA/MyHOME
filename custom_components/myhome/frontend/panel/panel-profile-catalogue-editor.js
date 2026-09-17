@@ -1,6 +1,8 @@
 /** Gateway profile mutations. Preview is bound to the saved revision and exact draft. */
 const url = new URL("panel-dom.js", import.meta.url); url.search = new URL(import.meta.url).search;
 const { escapeHtml: esc } = await import(url.href);
+const geometryUrl = new URL("panel-cover-geometry.js", import.meta.url); geometryUrl.search = url.search;
+const geometry = await import(geometryUrl.href);
 
 export class ProfileCatalogueEditor {
   constructor() { this._generation = 0; }
@@ -118,16 +120,19 @@ export class ProfileCatalogueEditor {
     this.dialog.querySelector("#catalogue-body").innerHTML = `<h3>${esc(profile.name)}</h3>
       <p class="muted">${profile.assigned_to.length} ${esc(t("profileAssociatedCovers"))} · ${esc(profile.opening_time)} / ${esc(profile.closing_time)} s</p>
       <form id="catalogue-form"><fieldset class="profile-section">
-        ${assign ? `<p class="notice muted" id="catalogue-unscaled">${esc(t(profile.reference_travel_cm != null ? "profileScalingHelp" : "profileUnscaled"))}</p>` : ""}
+        ${assign ? `<p class="notice muted" id="catalogue-unscaled">${esc(geometry.scalingText(profile, t))}</p>` : ""}
         ${assign ? this._candidates(profile, data) : ""}
         ${edit || duplicate ? `<label>${esc(t("profileName"))}<input name="profile_name" required maxlength="64" value="${esc(duplicate ? `${profile.name.slice(0, 50)} ${t("catalogueCopySuffix")}` : profile.name)}"></label>` : ""}
         ${edit ? `<div class="profile-times">${["opening", "closing"].map((direction) => `<label>${esc(t(direction === "opening" ? "profileOpeningTime" : "profileClosingTime"))}<input name="${direction}_time" type="number" required min="1" max="600" step="any" value="${esc(profile[`${direction}_time`])}"></label>`).join("")}</div>` : ""}
         ${edit && data.capabilities?.height_scaling ? `<label>${esc(t("profileReferenceTravel"))}<input name="reference_travel_cm" type="number" min="0.1" max="10000" step="any" inputmode="decimal" value="${esc(profile.reference_travel_cm ?? "")}" aria-describedby="catalogue-reference-help"></label><p class="muted" id="catalogue-reference-help">${esc(t("profileReferenceHelp"))}</p>` : ""}
+        ${edit && data.capabilities?.nonlinear ? geometry.geometryFields(t) : ""}
       </fieldset><p class="muted">${esc(t(assign ? "catalogueAssignHelp" : edit ? "catalogueEditHelp" : duplicate ? "catalogueDuplicateHelp" : "catalogueDeleteHelp"))}</p>
       <div id="catalogue-impact" class="notice" hidden></div>
       <button type="submit" class="primary" id="catalogue-submit">${esc(t(edit ? "cataloguePreview" : duplicate ? "catalogueDuplicate" : "catalogueDeleteConfirm"))}</button></form>`;
     const form = this.dialog.querySelector("form");
+    geometry.fillGeometry(form, profile);
     const invalidate = (event) => {
+      geometry.geometryControls(form);
       if (event.target.name === "assignment_filter") {
         const terms = event.target.value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
         form.querySelectorAll(".catalogue-candidate").forEach((row) => { row.hidden = !terms.every((term) => row.dataset.search.toLocaleLowerCase().includes(term)); });
@@ -165,10 +170,10 @@ export class ProfileCatalogueEditor {
   _impact(preview) {
     const { t } = this._context, box = this.dialog.querySelector("#catalogue-impact");
     const assign = this._context.action === "assign", followers = assign ? preview.targets : preview.followers;
-    box.innerHTML = `${assign ? `<p><strong>${esc(preview.profile_name)}</strong> · ${followers.length} ${esc(t("catalogueSelected"))}</p>` : `<p><strong>${esc(preview.before.name)} → ${esc(preview.after.name)}</strong></p>
+    box.innerHTML = `${geometry.geometryImpact(preview, t)}${assign ? `<p><strong>${esc(preview.profile_name)}</strong> · ${followers.length} ${esc(t("catalogueSelected"))}</p>` : `<p><strong>${esc(preview.before.name)} → ${esc(preview.after.name)}</strong></p>
       <p>${esc(preview.before.opening_time)} / ${esc(preview.before.closing_time)} s → ${esc(preview.after.opening_time)} / ${esc(preview.after.closing_time)} s</p>
       ${"reference_travel_cm" in preview.before || "reference_travel_cm" in preview.after ? `<p>${esc(t("profileReferenceTravel"))}: ${esc(preview.before.reference_travel_cm ?? "—")} → ${esc(preview.after.reference_travel_cm ?? "—")} cm</p>` : ""}`}
-      ${followers.length ? `<ul>${followers.map((item) => `<li><strong>${esc(item.name || item.entity_id || t("profileMissingCover"))}</strong>
+      ${followers.length ? `<ul>${followers.map((item) => `<li>${geometry.geometryImpact(item, t)}<strong>${esc(item.name || item.entity_id || t("profileMissingCover"))}</strong>
         ${assign ? `${this._address(item.entity_id)}${esc(item.previous_profile_name || t("catalogueNoProfile"))} → ${esc(preview.profile_name)}` : item.available ? "" : ` · ${esc(t("profileUnavailableFollower"))}`}<br>${["opening", "closing"].map((direction) => {
           const change = item.changes[direction];
           return `${esc(t(direction === "opening" ? "profileOpeningTime" : "profileClosingTime"))}: ${esc(change.before)} → ${esc(change.after)} s${change.overridden ? ` · ${esc(t("calPersonalRetained"))}` : ` · ${esc(t(change.scaled ? "profileScaled" : "profileNotScaled"))}`}`;
@@ -180,11 +185,12 @@ export class ProfileCatalogueEditor {
     if (this._busy || this._stale || this._inUse) return;
     const generation = this._generation, { hass, entryId, profileId, action, onSaved } = this._context;
     const form = this.dialog.querySelector("form");
+    if (action === "edit" && !geometry.validGeometry(form)) return;
     if (action === "assign" && (this._selection().length === 0 || this._selection().length > 200)) return;
     let message = { type: "myhome/cover_profiles/manage", entry_id: entryId, profile_id: profileId, revision: this._revision };
     if (action === "edit") message = this._preview
       ? { ...this._preview.message, action: "update", confirmation: this._preview.confirmation }
-      : { ...message, action: "preview", profile: { name: form.elements.profile_name.value.trim(),
+      : { ...message, action: "preview", profile: { ...geometry.readGeometry(form), name: form.elements.profile_name.value.trim(),
         opening_time: Number(form.elements.opening_time.value), closing_time: Number(form.elements.closing_time.value),
         ...(form.elements.reference_travel_cm ? { reference_travel_cm: form.elements.reference_travel_cm.value === "" ? null : Number(form.elements.reference_travel_cm.value) } : {}) } };
     else if (action === "assign") message = this._preview

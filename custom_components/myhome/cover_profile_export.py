@@ -34,7 +34,7 @@ async def export_profiles(hass: Any, entry_id: str) -> Any:
                    er.async_entries_for_config_entry(er.async_get(hass), entry_id)
                    if record.domain == "cover" and record.platform == DOMAIN}
         origins = {meta["origin_unique_id"] for profile in data["profiles"].values()
-                   for meta in profile["provenance"].values() if meta["origin_unique_id"] is not None}
+                   for meta in {**profile["provenance"], **profile.get("geometry_provenance", {})}.values() if meta["origin_unique_id"] is not None}
         origins.update(meta["provenance"]["origin_unique_id"] for record in data["covers"].values()
                        for meta in record["overrides"].values()
                        if meta["provenance"]["origin_unique_id"] is not None)
@@ -55,7 +55,7 @@ async def export_profiles(hass: Any, entry_id: str) -> Any:
                            "entity_id": record.entity_id if record else None,
                            "name": (record.name or record.original_name or record.entity_id) if record else None})
         return {
-            "format": "myhome.cover_calibration", "format_version": 4,
+            "format": "myhome.cover_calibration", "format_version": 5,
             "exported_at": dt_util.utcnow().isoformat(),
             "gateway": {"entry_id": entry_id, "name": entry.title},
             "revision": data["revision"], "covers": covers,
@@ -63,6 +63,11 @@ async def export_profiles(hass: Any, entry_id: str) -> Any:
                           "opening_time": profile["opening_time"], "closing_time": profile["closing_time"],
                           **({"reference_travel_cm": profile["reference_travel_cm"]}
                              if "reference_travel_cm" in profile else {}),
+                          **({"geometry": dict(profile["geometry"]), "geometry_provenance": {
+                              key: {"source": meta["source"], "recorded_at": meta["recorded_at"],
+                                    "origin_cover_id": refs.get(meta["origin_unique_id"])}
+                              for key, meta in profile.get("geometry_provenance", {}).items()}}
+                             if "geometry" in profile else {}),
                           "provenance": {direction: {"source": meta["source"],
                                                      "recorded_at": meta["recorded_at"],
                                                      "origin_cover_id": refs.get(meta["origin_unique_id"])}
@@ -70,7 +75,7 @@ async def export_profiles(hass: Any, entry_id: str) -> Any:
                          for profile_id, profile in sorted(data["profiles"].items())],
             "assignments": [{"cover_id": refs[unique], "profile_id": profile_id}
                             for unique, profile_id in sorted(data["assignments"].items())],
-            "model": "linear_time", "scaling": "optional_height",
+            "model": "per_cover", "scaling": "optional_height",
             "native_fallbacks": [{"cover_id": refs[native_ids[device_id]],
                                   "opening_time": value["up"], "closing_time": value["down"],
                                   "source": value.get("source", "unknown"),

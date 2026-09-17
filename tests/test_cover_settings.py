@@ -152,9 +152,9 @@ async def test_overview_runtime_provenance_offline_advanced_and_gateway_isolatio
     assert row["effective"]["closing"]["value"] == cover._travel_time_down == 28
     assert row["effective"]["closing"]["origin"] == "override"
     assert row["effective"]["closing"]["provenance"]["origin_entity_id"] == cover.entity_id
-    assert result["model"] == "linear_time" and result["scaling"] == "optional_height"
+    assert result["model"] == "per_cover" and result["scaling"] == "optional_height"
     assert result["accuracy"] == {"kind": "not_measured"}
-    assert result["capabilities"] == {"height_scaling": True, "nonlinear": False,
+    assert result["capabilities"] == {"height_scaling": True, "nonlinear": True, "nonlinear_calibration": False, "geometry_overrides": False,
                                       "profile_assignment": True, "profile_management": True, "override_write": True, "shared_profile_write": True}
     assert len(result["covers"]) == 2
     assert len((await overview(hass, plant.entries[1].entry_id))["covers"]) == 1
@@ -182,7 +182,7 @@ async def test_overview_websocket_auth_and_removed_entry(hass, plant, hass_ws_cl
     entry_id = plant.entries[0].entry_id
     await client.send_json({"id": 1, "type": WS_OVERVIEW, "entry_id": entry_id})
     response = await client.receive_json()
-    assert response["success"] and response["result"]["storage_version"] == 7
+    assert response["success"] and response["result"]["storage_version"] == 8
     await client.send_json({"id": 2, "type": WS_OVERVIEW, "entry_id": "missing"})
     assert (await client.receive_json())["error"]["code"] == "target_not_found"
     # Administrator authorization is exercised separately through the decorated handler below.
@@ -206,7 +206,7 @@ async def test_export_includes_native_fallbacks_and_override_evidence_and_cleanu
     store = get_store(hass, entry.entry_id)
     store.data["covers"][cover.unique_id] = {"overrides": {"closing": {"value": 27, "provenance": evidence("manual", cover.unique_id)}}}
     exported = await export_profiles(hass, entry.entry_id)
-    assert exported["format_version"] == 4 and len(exported["native_fallbacks"]) == 2
+    assert exported["format_version"] == 5 and len(exported["native_fallbacks"]) == 2
     ref = next(r["id"] for r in exported["covers"] if r["entity_id"] == cover.entity_id)
     assert exported["overrides"][0]["cover_id"] == ref
     assert exported["overrides"][0]["values"]["closing"]["value"] == 27

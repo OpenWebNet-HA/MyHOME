@@ -1,5 +1,11 @@
 # Shared MyHOME panel contract — implementation and proposal
 
+> Current update — panel 0.30.0: [optional slat/roll profiles and runtime](cover-nonlinear-runtime.md)
+> add storage v8, export v5, explicit geometry, model-aware previews and motor
+> tracking. Timing-only profiles remain linear; guided geometry measurement and
+> physical accuracy checks are still pending. Older release notes below are historical.
+
+
 **Updated: 2026-09-17, panel 0.29.0.** The shared backend now includes:
 storage v7 (optional reference/per-cover travel; manual edits without a fictitious origin), migration of native v2 fallbacks, one directional resolver, native
 service persistence through the shared transaction, gateway-wide read API,

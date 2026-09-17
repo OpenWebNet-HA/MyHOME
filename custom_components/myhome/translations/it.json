@@ -183,5 +183,10 @@
         }
       }
     }
+  },
+  "exceptions": {
+    "cover_position_unknown": {
+      "message": "Esegui un’apertura o una chiusura completa prima di impostare una posizione intermedia."
+    }
   }
 }

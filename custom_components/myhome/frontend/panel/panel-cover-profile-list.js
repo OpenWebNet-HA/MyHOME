@@ -4,6 +4,8 @@ const [{ escapeHtml: esc, replacePreservingFocus }, model] = await Promise.all([
   import(asset("panel-dom.js")), import(asset("panel-model.js")),
 ]);
 
+const geometry = await import(asset("panel-cover-geometry.js"));
+
 export class CoverProfileList {
   constructor() { this._generation = 0; this._expanded = new Set(); this._unsubs = []; this._rows = new Map(); }
 
@@ -128,6 +130,7 @@ export class CoverProfileList {
       ${entity ? addressDetails(entity) : `<p class="muted">${esc(id)}</p>`}
       ${!cover.available ? `<span class="badge offline">${esc(t("unavailable"))}</span>` : ""}
       ${cover.advanced ? `<p class="muted">${esc(t("profileError_advanced_cover"))}</p>` : `
+        <p class="muted">${geometry.geometrySummary(cover.effective, t, cover.position_known)}</p>
         <p class="muted">${esc(t("profileEffectiveTimes"))}: ${esc(t("profileOpeningTime"))} ${esc(cover.effective?.opening?.value ?? "—")} s · ${esc(t("profileClosingTime"))} ${esc(cover.effective?.closing?.value ?? "—")} s</p>
         ${"travel_cm" in cover ? `<p class="muted">${esc(t("profileCoverTravel"))}: ${esc(cover.travel_cm ?? "—")} cm · ${["opening", "closing"].map((direction) => `${esc(t(direction === "opening" ? "calOnlyOpening" : "calOnlyClosing"))}: ${esc(t(cover.effective?.[direction]?.origin === "override" ? "profilePersonalValue" : cover.effective?.[direction]?.scaled ? "profileScaled" : "profileNotScaled"))}`).join(" · ")}</p>` : ""}
         <p class="${personal.length ? "notice" : "muted"}">${esc(personal.length
@@ -151,7 +154,8 @@ export class CoverProfileList {
           ${[...(this._rows.get(entry.entry_id).data.capabilities?.profile_assignment ? ["assign"] : []), "edit", "duplicate", "delete"].map((action) => `<button type="button" data-action="manage-profile" data-id="${esc(profile.id)}" data-operation="${action}" data-entry="${esc(entry.entry_id)}" ${action === "delete" && profile.assigned_to.length ? `disabled title="${esc(t("profileDeleteHelp"))}"` : ""}>${esc(t(action === "assign" ? "catalogueAssign" : action === "edit" ? "edit" : action === "duplicate" ? "catalogueDuplicate" : "catalogueDelete"))}</button>`).join("")}
         </div>` : ""}
         ${this._provenance(profile)}
-        ${"reference_travel_cm" in profile ? `<p class="muted">${esc(t("profileReferenceTravel"))}: ${esc(profile.reference_travel_cm ?? "—")} cm. ${esc(t(profile.reference_travel_cm != null ? "profileScalingHelp" : "profileUnscaled"))}</p>` : ""}
+        ${profile.geometry ? `<p class="muted">${geometry.geometrySummary(Object.fromEntries(Object.entries(profile.geometry).map(([key, value]) => [key, { value }])), t)}</p>` : ""}
+        ${"reference_travel_cm" in profile ? `<p class="muted">${esc(t("profileReferenceTravel"))}: ${esc(profile.reference_travel_cm ?? "—")} cm. ${esc(geometry.scalingText(profile, t))}</p>` : ""}
         ${followers.length ? `<ul class="shared-profile-followers">${followers.map((item) => this._follower(item)).join("")}</ul>`
           : `<p class="muted">${esc(t("profileListUnused"))}</p>`}
       </div></section>`;

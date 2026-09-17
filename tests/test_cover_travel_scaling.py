@@ -68,7 +68,7 @@ async def test_optional_geometry_scales_only_inherited_times_and_survives_reload
     unloaded = await read_profile(hass, store.entry_id, cover.entity_id)
     assert unloaded["configured"] == data["configured"] and unloaded["effective"] is None
     exported = await export_profiles(hass, store.entry_id)
-    assert exported["format_version"] == 4
+    assert exported["format_version"] == 5
     assert exported["profiles"][0]["reference_travel_cm"] == 200
     assert next(c for c in exported["covers"] if c["entity_id"] == cover.entity_id)["travel_cm"] == 150
 
@@ -219,7 +219,7 @@ async def test_v6_migration_is_lossless_and_keeps_exact_backup(hass, plant):
     store = get_store(hass, entry_id)
     assert store.data == original
     assert await Store(hass, 6, key + ".pre_travel").async_load() == original
-    assert await Store(hass, 7, key).async_load() == original
+    assert await Store(hass, 8, key).async_load() == original
     assert plant.covers[0]._travel_time_up == 42.5 and plant.covers[0]._travel_time_down == 14
     await remove_entry(hass, entry_id)
     assert await Store(hass, 6, key + ".pre_travel").async_load() is None

@@ -1,8 +1,7 @@
-"""Gateway-scoped travel-time profiles for the existing timed-cover runtime.
+"""Gateway-scoped cover profiles with atomic persistence and runtime snapshots.
 
-The storage/resolution split follows Interstellar0verdrive's calibration-store
-approach. This contract supports a linear model with separate opening and closing
-times; it does not claim compatibility with the fork's roll/height calibration.
+Explicit geometry enables slat/roll timing; legacy profiles remain linear.
+The panel and runtime consume the same shared settings resolver.
 """
 from __future__ import annotations
 
@@ -28,6 +27,14 @@ from homeassistant.util.file import WriteError
 from homeassistant.util.json import SerializationError
 
 from .const import CONF_COVER_TRAVEL_TIMES, DOMAIN
+from .cover_geometry import (
+    GEOMETRY,
+    GEOMETRY_PROVENANCE,
+    NONLINEAR_MODEL,
+    model_name,
+    public_geometry,
+    stamp_geometry,
+)
 from .cover_profile_provenance import (
     DIRECTIONS,
     PROVENANCE,
@@ -79,10 +86,13 @@ DIRECTIONAL_PROFILE = vol.Schema({
     vol.Required("opening_time"): travel_time,
     vol.Required("closing_time"): travel_time,
     vol.Optional("reference_travel_cm"): vol.Any(None, centimetres),
+    vol.Optional("geometry"): vol.Any(None, GEOMETRY),
 })
 PROFILE = vol.Any(DIRECTIONAL_PROFILE, vol.All(LEGACY_PROFILE, directional_profile))
 STORED_DIRECTIONAL_PROFILE = DIRECTIONAL_PROFILE.extend({
     vol.Optional("reference_travel_cm"): centimetres,
+    vol.Optional("geometry"): GEOMETRY,
+    vol.Optional("geometry_provenance"): GEOMETRY_PROVENANCE,
     vol.Optional("provenance", default=unknown_provenance): PROVENANCE,
 })
 STORED_PROFILE = vol.Any(STORED_DIRECTIONAL_PROFILE,
@@ -107,6 +117,10 @@ class ProfileStorage(Store[dict[str, Any]]):
     """Surface write failures: HA's default Store logs them and returns success."""
 
     async def _async_migrate_func(self, old_major_version: Any, old_minor_version: Any, old_data: Any) -> Any:
+        if old_major_version == 7:
+            data = STORED(old_data)
+            await ProfileStorage(self.hass, 7, f"{self.key}.pre_nonlinear", atomic_writes=True).async_save(old_data)
+            return data
         if old_major_version == 6:
             data = STORED(old_data)
             await ProfileStorage(self.hass, 6, f"{self.key}.pre_travel", atomic_writes=True).async_save(old_data)
@@ -140,7 +154,7 @@ class CoverProfileStore:
     def __init__(self, hass: Any, entry_id: str) -> None:
         self.hass, self.entry_id = hass, entry_id
         self.store = ProfileStorage(
-            hass, 7, f"{DOMAIN}.cover_profiles.{entry_id}", atomic_writes=True
+            hass, 8, f"{DOMAIN}.cover_profiles.{entry_id}", atomic_writes=True
         )
         self.lock = asyncio.Lock()
         self.loaded = False
@@ -222,9 +236,12 @@ def snapshot(hass: Any, store: Any, entry: Any, entity: Any) -> Any:
         "calibration": ({key: value for key, value in store.calibration.view().items()
                          if key != "attachment"} if store.calibration and (store.calibration.client_id or store.calibration.closed) else None),
         "revision": store.data["revision"], "assigned_profile_id": assigned["id"] if assigned else None,
-        "model": MODEL, "scaling": "height" if travel is not None and assigned and assigned.get("reference_travel_cm") else "unscaled",
+        "model": model_name(cover._effective_cover_settings) if cover else None,
+        "configured_model": NONLINEAR_MODEL if assigned and "geometry" in assigned else MODEL,
+        "nonlinear": True, "position_known": cover.current_cover_position is not None if cover else False,
+        "scaling": "height" if travel is not None and assigned and assigned.get("reference_travel_cm") else "unscaled",
         "travel_cm": travel, "height_scaling": True, "accuracy": {"kind": "not_measured"},
-        "profiles": [{"id": key, **value, "model": MODEL, "scaling": "height" if value.get("reference_travel_cm") else "unscaled",
+        "profiles": [{"id": key, **value, **public_geometry(value, records, entity.unique_id), "model": NONLINEAR_MODEL if "geometry" in value else MODEL, "scaling": "height" if value.get("reference_travel_cm") else "unscaled",
                       "provenance": public_provenance(value, records, entity.unique_id),
                       "uses": list(store.data["assignments"].values()).count(key),
                       "assigned_to": assignments(key)}
@@ -327,6 +344,7 @@ async def write_profile(hass: Any, msg: dict[str, Any], *, calibration: Any=None
                     else evidence("manual", entity.unique_id)
                     for direction in DIRECTIONS
                 }
+            stamp_geometry(profile, previous, entity.unique_id)
             data["profiles"][profile_id] = profile
             if calibration is not None:
                 # The measured cover follows the new profile; old overrides must
@@ -420,6 +438,7 @@ async def remove_entry(hass: Any, entry_id: str) -> None:
         await Store(hass, 1, f"{store.store.key}.pre_shared").async_remove()
         await Store(hass, 5, f"{store.store.key}.pre_catalogue").async_remove()
         await Store(hass, 6, f"{store.store.key}.pre_travel").async_remove()
+        await Store(hass, 7, f"{store.store.key}.pre_nonlinear").async_remove()
         if store.calibration:
             store.calibration.close("cover_unavailable")
         async_dispatcher_send(hass, f"{WS_SUBSCRIBE}:{entry_id}", {

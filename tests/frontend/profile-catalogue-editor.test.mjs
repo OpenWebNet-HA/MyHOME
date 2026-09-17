@@ -257,3 +257,23 @@ test('Enter in the assignment search field cannot confirm an existing preview', 
   assert.equal(calls.at(-1).action, 'assign');
   assert.equal(counts().saved, 1);
 });
+
+test('catalogue edits preserve geometry, show curve changes and bind confirmation to exact fields', async () => {
+  const current = { ...structuredClone(profile), reference_travel_cm: 200,
+    geometry: { slat_time_s: 2, opening_roll: 2, closing_roll: 3 } };
+  const preview = { ...structuredClone(impact), before: current, after: current,
+    model_before: 'slat_roll', model_after: 'slat_roll', geometry_changes: {
+      slat_time_s: { before: 2, after: 2 }, opening_roll: { before: 2, after: 2.5 }, closing_roll: { before: 3, after: 3 } } };
+  const { host, calls, editor } = await mount({ read: () => overview({ capabilities: { profile_management: true, nonlinear: true, height_scaling: true }, profiles: [current] }),
+    call: message => message.action === 'preview' ? preview : { revision: 5 } });
+  assert.equal(host.querySelector('[name="opening_roll"]').value, '2');
+  input(host, 'opening_roll', '2.5');
+  submit(host); await tick();
+  assert.deepEqual(calls.at(-1).profile.geometry, { slat_time_s: 2, opening_roll: 2.5, closing_roll: 3 });
+  assert.match(host.querySelector('#catalogue-impact').textContent, /Rapporto rullo in apertura: 2 → 2.5/);
+  input(host, 'motion_model', 'linear_time');
+  assert.equal(editor._preview, null);
+  assert.equal(host.querySelector('[name="opening_roll"]').disabled, true);
+  submit(host); await tick();
+  assert.equal(calls.at(-1).profile.geometry, null);
+});

@@ -10,6 +10,7 @@ import voluptuous as vol
 from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
+from .cover_geometry import geometry_impact, stamp_geometry
 from .cover_profile_provenance import DIRECTIONS, evidence
 from .cover_profiles import PROFILE, ProfileError, commit_profiles, snapshot
 from .cover_settings import KEYS, centimetres, reference_profile, resolve, seconds, set_overrides
@@ -21,6 +22,8 @@ def shared_preview(store: Any, entity: Any, profile_id: str, profile: dict[str, 
     """Include every stored follower, even when its registry/runtime is absent."""
     target_unique = entity.unique_id if entity is not None else None
     previous = store.data["profiles"][profile_id]
+    reference_before = resolve(profile=previous, native=None, overrides={}, default=None)
+    reference_after = resolve(profile={**profile, "provenance": previous["provenance"]}, native=None, overrides={}, default=None)
     records = {record.unique_id: record for record in er.async_entries_for_config_entry(
         er.async_get(store.hass), store.entry_id) if record.domain == "cover" and record.platform == DOMAIN}
     followers = []
@@ -39,6 +42,7 @@ def shared_preview(store: Any, entity: Any, profile_id: str, profile: dict[str, 
             "entity_id": record.entity_id if record else None,
             "name": (record.name or record.original_name or record.entity_id) if record else None,
             "available": bool(record and not record.disabled_by and cover and cover.available),
+            **geometry_impact(before, after),
             "changes": {direction: {
                 "before": before[direction]["value"],
                 "after": after[direction]["value"],
@@ -51,8 +55,9 @@ def shared_preview(store: Any, entity: Any, profile_id: str, profile: dict[str, 
     # Runtime motion/availability can change without invalidating the configuration.
     payload = [store.entry_id, target_unique, store.data["revision"], profile_id, profile, clear_overrides]
     token = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
-    keys = set(profile) | ({"reference_travel_cm"} if "reference_travel_cm" in previous else set())
+    keys = set(profile) | ({"reference_travel_cm"} if "reference_travel_cm" in previous else set()) | ({"geometry"} if "geometry" in previous else set())
     return {"revision": store.data["revision"], "profile_id": profile_id,
+            **geometry_impact(reference_before, reference_after),
             "before": {key: previous.get(key) for key in keys}, "after": {key: profile.get(key) for key in keys},
             "followers": followers, "confirmation": token}
 
@@ -102,6 +107,7 @@ async def mutate_settings(hass: Any, store: Any, entry: Any, entity: Any, msg: d
             if previous[f"{direction}_time"] == profile[f"{direction}_time"]
             else evidence("manual", entity.unique_id) for direction in DIRECTIONS
         }
+        stamp_geometry(profile, previous, entity.unique_id)
         data["profiles"][profile_id] = profile
     await commit_profiles(hass, store, entry.entry_id, data, affected)
     return snapshot(hass, store, entry, entity)

@@ -315,6 +315,7 @@ class CalibrationSession:
         cover._cancel_stop_task()
         cover._attr_current_cover_position = cover._start_position = position
         cover._move_start_time = None
+        cover._motion.confirm(position)
         cover._attr_is_opening = cover._attr_is_closing = False
         cover._attr_is_closed = position == 0
         cover.async_write_ha_state()

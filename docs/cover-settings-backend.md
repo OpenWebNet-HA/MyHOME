@@ -1,5 +1,11 @@
 # Shared cover settings
 
+> Current update — panel 0.30.0: [optional slat/roll profiles and runtime](cover-nonlinear-runtime.md)
+> add storage v8, export v5, explicit geometry, model-aware previews and motor
+> tracking. Timing-only profiles remain linear; guided geometry measurement and
+> physical accuracy checks are still pending. Older release notes below are historical.
+
+
 **Current: panel 0.29.0**, storage v7, export v4. Optional reference/per-cover
 travel enables linear height scaling through the shared resolver. Personal times
 retain priority; existing profiles remain unscaled until both dimensions exist.

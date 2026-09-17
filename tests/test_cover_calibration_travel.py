@@ -94,3 +94,32 @@ async def test_automatic_batch_references_each_cover_and_preserves_travel(batch)
         profile = data["profiles"][data["assignments"][cover.unique_id]]
         assert profile["reference_travel_cm"] == data["covers"][cover.unique_id]["travel_cm"] == 100 + 100 * index
         assert cover._travel_time_up == 20 + index and cover._travel_time_down == 22 + index
+
+
+async def test_shared_nonlinear_timing_measurement_preserves_geometry_and_normalizes_curtain_phase(hass, quick):
+    cal = quick
+    cal.session.close()
+    store = cal.session.store
+    profile = store.data["profiles"][cal.original_id]
+    profile["reference_travel_cm"] = 200
+    profile["geometry"] = {"slat_time_s": 2, "opening_roll": 3, "closing_roll": 2}
+    store.data["covers"][cal.cover.unique_id] = {"travel_cm": 100, "overrides": {}}
+    cal.session = await begin(hass, cal.connection, cal.request)
+    try:
+        before = copy.deepcopy(profile)
+        await measure(cal)
+        preview = (await act(cal, "preview_save", save_mode="shared"))["save_preview"]
+        direction = cal.session.direction
+        first = next(row for row in preview["followers"] if row["entity_id"] == cal.cover.entity_id)
+        assert first["changes"][direction]["after"] == pytest.approx(12.75)
+        assert preview["after"]["geometry"] == before["geometry"]
+        assert first["geometry_changes"]["slat_time_s"]["before"] == first["geometry_changes"]["slat_time_s"]["after"] == 1
+        await act(cal, "save", save_mode="shared", confirmation=preview["confirmation"])
+        bus(cal, "*2*0*11##")
+        saved = store.data["profiles"][cal.original_id]
+        assert saved["geometry"] == before["geometry"]
+        opposite = "closing" if direction == "opening" else "opening"
+        assert saved["provenance"][opposite] == before["provenance"][opposite]
+        assert cal.cover.resolve_cover_settings(store.profile(cal.cover.unique_id))[direction]["value"] == pytest.approx(12.75)
+    finally:
+        cal.session.close()

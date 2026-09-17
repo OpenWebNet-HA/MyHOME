@@ -12,6 +12,7 @@ from homeassistant.components.websocket_api.decorators import (
 from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
+from .cover_geometry import NONLINEAR_MODEL, model_name, public_geometry
 from .cover_profile_assignment import assignment_reason
 from .cover_profiles import WS_OVERVIEW, ProfileError, get_store, public_settings, respond
 from .cover_settings import MODEL
@@ -41,6 +42,9 @@ async def overview(hass: Any, entry_id: str) -> dict[str, Any]:
                            "advanced": bool(cover and cover._advanced),
                            "pending": bool(cover and cover._pending_profile is not None),
                            "configured": configured,
+                           "configured_model": model_name(configured),
+                           "model": model_name(cover._effective_cover_settings) if cover else None,
+                           "position_known": cover.current_cover_position is not None if cover else False,
                            "overrides": {direction: item for direction, item in (configured or {}).items()
                                          if item["origin"] == "override"},
                            "effective": public_settings(store, record, records, active=True)})
@@ -53,12 +57,13 @@ async def overview(hass: Any, entry_id: str) -> dict[str, Any]:
                              "opening_time": profile["opening_time"], "closing_time": profile["closing_time"],
                              "reference_travel_cm": profile.get("reference_travel_cm"),
                              "provenance": public_provenance(profile, records, None),
-                             "model": MODEL, "scaling": "height" if profile.get("reference_travel_cm") else "unscaled",
+                             **public_geometry(profile, records),
+                             "model": NONLINEAR_MODEL if "geometry" in profile else MODEL, "scaling": "height" if profile.get("reference_travel_cm") else "unscaled",
                              "assigned_to": [records[unique].entity_id if unique in records else None for unique in followers]})
         return {"entry_id": entry_id, "revision": store.data["revision"], "schema_version": 1,
-                "storage_version": 7, "model": MODEL, "scaling": "optional_height",
+                "storage_version": 8, "model": "per_cover", "models": [MODEL, NONLINEAR_MODEL], "scaling": "optional_height",
                 "accuracy": {"kind": "not_measured"},
-                "capabilities": {"height_scaling": True, "nonlinear": False,
+                "capabilities": {"height_scaling": True, "nonlinear": True, "nonlinear_calibration": False, "geometry_overrides": False,
                                  "profile_assignment": True,
                                  "profile_management": True, "override_write": True, "shared_profile_write": True},
                 "profiles": profiles, "covers": covers}

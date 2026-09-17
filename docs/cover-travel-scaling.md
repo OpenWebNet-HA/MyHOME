@@ -5,11 +5,9 @@ Implements the linear case of sections 1.2–1.7 of the
 The model remains `linear_time`, with accuracy `not_measured`. Slat/roll fitting
 and out-of-sample physical accuracy checks remain future work.
 
-The next backend increment adds the isolated
-[nonlinear mathematical foundation](cover-nonlinear-model.md). It is not yet
-connected to live profiles or motion, so the runtime and API described here
-remain linear. The user has confirmed the 0.29.0 linear adaptation on the test
-installation.
+Panel 0.30.0 adds [optional nonlinear profiles](cover-nonlinear-runtime.md).
+The linear behavior below remains valid for profiles without geometry. The user
+confirmed the 0.29.0 linear adaptation on the test installation.
 
 ## Data and runtime
 

@@ -59,6 +59,9 @@ from .const import (
     SERVICE_SET_COVER_TRAVEL_TIME,
     SERVICE_STOP_COVER_CALIBRATION,
 )
+from .cover_geometry import model_name, motion_from_settings
+from .cover_motion import MotionPosition
+from .cover_motion_runtime import CoverMotionTracker
 from .cover_profiles import bind_cover, write_native_timing
 from .cover_settings import resolve
 from .discovery import DeviceContext, PlatformDiscovery, default_known_keys
@@ -318,6 +321,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._copied_from = calibration.get("copied_from") or None
         self._default_travel_time = base_travel
         self._default_travel_source = travel_time_source
+        self._motion = CoverMotionTracker()
         self._profile_store: Any = None
         self._effective_cover_settings = resolve(profile=None, native=calibration, overrides={},
                                                  default=base_travel, default_source=travel_time_source)
@@ -381,6 +385,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._active_cover_profile = profile
         baseline = self.native_cover_fallback()
         self._effective_cover_settings = self.resolve_cover_settings(profile)
+        self._motion.configure(motion_from_settings(self._effective_cover_settings))
         self._travel_time_up = self._effective_cover_settings["opening"]["value"]
         self._travel_time_down = self._effective_cover_settings["closing"]["value"]
         self._travel_time = self._travel_time_down
@@ -421,6 +426,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     def _refresh_travel_attributes(self) -> None:
         attrs = self._attr_extra_state_attributes
+        attrs["cover_motion_model"] = model_name(self._effective_cover_settings)
         attrs["opening_time"] = self._travel_time_up
         attrs["closing_time"] = self._travel_time_down
         attrs["travel_time"] = int(round(self._travel_time_down))
@@ -481,7 +487,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             if self._pending_cmd in ("open", "close") and not self._motor_started.is_set():
                 # Provisional anchor: the motor starts shortly after the write.
                 # The direction echo re-anchors precisely if the gateway relays it.
-                self._anchor_run(write_ts)
+                # Unknown nonlinear position is established only after a whole
+                # motor run; include the fallback start delay when no echo comes.
+                delay = MOTOR_START_DELAY if self._motion.model is not None and self._motion.position is None else 0
+                self._anchor_run(write_ts + delay)
             elif self._pending_cmd == "stop":
                 # Motion stops within ~0.1 s of the write, not at enqueue time.
                 self._freeze_position(write_ts)
@@ -501,6 +510,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     def _anchor_run(self, at: float) -> None:
         """Anchor the running estimate and the run measurement on the motor start."""
+        if self._motion.model is not None:
+            self._motion.start(at)
         self._move_start_time = at  # type: ignore
         self._run_started_at = at
         started = dt_util.utcnow() - timedelta(seconds=max(0.0, time.monotonic() - at))
@@ -518,6 +529,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._run_started_at = None
             self._motion_started_at = None
             self._refresh_travel_attributes()
+        if self._motion.model is not None:
+            self._motion.stop(at)
+            position = self._motion.position
+            self._attr_current_cover_position = round(position.height * 100) if position else None
+            self._move_start_time = None
         if self._move_start_time is not None:
             elapsed = max(0.0, at - self._move_start_time)  # type: ignore
             delta = (elapsed / self._travel_for(self._attr_is_opening)) * 100
@@ -546,6 +562,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if self._attr_current_cover_position is not None:
             self._start_position = self._attr_current_cover_position
             self._attr_is_closed = (self._attr_current_cover_position == 0)
+        if self._motion.model is not None:
+            self._motion.abort()
+            if self._motion.anchor is not None:
+                self._attr_is_opening = self._motion.opening
+                self._attr_is_closing = not self._motion.opening
         self._apply_pending_cover_profile()
         self._refresh_travel_attributes()
         self._publish_state()
@@ -615,6 +636,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     @property
     def current_cover_position(self) -> int | None:
         """Return current cover position (interpolated if moving)."""
+        if not self._advanced and self._motion.model is not None:
+            position = self._motion.sample(time.monotonic())
+            return round(position.height * 100) if position else None
         if not self._advanced and self._move_start_time is not None:
             elapsed = time.monotonic() - self._move_start_time  # type: ignore
             delta = (elapsed / self._travel_for(self._attr_is_opening)) * 100
@@ -637,6 +661,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     @property
     def is_closed(self) -> bool:
         """Return if the cover is closed."""
+        if self._motion.model is not None:
+            position = self._motion.sample(time.monotonic())
+            return position == MotionPosition(0, 0) if position is not None else False
         if self.current_cover_position is not None:
             return self.current_cover_position == 0
         return self._attr_is_closed  # type: ignore
@@ -655,6 +682,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def async_restore_last_state(self, last_state: typing.Any) -> None:
         """Restore cover position and closure state."""
+        if self._motion.model is not None:
+            # A restored HA percentage cannot establish the hidden slat phase,
+            # nor whether the motor moved while Home Assistant was offline.
+            self._motion.configure(self._motion.model)
+            self._motion.position = None
+            self._attr_current_cover_position = None
+            self._attr_is_closed = False
+            return
         if not self._advanced:
             restored = False
             last_pos = last_state.attributes.get(ATTR_CURRENT_POSITION)
@@ -1024,6 +1059,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         else:
             command = OWNAutomationCommand.lower_shutter(self._full_where)
         if not self._advanced:
+            if self._motion.model is not None:
+                self._motion.prepare(direction == "open")
             self._start_position = self.current_cover_position if self.current_cover_position is not None else (0 if direction == "open" else 100)
             # The clock starts when the frame is written (see _track_write),
             # not now: with a busy queue the motor is still idle for a while.
@@ -1091,9 +1128,28 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 translation_placeholders={"entity_id": str(self.entity_id)},
             )
 
+        target_motion = None
+        if self._motion.model is not None:
+            target_motion = MotionPosition.at_height(float(target_position) / 100)
+            current_motion = self._motion.sample(time.monotonic())
+            if current_motion is None:
+                if target_position in (0, 100):
+                    await self._async_move("open" if target_position == 100 else "close")
+                    return
+                raise HomeAssistantError("Complete a full opening or closing run before setting an intermediate position",
+                                         translation_domain=DOMAIN, translation_key="cover_position_unknown")
+            if current_motion == target_motion:
+                if self._attr_is_opening or self._attr_is_closing:
+                    await self.async_stop_cover()
+                return
+            curr_pos = current_motion.height * 100
+            diff = target_position - curr_pos
+            if diff == 0:  # Height zero still owes the closure of the slats.
+                diff = -1
+        else:
+            curr_pos = self.current_cover_position if self.current_cover_position is not None else 50
+            diff = target_position - curr_pos
         self._cancel_stop_task()
-        curr_pos = self.current_cover_position if self.current_cover_position is not None else 50
-        diff = target_position - curr_pos
         if diff == 0:
             return
 
@@ -1108,16 +1164,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 anchor = await self._await_motion_anchor(written)
                 if generation != self._run_generation:
                     return  # a newer command superseded this run
-                await asyncio.sleep(max(0.0, run_duration - (time.monotonic() - anchor)))
+                duration = self._motion.remaining(target_motion) if target_motion is not None else run_duration
+                await asyncio.sleep(max(0.0, duration - (time.monotonic() - anchor)))
                 if generation != self._run_generation:
                     return
                 # By the model we are at the target now; the motor keeps
                 # running until the stop frame is written, so re-anchor the
                 # run here and let the stop's write time freeze the estimate
                 # (target plus whatever the queue delay added).
-                self._start_position = target_position
-                self._attr_current_cover_position = target_position
-                self._move_start_time = time.monotonic()  # type: ignore
+                if target_motion is None:
+                    self._start_position = target_position
+                    self._attr_current_cover_position = target_position
+                    self._move_start_time = time.monotonic()  # type: ignore
                 await self.async_stop_cover()
                 if self.hass is not None:
                     self.async_write_ha_state()
@@ -1225,6 +1283,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             return
         if message.current_position is not None:
             self._cancel_stop_task()
+            if self._motion.model is not None:
+                self._motion.confirm(message.current_position)
             self._attr_current_cover_position = message.current_position
             if not self._advanced:
                 self._start_position = message.current_position
@@ -1243,6 +1303,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._run_generation += 1
             if not self._advanced and not self._attr_is_opening:
                 self._start_position = self.current_cover_position if self.current_cover_position is not None else 0
+                self._motion.prepare(True)
                 self._anchor_run(now)
             self._attr_is_opening = True
             self._attr_is_closing = False
@@ -1255,6 +1316,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._run_generation += 1
             if not self._advanced and not self._attr_is_closing:
                 self._start_position = self.current_cover_position if self.current_cover_position is not None else 100
+                self._motion.prepare(False)
                 self._anchor_run(now)
             self._attr_is_opening = False
             self._attr_is_closing = True

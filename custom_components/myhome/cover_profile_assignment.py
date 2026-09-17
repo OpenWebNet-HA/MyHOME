@@ -9,6 +9,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntryState
 
+from .cover_geometry import geometry_impact
 from .cover_profile_provenance import DIRECTIONS
 from .cover_profiles import ProfileError, commit_profiles, target
 
@@ -50,6 +51,7 @@ async def assign_profiles(hass: Any, store: Any, entry: Any, msg: dict[str, Any]
             "entity_id": entity_id, "name": record.name or record.original_name or entity_id,
             "previous_profile_id": previous["id"] if previous else None,
             "previous_profile_name": previous["name"] if previous else None,
+            **geometry_impact(before, after),
             "changes": {direction: {
                 "before": before[direction]["value"], "after": after[direction]["value"],
                 "overridden": after[direction]["origin"] == "override",

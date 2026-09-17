@@ -150,7 +150,7 @@ async def test_write_failure_and_moving_cover_keep_active_timing(hass, plant, ac
         cover._apply_pending_cover_profile()
     assert plant.covers[0]._travel_time_up == 21
     assert plant.covers[1]._travel_time_up == (21 if action == "update_shared" else 42.5)
-    persisted = await Store(hass, 7, store.store.key).async_load()
+    persisted = await Store(hass, 8, store.store.key).async_load()
     assert persisted == store.data
 
 

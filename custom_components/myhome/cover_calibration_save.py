@@ -6,6 +6,7 @@ import hashlib
 from typing import Any
 
 from .cover_calibration import ready_cover
+from .cover_geometry import reference_timing
 from .cover_profile_mutations import shared_preview
 from .cover_profile_provenance import DIRECTIONS, PROVENANCE
 from .cover_profiles import PROFILE, ProfileError, commit_profiles, target
@@ -46,11 +47,13 @@ async def save_measurement(session: Any, msg: dict[str, Any], *, preview: bool =
                 # Measurements are made on this cover; shared times describe the
                 # reference cover. Do not scale a measured duration a second time.
                 value = values[f"{direction}_time"]
-                profile[f"{direction}_time"] = seconds(value * reference / travel) if reference is not None else value
+                profile[f"{direction}_time"] = seconds(reference_timing(profile, travel, value)) if reference is not None else value
                 profile["provenance"][direction] = copy.deepcopy(provenance[direction])
             proposal = {key: profile[key] for key in ("name", "opening_time", "closing_time")}
             if reference is not None:
                 proposal["reference_travel_cm"] = reference
+            if "geometry" in profile:
+                proposal["geometry"] = copy.deepcopy(profile["geometry"])
             impact = shared_preview(store, entity, profile_id, proposal, clear_overrides=directions)
             # A confirmation from another measurement cannot authorize this save.
             impact["confirmation"] = hashlib.sha256((session.id + impact["confirmation"]).encode()).hexdigest()

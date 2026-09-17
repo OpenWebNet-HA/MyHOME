@@ -384,3 +384,47 @@ test('HA availability transitions trigger an authoritative read without polling 
   view.editor.updateState({ states: { 'cover.test': { state: 'opening', attributes: { current_position: 35 } } } });
   await tick(); assert.equal(reads(), 3);
 });
+
+test("nonlinear geometry uses existing sections, validates manual inputs and submits explicit opt-out", async () => {
+  const data = { ...geometrySnapshot(), nonlinear: true, position_known: false };
+  data.profiles[0].geometry = { slat_time_s: 2, opening_roll: 2.1, closing_roll: 2.3 };
+  for (const [key, value] of Object.entries(data.profiles[0].geometry)) data.effective[key] = { value, origin: "profile", scaled: true };
+  const view = setup({ read: () => structuredClone(data), write: () => structuredClone(data) });
+  await view.open();
+  assert.equal(view.host.querySelectorAll(".profile-details").length, 3);
+  assert.equal(form(view).elements.motion_model.value, "slat_roll");
+  assert.match(view.host.querySelector("#profile-motion-status").textContent, /apertura o una chiusura completa/);
+  const calls = view.calls.length;
+  form(view).elements.opening_roll.value = "";
+  await view.editor._save("update");
+  assert.equal(view.calls.length, calls);
+  form(view).elements.opening_roll.value = "2.5";
+  form(view).elements.opening_roll.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  assert.notEqual(view.editor._draft(), view.editor._baseline);
+  await view.editor._save("update");
+  assert.deepEqual(view.calls.at(-1).profile.geometry, { slat_time_s: 2, opening_roll: 2.5, closing_roll: 2.3 });
+  form(view).elements.motion_model.value = "linear_time";
+  form(view).elements.motion_model.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  assert.equal(form(view).elements.slat_time_s.disabled, true);
+  await view.editor._save("update");
+  assert.equal(view.calls.at(-1).profile.geometry, null);
+});
+
+test("geometry-only shared edits display follower impacts and invalidate confirmation on model changes", async () => {
+  const data = { ...geometrySnapshot(), nonlinear: true };
+  data.profiles[0].uses = 2;
+  data.profiles[0].geometry = { slat_time_s: 2, opening_roll: 2, closing_roll: 3 };
+  const view = setup({ read: () => data, write: request => ({ before: data.profiles[0], after: request.profile,
+    confirmation: "geometry-confirmation", followers: [{ name: "Follower", available: true,
+      model_before: "slat_roll", model_after: "slat_roll",
+      geometry_changes: { slat_time_s: { before: 2, after: 2 }, opening_roll: { before: 2, after: 3 }, closing_roll: { before: 3, after: 3 } },
+      changes: { opening: { before: 20, after: 20 }, closing: { before: 40, after: 40 } } }] }) });
+  await view.open();
+  form(view).elements.opening_roll.value = "3";
+  await view.editor._save("shared");
+  assert.match(view.host.querySelector("#profile-impact li").textContent, /Rapporto rullo in apertura: 2 → 3/);
+  form(view).elements.motion_model.value = "linear_time";
+  form(view).elements.motion_model.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  assert.equal(view.editor._preview, null);
+  assert.equal(view.host.querySelector("#profile-impact").hidden, true);
+});

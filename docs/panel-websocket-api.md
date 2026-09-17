@@ -1,5 +1,11 @@
 # MyHOME panel API: implemented reference
 
+> Current update — panel 0.30.0: [optional slat/roll profiles and runtime](cover-nonlinear-runtime.md)
+> add storage v8, export v5, explicit geometry, model-aware previews and motor
+> tracking. Timing-only profiles remain linear; guided geometry measurement and
+> physical accuracy checks are still pending. Older release notes below are historical.
+
+
 > Current update — panel 0.29.0: [travel scaling](cover-travel-scaling.md)
 > specifies storage v7, export v4, optional dimensions, the `travel` write action,
 > and `myhome/cover_profiles/overview` (schema v1 with height scaling capability).

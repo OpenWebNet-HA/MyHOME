@@ -1,5 +1,11 @@
 # MyHOME sidepanel — first version
 
+> Current update — panel 0.30.0: [optional slat/roll profiles and runtime](cover-nonlinear-runtime.md)
+> add storage v8, export v5, explicit geometry, model-aware previews and motor
+> tracking. Timing-only profiles remain linear; guided geometry measurement and
+> physical accuracy checks are still pending. Older release notes below are historical.
+
+
 Panel **0.29.0** adds optional cover travel and profile reference travel within the
 existing sections. Both dimensions enable linear timing adaptation; personal
 values retain priority. See [setup, migration and installation checks](cover-travel-scaling.md).

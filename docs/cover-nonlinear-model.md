@@ -8,17 +8,10 @@ calibration proposal.
 
 ## What is active
 
-`custom_components/myhome/cover_motion.py` supplies an immutable,
-Home-Assistant-independent engine for geometry scaling, elapsed-motor-time
-position estimates and motor durations between arbitrary positions. It has no
-clock, storage, WebSocket or bus side effects.
-
-**The engine is not yet connected to live cover control or profile writes.**
-Existing runtime calculations, profile storage v7, export format 4, panel
-0.29.0 and API capabilities are unchanged: `model: linear_time`,
-`nonlinear: false`, accuracy `not_measured`. Installing this commit requires no
-recalibration or data migration and does not turn existing timings into measured
-roll coefficients. There is no new user-facing control to test yet.
+Panel 0.30.0 connects this engine to optional profile geometry and timed-cover
+control. See [runtime, API, migration and limitations](cover-nonlinear-runtime.md).
+Existing profiles stay linear until explicitly configured. The engine itself
+remains independent of HA, clocks, storage and the bus.
 
 ## Physical coordinates and partial movements
 
@@ -93,26 +86,17 @@ NaN and infinity. Impossible states, unknown override keys and targets opposite
 to the selected direction fail explicitly. Excess elapsed time saturates at an
 end stop, while negative elapsed time is rejected.
 
-## Integration work still required
+## Runtime boundary and remaining measurement work
 
-The next adapter must map persisted keys and per-key provenance into this engine,
-expose the same resolved model to previews and runtime, and retain a frozen model
-through an active run. It must preserve the fractional slat state at Stop and
-reversal; a rounded percentage restored after a restart does not establish that
-state. Restart/re-anchoring policy must be explicit before activating slat-aware
-control. Existing profiles must continue using linear geometry until explicitly
-configured from measurements.
-
-`advance` and `duration` use **motor seconds** only. Bus write/movement anchors,
-queue delay, start-delay and stop-latency compensation, Stop delivery failures,
-session reservations and in-flight configuration updates remain the runner's
-responsibility. Merely subtracting latency from an arbitrary sleep would not
-provide a safe runtime adapter. None of these behaviors is changed here.
+The [runtime adapter](cover-nonlinear-runtime.md) retains fractional slat state,
+freezes the model during each run and re-establishes position after restart.
+`advance` and `duration` use motor seconds; command anchoring and actual Stop
+write times belong to the adapter. Start/stop latency parameters are not yet
+exposed as profile configuration. Personal geometry overrides are also deferred.
 
 The guided flow still needs lift-off measurement, physical travel readings,
-roll fitting, a separate out-of-sample check and review before atomic Save.
-This increment does not implement the Basic/Thorough/Correction paths or claim
-physical accuracy. The WHO layout is unchanged.
+roll fitting, an independent check and review before atomic Save. Existing
+calibration remains timing-only; it does not measure geometry or accuracy.
 
 ## Verification
 

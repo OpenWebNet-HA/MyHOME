@@ -14,6 +14,7 @@ from homeassistant.components.websocket_api.decorators import (
 from homeassistant.core import CoreState
 
 from .const import DOMAIN
+from .cover_geometry import stamp_geometry
 from .cover_profile_mutations import shared_preview
 from .cover_profile_provenance import DIRECTIONS, evidence
 from .cover_profiles import MAX_PROFILES, PROFILE, ProfileError, commit_profiles, get_store, respond
@@ -72,6 +73,7 @@ async def manage_profile(hass: Any, msg: dict[str, Any]) -> dict[str, Any]:
                 if previous[f"{direction}_time"] == profile[f"{direction}_time"]
                 else evidence("manual", None) for direction in DIRECTIONS
             }
+            stamp_geometry(profile, previous, None)
             data["profiles"][profile_id] = profile
             affected = followers
         elif action == "duplicate":

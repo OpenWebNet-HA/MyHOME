@@ -180,7 +180,7 @@ async def test_v5_migration_keeps_all_data_and_backup_and_removal_cleans_both(ha
     store = get_store(hass, cat.store.entry_id)
     assert store.data == original
     assert await Store(hass, 5, key + '.pre_catalogue').async_load() == original
-    assert await Store(hass, 7, key).async_load() == original
+    assert await Store(hass, 8, key).async_load() == original
     await remove_entry(hass, cat.store.entry_id)
     assert await Store(hass, 5, key + '.pre_catalogue').async_load() is None
 
