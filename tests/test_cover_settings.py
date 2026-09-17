@@ -155,7 +155,7 @@ async def test_overview_runtime_provenance_offline_advanced_and_gateway_isolatio
     assert result["model"] == "linear_time" and result["scaling"] == "unscaled"
     assert result["accuracy"] == {"kind": "not_measured"}
     assert result["capabilities"] == {"height_scaling": False, "nonlinear": False,
-                                      "override_write": True, "shared_profile_write": True}
+                                      "profile_management": True, "override_write": True, "shared_profile_write": True}
     assert len(result["covers"]) == 2
     assert len((await overview(hass, plant.entries[1].entry_id))["covers"]) == 1
     assert "00:03:50" not in json.dumps(result).replace(cover.entity_id, "").replace(plant.covers[1].entity_id, "")
@@ -182,7 +182,7 @@ async def test_overview_websocket_auth_and_removed_entry(hass, plant, hass_ws_cl
     entry_id = plant.entries[0].entry_id
     await client.send_json({"id": 1, "type": WS_OVERVIEW, "entry_id": entry_id})
     response = await client.receive_json()
-    assert response["success"] and response["result"]["storage_version"] == 5
+    assert response["success"] and response["result"]["storage_version"] == 6
     await client.send_json({"id": 2, "type": WS_OVERVIEW, "entry_id": "missing"})
     assert (await client.receive_json())["error"]["code"] == "target_not_found"
     # Administrator authorization is exercised separately through the decorated handler below.

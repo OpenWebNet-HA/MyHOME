@@ -1,5 +1,11 @@
 # Shared cover settings — panel 0.22.0
 
+Panel 0.26.0 extends the shared store to **v6** for manual profile edits without an
+origin cover. Existing v5 data is preserved with a `.pre_catalogue` backup before
+migration. Export remains v3. See [profile management and rollback](sidepanel.md#profile-management-0260).
+The v5 details below document the preceding backend version; resolution order and
+native-service behavior are unchanged.
+
 This implements shared persistence, individual overrides and shared-edit previews
 from discussion #270, against
 [Interstellar0verdrive's proposal at 51ffaf7](https://github.com/Interstellar0verdrive/MyHOME-stability/blob/51ffaf73a3da3ac09246ee199751e613217e0a78/docs/calibration-contract-proposal.md).

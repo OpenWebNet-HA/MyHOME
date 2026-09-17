@@ -1,6 +1,6 @@
 # MyHOME panel API: implemented reference
 
-> Current update — panel 0.25.0: [shared cover settings](cover-settings-backend.md)
+> Current update — panel 0.26.0: [shared cover settings](cover-settings-backend.md)
 > specifies storage v5, export v3 and `myhome/cover_profiles/overview` (schema v1).
 > Partial guided calibration now uses resolved cover settings without requiring
 > an assigned profile (see the single-direction extension below).
@@ -8,6 +8,38 @@
 > and revision-bound impact confirmation; their complete contract is linked above.
 > Existing endpoints remain available; native writes use the shared store and revision. Earlier release descriptions below remain historical where superseded.
 
+
+## Gateway profile management (0.26.0)
+
+`myhome/cover_profiles/manage` requires administrator access. Common fields are
+`entry_id`, `revision` (nonnegative integer), `profile_id` and `action`:
+
+| Action | Additional fields | Result |
+| --- | --- | --- |
+| `preview` | `profile`: name, opening_time, closing_time | Before/after values, every follower with directional override masking, exact-proposal confirmation token; no mutation |
+| `update` | The same `profile` plus `confirmation` | Atomically updates the existing profile and applies/defer timings to its followers |
+| `duplicate` | `name` | Independent backend copy of the saved times/evidence, no assignments |
+| `delete` | None | Deletes only if no stored association references the profile |
+
+Names are trimmed, nonempty and at most 64 characters. Times use the existing
+finite 1–600 second validation. Action-specific extra fields are rejected: the
+browser cannot inject associations, provenance, timings into a duplicate or a
+cover identity into a catalogue operation. Write results contain `entry_id`,
+`revision` and `profile_id` (the new ID for duplication). The existing overview
+and revision subscription refresh the UI. Overview now advertises
+`capabilities.profile_management: true` and `storage_version: 6`.
+
+`revision_conflict`, `preview_required`, `profile_not_found`, `profile_in_use`,
+`profile_limit`, `calibration_busy`, `invalid_profile`, `target_not_found`,
+`cover_unavailable` and `storage_error` reuse the existing error vocabulary.
+The token is bound to the gateway, saved revision, profile ID and normalized
+proposal, with a null cover context; it cannot reuse a cover-editor confirmation.
+No availability requirement is imposed on an arbitrary reference cover. HA shutdown
+and entry removal/replacement are revalidated under the gateway lock.
+
+Only changed times get new manual provenance with a backend date and null origin.
+Unchanged directions and duplicates preserve original evidence. Guided/automatic
+measurements still require an origin. See [migration/rollback](sidepanel.md#storage-v6-and-rollback).
 
 ## Shared profile overview UI (0.25.0)
 

@@ -1271,7 +1271,7 @@ test("refreshing session availability preserves a profile draft at the same revi
 });
 
 function profileOverview(entry_id) {
-  return { entry_id, revision: 3,
+  return { entry_id, revision: 3, capabilities: { profile_management: true },
     profiles: entry_id === "one" ? [{ id: "timed", name: "Alluminio", opening_time: 35, closing_time: 40, assigned_to: ["cover.shutter"] }] : [],
     covers: [{ entity_id: "cover.shutter", name: "Tapparella", available: true, overrides: {},
       effective: { opening: { value: 35 }, closing: { value: 40 } } }] };
@@ -1345,4 +1345,27 @@ test("leaving WHO 2 closes profile subscriptions; returning devices still allows
   root.querySelector('[data-action="cover-view"][data-id="devices"]').click();
   openProfile(root); await tick();
   assert.ok(root.querySelector('#profile-calibrate'));
+});
+
+
+test("profile-card actions open the gateway editor and protect associated profiles from deletion", async () => {
+  const { root, hass } = await mountSharedProfiles();
+  const requests = [], original = hass.callWS;
+  hass.callWS = async (message) => {
+    if (message.type === "myhome/cover_profiles/manage") { requests.push(message); return { revision: 4, profile_id: "copy" }; }
+    return original(message);
+  };
+  root.querySelector('[data-action="cover-view"][data-id="profiles"]').click(); await tick();
+  root.querySelector('[data-action="toggle-shared-profile"]').click();
+  assert.equal(root.querySelector('[data-operation="delete"]').disabled, true);
+  root.querySelector('[data-operation="edit"]').click(); await tick();
+  assert.equal(root.querySelector('#catalogue-form [name="opening_time"]').value, '35');
+  assert.equal(root.querySelector('#profile-calibrate'), null);
+  root.querySelector('#catalogue-close').click();
+  root.querySelector('[data-operation="duplicate"]').click(); await tick();
+  root.querySelector('#catalogue-form [name="profile_name"]').value = 'Independent copy';
+  root.querySelector('#catalogue-form').dispatchEvent(new Event('submit', { cancelable: true })); await tick();
+  assert.deepEqual(requests, [{ type: 'myhome/cover_profiles/manage', entry_id: 'one', profile_id: 'timed', revision: 3,
+    action: 'duplicate', name: 'Independent copy' }]);
+  assert.equal(root.querySelector('dialog'), null);
 });

@@ -52,10 +52,10 @@ async def overview(hass: Any, entry_id: str) -> dict[str, Any]:
                              "model": MODEL, "scaling": "unscaled",
                              "assigned_to": [records[unique].entity_id if unique in records else None for unique in followers]})
         return {"entry_id": entry_id, "revision": store.data["revision"], "schema_version": 1,
-                "storage_version": 5, "model": MODEL, "scaling": "unscaled",
+                "storage_version": 6, "model": MODEL, "scaling": "unscaled",
                 "accuracy": {"kind": "not_measured"},
                 "capabilities": {"height_scaling": False, "nonlinear": False,
-                                 "override_write": True, "shared_profile_write": True},
+                                 "profile_management": True, "override_write": True, "shared_profile_write": True},
                 "profiles": profiles, "covers": covers}
 
 

@@ -4,7 +4,7 @@ export const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (ch
 })[char]);
 
 const focusKey = (element) => JSON.stringify([
-  element.tagName, element.dataset.action, element.dataset.id,
+  element.tagName, element.dataset.action, element.dataset.id, element.dataset.operation,
   element.dataset.group, element.getAttribute("href"),
   element.closest(".who-group")?.dataset.who,
   element.closest(".device-group")?.dataset.entry,

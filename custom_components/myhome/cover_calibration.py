@@ -410,6 +410,8 @@ async def begin(hass: Any, connection: Any, msg: dict[str, Any]) -> Any:
             # may lack the origin/date required by profile evidence; do not invent
             # a measurement or overwrite that original fallback record.
             try:
+                if setting["origin"] == "native_fallback" and setting["provenance"]["origin_unique_id"] is None:
+                    raise vol.Invalid("Native evidence has no recorded origin")
                 provenance = EVIDENCE(setting["provenance"])
             except vol.Invalid:
                 provenance = unknown_provenance()[retained]

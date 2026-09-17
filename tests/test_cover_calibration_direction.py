@@ -81,7 +81,7 @@ async def measure(quick):
     await act(quick, "endpoint")
 
 
-@pytest.mark.parametrize("retained_source", ["manual", "automatic", "unknown"])
+@pytest.mark.parametrize("retained_source", ["manual", "catalogue", "automatic", "unknown"])
 async def test_one_leg_preserves_saved_evidence_shared_profile_and_restart(
     hass, quick, retained_source
 ):
@@ -92,6 +92,8 @@ async def test_one_leg_preserves_saved_evidence_shared_profile_and_restart(
     original = session.store.data["profiles"][quick.original_id]
     if retained_source == "unknown":
         original["provenance"][retained] = unknown_provenance()[retained]
+    elif retained_source == "catalogue":
+        original["provenance"][retained]["origin_unique_id"] = None
     else:
         original["provenance"][retained]["source"] = retained_source
     await session.store.store.async_save(session.store.data)

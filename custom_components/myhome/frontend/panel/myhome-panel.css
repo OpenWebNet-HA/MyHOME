@@ -495,3 +495,7 @@ button.danger-solid:hover { background: color-mix(in srgb, var(--panel-error) 85
   .cover-view-tabs button { flex: 1; min-height: 44px; }
   .shared-profile-card .device-label { flex-basis: 140px; }
 }
+.catalogue-actions { margin: 0 0 14px; flex-wrap: wrap; }
+#catalogue-form fieldset:empty { display: none; }
+#catalogue-impact { overflow-wrap: anywhere; margin-bottom: 14px; }
+#catalogue-impact li { margin: 10px 0; }

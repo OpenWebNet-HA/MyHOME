@@ -15,6 +15,49 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Profile management (0.26.0)
+
+Expanded WHO 2 profile cards now offer **Edit**, **Duplicate** and **Delete**.
+They open a gateway-scoped dialog, independent of any selected or available cover.
+The cover editor and calibration entry points are unchanged.
+
+- **Edit**: change the name and opening/closing times, preview all affected covers,
+  then confirm that exact proposal. Personal directional overrides remain in place.
+  Moving covers retain their current runtime timing until stopped; unavailable and
+  missing followers are included in the impact list. Even an unused profile can be
+  edited. Changed times become manual entries dated by the backend with no invented
+  origin cover. Renaming or keeping a time preserves its original evidence.
+- **Duplicate**: choose a name for an independent copy of the saved times/evidence.
+  The copy is unassigned; the source and all existing assignments remain untouched.
+- **Delete**: available only for unused profiles and requires a separate confirmation.
+  The backend checks every stored association again, including orphan references.
+
+All mutations require administrator access and an exact saved revision, use the
+same gateway transaction/atomic storage and reject a reserved panel calibration.
+Shared updates also reject native calibration on affected covers. A failed save
+keeps the editor draft. Concurrent changes invalidate preview/confirmation and
+require an explicit reload; closing a dialog does not roll back an accepted write.
+No operation sends movement commands.
+
+### Storage v6 and rollback
+
+Version 6 permits a manual profile value with `origin_unique_id: null`. Guided and
+automatic evidence still require an origin. This avoids fabricating a cover or
+misrepresenting a manual edit as a physical measurement. Export remains v3 with
+its existing nullable origin reference; no artificial cover record is exported.
+
+On first load, the backend validates the complete v5 payload, saves an exact v5
+copy to `.storage/myhome.cover_profiles.<entry_id>.pre_catalogue`, then migrates
+without changing profiles, assignments, overrides, native fallbacks or revision.
+A failed backup prevents migration. Older v1–v4 stores retain the existing
+`.pre_shared` backup and migration path. Entry removal deletes both backup files.
+
+Older panel builds using storage v5 cannot read v6. To roll back, stop Home
+Assistant, restore the pre-update backup (including its v5 version metadata) as
+`.storage/myhome.cover_profiles.<entry_id>`, install the older integration and
+restart. That backup is the pre-upgrade snapshot: later edits are not included.
+Keep an independent installation backup when switching versions.
+
 ## Shared profile view (0.25.0)
 
 WHO 2 now has a local **Devices | Profiles** selector. Devices remains the default
@@ -29,10 +72,10 @@ explicit; unknown effective times are not replaced with the profile's times.
 Unused profiles remain visible. An association's **Manage cover** action opens
 the current cover editor for assignment, overrides, profile editing or calibration.
 
-This first increment is an overview/navigation view: direct profile-level edit,
-duplicate, delete and multi-cover assignment controls are not added here. The
-existing cover editor remains the write path, with its existing validation and
-shared-change preview/confirmation. No second calibration flow is introduced.
+The original 0.25.0 increment provided overview/navigation, with writes through
+the existing cover editor and its shared-change preview/confirmation. Version
+0.26.0 adds the direct profile operations described above. Multi-cover assignment
+controls remain outside this increment; no second calibration flow is introduced.
 
 With all gateways selected, profile groups are separate and keyed by gateway plus
 profile ID. Search matches profile names, cover names/IDs, areas and A-PL. Area

@@ -28,6 +28,11 @@ EVIDENCE = vol.Any(
         vol.Required("origin_unique_id"): vol.All(str, vol.Length(min=1)),
     }),
     vol.Schema({
+        vol.Required("source"): "manual",
+        vol.Required("recorded_at"): utc_timestamp,
+        vol.Required("origin_unique_id"): None,
+    }),
+    vol.Schema({
         vol.Required("source"): "unknown",
         vol.Required("recorded_at"): None,
         vol.Required("origin_unique_id"): None,
@@ -42,7 +47,7 @@ def unknown_provenance() -> Any:
             for direction in DIRECTIONS}
 
 
-def evidence(source: Any, unique_id: str) -> Any:
+def evidence(source: Any, unique_id: str | None) -> Any:
     """Record the backend wall clock separately from monotonic duration timing."""
     return {"source": source, "recorded_at": dt_util.utcnow().isoformat(),
             "origin_unique_id": unique_id}

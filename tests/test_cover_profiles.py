@@ -445,7 +445,7 @@ async def test_version_one_store_migrates_without_changing_assignments_or_timing
         "name": "Legacy", "opening_time": 32.5, "closing_time": 32.5,
         "provenance": unknown_provenance()}}}
     assert plant.covers[0]._travel_time_up == plant.covers[0]._travel_time_down == 32.5
-    assert await ProfileStorage(hass, 5, store.store.key).async_load() == store.data
+    assert await ProfileStorage(hass, 6, store.store.key).async_load() == store.data
     with pytest.raises(NotImplementedError):
         await store.store._async_migrate_func(6, 1, legacy)
     plant.gateways[0].send.assert_not_called()

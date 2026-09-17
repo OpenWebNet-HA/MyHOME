@@ -101,6 +101,10 @@ class ProfileStorage(Store[dict[str, Any]]):
     """Surface write failures: HA's default Store logs them and returns success."""
 
     async def _async_migrate_func(self, old_major_version: Any, old_minor_version: Any, old_data: Any) -> Any:
+        if old_major_version == 5:
+            data = STORED(old_data)
+            await ProfileStorage(self.hass, 5, f"{self.key}.pre_catalogue", atomic_writes=True).async_save(old_data)
+            return data
         if old_major_version not in (1, 2, 3, 4):
             raise NotImplementedError
         data = migrate(LEGACY_STORED(old_data), self.native_options())
@@ -126,7 +130,7 @@ class CoverProfileStore:
     def __init__(self, hass: Any, entry_id: str) -> None:
         self.hass, self.entry_id = hass, entry_id
         self.store = ProfileStorage(
-            hass, 5, f"{DOMAIN}.cover_profiles.{entry_id}", atomic_writes=True
+            hass, 6, f"{DOMAIN}.cover_profiles.{entry_id}", atomic_writes=True
         )
         self.lock = asyncio.Lock()
         self.loaded = False
@@ -398,6 +402,7 @@ async def remove_entry(hass: Any, entry_id: str) -> None:
     async with store.lock:
         await store.store.async_remove()
         await Store(hass, 1, f"{store.store.key}.pre_shared").async_remove()
+        await Store(hass, 5, f"{store.store.key}.pre_catalogue").async_remove()
         if store.calibration:
             store.calibration.close("cover_unavailable")
         async_dispatcher_send(hass, f"{WS_SUBSCRIBE}:{entry_id}", {
@@ -497,9 +502,11 @@ async def ws_subscribe(hass: Any, connection: Any, msg: dict[str, Any]) -> None:
 
 @callback
 def register_api(hass: HomeAssistant) -> None:
+    from .cover_profile_catalogue import ws_manage
     from .cover_profile_export import ws_export
     from .cover_settings_api import ws_overview
 
+    websocket_api.async_register_command(hass, ws_manage)
     websocket_api.async_register_command(hass, ws_export)
     websocket_api.async_register_command(hass, ws_overview)
     websocket_api.async_register_command(hass, ws_read)

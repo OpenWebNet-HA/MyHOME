@@ -114,7 +114,7 @@ export class CoverProfileList {
       }
       return `<div><strong>${esc(t(direction === "opening" ? "profileOpeningTime" : "profileClosingTime"))}</strong>
         <p class="muted">${esc(t(`profileSource_${source}`))} · ${esc(date)}</p>
-        <p class="muted">${esc(evidence?.origin_name || evidence?.origin_entity_id || t("profileOriginUnknown"))}</p></div>`;
+        <p class="muted">${esc(evidence?.origin_name || evidence?.origin_entity_id || t(source === "manual" && !evidence?.inherited ? "catalogueManualOrigin" : "profileOriginUnknown"))}</p></div>`;
     }).join("")}</div>`;
   }
 
@@ -146,6 +146,9 @@ export class CoverProfileList {
         <span class="shared-profile-times muted">${esc(t("profileOpeningTime"))}: ${esc(profile.opening_time)} s · ${esc(t("profileClosingTime"))}: ${esc(profile.closing_time)} s</span></span>
         <span class="count">${profile.assigned_to.length} ${esc(t("profileAssociatedCovers"))}</span></button></header>
       <div id="${esc(id)}" class="entity-list shared-profile-body" ${expanded ? "" : "hidden"}>
+        ${this._rows.get(entry.entry_id).data.capabilities?.profile_management ? `<div class="actions catalogue-actions">
+          ${["edit", "duplicate", "delete"].map((action) => `<button type="button" data-action="manage-profile" data-id="${esc(profile.id)}" data-operation="${action}" data-entry="${esc(entry.entry_id)}" ${action === "delete" && profile.assigned_to.length ? `disabled title="${esc(t("profileDeleteHelp"))}"` : ""}>${esc(t(action === "edit" ? "edit" : action === "duplicate" ? "catalogueDuplicate" : "catalogueDelete"))}</button>`).join("")}
+        </div>` : ""}
         ${this._provenance(profile)}
         ${followers.length ? `<ul class="shared-profile-followers">${followers.map((item) => this._follower(item)).join("")}</ul>`
           : `<p class="muted">${esc(t("profileListUnused"))}</p>`}

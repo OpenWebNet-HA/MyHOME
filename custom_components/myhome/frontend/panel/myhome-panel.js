@@ -5,11 +5,11 @@ const assetUrl = (name) => {
   url.search = new URL(import.meta.url).search;
   return url.href;
 };
-const [{ translations }, model, { escapeHtml, replacePreservingFocus }, { BusMonitorSection }, { CoverProfileEditor }, { CoverProfileList }] = await Promise.all([
+const [{ translations }, model, { escapeHtml, replacePreservingFocus }, { BusMonitorSection }, { CoverProfileEditor }, { CoverProfileList }, { ProfileCatalogueEditor }] = await Promise.all([
   import(assetUrl("panel-translations.js")), import(assetUrl("panel-model.js")),
   import(assetUrl("panel-dom.js")), import(assetUrl("panel-bus-monitor.js")),
   import(assetUrl("panel-cover-profiles.js")),
-  import(assetUrl("panel-cover-profile-list.js")),
+  import(assetUrl("panel-cover-profile-list.js")), import(assetUrl("panel-profile-catalogue-editor.js")),
 ]);
 const SETTINGS_URL = "/config/integrations/integration/myhome";
 const CATEGORY_VIEW_STORAGE_KEY = "myhome-panel-category-view-v1";
@@ -36,6 +36,7 @@ class MyHomePanel extends HTMLElement {
     this._busMonitor = new BusMonitorSection();
     this._profileEditor = new CoverProfileEditor();
     this._profileList = new CoverProfileList();
+    this._catalogueEditor = new ProfileCatalogueEditor();
     this._coverView = "devices";
     this._visibilityChanged = () => this._updatePolling();
     this._locationChanged = () => this._syncGatewayFromUrl();
@@ -118,7 +119,7 @@ class MyHomePanel extends HTMLElement {
   }
 
   _stop() {
-    this._profileEditor.close();
+    this._profileEditor.close(); this._catalogueEditor.close();
     this._profileList.clear();
     this._started = false;
     document.removeEventListener("visibilitychange", this._visibilityChanged);
@@ -172,7 +173,7 @@ class MyHomePanel extends HTMLElement {
     const entryId = new URL(window.location.href).searchParams.get("entry_id");
     if (this._entryQuery === entryId) return;
     this._entryQuery = entryId;
-    this._profileEditor.close();
+    this._profileEditor.close(); this._catalogueEditor.close();
     this._entryId = entryId || "";
     this._selectedInitially = entryId !== null;
     this._view = "entities";
@@ -209,7 +210,7 @@ class MyHomePanel extends HTMLElement {
   }
 
   _buildShell(preserveMonitor = false) {
-    this._profileEditor.close();
+    this._profileEditor.close(); this._catalogueEditor.close();
     const monitor = preserveMonitor ? this._busMonitor.view : null;
     const focused = monitor?.shadowRoot.activeElement;
     if (!monitor) this._removeMonitor();
@@ -253,7 +254,7 @@ class MyHomePanel extends HTMLElement {
       focused?.focus();
     }
     this.shadowRoot.getElementById("gateway").onchange = (event) => {
-      this._profileEditor.close();
+      this._profileEditor.close(); this._catalogueEditor.close();
       this._entryId = event.target.value;
       this._selectedInitially = true;
       const url = new URL(window.location.href);
@@ -374,7 +375,7 @@ class MyHomePanel extends HTMLElement {
     root.getElementById("discovery-help").hidden = isBus || !this._data.gateways.length;
     root.getElementById("items").hidden = isBus;
     root.getElementById("monitor").hidden = !isBus;
-    if (isBus) { this._profileEditor.close(); this._profileList.clear(); this._renderMonitor(); return; }
+    if (isBus) { this._profileEditor.close(); this._catalogueEditor.close(); this._profileList.clear(); this._renderMonitor(); return; }
     this._removeMonitor();
     if (!this._data.gateways.length) {
       this._profileList.clear();
@@ -520,6 +521,7 @@ class MyHomePanel extends HTMLElement {
   _openCoverProfile(id) {
     const entity = this._data.entities.find((item) => item.entity_id === id);
     if (!entity) return;
+    this._catalogueEditor.close();
     this.shadowRoot.querySelector("dialog")?.close();
     this._profileEditor.open({
       host: this.shadowRoot.getElementById("dialog-host"), hass: this._hass, entity,
@@ -538,6 +540,12 @@ class MyHomePanel extends HTMLElement {
     } else if (target.dataset.view) {
       this._view = target.dataset.view;
       this._renderContent();
+    } else if (target.dataset.action === "manage-profile") {
+      this._profileEditor.close();
+      this._catalogueEditor.open({ host: this.shadowRoot.getElementById("dialog-host"), hass: this._hass,
+        entryId: target.dataset.entry, profileId: target.dataset.id, action: target.dataset.operation,
+        t: (key) => this._t(key), onSaved: () => { this._profileList.refresh();
+          this.shadowRoot.getElementById("toast").textContent = this._t("saved"); } });
     } else if (target.dataset.action === "cover-view") {
       this._coverView = target.dataset.id;
       this._renderContent();
@@ -578,7 +586,7 @@ class MyHomePanel extends HTMLElement {
   }
 
   _openEditor(kind, id) {
-    this._profileEditor.close();
+    this._profileEditor.close(); this._catalogueEditor.close();
     const item = kind === "device" ? this._data.devices.find((entry) => entry.id === id)
       : this._data.entities.find((entry) => entry.entity_id === id);
     if (!item) return;
