@@ -17,7 +17,7 @@ from .cover_settings import KEYS, seconds
 OVERRIDE_PATCH = vol.All({vol.In(KEYS): vol.Any(None, seconds)}, vol.Length(min=1))
 
 
-def shared_preview(store: Any, entity: Any, profile_id: str, profile: dict[str, Any]) -> dict[str, Any]:
+def shared_preview(store: Any, entity: Any, profile_id: str, profile: dict[str, Any], *, clear_overrides: tuple[str, ...] = ()) -> dict[str, Any]:
     """Include every stored follower, even when its registry/runtime is absent."""
     previous = store.data["profiles"][profile_id]
     records = {record.unique_id: record for record in er.async_entries_for_config_entry(
@@ -34,13 +34,14 @@ def shared_preview(store: Any, entity: Any, profile_id: str, profile: dict[str, 
             "available": bool(record and not record.disabled_by and cover and cover.available),
             "changes": {direction: {
                 "before": overrides[direction]["value"] if direction in overrides else previous[f"{direction}_time"],
-                "after": overrides[direction]["value"] if direction in overrides else profile[f"{direction}_time"],
-                "overridden": direction in overrides,
+                "after": overrides[direction]["value"] if direction in overrides and not (unique == entity.unique_id and direction in clear_overrides) else profile[f"{direction}_time"],
+                "overridden": direction in overrides and not (unique == entity.unique_id and direction in clear_overrides),
+                **({"override_removed": direction in overrides and unique == entity.unique_id and direction in clear_overrides} if clear_overrides else {}),
             } for direction in DIRECTIONS},
         })
     # Bind confirmation to the exact proposal, gateway, target and saved revision.
     # Runtime motion/availability can change without invalidating the configuration.
-    payload = [store.entry_id, entity.unique_id, store.data["revision"], profile_id, profile]
+    payload = [store.entry_id, entity.unique_id, store.data["revision"], profile_id, profile, clear_overrides]
     token = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
     return {"revision": store.data["revision"], "profile_id": profile_id,
             "before": {key: previous[key] for key in profile}, "after": profile,

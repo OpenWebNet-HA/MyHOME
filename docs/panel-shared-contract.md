@@ -1,15 +1,17 @@
 # Shared MyHOME panel contract — implementation and proposal
 
-**Updated: 2026-09-16, panel 0.22.0.** The shared backend now includes:
+**Updated: 2026-09-17, panel 0.23.0.** The shared backend now includes:
 storage v5, migration of native v2 fallbacks, one directional resolver, native
 service persistence through the shared transaction, gateway-wide read API,
 per-direction personal overrides and confirmed shared-profile impact previews.
+Single-cover measurement review now supports new profiles, personal values and
+confirmed assigned-profile updates; see [save semantics](sidepanel.md#measurement-save-destinations-0230).
 See [implemented schema, migration, API and limits](cover-settings-backend.md).
 The agreed proposal is pinned to [51ffaf7](https://github.com/Interstellar0verdrive/MyHOME-stability/blob/51ffaf73a3da3ac09246ee199751e613217e0a78/docs/calibration-contract-proposal.md).
 This is a review of that document; the historical fork-code comparison below stays
 pinned to `229b1eb` and is not a fresh audit of its runtime.
 
-Current implementation: [`166b923`](https://github.com/xtimmy86x/MyHOME/commit/166b92324b714ad588f280ed1bd816d8e73c6017).
+Shared-backend baseline: [`166b923`](https://github.com/xtimmy86x/MyHOME/commit/166b92324b714ad588f280ed1bd816d8e73c6017).
 The preceding implementation was panel 0.21.0 at [`d40f02f`](https://github.com/xtimmy86x/MyHOME/commit/d40f02ff11d9bdbd34adcd870afa12cef0d71f0d), following `e472ff4`.
 The integrated v2 baseline is now `1dc4b3e` (2026-09-17), including FrameRouter,
 OWNd 2.0.0b7, delivery-failure handling and broadcast resync. The previous

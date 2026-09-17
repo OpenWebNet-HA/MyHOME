@@ -1,12 +1,37 @@
 # MyHOME panel API: implemented reference
 
-> Current update — panel 0.22.2: [shared cover settings](cover-settings-backend.md)
+> Current update — panel 0.23.0: [shared cover settings](cover-settings-backend.md)
 > specifies storage v5, export v3 and `myhome/cover_profiles/overview` (schema v1).
 > Partial guided calibration now uses resolved cover settings without requiring
 > an assigned profile (see the single-direction extension below).
 > Write actions `overrides`, `preview` and `update_shared` add personal values
 > and revision-bound impact confirmation; their complete contract is linked above.
 > Existing endpoints remain available; native writes use the shared store and revision. Earlier release descriptions below remain historical where superseded.
+
+
+## Measurement destinations (0.23.0)
+
+Session views include `save_modes`: `new`, `cover`, and (when assigned) `shared`.
+Batch sessions advertise only `new`. The existing `myhome/cover_calibration/action`
+endpoint accepts optional `save_mode` (default `new`) and `confirmation`.
+
+- `save` + `new`: existing `name`/batch `names` behaviour.
+- `save` + `cover`: personal values for measured directions; no name required.
+- `preview_save` + `shared`: only in review; returns the unchanged session view
+  plus `save_preview` containing `before`, `after`, every `followers[]` entry and
+  `confirmation`. No persistence, motion or sequence transition occurs.
+- `save` + `shared` + `confirmation`: requires that exact proposal token. The
+  backend revalidates ownership, revision, target and followers under its lock.
+
+Each preview follower includes safe entity ID/name (nullable for missing entries),
+availability, and directional `{before, after, overridden, override_removed}`.
+Times/evidence/profile ID never come from the action payload. The assigned profile
+keeps its name and unmeasured direction; target overrides for measured directions
+are removed in the same transaction. Other personal values are retained.
+A storage error returns `storage_error` and restores review. Invalid confirmation
+returns `preview_required`; revision changes return `revision_conflict`. The
+frontend discards failed/stale previews and requires a fresh preview before retry.
+Socket ownership, administrator checks and explicit final Save remain required.
 
 
 Status: **implemented through panel 0.20.0**. The original profile contract was reviewed against

@@ -201,6 +201,11 @@ and administrator isolation, moving-cover deferral, and single-direction
 calibration with pre-existing overrides. Frontend coverage exercises personal
 values, previews, confirmation, dirty drafts and delayed responses.
 
-Detached session supervision/gateway reservation, additional measurement-save
-choices (update assigned profile or keep cover-only values), geometry/scaling and
+Detached session supervision/gateway reservation, geometry/scaling and
 nonlinear calibration remain separate steps. No numerical physical accuracy is claimed.
+
+
+Panel 0.23.0 implements the additional single-cover measurement save choices:
+[personal values or a confirmed assigned-profile update](sidepanel.md#measurement-save-destinations-0230).
+Both persist session evidence atomically through the same store. A partial
+measurement updates only its measured direction in these destinations.

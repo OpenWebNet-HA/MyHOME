@@ -40,6 +40,100 @@ async function mount({ call, subscribe, entity_ids, direction, mode = "guided" }
   return { host, controller, calls, starts, push, counts: () => ({ stopped, saved, cancelled }) };
 }
 
+function chooseSave(host, mode) {
+  const selector = host.querySelector("#cal-save-mode");
+  selector.value = mode;
+  selector.dispatchEvent(new dom.window.Event("change"));
+}
+
+function submitReview(host) {
+  host.querySelector("#cal-save").dispatchEvent(new dom.window.Event("submit", { cancelable: true }));
+}
+
+test("cover-only review saves without a name or browser timings and retains the selected direction", async () => {
+  const { host, push, calls } = await mount({ direction: "opening" });
+  push({ phase: "review", save_modes: ["new", "cover"], values: { opening_time: 12, closing_time: 30 } });
+  chooseSave(host, "cover");
+  assert.equal(host.querySelector('[value="shared"]').disabled, true);
+  assert.equal(host.querySelector('[name="profile_name"]').disabled, true);
+  assert.match(host.querySelector("#cal-save-help").textContent, /Solo le direzioni misurate/);
+  submitReview(host); await tick();
+  const save = calls.find((message) => message.action === "save");
+  assert.equal(save.save_mode, "cover");
+  for (const key of ["values", "name", "provenance", "direction", "profile_id"]) assert.equal(key in save, false);
+});
+
+const sharedImpact = { confirmation: "exact-proposal", after: { name: "<img src=x>" }, followers: [
+  { entity_id: "cover.one", name: "<b>Camera</b>", available: true, changes: {
+    opening: { before: 50, after: 12, overridden: false, override_removed: true },
+    closing: { before: 30, after: 30, overridden: false } } },
+  { entity_id: null, name: null, available: false, changes: {
+    opening: { before: 44, after: 44, overridden: true },
+    closing: { before: 30, after: 30, overridden: false } } },
+] };
+
+test("shared measurement needs a separate preview and confirmation; heartbeat preserves the preview", async () => {
+  const { host, push, calls, controller } = await mount({ call: async (message, state) =>
+    message.action === "preview_save" ? { ...state, save_preview: sharedImpact } : message.action === "save" ? { ...state, phase: "saved" } : state });
+  push({ phase: "review", save_modes: ["new", "cover", "shared"], values: { opening_time: 12, closing_time: 30 } });
+  chooseSave(host, "shared"); submitReview(host); await tick();
+  assert.equal(calls.filter((m) => m.action === "save").length, 0);
+  const box = host.querySelector("#cal-save-impact");
+  assert.equal(box.hidden, false);
+  assert.equal(box.querySelector("img"), null);
+  assert.equal(box.querySelector("b"), null);
+  assert.match(box.textContent, /valore personale rimosso/);
+  assert.match(box.textContent, /valore personale conservato/);
+  await controller._perform("heartbeat");
+  assert.equal(box.hidden, false);
+  assert.match(host.querySelector('#cal-save button[type="submit"]').textContent, /Conferma/);
+  submitReview(host); await tick();
+  const save = calls.find((m) => m.action === "save");
+  assert.equal(save.confirmation, "exact-proposal");
+  assert.equal(save.save_mode, "shared");
+  assert.equal("profile" in save, false);
+});
+
+test("switching destination discards confirmation and preserves the new-profile name draft", async () => {
+  const { host, push } = await mount({ call: async (_message, state) => ({ ...state, save_preview: sharedImpact }) });
+  push({ phase: "review", save_modes: ["new", "cover", "shared"] });
+  host.querySelector('[name="profile_name"]').value = "Bozza";
+  chooseSave(host, "shared"); submitReview(host); await tick();
+  chooseSave(host, "cover"); chooseSave(host, "shared");
+  assert.equal(host.querySelector("#cal-save-impact").hidden, true);
+  assert.match(host.querySelector('#cal-save button[type="submit"]').textContent, /Visualizza/);
+  chooseSave(host, "new");
+  assert.equal(host.querySelector('[name="profile_name"]').value, "Bozza");
+});
+
+test("stale or failed shared confirmation keeps measurements and requires another preview", async () => {
+  const { host, push } = await mount({ call: async (message, state) => {
+    if (message.action === "preview_save") return { ...state, save_preview: sharedImpact };
+    if (message.action === "save") throw { code: "revision_conflict" };
+    return state;
+  } });
+  push({ phase: "review", save_modes: ["new", "cover", "shared"], values: { opening_time: 12, closing_time: 30 } });
+  chooseSave(host, "shared"); submitReview(host); await tick();
+  submitReview(host); await tick();
+  assert.equal(host.querySelector("#cal-save").hidden, false);
+  assert.equal(host.querySelector("#cal-save-impact").hidden, true);
+  assert.match(host.querySelector("#cal-values").textContent, /12.*30/);
+  assert.equal(host.querySelector("#cal-reason").hidden, false);
+});
+
+test("late preview after Stop cannot restore a confirmation or review", async () => {
+  const waiting = deferred();
+  const { host, push } = await mount({ call: (message, state) => message.action === "preview_save" ? waiting.promise : state });
+  push({ phase: "review", save_modes: ["new", "cover", "shared"] });
+  chooseSave(host, "shared"); submitReview(host);
+  assert.equal(host.querySelector("#cal-save-mode").disabled, true);
+  push({ phase: "interrupted", sequence: 10 });
+  waiting.resolve({ entry_id: "one", session_id: "session-one", sequence: 2, phase: "review", values: {}, save_preview: sharedImpact });
+  await tick();
+  assert.equal(host.querySelector("#cal-save").hidden, true);
+  assert.equal(host.querySelector("#cal-save-impact").hidden, true);
+});
+
 afterEach(() => { for (const controller of instances.splice(0)) controller.close(); document.body.replaceChildren(); });
 after(() => dom.window.close());
 

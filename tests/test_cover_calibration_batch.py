@@ -401,3 +401,16 @@ async def test_batch_new_profiles_replace_old_overrides_only_after_durable_save(
     for index, cover in enumerate(batch.plant.covers[:2]):
         assert cover._travel_time_up == 20 + index
         assert cover._travel_time_down == 22 + index
+
+
+async def test_batch_review_rejects_single_cover_save_destinations(batch):
+    await measure(batch)
+    assert batch.session.view()["save_modes"] == ["new"]
+    before = copy.deepcopy(batch.session.store.data)
+    for mode in ("cover", "shared"):
+        with pytest.raises(profiles.ProfileError, match="invalid_profile"):
+            await action(batch, "save", save_mode=mode)
+    with pytest.raises(profiles.ProfileError, match="calibration_step"):
+        await action(batch, "preview_save", save_mode="shared")
+    assert batch.session.store.data == before
+    assert batch.session.phase == "review"

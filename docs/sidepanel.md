@@ -15,6 +15,35 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Measurement save destinations (0.23.0)
+
+Single-cover guided and automatic review offers three explicit destinations:
+
+- **New profile** (default): the existing named copy/assignment operation. Both
+  reviewed values are saved and the measured cover's old personal overrides are
+  removed. Partial measurement retains the other configured value/evidence.
+- **Only this cover**: save measured directions as personal values with their
+  measurement evidence; keep the existing assignment, profile and unmeasured
+  direction unchanged. No profile name or existing assignment is required.
+- **Assigned profile**: preview then separately confirm changes to the measured
+  directions of the assigned profile. Include every saved follower, even offline
+  or orphaned ones, and show values masked by personal overrides. Remove only the
+  measured directions' personal overrides on the measured cover; retain all
+  other personal values and the profile name. The unmeasured shared direction
+  keeps its original value/evidence, even when this cover has a personal value.
+
+All values and evidence come from the backend session. One durable transaction
+increments one revision. A failed write retains the review and measurements.
+Confirmation binds to the exact proposal, gateway, target, revision and session;
+followers performing native calibration block a shared commit, while moving
+followers apply changes after stopping. The WHO layout and collapsible sections
+are unchanged. Batch review retains its existing atomic new-profile save.
+
+Validation: 1,982 Python tests passed (one existing skip, five snapshots),
+106 frontend tests passed, and 100% line coverage (7,535 statements in 42 modules).
+Strict typing reports zero errors; Ruff and HA architecture checks pass. Physical
+installation verification of the new destinations remains separate.
+
 ## Current v2 alignment (2026-09-17)
 
 The branch integrates official `v2-phase1-architecture` through `1dc4b3e`

@@ -25,6 +25,8 @@ export class CoverCalibration {
     this._context = context;
     this._lost = false;
     this._busy = false;
+    this._savePreview = null;
+    this._renderedPreview = null;
     const generation = this._generation;
     const { host, hass, entity, revision, t } = context;
     const automatic = context.mode === "automatic";
@@ -51,9 +53,13 @@ export class CoverCalibration {
         <button type="button" class="primary" data-cal-action="endpoint" hidden></button>
       </div>
       <form id="cal-save" class="profile-section cal-save" hidden><p id="cal-values" class="cal-values"></p>
-        <label ${context.entity_ids ? "hidden" : ""}>${esc(t("profileName"))}<input name="profile_name" required maxlength="64" ${context.entity_ids ? "disabled" : ""}></label>
+        <label ${context.entity_ids ? "hidden" : ""}>${esc(t("calSaveDestination"))}<select id="cal-save-mode">
+          <option value="new">${esc(t("calSaveNew"))}</option><option value="cover">${esc(t("calSaveCover"))}</option><option value="shared">${esc(t("calSaveShared"))}</option>
+        </select></label>
+        <label id="cal-name-label" ${context.entity_ids ? "hidden" : ""}>${esc(t("profileName"))}<input name="profile_name" required maxlength="64" ${context.entity_ids ? "disabled" : ""}></label>
         <div id="cal-batch-review"></div>
-        <p class="muted">${esc(t("calSaveOverrides"))}</p>
+        <p id="cal-save-help" class="muted">${esc(t("calSaveOverrides"))}</p>
+        <div id="cal-save-impact" class="notice" hidden></div>
         <button type="submit" class="primary">${esc(t(context.entity_ids ? "calBatchSave" : "calSave"))}</button>
       </form>
       <div class="actions calibration-safety-actions"><button type="button" id="cal-stop" disabled><ha-icon icon="mdi:stop-circle-outline" aria-hidden="true"></ha-icon><span>${esc(t("calStop"))}</span></button>
@@ -64,12 +70,23 @@ export class CoverCalibration {
     }
     host.querySelector("#cal-stop").onclick = () => this._perform("stop");
     host.querySelector("#cal-cancel").onclick = () => { this.close(); context.onCancel(); };
+    host.querySelector("#cal-save-mode").onchange = () => {
+      this._savePreview = null;
+      if (this._state) this._render();
+    };
     host.querySelector("#cal-save").onsubmit = (event) => {
       event.preventDefault();
       const form = event.currentTarget;
-      if (form.reportValidity()) this._perform("save", context.entity_ids
-        ? { names: [...form.querySelectorAll("[data-batch-name]")].map((input) => input.value.trim()) }
-        : { name: form.elements.profile_name.value.trim() });
+      if (!form.reportValidity()) return;
+      if (context.entity_ids) {
+        this._perform("save", { names: [...form.querySelectorAll("[data-batch-name]")].map((input) => input.value.trim()) });
+        return;
+      }
+      const save_mode = host.querySelector("#cal-save-mode").value;
+      if (save_mode === "shared" && !this._savePreview) this._perform("preview_save", { save_mode });
+      else this._perform("save", { save_mode,
+        ...(save_mode === "new" ? { name: form.elements.profile_name.value.trim() } : {}),
+        ...(save_mode === "shared" ? { confirmation: this._savePreview.confirmation } : {}) });
     };
     try {
       const unsubscribe = await hass.connection.subscribeMessage((state) => {
@@ -91,6 +108,8 @@ export class CoverCalibration {
   _accept(state) {
     if (this._state && state.sequence < this._state.sequence) return;
     this._state = state;
+    if (state.phase !== "review") this._savePreview = null;
+    else if (state.save_preview && this._context.host.querySelector("#cal-save-mode").value === "shared") this._savePreview = state.save_preview;
     this._render();
     if (state.phase === "saved") {
       this.close();
@@ -122,7 +141,7 @@ export class CoverCalibration {
     host.querySelector('[data-cal-action="endpoint"]').textContent = t(state.phase === "opening" ? "calEndpointOpen" : "calEndpointClose");
     host.querySelector("#cal-stop").disabled = ["saved", "cancelled"].includes(state.phase);
     host.querySelector("#cal-save").hidden = state.phase !== "review";
-    host.querySelector('#cal-save button').disabled = this._busy || this._lost;
+    this._renderSave();
     host.querySelector("#cal-values").textContent = `${t("profileOpeningTime")}: ${state.values.opening_time ?? "—"} · ${t("profileClosingTime")}: ${state.values.closing_time ?? "—"}`;
     if (state.direction) {
       host.querySelector("#cal-values").textContent = ["opening", "closing"].map((direction) =>
@@ -143,6 +162,35 @@ export class CoverCalibration {
     }
   }
 
+  _renderSave() {
+    const { host, t } = this._context;
+    const state = this._state, form = host.querySelector("#cal-save");
+    const selector = host.querySelector("#cal-save-mode");
+    const modes = state.save_modes || ["new"];
+    for (const option of selector.options) option.disabled = !modes.includes(option.value);
+    if (!modes.includes(selector.value)) { selector.value = "new"; this._savePreview = null; }
+    selector.disabled = this._busy || this._lost;
+    const mode = selector.value;
+    host.querySelector("#cal-name-label").hidden = !!state.batch || mode !== "new";
+    form.elements.profile_name.disabled = !!state.batch || mode !== "new";
+    form.elements.profile_name.required = !state.batch && mode === "new";
+    host.querySelector("#cal-save-help").textContent = t(mode === "new" ? "calSaveOverrides" : mode === "cover" ? "calSaveCoverHelp" : "calSaveSharedHelp");
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = this._busy || this._lost;
+    button.textContent = t(state.batch ? "calBatchSave" : mode === "new" ? "calSave" : mode === "cover" ? "calSaveCover" : this._savePreview ? "calConfirmShared" : "calPreviewShared");
+    const box = host.querySelector("#cal-save-impact");
+    box.hidden = !this._savePreview;
+    if (this._savePreview && this._renderedPreview !== this._savePreview) {
+      const preview = this._savePreview;
+      box.innerHTML = `<p><strong>${esc(preview.after.name)}</strong> · ${esc(t("calSharedImpact"))}</p><ul>${preview.followers.map((item) =>
+        `<li><strong>${esc(item.name || item.entity_id || t("profileMissingCover"))}</strong>${item.available ? "" : ` · ${esc(t("profileUnavailableFollower"))}`}<br>${["opening", "closing"].map((direction) => {
+          const change = item.changes[direction];
+          return `${esc(t(direction === "opening" ? "profileOpeningTime" : "profileClosingTime"))}: ${esc(change.before)} → ${esc(change.after)} s${change.overridden ? ` · ${esc(t("calPersonalRetained"))}` : change.override_removed ? ` · ${esc(t("calPersonalRemoved"))}` : ""}`;
+        }).join("<br>")}</li>`).join("")}</ul>`;
+    }
+    this._renderedPreview = this._savePreview;
+  }
+
   _error(error) {
     const { host, t } = this._context;
     const key = `profileError_${error.code}`;
@@ -157,7 +205,10 @@ export class CoverCalibration {
     const { hass } = this._context;
     const state = this._state;
     const ownsBusy = !["heartbeat", "stop"].includes(action);
-    if (ownsBusy) this._busy = true;
+    if (ownsBusy) {
+      this._busy = true;
+      this._context.host.querySelector("#cal-reason").hidden = true;
+    }
     this._render();
     try {
       const result = await hass.callWS({ type: "myhome/cover_calibration/action", entry_id: state.entry_id,
@@ -166,6 +217,7 @@ export class CoverCalibration {
     } catch (error) {
       if (!this._current(generation)) return;
       if (action === "heartbeat") this._lost = true;
+      if (action === "save" || action === "preview_save") this._savePreview = null;
       this._error(error);
     } finally {
       if (this._current(generation)) { if (ownsBusy) this._busy = false; this._render(); }

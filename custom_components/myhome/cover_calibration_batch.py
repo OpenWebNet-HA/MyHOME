@@ -66,7 +66,7 @@ class BatchCalibrationSession(AutomaticCalibrationSession):
         def label(cover: Any) -> Any:
             record = er.async_get(self.hass).async_get(cover.entity_id)
             return (record.name or record.original_name or record.entity_id) if record else cover.entity_id
-        return {**super().view(), "batch": True, "cover_index": self.cover_index,
+        return {**super().view(), "save_modes": ["new"], "batch": True, "cover_index": self.cover_index,
                 "targets": [{"entity_id": cover.entity_id, "name": label(cover)} for cover in self.covers],
                 "results": [{"index": index, "entity_id": self.covers[index].entity_id,
                              "values": dict(result["values"])} for index, result in enumerate(self.results)]}

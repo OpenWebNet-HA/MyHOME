@@ -1,4 +1,12 @@
-# Guided and automatic travel measurement — panel 0.22.2
+# Guided and automatic travel measurement — panel 0.23.0
+
+Panel 0.23.0 adds [three reviewed save destinations](sidepanel.md#measurement-save-destinations-0230)
+for single-cover guided and automatic measurement: a new profile, personal values
+for this cover, or preview/confirmation of an assigned-profile update. Personal and
+shared saves write only measured directions; new-copy saves retain both reviewed
+values. Storage v5 and export v3 are unchanged. Existing descriptions of new-copy
+saving below still describe that default destination. Batch saves remain new copies.
+
 
 Panel 0.22.2 removes the assigned-profile prerequisite for measuring one direction.
 The opposite time comes from the backend resolver (override, profile, native or

@@ -97,6 +97,7 @@ class CalibrationSession:
                 "phase": self.phase, "mode": self.mode, "reason": self.reason, "values": dict(self.values),
                 "elapsed": round(monotonic() - self.started_at, 2) if self.started_at is not None else None,
                 "stop_requested": self.stop_requested,
+                "save_modes": ["new", "cover", "shared"] if self.store.profile(self.cover.unique_id) else ["new", "cover"],
                 **({"direction": self.direction} if self.direction else {})}
 
     def emit(self) -> None:
@@ -276,9 +277,17 @@ class CalibrationSession:
             self.move(action)
         elif action == "endpoint":
             self.endpoint()
+        elif action == "preview_save":
+            if self.phase != "review" or msg.get("save_mode") != "shared" or "shared" not in self.view()["save_modes"]:
+                raise ProfileError("calibration_step")
+            from .cover_calibration_save import save_measurement
+            preview = await save_measurement(self, msg, preview=True)
+            return {**self.view(), "save_preview": preview}
         elif action == "save":
             if self.phase != "review":
                 raise ProfileError("calibration_step")
+            if msg.get("save_mode", "new") not in self.view()["save_modes"]:
+                raise ProfileError("invalid_profile")
             self.phase = "saving"
             self.emit()
             try:
@@ -296,6 +305,9 @@ class CalibrationSession:
 
 
     async def save_profiles(self, msg: dict[str, Any]) -> Any:
+        if msg.get("save_mode", "new") != "new":
+            from .cover_calibration_save import save_measurement
+            return await save_measurement(self, msg)
         result = await write_profile(self.hass, {
             "entry_id": self.entry_id, "entity_id": self.cover.entity_id,
             "revision": self.revision, "action": "save", "profile_id": None,
@@ -385,9 +397,11 @@ def send_error(connection: Any, msg: dict[str, Any], error: Any) -> None:
 @websocket_command({
     vol.Required("type"): WS_ACTION, vol.Required("entry_id"): str,
     vol.Required("session_id"): str,
-    vol.Required("action"): vol.In(["run", "open", "close", "endpoint", "stop", "cancel", "save", "heartbeat"]),
+    vol.Required("action"): vol.In(["run", "open", "close", "endpoint", "stop", "cancel", "save", "preview_save", "heartbeat"]),
     vol.Optional("sequence"): vol.All(int, vol.Range(min=0)),
     vol.Optional("name"): str,
+    vol.Optional("save_mode"): vol.In(["new", "cover", "shared"]),
+    vol.Optional("confirmation"): str,
     vol.Optional("names"): vol.All([str], vol.Length(min=1, max=20)),
 })
 @require_admin
