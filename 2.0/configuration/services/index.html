@@ -1,0 +1,2969 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern async Home Assistant integration for Legrand & BTicino MyHOME SCS bus systems via OpenWebNet.">
+      
+      
+        <meta name="author" content="OpenWebNet-HA Community">
+      
+      
+        <link rel="canonical" href="https://openwebnet-ha.github.io/MyHOME/2.0/configuration/services/">
+      
+      
+        <link rel="prev" href="../alarm/">
+      
+      
+        <link rel="next" href="../bus_monitor/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Integration Services - MyHOME for Home Assistant</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="light-blue" data-md-color-accent="blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#integration-services-reference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="MyHOME for Home Assistant" class="md-header__button md-logo" aria-label="MyHOME for Home Assistant" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            MyHOME for Home Assistant
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Integration Services
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="light-blue" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="light-blue" data-md-color-accent="blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/OpenWebNet-HA/MyHOME" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    OpenWebNet-HA/MyHOME
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../gateways/" class="md-tabs__link">
+          
+  
+  
+  Device Configuration
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../bus_monitor/" class="md-tabs__link">
+          
+  
+  
+  Diagnostics & Monitoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/anti-drift-safeguards/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../migration/upgrade-from-094/" class="md-tabs__link">
+          
+  
+  
+  Migration & Legacy
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../roadmap/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Roadmap
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="MyHOME for Home Assistant" class="md-nav__button md-logo" aria-label="MyHOME for Home Assistant" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    MyHOME for Home Assistant
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/OpenWebNet-HA/MyHOME" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    OpenWebNet-HA/MyHOME
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/hardware-compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hardware Compatibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/removal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Removal & Clean Uninstall
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Device Configuration
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Device Configuration
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gateways/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gateways & Connection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gateway-identification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gateway Identification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lights/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lights & Dimmers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../covers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Covers & Shutters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../climate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Climate & Heating
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../media_player/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sound System (Diffusione Sonora)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cen_cenplus/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scenario Buttons (CEN / CEN+)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../switches/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Switches & Relays
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sensors & Energy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../binary-sensors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Binary Sensors & Contacts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../alarm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Burglar Alarm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integration Services
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integration Services
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#services-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        📋 Services Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-myhomesend_message" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. myhome.send_message
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. myhome.send_message">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-myhometurn_on_timed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. myhome.turn_on_timed
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. myhome.turn_on_timed">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-myhomesync_time" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. myhome.sync_time
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. myhome.sync_time">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-myhomestart_sending_instant_power" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. myhome.start_sending_instant_power
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. myhome.start_sending_instant_power">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-myhomesweep_bus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. myhome.sweep_bus
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. myhome.sweep_bus">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-myhomecalibrate_cover" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. myhome.calibrate_cover
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. myhome.calibrate_cover">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-myhomestop_cover_calibration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. myhome.stop_cover_calibration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. myhome.stop_cover_calibration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-myhomeset_cover_travel_time" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. myhome.set_cover_travel_time
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. myhome.set_cover_travel_time">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-myhomereset_cover_travel_time" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. myhome.reset_cover_travel_time
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. myhome.reset_cover_travel_time">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagnostics & Monitoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Diagnostics & Monitoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bus_monitor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lovelace Bus Monitor Card
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagnostics/repair-issues/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home Assistant Repairs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lovelace_recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dashboard Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../known_limitations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Known Limitations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../use_cases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use Cases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/anti-drift-safeguards/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Anti-Drift Sentinel System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../runtime_behaviour/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runtime Behaviour
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../supported_functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Supported Functions Matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../openwebnet-who-specifications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenWebNet Protocol & WHO Archive
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../protocol_conformance_matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Protocol Conformance Matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../f454-regression-checks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    F454 Regression Checks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quality_scale_plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quality Scale Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migration & Legacy
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Migration & Legacy
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../migration/upgrade-from-094/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrade from v0.9.4 to v2.0
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../migration/sdomotica_to_myhome/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migrating from SDomotica
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../migration/legacy-yaml/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Legacy YAML Configuration (< v0.9)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#services-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        📋 Services Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-myhomesend_message" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. myhome.send_message
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. myhome.send_message">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-myhometurn_on_timed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. myhome.turn_on_timed
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. myhome.turn_on_timed">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-myhomesync_time" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. myhome.sync_time
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. myhome.sync_time">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-myhomestart_sending_instant_power" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. myhome.start_sending_instant_power
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. myhome.start_sending_instant_power">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-myhomesweep_bus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. myhome.sweep_bus
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. myhome.sweep_bus">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-myhomecalibrate_cover" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. myhome.calibrate_cover
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. myhome.calibrate_cover">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-myhomestop_cover_calibration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. myhome.stop_cover_calibration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. myhome.stop_cover_calibration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-myhomeset_cover_travel_time" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. myhome.set_cover_travel_time
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. myhome.set_cover_travel_time">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-myhomereset_cover_travel_time" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. myhome.reset_cover_travel_time
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. myhome.reset_cover_travel_time">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="integration-services-reference">Integration Services Reference<a class="headerlink" href="#integration-services-reference" title="Permanent link">&para;</a></h1>
+<p>This document provides a comprehensive reference for all custom services registered by the <strong>MyHOME</strong> integration in Home Assistant.</p>
+<hr />
+<h2 id="services-summary">📋 Services Summary<a class="headerlink" href="#services-summary" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Service</th>
+<th style="text-align: left;">Target</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><a href="#myhomesend_message"><code>myhome.send_message</code></a></td>
+<td style="text-align: left;">Gateway</td>
+<td style="text-align: left;">Send an arbitrary, validated OpenWebNet frame to the SCS bus.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><a href="#myhometurn_on_timed"><code>myhome.turn_on_timed</code></a></td>
+<td style="text-align: left;"><code>light</code>, <code>switch</code></td>
+<td style="text-align: left;">Turn on an actuator with a hardware-offloaded SCS timer that turns off automatically even if Home Assistant reboots.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><a href="#myhomesync_time"><code>myhome.sync_time</code></a></td>
+<td style="text-align: left;">Gateway</td>
+<td style="text-align: left;">Synchronize the gateway internal clock with Home Assistant's local time.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><a href="#myhomestart_sending_instant_power"><code>myhome.start_sending_instant_power</code></a></td>
+<td style="text-align: left;"><code>sensor</code></td>
+<td style="text-align: left;">Request a temporary continuous stream of instant power readings from an energy meter.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><a href="#myhomesweep_bus"><code>myhome.sweep_bus</code></a></td>
+<td style="text-align: left;">Gateway</td>
+<td style="text-align: left;">Actively poll status across all subsystems to populate diagnostic buffers.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><a href="#myhomecalibrate_cover"><code>myhome.calibrate_cover</code></a></td>
+<td style="text-align: left;"><code>cover</code></td>
+<td style="text-align: left;">Measure a timed cover's up and down travel times on the bus and store them.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><a href="#myhomestop_cover_calibration"><code>myhome.stop_cover_calibration</code></a></td>
+<td style="text-align: left;">Gateway</td>
+<td style="text-align: left;">Stop the running calibration and cancel queued ones.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><a href="#myhomeset_cover_travel_time"><code>myhome.set_cover_travel_time</code></a></td>
+<td style="text-align: left;"><code>cover</code></td>
+<td style="text-align: left;">Store stopwatch-measured travel times without driving the cover.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><a href="#myhomereset_cover_travel_time"><code>myhome.reset_cover_travel_time</code></a></td>
+<td style="text-align: left;"><code>cover</code></td>
+<td style="text-align: left;">Forget measured / manual travel times; back to YAML or the default.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="1-myhomesend_message">1. <code>myhome.send_message</code><a class="headerlink" href="#1-myhomesend_message" title="Permanent link">&para;</a></h2>
+<p>Sends an arbitrary, valid OpenWebNet message through the gateway command session. The integration validates syntax, dispatches the frame, and logs the transaction to the Bus Monitor.</p>
+<h3 id="fields">Fields<a class="headerlink" href="#fields" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter</th>
+<th style="text-align: center;">Type</th>
+<th style="text-align: center;">Required</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;">Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>gateway</code></td>
+<td style="text-align: center;">string</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: left;">The MAC address of the target gateway.</td>
+<td style="text-align: left;"><code>"00:03:50:20:00:01"</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>message</code></td>
+<td style="text-align: center;">string</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: left;">Valid OpenWebNet frame ending with <code>##</code>.</td>
+<td style="text-align: left;"><code>"*1*0*0##"</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-yaml-call">Example YAML Call<a class="headerlink" href="#example-yaml-call" title="Permanent link">&para;</a></h3>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.send_message</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">data</span><span class="p">:</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">gateway</span><span class="p">:</span><span class="w"> </span><span class="s">"00:03:50:20:00:01"</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">"*1*0*0##"</span><span class="w"> </span><span class="c1"># General turn off all lights</span>
+</span></code></pre></div>
+<hr />
+<h2 id="2-myhometurn_on_timed">2. <code>myhome.turn_on_timed</code><a class="headerlink" href="#2-myhometurn_on_timed" title="Permanent link">&para;</a></h2>
+<p>Turns on a light or switch with a <strong>hardware-offloaded SCS timer</strong>. </p>
+<blockquote>
+<p>[!TIP]
+<strong>Why use this service?</strong> Standard Home Assistant timers (e.g. <code>delay: 00:02:00</code> followed by <code>light.turn_off</code>) will fail if Home Assistant restarts or crashes during the delay. <code>myhome.turn_on_timed</code> programs the hardware actuator itself to count down and power off autonomously on the physical bus.</p>
+</blockquote>
+<h3 id="fields_1">Fields<a class="headerlink" href="#fields_1" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter</th>
+<th style="text-align: center;">Type</th>
+<th style="text-align: center;">Required</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;">Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>duration</code></td>
+<td style="text-align: center;">float</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: left;">Total duration in seconds (0.5 to 918,000s).</td>
+<td style="text-align: left;"><code>120</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>hours</code></td>
+<td style="text-align: center;">integer</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: left;">Hours component (0–255).</td>
+<td style="text-align: left;"><code>0</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>minutes</code></td>
+<td style="text-align: center;">integer</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: left;">Minutes component (0–59).</td>
+<td style="text-align: left;"><code>5</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>seconds</code></td>
+<td style="text-align: center;">float</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: left;">Seconds component (0–59).</td>
+<td style="text-align: left;"><code>30</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>brightness</code></td>
+<td style="text-align: center;">integer</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: left;">Brightness level (1–255) for dimmable lights.</td>
+<td style="text-align: left;"><code>200</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>brightness_pct</code></td>
+<td style="text-align: center;">integer</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: left;">Brightness percentage (1–100%) for dimmable lights.</td>
+<td style="text-align: left;"><code>80</code></td>
+</tr>
+</tbody>
+</table>
+<p><em>(Note: You can specify <code>duration</code> directly, or specify custom <code>hours</code>/<code>minutes</code>/<code>seconds</code>).</em></p>
+<h3 id="example-yaml-call_1">Example YAML Call<a class="headerlink" href="#example-yaml-call_1" title="Permanent link">&para;</a></h3>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.turn_on_timed</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">target</span><span class="p">:</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">light.hallway_staircase</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nt">data</span><span class="p">:</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">minutes</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span><span class="nt">seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nt">brightness_pct</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">70</span>
+</span></code></pre></div>
+<hr />
+<h2 id="3-myhomesync_time">3. <code>myhome.sync_time</code><a class="headerlink" href="#3-myhomesync_time" title="Permanent link">&para;</a></h2>
+<p>Synchronizes the gateway's real-time clock (RTC) with Home Assistant's local time using <code>WHO = 13</code> dimension frames. This ensures scheduled events programmed directly inside physical gateways (e.g. MH200N/MH202 schedules) run in lockstep with real time.</p>
+<h3 id="fields_2">Fields<a class="headerlink" href="#fields_2" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter</th>
+<th style="text-align: center;">Type</th>
+<th style="text-align: center;">Required</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;">Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>gateway</code></td>
+<td style="text-align: center;">string</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: left;">Target gateway MAC address (defaults to all gateways).</td>
+<td style="text-align: left;"><code>"00:03:50:20:00:01"</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-yaml-call_2">Example YAML Call<a class="headerlink" href="#example-yaml-call_2" title="Permanent link">&para;</a></h3>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.sync_time</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">data</span><span class="p">:</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">gateway</span><span class="p">:</span><span class="w"> </span><span class="s">"00:03:50:20:00:01"</span>
+</span></code></pre></div>
+<hr />
+<h2 id="4-myhomestart_sending_instant_power">4. <code>myhome.start_sending_instant_power</code><a class="headerlink" href="#4-myhomestart_sending_instant_power" title="Permanent link">&para;</a></h2>
+<p>By default, MyHOME energy meters (F520, F521, F522, F523) transmit energy readings periodically to conserve bus bandwidth. Calling this service causes the meter to continuously stream high-frequency instant power updates for a defined duration.</p>
+<h3 id="fields_3">Fields<a class="headerlink" href="#fields_3" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter</th>
+<th style="text-align: center;">Type</th>
+<th style="text-align: center;">Required</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;">Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>entity_id</code></td>
+<td style="text-align: center;">string</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: left;">The power sensor entity ID.</td>
+<td style="text-align: left;"><code>"sensor.general_power"</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>duration</code></td>
+<td style="text-align: center;">integer</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: left;">Duration in seconds to keep streaming.</td>
+<td style="text-align: left;"><code>60</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-yaml-call_3">Example YAML Call<a class="headerlink" href="#example-yaml-call_3" title="Permanent link">&para;</a></h3>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.start_sending_instant_power</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">data</span><span class="p">:</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="s">"sensor.heat_pump_power"</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">duration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">120</span>
+</span></code></pre></div>
+<hr />
+<h2 id="5-myhomesweep_bus">5. <code>myhome.sweep_bus</code><a class="headerlink" href="#5-myhomesweep_bus" title="Permanent link">&para;</a></h2>
+<p>Actively queries status across all configured subsystems (lighting, automation, thermoregulation, and gateway diagnostics). It is used to refresh entity states and populate the in-band <strong>Bus Monitor</strong> with fresh data for troubleshooting.</p>
+<h3 id="fields_4">Fields<a class="headerlink" href="#fields_4" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter</th>
+<th style="text-align: center;">Type</th>
+<th style="text-align: center;">Required</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;">Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>gateway</code></td>
+<td style="text-align: center;">string</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: left;">Target gateway MAC address (defaults to all gateways).</td>
+<td style="text-align: left;"><code>"00:03:50:20:00:01"</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-yaml-call_4">Example YAML Call<a class="headerlink" href="#example-yaml-call_4" title="Permanent link">&para;</a></h3>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.sweep_bus</span>
+</span></code></pre></div>
+<hr />
+<h2 id="6-myhomecalibrate_cover">6. <code>myhome.calibrate_cover</code><a class="headerlink" href="#6-myhomecalibrate_cover" title="Permanent link">&para;</a></h2>
+<p>Measures a timed cover's travel times <strong>on the bus</strong> and stores them, replacing the guessed <code>travel_time</code>. The cover is driven fully <strong>up</strong> (so its position is known), then fully <strong>down</strong> (timed), then fully <strong>up</strong> again (timed). Covers of one gateway are calibrated <strong>one at a time</strong> — a single-session gateway cannot drive two motors reliably and overlapping runs would confuse the timing. The shutter moves for about three full travels; do not run it while the shutter must stay put.</p>
+<p>The measured values are the actuator's run times (motor start → actuator stop status). They equal the physical travel when the installer calibrated the actuator's run-time parameter, which is the usual case. An actuator left at its factory <strong>60 s run-time limit</strong> stops itself, not at the end stop: such a run ends at about 61 s and is <strong>refused</strong> (<code>failed</code>, nothing stored) as soon as it ends, whoever called the service. For that shutter, stop a run by hand (wall switch or the cover's Stop) once it reaches the end stop, read <code>last_run_seconds</code> from the cover's attributes and store it with <code>myhome.set_cover_travel_time</code>.</p>
+<p>The guard catches <strong>only that factory cutoff</strong> (a run ending in the 59–65 s window). An actuator whose run-time parameter the installer set longer than the physical travel — 30 s on a 14 s shutter, say — stops itself at 30 s just the same, and that 30 s is stored as the travel time: nothing on the bus tells it apart from a real end stop, only a stopwatch can. If the stored time is longer than the shutter visibly takes to move, time a run stopped by hand (<code>last_run_seconds</code>) or set <code>travel_time</code> manually with <code>myhome.set_cover_travel_time</code>.</p>
+<p>Results are stored in the config entry options (<code>cover_travel_times</code>), survive restarts and reinstalls, apply to discovered covers without any YAML, and show up as entity attributes: <code>travel_time_down</code>, <code>travel_time_up</code>, <code>calibration_source</code> (<code>measured</code> / <code>manual</code> / <code>yaml</code> / <code>default</code>), <code>calibrated_at</code>. Every run of a timed cover is measured the same way, calibration or not: <code>motion_started_at</code> is the motor-start anchor of the current run and <code>last_run_seconds</code> / <code>last_run_direction</code> / <code>last_run_ended_at</code> describe the last completed run (motor start → stop frame written or actuator stop status), so a run stopped by hand at the end stop gives the physical travel without the calibration service. Advanced covers (which report their position) are refused. Progress is published on the event bus as <code>myhome_cover_calibration</code> (<code>phase</code>: <code>start</code>, <code>run</code>, <code>done</code>, <code>failed</code>).</p>
+<p>The same action sits behind the <strong>Calibrate travel time</strong> button on every timed cover's device page, and the <strong>Calibrate all covers</strong> button on the gateway device.</p>
+<h3 id="fields_5">Fields<a class="headerlink" href="#fields_5" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter</th>
+<th style="text-align: center;">Type</th>
+<th style="text-align: center;">Required</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;">Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>entity_id</code></td>
+<td style="text-align: center;">target</td>
+<td style="text-align: center;">Yes</td>
+<td style="text-align: left;">One or more MyHOME cover entities (<code>all</code> for every cover).</td>
+<td style="text-align: left;"><code>cover.bedroom_shutter</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-yaml-call_5">Example YAML Call<a class="headerlink" href="#example-yaml-call_5" title="Permanent link">&para;</a></h3>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.calibrate_cover</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nt">target</span><span class="p">:</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.bedroom_shutter</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.kitchen_shutter</span>
+</span></code></pre></div>
+<hr />
+<h2 id="7-myhomestop_cover_calibration">7. <code>myhome.stop_cover_calibration</code><a class="headerlink" href="#7-myhomestop_cover_calibration" title="Permanent link">&para;</a></h2>
+<p>Stops the calibration that is running and cancels every cover still queued behind it. The moving cover receives a stop command, its calibration event reports <code>phase: failed</code> with <em>Calibration stopped by user</em>, and nothing is stored. Without a <code>gateway</code> every gateway's queue is cleared. Also available as the <strong>Stop</strong> button in the card's Covers panel and as an entity service on any cover (targets that cover's gateway).</p>
+<h3 id="fields_6">Fields<a class="headerlink" href="#fields_6" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter</th>
+<th style="text-align: center;">Type</th>
+<th style="text-align: center;">Required</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;">Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>gateway</code></td>
+<td style="text-align: center;">string</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: left;">Gateway MAC address; all gateways when omitted.</td>
+<td style="text-align: left;"><code>00:03:50:20:00:01</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-yaml-call_6">Example YAML Call<a class="headerlink" href="#example-yaml-call_6" title="Permanent link">&para;</a></h3>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.stop_cover_calibration</span>
+</span></code></pre></div>
+<hr />
+<h2 id="8-myhomeset_cover_travel_time">8. <code>myhome.set_cover_travel_time</code><a class="headerlink" href="#8-myhomeset_cover_travel_time" title="Permanent link">&para;</a></h2>
+<p>Stores the physical travel times of a timed cover <strong>by hand</strong> — the manual alternative to <code>calibrate_cover</code> for gateways that cannot calibrate reliably (MH200 / MH200N single-session pacing, or actuators with the 60 s safety cut-off). Measure the closing and opening runs with a stopwatch (the card's Covers panel has one built in) and pass them here. <code>travel_time</code> fills whichever direction has no explicit value. Values must lie between 1 s and 180 s; anything else is rejected before the entity is touched. The result is stored exactly like a measured calibration (<code>calibration_source: manual</code>).</p>
+<h3 id="fields_7">Fields<a class="headerlink" href="#fields_7" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter</th>
+<th style="text-align: center;">Type</th>
+<th style="text-align: center;">Required</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;">Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>entity_id</code></td>
+<td style="text-align: center;">target</td>
+<td style="text-align: center;">Yes</td>
+<td style="text-align: left;">One or more MyHOME timed cover entities.</td>
+<td style="text-align: left;"><code>cover.bedroom_shutter</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>travel_time</code></td>
+<td style="text-align: center;">float</td>
+<td style="text-align: center;">No*</td>
+<td style="text-align: left;">Seconds for a full travel, both directions.</td>
+<td style="text-align: left;"><code>24.5</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>travel_time_down</code></td>
+<td style="text-align: center;">float</td>
+<td style="text-align: center;">No*</td>
+<td style="text-align: left;">Seconds for a full closing run.</td>
+<td style="text-align: left;"><code>24.5</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>travel_time_up</code></td>
+<td style="text-align: center;">float</td>
+<td style="text-align: center;">No*</td>
+<td style="text-align: left;">Seconds for a full opening run.</td>
+<td style="text-align: left;"><code>26.0</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>copied_from</code></td>
+<td style="text-align: center;">entity id</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: left;">The cover the times were taken from; <code>calibration_source</code> becomes <code>copied</code> and <code>copied_from</code> is exposed as an attribute.</td>
+<td style="text-align: left;"><code>cover.living_room_west</code></td>
+</tr>
+</tbody>
+</table>
+<p>* at least one of the time fields is required.</p>
+<h3 id="example-yaml-call_7">Example YAML Call<a class="headerlink" href="#example-yaml-call_7" title="Permanent link">&para;</a></h3>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.set_cover_travel_time</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nt">target</span><span class="p">:</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.bedroom_shutter</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="nt">data</span><span class="p">:</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span><span class="nt">travel_time_down</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">24.5</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span><span class="nt">travel_time_up</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">26.0</span>
+</span></code></pre></div>
+<hr />
+<h2 id="9-myhomereset_cover_travel_time">9. <code>myhome.reset_cover_travel_time</code><a class="headerlink" href="#9-myhomereset_cover_travel_time" title="Permanent link">&para;</a></h2>
+<p>Forgets the measured or manually set travel times of a timed cover. The cover returns to the <code>travel_time</code> from <code>myhome.yaml</code> when one is configured, otherwise to the 25 s default, and <code>calibration_source</code> reports <code>yaml</code> / <code>default</code> again.</p>
+<h3 id="fields_8">Fields<a class="headerlink" href="#fields_8" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter</th>
+<th style="text-align: center;">Type</th>
+<th style="text-align: center;">Required</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;">Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>entity_id</code></td>
+<td style="text-align: center;">target</td>
+<td style="text-align: center;">Yes</td>
+<td style="text-align: left;">One or more MyHOME timed cover entities.</td>
+<td style="text-align: left;"><code>cover.bedroom_shutter</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-yaml-call_8">Example YAML Call<a class="headerlink" href="#example-yaml-call_8" title="Permanent link">&para;</a></h3>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.reset_cover_travel_time</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nt">target</span><span class="p">:</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.bedroom_shutter</span>
+</span></code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
