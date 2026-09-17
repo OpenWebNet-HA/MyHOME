@@ -1,6 +1,6 @@
 # Shared MyHOME panel contract — implementation and proposal
 
-**Updated: 2026-09-17, panel 0.26.0.** The shared backend now includes:
+**Updated: 2026-09-17, panel 0.27.0.** The shared backend now includes:
 storage v6 (manual profile edits without a fictitious origin), migration of native v2 fallbacks, one directional resolver, native
 service persistence through the shared transaction, gateway-wide read API,
 per-direction personal overrides and confirmed shared-profile impact previews.
@@ -11,7 +11,9 @@ inside WHO 2, reusing the same shell and cover editor. It shows the one-to-many
 relationship without adding a mandatory step to single-cover calibration. Direct
 profile-level editing, duplication and deletion are implemented in 0.26.0 through
 [the gateway management endpoint](panel-websocket-api.md#gateway-profile-management-0260),
-with exact-proposal confirmation and unchanged personal overrides.
+with exact-proposal confirmation and unchanged personal overrides. Version 0.27.0
+adds atomic multi-cover assignment from the same profile view, with complete
+selection validation and a single confirmed transaction.
 See [implemented schema, migration, API and limits](cover-settings-backend.md).
 The agreed proposal is pinned to [51ffaf7](https://github.com/Interstellar0verdrive/MyHOME-stability/blob/51ffaf73a3da3ac09246ee199751e613217e0a78/docs/calibration-contract-proposal.md).
 This is a review of that document; the historical fork-code comparison below stays

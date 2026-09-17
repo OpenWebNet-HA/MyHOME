@@ -544,6 +544,7 @@ class MyHomePanel extends HTMLElement {
       this._profileEditor.close();
       this._catalogueEditor.open({ host: this.shadowRoot.getElementById("dialog-host"), hass: this._hass,
         entryId: target.dataset.entry, profileId: target.dataset.id, action: target.dataset.operation,
+        entities: this._data.entities, addressDetails: (entity) => this._addressDetails(entity),
         t: (key) => this._t(key), onSaved: () => { this._profileList.refresh();
           this.shadowRoot.getElementById("toast").textContent = this._t("saved"); } });
     } else if (target.dataset.action === "cover-view") {

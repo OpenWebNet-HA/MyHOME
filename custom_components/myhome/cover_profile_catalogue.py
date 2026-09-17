@@ -46,9 +46,13 @@ async def manage_profile(hass: Any, msg: dict[str, Any]) -> dict[str, Any]:
         if profile_id not in store.data["profiles"]:
             raise ProfileError("profile_not_found")
         allowed = {"preview": {"profile"}, "update": {"profile", "confirmation"},
+                   "preview_assign": {"entity_ids"}, "assign": {"entity_ids", "confirmation"},
                    "duplicate": {"name"}, "delete": set()}
         if action not in allowed or set(msg) - {"id", "type", "entry_id", "profile_id", "revision", "action"} - allowed[action]:
             raise ProfileError("invalid_profile")
+        if action in ("preview_assign", "assign"):
+            from .cover_profile_assignment import assign_profiles
+            return await assign_profiles(hass, store, entry, msg)
         data = copy.deepcopy(store.data)
         previous = data["profiles"][profile_id]
         followers = [unique for unique, assigned in data["assignments"].items() if assigned == profile_id]
@@ -86,7 +90,8 @@ async def manage_profile(hass: Any, msg: dict[str, Any]) -> dict[str, Any]:
 @websocket_command({
     vol.Required("type"): WS_MANAGE, vol.Required("entry_id"): str,
     vol.Required("revision"): vol.All(int, vol.Range(min=0)), vol.Required("profile_id"): str,
-    vol.Required("action"): vol.In(["preview", "update", "duplicate", "delete"]),
+    vol.Required("action"): vol.In(["preview", "update", "duplicate", "delete", "preview_assign", "assign"]),
+    vol.Optional("entity_ids"): vol.All([str], vol.Length(min=1, max=200), vol.Unique()),
     vol.Optional("profile"): PROFILE, vol.Optional("name"): NAME, vol.Optional("confirmation"): str,
 })
 @require_admin

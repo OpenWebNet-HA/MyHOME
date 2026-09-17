@@ -499,3 +499,10 @@ button.danger-solid:hover { background: color-mix(in srgb, var(--panel-error) 85
 #catalogue-form fieldset:empty { display: none; }
 #catalogue-impact { overflow-wrap: anywhere; margin-bottom: 14px; }
 #catalogue-impact li { margin: 10px 0; }
+
+.catalogue-candidates { max-height: 40vh; overflow-y: auto; }
+.catalogue-candidate { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--divider-color); overflow-wrap: anywhere; }
+.catalogue-candidate[hidden] { display: none; }
+.catalogue-candidate input[type="checkbox"] { width: 22px; height: 22px; min-height: 22px; padding: 0; flex-shrink: 0; accent-color: var(--panel-accent); }
+.catalogue-candidate > span { min-width: 0; }
+.catalogue-candidate p { margin: 4px 0; }

@@ -52,8 +52,9 @@ export class ProfileCatalogueEditor {
       if (!this._current(generation)) return;
       const profile = data.profiles.find((item) => item.id === profileId);
       if (data.entry_id !== entryId || !profile || !data.capabilities?.profile_management) throw { code: "profile_not_found" };
+      if (action === "assign" && !data.capabilities?.profile_assignment) throw { code: "invalid_selection" };
       this._revision = data.revision;
-      this._renderForm(profile);
+      this._renderForm(profile, data);
       if (this._noticed > data.revision) this._markStale();
     } catch (error) {
       if (this._current(generation)) {
@@ -83,20 +84,50 @@ export class ProfileCatalogueEditor {
     this._controls();
   }
 
-  _renderForm(profile) {
+  _address(entityId) {
+    const entity = this._context.entities?.find((item) => item.entity_id === entityId && item.entry_id === this._context.entryId);
+    return entity && this._context.addressDetails ? this._context.addressDetails(entity) : `<p class="muted">${esc(entityId)}</p>`;
+  }
+
+  _selection() {
+    return [...this.dialog.querySelectorAll('[name="assignment"]')].filter((input) => input.checked && !input.disabled).map((input) => input.value);
+  }
+
+  _candidates(profile, data) {
+    const { t } = this._context;
+    return `<label>${esc(t("catalogueSearch"))}<input name="assignment_filter" type="search"></label>
+      <p id="catalogue-selection-count" class="muted" aria-live="polite"></p>
+      <div class="catalogue-candidates">${data.covers.map((cover) => {
+        const assigned = cover.profile_id === profile.id;
+        const reason = assigned ? t("catalogueAlreadyAssigned") : cover.assignment_reason ? t(`profileError_${cover.assignment_reason}`) : "";
+        const current = data.profiles.find((item) => item.id === cover.profile_id)?.name || t("catalogueNoProfile");
+        return `<label class="catalogue-candidate"><input type="checkbox" name="assignment" value="${esc(cover.entity_id)}" ${assigned ? "checked" : ""} ${assigned || cover.assignment_reason !== null ? "disabled" : ""}>
+          <span><strong>${esc(cover.name)}</strong>${this._address(cover.entity_id)}<span class="muted">${esc(current)}${reason ? ` · ${esc(reason)}` : ""}</span></span></label>`;
+      }).join("") || `<p>${esc(t("catalogueNoCovers"))}</p>`}</div>`;
+  }
+
+  _renderForm(profile, data) {
     const { action, t } = this._context;
-    const edit = action === "edit", duplicate = action === "duplicate";
+    const edit = action === "edit", duplicate = action === "duplicate", assign = action === "assign";
     this._inUse = action === "delete" && profile.assigned_to.length > 0;
     this.dialog.querySelector("#catalogue-body").innerHTML = `<h3>${esc(profile.name)}</h3>
       <p class="muted">${profile.assigned_to.length} ${esc(t("profileAssociatedCovers"))} · ${esc(profile.opening_time)} / ${esc(profile.closing_time)} s</p>
       <form id="catalogue-form"><fieldset class="profile-section">
+        ${assign ? this._candidates(profile, data) : ""}
         ${edit || duplicate ? `<label>${esc(t("profileName"))}<input name="profile_name" required maxlength="64" value="${esc(duplicate ? `${profile.name.slice(0, 50)} ${t("catalogueCopySuffix")}` : profile.name)}"></label>` : ""}
         ${edit ? `<div class="profile-times">${["opening", "closing"].map((direction) => `<label>${esc(t(direction === "opening" ? "profileOpeningTime" : "profileClosingTime"))}<input name="${direction}_time" type="number" required min="1" max="600" step="any" value="${esc(profile[`${direction}_time`])}"></label>`).join("")}</div>` : ""}
-      </fieldset><p class="muted">${esc(t(edit ? "catalogueEditHelp" : duplicate ? "catalogueDuplicateHelp" : "catalogueDeleteHelp"))}</p>
+      </fieldset><p class="muted">${esc(t(assign ? "catalogueAssignHelp" : edit ? "catalogueEditHelp" : duplicate ? "catalogueDuplicateHelp" : "catalogueDeleteHelp"))}</p>
       <div id="catalogue-impact" class="notice" hidden></div>
       <button type="submit" class="primary" id="catalogue-submit">${esc(t(edit ? "cataloguePreview" : duplicate ? "catalogueDuplicate" : "catalogueDeleteConfirm"))}</button></form>`;
     const form = this.dialog.querySelector("form");
-    const invalidate = () => { this._preview = null; this.dialog.querySelector("#catalogue-impact").hidden = true; this._controls(); };
+    const invalidate = (event) => {
+      if (event.target.name === "assignment_filter") {
+        const query = event.target.value.trim().toLocaleLowerCase();
+        form.querySelectorAll(".catalogue-candidate").forEach((row) => { row.hidden = !row.textContent.toLocaleLowerCase().includes(query); });
+        return;
+      }
+      this._preview = null; this.dialog.querySelector("#catalogue-impact").hidden = true; this._controls();
+    };
     form.addEventListener("input", invalidate); form.addEventListener("change", invalidate);
     form.onsubmit = (event) => { event.preventDefault(); if (form.reportValidity()) this._submit(); };
     if (this._inUse) this._error({ code: "profile_in_use" });
@@ -107,7 +138,12 @@ export class ProfileCatalogueEditor {
     const form = this.dialog.querySelector("form"); if (!form) return;
     form.querySelector("fieldset").disabled = this._busy;
     form.querySelector('[type="submit"]').disabled = this._busy || this._stale || this._inUse;
-    if (this._context.action === "edit") form.querySelector('[type="submit"]').textContent = this._context.t(this._preview ? "catalogueConfirm" : "cataloguePreview");
+    if (["edit", "assign"].includes(this._context.action)) form.querySelector('[type="submit"]').textContent = this._context.t(this._preview ? "catalogueConfirm" : "cataloguePreview");
+    if (this._context.action === "assign") {
+      const count = this._selection().length;
+      form.querySelector("#catalogue-selection-count").textContent = `${count} ${this._context.t("catalogueSelected")}`;
+      form.querySelector('[type="submit"]').disabled ||= count === 0 || count > 200;
+    }
   }
 
   _error(error) {
@@ -118,10 +154,11 @@ export class ProfileCatalogueEditor {
 
   _impact(preview) {
     const { t } = this._context, box = this.dialog.querySelector("#catalogue-impact");
-    box.innerHTML = `<p><strong>${esc(preview.before.name)} → ${esc(preview.after.name)}</strong></p>
-      <p>${esc(preview.before.opening_time)} / ${esc(preview.before.closing_time)} s → ${esc(preview.after.opening_time)} / ${esc(preview.after.closing_time)} s</p>
-      ${preview.followers.length ? `<ul>${preview.followers.map((item) => `<li><strong>${esc(item.name || item.entity_id || t("profileMissingCover"))}</strong>
-        ${item.available ? "" : ` · ${esc(t("profileUnavailableFollower"))}`}<br>${["opening", "closing"].map((direction) => {
+    const assign = this._context.action === "assign", followers = assign ? preview.targets : preview.followers;
+    box.innerHTML = `${assign ? `<p><strong>${esc(preview.profile_name)}</strong> · ${followers.length} ${esc(t("catalogueSelected"))}</p>` : `<p><strong>${esc(preview.before.name)} → ${esc(preview.after.name)}</strong></p>
+      <p>${esc(preview.before.opening_time)} / ${esc(preview.before.closing_time)} s → ${esc(preview.after.opening_time)} / ${esc(preview.after.closing_time)} s</p>`}
+      ${followers.length ? `<ul>${followers.map((item) => `<li><strong>${esc(item.name || item.entity_id || t("profileMissingCover"))}</strong>
+        ${assign ? `${this._address(item.entity_id)}${esc(item.previous_profile_name || t("catalogueNoProfile"))} → ${esc(preview.profile_name)}` : item.available ? "" : ` · ${esc(t("profileUnavailableFollower"))}`}<br>${["opening", "closing"].map((direction) => {
           const change = item.changes[direction];
           return `${esc(t(direction === "opening" ? "profileOpeningTime" : "profileClosingTime"))}: ${esc(change.before)} → ${esc(change.after)} s${change.overridden ? ` · ${esc(t("calPersonalRetained"))}` : ""}`;
         }).join("<br>")}</li>`).join("")}</ul>` : `<p>${esc(t("profileListUnused"))}</p>`}`;
@@ -132,17 +169,21 @@ export class ProfileCatalogueEditor {
     if (this._busy || this._stale || this._inUse) return;
     const generation = this._generation, { hass, entryId, profileId, action, onSaved } = this._context;
     const form = this.dialog.querySelector("form");
+    if (action === "assign" && (this._selection().length === 0 || this._selection().length > 200)) return;
     let message = { type: "myhome/cover_profiles/manage", entry_id: entryId, profile_id: profileId, revision: this._revision };
     if (action === "edit") message = this._preview
       ? { ...this._preview.message, action: "update", confirmation: this._preview.confirmation }
       : { ...message, action: "preview", profile: { name: form.elements.profile_name.value.trim(),
         opening_time: Number(form.elements.opening_time.value), closing_time: Number(form.elements.closing_time.value) } };
+    else if (action === "assign") message = this._preview
+      ? { ...this._preview.message, action: "assign", confirmation: this._preview.confirmation }
+      : { ...message, action: "preview_assign", entity_ids: this._selection() };
     else message = { ...message, action, ...(action === "duplicate" ? { name: form.elements.profile_name.value.trim() } : {}) };
     this._busy = true; this.dialog.querySelector("#catalogue-error").hidden = true; this._controls();
     try {
       const result = await hass.callWS(message);
       if (!this._current(generation)) return;
-      if (message.action === "preview") {
+      if (["preview", "preview_assign"].includes(message.action)) {
         if (this._stale) return;
         this._preview = { message, confirmation: result.confirmation }; this._impact(result);
       } else { this.close(); onSaved(); }

@@ -1,13 +1,46 @@
 # MyHOME panel API: implemented reference
 
-> Current update — panel 0.26.0: [shared cover settings](cover-settings-backend.md)
-> specifies storage v5, export v3 and `myhome/cover_profiles/overview` (schema v1).
+> Current update — panel 0.27.0: [shared cover settings](cover-settings-backend.md)
+> specifies storage v6, export v3 and `myhome/cover_profiles/overview` (schema v1).
 > Partial guided calibration now uses resolved cover settings without requiring
 > an assigned profile (see the single-direction extension below).
 > Write actions `overrides`, `preview` and `update_shared` add personal values
 > and revision-bound impact confirmation; their complete contract is linked above.
 > Existing endpoints remain available; native writes use the shared store and revision. Earlier release descriptions below remain historical where superseded.
 
+
+## Multi-cover profile assignment (0.27.0)
+
+The existing admin-only `myhome/cover_profiles/manage` endpoint adds two actions:
+
+| Action | Additional fields | Result |
+| --- | --- | --- |
+| `preview_assign` | `entity_ids`: 1–200 distinct cover entity IDs | `entry_id`, `revision`, `profile_id`, `profile_name`, `targets`, `confirmation`; no mutation |
+| `assign` | The same `entity_ids` plus `confirmation` | One atomic write, returning `entry_id`, new `revision`, `profile_id`, sorted `entity_ids` |
+
+Both require the existing common `entry_id`, `revision`, `profile_id` fields.
+Each preview target includes `entity_id`, registry `name`, nullable
+`previous_profile_id` / `previous_profile_name`, and directional `changes`
+(`before`, `after`, `overridden`). Values are resolved by the backend, including
+native fallbacks, configured defaults and retained personal overrides. The token
+binds the sorted selection, registry unique identities, preview and saved revision.
+Reordering the same selection is harmless; changing targets or resolved values
+requires a fresh preview. Internal identities are not exposed in the response.
+
+Selection membership, gateway ownership, loaded/enabled state, availability,
+standard timed-cover support and calibration eligibility are checked again before
+commit. There are no partial successes. Missing/foreign targets use
+`target_not_found`; malformed or repeated selections use `invalid_selection`
+(or WebSocket `invalid_format` when rejected by the command schema). Eligibility
+uses `cover_unavailable`, `advanced_cover` or `calibration_busy`. A panel calibration
+reservation blocks all catalogue writes. Existing revision/storage errors apply.
+No override, provenance, native fallback, unselected assignment or profile data is
+modified. Running motion retains existing pending-application behavior.
+
+Overview advertises `capabilities.profile_assignment: true` and adds nullable
+`assignment_reason` to each cover. Null means currently eligible; the backend
+always rechecks rather than relying on this UI hint. Storage v6 and export v3
+remain unchanged.
 
 ## Gateway profile management (0.26.0)
 

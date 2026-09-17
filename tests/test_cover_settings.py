@@ -155,7 +155,7 @@ async def test_overview_runtime_provenance_offline_advanced_and_gateway_isolatio
     assert result["model"] == "linear_time" and result["scaling"] == "unscaled"
     assert result["accuracy"] == {"kind": "not_measured"}
     assert result["capabilities"] == {"height_scaling": False, "nonlinear": False,
-                                      "profile_management": True, "override_write": True, "shared_profile_write": True}
+                                      "profile_assignment": True, "profile_management": True, "override_write": True, "shared_profile_write": True}
     assert len(result["covers"]) == 2
     assert len((await overview(hass, plant.entries[1].entry_id))["covers"]) == 1
     assert "00:03:50" not in json.dumps(result).replace(cover.entity_id, "").replace(plant.covers[1].entity_id, "")

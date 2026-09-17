@@ -1,6 +1,14 @@
 /** Panel strings are independent from Config Flow / Options Flow schemas. */
 export const translations = {
   en: {
+    catalogueAssign: "Assign to covers",
+    catalogueTitle_assign: "Assign profile to covers",
+    catalogueAssignHelp: "Select up to 200 covers from this gateway. Preview and confirm all assignments together. Personal values and unselected covers remain unchanged. Moving covers apply the new timing after stopping.",
+    catalogueSearch: "Search covers (name or address)",
+    catalogueSelected: "covers selected",
+    catalogueAlreadyAssigned: "Already assigned",
+    catalogueNoProfile: "No profile",
+    catalogueNoCovers: "No covers on this gateway",
     catalogueManualOrigin: "Manual profile edit",
     catalogueReload: "Reload profile (discard draft)",
     catalogueConfirm: "Confirm changes",
@@ -240,6 +248,14 @@ export const translations = {
     unavailable: "Unavailable", hidden: "Hidden", state: "State", device: "Device", firmware: "Firmware",
   },
   it: {
+    catalogueAssign: "Associa a tapparelle",
+    catalogueTitle_assign: "Associa profilo alle tapparelle",
+    catalogueAssignHelp: "Seleziona fino a 200 tapparelle di questo gateway. Visualizza e conferma tutte le associazioni insieme. I valori personali e le tapparelle non selezionate restano invariati. Quelle in movimento applicano i nuovi tempi dopo l’arresto.",
+    catalogueSearch: "Cerca tapparelle (nome o indirizzo)",
+    catalogueSelected: "tapparelle selezionate",
+    catalogueAlreadyAssigned: "Già associata",
+    catalogueNoProfile: "Nessun profilo",
+    catalogueNoCovers: "Nessuna tapparella su questo gateway",
     catalogueManualOrigin: "Modifica manuale del profilo",
     catalogueReload: "Ricarica profilo (scarta bozza)",
     catalogueConfirm: "Conferma modifiche",

@@ -1271,7 +1271,7 @@ test("refreshing session availability preserves a profile draft at the same revi
 });
 
 function profileOverview(entry_id) {
-  return { entry_id, revision: 3, capabilities: { profile_management: true },
+  return { entry_id, revision: 3, capabilities: { profile_management: true, profile_assignment: true },
     profiles: entry_id === "one" ? [{ id: "timed", name: "Alluminio", opening_time: 35, closing_time: 40, assigned_to: ["cover.shutter"] }] : [],
     covers: [{ entity_id: "cover.shutter", name: "Tapparella", available: true, overrides: {},
       effective: { opening: { value: 35 }, closing: { value: 40 } } }] };
@@ -1368,4 +1368,15 @@ test("profile-card actions open the gateway editor and protect associated profil
   assert.deepEqual(requests, [{ type: 'myhome/cover_profiles/manage', entry_id: 'one', profile_id: 'timed', revision: 3,
     action: 'duplicate', name: 'Independent copy' }]);
   assert.equal(root.querySelector('dialog'), null);
+});
+
+
+test("profile assignment action uses the existing modal and includes inventory addresses", async () => {
+  const { root } = await mountSharedProfiles();
+  root.querySelector('[data-action="cover-view"][data-id="profiles"]').click(); await tick();
+  root.querySelector('[data-action="toggle-shared-profile"]').click();
+  root.querySelector('[data-operation="assign"]').click(); await tick();
+  assert.ok(root.querySelector('#catalogue-form [name="assignment"]'));
+  assert.match(root.querySelector('#catalogue-body').textContent, /Indirizzo/);
+  assert.equal(root.querySelector('#profile-calibrate'), null);
 });

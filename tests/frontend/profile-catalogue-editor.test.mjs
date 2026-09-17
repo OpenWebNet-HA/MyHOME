@@ -127,3 +127,72 @@ test('fallback and visibility checks detect missed changes without replacing dra
   assert.equal(host.querySelector('[name="profile_name"]').value, 'Keep this');
   assert.equal(host.querySelector('#catalogue-submit').disabled, true);
 });
+
+const assignOverview = () => overview({ capabilities: { profile_management: true, profile_assignment: true }, profiles: [profile, { ...profile, id: 'old', name: 'Legno' }], covers: [
+  { entity_id: 'cover.one', name: 'Già presente', profile_id: 'shared', assignment_reason: null },
+  { entity_id: 'cover.two', name: '<img src=x> Cucina', profile_id: 'old', assignment_reason: null },
+  { entity_id: 'cover.three', name: 'Camera', profile_id: null, assignment_reason: null },
+  { entity_id: 'cover.offline', name: 'Offline', profile_id: null, assignment_reason: 'cover_unavailable' },
+  { entity_id: 'cover.advanced', name: 'Advanced', profile_id: null, assignment_reason: 'advanced_cover' },
+] });
+const assignedPreview = { profile_name: 'Alluminio', confirmation: 'assign-token', targets: [
+  { entity_id: 'cover.two', name: '<img src=x> Cucina', previous_profile_name: 'Legno', changes: { opening: { before: 12, after: 12, overridden: true }, closing: { before: 45, after: 30 } } },
+  { entity_id: 'cover.three', name: 'Camera', previous_profile_name: null, changes: { opening: { before: 30, after: 20 }, closing: { before: 30, after: 30 } } },
+] };
+const select = (host, id, checked = true) => {
+  const field = host.querySelector(`[name="assignment"][value="${id}"]`); field.checked = checked;
+  field.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+};
+
+test('multi-cover assignment displays eligibility and preview, then confirms the exact selection', async () => {
+  const { host, calls, counts } = await mount({ action: 'assign', read: assignOverview,
+    call: message => message.action === 'preview_assign' ? assignedPreview : { revision: 5 } });
+  assert.equal(host.querySelector('#catalogue-submit').disabled, true);
+  for (const id of ['cover.one', 'cover.offline', 'cover.advanced']) assert.equal(host.querySelector(`[value="${id}"]`).disabled, true);
+  assert.equal(host.querySelector('img'), null);
+  select(host, 'cover.two'); select(host, 'cover.three');
+  assert.match(host.querySelector('#catalogue-selection-count').textContent, /^2 /);
+  submit(host); await tick();
+  assert.deepEqual(calls.at(-1).entity_ids, ['cover.two', 'cover.three']);
+  assert.equal(calls.at(-1).action, 'preview_assign');
+  assert.equal(counts().saved, 0);
+  assert.match(host.querySelector('#catalogue-impact').textContent, /Legno → Alluminio/);
+  assert.match(host.querySelector('#catalogue-impact').textContent, /valore personale conservato/);
+  assert.equal(host.querySelector('#catalogue-impact img'), null);
+  submit(host); await tick();
+  assert.equal(calls.at(-1).action, 'assign'); assert.equal(calls.at(-1).confirmation, 'assign-token');
+  assert.deepEqual(calls.at(-1).entity_ids, ['cover.two', 'cover.three']);
+  assert.equal(counts().saved, 1);
+});
+
+test('search retains hidden selections, selection changes invalidate preview and empty selection cannot submit', async () => {
+  const { host, calls } = await mount({ action: 'assign', read: assignOverview, call: () => assignedPreview });
+  submit(host); await tick(); assert.equal(calls.length, 1);
+  select(host, 'cover.two'); submit(host); await tick();
+  input(host, 'assignment_filter', 'Camera');
+  assert.equal(host.querySelector('[value="cover.two"]').closest('label').hidden, true);
+  assert.equal(host.querySelector('#catalogue-impact').hidden, false);
+  select(host, 'cover.three'); assert.equal(host.querySelector('#catalogue-impact').hidden, true);
+  submit(host); await tick(); assert.equal(calls.at(-1).action, 'preview_assign');
+  assert.deepEqual(calls.at(-1).entity_ids, ['cover.two', 'cover.three']);
+});
+
+test('failed assignment keeps selection and requires another preview', async () => {
+  const { host, calls } = await mount({ action: 'assign', read: assignOverview,
+    call: message => { if (message.action === 'preview_assign') return assignedPreview; throw { code: 'cover_unavailable' }; } });
+  select(host, 'cover.two'); submit(host); await tick(); submit(host); await tick();
+  assert.equal(host.querySelector('[value="cover.two"]').checked, true);
+  assert.equal(host.querySelector('#catalogue-impact').hidden, true);
+  assert.match(host.querySelector('#catalogue-error').textContent, /gateway/);
+  submit(host); await tick(); assert.equal(calls.at(-1).action, 'preview_assign');
+});
+
+test('remote changes during assignment preview cannot enable confirmation', async () => {
+  const pending = deferred();
+  const { host, event } = await mount({ action: 'assign', read: assignOverview, call: () => pending.promise });
+  select(host, 'cover.two'); submit(host); event({ entry_id: 'one', revision: 5 });
+  pending.resolve(assignedPreview); await tick();
+  assert.equal(host.querySelector('#catalogue-submit').disabled, true);
+  assert.equal(host.querySelector('[value="cover.two"]').checked, true);
+  assert.equal(host.querySelector('#catalogue-impact').hidden, true);
+});

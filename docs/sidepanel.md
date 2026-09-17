@@ -15,6 +15,30 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Assign a profile to multiple covers (0.27.0)
+
+Expanded WHO 2 profile cards offer **Assign to covers** in the existing profile
+management dialog. Select covers from that profile's gateway, search by name or
+A-PL, and preview the complete selection before confirming once. Already assigned
+covers remain marked and disabled. Unavailable, disabled, advanced-position and
+calibrating covers show why they cannot be selected. The selection starts empty;
+filtering the list retains checked covers and their count.
+
+The preview shows each cover's current profile, destination profile and configured
+opening/closing times before and after assignment. Personal directional values
+remain in place, with an explicit indication when they mask the profile. Changing
+the selection invalidates the preview. Covers not selected retain their current
+assignments; this action does not remove associations or edit the profile itself.
+
+The backend validates the entire selection (1–200 distinct timed covers on the
+same loaded gateway) during both preview and confirmation. One unavailable,
+removed, disabled, advanced or calibrating member rejects the entire request.
+Confirmation binds the exact selection, registry identities, resolved values and
+saved revision. A concurrent change requires a fresh preview. All associations
+are saved in one atomic transaction and publish one revision; a failed save
+publishes none. Moving covers apply pending timing only after stopping. No bus
+movement commands are sent. Storage remains v6 and export v3.
+
 ## Profile management (0.26.0)
 
 Expanded WHO 2 profile cards now offer **Edit**, **Duplicate** and **Delete**.
@@ -74,8 +98,7 @@ the current cover editor for assignment, overrides, profile editing or calibrati
 
 The original 0.25.0 increment provided overview/navigation, with writes through
 the existing cover editor and its shared-change preview/confirmation. Version
-0.26.0 adds the direct profile operations described above. Multi-cover assignment
-controls remain outside this increment; no second calibration flow is introduced.
+0.26.0 adds the direct profile operations described above. Version 0.27.0 adds multi-cover assignment; no second calibration flow is introduced.
 
 With all gateways selected, profile groups are separate and keyed by gateway plus
 profile ID. Search matches profile names, cover names/IDs, areas and A-PL. Area

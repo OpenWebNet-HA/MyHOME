@@ -12,6 +12,7 @@ from homeassistant.components.websocket_api.decorators import (
 from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
+from .cover_profile_assignment import assignment_reason
 from .cover_profiles import WS_OVERVIEW, ProfileError, get_store, public_settings, respond
 from .cover_settings import MODEL
 
@@ -32,6 +33,7 @@ async def overview(hass: Any, entry_id: str) -> dict[str, Any]:
             cover = store.covers.get(unique)
             configured = public_settings(store, record, records, active=False)
             covers.append({"entity_id": record.entity_id,
+                           "assignment_reason": assignment_reason(entry, record, cover, store),
                            "name": record.name or record.original_name or record.entity_id,
                            "profile_id": store.data["assignments"].get(unique),
                            "available": bool(cover and cover.available and not record.disabled_by),
@@ -55,6 +57,7 @@ async def overview(hass: Any, entry_id: str) -> dict[str, Any]:
                 "storage_version": 6, "model": MODEL, "scaling": "unscaled",
                 "accuracy": {"kind": "not_measured"},
                 "capabilities": {"height_scaling": False, "nonlinear": False,
+                                 "profile_assignment": True,
                                  "profile_management": True, "override_write": True, "shared_profile_write": True},
                 "profiles": profiles, "covers": covers}
 
