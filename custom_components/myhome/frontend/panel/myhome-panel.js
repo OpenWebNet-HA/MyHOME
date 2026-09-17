@@ -5,10 +5,11 @@ const assetUrl = (name) => {
   url.search = new URL(import.meta.url).search;
   return url.href;
 };
-const [{ translations }, model, { escapeHtml, replacePreservingFocus }, { BusMonitorSection }, { CoverProfileEditor }] = await Promise.all([
+const [{ translations }, model, { escapeHtml, replacePreservingFocus }, { BusMonitorSection }, { CoverProfileEditor }, { CoverProfileList }] = await Promise.all([
   import(assetUrl("panel-translations.js")), import(assetUrl("panel-model.js")),
   import(assetUrl("panel-dom.js")), import(assetUrl("panel-bus-monitor.js")),
   import(assetUrl("panel-cover-profiles.js")),
+  import(assetUrl("panel-cover-profile-list.js")),
 ]);
 const SETTINGS_URL = "/config/integrations/integration/myhome";
 const CATEGORY_VIEW_STORAGE_KEY = "myhome-panel-category-view-v1";
@@ -34,6 +35,8 @@ class MyHomePanel extends HTMLElement {
     this._unsubs = [];
     this._busMonitor = new BusMonitorSection();
     this._profileEditor = new CoverProfileEditor();
+    this._profileList = new CoverProfileList();
+    this._coverView = "devices";
     this._visibilityChanged = () => this._updatePolling();
     this._locationChanged = () => this._syncGatewayFromUrl();
   }
@@ -116,6 +119,7 @@ class MyHomePanel extends HTMLElement {
 
   _stop() {
     this._profileEditor.close();
+    this._profileList.clear();
     this._started = false;
     document.removeEventListener("visibilitychange", this._visibilityChanged);
     window.removeEventListener("popstate", this._locationChanged);
@@ -151,6 +155,7 @@ class MyHomePanel extends HTMLElement {
         this._showError(this._t("gatewayNotFound"));
       }
       if (changed) this._renderInventory();
+      this._profileList.refresh();
     } catch (error) {
       if (session === this._session) this._showError(this._t("loadError"));
     } finally {
@@ -369,9 +374,10 @@ class MyHomePanel extends HTMLElement {
     root.getElementById("discovery-help").hidden = isBus || !this._data.gateways.length;
     root.getElementById("items").hidden = isBus;
     root.getElementById("monitor").hidden = !isBus;
-    if (isBus) { this._profileEditor.close(); this._renderMonitor(); return; }
+    if (isBus) { this._profileEditor.close(); this._profileList.clear(); this._renderMonitor(); return; }
     this._removeMonitor();
     if (!this._data.gateways.length) {
+      this._profileList.clear();
       root.getElementById("items").innerHTML = this._empty(this._t("noGateways"), this._t("noGatewaysHelp"));
       return;
     }
@@ -381,6 +387,11 @@ class MyHomePanel extends HTMLElement {
       && !scope.entities.some((entity) => entity.device_id === device.id && entity.entry_id === entryId)),
     })).filter((device) => device.entry_ids.length);
     const groups = model.groupByWho([...scope.entities, ...emptyDevices]);
+    // A selected profile view must also work on gateways without registered covers.
+    if (this._coverView === "profiles" && !groups.some(([who]) => who === "2")) {
+      groups.push(["2", []]);
+      groups.sort(([a], [b]) => a === model.WHO_UNKNOWN ? 1 : b === model.WHO_UNKNOWN ? -1 : Number(a) - Number(b));
+    }
     this._renderCategoryNavigation(groups);
     const filters = { ...this._filters, who: this._categoryMode === "single" ? this._selectedWho : "" };
     const items = [
@@ -388,19 +399,40 @@ class MyHomePanel extends HTMLElement {
       ...model.filterItems(this._data, { ...scope, devices: emptyDevices, entities: [] }, "devices", filters, this._hass),
     ];
     items.sort((a, b) => this._itemName(a).localeCompare(this._itemName(b)));
-    replacePreservingFocus(root.getElementById("items"), model.groupByWho(items).map(([who, members]) => `
+    const visibleGroups = model.groupByWho(items);
+    // Keep WHO 2 navigation available when a profile-name filter matches no device.
+    const hasCovers = groups.some(([who]) => who === "2");
+    if (hasCovers && (!filters.who || filters.who === "2") && !visibleGroups.some(([who]) => who === "2")) {
+      visibleGroups.push(["2", []]);
+      visibleGroups.sort(([a], [b]) => a === model.WHO_UNKNOWN ? 1 : b === model.WHO_UNKNOWN ? -1 : Number(a) - Number(b));
+    }
+    const previousProfileHost = root.getElementById("cover-profile-list");
+    const profileFocus = previousProfileHost?.contains(root.activeElement) ? root.activeElement : null;
+    replacePreservingFocus(root.getElementById("items"), visibleGroups.map(([who, members]) => `
       <section class="who-group" data-who="${escapeHtml(who)}" aria-labelledby="who-title-${escapeHtml(who)}">
         <div class="who-heading"><h2 id="who-title-${escapeHtml(who)}">${escapeHtml(this._whoLabel(who))}</h2>
-          <span class="count">${escapeHtml(this._inventoryCount(members))}</span></div>
-        <div class="device-groups">${[
+          <span class="count">${escapeHtml(this._inventoryCount(members))}</span>
+          ${who === "2" ? `<nav class="cover-view-tabs" aria-label="${escapeHtml(this._t("profileViewLabel"))}">
+            ${["devices", "profiles"].map((view) => `<button type="button" data-action="cover-view" data-id="${view}" aria-pressed="${this._coverView === view}">${escapeHtml(this._t(view === "devices" ? "devices" : "profileListTitle"))}</button>`).join("")}</nav>` : ""}</div>
+        ${who === "2" && this._coverView === "profiles" ? '<div id="cover-profile-list"></div>' : `<div class="device-groups">${[
           ...model.groupEntitiesByDevice(members.filter((item) => item.entity_id), scope.devices),
           ...members.filter((item) => !item.entity_id).flatMap((device) => device.entry_ids
             .filter((entryId) => scope.gateways.some((gateway) => gateway.entry_id === entryId))
             .map((entryId) => ({ device, entryId, entities: [] }))),
         ]
             .sort((a, b) => a.device ? (b.device ? this._itemName(a.device).localeCompare(this._itemName(b.device)) : -1) : b.device ? 1 : 0)
-            .map((group) => this._entityGroup(group, scope, who)).join("")}</div>
+            .map((group) => this._entityGroup(group, scope, who)).join("") || this._empty(this._t("noResults"), this._t("noResultsHelp"))}</div>`}
       </section>`).join("") || this._empty(this._t("noResults"), this._t("noResultsHelp")));
+    let profileHost = root.getElementById("cover-profile-list");
+    if (profileHost && previousProfileHost) {
+      profileHost.replaceWith(previousProfileHost);
+      profileHost = previousProfileHost;
+      profileFocus?.focus({ preventScroll: true });
+    }
+    if (profileHost) this._profileList.show({ host: profileHost, hass: this._hass, gateways: scope.gateways,
+      inventory: this._data, filters: this._filters, t: (key) => this._t(key),
+      addressDetails: (entity) => this._addressDetails(entity) });
+    else this._profileList.clear();
     this._updateStates();
   }
 
@@ -469,6 +501,7 @@ class MyHomePanel extends HTMLElement {
   _updateStates() {
     if (!this._data) return;
     this._profileEditor.updateState(this._hass);
+    this._profileList.updateHass(this._hass);
     for (const element of this.shadowRoot.querySelectorAll("[data-state]")) {
       const entity = this._data.entities.find((item) => item.entity_id === element.dataset.state);
       const state = this._hass?.states?.[element.dataset.state];
@@ -505,6 +538,13 @@ class MyHomePanel extends HTMLElement {
     } else if (target.dataset.view) {
       this._view = target.dataset.view;
       this._renderContent();
+    } else if (target.dataset.action === "cover-view") {
+      this._coverView = target.dataset.id;
+      this._renderContent();
+    } else if (target.dataset.action === "toggle-shared-profile") {
+      this._profileList.toggle(target.dataset.group);
+    } else if (target.dataset.action === "refresh-profiles") {
+      this._profileList.refresh();
     } else if (target.dataset.action === "toggle-device") {
       const expanded = target.getAttribute("aria-expanded") !== "true";
       const key = target.dataset.group;

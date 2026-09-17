@@ -15,6 +15,38 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Shared profile view (0.25.0)
+
+WHO 2 now has a local **Devices | Profiles** selector. Devices remains the default
+view and still opens each cover's existing editor/calibration directly. Profiles
+uses the same section shell, responsive card grid and collapsed-by-default cards.
+
+Each card shows its name, opening/closing times and complete association count.
+Expanding it shows the source/date of each directional value and all associated
+covers, with native names, A-PL addresses, backend effective times, availability,
+personal overrides and pending configured times. Missing entities/origins are
+explicit; unknown effective times are not replaced with the profile's times.
+Unused profiles remain visible. An association's **Manage cover** action opens
+the current cover editor for assignment, overrides, profile editing or calibration.
+
+This first increment is an overview/navigation view: direct profile-level edit,
+duplicate, delete and multi-cover assignment controls are not added here. The
+existing cover editor remains the write path, with its existing validation and
+shared-change preview/confirmation. No second calibration flow is introduced.
+
+With all gateways selected, profile groups are separate and keyed by gateway plus
+profile ID. Search matches profile names, cover names/IDs, areas and A-PL. Area
+and entity-category filters select matching profiles; every matched profile keeps
+its **complete** association list, including followers outside the filter.
+
+The view reads `myhome/cover_profiles/overview` and subscribes to the existing
+profile revision notifications only while visible. The panel's 15-second visible
+refresh reconciles runtime values and missed events. Registry updates refresh
+native names/addresses. Scope/connection changes invalidate pending responses and
+release subscriptions; failures are shown per gateway and can be retried. Only
+expansion/navigation state is held in the browser; saved values remain in HA.
+Storage v5, export v3 and the websocket schemas are unchanged.
+
 ## Session recovery (0.24.0)
 
 The existing calibration section now offers **Resume session** when a detached

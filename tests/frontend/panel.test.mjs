@@ -1269,3 +1269,80 @@ test("refreshing session availability preserves a profile draft at the same revi
   assert.equal(root.querySelector('[name="profile_name"]'), name);
   assert.equal(name.value, "My unsaved draft");
 });
+
+function profileOverview(entry_id) {
+  return { entry_id, revision: 3,
+    profiles: entry_id === "one" ? [{ id: "timed", name: "Alluminio", opening_time: 35, closing_time: 40, assigned_to: ["cover.shutter"] }] : [],
+    covers: [{ entity_id: "cover.shutter", name: "Tapparella", available: true, overrides: {},
+      effective: { opening: { value: 35 }, closing: { value: 40 } } }] };
+}
+async function mountSharedProfiles() {
+  const mounted = await mountProfiles();
+  const original = mounted.hass.callWS;
+  const reads = [];
+  mounted.hass.callWS = async (message) => {
+    if (message.type === "myhome/cover_profiles/overview") { reads.push(message); return profileOverview(message.entry_id); }
+    return original(message);
+  };
+  return { ...mounted, reads };
+}
+
+test("WHO 2 defaults to devices and offers a second profile view without changing other WHO sections", async () => {
+  const { root, reads } = await mountSharedProfiles();
+  assert.equal(root.querySelector('[data-action="cover-view"][data-id="devices"]').getAttribute("aria-pressed"), "true");
+  assert.ok(root.querySelector('.who-group[data-who="2"] .device-group'));
+  assert.equal(reads.length, 0);
+  root.querySelector('[data-action="cover-view"][data-id="profiles"]').click(); await tick();
+  assert.ok(root.querySelector('.who-group[data-who="1"] .device-group'));
+  assert.equal(root.querySelectorAll('.who-group[data-who="1"] .cover-view-tabs').length, 0);
+  const card = root.querySelector('.who-group[data-who="2"] .shared-profile-card');
+  assert.ok(card);
+  assert.equal(card.querySelector('.shared-profile-body').hidden, true);
+  assert.deepEqual(reads.map((message) => message.entry_id), ["one", "two"]);
+  root.querySelector('[data-action="cover-view"][data-id="devices"]').click();
+  assert.equal(root.querySelector('.shared-profile-card'), null);
+  assert.ok(root.querySelector('.who-group[data-who="2"] .device-group'));
+});
+
+test("profile-name search keeps WHO 2 navigation visible and association opens the existing editor", async () => {
+  const { root } = await mountSharedProfiles();
+  root.querySelector('[data-action="cover-view"][data-id="profiles"]').click(); await tick();
+  change(root.querySelector('#search'), 'Alluminio');
+  assert.ok(root.querySelector('[data-action="cover-view"][data-id="devices"]'));
+  const card = root.querySelector('.shared-profile-card');
+  card.querySelector('[data-action="toggle-shared-profile"]').click();
+  assert.equal(root.querySelector('.shared-profile-body').hidden, false);
+  root.querySelector('.shared-profile-card [data-action="cover-profile"]').click(); await tick();
+  assert.ok(root.querySelector('.cover-profile-dialog'));
+  assert.equal(root.querySelector('#profile-form [name="profile"]').value, 'timed');
+  assert.ok(root.querySelector('#profile-calibrate'));
+});
+
+test("inventory refresh keeps the expanded profile and keyboard focus and scopes reads after gateway changes", async () => {
+  const { root, panel, data, reads } = await mountSharedProfiles();
+  root.querySelector('[data-action="cover-view"][data-id="profiles"]').click(); await tick();
+  root.querySelector('[data-action="toggle-shared-profile"]').click();
+  root.querySelector('[data-action="toggle-shared-profile"]').focus();
+  data.gateways[0].connected = false;
+  await panel._refresh(); await tick();
+  assert.equal(root.activeElement.dataset.action, 'toggle-shared-profile');
+  assert.equal(root.querySelector('.shared-profile-body').hidden, false);
+  reads.length = 0;
+  change(root.querySelector('#gateway'), 'two'); await tick();
+  assert.deepEqual(reads.map((message) => message.entry_id), ['two']);
+  assert.equal(root.querySelector('.shared-profile-card'), null);
+});
+
+test("leaving WHO 2 closes profile subscriptions; returning devices still allows direct calibration", async () => {
+  const { root, hass } = await mountSharedProfiles();
+  let stopped = 0;
+  hass.connection.subscribeMessage = async () => () => { stopped++; };
+  root.querySelector('[data-action="cover-view"][data-id="profiles"]').click(); await tick();
+  root.querySelector('[data-action="select-who"][data-who="1"]').click();
+  await tick(); assert.equal(stopped, 2);
+  assert.equal(root.querySelector('#cover-profile-list'), null);
+  root.querySelector('[data-action="select-who"][data-who="2"]').click(); await tick();
+  root.querySelector('[data-action="cover-view"][data-id="devices"]').click();
+  openProfile(root); await tick();
+  assert.ok(root.querySelector('#profile-calibrate'));
+});

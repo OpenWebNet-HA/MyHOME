@@ -1,6 +1,6 @@
 # MyHOME panel API: implemented reference
 
-> Current update — panel 0.24.0: [shared cover settings](cover-settings-backend.md)
+> Current update — panel 0.25.0: [shared cover settings](cover-settings-backend.md)
 > specifies storage v5, export v3 and `myhome/cover_profiles/overview` (schema v1).
 > Partial guided calibration now uses resolved cover settings without requiring
 > an assigned profile (see the single-direction extension below).
@@ -8,6 +8,16 @@
 > and revision-bound impact confirmation; their complete contract is linked above.
 > Existing endpoints remain available; native writes use the shared store and revision. Earlier release descriptions below remain historical where superseded.
 
+
+## Shared profile overview UI (0.25.0)
+
+The WHO 2 **Profiles** view consumes the existing `myhome/cover_profiles/overview`
+response and `myhome/cover_profiles/subscribe` notifications. It joins each
+association's entity ID with the gateway-scoped panel inventory for native names,
+areas and A-PL. Effective/configured values and provenance are taken directly from
+the backend, never recalculated from the displayed profile. Missing runtime values
+are shown as unknown. No new endpoint, persisted field or write operation is added.
+See [behavior and scope](sidepanel.md#shared-profile-view-0250).
 
 ## Session recovery (0.24.0)
 

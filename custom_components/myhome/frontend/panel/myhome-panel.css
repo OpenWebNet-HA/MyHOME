@@ -471,3 +471,27 @@ button.danger-solid:hover { background: color-mix(in srgb, var(--panel-error) 85
   .profile-origin-grid { grid-template-columns: 1fr; }
   .cover-profile-dialog > .help-text { margin-inline: 18px; }
 }
+
+/* WHO 2 uses the same shell and collapsible cards as the device view. */
+.cover-view-tabs { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid var(--panel-border); border-radius: 12px; background: var(--panel-surface-2); }
+.cover-view-tabs button { background: transparent; border-color: transparent; min-height: 38px; }
+.cover-view-tabs button[aria-pressed="true"] { background: var(--panel-accent-soft); color: var(--panel-accent); border-color: var(--panel-accent); }
+.shared-profile-gateway { margin-top: 16px; }
+.shared-profile-gateway h3 { margin: 0 0 12px; }
+.shared-profile-card .device-name, .shared-profile-card .device-label .shared-profile-times { white-space: normal; overflow-wrap: anywhere; }
+.shared-profile-card .device-group-title { flex-wrap: wrap; }
+.shared-profile-card .device-label { flex-basis: 160px; }
+.shared-profile-card .count { margin-inline-start: auto; }
+.shared-profile-body { padding: 14px; }
+.shared-profile-body .profile-origin-grid { padding-bottom: 12px; }
+.shared-profile-followers { list-style: none; margin: 0; padding: 0; }
+.shared-profile-follower { padding: 12px 0; border-top: 1px solid var(--panel-border); }
+.shared-profile-follower-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.shared-profile-follower-head strong { min-width: 0; overflow-wrap: anywhere; }
+.shared-profile-follower p { margin: 8px 0 0; }
+.shared-profile-follower .address { margin: 8px 0; }
+@media (max-width: 600px) {
+  .cover-view-tabs { flex-basis: 100%; }
+  .cover-view-tabs button { flex: 1; min-height: 44px; }
+  .shared-profile-card .device-label { flex-basis: 140px; }
+}

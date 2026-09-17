@@ -30,7 +30,7 @@ from .cover_profiles import register_api
 from .data import get_runtime_data
 
 PANEL_URL = "myhome"
-PANEL_VERSION = "0.24.0"
+PANEL_VERSION = "0.25.0"
 PANEL_STATIC_URL = "/myhome_panel"
 WS_INVENTORY = "myhome/panel/inventory"
 _PANEL_REGISTERED = "_panel_registered"

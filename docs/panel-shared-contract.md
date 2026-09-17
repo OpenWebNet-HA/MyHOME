@@ -1,11 +1,15 @@
 # Shared MyHOME panel contract — implementation and proposal
 
-**Updated: 2026-09-17, panel 0.24.0.** The shared backend now includes:
+**Updated: 2026-09-17, panel 0.25.0.** The shared backend now includes:
 storage v5, migration of native v2 fallbacks, one directional resolver, native
 service persistence through the shared transaction, gateway-wide read API,
 per-direction personal overrides and confirmed shared-profile impact previews.
 Single-cover measurement review now supports new profiles, personal values and
 confirmed assigned-profile updates; see [save semantics](sidepanel.md#measurement-save-destinations-0230).
+Panel 0.25.0 adds a [shared profile overview](sidepanel.md#shared-profile-view-0250)
+inside WHO 2, reusing the same shell and cover editor. It shows the one-to-many
+relationship without adding a mandatory step to single-cover calibration. Direct
+profile-level editing from the overview remains a subsequent increment.
 See [implemented schema, migration, API and limits](cover-settings-backend.md).
 The agreed proposal is pinned to [51ffaf7](https://github.com/Interstellar0verdrive/MyHOME-stability/blob/51ffaf73a3da3ac09246ee199751e613217e0a78/docs/calibration-contract-proposal.md).
 This is a review of that document; the historical fork-code comparison below stays
