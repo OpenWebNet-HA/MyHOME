@@ -196,3 +196,34 @@ test('remote changes during assignment preview cannot enable confirmation', asyn
   assert.equal(host.querySelector('[value="cover.two"]').checked, true);
   assert.equal(host.querySelector('#catalogue-impact').hidden, true);
 });
+
+test('assignment search accepts spaced A-PL terms and Enter never confirms an assignment', async () => {
+  const { host, editor, context, calls } = await mount({ action: 'assign', read: assignOverview, call: () => assignedPreview });
+  context.entities = [{ entity_id: 'cover.two', entry_id: 'one', address: { raw: '12', a: '1', pl: '2' } }];
+  context.addressDetails = () => '<dl><dt>A:</dt><dd>1</dd><dt>PL:</dt><dd>2</dd></dl>';
+  await editor.open(context);
+  input(host, 'assignment_filter', 'A: 1 PL: 2');
+  assert.equal(host.querySelector('[value="cover.two"]').closest('label').hidden, false);
+  assert.equal(host.querySelector('[value="cover.three"]').closest('label').hidden, true);
+  select(host, 'cover.two'); submit(host); await tick();
+  const before = calls.length;
+  const enter = new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+  host.querySelector('[name="assignment_filter"]').dispatchEvent(enter);
+  assert.equal(enter.defaultPrevented, true);
+  assert.equal(calls.length, before);
+  assert.equal(host.querySelector('#catalogue-impact').hidden, false);
+});
+
+test('Enter in the assignment search field cannot confirm an existing preview', async () => {
+  const { host, calls, counts } = await mount({ action: 'assign', read: assignOverview,
+    call: message => message.action === 'preview_assign' ? assignedPreview : { revision: 5 } });
+  select(host, 'cover.two'); submit(host); await tick();
+  const enter = new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+  host.querySelector('[name="assignment_filter"]').dispatchEvent(enter);
+  assert.equal(enter.defaultPrevented, true);
+  assert.equal(calls.some(item => item.action === 'assign'), false);
+  assert.equal(counts().saved, 0);
+  host.querySelector('#catalogue-submit').click(); await tick();
+  assert.equal(calls.at(-1).action, 'assign');
+  assert.equal(counts().saved, 1);
+});

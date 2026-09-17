@@ -1,6 +1,7 @@
 /** Panel strings are independent from Config Flow / Options Flow schemas. */
 export const translations = {
   en: {
+    profileAvailabilityChanged: "The cover's availability or support for timing profiles changed. Your draft is preserved. Reload saved data before continuing.",
     catalogueAssign: "Assign to covers",
     catalogueTitle_assign: "Assign profile to covers",
     catalogueAssignHelp: "Select up to 200 covers from this gateway. Preview and confirm all assignments together. Personal values and unselected covers remain unchanged. Moving covers apply the new timing after stopping.",
@@ -248,6 +249,7 @@ export const translations = {
     unavailable: "Unavailable", hidden: "Hidden", state: "State", device: "Device", firmware: "Firmware",
   },
   it: {
+    profileAvailabilityChanged: "La disponibilità della tapparella o il supporto ai profili temporizzati è cambiato. La bozza è conservata: ricarica i dati salvati prima di continuare.",
     catalogueAssign: "Associa a tapparelle",
     catalogueTitle_assign: "Associa profilo alle tapparelle",
     catalogueAssignHelp: "Seleziona fino a 200 tapparelle di questo gateway. Visualizza e conferma tutte le associazioni insieme. I valori personali e le tapparelle non selezionate restano invariati. Quelle in movimento applicano i nuovi tempi dopo l’arresto.",

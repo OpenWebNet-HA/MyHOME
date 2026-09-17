@@ -26,6 +26,7 @@ export class CoverProfileEditor {
     this.close();
     const generation = this._generation;
     this._context = { host, hass, entity, t, onSaved, generation };
+    this._unavailable = !hass.states?.[entity.entity_id] || ["unknown", "unavailable"].includes(hass.states[entity.entity_id].state);
     this._data = null;
     this._preview = null;
     this._noticedRevision = -1;
@@ -90,8 +91,12 @@ export class CoverProfileEditor {
   }
 
   updateState(hass) {
-    const attrs = hass?.states?.[this._context?.entity.entity_id]?.attributes;
-    if (!this.dialog || !attrs) return;
+    if (!this.dialog) return;
+    const state = hass?.states?.[this._context?.entity.entity_id];
+    const unavailable = !state || ["unknown", "unavailable"].includes(state.state);
+    if (unavailable !== this._unavailable) { this._unavailable = unavailable; this._refresh(true); }
+    const attrs = state?.attributes;
+    if (!attrs) return;
     for (const direction of ["opening", "closing"]) {
       const effective = this.dialog.querySelector(`#profile-effective-${direction}`);
       const value = attrs[`${direction}_time`] ?? attrs.travel_time;
@@ -107,13 +112,16 @@ export class CoverProfileEditor {
     const form = this.dialog?.querySelector("#profile-form");
     return form ? JSON.stringify([...["profile", "profile_name", "opening_time", "closing_time", "override_opening", "override_closing"]
       .map((name) => form.elements[name].value), !form.querySelector("#profile-delete-confirmation").hidden,
-      ...["opening", "closing"].map((direction) => form.elements[`use_${direction}`].checked), Boolean(this._preview)]) : null;
+      ...["opening", "closing"].map((direction) => form.elements[`use_${direction}`].checked),
+      form.querySelector("#cal-mode").value, form.querySelector("#cal-direction").value, Boolean(this._preview)]) : null;
   }
 
-  _markStale() {
+  _markStale(message = this._context.t("profileChanged")) {
     this._stale = true;
+    this._preview = null;
+    this.dialog.querySelector("#profile-impact").hidden = true;
     const error = this.dialog.querySelector("#profile-error");
-    error.textContent = this._context.t("profileChanged");
+    error.textContent = message;
     error.hidden = false;
     this.dialog.querySelector("#profile-reload").hidden = false;
     for (const button of this.dialog.querySelectorAll("[data-profile-action], #profile-delete, #profile-calibrate, #profile-calibrate-batch")) button.disabled = true;
@@ -129,13 +137,17 @@ export class CoverProfileEditor {
     try {
       const data = await hass.callWS({ type: "myhome/cover_profiles/read", entry_id: entity.entry_id, entity_id: entity.entity_id });
       if (!this._current(generation) || this._calibrating || this._saving === generation) return;
-      if (data.revision === this._data.revision) {
+      if (data.revision < this._data.revision) return;
+      const availabilityChanged = data.writable !== this._data.writable || (data.reason ?? null) !== (this._data.reason ?? null);
+      if (data.revision === this._data.revision && !availabilityChanged) {
         this._data.calibration = data.calibration;
         this._renderRecovery();
         return;
       }
-      if (data.revision < this._data.revision) return;
-      if (this._draft() !== this._baseline) { this._markStale(); return; }
+      if (this._draft() !== this._baseline) {
+        this._markStale(availabilityChanged ? this._context.t("profileAvailabilityChanged") : undefined);
+        return;
+      }
       this._data = data;
       this._render();
     } catch (error) {

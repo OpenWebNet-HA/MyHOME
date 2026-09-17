@@ -204,6 +204,8 @@ test("editing or cancelling a preview invalidates confirmation and remote revisi
   const other = setup({ write: impact }); await other.open(); await other.editor._save("shared");
   other.push(1); await tick();
   assert.equal(other.host.querySelector('[data-profile-action="confirm_shared"]').disabled, true);
+  assert.equal(other.host.querySelector('#profile-impact').hidden, true);
+  assert.equal(other.editor._preview, null);
   const writes = other.calls.length; await other.editor._save("confirm_shared"); assert.equal(other.calls.length, writes);
 });
 
@@ -230,4 +232,70 @@ test("late preview responses cannot replace a newly opened cover editor", async 
   pending.resolve(impact(request)); await saving;
   assert.equal(form(view), current);
   assert.equal(view.host.querySelector("#profile-impact").hidden, true);
+});
+
+test("remote updates retain the selected calibration mode and direction until explicit reload", async () => {
+  const view = setup(); await view.open();
+  const direction = view.host.querySelector('#cal-direction');
+  direction.value = 'opening'; direction.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  view.push(1); await tick();
+  assert.equal(view.host.querySelector('#cal-direction'), direction);
+  assert.equal(direction.value, 'opening');
+  assert.equal(view.host.querySelector('#profile-calibrate').disabled, true);
+  assert.equal(view.host.querySelector('#profile-reload').hidden, false);
+});
+
+test("same-revision availability changes update pristine editors in both directions", async () => {
+  const view = setup(); await view.open();
+  view.setData({ ...snapshot(), writable: false, reason: 'cover_unavailable' });
+  await view.editor._refresh(true);
+  assert.equal(form(view).elements.profile.disabled, true);
+  assert.equal(view.host.querySelector('#profile-calibrate').disabled, true);
+  view.setData(snapshot()); await view.editor._refresh(true);
+  assert.equal(form(view).elements.profile.disabled, false);
+  assert.equal(view.host.querySelector('#profile-calibrate').disabled, false);
+});
+
+test("same-revision unavailability preserves drafts but blocks writes until explicit reload", async () => {
+  const view = setup(); await view.open();
+  const input = form(view).elements.profile_name; input.value = 'Do not lose'; input.focus();
+  view.setData({ ...snapshot(), writable: false, reason: 'cover_unavailable' });
+  await view.editor._refresh(true);
+  assert.equal(form(view).elements.profile_name, input);
+  assert.equal(input.value, 'Do not lose');
+  assert.equal(view.host.querySelector('[data-profile-action="update"]').disabled, true);
+  assert.equal(view.host.querySelector('#profile-reload').hidden, false);
+  await view.editor._save('update');
+  assert.equal(view.calls.some(item => item.type.endsWith('/write')), false);
+});
+
+for (const [id, value] of [['cal-direction', 'closing'], ['cal-mode', 'automatic']]) {
+  test(`remote changes preserve ${id}=${value}`, async () => {
+    const view = setup(); await view.open();
+    const selector = view.host.querySelector(`#${id}`);
+    selector.value = value; selector.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    view.push(1); await tick();
+    assert.equal(view.host.querySelector(`#${id}`), selector);
+    assert.equal(selector.value, value);
+    assert.equal(view.host.querySelector('#profile-calibrate').disabled, true);
+  });
+}
+
+test('HA availability transitions trigger an authoritative read without polling every position update', async () => {
+  const view = setup();
+  view.context.hass.states['cover.test'] = { state: 'open', attributes: {} };
+  await view.open();
+  const reads = () => view.calls.filter(item => item.type.endsWith('/read')).length;
+  assert.equal(reads(), 1);
+  view.setData({ ...snapshot(), writable: false, reason: 'cover_unavailable' });
+  view.editor.updateState({ states: { 'cover.test': { state: 'unavailable', attributes: {} } } });
+  await tick(); assert.equal(form(view).elements.profile.disabled, true);
+  assert.equal(reads(), 2);
+  view.editor.updateState({ states: { 'cover.test': { state: 'unavailable', attributes: {} } } });
+  await tick(); assert.equal(reads(), 2);
+  view.setData(snapshot());
+  view.editor.updateState({ states: { 'cover.test': { state: 'closed', attributes: {} } } });
+  await tick(); assert.equal(form(view).elements.profile.disabled, false);
+  view.editor.updateState({ states: { 'cover.test': { state: 'opening', attributes: { current_position: 35 } } } });
+  await tick(); assert.equal(reads(), 3);
 });

@@ -98,10 +98,15 @@ export class ProfileCatalogueEditor {
     return `<label>${esc(t("catalogueSearch"))}<input name="assignment_filter" type="search"></label>
       <p id="catalogue-selection-count" class="muted" aria-live="polite"></p>
       <div class="catalogue-candidates">${data.covers.map((cover) => {
+        const entity = this._context.entities?.find((item) => item.entity_id === cover.entity_id && item.entry_id === this._context.entryId);
+        const address = entity?.address;
+        const search = [cover.name, cover.entity_id, address?.raw,
+          address?.a == null ? "" : `A:${address.a} A: ${address.a}`,
+          address?.pl == null ? "" : `PL:${address.pl} PL: ${address.pl}`].filter(Boolean).join(" ");
         const assigned = cover.profile_id === profile.id;
         const reason = assigned ? t("catalogueAlreadyAssigned") : cover.assignment_reason ? t(`profileError_${cover.assignment_reason}`) : "";
         const current = data.profiles.find((item) => item.id === cover.profile_id)?.name || t("catalogueNoProfile");
-        return `<label class="catalogue-candidate"><input type="checkbox" name="assignment" value="${esc(cover.entity_id)}" ${assigned ? "checked" : ""} ${assigned || cover.assignment_reason !== null ? "disabled" : ""}>
+        return `<label class="catalogue-candidate" data-search="${esc(search)}"><input type="checkbox" name="assignment" value="${esc(cover.entity_id)}" ${assigned ? "checked" : ""} ${assigned || cover.assignment_reason !== null ? "disabled" : ""}>
           <span><strong>${esc(cover.name)}</strong>${this._address(cover.entity_id)}<span class="muted">${esc(current)}${reason ? ` · ${esc(reason)}` : ""}</span></span></label>`;
       }).join("") || `<p>${esc(t("catalogueNoCovers"))}</p>`}</div>`;
   }
@@ -122,13 +127,16 @@ export class ProfileCatalogueEditor {
     const form = this.dialog.querySelector("form");
     const invalidate = (event) => {
       if (event.target.name === "assignment_filter") {
-        const query = event.target.value.trim().toLocaleLowerCase();
-        form.querySelectorAll(".catalogue-candidate").forEach((row) => { row.hidden = !row.textContent.toLocaleLowerCase().includes(query); });
+        const terms = event.target.value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+        form.querySelectorAll(".catalogue-candidate").forEach((row) => { row.hidden = !terms.every((term) => row.dataset.search.toLocaleLowerCase().includes(term)); });
         return;
       }
       this._preview = null; this.dialog.querySelector("#catalogue-impact").hidden = true; this._controls();
     };
     form.addEventListener("input", invalidate); form.addEventListener("change", invalidate);
+    form.querySelector('[name="assignment_filter"]')?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") event.preventDefault();
+    });
     form.onsubmit = (event) => { event.preventDefault(); if (form.reportValidity()) this._submit(); };
     if (this._inUse) this._error({ code: "profile_in_use" });
     this._controls();

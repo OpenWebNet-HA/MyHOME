@@ -15,6 +15,24 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Cover flow review (0.27.1)
+
+This maintenance update preserves the current WHO 2 layout and calibration steps.
+It fixes four issues found while reviewing the device editor and profile catalogue:
+
+- Calibration mode and direction are part of the unsaved draft. A remote profile
+  update cannot silently reset a selected single-direction or automatic mode.
+- Cover availability transitions trigger a backend read. Even at the same saved
+  revision, a pristine editor reflects updated writability. An edited form retains
+  its draft, hides invalid previews and requires explicit reload before writing.
+- Multi-cover assignment search accepts multiple name/address terms and both
+  `A:1 PL:2` and `A: 1 PL: 2`, independently of rendered address markup.
+- Enter in the assignment search field only stays in search; confirmation uses
+  the explicit action button. Filtering retains the selection and valid preview.
+
+No storage migration, API or timing changes are required. See the
+[review record](cover-flow-review.md) for scope, findings and validation.
+
 ## Assign a profile to multiple covers (0.27.0)
 
 Expanded WHO 2 profile cards offer **Assign to covers** in the existing profile
