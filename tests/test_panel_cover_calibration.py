@@ -441,7 +441,7 @@ async def test_automatic_three_runs_review_save_provenance_and_export(hass, cali
     assert cal.session.phase == "saved" and len(cal.queue) == 3
     assert (cal.cover._travel_time_up, cal.cover._travel_time_down) == (20.5, 22.5)
     result = await export_profiles(hass, cal.session.entry_id)
-    assert result["format_version"] == 3
+    assert result["format_version"] == 4
     assert all(meta["source"] == "automatic" and meta["recorded_at"]
                for meta in result["profiles"][0]["provenance"].values())
 

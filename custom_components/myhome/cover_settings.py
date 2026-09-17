@@ -1,7 +1,7 @@
-"""Shared, unscaled timing schema and pure per-key resolution.
+"""Shared linear timing schema and pure per-key resolution.
 
-Only supported linear timing fields are accepted. Geometry, fitting and shared
-mutation APIs will extend this contract separately; absent measurements stay absent.
+Travel scaling is optional. Slat/roll fitting remains unsupported; absent
+measurements stay absent and personal timing values are never scaled.
 """
 from __future__ import annotations
 
@@ -24,10 +24,35 @@ def seconds(value: Any) -> float:
     return float(value)
 
 
+def centimetres(value: Any) -> float:
+    """Validate an explicitly supplied physical travel, never infer one."""
+    if type(value) not in (int, float) or not math.isfinite(value) or not 0.1 <= value <= 10000:
+        raise vol.Invalid("travel_cm must be between 0.1 and 10000 centimetres")
+    return float(value)
+
+
+def reference_profile(profile: dict[str, Any], previous: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Omission retains existing geometry; explicit null removes it."""
+    result = copy.deepcopy(profile)
+    if "reference_travel_cm" not in result and previous and "reference_travel_cm" in previous:
+        result["reference_travel_cm"] = previous["reference_travel_cm"]
+    if result.get("reference_travel_cm", False) is None:
+        result.pop("reference_travel_cm")
+    return result
+
+
+def set_overrides(data: dict[str, Any], unique: str, overrides: dict[str, Any]) -> None:
+    """Changing timing overrides must preserve the cover's own travel."""
+    record = data["covers"].setdefault(unique, {})
+    record["overrides"] = overrides
+    if not overrides and "travel_cm" not in record:
+        data["covers"].pop(unique)
+
+
 OVERRIDE = vol.Schema({vol.Required("value"): seconds, vol.Required("provenance"): EVIDENCE})
 COVER_RECORD = vol.Schema({vol.Optional("overrides", default=dict): {
     vol.In(KEYS): OVERRIDE,
-}})
+}, vol.Optional("travel_cm"): centimetres})
 # Keep native evidence verbatim in storage. Public responses allowlist its fields.
 NATIVE_EVIDENCE = vol.Schema({vol.Required("source"): str,
                              vol.Required("recorded_at"): vol.Any(str, None),
@@ -59,16 +84,20 @@ def migrate(data: dict[str, Any], native: Any) -> dict[str, Any]:
 
 def resolve(*, profile: dict[str, Any] | None, native: dict[str, Any] | None,
             overrides: dict[str, Any], default: float | None,
-            default_source: str = "default") -> dict[str, Any]:
+            default_source: str = "default", travel_cm: float | None = None) -> dict[str, Any]:
     """One resolver for runtime and API; no clock, registry or storage side effects."""
     result = {}
     for direction, native_key in KEYS.items():
+        scaled = False
         if direction in overrides:
             record = overrides[direction]
             value, origin, provenance = record["value"], "override", record["provenance"]
         elif profile is not None:
             value, origin = profile[f"{direction}_time"], "profile"
             provenance = profile["provenance"][direction]
+            if travel_cm is not None and profile.get("reference_travel_cm") is not None:
+                value = round(seconds(value * centimetres(travel_cm) / centimetres(profile["reference_travel_cm"])), 4)
+                scaled = True
         elif native is not None:
             value, origin = native[native_key], "native_fallback"
             provenance = native_provenance(native, direction)
@@ -76,5 +105,15 @@ def resolve(*, profile: dict[str, Any] | None, native: dict[str, Any] | None,
             value, origin = default, default_source
             provenance = {"source": "unknown", "recorded_at": None, "origin_unique_id": None}
         result[direction] = {"value": value, "origin": origin,
-                             "provenance": copy.deepcopy(provenance), "scaled": False}
+                             "provenance": copy.deepcopy(provenance), "scaled": scaled}
     return result
+
+
+def validate_scaling(data: dict[str, Any]) -> None:
+    """Reject unsupported effective durations before persistence, including orphans."""
+    for unique, profile_id in data["assignments"].items():
+        if profile_id not in data["profiles"]:
+            raise vol.Invalid("Missing assigned profile")
+        record = data["covers"].get(unique, {})
+        resolve(profile=data["profiles"][profile_id], native=None, overrides=record.get("overrides", {}),
+                default=None, travel_cm=record.get("travel_cm"))

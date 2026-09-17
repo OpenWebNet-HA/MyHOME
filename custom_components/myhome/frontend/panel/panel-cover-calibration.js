@@ -182,6 +182,7 @@ export class CoverCalibration {
       const review = host.querySelector("#cal-batch-review");
       if (state.phase === "review" && !review.children.length) {
         review.innerHTML = state.results.map((result) => `<label>${esc(state.targets[result.index].name)} · ${esc(result.values.opening_time)} / ${esc(result.values.closing_time)} s
+          ${state.targets[result.index].travel_cm != null ? `<span class="muted">${esc(t("profileReferenceTravel"))}: ${esc(state.targets[result.index].travel_cm)} cm</span>` : ""}
           <span class="muted">${esc(t("profileName"))}</span><input data-batch-name="${result.index}" required maxlength="64" value="${esc(state.targets[result.index].name.slice(0, 64))}"></label>`).join("");
       }
     }
@@ -200,6 +201,8 @@ export class CoverCalibration {
     form.elements.profile_name.disabled = !!state.batch || mode !== "new";
     form.elements.profile_name.required = !state.batch && mode === "new";
     host.querySelector("#cal-save-help").textContent = t(mode === "new" ? "calSaveOverrides" : mode === "cover" ? "calSaveCoverHelp" : "calSaveSharedHelp");
+    if (!state.batch && mode === "new" && state.travel_cm != null) host.querySelector("#cal-save-help").textContent += ` ${t("profileReferenceTravel")}: ${state.travel_cm} cm.`;
+    if (mode === "shared" && state.reference_travel_cm != null) host.querySelector("#cal-save-help").textContent += ` ${t("profileReferenceTravel")}: ${state.reference_travel_cm} cm. ${t("calReferenceNormalization")}`;
     const button = form.querySelector('button[type="submit"]');
     button.disabled = this._busy || this._lost;
     button.textContent = t(state.batch ? "calBatchSave" : mode === "new" ? "calSave" : mode === "cover" ? "calSaveCover" : this._savePreview ? "calConfirmShared" : "calPreviewShared");

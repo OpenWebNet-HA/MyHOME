@@ -375,7 +375,7 @@ async def test_websocket_round_trip_validation_and_errors(hass, plant, hass_ws_c
             assert result["result"]["effective_opening_time"] == 22.5
             assert result["result"]["effective_closing_time"] == 44.5
             result = await send({"id": 11, "type": WS_EXPORT, "entry_id": plant.entries[0].entry_id})
-            assert result["result"]["format_version"] == 3
+            assert result["result"]["format_version"] == 4
             assert result["result"]["profiles"][0]["closing_time"] == 44.5
             result = await send({"id": 12, "type": WS_EXPORT, "entry_id": "missing"})
             assert result["error"]["code"] == "target_not_found"
@@ -445,9 +445,9 @@ async def test_version_one_store_migrates_without_changing_assignments_or_timing
         "name": "Legacy", "opening_time": 32.5, "closing_time": 32.5,
         "provenance": unknown_provenance()}}}
     assert plant.covers[0]._travel_time_up == plant.covers[0]._travel_time_down == 32.5
-    assert await ProfileStorage(hass, 6, store.store.key).async_load() == store.data
+    assert await ProfileStorage(hass, 7, store.store.key).async_load() == store.data
     with pytest.raises(NotImplementedError):
-        await store.store._async_migrate_func(6, 1, legacy)
+        await store.store._async_migrate_func(8, 1, legacy)
     plant.gateways[0].send.assert_not_called()
 
 
@@ -693,7 +693,7 @@ async def test_export_preserves_saved_profiles_orphans_and_origins_without_runti
     store.calibration = SimpleNamespace(active=True, values={"opening_time": 99})
     before = copy.deepcopy(store.data)
     result = await export_profiles(hass, entry_id)
-    assert result["format"] == "myhome.cover_calibration" and result["format_version"] == 3
+    assert result["format"] == "myhome.cover_calibration" and result["format_version"] == 4
     assert result["revision"] == 3
     assert datetime.fromisoformat(result["exported_at"]).utcoffset().total_seconds() == 0
     assert len(result["profiles"]) == 2

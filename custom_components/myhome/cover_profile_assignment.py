@@ -53,6 +53,7 @@ async def assign_profiles(hass: Any, store: Any, entry: Any, msg: dict[str, Any]
             "changes": {direction: {
                 "before": before[direction]["value"], "after": after[direction]["value"],
                 "overridden": after[direction]["origin"] == "override",
+                "scaled": after[direction]["scaled"],
             } for direction in DIRECTIONS},
         })
     # Bind identities as well as entity IDs: registry replacement must invalidate

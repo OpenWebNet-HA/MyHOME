@@ -89,7 +89,7 @@ async def test_shared_preview_covers_masked_orphan_and_offline_followers(hass, p
     assert store.data == before and plant.covers[0]._travel_time_up == 42.5
     assert len(preview["followers"]) == 3
     masked = preview["followers"][1]
-    assert masked["changes"]["opening"] == {"before": 18, "after": 18, "overridden": True}
+    assert masked["changes"]["opening"] == {"before": 18, "after": 18, "overridden": True, "scaled": False}
     assert not masked["available"]
     assert preview["followers"][2]["entity_id"] is None
     serialized = json.dumps(preview)
@@ -150,7 +150,7 @@ async def test_write_failure_and_moving_cover_keep_active_timing(hass, plant, ac
         cover._apply_pending_cover_profile()
     assert plant.covers[0]._travel_time_up == 21
     assert plant.covers[1]._travel_time_up == (21 if action == "update_shared" else 42.5)
-    persisted = await Store(hass, 6, store.store.key).async_load()
+    persisted = await Store(hass, 7, store.store.key).async_load()
     assert persisted == store.data
 
 

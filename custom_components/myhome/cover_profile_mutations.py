@@ -12,7 +12,7 @@ from homeassistant.helpers import entity_registry as er
 from .const import DOMAIN
 from .cover_profile_provenance import DIRECTIONS, evidence
 from .cover_profiles import PROFILE, ProfileError, commit_profiles, snapshot
-from .cover_settings import KEYS, seconds
+from .cover_settings import KEYS, centimetres, reference_profile, resolve, seconds, set_overrides
 
 OVERRIDE_PATCH = vol.All({vol.In(KEYS): vol.Any(None, seconds)}, vol.Length(min=1))
 
@@ -29,13 +29,20 @@ def shared_preview(store: Any, entity: Any, profile_id: str, profile: dict[str, 
             continue
         record, cover = records.get(unique), store.covers.get(unique)
         overrides = store.data["covers"].get(unique, {}).get("overrides", {})
+        travel = store.data["covers"].get(unique, {}).get("travel_cm")
+        remaining = {key: value for key, value in overrides.items()
+                     if not (unique == target_unique and key in clear_overrides)}
+        before = resolve(profile=previous, native=None, overrides=overrides, default=None, travel_cm=travel)
+        after = resolve(profile={**profile, "provenance": previous["provenance"]}, native=None,
+                        overrides=remaining, default=None, travel_cm=travel)
         followers.append({
             "entity_id": record.entity_id if record else None,
             "name": (record.name or record.original_name or record.entity_id) if record else None,
             "available": bool(record and not record.disabled_by and cover and cover.available),
             "changes": {direction: {
-                "before": overrides[direction]["value"] if direction in overrides else previous[f"{direction}_time"],
-                "after": overrides[direction]["value"] if direction in overrides and not (unique == target_unique and direction in clear_overrides) else profile[f"{direction}_time"],
+                "before": before[direction]["value"],
+                "after": after[direction]["value"],
+                "scaled": after[direction]["scaled"],
                 "overridden": direction in overrides and not (unique == target_unique and direction in clear_overrides),
                 **({"override_removed": direction in overrides and unique == target_unique and direction in clear_overrides} if clear_overrides else {}),
             } for direction in DIRECTIONS},
@@ -44,8 +51,9 @@ def shared_preview(store: Any, entity: Any, profile_id: str, profile: dict[str, 
     # Runtime motion/availability can change without invalidating the configuration.
     payload = [store.entry_id, target_unique, store.data["revision"], profile_id, profile, clear_overrides]
     token = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+    keys = set(profile) | ({"reference_travel_cm"} if "reference_travel_cm" in previous else set())
     return {"revision": store.data["revision"], "profile_id": profile_id,
-            "before": {key: previous[key] for key in profile}, "after": profile,
+            "before": {key: previous.get(key) for key in keys}, "after": {key: profile.get(key) for key in keys},
             "followers": followers, "confirmation": token}
 
 
@@ -53,7 +61,17 @@ async def mutate_settings(hass: Any, store: Any, entry: Any, entity: Any, msg: d
     """Called under the gateway lock after common target/ownership/revision checks."""
     data = copy.deepcopy(store.data)
     action = msg["action"]
-    if action == "overrides":
+    if action == "travel":
+        if "travel_cm" not in msg:
+            raise vol.Invalid("travel_cm is required")
+        record = data["covers"].setdefault(entity.unique_id, {"overrides": {}})
+        if msg["travel_cm"] is None:
+            record.pop("travel_cm", None)
+        else:
+            record["travel_cm"] = centimetres(msg["travel_cm"])
+        set_overrides(data, entity.unique_id, record["overrides"])
+        affected = [entity.unique_id]
+    elif action == "overrides":
         patch = OVERRIDE_PATCH(msg.get("overrides", {}))
         overrides = data["covers"].get(entity.unique_id, {}).get("overrides", {})
         for direction, value in patch.items():
@@ -61,10 +79,7 @@ async def mutate_settings(hass: Any, store: Any, entry: Any, entity: Any, msg: d
                 overrides.pop(direction, None)
             elif direction not in overrides or overrides[direction]["value"] != value:
                 overrides[direction] = {"value": value, "provenance": evidence("manual", entity.unique_id)}
-        if overrides:
-            data["covers"][entity.unique_id] = {"overrides": overrides}
-        else:
-            data["covers"].pop(entity.unique_id, None)
+        set_overrides(data, entity.unique_id, overrides)
         affected = [entity.unique_id]
     else:
         profile_id = msg.get("profile_id")
@@ -72,7 +87,7 @@ async def mutate_settings(hass: Any, store: Any, entry: Any, entity: Any, msg: d
             raise ProfileError("profile_not_found")
         if data["assignments"].get(entity.unique_id) != profile_id:
             raise ProfileError("profile_shared")
-        profile = PROFILE(msg.get("profile", {}))
+        profile = reference_profile(PROFILE(msg.get("profile", {})), data["profiles"][profile_id])
         preview = shared_preview(store, entity, profile_id, profile)
         if action == "preview":
             return preview

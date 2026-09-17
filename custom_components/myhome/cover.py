@@ -403,10 +403,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         return _stored_calibration(entry, str(self._device_id)) if entry else None
 
     def resolve_cover_settings(self, profile: dict[str, Any] | None) -> dict[str, Any]:
-        overrides = (self._profile_store.data["covers"].get(self.unique_id, {}).get("overrides", {})
-                     if self._profile_store is not None else {})
-        return resolve(profile=profile, native=self.native_cover_fallback(), overrides=overrides,
-                       default=self._default_travel_time, default_source=self._default_travel_source)
+        record = (self._profile_store.data["covers"].get(self.unique_id, {})
+                  if self._profile_store is not None else {})
+        return resolve(profile=profile, native=self.native_cover_fallback(), overrides=record.get("overrides", {}),
+                       default=self._default_travel_time, default_source=self._default_travel_source,
+                       travel_cm=record.get("travel_cm"))
 
     def _apply_pending_cover_profile(self) -> None:
         if self._pending_profile is not None:

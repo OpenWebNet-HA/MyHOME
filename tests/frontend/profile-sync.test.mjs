@@ -41,6 +41,78 @@ after(() => dom.window.close());
 
 const form = (view) => view.host.querySelector("#profile-form");
 
+const geometrySnapshot = () => ({ ...snapshot(), height_scaling: true, travel_cm: 150, scaling: "height",
+  profiles: [{ ...snapshot().profiles[0], reference_travel_cm: 200 }],
+  effective_opening_time: 15, effective_closing_time: 19,
+  effective: { opening: { value: 15, origin: "profile", scaled: true }, closing: { value: 19, origin: "override", scaled: false } } });
+
+test("geometry remains in existing sections and saves cover travel independently of profile edits", async () => {
+  const data = geometrySnapshot();
+  const view = setup({ read: () => data, write: request => ({ ...data, revision: 1, travel_cm: request.travel_cm }) });
+  await view.open();
+  assert.equal(view.host.querySelectorAll(".profile-details").length, 3);
+  assert.equal(form(view).elements.travel_cm.value, "150");
+  assert.equal(form(view).elements.reference_travel_cm.value, "200");
+  assert.match(view.host.querySelector("#profile-scaling-status").textContent, /adattati alla corsa/);
+  assert.match(view.host.querySelector("#profile-scaling-status").textContent, /personale/);
+  assert.match(view.host.querySelector("#profile-unscaled").textContent, /solo quando/);
+  form(view).elements.travel_cm.value = "175.5";
+  view.host.querySelector("#profile-calibrate").click();
+  assert.match(view.host.querySelector("#profile-error").textContent, /Salva la corsa/);
+  assert.equal(view.editor._calibrating, false);
+  await view.editor._selectBatch();
+  assert.equal(view.editor._calibrating, false);
+  await view.editor._save("travel");
+  assert.deepEqual(view.calls.at(-1), { type: "myhome/cover_profiles/write", entry_id: "one", entity_id: "cover.test", revision: 0, action: "travel", travel_cm: 175.5 });
+  form(view).elements.travel_cm.value = "";
+  await view.editor._save("travel");
+  assert.equal(view.calls.at(-1).travel_cm, null);
+});
+
+test("profile reference edits include explicit clearing and invalid dimensions never reach the backend", async () => {
+  const data = geometrySnapshot();
+  const view = setup({ read: () => data, write: () => data }); await view.open();
+  form(view).elements.reference_travel_cm.value = "250.5";
+  await view.editor._save("update");
+  assert.equal(view.calls.at(-1).profile.reference_travel_cm, 250.5);
+  form(view).elements.reference_travel_cm.value = "";
+  await view.editor._save("update");
+  assert.equal(view.calls.at(-1).profile.reference_travel_cm, null);
+  const count = view.calls.length;
+  form(view).elements.reference_travel_cm.value = "0";
+  await view.editor._save("update");
+  form(view).elements.travel_cm.value = "10001";
+  await view.editor._save("travel");
+  assert.equal(view.calls.length, count);
+});
+
+test("a dirty travel remains a draft on concurrent revision and reference changes invalidate preview", async () => {
+  let data = geometrySnapshot(); data.profiles[0].uses = 2;
+  const view = setup({ read: () => data, write: request => ({ ...impact(request), before: data.profiles[0] }) });
+  await view.open();
+  await view.editor._save("shared");
+  assert.match(view.host.querySelector("#profile-impact").textContent, /200 → 200 cm/);
+  const input = form(view).elements.reference_travel_cm;
+  input.value = "220"; input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  assert.equal(view.host.querySelector("#profile-impact").hidden, true);
+  data = { ...data, revision: 1 };
+  view.push(1); await tick();
+  assert.equal(form(view).elements.reference_travel_cm.value, "220");
+  assert.match(view.host.querySelector("#profile-error").textContent, /bozza è conservata/);
+});
+
+test("same-revision completion updates effective scaling without discarding a geometry draft", async () => {
+  let data = { ...geometrySnapshot(), pending: true };
+  const view = setup({ read: () => data }); await view.open();
+  form(view).elements.travel_cm.value = "175";
+  data = { ...data, pending: false, effective_opening_time: 30, effective: { opening: { value: 30, origin: "profile", scaled: false } } };
+  await view.editor._refresh(true);
+  assert.equal(form(view).elements.travel_cm.value, "175");
+  assert.equal(view.host.querySelector("#profile-effective-opening").textContent, "30");
+  assert.doesNotMatch(view.host.querySelector("#profile-scaling-status").textContent, /adattati alla corsa/);
+  assert.equal(view.host.querySelector("#profile-pending").hidden, true);
+});
+
 test("closed movement reservation blocks calibration without offering recovery until refresh confirms release", async () => {
   let calibration = { entity_id: "cover.test", waiting_for_stop: true, recoverable: false, attached: false };
   const view = setup({ read: () => ({ ...snapshot(), calibration }) });

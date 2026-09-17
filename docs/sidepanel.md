@@ -1,5 +1,9 @@
 # MyHOME sidepanel — first version
 
+Panel **0.29.0** adds optional cover travel and profile reference travel within the
+existing sections. Both dimensions enable linear timing adaptation; personal
+values retain priority. See [setup, migration and installation checks](cover-travel-scaling.md).
+
 Home Assistant administrators can open **Configure → MyHOME panel** from a
 gateway integration entry, then follow **Open the MyHOME panel**. The link selects
 that gateway using `/myhome?entry_id=<config entry ID>`. **Gateway settings** in

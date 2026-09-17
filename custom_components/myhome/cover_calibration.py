@@ -105,6 +105,8 @@ class CalibrationSession:
                 "phase": self.phase, "mode": self.mode, "reason": self.reason, "values": dict(self.values),
                 "elapsed": round(monotonic() - self.started_at, 2) if self.started_at is not None else None,
                 "stop_requested": self.stop_requested,
+                "travel_cm": self.store.data["covers"].get(self.cover.unique_id, {}).get("travel_cm"),
+                "reference_travel_cm": (self.store.profile(self.cover.unique_id) or {}).get("reference_travel_cm"),
                 "waiting_for_stop": self.closed and self.reservation.pending,
                 **({"recoverable": not self.closed, "attached": self.listener and not self.closed, "attachment": self.attachment,
                     "recovery_seconds": RECOVERY_SECONDS} if self.client_id else {}),
@@ -380,10 +382,12 @@ class CalibrationSession:
         if msg.get("save_mode", "new") != "new":
             from .cover_calibration_save import save_measurement
             return await save_measurement(self, msg)
+        travel = self.store.data["covers"].get(self.cover.unique_id, {}).get("travel_cm")
         result = await write_profile(self.hass, {
             "entry_id": self.entry_id, "entity_id": self.cover.entity_id,
             "revision": self.revision, "action": "save", "profile_id": None,
-            "profile": {"name": msg.get("name", ""), **self.values},
+            "profile": {"name": msg.get("name", ""), **self.values,
+                        **({"reference_travel_cm": travel} if travel is not None else {})},
         }, calibration=self)
         return result["revision"]
 

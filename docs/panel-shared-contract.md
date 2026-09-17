@@ -1,7 +1,7 @@
 # Shared MyHOME panel contract — implementation and proposal
 
-**Updated: 2026-09-17, panel 0.27.0.** The shared backend now includes:
-storage v6 (manual profile edits without a fictitious origin), migration of native v2 fallbacks, one directional resolver, native
+**Updated: 2026-09-17, panel 0.29.0.** The shared backend now includes:
+storage v7 (optional reference/per-cover travel; manual edits without a fictitious origin), migration of native v2 fallbacks, one directional resolver, native
 service persistence through the shared transaction, gateway-wide read API,
 per-direction personal overrides and confirmed shared-profile impact previews.
 Single-cover measurement review now supports new profiles, personal values and
@@ -14,6 +14,11 @@ profile-level editing, duplication and deletion are implemented in 0.26.0 throug
 with exact-proposal confirmation and unchanged personal overrides. Version 0.27.0
 adds atomic multi-cover assignment from the same profile view, with complete
 selection validation and a single confirmed transaction.
+Version 0.28.0 separates closed-client lifetime from gateway reservation until
+Stop/guard completion. Version 0.29.0 adds the contract's optional linear height
+scaling, preserving overrides and using the same resolver for runtime and
+previews. See [dimensions, normalization, migration and export v4](cover-travel-scaling.md).
+Slat/roll fitting and physical accuracy checks remain future work.
 See [implemented schema, migration, API and limits](cover-settings-backend.md).
 The agreed proposal is pinned to [51ffaf7](https://github.com/Interstellar0verdrive/MyHOME-stability/blob/51ffaf73a3da3ac09246ee199751e613217e0a78/docs/calibration-contract-proposal.md).
 This is a review of that document; the historical fork-code comparison below stays

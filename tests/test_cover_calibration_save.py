@@ -85,7 +85,7 @@ async def test_shared_preview_matches_override_removal_and_preserves_other_overr
     preview = (await act(quick, "preview_save", save_mode="shared"))["save_preview"]
     first = next(row for row in preview["followers"] if row["entity_id"] == cover.entity_id)
     other = next(row for row in preview["followers"] if row["entity_id"] != cover.entity_id)
-    assert first["changes"][direction] == {"before": 55, "after": 12.75, "overridden": False, "override_removed": True}
+    assert first["changes"][direction] == {"before": 55, "after": 12.75, "overridden": False, "override_removed": True, "scaled": False}
     assert other["changes"][direction]["after"] == 55
     assert other["changes"][direction]["overridden"]
     await act(quick, "save", save_mode="shared", confirmation=preview["confirmation"])

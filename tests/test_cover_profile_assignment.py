@@ -34,7 +34,7 @@ async def test_atomic_assignment_preserves_overrides_evidence_and_other_gateway(
     preview = await manage_profile(hass, msg)
     assert cat.store.data == before
     assert len(preview['targets']) == 2
-    assert preview['targets'][1]['changes']['opening'] == {'before': 12, 'after': 12, 'overridden': True}
+    assert preview['targets'][1]['changes']['opening'] == {'before': 12, 'after': 12, 'overridden': True, 'scaled': False}
     assert preview['targets'][0]['previous_profile_id'] == cat.profile_id
     for cover in cat.plant.covers:
         cover.async_write_ha_state.reset_mock()

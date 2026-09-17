@@ -118,10 +118,11 @@ export class ProfileCatalogueEditor {
     this.dialog.querySelector("#catalogue-body").innerHTML = `<h3>${esc(profile.name)}</h3>
       <p class="muted">${profile.assigned_to.length} ${esc(t("profileAssociatedCovers"))} · ${esc(profile.opening_time)} / ${esc(profile.closing_time)} s</p>
       <form id="catalogue-form"><fieldset class="profile-section">
-        ${assign ? `<p class="notice muted" id="catalogue-unscaled">${esc(t("profileUnscaled"))}</p>` : ""}
+        ${assign ? `<p class="notice muted" id="catalogue-unscaled">${esc(t(profile.reference_travel_cm != null ? "profileScalingHelp" : "profileUnscaled"))}</p>` : ""}
         ${assign ? this._candidates(profile, data) : ""}
         ${edit || duplicate ? `<label>${esc(t("profileName"))}<input name="profile_name" required maxlength="64" value="${esc(duplicate ? `${profile.name.slice(0, 50)} ${t("catalogueCopySuffix")}` : profile.name)}"></label>` : ""}
         ${edit ? `<div class="profile-times">${["opening", "closing"].map((direction) => `<label>${esc(t(direction === "opening" ? "profileOpeningTime" : "profileClosingTime"))}<input name="${direction}_time" type="number" required min="1" max="600" step="any" value="${esc(profile[`${direction}_time`])}"></label>`).join("")}</div>` : ""}
+        ${edit && data.capabilities?.height_scaling ? `<label>${esc(t("profileReferenceTravel"))}<input name="reference_travel_cm" type="number" min="0.1" max="10000" step="any" inputmode="decimal" value="${esc(profile.reference_travel_cm ?? "")}" aria-describedby="catalogue-reference-help"></label><p class="muted" id="catalogue-reference-help">${esc(t("profileReferenceHelp"))}</p>` : ""}
       </fieldset><p class="muted">${esc(t(assign ? "catalogueAssignHelp" : edit ? "catalogueEditHelp" : duplicate ? "catalogueDuplicateHelp" : "catalogueDeleteHelp"))}</p>
       <div id="catalogue-impact" class="notice" hidden></div>
       <button type="submit" class="primary" id="catalogue-submit">${esc(t(edit ? "cataloguePreview" : duplicate ? "catalogueDuplicate" : "catalogueDeleteConfirm"))}</button></form>`;
@@ -165,11 +166,12 @@ export class ProfileCatalogueEditor {
     const { t } = this._context, box = this.dialog.querySelector("#catalogue-impact");
     const assign = this._context.action === "assign", followers = assign ? preview.targets : preview.followers;
     box.innerHTML = `${assign ? `<p><strong>${esc(preview.profile_name)}</strong> · ${followers.length} ${esc(t("catalogueSelected"))}</p>` : `<p><strong>${esc(preview.before.name)} → ${esc(preview.after.name)}</strong></p>
-      <p>${esc(preview.before.opening_time)} / ${esc(preview.before.closing_time)} s → ${esc(preview.after.opening_time)} / ${esc(preview.after.closing_time)} s</p>`}
+      <p>${esc(preview.before.opening_time)} / ${esc(preview.before.closing_time)} s → ${esc(preview.after.opening_time)} / ${esc(preview.after.closing_time)} s</p>
+      ${"reference_travel_cm" in preview.before || "reference_travel_cm" in preview.after ? `<p>${esc(t("profileReferenceTravel"))}: ${esc(preview.before.reference_travel_cm ?? "—")} → ${esc(preview.after.reference_travel_cm ?? "—")} cm</p>` : ""}`}
       ${followers.length ? `<ul>${followers.map((item) => `<li><strong>${esc(item.name || item.entity_id || t("profileMissingCover"))}</strong>
         ${assign ? `${this._address(item.entity_id)}${esc(item.previous_profile_name || t("catalogueNoProfile"))} → ${esc(preview.profile_name)}` : item.available ? "" : ` · ${esc(t("profileUnavailableFollower"))}`}<br>${["opening", "closing"].map((direction) => {
           const change = item.changes[direction];
-          return `${esc(t(direction === "opening" ? "profileOpeningTime" : "profileClosingTime"))}: ${esc(change.before)} → ${esc(change.after)} s${change.overridden ? ` · ${esc(t("calPersonalRetained"))}` : ""}`;
+          return `${esc(t(direction === "opening" ? "profileOpeningTime" : "profileClosingTime"))}: ${esc(change.before)} → ${esc(change.after)} s${change.overridden ? ` · ${esc(t("calPersonalRetained"))}` : ` · ${esc(t(change.scaled ? "profileScaled" : "profileNotScaled"))}`}`;
         }).join("<br>")}</li>`).join("")}</ul>` : `<p>${esc(t("profileListUnused"))}</p>`}`;
     box.hidden = false;
   }
@@ -183,7 +185,8 @@ export class ProfileCatalogueEditor {
     if (action === "edit") message = this._preview
       ? { ...this._preview.message, action: "update", confirmation: this._preview.confirmation }
       : { ...message, action: "preview", profile: { name: form.elements.profile_name.value.trim(),
-        opening_time: Number(form.elements.opening_time.value), closing_time: Number(form.elements.closing_time.value) } };
+        opening_time: Number(form.elements.opening_time.value), closing_time: Number(form.elements.closing_time.value),
+        ...(form.elements.reference_travel_cm ? { reference_travel_cm: form.elements.reference_travel_cm.value === "" ? null : Number(form.elements.reference_travel_cm.value) } : {}) } };
     else if (action === "assign") message = this._preview
       ? { ...this._preview.message, action: "assign", confirmation: this._preview.confirmation }
       : { ...message, action: "preview_assign", entity_ids: this._selection() };

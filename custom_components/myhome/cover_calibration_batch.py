@@ -16,6 +16,7 @@ from .const import DOMAIN
 from .cover_calibration import ready_cover, send_error
 from .cover_calibration_automatic import SETTLE_SECONDS, AutomaticCalibrationSession
 from .cover_profile_provenance import PROVENANCE
+from .cover_settings import set_overrides
 
 WS_TARGETS = "myhome/cover_calibration/targets"
 WS_BATCH_START = "myhome/cover_calibration/batch_start"
@@ -67,7 +68,8 @@ class BatchCalibrationSession(AutomaticCalibrationSession):
             record = er.async_get(self.hass).async_get(cover.entity_id)
             return (record.name or record.original_name or record.entity_id) if record else cover.entity_id
         return {**super().view(), "save_modes": ["new"], "batch": True, "cover_index": self.cover_index,
-                "targets": [{"entity_id": cover.entity_id, "name": label(cover)} for cover in self.covers],
+                "targets": [{"entity_id": cover.entity_id, "name": label(cover),
+                             "travel_cm": self.store.data["covers"].get(cover.unique_id, {}).get("travel_cm")} for cover in self.covers],
                 "results": [{"index": index, "entity_id": self.covers[index].entity_id,
                              "values": dict(result["values"])} for index, result in enumerate(self.results)]}
 
@@ -119,11 +121,14 @@ class BatchCalibrationSession(AutomaticCalibrationSession):
                 if ready_cover(self.hass, self.store, self.entry_id, cover.entity_id) is not cover:
                     raise profiles.ProfileError("cover_unavailable")
                 profile = profiles.PROFILE({"name": name, **result["values"]})
+                travel = data["covers"].get(cover.unique_id, {}).get("travel_cm")
+                if travel is not None:
+                    profile["reference_travel_cm"] = travel
                 profile["provenance"] = copy.deepcopy(PROVENANCE(result["provenance"]))
                 profile_id = uuid4().hex
                 data["profiles"][profile_id] = profile
                 data["assignments"][cover.unique_id] = profile_id
-                data["covers"].pop(cover.unique_id, None)
+                set_overrides(data, cover.unique_id, {})
             await profiles.commit_profiles(self.hass, self.store, self.entry_id, data,
                                            [cover.unique_id for cover in self.covers])
         return data["revision"]

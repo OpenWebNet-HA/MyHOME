@@ -50,15 +50,19 @@ async def export_profiles(hass: Any, entry_id: str) -> Any:
         for unique, ref in refs.items():
             record = records.get(unique)
             covers.append({"id": ref, "registry_id": record.id if record else None,
+                           **({"travel_cm": data["covers"][unique]["travel_cm"]}
+                              if "travel_cm" in data["covers"].get(unique, {}) else {}),
                            "entity_id": record.entity_id if record else None,
                            "name": (record.name or record.original_name or record.entity_id) if record else None})
         return {
-            "format": "myhome.cover_calibration", "format_version": 3,
+            "format": "myhome.cover_calibration", "format_version": 4,
             "exported_at": dt_util.utcnow().isoformat(),
             "gateway": {"entry_id": entry_id, "name": entry.title},
             "revision": data["revision"], "covers": covers,
             "profiles": [{"id": profile_id, "name": profile["name"],
                           "opening_time": profile["opening_time"], "closing_time": profile["closing_time"],
+                          **({"reference_travel_cm": profile["reference_travel_cm"]}
+                             if "reference_travel_cm" in profile else {}),
                           "provenance": {direction: {"source": meta["source"],
                                                      "recorded_at": meta["recorded_at"],
                                                      "origin_cover_id": refs.get(meta["origin_unique_id"])}
@@ -66,7 +70,7 @@ async def export_profiles(hass: Any, entry_id: str) -> Any:
                          for profile_id, profile in sorted(data["profiles"].items())],
             "assignments": [{"cover_id": refs[unique], "profile_id": profile_id}
                             for unique, profile_id in sorted(data["assignments"].items())],
-            "model": "linear_time", "scaling": "unscaled",
+            "model": "linear_time", "scaling": "optional_height",
             "native_fallbacks": [{"cover_id": refs[native_ids[device_id]],
                                   "opening_time": value["up"], "closing_time": value["down"],
                                   "source": value.get("source", "unknown"),

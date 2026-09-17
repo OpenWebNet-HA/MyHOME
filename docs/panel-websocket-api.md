@@ -1,7 +1,8 @@
 # MyHOME panel API: implemented reference
 
-> Current update — panel 0.27.0: [shared cover settings](cover-settings-backend.md)
-> specifies storage v6, export v3 and `myhome/cover_profiles/overview` (schema v1).
+> Current update — panel 0.29.0: [travel scaling](cover-travel-scaling.md)
+> specifies storage v7, export v4, optional dimensions, the `travel` write action,
+> and `myhome/cover_profiles/overview` (schema v1 with height scaling capability).
 > Partial guided calibration now uses resolved cover settings without requiring
 > an assigned profile (see the single-direction extension below).
 > Write actions `overrides`, `preview` and `update_shared` add personal values

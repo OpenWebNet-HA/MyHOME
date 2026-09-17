@@ -104,6 +104,7 @@ export class CoverProfileEditor {
     }
     const pending = this.dialog.querySelector("#profile-pending");
     if (pending && typeof attrs.cover_profile_pending === "boolean") pending.hidden = !attrs.cover_profile_pending;
+    if (typeof attrs.cover_profile_pending === "boolean" && attrs.cover_profile_pending !== this._data?.pending) this._refresh(true);
   }
 
   _current(generation) { return generation === this._generation && this.dialog?.isConnected; }
@@ -111,7 +112,8 @@ export class CoverProfileEditor {
   _draft() {
     const form = this.dialog?.querySelector("#profile-form");
     return form ? JSON.stringify([...["profile", "profile_name", "opening_time", "closing_time", "override_opening", "override_closing"]
-      .map((name) => form.elements[name].value), !form.querySelector("#profile-delete-confirmation").hidden,
+      .map((name) => form.elements[name].value), form.elements.travel_cm?.value, form.elements.reference_travel_cm?.value,
+      !form.querySelector("#profile-delete-confirmation").hidden,
       ...["opening", "closing"].map((direction) => form.elements[`use_${direction}`].checked),
       form.querySelector("#cal-mode").value, form.querySelector("#cal-direction").value, Boolean(this._preview)]) : null;
   }
@@ -140,7 +142,7 @@ export class CoverProfileEditor {
       if (data.revision < this._data.revision) return;
       const availabilityChanged = data.writable !== this._data.writable || (data.reason ?? null) !== (this._data.reason ?? null);
       if (data.revision === this._data.revision && !availabilityChanged) {
-        this._data.calibration = data.calibration;
+        for (const key of ["calibration", "effective", "effective_opening_time", "effective_closing_time", "effective_travel_time", "pending"]) this._data[key] = data[key];
         this._renderRecovery();
         return;
       }
@@ -172,6 +174,10 @@ export class CoverProfileEditor {
 
   _renderRecovery() {
     const { t } = this._context, data = this._data, session = data.calibration;
+    const scaling = this.dialog.querySelector("#profile-scaling-status");
+    if (scaling) scaling.textContent = ["opening", "closing"].map((direction) => `${t(direction === "opening" ? "calOnlyOpening" : "calOnlyClosing")}: ${t(data.effective?.[direction]?.origin === "override" ? "profilePersonalValue" : data.effective?.[direction]?.scaled ? "profileScaled" : "profileNotScaled")}`).join(" · ");
+    for (const direction of ["opening", "closing"]) this.dialog.querySelector(`#profile-effective-${direction}`).textContent = data[`effective_${direction}_time`] ?? data.effective_travel_time ?? "—";
+    this.dialog.querySelector("#profile-pending").hidden = !data.pending;
     const box = this.dialog.querySelector("#cal-recovery");
     box.hidden = !session;
     box.querySelector("p").textContent = session ? `${session.entity_id} · ${t(session.waiting_for_stop ? "calWaitingForStop" : session.attached ? "calAttachedElsewhere" : "calDetached")}` : "";
@@ -192,6 +198,7 @@ export class CoverProfileEditor {
 
   async _selectBatch() {
     if (this._calibrating || this._saving === this._generation || this._stale) return;
+    if (!this._requireSavedTravel()) return;
     this._calibrating = true;
     const context = this._context;
     const { hass, entity, t, generation } = context;
@@ -288,6 +295,15 @@ export class CoverProfileEditor {
     }).join("")}</div>`;
   }
 
+  _requireSavedTravel() {
+    const field = this.dialog.querySelector('[name="travel_cm"]');
+    if (!field || (field.value === "" ? null : Number(field.value)) === (this._data.travel_cm ?? null)) return true;
+    const box = this.dialog.querySelector("#profile-error");
+    box.textContent = this._context.t("profileSaveTravelFirst"); box.hidden = false;
+    field.focus();
+    return false;
+  }
+
   _render() {
     const { host, t } = this._context;
     const data = this._data;
@@ -310,6 +326,7 @@ export class CoverProfileEditor {
             <span class="profile-stat-value"><span id="profile-effective-closing">${esc(data.effective_closing_time ?? data.effective_travel_time ?? "—")}</span><small>s</small></span></div>
         </div>
         <p id="profile-pending" class="profile-pending" role="status" ${data.pending ? "" : "hidden"}>${esc(t("profilePending"))}</p>
+        ${data.height_scaling ? `<p class="muted" id="profile-scaling-status">${["opening", "closing"].map((direction) => `${esc(t(direction === "opening" ? "calOnlyOpening" : "calOnlyClosing"))}: ${esc(t(data.effective?.[direction]?.origin === "override" ? "profilePersonalValue" : data.effective?.[direction]?.scaled ? "profileScaled" : "profileNotScaled"))}`).join(" · ")}</p>` : ""}
       </section>
       ${!data.writable ? `<p class="notice">${esc(t(`profileError_${data.reason}`))}</p>` : ""}
       <p class="muted" id="profile-override-status" ${Object.values(data.configured || {}).some((item) => item.origin === "override") ? "" : "hidden"}>${esc(t("profileOverridesActive"))}</p>
@@ -322,7 +339,10 @@ export class CoverProfileEditor {
             </select></label>
             <button type="button" class="primary" data-profile-action="assign" ${disabled}>${esc(t("profileAssign"))}</button>
           </div>
-          ${data.scaling === "unscaled" ? `<p class="muted" id="profile-unscaled">${esc(t("profileUnscaled"))}</p>` : ""}
+          ${data.scaling || data.height_scaling ? `<p class="muted" id="profile-unscaled"></p>` : ""}
+          ${data.height_scaling ? `<label>${esc(t("profileCoverTravel"))}<span class="input-suffix"><input name="travel_cm" type="number" min="0.1" max="10000" step="any" inputmode="decimal" value="${esc(data.travel_cm ?? "")}" aria-describedby="profile-travel-help" ${disabled}><span>cm</span></span></label>
+            <p class="muted" id="profile-travel-help">${esc(t("profileTravelHelp"))}</p>
+            <button type="button" data-profile-action="travel" ${disabled}>${esc(t("profileSaveTravel"))}</button>` : ""}
         </fieldset>
         <details class="profile-details" data-section="calibration" ${open("calibration")}>
           <summary><span class="profile-details-title">${esc(t("profileSectionCalibrate"))} ${help("cal-help-text")}</span><span class="profile-details-hint" id="cal-hint"></span>${chevron}</summary>
@@ -346,6 +366,8 @@ export class CoverProfileEditor {
           <div class="profile-details-body">
             ${helpText("edit-help-text", "profileSharedHelp")}
             <label>${esc(t("profileName"))}<input name="profile_name" maxlength="64" required ${disabled}></label>
+            ${data.height_scaling ? `<label>${esc(t("profileReferenceTravel"))}<span class="input-suffix"><input name="reference_travel_cm" type="number" min="0.1" max="10000" step="any" inputmode="decimal" aria-describedby="profile-reference-help" ${disabled}><span>cm</span></span></label>
+              <p id="profile-reference-help" class="muted">${esc(t("profileReferenceHelp"))}</p>` : ""}
             <div class="profile-times">
               <label>${esc(t("profileOpeningTime"))}<span class="input-suffix"><input name="opening_time" type="number" min="1" max="600" step="any" inputmode="decimal" required ${disabled}><span>s</span></span></label>
               <label>${esc(t("profileClosingTime"))}<span class="input-suffix"><input name="closing_time" type="number" min="1" max="600" step="any" inputmode="decimal" required ${disabled}><span>s</span></span></label>
@@ -416,6 +438,7 @@ export class CoverProfileEditor {
     if (data.calibration) host.querySelector('[data-section="calibration"]').open = true;
     host.querySelector("#profile-calibrate").onclick = () => {
       if (this._saving === this._generation || !data.writable || this._stale) return;
+      if (!this._requireSavedTravel()) return;
       this._calibrating = true;
       const context = this._context;
       const mode = host.querySelector("#cal-mode").value;
@@ -437,6 +460,9 @@ export class CoverProfileEditor {
       clearPreview();
       const profile = data.profiles.find((item) => item.id === form.elements.profile.value);
       form.elements.profile_name.value = profile?.name || "";
+      if (form.elements.reference_travel_cm) form.elements.reference_travel_cm.value = profile?.reference_travel_cm ?? "";
+      const scaling = form.querySelector("#profile-unscaled");
+      if (scaling) scaling.textContent = t(profile?.reference_travel_cm != null ? "profileScalingHelp" : "profileUnscaled");
       for (const direction of ["opening", "closing"]) {
         form.elements[`${direction}_time`].value = profile?.[`${direction}_time`] ?? profile?.travel_time ?? data.default_travel_time ?? "";
       }
@@ -481,11 +507,12 @@ export class CoverProfileEditor {
     box.hidden = false;
     box.innerHTML = `<h4>${esc(t("profileSharedPreview"))}</h4>
       <p>${esc(data.before.name)} → ${esc(data.after.name)} · ${esc(data.before.opening_time)} / ${esc(data.before.closing_time)} s → ${esc(data.after.opening_time)} / ${esc(data.after.closing_time)} s</p>
+      ${"reference_travel_cm" in data.before || "reference_travel_cm" in data.after ? `<p>${esc(t("profileReferenceTravel"))}: ${esc(data.before.reference_travel_cm ?? "—")} → ${esc(data.after.reference_travel_cm ?? "—")} cm</p>` : ""}
       <p>${esc(t("profileImpactHelp"))}</p>
       <ul>${data.followers.map((item) => `<li><strong>${esc(item.name || item.entity_id || t("profileMissingCover"))}</strong>${item.available ? "" : ` · ${esc(t("profileUnavailableFollower"))}`}
         <p>${["opening", "closing"].map((direction) => {
           const change = item.changes[direction];
-          return `${esc(t(direction === "opening" ? "profileEffectiveOpening" : "profileEffectiveClosing"))}: ${esc(change.before)} → ${esc(change.after)} s${change.overridden ? ` (${esc(t("profilePersonalValue"))})` : ""}`;
+          return `${esc(t(direction === "opening" ? "profileEffectiveOpening" : "profileEffectiveClosing"))}: ${esc(change.before)} → ${esc(change.after)} s${change.overridden ? ` (${esc(t("profilePersonalValue"))})` : change.scaled ? ` (${esc(t("profileScaled"))})` : ""}`;
         }).join(" · ")}</p></li>`).join("")}</ul>
       <div class="actions"><button type="button" class="primary" data-profile-action="confirm_shared">${esc(t("profileConfirmShared"))}</button>
         <button type="button" id="profile-impact-cancel">${esc(t("cancel"))}</button></div>`;
@@ -499,6 +526,7 @@ export class CoverProfileEditor {
     const form = host.querySelector("#profile-form");
     const savingProfile = ["new", "update", "shared"].includes(action);
     if (savingProfile && !["profile_name", "opening_time", "closing_time"].every((key) => form.elements[key].reportValidity())) return;
+    if (savingProfile && form.elements.reference_travel_cm && !form.elements.reference_travel_cm.reportValidity()) return;
     if (action === "confirm_shared" && !this._preview) return;
     if (action === "delete") {
       const selected = this._data.profiles.find((item) => item.id === form.elements.profile.value);
@@ -513,7 +541,13 @@ export class CoverProfileEditor {
       name: form.elements.profile_name.value.trim(),
       opening_time: Number(form.elements.opening_time.value),
       closing_time: Number(form.elements.closing_time.value),
+      ...(form.elements.reference_travel_cm ? { reference_travel_cm: form.elements.reference_travel_cm.value === "" ? null : Number(form.elements.reference_travel_cm.value) } : {}),
     };
+    if (action === "travel") {
+      if (!form.elements.travel_cm.reportValidity()) return;
+      delete message.profile_id;
+      message.travel_cm = form.elements.travel_cm.value === "" ? null : Number(form.elements.travel_cm.value);
+    }
     if (action === "new" && form.elements.profile.value) message.copy_from_profile_id = form.elements.profile.value;
     if (action === "shared") message.action = "preview";
     if (action === "confirm_shared") message = { ...this._preview.message, action: "update_shared", confirmation: this._preview.confirmation };

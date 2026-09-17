@@ -40,10 +40,14 @@ from .cover_settings import (
     KEYS,
     MODEL,
     NATIVE,
+    centimetres,
     migrate,
     native_provenance,
+    reference_profile,
     resolve,
     seconds,
+    set_overrides,
+    validate_scaling,
 )
 
 DATA_KEY = f"{DOMAIN}_cover_profile_stores"
@@ -74,9 +78,11 @@ DIRECTIONAL_PROFILE = vol.Schema({
     vol.Required("name"): vol.All(str, vol.Strip, vol.Length(min=1, max=64)),
     vol.Required("opening_time"): travel_time,
     vol.Required("closing_time"): travel_time,
+    vol.Optional("reference_travel_cm"): vol.Any(None, centimetres),
 })
 PROFILE = vol.Any(DIRECTIONAL_PROFILE, vol.All(LEGACY_PROFILE, directional_profile))
 STORED_DIRECTIONAL_PROFILE = DIRECTIONAL_PROFILE.extend({
+    vol.Optional("reference_travel_cm"): centimetres,
     vol.Optional("provenance", default=unknown_provenance): PROVENANCE,
 })
 STORED_PROFILE = vol.Any(STORED_DIRECTIONAL_PROFILE,
@@ -101,6 +107,10 @@ class ProfileStorage(Store[dict[str, Any]]):
     """Surface write failures: HA's default Store logs them and returns success."""
 
     async def _async_migrate_func(self, old_major_version: Any, old_minor_version: Any, old_data: Any) -> Any:
+        if old_major_version == 6:
+            data = STORED(old_data)
+            await ProfileStorage(self.hass, 6, f"{self.key}.pre_travel", atomic_writes=True).async_save(old_data)
+            return data
         if old_major_version == 5:
             data = STORED(old_data)
             await ProfileStorage(self.hass, 5, f"{self.key}.pre_catalogue", atomic_writes=True).async_save(old_data)
@@ -130,7 +140,7 @@ class CoverProfileStore:
     def __init__(self, hass: Any, entry_id: str) -> None:
         self.hass, self.entry_id = hass, entry_id
         self.store = ProfileStorage(
-            hass, 6, f"{DOMAIN}.cover_profiles.{entry_id}", atomic_writes=True
+            hass, 7, f"{DOMAIN}.cover_profiles.{entry_id}", atomic_writes=True
         )
         self.lock = asyncio.Lock()
         self.loaded = False
@@ -148,6 +158,7 @@ class CoverProfileStore:
                 saved = migrate({"revision": 0, "profiles": {}, "assignments": {}}, self.store.native_options())
                 await self.store.async_save(saved)
             self.data = STORED(saved)
+            validate_scaling(self.data)
             self.loaded = True
 
     def profile(self, unique_id: str) -> Any:
@@ -197,6 +208,7 @@ def snapshot(hass: Any, store: Any, entry: Any, entity: Any) -> Any:
     if cover and cover._advanced:
         writable, reason = False, "advanced_cover"
     assigned = store.profile(entity.unique_id)
+    travel = store.data["covers"].get(entity.unique_id, {}).get("travel_cm")
     records = {record.unique_id: record for record in
                er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
                if record.domain == "cover" and record.platform == DOMAIN}
@@ -210,8 +222,9 @@ def snapshot(hass: Any, store: Any, entry: Any, entity: Any) -> Any:
         "calibration": ({key: value for key, value in store.calibration.view().items()
                          if key != "attachment"} if store.calibration and (store.calibration.client_id or store.calibration.closed) else None),
         "revision": store.data["revision"], "assigned_profile_id": assigned["id"] if assigned else None,
-        "model": MODEL, "scaling": "unscaled", "accuracy": {"kind": "not_measured"},
-        "profiles": [{"id": key, **value, "model": MODEL, "scaling": "unscaled",
+        "model": MODEL, "scaling": "height" if travel is not None and assigned and assigned.get("reference_travel_cm") else "unscaled",
+        "travel_cm": travel, "height_scaling": True, "accuracy": {"kind": "not_measured"},
+        "profiles": [{"id": key, **value, "model": MODEL, "scaling": "height" if value.get("reference_travel_cm") else "unscaled",
                       "provenance": public_provenance(value, records, entity.unique_id),
                       "uses": list(store.data["assignments"].values()).count(key),
                       "assigned_to": assignments(key)}
@@ -239,6 +252,7 @@ def public_settings(store: Any, entity: Any, records: Any, *, active: bool) -> A
     else:
         values = resolve(profile=store.profile(entity.unique_id), native=store.native_for(entity.unique_id),
                          overrides=store.data["covers"].get(entity.unique_id, {}).get("overrides", {}),
+                         travel_cm=store.data["covers"].get(entity.unique_id, {}).get("travel_cm"),
                          default=None, default_source="unavailable")
     if values is None:
         return None
@@ -279,7 +293,7 @@ async def write_profile(hass: Any, msg: dict[str, Any], *, calibration: Any=None
             raise ProfileError("calibration_expired")
         if msg["revision"] != store.data["revision"]:
             raise ProfileError("revision_conflict")
-        if msg["action"] in ("overrides", "preview", "update_shared"):
+        if msg["action"] in ("travel", "overrides", "preview", "update_shared"):
             from .cover_profile_mutations import mutate_settings
 
             return await mutate_settings(hass, store, entry, entity, msg)
@@ -295,6 +309,7 @@ async def write_profile(hass: Any, msg: dict[str, Any], *, calibration: Any=None
             if source_id is not None and source_id not in data["profiles"]:
                 raise ProfileError("profile_not_found")
             previous = data["profiles"].get(source_id or profile_id)
+            profile = reference_profile(profile, previous)
             if profile_id is not None:
                 if (data["assignments"].get(entity.unique_id) != profile_id
                         or list(data["assignments"].values()).count(profile_id) > 1):
@@ -316,7 +331,7 @@ async def write_profile(hass: Any, msg: dict[str, Any], *, calibration: Any=None
             if calibration is not None:
                 # The measured cover follows the new profile; old overrides must
                 # not silently mask the measurement just accepted in review.
-                data["covers"].pop(entity.unique_id, None)
+                set_overrides(data, entity.unique_id, {})
         elif "copy_from_profile_id" in msg:
             raise ProfileError("invalid_profile")
         if msg["action"] == "delete":
@@ -336,6 +351,7 @@ async def write_profile(hass: Any, msg: dict[str, Any], *, calibration: Any=None
 
 async def commit_profiles(hass: Any, store: Any, entry_id: str, data: Any, affected: Any) -> None:
     """Caller holds the store lock and has validated the entire mutation."""
+    validate_scaling(data)
     data["revision"] += 1
     await store.store.async_save(data)
     store.data = data
@@ -403,6 +419,7 @@ async def remove_entry(hass: Any, entry_id: str) -> None:
         await store.store.async_remove()
         await Store(hass, 1, f"{store.store.key}.pre_shared").async_remove()
         await Store(hass, 5, f"{store.store.key}.pre_catalogue").async_remove()
+        await Store(hass, 6, f"{store.store.key}.pre_travel").async_remove()
         if store.calibration:
             store.calibration.close("cover_unavailable")
         async_dispatcher_send(hass, f"{WS_SUBSCRIBE}:{entry_id}", {
@@ -434,7 +451,8 @@ async def ws_read(hass: Any, connection: Any, msg: dict[str, Any]) -> None:
 @websocket_command({
     vol.Required("type"): WS_WRITE, **TARGET,
     vol.Required("revision"): vol.All(int, vol.Range(min=0)),
-    vol.Required("action"): vol.In(["assign", "save", "delete", "overrides", "preview", "update_shared"]),
+    vol.Required("action"): vol.In(["assign", "save", "delete", "overrides", "preview", "update_shared", "travel"]),
+    vol.Optional("travel_cm"): vol.Any(None, centimetres),
     vol.Optional("profile_id"): vol.Any(str, None),
     vol.Optional("copy_from_profile_id"): str,
     vol.Optional("profile"): PROFILE,

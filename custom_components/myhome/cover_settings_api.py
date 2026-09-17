@@ -36,6 +36,7 @@ async def overview(hass: Any, entry_id: str) -> dict[str, Any]:
                            "assignment_reason": assignment_reason(entry, record, cover, store),
                            "name": record.name or record.original_name or record.entity_id,
                            "profile_id": store.data["assignments"].get(unique),
+                           "travel_cm": store.data["covers"].get(unique, {}).get("travel_cm"),
                            "available": bool(cover and cover.available and not record.disabled_by),
                            "advanced": bool(cover and cover._advanced),
                            "pending": bool(cover and cover._pending_profile is not None),
@@ -50,13 +51,14 @@ async def overview(hass: Any, entry_id: str) -> dict[str, Any]:
             from .cover_profile_provenance import public_provenance
             profiles.append({"id": profile_id, "name": profile["name"],
                              "opening_time": profile["opening_time"], "closing_time": profile["closing_time"],
+                             "reference_travel_cm": profile.get("reference_travel_cm"),
                              "provenance": public_provenance(profile, records, None),
-                             "model": MODEL, "scaling": "unscaled",
+                             "model": MODEL, "scaling": "height" if profile.get("reference_travel_cm") else "unscaled",
                              "assigned_to": [records[unique].entity_id if unique in records else None for unique in followers]})
         return {"entry_id": entry_id, "revision": store.data["revision"], "schema_version": 1,
-                "storage_version": 6, "model": MODEL, "scaling": "unscaled",
+                "storage_version": 7, "model": MODEL, "scaling": "optional_height",
                 "accuracy": {"kind": "not_measured"},
-                "capabilities": {"height_scaling": False, "nonlinear": False,
+                "capabilities": {"height_scaling": True, "nonlinear": False,
                                  "profile_assignment": True,
                                  "profile_management": True, "override_write": True, "shared_profile_write": True},
                 "profiles": profiles, "covers": covers}

@@ -12,6 +12,20 @@ const deferred = () => { let resolve; const promise = new Promise((done) => { re
 const t = (key) => translations.it[key] || translations.en[key] || key;
 const instances = [];
 
+test("profile list distinguishes reference travel, cover travel and per-direction effective scaling", async () => {
+  const data = overview();
+  data.profiles[0].reference_travel_cm = 200;
+  data.covers[0].travel_cm = 150;
+  data.covers[0].effective.opening.scaled = true;
+  data.covers[0].effective.closing.origin = "override";
+  const { host } = await mount({ read: () => data });
+  const card = host.querySelector('[data-profile="shared"]');
+  assert.match(card.textContent, /riferimento del profilo \(cm\): 200 cm/);
+  assert.match(card.textContent, /questa tapparella \(cm\): 150 cm/);
+  assert.match(card.textContent, /adattati alla corsa/);
+  assert.match(card.textContent, /personale/);
+});
+
 function overview(entry_id = "one") {
   const evidence = { source: "guided", recorded_at: "2026-09-17T12:00:00+00:00", origin_entity_id: "cover.kitchen", origin_name: "Cucina" };
   return { entry_id, revision: 1, profiles: [

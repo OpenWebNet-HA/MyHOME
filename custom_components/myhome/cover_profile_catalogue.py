@@ -17,6 +17,7 @@ from .const import DOMAIN
 from .cover_profile_mutations import shared_preview
 from .cover_profile_provenance import DIRECTIONS, evidence
 from .cover_profiles import MAX_PROFILES, PROFILE, ProfileError, commit_profiles, get_store, respond
+from .cover_settings import reference_profile
 
 WS_MANAGE = "myhome/cover_profiles/manage"
 NAME = vol.All(str, vol.Strip, vol.Length(min=1, max=64))
@@ -58,7 +59,7 @@ async def manage_profile(hass: Any, msg: dict[str, Any]) -> dict[str, Any]:
         followers = [unique for unique, assigned in data["assignments"].items() if assigned == profile_id]
         affected = []
         if action in ("preview", "update"):
-            profile = PROFILE(msg.get("profile", {}))
+            profile = reference_profile(PROFILE(msg.get("profile", {})), previous)
             preview = shared_preview(store, None, profile_id, profile)
             if action == "preview":
                 return preview

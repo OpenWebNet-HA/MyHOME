@@ -1,4 +1,11 @@
-# Shared cover settings — panel 0.22.0
+# Shared cover settings
+
+**Current: panel 0.29.0**, storage v7, export v4. Optional reference/per-cover
+travel enables linear height scaling through the shared resolver. Personal times
+retain priority; existing profiles remain unscaled until both dimensions exist.
+See [current schema, API, migration and runtime behavior](cover-travel-scaling.md).
+
+## Historical backend baseline — 0.22.0–0.26.0
 
 Panel 0.26.0 extends the shared store to **v6** for manual profile edits without an
 origin cover. Existing v5 data is preserved with a `.pre_catalogue` backup before

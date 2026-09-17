@@ -144,6 +144,34 @@ const select = (host, id, checked = true) => {
   field.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 };
 
+test('catalogue edits preview and confirm reference travel, including explicit removal', async () => {
+  const data = overview({ capabilities: { profile_management: true, height_scaling: true }, profiles: [{ ...profile, reference_travel_cm: 200 }] });
+  const preview = { ...impact, before: { ...profile, reference_travel_cm: 200 }, after: { ...profile, reference_travel_cm: 250 } };
+  const { host, calls } = await mount({ read: () => data, call: message => message.action === 'preview' ? preview : { revision: 5 } });
+  assert.equal(host.querySelector('[name="reference_travel_cm"]').value, '200');
+  input(host, 'reference_travel_cm', '250'); submit(host); await tick();
+  assert.equal(calls.at(-1).profile.reference_travel_cm, 250);
+  assert.match(host.querySelector('#catalogue-impact').textContent, /200 → 250 cm/);
+  input(host, 'reference_travel_cm', '');
+  assert.equal(host.querySelector('#catalogue-impact').hidden, true);
+  submit(host); await tick();
+  assert.equal(calls.at(-1).profile.reference_travel_cm, null);
+  submit(host); await tick();
+  assert.equal(calls.at(-1).action, 'update');
+  assert.equal(calls.at(-1).profile.reference_travel_cm, null);
+});
+
+test('assignment with a reference explains conditional scaling and uses backend per-direction results', async () => {
+  const data = structuredClone(assignOverview()); data.profiles[0].reference_travel_cm = 200;
+  const preview = structuredClone(assignedPreview);
+  preview.targets[1].changes.opening = { before: 30, after: 15, scaled: true, overridden: false };
+  const { host } = await mount({ action: 'assign', read: () => data, call: () => preview });
+  assert.match(host.querySelector('#catalogue-unscaled').textContent, /solo quando/);
+  select(host, 'cover.three'); submit(host); await tick();
+  assert.match(host.querySelector('#catalogue-impact').textContent, /30 → 15 s · adattati alla corsa/);
+  assert.match(host.querySelector('#catalogue-impact').textContent, /senza adattamento alla corsa/);
+});
+
 test('multi-cover assignment displays eligibility and preview, then confirms the exact selection', async () => {
   const { host, calls, counts } = await mount({ action: 'assign', read: assignOverview,
     call: message => message.action === 'preview_assign' ? assignedPreview : { revision: 5 } });

@@ -47,6 +47,16 @@ function chooseSave(host, mode) {
   selector.dispatchEvent(new dom.window.Event("change"));
 }
 
+test("measurement review shows the saved travel used by new and shared profiles", async () => {
+  const { host, push } = await mount();
+  push({ phase: "review", save_modes: ["new", "cover", "shared"], travel_cm: 150, reference_travel_cm: 200,
+    values: { opening_time: 15, closing_time: 20 } });
+  assert.match(host.querySelector("#cal-save-help").textContent, /150 cm/);
+  chooseSave(host, "shared");
+  assert.match(host.querySelector("#cal-save-help").textContent, /200 cm/);
+  assert.match(host.querySelector("#cal-save-help").textContent, /riportata alla corsa/);
+});
+
 function submitReview(host) {
   host.querySelector("#cal-save").dispatchEvent(new dom.window.Event("submit", { cancelable: true }));
 }

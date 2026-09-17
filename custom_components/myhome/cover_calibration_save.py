@@ -9,6 +9,7 @@ from .cover_calibration import ready_cover
 from .cover_profile_mutations import shared_preview
 from .cover_profile_provenance import DIRECTIONS, PROVENANCE
 from .cover_profiles import PROFILE, ProfileError, commit_profiles, target
+from .cover_settings import seconds, set_overrides
 
 
 async def save_measurement(session: Any, msg: dict[str, Any], *, preview: bool = False) -> Any:
@@ -37,10 +38,19 @@ async def save_measurement(session: Any, msg: dict[str, Any], *, preview: bool =
             if profile_id not in data["profiles"]:
                 raise ProfileError("profile_not_found")
             profile = data["profiles"][profile_id]
+            reference = profile.get("reference_travel_cm")
+            travel = data["covers"].get(entity.unique_id, {}).get("travel_cm")
+            if reference is not None and travel is None:
+                raise ProfileError("profile_reference_required")
             for direction in directions:
-                profile[f"{direction}_time"] = values[f"{direction}_time"]
+                # Measurements are made on this cover; shared times describe the
+                # reference cover. Do not scale a measured duration a second time.
+                value = values[f"{direction}_time"]
+                profile[f"{direction}_time"] = seconds(value * reference / travel) if reference is not None else value
                 profile["provenance"][direction] = copy.deepcopy(provenance[direction])
             proposal = {key: profile[key] for key in ("name", "opening_time", "closing_time")}
+            if reference is not None:
+                proposal["reference_travel_cm"] = reference
             impact = shared_preview(store, entity, profile_id, proposal, clear_overrides=directions)
             # A confirmation from another measurement cannot authorize this save.
             impact["confirmation"] = hashlib.sha256((session.id + impact["confirmation"]).encode()).hexdigest()
@@ -54,7 +64,6 @@ async def save_measurement(session: Any, msg: dict[str, Any], *, preview: bool =
             overrides = data["covers"].get(entity.unique_id, {}).get("overrides", {})
             for direction in directions:
                 overrides.pop(direction, None)
-            if not overrides:
-                data["covers"].pop(entity.unique_id, None)
+            set_overrides(data, entity.unique_id, overrides)
         await commit_profiles(hass, store, entry.entry_id, data, affected)
         return data["revision"]
