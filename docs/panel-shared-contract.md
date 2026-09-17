@@ -11,8 +11,9 @@ pinned to `229b1eb` and is not a fresh audit of its runtime.
 
 Current implementation: [`166b923`](https://github.com/xtimmy86x/MyHOME/commit/166b92324b714ad588f280ed1bd816d8e73c6017).
 The preceding implementation was panel 0.21.0 at [`d40f02f`](https://github.com/xtimmy86x/MyHOME/commit/d40f02ff11d9bdbd34adcd870afa12cef0d71f0d), following `e472ff4`.
-The integrated v2 baseline is now `c2e6424`, including the official command-session
-signature and WHO=13 ambiguous F454 identification fixes. Storage v5 and export v3 supersede
+The integrated v2 baseline is now `1dc4b3e` (2026-09-17), including FrameRouter,
+OWNd 2.0.0b7, delivery-failure handling and broadcast resync. The previous
+command-session signature and WHO=13 ambiguous F454 identification fixes remain included. Storage v5 and export v3 supersede
 the v4/v2 descriptions in the historical comparison below. The session behaviour
 retains panel 0.20.0 ownership; detached supervision and nonlinear calibration
 remain future work. Measurement saves now clear old overrides, retaining the

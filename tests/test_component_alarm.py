@@ -161,13 +161,12 @@ class TestMyHOMEAlarmEntity:
     async def test_async_lifecycle_and_update(self, alarm_central, alarm_zone1):
         alarm_central.async_on_remove = MagicMock()
         await alarm_central.async_added_to_hass()
-        assert alarm_central.async_on_remove.call_count == 2
+        assert alarm_central.async_on_remove.call_count == 1  # availability; frames come via the router
         alarm_central._gateway_handler.send_status_request.assert_awaited()
 
-        # Zone 1 also subscribes to global zone 0 broadcast
         alarm_zone1.async_on_remove = MagicMock()
         await alarm_zone1.async_added_to_hass()
-        assert alarm_zone1.async_on_remove.call_count == 3
+        assert alarm_zone1.async_on_remove.call_count == 1
 
     async def test_alarm_commands(self, alarm_central, alarm_zone1):
         # Disarm

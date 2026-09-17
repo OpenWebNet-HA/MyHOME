@@ -15,7 +15,6 @@ from homeassistant.components.light import (
     LightEntityFeature,
 )
 from homeassistant.const import CONF_NAME
-from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import (
     OWNEvent,
@@ -776,18 +775,9 @@ async def test_light_switch_collision_and_interface_dispatch(hass):
         received_unique = []
         received_base = []
 
-        from homeassistant.helpers.dispatcher import async_dispatcher_connect
-
-        @callback
-        def on_unique(msg):
-            received_unique.append(msg)
-
-        @callback
-        def on_base(msg):
-            received_base.append(msg)
-
-        async_dispatcher_connect(hass, "myhome_update_mac_1_16#4#01", on_unique)
-        async_dispatcher_connect(hass, "myhome_update_mac_1_16", on_base)
+        router = config_entry.runtime_data.router
+        router.subscribe("1", ["16#4#01"], lambda msg: received_unique.append(msg))
+        router.subscribe("1", ["16"], lambda msg: received_base.append(msg))
 
         from OWNd.message import OWNEvent
         msg = OWNEvent.parse("*1*1*16#4#01##")
@@ -798,6 +788,50 @@ async def test_light_switch_collision_and_interface_dispatch(hass):
 
         assert len(received_unique) == 1
         assert len(received_base) == 1
+
+
+async def test_routed_switch_receives_bare_where_frame(hass):
+    """A switch behind an F422 interface also answers to its bare WHERE.
+
+    The light platform claims ``16`` for the switch at ``16#4#01`` and publishes
+    a bare ``*1*1*16##`` under that spelling, so the switch must listen there:
+    otherwise the frame creates no light and reaches no switch.
+    """
+    from custom_components.myhome.switch import async_setup_entry as async_setup_switch_entry
+
+    mock_gateway = MagicMock()
+    mock_gateway.mac = "mac"
+    mock_gateway.send_status_request = AsyncMock()
+    hass.data.setdefault(DOMAIN, {})["mac"] = {
+        "entity": mock_gateway,
+        CONF_PLATFORMS: {
+            "switch": {"routed_switch": {CONF_WHERE: "16", "interface": "01", CONF_NAME: "Routed Switch"}},
+            "light": {},
+        },
+    }
+    config_entry = MagicMock()
+    config_entry.data = {"mac": "mac"}
+    config_entry.entry_id = "test_entry"
+
+    with patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]), \
+         patch("custom_components.myhome.discovery.er.async_get"):
+        attach_runtime(hass, config_entry)
+        lights, switches = [], []
+        await async_setup_entry(hass, config_entry, lights.extend)
+        await async_setup_switch_entry(hass, config_entry, switches.extend)
+
+    assert lights == [] and len(switches) == 1
+    sw = switches[0]
+    assert sw._full_where == "16#4#01"
+    router = config_entry.runtime_data.router
+    assert router.subscribers("1", "16#4#01") == 1 and router.subscribers("1", "16") == 1
+
+    sw.hass = hass
+    sw.async_write_ha_state = MagicMock()
+    async_dispatcher_send(hass, "myhome_message_mac", OWNEvent.parse("*1*1*16##"))
+    await hass.async_block_till_done()
+    assert sw.is_on is True
+    assert lights == []  # still no light discovered for the switch's bare WHERE
 
 
 async def test_light_setup_registry_exception(hass):
@@ -999,7 +1033,7 @@ async def test_light_async_added_to_hass_requests_initial_state(hass):
 
     with patch.object(light, "async_on_remove") as mock_on_remove:
         await light.async_added_to_hass()
-        assert mock_on_remove.call_count == 2
+        assert mock_on_remove.call_count == 1  # availability; frames come via the router
         mock_gateway.send_status_request.assert_called_once()
 
     # Verify dimmable light requests brightness status

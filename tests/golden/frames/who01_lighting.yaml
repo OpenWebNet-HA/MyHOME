@@ -526,3 +526,80 @@
   mcp_valid: true
   mcp_notes: "Lighting: Command Translation frame on private SCS bus 01"
   roundtrip: true
+
+- id: light.req.status.ptp.05
+  frame: "*#1*05##"
+  direction: status_request
+  who: 1
+  what: null
+  where: "05"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting: Query status of light at address '05' (BTicino MH201 physical plant test, issue #378, fedem95)"
+  roundtrip: true
+  builder:
+    class: OWNLightingCommand
+    method: status
+    args: ["05"]
+
+# Group dimension writes (#368 PR B: declared groups as an assumed-state light).
+# The gateway echoes these back as OWNLightingCommand (not an event), which
+# MyHOMELightGroup consumes the same way as the equivalent status reply.
+- id: light.dim.write.group.brightness
+  frame: "*#1*#6*#1*150*0##"
+  direction: dimension_write
+  who: 1
+  where: "#6"
+  dimension: 1
+  dimension_values: ["150", "0"]
+  source: mcp-draft
+  mcp_valid: true
+  mcp_notes: "Lighting: Set group #6 brightness to 50% (OWNd encodes exact level as 100+percent) with transition speed 0"
+  roundtrip: true
+  builder:
+    class: OWNLightingCommand
+    method: set_brightness
+    args: ["#6", 50]
+
+- id: light.dim.write.group.color_temp
+  frame: "*#1*#6*#14*153##"
+  direction: dimension_write
+  who: 1
+  where: "#6"
+  dimension: 14
+  dimension_values: ["153"]
+  source: mcp-draft
+  mcp_valid: true
+  mcp_notes: "Lighting: Set group #6 colour temperature to 153 mireds (Dimension 14 is not officially documented for WHO=1; DALI DT8 tunable white, issue #273/#300)"
+  roundtrip: true
+  builder:
+    class: OWNLightingCommand
+    method: set_color_temperature
+    args: ["#6", 153]
+
+- id: light.dim.write.group.hsv
+  frame: "*#1*#6*#12*120*50*80##"
+  direction: dimension_write
+  who: 1
+  where: "#6"
+  dimension: 12
+  dimension_values: ["120", "50", "80"]
+  source: mcp-draft
+  mcp_valid: true
+  mcp_notes: "Lighting: Set group #6 HSV colour to (120°, 50%, 80%) (Dimension 12 is not officially documented for WHO=1)"
+  roundtrip: true
+  builder:
+    class: OWNLightingCommand
+    method: set_hsv_color
+    args: ["#6", 120, 50, 80]
+
+- id: light.evt.dim.level10.ptp.67
+  frame: "*1*10*67##"
+  direction: event
+  who: 1
+  what: 10
+  where: "67"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting: Dimming level 10 (100%) event at address '67' (MH200 physical plant sweep)"
+  roundtrip: true

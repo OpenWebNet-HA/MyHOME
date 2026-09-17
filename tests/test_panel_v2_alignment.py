@@ -91,3 +91,29 @@ async def test_pending_profile_waits_for_stop_delivery(hass, plant):
     await asyncio.sleep(0)
     assert cover._pending_profile is None
     assert cover._travel_time_up == 42.5
+
+
+@pytest.mark.parametrize("failure", ["cancel", "exception"])
+async def test_failed_delivery_applies_pending_profile_without_advancing_position(hass, plant, failure):
+    """The v2 delivery abort also settles a profile committed while queued."""
+    import asyncio
+
+    cover = plant.covers[0]
+    cover._attr_current_cover_position = 25
+    cover._start_position = 25
+    written = asyncio.get_running_loop().create_future()
+    plant.gateways[0].send = AsyncMock(return_value=written)
+    await cover.async_open_cover()
+    await write_profile(hass, message(plant))
+    assert cover._pending_profile is not None
+    assert cover._travel_time_up == 30
+    if failure == "cancel":
+        written.cancel()
+    else:
+        written.set_exception(ConnectionError("gateway disconnected"))
+    await asyncio.sleep(0)
+    assert cover.current_cover_position == 25
+    assert not cover.is_opening and not cover.is_closing
+    assert cover._pending_profile is None
+    assert cover._travel_time_up == 42.5
+    assert plant.gateways[0].send.await_count == 1

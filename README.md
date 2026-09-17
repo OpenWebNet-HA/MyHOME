@@ -11,6 +11,7 @@
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
 [![Latest Release](https://img.shields.io/github/v/release/OpenWebNet-HA/MyHOME?include_prereleases&label=release&logo=github)](https://github.com/OpenWebNet-HA/MyHOME/releases)
 [![Python 3.14](https://img.shields.io/badge/python-3.14-blue.svg)](https://www.python.org/)
+[![mypy](https://img.shields.io/badge/mypy-strict-blue.svg)](https://mypy.readthedocs.io/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Wiki Docs](https://img.shields.io/badge/Wiki-OpenWebNet%20Docs-blue.svg)](https://github.com/OpenWebNet-HA/MyHOME/wiki/OpenWebNet-Protocol-&-WHO-Specifications)
 [![Discussions](https://img.shields.io/badge/Discussions-Join-blue?logo=github)](https://github.com/OpenWebNet-HA/MyHOME/discussions)
@@ -272,6 +273,7 @@ Go to **Settings → Devices & Services → MyHOME → Configure** to fine-tune 
 - **Gateway Address & Password**: Update the gateway IP address or OpenWebNet password without recreating the integration.
 - **Command Worker Count**: Adjust concurrent command sessions (1 to 10 workers, default 1).
 - **Generate Bus Events (`myhome_message_event`)**: Enable firing raw OpenWebNet messages directly to the Home Assistant event bus for custom monitoring and blueprint automations.
+- **Sweep group/area/general light addresses for status**: Enabled by default. After a group, area or general lighting command, the gateway is given a short (~250 ms) debounce window to echo each member's own status before the integration sweeps the group/area itself; disable this if your gateway needs a different cadence (see [Broadcast re-sync](docs/configuration/runtime_behaviour.md#-broadcast-re-sync-group--area--general)).
 - **Light Transition Mode**: Select how brightness transitions are handled:
   - `software_stepped` *(Default & Recommended)*: Smooth 0.3s stepped fades interpolated in software, compatible with all MyHOME dimmers.
   - `native`: Passes through the OpenWebNet hardware speed parameter directly (for supported hardware dimmers).
@@ -338,6 +340,31 @@ Without `lock_features` the three flags are only the starting point and auto-det
 ```text
 GATEWAY light 26#4#02 is locked to ['onoff']; ignoring Dimension 12 frame *#1*26#4#02*12*353*74*80##
 ```
+
+5. **Declared lighting groups (P7, #368)**: a `#G` `WHERE` (`#1` through `#255`) declares a group that **already exists in your plant** (configured with MyHOME_Suite or a physical group-programmed actuator) - it does not configure group membership on the bus, and it is not a second kind of "group" competing with Home Assistant's own `light.group`. Use it when you want a single OpenWebNet frame (`*1*1*#G##`, or `*#1*#G*#14*<mireds>##` for a DALI colour-temperature change) to reach every actuator programmed into that group at once:
+
+```yaml
+  light:
+    living_room_group:
+      where: '#6'
+      name: Living Room Group
+      dimmable: true
+      color_temp: true
+```
+
+Without `members` the entity is `assumed_state`: Home Assistant shows separate On / Off controls instead of a toggle, because the integration has no way to know the group's actual state - only what was last sent to it. Add `members` (the point-to-point `WHERE` of each actuator in the group) to derive real state instead, the same way core's `light.group` averages its members' brightness / colour temperature / HS colour:
+
+```yaml
+  light:
+    living_room_group:
+      where: '#6'
+      name: Living Room Group
+      dimmable: true
+      color_temp: true
+      members: ['12', '13', '0114']   # each member's own light WHERE
+```
+
+`members` never sends a single extra frame - it only tells the integration which existing light entities to watch. A group with `members` still accepts direct control (single-frame `*1*1*#6##`); it also picks up a group dimension write the gateway echoes back (`*#1*#6*#14*153##`, the DALI case from #300). Never an auto-discovered entity for a group, area or general address (#368) - only a declared one.
 
 ---
 
@@ -596,14 +623,14 @@ automated coverage and physical gateway verification steps.
 
 <!-- START_QUALITY_SCALE -->
 
-**Tier reached: 🥇 Gold**
+**Tier reached: 🏆 Platinum**
 
 | Tier | Rules satisfied | Status |
 | :--- | :---: | :--- |
 | 🥉 Bronze | 20 / 20 | ✅ complete |
 | 🥈 Silver | 10 / 10 | ✅ complete |
 | 🥇 Gold | 21 / 21 | ✅ complete |
-| 🏆 Platinum | 2 / 3 | ⏳ next — blocked by `strict-typing` |
+| 🏆 Platinum | 3 / 3 | ✅ complete |
 
 _Self-audit of [`quality_scale.yaml`](custom_components/myhome/quality_scale.yaml) against the official [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/); a tier needs every rule of that tier and all lower tiers `done`/`exempt`. Updated by the [Integration Quality Scale workflow](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/quality-scale.yml); tiers are formally awarded only by Home Assistant core review._
 

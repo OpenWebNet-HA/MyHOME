@@ -819,7 +819,7 @@ async def test_motion_sensor_0015_and_switch_15_coexistence(hass):
 
         # Switch ON frame for 15 (*1*1*15##) must trigger switch
         msg_switch_on = OWNEvent.parse("*1*1*15##")
-        async_dispatcher_send(hass, f"myhome_update_{mac}_1_15", msg_switch_on)
+        config_entry.runtime_data.router.publish("1", ["15"], msg_switch_on)  # what the light platform does
         await hass.async_block_till_done()
         assert sw.is_on is True
 

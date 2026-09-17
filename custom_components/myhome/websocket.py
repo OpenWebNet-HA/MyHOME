@@ -10,8 +10,18 @@ from typing import Any, Optional
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
-from homeassistant.components.websocket_api import ActiveConnection
-from homeassistant.components.websocket_api.decorators import require_admin
+from homeassistant.components.websocket_api.connection import ActiveConnection
+from homeassistant.components.websocket_api.const import (
+    ERR_INVALID_FORMAT,
+    ERR_NOT_FOUND,
+    ERR_UNKNOWN_ERROR,
+)
+from homeassistant.components.websocket_api.decorators import (
+    async_response,
+    require_admin,
+    websocket_command,
+)
+from homeassistant.components.websocket_api.messages import event_message
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PORT
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
@@ -37,17 +47,17 @@ WS_TYPE_CLEAR = "myhome/bus_monitor/clear"
 WS_TYPE_INFO = "myhome/bus_monitor/info"
 WS_TYPE_CALIBRATION_TRACE = "myhome/cover/calibration_trace"
 
-SCHEMA_WS_CALIBRATION_TRACE = {
+SCHEMA_WS_CALIBRATION_TRACE: dict[str | vol.Marker, Any] = {
     vol.Required("type"): WS_TYPE_CALIBRATION_TRACE,
     vol.Optional("mac"): vol.Any(cv.string, None),
 }
 
-SCHEMA_WS_INFO = {
+SCHEMA_WS_INFO: dict[str | vol.Marker, Any] = {
     vol.Required("type"): WS_TYPE_INFO,
     vol.Optional("mac"): vol.Any(cv.string, None),
 }
 
-SCHEMA_WS_HISTORY = {
+SCHEMA_WS_HISTORY: dict[str | vol.Marker, Any] = {
     vol.Required("type"): WS_TYPE_HISTORY,
     vol.Optional("mac"): vol.Any(cv.string, None),
     vol.Optional("limit", default=100): vol.All(vol.Coerce(int), vol.Range(min=1, max=500)),
@@ -56,7 +66,7 @@ SCHEMA_WS_HISTORY = {
     vol.Optional("direction"): vol.Any(vol.In(["rx", "tx", "ack", "nack", "all"]), None),
 }
 
-SCHEMA_WS_STREAM = {
+SCHEMA_WS_STREAM: dict[str | vol.Marker, Any] = {
     vol.Required("type"): WS_TYPE_STREAM,
     vol.Optional("mac"): vol.Any(cv.string, None),
     vol.Optional("who"): vol.Any(cv.string, vol.Coerce(int), None),
@@ -64,13 +74,13 @@ SCHEMA_WS_STREAM = {
     vol.Optional("direction"): vol.Any(vol.In(["rx", "tx", "ack", "nack", "all"]), None),
 }
 
-SCHEMA_WS_SEND = {
+SCHEMA_WS_SEND: dict[str | vol.Marker, Any] = {
     vol.Required("type"): WS_TYPE_SEND,
     vol.Required("frame"): cv.string,
     vol.Optional("mac"): vol.Any(cv.string, None),
 }
 
-SCHEMA_WS_CLEAR = {
+SCHEMA_WS_CLEAR: dict[str | vol.Marker, Any] = {
     vol.Required("type"): WS_TYPE_CLEAR,
     vol.Optional("mac"): vol.Any(cv.string, None),
 }
@@ -279,9 +289,9 @@ def _matches_filter(
     return True
 
 
-@websocket_api.websocket_command(SCHEMA_WS_HISTORY)
+@websocket_command(SCHEMA_WS_HISTORY)
 @require_admin
-@websocket_api.async_response
+@async_response
 async def ws_bus_monitor_history(
     hass: HomeAssistant,
     connection: ActiveConnection,
@@ -292,7 +302,7 @@ async def ws_bus_monitor_history(
     if monitor is None:
         connection.send_error(
             msg["id"],
-            websocket_api.ERR_NOT_FOUND,
+            ERR_NOT_FOUND,
             "No active MyHOME gateway or bus monitor found",
         )
         return
@@ -321,9 +331,9 @@ async def ws_bus_monitor_history(
     )
 
 
-@websocket_api.websocket_command(SCHEMA_WS_STREAM)
+@websocket_command(SCHEMA_WS_STREAM)
 @require_admin
-@websocket_api.async_response
+@async_response
 async def ws_bus_monitor_stream(
     hass: HomeAssistant,
     connection: ActiveConnection,
@@ -334,7 +344,7 @@ async def ws_bus_monitor_stream(
     if monitor is None:
         connection.send_error(
             msg["id"],
-            websocket_api.ERR_NOT_FOUND,
+            ERR_NOT_FOUND,
             "No active MyHOME gateway or bus monitor found",
         )
         return
@@ -347,7 +357,7 @@ async def ws_bus_monitor_stream(
     def forward_frame(frame: BusFrame) -> None:
         if _matches_filter(frame, who=who, where=where, direction=direction):
             connection.send_message(
-                websocket_api.event_message(msg["id"], frame.to_dict())
+                event_message(msg["id"], frame.to_dict())
             )
 
     unsub = monitor.subscribe(forward_frame)
@@ -355,9 +365,9 @@ async def ws_bus_monitor_stream(
     connection.send_result(msg["id"])
 
 
-@websocket_api.websocket_command(SCHEMA_WS_SEND)
+@websocket_command(SCHEMA_WS_SEND)
 @require_admin
-@websocket_api.async_response
+@async_response
 async def ws_bus_monitor_send(
     hass: HomeAssistant,
     connection: ActiveConnection,
@@ -368,7 +378,7 @@ async def ws_bus_monitor_send(
     if gateway is None:
         connection.send_error(
             msg["id"],
-            websocket_api.ERR_NOT_FOUND,
+            ERR_NOT_FOUND,
             "No active MyHOME gateway found to transmit frame",
         )
         return
@@ -377,7 +387,7 @@ async def ws_bus_monitor_send(
     if not (frame_str.startswith("*") and frame_str.endswith("##")):
         connection.send_error(
             msg["id"],
-            websocket_api.ERR_INVALID_FORMAT,
+            ERR_INVALID_FORMAT,
             f"Invalid OpenWebNet frame format: {frame_str}",
         )
         return
@@ -391,7 +401,7 @@ async def ws_bus_monitor_send(
         _LOGGER.error("Failed to transmit frame %s via WebSocket: %s", frame_str, ex)
         connection.send_error(
             msg["id"],
-            websocket_api.ERR_UNKNOWN_ERROR,
+            ERR_UNKNOWN_ERROR,
             f"Failed to transmit frame: {ex}",
         )
         return
@@ -402,9 +412,9 @@ async def ws_bus_monitor_send(
     )
 
 
-@websocket_api.websocket_command(SCHEMA_WS_CLEAR)
+@websocket_command(SCHEMA_WS_CLEAR)
 @require_admin
-@websocket_api.async_response
+@async_response
 async def ws_bus_monitor_clear(
     hass: HomeAssistant,
     connection: ActiveConnection,
@@ -415,7 +425,7 @@ async def ws_bus_monitor_clear(
     if monitor is None:
         connection.send_error(
             msg["id"],
-            websocket_api.ERR_NOT_FOUND,
+            ERR_NOT_FOUND,
             "No active MyHOME gateway or bus monitor found",
         )
         return
@@ -424,9 +434,9 @@ async def ws_bus_monitor_clear(
     connection.send_result(msg["id"], {"success": True})
 
 
-@websocket_api.websocket_command(SCHEMA_WS_INFO)
+@websocket_command(SCHEMA_WS_INFO)
 @require_admin
-@websocket_api.async_response
+@async_response
 async def ws_bus_monitor_info(
     hass: HomeAssistant,
     connection: ActiveConnection,
@@ -437,7 +447,7 @@ async def ws_bus_monitor_info(
     if monitor is None and gw is None:
         connection.send_error(
             msg["id"],
-            websocket_api.ERR_NOT_FOUND,
+            ERR_NOT_FOUND,
             "No active MyHOME gateway or bus monitor found",
         )
         return
@@ -451,8 +461,8 @@ async def ws_bus_monitor_info(
     )
 
 
-@websocket_api.websocket_command(SCHEMA_WS_CALIBRATION_TRACE)
-@websocket_api.async_response
+@websocket_command(SCHEMA_WS_CALIBRATION_TRACE)
+@async_response
 async def ws_cover_calibration_trace(
     hass: HomeAssistant,
     connection: ActiveConnection,
@@ -470,7 +480,7 @@ async def ws_cover_calibration_trace(
     if gw is None:
         connection.send_error(
             msg["id"],
-            websocket_api.ERR_NOT_FOUND,
+            ERR_NOT_FOUND,
             "No active MyHOME gateway found",
         )
         return

@@ -6,7 +6,10 @@ green in CI and only fails on a real gateway, where the worker's broad
 ``except`` turns it into "unexpected error while sending" for every frame.
 This file is the one place the worker meets the real class.
 """
+import ast
 import asyncio
+import inspect
+from pathlib import Path
 from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
@@ -141,3 +144,51 @@ async def test_worker_delivers_golden_mh200_device_type_request():
     assert "*#13**15##" in harness.received_messages
     assert written.done() and not written.cancelled()
     assert isinstance(written.result(), float)
+
+
+def test_all_command_session_send_calls_match_ownd_signature():
+    """Static AST audit: every call to OWNCommandSession.send matches OWNd's documented signature.
+
+    Scans custom_components/myhome for any .send() invocation on command session variables
+    or OWNCommandSession instances and verifies that only documented keyword arguments
+    ('message', 'is_status_request') are passed. This prevents regressions like #371 where
+    an unsupported kwarg caused every frame transmission to fail on real hardware.
+    """
+    sig = inspect.signature(OWNCommandSession.send)
+    valid_params = set(sig.parameters.keys()) - {"self"}
+
+    pkg_root = Path(__file__).parents[1] / "custom_components" / "myhome"
+    violations = []
+    found_calls = 0
+
+    for py_file in pkg_root.rglob("*.py"):
+        source = py_file.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(py_file))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                if node.func.attr == "send":
+                    recv_name = ""
+                    if isinstance(node.func.value, ast.Name):
+                        recv_name = node.func.value.id
+                    elif isinstance(node.func.value, ast.Attribute):
+                        recv_name = node.func.value.attr
+
+                    if "command_session" in recv_name.lower():
+                        found_calls += 1
+                        passed_kwargs = {kw.arg for kw in node.keywords if kw.arg is not None}
+                        invalid = passed_kwargs - valid_params
+                        if invalid:
+                            violations.append(
+                                f"{py_file.name}:{node.lineno} passes undocumented kwargs {invalid} "
+                                f"to {recv_name}.send(); valid kwargs are {valid_params}"
+                            )
+                        # Also check max positional args: message, is_status_request (max 2)
+                        if len(node.args) > 2:
+                            violations.append(
+                                f"{py_file.name}:{node.lineno} passes too many positional args ({len(node.args)}) "
+                                f"to {recv_name}.send(); max allowed is 2"
+                            )
+
+    assert found_calls > 0, "Expected to find at least one command_session.send() call in custom_components/myhome"
+    assert not violations, "\n".join(violations)
+

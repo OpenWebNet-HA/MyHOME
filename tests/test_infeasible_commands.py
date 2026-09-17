@@ -211,11 +211,13 @@ class TestCommandGenerationFeasibility:
 
         # 2. Rule: Press commands must generate exact feasible WHO 14 frames
         await lock_btn.async_press()
-        mock_gateway.send.assert_called_once_with("*14*0*15##")
+        mock_gateway.send.assert_called_once()
+        assert str(mock_gateway.send.call_args[0][0]) == "*14*0*15##"
         mock_gateway.send.reset_mock()
 
         await unlock_btn.async_press()
-        mock_gateway.send.assert_called_once_with("*14*1*15##")
+        mock_gateway.send.assert_called_once()
+        assert str(mock_gateway.send.call_args[0][0]) == "*14*1*15##"
         mock_gateway.send.reset_mock()
 
         # Test with 4-digit address 0015
@@ -232,7 +234,8 @@ class TestCommandGenerationFeasibility:
             gateway=mock_gateway,
         )
         await lock_btn_0015.async_press()
-        mock_gateway.send.assert_called_once_with("*14*0*0015##")
+        mock_gateway.send.assert_called_once()
+        assert str(mock_gateway.send.call_args[0][0]) == "*14*0*0015##"
         assert "*14*0*15##" != "*14*0*0015##"
 
 

@@ -15,6 +15,26 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Current v2 alignment (2026-09-17)
+
+The branch integrates official `v2-phase1-architecture` through `1dc4b3e`
+(integration 2.0.0b12, OWNd 2.0.0b7). This includes FrameRouter event delivery,
+declared lighting groups and debounced broadcast resync, profile-driven command
+session idle timeouts, cover delivery-failure handling and the antifreeze target
+fix. The panel remains at 0.22.2; its frontend assets have not changed.
+
+Cover profiles bind before the initial status request while FrameRouter owns bus
+subscriptions. A failed cover command clears motion and applies any pending
+profile without advancing position. Calibration queue locks and cancellation
+guards, atomic shared storage, single-direction measurement without an assigned
+profile, admin-only monitor access and Configure navigation are retained.
+Gateway settings expose the upstream broadcast-resync option. Area lookup uses
+the handler's normalized MAC property, which is also tested with a real OWNd gateway.
+
+Validation: 101 frontend tests pass; backend line coverage is 100% (7,473
+statements across 41 modules). Strict mypy reports zero errors without raising
+the upstream zero-error baseline; Ruff and HA architectural checks pass.
+
 ## Partial measurement without an assigned profile (0.22.2)
 
 Opening-only and closing-only no longer require a saved profile assignment.
@@ -47,7 +67,7 @@ the selector. Backend measurement, override and persistence semantics are unchan
 Validated with 100 frontend tests and 35 targeted panel/partial-calibration Python
 tests. The two selector regressions fail before this fix and pass afterwards.
 
-## Current v2 alignment (0.22.0)
+## Previous v2 alignment (0.22.0)
 
 The branch integrates official v2 through `c2e6424`, including the public OWNd
 `send(message, is_status_request)` contract, callback-safe tests and ambiguous

@@ -93,6 +93,7 @@
           "config_file_path": "Configuration file path",
           "command_worker_count": "Number of concurrent command sessions",
           "generate_events": "Generate events in Home Assistant for each message received",
+          "broadcast_resync": "Sweep group/area/general light addresses for status after a debounced silence window",
           "transition_mode": "Brightness transition method",
           "decoder_1_entity": "Decoder 1 — Media player entity (e.g. media_player.cambridge_audio_cxn)",
           "decoder_1_source": "Decoder 1 — BTicino source input number (1–4)",
@@ -273,6 +274,15 @@
     }
   },
   "exceptions": {
+    "command_delivery_cancelled": {
+      "message": "{name}: direction command delivery was cancelled before reaching the bus"
+    },
+    "command_delivery_timeout": {
+      "message": "{name}: direction command was not delivered to the bus within {timeout} s"
+    },
+    "command_delivery_failed": {
+      "message": "{name}: direction command delivery failed: {error}"
+    },
     "calibration_interrupted": {
       "message": "{name}: {cause}"
     },
@@ -294,6 +304,9 @@
     "travel_time_out_of_range": {
       "message": "{field} must be between {min} s and {max} s"
     },
+    "cover_command_undelivered": {
+      "message": "Command undelivered (gateway disconnected or queue flushed)"
+    },
     "cover_busy_calibrating": {
       "message": "{entity_id} is being calibrated; try again when it has finished"
     },
@@ -305,6 +318,12 @@
     },
     "panel_timing_managed": {
       "message": "Travel times are managed by the MyHOME panel. Finish its measurement and remove the assigned travel profile before using native timing services."
+    },
+    "group_no_transition": {
+      "message": "{name}: a lighting group does not support software transition"
+    },
+    "group_no_timer": {
+      "message": "{name}: timed on/off is not supported for a lighting group"
     }
   },
   "entity": {

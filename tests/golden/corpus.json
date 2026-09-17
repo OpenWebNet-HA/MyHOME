@@ -781,6 +781,116 @@
     "_file": "who01_lighting.yaml"
   },
   {
+    "id": "light.req.status.ptp.05",
+    "frame": "*#1*05##",
+    "direction": "status_request",
+    "who": 1,
+    "what": null,
+    "where": "05",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Query status of light at address '05' (BTicino MH201 physical plant test, issue #378, fedem95)",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "status",
+      "args": [
+        "05"
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.write.group.brightness",
+    "frame": "*#1*#6*#1*150*0##",
+    "direction": "dimension_write",
+    "who": 1,
+    "where": "#6",
+    "dimension": 1,
+    "dimension_values": [
+      "150",
+      "0"
+    ],
+    "source": "mcp-draft",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Set group #6 brightness to 50% (OWNd encodes exact level as 100+percent) with transition speed 0",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "set_brightness",
+      "args": [
+        "#6",
+        50
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.write.group.color_temp",
+    "frame": "*#1*#6*#14*153##",
+    "direction": "dimension_write",
+    "who": 1,
+    "where": "#6",
+    "dimension": 14,
+    "dimension_values": [
+      "153"
+    ],
+    "source": "mcp-draft",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Set group #6 colour temperature to 153 mireds (Dimension 14 is not officially documented for WHO=1; DALI DT8 tunable white, issue #273/#300)",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "set_color_temperature",
+      "args": [
+        "#6",
+        153
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.dim.write.group.hsv",
+    "frame": "*#1*#6*#12*120*50*80##",
+    "direction": "dimension_write",
+    "who": 1,
+    "where": "#6",
+    "dimension": 12,
+    "dimension_values": [
+      "120",
+      "50",
+      "80"
+    ],
+    "source": "mcp-draft",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Set group #6 HSV colour to (120\u00b0, 50%, 80%) (Dimension 12 is not officially documented for WHO=1)",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNLightingCommand",
+      "method": "set_hsv_color",
+      "args": [
+        "#6",
+        120,
+        50,
+        80
+      ]
+    },
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.evt.dim.level10.ptp.67",
+    "frame": "*1*10*67##",
+    "direction": "event",
+    "who": 1,
+    "what": 10,
+    "where": "67",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Dimming level 10 (100%) event at address '67' (MH200 physical plant sweep)",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
     "id": "cover.cmd.up.ptp.93",
     "frame": "*2*1*93##",
     "direction": "command",
@@ -1018,6 +1128,62 @@
     "source": "community-plant-capture",
     "mcp_valid": true,
     "mcp_notes": "Automation: Absolute position level 10% report for address 73 (issue #247 reporter plant)",
+    "roundtrip": true,
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.cmd.translation.stop.03",
+    "frame": "*2*1000#0*03##",
+    "direction": "command",
+    "who": 2,
+    "what": "1000#0",
+    "where": "03",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "[Translation] Automation (Covers & Shutters): STOP movement at address '03' (issue #378 reporter plant, TheDarkWizard)",
+    "roundtrip": true,
+    "is_translation": true,
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.cmd.translation.up.03",
+    "frame": "*2*1000#1*03##",
+    "direction": "command",
+    "who": 2,
+    "what": "1000#1",
+    "where": "03",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "[Translation] Automation (Covers & Shutters): UP (Open shutter) at address '03' (issue #378 reporter plant, TheDarkWizard)",
+    "roundtrip": true,
+    "is_translation": true,
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.cmd.translation.down.03",
+    "frame": "*2*1000#2*03##",
+    "direction": "command",
+    "who": 2,
+    "what": "1000#2",
+    "where": "03",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "[Translation] Automation (Covers & Shutters): DOWN (Close shutter) at address '03' (issue #378 reporter plant, TheDarkWizard)",
+    "roundtrip": true,
+    "is_translation": true,
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.evt.stop.routed.interface.02",
+    "frame": "*2*0*14#4#02##",
+    "direction": "event",
+    "who": 2,
+    "what": 0,
+    "where": "14",
+    "interface": "02",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Automation: STOP event at address '14' routed via private bus interface 02 (MH200 physical plant sweep)",
     "roundtrip": true,
     "_file": "who02_automation.yaml"
   },
@@ -1341,6 +1507,72 @@
     "source": "community-plant-capture",
     "mcp_valid": true,
     "mcp_notes": "Thermoregulation: Zone 2 measured temperature 26.2\u00b0C",
+    "roundtrip": true,
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.resp.probe.status.antifreeze.70",
+    "frame": "*#4*2*12*0070*3##",
+    "direction": "dimension_response",
+    "who": 4,
+    "what": null,
+    "where": "2",
+    "dimension": 12,
+    "dimension_values": [
+      "0070",
+      "3"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Thermoregulation: Zone 2 complete probe status target 7.0\u00b0C in Antifreeze / Generic Protection mode",
+    "roundtrip": true,
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.event.mode.antifreeze.zone2",
+    "frame": "*4*102*2##",
+    "direction": "command",
+    "who": 4,
+    "what": 102,
+    "where": "2",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Thermoregulation: Zone 2 in Antifreeze protection mode",
+    "roundtrip": true,
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.resp.setpoint.zone2.heat.170",
+    "frame": "*#4*2*14*0170*3##",
+    "direction": "dimension_response",
+    "who": 4,
+    "what": null,
+    "where": "2",
+    "dimension": 14,
+    "dimension_values": [
+      "0170",
+      "3"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Thermoregulation: Zone 2 configured comfort setpoint 17.0\u00b0C",
+    "roundtrip": true,
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.resp.offset.zone2.0",
+    "frame": "*#4*2*13*00##",
+    "direction": "dimension_response",
+    "who": 4,
+    "what": null,
+    "where": "2",
+    "dimension": 13,
+    "dimension_values": [
+      "00"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Thermoregulation: Zone 2 local knob offset 0.0\u00b0C",
     "roundtrip": true,
     "_file": "who04_thermo.yaml"
   },

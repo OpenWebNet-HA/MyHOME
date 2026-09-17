@@ -76,7 +76,8 @@
           "password": "Mot de passe",
           "config_file_path": "Chemin du fichier de configuration",
           "command_worker_count": "Nombre de session de commande simultanées",
-          "generate_events": "Générer des événements dans Home Assistant pour chaque message reçu"
+          "generate_events": "Générer des événements dans Home Assistant pour chaque message reçu",
+          "broadcast_resync": "Interroger les adresses de groupe/zone/générale après une fenêtre de silence"
         }
       },
       "init": {

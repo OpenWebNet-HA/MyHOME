@@ -1,5 +1,5 @@
 """Test the MyHOME climate component."""
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.components.climate.const import ClimateEntityFeature, HVACAction, HVACMode
 from homeassistant.const import UnitOfTemperature
@@ -81,6 +81,32 @@ async def test_setup_and_unload_entry(hass):
     attach_runtime(hass, config_entry)
     await async_unload_entry(hass, config_entry)
     assert "device_1" not in hass.data["myhome"]["mac"]["platforms"]["climate"]
+
+
+async def test_legacy_routed_zone_listens_under_clean_spellings(hass):
+    """A zone restored from a legacy ``4-`` prefixed id behind an F422 interface is
+    reached under the spellings a frame is published under (``1#4#01``, ``1``)."""
+    hass.data = {"myhome": {"mac": {"platforms": {"climate": {}}, "entity": MagicMock()}}}
+    config_entry = MagicMock()
+    config_entry.data = {"mac": "mac"}
+    config_entry.entry_id = "test_entry"
+    legacy = MagicMock()
+    legacy.domain = "climate"
+    legacy.unique_id = "mac-4-4-1#4#01"
+    legacy.entity_id = "climate.zone_1"
+    legacy.name = None
+
+    with patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[legacy]), \
+         patch("custom_components.myhome.discovery.er.async_get"):
+        attach_runtime(hass, config_entry)
+        entities = []
+        await async_setup_entry(hass, config_entry, entities.extend)
+
+    assert len(entities) == 1
+    router = config_entry.runtime_data.router
+    assert router.subscribers("4", "4-1#4#01") == 1  # the id it was restored under
+    assert router.subscribers("4", "1#4#01") == 1  # the frame's key
+    assert router.subscribers("4", "1") == 1  # the bare zone
 
 async def test_climate_properties_and_hvac_modes(hass):
     """Test climate entity properties and set_hvac_mode."""
@@ -677,3 +703,125 @@ async def test_climate_knob_positions_coverage(hass):
     assert entity._knob_pos == "OFF"
     assert entity._local_offset == 0
     assert entity._local_target_temperature == 20.0
+
+
+async def test_climate_antifreeze_status_sweep_preserves_target_and_comfort_setpoint(hass):
+    """Test that an antifreeze status sweep reports 7.0 °C target and preserves nominal setpoint (#383)."""
+    gateway_mock = MagicMock()
+    gateway_mock.mac = "00:11:22:33:44:55"
+    gateway_mock.send = AsyncMock()
+
+    climate = MyHOMEClimate(
+        hass=hass,
+        name="Zone 2",
+        device_id="4-2",
+        who="4",
+        where="2",
+        heating=True,
+        cooling=True,
+        fan=False,
+        standalone=True,
+        central=False,
+        manufacturer="BTicino",
+        model="Heating Zone",
+        gateway=gateway_mock,
+    )
+    climate.hass = hass
+    climate.entity_id = "climate.zone_2"
+    climate.async_write_ha_state = MagicMock()
+
+    # Diagnostic trace from Issue #383
+    # 1. Dimension 12: active operational target 7.0 °C (mode 3 = Generic/Antifreeze)
+    climate.handle_event(OWNHeatingEvent("*#4*2*12*0070*3##"))
+    assert climate.target_temperature == 7.0
+    assert climate.extra_state_attributes["local_target_temperature"] == 7.0
+
+    # 2. WHAT=102: Zone Antifreeze mode event
+    climate.handle_event(OWNHeatingEvent("*4*102*2##"))
+    assert climate.hvac_mode == HVACMode.OFF
+    assert climate.hvac_action == HVACAction.OFF
+    assert climate.target_temperature == 7.0
+
+    # 3. Dimension 14: Nominal configured comfort setpoint (17.0 °C in mode 3)
+    # This must NOT overwrite the active antifreeze target (7.0 °C)!
+    climate.handle_event(OWNHeatingEvent("*#4*2*14*0170*3##"))
+    assert climate.target_temperature == 7.0
+    assert climate.extra_state_attributes["local_target_temperature"] == 7.0
+    assert climate._target_temperature == 17.0
+
+    # 4. Dimension 13: Local knob offset (0 °C)
+    climate.handle_event(OWNHeatingEvent("*#4*2*13*00##"))
+    assert climate.target_temperature == 7.0
+    assert climate._local_offset == 0
+    assert climate.extra_state_attributes["local_target_temperature"] == 7.0
+
+    # 5. Dimension 0: Measured temperature (24.7 °C)
+    climate.handle_event(OWNHeatingEvent("*#4*2*0*0247##"))
+    assert climate.current_temperature == 24.7
+    assert climate.target_temperature == 7.0
+
+    # Test toggling back to HEAT restores nominal comfort setpoint (17.0 °C, NOT 7.0 °C!)
+    await climate.async_set_hvac_mode(HVACMode.HEAT)
+    gateway_mock.send.assert_awaited_once()
+    assert str(gateway_mock.send.call_args[0][0]) == "*#4*2*#14*0170*1##"
+
+    # Simulated bus acknowledgment of HEAT mode: target updates to nominal comfort setpoint
+    climate.handle_event(OWNHeatingEvent("*4*1*2##"))  # or *4*110*2##
+    assert climate.hvac_mode == HVACMode.HEAT
+    assert climate.target_temperature == 17.0
+
+    # Test out-of-order delivery: Dimension 14 arriving before Dimension 12 while in OFF mode
+    climate_alt = MyHOMEClimate(
+        hass=hass,
+        name="Zone 1",
+        device_id="4-1",
+        who="4",
+        where="1",
+        heating=True,
+        cooling=True,
+        fan=False,
+        standalone=True,
+        central=False,
+        manufacturer="BTicino",
+        model="Heating Zone",
+        gateway=gateway_mock,
+    )
+    climate_alt.hass = hass
+    climate_alt.entity_id = "climate.zone_1"
+    climate_alt.async_write_ha_state = MagicMock()
+
+    # Dimension 14 arrives first with mode 3 (19.0 °C nominal setpoint)
+    climate_alt.handle_event(OWNHeatingEvent("*#4*1*14*0190*3##"))
+    # Dimension 12 arrives second with 7.0 °C antifreeze target
+    climate_alt.handle_event(OWNHeatingEvent("*#4*1*12*0070*3##"))
+    # WHAT=102 arrives third
+    climate_alt.handle_event(OWNHeatingEvent("*4*102*1##"))
+    # Dimension 13 arrives fourth
+    climate_alt.handle_event(OWNHeatingEvent("*#4*1*13*00##"))
+
+    assert climate_alt.target_temperature == 7.0
+    assert climate_alt._target_temperature == 19.0
+    assert climate_alt.hvac_mode == HVACMode.OFF
+
+    # Transition from OFF to COOL restores comfort setpoint
+    climate_alt.handle_event(OWNHeatingEvent("*4*211*1##"))
+    assert climate_alt.hvac_mode == HVACMode.COOL
+    assert climate_alt.target_temperature == 19.0
+
+    # Put back to OFF, then transition to AUTO restores comfort setpoint
+    climate_alt.handle_event(OWNHeatingEvent("*4*102*1##"))
+    assert climate_alt.hvac_mode == HVACMode.OFF
+    climate_alt.handle_event(OWNHeatingEvent("*4*311*1##"))
+    assert climate_alt.hvac_mode == HVACMode.AUTO
+    assert climate_alt.target_temperature == 19.0
+
+    # Transition from OFF when target_temperature is None
+    climate_alt._target_temperature = None
+    climate_alt._local_target_temperature = 5.0
+    climate_alt.handle_event(OWNHeatingEvent("*4*102*1##"))
+    assert climate_alt.hvac_mode == HVACMode.OFF
+    climate_alt.handle_event(OWNHeatingEvent("*4*1*1##"))
+    assert climate_alt.hvac_mode == HVACMode.HEAT
+    assert climate_alt._local_target_temperature == 5.0
+
+

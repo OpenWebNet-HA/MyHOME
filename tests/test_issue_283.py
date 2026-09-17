@@ -165,6 +165,7 @@ async def test_dynamic_discovery_rejects_command_translation(hass):
 
     with patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]), \
          patch("custom_components.myhome.discovery.er.async_get"):
+        attach_runtime(hass, config_entry)
         await async_setup_light(hass, config_entry, mock_add_entities)
 
     dispatcher_signal = f"myhome_message_{config_entry.data[CONF_MAC]}"

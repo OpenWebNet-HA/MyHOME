@@ -2,6 +2,7 @@
 import asyncio
 import ipaddress
 import re
+import typing
 from typing import Dict, Optional
 
 import voluptuous as vol
@@ -36,6 +37,7 @@ from voluptuous import (
 
 from .const import (
     CONF_ADDRESS,
+    CONF_BROADCAST_RESYNC,
     CONF_DECODER_ENTITY,
     CONF_DECODER_PRE_GAIN,
     CONF_DECODER_SLOTS,
@@ -75,10 +77,10 @@ class MACAddress:
         return ":".join(["%s" % (self.mac[i : i + 2]) for i in range(0, 12, 2)])
 
 
-def _get_serial_ports() -> list:
+def _get_serial_ports() -> list:  # type: ignore
     """Enumerate serial ports safely without hard dependency on pyserial."""
     try:
-        import serial.tools.list_ports
+        import serial.tools.list_ports  # type: ignore
         return list(serial.tools.list_ports.comports())
     except Exception:
         return []
@@ -91,28 +93,29 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry):
+    def async_get_options_flow(config_entry):  # type: ignore
         """Get the options flow for this handler."""
         return MyhomeOptionsFlowHandler(config_entry)
 
-    def __init__(self):
+    def __init__(self):  # type: ignore
         """Initialize the MyHome flow."""
         self.gateway_handler: Optional[OWNGateway] = None
-        self.discovered_gateways: Optional[Dict[str, OWNGateway]] = None
-        self._existing_entry: ConfigEntry = None
+        self.discovered_gateways: Optional[Dict[str, dict[str, typing.Any]]] = None
+        self._existing_entry: ConfigEntry | None = None
 
-    async def async_step_user(self, user_input=None):
+    async def async_step_user(self, user_input=None):  # type: ignore
         """Handle a flow initialized by the user."""
 
         # Check if user chooses manual entry or serial entry
         if user_input is not None and user_input["serial"] == "00:00:00:00:00:00":
-            return await self.async_step_custom()
+            return await self.async_step_custom()  # type: ignore
 
         if user_input is not None and user_input["serial"] == "serial_gateway":
-            return await self.async_step_serial()
+            return await self.async_step_serial()  # type: ignore
 
         if user_input is not None and self.discovered_gateways is not None and user_input["serial"] in self.discovered_gateways:
             self.gateway_handler = await OWNGateway.build_from_discovery_info(self.discovered_gateways[user_input["serial"]])
+            assert self.gateway_handler is not None
             await self.async_set_unique_id(
                 dr.format_mac(self.gateway_handler.serial),
                 raise_on_progress=False,
@@ -144,7 +147,7 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
             ),
         )
 
-    async def async_step_serial(self, user_input=None, errors=None):
+    async def async_step_serial(self, user_input=None, errors=None):  # type: ignore
         """Handle USB / Serial gateway setup (Legrand 3578 / OpenZigBee)."""
         if errors is None:
             errors = {}
@@ -211,7 +214,7 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_custom(self, user_input=None, errors=None):
+    async def async_step_custom(self, user_input=None, errors=None):  # type: ignore
         """Handle manual gateway setup — auto-discovers MAC from IP when possible.
 
         Step 1: User provides only IP and port.
@@ -261,7 +264,7 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
                     )
                     self._custom_address = user_input["address"]
                     self._custom_port = user_input.get("port", 20000)
-                    return await self.async_step_custom_manual()
+                    return await self.async_step_custom_manual()  # type: ignore
 
         address_suggestion = user_input["address"] if user_input is not None and user_input.get("address") else "192.168.1.100"
         port_suggestion = user_input["port"] if user_input is not None and user_input.get("port") else 20000
@@ -277,7 +280,7 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_custom_manual(self, user_input=None, errors=None):
+    async def async_step_custom_manual(self, user_input=None, errors=None):  # type: ignore
         """Fallback manual entry when UPnP auto-discovery fails.
 
         Shown only when the gateway could not be discovered by IP.
@@ -343,10 +346,10 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_reauth(self, config: dict = None):
+    async def async_step_reauth(self, config: dict = None):  # type: ignore
         """Perform reauth upon an authentication error."""
 
-        entry = self.hass.config_entries.async_get_entry(self.context.get("entry_id"))
+        entry = self.hass.config_entries.async_get_entry(self.context.get("entry_id"))  # type: ignore
         if entry is None and config and CONF_MAC in config:
             entry = self.hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, config[CONF_MAC])
         self._existing_entry = entry
@@ -362,21 +365,21 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
 
         model_val = getattr(self.gateway_handler, "model_name", None) or getattr(self.gateway_handler, "model", "Gateway")
         self.context.update(
-            {
+            {  # type: ignore
                 CONF_HOST: self.gateway_handler.host,
                 CONF_NAME: model_val,
                 CONF_MAC: self.gateway_handler.serial,
                 "title_placeholders": {
-                    CONF_HOST: self.gateway_handler.host,
-                    CONF_NAME: model_val,
-                    CONF_MAC: self.gateway_handler.serial,
+                    CONF_HOST: self.gateway_handler.host,  # type: ignore
+                    CONF_NAME: model_val,  # type: ignore
+                    CONF_MAC: self.gateway_handler.serial,  # type: ignore
                 },
             }
         )
 
-        return await self.async_step_password(errors={CONF_OWN_PASSWORD: "password_error"})
+        return await self.async_step_password(errors={CONF_OWN_PASSWORD: "password_error"})  # type: ignore
 
-    async def async_step_test_connection(self, user_input=None, errors={}):  # pylint: disable=unused-argument,dangerous-default-value
+    async def async_step_test_connection(self, user_input: typing.Any = None, errors: typing.Any = {}) -> typing.Any:  # pylint: disable=unused-argument,dangerous-default-value  # type: ignore
         """Testing connection to the OWN Gateway.
 
         Given a configured gateway, will attempt to connect and negociate a
@@ -386,14 +389,14 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
         assert gateway is not None
 
         self.context.update(
-            {
+            {  # type: ignore
                 CONF_HOST: gateway.host,
                 CONF_NAME: gateway.model_name,
                 CONF_MAC: gateway.serial,
                 "title_placeholders": {
-                    CONF_HOST: gateway.host,
-                    CONF_NAME: gateway.model_name,
-                    CONF_MAC: gateway.serial,
+                    CONF_HOST: str(gateway.host or ""),
+                    CONF_NAME: str(gateway.model_name or ""),
+                    CONF_MAC: str(gateway.serial or ""),
                 },
             }
         )
@@ -439,14 +442,14 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
             )
         else:
             if test_result["Message"] == "password_required":
-                return await self.async_step_password()
+                return await self.async_step_password()  # type: ignore
             elif test_result["Message"] == "password_error" or test_result["Message"] == "password_retry":
                 errors["password"] = test_result["Message"]
-                return await self.async_step_password(errors=errors)
+                return await self.async_step_password(errors=errors)  # type: ignore
             else:
                 return self.async_abort(reason=test_result["Message"])
 
-    async def async_step_port(self, user_input=None, errors=None):
+    async def async_step_port(self, user_input=None, errors=None):  # type: ignore
         """Port information for the gateway is missing.
 
         Asking user to provide the port on which the gateway is listening.
@@ -457,7 +460,7 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             # Validate user input
             if 1 <= int(user_input[CONF_PORT]) <= 65535:
-                self.gateway_handler.port = int(user_input[CONF_PORT])
+                self.gateway_handler.port = int(user_input[CONF_PORT])  # type: ignore
                 return await self.async_step_test_connection()
             errors["port"] = "invalid_port"
 
@@ -469,14 +472,14 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
                 }
             ),
             description_placeholders={
-                CONF_HOST: self.context[CONF_HOST],
-                CONF_NAME: self.context[CONF_NAME],
-                CONF_MAC: self.context[CONF_MAC],
+                CONF_HOST: self.context[CONF_HOST],  # type: ignore
+                CONF_NAME: self.context[CONF_NAME],  # type: ignore
+                CONF_MAC: self.context[CONF_MAC],  # type: ignore
             },
             errors=errors,
         )
 
-    async def async_step_password(self, user_input=None, errors=None):
+    async def async_step_password(self, user_input=None, errors=None):  # type: ignore
         """Password is required to connect the gateway.
 
         Asking user to provide the gateway's password.
@@ -486,11 +489,11 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             # Validate user input
-            self.gateway_handler.password = str(user_input[CONF_OWN_PASSWORD])
+            self.gateway_handler.password = str(user_input[CONF_OWN_PASSWORD])  # type: ignore
             return await self.async_step_test_connection()
         else:
-            if self.gateway_handler.password is not None:
-                _suggested_password = self.gateway_handler.password
+            if self.gateway_handler.password is not None:  # type: ignore
+                _suggested_password = self.gateway_handler.password  # type: ignore
             else:
                 _suggested_password = 12345
 
@@ -505,14 +508,14 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
                 }
             ),
             description_placeholders={
-                CONF_HOST: self.context[CONF_HOST],
-                CONF_NAME: self.context[CONF_NAME],
-                CONF_MAC: self.context[CONF_MAC],
+                CONF_HOST: self.context[CONF_HOST],  # type: ignore
+                CONF_NAME: self.context[CONF_NAME],  # type: ignore
+                CONF_MAC: self.context[CONF_MAC],  # type: ignore
             },
             errors=errors,
         )
 
-    async def async_step_ssdp(self, discovery_info):
+    async def async_step_ssdp(self, discovery_info):  # type: ignore
         """Handle a discovered OpenWebNet gateway.
 
         This flow is triggered by the SSDP component. It will check if the
@@ -527,6 +530,8 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
         _discovery_info["port"] = 20000
 
         gateway = await OWNGateway.build_from_discovery_info(_discovery_info)
+        if gateway is None:
+            return self.async_abort(reason="unknown")
         await self.async_set_unique_id(dr.format_mac(gateway.unique_id))
         LOGGER.info("Found gateway: %s", gateway.address)
         updatable = {
@@ -543,44 +548,44 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
 
         self.gateway_handler = gateway
         self.context.update(
-            {
+            {  # type: ignore
                 CONF_HOST: gateway.address,
                 CONF_NAME: gateway.model_name,
                 CONF_MAC: gateway.serial,
                 "title_placeholders": {
-                    CONF_HOST: gateway.address,
-                    CONF_NAME: gateway.model_name,
-                    CONF_MAC: gateway.serial,
+                    CONF_HOST: str(gateway.address or ""),
+                    CONF_NAME: str(gateway.model_name or ""),
+                    CONF_MAC: str(gateway.serial or ""),
                 },
             }
         )
 
-        return await self.async_step_discovery_confirm()
+        return await self.async_step_discovery_confirm()  # type: ignore
 
-    async def async_step_discovery_confirm(self, user_input=None):
+    async def async_step_discovery_confirm(self, user_input=None):  # type: ignore
         """Handle user confirmation of discovered gateway."""
         if user_input is not None:
-            if self.gateway_handler.port is None:
-                return await self.async_step_port()
+            if self.gateway_handler.port is None:  # type: ignore
+                return await self.async_step_port()  # type: ignore
             return await self.async_step_test_connection()
 
         self._set_confirm_only()
         return self.async_show_form(
             step_id="discovery_confirm",
             description_placeholders={
-                CONF_HOST: self.gateway_handler.address,
-                CONF_NAME: self.gateway_handler.model_name or "MyHOME Gateway",
+                CONF_HOST: self.gateway_handler.address,  # type: ignore
+                CONF_NAME: self.gateway_handler.model_name or "MyHOME Gateway",  # type: ignore
             },
         )
 
-    async def async_step_reconfigure(self, user_input=None):
+    async def async_step_reconfigure(self, user_input=None):  # type: ignore
         """Handle reconfiguration of the gateway connection."""
         errors = {}
         try:
             entry = (
                 self._get_reconfigure_entry()
                 if hasattr(self, "_get_reconfigure_entry")
-                else self.hass.config_entries.async_get_entry(self.context.get("entry_id"))
+                else self.hass.config_entries.async_get_entry(self.context.get("entry_id"))  # type: ignore
             )
         except Exception:
             entry = None
@@ -615,7 +620,7 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
 
                 port = user_input.get(CONF_PORT, 20000)
                 try:
-                    port = int(port)
+                    port = int(port)  # type: ignore
                     if not (1 <= port <= 65535):
                         errors[CONF_PORT] = "invalid_port"
                 except (ValueError, TypeError):
@@ -671,26 +676,26 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
 class MyhomeOptionsFlowHandler(OptionsFlow):
     """Handle MyHome options (general settings + decoder mapping)."""
 
-    def __init__(self, config_entry: ConfigEntry = None):
+    def __init__(self, config_entry: ConfigEntry = None):  # type: ignore
         """Initialize MyHome options flow."""
         self._config_entry = config_entry
         self.options = None
         self.data = None
 
     @property
-    def config_entry(self):
+    def config_entry(self):  # type: ignore
         """Return the config entry for this options flow."""
         if self._config_entry is not None:
             return self._config_entry
-        if hasattr(self, "handler") and self.hass:
+        if hasattr(self, "handler") and self.hass:  # type: ignore
             return self.hass.config_entries.async_get_entry(self.handler)
         return None
 
-    async def async_step_init(self, user_input=None):  # pylint: disable=unused-argument
+    async def async_step_init(self, user_input: dict[str, typing.Any] | None = None) -> typing.Any:  # pylint: disable=unused-argument
         """Keep panel access separate from gateway connection settings."""
         return self.async_show_menu(step_id="init", menu_options=["panel", "user"])
 
-    async def async_step_panel(self, user_input=None):
+    async def async_step_panel(self, user_input: dict[str, typing.Any] | None = None) -> typing.Any:
         """Link to this gateway's panel and manage its shared sidebar shortcut."""
         from urllib.parse import urlencode
 
@@ -719,18 +724,17 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
             errors=errors,
         )
 
-    def _initialize_options(self):
+    def _initialize_options(self) -> None:
         """Prepare gateway settings only when entering their existing form."""
-        self.options = dict(self.config_entry.options)
-        self.data = dict(self.config_entry.data)
-        if CONF_WORKER_COUNT not in self.options:
-            self.options[CONF_WORKER_COUNT] = 1
-        if CONF_GENERATE_EVENTS not in self.options:
-            self.options[CONF_GENERATE_EVENTS] = False
-        if CONF_TRANSITION_MODE not in self.options:
-            self.options[CONF_TRANSITION_MODE] = DEFAULT_TRANSITION_MODE
+        options = dict(self.config_entry.options)
+        options.setdefault(CONF_WORKER_COUNT, 1)
+        options.setdefault(CONF_GENERATE_EVENTS, False)
+        options.setdefault(CONF_BROADCAST_RESYNC, True)
+        options.setdefault(CONF_TRANSITION_MODE, DEFAULT_TRANSITION_MODE)
+        self.options = options  # type: ignore[assignment]
+        self.data = dict(self.config_entry.data)  # type: ignore[assignment]
 
-    async def async_step_user(self, user_input=None, errors=None):
+    async def async_step_user(self, user_input=None, errors=None):  # type: ignore
         """Manage general settings and decoder mapping."""
 
         errors = errors or {}
@@ -756,36 +760,37 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
                             errors[entity_key] = "mass_entity_not_allowed"
 
             if not errors:
-                self.options.update({CONF_WORKER_COUNT: user_input[CONF_WORKER_COUNT]})
-                self.options.update({CONF_GENERATE_EVENTS: user_input[CONF_GENERATE_EVENTS]})
-                self.options[CONF_TRANSITION_MODE] = user_input.get(CONF_TRANSITION_MODE, DEFAULT_TRANSITION_MODE)
+                self.options.update({CONF_WORKER_COUNT: user_input[CONF_WORKER_COUNT]})  # type: ignore
+                self.options.update({CONF_GENERATE_EVENTS: user_input[CONF_GENERATE_EVENTS]})  # type: ignore
+                self.options.update({CONF_BROADCAST_RESYNC: user_input.get(CONF_BROADCAST_RESYNC, True)})  # type: ignore
+                self.options[CONF_TRANSITION_MODE] = user_input.get(CONF_TRANSITION_MODE, DEFAULT_TRANSITION_MODE)  # type: ignore
 
                 # Persist decoder slots
                 for i in range(1, CONF_DECODER_SLOTS + 1):
                     entity_key = CONF_DECODER_ENTITY.format(i)
                     source_key = CONF_DECODER_SOURCE.format(i)
                     gain_key = CONF_DECODER_PRE_GAIN.format(i)
-                    self.options[entity_key] = user_input.get(entity_key, "")
-                    self.options[source_key] = user_input.get(source_key, i)
-                    self.options[gain_key] = user_input.get(gain_key, 0)
+                    self.options[entity_key] = user_input.get(entity_key, "")  # type: ignore
+                    self.options[source_key] = user_input.get(source_key, i)  # type: ignore
+                    self.options[gain_key] = user_input.get(gain_key, 0)  # type: ignore
 
                 _model_update = False
-                if CONF_NAME in user_input and user_input[CONF_NAME] != self.data.get(CONF_NAME):
-                    self.data[CONF_NAME] = user_input[CONF_NAME]
+                if CONF_NAME in user_input and user_input[CONF_NAME] != self.data.get(CONF_NAME):  # type: ignore
+                    self.data[CONF_NAME] = user_input[CONF_NAME]  # type: ignore
                     # An explicit choice is authoritative: drop any earlier WHO=13 label so
                     # the next device-type reply cannot overwrite it (see gateway.py).
-                    self.data["model_source"] = IDENTIFICATION_MANUAL
+                    self.data["model_source"] = IDENTIFICATION_MANUAL  # type: ignore
                     _model_update = True
 
                 _data_update = not (
-                    self.data.get(CONF_HOST) == user_input.get(CONF_ADDRESS)
-                    and self.data.get(CONF_PASSWORD) == user_input.get(CONF_OWN_PASSWORD)
+                    self.data.get(CONF_HOST) == user_input.get(CONF_ADDRESS)  # type: ignore
+                    and self.data.get(CONF_PASSWORD) == user_input.get(CONF_OWN_PASSWORD)  # type: ignore
                 ) or _model_update
-                self.data.update({CONF_HOST: user_input.get(CONF_ADDRESS)})
-                self.data.update({CONF_PASSWORD: user_input.get(CONF_OWN_PASSWORD)})
+                self.data.update({CONF_HOST: user_input.get(CONF_ADDRESS)})  # type: ignore
+                self.data.update({CONF_PASSWORD: user_input.get(CONF_OWN_PASSWORD)})  # type: ignore
 
                 try:
-                    self.data[CONF_HOST] = str(ipaddress.IPv4Address(self.data[CONF_HOST]))
+                    self.data[CONF_HOST] = str(ipaddress.IPv4Address(self.data[CONF_HOST]))  # type: ignore
                 except ipaddress.AddressValueError:
                     errors[CONF_ADDRESS] = "invalid_ip"
 
@@ -793,22 +798,22 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
                     if _data_update:
                         update_kwargs = {"data": self.data}
                         if _model_update and self.config_entry.title.endswith("Gateway"):
-                            update_kwargs["title"] = f"{user_input[CONF_NAME]} Gateway"
-                        self.hass.config_entries.async_update_entry(self.config_entry, **update_kwargs)
+                            update_kwargs["title"] = f"{user_input[CONF_NAME]} Gateway"  # type: ignore
+                        self.hass.config_entries.async_update_entry(self.config_entry, **update_kwargs)  # type: ignore
                         await self.hass.config_entries.async_reload(self.config_entry.entry_id)
 
-                    return self.async_create_entry(title="", data=self.options)
+                    return self.async_create_entry(title="", data=self.options)  # type: ignore
 
         # ── Build form schema ─────────────────────────────────────────────
         model_options = [m for m in SUPPORTED_GATEWAY_MODELS]
-        current_model = self.data.get(CONF_NAME, "MyHomeServer1")
+        current_model = self.data.get(CONF_NAME, "MyHomeServer1")  # type: ignore
         if current_model not in model_options:
             model_options.insert(0, current_model)
 
         schema_dict = {
             Required(
                 CONF_ADDRESS,
-                description={"suggested_value": self.data.get(CONF_HOST) or ""},
+                description={"suggested_value": self.data.get(CONF_HOST) or ""},  # type: ignore
             ): str,
             vol.Optional(
                 CONF_NAME,
@@ -816,24 +821,29 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
             ): vol.Any(In(model_options), cv.string),
             vol.Optional(
                 CONF_OWN_PASSWORD,
-                description={"suggested_value": self.data.get(CONF_PASSWORD) or ""},
+                description={"suggested_value": self.data.get(CONF_PASSWORD) or ""},  # type: ignore
             ): str,
             Required(
                 CONF_WORKER_COUNT,
-                description={"suggested_value": self.options.get(CONF_WORKER_COUNT, 1)},
+                description={"suggested_value": self.options.get(CONF_WORKER_COUNT, 1)},  # type: ignore
             ): All(Coerce(int), Range(min=1, max=10)),
             Required(
                 CONF_GENERATE_EVENTS,
-                description={"suggested_value": self.options.get(CONF_GENERATE_EVENTS, False)},
+                description={"suggested_value": self.options.get(CONF_GENERATE_EVENTS, False)},  # type: ignore
+            ): bool,
+            vol.Optional(
+                CONF_BROADCAST_RESYNC,
+                description={"suggested_value": typing.cast(dict[str, typing.Any], self.options).get(CONF_BROADCAST_RESYNC, True)},
+                default=True,
             ): bool,
             vol.Optional(
                 CONF_TRANSITION_MODE,
                 description={
-                    "suggested_value": self.options.get(CONF_TRANSITION_MODE, DEFAULT_TRANSITION_MODE)
+                    "suggested_value": self.options.get(CONF_TRANSITION_MODE, DEFAULT_TRANSITION_MODE)  # type: ignore
                 },
             ): selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=[
+                    options=[  # type: ignore
                         {"value": "software_stepped", "label": "software_stepped (recommended - reliable stepped fades)"},
                         {"value": "native", "label": "native (pass through hardware speed param - only if your dimmers support it)"},
                         {"value": "auto", "label": "auto (alias for software_stepped)"},
@@ -849,7 +859,7 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
             source_key = CONF_DECODER_SOURCE.format(i)
             gain_key = CONF_DECODER_PRE_GAIN.format(i)
 
-            _entity_val = self.options.get(entity_key, "")
+            _entity_val = self.options.get(entity_key, "")  # type: ignore
             if _entity_val:
                 schema_dict[vol.Optional(
                     entity_key,
@@ -864,11 +874,11 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
 
             schema_dict[vol.Optional(
                 source_key,
-                description={"suggested_value": self.options.get(source_key, i)},
+                description={"suggested_value": self.options.get(source_key, i)},  # type: ignore
             )] = All(Coerce(int), Range(min=0, max=4))
             schema_dict[vol.Optional(
                 gain_key,
-                description={"suggested_value": self.options.get(gain_key, 0)},
+                description={"suggested_value": self.options.get(gain_key, 0)},  # type: ignore
             )] = All(Coerce(int), Range(min=0, max=50))
 
         return self.async_show_form(

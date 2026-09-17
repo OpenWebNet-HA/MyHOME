@@ -120,7 +120,8 @@ async def test_disable_button_entity(hass):
     assert "Int" not in btn1.extra_state_attributes
 
     await btn1.async_press()
-    mock_gateway.send.assert_called_once_with("*14*0*12##")
+    mock_gateway.send.assert_called_once()
+    assert str(mock_gateway.send.call_args[0][0]) == "*14*0*12##"
     mock_gateway.send.reset_mock()
 
     # Test with interface
@@ -141,7 +142,8 @@ async def test_disable_button_entity(hass):
     assert btn2.extra_state_attributes["Int"] == "2"
 
     await btn2.async_press()
-    mock_gateway.send.assert_called_once_with("*14*0*13#4#2##")
+    mock_gateway.send.assert_called_once()
+    assert str(mock_gateway.send.call_args[0][0]) == "*14*0*13#4#2##"
 
     # Test lifecycle
     await btn1.async_added_to_hass()
@@ -190,7 +192,8 @@ async def test_enable_button_entity(hass):
     bind_entity(hass, btn1, "mac", mock_gateway)
 
     await btn1.async_press()
-    mock_gateway.send.assert_called_once_with("*14*1*12##")
+    mock_gateway.send.assert_called_once()
+    assert str(mock_gateway.send.call_args[0][0]) == "*14*1*12##"
 
     # Test lifecycle
     await btn1.async_added_to_hass()

@@ -252,15 +252,21 @@ async def test_echo_window_bounded_without_delivery_info(cover, clock, fake_time
     assert cover._move_start_time is None
 
 
-async def test_motion_anchor_falls_back_when_write_is_cancelled(cover, gateway, clock, fake_time, sleeps):
-    """Gateway shutdown cancels the delivery: the run anchors on 'now' instead of hanging."""
+async def test_motion_anchor_aborts_when_write_is_cancelled(cover, gateway, clock, fake_time, sleeps):
+    """Gateway shutdown cancels the delivery: motion is aborted, position does not advance, and no stop is sent."""
+    initial_pos = cover.current_cover_position
     await cover.async_set_cover_position(**{ATTR_POSITION: 50})
     _, written = gateway.deliveries[0]
     written.cancel()
     clock.now = 3.0
     with patch("custom_components.myhome.cover.ECHO_WINDOW", 0.0):
         await _yield(5)
-    assert cover._move_start_time is not None
+    assert cover._move_start_time is None
+    assert cover.is_closing is False
+    assert cover.is_opening is False
+    assert cover.current_cover_position == initial_pos
+    assert not sleeps
+    assert [f for f, _ in gateway.deliveries] == ["*2*2*21##"]
 
 
 # ── gateway side: the delivery future ────────────────────────────────────
@@ -411,10 +417,11 @@ async def test_echo_window_is_bounded_from_enqueue_and_closes_when_delivery_fail
     assert cover.is_closing is False
 
 
-async def test_write_that_never_happens_times_the_run_from_now(cover, gateway, clock, fake_time, sleeps):
-    """The wait for the write is bounded: past WRITE_TIMEOUT the run is timed from now
-    and the echo window is closed, so a later stop status is handled as real."""
+async def test_write_that_never_happens_aborts_run(cover, gateway, clock, fake_time, sleeps):
+    """The wait for the write is bounded: past WRITE_TIMEOUT delivery is treated as failed,
+    motion is aborted, and no stop command is queued."""
     clock.now = 10.0
+    initial_pos = cover.current_cover_position
     with patch("custom_components.myhome.cover.WRITE_TIMEOUT", 0.05), patch("custom_components.myhome.cover.ECHO_WINDOW", 0.0):
         await cover.async_set_cover_position(**{ATTR_POSITION: 50})
         _, written = gateway.deliveries[0]
@@ -423,10 +430,13 @@ async def test_write_that_never_happens_times_the_run_from_now(cover, gateway, c
         except TimeoutError:
             pass
     assert not written.done()  # still stuck in the queue ...
-    assert sleeps and sleeps[-1] == pytest.approx(5.0)  # ... the run measured from "now"
-    assert [f for f, _ in gateway.deliveries] == ["*2*2*21##", "*2*0*21##"]
-    # the open command's window (10.05) is gone; the one left is the stop's own, opened at its enqueue
-    assert cover._echo_until == pytest.approx(clock.now + 0.05)
+    assert not sleeps  # run was aborted, not measured from "now"
+    assert [f for f, _ in gateway.deliveries] == ["*2*2*21##"]
+    assert cover._move_start_time is None
+    assert cover.is_closing is False
+    assert cover.is_opening is False
+    assert cover.current_cover_position == initial_pos
+    assert cover._echo_until is None
 
 
 async def test_write_confirmation_repaints_the_estimate(cover, gateway, clock, fake_time):
@@ -575,4 +585,5 @@ async def test_worker_terminates_when_the_gateway_refuses_the_reconnect(handler)
 
     assert refused.cancelled()
     assert session.send.await_count == 1
+
 

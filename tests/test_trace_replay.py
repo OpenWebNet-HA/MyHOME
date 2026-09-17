@@ -318,6 +318,110 @@ class TestTraceReplayHarness:
         # Unload cleanly
         await hass.config_entries.async_unload(entry.entry_id)
 
+    @pytest.mark.asyncio
+    async def test_real_world_trace_replay_mh201_physical_plant(self, hass: HomeAssistant) -> None:
+        """Replay on-wire frames from the physical BTicino MH201 gateway plant.
+
+        Verifies that the 100 frames captured from the physical MH201
+        (23 lights, 1 outlet, 7 advanced covers) replay cleanly: covers settle
+        closed after the group close command, lighting states follow the bus and
+        the CEN+ presses and WHO=13 gateway replies parse without exceptions.
+        """
+        plant_dir = FIXTURES_PLANTS_DIR / "mh201_physical_plant"
+        plant_yaml = plant_dir / "myhome.yaml"
+        diag_json = plant_dir / "diagnostic_summary.json"
+
+        assert plant_yaml.is_file()
+        assert diag_json.is_file()
+
+        with open(diag_json, "r", encoding="utf-8") as f:
+            diag_data = json.load(f)
+
+        raw_frames = diag_data["data"]["bus_monitor"]["recent_frames"]
+        assert len(raw_frames) == 100, f"Expected 100 frames, found {len(raw_frames)}"
+        raws = {item["raw"] for item in raw_frames}
+        assert "*#13**15*200##" in raws
+        assert "*#13**16*3*6*27##" in raws
+
+        mac = "00:03:50:00:02:01"
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_HOST: "192.0.2.1",
+                CONF_PORT: 20000,
+                CONF_PASSWORD: "pass",
+                CONF_MAC: mac,
+                CONF_NAME: "MH201",
+                CONF_DEVICE_TYPE: "urn:schemas-bticino-it:device:IP scenario module:1",
+                CONF_FRIENDLY_NAME: "MH201 Gateway",
+                CONF_MANUFACTURER: "BTicino S.p.A.",
+                CONF_FIRMWARE: "3.6.27",
+            },
+            options={
+                CONF_FILE_PATH: str(plant_yaml),
+            },
+            unique_id=mac,
+        )
+        entry.add_to_hass(hass)
+
+        with (
+            patch(
+                "custom_components.myhome.gateway.OWNSession.test_connection",
+                return_value={"Success": True, "Message": None},
+            ),
+            patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+            patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"),
+        ):
+            assert await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+        handler = hass.data[DOMAIN][mac][CONF_ENTITY]
+        handler._on_event_connection_state_change(True)
+
+        replayed_count = 0
+        for item in raw_frames:
+            if item.get("direction") != "rx":
+                continue
+            raw = item.get("raw")
+            if not raw or raw in ("*#*1##", "*#*0##"):
+                continue
+
+            try:
+                msg = OWNMessage.parse(raw)
+            except Exception as exc:
+                pytest.fail(f"Trace replay failed to parse MH201 frame {raw!r}: {exc}")
+
+            async_dispatcher_send(hass, f"myhome_message_{mac}", msg)
+            replayed_count += 1
+
+        await hass.async_block_till_done()
+        assert replayed_count >= 80
+
+        # 1. Light 21 -> ON (*1*1*21##)
+        light_on = hass.states.get("light.light_21")
+        assert light_on is not None
+        assert light_on.state == "on"
+
+        # 2. Light 18 -> OFF (*1*0*18##)
+        light_off = hass.states.get("light.light_18")
+        assert light_off is not None
+        assert light_off.state == "off"
+
+        # 3. Outlet 20 -> OFF (*1*0*20##)
+        outlet = hass.states.get("switch.switch_20")
+        assert outlet is not None
+        assert outlet.state == "off"
+
+        # 4. Every advanced cover ends closed at position 0 (*#2*<where>*10*10*0*001*0##)
+        for where in ("19", "0110", "0111", "0112", "0113", "0114", "0115"):
+            cover = hass.states.get(f"cover.cover_{where}")
+            assert cover is not None, f"cover_{where} was not created"
+            assert cover.state == "closed", f"cover_{where} is {cover.state}"
+            assert cover.attributes.get("current_position") == 0
+
+        # Unload cleanly
+        await hass.config_entries.async_unload(entry.entry_id)
+
     @pytest.mark.parametrize(
         "plant_dir",
         get_plant_fixture_dirs(),
@@ -493,21 +597,21 @@ class TestTraceReplayHarness:
         handler._on_event_connection_state_change(True)
 
         # 1. Initialize and add light to HA
-        init_msg = OWNMessage.parse("*1*0*10##")
+        init_msg = OWNMessage.parse("*1*0*11##")
         async_dispatcher_send(hass, f"myhome_message_{mac}", init_msg)
         await hass.async_block_till_done()
 
         # 2. Rapidly toggle light 10 50 times in a burst
         for i in range(50):
             action = "1" if (i % 2 == 0) else "0"
-            msg = OWNMessage.parse(f"*1*{action}*10##")
+            msg = OWNMessage.parse(f"*1*{action}*11##")
             async_dispatcher_send(hass, f"myhome_message_{mac}", msg)
 
         # Await full event loop flush
         await hass.async_block_till_done()
 
         # Entity should be in the final state (i=49 -> action='0' -> 'off')
-        state = hass.states.get("light.light_10")
+        state = hass.states.get("light.light_11")
         assert state is not None
         assert state.state == "off"
 

@@ -11,7 +11,7 @@
     'last_changed': <ANY>,
     'last_reported': <ANY>,
     'last_updated': <ANY>,
-    'state': 'off',
+    'state': 'on',
   })
 # ---
 # name: test_legacy_platforms_setup_and_execution[button_state]
@@ -43,12 +43,12 @@
       ]),
       'knob_pos': 'UNKNOWN',
       'local_offset': 0,
-      'local_target_temperature': None,
+      'local_target_temperature': 22.0,
       'max_temp': 40,
       'min_temp': 5,
       'supported_features': <ClimateEntityFeature: 1>,
       'target_temp_step': 0.5,
-      'temperature': None,
+      'temperature': 22.0,
     }),
     'context': <ANY>,
     'entity_id': 'climate.climate_1',
@@ -75,6 +75,6 @@
     'last_changed': <ANY>,
     'last_reported': <ANY>,
     'last_updated': <ANY>,
-    'state': 'unknown',
+    'state': 'on',
   })
 # ---

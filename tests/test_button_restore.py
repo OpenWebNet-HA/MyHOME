@@ -201,7 +201,7 @@ async def test_restore_before_parent_cleanup(hass, unload_callbacks, reverse, co
     assert len(lock_unlock) == 2 * len(expected)
     for entity in lock_unlock:
         await entity.async_press()
-    assert {call.args[0] for call in gateway.send.await_args_list} == {
+    assert {str(call.args[0]) for call in gateway.send.await_args_list} == {
         f"*14*{command}*{address.split('-', 1)[1]}##"
         for address in expected for command in ("0", "1")
     }

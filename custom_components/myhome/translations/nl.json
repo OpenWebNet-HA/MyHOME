@@ -76,7 +76,8 @@
           "password": "Wachtwoord",
           "config_file_path": "Path onfiguratie bestand",
           "command_worker_count": "Aantal open command sessies",
-          "generate_events": "Genereer gebeurtenissen in Home Assistant voor elk ontvangen bericht"
+          "generate_events": "Genereer gebeurtenissen in Home Assistant voor elk ontvangen bericht",
+          "broadcast_resync": "Bevraag groep-/gebied-/algemene adressen na een stille periode"
         }
       },
       "init": {

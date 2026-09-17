@@ -3,27 +3,26 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+from OWNd.message import OWNCommand
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
 
-from homeassistant.components.button import (
-    DOMAIN as PLATFORM,
-)
-from homeassistant.components.button import (
-    ButtonEntity,
-)
+from homeassistant.components.button import ButtonEntity
 from homeassistant.const import (
     CONF_MAC,
     CONF_NAME,
     EntityCategory,
+    Platform,
 )
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import (
     CONF_BUS_INTERFACE,
@@ -35,11 +34,12 @@ from .const import (
     LOGGER,
     SERVICE_CALIBRATE_COVER,
 )
-from .data import get_runtime_data
+from .data import MyHOMEConfigEntry, get_runtime_data
 from .discovery import Address, parse_unique_id
 from .myhome_device import MyHOMEEntity
 
 PARALLEL_UPDATES = 0
+PLATFORM = Platform.BUTTON
 
 
 def _valid_device_address(address: str) -> bool:
@@ -47,7 +47,11 @@ def _valid_device_address(address: str) -> bool:
     return re.fullmatch(r"[0-9]+(?:#4#[0-9]+)?", address) is not None
 
 
-async def async_setup_entry(hass, config_entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant,
+    config_entry: MyHOMEConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> bool:
     """Set up the buttons of a gateway: lock / unlock per actuator, calibrate per timed cover.
 
     Buttons have no bus address of their own: they are created for every
@@ -60,25 +64,25 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         return True
     mac = runtime.mac
 
-    _buttons = []
+    _buttons: list[ButtonEntity] = []
     _configured_buttons = runtime.platforms[PLATFORM]
     gateway = runtime.gateway
 
-    known_button_actuators = set()
+    known_button_actuators: set[str] = set()
     known_calibration_covers: set[str] = set()
 
-    def _calibration_button_for_cover(device_id, name):
+    def _calibration_button_for_cover(device_id: str | int, name: str | None) -> list[ButtonEntity]:
         """One 'Calibrate travel time' button per timed cover, on the cover's device."""
-        device_id = str(device_id)
-        if not device_id or device_id in known_calibration_covers:
+        dev_str = str(device_id)
+        if not dev_str or dev_str in known_calibration_covers:
             return []
-        known_calibration_covers.add(device_id)
-        address = Address.from_device_id(device_id)
+        known_calibration_covers.add(dev_str)
+        address = Address.from_device_id(dev_str)
         return [
             CalibrateCoverButtonEntity(
                 hass=hass,
                 platform=PLATFORM,
-                device_id=device_id,
+                device_id=dev_str,
                 where=address.where,
                 interface=address.interface,
                 name=name or f"Cover {address.where}",
@@ -105,10 +109,10 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     if gateway is not None:
         _buttons.append(CalibrateAllCoversButtonEntity(hass=hass, config_entry=config_entry, gateway=gateway))
 
-    def _create_buttons_for_device(dev_id, cfg):
+    def _create_buttons_for_device(dev_id: str | int, cfg: dict[str, Any]) -> list[ButtonEntity]:
         """Lock and unlock buttons for one actuator (a yaml entry or an announcement)."""
         who = str(cfg.get(CONF_WHO, "1"))
-        address = Address.from_config(dev_id, cfg)
+        address = Address.from_config(str(dev_id), cfg)
         if not address.where or address.where.startswith("#"):
             return []  # groups / general have no lock
 
@@ -143,7 +147,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     # Registry ids may carry the config entry's MAC spelling as well as the gateway's
     mac_prefixes = (f"{gateway.mac}-", f"{config_entry.data.get(CONF_MAC, mac)}-")
 
-    def _registered_id(registered):
+    def _registered_id(registered: er.RegistryEntry) -> str:
         if registered.platform == DOMAIN:
             for prefix in mac_prefixes:
                 if registered.unique_id.startswith(prefix):
@@ -153,7 +157,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     # Platform setup order is not guaranteed. Determine sensor/switch ownership
     # before restoring any lights, rather than waiting for light.py's cleanup.
     # Include the interface in every key: equal WHEREs on different buses differ.
-    non_light_addresses = set()
+    non_light_addresses: set[str] = set()
     for registered in registered_entries:
         registered_id = _registered_id(registered)
         if registered.domain == "switch" and registered_id.startswith("1-"):
@@ -184,7 +188,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             if _valid_device_address(address):
                 non_light_addresses.add(address)
 
-    devices = None
+    devices: dr.DeviceRegistry | None = None
     for registered in registered_entries:
         who = {"light": "1", "switch": "1", "cover": "2"}.get(registered.domain)
         if who is None:
@@ -202,26 +206,26 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         default_suffix = f"{where}I{interface}" if interface else where
         if registered.device_id and devices is None:
             devices = dr.async_get(hass)
-        device = devices.async_get(registered.device_id) if registered.device_id else None
+        device = devices.async_get(registered.device_id) if registered.device_id and devices is not None else None
         _buttons.extend(_create_buttons_for_device(device_id, {
             CONF_WHO: who,
             CONF_WHERE: where,
             CONF_BUS_INTERFACE: interface or None,
-            CONF_NAME: (device.name if device else None) or registered.original_name
+            CONF_NAME: (getattr(device, "name_by_user", None) or getattr(device, "name", None) if device else None) or registered.original_name
             or f"{registered.domain.title()} {default_suffix}",
-            CONF_MANUFACTURER: (device.manufacturer if device else None) or "BTicino",
-            CONF_DEVICE_MODEL: (device.model if device else None) or "Actuator",
+            CONF_MANUFACTURER: getattr(device, "manufacturer", None) or "BTicino",
+            CONF_DEVICE_MODEL: getattr(device, "model", None) or "Actuator",
         }))
 
     if _buttons:
         async_add_entities(_buttons)
 
     @callback
-    def _async_new_device_listener(dev_info):
+    def _async_new_device_listener(dev_info: dict[str, Any]) -> None:
         """Add lock/unlock (and, for covers, calibration) buttons for newly discovered or configured devices."""
-        new_btns = _create_buttons_for_device(dev_info.get("device_id"), dev_info)
+        new_btns = _create_buttons_for_device(dev_info.get("device_id", ""), dev_info)
         if str(dev_info.get("who", "")) == "2":
-            new_btns.extend(_calibration_button_for_cover(dev_info.get("device_id"), dev_info.get("name")))
+            new_btns.extend(_calibration_button_for_cover(dev_info.get("device_id", ""), dev_info.get("name")))
         if new_btns:
             async_add_entities(new_btns)
 
@@ -237,7 +241,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     return True
 
 
-async def async_unload_entry(hass, config_entry):
+async def async_unload_entry(hass: HomeAssistant, config_entry: MyHOMEConfigEntry) -> bool:
     runtime = get_runtime_data(config_entry)
     if runtime is None or PLATFORM not in runtime.platforms:
         return True
@@ -252,17 +256,17 @@ async def async_unload_entry(hass, config_entry):
 class DisableCommandButtonEntity(ButtonEntity, MyHOMEEntity):
     def __init__(
         self,
-        hass,
+        hass: HomeAssistant,
         platform: str,
         name: str,
         device_id: str,
         who: str,
         where: str,
-        interface: str,
+        interface: str | None,
         manufacturer: str,
         model: str,
         gateway: MyHOMEGatewayHandler,
-    ):
+    ) -> None:
         super().__init__(
             hass=hass,
             name=name,
@@ -287,41 +291,43 @@ class DisableCommandButtonEntity(ButtonEntity, MyHOMEEntity):
             else self._where
         )
 
-        self._attr_extra_state_attributes = {
+        self._attr_extra_state_attributes: dict[str, Any] = {
             "A": where[: len(where) // 2],
             "PL": where[len(where) // 2 :],
         }
         if self._interface is not None:
             self._attr_extra_state_attributes["Int"] = self._interface
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
         self._register_availability_listener()
         self._register_entity_ref("disable")
 
-    async def async_will_remove_from_hass(self):
+    async def async_will_remove_from_hass(self) -> None:
         """When entity is removed from hass."""
         self._unregister_entity_ref("disable")
 
     async def async_press(self) -> None:
         """Press the button."""
-        await self._gateway_handler.send(f"*14*0*{self._full_where}##")
+        cmd = OWNCommand.parse(f"*14*0*{self._full_where}##")
+        if cmd is not None:
+            await self._gateway_handler.send(cmd)
 
 
 class EnableCommandButtonEntity(ButtonEntity, MyHOMEEntity):
     def __init__(
         self,
-        hass,
+        hass: HomeAssistant,
         platform: str,
         name: str,
         device_id: str,
         who: str,
         where: str,
-        interface: str,
+        interface: str | None,
         manufacturer: str,
         model: str,
         gateway: MyHOMEGatewayHandler,
-    ):
+    ) -> None:
         super().__init__(
             hass=hass,
             name=name,
@@ -346,31 +352,42 @@ class EnableCommandButtonEntity(ButtonEntity, MyHOMEEntity):
             else self._where
         )
 
-        self._attr_extra_state_attributes = {
+        self._attr_extra_state_attributes: dict[str, Any] = {
             "A": where[: len(where) // 2],
             "PL": where[len(where) // 2 :],
         }
         if self._interface is not None:
             self._attr_extra_state_attributes["Int"] = self._interface
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
         self._register_availability_listener()
         self._register_entity_ref("enable")
 
-    async def async_will_remove_from_hass(self):
+    async def async_will_remove_from_hass(self) -> None:
         """When entity is removed from hass."""
         self._unregister_entity_ref("enable")
 
     async def async_press(self) -> None:
         """Press the button."""
-        await self._gateway_handler.send(f"*14*1*{self._full_where}##")
+        cmd = OWNCommand.parse(f"*14*1*{self._full_where}##")
+        if cmd is not None:
+            await self._gateway_handler.send(cmd)
 
 
 class CalibrateCoverButtonEntity(ButtonEntity, MyHOMEEntity):
     """Measure a timed cover's up/down travel times on the bus (myhome.calibrate_cover)."""
 
-    def __init__(self, hass, platform: str, device_id: str, where: str, interface: str | None, name: str, gateway):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        platform: str,
+        device_id: str,
+        where: str,
+        interface: str | None,
+        name: str,
+        gateway: MyHOMEGatewayHandler,
+    ) -> None:
         super().__init__(
             hass=hass,
             name=name,
@@ -389,7 +406,7 @@ class CalibrateCoverButtonEntity(ButtonEntity, MyHOMEEntity):
         self._interface = interface
         self._poll_on_add = False
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Buttons have no state to request."""
 
     async def async_press(self) -> None:
@@ -411,7 +428,12 @@ class CalibrateAllCoversButtonEntity(ButtonEntity):
     _attr_entity_category = EntityCategory.CONFIG
     _attr_should_poll = False
 
-    def __init__(self, hass, config_entry, gateway):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        config_entry: MyHOMEConfigEntry,
+        gateway: MyHOMEGatewayHandler,
+    ) -> None:
         self.hass = hass
         self._config_entry = config_entry
         self._gateway_handler = gateway
@@ -438,4 +460,5 @@ class CalibrateAllCoversButtonEntity(ButtonEntity):
         LOGGER.info("%s Calibrating %d covers sequentially.", self._gateway_handler.log_id, len(entity_ids))
         # The entity service runs the covers concurrently; the per-gateway lock serializes them.
         await self.hass.services.async_call(DOMAIN, SERVICE_CALIBRATE_COVER, {"entity_id": entity_ids}, blocking=False)
+
 

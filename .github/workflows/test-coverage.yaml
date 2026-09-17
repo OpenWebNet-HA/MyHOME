@@ -34,16 +34,13 @@ jobs:
         run: |
           python scripts/verify_ha_standards.py
 
-      - name: Test coverage & Snapshot generation
+      - name: Test coverage tracking
         run: |
-          PYTHONPATH=. pytest tests/ --snapshot-update --cov=custom_components.myhome --cov-report=xml --cov-report=html --cov-report=term --junitxml=junit.xml
+          PYTHONPATH=. pytest tests/ --cov=custom_components.myhome --cov-report=xml --cov-report=html --cov-report=term --junitxml=junit.xml
           python scripts/update_readme_coverage.py
           if [ "${{ github.event_name }}" = "push" ] && ([ "${{ github.ref }}" = "refs/heads/main" ] || [ "${{ github.ref }}" = "refs/heads/master" ]); then
             git config --global user.name "github-actions[bot]"
             git config --global user.email "github-actions[bot]@users.noreply.github.com"
-            git add "tests/**/__snapshots__/*" || true
-            git add "tests/__snapshots__/*" || true
-            git add "tests/snapshots/*" || true
             git add coverage.svg || true
             git add README.md || true
             if ! git diff --staged --quiet; then

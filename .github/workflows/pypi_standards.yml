@@ -80,7 +80,7 @@ jobs:
 
       - name: Run test suite with coverage tracking
         run: |
-          pytest --snapshot-update --cov=custom_components.myhome --cov-report=xml --cov-report=term-missing tests/
+          pytest --cov=custom_components.myhome --cov-report=xml --cov-report=term-missing tests/
 
       - name: Enforce 100% test coverage on ownd core
         run: |

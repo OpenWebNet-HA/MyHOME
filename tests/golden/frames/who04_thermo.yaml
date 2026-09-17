@@ -234,3 +234,54 @@
   mcp_notes: "Thermoregulation: Zone 2 measured temperature 26.2°C"
   roundtrip: true
 
+- id: thermo.resp.probe.status.antifreeze.70
+  frame: "*#4*2*12*0070*3##"
+  direction: dimension_response
+  who: 4
+  what: null
+  where: "2"
+  dimension: 12
+  dimension_values: ["0070", "3"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation: Zone 2 complete probe status target 7.0°C in Antifreeze / Generic Protection mode"
+  roundtrip: true
+
+- id: thermo.event.mode.antifreeze.zone2
+  frame: "*4*102*2##"
+  direction: command
+  who: 4
+  what: 102
+  where: "2"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation: Zone 2 in Antifreeze protection mode"
+  roundtrip: true
+
+- id: thermo.resp.setpoint.zone2.heat.170
+  frame: "*#4*2*14*0170*3##"
+  direction: dimension_response
+  who: 4
+  what: null
+  where: "2"
+  dimension: 14
+  dimension_values: ["0170", "3"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation: Zone 2 configured comfort setpoint 17.0°C"
+  roundtrip: true
+
+- id: thermo.resp.offset.zone2.0
+  frame: "*#4*2*13*00##"
+  direction: dimension_response
+  who: 4
+  what: null
+  where: "2"
+  dimension: 13
+  dimension_values: ["00"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation: Zone 2 local knob offset 0.0°C"
+  roundtrip: true
+
+

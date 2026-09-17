@@ -49,7 +49,7 @@ Add a parametrised test that asserts the table so it cannot regress.
 
 ## Phase 5 — 🏆 Platinum: `strict-typing`
 
-- ✅ Ratchet in place: `[tool.mypy]` (strict) in `pyproject.toml`, `mypy_baseline.json` with a per-module ceiling, `scripts/typing_ratchet.py` (fails on any regression, `--update` only lowers), workflow `strict-typing.yml`. 15 of 28 modules are clean (`const`, `data`, `gateway`, `myhome_device`, `services`, `device_trigger`, `decoder_pool`, transports, diagnostics, repairs, bus monitor); **507 errors remain in 13 modules** — biggest first: `config_flow` 105, `cover` 64, `validate` 57, `binary_sensor` 43, `light` 39, `sensor` 32, `websocket` 30, `__init__` 27, `button` 27, `climate` 25, `media_player` 25, `alarm_control_panel` 18, `switch` 15 (`discovery` is clean). Each PR that touches a module should leave it lower and run `--update`.
+- ✅ Ratchet in place: `[tool.mypy]` (strict) in `pyproject.toml`, `mypy_baseline.json` with a per-module ceiling, `scripts/typing_ratchet.py` (fails on any regression, `--update` only lowers), workflow `strict-typing.yml`. 15 of 28 modules are clean (`const`, `data`, `gateway`, `myhome_device`, `services`, `device_trigger`, `decoder_pool`, transports, diagnostics, repairs, bus monitor); **504 errors remain in 13 modules** — biggest first: `config_flow` 105, `cover` 64, `validate` 57, `binary_sensor` 43, `light` 37, `sensor` 32, `websocket` 30, `__init__` 27, `button` 27, `climate` 25, `media_player` 25, `alarm_control_panel` 18, `switch` 14 (`discovery` and `router` are clean). Each PR that touches a module should leave it lower and run `--update`.
 - OWNd does **not** ship `py.typed`; the rule needs an OWNd release that is PEP 561 typed before it can be marked done.
 - `inject-websession` is correctly `exempt` (raw TCP, no HTTP); `async-dependency` is done.
 
@@ -57,6 +57,7 @@ Add a parametrised test that asserts the table so it cannot regress.
 
 - ✅ `custom_components/myhome/discovery.py` holds the restore / configure / discover / route skeleton once; `light`, `switch`, `cover`, `alarm_control_panel` and `media_player` are on it (their setup functions shrank from ~940 to ~260 lines, module coverage stays 100%, the new module is mypy-strict clean).
 - ✅ `sensor`, `binary_sensor` and `climate` followed (multi-WHO platforms, one entity per measurement, address spellings, direct feed); `button` uses the shared address helpers. Their setup code is fully typed, which took the ratchet from 537 to 506.
+- ✅ `router.py`: one `FrameRouter` per gateway delivers frames to the entities owning their addresses. The platforms subscribe the entities they create and publish the frames they receive; the `myhome_update_{mac}_{who}_{where}` dispatcher signals (60+ f-strings across platforms and entities) are gone, and so is the entity-side `async_added_to_hass` subscription boilerplate. Ratchet 507 → 504.
 
 ## Throughout
 

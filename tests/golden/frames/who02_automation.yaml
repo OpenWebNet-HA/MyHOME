@@ -176,3 +176,51 @@
   mcp_notes: "Automation: Absolute position level 10% report for address 73 (issue #247 reporter plant)"
   roundtrip: true
 
+- id: cover.cmd.translation.stop.03
+  frame: "*2*1000#0*03##"
+  direction: command
+  who: 2
+  what: "1000#0"
+  where: "03"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "[Translation] Automation (Covers & Shutters): STOP movement at address '03' (issue #378 reporter plant, TheDarkWizard)"
+  roundtrip: true
+  is_translation: true
+
+- id: cover.cmd.translation.up.03
+  frame: "*2*1000#1*03##"
+  direction: command
+  who: 2
+  what: "1000#1"
+  where: "03"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "[Translation] Automation (Covers & Shutters): UP (Open shutter) at address '03' (issue #378 reporter plant, TheDarkWizard)"
+  roundtrip: true
+  is_translation: true
+
+- id: cover.cmd.translation.down.03
+  frame: "*2*1000#2*03##"
+  direction: command
+  who: 2
+  what: "1000#2"
+  where: "03"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "[Translation] Automation (Covers & Shutters): DOWN (Close shutter) at address '03' (issue #378 reporter plant, TheDarkWizard)"
+  roundtrip: true
+  is_translation: true
+
+- id: cover.evt.stop.routed.interface.02
+  frame: "*2*0*14#4#02##"
+  direction: event
+  who: 2
+  what: 0
+  where: "14"
+  interface: "02"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: STOP event at address '14' routed via private bus interface 02 (MH200 physical plant sweep)"
+  roundtrip: true
+

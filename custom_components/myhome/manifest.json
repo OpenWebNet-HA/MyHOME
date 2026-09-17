@@ -16,7 +16,7 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/OpenWebNet-HA/MyHOME/issues",
   "requirements": [
-    "OWNd==2.0.0b6"
+    "OWNd==2.0.0b7"
   ],
   "ssdp": [
     {

@@ -675,6 +675,12 @@ async def test_step_port_and_ssdp_missing_port(hass: HomeAssistant) -> None:
             res_confirm = await handler.async_step_discovery_confirm({})
             assert res_confirm["step_id"] == "port"
 
+    # Test ssdp when build_from_discovery_info returns None (line 533)
+    with patch("custom_components.myhome.config_flow.OWNGateway.build_from_discovery_info", return_value=None):
+        res_abort = await handler.async_step_ssdp(discovery_info)
+        assert res_abort["type"] == FlowResultType.ABORT
+        assert res_abort["reason"] == "unknown"
+
 
 
 async def test_reauth_with_config_dict(hass: HomeAssistant) -> None:

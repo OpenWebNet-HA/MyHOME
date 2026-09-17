@@ -761,6 +761,109 @@ async def test_sending_loop_auth_failure_lockout_protection(gateway_handler):
 
 
 @pytest.mark.asyncio
+async def test_sending_loop_idle_timeout_closes_session(gateway_handler, monkeypatch):
+    """Issue #378: an idle command session must be closed proactively so the
+    next send() reconnects, instead of writing into a socket the gateway has
+    already dropped on its own idle timeline."""
+    import custom_components.myhome.gateway as gw_module
+
+    monkeypatch.setattr(gw_module, "COMMAND_SESSION_IDLE_TIMEOUT", 0.01)
+
+    with patch("custom_components.myhome.gateway.OWNCommandSession") as mock_cmd_class:
+        mock_cmd_session = MagicMock()
+        mock_cmd_session.connect = AsyncMock(return_value={"Success": True})
+        mock_cmd_session.close = AsyncMock()
+        mock_cmd_session._stream_reader = MagicMock()
+        mock_cmd_session._stream_writer = MagicMock()
+        mock_cmd_class.return_value = mock_cmd_session
+        gateway_handler._event_session_ready.set()
+
+        worker = asyncio.create_task(gateway_handler.sending_loop(0))
+
+        # Let the queue.get() time out at least once while idle.
+        await asyncio.sleep(0.05)
+        mock_cmd_session.close.assert_called()
+
+        await gateway_handler.send_buffer.put(None)
+        await asyncio.wait_for(worker, timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_issue_254_mh201_idle_disconnect_and_reconnection_e2e(gateway_handler, monkeypatch):
+    """Verify Issue #254 / #378: idle disconnect releases socket and reconnects for subsequent commands."""
+    from OWNd.message import OWNCommand
+
+    import custom_components.myhome.gateway as gw_module
+
+    monkeypatch.setattr(gw_module, "COMMAND_SESSION_IDLE_TIMEOUT", 0.02)
+
+    with patch("custom_components.myhome.gateway.OWNCommandSession") as mock_cmd_class:
+        mock_cmd_session = MagicMock()
+
+        async def mock_connect():
+            mock_cmd_session._stream_reader = MagicMock()
+            mock_cmd_session._stream_writer = MagicMock()
+            return {"Success": True}
+
+        async def mock_close():
+            mock_cmd_session._stream_reader = None
+            mock_cmd_session._stream_writer = None
+
+        mock_cmd_session.connect = AsyncMock(side_effect=mock_connect)
+        mock_cmd_session.close = AsyncMock(side_effect=mock_close)
+        mock_cmd_session.send = AsyncMock(return_value=[])
+        mock_cmd_class.return_value = mock_cmd_session
+
+        gateway_handler._event_session_ready.set()
+        worker = asyncio.create_task(gateway_handler.sending_loop(0))
+
+        # Initial connect during sending_loop startup
+        await asyncio.sleep(0.01)
+        assert mock_cmd_session.connect.call_count == 1
+
+        # 1. User sends cover command *2*1*14##
+        cmd1 = OWNCommand.parse("*2*1*14##")
+        await gateway_handler.send(cmd1)
+        await asyncio.sleep(0.03)
+        mock_cmd_session.send.assert_called_with(message=cmd1, is_status_request=False)
+
+        # 2. Simulate idle period past timeout: socket is proactively closed
+        await asyncio.sleep(0.05)
+        assert mock_cmd_session.close.call_count >= 1
+        assert not gw_module._session_is_open(mock_cmd_session)
+
+        # 3. User sends another cover command after idle: worker reconnects and delivers it
+        mock_cmd_session.send.reset_mock()
+        cmd2 = OWNCommand.parse("*2*1*14##")
+        await gateway_handler.send(cmd2)
+        await asyncio.sleep(0.03)
+        assert mock_cmd_session.connect.call_count >= 2
+        mock_cmd_session.send.assert_called_with(message=cmd2, is_status_request=False)
+
+        # Clean shutdown
+        await gateway_handler.send_buffer.put(None)
+        await asyncio.wait_for(worker, timeout=1)
+
+
+def test_gateway_command_session_idle_timeout_property_and_profile_override(gateway_handler):
+    """Test that command_session_idle_timeout defaults to COMMAND_SESSION_IDLE_TIMEOUT
+    or adopts profile-specified value if present on the gateway profile."""
+    import custom_components.myhome.gateway as gw_module
+
+    # 1. Default without profile override returns COMMAND_SESSION_IDLE_TIMEOUT
+    assert gateway_handler.command_session_idle_timeout == gw_module.COMMAND_SESSION_IDLE_TIMEOUT
+
+    # 2. Profile with explicit command_session_idle_timeout overrides the default
+    gateway_handler.gateway.profile = MagicMock()
+    gateway_handler.gateway.profile.command_session_idle_timeout = 42.0
+    assert gateway_handler.command_session_idle_timeout == 42.0
+
+    # 3. Profile without attribute falls back to default
+    gateway_handler.gateway.profile = MagicMock(spec=[])
+    assert gateway_handler.command_session_idle_timeout == gw_module.COMMAND_SESSION_IDLE_TIMEOUT
+
+
+@pytest.mark.asyncio
 async def test_sending_loop_collected_responses_and_pacing(gateway_handler):
     with patch("custom_components.myhome.gateway.OWNCommandSession") as mock_cmd_class:
         mock_cmd_session = MagicMock()
@@ -1072,7 +1175,7 @@ async def test_gateway_properties_and_cen_branches(gateway_handler):
     assert gateway_handler.manufacturer == "BTicino"
 
     # Firmware as tuple/list
-    gateway_handler.gateway.firmware = [1, 0, 5]
+    gateway_handler.gateway.firmware = "1.0.5"
     assert gateway_handler.firmware == "1.0.5"
 
     # CEN device when config_entry has no entry_id

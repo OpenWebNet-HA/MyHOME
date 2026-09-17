@@ -20,6 +20,38 @@ Each request is only sent when the gateway's OWNd **profile** advertises that WH
 
 ---
 
+## 🔁 Broadcast re-sync (group / area / general)
+
+A group (`*1*x*#G##`), area (`*1*x*A##`) or general (`*1*x*0##`) command comes from a
+physical wall switch or scene, not from Home Assistant, so no single actuator's own
+status reply is guaranteed to follow it. Depending on the gateway model and firmware,
+member status replies may arrive either *before* the broadcast frame (e.g. ~0.9 s prior on
+MyHomeServer1) or *after* it (e.g. trailing ~60–200 ms on F454 and other installations).
+Sweeping on every broadcast frame regardless would double that traffic for no benefit.
+Instead, the integration debounces across a bidirectional window:
+
+1. A group/area/general frame checks for **leading echoes** received in the preceding 1.5 s
+   (`RESYNC_LEADING_WINDOW_S`). If members already reported their status, no sweep is scheduled.
+2. Otherwise, a 0.5 s timer (`RESYNC_DEBOUNCE_S`) is armed for that target.
+3. If member point-to-point status frames arrive before the timer fires (**trailing echoes**),
+   the sweep is cancelled:
+   - For an **area**, only point-to-point echoes in that matching area cancel its timer;
+     unrelated areas stay armed.
+   - For a **group**, receiving multiple member echoes ($\ge 2$) in the window cancels its
+     timer, protecting against unrelated bus frames.
+4. Otherwise, one status request is sent:
+   - **Group** `#G`: `*#1*#G##` (the group's own status).
+   - **Area** `A`: `*#1*A##`, using the frame's own `WHERE` (`"00"`, `"1"`.."9", `"100"`)
+     - never a value re-derived from an integer, which would risk emitting the banned
+     `*#1*0##`.
+   - **General**: one `*#1*A##` per area that has at least one known WHO=1 actuator
+     (`light` or `switch` in the entity registry), never `*#1*0##`.
+
+Disable this with **Sweep group/area/general light addresses for status** in the
+Options Flow if your gateway lags on repeated status requests.
+
+---
+
 ## 🧱 Every platform follows the same life cycle
 
 Every entity platform shares one setup skeleton (`custom_components/myhome/discovery.py`). For each gateway a platform runs, in order:
@@ -29,7 +61,7 @@ Every entity platform shares one setup skeleton (`custom_components/myhome/disco
 | **Restore** | Entities already in the entity registry are re-created immediately. | Your names, areas and entity ids exist before the gateway has said a word; a restart never shows an empty dashboard. |
 | **Configure** | Devices declared in `myhome.yaml` that are not in the registry yet are created. | The configuration is the source of truth for names, device classes and options. |
 | **Discover** | The first frame from an unknown address creates the entity. | New actuators appear on their own; nothing needs a restart. |
-| **Route** | Every frame is forwarded to the entity that owns the address. | One dispatcher signal per entity, no per-platform message loops. |
+| **Route** | Every frame is delivered to the entities that own the address, through the gateway's frame router (`router.py`). | An entity is subscribed the moment it is created, under every spelling of its address, so no frame of a burst is lost while Home Assistant adds it. |
 
 Addresses follow the OpenWebNet `WHERE` conventions - point-to-point `APL` (`12`), area `A` (`1`), group `#G` (`#5`), general `0` - plus the F422 bus-routing form `APL#4#<bus>` (`0311#4#01`). Area, group and general frames never create an entity: they are broadcasts, not devices (the alarm central unit is the one subsystem where `WHERE = 0` is a real device). Translation frames (`*1*1000#1*14##`) are ignored as well.
 

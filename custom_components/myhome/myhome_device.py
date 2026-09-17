@@ -171,8 +171,13 @@ class MyHOMEEntity(RestoreEntity):
 
     @property
     def available(self) -> bool:
-        """Return whether the gateway is available."""
+        """Return True if entity is available."""
         return self._gateway_handler.available
+
+    @callback
+    def handle_event(self, msg: Any) -> bool | None:
+        """Handle a message routed from the gateway bus."""
+        raise NotImplementedError  # pragma: no cover
 
     @callback
     def _handle_availability_update(self) -> None:

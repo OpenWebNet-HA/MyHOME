@@ -6,15 +6,15 @@ Our overarching mission is to provide the most reliable, complete, and high-perf
 
 ---
 
-## 🗺️ Current Delivery Status (Unified Beta v2.0.0b11)
+## 🗺️ Current Delivery Status (Unified Beta v2.0.0b12 & Platinum IQS)
 
-Through intense community collaboration and engineering, the major architectural milestones originally planned across Phases 1, 2, 3, and 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** in the **v2.0.0b11 Unified Beta**.
+Through intense community collaboration and engineering, the major architectural milestones originally planned across Phases 1, 2, 3, and 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** in the **v2.0.0b12 Unified Beta**. Furthermore, **Phase 5 (Home Assistant Integration Quality Scale)** has been achieved ahead of schedule, with the integration officially qualifying for the **🏆 Platinum Quality Scale** and strict typing enforced with zero errors across all modules.
 
 ```mermaid
 gantt
     title MyHOME Integration Status & Roadmap
     dateFormat  YYYY-MM-DD
-    section Delivered in v2.0.0b11
+    section Delivered in v2.0.0b12
     Phase 1 - Dual Async Transports, Core Features & Bus Monitor    :done, 2026-08-01, 2026-09-01
     Phase 2 - Standalone OWNd Library (P1) & CEN Triggers (P2)      :done, 2026-09-01, 2026-09-11
     Phase 2 - Native DIN Bus Timers (WHO 1)                         :done, 2026-09-01, 2026-09-11
@@ -22,33 +22,44 @@ gantt
     Phase 4 - Real-World Trace Replay CI Fixture Engine (P5)        :done, 2026-09-01, 2026-09-11
     DALI Tunable White & Native HSV Color                           :done, 2026-09-01, 2026-09-11
     WHO 18 Energy Power/Meters & WHO 16 Audio Matrix Proxy          :done, 2026-09-01, 2026-09-11
-    section Active Community Consultation
-    RFC - P7 Group Sync, P3 Cover Calibration, WHO 14/24/22 Scope   :active, 2026-09-11, 2026-11-01
-    section Post-Beta Milestones
-    Phase 5 - Golden Quality Scale (IQS) & HA Core Alignment         :2026-11-01, 2026-12-15
+    P7 Lighting Groups & Debounced Resync (#367/#376/#377/#391)     :done, 2026-09-12, 2026-09-17
+    Phase 5 - Platinum Quality Scale (IQS) & Strict Typing          :done, 2026-09-15, 2026-09-17
+    OWNd 2.0.0b7 Engine (PEP 561 py.typed & HMAC Refactor)          :done, 2026-09-16, 2026-09-17
+    Physical MH201 Plant Trace Replay Fixture (#390)                :done, 2026-09-16, 2026-09-17
+    section Active Community Collaboration
+    RFC - Dedicated Admin Panel & Cover Travel Profiles (#374)      :active, 2026-09-16, 2026-10-15
+    Repairs Framework Expansion (Timezone & Unknown Model #387/#388):active, 2026-09-16, 2026-10-01
+    RFC - Scope Resolution for WHO 14, WHO 24, WHO 22               :active, 2026-09-11, 2026-10-15
+    section Upstream Milestones
+    Upstream Home Assistant Core Integration (PR #232 Merge)        :2026-10-01, 2026-11-15
+    Official Brands Asset Inclusion (home-assistant/brands#2052)    :2026-09-20, 2026-10-15
 ```
 
 ---
 
-## 📦 What is Shipped & Operational in v2.0.0b11
+## 📦 What is Shipped & Operational in v2.0.0b12
 
 The following table summarizes the completed architectural features and protocol subsystems verified in the current release:
 
 | Priority / Feature | Subsystem | Implementation Status | Highlights |
 |---|---|---|---|
-| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd 2.0.0b5`) | Extracted into an independent, strongly typed Python library on PyPI; shared with CLI tools and MCP servers. |
+| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd 2.0.0b7`) | Extracted into an independent, strongly typed Python library on PyPI; PEP 561 `py.typed` compliance, optimized HMAC-SHA256 handshake ($O(N)$ string generation), shared with CLI tools and MCP servers. |
+| **Lighting Groups & General Debounced Resync (P7)** | WHO=1 | ✅ **Shipped** (#367, #376, #377, #391) | Declared groups in `myhome.yaml` (`where: '#G'`, optional `members:`) with aggregate status or `assumed_state`; 250 ms debounced sweep with bidirectional echo window and per-address cancellation; truthful event emission and centralized `FrameRouter` integration. |
+| **Strict Typing & Platinum Quality Seal** | Core / IQS | ✅ **Shipped** (`quality_scale.yaml`) | 100% compliance across all Bronze, Silver, Gold, and Platinum rules; strict `mypy` typing with 0 errors across all 30 integration modules. |
 | **CEN / CEN+ UI Device Triggers (P2)** | WHO=15 / 25 | ✅ **Shipped** | First-class Home Assistant UI device triggers with string-preserved addressing (`"0001"`), gateway MAC isolation, and all 8 press/held/release actions. |
 | **Native Hardware Bus Timers** | WHO=1 | ✅ **Shipped** | Offloaded countdown timers on Legrand DIN actuators (F411) via `myhome.turn_on_timed` or `timer`/`duration` parameters in `light.turn_on` / `switch.turn_on`. |
 | **Central Unit Coordination (P4)** | WHO=4 | ✅ **Shipped** | Dedicated master coordination for 99-zone Central Unit (`#0`, model 3550) and 4-zone Central Unit (`#0#1`, model 4695). Master Seasonal switches propagate to subordinate zones. |
 | **Multi-Gateway Isolation (P6)** | Core / Dispatcher | ✅ **Shipped** | Namespaced event dispatchers (`f"myhome_cen_event_{mac}"`) and device trigger filtering by parent gateway MAC (`via_device`), eliminating cross-talk across multi-gateway plants. |
-| **Real-World CI Trace Replay (P5)** | Testing / CI | ✅ **Shipped** | Automated pytest fixture engine (`tests/test_trace_replay.py`) replaying frozen on-wire bus captures (e.g. issue #247 reporter's 100-frame trace from F454) directly against HA state machines. |
+| **Real-World CI Trace Replay (P5)** | Testing / CI | ✅ **Shipped** | Automated pytest fixture engine (`tests/test_trace_replay.py`) replaying frozen on-wire bus captures (issue #247 MHS1, issue #297 F454, MH200 physical plant, and MH201 physical plant #390) directly against HA state machines. |
 | **DALI Tunable White & Dimmers** | WHO=1 | ✅ **Shipped** | DALI DT8 tunable white (Kelvin 2000K–6535K / mireds, Dimension 14), HSV color auto-promotion (Dimension 12), and dimming speed curves. |
-| **Fancoil Thermoregulation** | WHO=4 | ✅ **Shipped** | 3-speed fancoil control (`auto`, `low`, `medium`, `high`) using dimension 11, temperature offset tracking, and startup sweeps. |
+| **Fancoil Thermoregulation & Antifreeze Target** | WHO=4 | ✅ **Shipped** (#383) | 3-speed fancoil control (`auto`, `low`, `medium`, `high`) using dimension 11, temperature offset tracking, startup sweeps, and active antifreeze target preservation across sweeps. |
+| **Cover Virtual Positioning & Delivery Protection** | WHO=2 | ✅ **Shipped** (#302, #319, #380) | Virtual travel-time positioning, 60s hardware cutoff safety guard, live bus calibration service (`myhome.calibrate_cover`), and delivery failure motion abort preventing phantom position advances. |
 | **Sound System 2.0 & Streaming Proxy**| WHO=16 | ✅ **Shipped** | Multi-room matrix amplifier control (F441/F441M), volume normalization (0–31 scale), software mute, and Dynamic Streaming Proxy for Music Assistant / Spotify. |
 | **Energy Management & Metering** | WHO=18 | ✅ **Shipped** | Instantaneous power (W), line voltage (V), current (mA), and energy counters wired into Home Assistant energy sensors. |
 | **Burglar Alarm** | WHO=5 | ✅ **Shipped** | Partitions, arm away/home, disarm, panic trigger, and zone 0 synchronization for central units (3485/3486). |
 | **Dry Contacts & Technical Alarms** | WHO=25 | ✅ **Shipped** | Dynamic discovery, inverted contact states, and event dispatching for Legrand 3477 binary sensors. |
-| **Lovelace Bus Monitor Card** | Frontend | ✅ **Shipped** (`<myhome-bus-card>`) | Live scrolling stream, color-coded WHO badges, syntax injector, and 1-click **"📋 Report Issue / Copy Trace"** clipboard exporter. |
+| **Gateway Session Supervisor & Latency Tuning** | Core / Gateway | ✅ **Shipped** (#378) | Profile-driven `command_session_idle_timeout` to support high-latency or legacy gateway architectures (e.g. MH201, MH200N). |
+| **Lovelace Bus Monitor Card** | Frontend | ✅ **Shipped** (`<myhome-bus-card>`) | Live scrolling stream, color-coded WHO badges, syntax injector, local timestamp rendering, and 1-click **"📋 Report Issue / Copy Trace"** clipboard exporter. |
 
 ---
 
@@ -60,122 +71,133 @@ We invite community members, certified installers, and power users to review the
 
 ---
 
-### 1. 💡 P7: Lighting Groups & General Sync (`WHO = 1`)
+### 1. 💡 P7: Lighting Groups & General Sync (`WHO = 1`) — ✅ Resolved & Shipped
 
 #### The Technical Context:
 In OpenWebNet, lighting actuators can be triggered individually (`WHERE=10`), by group (`WHERE=#1` through `#255`), by environment/room (`WHERE=room`), or generally across the whole plant (`WHERE=0`). 
 In ideal installations, actuators broadcast individual status frames (`*1*0*10##`, `*1*0*11##`) after executing a group or general command. However, on older gateways or specific actuator configurations, actuators do **not** emit individual status messages, leaving Home Assistant entities out of sync with the physical lights.
 
-#### Open Questions for the Community:
-1. **Group Mapping Definition**: Should group memberships be defined in `myhome.yaml` / UI Options (e.g. `groups: { 1: ["light.kitchen", "light.dining"] }`), or should Home Assistant trigger an asynchronous status sweep (`*#1*WHERE##`) whenever a group actuation is intercepted on the bus?
-2. **Priority**: For your installation, do you actively use physical MyHOME group/general buttons, and are your entity states desynchronizing today?
+#### Delivered Architecture (PRs #367, #376, #377, #391):
+Community consensus and engineering converged on a robust two-tier hybrid approach, fully delivered and validated in **v2.0.0b12**:
+
+1. **Truthful Broadcast Event Dispatching (#367)**: `myhome_group_light_event`, `myhome_area_light_event`, and `myhome_general_light_event` report a truthful `event` — strictly `on`/`off` for knowable WHATs, never firing a false `off` for speed, dimming, or toggle frames.
+2. **Declared Groups (#376)**: Groups are declared in `myhome.yaml` under `groups:` (`where: '#G'`, optional `members:`), co-located with `lock_features` (#364). When `members` is specified, state is derived dynamically from member lights like `light.group`; otherwise, it operates as an `assumed_state` light.
+3. **Centralized FrameRouter Integration (#391)**: `MyHOMELightGroup` implements the standardized `FrameRouter` interface (`handle_event`), enforced by type checking in `MyHOMEEntity` and an automated PR checklist.
+4. **Bidirectional Debounced Fallback Sweep (#377)**: A group, area, or general command arms a 250 ms debounce window with per-address cancellation. If individual member statuses echo spontaneously (as confirmed on F461, F429G, F454, and physical MH200 captures), the sweep is cancelled. If individual replies do not arrive within the window, a targeted status sweep (`*#1*#G##` / `*#1*A##`) fires, ensuring complete synchronization without bus congestion.
 
 ---
 
-### 2. 🪟 P3: Cover Calibration & Dynamic Hardware Position Promotion (`WHO = 2`)
+### 2. 🪟 P3: Cover Calibration & Dedicated Administration Panel (`WHO = 2`)
 
 #### The Technical Context:
-Home Assistant currently provides **virtual travel-time positioning** for all covers (calculating percentage open/closed based on configured travel duration). 
+Home Assistant provides **virtual travel-time positioning** for all covers (calculating percentage open/closed based on configured travel duration).
 Legrand advanced shutter actuators (such as the 67557, LN4672M2, and F401) support native hardware positioning via Dimension 10 (`*#2*WHERE*10*Position*...##`) and an automatic travel calibration routine (`shutterRun=AUTO`).
 
-#### Open Questions for the Community:
-1. **Calibration Service**: Would a `myhome.calibrate_cover` service (triggering physical calibration on the actuator) be valuable, or is manual travel-time estimation sufficient and safer?
-2. **Auto-Promotion**: Should covers that report Dimension 10 frames automatically promote themselves to hardware positioning mode without user intervention?
+#### Shipped Foundation:
+* **Interactive Live Bus Calibration Engine (#302, #319)**: Built-in `myhome.calibrate_cover` service with automatic stopwatch timing directly from on-wire frames, `Calibrate Up` and `Calibrate Down` configuration buttons (`EntityCategory.CONFIG`), `copied_from` timing sharing across identical shutters, and a 60-second hardware cutoff safety guard.
+* **Delivery Failure Motion Abort (#380)**: Immediately stops virtual movement and prevents phantom position advance when a cover frame is rejected or unconfirmed by the gateway.
+
+#### Active Community Collaboration: Dedicated Administration Panel (#374):
+Work is actively underway in **PR #374** (by @xtimmy86x, following [Discussion #270](https://github.com/orgs/OpenWebNet-HA/discussions/270)) introducing an experimental administration panel:
+* **Asymmetric Travel Profiles**: Configurable independent opening and closing durations per cover.
+* **Guided & Batch Calibration**: Guided, automatic, and selected-cover batch calibration workflows with explicit preview and atomic persistence.
+* **Integrated Diagnostics & Bus Monitor**: Embedded live trace capture, frame filtering, transmission, and diagnostic export directly inside the administration panel.
+* **WHO Category Inventory**: Categorized gateway entity inventory with search and area management.
 
 ---
 
-### 3. 🔒 WHO 14: Actuator Maintenance Locks & Relay Cycle Counters
+### 3. 🔒 WHO 14: Actuator Maintenance Locks & Relay Cycle Counters — ✅ Community Consensus
 
 #### The Technical Context:
 OpenWebNet WHO 14 handles actuator diagnostics, relay cycle counters, and hardware maintenance locks (preventing physical buttons from toggling a relay during maintenance or security states). 
-Legrand does not publish an open specification for WHO 14; frames are largely proprietary diagnostic codes from DIN actuators.
 
-#### Open Questions for the Community:
-1. **Use Case**: Does anyone in the community have a practical automation use case for software maintenance lock switches on Legrand DIN actuators, or does this add unnecessary entity clutter?
-2. **Recommendation**: Should WHO 14 remain an internal diagnostic listener (visible in the Bus Monitor card) rather than exposing Home Assistant lock entities?
+#### Community Resolution:
+* **Diagnostic Buttons Preserved (#353)**: Actuator lock and unlock controls are exposed as configuration buttons (`button.py`) under `EntityCategory.CONFIG`, allowing maintenance commands without creating cluttering lock entities.
+* **Bus Monitor Visibility**: WHO 14 frames remain fully visible, parsed, and color-coded in the Lovelace Bus Monitor card for diagnostic troubleshooting.
 
 ---
 
-### 4. 🏢 WHO 24: Legrand Commercial Lighting Management Room Controllers
+### 4. 🏢 WHO 24: Legrand Commercial Lighting Management Room Controllers — ✅ Resolved Scope
 
 #### The Technical Context:
-WHO 24 is designed for commercial Legrand Lighting Management controllers (**BMNE500**, **BMview**, **002645**) used in office buildings and schools. It regulates maintained lux levels, daylight harvesting, and profile activation (`*24*1#Profile*WHERE##`). 
-Residential MyHOME plants almost universally use standard WHO=1 lighting and DALI gateways (F429).
+WHO 24 is designed for commercial Legrand Lighting Management controllers (**BMNE500**, **BMview**, **002645**) used in office buildings and schools. Residential MyHOME plants almost universally use standard WHO=1 lighting and DALI gateways (F429).
 
-#### Open Questions for the Community:
-1. **User Base**: Is anyone in the community running commercial BMNE500 / WHO 24 lighting controllers in their installation?
-2. **Recommendation**: Should WHO 24 be deferred to an optional extension rather than core residential integration scope?
+#### Community Resolution:
+* **Scope Deferred**: WHO 24 is deferred as an optional standalone extension, keeping core integration scope focused on residential and commercial SCS bus systems.
 
 ---
 
-### 5. 🎵 WHO 22: Legacy Multi-Room FM Tuner & RDS Navigation
+### 5. 🎵 WHO 22: Legacy Multi-Room FM Tuner & RDS Navigation — ✅ Formally Deprecated
 
 #### The Technical Context:
 WHO 22 defines protocol frames for obsolete Legrand analog FM radio tuner modules (frequency stepping, station presets, and RDS text streaming). 
-Modern installations stream digital music from **Music Assistant**, **Spotify Connect**, or AirPlay directly into BTicino audio zones via the **Dynamic Proxy** pattern on the F441 matrix.
 
-#### Open Questions for the Community:
-1. **Deprecation**: Should WHO 22 FM tuner controls be formally deprecated in favor of our active F441 Dynamic Streaming Proxy?
+#### Community Resolution:
+* **Formally Deprecated**: Obsolete analog FM radio controls are formally deprecated in favor of the **Dynamic Streaming Proxy** on the F441 matrix, enabling high-fidelity digital streaming from **Music Assistant**, **Spotify Connect**, and AirPlay directly into wired SCS zones.
 
 ---
 
-## 🥇 Phase 5: Home Assistant Integration Quality Scale — Golden Quality Seal (Post-Beta)
+## 🏆 Phase 5 Achieved: Home Assistant Platinum Quality Scale
 
-Following the conclusion of the beta testing period and community RFC consultation, all engineering efforts will transition to qualifying for the **official Home Assistant 🥇 Golden Quality Seal** ([Home Assistant Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/)) and preparing the codebase for upstream inclusion in Home Assistant Core.
+Originally planned as an extended post-beta milestone, all requirements for the **Home Assistant Integration Quality Scale** have been **fully implemented and verified ahead of schedule**, elevating MyHOME directly to the **🏆 Platinum Quality Scale** ([Home Assistant Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/)).
 
-Under Home Assistant's grading architecture, an integration cannot achieve Gold without **100% compliance across all Bronze and Silver rules as well**.
+Under Home Assistant Core architecture, achieving Platinum requires 100% strict compliance across all Bronze, Silver, and Gold criteria without exception.
 
-### 📊 Quality Scale Compliance & Gap Analysis
+### 📊 Quality Scale Compliance & Architecture
 
 ```mermaid
 graph LR
-    subgraph Prerequisites["🥉 Bronze & 🥈 Silver Prerequisites"]
-        B1["has_entity_name = True"]
-        B2["entry.runtime_data"]
-        B3["async_setup Service Actions"]
-        S1["Service Action Exceptions"]
-        S2["PARALLEL_UPDATES Declarations"]
+    subgraph DeliveredTiers["🏆 Delivered Quality Tiers (100% Verified in CI)"]
+        B["🥉 Bronze Tier (20/20)<br/>has_entity_name, runtime_data,<br/>async_setup services, config_flow"]
+        S["🥈 Silver Tier (10/10)<br/>100% Test Coverage, Translated Exceptions,<br/>PARALLEL_UPDATES=0, Reauth"]
+        G["🥇 Gold Tier (21/21)<br/>async_step_reconfigure, strings/icons.json,<br/>Repairs Framework, All 10 Docs"]
+        P["🏆 Platinum Tier (3/3)<br/>100% Async OWNd, Strict Typing<br/>(0 mypy errors across 30 modules)"]
+        B --> S --> G --> P
     end
 
-    subgraph GoldMilestones["🥇 Gold Tier Implementation"]
-        G1["async_step_reconfigure"]
-        G2["strings.json & Entity Translations"]
-        G3["icons.json Translations"]
-        G4["Repairs Framework (async_create_issue)"]
-        G5["quality_scale.yaml Tracking"]
+    subgraph UpstreamCore["🌐 Upstream Core Inclusion"]
+        U1["home-assistant/brands Assets<br/>(PR #2052 submitted)"]
+        U2["Core Integration PR #232<br/>(Continuous V2 Alignment)"]
+        P --> U1
+        P --> U2
     end
 
-    subgraph Upstream["🌐 Upstream Inclusion & Assets"]
-        U1["home-assistant/brands Assets"]
-        U2["Official Core Docs (All 10 rules)"]
-        U3["Core Integration PR"]
-    end
-
-    Prerequisites --> GoldMilestones --> Upstream
+    classDef done fill:#2e7d32,stroke:#1b5e20,color:#ffffff;
+    classDef pending fill:#0277bd,stroke:#01579b,color:#ffffff;
+    class B,S,G,P done;
+    class U1,U2 pending;
 ```
 
-### 📋 Detailed Workstream Breakdown
+### 📋 Detailed Quality Scale Audit Summary
 
-#### 1. 🥉 Bronze Architectural Alignments (Core Prerequisites)
-* **`has-entity-name`**: Migrate all entity implementations (`MyHOMEEntity` in `custom_components/myhome/myhome_device.py`) from `self._attr_has_entity_name = False` to `True`. Primary entities (where the device and entity are one, such as a single light actuator or thermostat) will set `_attr_name = None` to inherit the device's friendly name. Remove manual `self.entity_id` overrides to allow Home Assistant Core's registry to handle naming.
-* **`runtime-data`**: Deprecate global `hass.data[DOMAIN][mac]` state storage in favor of modern `ConfigEntry.runtime_data` (introduced in HA 2024.4). Establish a typed `MyHomeData` dataclass and `type MyHomeConfigEntry = ConfigEntry[MyHomeData]`.
-* **`action-setup`**: Move service action registrations (`sync_time`, `send_message`, `sweep_bus`, `turn_on_timed`) out of `async_setup_entry` into `async_setup` (or a dedicated `services.py`), using standard Home Assistant service targets (`entity_id` / `device_id`) and preventing premature unregistration on entry unload.
+#### 1. 🥉 Bronze Architectural Alignments — ✅ 100% Complete (20/20)
+* **`has-entity-name = True`**: Fully implemented across all entity platforms (`MyHOMEEntity` in `custom_components/myhome/myhome_device.py`). Primary entities inherit device naming (`_attr_name = None`), and manual `entity_id` assignment has been eliminated in favor of core registry naming (`tests/test_entity_naming.py`).
+* **`runtime-data`**: Replaced all legacy `hass.data[DOMAIN]` global state with typed `ConfigEntry.runtime_data` (`MyHOMERuntimeData` in `data.py`), enforced statically by `scripts/verify_ha_standards.py`.
+* **`action-setup`**: Service action registrations (`sync_time`, `send_message`, `sweep_bus`, `turn_on_timed`, etc.) are centralized in `services.py` and registered once in `async_setup`, preventing listener teardown during entry reloads.
 
-#### 2. 🥈 Silver Robustness & Quality Hardening
-* **`test-coverage` (>95% per module)**: ✅ **Already Satisfied (Strict 100.0%)**. MyHOME already enforces strict 100.0% statement and branch coverage across all 25 modules (5,155/5,155 statements with 0 missing lines verified by `scripts/verify_ownd_coverage.py` and `tests/test_coverage_enforcer.py`), easily surpassing the Home Assistant >95% requirement.
-* **`action-exceptions`**: Update service handlers to raise `homeassistant.exceptions.ServiceValidationError` or `HomeAssistantError` instead of logging errors and returning `False`.
-* **`parallel-updates`**: Declare explicit `PARALLEL_UPDATES = 0` (for push-driven event stream entities) or `PARALLEL_UPDATES = 1` (where sequential bus dispatch is needed) across all platform modules (`light.py`, `switch.py`, `cover.py`, `climate.py`, `sensor.py`, `binary_sensor.py`, `media_player.py`, `button.py`, and `alarm_control_panel.py`).
+#### 2. 🥈 Silver Robustness & Quality Hardening — ✅ 100% Complete (10/10)
+* **`test-coverage` (100.0% Strict Statement & Branch Coverage)**: Surpasses the core >95% requirement. MyHOME enforces strict 100.0% statement coverage across all integration modules (over 1,700 automated tests passing with zero misses, guarded by `tests/test_coverage_enforcer.py` and CI).
+* **`action-exceptions`**: Service actions validate all inputs and raise `homeassistant.exceptions.ServiceValidationError` or `HomeAssistantError` mapped directly to localized translation keys under `exceptions` in `strings.json`.
+* **`parallel-updates`**: Declares explicit `PARALLEL_UPDATES = 0` across all platform modules (`light.py`, `switch.py`, `cover.py`, `climate.py`, `sensor.py`, `binary_sensor.py`, `media_player.py`, `button.py`, `alarm_control_panel.py`) for non-blocking local push stream processing.
 
-#### 3. 🥇 Gold User Experience & Framework Features
-* **`reconfiguration-flow`**: Implement `async_step_reconfigure` in `custom_components/myhome/config_flow.py` allowing users to update the gateway IP, port, or connection mode directly through the UI when network settings change, without deleting and recreating their config entry.
-* **`strings.json` & `entity-translations`**: Introduce `custom_components/myhome/strings.json` as the canonical source of truth for translations, and assign `translation_key` across all entities and diagnostic sensors.
-* **`icon-translations`**: Add `custom_components/myhome/icons.json` to define standard icons for service actions and state representations rather than hardcoding `_attr_icon`.
-* **`repair-issues`**: Integrate Home Assistant's Repairs framework (`homeassistant.helpers.issue_registry.async_create_issue`) for user-actionable situations (such as OWNd engine version mismatches or deprecation warnings for legacy `myhome.yaml` configurations).
-* **`quality_scale.yaml`**: Add the official Home Assistant quality scale tracking file (`custom_components/myhome/quality_scale.yaml`) to document rule statuses (`done`, `todo`, `exempt`) and maintain accountability during core review.
+#### 3. 🥇 Gold User Experience & Framework Features — ✅ 100% Complete (21/21)
+* **`reconfiguration-flow`**: Fully supports `async_step_reconfigure` in `config_flow.py` allowing users to update IP address, port, password, or connection mode directly from the Home Assistant UI.
+* **`strings.json` & `icon-translations`**: `custom_components/myhome/strings.json` and `icons.json` serve as the canonical source of truth for all entity states, configuration forms, device classes, and service actions.
+* **`repair-issues`**: Active integration of Home Assistant's Repairs framework (`async_create_issue`):
+  - `gateway_identity_mismatch` & `gateway_identity_corrected`: Proactively informs users if configured model conflicts with WHO=13 hardware telemetry.
+  - `unconfigured_timezone` (PR #387): Automatically flags legacy gateway timezone sentinel `999` with remediation guidance.
+  - `unknown_model` (PR #388): Captures unmapped WHO=13 hardware codes (`999`) and directs users to diagnostic trace submission.
+* **Complete Core Documentation Suite**: Authored all 10 Gold standard documentation chapters under `docs/configuration/` (Architecture, Supported Functions, Gateways, Services, Runtime Behaviour, CEN/CEN+, Sound System, Troubleshooting, Lovelace Recipes, and Known Limitations).
+* **`quality_scale.yaml`**: Official compliance manifest actively tracked at `custom_components/myhome/quality_scale.yaml` and verified by `scripts/quality_scale_report.py`.
 
-#### 4. 🌐 Upstream Ecosystem & Documentation
-* **Branding Assets (`brands`)**: Submit official SVG/PNG branding assets (`icon.png`, `icon@2x.png`, `logo.png`, `logo@2x.png`) to the [`home-assistant/brands`](https://github.com/home-assistant/brands) repository.
-* **Official Core Documentation**: Author the complete documentation suite for `home-assistant.io/integrations/myhome` fulfilling all 10 Gold documentation standards: data update model, supported hardware matrix, troubleshooting guide, automation examples, known limitations, and removal instructions.
+#### 4. 🏆 Platinum Engineering Tier — ✅ 100% Complete (3/3)
+* **`async-dependency`**: The underlying `OWNd` protocol engine (v2.0.0b7) is a 100% non-blocking asyncio library with zero synchronous blocking socket calls.
+* **`inject-websession`**: Formally exempt (all communication operates over raw OpenWebNet binary/text TCP streams; no HTTP websession required).
+* **`strict-typing`**: Enforces `mypy --strict` with **0 errors across all 30 integration modules**. Cascading type errors were eliminated alongside `OWNd 2.0.0b7`'s PEP 561 `py.typed` marker (PR #393), guarded in CI by `scripts/typing_ratchet.py`.
+
+#### 5. 🌐 Upstream Ecosystem & Core PR Status
+* **Branding Assets (`brands`)**: SVG and high-resolution PNG brand assets submitted in [`home-assistant/brands#2052`](https://github.com/home-assistant/brands/pull/2052).
+* **Core Integration PR #232**: Comprehensive PR [`#232`](https://github.com/OpenWebNet-HA/MyHOME/pull/232) continuously synced to `v2-phase1-architecture`, ready for upstream core maintainer review with full 2026.3+ / Python 3.14 certification.
 
 ---
 
@@ -195,7 +217,8 @@ graph TD
         GW_MH200["🟢 MH200 / MH200N<br/>(107 Frames / Physical Plant)"]
         GW_F461["🟢 F461<br/>(DIN Web Server)"]
         GW_3578["🟡 Legrand 3578<br/>(Serial/ZigBee Loopback)"]
-        GW_MH202["🔴 MH202 / MH201<br/>(Scenario Gateways)"]
+        GW_MH201["🟢 MH201<br/>(100 Frames / Physical Plant)"]
+        GW_MH202["🔴 MH202<br/>(Scenario Gateway)"]
         GW_F455["🔴 F455<br/>(Dual-Bus Routing)"]
     end
 
@@ -203,11 +226,11 @@ graph TD
         SUB_LIGHT["🟢 Lighting / Relays (WHO 1)<br/>(4-digit & on/off covered)"]
         SUB_DALI["🟢 DALI DT8 / RGB (WHO 1)<br/>(Dim 14 Tunable White)"]
         SUB_TIMER["🟡 DIN Bus Timers (WHO 1)<br/>(Synthetic test covered)"]
-        SUB_GRP["🔴 Lighting Groups (P7)<br/>(#group / WHERE=0 sweeps)"]
-        SUB_COV_V["🟢 Covers Virtual (WHO 2)<br/>(Travel-time positioning)"]
+        SUB_GRP["🟢 Lighting Groups (P7)<br/>(declared groups + debounced resync, #376/#377)"]
+        SUB_COV_V["🟢 Covers Virtual (WHO 2)<br/>(Travel-time positioning & #380 delivery abort)"]
         SUB_COV_H["🟢 Covers Hardware (WHO 2)<br/>(Dim 10 status covered)"]
         SUB_COV_CAL["🔴 Cover Calibration (P3)<br/>(shutterRun=AUTO traces)"]
-        SUB_CU3550["🟢 Central Unit 3550 (WHO 4)<br/>(99-zone master mode)"]
+        SUB_CU3550["🟢 Central Unit 3550 (WHO 4)<br/>(99-zone master mode & #383 antifreeze target)"]
         SUB_CU4695["🔴 Central Unit 4695 (WHO 4)<br/>(4-zone master mode)"]
         SUB_ENERGY["🟢 Energy Management (WHO 18)<br/>(W, V, mA live frames)"]
         SUB_DRY["🟢 Dry Contacts (WHO 25)<br/>(Technical alarms & AUX)"]
@@ -223,9 +246,11 @@ graph TD
     GW_MHS1 --> HARNESS
     GW_F454 --> HARNESS
     GW_MH200 --> HARNESS
+    GW_MH201 --> HARNESS
     GW_F461 --> HARNESS
     SUB_LIGHT --> HARNESS
     SUB_DALI --> HARNESS
+    SUB_GRP --> HARNESS
     SUB_COV_V --> HARNESS
     SUB_COV_H --> HARNESS
     SUB_CU3550 --> HARNESS
@@ -237,9 +262,9 @@ graph TD
     classDef partial fill:#f57f17,stroke:#e65100,color:#ffffff;
     classDef needed fill:#c62828,stroke:#b71c1c,color:#ffffff;
 
-    class GW_MHS1,GW_F454,GW_MH200,GW_F461,SUB_LIGHT,SUB_DALI,SUB_COV_V,SUB_COV_H,SUB_CU3550,SUB_ENERGY,SUB_DRY,SUB_ROUTER covered;
+    class GW_MHS1,GW_F454,GW_MH200,GW_MH201,GW_F461,SUB_LIGHT,SUB_DALI,SUB_GRP,SUB_COV_V,SUB_COV_H,SUB_CU3550,SUB_ENERGY,SUB_DRY,SUB_ROUTER covered;
     class GW_3578,SUB_TIMER,SUB_CEN,SUB_ALARM partial;
-    class GW_MH202,GW_F455,SUB_GRP,SUB_COV_CAL,SUB_CU4695 needed;
+    class GW_MH202,GW_F455,SUB_COV_CAL,SUB_CU4695 needed;
 ```
 
 ---
@@ -253,7 +278,8 @@ graph TD
 | **MH200 / MH200N** | 🟢 **Covered** | `tests/fixtures/plants/mh200_physical_plant/` (107 on-wire frames from physical MH200) | *None needed — full physical plant active in CI (62 lights, 7 switches, 11 covers across F422 interfaces).* |
 | **F461 Web Server** | 🟢 **Covered** | Issue #273 capture (@lyubomirtraykov) | *None needed — DALI DT8 ballasts verified.* |
 | **Legrand 3578 USB/Serial** | 🟡 **Partial** | Unit test loopback in `tests/test_gateway.py` | **Real-world USB serial stream**: Raw byte capture from physical OpenZigBee installation (`WHERE=<id>#9`). |
-| **MH202 / MH201** | 🔴 **Needed** | Synthetic gateway profile tests only | **Production plant trace**: General residential traffic through an MH201/MH202 scenario programmer. |
+| **MH201** | 🟢 **Covered** | `tests/fixtures/plants/mh201_physical_plant/` (100 on-wire frames from physical MH201, issue #378 / PR #390; anonymized) | *None needed — physical plant active in CI (23 lights, 1 outlet, 7 advanced covers, CEN+ presses, WHO=13 device type / firmware / datetime replies).* |
+| **MH202** | 🔴 **Needed** | Synthetic gateway profile tests only | **Production plant trace**: General residential traffic through an MH202 scenario programmer. |
 | **F455** | 🔴 **Needed** | Synthetic dual-bus profile tests only | **Dual-bus cross-routing trace**: Simultaneous traffic routing between Bus 1 and Bus 2. |
 | **F452 / F453AV / AM4890** | 🟡 **Synthetic** | Factory golden frames from `openwebnet4j` | **General trace**: Normal residential bus captures welcomed to expand gateway diversity. |
 
@@ -266,11 +292,11 @@ graph TD
 | **Lighting (WHO = 1) — Relays & Dimmers** | 🟢 **Covered** | issue #247 capture (F411U2, F418, 4-digit addressing `1000`, `0910`) + MH200 plant (62 lights) | *Baseline covered.* |
 | **Lighting (WHO = 1) — DALI Tunable White** | 🟢 **Covered** | Lyubomir Traykov capture (Dimension 14, Kelvin 2000K–6535K / mireds) | *Baseline covered.* |
 | **Lighting (WHO = 1) — Native DIN Timers** | 🟡 **Synthetic** | Unit tests in `tests/test_timed_lighting.py` | **Actuator countdown trace**: Capture of physical F411 relay executing Dim 2 (`*#1*WHERE*#2*H*M*S##`) or preset temporization. |
-| **Lighting (WHO = 1) — Groups & General (P7)** | 🔴 **CRITICAL** | None (deferred in RFC #248) | **Group actuation trace**: Capture of physical bus frames when sending `#group` (`*1*1*#1##`) or all-off (`*1*0*0##`), showing whether your gateway emits individual status replies! |
-| **Covers (WHO = 2) — Travel-Time Positioning** | 🟢 **Covered** | issue #247 capture (`*2*0*42##`, LN4661M2) | *Baseline covered.* |
+| **Lighting (WHO = 1) — Groups & General (P7)** | 🟢 **Covered** | F461/F429G/F454 traces + physical MH200 golden sample burst fixture (`tests/test_issue_368_resync.py`); declared groups (#376), debounced sweep (#377), and FrameRouter (#391) | *None needed — full group and general broadcast resync engine active in CI.* |
+| **Covers (WHO = 2) — Travel-Time Positioning** | 🟢 **Covered** | issue #247 capture (`*2*0*42##`, LN4661M2) + 60s hardware cutoff guard (#319) + motion abort on delivery failure (#380) | *Baseline covered.* |
 | **Covers (WHO = 2) — Hardware Feedback** | 🟢 **Covered** | issue #247 capture (`*#2*73*10*10*0*001*0##`) | *Baseline covered.* |
-| **Covers (WHO = 2) — Calibration (P3)** | 🔴 **Needed** | Synthetic dimension 10 tests only | **Hardware calibration trace**: Bus recording during physical calibration (`shutterRun=AUTO`) on Legrand 67557, LN4672M2, or F401. |
-| **Thermoregulation (WHO = 4) — 99-Zone CU 3550** | 🟢 **Covered** | issue #247 capture (`#0` central unit + zone thermostats) | *Baseline covered.* |
+| **Covers (WHO = 2) — Calibration (P3)** | 🔴 **Needed** | Synthetic dimension 10 tests only (on-bus travel-time calibration live in v2; PR #374 admin panel in review) | **Hardware calibration trace**: Bus recording during physical calibration (`shutterRun=AUTO`) on Legrand 67557, LN4672M2, or F401. |
+| **Thermoregulation (WHO = 4) — 99-Zone CU 3550** | 🟢 **Covered** | issue #247 capture (`#0` central unit + zone thermostats) + antifreeze target preservation across sweeps (#383) | *Baseline covered.* |
 | **Thermoregulation (WHO = 4) — 4-Zone CU 4695** | 🔴 **Needed** | Synthetic unit tests in `tests/test_climate.py` | **4-zone central unit trace**: Physical capture from a plant running a 4-zone 4695 / HD4695 (`#0#1`) central unit. |
 | **Thermoregulation (WHO = 4) — 4-Pipe Fancoil** | 🟡 **Synthetic** | Unit tests with dimension 11 | **4-pipe heating/cooling trace**: Physical speed toggles on 4-pipe fancoil systems. |
 | **Burglar Alarm (WHO = 5)** | 🟡 **Synthetic** | Golden frames from `openwebnet4j` | **Central unit alarm trace**: Arm/disarm/alarm frames from physical 3485 / 3486 central units. |

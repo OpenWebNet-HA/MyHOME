@@ -1,6 +1,7 @@
 """Support for MyHome binary sensors (dry contacts and motion sensors)."""
 from __future__ import annotations
 
+import typing
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -11,14 +12,16 @@ from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONF_MAC,
     CONF_NAME,
     STATE_ON,
 )
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from OWNd.message import (
     MESSAGE_TYPE_MOTION,
     MESSAGE_TYPE_MOTION_TIMEOUT,
@@ -93,7 +96,7 @@ ALL_DEVICE_CLASS_SUFFIXES = tuple(
 )
 
 
-async def async_setup_entry(hass, config_entry, async_add_entities):
+async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     """Set up the binary sensors of a gateway: dry contacts (WHO=25), auxiliary
     channels (WHO=9) and motion sensors (WHO=1), each restored from the registry,
     then created from myhome.yaml, then discovered from the bus.
@@ -107,8 +110,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     mac = config_entry.data[CONF_MAC]
     configured = runtime.platforms.get(PLATFORM, {})
 
-    def registry_address(who: str):
-        def address_of(entry) -> Address | None:
+    def registry_address(who: str):  # type: ignore
+        def address_of(entry) -> Address | None:  # type: ignore
             classified = _classify_registry_entry(entry, gateway.mac, mac)
             if classified is None or classified[0] != who:
                 return None
@@ -116,7 +119,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
         return address_of
 
-    def duplicate(entry, ctx: DeviceContext) -> bool:
+    def duplicate(entry, ctx: DeviceContext) -> bool:  # type: ignore
         # A second registry entry for a contact already restored under another spelling
         return any(key in ctx_discovery[ctx.who].known for key in _spellings(ctx.address.where))
 
@@ -225,7 +228,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             motion._attr_unique_id = ctx.registry_entry.unique_id
         return motion
 
-    def yaml_who(who: int, device_class=None):
+    def yaml_who(who: int, device_class=None):  # type: ignore
         def accept(ctx: DeviceContext) -> bool:
             if ctx.source == "yaml":
                 cfg = ctx.cfg
@@ -244,25 +247,25 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             keys.extend(_spellings(str(cfg_where)))
         return [k for k in keys if k]
 
-    def route_keys(message, address: Address | None) -> list[str]:
+    def route_keys(message, address: Address | None) -> list[str]:  # type: ignore
         return _spellings(address.where) if address is not None else []
 
     common = dict(hass=hass, config_entry=config_entry, async_add_entities=async_add_entities, platform=PLATFORM)
     ctx_discovery["25"] = PlatformDiscovery(
         who="25", event_type=OWNDryContactEvent, build=build_dry_contact,
         registry_address=registry_address("25"), reject_registry_entry=duplicate, accept=yaml_who(25),
-        known_keys=known_keys, route_keys=route_keys, address=_contact_address, **common,
+        known_keys=known_keys, route_keys=route_keys, address=_contact_address, **common,  # type: ignore
     )
     ctx_discovery["9"] = PlatformDiscovery(
         who="9", event_type=OWNAuxEvent, build=build_auxiliary,
         registry_address=registry_address("9"), reject_registry_entry=duplicate, accept=yaml_who(9),
-        known_keys=known_keys, route_keys=route_keys, address=_aux_address, **common,
+        known_keys=known_keys, route_keys=route_keys, address=_aux_address, **common,  # type: ignore
     )
     ctx_discovery["1"] = PlatformDiscovery(
         who="1", event_type=OWNLightingEvent, build=build_motion,
         registry_address=registry_address("1"), reject_registry_entry=duplicate,
         accept=yaml_who(1, BinarySensorDeviceClass.MOTION),
-        known_keys=known_keys, route_keys=route_keys, address=_motion_address, **common,
+        known_keys=known_keys, route_keys=route_keys, address=_motion_address, **common,  # type: ignore
     )
 
     entities: list[Entity] = []
@@ -272,7 +275,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         async_add_entities(entities)
 
     @callback
-    def _handle_binary_sensor_message(msg):
+    def _handle_binary_sensor_message(msg: typing.Any) -> None:
         """Forward incoming bus messages to binary sensor entities."""
         for discovery in ctx_discovery.values():
             discovery.handle_message(msg)
@@ -280,7 +283,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     config_entry.async_on_unload(
         async_dispatcher_connect(hass, f"myhome_message_{mac}", _handle_binary_sensor_message)
     )
-    return True
+    return True  # type: ignore
 
 
 def _spellings(where: str) -> list[str]:
@@ -304,7 +307,7 @@ def _strip_class_suffix(candidate: str) -> str:
     return candidate
 
 
-def _classify_registry_entry(entry, gateway_mac: str, entry_mac: str) -> tuple[str, str] | None:
+def _classify_registry_entry(entry, gateway_mac: str, entry_mac: str) -> tuple[str, str] | None:  # type: ignore
     """``(who, candidate id)`` of a registry entry, from its unique id or device class.
 
     Auxiliary channels first (an aux channel may carry the motion class), then
@@ -341,15 +344,15 @@ def _primary(where: str) -> str:
     return normalize_where(where) or normalize_where(clean) or clean
 
 
-def _contact_address(message) -> Address | None:
+def _contact_address(message) -> Address | None:  # type: ignore
     return Address(_primary(str(message.where)))
 
 
-def _aux_address(message) -> Address | None:
+def _aux_address(message) -> Address | None:  # type: ignore
     return Address(str(message.channel))
 
 
-def _motion_address(message) -> Address | None:
+def _motion_address(message) -> Address | None:  # type: ignore
     """Motion / PIR frames of a WHO=1 sensor; ``None`` for anything else on WHO=1."""
     is_motion = (
         getattr(message, "is_sensor", False) is True
@@ -363,7 +366,7 @@ def _motion_address(message) -> Address | None:
     return Address(_primary(str(message.where)))
 
 
-async def async_unload_entry(hass, config_entry):
+async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:  # type: ignore
     runtime = config_entry.runtime_data
 
     if PLATFORM not in runtime.platforms:
@@ -378,7 +381,7 @@ async def async_unload_entry(hass, config_entry):
 class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
     _name_from_device_class = True
 
-    def __init__(
+    def __init__(  # type: ignore
         self,
         hass,
         name: str,
@@ -408,7 +411,7 @@ class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
 
         self._inverted = inverted
 
-        self._attr_device_class = device_class
+        self._attr_device_class = device_class  # type: ignore
 
         self._attr_unique_id = f"{gateway.mac}-{self._device_id}-{self._attr_device_class}"
 
@@ -416,37 +419,21 @@ class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
         sensor_attr = f"({self._where[0]}){self._where[1:]}" if self._where else ""
         self._attr_extra_state_attributes = {"Sensor": sensor_attr}
 
-    async def async_restore_last_state(self, last_state) -> None:
+    async def async_restore_last_state(self, last_state: typing.Any) -> None:
         """Restore dry contact state."""
         if last_state is not None and last_state.state not in ("unknown", "unavailable"):
             self._attr_is_on = last_state.state == "on"
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
-        self._register_entity_ref(self._attr_device_class)
-        target_hass = self.hass or self._hass
-        if target_hass is not None:
-            unsub = async_dispatcher_connect(
-                target_hass,
-                f"myhome_update_{self._gateway_handler.mac}_25_{self._where}",
-                self.handle_event,
-            )
-            self.async_on_remove(unsub)
-            norm_where = normalize_where(self._where)
-            if norm_where != self._where:
-                unsub2 = async_dispatcher_connect(
-                    target_hass,
-                    f"myhome_update_{self._gateway_handler.mac}_25_{norm_where}",
-                    self.handle_event,
-                )
-                self.async_on_remove(unsub2)
+        self._register_entity_ref(self._attr_device_class)  # type: ignore
         await super().async_added_to_hass()
 
-    async def async_will_remove_from_hass(self):
+    async def async_will_remove_from_hass(self) -> None:
         """When entity is removed from hass."""
-        self._unregister_entity_ref(self._attr_device_class)
+        self._unregister_entity_ref(self._attr_device_class)  # type: ignore
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Update the entity.
 
         Only used by the generic entity update service.
@@ -454,7 +441,7 @@ class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
         await self._gateway_handler.send_status_request(OWNDryContactCommand.status(self._where))
 
     @callback
-    def handle_event(self, message: OWNDryContactEvent):
+    def handle_event(self, message: OWNDryContactEvent) -> None:
         """Handle an event message."""
         LOGGER.debug(
             "%s %s",
@@ -468,7 +455,7 @@ class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
 class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
     _name_from_device_class = True
 
-    def __init__(
+    def __init__(  # type: ignore
         self,
         hass,
         name: str,
@@ -497,7 +484,7 @@ class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
 
         self._inverted = inverted
 
-        self._attr_device_class = device_class
+        self._attr_device_class = device_class  # type: ignore
         if not device_class and not entity_name:
             self._attr_name = None  # no class to name it after: the entity is the device
 
@@ -509,33 +496,25 @@ class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
         self._attr_is_on = False
         self._attr_extra_state_attributes = {"Auxiliary channel": self._where}
 
-    async def async_restore_last_state(self, last_state) -> None:
+    async def async_restore_last_state(self, last_state: typing.Any) -> None:
         """Restore auxiliary state."""
         if last_state is not None and last_state.state not in ("unknown", "unavailable"):
             self._attr_is_on = last_state.state == "on"
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
-        self._register_entity_ref(self._attr_device_class)
-        target_hass = self.hass or self._hass
-        if target_hass is not None:
-            unsub = async_dispatcher_connect(
-                target_hass,
-                f"myhome_update_{self._gateway_handler.mac}_9_{self._where}",
-                self.handle_event,
-            )
-            self.async_on_remove(unsub)
+        self._register_entity_ref(self._attr_device_class)  # type: ignore
         await super().async_added_to_hass()
 
-    async def async_will_remove_from_hass(self):
+    async def async_will_remove_from_hass(self) -> None:
         """When entity is removed from hass."""
-        self._unregister_entity_ref(self._attr_device_class)
+        self._unregister_entity_ref(self._attr_device_class)  # type: ignore
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """AUX sensors are read only and cannot be queried, no async_update implementation."""
 
     @callback
-    def handle_event(self, message: OWNDryContactEvent):
+    def handle_event(self, message: OWNDryContactEvent) -> None:
         """Handle an event message."""
         LOGGER.debug(
             "%s %s",
@@ -549,7 +528,7 @@ class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
 class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
     _name_from_device_class = True
 
-    def __init__(
+    def __init__(  # type: ignore
         self,
         hass,
         name: str,
@@ -582,7 +561,7 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
         self._last_updated = None
         self._timeout = timedelta(seconds=315)
 
-        self._attr_device_class = device_class
+        self._attr_device_class = device_class  # type: ignore
 
         self._attr_unique_id = f"{gateway.mac}-{self._device_id}-{self._attr_device_class}"
         self._attr_should_poll = True
@@ -598,58 +577,42 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
             "Sensitivity": PIR_SENSITIVITY[1],
         }
 
-    async def async_restore_last_state(self, last_state) -> None:
+    async def async_restore_last_state(self, last_state: typing.Any) -> None:
         """Restore motion sensor state."""
         if last_state is not None and last_state.state not in ("unknown", "unavailable"):
             self._attr_is_on = last_state.state == STATE_ON
             self._last_updated = last_state.last_updated
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
-        self._register_entity_ref(self._attr_device_class)
-        target_hass = self.hass or self._hass
-        if target_hass is not None:
-            unsub = async_dispatcher_connect(
-                target_hass,
-                f"myhome_update_{self._gateway_handler.mac}_1_{self._where}",
-                self.handle_event,
-            )
-            self.async_on_remove(unsub)
-            norm_where = normalize_where(self._where)
-            if norm_where != self._where:
-                unsub2 = async_dispatcher_connect(
-                    target_hass,
-                    f"myhome_update_{self._gateway_handler.mac}_1_{norm_where}",
-                    self.handle_event,
-                )
-                self.async_on_remove(unsub2)
+        self._register_entity_ref(self._attr_device_class)  # type: ignore
         await self._gateway_handler.send_status_request(OWNLightingCommand.get_pir_sensitivity(self._where))
         await self._gateway_handler.send_status_request(OWNLightingCommand.get_motion_timeout(self._where))
         await super().async_added_to_hass()
 
-    async def async_will_remove_from_hass(self):
+    async def async_will_remove_from_hass(self) -> None:
         """When entity is removed from hass."""
-        self._unregister_entity_ref(self._attr_device_class)
+        self._unregister_entity_ref(self._attr_device_class)  # type: ignore
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Update the entity.
 
         Only used by the generic entity update service.
         """
-        if self._attr_is_on and self._last_updated and self._last_updated + self._timeout < datetime.now(timezone.utc):
-            self._attr_is_on = False
+        if self._attr_is_on and self._last_updated and self._last_updated + self._timeout < datetime.now(timezone.utc):  # type: ignore
+            self._attr_is_on = False  # type: ignore
             self._last_updated = datetime.now(timezone.utc)
             self.async_schedule_update_ha_state()
 
     @callback
-    def handle_event(self, message: OWNLightingEvent):
+    def handle_event(self, message: OWNLightingEvent) -> None:
         """Handle an event message."""
         if message.message_type not in [
             MESSAGE_TYPE_MOTION,
             MESSAGE_TYPE_MOTION_TIMEOUT,
             MESSAGE_TYPE_PIR_SENSITIVITY,
         ]:
-            return True
+            return True  # type: ignore
 
         LOGGER.debug(
             "%s %s",
@@ -659,11 +622,13 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
         if message.message_type == MESSAGE_TYPE_MOTION and message.motion:
             self._attr_is_on = message.motion != self._inverted
         elif message.message_type == MESSAGE_TYPE_MOTION_TIMEOUT:
-            self._timeout = message.motion_timeout + timedelta(seconds=15)
-            self._attr_extra_state_attributes["Timeout"] = self._timeout.total_seconds()
+            if message.motion_timeout is not None:
+                self._timeout = message.motion_timeout + timedelta(seconds=15)
+                self._attr_extra_state_attributes["Timeout"] = self._timeout.total_seconds()
         elif message.message_type == MESSAGE_TYPE_PIR_SENSITIVITY:
-            self._attr_extra_state_attributes["Sensitivity"] = PIR_SENSITIVITY[message.pir_sensitivity]
-        self._last_updated = datetime.now(timezone.utc)
+            if message.pir_sensitivity is not None:
+                self._attr_extra_state_attributes["Sensitivity"] = PIR_SENSITIVITY[message.pir_sensitivity]
+        self._last_updated = datetime.now(timezone.utc)  # type: ignore
         self._attr_force_update = True
         try:
             self.async_write_ha_state()

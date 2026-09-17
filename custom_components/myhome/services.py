@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from homeassistant.const import CONF_MAC
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -125,7 +125,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
 
     async def handle_sweep_bus(call: ServiceCall) -> None:
         """Trigger an active status query sweep across bus subsystems to populate the bus monitor."""
-        from OWNd.message import OWNMessage
+        from OWNd.message import OWNCommand, OWNMessage
 
         gateway = call.data.get(ATTR_GATEWAY, None)
         gateways = _loaded_gateways(hass)
@@ -156,7 +156,9 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         for gw_mac, handler in target_gateways.items():
             _LOGGER.info("Executing diagnostic bus sweep on gateway %s", gw_mac)
             for query in sweep_queries:
-                await handler.send(OWNMessage.parse(query))
+                msg = OWNMessage.parse(query)
+                if msg is not None:
+                    await handler.send(cast(OWNCommand, msg))
                 await asyncio.sleep(0.05)
 
         return

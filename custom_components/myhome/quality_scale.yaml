@@ -19,7 +19,7 @@ rules:
     comment: Listed in home-assistant/brands with icon and logo (PR home-assistant/brands#2052).
   common-modules:
     status: done
-    comment: Base entity in myhome_device.py; gateway handler in gateway.py; shared constants in const.py; the restore / configure / discover / route platform skeleton in discovery.py (every entity platform; button creates its entities from the other platforms' announcements).
+    comment: Base entity in myhome_device.py; gateway handler in gateway.py; shared constants in const.py; the restore / configure / discover / route platform skeleton in discovery.py (every entity platform; button creates its entities from the other platforms' announcements); the per-gateway frame router in router.py that delivers bus frames to the entities owning their addresses.
   config-flow-test-coverage:
     status: done
     comment: tests/test_config_flow.py and test_config_flow_serial.py cover user, SSDP, reauth, reconfigure and error recovery paths (100% statement coverage of config_flow.py).
@@ -174,5 +174,5 @@ rules:
     status: exempt
     comment: No HTTP is used; communication is via raw TCP OpenWebNet sockets.
   strict-typing:
-    status: in_progress
-    comment: mypy --strict is ratcheted per module by scripts/typing_ratchet.py against mypy_baseline.json (CI workflow strict-typing fails on any regression); 16 of 29 modules are clean, 507 errors remain in 13. OWNd must also ship py.typed (PEP 561) before this rule can be done.
+    status: done
+    comment: mypy --strict is ratcheted per module by scripts/typing_ratchet.py against mypy_baseline.json; 0 errors remain in all modules. OWNd ships py.typed (PEP 561) as of 2.0.0b7.

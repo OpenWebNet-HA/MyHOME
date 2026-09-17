@@ -5,7 +5,7 @@ import re
 import time
 from collections.abc import Callable
 from datetime import timedelta
-from typing import Any
+from typing import Any, cast
 
 from homeassistant.components.sensor import DOMAIN as PLATFORM
 from homeassistant.components.sensor import (
@@ -111,7 +111,7 @@ async def async_setup_entry(
 
     A meter is one address with one entity per reported measurement (power,
     total / daily / monthly energy), so its entities are keyed ``<where>-<measurement>``.
-    Sensor entities are fed directly: a frame reaches every entity of its address.
+    A frame reaches every entity of its address.
     """
     runtime = config_entry.runtime_data
     if PLATFORM not in runtime.platforms:
@@ -174,12 +174,12 @@ async def async_setup_entry(
         return Address(where, key_suffix=f"-{measurement}")
 
     def energy_bus_address(message: Any) -> Address | None:
-        measurement = ENERGY_MEASUREMENTS.get(getattr(message, "message_type", None))
+        measurement = ENERGY_MEASUREMENTS.get(cast(str, getattr(message, "message_type", None)))
         if measurement is None:
             return None
         return Address(_sensor_address("18", message.where)[1], key_suffix=f"-{measurement}")
 
-    def build_energy(ctx: DeviceContext) -> list[SensorEntity] | SensorEntity:
+    def build_energy(ctx: DeviceContext) -> list[MyHOMEEntity] | MyHOMEEntity:
         if ctx.source == "yaml":
             cfg = ctx.cfg
             dev_class = cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class")
@@ -189,7 +189,7 @@ async def async_setup_entry(
                 manufacturer=cfg[CONF_MANUFACTURER], model=cfg[CONF_DEVICE_MODEL], gateway=gateway,
             )
             measurements = list(cfg[CONF_ENTITIES].keys())
-            sensors: list[SensorEntity] = []
+            sensors: list[MyHOMEEntity] = []
             if dev_class == SensorDeviceClass.POWER:
                 _migrate_power_unique_id(hass, device_id)
                 sensors.append(MyHOMEPowerSensor(device_class=dev_class, **common))
@@ -204,7 +204,7 @@ async def async_setup_entry(
             return sensors
         # Restored or discovered: only the measurements the meter actually reported
         where, measurement = ctx.address.where, ctx.address.key_suffix[1:]
-        sensor: SensorEntity
+        sensor: MyHOMEEntity
         if measurement == "power":
             sensor = MyHOMEPowerSensor(
                 hass=hass, device_id=f"18-{where}", who="18", where=where, name=f"Meter {where}",
@@ -320,7 +320,7 @@ async def async_setup_entry(
 
     common_args: dict[str, Any] = dict(
         hass=hass, config_entry=config_entry, async_add_entities=async_add_entities, platform=PLATFORM,
-        route_keys=route_keys, direct=True, one_per_address=False,
+        route_keys=route_keys, one_per_address=False,
         general_is_device=True,  # sensor frames are never broadcasts; the address hooks decide
     )
     discovery_for["18"] = PlatformDiscovery(
@@ -376,7 +376,7 @@ def _migrate_power_unique_id(hass: HomeAssistant, device_id: str) -> None:
         pass
 
 
-async def async_unload_entry(hass, config_entry):
+async def async_unload_entry(hass: HomeAssistant, config_entry: MyHOMEConfigEntry) -> bool:
     runtime = config_entry.runtime_data
 
     if PLATFORM not in runtime.platforms:
@@ -388,6 +388,7 @@ async def async_unload_entry(hass, config_entry):
         del runtime.platforms[PLATFORM][
             _sensor
         ]
+    return True
 
 
 class MyHOMEPowerSensor(MyHOMEEntity, SensorEntity):
@@ -395,12 +396,12 @@ class MyHOMEPowerSensor(MyHOMEEntity, SensorEntity):
 
     def __init__(
         self,
-        hass,
+        hass: HomeAssistant | None,
         name: str,
         device_id: str,
         who: str,
         where: str,
-        device_class: str,
+        device_class: SensorDeviceClass,
         manufacturer: str | None,
         model: str | None,
         gateway: MyHOMEGatewayHandler,
@@ -430,16 +431,16 @@ class MyHOMEPowerSensor(MyHOMEEntity, SensorEntity):
             "Sensor": f"({self._where[0]}){self._where[1:]}"
         }
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
-        self._register_entity_ref(self._attr_device_class)
+        self._register_entity_ref(str(self._attr_device_class))
         await super().async_added_to_hass()
 
-    async def async_will_remove_from_hass(self):
+    async def async_will_remove_from_hass(self) -> None:
         """When entity is removed from hass."""
-        self._unregister_entity_ref(self._attr_device_class)
+        self._unregister_entity_ref(str(self._attr_device_class))
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Update the entity.
 
         Only used by the generic entity update service.
@@ -447,7 +448,7 @@ class MyHOMEPowerSensor(MyHOMEEntity, SensorEntity):
         # await self.start_sending_instant_power(255)
 
     @callback
-    def handle_event(self, message: OWNEnergyEvent):
+    def handle_event(self, message: OWNEnergyEvent) -> bool | None:
         """Handle an event message."""
         if message.message_type not in [MESSAGE_TYPE_ACTIVE_POWER]:
             return True
@@ -459,8 +460,9 @@ class MyHOMEPowerSensor(MyHOMEEntity, SensorEntity):
         )
         self._attr_native_value = message.active_power
         self._publish_state()
+        return None
 
-    async def start_sending_instant_power(self, duration):
+    async def start_sending_instant_power(self, duration: int) -> None:
         """Request automatic instant power."""
         await self._gateway_handler.send(
             OWNEnergyCommand.start_sending_instant_power(self._where, duration)
@@ -472,13 +474,13 @@ class MyHOMEEnergySensor(MyHOMEEntity, SensorEntity):
 
     def __init__(
         self,
-        hass,
+        hass: HomeAssistant | None,
         name: str,
         device_id: str,
         who: str,
         where: str,
         entity_specific_id: str,
-        device_class: str,
+        device_class: SensorDeviceClass,
         manufacturer: str | None,
         model: str | None,
         gateway: MyHOMEGatewayHandler,
@@ -521,16 +523,16 @@ class MyHOMEEnergySensor(MyHOMEEntity, SensorEntity):
             "Sensor": f"({self._where[0]}){self._where[1:]}"
         }
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
         self._register_entity_ref(self._entity_specific_id)
         await super().async_added_to_hass()
 
-    async def async_will_remove_from_hass(self):
+    async def async_will_remove_from_hass(self) -> None:
         """When entity is removed from hass."""
         self._unregister_entity_ref(self._entity_specific_id)
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Update the entity.
 
         Only used by the generic entity update service.
@@ -550,7 +552,7 @@ class MyHOMEEnergySensor(MyHOMEEntity, SensorEntity):
             )
 
     @callback
-    def handle_event(self, message: OWNEnergyEvent):
+    def handle_event(self, message: OWNEnergyEvent) -> bool | None:
         """Handle an event message."""
         if message.message_type not in [
             MESSAGE_TYPE_ENERGY_TOTALIZER,
@@ -591,6 +593,7 @@ class MyHOMEEnergySensor(MyHOMEEntity, SensorEntity):
             )
             self._attr_native_value = message.current_day_partial_consumption
         self._publish_state()
+        return None
 
 
 class MyHOMETemperatureSensor(MyHOMEEntity, SensorEntity):
@@ -598,12 +601,12 @@ class MyHOMETemperatureSensor(MyHOMEEntity, SensorEntity):
 
     def __init__(
         self,
-        hass,
+        hass: HomeAssistant | None,
         name: str,
         device_id: str,
         who: str,
         where: str,
-        device_class: str,
+        device_class: SensorDeviceClass,
         manufacturer: str | None,
         model: str | None,
         gateway: MyHOMEGatewayHandler,
@@ -651,19 +654,19 @@ class MyHOMETemperatureSensor(MyHOMEEntity, SensorEntity):
             and (time.monotonic() - self._last_push_at) < SCAN_INTERVAL.total_seconds()
         )
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
-        self._register_entity_ref(self._attr_device_class)
+        self._register_entity_ref(str(self._attr_device_class))
         # Probes start receive-only: no initial poll, the push stream fills in
         # and the periodic update only polls if it stays silent (issue #308).
         self._poll_on_add = not self._is_probe
         await super().async_added_to_hass()
 
-    async def async_will_remove_from_hass(self):
+    async def async_will_remove_from_hass(self) -> None:
         """When entity is removed from hass."""
-        self._unregister_entity_ref(self._attr_device_class)
+        self._unregister_entity_ref(str(self._attr_device_class))
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Poll the probe, unless the bus already pushed a fresh reading."""
         if self._push_is_fresh():
             return
@@ -677,7 +680,7 @@ class MyHOMETemperatureSensor(MyHOMEEntity, SensorEntity):
         await self._gateway_handler.send_status_request(cmd)
 
     @callback
-    def handle_event(self, message: OWNHeatingEvent):
+    def handle_event(self, message: OWNHeatingEvent) -> bool | None:
         """Handle an event message."""
         val = None
         if message.message_type == MESSAGE_TYPE_MAIN_TEMPERATURE:
@@ -725,6 +728,7 @@ class MyHOMETemperatureSensor(MyHOMEEntity, SensorEntity):
             self._attr_native_value = val
             self._last_push_at = time.monotonic()
             self._publish_state()
+        return None
 
 
 class MyHOMEIlluminanceSensor(MyHOMEEntity, SensorEntity):
@@ -732,12 +736,12 @@ class MyHOMEIlluminanceSensor(MyHOMEEntity, SensorEntity):
 
     def __init__(
         self,
-        hass,
+        hass: HomeAssistant | None,
         name: str,
         device_id: str,
         who: str,
         where: str,
-        device_class: str,
+        device_class: SensorDeviceClass,
         manufacturer: str | None,
         model: str | None,
         gateway: MyHOMEGatewayHandler,
@@ -767,32 +771,16 @@ class MyHOMEIlluminanceSensor(MyHOMEEntity, SensorEntity):
             "PL": where[len(where) // 2 :],
         }
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
-        self._register_entity_ref(self._attr_device_class)
-        target_hass = self.hass or self._hass
-        if target_hass is not None:
-            unsub = async_dispatcher_connect(
-                target_hass,
-                f"myhome_update_{self._gateway_handler.mac}_1_{self._where}",
-                self.handle_event,
-            )
-            self.async_on_remove(unsub)
-            norm_where = normalize_where(self._where)
-            if norm_where != self._where:
-                unsub2 = async_dispatcher_connect(
-                    target_hass,
-                    f"myhome_update_{self._gateway_handler.mac}_1_{norm_where}",
-                    self.handle_event,
-                )
-                self.async_on_remove(unsub2)
+        self._register_entity_ref(str(self._attr_device_class))
         await super().async_added_to_hass()
 
-    async def async_will_remove_from_hass(self):
+    async def async_will_remove_from_hass(self) -> None:
         """When entity is removed from hass."""
-        self._unregister_entity_ref(self._attr_device_class)
+        self._unregister_entity_ref(str(self._attr_device_class))
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Update the entity.
 
         Only used by the generic entity update service.
@@ -802,7 +790,7 @@ class MyHOMEIlluminanceSensor(MyHOMEEntity, SensorEntity):
         )
 
     @callback
-    def handle_event(self, message: OWNLightingEvent):
+    def handle_event(self, message: OWNLightingEvent) -> bool | None:
         """Handle an event message."""
         if (
             getattr(message, "message_type", None) != MESSAGE_TYPE_ILLUMINANCE
@@ -818,3 +806,4 @@ class MyHOMEIlluminanceSensor(MyHOMEEntity, SensorEntity):
         )
         self._attr_native_value = message.illuminance
         self._publish_state()
+        return None
