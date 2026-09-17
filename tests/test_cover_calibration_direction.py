@@ -200,6 +200,7 @@ async def test_quick_real_websocket_starts_without_assigned_profile(
 ):
     from aiohttp.resolver import ThreadedResolver
 
+    plant.gateways[0].async_queue_calibration = MagicMock()
     register_api(hass)
     with patch("aiohttp.connector.DefaultResolver", ThreadedResolver):
         client = await hass_ws_client(hass)
@@ -220,6 +221,9 @@ async def test_quick_real_websocket_starts_without_assigned_profile(
     assert event["event"]["values"] == {"opening_time": 30}
     assert profiles.get_store(hass, plant.entries[0].entry_id).data["assignments"] == {}
     await client.close()
+    await hass.async_block_till_done()
+    plant.gateways[0].async_queue_calibration.assert_called_once()
+    assert profiles.get_store(hass, plant.entries[0].entry_id).calibration is None
 
 
 async def test_one_leg_retains_other_override_and_new_profile_becomes_authoritative(hass, quick):

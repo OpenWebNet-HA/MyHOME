@@ -1,4 +1,4 @@
-/** Socket-owned guided or automatic measurement; the browser never computes or saves timings. */
+/** Backend-owned measurement with one attached controller and explicit recovery. */
 const url = new URL("panel-dom.js", import.meta.url);
 url.search = new URL(import.meta.url).search;
 const { escapeHtml: esc } = await import(url.href);
@@ -6,22 +6,26 @@ const { escapeHtml: esc } = await import(url.href);
 export class CoverCalibration {
   constructor() { this._generation = 0; }
 
-  close() {
+  close({ cancel = false } = {}) {
     this._generation++;
     clearInterval(this._heartbeat);
     this._heartbeat = null;
     const state = this._state;
-    if (state && !["saved", "cancelled"].includes(state.phase)) {
-      this._context.hass.callWS({ type: "myhome/cover_calibration/action", entry_id: state.entry_id,
-        session_id: state.session_id, action: "cancel" }).catch(() => {});
-    }
-    Promise.resolve(this._unsubscribe?.()).catch(() => {});
+    const operation = state && !["saved", "cancelled"].includes(state.phase)
+      ? this._context.hass.callWS({ type: "myhome/cover_calibration/action", entry_id: state.entry_id,
+        session_id: state.session_id, ...(state.attachment ? { attachment: state.attachment } : {}),
+        action: cancel || !state.recoverable ? "cancel" : "detach" }).catch(() => {}) : Promise.resolve();
+    const unsubscribe = this._unsubscribe;
+    const done = operation.then(() => unsubscribe?.()).catch(() => {});
     this._unsubscribe = null;
     this._state = null;
+    return done;
   }
 
   async open(context) {
     this.close();
+    if (context.resume) context = { ...context, mode: context.resume.mode, direction: context.resume.direction,
+      entity_ids: context.resume.batch ? context.resume.targets.map((item) => item.entity_id) : undefined };
     this._context = context;
     this._lost = false;
     this._busy = false;
@@ -29,6 +33,7 @@ export class CoverCalibration {
     this._renderedPreview = null;
     const generation = this._generation;
     const { host, hass, entity, revision, t } = context;
+    const client_id = globalThis.crypto.getRandomValues(new Uint32Array(4)).join("-");
     const automatic = context.mode === "automatic";
     const quick = context.direction;
     host.innerHTML = `<div class="cal-panel" data-phase="loading">
@@ -39,6 +44,8 @@ export class CoverCalibration {
         <li data-step="review"><span class="cal-step-index">3</span><span>${esc(t("calStepReview"))}</span></li>
       </ol>
       <p class="muted cal-help">${esc(t(quick ? (quick === "opening" ? "calQuickOpeningHelp" : "calQuickClosingHelp") : automatic ? "calAutomaticHelp" : "calHelp"))}</p>
+      <p class="muted">${esc(t("calRecoveryHelp"))}</p>
+      ${context.resume ? `<p>${esc(context.resume.entity_id)}</p>` : ""}
       ${context.entity_ids ? `<p class="notice">${esc(t("calBatchHelp"))}</p><ol id="cal-targets"></ol>` : ""}
       <div class="cal-status">
         <p id="cal-phase" role="status">${esc(t("loading"))}</p>
@@ -46,6 +53,7 @@ export class CoverCalibration {
       </div>
       <p id="cal-stop-status" class="notice" hidden>${esc(t("calStopRequested"))}</p>
       <p id="cal-reason" class="error" role="alert" hidden></p>
+      <button type="button" id="cal-reconnect" hidden>${esc(t("calResume"))}</button>
       <div class="actions cal-actions">
         <button type="button" class="primary" data-cal-action="run" hidden>${esc(t("calAutomaticStart"))}</button>
         <button type="button" class="primary" data-cal-action="open" hidden><ha-icon icon="mdi:arrow-up-bold" aria-hidden="true"></ha-icon><span>${esc(t("calOpen"))}</span></button>
@@ -63,13 +71,17 @@ export class CoverCalibration {
         <button type="submit" class="primary">${esc(t(context.entity_ids ? "calBatchSave" : "calSave"))}</button>
       </form>
       <div class="actions calibration-safety-actions"><button type="button" id="cal-stop" disabled><ha-icon icon="mdi:stop-circle-outline" aria-hidden="true"></ha-icon><span>${esc(t("calStop"))}</span></button>
-        <button type="button" id="cal-cancel">${esc(t("calCancel"))}</button></div>
+        <button type="button" id="cal-cancel" disabled>${esc(t("calCancel"))}</button></div>
     </div>`;
     for (const button of host.querySelectorAll("[data-cal-action]")) {
       button.onclick = () => this._perform(button.dataset.calAction);
     }
     host.querySelector("#cal-stop").onclick = () => this._perform("stop");
-    host.querySelector("#cal-cancel").onclick = () => { this.close(); context.onCancel(); };
+    host.querySelector("#cal-cancel").onclick = async () => {
+      await this.close({ cancel: true });
+      if (this._generation === generation + 1 && host.isConnected) context.onCancel();
+    };
+    host.querySelector("#cal-reconnect").onclick = () => this.open({ ...context, resume: this._state });
     host.querySelector("#cal-save-mode").onchange = () => {
       this._savePreview = null;
       if (this._state) this._render();
@@ -92,14 +104,19 @@ export class CoverCalibration {
       const unsubscribe = await hass.connection.subscribeMessage((state) => {
         if (!this._current(generation)) return;
         this._accept(state);
-      }, context.entity_ids
-        ? { type: "myhome/cover_calibration/batch_start", entry_id: entity.entry_id, entity_ids: context.entity_ids, revision }
-        : { type: "myhome/cover_calibration/start", entry_id: entity.entry_id, entity_id: entity.entity_id, revision, ...(automatic ? { mode: "automatic" } : {}), ...(quick ? { direction: quick } : {}) });
+      }, context.resume
+        ? { type: "myhome/cover_calibration/resume", entry_id: entity.entry_id, session_id: context.resume.session_id, client_id }
+        : context.entity_ids
+          ? { type: "myhome/cover_calibration/batch_start", entry_id: entity.entry_id, entity_ids: context.entity_ids, revision, client_id }
+          : { type: "myhome/cover_calibration/start", entry_id: entity.entry_id, entity_id: entity.entity_id, revision, client_id, ...(automatic ? { mode: "automatic" } : {}), ...(quick ? { direction: quick } : {}) });
       if (!this._current(generation)) { Promise.resolve(unsubscribe()).catch(() => {}); return; }
       this._unsubscribe = unsubscribe;
       this._heartbeat = setInterval(() => this._perform("heartbeat"), 5000);
     } catch (error) {
-      if (this._current(generation)) this._error(error);
+      if (this._current(generation)) {
+        this._error(error);
+        host.querySelector("#cal-cancel").disabled = false;
+      }
     }
   }
 
@@ -107,7 +124,13 @@ export class CoverCalibration {
 
   _accept(state) {
     if (this._state && state.sequence < this._state.sequence) return;
+    if (state.recoverable && state.attachment !== this._state?.attachment) {
+      this._busy = false;
+      this._savePreview = null;
+      this._context.host.querySelector("#cal-reason").hidden = true;
+    }
     this._state = state;
+    if (state.recoverable) this._lost = !state.attached;
     if (state.phase !== "review") this._savePreview = null;
     else if (state.save_preview && this._context.host.querySelector("#cal-save-mode").value === "shared") this._savePreview = state.save_preview;
     this._render();
@@ -120,6 +143,8 @@ export class CoverCalibration {
   _render() {
     const { host, t } = this._context;
     const state = this._state;
+    host.querySelector("#cal-reconnect").hidden = !this._lost || !state.recoverable;
+    host.querySelector("#cal-cancel").disabled = false;
     host.querySelector(".cal-panel").dataset.phase = state.phase;
     const automatic = state.mode === "automatic";
     host.querySelector("#cal-phase").textContent = automatic && ["starting_open", "starting_close", "opening", "closing", "settling"].includes(state.phase)
@@ -205,6 +230,7 @@ export class CoverCalibration {
     const { hass } = this._context;
     const state = this._state;
     const ownsBusy = !["heartbeat", "stop"].includes(action);
+    const current = () => this._current(generation) && this._state?.attachment === state.attachment;
     if (ownsBusy) {
       this._busy = true;
       this._context.host.querySelector("#cal-reason").hidden = true;
@@ -212,15 +238,16 @@ export class CoverCalibration {
     this._render();
     try {
       const result = await hass.callWS({ type: "myhome/cover_calibration/action", entry_id: state.entry_id,
-        session_id: state.session_id, sequence: state.sequence, action, ...extra });
-      if (this._current(generation)) this._accept(result);
+        session_id: state.session_id, sequence: state.sequence,
+        ...(state.attachment ? { attachment: state.attachment } : {}), action, ...extra });
+      if (current()) this._accept(result);
     } catch (error) {
-      if (!this._current(generation)) return;
+      if (!current()) return;
       if (action === "heartbeat") this._lost = true;
       if (action === "save" || action === "preview_save") this._savePreview = null;
       this._error(error);
     } finally {
-      if (this._current(generation)) { if (ownsBusy) this._busy = false; this._render(); }
+      if (current()) { if (ownsBusy) this._busy = false; this._render(); }
     }
   }
 }

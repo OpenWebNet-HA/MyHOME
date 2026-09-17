@@ -203,6 +203,8 @@ def snapshot(hass: Any, store: Any, entry: Any, entity: Any) -> Any:
                 for unique, value in store.data["assignments"].items() if value == profile_id]
     return {
         "entry_id": entry.entry_id, "entity_id": entity.entity_id,
+        "calibration": ({key: value for key, value in store.calibration.view().items()
+                         if key != "attachment"} if store.calibration and store.calibration.client_id else None),
         "revision": store.data["revision"], "assigned_profile_id": assigned["id"] if assigned else None,
         "model": MODEL, "scaling": "unscaled", "accuracy": {"kind": "not_measured"},
         "profiles": [{"id": key, **value, "model": MODEL, "scaling": "unscaled",
@@ -396,6 +398,8 @@ async def remove_entry(hass: Any, entry_id: str) -> None:
     async with store.lock:
         await store.store.async_remove()
         await Store(hass, 1, f"{store.store.key}.pre_shared").async_remove()
+        if store.calibration:
+            store.calibration.close("cover_unavailable")
         async_dispatcher_send(hass, f"{WS_SUBSCRIBE}:{entry_id}", {
             "entry_id": entry_id, "revision": store.data["revision"], "kind": "removed",
         })

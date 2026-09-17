@@ -1,4 +1,8 @@
-# Guided and automatic travel measurement — panel 0.23.0
+# Guided and automatic travel measurement — panel 0.24.0
+
+Panel 0.24.0 adds [bounded backend session recovery](sidepanel.md#session-recovery-0240).
+The recovery rules below supersede the older socket-loss descriptions in the
+versioned 0.18–0.20 sections. Legacy clients still cancel on disconnect.
 
 Panel 0.23.0 adds [three reviewed save destinations](sidepanel.md#measurement-save-destinations-0230)
 for single-cover guided and automatic measurement: a new profile, personal values
@@ -117,7 +121,7 @@ do not establish compatibility with a particular actuator's endpoint reporting.
 
 ## Lifetime and persistence
 
-A session belongs to one HA WebSocket connection and one config entry/cover. There
+A backend session has at most one attached HA WebSocket controller and one config entry/cover. There
 is at most one session per gateway. While it is active, ordinary profile writes on
 that gateway are rejected with `calibration_busy`. Other gateways remain independent.
 The current profile read response still reports normal target writability; the
@@ -143,11 +147,13 @@ Stop/Cancel do not require a current step sequence. The frontend keeps Stop
 available while another call is pending. An interrupted session cannot resume a
 partly completed measurement. A new start is refused until it has been closed.
 
-The frontend sends a heartbeat every **5 seconds**. The backend cancels after
-**20 seconds** without one. Closing/navigating away unsubscribes and requests
-cancellation; socket loss, cover unload and HA shutdown also release ownership.
-A hidden/suspended browser may lose its lease. Nothing automatically resumes on
-reconnect or restart. Unsaved measurements and live sessions are never persisted.
+The frontend sends a heartbeat every **5 seconds**. After **20 seconds** without
+one, the backend detaches the controller. Closing/navigating away and socket loss
+do the same: safe checkpoints are retained for **10 minutes**, while any running
+cycle is interrupted and Stop requested. An interrupted measurement cannot continue.
+Cancel, retention expiry, cover unload, entry removal and HA shutdown release
+ownership. No movement automatically resumes on reconnect. Unsaved sessions are
+in memory only and do not survive restart. See [recovery semantics](sidepanel.md#session-recovery-0240).
 
 Movement must be dispatched and produce bus start feedback within **10 seconds**
 of the request; a guided leg is limited to **600 seconds**, an automatic leg to

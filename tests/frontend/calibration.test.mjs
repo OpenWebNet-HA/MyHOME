@@ -11,7 +11,7 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
 const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
 const t = (key) => translations.it[key] || translations.en[key] || key;
 
-async function mount({ call, subscribe, entity_ids, direction, mode = "guided" } = {}) {
+async function mount({ call, subscribe, entity_ids, direction, resume, mode = "guided" } = {}) {
   const host = document.createElement("section");
   document.body.append(host);
   const controller = new CoverCalibration();
@@ -24,6 +24,7 @@ async function mount({ call, subscribe, entity_ids, direction, mode = "guided" }
     values: direction === "closing" ? { opening_time: 25.5 } : { closing_time: 32.25 } });
   if (entity_ids) Object.assign(state, { batch: true, cover_index: 0, results: [],
     targets: entity_ids.map((id) => ({ entity_id: id, name: id })) });
+  if (resume) Object.assign(state, resume, { recoverable: true, attached: true, attachment: "new-controller" });
   const push = (extra) => { state = { ...state, sequence: state.sequence + 1, ...extra }; callback(state); };
   const hass = { connection: { subscribeMessage: async (cb, request) => {
     callback = cb; starts.push(request); cb(state);
@@ -35,7 +36,7 @@ async function mount({ call, subscribe, entity_ids, direction, mode = "guided" }
     return { ...state, sequence: state.sequence + (message.action === "heartbeat" ? 0 : 1),
       phase: phases[message.action] || state.phase };
   } };
-  await controller.open({ host, hass, entity: { entry_id: "one", entity_id: "cover.bedroom" }, revision: 4, mode, entity_ids, direction,
+  await controller.open({ host, hass, entity: { entry_id: "one", entity_id: "cover.bedroom" }, revision: 4, mode, entity_ids, direction, resume,
     t, onSaved: () => { saved++; }, onCancel: () => { cancelled++; } });
   return { host, controller, calls, starts, push, counts: () => ({ stopped, saved, cancelled }) };
 }
@@ -139,7 +140,8 @@ after(() => dom.window.close());
 
 test("wizard starts a gateway-scoped subscription and waits for backend movement feedback", async () => {
   const { host, starts, calls, push } = await mount();
-  assert.deepEqual(starts, [{ type: "myhome/cover_calibration/start", entry_id: "one", entity_id: "cover.bedroom", revision: 4 }]);
+  assert.match(starts[0].client_id, /^\d+-\d+-\d+-\d+$/);
+  assert.deepEqual(starts, [{ client_id: starts[0].client_id, type: "myhome/cover_calibration/start", entry_id: "one", entity_id: "cover.bedroom", revision: 4 }]);
   assert.equal(calls.length, 0);
   host.querySelector('[data-cal-action="open"]').click();
   await tick();
@@ -210,6 +212,7 @@ test("cancel invalidates a late subscription and queued responses", async () => 
   const opening = controller.open({ host, entity: { entry_id: "one", entity_id: "cover.bedroom" }, revision: 0, t,
     hass: { connection: { subscribeMessage: () => waiting.promise }, callWS: async () => ({}) },
     onCancel: () => {}, onSaved: () => { saved++; } });
+  assert.equal(host.querySelector("#cal-cancel").disabled, true);
   controller.close();
   waiting.resolve(() => { stopped++; });
   await opening;
@@ -287,7 +290,7 @@ test("batch review preserves profile names through heartbeat and failed atomic s
       if (message.action === "save" && fail) throw { code: "storage_error" };
       return { ...state, phase: message.action === "save" ? "saved" : state.phase };
     } });
-  assert.deepEqual(starts[0], { type: "myhome/cover_calibration/batch_start", entry_id: "one", entity_ids: ids, revision: 4 });
+  assert.deepEqual(starts[0], { client_id: starts[0].client_id, type: "myhome/cover_calibration/batch_start", entry_id: "one", entity_ids: ids, revision: 4 });
   assert.equal(calls.length, 0);
   assert.match(host.querySelector("#cal-targets").textContent, /cover.kitchen.*cover.bedroom/);
   push({ phase: "between_covers", results: [{ index: 0, values: { opening_time: 20, closing_time: 22 } }] });
@@ -351,3 +354,70 @@ for (const direction of ["opening", "closing"]) {
     assert.equal("values" in save, false); assert.equal("direction" in save, false);
   });
 }
+
+test("navigation detaches a recoverable session; explicit cancel releases it using its attachment", async () => {
+  const { controller, push, calls, counts } = await mount();
+  push({ recoverable: true, attached: true, attachment: "current-owner", phase: "review", values: { opening_time: 20, closing_time: 30 } });
+  await controller.close();
+  assert.equal(calls.at(-1).action, "detach");
+  assert.equal(calls.at(-1).attachment, "current-owner");
+  assert.equal(counts().stopped, 1);
+  const other = await mount();
+  other.push({ recoverable: true, attached: true, attachment: "other-owner" });
+  other.host.querySelector("#cal-cancel").click(); await tick();
+  assert.equal(other.calls.at(-1).action, "cancel");
+  assert.equal(other.calls.at(-1).attachment, "other-owner");
+  assert.equal(other.counts().cancelled, 1);
+});
+
+test("recover partial review from backend without starting or replaying movement", async () => {
+  const { host, starts, calls } = await mount({ resume: { session_id: "retained", mode: "guided", direction: "closing",
+    phase: "review", values: { opening_time: 25, closing_time: 29 }, save_modes: ["new", "cover"] } });
+  assert.equal(starts[0].type, "myhome/cover_calibration/resume");
+  assert.equal(starts[0].session_id, "retained");
+  assert.equal("revision" in starts[0], false);
+  assert.equal(host.querySelector("#cal-save").hidden, false);
+  assert.match(host.querySelector("#cal-values").textContent, /25.*29/);
+  assert.equal(calls.length, 0);
+  chooseSave(host, "cover"); submitReview(host); await tick();
+  assert.equal(calls[0].attachment, "new-controller");
+  assert.equal(calls[0].save_mode, "cover");
+});
+
+test("recover automatic batch review and keep all target names and measurements", async () => {
+  const { host, starts, calls } = await mount({ resume: { session_id: "batch-retained", mode: "automatic", batch: true,
+    phase: "review", targets: [{ entity_id: "cover.a", name: "Kitchen" }, { entity_id: "cover.b", name: "Bedroom" }],
+    results: [{ index: 0, values: { opening_time: 20, closing_time: 22 } }, { index: 1, values: { opening_time: 21, closing_time: 23 } }] } });
+  assert.equal(starts[0].type, "myhome/cover_calibration/resume");
+  assert.equal(host.querySelectorAll("[data-batch-name]").length, 2);
+  assert.equal(host.querySelector("#cal-save-mode").closest("label").hidden, true);
+  assert.equal(calls.length, 0);
+  submitReview(host); await tick();
+  assert.deepEqual(calls[0].names, ["Kitchen", "Bedroom"]);
+});
+
+test("heartbeat expiry disables controls and exposes explicit recovery without auto-run", async () => {
+  const { host, push, calls, controller } = await mount();
+  push({ recoverable: true, attached: false, attachment: "expired-owner" });
+  assert.equal(host.querySelector('[data-cal-action="open"]').disabled, true);
+  assert.equal(host.querySelector("#cal-reconnect").hidden, false);
+  assert.equal(calls.length, 0);
+  push({ attached: true, attachment: "fresh-owner" });
+  assert.equal(host.querySelector('[data-cal-action="open"]').disabled, false);
+  assert.equal(host.querySelector("#cal-reconnect").hidden, true);
+  await controller._perform("heartbeat");
+  assert.equal(calls.at(-1).attachment, "fresh-owner");
+});
+
+test("a late heartbeat error from the old attachment cannot disable the recovered controller", async () => {
+  let reject;
+  const waiting = new Promise((_resolve, fail) => { reject = fail; });
+  const { host, push, controller } = await mount({ call: () => waiting });
+  push({ recoverable: true, attached: true, attachment: "old" });
+  const heartbeat = controller._perform("heartbeat");
+  push({ attachment: "new", attached: true });
+  reject({ code: "calibration_expired" }); await heartbeat;
+  assert.equal(host.querySelector('[data-cal-action="open"]').disabled, false);
+  assert.equal(host.querySelector("#cal-reconnect").hidden, true);
+  assert.equal(host.querySelector("#cal-reason").hidden, true);
+});

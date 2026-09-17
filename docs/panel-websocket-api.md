@@ -1,6 +1,6 @@
 # MyHOME panel API: implemented reference
 
-> Current update — panel 0.23.0: [shared cover settings](cover-settings-backend.md)
+> Current update — panel 0.24.0: [shared cover settings](cover-settings-backend.md)
 > specifies storage v5, export v3 and `myhome/cover_profiles/overview` (schema v1).
 > Partial guided calibration now uses resolved cover settings without requiring
 > an assigned profile (see the single-direction extension below).
@@ -8,6 +8,48 @@
 > and revision-bound impact confirmation; their complete contract is linked above.
 > Existing endpoints remain available; native writes use the shared store and revision. Earlier release descriptions below remain historical where superseded.
 
+
+## Session recovery (0.24.0)
+
+`start` and `batch_start` accept optional `client_id` (nonempty string, at most
+64 characters). Panel 0.24.0 generates a fresh random ID per controller. Supplying
+it opts into [bounded recovery](sidepanel.md#session-recovery-0240); omitting it
+preserves legacy cancellation-on-disconnect behavior. Replaying the same start
+subscription after a websocket reconnect reattaches its detached session. It
+cannot replace an active controller. If the session has expired, a replayed start
+creates a fresh confirmation step, never a movement.
+
+`cover_profiles/read` includes `calibration`: null, or the gateway session view
+without its controller `attachment` token. It describes the current target, phase,
+values, mode/direction and batch targets/results where applicable. `attached`
+indicates whether it is controlled; this transient view does not increment the
+persisted profile revision. The editor can refresh it without replacing drafts.
+
+To claim a retained session, an administrator subscribes to:
+
+```json
+{"id": 50, "type": "myhome/cover_calibration/resume", "entry_id": "ENTRY",
+ "session_id": "SESSION", "client_id": "NEW-RANDOM-CONTROLLER-ID"}
+```
+
+The result acknowledges the subscription, followed by the current authoritative
+view. `calibration_busy` rejects a live owner; `calibration_expired` rejects an
+absent, ended or legacy session. Resume does not accept browser timings or issue
+movement commands. It can also reconnect to interrupted status for Stop/Cancel.
+
+Recoverable subscription views add `recoverable: true`, `attached`,
+`recovery_seconds: 600` and `attachment`. Every `action`, including heartbeat,
+Stop, Cancel and the new `detach`, must provide that attachment token in addition
+to the session ID and use the owning websocket. The token rotates on each attach;
+old actions and old unsubscribe callbacks cannot affect the new controller.
+Existing sequence validation still applies to state-changing steps and saves.
+Sequence remains monotonic across detach and attach notifications.
+
+`detach` and unsubscribe retain safe checkpoints for 600 seconds, or interrupt
+and discard an in-progress cycle before requesting Stop. Neither detachment nor
+reattachment changes the measurement provenance. Cancel releases ownership
+immediately. Storage v5 and export v3 are unchanged; transient sessions are not
+included in export or restored after HA restart.
 
 ## Measurement destinations (0.23.0)
 
@@ -31,7 +73,7 @@ are removed in the same transaction. Other personal values are retained.
 A storage error returns `storage_error` and restores review. Invalid confirmation
 returns `preview_required`; revision changes return `revision_conflict`. The
 frontend discards failed/stale previews and requires a fresh preview before retry.
-Socket ownership, administrator checks and explicit final Save remain required.
+Attached-controller ownership, administrator checks and explicit final Save remain required.
 
 
 Status: **implemented through panel 0.20.0**. The original profile contract was reviewed against

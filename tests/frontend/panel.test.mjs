@@ -1078,11 +1078,11 @@ test("failed deletion keeps the profile and displays storage or concurrent assig
   }
 });
 
-test("profile dialog mounts calibration and gateway navigation cancels only its session", async () => {
+test("profile dialog mounts calibration and gateway navigation detaches only its session", async () => {
   const { root, hass } = await mountProfiles();
   const requests = [];
   let stopped = 0;
-  const state = { entry_id: "one", entity_id: "cover.shutter", session_id: "measuring-one", sequence: 1,
+  const state = { entry_id: "one", entity_id: "cover.shutter", session_id: "measuring-one", sequence: 1, recoverable: true, attached: true, attachment: "owner-one",
     phase: "confirm_closed", revision: 3, values: {}, reason: null, stop_requested: false };
   hass.connection.subscribeMessage = async (callback, request) => {
     if (request.type === "myhome/cover_profiles/subscribe") return () => {};
@@ -1098,12 +1098,12 @@ test("profile dialog mounts calibration and gateway navigation cancels only its 
   root.querySelector("#profile-calibrate").click();
   await tick();
   assert.match(root.querySelector("#cal-phase").textContent, /completamente chiusa/);
-  assert.deepEqual(requests[0], { type: "myhome/cover_calibration/start", entry_id: "one", entity_id: "cover.shutter", revision: 3 });
+  assert.deepEqual(requests[0], { client_id: requests[0].client_id, type: "myhome/cover_calibration/start", entry_id: "one", entity_id: "cover.shutter", revision: 3 });
   change(root.querySelector("#gateway"), "two");
   await tick();
   assert.equal(root.querySelector("dialog"), null);
   assert.equal(stopped, 1);
-  assert.deepEqual(requests[1], { type: "myhome/cover_calibration/action", entry_id: "one", session_id: "measuring-one", action: "cancel" });
+  assert.deepEqual(requests[1], { type: "myhome/cover_calibration/action", entry_id: "one", session_id: "measuring-one", attachment: "owner-one", action: "detach" });
 });
 
 test("panel language changes keep the native monitor capture and command draft", async () => {
@@ -1159,7 +1159,7 @@ test("batch selector is explicit, gateway-scoped, bounded and submits only chose
   checks[0].click();
   assert.equal(next.disabled, false);
   next.click(); await tick();
-  assert.deepEqual(subscribed, { type: "myhome/cover_calibration/batch_start", entry_id: "one", entity_ids: ["cover.two"], revision: 8 });
+  assert.deepEqual(subscribed, { client_id: subscribed.client_id, type: "myhome/cover_calibration/batch_start", entry_id: "one", entity_ids: ["cover.two"], revision: 8 });
   assert.equal(calls.filter((c) => c.type.endsWith("/action")).length, 0);
 });
 
@@ -1235,3 +1235,37 @@ for (const direction of ["opening", "closing"]) {
     assert.equal(calls.filter((call) => call.type === "myhome/cover_calibration/action").length, 0);
   });
 }
+
+test("existing calibration section discovers a detached session and resumes it without a new start", async () => {
+  const session = { entry_id: "one", entity_id: "cover.shutter", session_id: "retained", mode: "guided", direction: "opening",
+    phase: "review", sequence: 5, values: { opening_time: 20, closing_time: 30 }, recoverable: true, attached: false };
+  const { root, hass } = await mountProfiles({ read: () => coverProfileData({ calibration: session }) });
+  const requests = [];
+  const original = hass.connection.subscribeMessage;
+  hass.connection.subscribeMessage = async (callback, request) => {
+    if (request.type === "myhome/cover_profiles/subscribe") return original(callback, request);
+    requests.push(request); callback({ ...session, attached: true, attachment: "new-owner" }); return () => {};
+  };
+  openProfile(root); await tick();
+  assert.equal(root.querySelector('[data-section="calibration"]').open, true);
+  assert.equal(root.querySelector("#profile-calibrate").disabled, true);
+  assert.equal(root.querySelector("#cal-resume").hidden, false);
+  root.querySelector("#cal-resume").click(); await tick();
+  assert.equal(requests[0].type, "myhome/cover_calibration/resume");
+  assert.equal(requests[0].session_id, "retained");
+  assert.equal(root.querySelector("#cal-save").hidden, false);
+});
+
+test("refreshing session availability preserves a profile draft at the same revision", async () => {
+  let attached = true;
+  const { root } = await mountProfiles({ read: () => coverProfileData({ calibration: {
+    entry_id: "one", entity_id: "cover.other", session_id: "retained", attached } }) });
+  openProfile(root); await tick();
+  const name = root.querySelector('[name="profile_name"]'); name.value = "My unsaved draft";
+  assert.equal(root.querySelector("#cal-resume").hidden, true);
+  attached = false;
+  root.querySelector("#cal-refresh").click(); await tick();
+  assert.equal(root.querySelector("#cal-resume").hidden, false);
+  assert.equal(root.querySelector('[name="profile_name"]'), name);
+  assert.equal(name.value, "My unsaved draft");
+});

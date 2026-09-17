@@ -1,4 +1,4 @@
-"""Experimental, socket-owned measurement of one standard cover's travel times.
+"""Experimental, backend-owned measurement of one standard cover's travel times.
 
 The bus starts the monotonic clock; the operator confirms the physical endpoints.
 A queued Stop is never represented as an acknowledged or physically verified stop.
@@ -39,6 +39,7 @@ LOGGER = logging.getLogger(__name__)
 WS_START = "myhome/cover_calibration/start"
 WS_ACTION = "myhome/cover_calibration/action"
 LEASE_SECONDS = 20
+RECOVERY_SECONDS = 600
 START_SECONDS = 10
 MAX_TRAVEL_SECONDS = 600
 STOP_QUEUE_SECONDS = 30
@@ -52,7 +53,7 @@ class CalibrationSession:
     travel_seconds = MAX_TRAVEL_SECONDS
     travel_reason = "travel_timeout"
 
-    def __init__(self, hass: Any, store: Any, entry: Any, cover: Any, connection: Any, subscription_id: Any, *, direction: Any=None, profile: dict[str, Any] | None=None) -> None:
+    def __init__(self, hass: Any, store: Any, entry: Any, cover: Any, connection: Any, subscription_id: Any, *, direction: Any=None, profile: dict[str, Any] | None=None, client_id: str | None=None) -> None:
         self.hass, self.store, self.cover = hass, store, cover
         self.entry_id = entry.entry_id
         self.connection = connection
@@ -75,6 +76,10 @@ class CalibrationSession:
         self.armed = False
         self.stop_requested = False
         self.listener = True
+        self.closed = False
+        self.client_id = client_id
+        self.attachment = uuid4().hex
+        self.retention: asyncio.TimerHandle | None = None
         self.lease: asyncio.TimerHandle | None = None
         self.deadline: asyncio.TimerHandle | None = None
         self.settle: asyncio.TimerHandle | None = None
@@ -97,6 +102,8 @@ class CalibrationSession:
                 "phase": self.phase, "mode": self.mode, "reason": self.reason, "values": dict(self.values),
                 "elapsed": round(monotonic() - self.started_at, 2) if self.started_at is not None else None,
                 "stop_requested": self.stop_requested,
+                **({"recoverable": True, "attached": self.listener, "attachment": self.attachment,
+                    "recovery_seconds": RECOVERY_SECONDS} if self.client_id else {}),
                 "save_modes": ["new", "cover", "shared"] if self.store.profile(self.cover.unique_id) else ["new", "cover"],
                 **({"direction": self.direction} if self.direction else {})}
 
@@ -108,7 +115,44 @@ class CalibrationSession:
     def touch(self) -> None:
         if self.lease:
             self.lease.cancel()
-        self.lease = self.hass.loop.call_later(LEASE_SECONDS, self.close, "heartbeat_timeout")
+        self.lease = self.hass.loop.call_later(LEASE_SECONDS, self.detach, self.attachment, "heartbeat_timeout")
+
+    def subscribe(self) -> None:
+        """Bind cleanup to this attachment, never to a later controller."""
+        token = self.attachment
+        self.connection.subscriptions[self.subscription_id] = (lambda: self.detach(token)) if self.client_id else self.close
+
+    def detach(self, token: str, reason: str="disconnected") -> None:
+        """Retain safe checkpoints; invalidate any unattended movement immediately."""
+        if self.closed or not self.listener or token != self.attachment:
+            return
+        if not self.client_id:
+            self.close(reason)
+            return
+        if self.phase not in {"confirm_closed", "confirm_open", "confirm_automatic", "review", "saving"}:
+            self.interrupt(reason)
+        self.listener = False
+        # Notify a still-open socket when its heartbeat lease expires.
+        self.sequence += 1
+        self.connection.send_event(self.subscription_id, self.view())
+        if self.lease:
+            self.lease.cancel()
+        self.retention = self.hass.loop.call_later(RECOVERY_SECONDS, self.close, "recovery_expired")
+
+    def attach(self, connection: Any, subscription_id: Any, client_id: str) -> None:
+        """Claim a detached session without running or replaying any movement."""
+        if self.closed or not self.client_id:
+            raise ProfileError("calibration_expired")
+        if self.listener:
+            raise ProfileError("calibration_busy")
+        self.connection, self.subscription_id = connection, subscription_id
+        self.client_id, self.attachment = client_id, uuid4().hex
+        self.listener = True
+        if self.retention:
+            self.retention.cancel()
+            self.retention = None
+        self.touch()
+        self.subscribe()
 
     def arm_deadline(self, seconds: Any, reason: str) -> None:
         if self.deadline:
@@ -145,25 +189,31 @@ class CalibrationSession:
         self.emit()
 
     def close(self, reason: str="cancelled") -> None:
-        if not self.listener:
+        if self.closed:
             return
-        # Invalidate queued motion before releasing the socket/store ownership.
-        self.interrupt(reason)
-        if self.phase != "saved":
-            self.phase, self.reason = "cancelled", reason
-        self.emit()
-        self.listener = False
-        if self.lease:
-            self.lease.cancel()
-        if self.deadline:
-            self.deadline.cancel()
-        if self.shutdown is not None:
-            unsubscribe, self.shutdown = self.shutdown, None
-            unsubscribe()
-        if self.store.calibration is self:
-            self.store.calibration = None
-        if self.cover._calibration is self:
-            self.cover._calibration = None
+        self.closed = True
+        try:
+            # Invalidate queued motion before releasing the socket/store ownership.
+            self.interrupt(reason, send_stop=reason != "recovery_expired")
+            if self.phase != "saved":
+                self.phase, self.reason = "cancelled", reason
+            self.emit()
+        finally:
+            self.listener = False
+
+            if self.lease:
+                self.lease.cancel()
+            if self.deadline:
+                self.deadline.cancel()
+            if self.retention:
+                self.retention.cancel()
+            if self.shutdown is not None:
+                unsubscribe, self.shutdown = self.shutdown, None
+                unsubscribe()
+            if self.store.calibration is self:
+                self.store.calibration = None
+            if self.cover._calibration is self:
+                self.cover._calibration = None
 
     def move(self, direction: Any) -> None:
         expected = "confirm_closed" if direction == "open" else "confirm_open"
@@ -261,6 +311,9 @@ class CalibrationSession:
         if action == "heartbeat":
             self.touch()
             return self.view()
+        if action == "detach":
+            self.detach(self.attachment)
+            return self.view()
         if not self.active or msg.get("sequence") != self.sequence:
             raise ProfileError("calibration_step")
         entry, entity = target(self.hass, self.entry_id, self.cover.entity_id)
@@ -338,6 +391,9 @@ async def begin(hass: Any, connection: Any, msg: dict[str, Any]) -> Any:
     store = get_store(hass, entry.entry_id)
     async with store.lock:
         await store.load()
+        if store.calibration is not None and msg.get("client_id") == store.calibration.client_id and msg.get("client_id"):
+            store.calibration.attach(connection, msg["id"], msg["client_id"])
+            return store.calibration
         cover = ready_cover(hass, store, entry.entry_id, msg["entity_id"])
         if store.calibration is not None:
             raise ProfileError("calibration_busy")
@@ -365,9 +421,9 @@ async def begin(hass: Any, connection: Any, msg: dict[str, Any]) -> Any:
         if msg.get("mode", "guided") == "automatic":
             from .cover_calibration_automatic import AutomaticCalibrationSession
             session_type = AutomaticCalibrationSession
-        session = session_type(hass, store, entry, cover, connection, msg["id"], **options)
+        session = session_type(hass, store, entry, cover, connection, msg["id"], client_id=msg.get("client_id"), **options)
         store.calibration = cover._calibration = session
-        connection.subscriptions[msg["id"]] = session.close
+        session.subscribe()
         return session
 
 
@@ -376,6 +432,7 @@ async def begin(hass: Any, connection: Any, msg: dict[str, Any]) -> Any:
     vol.Required("entity_id"): str, vol.Required("revision"): vol.All(int, vol.Range(min=0)),
     vol.Optional("mode"): vol.In(["guided", "automatic"]),
     vol.Optional("direction"): vol.In(["opening", "closing"]),
+    vol.Optional("client_id"): vol.All(str, vol.Length(min=1, max=64)),
 })
 @require_admin
 @async_response
@@ -397,7 +454,8 @@ def send_error(connection: Any, msg: dict[str, Any], error: Any) -> None:
 @websocket_command({
     vol.Required("type"): WS_ACTION, vol.Required("entry_id"): str,
     vol.Required("session_id"): str,
-    vol.Required("action"): vol.In(["run", "open", "close", "endpoint", "stop", "cancel", "save", "preview_save", "heartbeat"]),
+    vol.Required("action"): vol.In(["run", "open", "close", "endpoint", "stop", "cancel", "save", "preview_save", "heartbeat", "detach"]),
+    vol.Optional("attachment"): str,
     vol.Optional("sequence"): vol.All(int, vol.Range(min=0)),
     vol.Optional("name"): str,
     vol.Optional("save_mode"): vol.In(["new", "cover", "shared"]),
@@ -409,7 +467,8 @@ def send_error(connection: Any, msg: dict[str, Any], error: Any) -> None:
 async def ws_action(hass: Any, connection: Any, msg: dict[str, Any]) -> None:
     store = hass.data.get(DATA_KEY, {}).get(msg["entry_id"])
     session = store.calibration if store else None
-    if session is None or session.id != msg["session_id"] or session.connection is not connection:
+    if (session is None or session.id != msg["session_id"] or session.connection is not connection
+            or not session.listener or (session.client_id and msg.get("attachment") != session.attachment)):
         connection.send_error(msg["id"], "calibration_expired", "Calibration session is not owned by this connection")
         return
     try:
@@ -423,6 +482,8 @@ async def ws_action(hass: Any, connection: Any, msg: dict[str, Any]) -> None:
 @callback
 def register_api(hass: Any) -> None:
     from .cover_calibration_batch import ws_batch_start, ws_targets
+    from .cover_calibration_recovery import ws_resume
+    websocket_api.async_register_command(hass, ws_resume)
     websocket_api.async_register_command(hass, ws_batch_start)
     websocket_api.async_register_command(hass, ws_targets)
     websocket_api.async_register_command(hass, ws_start)

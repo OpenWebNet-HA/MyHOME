@@ -15,6 +15,37 @@ The layout takes inspiration from ha-s7plc: a gateway overview, responsive card
 grid, category filters, and editing dialogs. It uses Home Assistant theme colors
 and provides English and Italian labels, with English fallback for other languages.
 
+## Session recovery (0.24.0)
+
+The existing calibration section now offers **Resume session** when a detached
+session exists for the selected gateway. It shows an occupied-session notice while
+another panel still controls it; **Refresh session status** updates availability
+without replacing profile form drafts. All authenticated administrators can claim
+a detached session. An attached controller cannot be displaced by another panel.
+
+Closing the dialog, changing page or losing the websocket detaches the controller.
+The backend retains the session for **10 minutes after detachment**. At
+`confirm_closed`, `confirm_open`, `confirm_automatic` and `review`, collected times
+and their original evidence survive. Single-direction and complete batch reviews
+use the same recovery flow. Recovery only attaches a controller: it never starts,
+replays or continues a movement. Profile names and unsent form drafts are not saved
+as session configuration.
+
+Leaving during queued/running motion, an automatic settling pause or a pause
+between covers interrupts the whole measurement, clears provisional results,
+invalidates queued motion and requests Stop. A queued Stop is not proof of a
+physical stop. The interrupted session can be reopened to inspect its reason or
+retry Stop, but must be cancelled before starting a new measurement. External
+movement still invalidates a detached checkpoint.
+
+The attached controller heartbeats every 5 seconds; its **20-second lease** expires
+into the same detach behavior. **Cancel** explicitly ends the session. Retention
+expiry, cover unload, entry removal and HA shutdown release the gateway. A restart
+loses unsaved sessions. An already accepted durable save can finish after detach;
+a storage failure leaves its review recoverable. Only one session owns a gateway;
+other gateways remain independent. Existing save destinations and WHO layout are
+unchanged. Older API clients without `client_id` retain cancellation on disconnect.
+
 ## Measurement save destinations (0.23.0)
 
 Single-cover guided and automatic review offers three explicit destinations:

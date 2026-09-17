@@ -128,7 +128,13 @@ export class CoverProfileEditor {
     this._refreshing = generation;
     try {
       const data = await hass.callWS({ type: "myhome/cover_profiles/read", entry_id: entity.entry_id, entity_id: entity.entity_id });
-      if (!this._current(generation) || this._calibrating || this._saving === generation || data.revision <= this._data.revision) return;
+      if (!this._current(generation) || this._calibrating || this._saving === generation) return;
+      if (data.revision === this._data.revision) {
+        this._data.calibration = data.calibration;
+        this._renderRecovery();
+        return;
+      }
+      if (data.revision < this._data.revision) return;
       if (this._draft() !== this._baseline) { this._markStale(); return; }
       this._data = data;
       this._render();
@@ -150,6 +156,26 @@ export class CoverProfileEditor {
     const { t } = this._context;
     const key = `profileError_${error.code}`;
     return t(key) === key ? t("profileError") : t(key);
+  }
+
+  _renderRecovery() {
+    const { t } = this._context, data = this._data, session = data.calibration;
+    const box = this.dialog.querySelector("#cal-recovery");
+    box.hidden = !session;
+    box.querySelector("p").textContent = session ? `${session.entity_id} · ${t(session.attached ? "calAttachedElsewhere" : "calDetached")}` : "";
+    const resume = box.querySelector("#cal-resume");
+    resume.hidden = !session || session.attached;
+    resume.onclick = () => {
+      this._calibrating = true;
+      const context = this._context;
+      this._calibration.open({ ...context, resume: this._data.calibration,
+        host: this.dialog.querySelector("#profile-body"),
+        onCancel: () => this.open(context), onSaved: () => { context.onSaved(t("saved")); this.open(context); } });
+    };
+    box.querySelector("#cal-refresh").onclick = () => this._refresh(true);
+    for (const id of ["profile-calibrate", "profile-calibrate-batch"]) {
+      this.dialog.querySelector(`#${id}`).disabled = !!session || !data.writable || this._stale;
+    }
   }
 
   async _selectBatch() {
@@ -290,6 +316,10 @@ export class CoverProfileEditor {
           <summary><span class="profile-details-title">${esc(t("profileSectionCalibrate"))} ${help("cal-help-text")}</span><span class="profile-details-hint" id="cal-hint"></span>${chevron}</summary>
           <div class="profile-details-body">
             ${helpText("cal-help-text", "calQuickRequirement")}
+            <div id="cal-recovery" class="notice" hidden><p></p>
+              <button type="button" id="cal-resume">${esc(t("calResume"))}</button>
+              <button type="button" id="cal-refresh">${esc(t("calRefresh"))}</button>
+            </div>
             <div class="profile-times">
               <label>${esc(t("calMode"))}<select id="cal-mode" ${disabled}><option value="guided">${esc(t("calGuided"))}</option><option value="automatic">${esc(t("calAutomatic"))}</option></select></label>
               <label>${esc(t("calScope"))}<select id="cal-direction" aria-describedby="cal-scope-help" ${disabled}><option value="">${esc(t("calBothDirections"))}</option><option value="opening">${esc(t("calOnlyOpening"))}</option><option value="closing">${esc(t("calOnlyClosing"))}</option></select></label>
@@ -370,6 +400,8 @@ export class CoverProfileEditor {
       updateCalibrationLabels();
     };
     updateCalibrationLabels();
+    this._renderRecovery();
+    if (data.calibration) host.querySelector('[data-section="calibration"]').open = true;
     host.querySelector("#profile-calibrate").onclick = () => {
       if (this._saving === this._generation || !data.writable || this._stale) return;
       this._calibrating = true;

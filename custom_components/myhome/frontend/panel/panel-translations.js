@@ -1,6 +1,12 @@
 /** Panel strings are independent from Config Flow / Options Flow schemas. */
 export const translations = {
   en: {
+    calReason_disconnected: "The panel disconnected during the cycle. The measurement was discarded and Stop was requested.",
+    calDetached: "Session available for recovery. Interrupted measurements cannot be saved: cancel them and start again.",
+    calAttachedElsewhere: "A panel is controlling this session. Close it or wait for its connection lease to expire, then refresh.",
+    calRecoveryHelp: "Closing the panel keeps safe checkpoints for 10 minutes. Leaving during movement interrupts the measurement and requests Stop. Recovery never restarts movement. Unsaved measurements are lost when Home Assistant restarts.",
+    calRefresh: "Refresh session status",
+    calResume: "Resume session",
     calQuickReview: "Review the measured time and the retained time before saving and assigning a new profile.",
     calScope: "Directions to measure",
     calSingleDirectionGuided: "Selecting opening only or closing only switches to guided measurement. Automatic measurement runs both directions.",
@@ -91,7 +97,7 @@ export const translations = {
     profileError_command_queue_full: "The gateway command queue is full. No measurement movement was queued.",
     calReason_start_timeout: "No movement feedback within 10 seconds. The measurement was discarded.",
     calReason_travel_timeout: "The 600-second travel limit was reached. The measurement was discarded.",
-    calReason_heartbeat_timeout: "The panel stopped responding. The session was cancelled.",
+    calReason_heartbeat_timeout: "The panel stopped responding. The running measurement was interrupted.",
     calReason_cover_unavailable: "The cover or gateway became unavailable.",
     calReason_target_not_found: "The cover or gateway was removed. Measurement interrupted.",
     calReason_shutdown: "Home Assistant is shutting down.",
@@ -206,6 +212,12 @@ export const translations = {
     unavailable: "Unavailable", hidden: "Hidden", state: "State", device: "Device", firmware: "Firmware",
   },
   it: {
+    calReason_disconnected: "Il pannello si è scollegato durante il ciclo. La misura è stata scartata ed è stato richiesto lo Stop.",
+    calDetached: "Sessione disponibile per il recupero. Le misure interrotte non possono essere salvate: annullale e ricomincia.",
+    calAttachedElsewhere: "Un pannello sta controllando questa sessione. Chiudilo oppure attendi la scadenza della connessione, poi aggiorna.",
+    calRecoveryHelp: "Chiudendo il pannello, le fasi di conferma restano disponibili per 10 minuti. Uscire durante un movimento interrompe la misura e richiede lo Stop. Il recupero non riavvia movimenti. Riavviare Home Assistant elimina le misure non salvate.",
+    calRefresh: "Aggiorna stato sessione",
+    calResume: "Riprendi sessione",
     calQuickReview: "Rivedi il tempo misurato e quello conservato prima di salvare e assegnare un nuovo profilo.",
     calScope: "Direzioni da misurare",
     calSingleDirectionGuided: "Selezionando solo apertura o solo chiusura si passa alla misura guidata. La misura automatica esegue entrambe le direzioni.",
@@ -296,7 +308,7 @@ export const translations = {
     profileError_command_queue_full: "La coda del gateway è piena. Nessun movimento di misura è stato accodato.",
     calReason_start_timeout: "Nessun riscontro di movimento entro 10 secondi. Misura scartata.",
     calReason_travel_timeout: "Raggiunto il limite di corsa di 600 secondi. Misura scartata.",
-    calReason_heartbeat_timeout: "Il pannello non risponde più. La sessione è stata annullata.",
+    calReason_heartbeat_timeout: "Il pannello non risponde più. La misura in corso è stata interrotta.",
     calReason_target_not_found: "La tapparella o il gateway sono stati rimossi. Misura interrotta.",
     calReason_cover_unavailable: "La tapparella o il gateway non sono più disponibili.",
     calReason_shutdown: "Home Assistant si sta arrestando.",

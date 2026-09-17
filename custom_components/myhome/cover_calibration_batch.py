@@ -56,8 +56,8 @@ async def read_targets(hass: Any, entry_id: str) -> Any:
 class BatchCalibrationSession(AutomaticCalibrationSession):
     """One owner and lease throughout every selected cover and final review."""
 
-    def __init__(self, hass: Any, store: Any, entry: Any, covers: Any, connection: Any, subscription_id: Any) -> None:
-        super().__init__(hass, store, entry, covers[0], connection, subscription_id)
+    def __init__(self, hass: Any, store: Any, entry: Any, covers: Any, connection: Any, subscription_id: Any, *, client_id: str | None=None) -> None:
+        super().__init__(hass, store, entry, covers[0], connection, subscription_id, client_id=client_id)
         self.covers = covers
         self.cover_index = 0
         self.results: list[dict[str, Any]] = []
@@ -141,6 +141,9 @@ async def begin_batch(hass: Any, connection: Any, msg: dict[str, Any]) -> Any:
         await store.load()
         if gateway(hass, entry.entry_id) is not entry:
             raise profiles.ProfileError("target_not_found")
+        if store.calibration is not None and msg.get("client_id") == store.calibration.client_id and msg.get("client_id"):
+            store.calibration.attach(connection, msg["id"], msg["client_id"])
+            return store.calibration
         if store.calibration is not None:
             raise profiles.ProfileError("calibration_busy")
         if msg["revision"] != store.data["revision"]:
@@ -148,9 +151,9 @@ async def begin_batch(hass: Any, connection: Any, msg: dict[str, Any]) -> Any:
         if len(store.data["profiles"]) + len(entity_ids) > profiles.MAX_PROFILES:
             raise profiles.ProfileError("profile_limit")
         covers = [ready_cover(hass, store, entry.entry_id, entity_id) for entity_id in entity_ids]
-        session = BatchCalibrationSession(hass, store, entry, covers, connection, msg["id"])
+        session = BatchCalibrationSession(hass, store, entry, covers, connection, msg["id"], client_id=msg.get("client_id"))
         store.calibration = covers[0]._calibration = session
-        connection.subscriptions[msg["id"]] = session.close
+        session.subscribe()
         return session
 
 
@@ -164,6 +167,7 @@ async def ws_targets(hass: Any, connection: Any, msg: dict[str, Any]) -> None:
 @websocket_command({
     vol.Required("type"): WS_BATCH_START, vol.Required("entry_id"): str,
     vol.Required("entity_ids"): SELECTION, vol.Required("revision"): vol.All(int, vol.Range(min=0)),
+    vol.Optional("client_id"): vol.All(str, vol.Length(min=1, max=64)),
 })
 @require_admin
 @async_response

@@ -201,8 +201,10 @@ and administrator isolation, moving-cover deferral, and single-direction
 calibration with pre-existing overrides. Frontend coverage exercises personal
 values, previews, confirmation, dirty drafts and delayed responses.
 
-Detached session supervision/gateway reservation, geometry/scaling and
-nonlinear calibration remain separate steps. No numerical physical accuracy is claimed.
+Panel 0.24.0 retains a detached session and its gateway reservation for 10 minutes,
+with [checkpoint recovery](sidepanel.md#session-recovery-0240). Unattended movement
+is interrupted rather than supervised to completion. Geometry/scaling and nonlinear
+calibration remain separate steps. No numerical physical accuracy is claimed.
 
 
 Panel 0.23.0 implements the additional single-cover measurement save choices:
