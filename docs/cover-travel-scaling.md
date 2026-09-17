@@ -5,6 +5,12 @@ Implements the linear case of sections 1.2–1.7 of the
 The model remains `linear_time`, with accuracy `not_measured`. Slat/roll fitting
 and out-of-sample physical accuracy checks remain future work.
 
+The next backend increment adds the isolated
+[nonlinear mathematical foundation](cover-nonlinear-model.md). It is not yet
+connected to live profiles or motion, so the runtime and API described here
+remain linear. The user has confirmed the 0.29.0 linear adaptation on the test
+installation.
+
 ## Data and runtime
 
 Profiles optionally store `reference_travel_cm`; covers optionally store
@@ -110,5 +116,6 @@ not claim the nonlinear model's precision.
 Local validation on Python 3.14 / HA 2026.9.1: 2,081 backend tests passed (one
 skipped), 161 frontend tests passed, and all 46 integration modules reached 100%
 line coverage (7,843 statements). Strict typing reports zero errors; Ruff and
-Home Assistant architecture checks pass. Hardware validation of this increment
-remains separate from the user's successful 0.28.0 installation tests.
+Home Assistant architecture checks pass. The user subsequently tested the 0.29.0
+linear adaptation on the installation and reported that it works correctly;
+this does not establish nonlinear positioning accuracy.
