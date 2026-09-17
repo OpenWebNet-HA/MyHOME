@@ -41,7 +41,7 @@ jobs:
 
       - name: Quality scale audit and badge
         run: |
-          python scripts/quality_scale_report.py --badge quality_scale.svg --json quality_scale.json --update-readme README.md
+          python scripts/quality_scale_report.py --badge quality_scale.svg --json quality_scale.json --update-readme README.md --require platinum
           echo "reached=$(python -c 'import json;print(json.load(open("quality_scale.json"))["reached"])')" >> "$GITHUB_OUTPUT"
         id: audit
 
@@ -54,7 +54,7 @@ jobs:
             quality_scale.svg
 
       - name: Commit badge and README table on the default branch
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/v2-'))
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
