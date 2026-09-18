@@ -503,9 +503,22 @@ class MyHomePanel extends HTMLElement {
     for (const element of this.shadowRoot.querySelectorAll("[data-state]")) {
       const entity = this._data.entities.find((item) => item.entity_id === element.dataset.state);
       const state = this._hass?.states?.[element.dataset.state];
-      const text = entity?.disabled_by ? this._t("disabled") : !state ? this._t("unavailable")
+      let text = entity?.disabled_by ? this._t("disabled") : !state ? this._t("unavailable")
         : this._hass.formatEntityState ? this._hass.formatEntityState(state)
           : `${this._t(state.state)}${state.attributes?.unit_of_measurement ? ` ${state.attributes.unit_of_measurement}` : ""}`;
+      const climate = entity?.domain === "climate";
+      element.classList.toggle("climate-state", climate);
+      if (climate && !entity.disabled_by && state && !["unavailable", "unknown"].includes(state.state)) {
+        const attrs = state.attributes || {};
+        const unit = attrs.unit_of_measurement || this._hass.config?.unit_system?.temperature || "";
+        const numbers = new Intl.NumberFormat(this._hass.locale?.language || this._hass.language || "en", { maximumFractionDigits: 20, useGrouping: false });
+        const temperature = (value) => `${numbers.format(value)}${unit ? ` ${unit}` : ""}`;
+        if (Number.isFinite(attrs.current_temperature)) text += ` · ${this._t("climateCurrentTemperature")}: ${temperature(attrs.current_temperature)}`;
+        if (Number.isFinite(attrs.temperature)) text += ` · ${this._t("climateSetpoint")}: ${temperature(attrs.temperature)}`;
+        else if (Number.isFinite(attrs.target_temp_low) && Number.isFinite(attrs.target_temp_high)) {
+          text += ` · ${this._t("climateSetpoint")}: ${temperature(attrs.target_temp_low)} – ${temperature(attrs.target_temp_high)}`;
+        }
+      }
       if (element.textContent !== text) element.textContent = text;
     }
     for (const element of this.shadowRoot.querySelectorAll("[data-cover-profile]")) {

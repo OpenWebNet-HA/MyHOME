@@ -191,6 +191,8 @@ label { display: grid; gap: 6px; font-size: 12px; font-weight: 500; color: var(-
 .device-states { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; min-width: 0; padding-inline-start: 34px; }
 .device-state { display: inline-flex; align-items: baseline; gap: 5px; min-width: 0; max-width: 100%; padding: 3px 9px; border-radius: 999px; background: var(--panel-surface-2); color: var(--primary-text-color, #182b37); font-size: 12px; font-weight: 600; line-height: 1.4; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .device-state > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.device-state:has(.climate-state) { white-space: normal; border-radius: 10px; }
+.climate-state { line-height: 1.5; overflow-wrap: anywhere; }
 .device-state-name { font-weight: 400; color: var(--panel-text-2); max-width: 22ch; }
 .device-state:only-child { background: var(--panel-accent-soft); color: var(--panel-accent); }
 .device-group-header:has(.device-group-title[aria-expanded="true"]) .device-states { display: none; }

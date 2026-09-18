@@ -1,6 +1,8 @@
 /** Panel strings are independent from Config Flow / Options Flow schemas. */
 export const translations = {
   en: {
+    climateCurrentTemperature: "Current temperature",
+    climateSetpoint: "Setpoint",
     profileScalingHelpNonlinear: "Slat and roll estimate; accuracy has not been measured. Geometry and inherited times adapt only when both travel distances are saved. Personal times keep priority.",
     profileUnscaledNonlinear: "Slat and roll estimate; accuracy has not been measured. This profile applies as-is because a reference travel is missing.",
     profileMotionModel: "Position model",
@@ -305,6 +307,8 @@ export const translations = {
     unavailable: "Unavailable", hidden: "Hidden", state: "State", device: "Device", firmware: "Firmware",
   },
   it: {
+    climateCurrentTemperature: "Temperatura rilevata",
+    climateSetpoint: "Setpoint",
     profileScalingHelpNonlinear: "Stima con lamelle e rullo; precisione non misurata. Geometria e tempi ereditati si adattano solo quando entrambe le corse sono salvate. I tempi personali mantengono la precedenza.",
     profileUnscaledNonlinear: "Stima con lamelle e rullo; precisione non misurata. Il profilo si applica invariato perché manca la corsa di riferimento.",
     profileMotionModel: "Modello di posizione",
