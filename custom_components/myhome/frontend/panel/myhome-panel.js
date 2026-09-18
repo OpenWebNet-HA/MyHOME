@@ -25,6 +25,7 @@ class MyHomePanel extends HTMLElement {
     this._filters = { query: "", category: "", area: "" };
     this._expandedDevices = new Set();
     this._expandedSecondary = new Set();
+    this._expandedGateways = new Set();
     this._categoryMode = "all";
     this._selectedWho = "";
     try {
@@ -222,30 +223,30 @@ class MyHomePanel extends HTMLElement {
         <div class="brand-group"><div class="brand-mark" aria-hidden="true"><ha-icon icon="mdi:home-lightning-bolt"></ha-icon></div>
           <div class="brand-text"><div class="brand">My<span>HOME</span></div>
             <div class="versions"><span id="panel-version"></span><span id="version"></span></div></div></div>
-        <a class="button" href="${SETTINGS_URL}"><ha-icon icon="mdi:cog-outline" aria-hidden="true"></ha-icon><span>${t("settings")}</span></a>
+        <div class="topbar-actions"><button data-action="refresh" class="ghost" title="${t("refresh")}" aria-label="${t("refresh")}"><ha-icon icon="mdi:refresh" aria-hidden="true"></ha-icon></button>
+        <a class="button ghost" href="${SETTINGS_URL}" aria-label="${t("settings")}"><ha-icon icon="mdi:cog-outline" aria-hidden="true"></ha-icon><span>${t("settingsShort")}</span></a></div>
       </header>
       <main>
-        <div class="heading"><div><h1>${t("subtitle")}</h1><p class="muted" id="totals"></p></div>
-        </div>
+        <h1 class="visually-hidden">${t("subtitle")}</h1>
         <div id="error" class="notice error" role="alert" hidden></div>
         <section id="gateways" class="gateway-grid" aria-label="${t("gateway")}"></section>
         <nav class="tabs" aria-label="MyHOME">
           ${[["entities", "mdi:view-list-outline"], ["bus", "mdi:swap-horizontal"]].map(([view, icon]) => `<button data-view="${view}" aria-pressed="${view === this._view}"><ha-icon icon="${icon}" aria-hidden="true"></ha-icon>${t(view)} <span class="count" id="count-${view}" ${view === "bus" ? "hidden" : ""}></span></button>`).join("")}
-          <button data-action="refresh" class="ghost" title="${t("refresh")}" aria-label="${t("refresh")}"><ha-icon icon="mdi:refresh" aria-hidden="true"></ha-icon></button>
+          <p class="muted" id="totals"></p>
         </nav>
         <section id="who-navigation" class="who-navigation" hidden>
-          <div class="who-toolbar"><p id="category-view-label" class="muted" aria-live="polite"></p>
+          <nav id="who-buttons" class="who-buttons" aria-label="${t("whoCategory")}"></nav>
+          <div class="who-toolbar"><p id="category-view-label" class="visually-hidden" aria-live="polite"></p>
             <button type="button" data-action="toggle-category-view" aria-controls="items"></button>
           </div>
-          <nav id="who-buttons" class="who-buttons" aria-label="${t("whoCategory")}"></nav>
         </section>
         <div class="filters" id="filters">
-          <label>${t("search")}<input id="search" type="search" value="${escapeHtml(this._filters.query)}"></label>
+          <label>${t("searchShort")}<input id="search" type="search" aria-label="${t("search")}" placeholder="${t("searchPlaceholder")}" value="${escapeHtml(this._filters.query)}"></label>
           <label>${t("category")}<select id="category"></select></label>
           <label>${t("area")}<select id="area"></select></label>
         </div>
-        <p class="notice muted" id="discovery-help">${t("discoveryHelp")}</p>
         <section id="items" class="who-groups"></section>
+        <p class="muted" id="discovery-help">${t("discoveryHelp")}</p>
         <section id="monitor" hidden></section>
         <p id="toast" class="muted" role="status"></p>
       </main><div id="dialog-host"></div>`;
@@ -294,11 +295,13 @@ class MyHomePanel extends HTMLElement {
       const status = item.disabled_by ? "disabled" : item.state === "loaded" ? (item.connected ? "connected" : "disconnected") : item.state;
       const devices = data.devices.filter((device) => device.entry_ids.includes(item.entry_id)).length;
       const entities = data.entities.filter((entity) => entity.entry_id === item.entry_id).length;
-      return `<button type="button" class="gateway-card" data-action="select-gateway" data-id="${escapeHtml(item.entry_id)}" aria-pressed="${item.entry_id === this._entryId}" aria-controls="items monitor"><span class="card-head"><span class="gateway-name"><ha-icon icon="${item.serial_port ? "mdi:serial-port" : "mdi:router-network"}" aria-hidden="true"></ha-icon>${escapeHtml(item.title)}</span>
-        <span class="badge ${item.connected ? "online" : "offline"}">${t(status)}</span></span>
-        <span class="muted gateway-address">${escapeHtml([item.model, item.host ? `${item.host}${item.port ? `:${item.port}` : ""}` : item.serial_port].filter(Boolean).join(" · "))}</span>
-        <span class="gateway-meta"><span><ha-icon icon="mdi:devices" aria-hidden="true"></ha-icon>${devices} ${t("devices")}</span><span><ha-icon icon="mdi:shape-outline" aria-hidden="true"></ha-icon>${entities} ${t("entities")}</span>
-        ${item.firmware ? `<span><ha-icon icon="mdi:chip" aria-hidden="true"></ha-icon>${t("firmware")} ${escapeHtml(item.firmware)}</span>` : ""}</span></button>`;
+      const detailsId = escapeHtml(`gateway-details-${encodeURIComponent(item.entry_id)}`);
+      const expanded = this._expandedGateways.has(item.entry_id);
+      return `<div class="gateway-overview"><button type="button" class="gateway-card" data-action="select-gateway" data-id="${escapeHtml(item.entry_id)}" aria-pressed="${item.entry_id === this._entryId}" aria-controls="items monitor"><span class="gateway-name"><ha-icon icon="${item.serial_port ? "mdi:serial-port" : "mdi:router-network"}" aria-hidden="true"></ha-icon><span>${escapeHtml(item.title)}</span><ha-icon class="gateway-selected" icon="mdi:check-circle-outline" aria-hidden="true"></ha-icon></span>
+        <span class="gateway-summary"><span>${escapeHtml(item.model)}</span><span class="badge ${status === "connected" ? "online" : "offline"}">${t(status)}</span></span></button>
+        <button type="button" class="gateway-details-toggle icon-button" data-action="gateway-details" data-id="${escapeHtml(item.entry_id)}" aria-expanded="${expanded}" aria-controls="${detailsId}" aria-label="${t("details")}: ${escapeHtml(item.title)}" title="${t("details")}"><ha-icon icon="mdi:information-outline" aria-hidden="true"></ha-icon></button>
+        <div class="gateway-technical" id="${detailsId}" ${expanded ? "" : "hidden"}><span class="muted gateway-address">${escapeHtml(item.host ? `${item.host}${item.port ? `:${item.port}` : ""}` : item.serial_port || "")}</span>
+        <span class="gateway-meta"><span>${devices} ${t("devices")}</span><span>${entities} ${t("entities")}</span>${item.firmware ? `<span>${t("firmware")} ${escapeHtml(item.firmware)}</span>` : ""}</span></div></div>`;
     }).join("");
     replacePreservingFocus(root.getElementById("gateways"), gatewayCards);
     root.getElementById("count-entities").textContent = scope.entities.length;
@@ -349,10 +352,17 @@ class MyHomePanel extends HTMLElement {
     const all = this._categoryMode === "all";
     root.getElementById("category-view-label").textContent = all ? this._t("allWhoCategories") : this._whoLabel(this._selectedWho);
     const toggle = root.querySelector('[data-action="toggle-category-view"]');
-    toggle.innerHTML = `<ha-icon icon="mdi:${all ? "tab" : "view-sequential"}" aria-hidden="true"></ha-icon><span>${escapeHtml(this._t(all ? "showSelectedCategory" : "showAllCategories"))}</span>`;
+    toggle.setAttribute("aria-pressed", String(all));
+    toggle.setAttribute("title", this._t(all ? "showSelectedCategory" : "showAllCategories"));
+    toggle.innerHTML = `<ha-icon icon="mdi:layers-outline" aria-hidden="true"></ha-icon><span>${escapeHtml(this._t(all ? "allWhoCategories" : "selectedCategory"))}</span>`;
     const nav = root.getElementById("who-buttons");
-    const buttons = groups.map(([who, members]) => `<button type="button" data-action="select-who" data-who="${escapeHtml(who)}" aria-pressed="${!all && who === this._selectedWho}" aria-controls="items">
-      <span>${escapeHtml(this._whoLabel(who))}</span><span class="count">${escapeHtml(this._inventoryCount(members))}</span></button>`).join("");
+    const buttons = groups.map(([who, members]) => {
+      const shortKey = { "1": "light", "2": "cover", "4": "climate" }[who];
+      const known = this._t(`who_${who}`) !== `who_${who}`;
+      const label = shortKey ? this._t(shortKey) : who === model.WHO_UNKNOWN ? this._t("whoUnknown") : known ? this._t(`who_${who}`) : `WHO ${who}`;
+      const icon = { "0": "mdi:movie-open-outline", "1": "mdi:lightbulb-outline", "2": "mdi:window-shutter", "3": "mdi:power-plug-outline", "4": "mdi:thermometer", "5": "mdi:shield-home-outline", "13": "mdi:router-network", "16": "mdi:speaker", "18": "mdi:lightning-bolt", "25": "mdi:gesture-tap-button" }[who] || "mdi:shape-outline";
+      return `<button type="button" data-action="select-who" data-who="${escapeHtml(who)}" aria-pressed="${!all && who === this._selectedWho}" aria-controls="items" title="${escapeHtml(this._inventoryCount(members))}"><ha-icon icon="${icon}" aria-hidden="true"></ha-icon><span class="who-label">${escapeHtml(label)}${who !== model.WHO_UNKNOWN && (known || shortKey) ? `<span class="who-code"> · WHO ${escapeHtml(who)}</span>` : ""}</span><span class="count" aria-label="${escapeHtml(this._inventoryCount(members))}">${members.length}</span></button>`;
+    }).join("");
     // Keep keyboard focus and horizontal position when registry updates rebuild buttons.
     if (nav.innerHTML !== buttons) {
       const focusedWho = nav.contains(root.activeElement) ? root.activeElement.dataset.who : null;
@@ -531,6 +541,10 @@ class MyHomePanel extends HTMLElement {
         : this._hass.formatEntityState ? this._hass.formatEntityState(state)
           : `${this._t(state.state)}${state.attributes?.unit_of_measurement ? ` ${state.attributes.unit_of_measurement}` : ""}`;
       const climate = entity?.domain === "climate";
+      const tone = this._stateTone(entity, state);
+      element.dataset.tone = tone;
+      const summary = element.closest(".device-state");
+      if (summary) summary.dataset.tone = tone;
       element.classList.toggle("climate-state", climate);
       if (climate && element.closest(".device-states")) {
         const temperatures = this._climateTemperatures(entity, state);
@@ -556,6 +570,21 @@ class MyHomePanel extends HTMLElement {
     }
   }
 
+  _stateTone(entity, state) {
+    if (entity?.disabled_by) return "disabled";
+    if (!state || state.state === "unavailable") return "unavailable";
+    if (state.state === "unknown") return "unknown";
+    if (entity?.domain === "alarm_control_panel" && state.state === "triggered") return "alert";
+    const active = {
+      light: ["on"], switch: ["on"], binary_sensor: ["on"],
+      cover: ["open", "opening", "closing"], media_player: ["playing"],
+      climate: ["heat", "cool", "heat_cool", "auto", "dry", "fan_only"],
+      alarm_control_panel: ["armed_home", "armed_away", "armed_night", "armed_vacation", "armed_custom_bypass", "arming", "pending"],
+    };
+    if (entity?.domain === "climate" && ["idle", "off"].includes(state.attributes?.hvac_action)) return "neutral";
+    return active[entity?.domain]?.includes(state.state) ? "active" : "neutral";
+  }
+
   _openCoverProfile(id) {
     const entity = this._data.entities.find((item) => item.entity_id === id);
     if (!entity) return;
@@ -577,6 +606,12 @@ class MyHomePanel extends HTMLElement {
       window.dispatchEvent(new Event("location-changed"));
     } else if (target.dataset.action === "select-gateway") {
       this._selectGateway(target.dataset.id);
+    } else if (target.dataset.action === "gateway-details") {
+      const expanded = target.getAttribute("aria-expanded") !== "true";
+      if (expanded) this._expandedGateways.add(target.dataset.id);
+      else this._expandedGateways.delete(target.dataset.id);
+      target.setAttribute("aria-expanded", String(expanded));
+      this.shadowRoot.getElementById(target.getAttribute("aria-controls")).hidden = !expanded;
     } else if (target.dataset.view) {
       this._view = target.dataset.view;
       this._renderContent();

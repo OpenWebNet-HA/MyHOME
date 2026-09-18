@@ -269,6 +269,52 @@ test("DOM search and gateway selection expose the expected devices and disabled 
   assert.equal(root.activeElement.getAttribute("aria-pressed"), "true");
 });
 
+test("gateway details remain independent of selection and survive refreshed inventory", async () => {
+  const { panel, root, data } = await mount();
+  const toggle = (id) => root.querySelector(`[data-action="gateway-details"][data-id="${id}"]`);
+  const details = (id) => root.getElementById(toggle(id).getAttribute("aria-controls"));
+  assert.equal(details("one").hidden, true);
+  assert.equal(details("two").hidden, true);
+  assert.doesNotMatch(root.querySelector('.gateway-card[data-id="one"]').textContent, /192\.0\.2/);
+  toggle("two").click(); toggle("two").focus();
+  assert.equal(details("two").hidden, false);
+  assert.match(details("two").textContent, /192\.0\.2\.2/);
+  assert.equal(root.querySelector('.gateway-card[aria-pressed="true"]').dataset.id, "one");
+  data.gateways[1].firmware = "2.87.13";
+  await panel._refresh();
+  assert.equal(root.activeElement, toggle("two"));
+  assert.match(details("two").textContent, /2\.87\.13/);
+  assert.equal(details("two").hidden, false);
+  assert.equal(details("one").hidden, true);
+  toggle("two").click();
+  selectGateway(root, "two");
+  assert.equal(details("two").hidden, true);
+});
+
+test("state tones use raw domain states and keep collapsed summaries in sync", async () => {
+  const { panel, root, hass, data } = await mount();
+  const set = (state, attributes = {}) => {
+    panel.hass = { ...hass, formatEntityState: () => "Localized state", states: { "light.sala": { state, attributes } } };
+  };
+  const tone = () => root.querySelector('.entity-row [data-state="light.sala"]').dataset.tone;
+  for (const [state, expected] of [["on", "active"], ["off", "neutral"], ["unavailable", "unavailable"], ["unknown", "unknown"]]) {
+    set(state); assert.equal(tone(), expected);
+    assert.equal(root.querySelector('.device-states [data-state="light.sala"]').closest('.device-state').dataset.tone, expected);
+    assert.equal(root.querySelector('.entity-row [data-state="light.sala"]').textContent, "Localized state");
+  }
+  panel.hass = { ...hass, states: {} };
+  assert.equal(tone(), "unavailable");
+  data.entities[0].disabled_by = "user";
+  await panel._refresh();
+  assert.equal(tone(), "disabled");
+  assert.equal(panel._stateTone({ domain: "sensor" }, { state: "on" }), "neutral");
+  assert.equal(panel._stateTone({ domain: "cover" }, { state: "closed" }), "neutral");
+  assert.equal(panel._stateTone({ domain: "cover" }, { state: "opening" }), "active");
+  assert.equal(panel._stateTone({ domain: "climate" }, { state: "heat", attributes: { hvac_action: "idle" } }), "neutral");
+  assert.equal(panel._stateTone({ domain: "climate" }, { state: "heat", attributes: { hvac_action: "heating" } }), "active");
+  assert.equal(panel._stateTone({ domain: "alarm_control_panel" }, { state: "triggered" }), "alert");
+});
+
 test("home groups mixed sensor WHOs numerically and filters categories without losing unclassified items", async () => {
   const { root } = await mount({ prepare: (data) => {
     for (const [id, who] of [["power", "18"], ["temperature", "4"], ["diagnostic", null], ["scenario", "0"], ["future", "99"]]) {
@@ -302,14 +348,19 @@ test("category buttons and layout toggle preserve selection, focus, filters and 
   const { panel, root, hass, data } = await mount();
   const toggle = root.querySelector('[data-action="toggle-category-view"]');
   const groups = () => [...root.querySelectorAll(".who-group")].map((group) => group.dataset.who);
-  assert.equal(toggle.textContent, "Mostra solo categoria");
+  assert.equal(toggle.textContent, "Tutte le categorie WHO");
+  assert.equal(toggle.getAttribute("title"), "Mostra solo categoria");
+  assert.equal(toggle.getAttribute("aria-pressed"), "true");
+  assert.equal(root.querySelector('#who-buttons [data-who="1"] .who-label').textContent, "Luci · WHO 1");
   root.querySelector('[data-view="entities"]').click();
   const cen = root.querySelector('#who-buttons [data-who="25"]');
   cen.focus();
   cen.click();
   assert.deepEqual(groups(), ["25"]);
   assert.equal(root.activeElement.dataset.who, "25");
-  assert.equal(toggle.textContent, "Mostra tutto");
+  assert.equal(toggle.textContent, "Solo categoria");
+  assert.equal(toggle.getAttribute("title"), "Mostra tutto");
+  assert.equal(toggle.getAttribute("aria-pressed"), "false");
   toggle.click();
   assert.deepEqual(groups(), ["1", "25"]);
   assert.equal(root.querySelector('#who-buttons [aria-pressed="true"]'), null);
@@ -335,7 +386,7 @@ test("category buttons and layout toggle preserve selection, focus, filters and 
   root.querySelector('[data-view="entities"]').click();
   assert.deepEqual(groups(), ["25"]);
   panel.hass = { ...hass, language: "en" };
-  assert.match(root.querySelector('[data-action="toggle-category-view"]').textContent, /Show all/);
+  assert.equal(root.querySelector('[data-action="toggle-category-view"]').textContent, "Selected category");
   assert.deepEqual(groups(), ["25"]);
 
   // Reopening the panel restores the preference if the category is available.

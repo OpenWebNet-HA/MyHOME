@@ -1,6 +1,8 @@
 /** Panel strings are independent from Config Flow / Options Flow schemas. */
 export const translations = {
   en: {
+    settingsShort: "Settings", searchShort: "Search",
+    searchPlaceholder: "Name, entity or address…", selectedCategory: "Selected category",
     climateCurrentTemperature: "Current temperature",
     climateSetpoint: "Setpoint",
     profileScalingHelpNonlinear: "Slat and roll estimate; accuracy has not been measured. Geometry and inherited times adapt only when both travel distances are saved. Personal times keep priority.",
@@ -307,6 +309,8 @@ export const translations = {
     unavailable: "Unavailable", hidden: "Hidden", state: "State", device: "Device", firmware: "Firmware",
   },
   it: {
+    settingsShort: "Impostazioni", searchShort: "Cerca",
+    searchPlaceholder: "Nome, entità o indirizzo…", selectedCategory: "Solo categoria",
     climateCurrentTemperature: "Temperatura rilevata",
     climateSetpoint: "Setpoint",
     profileScalingHelpNonlinear: "Stima con lamelle e rullo; precisione non misurata. Geometria e tempi ereditati si adattano solo quando entrambe le corse sono salvate. I tempi personali mantengono la precedenza.",

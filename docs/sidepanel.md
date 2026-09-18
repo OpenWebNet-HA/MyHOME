@@ -1,5 +1,23 @@
 # MyHOME sidepanel — first version
 
+## Compact panel navigation (0.34.0)
+
+The header now contains refresh and integration settings, with quieter version
+labels. Gateway cards show name, model and connection; the selected gateway keeps
+its green border and gains a checkmark. Each card has a separate Details button
+for the connection address, firmware and inventory counts. Opening details does
+not change gateway selection and remains open through inventory updates.
+
+WHO buttons combine an icon, a short category label, the explicit WHO number and
+an item count. For example: **Lights · WHO 1**, **Covers · WHO 2**, **Climate · WHO 4**.
+The all/selected-category toggle and entity-type/area/search filters are retained.
+The discovery explanation sits below the inventory instead of above the cards.
+
+Entity and collapsed-device states use the same colors: neutral for inactive,
+accent for active, high contrast for unavailable, and an alert tone for triggered
+alarms. Labels remain visible and use HA formatting; colors use raw domain states,
+not translated text. Climate modes with explicit idle/off activity remain neutral.
+
 ## Compact entity cards (0.33.0)
 
 Device groups still start collapsed. Expanded cards align each entity name and
