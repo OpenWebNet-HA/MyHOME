@@ -1,6 +1,6 @@
 # Supported Functions
 
-What the integration does — and does not — do for each OpenWebNet subsystem (`WHO`) and Home Assistant platform. Hardware and gateway models are listed in the README's [Supported Hardware](../../README.md#%EF%B8%8F-supported-hardware) section; the wire-level conformance corpus is in the [Protocol Conformance Matrix](../protocol_conformance_matrix.md). Things that are deliberately *not* supported, and why, are in [Known Limitations](known_limitations.md).
+What the integration does — and does not — do for each OpenWebNet subsystem (`WHO`) and Home Assistant platform. Hardware and gateway models are listed in [Hardware Compatibility](../getting-started/hardware-compatibility.md); the wire-level conformance corpus is in the [Protocol Conformance Matrix](../protocol_conformance_matrix.md). Things that are deliberately *not* supported, and why, are in [Known Limitations](known_limitations.md).
 
 Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entity · ❌ not supported
 

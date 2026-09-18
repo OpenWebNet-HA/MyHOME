@@ -165,7 +165,7 @@ async def test_restore_group_from_registry(hass: HomeAssistant):
 
 
 async def test_build_refuses_area_and_general_where(hass: HomeAssistant, caplog):
-    """Area/general yaml WHEREs never make a light entity (#368 point 3)."""
+    """Area/general yaml WHEREs never make a light entity (#368 point 3, #402)."""
     from homeassistant.util.yaml.loader import parse_yaml
 
     validated = config_schema(parse_yaml(
@@ -175,6 +175,9 @@ async def test_build_refuses_area_and_general_where(hass: HomeAssistant, caplog)
     area_1:
       where: '1'
       name: Area Light
+    area_10:
+      where: '100'
+      name: Area 10 Light
 """
     ))
     lights = validated[MAC]["platforms"]["light"]
@@ -194,7 +197,45 @@ async def test_build_refuses_area_and_general_where(hass: HomeAssistant, caplog)
         await async_setup_entry(hass, config_entry, async_add_entities)
 
     async_add_entities.assert_not_called()
-    assert "Refusing to create a light entity for broadcast WHERE" in caplog.text
+    assert "Refusing to create a light entity for broadcast WHERE 1" in caplog.text
+    assert "Refusing to create a light entity for broadcast WHERE 100" in caplog.text
+
+
+async def test_build_allows_point_to_point_where_10(hass: HomeAssistant, caplog):
+    """WHERE '10' is Point-to-Point (A=1, PL=0), NOT an area broadcast (#402)."""
+    from homeassistant.util.yaml.loader import parse_yaml
+
+    validated = config_schema(parse_yaml(
+        f"""
+{MAC}:
+  light:
+    light_10:
+      where: '10'
+      name: Light 10
+"""
+    ))
+    lights = validated[MAC]["platforms"]["light"]
+
+    config_entry = MagicMock()
+    config_entry.data = {"mac": MAC}
+    config_entry.entry_id = "test_entry"
+    gateway = _gateway()
+    hass.data = {DOMAIN: {MAC: {"entity": gateway, "platforms": {"light": lights}}}}
+
+    with (
+        patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]),
+        patch("custom_components.myhome.discovery.er.async_get", return_value=MagicMock()),
+    ):
+        async_add_entities = MagicMock()
+        attach_runtime(hass, config_entry)
+        await async_setup_entry(hass, config_entry, async_add_entities)
+
+    async_add_entities.assert_called_once()
+    entities = list(async_add_entities.call_args[0][0])
+    assert len(entities) == 1
+    assert entities[0]._device_name == "Light 10"
+    assert entities[0]._where == "10"
+    assert "Refusing to create a light entity for broadcast WHERE 10" not in caplog.text
 
 
 # ── assumed-state (no members) ─────────────────────────────────────────

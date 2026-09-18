@@ -188,5 +188,15 @@
     "cover_position_unknown": {
       "message": "Esegui un’apertura o una chiusura completa prima di impostare una posizione intermedia."
     }
+  },
+  "issues": {
+    "unconfigured_timezone": {
+      "title": "Fuso orario non configurato sul gateway MyHOME ({gateway})",
+      "description": "Il gateway MyHOME {gateway} segnala un fuso orario non configurato (codice segnaposto '999'). Questo può causare errori di analisi di data e ora o la perdita di messaggi diagnostici del gateway.\n\nAccedi all'interfaccia web del gateway (o a MyHOME_Suite / MyHOME_Up) per impostare un fuso orario valido, quindi riavvia il gateway."
+    },
+    "unknown_gateway_model": {
+      "title": "Codice tipo dispositivo gateway sconosciuto ({code})",
+      "description": "Il gateway ha segnalato un codice del tipo di dispositivo hardware ({code}) sconosciuto all'integrazione MyHOME. Fai clic su 'Ulteriori informazioni' per aprire una segnalazione su GitHub e allegare una traccia diagnostica per consentirci di aggiungere il supporto per questo modello."
+    }
   }
 }

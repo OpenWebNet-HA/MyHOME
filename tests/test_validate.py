@@ -121,15 +121,18 @@ class TestWhereValidators:
             validator(0)  # integer instead of str
 
     def test_area_validator(self):
-        """Test Area validator (must be '00', '1'-'9', or '10')."""
+        """Test Area validator (must be '00', '1'-'9', or '100')."""
         validator = Area("custom area msg")
         assert validator("00") == "00"
-        for i in range(1, 11):
+        for i in range(1, 10):
             assert validator(str(i)) == str(i)
+        assert validator("100") == "100"
         assert repr(validator) == "Where(String, msg='custom area msg')"
 
         with pytest.raises(Invalid, match="Invalid Area WHERE 0"):
             validator("0")
+        with pytest.raises(Invalid, match="Invalid Area WHERE 10"):
+            validator("10")
         with pytest.raises(Invalid, match="Invalid Area WHERE 11"):
             validator("11")
         with pytest.raises(Invalid, match="Invalid Area WHERE 1"):

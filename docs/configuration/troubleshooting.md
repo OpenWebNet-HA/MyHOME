@@ -29,7 +29,7 @@ Home Assistant opens the reauth flow itself; enter the OpenWebNet password confi
 
 ### The gateway was discovered with the wrong model, or a repair issue says the model was corrected
 
-The model decides pacing and which subsystems are queried. See [How the gateway model is identified](gateways.md#-how-the-gateway-model-is-identified): SSDP is authoritative, a manual choice is corrected when the WHO 13 device type contradicts it with an official code, and a repair issue asks you to confirm otherwise. Use the reconfigure flow to set the model explicitly. If the diagnostics show an unknown `who13_code`, please attach the download to an issue so the code can be documented.
+The model decides pacing and which subsystems are queried. See [How the gateway model is identified](gateway-identification.md): SSDP is authoritative, a manual choice is corrected when the WHO 13 device type contradicts it with an official code, and a repair issue asks you to confirm otherwise. Use the reconfigure flow to set the model explicitly. If the diagnostics show an unknown `who13_code`, please attach the download to an issue so the code can be documented.
 
 ### `No module named 'custom_components.myhome.backup'`
 

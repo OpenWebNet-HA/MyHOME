@@ -260,6 +260,14 @@
       "title": "Authentication failed for MyHOME gateway {gateway}",
       "description": "The MyHOME gateway refused the configured OpenWebNet password or HMAC negotiation. Please check your credentials using the reconfigure flow."
     },
+    "unconfigured_timezone": {
+      "title": "Unconfigured timezone on MyHOME gateway ({gateway})",
+      "description": "The MyHOME gateway {gateway} is reporting an unconfigured timezone (placeholder code '999'). This can cause date and time parsing failures or dropped gateway diagnostic messages.\n\nPlease log into the gateway web UI or MyHOME Suite and configure a valid timezone, then restart the gateway."
+    },
+    "unknown_gateway_model": {
+      "title": "Unknown gateway device type code ({code})",
+      "description": "The gateway reported a hardware device type code ({code}) that is unknown to the MyHOME integration. Please click 'Learn More' to open a GitHub issue and attach a diagnostic trace so we can add support for this model."
+    },
     "bus_collision_storm": {
       "title": "High SCS bus collision rate detected ({count} NACKs)",
       "description": "An unusually high rate of bus collisions or NACK frames was detected on the SCS bus. Please check actuator wiring and physical bus termination."

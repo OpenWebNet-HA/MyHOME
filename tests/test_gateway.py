@@ -1288,7 +1288,12 @@ def test_handle_gateway_diagnostics_dimension_15_and_16(gateway_handler, mock_co
 
     mock_dev_reg.async_update_device.side_effect = _track_model
 
-    with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dev_reg),          patch("custom_components.myhome.gateway.async_create_identity_issue") as create_issue,          patch("custom_components.myhome.gateway.async_create_identity_corrected_issue"),          patch("custom_components.myhome.gateway.async_delete_identity_issue"):
+    with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dev_reg), \
+         patch("custom_components.myhome.gateway.async_create_identity_issue") as create_issue, \
+         patch("custom_components.myhome.gateway.async_create_identity_corrected_issue"), \
+         patch("custom_components.myhome.gateway.async_delete_identity_issue"), \
+         patch("custom_components.myhome.gateway.async_create_unknown_model_issue") as create_unknown, \
+         patch("custom_components.myhome.gateway.async_delete_unknown_model_issue") as delete_unknown:
         # 1. Dimension 15: type 2 = MHServer (2006 table) contradicts the announced "MYHOME"
         #    model -> flagged as a conflict, model untouched, entry not rewritten.
         msg_dim15 = OWNEvent.parse("*#13**15*2##")
@@ -1297,6 +1302,7 @@ def test_handle_gateway_diagnostics_dimension_15_and_16(gateway_handler, mock_co
         assert gateway_handler._who13["model"] == "MHServer"
         assert gateway_handler._identity_conflict is not None
         create_issue.assert_called_once()
+        delete_unknown.assert_called_with(gateway_handler.hass, "entry_diag")
         gateway_handler.hass.config_entries.async_update_entry.assert_not_called()
         assert not mock_dev_reg.async_update_device.called
 
@@ -1310,11 +1316,12 @@ def test_handle_gateway_diagnostics_dimension_15_and_16(gateway_handler, mock_co
         gateway_handler._handle_gateway_diagnostics(msg_dim15)
         create_issue.assert_called_once()
 
-        # 4. Unknown type (999): recorded, nothing changes
+        # 4. Unknown type (999): recorded, repair issue created
         mock_dev_reg.reset_mock()
         gateway_handler._handle_gateway_diagnostics(OWNEvent.parse("*#13**15*999##"))
         assert gateway_handler._who13["code"] == "999"
         assert gateway_handler.model == "MYHOME"
+        create_unknown.assert_called_once_with(gateway_handler.hass, "entry_diag", "999")
 
         # 5. Same firmware again (no duplicate update)
         mock_dev_reg.reset_mock()
@@ -1351,6 +1358,60 @@ def test_device_type_4_is_mh200_not_mh200n(gateway_handler):
         gateway_handler._handle_gateway_diagnostics(OWNEvent.parse("*#13**15*4##"))
     assert gateway_handler.gateway.model_name == "MH200"
     assert not mock_dev_reg.async_update_device.called
+
+
+def test_handle_gateway_diagnostics_dimension_0(gateway_handler, mock_config_entry):
+    """Test WHO=13 dimension 0 and dimension 22 (timezone) issues."""
+    from OWNd.message import OWNEvent
+
+    gateway_handler.config_entry.entry_id = "entry_diag"
+
+    with patch("custom_components.myhome.gateway.async_create_unconfigured_timezone_issue") as create_issue, \
+         patch("custom_components.myhome.gateway.async_delete_unconfigured_timezone_issue") as delete_issue:
+
+        # 1. Dim 0: 999 sentinel triggers issue
+        msg = OWNEvent.parse("*#13**0*23*52*03*999##")
+        gateway_handler._handle_gateway_diagnostics(msg)
+        create_issue.assert_called_once_with(gateway_handler.hass, "entry_diag", gateway_handler.config_entry.title)
+        delete_issue.assert_not_called()
+
+        create_issue.reset_mock()
+
+        # 2. Dim 0: Valid timezone (+1) resolves issue
+        msg_valid = OWNEvent.parse("*#13**0*23*52*03*001##")
+        gateway_handler._handle_gateway_diagnostics(msg_valid)
+        create_issue.assert_not_called()
+        delete_issue.assert_called_once_with(gateway_handler.hass, "entry_diag")
+
+        delete_issue.reset_mock()
+
+        # 3. Dim 22: 999 sentinel triggers issue
+        msg_dim22_999 = OWNEvent.parse("*#13**22*23*52*03*999*4*17*09*2026##")
+        gateway_handler._handle_gateway_diagnostics(msg_dim22_999)
+        create_issue.assert_called_once_with(gateway_handler.hass, "entry_diag", gateway_handler.config_entry.title)
+        delete_issue.assert_not_called()
+
+        create_issue.reset_mock()
+
+        # 4. Dim 22: Valid timezone (+1) resolves issue
+        msg_dim22_valid = OWNEvent.parse("*#13**22*23*52*03*001*4*17*09*2026##")
+        gateway_handler._handle_gateway_diagnostics(msg_dim22_valid)
+        create_issue.assert_not_called()
+        delete_issue.assert_called_once_with(gateway_handler.hass, "entry_diag")
+
+        delete_issue.reset_mock()
+
+        # 5. Short dimension (no timezone field) does nothing
+        msg_short = OWNEvent.parse("*#13**0*23*52*03##")
+        gateway_handler._handle_gateway_diagnostics(msg_short)
+        create_issue.assert_not_called()
+        delete_issue.assert_not_called()
+
+        # 6. Empty timezone field does not trigger create
+        msg_empty = OWNEvent.parse("*#13**0*23*52*03*##")
+        gateway_handler._handle_gateway_diagnostics(msg_empty)
+        create_issue.assert_not_called()
+
 
 
 def test_compat_gateway_timezone():

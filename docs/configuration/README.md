@@ -1,50 +1,78 @@
-# MyHOME Integration Configuration Guides
+# Getting Started & Configuration Overview
 
-Welcome to the configuration documentation for the **MyHOME Home Assistant Integration** (v2.0 Beta / Phase 1 Architecture).
-
-This directory provides comprehensive, step-by-step guides for connecting, configuring, and automating your Legrand / BTicino MyHOME SCS bus installation using Home Assistant.
-
-> [!NOTE]
-> **Branch & Architecture Note**: This documentation reflects the next-generation **v2.0 architecture** (`v2-phase1-architecture`).
-> In v2.0, setup and device management are **100% UI-first** through Home Assistant's native Config Flow and Options Flow.
+This guide walks you through onboarding, configuring, and automating your Legrand / BTicino MyHOME SCS installation with Home Assistant using the **v2.0 UI-first architecture**.
 
 ---
 
-## 📚 Configuration Guides Directory
+## 📋 Prerequisites
 
-| Guide | Target Subsystem / Feature | OpenWebNet WHO | Key Topics Covered |
-| :--- | :--- | :---: | :--- |
-| [**Gateways & Connection Setup**](gateways.md) | Gateway Setup & Network | `WHO = 13` | IP gateways (F454, MyHomeServer1, MH200N/201/202), serial interfaces (3578), OpenWebNet password & HMAC authentication, connection resilience, keep-alive, and worker pool sizing. |
-| [**Sound System / Media Player**](media_player.md) | Diffusione Sonora | `WHO = 16` | F441/F441M hardware analog audio matrix, Dynamic Proxy for Music Assistant / Spotify, decoder pool management, gain staging (anti-hiss), and physical wall-panel routing. |
-| [**CEN & CEN+ Device Triggers**](cen_cenplus.md) | Scenario Pushbuttons | `WHO = 15`, `WHO = 25` | Native Home Assistant UI Device Triggers, physical button numbers 0–31, short press, long press, release, rotary dials, and automation blueprints. |
-| [**Lovelace Bus Monitor Card**](bus_monitor.md) | In-Band Diagnostic Monitor | All WHOs | Native Lovelace card (`custom:myhome-bus-card`), 500-frame circular ring buffer, real-time live streaming, WHO filtering, 1-click **Sweep Bus**, and 1-click **Export Trace**. |
-| [**Lovelace Dashboard Recipes**](lovelace_recipes.md) | UI & Dashboard Showcase | All WHOs | Dynamic auto-collapsing active lights, multiroom audio player cards, perimeter security status, and equipment runtime tracker. |
-| [**Integration Services Reference**](services.md) | Integration Actions | All WHOs | Reference for all nine services: `send_message`, `turn_on_timed` (hardware SCS timers), `sync_time`, `start_sending_instant_power`, `sweep_bus`, `calibrate_cover`, `stop_cover_calibration`, `set_cover_travel_time`, `reset_cover_travel_time`. |
-| [**Runtime Behaviour Notes**](runtime_behaviour.md) | Polling, discovery & runtime learning | `WHO = 1, 2, 4, 13, 15, 25` | Profile-gated startup discovery, silent reconnect cycles, reauth flow, timed-cover echo model (`travel_time`), push-driven temperature probes (`WHERE ≥ 100`), additive light colour modes (DALI DT8), `via_device_id` links, OWNd version handling. |
-| [**Supported Functions**](supported_functions.md) | Feature matrix | All WHOs | What every subsystem and platform supports, read-only, or does not support. |
-| [**Known Limitations**](known_limitations.md) | Boundaries & workarounds | All WHOs | Single-session gateways, WHO 1 group sync, timed-cover position, alarm zones, naming, with the reason and workaround for each. |
-| [**Troubleshooting**](troubleshooting.md) | Symptoms → fixes | All WHOs | Setup / reauth failures, wrong gateway model, unknown lights, NACK storms, cover calibration, card not loading, how to attach diagnostics. |
-| [**Use Cases**](use_cases.md) | End-to-end scenarios | All WHOs | Existing plant onboarding, CEN+ buttons driving other devices, calibrated shutters, hardware timers, Music Assistant multiroom, central-unit heating, alarm, energy dashboard. |
+Before adding the integration to Home Assistant, ensure:
+1. **Network Connectivity**: Your OpenWebNet IP gateway (F454, MyHomeServer1, MH200N/201/202, F453AV) is connected to your local network and powered on.
+2. **Fixed IP Address**: A static IP address or permanent DHCP lease reservation on your local router is strongly recommended.
+3. **OpenWebNet Password**:
+   - For standard gateways (F454, MH201): Note your numeric (4 or 9 digits) or alphanumeric password configured in MyHOME_Suite or TiMyHome.
+   - For MyHomeServer1: Note the installer password configured via the MyHOME_Up app.
+   - If open LAN authentication is disabled on the gateway, no password is required.
+4. **Integration Installed**: The MyHOME custom component is installed (see the [Installation Guide](../getting-started/installation.md)).
 
 ---
 
-## 🚀 Quick Setup Overview
+## 🚀 Step 1: Add the Gateway via Config Flow
 
-### 1. Add Integration via UI
-1. Navigate to **Settings** -> **Devices & Services** -> **Add Integration**.
-2. Search for **MyHOME**.
-3. Enter your gateway IP address (or serial port), port (default `20000`), and OpenWebNet password (if configured).
-4. Select your gateway model (e.g., `MyHomeServer1`, `F454`, `MH201`).
+In v2, gateway setup is **100% UI-first**:
 
-### 2. Auto-Discovery
-Once the gateway is added:
-- The integration connects to the gateway event session (`*99*1##`) and command session (`*99*0##`).
-- Existing configured entities (lights, covers, climate probes, switches) are discovered and created automatically.
-- The gateway itself is a device (model, firmware, identification source); connection and queue telemetry is in the diagnostics download and the bus-monitor card, not in entities.
+1. In Home Assistant, navigate to **Settings → Devices & Services**.
+2. If your gateway is discovered automatically via SSDP or mDNS, click **Configure** on the discovery card.
+3. If adding manually:
+   - Click **Add Integration** in the bottom right corner.
+   - Search for **MyHOME** and select it.
+4. Fill in the connection parameters:
+   - **Host**: Gateway IP address (e.g. `192.168.1.50`).
+   - **Port**: `20000` (default OpenWebNet port).
+   - **Password**: Your OpenWebNet or HMAC authentication password.
+5. Click **Submit**. Home Assistant will establish the command session (`*99*0##`) and event listening session (`*99*1##`), verify the gateway hardware identity, and create the gateway device entry.
 
-### 3. Adjust Options
-Access **Configure** on the integration card to fine-tune:
-- **Worker Concurrency**: Number of asynchronous command workers (default: `1`).
-- **Dimmer Transition Mode**: `software_stepped` (reliable smooth software stepping) vs. `native` hardware fade.
-- **Dynamic Proxy Decoders**: Map network audio decoders (Music Assistant, Squeezelite) to physical F441 matrix inputs.
-- **Event Bus Broadcasting**: Toggle whether raw bus events are published to the global Home Assistant event bus (`myhome_event`).
+For full parameter specifications and troubleshooting, see [Gateways & Connection Setup](gateways.md).
+
+---
+
+## 🔍 Step 2: First Bus Discovery & Device Creation
+
+Once connected:
+* **Automatic Bus Scanning**: The integration queries the SCS bus across supported subsystems (`WHO = 1, 2, 4, 15, 18, 25`).
+* **Device Registry Linking**: Discovered actuators, thermostats, and sensors are automatically grouped and linked to your gateway device via Home Assistant's `via_device_id` registry model.
+* **Non-Destructive Transition**: If you have an existing `/config/myhome.yaml` file from v0.9.4, entity names and physical SCS groups (`#G`) are read on startup as a compatibility overlay.
+* **Organizing Entities**: Open **Settings → Devices & Services → Entities** to customize entity names, assign rooms/areas (e.g. *Living Room*, *Kitchen*), and set custom icons.
+
+---
+
+## ⚙️ Step 3: Tune Integration Options
+
+Fine-tune runtime parameters by clicking **Configure** on the MyHOME integration card:
+
+* **Command Worker Concurrency**: Number of asynchronous command workers (default: `1`). Increase to `2`–`4` for high-throughput multi-session gateways like F454 or MHS1.
+* **Dimmer Transition Mode**: Choose between `software_stepped` (smooth 100-step software stepping managed by Home Assistant) and `native` (actuator hardware fade ramp).
+* **Event Bus Broadcasting**: Toggle whether raw bus frames are emitted as `myhome_event` events to Home Assistant for custom event automations.
+* **Dynamic Proxy Decoders**: Map network audio decoders (Music Assistant, Squeezelite) to physical F441 matrix source inputs for Diffusione Sonora.
+
+---
+
+## 📚 Detailed Subsystem Guides
+
+Explore dedicated guides for each MyHOME subsystem:
+
+| Subsystem / Feature | OpenWebNet WHO | Documentation Guide |
+| :--- | :---: | :--- |
+| **Gateways & Hardware Identification** | `WHO = 13` | [Gateways & Connection Setup](gateways.md) • [Gateway Identification](gateway-identification.md) |
+| **Lighting & Dimmers** | `WHO = 1` | [Lights & Dimmers Guide](lights.md) |
+| **Motorized Covers & Shutters** | `WHO = 2` | [Covers & Shutters Guide](covers.md) |
+| **Heating & Climate Control** | `WHO = 4` | [Climate & Heating Guide](climate.md) |
+| **Diffusione Sonora (Sound System)** | `WHO = 16` | [Sound System / Media Player Guide](media_player.md) |
+| **Scenario Pushbuttons & Rotary Dials** | `WHO = 15`, `WHO = 25` | [CEN & CEN+ Device Triggers Guide](cen_cenplus.md) |
+| **Switches, Relays & Sockets** | `WHO = 1` | [Switches & Relays Guide](switches.md) |
+| **Electrical Energy & Power Meters** | `WHO = 18` | [Sensors & Energy Guide](sensors.md) |
+| **Dry Contacts & Motion Detectors** | `WHO = 25`, `WHO = 1` | [Binary Sensors & Contacts Guide](binary-sensors.md) |
+| **Burglar Alarm Central Units** | `WHO = 5` | [Burglar Alarm Guide](alarm.md) |
+| **Integration Service Actions** | All WHOs | [Services Action Reference](services.md) |
+| **In-Band Bus Monitor** | All WHOs | [Lovelace Bus Monitor Card](bus_monitor.md) |
+| **Troubleshooting & Known Limits** | All WHOs | [Troubleshooting Guide](troubleshooting.md) • [Known Limitations](known_limitations.md) |

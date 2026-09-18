@@ -25,13 +25,15 @@ The MyHOME integration communicates with SCS bus gateways over TCP/IP or RS232/U
 - If discovered automatically, Home Assistant displays a notification prompting to configure the discovered gateway.
 - If configuring manually: Go to **Settings** -> **Devices & Services** -> **Add Integration** -> search **MyHOME**.
 
-### Step 2: Connection Parameters
-- **Host**: IP address of your gateway on the local network (e.g., `192.168.1.50`). A static IP or DHCP reservation is strongly advised.
-- **Port**: Default is `20000` (standard OpenWebNet port).
-- **Password**:
-  - Leave blank if your gateway has authentication disabled (open LAN).
-  - Enter your 4-digit or 9-digit numeric OpenWebNet password, or alphanumeric password configured in TiMyHome / MyHOME_Suite.
-  - For **MyHomeServer1**, enter the installer OpenWebNet password configured in the MyHOME_Up app.
+### Step 2: Installation Parameters Reference
+
+| Parameter | Key | Type | Default | Description |
+| :--- | :--- | :---: | :---: | :--- |
+| **Host** | `host` | String | - | IPv4 address or hostname of the OpenWebNet gateway (e.g. `192.168.1.50`). A static IP or permanent DHCP reservation is strongly advised. |
+| **Port** | `port` | Integer | `20000` | TCP port for the OpenWebNet service (standard default is `20000`). |
+| **Password** | `password` | String | None | OpenWebNet password. Can be numeric (4 or 9 digits) or alphanumeric depending on gateway model and firmware. For **MyHomeServer1**, use the installer password configured in MyHOME_Up. Leave blank if open LAN is active. |
+| **Serial Device** | `device` | String | None | Port path (e.g. `/dev/ttyUSB0` or `COM3`) when connecting via BTicino 3578 USB/Serial interface. |
+| **Gateway Model** | `model` | Select | Auto-detected | Hardware model (e.g. `MyHomeServer1`, `F454`, `MH201`, `F453AV`). Auto-detected during handshake, or selected manually. |
 
 ---
 
@@ -105,7 +107,23 @@ See [Runtime Behaviour Notes](runtime_behaviour.md) for the reasoning behind eac
 
 ---
 
-## 🪪 How the gateway model is identified
+## Gateway Timezone Configuration
+
+OpenWebNet gateways manage an internal real-time clock (RTC) queried via WHO=13 dimension 0 (`*#13**0##`) or dimension 22 (`*#13**22##`). When the timezone has not been configured in the gateway's management interface, the gateway emits a placeholder sentinel value `999` in the timezone field (e.g. `*#13**0*<HH>*<MM>*<SS>*999##` or `*#13**22*...*999*...##`).
+
+This placeholder can cause date and time parsing failures or dropped gateway diagnostic messages. When the integration detects this sentinel, it registers a Home Assistant Repair issue advising that the gateway requires configuration. (See also the [Wiki guide on Gateway Timezone Configuration](https://github.com/OpenWebNet-HA/MyHOME/wiki/Gateway-Timezone-Configuration)).
+
+### How to resolve:
+1. Log into the gateway's web administration interface, or open **MyHOME_Suite** / **TiMyHome** / **MyHOME_Up**.
+2. Navigate to the **Date & Time** or **Clock** settings.
+3. Configure the correct local time and timezone (or enable NTP synchronization if supported by your gateway).
+4. Save the configuration and reboot or restart the gateway.
+
+Once the gateway responds with a valid timezone offset, the repair issue automatically resolves and clears from your Home Assistant Repairs dashboard.
+
+---
+
+## How the gateway model is identified
 
 The model label decides the gateway profile (command sessions, pacing, queue size, which subsystems are queried) and appears in the entry title, the device registry, diagnostics and every bus-monitor export — so it must be right, and it must say *how* it was established.
 
@@ -142,3 +160,20 @@ A stray `__init__.py` / `manifest.json` in the root of `custom_components` turns
 
 Likewise keep backups **outside** `custom_components` (e.g. `/config/myhome_backup/`). A copy such as `custom_components/myhome_backup_2026…/` registers a second `myhome` domain: the loader logs *We found a custom integration myhome* twice and may load the backup instead of the real one (duplicate CEN units, stale code).
 - **Bus Monitor Tap**: Zero-overhead in-band packet tap that copies incoming and outgoing frames directly to the diagnostic Lovelace bus card without opening additional sockets.
+
+---
+
+## ⚙️ Runtime Options Flow Parameters
+
+You can adjust integration runtime parameters at any time without re-adding the gateway:
+1. Navigate to **Settings → Devices & Services → MyHOME**.
+2. Click **Configure** on the gateway integration card.
+
+| Option | Key | Type | Default | Description |
+| :--- | :--- | :---: | :---: | :--- |
+| **Command Worker Concurrency** | `worker_count` | Integer (1–4) | `1` | Number of concurrent asynchronous command workers. Set to `1` on single-session scenario programmers (MH200/MH200N) to prevent command collision; can be increased to `2`–`4` on modern multi-session gateways (F454, MHS1). |
+| **Dimmer Transition Mode** | `transition_mode` | Select | `software_stepped` | `software_stepped` (smooth 100-step software interpolation managed by Home Assistant) vs `native` (hardware fade execution on F418 modules). |
+| **Event Bus Broadcasting** | `generate_events` | Boolean | `True` | Emits raw bus frames as `myhome_event` events to the Home Assistant global event bus for custom automations. |
+| **Broadcast Re-sync** | `broadcast_resync` | Boolean | `True` | Automatically triggers a targeted query when general/area broadcast commands (`WHERE = 0` or area addresses) are detected on the bus to keep individual entity states synchronized. |
+| **Dynamic Proxy Decoders** | `decoders` | Mapping | None | Maps external software audio players (e.g. Music Assistant, Squeezelite) to physical F441 audio matrix source inputs for Diffusione Sonora (`WHO = 16`). |
+

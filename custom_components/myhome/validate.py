@@ -112,10 +112,10 @@ class Area(object):
         self.msg = msg
 
     def __call__(self, v):  # type: ignore
-        if isinstance(v, str) and v in ["00", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]:
+        if isinstance(v, str) and v in ["00", "1", "2", "3", "4", "5", "6", "7", "8", "9", "100"]:
             return v
         else:
-            raise Invalid(f"Invalid Area WHERE {v}, it must be a string in [00, 1-9, 10].")
+            raise Invalid(f"Invalid Area WHERE {v}, it must be a string in [00, 1-9, 100].")
 
     def __repr__(self):  # type: ignore
         return "Where(%s, msg=%r)" % ("String", self.msg)

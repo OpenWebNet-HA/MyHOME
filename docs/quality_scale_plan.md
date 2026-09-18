@@ -3,7 +3,7 @@
 _Status on 2026-09-14 (`scripts/quality_scale_report.py`): **no tier reached yet** — 52/54 rules satisfied (Bronze 19/20, Silver 10/10, Gold 21/21, Platinum 2/3). Phases 0–4 are done; 🥉 Bronze is blocked only by `brands` (an external PR), Platinum by `strict-typing`. There is no "Diamond" tier in the official scale; the top is 🏆 Platinum. Tiers are formally awarded only by Home Assistant core review — this plan gets the self-audit there, which is the precondition for the upstream submission in ROADMAP Phase 5._
 
 Reference: <https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/>  
-Manifest: [`custom_components/myhome/quality_scale.yaml`](../custom_components/myhome/quality_scale.yaml)
+Manifest: [`custom_components/myhome/quality_scale.yaml`](https://github.com/OpenWebNet-HA/MyHOME/blob/v2-phase1-architecture/custom_components/myhome/quality_scale.yaml)
 
 ## Phase 0 — Land what's in flight (prerequisite) — ✅ done
 

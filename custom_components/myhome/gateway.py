@@ -78,7 +78,11 @@ from .discovery import Address, parse_unique_id
 from .repairs import (
     async_create_identity_corrected_issue,
     async_create_identity_issue,
+    async_create_unconfigured_timezone_issue,
+    async_create_unknown_model_issue,
     async_delete_identity_issue,
+    async_delete_unconfigured_timezone_issue,
+    async_delete_unknown_model_issue,
 )
 
 _orig_gw_tz = _ownd_msg._gateway_timezone
@@ -698,6 +702,17 @@ class MyHOMEGatewayHandler:
         dim = getattr(message, "dimension", getattr(message, "_dimension", None))
         dim_val = getattr(message, "dimension_value", getattr(message, "_dimension_value", []))
 
+        # ── Dimension 0 & 22: Time & Timezone ────────────────────────────────
+        if dim in (0, 22) and dim_val:
+            # Check if timezone is 999. In both dimension 0 and 22, dim_val[3] carries the timezone.
+            # The OWNd < 2.0.0b7 compat shim clears the time_zone property, but leaves dim_val[3] as "999".
+            if len(dim_val) > 3 and str(dim_val[3]) == "999":
+                if self.config_entry:
+                    async_create_unconfigured_timezone_issue(self.hass, self.config_entry.entry_id, self.config_entry.title)
+            elif len(dim_val) > 3 and str(dim_val[3]) != "":
+                if self.config_entry:
+                    async_delete_unconfigured_timezone_issue(self.hass, self.config_entry.entry_id)
+
         # ── Dimension 15: Device type (MODEL REQUEST) ────────────────────
         if dim == 15 and dim_val:
             self._handle_device_type(str(dim_val[0]))
@@ -752,9 +767,14 @@ class MyHOMEGatewayHandler:
                 "keeping model `%s`. Please attach a trace to an issue so the code can be documented.",
                 self.log_id, raw_code, configured,
             )
+            if entry_id:
+                async_create_unknown_model_issue(self.hass, entry_id, raw_code)
             self._set_conflict(None, entry_id)
             self._sync_device_registry_model(configured)
             return
+
+        if entry_id:
+            async_delete_unknown_model_issue(self.hass, entry_id)
 
         is_ambiguous = raw_code in WHO13_AMBIGUOUS_DEVICE_TYPES
         compatibility = is_who13_code_compatible(raw_code, configured)

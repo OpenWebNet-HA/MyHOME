@@ -1,6 +1,6 @@
 # Known Limitations
 
-Things the integration does not do, or does with a caveat, and the reason. Where a limitation is a design decision it links to the discussion; where it is a gap it names the trace or hardware needed to close it (see the [Roadmap](../../ROADMAP.md) and [RFC #248](https://github.com/orgs/OpenWebNet-HA/discussions/248)). The full feature matrix is in [Supported Functions](supported_functions.md).
+Things the integration does not do, or does with a caveat, and the reason. Where a limitation is a design decision it links to the discussion; where it is a gap it names the trace or hardware needed to close it (see the [Roadmap](../roadmap.md) and [RFC #248](https://github.com/orgs/OpenWebNet-HA/discussions/248)). The full feature matrix is in [Supported Functions](supported_functions.md).
 
 ## Bus and gateway
 
@@ -9,7 +9,7 @@ Things the integration does not do, or does with a caveat, and the reason. Where
 | **One command session per gateway on MH200 / MH200N / MH201.** Commands are queued and paced (150 / 80 / 60 ms). | Those gateways refuse or drop overlapping sessions; the pacing is what keeps them alive. | Keep the worker count at the profile default. F454 / F455 / MyHOMEServer1 / MH202 take more workers. |
 | **Lights are not hydrated at startup.** State appears when the actuator first reports, or after `myhome.sweep_bus`. | `*#1*0##` is not a valid OpenWebNet request; there is no general status query for WHO 1. | Call `myhome.sweep_bus` from an automation on `homeassistant.start`, or turn something on. |
 | **Entities can be unavailable for up to 60 s after a gateway drop.** | The availability grace period hides short reconnects instead of flapping every entity. | Nothing needed; a longer outage marks entities unavailable and they recover on reconnect. |
-| **A gateway's model can be mislabelled.** | Only the WHO 13 device-type reply is available in-band, and its official table stops at 2006 hardware. | The [identification rules](gateways.md#-how-the-gateway-model-is-identified) correct manual choices and raise a repair issue when evidence contradicts SSDP; use the reconfigure flow to set the model explicitly. |
+| **A gateway's model can be mislabelled.** | Only the WHO 13 device-type reply is available in-band, and its official table stops at 2006 hardware. | The [identification rules](gateway-identification.md) correct manual choices and raise a repair issue when evidence contradicts SSDP; use the reconfigure flow to set the model explicitly. |
 | **Serial (Legrand 3578) gateways are not discovered.** | No SSDP on a USB port. | Add the integration manually and pick the serial transport. |
 | **No HMAC on MH200 / MH200N / MH201 / AM4890 / 3578.** | Those gateways only implement the numeric (SHA-less) password. | Configure the numeric OpenWebNet password on the gateway. |
 

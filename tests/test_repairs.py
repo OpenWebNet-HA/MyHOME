@@ -87,3 +87,51 @@ async def test_identity_repair_issues_lifecycle(hass: HomeAssistant) -> None:
     issue = issue_registry.async_get_issue(DOMAIN, f"{ISSUE_GATEWAY_IDENTITY_CORRECTED}_{entry_id}")
     assert issue is not None
     assert issue.translation_placeholders == {"previous": "F454", "corrected": "F452", "code": "6"}
+
+
+async def test_unknown_model_issues_lifecycle(hass: HomeAssistant) -> None:
+    """Test the unknown model repair issue lifecycle."""
+    from custom_components.myhome.repairs import (
+        ISSUE_UNKNOWN_GATEWAY_MODEL,
+        async_create_unknown_model_issue,
+        async_delete_unknown_model_issue,
+    )
+
+    issue_registry = ir.async_get(hass)
+    entry_id = "entry_unknown"
+
+    async_create_unknown_model_issue(hass, entry_id, "999")
+    issue = issue_registry.async_get_issue(DOMAIN, f"{ISSUE_UNKNOWN_GATEWAY_MODEL}_{entry_id}")
+    assert issue is not None
+    assert issue.severity == ir.IssueSeverity.WARNING
+    assert issue.translation_key == ISSUE_UNKNOWN_GATEWAY_MODEL
+    assert issue.translation_placeholders["code"] == "999"
+    assert not issue.is_fixable
+    assert issue.learn_more_url == "https://github.com/OpenWebNet-HA/MyHOME/issues/new?template=device_request.yml"
+
+    async_delete_unknown_model_issue(hass, entry_id)
+    assert issue_registry.async_get_issue(DOMAIN, f"{ISSUE_UNKNOWN_GATEWAY_MODEL}_{entry_id}") is None
+
+
+async def test_unconfigured_timezone_issues_lifecycle(hass: HomeAssistant) -> None:
+    """Test the unconfigured timezone repair issue lifecycle."""
+    from custom_components.myhome.repairs import (
+        ISSUE_UNCONFIGURED_TIMEZONE,
+        async_create_unconfigured_timezone_issue,
+        async_delete_unconfigured_timezone_issue,
+    )
+
+    issue_registry = ir.async_get(hass)
+    entry_id = "entry_tz"
+
+    async_create_unconfigured_timezone_issue(hass, entry_id, "Mock Gateway")
+    issue = issue_registry.async_get_issue(DOMAIN, f"{ISSUE_UNCONFIGURED_TIMEZONE}_{entry_id}")
+    assert issue is not None
+    assert issue.severity == ir.IssueSeverity.WARNING
+    assert issue.translation_key == ISSUE_UNCONFIGURED_TIMEZONE
+    assert not issue.is_fixable
+    assert issue.translation_placeholders == {"gateway": "Mock Gateway"}
+    assert issue.learn_more_url == "https://openwebnet-ha.github.io/MyHOME/beta/diagnostics/repair-issues/#unconfigured-timezone"
+
+    async_delete_unconfigured_timezone_issue(hass, entry_id)
+    assert issue_registry.async_get_issue(DOMAIN, f"{ISSUE_UNCONFIGURED_TIMEZONE}_{entry_id}") is None

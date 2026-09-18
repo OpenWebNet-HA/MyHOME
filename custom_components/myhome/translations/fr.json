@@ -183,5 +183,15 @@
         }
       }
     }
+  },
+  "issues": {
+    "unconfigured_timezone": {
+      "title": "Fuseau horaire non configuré sur la passerelle MyHOME ({gateway})",
+      "description": "La passerelle MyHOME {gateway} signale un fuseau horaire non configuré (code réservé '999'). Cela peut entraîner des erreurs d'analyse de date et d'heure ou la perte de messages de diagnostic de la passerelle.\n\nVeuillez vous connecter à l'interface web de la passerelle (ou MyHOME_Suite / MyHOME_Up) pour définir un fuseau horaire valide, puis redémarrez la passerelle."
+    },
+    "unknown_gateway_model": {
+      "title": "Code de type d'appareil de passerelle inconnu ({code})",
+      "description": "La passerelle a signalé un code de type d'appareil matériel ({code}) inconnu pour l'intégration MyHOME. Veuillez cliquer sur « En savoir plus » pour ouvrir un ticket GitHub et joindre une trace de diagnostic afin que nous puissions ajouter la prise en charge de ce modèle."
+    }
   }
 }

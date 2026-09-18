@@ -183,5 +183,15 @@
         }
       }
     }
+  },
+  "issues": {
+    "unconfigured_timezone": {
+      "title": "Niet-geconfigureerde tijdzone op MyHOME-gateway ({gateway})",
+      "description": "De MyHOME-gateway {gateway} meldt een niet-geconfigureerde tijdzone (tijdelijke code '999'). Dit kan leiden tot fouten bij het verwerken van datum en tijd of het verliezen van diagnostische gatewayberichten.\n\nLog in op de webinterface van de gateway (of MyHOME_Suite / MyHOME_Up) om een geldige tijdzone in te stellen en herstart vervolgens de gateway."
+    },
+    "unknown_gateway_model": {
+      "title": "Onbekende apparaattypecode voor gateway ({code})",
+      "description": "De gateway heeft een hardware-apparaattypecode ({code}) gerapporteerd die onbekend is bij de MyHOME-integratie. Klik op 'Meer informatie' om een GitHub-issue te openen en een diagnostische trace bij te voegen, zodat we ondersteuning voor dit model kunnen toevoegen."
+    }
   }
 }

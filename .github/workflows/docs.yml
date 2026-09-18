@@ -1,0 +1,75 @@
+name: Documentation (MkDocs & Mike)
+
+on:
+  push:
+    branches:
+      - master
+      - v2-phase1-architecture
+    paths:
+      - 'docs/**'
+      - 'docs-v0.9/**'
+      - 'mkdocs*.yml'
+      - 'requirements-docs.txt'
+      - '.github/workflows/docs.yml'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    name: Build & Deploy Versioned Docs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository with full git history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install documentation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-docs.txt
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Deploy versioned docs via mike
+        run: |
+          # 1. Deploy the v0.9.4 legacy documentation (production master)
+          echo "Deploying v0.9.4 legacy documentation..."
+          mike deploy --push --update-aliases -F mkdocs-v0.9.yml 0.9.4 legacy v0.9 latest -t "v0.9.4 (legacy)"
+
+          # 2. Deploy v2 (beta) documentation
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION="${{ github.ref_name }}"
+            # Check if this is a final stable 2.0 release (without beta/alpha/rc tag)
+            if echo "${VERSION}" | grep -Eq '^v?2\.[0-9]+\.[0-9]+$'; then
+              echo "Deploying official stable release: ${VERSION}"
+              mike deploy --push --update-aliases -F mkdocs.yml "${VERSION}" stable latest -t "${VERSION} (stable)"
+              mike set-default --push stable
+            else
+              echo "Deploying beta/preview release: ${VERSION}"
+              mike deploy --push --update-aliases -F mkdocs.yml 2.0 beta dev -t "v2 (beta)"
+              mike set-default --push latest
+            fi
+          else
+            echo "Deploying branch ${{ github.ref_name }} as v2 (beta) (aliases: beta, dev)"
+            mike deploy --push --update-aliases -F mkdocs.yml 2.0 beta dev -t "v2 (beta)"
+            # Default root redirect points to latest (production v0.9.4 until 2.0.0 is released)
+            mike set-default --push latest
+          fi

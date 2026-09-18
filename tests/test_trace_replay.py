@@ -902,6 +902,11 @@ class TestTraceReplayHarness:
         assert handler.bus_monitor.has_frame_since(task_start, direction="rx", raw="*#2*99*10*10*100*001*0##") is False
 
         # 5. Verify entity states from trace status messages
+        # *1*0*10## -> OFF (WHERE 10 point-to-point light, #402)
+        light_10 = hass.states.get("light.light_10")
+        assert light_10 is not None
+        assert light_10.state == "off"
+
         # *1*1*12## -> ON
         light_12 = hass.states.get("light.light_12")
         assert light_12 is not None

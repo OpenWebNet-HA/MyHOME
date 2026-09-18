@@ -120,10 +120,11 @@ async def async_setup_entry(
                 icon_on=cfg.get(CONF_ICON_ON),
             )
 
-        if where in ("0", "00", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"):
+        if where in ("0", "00", "1", "2", "3", "4", "5", "6", "7", "8", "9", "100"):
             # Matches validate.py's General()/Area() validators exactly: a yaml
             # `where` this loose is a broadcast address, not a light - never an
             # auto-discovered entity for a group, area or general address (#368).
+            # Note: Area 10 is '100' on the bus; '10' is Point-to-Point (A=1, PL=0, #402).
             # Not is_apl_address(): plenty of real point-to-point WHEREs (F422
             # sub-bus addresses like "02") are not full APL-feasible and must
             # still build a light (see #256/#257, #288).

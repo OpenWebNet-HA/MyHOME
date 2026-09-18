@@ -161,3 +161,4 @@ quality_scale.json
 
 # Frontend test dependencies
 /node_modules
+site/
