@@ -89,7 +89,6 @@ input[type="search"] { padding-inline-start: 38px;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2390a0a8'><path d='M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5z'/></svg>");
   background-repeat: no-repeat; background-position: 12px 50%; background-size: 18px; }
 label { display: grid; gap: 6px; font-size: 12px; font-weight: 500; color: var(--panel-text-2); }
-.gateway-select { min-width: 240px; max-width: 100%; }
 
 /* ---------- Badges & chips ---------- */
 .badge, .chip, .count {
@@ -111,6 +110,7 @@ label { display: grid; gap: 6px; font-size: 12px; font-weight: 500; color: var(-
 .gateway-grid, .item-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px; }
 .gateway-grid { margin-bottom: 26px; }
 .gateway-card {
+  display: block; width: 100%; text-align: start; font-weight: 400;
   position: relative; overflow: hidden; padding: 18px 20px 16px;
   border: 1px solid var(--panel-border); border-radius: var(--panel-radius);
   background: var(--panel-surface); box-shadow: var(--panel-shadow);
@@ -118,8 +118,12 @@ label { display: grid; gap: 6px; font-size: 12px; font-weight: 500; color: var(-
 }
 .gateway-card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--panel-accent); opacity: .9; }
 .gateway-card:hover { box-shadow: var(--panel-shadow-hover); transform: translateY(-1px); }
+.gateway-card[aria-pressed="true"] { border-color: var(--panel-success); box-shadow: 0 0 0 1px var(--panel-success), var(--panel-shadow); }
+.gateway-card[aria-pressed="true"]::before { background: var(--panel-success); }
+.gateway-address { display: block; overflow-wrap: anywhere; }
+.gateway-name { overflow-wrap: anywhere; min-width: 0; }
 .gateway-card .card-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
-.gateway-card .card-head h2 { display: flex; align-items: center; gap: 9px; font-size: 16px; font-weight: 600; }
+.gateway-card .gateway-name { display: flex; align-items: center; gap: 9px; font-size: 16px; font-weight: 600; }
 .gateway-card .card-head ha-icon { color: var(--panel-accent); --mdc-icon-size: 20px; flex-shrink: 0; }
 .gateway-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; font-size: 12px; color: var(--panel-text-2); }
 .gateway-meta span { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 8px; background: var(--panel-surface-2); font-variant-numeric: tabular-nums; }
@@ -292,7 +296,6 @@ dialog a { color: var(--panel-accent); font-size: 13px; }
   .topbar .button span { display: none; }
   .brand-mark { width: 34px; height: 34px; border-radius: 9px; }
   .heading { display: block; }
-  .gateway-select { margin-top: 16px; }
   h1 { font-size: 23px; }
   .filters { grid-template-columns: 1fr 1fr; gap: 10px; }
   .filters label:first-child { grid-column: 1 / -1; }

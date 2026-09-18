@@ -84,6 +84,7 @@ async function mount(options = {}) {
   return { panel, root: panel.shadowRoot, data, calls, subscriptions, hass };
 }
 
+const selectGateway = (root, entryId) => root.querySelector(`[data-action="select-gateway"][data-id="${entryId}"]`).click();
 const change = (element, value) => {
   element.value = value;
   element.dispatchEvent(new Event(element.type === "search" ? "input" : "change", { bubbles: true }));
@@ -139,11 +140,12 @@ test("secondary-only searches retain disabled flags, area overrides and gateway 
     );
   } });
   change(root.getElementById("category"), "button");
-  assert.equal(root.querySelectorAll(".entity-secondary").length, 3);
+  assert.equal(root.querySelectorAll(".entity-secondary").length, 2);
   assert.equal(root.querySelectorAll(".entity-list > .entity-row").length, 0);
+  selectGateway(root, "two");
   const other = root.querySelector('[data-id="button.two"]').closest(".device-group");
   assert.equal(other.dataset.entry, "two");
-  change(root.getElementById("gateway"), "one");
+  selectGateway(root, "one");
   change(root.getElementById("search"), "button.one");
   assert.equal(root.querySelectorAll(".entity-row").length, 1);
   const row = root.querySelector(".entity-secondary");
@@ -169,20 +171,30 @@ test("gateway, category and inherited area filters retain trigger-only and disab
 });
 
 test("DOM search and gateway selection expose the expected devices and disabled entities", async () => {
-  const { root } = await mount();
+  const { root, panel, data } = await mount();
   assert.equal(root.querySelector('[data-view="entities"]').getAttribute("aria-pressed"), "true");
   assert.equal(root.getElementById("panel-version").textContent, "Pannello v0.20.0");
   assert.equal(root.getElementById("version").textContent, "Integrazione v2.0.0b9");
   root.querySelector('[data-view="entities"]').click();
-  assert.equal(root.querySelectorAll(".device-group").length, 3);
-  change(root.getElementById("gateway"), "one");
+  assert.equal(root.querySelectorAll(".device-group").length, 2);
+  assert.equal(root.querySelector("#gateway"), null);
+  assert.equal(root.querySelectorAll(".gateway-card").length, 2);
+  assert.equal(root.querySelector('.gateway-card[aria-pressed="true"]').dataset.id, "one");
+  selectGateway(root, "one");
   assert.equal(root.querySelectorAll(".device-group").length, 2);
   change(root.getElementById("search"), "25-21");
   assert.equal(root.querySelector(".device-name").textContent, "CEN ingresso");
   change(root.getElementById("search"), "");
-  change(root.getElementById("gateway"), "two");
+  selectGateway(root, "two");
   root.querySelector('[data-view="entities"]').click();
   assert.equal(root.querySelector(".state").textContent, "Disabilitato");
+  assert.equal(root.querySelectorAll(".gateway-card").length, 2);
+  const selected = root.querySelector('.gateway-card[aria-pressed="true"]');
+  assert.equal(selected.dataset.id, "two");
+  selected.focus(); data.gateways[1].title = "Garage aggiornato";
+  await panel._refresh();
+  assert.equal(root.activeElement.dataset.id, "two");
+  assert.equal(root.activeElement.getAttribute("aria-pressed"), "true");
 });
 
 test("home groups mixed sensor WHOs numerically and filters categories without losing unclassified items", async () => {
@@ -196,7 +208,7 @@ test("home groups mixed sensor WHOs numerically and filters categories without l
   assert.match(root.querySelector('[data-who="18"] h2').textContent, /WHO 18 · Gestione energia/);
   assert.equal(root.querySelector('[data-who="99"] h2').textContent, "WHO 99");
   assert.equal(root.querySelector('[data-who="__unknown__"] h2').textContent, "Senza categoria WHO");
-  assert.equal(root.querySelectorAll(".item-card").length, 7);
+  assert.equal(root.querySelectorAll(".item-card").length, 6);
   assert.deepEqual([...root.querySelectorAll("#who-buttons button")].map((button) => button.dataset.who), groups());
   root.querySelector('#who-buttons [data-who="__unknown__"]').click();
   assert.deepEqual(groups(), ["__unknown__"]);
@@ -209,7 +221,7 @@ test("home groups mixed sensor WHOs numerically and filters categories without l
   change(root.getElementById("search"), "temperature");
   assert.equal(root.querySelectorAll(".item-card").length, 0);
   change(root.getElementById("search"), "");
-  change(root.getElementById("gateway"), "two");
+  selectGateway(root, "two");
   assert.equal(root.querySelector('#who-buttons [aria-pressed="true"]').dataset.who, "1");
   assert.deepEqual(groups(), ["1"]);
 });
@@ -273,11 +285,11 @@ test("category navigation recovers from removed categories, empty inventories an
     data.devices = data.devices.filter((device) => device.id !== "cen");
     await panel._refresh();
     assert.equal(root.querySelector('#who-buttons [aria-pressed="true"]').dataset.who, "1");
-    assert.equal(root.querySelectorAll(".item-card").length, 2);
+    assert.equal(root.querySelectorAll(".item-card").length, 1);
     data.devices = [];
     await panel._refresh();
     // Registry orphans remain available even when no devices are registered.
-    assert.equal(root.querySelectorAll(".entity-row").length, 2);
+    assert.equal(root.querySelectorAll(".entity-row").length, 1);
     data.entities = [];
     await panel._refresh();
     assert.equal(root.getElementById("who-navigation").hidden, true);
@@ -287,7 +299,7 @@ test("category navigation recovers from removed categories, empty inventories an
     await panel._refresh();
     assert.equal(root.getElementById("who-navigation").hidden, false);
     root.querySelector('[data-action="toggle-category-view"]').click();
-    assert.equal(root.querySelectorAll(".device-group").length, 3);
+    assert.equal(root.querySelectorAll(".device-group").length, 2);
   } finally {
     Object.defineProperty(window, "localStorage", storage);
   }
@@ -307,7 +319,9 @@ test("entity and device cards display searchable A/PL, bus routes and unknown ad
   const card = (id) => root.querySelector(`[data-id="${id}"]`).closest(".item-card, .device-group");
   const fields = (id) => [...(card(id).querySelector(".address") || card(id).closest(".device-group")?.querySelector(".device-group-header .address")).querySelectorAll("div")].map((field) => [field.querySelector("dt").textContent, field.querySelector("dd").textContent]);
   assert.deepEqual(fields("sensor.lux"), [["Indirizzo:", "0015#4#02"], ["A:", "00"], ["PL:", "15"], ["Interfaccia:", "02"]]);
+  selectGateway(root, "two");
   assert.deepEqual(fields("light.garage"), [["Indirizzo:", "01"], ["A:", "0"], ["PL:", "1"]]);
+  selectGateway(root, "one");
   assert.match(card("sensor.unknown").querySelector(".address").textContent, /Indirizzo: Non disponibile/);
   assert.deepEqual(fields("sensor.energy"), [["Indirizzo:", "52"]]);
   change(root.getElementById("search"), "A:00 PL:15");
@@ -325,6 +339,7 @@ test("entity and device cards display searchable A/PL, bus routes and unknown ad
 test("entity groups use device and gateway identity, share metadata and retain filtered orphans", async () => {
   const { panel, root, data } = await mount({ prepare: (data) => {
     data.devices[0].name_by_user = "Attuatore <sala>";
+    data.devices[0].entry_ids.push("two");
     data.devices[2].name_by_user = "Attuatore <sala>";
     const first = data.entities[0];
     data.entities.push(
@@ -335,19 +350,21 @@ test("entity groups use device and gateway identity, share metadata and retain f
     );
   } });
   const group = (device, entry) => root.querySelector(`.device-group[data-device="${device}"][data-entry="${entry}"]`);
-  assert.equal(root.querySelectorAll(".device-group").length, 5);
+  assert.equal(root.querySelectorAll(".device-group").length, 3);
   const living = group("device-one", "one");
   assert.equal(living.querySelector(".device-name").textContent, "Attuatore <sala>");
   assert.equal(living.querySelector("sala"), null);
   assert.equal(living.querySelectorAll(".entity-row").length, 2);
   assert.equal(living.querySelectorAll(".address").length, 1);
-  assert.match(living.querySelector(".device-group-header").textContent, /Soggiorno · Casa/);
+  assert.match(living.querySelector(".device-group-header").textContent, /Soggiorno/);
   const diagnostic = living.querySelector('[data-id="sensor.diagnostic"]').closest(".entity-row");
   assert.match(diagnostic.textContent, /Esterno/);
   assert.match(diagnostic.textContent, /Disabilitato/);
   assert.match(diagnostic.textContent, /Nascosta/);
   assert.doesNotMatch(living.textContent, /00:03:50/);
+  selectGateway(root, "two");
   assert.match(group("device-one", "two").querySelector(".address").textContent, /22/);
+  selectGateway(root, "one");
   assert.equal(group("", "one").querySelectorAll(".entity-row").length, 2);
   assert.match(group("", "one").querySelector(".device-name").textContent, /senza dispositivo/);
   data.entities.find((entity) => entity.entity_id === "sensor.diagnostic").address = { raw: "12", a: "1", pl: "2", interface: null };
@@ -355,9 +372,9 @@ test("entity groups use device and gateway identity, share metadata and retain f
   assert.equal(group("device-one", "one").querySelectorAll(".entity-row .address").length, 2);
   assert.equal(group("device-one", "one").querySelector(".device-group-header .address"), null);
   change(root.getElementById("search"), "Attuatore");
-  assert.equal(root.querySelectorAll(".device-group").length, 3);
+  assert.equal(root.querySelectorAll(".device-group").length, 1);
   change(root.getElementById("category"), "sensor");
-  assert.equal(root.querySelectorAll(".entity-row").length, 2);
+  assert.equal(root.querySelectorAll(".entity-row").length, 1);
   change(root.getElementById("area"), "outside");
   assert.equal(root.querySelectorAll(".device-group").length, 1);
   assert.equal(root.querySelector(".device-group .count").textContent, "1 Entità");
@@ -371,7 +388,9 @@ test("device headers collapse independently and preserve their state through ref
   assert.equal(root.querySelector('[data-view="devices"]'), null);
   assert.ok([...root.querySelectorAll(".entity-list")].every((list) => list.hidden));
   assert.equal(group("device-one").querySelector('.device-states [data-state="light.sala"]').textContent, "on");
+  selectGateway(root, "two");
   assert.equal(group("device-two").querySelector('.device-states [data-state="light.garage"]').textContent, "Disabilitato");
+  selectGateway(root, "one");
   assert.equal(group("cen").querySelector(".device-states"), null);
   toggle("device-one").click();
   assert.equal(toggle("device-one").getAttribute("aria-expanded"), "true");
@@ -379,7 +398,7 @@ test("device headers collapse independently and preserve their state through ref
   toggle("device-one").click();
   assert.equal(toggle("device-one").getAttribute("aria-expanded"), "false");
   assert.equal(group("device-one").querySelector(".entity-list").hidden, true);
-  assert.equal(group("device-two").querySelector(".entity-list").hidden, true);
+  assert.equal(group("device-two"), null);
   assert.ok(group("device-one").querySelector(".device-group-header .address"));
   group("device-one").querySelector('[data-action="edit-device"]').click();
   const form = root.querySelector("dialog form");
@@ -388,8 +407,8 @@ test("device headers collapse independently and preserve their state through ref
   await tick();
   assert.equal(group("device-one").querySelector(".entity-list").hidden, true);
   assert.equal(group("device-one").querySelector(".device-name").textContent, "Attuatore rinominato");
-  change(root.getElementById("gateway"), "two");
-  change(root.getElementById("gateway"), "");
+  selectGateway(root, "two");
+  selectGateway(root, "one");
   change(root.getElementById("search"), "missing");
   change(root.getElementById("search"), "");
   await panel._refresh();
@@ -410,6 +429,7 @@ test("device headers collapse independently and preserve their state through ref
   assert.match(group("cen").textContent, /Nessuna entità registrata/);
   assert.ok(group("cen").querySelector('[data-action="edit-device"]'));
   toggle("cen").click();
+  selectGateway(root, "one");
   assert.equal(group("cen").querySelector(".entity-list").hidden, false);
 });
 
@@ -438,10 +458,10 @@ test("header states label multiple primary entities and respect secondary catego
   panel.hass = { ...panel.hass, states: { "light.sala": { state: "<off>", attributes: {} } } };
   assert.equal(group().querySelector('.device-states [data-state="light.sala"]').textContent, "HA: <off>");
   assert.equal(group().querySelector('.device-states off'), null);
-  change(root.getElementById("gateway"), "two");
+  selectGateway(root, "two");
   assert.equal(root.querySelector('.device-states [data-state="light.sala"]'), null);
   assert.ok(root.querySelector('.device-states [data-state="light.other"]'));
-  change(root.getElementById("gateway"), "one");
+  selectGateway(root, "one");
   change(root.getElementById("category"), "button");
   assert.equal(root.querySelector('.device-states'), null);
   assert.ok(root.querySelector('[data-id="button.lock"]'));
@@ -514,11 +534,13 @@ test("disconnect discards pending inventory and cleans late registry subscriptio
   assert.ok(subscriptions.every((subscription) => subscription.stopped));
 });
 
-test("bus selection never opens the monitor for an unloaded or ambiguous gateway", async () => {
-  const { root } = await mount();
+test("bus selection never opens the monitor for an unloaded gateway and defaults to the first configured gateway", async () => {
+  const { root, panel } = await mount();
   root.querySelector('[data-view="bus"]').click();
-  assert.match(root.getElementById("monitor").textContent, /Seleziona un gateway/);
-  change(root.getElementById("gateway"), "two");
+  await tick();
+  assert.equal(panel._entryId, "one");
+  assert.ok(root.querySelector("myhome-panel-bus-monitor"));
+  selectGateway(root, "two");
   assert.match(root.getElementById("monitor").textContent, /non è caricato/);
   assert.equal(root.querySelector("myhome-panel-bus-monitor"), null);
 });
@@ -568,42 +590,42 @@ test("bus sweep follows the selected gateway and preserves unscoped Lovelace usa
 test("gateway deep links work on first load, route changes and browser navigation", async () => {
   window.history.replaceState(null, "", "/myhome?entry_id=two");
   const { panel, root } = await mount();
-  assert.equal(root.getElementById("gateway").value, "two");
+  assert.equal(panel._entryId, "two");
   assert.equal(root.querySelectorAll(".device-group").length, 1);
   await panel._refresh();
-  assert.equal(root.getElementById("gateway").value, "two");
+  assert.equal(panel._entryId, "two");
   window.history.pushState(null, "", "/myhome?entry_id=one");
   window.dispatchEvent(new Event("location-changed"));
-  assert.equal(root.getElementById("gateway").value, "one");
+  assert.equal(panel._entryId, "one");
   assert.equal(root.querySelectorAll(".device-group").length, 2);
   window.history.replaceState(null, "", "/myhome?entry_id=two");
   window.dispatchEvent(new Event("popstate"));
-  assert.equal(root.getElementById("gateway").value, "two");
-  change(root.getElementById("gateway"), "");
-  assert.equal(new URL(window.location.href).searchParams.get("entry_id"), "");
+  assert.equal(panel._entryId, "two");
+  selectGateway(root, "one");
+  assert.equal(new URL(window.location.href).searchParams.get("entry_id"), "one");
   await panel._refresh();
-  assert.equal(root.querySelectorAll(".device-group").length, 3);
-  window.history.replaceState(null, "", "/myhome?entry_id=one");
+  assert.equal(root.querySelectorAll(".device-group").length, 2);
+  window.history.replaceState(null, "", "/myhome");
   panel.route = { path: "" };
-  assert.equal(root.getElementById("gateway").value, "one");
+  assert.equal(panel._entryId, "one");
   panel.remove();
   window.history.replaceState(null, "", "/myhome?entry_id=two");
   window.dispatchEvent(new Event("location-changed"));
   assert.equal(panel._entryId, "one");
   document.body.append(panel);
   await tick();
-  assert.equal(root.getElementById("gateway").value, "two");
+  assert.equal(panel._entryId, "two");
 });
 
 test("unknown gateway links never fall back to another installation", async () => {
   window.history.replaceState(null, "", "/myhome?entry_id=removed");
   const { panel, root } = await mount();
-  assert.equal(root.getElementById("gateway").value, "removed");
+  assert.equal(panel._entryId, "removed");
   assert.equal(root.querySelectorAll(".device-group").length, 0);
   assert.ok(root.textContent.includes(translations.it.gatewayNotFound));
   await panel._refresh();
   assert.equal(panel._entryId, "removed");
-  change(root.getElementById("gateway"), "one");
+  selectGateway(root, "one");
   assert.equal(root.querySelectorAll(".device-group").length, 2);
 });
 
@@ -711,12 +733,12 @@ test("native bus section ignores the legacy resource and isolates gateway subscr
     return () => { stream.stopped = true; };
   };
   panel.panel = { config: { bus_card_url: resourceUrl } };
-  change(root.getElementById("gateway"), "one");
+  selectGateway(root, "one");
   root.querySelector('[data-view="bus"]').click();
-  change(root.getElementById("gateway"), "two");
+  selectGateway(root, "two");
   await tick();
   assert.deepEqual(streams.map((stream) => stream.mac), ["00:03:50:00:00:02"]);
-  change(root.getElementById("gateway"), "one");
+  selectGateway(root, "one");
   await tick();
   assert.equal(streams[0].stopped, true);
   assert.equal(streams[1].mac, "00:03:50:00:00:01");
@@ -799,7 +821,7 @@ test("calibration export prevents duplicate downloads and discards results after
   button.click(); button.click();
   assert.equal(button.disabled, true);
   assert.equal(calls.filter((m) => m.type.endsWith("/export")).length, 1);
-  change(root.getElementById("gateway"), "two");
+  selectGateway(root, "two");
   pending.resolve({ revision: 3 });
   await tick();
   assert.equal(downloads.length, 0);
@@ -938,11 +960,11 @@ test("late profile reads and saves cannot overwrite another gateway or survive d
   const { panel, root } = await mountProfiles({ read: () => ++reads === 1 ? pendingRead.promise : coverProfileData(),
     write: () => pendingSave.promise });
   openProfile(root);
-  change(root.getElementById("gateway"), "two");
+  selectGateway(root, "two");
   pendingRead.resolve(coverProfileData());
   await tick();
   assert.equal(root.querySelector("dialog"), null);
-  change(root.getElementById("gateway"), "one");
+  selectGateway(root, "one");
   root.querySelector('[data-action="cover-profile"]').click();
   await tick();
   root.querySelector('[data-profile-action="update"]').click();
@@ -1099,7 +1121,7 @@ test("profile dialog mounts calibration and gateway navigation detaches only its
   await tick();
   assert.match(root.querySelector("#cal-phase").textContent, /completamente chiusa/);
   assert.deepEqual(requests[0], { client_id: requests[0].client_id, type: "myhome/cover_calibration/start", entry_id: "one", entity_id: "cover.shutter", revision: 3 });
-  change(root.querySelector("#gateway"), "two");
+  selectGateway(root, "two");
   await tick();
   assert.equal(root.querySelector("dialog"), null);
   assert.equal(stopped, 1);
@@ -1108,7 +1130,7 @@ test("profile dialog mounts calibration and gateway navigation detaches only its
 
 test("panel language changes keep the native monitor capture and command draft", async () => {
   const { panel, root, hass } = await mount({ callWS: async (message, data) => message.type === "myhome/panel/inventory" ? structuredClone(data) : { frames: [] } });
-  change(root.getElementById("gateway"), "one"); root.querySelector('[data-view="bus"]').click(); await tick();
+  selectGateway(root, "one"); root.querySelector('[data-view="bus"]').click(); await tick();
   const view = root.querySelector("myhome-panel-bus-monitor");
   const input = view.shadowRoot.getElementById("send-frame"); input.value = "*1*0*11##";
   view._onNewFrame({ raw: "*1*1*11##", who: "1", timestamp: 100, direction: "rx" });
@@ -1168,7 +1190,7 @@ test("batch selector ignores a late target response after navigation", async () 
   const { root } = await mountProfiles({ targets: () => pending.promise });
   openProfile(root); await tick();
   root.querySelector("#profile-calibrate-batch").click();
-  change(root.querySelector("#gateway"), "two");
+  selectGateway(root, "two");
   pending.resolve({ targets: [], max_batch: 20, revision: 3 }); await tick();
   assert.equal(root.querySelector("dialog"), null);
 });
@@ -1298,7 +1320,7 @@ test("WHO 2 defaults to devices and offers a second profile view without changin
   const card = root.querySelector('.who-group[data-who="2"] .shared-profile-card');
   assert.ok(card);
   assert.equal(card.querySelector('.shared-profile-body').hidden, true);
-  assert.deepEqual(reads.map((message) => message.entry_id), ["one", "two"]);
+  assert.deepEqual(reads.map((message) => message.entry_id), ["one"]);
   root.querySelector('[data-action="cover-view"][data-id="devices"]').click();
   assert.equal(root.querySelector('.shared-profile-card'), null);
   assert.ok(root.querySelector('.who-group[data-who="2"] .device-group'));
@@ -1328,7 +1350,7 @@ test("inventory refresh keeps the expanded profile and keyboard focus and scopes
   assert.equal(root.activeElement.dataset.action, 'toggle-shared-profile');
   assert.equal(root.querySelector('.shared-profile-body').hidden, false);
   reads.length = 0;
-  change(root.querySelector('#gateway'), 'two'); await tick();
+  selectGateway(root, "two"); await tick();
   assert.deepEqual(reads.map((message) => message.entry_id), ['two']);
   assert.equal(root.querySelector('.shared-profile-card'), null);
 });
@@ -1339,7 +1361,7 @@ test("leaving WHO 2 closes profile subscriptions; returning devices still allows
   hass.connection.subscribeMessage = async () => () => { stopped++; };
   root.querySelector('[data-action="cover-view"][data-id="profiles"]').click(); await tick();
   root.querySelector('[data-action="select-who"][data-who="1"]').click();
-  await tick(); assert.equal(stopped, 2);
+  await tick(); assert.equal(stopped, 1);
   assert.equal(root.querySelector('#cover-profile-list'), null);
   root.querySelector('[data-action="select-who"][data-who="2"]').click(); await tick();
   root.querySelector('[data-action="cover-view"][data-id="devices"]').click();

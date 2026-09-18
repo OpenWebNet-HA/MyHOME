@@ -237,8 +237,8 @@ the wrong gateway. `identifiers` includes only MyHOME identifiers. WHO/address
 metadata is recorded information, not a physical-hardware discovery result.
 Credentials and entire Config Entry data/options are never serialized.
 
-The shell may display all gateways, but a profile dialog always receives exactly
-one `entry_id`. An explicit missing gateway is an error in the shell; it does not
+The shell displays all gateway cards and selects one gateway at a time. A profile
+dialog always receives exactly one `entry_id`. An explicit missing gateway is an error in the shell; it does not
 select a replacement. The legacy bus API accepts an omitted MAC and has a fallback;
 the panel adapter always passes the selected MAC and an explicit unknown MAC does
 not fall back.

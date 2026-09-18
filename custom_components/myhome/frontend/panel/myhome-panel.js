@@ -149,7 +149,7 @@ class MyHomePanel extends HTMLElement {
       this._data = data;
       this._showError("");
       if (!this._selectedInitially && data.gateways.length) {
-        this._entryId = data.gateways.length === 1 ? data.gateways[0].entry_id : "";
+        this._entryId = data.gateways[0].entry_id;
         this._selectedInitially = true;
       }
       if (this._entryId && !data.gateways.some((entry) => entry.entry_id === this._entryId)) {
@@ -174,8 +174,8 @@ class MyHomePanel extends HTMLElement {
     if (this._entryQuery === entryId) return;
     this._entryQuery = entryId;
     this._profileEditor.close(); this._catalogueEditor.close();
-    this._entryId = entryId || "";
-    this._selectedInitially = entryId !== null;
+    this._entryId = entryId || this._data?.gateways[0]?.entry_id || "";
+    this._selectedInitially = Boolean(this._entryId);
     this._view = "entities";
     this._removeMonitor();
     if (this._data) {
@@ -225,7 +225,6 @@ class MyHomePanel extends HTMLElement {
       </header>
       <main>
         <div class="heading"><div><h1>${t("subtitle")}</h1><p class="muted" id="totals"></p></div>
-          <label class="gateway-select">${t("gateway")}<select id="gateway" aria-label="${t("gateway")}"></select></label>
         </div>
         <div id="error" class="notice error" role="alert" hidden></div>
         <section id="gateways" class="gateway-grid" aria-label="${t("gateway")}"></section>
@@ -253,17 +252,6 @@ class MyHomePanel extends HTMLElement {
       this.shadowRoot.getElementById("monitor").append(monitor);
       focused?.focus();
     }
-    this.shadowRoot.getElementById("gateway").onchange = (event) => {
-      this._profileEditor.close(); this._catalogueEditor.close();
-      this._entryId = event.target.value;
-      this._selectedInitially = true;
-      const url = new URL(window.location.href);
-      url.searchParams.set("entry_id", this._entryId);
-      window.history.replaceState(window.history.state, "", url);
-      this._entryQuery = this._entryId;
-      this._showError("");
-      this._renderInventory();
-    };
     for (const [id, key] of [["search", "query"], ["category", "category"], ["area", "area"]]) {
       this.shadowRoot.getElementById(id).addEventListener(id === "search" ? "input" : "change", (event) => {
         this._filters[key] = event.target.value;
@@ -272,6 +260,19 @@ class MyHomePanel extends HTMLElement {
     }
     this._updateMenu();
     this._renderVersions();
+  }
+
+  _selectGateway(entryId) {
+    if (entryId === this._entryId || !this._data?.gateways.some((item) => item.entry_id === entryId)) return;
+    this._profileEditor.close(); this._catalogueEditor.close();
+    this._entryId = entryId;
+    this._selectedInitially = true;
+    const url = new URL(window.location.href);
+    url.searchParams.set("entry_id", entryId);
+    window.history.replaceState(window.history.state, "", url);
+    this._entryQuery = entryId;
+    this._showError("");
+    this._renderInventory();
   }
 
   _scope() { return model.scopedInventory(this._data, this._entryId); }
@@ -288,21 +289,17 @@ class MyHomePanel extends HTMLElement {
     const t = (key) => escapeHtml(this._t(key));
     this._renderVersions();
     root.getElementById("totals").textContent = `${scope.devices.length} ${this._t("devices").toLocaleLowerCase()} · ${scope.entities.length} ${this._t("entities").toLocaleLowerCase()}`;
-    root.getElementById("gateway").innerHTML = `<option value="">${t("allGateways")}</option>` + data.gateways.map((item) => `<option value="${escapeHtml(item.entry_id)}">${escapeHtml(item.title)}</option>`).join("");
-    if (this._entryId && !data.gateways.some((item) => item.entry_id === this._entryId)) {
-      root.getElementById("gateway").insertAdjacentHTML("beforeend", `<option value="${escapeHtml(this._entryId)}" disabled>${t("gatewayNotFound")}</option>`);
-    }
-    root.getElementById("gateway").value = this._entryId;
-    root.getElementById("gateways").innerHTML = scope.gateways.map((item) => {
+    const gatewayCards = data.gateways.map((item) => {
       const status = item.disabled_by ? "disabled" : item.state === "loaded" ? (item.connected ? "connected" : "disconnected") : item.state;
       const devices = data.devices.filter((device) => device.entry_ids.includes(item.entry_id)).length;
       const entities = data.entities.filter((entity) => entity.entry_id === item.entry_id).length;
-      return `<article class="gateway-card"><div class="card-head"><h2><ha-icon icon="${item.serial_port ? "mdi:serial-port" : "mdi:router-network"}" aria-hidden="true"></ha-icon>${escapeHtml(item.title)}</h2>
-        <span class="badge ${item.connected ? "online" : "offline"}">${t(status)}</span></div>
-        <p class="muted">${escapeHtml([item.model, item.host ? `${item.host}${item.port ? `:${item.port}` : ""}` : item.serial_port].filter(Boolean).join(" · "))}</p>
-        <div class="gateway-meta"><span><ha-icon icon="mdi:devices" aria-hidden="true"></ha-icon>${devices} ${t("devices")}</span><span><ha-icon icon="mdi:shape-outline" aria-hidden="true"></ha-icon>${entities} ${t("entities")}</span>
-        ${item.firmware ? `<span><ha-icon icon="mdi:chip" aria-hidden="true"></ha-icon>${t("firmware")} ${escapeHtml(item.firmware)}</span>` : ""}</div></article>`;
+      return `<button type="button" class="gateway-card" data-action="select-gateway" data-id="${escapeHtml(item.entry_id)}" aria-pressed="${item.entry_id === this._entryId}" aria-controls="items monitor"><span class="card-head"><span class="gateway-name"><ha-icon icon="${item.serial_port ? "mdi:serial-port" : "mdi:router-network"}" aria-hidden="true"></ha-icon>${escapeHtml(item.title)}</span>
+        <span class="badge ${item.connected ? "online" : "offline"}">${t(status)}</span></span>
+        <span class="muted gateway-address">${escapeHtml([item.model, item.host ? `${item.host}${item.port ? `:${item.port}` : ""}` : item.serial_port].filter(Boolean).join(" · "))}</span>
+        <span class="gateway-meta"><span><ha-icon icon="mdi:devices" aria-hidden="true"></ha-icon>${devices} ${t("devices")}</span><span><ha-icon icon="mdi:shape-outline" aria-hidden="true"></ha-icon>${entities} ${t("entities")}</span>
+        ${item.firmware ? `<span><ha-icon icon="mdi:chip" aria-hidden="true"></ha-icon>${t("firmware")} ${escapeHtml(item.firmware)}</span>` : ""}</span></button>`;
     }).join("");
+    replacePreservingFocus(root.getElementById("gateways"), gatewayCards);
     root.getElementById("count-entities").textContent = scope.entities.length;
     const categories = [...new Set(scope.entities.map((item) => item.domain))].sort();
     if (this._filters.category && !categories.includes(this._filters.category)) this._filters.category = "";
@@ -537,6 +534,8 @@ class MyHomePanel extends HTMLElement {
       event.preventDefault();
       history.pushState(null, "", target.getAttribute("href"));
       window.dispatchEvent(new Event("location-changed"));
+    } else if (target.dataset.action === "select-gateway") {
+      this._selectGateway(target.dataset.id);
     } else if (target.dataset.view) {
       this._view = target.dataset.view;
       this._renderContent();

@@ -1,5 +1,16 @@
 # MyHOME sidepanel — first version
 
+## Gateway navigation (0.32.0)
+
+Choose the gateway by clicking its overview card. All gateway cards remain visible;
+the active card has a green border and exposes its selected state to assistive
+technology. Cards also work with Tab and Enter/Space. Opening the panel without a
+gateway link selects the first gateway in the inventory. Configure links retain
+the requested gateway; an unknown gateway link still reports an error. Changing
+cards scopes entities, cover profiles and the bus monitor to the selected gateway.
+The dropdown and the combined all-gateways selection have been removed.
+
+
 > Panel 0.31.0 adds [guided slat/roll measurement](cover-guided-geometry.md): basic new-profile path, backend tape fitting and atomic review/save.
 
 > Runtime baseline — panel 0.30.0: [optional slat/roll profiles and runtime](cover-nonlinear-runtime.md)
@@ -130,7 +141,7 @@ The original 0.25.0 increment provided overview/navigation, with writes through
 the existing cover editor and its shared-change preview/confirmation. Version
 0.26.0 adds the direct profile operations described above. Version 0.27.0 adds multi-cover assignment; no second calibration flow is introduced.
 
-With all gateways selected, profile groups are separate and keyed by gateway plus
+Profiles are shown for the selected gateway and remain keyed by gateway plus
 profile ID. Search matches profile names, cover names/IDs, areas and A-PL. Area
 and entity-category filters select matching profiles; every matched profile keeps
 its **complete** association list, including followers outside the filter.
