@@ -105,6 +105,9 @@ test("secondary entities follow the main entity and buttons never render or form
   group.querySelector('[data-action="toggle-device"]').click();
   assert.equal(group.querySelector('.entity-list > .entity-row [data-action="details"]').dataset.id, "light.sala");
   assert.equal(group.querySelectorAll(".secondary-entities .entity-row").length, 3);
+  assert.equal(group.querySelector(".secondary-grid").hidden, true);
+  group.querySelector('[data-action="toggle-secondary"]').click();
+  assert.equal(group.querySelector(".secondary-grid").hidden, false);
   const name = group.querySelector('[data-action="details"][data-id="button.lock"]');
   assert.equal(name.textContent, "Blocca <sala>"); assert.equal(name.querySelector("sala"), null);
   assert.equal(group.querySelectorAll('.is-button [data-state]').length, 0);
@@ -151,10 +154,79 @@ test("secondary-only searches retain disabled flags, area overrides and gateway 
   const row = root.querySelector(".entity-secondary");
   for (const text of ["Disabilitato", "Nascosta", "Esterno"]) assert.ok(row.textContent.includes(text));
   panel.hass = { ...hass, language: "en" };
-  assert.equal(root.querySelector(".secondary-entities h3").textContent, "Additional entities");
+  assert.equal(root.querySelector(".secondary-toggle").textContent, "Additional entities · 1");
   assert.equal(root.querySelectorAll('[data-state^="button."]').length, 0);
   change(root.getElementById("search"), ""); change(root.getElementById("category"), "switch");
   assert.ok(root.querySelector('.entity-secondary [data-state="switch.setting"]'));
+});
+
+test("secondary sections retain expansion and keyboard focus without opening another gateway", async () => {
+  const { panel, root } = await mount({ prepare: (data) => {
+    data.entities.push(
+      { ...data.entities[0], entity_id: "button.one", domain: "button", name: "Lock" },
+      { ...data.entities[1], entity_id: "button.two", domain: "button", name: "Lock" },
+    );
+  } });
+  const toggle = () => root.querySelector('[data-action="toggle-secondary"]');
+  const list = () => root.querySelector(".secondary-grid");
+  root.querySelector('[data-action="toggle-device"]').click();
+  assert.equal(list().hidden, true);
+  toggle().click(); toggle().focus();
+  assert.equal(toggle().getAttribute("aria-expanded"), "true");
+  await panel._refresh();
+  assert.equal(list().hidden, false);
+  assert.equal(root.activeElement, toggle());
+  root.querySelector('[data-action="toggle-device"]').click();
+  root.querySelector('[data-action="toggle-device"]').click();
+  assert.equal(list().hidden, false);
+  selectGateway(root, "two");
+  assert.equal(list().hidden, true);
+  selectGateway(root, "one");
+  assert.equal(list().hidden, false);
+  toggle().click();
+  await panel._refresh();
+  assert.equal(list().hidden, true);
+});
+
+test("climate readings stay separate from the row state and discard missing or stale temperatures", async () => {
+  const { panel, root, hass, data } = await mount({ prepare: (data) => {
+    Object.assign(data.entities[0], { entity_id: "climate.sala", domain: "climate", who: "4" });
+    data.devices[0].who = "4";
+  } });
+  const setState = (state, attributes = {}) => {
+    panel.hass = { ...hass, config: { unit_system: { temperature: "°C" } },
+      states: { "climate.sala": { state, attributes } } };
+  };
+  const readings = () => root.querySelector('[data-climate="climate.sala"]');
+  const current = () => readings().querySelector('[data-temperature="current"]');
+  const target = () => readings().querySelector('[data-temperature="target"]');
+  setState("heat", { current_temperature: 20.5, temperature: 21 });
+  assert.equal(root.querySelector('.entity-row [data-state]').textContent, "heat");
+  assert.equal(current().querySelector("dd").textContent, "20,5 °C");
+  assert.equal(target().querySelector("dd").textContent, "21 °C");
+  assert.match(root.querySelector('.device-states [data-state]').textContent, /Temperatura rilevata: 20,5 °C · Setpoint: 21 °C/);
+  const node = readings();
+  setState("heat", { current_temperature: 0, target_temp_low: 17, target_temp_high: 23 });
+  assert.equal(readings(), node);
+  assert.equal(current().querySelector("dd").textContent, "0 °C");
+  assert.equal(target().querySelector("dd").textContent, "17 °C – 23 °C");
+  setState("heat", { current_temperature: null, temperature: 0, unit_of_measurement: "°F" });
+  assert.equal(current().hidden, true);
+  assert.equal(target().querySelector("dd").textContent, "0 °F");
+  for (const state of ["unavailable", "unknown"]) {
+    setState(state, { current_temperature: 20, temperature: 21 });
+    assert.equal(readings().hidden, true);
+    assert.equal(current().querySelector("dd").textContent, "");
+    assert.doesNotMatch(root.querySelector('.device-states [data-state]').textContent, /°C/);
+  }
+  setState("heat", { current_temperature: NaN, temperature: Infinity });
+  assert.equal(readings().hidden, true);
+  setState("heat", { current_temperature: 20 });
+  assert.equal(readings().hidden, false);
+  assert.equal(target().hidden, true);
+  data.entities[0].disabled_by = "user";
+  await panel._refresh();
+  assert.equal(readings().hidden, true);
 });
 
 test("gateway, category and inherited area filters retain trigger-only and disabled items", () => {

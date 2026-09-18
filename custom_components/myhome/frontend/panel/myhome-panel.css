@@ -177,17 +177,17 @@ label { display: grid; gap: 6px; font-size: 12px; font-weight: 500; color: var(-
   transition: box-shadow var(--panel-ease);
 }
 .device-group:hover { box-shadow: var(--panel-shadow-hover); }
-.device-group-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 14px 10px 8px; }
+.device-group-header { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; padding: 8px 10px 10px 8px; }
 .device-group-header:has(+ .entity-list:not([hidden])) { border-bottom: 1px solid var(--panel-border); background: color-mix(in srgb, var(--panel-surface-2) 55%, var(--panel-surface)); }
 .device-group-title { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; min-height: 44px; padding: 4px 8px 4px 4px; border: 0; border-radius: 10px; background: transparent; text-align: start; }
 .device-group-title:hover { background: var(--panel-accent-soft); border-color: transparent; }
 .device-group-title .device-label { flex: 1; min-width: 0; display: grid; gap: 1px; }
-.device-group-title .count { flex-shrink: 0; }
+.device-group-title .count { flex-shrink: 0; background: transparent; padding-inline: 4px; }
 .device-group-title ha-icon { color: var(--panel-text-2); flex-shrink: 0; --mdc-icon-size: 22px; transition: transform var(--panel-ease), color var(--panel-ease); }
 .device-group-title[aria-expanded="true"] ha-icon { color: var(--panel-accent); }
 .device-group-title[aria-expanded="false"] .device-chevron { transform: rotate(-90deg); }
 .device-name { display: block; margin: 0; font-size: 15px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
-.device-label .muted { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.device-label .muted { font-size: 12px; overflow-wrap: anywhere; }
 .device-states { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; min-width: 0; padding-inline-start: 34px; }
 .device-state { display: inline-flex; align-items: baseline; gap: 5px; min-width: 0; max-width: 100%; padding: 3px 9px; border-radius: 999px; background: var(--panel-surface-2); color: var(--primary-text-color, #182b37); font-size: 12px; font-weight: 600; line-height: 1.4; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .device-state > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -215,29 +215,43 @@ label { display: grid; gap: 6px; font-size: 12px; font-weight: 500; color: var(-
 .item-card { background: var(--panel-surface); border: 1px solid var(--panel-border); border-radius: var(--panel-radius); padding: 18px; min-width: 0; display: flex; flex-direction: column; }
 .item-card .muted { overflow-wrap: anywhere; }
 .item-card .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 16px; }
-.entity-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 14px; border: 0; border-radius: 0; padding: 14px 16px; transition: background var(--panel-ease); }
+.entity-row { display: grid; grid-template-columns: minmax(0, 1fr) fit-content(45%); align-items: start; gap: 6px 12px; border: 0; border-radius: 0; padding: 14px 16px 10px; transition: background var(--panel-ease); }
 .entity-row:hover { background: color-mix(in srgb, var(--panel-surface-2) 45%, transparent); }
 .entity-row + .entity-row { border-top: 1px solid var(--panel-border); }
 .entity-info { min-width: 0; }
-.entity-row h4 { margin: 0 0 2px; font-size: 14px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
-.entity-row .entity-info > .muted { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px; }
+.entity-row h4 { display: flex; align-items: center; gap: 9px; margin: 3px 0; font-size: 14px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.entity-row h4 > span { min-width: 0; }
+.entity-row h4 > ha-icon { --mdc-icon-size: 18px; color: var(--panel-text-2); flex-shrink: 0; }
 .entity-row .chips { margin: 8px 0 0; }
-.entity-row .state { margin: 0; font-size: 13px; font-weight: 600; text-align: end; align-self: start; padding: 5px 11px; border-radius: 999px; background: var(--panel-accent-soft); color: var(--panel-accent); max-width: 40vw; font-variant-numeric: tabular-nums; }
+.entity-row .chips:not(:has(*)) { display: none; }
+.entity-row .chip { white-space: normal; overflow-wrap: anywhere; }
+.entity-row .state { min-width: 0; max-width: 100%; margin: 0; font-size: 13px; font-weight: 600; text-align: end; align-self: start; justify-self: end; padding: 4px 10px; border-radius: 14px; background: var(--panel-accent-soft); color: var(--panel-accent); font-variant-numeric: tabular-nums; }
 .entity-row .state:empty { display: none; }
 .entity-row .actions { grid-column: 1 / -1; margin: 0; padding: 0; justify-content: flex-end; flex-wrap: wrap; }
-.entity-row .actions button { min-height: 32px; padding: 4px 10px; font-size: 12px; border-radius: 8px; }
+.entity-row .actions button { min-height: 34px; padding: 5px 9px; font-size: 12px; border-radius: 8px; border-color: transparent; background: transparent; color: var(--panel-accent); }
+.entity-row .actions button:hover { background: var(--panel-accent-soft); }
 .entity-row .address { margin: 10px 0 0; }
-.entity-row .profile-chip { margin-inline-end: auto; align-self: center; max-width: 100%; }
-.entity-row .profile-chip::before { content: attr(title) ":"; font-weight: 400; color: var(--panel-text-2); }
-.entity-row .profile-chip:empty { display: none; }
 .entity-row .actions ha-icon { --mdc-icon-size: 16px; }
+.entity-profile { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; padding-top: 10px; margin-top: 2px; border-top: 1px solid var(--panel-border); }
+.profile-description { flex: 1; min-width: min(100%, 160px); overflow-wrap: anywhere; }
+.profile-label { display: block; color: var(--panel-text-2); font-size: 12px; }
+.profile-value { display: block; margin-top: 2px; font-size: 13px; }
+.profile-value:empty { display: none; }
+.entity-profile button { min-height: 36px; max-width: 100%; padding: 7px 10px; border-radius: 8px; font-size: 12px; }
+.entity-profile button ha-icon { --mdc-icon-size: 16px; }
+.climate-temperatures { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 4px 0 0; padding-inline-start: 27px; }
+.climate-temperatures > div { min-width: 0; }
+.climate-temperatures dt { color: var(--panel-text-2); font-size: 12px; }
+.climate-temperatures dd { margin: 2px 0 0; font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
 .state { font-size: 19px; font-weight: 500; margin: 10px 0 0; overflow-wrap: anywhere; }
 
 /* Secondary entities share a compact area beneath the main device controls. */
-.secondary-entities { padding: 10px 16px 8px; border-top: 1px solid var(--panel-border); background: color-mix(in srgb, var(--panel-surface-2) 40%, transparent); }
-.secondary-entities h3 { margin: 0 0 4px; color: var(--panel-text-2); font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
-.secondary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 0 20px; }
+.secondary-entities { border-top: 1px solid var(--panel-border); }
+.secondary-toggle { width: 100%; justify-content: flex-start; text-align: start; gap: 7px; padding: 10px 16px; border: 0; border-radius: 0; background: transparent; color: var(--panel-text-2); font-size: 12px; }
+.secondary-toggle ha-icon { --mdc-icon-size: 16px; transition: transform var(--panel-ease); }
+.secondary-toggle[aria-expanded="true"] ha-icon { transform: rotate(90deg); }
+.secondary-grid { display: grid; grid-template-columns: minmax(0, 1fr); padding: 0 16px 6px; }
 .entity-row.entity-secondary { grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 4px 8px; padding: 2px 0; border: 0; border-radius: 0; border-top: 1px solid var(--panel-border); }
 .entity-row.entity-secondary:hover { background: transparent; }
 .entity-row.entity-secondary.is-button { grid-template-columns: minmax(0, 1fr) auto; }
@@ -305,16 +319,15 @@ dialog a { color: var(--panel-accent); font-size: 13px; }
   .who-navigation { padding: 12px; }
   .gateway-grid, .item-grid, .device-groups { grid-template-columns: 1fr; }
   .device-group-header, .entity-row { padding: 12px; }
-  .entity-row { grid-template-columns: minmax(0, 1fr); }
-  .entity-row .state { justify-self: start; text-align: start; max-width: 100%; }
-  .secondary-entities { padding: 8px 12px 12px; }
-  .secondary-grid { grid-template-columns: minmax(0, 1fr); }
+  .secondary-toggle { padding-inline: 12px; }
+  .secondary-grid { padding-inline: 12px; }
   .device-states, .device-group-header .address { padding-inline-start: 0; }
   .device-state-name { max-width: 14ch; }
 }
 @media (any-pointer: coarse) {
   button, a.button { min-height: 44px; }
-  .entity-row .actions button, .device-actions button, .device-actions a.button { min-height: 40px; }
+  .entity-row .actions button, .entity-profile button, .secondary-toggle, .device-actions button, .device-actions a.button { min-height: 44px; }
+  .device-actions button, .device-actions a.button { min-width: 44px; }
   .entity-secondary .secondary-name, .entity-secondary .actions button { min-height: 44px; }
   .entity-secondary .actions button { min-width: 44px; }
 }

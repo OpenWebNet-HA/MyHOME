@@ -24,6 +24,7 @@ class MyHomePanel extends HTMLElement {
     this._view = "entities";
     this._filters = { query: "", category: "", area: "" };
     this._expandedDevices = new Set();
+    this._expandedSecondary = new Set();
     this._categoryMode = "all";
     this._selectedWho = "";
     try {
@@ -447,13 +448,16 @@ class MyHomePanel extends HTMLElement {
     const key = JSON.stringify([entryId, device?.id || null]);
     const listId = escapeHtml(`device-entities-${encodeURIComponent(JSON.stringify([key, who]))}`);
     const expanded = this._expandedDevices.has(key);
+    const secondaryKey = JSON.stringify([key, who]);
+    const secondaryId = `${listId}-secondary`;
+    const secondaryExpanded = this._expandedSecondary.has(secondaryKey);
     const isSecondary = (entity) => entity.domain === "button" || ["config", "diagnostic"].includes(entity.entity_category);
     const primary = entities.filter((entity) => !isSecondary(entity));
     const secondary = entities.filter(isSecondary);
     return `<section class="device-group" data-device="${escapeHtml(device?.id || "")}" data-entry="${escapeHtml(entryId)}">
       <header class="device-group-header"><button class="device-group-title" data-action="toggle-device" data-group="${escapeHtml(key)}" aria-expanded="${expanded}" aria-controls="${listId}"><ha-icon class="device-chevron" icon="mdi:chevron-down" aria-hidden="true"></ha-icon><span class="device-label">
         <span class="device-name">${escapeHtml(device ? this._itemName(device) : this._t("unassignedEntities"))}</span>
-        <span class="muted">${escapeHtml([area, gateway].filter(Boolean).join(" · "))}</span>
+        ${area || gateway ? `<span class="muted">${escapeHtml([area, gateway].filter(Boolean).join(" · "))}</span>` : ""}
       </span><span class="count">${entities.length} ${escapeHtml(this._t("entities"))}</span></button>
       ${device ? `<div class="device-actions"><button class="icon-button" data-action="edit-device" data-id="${escapeHtml(device.id)}" title="${escapeHtml(this._t("edit"))}" aria-label="${escapeHtml(this._t("edit"))}: ${escapeHtml(this._itemName(device))}"><ha-icon icon="mdi:pencil-outline" aria-hidden="true"></ha-icon></button><a class="button icon-button" href="${escapeHtml(deviceUrl(device.id))}" title="${escapeHtml(this._t("openDevice"))}" aria-label="${escapeHtml(this._t("openDevice"))}: ${escapeHtml(this._itemName(device))}"><ha-icon icon="mdi:open-in-new" aria-hidden="true"></ha-icon></a></div>` : ""}
       ${device && primary.length ? `<div class="device-states">${primary.map((entity) => `<span class="device-state" title="${escapeHtml(this._itemName(entity))}">
@@ -462,7 +466,7 @@ class MyHomePanel extends HTMLElement {
         </span>`).join("")}</div>` : ""}
       ${sharedAddress ? this._addressDetails({ address: sharedAddress }) : !entities.length && device ? this._addressDetails(device) : ""}</header>
       <div class="entity-list" id="${listId}" ${expanded ? "" : "hidden"}>${primary.map((entity) => this._entityRow(entity, device, sharedAddress)).join("")}
-        ${secondary.length ? `<section class="secondary-entities" aria-label="${escapeHtml(this._t("secondaryEntities"))}"><h3>${escapeHtml(this._t("secondaryEntities"))}</h3><div class="secondary-grid">${secondary.map((entity) => this._entityRow(entity, device, sharedAddress, true)).join("")}</div></section>` : ""}
+        ${secondary.length ? `<section class="secondary-entities" aria-label="${escapeHtml(this._t("secondaryEntities"))}"><button class="secondary-toggle" data-action="toggle-secondary" data-group="${escapeHtml(secondaryKey)}" aria-expanded="${secondaryExpanded}" aria-controls="${secondaryId}"><ha-icon icon="mdi:chevron-right" aria-hidden="true"></ha-icon><span>${escapeHtml(this._t("secondaryEntities"))} · ${secondary.length}</span></button><div class="secondary-grid" id="${secondaryId}" ${secondaryExpanded ? "" : "hidden"}>${secondary.map((entity) => this._entityRow(entity, device, sharedAddress, true)).join("")}</div></section>` : ""}
         ${!entities.length ? `<p class="muted no-entities">${escapeHtml(this._t("noEntities"))}</p>` : ""}</div>
     </section>`;
   }
@@ -474,17 +478,37 @@ class MyHomePanel extends HTMLElement {
     const area = this._data.areas.find((area) => area.id === areaId)?.name || this._t("noArea");
     const name = escapeHtml(this._itemName(item));
     const isButton = item.domain === "button";
+    const icon = escapeHtml(item.icon || this._hass?.states?.[item.entity_id]?.attributes?.icon || {
+      light: "mdi:lightbulb-outline", cover: "mdi:window-shutter", climate: "mdi:thermometer",
+      sensor: "mdi:gauge", binary_sensor: "mdi:checkbox-marked-circle-outline", switch: "mdi:toggle-switch-outline",
+      button: "mdi:gesture-tap-button", number: "mdi:numeric", select: "mdi:format-list-bulleted",
+    }[item.domain] || "mdi:circle-outline");
     return `<article class="item-card entity-row${secondary ? " entity-secondary" : ""}${isButton ? " is-button" : ""}"><div class="entity-info">
-      <h4>${secondary ? `<button class="secondary-name" data-action="details" data-id="${id}" title="${name} · ${id}" aria-label="${t("details")}: ${name}">${name}</button>` : name}</h4>${secondary ? "" : `<p class="muted">${id}</p>`}
-      <div class="chips">${secondary ? "" : `<span class="chip">${t(item.domain)}</span>`}
+      <h4>${secondary ? `<button class="secondary-name" data-action="details" data-id="${id}" title="${name} · ${id}" aria-label="${t("details")}: ${name}">${name}</button>` : `<ha-icon icon="${icon}" aria-hidden="true"></ha-icon><span>${name}</span>`}</h4>
+      <div class="chips">
         ${!device || areaId !== (device.area_id || "") ? `<span class="chip">${escapeHtml(area)}</span>` : ""}
         ${item.disabled_by ? `<span class="badge">${t("disabled")}</span>` : ""}
         ${item.hidden_by ? `<span class="chip">${t("hidden")}</span>` : ""}</div>
       ${sharedAddress ? "" : this._addressDetails(item)}</div>
       ${isButton ? "" : `<p class="state" data-state="${id}" aria-label="${t("state")}"></p>`}
+      ${item.domain === "climate" ? `<dl class="climate-temperatures" data-climate="${id}" hidden><div data-temperature="current" hidden><dt>${t("climateCurrentTemperature")}</dt><dd></dd></div><div data-temperature="target" hidden><dt>${t("climateSetpoint")}</dt><dd></dd></div></dl>` : ""}
       <div class="actions"><button data-action="edit-entity" data-id="${id}" aria-label="${t("edit")}: ${name}" title="${t("edit")}: ${name}">${secondary ? '<ha-icon icon="mdi:pencil-outline" aria-hidden="true"></ha-icon>' : t("edit")}</button>
-        ${secondary ? "" : `<button data-action="details" data-id="${id}">${t("details")}</button>`}
-        ${item.domain === "cover" && item.who === "2" ? `<span class="chip profile-chip" data-cover-profile="${id}" title="${t("coverProfiles")}"></span><button data-action="cover-profile" data-id="${id}"><ha-icon icon="mdi:timer-outline" aria-hidden="true"></ha-icon>${t("coverProfiles")}</button>` : ""}</div></article>`;
+        ${secondary ? "" : `<button data-action="details" data-id="${id}">${t("details")}<ha-icon icon="mdi:information-outline" aria-hidden="true"></ha-icon></button>`}</div>
+      ${item.domain === "cover" && item.who === "2" ? `<div class="entity-profile"><div class="profile-description"><span class="profile-label">${t("coverProfiles")}</span><span class="profile-value" data-cover-profile="${id}"></span></div><button data-action="cover-profile" data-id="${id}"><ha-icon icon="mdi:timer-outline" aria-hidden="true"></ha-icon>${t("coverProfiles")}</button></div>` : ""}</article>`;
+  }
+
+  _climateTemperatures(entity, state) {
+    if (entity?.domain !== "climate" || entity.disabled_by || !state || ["unavailable", "unknown"].includes(state.state)) return {};
+    const attrs = state.attributes || {};
+    const unit = attrs.unit_of_measurement || this._hass.config?.unit_system?.temperature || "";
+    const numbers = new Intl.NumberFormat(this._hass.locale?.language || this._hass.language || "en", { maximumFractionDigits: 20, useGrouping: false });
+    const temperature = (value) => `${numbers.format(value)}${unit ? ` ${unit}` : ""}`;
+    return {
+      current: Number.isFinite(attrs.current_temperature) ? temperature(attrs.current_temperature) : "",
+      target: Number.isFinite(attrs.temperature) ? temperature(attrs.temperature)
+        : Number.isFinite(attrs.target_temp_low) && Number.isFinite(attrs.target_temp_high)
+          ? `${temperature(attrs.target_temp_low)} – ${temperature(attrs.target_temp_high)}` : "",
+    };
   }
 
   _addressDetails(item) {
@@ -508,18 +532,22 @@ class MyHomePanel extends HTMLElement {
           : `${this._t(state.state)}${state.attributes?.unit_of_measurement ? ` ${state.attributes.unit_of_measurement}` : ""}`;
       const climate = entity?.domain === "climate";
       element.classList.toggle("climate-state", climate);
-      if (climate && !entity.disabled_by && state && !["unavailable", "unknown"].includes(state.state)) {
-        const attrs = state.attributes || {};
-        const unit = attrs.unit_of_measurement || this._hass.config?.unit_system?.temperature || "";
-        const numbers = new Intl.NumberFormat(this._hass.locale?.language || this._hass.language || "en", { maximumFractionDigits: 20, useGrouping: false });
-        const temperature = (value) => `${numbers.format(value)}${unit ? ` ${unit}` : ""}`;
-        if (Number.isFinite(attrs.current_temperature)) text += ` · ${this._t("climateCurrentTemperature")}: ${temperature(attrs.current_temperature)}`;
-        if (Number.isFinite(attrs.temperature)) text += ` · ${this._t("climateSetpoint")}: ${temperature(attrs.temperature)}`;
-        else if (Number.isFinite(attrs.target_temp_low) && Number.isFinite(attrs.target_temp_high)) {
-          text += ` · ${this._t("climateSetpoint")}: ${temperature(attrs.target_temp_low)} – ${temperature(attrs.target_temp_high)}`;
-        }
+      if (climate && element.closest(".device-states")) {
+        const temperatures = this._climateTemperatures(entity, state);
+        if (temperatures.current) text += ` · ${this._t("climateCurrentTemperature")}: ${temperatures.current}`;
+        if (temperatures.target) text += ` · ${this._t("climateSetpoint")}: ${temperatures.target}`;
       }
       if (element.textContent !== text) element.textContent = text;
+    }
+    for (const element of this.shadowRoot.querySelectorAll("[data-climate]")) {
+      const entity = this._data.entities.find((item) => item.entity_id === element.dataset.climate);
+      const temperatures = this._climateTemperatures(entity, this._hass?.states?.[element.dataset.climate]);
+      element.hidden = !temperatures.current && !temperatures.target;
+      for (const field of element.querySelectorAll("[data-temperature]")) {
+        const value = temperatures[field.dataset.temperature] || "";
+        field.hidden = !value;
+        if (field.querySelector("dd").textContent !== value) field.querySelector("dd").textContent = value;
+      }
     }
     for (const element of this.shadowRoot.querySelectorAll("[data-cover-profile]")) {
       const attrs = this._hass?.states?.[element.dataset.coverProfile]?.attributes;
@@ -576,6 +604,13 @@ class MyHomePanel extends HTMLElement {
         button.setAttribute("aria-expanded", String(expanded));
         button.closest(".device-group").querySelector(".entity-list").hidden = !expanded;
       }
+    } else if (target.dataset.action === "toggle-secondary") {
+      const expanded = target.getAttribute("aria-expanded") !== "true";
+      const key = target.dataset.group;
+      if (expanded) this._expandedSecondary.add(key);
+      else this._expandedSecondary.delete(key);
+      target.setAttribute("aria-expanded", String(expanded));
+      this.shadowRoot.getElementById(target.getAttribute("aria-controls")).hidden = !expanded;
     } else if (target.dataset.action === "select-who") {
       this._setCategoryView("single", target.dataset.who);
     } else if (target.dataset.action === "toggle-category-view") {

@@ -1,5 +1,19 @@
 # MyHOME sidepanel — first version
 
+## Compact entity cards (0.33.0)
+
+Device groups still start collapsed. Expanded cards align each entity name and
+state on the same row at desktop and mobile widths. Technical entity IDs remain
+available through Home Assistant's details/settings; WHO headings identify the
+category. Area overrides, disabled/hidden flags and A/PL addresses stay visible.
+
+Additional entities start in a collapsed section with a count. Its toggle works
+with the keyboard and retains expansion during inventory refreshes and navigation,
+separately for each gateway, device and WHO. Cover profiles have a dedicated row.
+Climate cards show current temperature and setpoint (or target range) in separate
+fields when available; collapsed device summaries retain both values. Missing,
+unknown, unavailable or disabled states do not display stale temperatures.
+
 ## Gateway navigation (0.32.0)
 
 Choose the gateway by clicking its overview card. All gateway cards remain visible;
