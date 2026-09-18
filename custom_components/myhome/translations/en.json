@@ -108,6 +108,20 @@
           "decoder_4_source": "Decoder 4 — BTicino source input number (1–4)",
           "decoder_4_pre_gain": "Decoder 4 — Pre-gain offset %"
         }
+      },
+      "init": {
+        "title": "MyHOME",
+        "menu_options": {
+          "panel": "MyHOME panel",
+          "user": "Gateway settings"
+        }
+      },
+      "panel": {
+        "title": "MyHOME panel",
+        "description": "[Open the MyHOME panel]({panel_url}) for this gateway.\n\nSidebar visibility is shared across all gateways and administrators. The panel remains accessible through this link when the shortcut is hidden.",
+        "data": {
+          "show_sidebar": "Show MyHOME in the sidebar"
+        }
       }
     },
     "error": {
@@ -117,7 +131,8 @@
       "invalid_password": "Invalid password",
       "password_error": "Invalid password",
       "not_a_media_player": "Must be a media_player entity (e.g. media_player.cambridge_audio_cxn)",
-      "mass_entity_not_allowed": "Infinite Loop Protection: Do not select Music Assistant clones! Select the original hardware entity instead."
+      "mass_entity_not_allowed": "Infinite Loop Protection: Do not select Music Assistant clones! Select the original hardware entity instead.",
+      "panel_save_failed": "Could not save the preference. Try again."
     }
   },
   "services": {
@@ -267,6 +282,9 @@
     }
   },
   "exceptions": {
+    "cover_position_unknown": {
+      "message": "Complete a full opening or closing run before setting an intermediate position."
+    },
     "command_delivery_cancelled": {
       "message": "{name}: direction command delivery was cancelled before reaching the bus"
     },
@@ -308,6 +326,9 @@
     },
     "decoder_start_failed": {
       "message": "{entity_id}: decoder {decoder} failed to start playback: {error}"
+    },
+    "panel_timing_managed": {
+      "message": "Travel times are managed by the MyHOME panel. Finish its measurement and remove the assigned travel profile before using native timing services."
     },
     "group_no_transition": {
       "message": "{name}: a lighting group does not support software transition"

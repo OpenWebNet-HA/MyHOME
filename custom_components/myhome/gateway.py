@@ -3,6 +3,7 @@ import asyncio
 import collections
 import contextlib
 import time
+from collections.abc import Callable
 from typing import Any, List, cast
 
 import OWNd.message as _ownd_msg
@@ -949,70 +950,75 @@ class MyHOMEGatewayHandler:
                         task["message"],
                         worker_id,
                     )
-                    task_start = time.time()
-                    self.bus_monitor.record_frame(
-                        direction="tx",
-                        raw=str(task["message"]),
-                        parsed=(
-                            task["message"]
-                            if isinstance(task["message"], OWNMessage)
-                            else None
-                        ),
-                    )
-                    # The delivery future carries the time the frame reached the bus.
-                    # Reconnect explicitly *before* taking the timestamp; OWNd's
-                    # send() would otherwise do it after our stamp. The future is resolved
-                    # only once send() reports the frame written and acknowledged, and
-                    # cancelled when it was not: a frame that never reached the bus must
-                    # not start a timed run.
-                    if not _session_is_open(_command_session):
-                        res = await _command_session.connect()
-                        if self._connect_refused(res, worker_id):
-                            # As at start-up: no further negotiation with a gateway that
-                            # refused us. The frame was not written and never will be.
-                            _cancel_written(task)
-                            return
-                        if not _session_is_open(_command_session):
-                            # connect() gave up after its retries; send() would only run
-                            # the same cycle again. Drop this frame and try the next.
-                            LOGGER.warning(
-                                "%s Command session unavailable; message `%s` not sent.",
-                                self.log_id,
-                                task["message"],
-                            )
+                    async with task.get("command_lock", contextlib.nullcontext()):
+                        if "guard" in task and not task["guard"]():
                             _cancel_written(task)
                             continue
-                    written_at = time.monotonic()
-                    # OWNd's send() decides the retry policy itself: a status
-                    # request may be retried after a transport reset, a written
-                    # command is never replayed. Keep this call to its public
-                    # signature - the test suite pins it against the real class.
-                    collected = await _command_session.send(
-                        message=task["message"],
-                        is_status_request=task["is_status_request"],
-                    )
-                    if collected is None:
-                        _cancel_written(task)
-                    else:
-                        _resolve_written(task, written_at)
-                    if collected and isinstance(collected, list):
-                        for resp in collected:
-                            raw_resp = str(resp)
-                            if self.bus_monitor.has_frame_since(
-                                task_start, direction="rx", raw=raw_resp
-                            ):
-                                continue
-                            frame = self.bus_monitor.record_frame(
-                                direction="rx",
-                                raw=raw_resp,
-                                parsed=resp if isinstance(resp, OWNMessage) else None,
-                            )
-                            if not getattr(
-                                frame, "is_duplicate", False
-                            ) and isinstance(resp, OWNMessage):
-                                async_dispatcher_send(
-                                    self.hass, f"myhome_message_{self.mac}", resp
+                        task_start = time.time()
+                        self.bus_monitor.record_frame(
+                            direction="tx",
+                            raw=str(task["message"]),
+                            parsed=(
+                                task["message"]
+                                if isinstance(task["message"], OWNMessage)
+                                else None
+                            ),
+                        )
+                        # The delivery future carries the time the frame reached the bus.
+                        # Reconnect explicitly *before* taking the timestamp; OWNd's
+                        # send() would otherwise do it after our stamp. The future is resolved
+                        # only once send() reports the frame written and acknowledged, and
+                        # cancelled when it was not: a frame that never reached the bus must
+                        # not start a timed run.
+                        if not _session_is_open(_command_session):
+                            res = await _command_session.connect()
+                            if self._connect_refused(res, worker_id):
+                                # As at start-up: no further negotiation with a gateway that
+                                # refused us. The frame was not written and never will be.
+                                _cancel_written(task)
+                                return
+                            if not _session_is_open(_command_session):
+                                # connect() gave up after its retries; send() would only run
+                                # the same cycle again. Drop this frame and try the next.
+                                LOGGER.warning(
+                                    "%s Command session unavailable; message `%s` not sent.",
+                                    self.log_id,
+                                    task["message"],
                                 )
+                                _cancel_written(task)
+                                continue
+                        if "guard" in task and not task["guard"]():
+                            _cancel_written(task)
+                            continue
+                        written_at = time.monotonic()
+                        # Follow OWNd's public signature and library retry policy.
+                        # Preserve the panel lock/guards before issuing motion.
+                        collected = await _command_session.send(
+                            message=task["message"],
+                            is_status_request=task["is_status_request"],
+                        )
+                        if collected is None:
+                            _cancel_written(task)
+                        else:
+                            _resolve_written(task, written_at)
+                        if collected and isinstance(collected, list):
+                            for resp in collected:
+                                raw_resp = str(resp)
+                                if self.bus_monitor.has_frame_since(
+                                    task_start, direction="rx", raw=raw_resp
+                                ):
+                                    continue
+                                frame = self.bus_monitor.record_frame(
+                                    direction="rx",
+                                    raw=raw_resp,
+                                    parsed=resp if isinstance(resp, OWNMessage) else None,
+                                )
+                                if not getattr(
+                                    frame, "is_duplicate", False
+                                ) and isinstance(resp, OWNMessage):
+                                    async_dispatcher_send(
+                                        self.hass, f"myhome_message_{self.mac}", resp
+                                    )
                 except asyncio.CancelledError:
                     _cancel_written(task)
                     raise
@@ -1115,6 +1121,13 @@ class MyHOMEGatewayHandler:
 
         return True
 
+    def async_queue_calibration(self, message: OWNCommand, guard: Callable[[], bool], command_lock: asyncio.Lock) -> asyncio.Future[float]:
+        """Queue a leased command and expose the worker's actual write timestamp."""
+        written: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+        self.send_buffer.put_nowait({"message": message, "is_status_request": False,
+                                    "guard": guard, "command_lock": command_lock, "written": written})
+        return written
+
     async def send(self, message: OWNCommand) -> asyncio.Future[float]:
         """Queue a command; the returned future resolves to the monotonic write time."""
         return await self._enqueue(message, is_status_request=False)
@@ -1156,7 +1169,7 @@ class MyHOMEGatewayHandler:
         for entry in entries:
             if entry.domain in ("light", "switch"):
                 # entry.unique_id is like "00:03:50:00:12:34-1-12"
-                _, key = parse_unique_id(entry.unique_id, self.gateway.mac)
+                _, key = parse_unique_id(entry.unique_id, self.mac)
                 if not key:
                     continue
                 address = Address.from_device_id(key)

@@ -691,19 +691,48 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
             return self.hass.config_entries.async_get_entry(self.handler)
         return None
 
-    async def async_step_init(self, user_input: typing.Any = None) -> typing.Any:  # pylint: disable=unused-argument  # type: ignore
-        """Manage the MyHome options."""
-        self.options = dict(self.config_entry.options)  # type: ignore
-        self.data = dict(self.config_entry.data)  # type: ignore
-        if CONF_WORKER_COUNT not in self.options:  # type: ignore
-            self.options[CONF_WORKER_COUNT] = 1  # type: ignore
-        if CONF_GENERATE_EVENTS not in self.options:  # type: ignore
-            self.options[CONF_GENERATE_EVENTS] = False  # type: ignore
-        if CONF_BROADCAST_RESYNC not in self.options:  # type: ignore
-            self.options[CONF_BROADCAST_RESYNC] = True  # type: ignore
-        if CONF_TRANSITION_MODE not in self.options:  # type: ignore
-            self.options[CONF_TRANSITION_MODE] = DEFAULT_TRANSITION_MODE  # type: ignore
-        return await self.async_step_user()  # type: ignore
+    async def async_step_init(self, user_input: dict[str, typing.Any] | None = None) -> typing.Any:  # pylint: disable=unused-argument
+        """Keep panel access separate from gateway connection settings."""
+        return self.async_show_menu(step_id="init", menu_options=["panel", "user"])
+
+    async def async_step_panel(self, user_input: dict[str, typing.Any] | None = None) -> typing.Any:
+        """Link to this gateway's panel and manage its shared sidebar shortcut."""
+        from urllib.parse import urlencode
+
+        from .panel import (
+            CONF_SHOW_SIDEBAR,
+            PANEL_URL,
+            async_get_panel_sidebar,
+            async_set_panel_sidebar,
+        )
+
+        errors = {}
+        if user_input is not None:
+            try:
+                await async_set_panel_sidebar(self.hass, user_input[CONF_SHOW_SIDEBAR])
+            except OSError:
+                errors["base"] = "panel_save_failed"
+            else:
+                return self.async_create_entry(title="", data=dict(self.config_entry.options))
+        visible = await async_get_panel_sidebar(self.hass)
+        return self.async_show_form(
+            step_id="panel",
+            data_schema=Schema({Required(CONF_SHOW_SIDEBAR, default=visible): bool}),
+            description_placeholders={
+                "panel_url": f"/{PANEL_URL}?{urlencode({'entry_id': self.config_entry.entry_id})}",
+            },
+            errors=errors,
+        )
+
+    def _initialize_options(self) -> None:
+        """Prepare gateway settings only when entering their existing form."""
+        options = dict(self.config_entry.options)
+        options.setdefault(CONF_WORKER_COUNT, 1)
+        options.setdefault(CONF_GENERATE_EVENTS, False)
+        options.setdefault(CONF_BROADCAST_RESYNC, True)
+        options.setdefault(CONF_TRANSITION_MODE, DEFAULT_TRANSITION_MODE)
+        self.options = options  # type: ignore[assignment]
+        self.data = dict(self.config_entry.data)  # type: ignore[assignment]
 
     async def async_step_user(self, user_input=None, errors=None):  # type: ignore
         """Manage general settings and decoder mapping."""
@@ -711,9 +740,7 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
         errors = errors or {}
 
         if self.options is None:
-            self.options = dict(self.config_entry.options) if self.config_entry else {}  # type: ignore
-        if self.data is None:
-            self.data = dict(self.config_entry.data) if self.config_entry else {}  # type: ignore
+            self._initialize_options()
 
         if user_input is not None:
             # ── Validate decoder entity IDs ───────────────────────────────
@@ -806,7 +833,7 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
             ): bool,
             vol.Optional(
                 CONF_BROADCAST_RESYNC,
-                description={"suggested_value": self.options.get(CONF_BROADCAST_RESYNC, True)},
+                description={"suggested_value": typing.cast(dict[str, typing.Any], self.options).get(CONF_BROADCAST_RESYNC, True)},
                 default=True,
             ): bool,
             vol.Optional(

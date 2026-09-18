@@ -290,6 +290,10 @@ async def test_options_flow(mock_sending, mock_listening, mock_test_connection, 
     with patch("custom_components.myhome.config_flow.find_gateways"):
         # Initialize option flow
         result = await hass.config_entries.options.async_init(entry.entry_id)
+        assert result["type"] == FlowResultType.MENU
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "user"}
+        )
 
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "user"
@@ -721,7 +725,9 @@ async def test_options_flow_existing_decoders_and_handler_lookup(hass: HomeAssis
     # 1. Options flow with config_entry passed
     opt_flow = MyhomeOptionsFlowHandler(entry)
     opt_flow.hass = hass
-    form = await opt_flow.async_step_init()
+    menu = await opt_flow.async_step_init()
+    assert menu["type"] == FlowResultType.MENU
+    form = await opt_flow.async_step_user()
     assert form["type"] == FlowResultType.FORM
     assert form["step_id"] == "user"
 
@@ -878,8 +884,12 @@ async def test_options_flow_update_gateway_model(hass: HomeAssistant) -> None:
 
     opt_flow = MyhomeOptionsFlowHandler(entry)
     opt_flow.hass = hass
-    form = await opt_flow.async_step_init()
+    menu = await opt_flow.async_step_init()
+    assert menu["type"] == FlowResultType.MENU
+    assert menu["menu_options"] == ["panel", "user"]
+    form = await opt_flow.async_step_user()
     assert form["type"] == FlowResultType.FORM
+    assert form["step_id"] == "user"
 
     with patch.object(hass.config_entries, "async_reload", return_value=True) as mock_reload:
         res = await opt_flow.async_step_user({

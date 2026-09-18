@@ -747,7 +747,9 @@ class TestConfigFlowHardening:
         options_flow = MyhomeOptionsFlowHandler(entry)
         options_flow.hass = hass
 
-        init_res = await options_flow.async_step_init()
+        menu = await options_flow.async_step_init()
+        assert menu["type"] == "menu"
+        init_res = await options_flow.async_step_user()
         assert init_res["type"] == "form"
         assert init_res["step_id"] == "user"
 
