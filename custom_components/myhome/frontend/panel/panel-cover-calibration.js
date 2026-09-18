@@ -214,7 +214,8 @@ export class CoverCalibration {
     }
     const form = host.querySelector("#cal-reading");
     form.hidden = !enabled || state.phase !== "reading";
-    for (const input of form.elements) input.disabled = disabled;
+    // HA's scoped registry exposes named form controls but its iterator throws.
+    for (const input of form.querySelectorAll("input, button")) input.disabled = disabled;
     const repeat = host.querySelector("#cal-repeat");
     repeat.hidden = !enabled || !state.can_repeat;
     repeat.disabled = disabled;

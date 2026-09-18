@@ -495,3 +495,41 @@ test("geometry recovery restores its reading screen without starting any movemen
   assert.match(host.querySelector("#cal-phase").textContent, /corsa completa/);
   assert.equal(calls.length, 0);
 });
+
+for (const mode of ["geometry", "guided", "automatic"]) {
+  test(`${mode} renders with HA's non-iterable scoped form controls`, async () => {
+    // @webcomponents/scoped-custom-element-registry supplies named/indexed form
+    // controls but its Symbol.iterator throws "Method not implemented.".
+    const prototype = dom.window.HTMLFormElement.prototype;
+    const original = Object.getOwnPropertyDescriptor(prototype, "elements");
+    Object.defineProperty(prototype, "elements", { ...original, get() {
+      return new Proxy(original.get.call(this), { get(target, key) {
+        if (key === Symbol.iterator) return () => { throw new Error("Method not implemented."); };
+        return Reflect.get(target, key, target);
+      } });
+    } });
+    try {
+      const { host, push, controller, calls } = await mount({ mode });
+      assert.equal(host.querySelector("#cal-reason").hidden, true, "initial subscription must render without an exception");
+      if (mode !== "geometry") return;
+      push({ phase: "briefing", step: "lift", can_repeat: false, save_modes: ["new"] });
+      assert.equal(host.querySelector('[data-cal-action="next"]').hidden, false);
+      push({ phase: "reading", step: "lift", reading_kind: "lift", can_repeat: true });
+      const form = host.querySelector("#cal-reading");
+      const input = form.querySelector("input"), submit = form.querySelector('button[type="submit"]');
+      input.value = "2.5";
+      controller._busy = true; controller._render();
+      assert.equal(input.disabled, true); assert.equal(submit.disabled, true);
+      controller._busy = false; controller._lost = true; controller._render();
+      assert.equal(input.disabled, true); assert.equal(submit.disabled, true);
+      controller._lost = false; controller._render();
+      assert.equal(input.disabled, false); assert.equal(submit.disabled, false);
+      assert.equal(input.value, "2.5");
+      form.dispatchEvent(new dom.window.Event("submit", { cancelable: true })); await tick();
+      assert.equal(calls.at(-1).action, "reading");
+      assert.equal(calls.at(-1).reading_cm, 2.5);
+    } finally {
+      Object.defineProperty(prototype, "elements", original);
+    }
+  });
+}
