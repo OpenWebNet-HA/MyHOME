@@ -1954,10 +1954,12 @@
 <p>In v2, setup and management are <strong>100% UI-first</strong>: climate zones and central units are automatically discovered over the SCS bus without manual YAML configuration files.</p>
 <hr />
 <h2 id="auto-discovery">🚀 Auto-Discovery<a class="headerlink" href="#auto-discovery" title="Permanent link">&para;</a></h2>
-<p>When your gateway connects to Home Assistant:
-1. <strong>Dynamic Bus Discovery</strong>: The integration listens to OpenWebNet <code>WHO = 4</code> temperature and setpoint messages broadcast on the SCS bus.
-2. <strong>Entity Creation</strong>: Each active thermoregulation zone (<code>WHERE = 1..99</code> or central unit <code>#0</code>) is registered as a Home Assistant <code>climate</code> entity linked to your gateway.
-3. <strong>UI Customization</strong>: You can rename the zone, assign it to an Area (e.g. <em>Master Bedroom</em>, <em>Living Room</em>), and adjust temperature step increments directly in the Home Assistant UI.</p>
+<p>When your gateway connects to Home Assistant:</p>
+<ol>
+<li><strong>Dynamic Bus Discovery</strong>: The integration listens to OpenWebNet <code>WHO = 4</code> temperature and setpoint messages broadcast on the SCS bus.</li>
+<li><strong>Entity Creation</strong>: Each active thermoregulation zone (<code>WHERE = 1..99</code> or central unit <code>#0</code>) is registered as a Home Assistant <code>climate</code> entity linked to your gateway.</li>
+<li><strong>UI Customization</strong>: You can rename the zone, assign it to an Area (e.g. <em>Master Bedroom</em>, <em>Living Room</em>), and adjust temperature step increments directly in the Home Assistant UI.</li>
+</ol>
 <hr />
 <h2 id="supported-plant-architectures">🏛️ Supported Plant Architectures<a class="headerlink" href="#supported-plant-architectures" title="Permanent link">&para;</a></h2>
 <p>MyHOME installations typically deploy one of three climate topologies, all natively supported by the v2 discovery engine:</p>
@@ -1986,14 +1988,16 @@
 </ul>
 <hr />
 <h2 id="supported-features-hvac-modes">🎛️ Supported Features &amp; HVAC Modes<a class="headerlink" href="#supported-features-hvac-modes" title="Permanent link">&para;</a></h2>
-<p>MyHOME climate entities support standard Home Assistant climate controls:
-* <strong>HVAC Modes</strong>:
-  - <code>heat</code>: System active in heating mode.
-  - <code>cool</code>: System active in cooling / air-conditioning mode.
-  - <code>auto</code>: Following scheduled setpoint or central program.
-  - <code>off</code>: System frost-protection or thermal shutdown.
-* <strong>Target Temperature</strong>: Adjustable setpoint slider in 0.5 °C increments.
-* <strong>Current Temperature</strong>: Real-time ambient reading reported by the probe.</p>
+<p>MyHOME climate entities support standard Home Assistant climate controls:</p>
+<ul>
+<li><strong>HVAC Modes</strong>:</li>
+<li><code>heat</code>: System active in heating mode.</li>
+<li><code>cool</code>: System active in cooling / air-conditioning mode.</li>
+<li><code>auto</code>: Following scheduled setpoint or central program.</li>
+<li><code>off</code>: System frost-protection or thermal shutdown.</li>
+<li><strong>Target Temperature</strong>: Adjustable setpoint slider in 0.5 °C increments.</li>
+<li><strong>Current Temperature</strong>: Real-time ambient reading reported by the probe.</li>
+</ul>
 <hr />
 <h2 id="legacy-yaml-note">🔄 Legacy YAML Note<a class="headerlink" href="#legacy-yaml-note" title="Permanent link">&para;</a></h2>
 <div class="admonition note">

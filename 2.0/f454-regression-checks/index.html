@@ -1833,25 +1833,37 @@ normal bus traffic. The tests use synthetic frames and a local mock gateway;
 validation on a physical F454 is still required.</p>
 <h2 id="changes">Changes<a class="headerlink" href="#changes" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Accept time broadcasts and replies when the optional timezone is empty or
+<li>
+<p>Accept time broadcasts and replies when the optional timezone is empty or
   absent. Keep an unspecified timezone unspecified. Reject truncated or invalid
-  clock values without losing the following event.</li>
-<li>Read command replies through their terminal ACK or NACK, including discovery
+  clock values without losing the following event.</p>
+</li>
+<li>
+<p>Read command replies through their terminal ACK or NACK, including discovery
   responses longer than 20 frames. Bound each transaction to 30 seconds. Close
   incomplete sessions before reuse, and avoid repeating an actuation whose ACK
-  was lost. An immediate NACK may retry once.</li>
-<li>Deliver energy, power, temperature and illuminance updates to configured
-  sensors. Process each YAML device once even when it has a WHERE alias.</li>
-<li>Discover WHO 18 power and energy measurements as they arrive. Restore their
+  was lost. An immediate NACK may retry once.</p>
+</li>
+<li>
+<p>Deliver energy, power, temperature and illuminance updates to configured
+  sensors. Process each YAML device once even when it has a WHERE alias.</p>
+</li>
+<li>
+<p>Discover WHO 18 power and energy measurements as they arrive. Restore their
   registry identities after reload, preserving names and disabled entities.
   Discover only reported measurements; daily and monthly energy remain disabled
-  by default. Explicit sensor configuration takes precedence at that address.</li>
-<li>Use the gateway's registry ID for device links on Home Assistant versions that
+  by default. Explicit sensor configuration takes precedence at that address.</p>
+</li>
+<li>
+<p>Use the gateway's registry ID for device links on Home Assistant versions that
   support <code>via_device_id</code>, with compatibility for older versions. Replace the
   removed media-player standby enum with OFF and IDLE behavior. Remove an unused
-  <code>async_timeout</code> import that prevents loading on a clean newer installation.</li>
-<li>Keep routine bus traffic at debug level; retain warnings for malformed frames,
-  explicit rejections and transport failures.</li>
+  <code>async_timeout</code> import that prevents loading on a clean newer installation.</p>
+</li>
+<li>
+<p>Keep routine bus traffic at debug level; retain warnings for malformed frames,
+  explicit rejections and transport failures.</p>
+</li>
 </ul>
 <h2 id="automated-verification">Automated verification<a class="headerlink" href="#automated-verification" title="Permanent link">&para;</a></h2>
 <p>Run from the repository root in an environment with the project's test and
@@ -1874,18 +1886,28 @@ restoration, multiple gateways and YAML precedence through real HA platforms.
 The existing mock-gateway, media-player, snapshot and packaging checks also apply.</p>
 <h2 id="physical-gateway-verification">Physical gateway verification<a class="headerlink" href="#physical-gateway-verification" title="Permanent link">&para;</a></h2>
 <ol>
-<li>Install the branch's <code>custom_components/myhome</code> folder and restart Home
-   Assistant. Verify that existing entity IDs and customized names are retained.</li>
-<li>Check discovery on an installation with more than 20 light responses. Verify
-   that subsequent cover, heating and audio requests receive their own replies.</li>
-<li>Leave the integration running through several clock and energy reports.
+<li>
+<p>Install the branch's <code>custom_components/myhome</code> folder and restart Home
+   Assistant. Verify that existing entity IDs and customized names are retained.</p>
+</li>
+<li>
+<p>Check discovery on an installation with more than 20 light responses. Verify
+   that subsequent cover, heating and audio requests receive their own replies.</p>
+</li>
+<li>
+<p>Leave the integration running through several clock and energy reports.
    Check that the clock no longer causes <code>IndexError</code> and power/energy values
-   update. Enable daily or monthly energy entities if needed.</li>
-<li>Reload the integration and confirm that discovered sensors return with the
-   same IDs. Verify normal light, cover and audio operation.</li>
-<li>In a controlled test, interrupt the gateway connection. Confirm that timed-out
+   update. Enable daily or monthly energy entities if needed.</p>
+</li>
+<li>
+<p>Reload the integration and confirm that discovered sensors return with the
+   same IDs. Verify normal light, cover and audio operation.</p>
+</li>
+<li>
+<p>In a controlled test, interrupt the gateway connection. Confirm that timed-out
    command sessions are closed, later commands reconnect, and an actuation with
-   a lost ACK is not automatically sent again.</li>
+   a lost ACK is not automatically sent again.</p>
+</li>
 </ol>
 <p>These changes do not address unrelated Bluetooth permissions, camera libraries
 or other custom integrations reported in the same Home Assistant log.</p>

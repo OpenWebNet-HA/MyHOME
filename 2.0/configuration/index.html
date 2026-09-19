@@ -1875,14 +1875,16 @@
 <p>This guide walks you through onboarding, configuring, and automating your Legrand / BTicino MyHOME SCS installation with Home Assistant using the <strong>v2.0 UI-first architecture</strong>.</p>
 <hr />
 <h2 id="prerequisites">📋 Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h2>
-<p>Before adding the integration to Home Assistant, ensure:
-1. <strong>Network Connectivity</strong>: Your OpenWebNet IP gateway (F454, MyHomeServer1, MH200N/201/202, F453AV) is connected to your local network and powered on.
-2. <strong>Fixed IP Address</strong>: A static IP address or permanent DHCP lease reservation on your local router is strongly recommended.
-3. <strong>OpenWebNet Password</strong>:
-   - For standard gateways (F454, MH201): Note your numeric (4 or 9 digits) or alphanumeric password configured in MyHOME_Suite or TiMyHome.
-   - For MyHomeServer1: Note the installer password configured via the MyHOME_Up app.
-   - If open LAN authentication is disabled on the gateway, no password is required.
-4. <strong>Integration Installed</strong>: The MyHOME custom component is installed (see the <a href="../getting-started/installation/">Installation Guide</a>).</p>
+<p>Before adding the integration to Home Assistant, ensure:</p>
+<ol>
+<li><strong>Network Connectivity</strong>: Your OpenWebNet IP gateway (F454, MyHomeServer1, MH200N/201/202, F453AV) is connected to your local network and powered on.</li>
+<li><strong>Fixed IP Address</strong>: A static IP address or permanent DHCP lease reservation on your local router is strongly recommended.</li>
+<li><strong>OpenWebNet Password</strong>:</li>
+<li>For standard gateways (F454, MH201): Note your numeric (4 or 9 digits) or alphanumeric password configured in MyHOME_Suite or TiMyHome.</li>
+<li>For MyHomeServer1: Note the installer password configured via the MyHOME_Up app.</li>
+<li>If open LAN authentication is disabled on the gateway, no password is required.</li>
+<li><strong>Integration Installed</strong>: The MyHOME custom component is installed (see the <a href="../getting-started/installation/">Installation Guide</a>).</li>
+</ol>
 <hr />
 <h2 id="step-1-add-the-gateway-via-config-flow">🚀 Step 1: Add the Gateway via Config Flow<a class="headerlink" href="#step-1-add-the-gateway-via-config-flow" title="Permanent link">&para;</a></h2>
 <p>In v2, gateway setup is <strong>100% UI-first</strong>:</p>
@@ -1901,11 +1903,13 @@
 <p>For full parameter specifications and troubleshooting, see <a href="gateways/">Gateways &amp; Connection Setup</a>.</p>
 <hr />
 <h2 id="step-2-first-bus-discovery-device-creation">🔍 Step 2: First Bus Discovery &amp; Device Creation<a class="headerlink" href="#step-2-first-bus-discovery-device-creation" title="Permanent link">&para;</a></h2>
-<p>Once connected:
-* <strong>Automatic Bus Scanning</strong>: The integration queries the SCS bus across supported subsystems (<code>WHO = 1, 2, 4, 15, 18, 25</code>).
-* <strong>Device Registry Linking</strong>: Discovered actuators, thermostats, and sensors are automatically grouped and linked to your gateway device via Home Assistant's <code>via_device_id</code> registry model.
-* <strong>Non-Destructive Transition</strong>: If you have an existing <code>/config/myhome.yaml</code> file from v0.9.4, entity names and physical SCS groups (<code>#G</code>) are read on startup as a compatibility overlay.
-* <strong>Organizing Entities</strong>: Open <strong>Settings → Devices &amp; Services → Entities</strong> to customize entity names, assign rooms/areas (e.g. <em>Living Room</em>, <em>Kitchen</em>), and set custom icons.</p>
+<p>Once connected:</p>
+<ul>
+<li><strong>Automatic Bus Scanning</strong>: The integration queries the SCS bus across supported subsystems (<code>WHO = 1, 2, 4, 15, 18, 25</code>).</li>
+<li><strong>Device Registry Linking</strong>: Discovered actuators, thermostats, and sensors are automatically grouped and linked to your gateway device via Home Assistant's <code>via_device_id</code> registry model.</li>
+<li><strong>Non-Destructive Transition</strong>: If you have an existing <code>/config/myhome.yaml</code> file from v0.9.4, entity names and physical SCS groups (<code>#G</code>) are read on startup as a compatibility overlay.</li>
+<li><strong>Organizing Entities</strong>: Open <strong>Settings → Devices &amp; Services → Entities</strong> to customize entity names, assign rooms/areas (e.g. <em>Living Room</em>, <em>Kitchen</em>), and set custom icons.</li>
+</ul>
 <hr />
 <h2 id="step-3-tune-integration-options">⚙️ Step 3: Tune Integration Options<a class="headerlink" href="#step-3-tune-integration-options" title="Permanent link">&para;</a></h2>
 <p>Fine-tune runtime parameters by clicking <strong>Configure</strong> on the MyHOME integration card:</p>

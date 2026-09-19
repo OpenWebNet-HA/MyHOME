@@ -2077,15 +2077,17 @@
 <p>This guide provides a step-by-step, zero-touch migration path for users transitioning from the legacy <strong>SDomotica</strong> bridge to the native Home Assistant <strong>MyHOME (OpenWebNet)</strong> integration.</p>
 <hr />
 <h2 id="executive-summary">📌 Executive Summary<a class="headerlink" href="#executive-summary" title="Permanent link">&para;</a></h2>
-<p>Many Legrand &amp; BTicino MyHOME installations were previously integrated into Home Assistant via SDomotica (either through MQTT packages or the custom bridge add-on). In these setups, Home Assistant entity IDs are automatically generated based on each installation's SCS bus addresses and device types:
-- <strong>Lights &amp; Relays</strong>: <code>light.sdomoticabticino&lt;where&gt;</code> (or <code>light.sdomoticabticino2_&lt;where&gt;</code> for secondary gateways)
-- <strong>F422 Bus Interfaces</strong>: <code>light.sdomoticabticino&lt;where&gt;_4_&lt;interface&gt;</code> (e.g. <code>where: 41</code>, <code>interface: 01</code>)
-- <strong>Covers &amp; Shutters</strong>: <code>cover.sdomoticabticino&lt;where&gt;</code> (e.g. <code>cover.sdomoticabticino31</code>)
-- <strong>Climate &amp; Thermoregulation</strong>: <code>climate.sdomoticabticino_4_&lt;zone&gt;</code> (e.g. <code>climate.sdomoticabticino_4_1</code>)
-- <strong>Audio Sound System</strong>: <code>media_player.audio_zone_&lt;zone&gt;</code> (e.g. <code>media_player.audio_zone_2</code>)
-- <strong>Burglar Alarm</strong>: <code>alarm_control_panel.sdomoticabtalarm</code> (or <code>sdomotica_alarm</code>)
-- <strong>Energy &amp; Power Sensors</strong>: <code>sensor.sdomoticabticino&lt;where&gt;</code> (e.g. F522/F523 power meters)
-- <strong>Auxiliary Contacts / Binary Sensors</strong>: <code>binary_sensor.sdomoticabticino&lt;where&gt;</code> (e.g. 3477 dry contacts)</p>
+<p>Many Legrand &amp; BTicino MyHOME installations were previously integrated into Home Assistant via SDomotica (either through MQTT packages or the custom bridge add-on). In these setups, Home Assistant entity IDs are automatically generated based on each installation's SCS bus addresses and device types:</p>
+<ul>
+<li><strong>Lights &amp; Relays</strong>: <code>light.sdomoticabticino&lt;where&gt;</code> (or <code>light.sdomoticabticino2_&lt;where&gt;</code> for secondary gateways)</li>
+<li><strong>F422 Bus Interfaces</strong>: <code>light.sdomoticabticino&lt;where&gt;_4_&lt;interface&gt;</code> (e.g. <code>where: 41</code>, <code>interface: 01</code>)</li>
+<li><strong>Covers &amp; Shutters</strong>: <code>cover.sdomoticabticino&lt;where&gt;</code> (e.g. <code>cover.sdomoticabticino31</code>)</li>
+<li><strong>Climate &amp; Thermoregulation</strong>: <code>climate.sdomoticabticino_4_&lt;zone&gt;</code> (e.g. <code>climate.sdomoticabticino_4_1</code>)</li>
+<li><strong>Audio Sound System</strong>: <code>media_player.audio_zone_&lt;zone&gt;</code> (e.g. <code>media_player.audio_zone_2</code>)</li>
+<li><strong>Burglar Alarm</strong>: <code>alarm_control_panel.sdomoticabtalarm</code> (or <code>sdomotica_alarm</code>)</li>
+<li><strong>Energy &amp; Power Sensors</strong>: <code>sensor.sdomoticabticino&lt;where&gt;</code> (e.g. F522/F523 power meters)</li>
+<li><strong>Auxiliary Contacts / Binary Sensors</strong>: <code>binary_sensor.sdomoticabticino&lt;where&gt;</code> (e.g. 3477 dry contacts)</li>
+</ul>
 <h3 id="our-migration-guarantees">Our Migration Guarantees<a class="headerlink" href="#our-migration-guarantees" title="Permanent link">&para;</a></h3>
 <ol>
 <li><strong>Zero Dashboard Changes</strong>: Your existing Lovelace cards, entity grids, auto-entities filters, and ApexCharts remain 100% operational with your exact entity IDs.</li>
@@ -2094,17 +2096,21 @@
 </ol>
 <hr />
 <h2 id="migration-options">🚀 Migration Options<a class="headerlink" href="#migration-options" title="Permanent link">&para;</a></h2>
-<p>You can migrate using either:
-1. <strong>The Automated Migration CLI Tool (<code>scripts/migrate_from_sdomotica.py</code>)</strong> <em>(Recommended)</em>
-2. <strong>Direct <code>myhome.yaml</code> Configuration</strong></p>
+<p>You can migrate using either:</p>
+<ol>
+<li><strong>The Automated Migration CLI Tool (<code>scripts/migrate_from_sdomotica.py</code>)</strong> <em>(Recommended)</em></li>
+<li><strong>Direct <code>myhome.yaml</code> Configuration</strong></li>
+</ol>
 <hr />
 <h3 id="option-1-the-automated-migration-cli-tool-recommended">Option 1: The Automated Migration CLI Tool (Recommended)<a class="headerlink" href="#option-1-the-automated-migration-cli-tool-recommended" title="Permanent link">&para;</a></h3>
 <p>The MyHOME repository includes a multi-source automated migration utility located at <code>scripts/migrate_from_sdomotica.py</code>.</p>
 <h4 id="supported-ingestion-sources-add-ons">Supported Ingestion Sources &amp; Add-ons<a class="headerlink" href="#supported-ingestion-sources-add-ons" title="Permanent link">&para;</a></h4>
-<p>The migration engine automatically scans and discovers all configurations across SDomotica add-ons:
-1. <strong>Home Assistant Entity Registry (<code>.storage/core.entity_registry</code>)</strong>: Your live HA registry with custom names, icons, and room/area assignments. Automatically recognizes <code>sdomoticabticino*</code>, <code>sdomoticabticino2*</code> (secondary gateway), <code>sdomoticabtalarm*</code> (burglar alarm), and <code>platform: MyHomeAudio</code>.
-2. <strong>Sdomotica Gateway <code>config.json</code></strong> (<code>--sdomotica-json</code>): The Homebridge-standard config from the SDomotica Add-on WebUI containing device capabilities (<code>can_dim</code>, <code>WindowsAdvance</code>, <code>travel_time</code>, <code>SAThermoHC</code>, <code>Sensor3477inv</code>, gateway IP and credentials). Discovered automatically in <code>/config</code>, <code>/config/sdomotica/</code>, or <code>/share/sdomotica/</code>.
-3. <strong>Sdomotica Package YAMLs (<code>--sdomotica-yaml</code>)</strong>: Discovers and loads all package files in <code>/config/packages/</code> (e.g. <code>sdomoticabticino.yaml</code>, <code>sdomoticabticino2.yaml</code>, and <code>sdomoticabtalarm.yaml</code>), parsing lights, covers, switches, climates, media players, power/energy sensors, binary contacts, and burglar alarms simultaneously.</p>
+<p>The migration engine automatically scans and discovers all configurations across SDomotica add-ons:</p>
+<ol>
+<li><strong>Home Assistant Entity Registry (<code>.storage/core.entity_registry</code>)</strong>: Your live HA registry with custom names, icons, and room/area assignments. Automatically recognizes <code>sdomoticabticino*</code>, <code>sdomoticabticino2*</code> (secondary gateway), <code>sdomoticabtalarm*</code> (burglar alarm), and <code>platform: MyHomeAudio</code>.</li>
+<li><strong>Sdomotica Gateway <code>config.json</code></strong> (<code>--sdomotica-json</code>): The Homebridge-standard config from the SDomotica Add-on WebUI containing device capabilities (<code>can_dim</code>, <code>WindowsAdvance</code>, <code>travel_time</code>, <code>SAThermoHC</code>, <code>Sensor3477inv</code>, gateway IP and credentials). Discovered automatically in <code>/config</code>, <code>/config/sdomotica/</code>, or <code>/share/sdomotica/</code>.</li>
+<li><strong>Sdomotica Package YAMLs (<code>--sdomotica-yaml</code>)</strong>: Discovers and loads all package files in <code>/config/packages/</code> (e.g. <code>sdomoticabticino.yaml</code>, <code>sdomoticabticino2.yaml</code>, and <code>sdomoticabtalarm.yaml</code>), parsing lights, covers, switches, climates, media players, power/energy sensors, binary contacts, and burglar alarms simultaneously.</li>
+</ol>
 <h4 id="step-1-preview-entities-dry-run">Step 1: Preview Entities (Dry Run)<a class="headerlink" href="#step-1-preview-entities-dry-run" title="Permanent link">&para;</a></h4>
 <p>Inspect your installation and preview all discovered entities:
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Auto-discover from HA config directory:</span>
@@ -2183,17 +2189,23 @@ Or directly from your Sdomotica <code>config.json</code> backup:
 </span><span id="__span-4-48"><a id="__codelineno-4-48" name="__codelineno-4-48" href="#__codelineno-4-48"></a><span class="w">      </span><span class="nt">inverted</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span></code></pre></div></p>
 <h5 id="mode-b-in-place-entity-registry-migration-zero-touch">Mode B: In-Place Entity Registry Migration (Zero-Touch)<a class="headerlink" href="#mode-b-in-place-entity-registry-migration-zero-touch" title="Permanent link">&para;</a></h5>
-<p>To seamlessly adopt your entities directly inside Home Assistant's entity registry without changing any YAML files:
-1. <strong>Stop Home Assistant</strong>:
+<p>To seamlessly adopt your entities directly inside Home Assistant's entity registry without changing any YAML files:</p>
+<ol>
+<li><strong>Stop Home Assistant</strong>:
    <div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>ha<span class="w"> </span>core<span class="w"> </span>stop
-</span></code></pre></div>
-2. <strong>Execute In-Place Registry Migration</strong>:
+</span></code></pre></div></li>
+<li>
+<p><strong>Execute In-Place Registry Migration</strong>:
    <div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>python<span class="w"> </span>scripts/migrate_from_sdomotica.py<span class="w"> </span>--config-dir<span class="w"> </span>/config<span class="w"> </span>--migrate-registry<span class="w"> </span>--gateway-mac<span class="w"> </span><span class="m">00</span>:03:50:20:00:01
 </span></code></pre></div>
-   <em>Note: A timestamped backup (<code>core.entity_registry.backup_sdomotica_&lt;timestamp&gt;</code>) is automatically created before any modification.</em>
-3. <strong>Start Home Assistant</strong>:
+   <em>Note: A timestamped backup (<code>core.entity_registry.backup_sdomotica_&lt;timestamp&gt;</code>) is automatically created before any modification.</em></p>
+</li>
+<li>
+<p><strong>Start Home Assistant</strong>:
    <div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>ha<span class="w"> </span>core<span class="w"> </span>start
 </span></code></pre></div></p>
+</li>
+</ol>
 <p>When Home Assistant restarts, the native MyHOME integration binds directly to existing entity registry records. <strong>Zero duplicate entities, no <code>_2</code> suffixes, and 100% preservation of Lovelace cards and automations.</strong></p>
 <hr />
 <h3 id="option-2-complete-sdomotica-device-mapping-catalog">Option 2: Complete SDomotica Device Mapping Catalog<a class="headerlink" href="#option-2-complete-sdomotica-device-mapping-catalog" title="Permanent link">&para;</a></h3>
@@ -2360,11 +2372,13 @@ Or directly from your Sdomotica <code>config.json</code> backup:
 </table>
 <hr />
 <h2 id="post-migration-verification-checklist">🛡️ Post-Migration Verification Checklist<a class="headerlink" href="#post-migration-verification-checklist" title="Permanent link">&para;</a></h2>
-<p>After restarting Home Assistant with MyHOME:
-- [ ] Open <strong>Developer Tools ➔ States</strong> and search for <code>sdomoticabticino</code>. Verify all entities report their correct state (<code>on</code>, <code>off</code>, <code>open</code>, <code>closed</code>).
-- [ ] Check your Lovelace dashboards (e.g. Active Lights, Covers grid). Ensure no cards show yellow <em>"Entity not found"</em> warnings.
-- [ ] Test toggling a light and operating a cover to confirm bidirectional bus feedback.
-- [ ] Check the <strong>MyHOME OpenWebNet Bus Monitor</strong> card (<code>custom:myhome-openwebnet-bus-monitor</code>) to verify live frame traffic.</p>
+<p>After restarting Home Assistant with MyHOME:</p>
+<ul>
+<li>[ ] Open <strong>Developer Tools ➔ States</strong> and search for <code>sdomoticabticino</code>. Verify all entities report their correct state (<code>on</code>, <code>off</code>, <code>open</code>, <code>closed</code>).</li>
+<li>[ ] Check your Lovelace dashboards (e.g. Active Lights, Covers grid). Ensure no cards show yellow <em>"Entity not found"</em> warnings.</li>
+<li>[ ] Test toggling a light and operating a cover to confirm bidirectional bus feedback.</li>
+<li>[ ] Check the <strong>MyHOME OpenWebNet Bus Monitor</strong> card (<code>custom:myhome-openwebnet-bus-monitor</code>) to verify live frame traffic.</li>
+</ul>
 <hr />
 <h2 id="legal-trademark-notice">⚖️ Legal &amp; Trademark Notice<a class="headerlink" href="#legal-trademark-notice" title="Permanent link">&para;</a></h2>
 <ul>

@@ -2222,10 +2222,12 @@
 <h2 id="step-1-pre-upgrade-preparation-backup">🛡️ Step 1: Pre-Upgrade Preparation &amp; Backup<a class="headerlink" href="#step-1-pre-upgrade-preparation-backup" title="Permanent link">&para;</a></h2>
 <div class="admonition important">
 <p class="admonition-title">Important</p>
-<p><strong>Always take a full Home Assistant backup before upgrading any custom integration.</strong>
-1. Go to <strong>Settings → System → Backups</strong>.
-2. Click <strong>Create Backup</strong>, select <strong>Full backup</strong>, and wait for completion.
-3. Download the backup file to your local computer.</p>
+<p><strong>Always take a full Home Assistant backup before upgrading any custom integration.</strong></p>
+<ol>
+<li>Go to <strong>Settings → System → Backups</strong>.</li>
+<li>Click <strong>Create Backup</strong>, select <strong>Full backup</strong>, and wait for completion.</li>
+<li>Download the backup file to your local computer.</li>
+</ol>
 </div>
 <h3 id="document-current-plant-configuration">Document Current Plant Configuration<a class="headerlink" href="#document-current-plant-configuration" title="Permanent link">&para;</a></h3>
 <ol>
@@ -2253,23 +2255,27 @@
 </span></code></pre></div>
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
-<p><strong>What this command does step-by-step</strong>:
-1. <code>mkdir -p /config/custom_components &amp;&amp; cd /config/custom_components</code>: Ensures the directory exists and enters your custom components folder.
-2. <code>wget -O myhome.zip ...</code>: Downloads the official pre-packaged release zip directly from GitHub.
-3. <code>rm -rf myhome</code>: Removes previous files to prevent orphaned legacy modules from colliding with v2.
-4. <code>unzip -q myhome.zip -d myhome</code>: Extracts the integration files directly into <code>/config/custom_components/myhome/</code> (avoiding the common nested folder pitfall).
-5. <code>rm myhome.zip</code>: Cleans up the temporary archive.
-6. <code>grep '"version"' myhome/manifest.json</code>: Prints the installed version to the terminal for immediate confirmation.
-7. <code>ha core restart</code>: Issues a core restart command via the Home Assistant supervisor CLI.</p>
+<p><strong>What this command does step-by-step</strong>:</p>
+<ol>
+<li><code>mkdir -p /config/custom_components &amp;&amp; cd /config/custom_components</code>: Ensures the directory exists and enters your custom components folder.</li>
+<li><code>wget -O myhome.zip ...</code>: Downloads the official pre-packaged release zip directly from GitHub.</li>
+<li><code>rm -rf myhome</code>: Removes previous files to prevent orphaned legacy modules from colliding with v2.</li>
+<li><code>unzip -q myhome.zip -d myhome</code>: Extracts the integration files directly into <code>/config/custom_components/myhome/</code> (avoiding the common nested folder pitfall).</li>
+<li><code>rm myhome.zip</code>: Cleans up the temporary archive.</li>
+<li><code>grep '"version"' myhome/manifest.json</code>: Prints the installed version to the terminal for immediate confirmation.</li>
+<li><code>ha core restart</code>: Issues a core restart command via the Home Assistant supervisor CLI.</li>
+</ol>
 </div>
 <h4 id="alternative-manual-download-via-samba-studio-code-server">📁 Alternative: Manual Download via Samba / Studio Code Server<a class="headerlink" href="#alternative-manual-download-via-samba-studio-code-server" title="Permanent link">&para;</a></h4>
-<p>If you prefer not using the command line:
-1. Download <code>myhome.zip</code> from the latest <a href="https://github.com/OpenWebNet-HA/MyHOME/releases">v2.0 Beta GitHub Release</a>.
-2. Connect to your Home Assistant host via <strong>Samba Share</strong> or the <strong>Studio Code Server</strong> add-on.
-3. Navigate to <code>/config/custom_components/myhome/</code> (create the folders if they don't exist).
-4. Extract the contents of <code>myhome.zip</code> directly into <code>/config/custom_components/myhome/</code>.
-5. Verify that <code>manifest.json</code> is located at <code>/config/custom_components/myhome/manifest.json</code>.
-6. Restart Home Assistant (<strong>Settings → System → Restart</strong> or <strong>Developer Tools → YAML → Restart</strong>).</p>
+<p>If you prefer not using the command line:</p>
+<ol>
+<li>Download <code>myhome.zip</code> from the latest <a href="https://github.com/OpenWebNet-HA/MyHOME/releases">v2.0 Beta GitHub Release</a>.</li>
+<li>Connect to your Home Assistant host via <strong>Samba Share</strong> or the <strong>Studio Code Server</strong> add-on.</li>
+<li>Navigate to <code>/config/custom_components/myhome/</code> (create the folders if they don't exist).</li>
+<li>Extract the contents of <code>myhome.zip</code> directly into <code>/config/custom_components/myhome/</code>.</li>
+<li>Verify that <code>manifest.json</code> is located at <code>/config/custom_components/myhome/manifest.json</code>.</li>
+<li>Restart Home Assistant (<strong>Settings → System → Restart</strong> or <strong>Developer Tools → YAML → Restart</strong>).</li>
+</ol>
 <hr />
 <h2 id="step-3-gateway-setup-device-onboarding">🔌 Step 3: Gateway Setup &amp; Device Onboarding<a class="headerlink" href="#step-3-gateway-setup-device-onboarding" title="Permanent link">&para;</a></h2>
 <ol>
@@ -2307,9 +2313,11 @@
 </ul>
 <hr />
 <h2 id="rollback-procedure">⏪ Rollback Procedure<a class="headerlink" href="#rollback-procedure" title="Permanent link">&para;</a></h2>
-<p>If you encounter an unexpected issue during beta testing and wish to revert to v0.9.4:
-1. Restore your pre-upgrade Home Assistant backup via <strong>Settings → System → Backups</strong>.
-2. Alternatively, re-download the <a href="https://github.com/OpenWebNet-HA/MyHOME/releases/tag/0.9.4">v0.9.4 Release Archive</a>, extract it into <code>/config/custom_components/myhome/</code>, and restart Home Assistant.</p>
+<p>If you encounter an unexpected issue during beta testing and wish to revert to v0.9.4:</p>
+<ol>
+<li>Restore your pre-upgrade Home Assistant backup via <strong>Settings → System → Backups</strong>.</li>
+<li>Alternatively, re-download the <a href="https://github.com/OpenWebNet-HA/MyHOME/releases/tag/0.9.4">v0.9.4 Release Archive</a>, extract it into <code>/config/custom_components/myhome/</code>, and restart Home Assistant.</li>
+</ol>
 
 
 

@@ -1854,10 +1854,12 @@
 <p>In v2, setup and management are <strong>100% UI-first</strong>: switch relays are automatically discovered over the SCS bus, and entity types (such as distinguishing between a wall switch and a power outlet) are configured natively through Home Assistant's UI settings without manual YAML.</p>
 <hr />
 <h2 id="auto-discovery">🚀 Auto-Discovery<a class="headerlink" href="#auto-discovery" title="Permanent link">&para;</a></h2>
-<p>When your gateway connects to Home Assistant:
-1. <strong>Dynamic Bus Discovery</strong>: The integration listens to OpenWebNet <code>WHO = 1</code> relay commands and active addresses.
-2. <strong>Device Creation</strong>: Each physical relay actuator (<code>WHERE = 1..99</code> or area/point addresses <code>WHERE = 01..9999</code>) is registered as a Home Assistant entity linked to your gateway device.
-3. <strong>UI Customization</strong>: You can rename the switch, assign it to an Area (e.g. <em>Kitchen</em>, <em>Utility Room</em>), and select a custom icon directly in the Home Assistant UI.</p>
+<p>When your gateway connects to Home Assistant:</p>
+<ol>
+<li><strong>Dynamic Bus Discovery</strong>: The integration listens to OpenWebNet <code>WHO = 1</code> relay commands and active addresses.</li>
+<li><strong>Device Creation</strong>: Each physical relay actuator (<code>WHERE = 1..99</code> or area/point addresses <code>WHERE = 01..9999</code>) is registered as a Home Assistant entity linked to your gateway device.</li>
+<li><strong>UI Customization</strong>: You can rename the switch, assign it to an Area (e.g. <em>Kitchen</em>, <em>Utility Room</em>), and select a custom icon directly in the Home Assistant UI.</li>
+</ol>
 <hr />
 <h2 id="displaying-relays-as-outlets-valves-or-appliances">🔌 Displaying Relays as Outlets, Valves, or Appliances<a class="headerlink" href="#displaying-relays-as-outlets-valves-or-appliances" title="Permanent link">&para;</a></h2>
 <p>In legacy configurations, distinguishing between an outlet and a switch required manual <code>class: outlet</code> YAML entries. In Home Assistant v2, this is handled natively in the UI using Home Assistant's <strong>"Show As"</strong> feature:</p>

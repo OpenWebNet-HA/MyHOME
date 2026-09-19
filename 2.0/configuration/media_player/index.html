@@ -2005,16 +2005,18 @@
 </span></code></pre></div>
 <h3 id="the-hardware-routing-first-model">The "Hardware Routing First" Model<a class="headerlink" href="#the-hardware-routing-first-model" title="Permanent link">&para;</a></h3>
 <p>Switching matrix sources dynamically via OpenWebNet IP commands (<code>*16*100*WHERE##</code> to <code>*16*103*WHERE##</code>) on MH200/MH201/F454 gateways causes mechanical relay clicks and momentary bus noise.</p>
-<p><strong>Recommended Practice</strong>:
-1. <strong>Physical Cabling</strong>: Connect the analog output of your network streamer (e.g. Raspberry Pi running Squeezelite, WiiM Pro, Cambridge Audio) into physical Source 1 on the F441M matrix.
-2. <strong>Matrix Configuration</strong>: Configure your room amplifiers (or physical wall panels) to stay routed to Source 1.
-3. <strong>Automated Power Sequence</strong>: When a stream starts, the integration proxy:
-   - Claims an idle decoder from the shared <strong>Decoder Pool</strong>.
-   - Wakes the decoder if it is in standby.
-   - Powers ON the BTicino amplifier zone with a smooth <code>*16*1*WHERE##</code> command.
-   - Forwards the stream URL to the streaming decoder.
-   - Mirrors track metadata (title, artist, album art) and state back onto the Home Assistant room entity.
-4. <strong>Shutdown &amp; Release</strong>: When playback stops or the zone is turned off, the amplifier powers off (<code>*16*0*WHERE##</code>) and the decoder is released back to the idle pool.</p>
+<p><strong>Recommended Practice</strong>:</p>
+<ol>
+<li><strong>Physical Cabling</strong>: Connect the analog output of your network streamer (e.g. Raspberry Pi running Squeezelite, WiiM Pro, Cambridge Audio) into physical Source 1 on the F441M matrix.</li>
+<li><strong>Matrix Configuration</strong>: Configure your room amplifiers (or physical wall panels) to stay routed to Source 1.</li>
+<li><strong>Automated Power Sequence</strong>: When a stream starts, the integration proxy:</li>
+<li>Claims an idle decoder from the shared <strong>Decoder Pool</strong>.</li>
+<li>Wakes the decoder if it is in standby.</li>
+<li>Powers ON the BTicino amplifier zone with a smooth <code>*16*1*WHERE##</code> command.</li>
+<li>Forwards the stream URL to the streaming decoder.</li>
+<li>Mirrors track metadata (title, artist, album art) and state back onto the Home Assistant room entity.</li>
+<li><strong>Shutdown &amp; Release</strong>: When playback stops or the zone is turned off, the amplifier powers off (<code>*16*0*WHERE##</code>) and the decoder is released back to the idle pool.</li>
+</ol>
 <hr />
 <h2 id="gain-staging-bus-noise-elimination">🎛️ Gain Staging &amp; Bus Noise Elimination<a class="headerlink" href="#gain-staging-bus-noise-elimination" title="Permanent link">&para;</a></h2>
 <p>Analog SCS audio matrices can suffer from faint ground-loop hum or bus hiss if the input signal level is too low.</p>
@@ -2043,11 +2045,13 @@ $$\text{Decoder Volume} = \text{Zone Volume} + \text{Pre-Gain Offset}$$</p>
 </div>
 <hr />
 <h2 id="standalone-fallback-mode-no-decoders">📻 Standalone Fallback Mode (No Decoders)<a class="headerlink" href="#standalone-fallback-mode-no-decoders" title="Permanent link">&para;</a></h2>
-<p>If you do not configure any streaming decoders in the Options Flow, the room amplifier entities operate in <strong>Native WHO = 16 Mode</strong>:
-- <strong>On / Off</strong>: Toggles the physical amplifier power.
-- <strong>Volume</strong>: Controls the hardware volume step (0 to 30) via dimension 1.
-- <strong>Source Selection</strong>: Allows switching between physical sources 1–4.
-- <strong>Track Controls</strong>: Sends OpenWebNet Next/Previous track commands (<code>WHAT = 20</code> / <code>WHAT = 21</code>) to compatible Legrand FM/DAB tuners.</p>
+<p>If you do not configure any streaming decoders in the Options Flow, the room amplifier entities operate in <strong>Native WHO = 16 Mode</strong>:</p>
+<ul>
+<li><strong>On / Off</strong>: Toggles the physical amplifier power.</li>
+<li><strong>Volume</strong>: Controls the hardware volume step (0 to 30) via dimension 1.</li>
+<li><strong>Source Selection</strong>: Allows switching between physical sources 1–4.</li>
+<li><strong>Track Controls</strong>: Sends OpenWebNet Next/Previous track commands (<code>WHAT = 20</code> / <code>WHAT = 21</code>) to compatible Legrand FM/DAB tuners.</li>
+</ul>
 <hr />
 <h2 id="openwebnet-who-16-reference-frames">📜 OpenWebNet WHO = 16 Reference Frames<a class="headerlink" href="#openwebnet-who-16-reference-frames" title="Permanent link">&para;</a></h2>
 <table>

@@ -2021,22 +2021,26 @@
     end</code></pre>
 <h3 id="pillar-1-downstream-integration-canary-in-ownd-shift-left-sentinel">Pillar 1: Downstream Integration Canary in <code>OWNd</code> (Shift-Left Sentinel)<a class="headerlink" href="#pillar-1-downstream-integration-canary-in-ownd-shift-left-sentinel" title="Permanent link">&para;</a></h3>
 <p>The most effective safeguard is <strong>Shift-Left Testing</strong>: stopping breaking changes before they are ever merged into <code>OWNd</code>.</p>
-<p>In <code>OpenWebNet-HA/OWNd/.github/workflows/ci.yml</code>, every PR and push to <code>master</code> triggers a downstream verification job:
-- The runner builds and installs the candidate <code>OWNd</code> wheel.
-- It clones the active development branch of <code>OpenWebNet-HA/MyHOME</code> (<code>v2-phase1-architecture</code> or <code>master</code>).
-- It runs the complete automated unit test suite of <code>MyHOME</code> with <strong>strict 100.0% line coverage enforcement</strong>.</p>
+<p>In <code>OpenWebNet-HA/OWNd/.github/workflows/ci.yml</code>, every PR and push to <code>master</code> triggers a downstream verification job:</p>
+<ul>
+<li>The runner builds and installs the candidate <code>OWNd</code> wheel.</li>
+<li>It clones the active development branch of <code>OpenWebNet-HA/MyHOME</code> (<code>v2-phase1-architecture</code> or <code>master</code>).</li>
+<li>It runs the complete automated unit test suite of <code>MyHOME</code> with <strong>strict 100.0% line coverage enforcement</strong>.</li>
+</ul>
 <div class="admonition important">
 <p class="admonition-title">Important</p>
 <p>A pull request to <code>OWNd</code> <strong>cannot merge</strong> if it breaks any behavior, parser, or assumption in <code>MyHOME</code>.</p>
 </div>
 <hr />
 <h3 id="pillar-2-upstream-canary-ci-in-myhome-nightly-sentinel">Pillar 2: Upstream Canary CI in <code>MyHOME</code> (Nightly Sentinel)<a class="headerlink" href="#pillar-2-upstream-canary-ci-in-myhome-nightly-sentinel" title="Permanent link">&para;</a></h3>
-<p>To detect upstream changes before they are tagged and released to PyPI, <code>MyHOME</code> runs a nightly scheduled workflow (<code>.github/workflows/ownd-smoke.yml</code>):
-- Runs daily at 04:00 UTC and on manual <code>workflow_dispatch</code>.
-- Installs the cutting-edge development head of <code>OWNd</code>:
+<p>To detect upstream changes before they are tagged and released to PyPI, <code>MyHOME</code> runs a nightly scheduled workflow (<code>.github/workflows/ownd-smoke.yml</code>):</p>
+<ul>
+<li>Runs daily at 04:00 UTC and on manual <code>workflow_dispatch</code>.</li>
+<li>Installs the cutting-edge development head of <code>OWNd</code>:
   <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pip<span class="w"> </span>install<span class="w"> </span>git+https://github.com/OpenWebNet-HA/OWNd.git@master
-</span></code></pre></div>
-- Runs the complete test suite. If an unreleased commit in <code>OWNd</code> triggers a deprecation warning, subtle behavioral divergence, or test failure, the team is alerted immediately.</p>
+</span></code></pre></div></li>
+<li>Runs the complete test suite. If an unreleased commit in <code>OWNd</code> triggers a deprecation warning, subtle behavioral divergence, or test failure, the team is alerted immediately.</li>
+</ul>
 <hr />
 <h3 id="pillar-3-release-auto-bump-pin-enforcer">Pillar 3: Release Auto-Bump &amp; Pin Enforcer<a class="headerlink" href="#pillar-3-release-auto-bump-pin-enforcer" title="Permanent link">&para;</a></h3>
 <p>To keep production and development dependencies in lock-step:</p>

@@ -2156,8 +2156,10 @@
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>myhome_trace_MH200N_who2-rx_2026-09-13T11-53-07.json    passive capture, WHO=2 + RX filter
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>myhome_sweep_MH200N_all_2026-09-13T11-52-19.json        buffer populated by a Sweep Bus click
 </span></code></pre></div>
-<p>Clear the filters first if you want the whole buffer.
-- <strong>📋 Copy Trace / Copy Sweep</strong>: copies the same shown frames as a markdown diagnostic bundle (environment, gateway, capture kind, active filter, frames) to the clipboard and opens the GitHub issue form.</p>
+<p>Clear the filters first if you want the whole buffer.</p>
+<ul>
+<li><strong>📋 Copy Trace / Copy Sweep</strong>: copies the same shown frames as a markdown diagnostic bundle (environment, gateway, capture kind, active filter, frames) to the clipboard and opens the GitHub issue form.</li>
+</ul>
 <h3 id="5-transmit-frame-direct-bus-command">5. Transmit frame (⚠️ direct bus command)<a class="headerlink" href="#5-transmit-frame-direct-bus-command" title="Permanent link">&para;</a></h3>
 <p>The bar at the bottom writes a raw OpenWebNet frame to the SCS bus exactly as typed. That <strong>can</strong> switch loads, move shutters, or arm/disarm the burglar alarm, so it is disabled until you tick <strong>I understand the risk</strong> in the orange bar above it; the bar turns red while armed. Untick it when you are done. Start Trace and Sweep Bus never use this path. (The backend additionally refuses the command for non-administrator users.)</p>
 <h3 id="6-time-stamps">6. Time stamps<a class="headerlink" href="#6-time-stamps" title="Permanent link">&para;</a></h3>
@@ -2197,10 +2199,12 @@
 </span></code></pre></div>
 <hr />
 <h2 id="home-assistant-diagnostics-integration">🩺 Home Assistant Diagnostics Integration<a class="headerlink" href="#home-assistant-diagnostics-integration" title="Permanent link">&para;</a></h2>
-<p>In addition to the real-time Lovelace card, MyHOME fully supports Home Assistant's native <strong>Download Diagnostics</strong> feature:
-1. Navigate to <strong>Settings</strong> -&gt; <strong>Devices &amp; Services</strong> -&gt; <strong>MyHOME</strong>.
-2. Click the three-dots menu on your gateway device and select <strong>Download diagnostics</strong>.
-3. The generated report includes sanitized gateway connection stats, active entities, latency metrics, and recent bus activity without exposing passwords or private credentials.</p>
+<p>In addition to the real-time Lovelace card, MyHOME fully supports Home Assistant's native <strong>Download Diagnostics</strong> feature:</p>
+<ol>
+<li>Navigate to <strong>Settings</strong> -&gt; <strong>Devices &amp; Services</strong> -&gt; <strong>MyHOME</strong>.</li>
+<li>Click the three-dots menu on your gateway device and select <strong>Download diagnostics</strong>.</li>
+<li>The generated report includes sanitized gateway connection stats, active entities, latency metrics, and recent bus activity without exposing passwords or private credentials.</li>
+</ol>
 
 
 

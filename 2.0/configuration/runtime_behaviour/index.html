@@ -2022,13 +2022,21 @@ MyHomeServer1) or <em>after</em> it (e.g. trailing ~60–200 ms on F454 and othe
 Sweeping on every broadcast frame regardless would double that traffic for no benefit.
 Instead, the integration debounces across a bidirectional window:</p>
 <ol>
-<li>A group/area/general frame checks for <strong>leading echoes</strong> received in the preceding 1.5 s
-   (<code>RESYNC_LEADING_WINDOW_S</code>). If members already reported their status, no sweep is scheduled.</li>
-<li>Otherwise, a 0.5 s timer (<code>RESYNC_DEBOUNCE_S</code>) is armed for that target.</li>
-<li>If member point-to-point status frames arrive before the timer fires (<strong>trailing echoes</strong>),
-   the sweep is cancelled:</li>
-<li>For an <strong>area</strong>, only point-to-point echoes in that matching area cancel its timer;
-     unrelated areas stay armed.</li>
+<li>
+<p>A group/area/general frame checks for <strong>leading echoes</strong> received in the preceding 1.5 s
+   (<code>RESYNC_LEADING_WINDOW_S</code>). If members already reported their status, no sweep is scheduled.</p>
+</li>
+<li>
+<p>Otherwise, a 0.5 s timer (<code>RESYNC_DEBOUNCE_S</code>) is armed for that target.</p>
+</li>
+<li>
+<p>If member point-to-point status frames arrive before the timer fires (<strong>trailing echoes</strong>),
+   the sweep is cancelled:</p>
+</li>
+<li>
+<p>For an <strong>area</strong>, only point-to-point echoes in that matching area cancel its timer;
+     unrelated areas stay armed.</p>
+</li>
 <li>For a <strong>group</strong>, receiving multiple member echoes ($\ge 2$) in the window cancels its
      timer, protecting against unrelated bus frames.</li>
 <li>Otherwise, one status request is sent:</li>

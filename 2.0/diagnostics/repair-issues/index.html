@@ -2282,9 +2282,11 @@
 <strong>Severity</strong>: <code>WARNING</code><br />
 <strong>Auto-Resolving</strong>: Yes</p>
 <h3 id="what-it-means">What it means<a class="headerlink" href="#what-it-means" title="Permanent link">&para;</a></h3>
-<p>OpenWebNet gateways maintain an internal real-time clock (RTC) queried via WHO=13 dimension 0 (<code>*#13**0##</code>) or dimension 22 (<code>*#13**22##</code>). When a gateway has never had its timezone configured (or following a firmware factory reset), it emits a sentinel placeholder value <code>999</code> in the timezone field:
-- Dimension 0: <code>*#13**0*&lt;HH&gt;*&lt;MM&gt;*&lt;SS&gt;*999##</code>
-- Dimension 22: <code>*#13**22*&lt;HH&gt;*&lt;MM&gt;*&lt;SS&gt;*999*&lt;DAY&gt;*&lt;MONTH&gt;*&lt;YEAR&gt;##</code></p>
+<p>OpenWebNet gateways maintain an internal real-time clock (RTC) queried via WHO=13 dimension 0 (<code>*#13**0##</code>) or dimension 22 (<code>*#13**22##</code>). When a gateway has never had its timezone configured (or following a firmware factory reset), it emits a sentinel placeholder value <code>999</code> in the timezone field:</p>
+<ul>
+<li>Dimension 0: <code>*#13**0*&lt;HH&gt;*&lt;MM&gt;*&lt;SS&gt;*999##</code></li>
+<li>Dimension 22: <code>*#13**22*&lt;HH&gt;*&lt;MM&gt;*&lt;SS&gt;*999*&lt;DAY&gt;*&lt;MONTH&gt;*&lt;YEAR&gt;##</code></li>
+</ul>
 <h3 id="why-it-matters">Why it matters<a class="headerlink" href="#why-it-matters" title="Permanent link">&para;</a></h3>
 <ol>
 <li><strong>Clock &amp; Timestamp Drift</strong>: Without a configured timezone, scheduled scenario triggers and time broadcasts on the SCS bus may diverge from local daylight saving time or Home Assistant's clock.</li>

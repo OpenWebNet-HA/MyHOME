@@ -3061,19 +3061,23 @@ Modern installations stream digital music from <strong>Music Assistant</strong>,
 <h3 id="dual-track-guide-how-community-testers-can-submit-a-trace">📋 Dual-Track Guide: How Community Testers Can Submit a Trace<a class="headerlink" href="#dual-track-guide-how-community-testers-can-submit-a-trace" title="Permanent link">&para;</a></h3>
 <p>We offer <strong>two simple ways</strong> to contribute real-world bus traces, tailored to your technical setup:</p>
 <h4 id="track-a-zero-cli-via-home-assistant-ui-fastest-easiest">🏷️ Track A: Zero-CLI via Home Assistant UI (Fastest &amp; Easiest)<a class="headerlink" href="#track-a-zero-cli-via-home-assistant-ui-fastest-easiest" title="Permanent link">&para;</a></h4>
-<p>Ideal for standard users running Home Assistant with the MyHOME integration:
-1. <strong>Sweep the Bus</strong>: In Home Assistant, go to <strong>Developer Tools</strong> &gt; <strong>Services</strong> and call <code>myhome.sweep_bus</code> (or trigger it from the Lovelace Bus Monitor Card). This actively queries all lighting, cover, HVAC, and gateway diagnostic states in under 3 seconds.
-2. <strong>Download Diagnostics</strong>: Navigate to <strong>Settings</strong> &gt; <strong>Devices &amp; Services</strong> &gt; <strong>MyHOME</strong> &gt; click the three dots (<code>⋮</code>) &gt; <strong>Download diagnostics</strong> (or click <strong><code>📋 Export Trace</code></strong> on the <code>&lt;myhome-bus-card&gt;</code>).
-3. <strong>Submit</strong>: Attach the downloaded <code>.json</code> file to <a href="https://github.com/orgs/OpenWebNet-HA/discussions/248"><strong>RFC Discussion #248</strong></a> or open a GitHub Issue.
-4. <em>Privacy Guarantee</em>: Home Assistant and MyHOME automatically redact all passwords, authentication tokens, and private credentials before exporting.</p>
+<p>Ideal for standard users running Home Assistant with the MyHOME integration:</p>
+<ol>
+<li><strong>Sweep the Bus</strong>: In Home Assistant, go to <strong>Developer Tools</strong> &gt; <strong>Services</strong> and call <code>myhome.sweep_bus</code> (or trigger it from the Lovelace Bus Monitor Card). This actively queries all lighting, cover, HVAC, and gateway diagnostic states in under 3 seconds.</li>
+<li><strong>Download Diagnostics</strong>: Navigate to <strong>Settings</strong> &gt; <strong>Devices &amp; Services</strong> &gt; <strong>MyHOME</strong> &gt; click the three dots (<code>⋮</code>) &gt; <strong>Download diagnostics</strong> (or click <strong><code>📋 Export Trace</code></strong> on the <code>&lt;myhome-bus-card&gt;</code>).</li>
+<li><strong>Submit</strong>: Attach the downloaded <code>.json</code> file to <a href="https://github.com/orgs/OpenWebNet-HA/discussions/248"><strong>RFC Discussion #248</strong></a> or open a GitHub Issue.</li>
+<li><em>Privacy Guarantee</em>: Home Assistant and MyHOME automatically redact all passwords, authentication tokens, and private credentials before exporting.</li>
+</ol>
 <h4 id="track-b-standalone-python-tool-test-benches-integrators">💻 Track B: Standalone Python Tool (Test Benches &amp; Integrators)<a class="headerlink" href="#track-b-standalone-python-tool-test-benches-integrators" title="Permanent link">&para;</a></h4>
-<p>Ideal for installers, bench testers, and developers testing isolated gateways without Home Assistant installed:
-1. <strong>Run the Trace Recorder</strong>:
+<p>Ideal for installers, bench testers, and developers testing isolated gateways without Home Assistant installed:</p>
+<ol>
+<li><strong>Run the Trace Recorder</strong>:
    <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>python<span class="w"> </span>scripts/record_gateway_trace.py<span class="w"> </span>--host<span class="w"> </span><span class="m">192</span>.168.1.35<span class="w"> </span>--password<span class="w"> </span><span class="m">12345</span><span class="w"> </span>--model<span class="w"> </span>MH202
-</span></code></pre></div>
-2. <strong>Active Sweep &amp; Listen</strong>: The script automatically executes the diagnostic status sweep, listens for ambient button presses or scenario bursts, and scrubs sensitive credentials.
-3. <strong>Drop &amp; Commit</strong>: The tool writes a complete ready-to-test fixture folder in <code>tests/fixtures/plants/&lt;model&gt;_plant/</code>.
-4. <strong>Instant CI Verification</strong>: Run <code>pytest tests/test_trace_replay.py</code> — our parameterized test runner automatically discovers and tests your plant with zero additional test code required! Submit a Pull Request.</p>
+</span></code></pre></div></li>
+<li><strong>Active Sweep &amp; Listen</strong>: The script automatically executes the diagnostic status sweep, listens for ambient button presses or scenario bursts, and scrubs sensitive credentials.</li>
+<li><strong>Drop &amp; Commit</strong>: The tool writes a complete ready-to-test fixture folder in <code>tests/fixtures/plants/&lt;model&gt;_plant/</code>.</li>
+<li><strong>Instant CI Verification</strong>: Run <code>pytest tests/test_trace_replay.py</code> — our parameterized test runner automatically discovers and tests your plant with zero additional test code required! Submit a Pull Request.</li>
+</ol>
 <hr />
 <h2 id="how-to-participate">💬 How to Participate<a class="headerlink" href="#how-to-participate" title="Permanent link">&para;</a></h2>
 <p>Please share your feedback, real-world bus captures, and advice in our GitHub discussions:</p>

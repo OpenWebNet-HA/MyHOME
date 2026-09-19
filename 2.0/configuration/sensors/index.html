@@ -1932,19 +1932,25 @@
 <p>In v2, setup and management are <strong>100% UI-first</strong>: sensors are automatically discovered from bus telemetry without manual YAML configuration files.</p>
 <hr />
 <h2 id="power-energy-meters-who-18">⚡ Power &amp; Energy Meters (WHO = 18)<a class="headerlink" href="#power-energy-meters-who-18" title="Permanent link">&para;</a></h2>
-<p>The integration natively interfaces with Legrand / BTicino DIN power management actuators:
-* <strong>BTicino F520</strong>: Single-phase power and energy meter (<code>WHERE = 51</code> through <code>5255</code>).
-* <strong>BTicino F522 / F523</strong>: Multi-circuit energy and power management modules (<code>WHERE = 71</code> through <code>7255</code>).</p>
+<p>The integration natively interfaces with Legrand / BTicino DIN power management actuators:</p>
+<ul>
+<li><strong>BTicino F520</strong>: Single-phase power and energy meter (<code>WHERE = 51</code> through <code>5255</code>).</li>
+<li><strong>BTicino F522 / F523</strong>: Multi-circuit energy and power management modules (<code>WHERE = 71</code> through <code>7255</code>).</li>
+</ul>
 <h3 id="auto-discovered-entities">Auto-Discovered Entities<a class="headerlink" href="#auto-discovered-entities" title="Permanent link">&para;</a></h3>
-<p>When an energy meter is detected on the SCS bus, the integration creates:
-1. <strong>Instantaneous Power Sensor</strong> (<code>device_class: power</code>): Real-time active power consumption in Watts (<strong>W</strong>).
-2. <strong>Total Energy Counter</strong> (<code>device_class: energy</code>, <code>state_class: total_increasing</code>): Cumulative electrical energy consumption in Watt-hours (<strong>Wh</strong>) or kilowatt-hours (<strong>kWh</strong>).
-3. <strong>Periodic Energy Counters</strong>: Daily and monthly energy sub-counters.</p>
+<p>When an energy meter is detected on the SCS bus, the integration creates:</p>
+<ol>
+<li><strong>Instantaneous Power Sensor</strong> (<code>device_class: power</code>): Real-time active power consumption in Watts (<strong>W</strong>).</li>
+<li><strong>Total Energy Counter</strong> (<code>device_class: energy</code>, <code>state_class: total_increasing</code>): Cumulative electrical energy consumption in Watt-hours (<strong>Wh</strong>) or kilowatt-hours (<strong>kWh</strong>).</li>
+<li><strong>Periodic Energy Counters</strong>: Daily and monthly energy sub-counters.</li>
+</ol>
 <h3 id="home-assistant-energy-dashboard-integration">Home Assistant Energy Dashboard Integration<a class="headerlink" href="#home-assistant-energy-dashboard-integration" title="Permanent link">&para;</a></h3>
-<p>Because energy entities implement standard <code>state_class: total_increasing</code> and <code>device_class: energy</code>:
-1. Navigate to <strong>Settings → Dashboards → Energy</strong>.
-2. Under <strong>Electricity Grid → Add Consumption</strong>, select your discovered MyHOME total energy sensor (e.g. <code>sensor.total_power_energy</code>).
-3. Home Assistant automatically generates hourly, daily, and monthly solar/grid tracking graphs.</p>
+<p>Because energy entities implement standard <code>state_class: total_increasing</code> and <code>device_class: energy</code>:</p>
+<ol>
+<li>Navigate to <strong>Settings → Dashboards → Energy</strong>.</li>
+<li>Under <strong>Electricity Grid → Add Consumption</strong>, select your discovered MyHOME total energy sensor (e.g. <code>sensor.total_power_energy</code>).</li>
+<li>Home Assistant automatically generates hourly, daily, and monthly solar/grid tracking graphs.</li>
+</ol>
 <h3 id="live-high-frequency-power-streaming">Live High-Frequency Power Streaming<a class="headerlink" href="#live-high-frequency-power-streaming" title="Permanent link">&para;</a></h3>
 <p>To instruct the gateway to stream high-frequency instantaneous power updates to Home Assistant, call the <code>myhome.start_sending_instant_power</code> service action:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.start_sending_instant_power</span>
@@ -1954,15 +1960,19 @@
 </span></code></pre></div>
 <hr />
 <h2 id="temperature-sensors-who-4">🌡️ Temperature Sensors (WHO = 4)<a class="headerlink" href="#temperature-sensors-who-4" title="Permanent link">&para;</a></h2>
-<p>Standalone and secondary temperature probes operating on WHO 4 are automatically exposed as <code>sensor</code> entities with <code>device_class: temperature</code>:
-* <strong>Main Zone Probes (<code>WHERE = 1..99</code>)</strong>: Reports ambient room temperature for individual zones.
-* <strong>Secondary Radio Probes (<code>WHERE ≥ 100</code>)</strong>: Reports battery-powered wireless probes (e.g. BTicino <code>3455</code> behind <code>L4577</code> radio interfaces). The v2 engine utilizes push-driven listening, eliminating unnecessary bus polling.</p>
+<p>Standalone and secondary temperature probes operating on WHO 4 are automatically exposed as <code>sensor</code> entities with <code>device_class: temperature</code>:</p>
+<ul>
+<li><strong>Main Zone Probes (<code>WHERE = 1..99</code>)</strong>: Reports ambient room temperature for individual zones.</li>
+<li><strong>Secondary Radio Probes (<code>WHERE ≥ 100</code>)</strong>: Reports battery-powered wireless probes (e.g. BTicino <code>3455</code> behind <code>L4577</code> radio interfaces). The v2 engine utilizes push-driven listening, eliminating unnecessary bus polling.</li>
+</ul>
 <hr />
 <h2 id="illuminance-lux-sensors-who-1">☀️ Illuminance Lux Sensors (WHO = 1)<a class="headerlink" href="#illuminance-lux-sensors-who-1" title="Permanent link">&para;</a></h2>
-<p>Light intensity sensors (e.g. Legrand <code>048822</code> ceiling detectors configured in scenario mode) operating on WHO 1 report ambient lux levels:
-* <strong>Entity</strong>: <code>sensor.&lt;name&gt;_illuminance</code>
-* <strong>Device Class</strong>: <code>illuminance</code> (unit: <code>lx</code>)
-* <strong>Use Case</strong>: Drive automated curtain/blind closing when solar glare exceeds threshold, or trigger dusk lighting.</p>
+<p>Light intensity sensors (e.g. Legrand <code>048822</code> ceiling detectors configured in scenario mode) operating on WHO 1 report ambient lux levels:</p>
+<ul>
+<li><strong>Entity</strong>: <code>sensor.&lt;name&gt;_illuminance</code></li>
+<li><strong>Device Class</strong>: <code>illuminance</code> (unit: <code>lx</code>)</li>
+<li><strong>Use Case</strong>: Drive automated curtain/blind closing when solar glare exceeds threshold, or trigger dusk lighting.</li>
+</ul>
 <hr />
 <h2 id="legacy-yaml-note">🔄 Legacy YAML Note<a class="headerlink" href="#legacy-yaml-note" title="Permanent link">&para;</a></h2>
 <div class="admonition note">

@@ -2360,13 +2360,17 @@
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>unzip<span class="w"> </span>-q<span class="w"> </span>myhome.zip<span class="w"> </span>-d<span class="w"> </span>/config/custom_components<span class="w">            </span><span class="c1"># wrong</span>
 </span></code></pre></div>
 <p>A stray <code>__init__.py</code> / <code>manifest.json</code> in the root of <code>custom_components</code> turns that folder into a regular Python package whose init is the integration code. On Home Assistant 2026.9+ the loader then imports <strong>no custom integration at all</strong> — every custom integration shows <em>Not loaded</em>, the bus-monitor card 404s, and nothing is logged at <code>warning</code> level.</p>
-<p>Likewise keep backups <strong>outside</strong> <code>custom_components</code> (e.g. <code>/config/myhome_backup/</code>). A copy such as <code>custom_components/myhome_backup_2026…/</code> registers a second <code>myhome</code> domain: the loader logs <em>We found a custom integration myhome</em> twice and may load the backup instead of the real one (duplicate CEN units, stale code).
-- <strong>Bus Monitor Tap</strong>: Zero-overhead in-band packet tap that copies incoming and outgoing frames directly to the diagnostic Lovelace bus card without opening additional sockets.</p>
+<p>Likewise keep backups <strong>outside</strong> <code>custom_components</code> (e.g. <code>/config/myhome_backup/</code>). A copy such as <code>custom_components/myhome_backup_2026…/</code> registers a second <code>myhome</code> domain: the loader logs <em>We found a custom integration myhome</em> twice and may load the backup instead of the real one (duplicate CEN units, stale code).</p>
+<ul>
+<li><strong>Bus Monitor Tap</strong>: Zero-overhead in-band packet tap that copies incoming and outgoing frames directly to the diagnostic Lovelace bus card without opening additional sockets.</li>
+</ul>
 <hr />
 <h2 id="runtime-options-flow-parameters">⚙️ Runtime Options Flow Parameters<a class="headerlink" href="#runtime-options-flow-parameters" title="Permanent link">&para;</a></h2>
-<p>You can adjust integration runtime parameters at any time without re-adding the gateway:
-1. Navigate to <strong>Settings → Devices &amp; Services → MyHOME</strong>.
-2. Click <strong>Configure</strong> on the gateway integration card.</p>
+<p>You can adjust integration runtime parameters at any time without re-adding the gateway:</p>
+<ol>
+<li>Navigate to <strong>Settings → Devices &amp; Services → MyHOME</strong>.</li>
+<li>Click <strong>Configure</strong> on the gateway integration card.</li>
+</ol>
 <table>
 <thead>
 <tr>

@@ -2032,10 +2032,12 @@
 <p>In v2, setup and management are <strong>100% UI-first</strong>: lighting fixtures are automatically discovered over the SCS bus, and capabilities such as dimming, colour temperature, and colour modes are learned dynamically from bus telemetry.</p>
 <hr />
 <h2 id="auto-discovery">🚀 Auto-Discovery<a class="headerlink" href="#auto-discovery" title="Permanent link">&para;</a></h2>
-<p>When your gateway connects to Home Assistant:
-1. <strong>Dynamic Bus Discovery</strong>: The integration listens to OpenWebNet <code>WHO = 1</code> frames and scans active addresses.
-2. <strong>Device &amp; Entity Creation</strong>: Each physical lighting actuator (<code>WHERE = 1..99</code> or area/point addresses <code>WHERE = 01..9999</code>) is registered as a Home Assistant <code>light</code> entity linked to the gateway device.
-3. <strong>UI Customization</strong>: Rename lights, assign them to Areas (e.g. <em>Kitchen</em>, <em>Living Room</em>), or customize icons directly in the Home Assistant UI (<strong>Settings → Devices &amp; Services → Entities</strong>).</p>
+<p>When your gateway connects to Home Assistant:</p>
+<ol>
+<li><strong>Dynamic Bus Discovery</strong>: The integration listens to OpenWebNet <code>WHO = 1</code> frames and scans active addresses.</li>
+<li><strong>Device &amp; Entity Creation</strong>: Each physical lighting actuator (<code>WHERE = 1..99</code> or area/point addresses <code>WHERE = 01..9999</code>) is registered as a Home Assistant <code>light</code> entity linked to the gateway device.</li>
+<li><strong>UI Customization</strong>: Rename lights, assign them to Areas (e.g. <em>Kitchen</em>, <em>Living Room</em>), or customize icons directly in the Home Assistant UI (<strong>Settings → Devices &amp; Services → Entities</strong>).</li>
+</ol>
 <hr />
 <h2 id="dynamic-capability-learning-v2-engine">🎨 Dynamic Capability Learning (v2 Engine)<a class="headerlink" href="#dynamic-capability-learning-v2-engine" title="Permanent link">&para;</a></h2>
 <p>Unlike legacy configurations that required manual flags (such as <code>dimmable: True</code>), v2 dynamically learns each fixture's capabilities directly from OpenWebNet bus traffic:</p>
@@ -2048,12 +2050,14 @@
 </ul>
 <hr />
 <h2 id="dimmer-transition-modes-ui-options">⚙️ Dimmer Transition Modes (UI Options)<a class="headerlink" href="#dimmer-transition-modes-ui-options" title="Permanent link">&para;</a></h2>
-<p>You can customize how dimming transitions are executed globally via the integration's UI Options:
-1. Navigate to <strong>Settings → Devices &amp; Services → MyHOME</strong>.
-2. Click <strong>Configure</strong>.
-3. Select your preferred <strong>Dimmer Transition Mode</strong>:
-   - <strong><code>software_stepped</code></strong> (<em>Default / Recommended</em>): Home Assistant manages incremental step fading, providing smooth transitions across all actuators.
-   - <strong><code>native</code></strong>: Lets the physical hardware dimmer module perform its internal hardware fade ramp.</p>
+<p>You can customize how dimming transitions are executed globally via the integration's UI Options:</p>
+<ol>
+<li>Navigate to <strong>Settings → Devices &amp; Services → MyHOME</strong>.</li>
+<li>Click <strong>Configure</strong>.</li>
+<li>Select your preferred <strong>Dimmer Transition Mode</strong>:</li>
+<li><strong><code>software_stepped</code></strong> (<em>Default / Recommended</em>): Home Assistant manages incremental step fading, providing smooth transitions across all actuators.</li>
+<li><strong><code>native</code></strong>: Lets the physical hardware dimmer module perform its internal hardware fade ramp.</li>
+</ol>
 <hr />
 <h2 id="native-bus-timers-temporized-lights">⏱️ Native Bus Timers (Temporized Lights)<a class="headerlink" href="#native-bus-timers-temporized-lights" title="Permanent link">&para;</a></h2>
 <p>MyHOME light actuators feature built-in hardware timers on the SCS bus. Running timers directly in hardware guarantees lights turn off even if Home Assistant restarts, reloads, or experiences network interruptions.</p>

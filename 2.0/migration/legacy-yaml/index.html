@@ -2231,9 +2231,11 @@
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
 <p><strong>You are viewing the v2 (Beta) Documentation.</strong>
-In v2.0+, setup and device onboarding are <strong>100% UI-first</strong> via Config Flow and Auto-Discovery. Manual YAML files are <strong>not used</strong> for device creation.
-* To upgrade an existing v0.9.4 installation, see the <a href="../upgrade-from-094/"><strong>Upgrade from 0.9.4 Guide</strong></a>.
-* For the complete, dedicated manual for <code>/config/myhome.yaml</code>, visit the <a href="../../0.9.4/"><strong>v0.9.4 Legacy Documentation</strong></a>.</p>
+In v2.0+, setup and device onboarding are <strong>100% UI-first</strong> via Config Flow and Auto-Discovery. Manual YAML files are <strong>not used</strong> for device creation.</p>
+<ul>
+<li>To upgrade an existing v0.9.4 installation, see the <a href="../upgrade-from-094/"><strong>Upgrade from 0.9.4 Guide</strong></a>.</li>
+<li>For the complete, dedicated manual for <code>/config/myhome.yaml</code>, visit the <a href="../../0.9.4/"><strong>v0.9.4 Legacy Documentation</strong></a>.</li>
+</ul>
 </div>
 <p>This page is preserved for historical reference and documentation of the deprecated pre-v0.9 and v0.9.x YAML schemas.</p>
 <p>Once your gateway is integrated in Home Assistant, you can start adding your different devices.<br />
@@ -2515,16 +2517,18 @@ or
 </span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">  </span><span class="nt">pushbutton</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
 </span></code></pre></div>
 <code>object</code> and <code>pushbutton</code> are the ones defined in the OpenWebNet CEN or CEN+ configuration.
-Supported <code>events</code> varies between CEN and CEN+:<br />
-<em> CEN events:
-  * <code>pushbutton_short_press</code>
-  * <code>pushbutton_short_release</code>
-  * <code>pushbutton_long_press</code>
-  * <code>pushbutton_long_release</code><br />
-</em> CEN+ events:
-  * <code>pushbutton_short_press</code>
-  * <code>pushbutton_long_press</code>
-  * <code>pushbutton_long_release</code></p>
+Supported <code>events</code> varies between CEN and CEN+:  </p>
+<ul>
+<li>CEN events:</li>
+<li><code>pushbutton_short_press</code></li>
+<li><code>pushbutton_short_release</code></li>
+<li><code>pushbutton_long_press</code></li>
+<li><code>pushbutton_long_release</code>  </li>
+<li>CEN+ events:</li>
+<li><code>pushbutton_short_press</code></li>
+<li><code>pushbutton_long_press</code></li>
+<li><code>pushbutton_long_release</code></li>
+</ul>
 <p>This is a really useful feature, it allows you to have wall switches turn WLED strips ON and OFF; Play/Pause Skip track on your SONOS... The only limit is your imagination!</p>
 <h3 id="other-events">Other events<a class="headerlink" href="#other-events" title="Permanent link">&para;</a></h3>
 <p>When  group, area or general commands are detected, they generate events in Home Assistant.<br />
@@ -2537,17 +2541,21 @@ Example events use would be:
 </span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">  </span><span class="nt">event</span><span class="p">:</span><span class="w"> </span><span class="s">'on'</span>
 </span></code></pre></div></p>
 <h4 id="light-events">Light events<a class="headerlink" href="#light-events" title="Permanent link">&para;</a></h4>
-<p>3 types of light events exist:
-* <code>myhome_general_light_event</code>
-* <code>myhome_area_light_event</code>
-* <code>myhome_group_light_event</code></p>
+<p>3 types of light events exist:</p>
+<ul>
+<li><code>myhome_general_light_event</code></li>
+<li><code>myhome_area_light_event</code></li>
+<li><code>myhome_group_light_event</code></li>
+</ul>
 <p>All events have an attribute <code>message</code> containing the raw OpenWebNet message and an attribute <code>event</code> that can be either <code>on</code> or <code>off</code>.<br />
 Area events also have an attribute <code>area</code> containing the area ID (the 'A' of the 'APL'); and Group events have an attribute <code>group</code> containing the group ID (without the leading <code>#</code>).</p>
 <h4 id="automation-cover-events">Automation (cover) events<a class="headerlink" href="#automation-cover-events" title="Permanent link">&para;</a></h4>
-<p>3 types of cover events exist:
-* <code>myhome_general_automation_event</code>
-* <code>myhome_area_automation_event</code>
-* <code>myhome_group_automation_event</code></p>
+<p>3 types of cover events exist:</p>
+<ul>
+<li><code>myhome_general_automation_event</code></li>
+<li><code>myhome_area_automation_event</code></li>
+<li><code>myhome_group_automation_event</code></li>
+</ul>
 <p>All events have an attribute <code>message</code> containing the raw OpenWebNet message and an attribute <code>event</code> that can be either <code>open</code>, <code>close</code> or <code>stop</code>.<br />
 Area events also have an attribute <code>area</code> containing the area ID (the 'A' of the 'APL'); and Group events have an attribute <code>group</code> containing the group ID (without the leading <code>#</code>).</p>
 <h3 id="services">Services<a class="headerlink" href="#services" title="Permanent link">&para;</a></h3>

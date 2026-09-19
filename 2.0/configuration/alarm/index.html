@@ -1898,17 +1898,21 @@
 <p>In v2, setup and management are <strong>100% UI-first</strong>: alarm central units and zone partitions are automatically discovered over the SCS bus without manual YAML configuration files.</p>
 <hr />
 <h2 id="auto-discovery">🚀 Auto-Discovery<a class="headerlink" href="#auto-discovery" title="Permanent link">&para;</a></h2>
-<p>When your gateway connects to Home Assistant:
-1. <strong>Dynamic Bus Discovery</strong>: Any incoming alarm event frame on the SCS bus (e.g. <code>*5*1*0##</code> for arming, <code>*5*2*0##</code> for disarming, or <code>*5*15*0##</code> for intrusion) automatically registers the <code>alarm_control_panel</code> entity.
-2. <strong>Global Broadcast Zone 0 Listening</strong>: Entities automatically subscribe to global broadcast zone 0 telemetry (<code>myhome_update_&lt;mac&gt;_5_0</code>) alongside their specific zone/partition address (<code>myhome_update_&lt;mac&gt;_5_&lt;where&gt;</code>), guaranteeing synchronized state updates across all alarm panels in your home.
-3. <strong>UI Customization</strong>: You can rename the alarm panel, assign it to an Area (e.g. <em>Entrance</em>, <em>Security</em>), and customize icons directly in the Home Assistant UI.</p>
+<p>When your gateway connects to Home Assistant:</p>
+<ol>
+<li><strong>Dynamic Bus Discovery</strong>: Any incoming alarm event frame on the SCS bus (e.g. <code>*5*1*0##</code> for arming, <code>*5*2*0##</code> for disarming, or <code>*5*15*0##</code> for intrusion) automatically registers the <code>alarm_control_panel</code> entity.</li>
+<li><strong>Global Broadcast Zone 0 Listening</strong>: Entities automatically subscribe to global broadcast zone 0 telemetry (<code>myhome_update_&lt;mac&gt;_5_0</code>) alongside their specific zone/partition address (<code>myhome_update_&lt;mac&gt;_5_&lt;where&gt;</code>), guaranteeing synchronized state updates across all alarm panels in your home.</li>
+<li><strong>UI Customization</strong>: You can rename the alarm panel, assign it to an Area (e.g. <em>Entrance</em>, <em>Security</em>), and customize icons directly in the Home Assistant UI.</li>
+</ol>
 <hr />
 <h2 id="supported-hardware">🛡️ Supported Hardware<a class="headerlink" href="#supported-hardware" title="Permanent link">&para;</a></h2>
-<p>The platform interfaces with Legrand / BTicino SCS burglar alarm central units:
-* <strong>BTicino 3485 / 3486</strong>: Multi-zone central alarm control units.
-* <strong>BTicino HC4600 / L4600</strong>: Security control keypads and display terminals.
-* <strong>BTicino 3481</strong>: Zone expansion and partition modules.
-* <strong>Technical Alarm Transmitters</strong>: Flood/water leak detectors and gas safety sensors.</p>
+<p>The platform interfaces with Legrand / BTicino SCS burglar alarm central units:</p>
+<ul>
+<li><strong>BTicino 3485 / 3486</strong>: Multi-zone central alarm control units.</li>
+<li><strong>BTicino HC4600 / L4600</strong>: Security control keypads and display terminals.</li>
+<li><strong>BTicino 3481</strong>: Zone expansion and partition modules.</li>
+<li><strong>Technical Alarm Transmitters</strong>: Flood/water leak detectors and gas safety sensors.</li>
+</ul>
 <hr />
 <h2 id="supported-features-states">🔒 Supported Features &amp; States<a class="headerlink" href="#supported-features-states" title="Permanent link">&para;</a></h2>
 <p>The <code>alarm_control_panel</code> platform provides:</p>
@@ -1955,13 +1959,15 @@
 </span></code></pre></div>
 <hr />
 <h2 id="interactive-diagnostics-via-bus-monitor">🧪 Interactive Diagnostics via Bus Monitor<a class="headerlink" href="#interactive-diagnostics-via-bus-monitor" title="Permanent link">&para;</a></h2>
-<p>You can test alarm telemetry and commands using the <a href="../bus_monitor/">Lovelace Bus Monitor Card</a> Command Injector:
-* <strong>Query Central Status</strong>: <code>*#5*0##</code>
-* <strong>Query Zone Status</strong>: <code>*#5*#1##</code> (for zone 1)
-* <strong>Arm System (Total)</strong>: <code>*5*1*0##</code>
-* <strong>Disarm System</strong>: <code>*5*2*0##</code>
-* <strong>Trigger Panic Alarm</strong>: <code>*5*17*0##</code>
-* <strong>Simulate Intrusion</strong>: <code>*5*15*0##</code></p>
+<p>You can test alarm telemetry and commands using the <a href="../bus_monitor/">Lovelace Bus Monitor Card</a> Command Injector:</p>
+<ul>
+<li><strong>Query Central Status</strong>: <code>*#5*0##</code></li>
+<li><strong>Query Zone Status</strong>: <code>*#5*#1##</code> (for zone 1)</li>
+<li><strong>Arm System (Total)</strong>: <code>*5*1*0##</code></li>
+<li><strong>Disarm System</strong>: <code>*5*2*0##</code></li>
+<li><strong>Trigger Panic Alarm</strong>: <code>*5*17*0##</code></li>
+<li><strong>Simulate Intrusion</strong>: <code>*5*15*0##</code></li>
+</ul>
 <hr />
 <h2 id="legacy-yaml-note">🔄 Legacy YAML Note<a class="headerlink" href="#legacy-yaml-note" title="Permanent link">&para;</a></h2>
 <div class="admonition note">
