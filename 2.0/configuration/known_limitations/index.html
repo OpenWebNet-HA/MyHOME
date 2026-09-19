@@ -2026,12 +2026,12 @@
 <tr>
 <td style="text-align: left;"><strong>Timed covers report a calculated position.</strong> It drifts if the motor runs at a different speed than assumed, or after a manual stop mid-travel.</td>
 <td style="text-align: left;">The actuator has no encoder; only position-reporting actuators (dimension 10) know where the shutter is.</td>
-<td style="text-align: left;">Calibrate with <code>myhome.calibrate_cover</code> (or the card's stopwatch); a full open or close resynchronises the estimate.</td>
+<td style="text-align: left;">Calibrate with <code>myhome.calibrate_cover</code> (or <code>myhome.set_cover_travel_time</code>); a full open or close resynchronises the estimate.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Calibration on an MH200 / MH200N can fail</strong> with <em>no stop status from the actuator</em>.</td>
 <td style="text-align: left;">The single-session gateway delays or drops the actuator's stop status; some actuators also enforce a 60 s safety cut-off that ends the run early.</td>
-<td style="text-align: left;">Use <code>myhome.set_cover_travel_time</code> with a stopwatch value. The card's Covers panel preselects manual mode on those gateways.</td>
+<td style="text-align: left;">Measure the run with a stopwatch and store the timings via <code>myhome.set_cover_travel_time</code>.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>One calibration at a time per gateway.</strong></td>

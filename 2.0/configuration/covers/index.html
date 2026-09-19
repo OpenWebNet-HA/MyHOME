@@ -863,10 +863,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#method-1-stopwatch-button-on-device-page" class="md-nav__link">
+  <a href="#method-1-automated-calibration-button-on-device-page" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Method 1: Stopwatch Button on Device Page
+        Method 1: Automated Calibration Button on Device Page
       
     </span>
   </a>
@@ -885,21 +885,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#method-3-lovelace-bus-monitor-card-built-in-stopwatch" class="md-nav__link">
+  <a href="#method-3-set-explicit-travel-time-via-service-action" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Method 3: Lovelace Bus Monitor Card Built-In Stopwatch
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#method-4-set-explicit-travel-time-via-service-action" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Method 4: Set Explicit Travel Time via Service Action
+        Method 3: Set Explicit Travel Time via Service Action
       
     </span>
   </a>
@@ -1892,10 +1881,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#method-1-stopwatch-button-on-device-page" class="md-nav__link">
+  <a href="#method-1-automated-calibration-button-on-device-page" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Method 1: Stopwatch Button on Device Page
+        Method 1: Automated Calibration Button on Device Page
       
     </span>
   </a>
@@ -1914,21 +1903,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#method-3-lovelace-bus-monitor-card-built-in-stopwatch" class="md-nav__link">
+  <a href="#method-3-set-explicit-travel-time-via-service-action" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Method 3: Lovelace Bus Monitor Card Built-In Stopwatch
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#method-4-set-explicit-travel-time-via-service-action" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Method 4: Set Explicit Travel Time via Service Action
+        Method 3: Set Explicit Travel Time via Service Action
       
     </span>
   </a>
@@ -2007,6 +1985,10 @@
 </tr>
 </tbody>
 </table>
+<blockquote>
+<p>[!NOTE]
+Every discovered cover starts as a <strong>timed</strong> cover. Position-reporting hardware is not detected automatically: set <code>advanced_shutter: true</code> for that cover in <code>/config/myhome.yaml</code> (see <a href="../troubleshooting/#cover-position-is-wrong">Troubleshooting → Cover position is wrong</a>). Advanced covers refuse <code>myhome.calibrate_cover</code> and <code>myhome.set_cover_travel_time</code>, as they do not need a travel time.</p>
+</blockquote>
 <hr />
 <h2 id="timed-cover-position-engine">⏱️ Timed Cover Position Engine<a class="headerlink" href="#timed-cover-position-engine" title="Permanent link">&para;</a></h2>
 <p>For standard covers without hardware position feedback, the integration provides a high-precision software estimator enabling full <code>open_cover</code>, <code>close_cover</code>, <code>stop_cover</code>, and slider-based <code>set_cover_position</code> support:</p>
@@ -2018,24 +2000,38 @@
 </ul>
 <hr />
 <h2 id="calibrating-travel-time-zero-yaml">📐 Calibrating Travel Time (Zero YAML)<a class="headerlink" href="#calibrating-travel-time-zero-yaml" title="Permanent link">&para;</a></h2>
-<p>You never need to edit YAML files to calibrate travel times in v2. Choose any of the following UI-native methods:</p>
-<h3 id="method-1-stopwatch-button-on-device-page">Method 1: Stopwatch Button on Device Page<a class="headerlink" href="#method-1-stopwatch-button-on-device-page" title="Permanent link">&para;</a></h3>
-<p>Every timed cover device in Home Assistant includes a dedicated configuration button entity:
+<p>You never need to edit YAML files to calibrate travel times in v2.</p>
+<blockquote>
+<p>[!IMPORTANT]
+<strong>Actuator Requirements for Automated Calibration</strong>
+Automated on-bus calibration relies entirely on the actuator emitting a stop frame (<code>*2*0*&lt;WHERE&gt;##</code>) at the moment the shutter physically reaches its end stop.
+* <strong>Trimmed Actuators</strong>: If the installer trimmed the actuator's mechanical or potentiometer run-time limit to match the physical shutter, automated calibration will measure your shutter travel times accurately down to tenths of a second.
+* <strong>Factory 60 s Cutoff Actuators</strong>: If the actuator run-time was left at the factory default cutoff (~60 s), the actuator will not stop when the shutter reaches the bottom; it will continue running until the 60 s hardware timer expires. The integration detects this condition and <strong>safely rejects the calibration</strong> to prevent saving inaccurate 60 s run times. For these actuators, use <a href="#method-3-set-explicit-travel-time-via-service-action">Method 3: Set Explicit Travel Time via Service Action</a> instead.</p>
+</blockquote>
+<h3 id="method-1-automated-calibration-button-on-device-page">Method 1: Automated Calibration Button on Device Page<a class="headerlink" href="#method-1-automated-calibration-button-on-device-page" title="Permanent link">&para;</a></h3>
+<p>Every cover device in Home Assistant includes a dedicated configuration button entity (on a position-reporting cover a press is refused, as there is nothing to measure):
 * <strong>Entity</strong>: <code>button.&lt;name&gt;_calibrate_travel_time</code>
 * <strong>Icon</strong>: <code>mdi:ruler-square-compass</code></p>
-<ol>
-<li>Open the cover's device page in Home Assistant (<strong>Settings → Devices &amp; Services → Devices → [Cover Name]</strong>).</li>
-<li>Click <strong>Calibrate Travel Time</strong>:</li>
-<li>If the cover is open, it begins closing and starts the internal timer.</li>
-<li>When the cover reaches the bottom, click the button again (or call <code>stop_cover</code>) to lock in the measured time.</li>
-<li>The measured values are persisted automatically to the Home Assistant config entry.</li>
-</ol>
+<p>When you click <strong>Calibrate Travel Time</strong>, the integration performs a fully automated 3-step calibration sequence on the bus:
+1. <strong>Full Open (Reference Sync)</strong>: The shutter is driven fully <strong>UP</strong> to reach the mechanical top limit, establishing a reliable reference position.
+2. <strong>Full Close (Timed)</strong>: After a brief settling pause, the shutter is driven fully <strong>DOWN</strong>. The integration monitors the OpenWebNet bus to precisely record <code>travel_time_down</code> (from motor start to actuator stop frame).
+3. <strong>Full Open (Timed)</strong>: After another pause, the shutter is driven fully <strong>UP</strong> back to the top limit, recording <code>travel_time_up</code>.
+4. <strong>Saved Automatically</strong>: Both measured times are persisted into Home Assistant's config entry (<code>cover_travel_times</code>) and shown as the cover's <code>travel_time_down</code> / <code>travel_time_up</code> attributes, with <code>calibration_source: measured</code> and a <code>calibrated_at</code> timestamp. The shutter ends in the 100% open position. Progress is published on the event bus as <code>myhome_cover_calibration</code> (<code>phase</code>: <code>queued</code>, <code>start</code>, <code>run</code>, <code>done</code>, <code>failed</code>), so you can follow or automate on it.</p>
+<blockquote>
+<p>[!NOTE]
+* <strong>Do not press the button a second time</strong>: The sequence is fully automated. A second press while the run is active is refused (<em>"… is already being calibrated"</em>); the button fires the action without waiting for it, so the refusal only shows up in the Home Assistant log, not in the UI. Each run also gives up with <em>no stop status from the actuator</em> if no stop frame arrives within 180 s.
+* <strong>Do NOT stop the shutter during calibration — neither from the cover entity nor from the wall</strong>: A stop press from either place puts a plain stop frame (<code>*2*0*&lt;WHERE&gt;##</code>) on the bus, which is the very same frame the actuator emits when the shutter reaches its end stop. The integration cannot tell them apart, so it treats the stop as the end of the run and stores the partial elapsed time (e.g. 5–6 seconds) as the calibrated travel time.
+* <strong>How to Abort Safely</strong>: The one safe way out is the <code>myhome.stop_cover_calibration</code> action in <strong>Developer Tools → Actions</strong>: it marks the run as interrupted and stores nothing. Call it while the shutter is moving — a call that lands in the one-second pause between two runs is not seen and the next run starts. (Driving the shutter in the <em>opposite</em> direction from the wall is also recognised as an interruption, because it arrives as an explicit open/close command rather than a stop — but prefer the action.)</p>
+</blockquote>
 <h3 id="method-2-calibrate-all-covers-sequentially">Method 2: Calibrate All Covers Sequentially<a class="headerlink" href="#method-2-calibrate-all-covers-sequentially" title="Permanent link">&para;</a></h3>
-<p>On your gateway device page, click <strong>Calibrate All Covers</strong> (<code>button.calibrate_all_covers</code>). The integration will walk through each timed cover one after another, allowing full plant calibration in a single session.</p>
-<h3 id="method-3-lovelace-bus-monitor-card-built-in-stopwatch">Method 3: Lovelace Bus Monitor Card Built-In Stopwatch<a class="headerlink" href="#method-3-lovelace-bus-monitor-card-built-in-stopwatch" title="Permanent link">&para;</a></h3>
-<p>If you use the <a href="../bus_monitor/">Lovelace Bus Monitor Card</a>, open the <strong>Covers</strong> tab. It features a live stopwatch specifically designed for timing and saving shutter runs directly from your dashboard.</p>
-<h3 id="method-4-set-explicit-travel-time-via-service-action">Method 4: Set Explicit Travel Time via Service Action<a class="headerlink" href="#method-4-set-explicit-travel-time-via-service-action" title="Permanent link">&para;</a></h3>
-<p>If you already know the exact run duration (e.g. from a stopwatch or technical datasheet), you can set it directly using the <code>myhome.set_cover_travel_time</code> action in <strong>Developer Tools → Actions</strong>:</p>
+<p>On your gateway device page, click <strong>Calibrate All Covers</strong> (<code>button.&lt;gateway name&gt;_calibrate_all_covers</code>, e.g. <code>button.f454_gateway_calibrate_all_covers</code>). It calls <code>myhome.calibrate_cover</code> for every enabled cover of that gateway; a per-gateway lock runs them <strong>one at a time</strong>, because two motors moving on one paced session would make the timings meaningless. Covers still waiting report <code>phase: queued</code>. Position-reporting (advanced) covers are refused with an error in the log and the others continue. <code>myhome.stop_cover_calibration</code> stops the running cover and drops the whole queue.</p>
+<h3 id="method-3-set-explicit-travel-time-via-service-action">Method 3: Set Explicit Travel Time via Service Action<a class="headerlink" href="#method-3-set-explicit-travel-time-via-service-action" title="Permanent link">&para;</a></h3>
+<p>If your actuators enforce the 60-second factory cutoff, if your gateway is single-session (such as MH200 / MH200N), or if you already know the exact run duration (e.g. from a handheld stopwatch or technical datasheet), set it directly using the <code>myhome.set_cover_travel_time</code> action in <strong>Developer Tools → Actions</strong>.</p>
+<p>You rarely need a handheld stopwatch: the integration times <strong>every</strong> run of a timed cover, calibration or not, and exposes the result as plain entity attributes — no card required.
+1. Open the cover in Home Assistant (or use its wall switch) and press <strong>Close</strong>.
+2. Press <strong>Stop</strong> (entity or wall switch) the moment the shutter reaches the bottom end stop.
+3. Go to <strong>Developer Tools → States</strong>, filter on the cover entity: <code>last_run_seconds</code> is the motor-start-to-stop time of the run you just made and <code>last_run_direction</code> says <code>close</code>. The same attributes are listed under <strong>Attributes</strong> in the cover's more-info dialog.
+4. Repeat with <strong>Open</strong> for the up time, then pass both numbers to the action (or put the attributes and a <strong>Save</strong> button on your dashboard with <a href="../lovelace_recipes/#recipe-6-shutter-travel-time-workbench-stock-cards-only">Lovelace Recipe 6</a>):</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.set_cover_travel_time</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">target</span><span class="p">:</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.living_room_shutter</span>
@@ -2043,7 +2039,8 @@
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">travel_time_down</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">22.5</span>
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="nt">travel_time_up</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">24.0</span>
 </span></code></pre></div>
-<p>To clear calibration and return to default values:
+<p>The result is stored exactly like a measured calibration, with <code>calibration_source: manual</code>. When the numbers you pass were measured on an identical shutter, add <code>copied_from: cover.&lt;other_shutter&gt;</code> to record where they came from; <code>calibration_source</code> then reads <code>copied</code> and the entity is exposed as a <code>copied_from</code> attribute.</p>
+<p>To forget the measured or manual times and return to the <code>travel_time</code> from <code>myhome.yaml</code> (or the 25 s default when none is configured):
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.reset_cover_travel_time</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">target</span><span class="p">:</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.living_room_shutter</span>
