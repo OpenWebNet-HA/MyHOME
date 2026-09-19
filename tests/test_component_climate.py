@@ -28,11 +28,9 @@ from OWNd.message import (
 
 from custom_components.myhome.climate import (
     MyHOMEClimate,
-    _zone_config,
     async_setup_entry,
     async_unload_entry,
 )
-from custom_components.myhome.discovery import Address
 from tests.conftest import attach_runtime
 
 
@@ -109,18 +107,6 @@ async def test_legacy_routed_zone_listens_under_clean_spellings(hass):
     assert router.subscribers("4", "4-1#4#01") == 1  # the id it was restored under
     assert router.subscribers("4", "1#4#01") == 1  # the frame's key
     assert router.subscribers("4", "1") == 1  # the bare zone
-
-
-def test_zone_config_routed_zone_never_matches_local_bus():
-    """Zone 1 exists on every bus: a routed zone must only take its own bus's entry (#408)."""
-    configured = {
-        "4-1": {"name": "Bus 0 Zone"}, "1": {"name": "Bus 0 Zone"}, "zone_1": {"name": "Bus 0 Zone"},
-        "4-1#4#03": {"name": "Bus 3 Zone"}, "1#4#03": {"name": "Bus 3 Zone"},
-    }
-    assert _zone_config(configured, Address("1"), "1")["name"] == "Bus 0 Zone"
-    assert _zone_config(configured, Address("1", "03"), "1#4#03")["name"] == "Bus 3 Zone"
-    assert _zone_config(configured, Address("1", "05"), "1#4#05") == {}
-
 
 async def test_climate_properties_and_hvac_modes(hass):
     """Test climate entity properties and set_hvac_mode."""

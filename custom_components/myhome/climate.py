@@ -42,7 +42,6 @@ from OWNd.message import (
 )
 
 from .const import (
-    BUS_ROUTING,
     CONF_CENTRAL,
     CONF_COOLING_SUPPORT,
     CONF_DEVICE_MODEL,
@@ -142,15 +141,8 @@ def _is_probe(where: str) -> bool:
 
 
 def _zone_config(configured: dict[str, Any], address: Address, key: str) -> dict[str, Any]:
-    """The ``myhome.yaml`` entry of a zone under every spelling older versions accepted.
-
-    A routed zone only matches interface-qualified spellings: zone 1 exists
-    on every bus, so the bare ones name the local bus's zone (#408).
-    """
+    """The ``myhome.yaml`` entry of a zone under every spelling older versions accepted."""
     where, zone = address.where, _zone_number(address.where)
-    if address.interface:
-        routing = f"{BUS_ROUTING}{address.interface}"
-        return config_for(configured, address, key, f"4-{zone}{routing}", f"4-{key}", f"#{zone}{routing}")
     return config_for(
         configured, address, key, zone,
         f"4-{zone}", f"4-{where}", f"4-{key}", f"4-#{zone}", f"4-#{where}",
@@ -209,7 +201,7 @@ def _zone_route_keys(message: Any, address: Address | None) -> list[str]:
     for z in zones:
         keys.append(z)
         if interface:
-            keys.append(f"{z}{BUS_ROUTING}{interface}")
+            keys.append(f"{z}#4#{interface}")
     return keys
 
 

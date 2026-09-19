@@ -54,8 +54,6 @@ CONF_PARENT_ID = "parent_id"
 CONF_WHO = "who"
 CONF_WHERE = "where"
 CONF_BUS_INTERFACE = "interface"
-#: F422 bus-routing separator in a WHERE: ``APL#4#<bus>``.
-BUS_ROUTING = "#4#"
 CONF_ZONE = "zone"
 CONF_DIMMABLE = "dimmable"
 CONF_COLOR_TEMP = "color_temp"
