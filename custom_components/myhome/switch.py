@@ -1,93 +1,148 @@
-"""Support for MyHome switches (light modules used for controlled outlets, relays)."""
+from typing import Any
+
+import voluptuous as vol
 from homeassistant.components.switch import (
-    DOMAIN as PLATFORM,
     SwitchDeviceClass,
     SwitchEntity,
 )
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONF_NAME,
-    CONF_MAC,
+    Platform,
 )
-
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_platform
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_registry import RegistryEntry
 from OWNd.message import (
-    OWNLightingEvent,
     OWNLightingCommand,
+    OWNLightingEvent,
 )
 
 from .const import (
-    CONF_PLATFORMS,
-    CONF_ENTITY,
+    CONF_DEVICE_CLASS,
+    CONF_DEVICE_MODEL,
     CONF_ENTITY_NAME,
     CONF_ICON,
     CONF_ICON_ON,
-    CONF_WHO,
-    CONF_WHERE,
-    CONF_BUS_INTERFACE,
     CONF_MANUFACTURER,
-    CONF_DEVICE_MODEL,
-    CONF_DEVICE_CLASS,
-    DOMAIN,
     LOGGER,
+    SERVICE_TURN_ON_TIMED,
+    build_timed_turn_on_command,
 )
-from .myhome_device import MyHOMEEntity
+from .data import get_runtime_data
+from .discovery import DeviceContext, PlatformDiscovery, default_known_keys
 from .gateway import MyHOMEGatewayHandler
+from .myhome_device import MyHOMEEntity
+
+PLATFORM = Platform.SWITCH
+PARALLEL_UPDATES = 0
 
 
-async def async_setup_entry(hass, config_entry, async_add_entities):
-    if PLATFORM not in hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_PLATFORMS]:
+async def async_setup_entry(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> bool:
+    """Set up the switches of a gateway: registry entries first, then myhome.yaml.
+
+    Switches are WHO=1 actuators that *must* be configured (a relay driving a
+    socket looks exactly like a light on the bus); discovery of WHO=1 frames is
+    the light platform's job, which routes frames for configured switches here.
+    """
+    runtime = get_runtime_data(config_entry)
+    if runtime is None or PLATFORM not in runtime.platforms:
         return True
 
-    _switches = []
-    _configured_switches = hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_PLATFORMS][PLATFORM]
-
-    for _switch in _configured_switches.keys():
-        _switch = MyHOMESwitch(
+    def build(ctx: DeviceContext) -> MyHOMESwitch:
+        cfg = ctx.cfg
+        name_val = cfg.get(CONF_NAME)
+        name = str(name_val) if name_val else f"Switch {ctx.suffix}"
+        raw_entity_name = cfg.get(CONF_ENTITY_NAME)
+        entity_name = str(raw_entity_name) if raw_entity_name is not None else None
+        raw_icon = cfg.get(CONF_ICON)
+        icon = str(raw_icon) if raw_icon is not None else None
+        raw_icon_on = cfg.get(CONF_ICON_ON)
+        icon_on = str(raw_icon_on) if raw_icon_on is not None else None
+        device_class = cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class") or SwitchDeviceClass.SWITCH
+        manufacturer = str(cfg.get(CONF_MANUFACTURER, "BTicino"))
+        model = str(cfg.get(CONF_DEVICE_MODEL, "Switch / Relay"))
+        return MyHOMESwitch(
             hass=hass,
-            device_id=_switch,
-            who=_configured_switches[_switch][CONF_WHO],
-            where=_configured_switches[_switch][CONF_WHERE],
-            icon=_configured_switches[_switch][CONF_ICON],
-            icon_on=_configured_switches[_switch][CONF_ICON_ON],
-            interface=_configured_switches[_switch][CONF_BUS_INTERFACE] if CONF_BUS_INTERFACE in _configured_switches[_switch] else None,
-            name=_configured_switches[_switch][CONF_NAME],
-            entity_name=_configured_switches[_switch][CONF_ENTITY_NAME],
-            device_class=_configured_switches[_switch][CONF_DEVICE_CLASS],
-            manufacturer=_configured_switches[_switch][CONF_MANUFACTURER],
-            model=_configured_switches[_switch][CONF_DEVICE_MODEL],
-            gateway=hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_ENTITY],
+            name=name,
+            entity_name=entity_name,
+            icon=icon,
+            icon_on=icon_on,
+            device_id=ctx.key,
+            who=ctx.who,
+            where=ctx.address.where,
+            interface=ctx.address.interface,
+            device_class=str(device_class),
+            manufacturer=manufacturer,
+            model=model,
+            gateway=runtime.gateway,
         )
-        _switches.append(_switch)
 
-    async_add_entities(_switches)
+    def corrupted(entry: RegistryEntry, ctx: DeviceContext) -> bool:
+        # Duplicate unique ids like "{mac}-1-1-06" written by earlier versions
+        return bool(entry.unique_id and "-1-1-" in entry.unique_id)
+
+    def known_keys(ctx: DeviceContext) -> list[str]:
+        # The light platform claims the bare WHERE of a routed switch for it
+        # (_ForeignAddresses) and publishes under that spelling too.
+        return [*default_known_keys(ctx), ctx.address.where, ctx.address.clean_where]
+
+    PlatformDiscovery(
+        hass, config_entry, async_add_entities,
+        platform=PLATFORM, who="1", event_type=None, build=build, announce=True,
+        reject_registry_entry=corrupted, known_keys=known_keys,
+        yaml_device_id=lambda address: address.clean_key,
+    ).start(listen=False)
+
+    platform = entity_platform.current_platform.get()
+    if platform is not None:
+        platform.async_register_entity_service(
+            SERVICE_TURN_ON_TIMED,
+            {
+                vol.Optional("duration"): vol.Coerce(float),
+                vol.Optional("hours", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=255)),
+                vol.Optional("minutes", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=59)),
+                vol.Optional("seconds", default=0): vol.All(vol.Coerce(float), vol.Range(min=0, max=59)),
+            },
+            "async_turn_on_timed",
+        )
+    return True
 
 
-async def async_unload_entry(hass, config_entry):
-    if PLATFORM not in hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_PLATFORMS]:
+async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+    runtime = get_runtime_data(config_entry)
+    if runtime is None or PLATFORM not in runtime.platforms:
         return True
 
-    _configured_switches = hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_PLATFORMS][PLATFORM]
+    _configured_switches = runtime.platforms[PLATFORM]
+    for _switch in list(_configured_switches.keys()):
+        del runtime.platforms[PLATFORM][_switch]
 
-    for _switch in _configured_switches.keys():
-        del hass.data[DOMAIN][config_entry.data[CONF_MAC]][CONF_PLATFORMS][PLATFORM][_switch]
+    return True
 
 
 class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
     def __init__(
         self,
-        hass,
+        hass: HomeAssistant | None,
         name: str,
-        entity_name: str,
-        icon: str,
-        icon_on: str,
+        entity_name: str | None,
+        icon: str | None,
+        icon_on: str | None,
         device_id: str,
         who: str,
         where: str,
-        interface: str,
-        device_class: str,
+        interface: str | None,
+        device_class: str | None,
         manufacturer: str,
         model: str,
         gateway: MyHOMEGatewayHandler,
-    ):
+    ) -> None:
         super().__init__(
             hass=hass,
             name=name,
@@ -98,9 +153,8 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
             manufacturer=manufacturer,
             model=model,
             gateway=gateway,
+            entity_name=entity_name,
         )
-
-        self._attr_name = entity_name
 
         self._interface = interface
         self._full_where = f"{self._where}#4#{self._interface}" if self._interface is not None else self._where
@@ -112,7 +166,11 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
         if self._interface is not None:
             self._attr_extra_state_attributes["Int"] = self._interface
 
-        self._attr_device_class = SwitchDeviceClass.OUTLET if device_class.lower() == "outlet" else SwitchDeviceClass.SWITCH
+        self._attr_device_class = (
+            SwitchDeviceClass.OUTLET
+            if (device_class or "").lower() == "outlet"
+            else SwitchDeviceClass.SWITCH
+        )
 
         self._on_icon = icon_on
         self._off_icon = icon
@@ -122,37 +180,69 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
 
         self._attr_is_on = None
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Update the entity.
 
         Only used by the generic entity update service.
         """
-        await self._gateway_handler.send_status_request(OWNLightingCommand.status(self._where))
+        await self._gateway_handler.send_status_request(OWNLightingCommand.status(self._full_where))
 
-    async def async_turn_on(self, **kwargs):  # pylint: disable=unused-argument
+    async def async_turn_on_timed(
+        self,
+        duration: float | None = None,
+        hours: int = 0,
+        minutes: int = 0,
+        seconds: float = 0,
+    ) -> None:
+        """Turn on switch with a hardware-offloaded bus timer."""
+        cmd = build_timed_turn_on_command(
+            self._full_where,
+            duration=duration,
+            hours=hours,
+            minutes=minutes,
+            seconds=seconds,
+        )
+        await self._gateway_handler.send(cmd)
+        self._attr_is_on = True
+        self.async_write_ha_state()
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the device on."""
+        if "timer" in kwargs or "duration" in kwargs:
+            raw_dur = kwargs.get("timer", kwargs.get("duration"))
+            dur = float(raw_dur) if raw_dur is not None else None
+            await self.async_turn_on_timed(
+                duration=dur,
+                hours=int(kwargs.get("hours", 0)),
+                minutes=int(kwargs.get("minutes", 0)),
+                seconds=float(kwargs.get("seconds", 0)),
+            )
+            return
         await self._gateway_handler.send(OWNLightingCommand.switch_on(self._full_where))
 
-    async def async_turn_off(self, **kwargs):  # pylint: disable=unused-argument
+    async def async_turn_off(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Turn the device off."""
         await self._gateway_handler.send(OWNLightingCommand.switch_off(self._full_where))
 
-    def handle_event(self, message: OWNLightingEvent):
+    @callback
+    def handle_event(self, message: OWNLightingEvent) -> None:
         """Handle an event message."""
+        if getattr(message, "is_translation", None) is True:
+            return
         if self._attr_device_class == SwitchDeviceClass.SWITCH:
-            LOGGER.info(
+            LOGGER.debug(
                 "%s %s",
                 self._gateway_handler.log_id,
                 message.human_readable_log.replace("Light", "Switch"),
             )
         elif self._attr_device_class == SwitchDeviceClass.OUTLET:
-            LOGGER.info(
+            LOGGER.debug(
                 "%s %s",
                 self._gateway_handler.log_id,
                 message.human_readable_log.replace("Light", "Outlet"),
             )
         else:
-            LOGGER.info(
+            LOGGER.debug(
                 "%s %s",
                 self._gateway_handler.log_id,
                 message.human_readable_log,
@@ -160,4 +250,4 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
         self._attr_is_on = message.is_on
         if self._off_icon is not None and self._on_icon is not None:
             self._attr_icon = self._on_icon if self._attr_is_on else self._off_icon
-        self.async_schedule_update_ha_state()
+        self._publish_state()

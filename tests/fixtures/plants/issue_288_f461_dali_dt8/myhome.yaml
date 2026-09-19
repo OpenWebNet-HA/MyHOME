@@ -1,0 +1,40 @@
+# Issue #288 - F461 DALI gateway with one DT8 RGBW ballast (25) and four
+# ballasts (26-29) that only ever answer the HSV sentinel *12*511*127*255##.
+#
+# The trace shows 25 receiving real HSV writes (hue 240, 350, ...) and real
+# tunable-white writes (169, 153 mireds): it is the RGBW fixture the reporter
+# describes, so it is declared with both colour modes.  26-29 are declared as
+# plain relays and locked, so that a value the gateway remembers from an
+# accidental write can never promote them.
+f461:
+  mac: "00:03:50:00:02:88"
+
+  light:
+    light_25:
+      where: "25"
+      interface: "02"
+      name: "Light 25"
+      dimmable: true
+      color_temp: true
+      rgb: true
+      lock_features: true
+    light_26:
+      where: "26"
+      interface: "02"
+      name: "Light 26"
+      lock_features: true
+    light_27:
+      where: "27"
+      interface: "02"
+      name: "Light 27"
+      lock_features: true
+    light_28:
+      where: "28"
+      interface: "02"
+      name: "Light 28"
+      lock_features: true
+    light_29:
+      where: "29"
+      interface: "02"
+      name: "Light 29"
+      lock_features: true

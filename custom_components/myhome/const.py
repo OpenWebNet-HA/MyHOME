@@ -1,11 +1,32 @@
 """Constants for the MyHome component."""
 import logging
+import re
+from functools import lru_cache
+from typing import Any
 
 LOGGER = logging.getLogger(__package__)
 DOMAIN = "myhome"
 
 ATTR_GATEWAY = "gateway"
 ATTR_MESSAGE = "message"
+INTEGRATION_VERSION = "2.0.0b13"
+# hass.data[DOMAIN] key holding the OWNd version resolved off the event loop
+DATA_OWND_VERSION = "_ownd_version"
+
+
+@lru_cache(maxsize=1)
+def get_ownd_version() -> str:
+    """Return the installed version of the OWNd protocol engine.
+
+    Reads package metadata from disk: call it via ``hass.async_add_executor_job``
+    (see ``_async_resolve_ownd_version``), never directly from the event loop.
+    """
+    try:
+        import importlib.metadata
+
+        return importlib.metadata.version("OWNd")
+    except Exception:
+        return "unknown"
 
 CONF = "config"
 CONF_ENTITY = "entity"
@@ -23,16 +44,24 @@ CONF_DEVICE_TYPE = "deviceType"
 CONF_DEVICE_MODEL = "model"
 CONF_MANUFACTURER = "manufacturer"
 CONF_MANUFACTURER_URL = "manufacturerURL"
+CONF_MEMBERS = "members"
 CONF_UDN = "UDN"
 CONF_WORKER_COUNT = "command_worker_count"
 CONF_FILE_PATH = "config_file_path"
 CONF_GENERATE_EVENTS = "generate_events"
+CONF_BROADCAST_RESYNC = "broadcast_resync"
 CONF_PARENT_ID = "parent_id"
 CONF_WHO = "who"
 CONF_WHERE = "where"
 CONF_BUS_INTERFACE = "interface"
+#: F422 bus-routing separator in a WHERE: ``APL#4#<bus>``.
+BUS_ROUTING = "#4#"
 CONF_ZONE = "zone"
 CONF_DIMMABLE = "dimmable"
+CONF_COLOR_TEMP = "color_temp"
+CONF_RGB = "rgb"
+CONF_HS = "hs"
+CONF_LOCK_FEATURES = "lock_features"
 CONF_GATEWAY = "gateway"
 CONF_DEVICE_CLASS = "class"
 CONF_INVERTED = "inverted"
@@ -41,8 +70,275 @@ CONF_HEATING_SUPPORT = "heat"
 CONF_COOLING_SUPPORT = "cool"
 CONF_FAN_SUPPORT = "fan"
 CONF_STANDALONE = "standalone"
+CONF_SDOMOTICA_COMPAT = "sdomotica_compat"
 CONF_CENTRAL = "central"
 CONF_SHORT_PRESS = "pushbutton_short_press"
 CONF_SHORT_RELEASE = "pushbutton_short_release"
 CONF_LONG_PRESS = "pushbutton_long_press"
 CONF_LONG_RELEASE = "pushbutton_long_release"
+CONF_ROTARY_CW_SLOW = "rotary_cw_slow"
+CONF_ROTARY_CW_FAST = "rotary_cw_fast"
+CONF_ROTARY_CCW_SLOW = "rotary_ccw_slow"
+CONF_ROTARY_CCW_FAST = "rotary_ccw_fast"
+CONF_TRAVEL_TIME = "travel_time"
+DEFAULT_TRAVEL_TIME = 25
+
+# Cover calibration (timed covers measure their own travel times on the bus)
+CONF_COVER_TRAVEL_TIMES = "cover_travel_times"  # config entry option: {device_id: {...}}
+SERVICE_CALIBRATE_COVER = "calibrate_cover"
+SERVICE_STOP_COVER_CALIBRATION = "stop_cover_calibration"
+SERVICE_SET_COVER_TRAVEL_TIME = "set_cover_travel_time"
+SERVICE_RESET_COVER_TRAVEL_TIME = "reset_cover_travel_time"
+EVENT_COVER_CALIBRATION = "myhome_cover_calibration"
+CALIBRATION_RUN_TIMEOUT = 180.0  # s to wait for the actuator's stop status per run
+CALIBRATION_MIN_RUN = 1.0        # s: anything shorter is not a full travel
+CALIBRATION_MAX_RUN = 300.0      # s: anything longer is an actuator with no run-time limit
+CALIBRATION_SETTLE = 1.0         # s pause between runs so the actuator relay settles
+# An actuator with the factory 60 s run-time limit stops itself, not at the end
+# stop: measured 61.5 s for a 14 s shutter on a MyHOMEServer1 (#319). A run that
+# ends inside this window measured the actuator, not the shutter, and is refused.
+CALIBRATION_CUTOFF_MIN = 59.0
+CALIBRATION_CUTOFF_MAX = 65.0
+WHO_BURGLAR_ALARM = "5"
+PLATFORM_ALARM = "alarm_control_panel"
+
+# ── Decoder pool (Dynamic Proxy for Music Assistant / Spotify) ──────────────
+# Up to 4 decoder slots, one per BTicino physical source input.
+# Keys follow the pattern: decoder_{n}_{field}, n = 1..4
+CONF_DECODER_ENTITY = "decoder_{}_entity"     # HA media_player entity_id
+CONF_DECODER_SOURCE = "decoder_{}_source"     # BTicino source number (int 1-4)
+CONF_DECODER_PRE_GAIN = "decoder_{}_pre_gain" # Volume offset % added to decoder (0-50)
+CONF_DECODER_SLOTS = 4                        # Maximum number of decoder slots
+
+# ── Light transition modes (software stepped dimming) ─────────────────────
+CONF_TRANSITION_MODE = "transition_mode"
+TRANSITION_MODE_NATIVE = "native"
+TRANSITION_MODE_SOFTWARE = "software_stepped"
+TRANSITION_MODE_AUTO = "auto"  # back-compat alias → software_stepped
+TRANSITION_MODES = [TRANSITION_MODE_SOFTWARE, TRANSITION_MODE_NATIVE, TRANSITION_MODE_AUTO]
+DEFAULT_TRANSITION_MODE = TRANSITION_MODE_SOFTWARE
+
+# Tuning for software stepped fades (best-effort)
+SOFTWARE_TRANSITION_STEP_INTERVAL = 0.3   # target seconds between steps
+SOFTWARE_TRANSITION_MIN_STEPS = 2
+SOFTWARE_TRANSITION_MAX_STEPS = 25
+
+# Debounce window for reactive group / area / general broadcast re-sync (issue #368)
+RESYNC_DEBOUNCE_S = 0.5
+RESYNC_LEADING_WINDOW_S = 1.5
+
+
+def is_apl_address(base: str) -> bool:
+    """Check if base address is a valid OpenWebNet Point-to-Point (APL) address.
+
+    Point-to-point addressing combinations:
+      - A = 00; PL [01-15]     -> 4 digits (e.g. 0015 = Area 00, PL 15)
+      - A [1-9]; PL [1-9]      -> 2 digits (e.g. 15 = Area 1, PL 5)
+      - A = 10; PL [01-15]     -> 4 digits (e.g. 1015 = Area 10, PL 15)
+      - A [01-09]; PL [10-15]  -> 4 digits (e.g. 0115 = Area 1, PL 15)
+    """
+    if not base.isdigit():
+        return False
+    if len(base) == 2:
+        a = int(base[0])
+        pl = int(base[1])
+        return 1 <= a <= 9 and 1 <= pl <= 9
+    if len(base) == 4:
+        a = int(base[:2])
+        pl = int(base[2:])
+        if a == 0:
+            return 1 <= pl <= 15
+        if 1 <= a <= 9:
+            return 10 <= pl <= 15
+        if a == 10:
+            return 1 <= pl <= 15
+    return False
+
+
+def area_of_where(where: str | int | None) -> str | None:
+    """Return the area status WHERE for a given Point-to-Point (APL) WHERE."""
+    if where is None:
+        return None
+    where_str = str(where).strip()
+    parts = where_str.split("#", 1)
+    base = parts[0]
+    if not is_apl_address(base):
+        return None
+    if len(base) == 2:
+        return base[0]
+    # Length is 4
+    a = base[:2]
+    if a == "00":
+        return "00"
+    if a == "10":
+        return "100"
+    return str(int(a))
+
+
+def normalize_where(where: str | int | None) -> str:
+    """Normalize OpenWebNet address while preserving Point-to-Point (APL) addressing.
+
+    Point-to-point WHERE addresses must never have leading zeros stripped:
+      - '0015' means Area 00, Point 15 (4 digits)
+      - '15' means Area 1, Point 5 (2 digits)
+    Area broadcasts '00' (Area 0) and '100' (Area 10) are also preserved.
+    Other numeric addresses (such as zero-padded CEN+/dry contact object IDs like '0021')
+    have leading zeros stripped to match integer IDs.
+    """
+    if where is None:
+        return ""
+    where_str = str(where).strip()
+    if not where_str:
+        return ""
+    parts = where_str.split("#", 1)
+    base = parts[0]
+    if is_apl_address(base) or base in ("00", "100", "0"):
+        norm_base = base
+    elif base.isdigit():
+        norm_base = str(int(base))
+    else:
+        norm_base = base
+    return f"{norm_base}#{parts[1]}" if len(parts) > 1 else norm_base
+
+
+SERVICE_TURN_ON_TIMED = "turn_on_timed"
+
+PRESET_TIMERS: dict[float, int] = {
+    0.5: 18,
+    30.0: 17,
+    60.0: 11,
+    120.0: 12,
+    180.0: 13,
+    240.0: 14,
+    300.0: 15,
+    900.0: 16,
+}
+
+SUPPORTED_GATEWAY_MODELS = [
+    "MyHomeServer1",
+    "F454",
+    "F455",
+    "MH202",
+    "MH200N",
+    "MH200",
+    "MH201",
+    "F453AV",
+    "F452",
+    "F461",
+    "AM4890",
+    "Generic",
+]
+
+# WHO=13 dimension 15 ("MODEL REQUEST", *#13**15*MODEL##) device-type codes.
+#
+# Official table - BTicino "OpenWebNet_Community_2_device" v1.0.0 (2006-06-13),
+# section 1.2.6, reproduced completely. It predates every gateway sold after
+# 2006 (F454, F455, MH200N, MH202, MyHOMEServer1 ...), which therefore reuse or
+# invent codes: dimension 15 can CORROBORATE an identity, it can never establish
+# one for a modern gateway. Identification precedence lives in
+# MyHOMEGatewayHandler (SSDP announcement > user's choice > WHO=13).
+WHO13_OFFICIAL_DEVICE_TYPES = {
+    "2": "MHServer",
+    "4": "MH200",
+    "6": "F452",
+    "7": "F452V",
+    "11": "MHServer2",
+    "13": "H4684",
+}
+# Codes seen on real hardware but absent from the official document, with the
+# evidence.
+#   200: Observed on both F454 (issue #370, confirmed physical device + SSDP)
+#        and MyHOMEServer1 (issue #292/#297). Because it is shared across multiple
+#        modern Linux-based gateway families, it cannot uniquely identify either
+#        model or overrule an authoritative announcement. It corroborates both
+#        F454 and MyHOMEServer1, but contradicts legacy gateways (e.g. MH200/F452).
+WHO13_OBSERVED_DEVICE_TYPES: dict[str, str] = {
+    "200": "F454 / MyHomeServer1",
+}
+# Codes known to be shared across multiple model families.
+# Maps code -> tuple of compatible family names (normalized via gateway_model_family).
+WHO13_AMBIGUOUS_DEVICE_TYPES: dict[str, tuple[str, ...]] = {
+    "200": ("F454", "MYHOMESERVER1"),
+}
+GATEWAY_DEVICE_TYPE_MAP = {**WHO13_OBSERVED_DEVICE_TYPES, **WHO13_OFFICIAL_DEVICE_TYPES}
+
+# How the configured gateway model was established.
+IDENTIFICATION_SSDP = "ssdp"        # the gateway announced its modelName over UPnP/SSDP
+IDENTIFICATION_MANUAL = "manual"    # the user picked the model in the config flow
+IDENTIFICATION_SERIAL = "serial"    # serial (USB) interface: model fixed by the transport
+IDENTIFICATION_WHO13 = "who13"      # no model configured; labelled from WHO=13 dimension 15
+IDENTIFICATION_UNKNOWN = "unknown"
+
+
+def gateway_model_family(model: str | None) -> str:
+    """Reduce a model name to its family for identity comparisons.
+
+    ``MH200N`` -> ``MH200``, ``F452V`` -> ``F452``, ``MyHomeServer1`` -> ``MYHOMESERVER1``.
+    Trailing letters are variant suffixes the 2006 code table cannot express.
+    """
+    if not model:
+        return ""
+    name = str(model).strip().upper().replace(" ", "").replace("-", "").replace("_", "")
+    m = re.match(r"^([A-Z]+\d+)[A-Z]*$", name)
+    return m.group(1) if m else name
+
+
+def is_who13_code_compatible(raw_code: str, model: str | None) -> bool | None:
+    """Check if a WHO=13 dimension 15 code is compatible with a gateway model.
+
+    Returns:
+        True: Confirmed compatible (matches official spec or known empirical family).
+        False: Confirmed contradiction (contradicts official 2006 OpenWebNet spec).
+        None: Compatibility unknown (observed/empirical code on an unverified model,
+              or unknown code; cannot prove contradiction).
+    """
+    if not model or not raw_code:
+        return False
+    family = gateway_model_family(model)
+    official = WHO13_OFFICIAL_DEVICE_TYPES.get(raw_code)
+    if official:
+        return family == gateway_model_family(official)
+    allowed_families = WHO13_AMBIGUOUS_DEVICE_TYPES.get(raw_code)
+    if allowed_families:
+        if family in allowed_families:
+            return True
+        return None
+    observed = WHO13_OBSERVED_DEVICE_TYPES.get(raw_code)
+    if observed:
+        if family == gateway_model_family(observed):
+            return True
+        return None
+    return None
+
+
+
+
+def build_timed_turn_on_command(
+    where: str,
+    duration: float | None = None,
+    hours: int = 0,
+    minutes: int = 0,
+    seconds: float = 0,
+) -> Any:
+    """Build OpenWebNet hardware timer command for WHO=1."""
+    from OWNd.message import OWNCommand
+
+    total_seconds = float(duration if duration is not None else 0.0)
+    total_seconds += (int(hours) * 3600) + (int(minutes) * 60) + float(seconds)
+
+    if total_seconds <= 0:
+        total_seconds = 0.5
+
+    rounded_secs = round(total_seconds, 1)
+    if rounded_secs in PRESET_TIMERS:
+        what = PRESET_TIMERS[rounded_secs]
+        frame = f"*1*{what}*{where}##"
+    else:
+        int_secs = int(round(total_seconds))
+        h = max(0, min(255, int_secs // 3600))
+        m = max(0, min(59, (int_secs % 3600) // 60))
+        s = max(0, min(59, int_secs % 60))
+        frame = f"*#1*{where}*#2*{h}*{m}*{s}##"
+
+    parsed = OWNCommand.parse(frame)
+    return parsed if parsed is not None else OWNCommand(frame)
