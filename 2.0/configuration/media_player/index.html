@@ -1972,10 +1972,10 @@
 <li><strong>Room Amplifiers</strong>: 3484, 3484/1, 3487, F500</li>
 <li><strong>Audio Controls</strong>: L/N/NT4684, 3529</li>
 </ul>
-<blockquote>
-<p>[!IMPORTANT]
-<strong>Hardware-Only Analog Matrix</strong>: The BTicino F441 / F441M is a purely analog matrix switcher. It does not contain an Ethernet port or digital audio decoder and cannot stream IP audio by itself. It routes line-level analog signals from physical source inputs (Source 1 to Source 4) to room amplifier outputs (Zone 1 to Zone 9).</p>
-</blockquote>
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p><strong>Hardware-Only Analog Matrix</strong>: The BTicino F441 / F441M is a purely analog matrix switcher. It does not contain an Ethernet port or digital audio decoder and cannot stream IP audio by itself. It routes line-level analog signals from physical source inputs (Source 1 to Source 4) to room amplifier outputs (Zone 1 to Zone 9).</p>
+</div>
 <hr />
 <h2 id="the-dynamic-proxy-architecture">🔀 The Dynamic Proxy Architecture<a class="headerlink" href="#the-dynamic-proxy-architecture" title="Permanent link">&para;</a></h2>
 <p>To bridge modern streaming platforms (such as <strong>Music Assistant</strong>, <strong>Spotify Connect</strong>, or <strong>Squeezelite / LMS</strong>) into the analog BTicino matrix without audio artifacts, the MyHOME integration implements the <strong>Dynamic Proxy</strong> pattern.</p>
@@ -2037,10 +2037,10 @@ $$\text{Decoder Volume} = \text{Zone Volume} + \text{Pre-Gain Offset}$$</p>
 <li><em>(Repeat for Decoders 2 through 4 if you have multiple streaming DACs).</em></li>
 <li>Click <strong>Submit</strong>.</li>
 </ol>
-<blockquote>
-<p>[!WARNING]
-<strong>Avoid Recursive Loops</strong>: Do NOT select a Music Assistant virtual player as the backend decoder entity. The backend decoder must be the actual hardware device (e.g. <code>media_player.squeezelite_salon</code>, <code>media_player.wiim_dining</code>), while Music Assistant targets the MyHOME zone entity.</p>
-</blockquote>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p><strong>Avoid Recursive Loops</strong>: Do NOT select a Music Assistant virtual player as the backend decoder entity. The backend decoder must be the actual hardware device (e.g. <code>media_player.squeezelite_salon</code>, <code>media_player.wiim_dining</code>), while Music Assistant targets the MyHOME zone entity.</p>
+</div>
 <hr />
 <h2 id="standalone-fallback-mode-no-decoders">📻 Standalone Fallback Mode (No Decoders)<a class="headerlink" href="#standalone-fallback-mode-no-decoders" title="Permanent link">&para;</a></h2>
 <p>If you do not configure any streaming decoders in the Options Flow, the room amplifier entities operate in <strong>Native WHO = 16 Mode</strong>:

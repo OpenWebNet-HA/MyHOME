@@ -1916,11 +1916,11 @@
 </ul>
 <hr />
 <h2 id="option-1-manual-zip-ssh-installation-recommended-for-v2-beta">Option 1: Manual ZIP / SSH Installation (Recommended for v2 Beta)<a class="headerlink" href="#option-1-manual-zip-ssh-installation-recommended-for-v2-beta" title="Permanent link">&para;</a></h2>
-<blockquote>
-<p>[!IMPORTANT]
-<strong>Why Manual Installation is Recommended for v2 Beta</strong>:
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p><strong>Why Manual Installation is Recommended for v2 Beta</strong>:
 The v2 architecture is currently published as preview/beta releases from the <code>v2-phase1-architecture</code> development branch. HACS tracks the default <code>master</code> branch by default and often fails to detect or rejects pre-release beta tags on non-default branches. Installing via ZIP ensures you receive the exact, tested beta build.</p>
-</blockquote>
+</div>
 <h3 id="1-click-terminal-command-home-assistant-terminal-ssh">⚡ 1-Click Terminal Command (Home Assistant Terminal &amp; SSH)<a class="headerlink" href="#1-click-terminal-command-home-assistant-terminal-ssh" title="Permanent link">&para;</a></h3>
 <p>If you have the <strong>Terminal &amp; SSH</strong> add-on installed (or connect via SSH), paste this command directly into your terminal:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Set target beta release version (check https://github.com/OpenWebNet-HA/MyHOME/releases)</span>
@@ -1948,11 +1948,11 @@ The v2 architecture is currently published as preview/beta releases from the <co
 </span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>...
 </span></code></pre></div></li>
 </ol>
-<blockquote>
-<p>[!CAUTION]
-<strong>Folder Structure Warning</strong>:
+<div class="admonition danger">
+<p class="admonition-title">Caution</p>
+<p><strong>Folder Structure Warning</strong>:
 Always ensure integration files reside in <code>/config/custom_components/myhome/</code>. Never extract files directly into <code>/config/custom_components/</code> root, and never retain backup directories inside <code>custom_components/</code> (e.g. <code>custom_components/myhome_old/</code>). In modern Home Assistant cores, extra Python packages or stray <code>__init__.py</code> files in <code>custom_components/</code> can prevent all custom integrations from loading.</p>
-</blockquote>
+</div>
 <ol>
 <li>Restart Home Assistant:</li>
 <li>Go to <strong>Developer Tools → YAML → Restart</strong> (or <strong>Settings → System → Restart</strong>).</li>

@@ -2585,10 +2585,10 @@
 <hr />
 <h2 id="2-myhometurn_on_timed">2. <code>myhome.turn_on_timed</code><a class="headerlink" href="#2-myhometurn_on_timed" title="Permanent link">&para;</a></h2>
 <p>Turns on a light or switch with a <strong>hardware-offloaded SCS timer</strong>. </p>
-<blockquote>
-<p>[!TIP]
-<strong>Why use this service?</strong> Standard Home Assistant timers (e.g. <code>delay: 00:02:00</code> followed by <code>light.turn_off</code>) will fail if Home Assistant restarts or crashes during the delay. <code>myhome.turn_on_timed</code> programs the hardware actuator itself to count down and power off autonomously on the physical bus.</p>
-</blockquote>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p><strong>Why use this service?</strong> Standard Home Assistant timers (e.g. <code>delay: 00:02:00</code> followed by <code>light.turn_off</code>) will fail if Home Assistant restarts or crashes during the delay. <code>myhome.turn_on_timed</code> programs the hardware actuator itself to count down and power off autonomously on the physical bus.</p>
+</div>
 <h3 id="fields_1">Fields<a class="headerlink" href="#fields_1" title="Permanent link">&para;</a></h3>
 <table>
 <thead>

@@ -2025,10 +2025,10 @@
 - The runner builds and installs the candidate <code>OWNd</code> wheel.
 - It clones the active development branch of <code>OpenWebNet-HA/MyHOME</code> (<code>v2-phase1-architecture</code> or <code>master</code>).
 - It runs the complete automated unit test suite of <code>MyHOME</code> with <strong>strict 100.0% line coverage enforcement</strong>.</p>
-<blockquote>
-<p>[!IMPORTANT]
-A pull request to <code>OWNd</code> <strong>cannot merge</strong> if it breaks any behavior, parser, or assumption in <code>MyHOME</code>.</p>
-</blockquote>
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p>A pull request to <code>OWNd</code> <strong>cannot merge</strong> if it breaks any behavior, parser, or assumption in <code>MyHOME</code>.</p>
+</div>
 <hr />
 <h3 id="pillar-2-upstream-canary-ci-in-myhome-nightly-sentinel">Pillar 2: Upstream Canary CI in <code>MyHOME</code> (Nightly Sentinel)<a class="headerlink" href="#pillar-2-upstream-canary-ci-in-myhome-nightly-sentinel" title="Permanent link">&para;</a></h3>
 <p>To detect upstream changes before they are tagged and released to PyPI, <code>MyHOME</code> runs a nightly scheduled workflow (<code>.github/workflows/ownd-smoke.yml</code>):

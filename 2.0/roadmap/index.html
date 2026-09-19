@@ -2725,10 +2725,10 @@
 <h4 id="the-technical-context">The Technical Context:<a class="headerlink" href="#the-technical-context" title="Permanent link">&para;</a></h4>
 <p>In OpenWebNet, lighting actuators can be triggered individually (<code>WHERE=10</code>), by group (<code>WHERE=#1</code> through <code>#255</code>), by environment/room (<code>WHERE=room</code>), or generally across the whole plant (<code>WHERE=0</code>). 
 In ideal installations, actuators broadcast individual status frames (<code>*1*0*10##</code>, <code>*1*0*11##</code>) after executing a group or general command. However, on older gateways or specific actuator configurations, actuators do <strong>not</strong> emit individual status messages, leaving Home Assistant entities out of sync with the physical lights.</p>
-<blockquote>
-<p>[!NOTE]
-<strong>Real-World Case Study (Issue #300)</strong>: Installations utilizing DALI gateway interfaces (such as the <strong>F429G</strong>) often group ballasts into SCS groups (<code>WHERE = #1</code> .. <code>#255</code>) because F429G does not expose native DALI groups. While some modern gateways (such as the F461 in Issue #300) emit individual member status replies, older gateways do not. Currently, software-side grouping using Home Assistant native Light Groups (<code>light.group</code>) combined with <code>myhome_group_light_event</code> automations for physical wall switches is the officially recommended solution. See <a href="https://github.com/OpenWebNet-HA/MyHOME/issues/300">Issue #300</a> and discussion below.</p>
-</blockquote>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>Real-World Case Study (Issue #300)</strong>: Installations utilizing DALI gateway interfaces (such as the <strong>F429G</strong>) often group ballasts into SCS groups (<code>WHERE = #1</code> .. <code>#255</code>) because F429G does not expose native DALI groups. While some modern gateways (such as the F461 in Issue #300) emit individual member status replies, older gateways do not. Currently, software-side grouping using Home Assistant native Light Groups (<code>light.group</code>) combined with <code>myhome_group_light_event</code> automations for physical wall switches is the officially recommended solution. See <a href="https://github.com/OpenWebNet-HA/MyHOME/issues/300">Issue #300</a> and discussion below.</p>
+</div>
 <h4 id="open-questions-for-the-community">Open Questions for the Community:<a class="headerlink" href="#open-questions-for-the-community" title="Permanent link">&para;</a></h4>
 <ol>
 <li><strong>Group Mapping Definition</strong>: Should group memberships be defined in <code>myhome.yaml</code> / UI Options (e.g. <code>groups: { 1: ["light.kitchen", "light.dining"] }</code>), or should Home Assistant trigger an asynchronous status sweep (<code>*#1*WHERE##</code>) whenever a group actuation is intercepted on the bus?</li>

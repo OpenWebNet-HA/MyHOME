@@ -2220,13 +2220,13 @@
 </table>
 <hr />
 <h2 id="step-1-pre-upgrade-preparation-backup">🛡️ Step 1: Pre-Upgrade Preparation &amp; Backup<a class="headerlink" href="#step-1-pre-upgrade-preparation-backup" title="Permanent link">&para;</a></h2>
-<blockquote>
-<p>[!IMPORTANT]
-<strong>Always take a full Home Assistant backup before upgrading any custom integration.</strong>
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p><strong>Always take a full Home Assistant backup before upgrading any custom integration.</strong>
 1. Go to <strong>Settings → System → Backups</strong>.
 2. Click <strong>Create Backup</strong>, select <strong>Full backup</strong>, and wait for completion.
 3. Download the backup file to your local computer.</p>
-</blockquote>
+</div>
 <h3 id="document-current-plant-configuration">Document Current Plant Configuration<a class="headerlink" href="#document-current-plant-configuration" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Take note of your gateway IP address and OpenWebNet password.</li>
@@ -2251,9 +2251,9 @@
 </span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>grep<span class="w"> </span><span class="s1">'"version"'</span><span class="w"> </span>myhome/manifest.json<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
 </span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>ha<span class="w"> </span>core<span class="w"> </span>restart
 </span></code></pre></div>
-<blockquote>
-<p>[!TIP]
-<strong>What this command does step-by-step</strong>:
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p><strong>What this command does step-by-step</strong>:
 1. <code>mkdir -p /config/custom_components &amp;&amp; cd /config/custom_components</code>: Ensures the directory exists and enters your custom components folder.
 2. <code>wget -O myhome.zip ...</code>: Downloads the official pre-packaged release zip directly from GitHub.
 3. <code>rm -rf myhome</code>: Removes previous files to prevent orphaned legacy modules from colliding with v2.
@@ -2261,7 +2261,7 @@
 5. <code>rm myhome.zip</code>: Cleans up the temporary archive.
 6. <code>grep '"version"' myhome/manifest.json</code>: Prints the installed version to the terminal for immediate confirmation.
 7. <code>ha core restart</code>: Issues a core restart command via the Home Assistant supervisor CLI.</p>
-</blockquote>
+</div>
 <h4 id="alternative-manual-download-via-samba-studio-code-server">📁 Alternative: Manual Download via Samba / Studio Code Server<a class="headerlink" href="#alternative-manual-download-via-samba-studio-code-server" title="Permanent link">&para;</a></h4>
 <p>If you prefer not using the command line:
 1. Download <code>myhome.zip</code> from the latest <a href="https://github.com/OpenWebNet-HA/MyHOME/releases">v2.0 Beta GitHub Release</a>.

@@ -1985,10 +1985,10 @@
 </tr>
 </tbody>
 </table>
-<blockquote>
-<p>[!NOTE]
-Every discovered cover starts as a <strong>timed</strong> cover. Position-reporting hardware is not detected automatically: set <code>advanced_shutter: true</code> for that cover in <code>/config/myhome.yaml</code> (see <a href="../troubleshooting/#cover-position-is-wrong">Troubleshooting → Cover position is wrong</a>). Advanced covers refuse <code>myhome.calibrate_cover</code> and <code>myhome.set_cover_travel_time</code>, as they do not need a travel time.</p>
-</blockquote>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Every discovered cover starts as a <strong>timed</strong> cover. Position-reporting hardware is not detected automatically: set <code>advanced_shutter: true</code> for that cover in <code>/config/myhome.yaml</code> (see <a href="../troubleshooting/#cover-position-is-wrong">Troubleshooting → Cover position is wrong</a>). Advanced covers refuse <code>myhome.calibrate_cover</code> and <code>myhome.set_cover_travel_time</code>, as they do not need a travel time.</p>
+</div>
 <hr />
 <h2 id="timed-cover-position-engine">⏱️ Timed Cover Position Engine<a class="headerlink" href="#timed-cover-position-engine" title="Permanent link">&para;</a></h2>
 <p>For standard covers without hardware position feedback, the integration provides a high-precision software estimator enabling full <code>open_cover</code>, <code>close_cover</code>, <code>stop_cover</code>, and slider-based <code>set_cover_position</code> support:</p>
@@ -2001,13 +2001,13 @@ Every discovered cover starts as a <strong>timed</strong> cover. Position-report
 <hr />
 <h2 id="calibrating-travel-time-zero-yaml">📐 Calibrating Travel Time (Zero YAML)<a class="headerlink" href="#calibrating-travel-time-zero-yaml" title="Permanent link">&para;</a></h2>
 <p>You never need to edit YAML files to calibrate travel times in v2.</p>
-<blockquote>
-<p>[!IMPORTANT]
-<strong>Actuator Requirements for Automated Calibration</strong>
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p><strong>Actuator Requirements for Automated Calibration</strong>
 Automated on-bus calibration relies entirely on the actuator emitting a stop frame (<code>*2*0*&lt;WHERE&gt;##</code>) at the moment the shutter physically reaches its end stop.
 * <strong>Trimmed Actuators</strong>: If the installer trimmed the actuator's mechanical or potentiometer run-time limit to match the physical shutter, automated calibration will measure your shutter travel times accurately down to tenths of a second.
 * <strong>Factory 60 s Cutoff Actuators</strong>: If the actuator run-time was left at the factory default cutoff (~60 s), the actuator will not stop when the shutter reaches the bottom; it will continue running until the 60 s hardware timer expires. The integration detects this condition and <strong>safely rejects the calibration</strong> to prevent saving inaccurate 60 s run times. For these actuators, use <a href="#method-3-set-explicit-travel-time-via-service-action">Method 3: Set Explicit Travel Time via Service Action</a> instead.</p>
-</blockquote>
+</div>
 <h3 id="method-1-automated-calibration-button-on-device-page">Method 1: Automated Calibration Button on Device Page<a class="headerlink" href="#method-1-automated-calibration-button-on-device-page" title="Permanent link">&para;</a></h3>
 <p>Every cover device in Home Assistant includes a dedicated configuration button entity (on a position-reporting cover a press is refused, as there is nothing to measure):
 * <strong>Entity</strong>: <code>button.&lt;name&gt;_calibrate_travel_time</code>
@@ -2017,12 +2017,14 @@ Automated on-bus calibration relies entirely on the actuator emitting a stop fra
 2. <strong>Full Close (Timed)</strong>: After a brief settling pause, the shutter is driven fully <strong>DOWN</strong>. The integration monitors the OpenWebNet bus to precisely record <code>travel_time_down</code> (from motor start to actuator stop frame).
 3. <strong>Full Open (Timed)</strong>: After another pause, the shutter is driven fully <strong>UP</strong> back to the top limit, recording <code>travel_time_up</code>.
 4. <strong>Saved Automatically</strong>: Both measured times are persisted into Home Assistant's config entry (<code>cover_travel_times</code>) and shown as the cover's <code>travel_time_down</code> / <code>travel_time_up</code> attributes, with <code>calibration_source: measured</code> and a <code>calibrated_at</code> timestamp. The shutter ends in the 100% open position. Progress is published on the event bus as <code>myhome_cover_calibration</code> (<code>phase</code>: <code>queued</code>, <code>start</code>, <code>run</code>, <code>done</code>, <code>failed</code>), so you can follow or automate on it.</p>
-<blockquote>
-<p>[!NOTE]
-* <strong>Do not press the button a second time</strong>: The sequence is fully automated. A second press while the run is active is refused (<em>"… is already being calibrated"</em>); the button fires the action without waiting for it, so the refusal only shows up in the Home Assistant log, not in the UI. Each run also gives up with <em>no stop status from the actuator</em> if no stop frame arrives within 180 s.
-* <strong>Do NOT stop the shutter during calibration — neither from the cover entity nor from the wall</strong>: A stop press from either place puts a plain stop frame (<code>*2*0*&lt;WHERE&gt;##</code>) on the bus, which is the very same frame the actuator emits when the shutter reaches its end stop. The integration cannot tell them apart, so it treats the stop as the end of the run and stores the partial elapsed time (e.g. 5–6 seconds) as the calibrated travel time.
-* <strong>How to Abort Safely</strong>: The one safe way out is the <code>myhome.stop_cover_calibration</code> action in <strong>Developer Tools → Actions</strong>: it marks the run as interrupted and stores nothing. Call it while the shutter is moving — a call that lands in the one-second pause between two runs is not seen and the next run starts. (Driving the shutter in the <em>opposite</em> direction from the wall is also recognised as an interruption, because it arrives as an explicit open/close command rather than a stop — but prefer the action.)</p>
-</blockquote>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<ul>
+<li><strong>Do not press the button a second time</strong>: The sequence is fully automated. A second press while the run is active is refused (<em>"… is already being calibrated"</em>); the button fires the action without waiting for it, so the refusal only shows up in the Home Assistant log, not in the UI. Each run also gives up with <em>no stop status from the actuator</em> if no stop frame arrives within 180 s.</li>
+<li><strong>Do NOT stop the shutter during calibration — neither from the cover entity nor from the wall</strong>: A stop press from either place puts a plain stop frame (<code>*2*0*&lt;WHERE&gt;##</code>) on the bus, which is the very same frame the actuator emits when the shutter reaches its end stop. The integration cannot tell them apart, so it treats the stop as the end of the run and stores the partial elapsed time (e.g. 5–6 seconds) as the calibrated travel time.</li>
+<li><strong>How to Abort Safely</strong>: The one safe way out is the <code>myhome.stop_cover_calibration</code> action in <strong>Developer Tools → Actions</strong>: it marks the run as interrupted and stores nothing. Call it while the shutter is moving — a call that lands in the one-second pause between two runs is not seen and the next run starts. (Driving the shutter in the <em>opposite</em> direction from the wall is also recognised as an interruption, because it arrives as an explicit open/close command rather than a stop — but prefer the action.)</li>
+</ul>
+</div>
 <h3 id="method-2-calibrate-all-covers-sequentially">Method 2: Calibrate All Covers Sequentially<a class="headerlink" href="#method-2-calibrate-all-covers-sequentially" title="Permanent link">&para;</a></h3>
 <p>On your gateway device page, click <strong>Calibrate All Covers</strong> (<code>button.&lt;gateway name&gt;_calibrate_all_covers</code>, e.g. <code>button.f454_gateway_calibrate_all_covers</code>). It calls <code>myhome.calibrate_cover</code> for every enabled cover of that gateway; a per-gateway lock runs them <strong>one at a time</strong>, because two motors moving on one paced session would make the timings meaningless. Covers still waiting report <code>phase: queued</code>. Position-reporting (advanced) covers are refused with an error in the log and the others continue. <code>myhome.stop_cover_calibration</code> stops the running cover and drops the whole queue.</p>
 <h3 id="method-3-set-explicit-travel-time-via-service-action">Method 3: Set Explicit Travel Time via Service Action<a class="headerlink" href="#method-3-set-explicit-travel-time-via-service-action" title="Permanent link">&para;</a></h3>
@@ -2047,10 +2049,10 @@ Automated on-bus calibration relies entirely on the actuator emitting a stop fra
 </span></code></pre></div></p>
 <hr />
 <h2 id="legacy-yaml-note">🔄 Legacy YAML Note<a class="headerlink" href="#legacy-yaml-note" title="Permanent link">&para;</a></h2>
-<blockquote>
-<p>[!NOTE]
-If you are upgrading from legacy v0.9 installations and still have manual <code>cover:</code> blocks in <code>/config/myhome.yaml</code>, please refer to the <a href="../../0.9.4/configuration/covers/">v0.9.4 Legacy Cover Documentation</a> or the <a href="../../migration/legacy-yaml/">Legacy YAML Migration Guide</a>. In v2, all covers are managed dynamically via Home Assistant's native registry.</p>
-</blockquote>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>If you are upgrading from legacy v0.9 installations and still have manual <code>cover:</code> blocks in <code>/config/myhome.yaml</code>, please refer to the <a href="../../0.9.4/configuration/covers/">v0.9.4 Legacy Cover Documentation</a> or the <a href="../../migration/legacy-yaml/">Legacy YAML Migration Guide</a>. In v2, all covers are managed dynamically via Home Assistant's native registry.</p>
+</div>
 
 
 

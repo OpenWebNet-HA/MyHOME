@@ -2012,11 +2012,11 @@
 </span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">light.group_*</span>
 </span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">  </span><span class="nt">show_empty</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
 </span></code></pre></div>
-<blockquote>
-<p>[!TIP]
-<strong>Why <code>integration: myhome</code> is best practice:</strong><br />
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p><strong>Why <code>integration: myhome</code> is best practice:</strong><br />
 Using <code>integration: myhome</code> makes the card completely independent of entity naming. Whether your lights are named <code>light.sdomoticabticino2</code>, <code>light.keuken_spots</code>, or renamed in the UI, this card never breaks!</p>
-</blockquote>
+</div>
 <hr />
 <h2 id="recipe-2-dynamic-multiroom-audio-zone-player">🔊 Recipe 2: Dynamic Multiroom Audio Zone Player<a class="headerlink" href="#recipe-2-dynamic-multiroom-audio-zone-player" title="Permanent link">&para;</a></h2>
 <p>For installations equipped with BTicino WHO 16 sound systems (F441, F500 audio matrices, 3484 amplifier nodes). This card dynamically displays only the audio zones that are currently <strong>playing or active</strong>:</p>
@@ -2219,14 +2219,14 @@ Using <code>integration: myhome</code> makes the card completely independent of 
 </span><span id="__span-7-40"><a id="__codelineno-7-40" name="__codelineno-7-40" href="#__codelineno-7-40"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">entity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">button.living_room_shutter_calibrate_travel_time</span><span class="w">   </span><span class="c1"># on-bus calibration, when the actuator supports it</span>
 </span></code></pre></div>
 <p><strong>Workflow</strong>: press <strong>Close</strong> on the first row, press <strong>Stop</strong> the instant the shutter reaches the bottom, check <em>Last run</em> / <em>Last run direction</em>, press <strong>Save</strong>. Repeat with <strong>Open</strong>. <code>calibration_source</code> flips to <code>manual</code> and the position slider follows the new times immediately.</p>
-<blockquote>
-<p>[!TIP]
-Only want the number at a glance? A Markdown card does it in one line:
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Only want the number at a glance? A Markdown card does it in one line:
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">markdown</span>
 </span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nt">content</span><span class="p">:</span><span class="w"> </span><span class="s">"Last</span><span class="nv"> </span><span class="s">run:</span><span class="nv"> </span><span class="s">**{{</span><span class="nv"> </span><span class="s">state_attr('cover.living_room_shutter',</span><span class="nv"> </span><span class="s">'last_run_seconds')</span><span class="nv"> </span><span class="s">}}</span><span class="nv"> </span><span class="s">s**</span><span class="nv"> </span><span class="s">({{</span><span class="nv"> </span><span class="s">state_attr('cover.living_room_shutter',</span><span class="nv"> </span><span class="s">'last_run_direction')</span><span class="nv"> </span><span class="s">}})"</span>
 </span></code></pre></div>
 The measurement itself is done by the integration — the clock starts at the real motor start on the bus, so the queue delay is never in the number; only your reaction time on <strong>Stop</strong> is.</p>
-</blockquote>
+</div>
 <hr />
 <h2 id="join-in-share-your-creations">🤝 Join In &amp; Share Your Creations!<a class="headerlink" href="#join-in-share-your-creations" title="Permanent link">&para;</a></h2>
 <p>Every MyHOME installation is unique! Do you have a custom card layout, Mushroom card setup, floorplan SVG, or automation dashboard that you are proud of?</p>
