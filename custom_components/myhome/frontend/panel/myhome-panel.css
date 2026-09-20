@@ -437,6 +437,34 @@ button.danger-solid:hover { background: color-mix(in srgb, var(--panel-error) 85
 .cal-panel[data-phase="saved"] .cal-step-index { background: var(--panel-success); color: #fff; }
 .cal-status { display: grid; gap: 10px; padding: 18px; border-radius: 14px; background: var(--panel-surface-2); border: 1px solid var(--panel-border); border-inline-start: 4px solid var(--panel-accent); }
 .cal-status p { margin: 0; }
+.cal-visual { --cal-edge: 76px; display: flex; align-items: center; gap: 14px; margin: 0; min-width: 0; }
+.cal-visual-drawing { position: relative; width: 170px; height: 146px; flex: 0 0 170px; }
+.cal-visual-frame { position: absolute; top: 20px; left: 22px; width: 105px; height: 112px; border-inline: 4px solid var(--panel-border); box-sizing: border-box; background: var(--panel-surface); }
+.cal-visual-curtain { position: absolute; inset: 0 0 auto; height: calc(var(--cal-edge) - 20px); box-sizing: border-box; border-bottom: 3px solid var(--panel-accent); background: repeating-linear-gradient(to bottom, color-mix(in srgb, var(--panel-text-2) 45%, var(--panel-surface)) 0 7px, var(--panel-surface) 7px 9px); }
+.cal-visual-box { position: absolute; top: 9px; left: 16px; width: 117px; height: 18px; border-radius: 4px; background: var(--panel-border); }
+.cal-visual-base { position: absolute; top: 132px; left: 16px; width: 117px; border-top: 3px solid var(--panel-text-2); }
+.cal-visual-icon { position: absolute; top: 59px; left: 60px; padding: 4px; border-radius: 50%; background: var(--panel-surface); color: var(--panel-accent); --mdc-icon-size: 24px; }
+.cal-visual-measure { position: absolute; left: 143px; top: var(--cal-edge); height: calc(132px - var(--cal-edge)); border-left: 2px solid var(--panel-accent); display: flex; align-items: center; }
+.cal-visual-measure::before, .cal-visual-measure::after { content: ""; position: absolute; left: -5px; width: 8px; border-top: 2px solid var(--panel-accent); }
+.cal-visual-measure::before { top: 0; } .cal-visual-measure::after { bottom: 0; }
+.cal-visual-measure span { margin-left: 7px; font-size: 12px; color: var(--primary-text-color, #182b37); }
+.cal-visual-focus { display: none; position: absolute; top: 119px; left: 13px; width: 123px; height: 20px; border: 2px dashed var(--panel-accent); border-radius: 4px; }
+.cal-visual figcaption { display: grid; gap: 8px; min-width: 0; }
+.cal-visual-label { font-size: 15px; line-height: 1.4; font-weight: 600; overflow-wrap: anywhere; }
+.cal-visual-caption { font-size: 12px; }
+.cal-visual[data-scene="closed"] { --cal-edge: 132px; }
+.cal-visual[data-scene="open"] { --cal-edge: 32px; }
+.cal-visual[data-scene="slats"] { --cal-edge: 127px; }
+.cal-visual[data-scene="slats"] .cal-visual-curtain { background: repeating-linear-gradient(to bottom, color-mix(in srgb, var(--panel-text-2) 45%, var(--panel-surface)) 0 6px, var(--panel-surface) 6px 11px); }
+.cal-visual[data-scene="slats"] .cal-visual-focus { display: block; }
+.cal-visual[data-scene="gap"] { --cal-edge: 117px; }
+.cal-visual[data-scene="neutral"] .cal-visual-curtain { display: none; }
+.cal-visual[data-scene="neutral"] .cal-visual-frame { opacity: .45; }
+@media (max-width: 440px) {
+  .cal-visual { flex-direction: column; gap: 4px; }
+  .cal-visual-drawing { flex-basis: 146px; }
+  .cal-visual figcaption { width: 100%; text-align: center; }
+}
 #cal-phase { font-weight: 500; line-height: 1.45; }
 .cal-panel[data-phase="opening"] .cal-status, .cal-panel[data-phase="closing"] .cal-status, .cal-panel[data-phase^="starting_"] .cal-status { border-inline-start-color: var(--panel-warning); }
 .cal-panel[data-phase="opening"] #cal-phase::before, .cal-panel[data-phase="closing"] #cal-phase::before, .cal-panel[data-phase^="starting_"] #cal-phase::before {

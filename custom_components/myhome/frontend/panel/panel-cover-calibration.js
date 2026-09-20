@@ -2,6 +2,9 @@
 const url = new URL("panel-dom.js", import.meta.url);
 url.search = new URL(import.meta.url).search;
 const { escapeHtml: esc } = await import(url.href);
+const visualUrl = new URL("panel-calibration-visual.js", import.meta.url);
+visualUrl.search = new URL(import.meta.url).search;
+const { visualMarkup, renderCalibrationVisual } = await import(visualUrl.href);
 
 export class CoverCalibration {
   constructor() { this._generation = 0; }
@@ -44,11 +47,14 @@ export class CoverCalibration {
         <li data-step="closing"><span class="cal-step-index">2</span><span>${esc(t("calStepClosing"))}</span></li>
         <li data-step="review"><span class="cal-step-index">3</span><span>${esc(t("calStepReview"))}</span></li>
       </ol>
-      <p class="muted cal-help">${esc(t(geometry ? "calGeometryHelp" : quick ? (quick === "opening" ? "calQuickOpeningHelp" : "calQuickClosingHelp") : automatic ? "calAutomaticHelp" : "calHelp"))}</p>
-      <p class="muted">${esc(t("calRecoveryHelp"))}</p>
+      <details class="profile-meta cal-guide"><summary>${esc(t("calVisualGuide"))}</summary>
+        <p class="muted cal-help">${esc(t(geometry ? "calGeometryHelp" : quick ? (quick === "opening" ? "calQuickOpeningHelp" : "calQuickClosingHelp") : automatic ? "calAutomaticHelp" : "calHelp"))}</p>
+        <p class="muted">${esc(t("calRecoveryHelp"))}</p>
+      </details>
       ${context.resume ? `<p>${esc(context.resume.entity_id)}</p>` : ""}
       ${context.entity_ids ? `<p class="notice">${esc(t("calBatchHelp"))}</p><ol id="cal-targets"></ol>` : ""}
       <div class="cal-status">
+        ${visualMarkup()}
         <p id="cal-phase" role="status">${esc(t("loading"))}</p>
         <p id="cal-elapsed" class="cal-elapsed"></p>
       </div>
@@ -188,6 +194,7 @@ export class CoverCalibration {
         `${t(direction === "opening" ? "profileOpeningTime" : "profileClosingTime")}: ${state.values[`${direction}_time`] ?? "—"} s · ${t(direction === state.direction ? "calQuickMeasured" : "calQuickRetained")}`).join(" · ");
     }
     this._renderGeometry(geometry);
+    renderCalibrationVisual(host, state, t, this._lost);
     host.querySelector("#cal-values").hidden = !!state.batch;
     if (state.batch) {
       host.querySelector("#cal-targets").innerHTML = state.targets.map((item, index) => {

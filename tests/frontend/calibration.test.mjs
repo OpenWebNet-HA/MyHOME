@@ -3,6 +3,7 @@ import { after, afterEach, test } from "node:test";
 import { JSDOM } from "jsdom";
 import { CoverCalibration } from "../../custom_components/myhome/frontend/panel/panel-cover-calibration.js";
 import { translations } from "../../custom_components/myhome/frontend/panel/panel-translations.js";
+import { calibrationScene } from "../../custom_components/myhome/frontend/panel/panel-calibration-visual.js";
 
 const dom = new JSDOM("<!doctype html><body></body>", { pretendToBeVisual: true });
 const { document } = dom.window;
@@ -10,6 +11,82 @@ const instances = [];
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
 const t = (key) => translations.it[key] || translations.en[key] || key;
+
+test("visual guide covers the geometry steps and measures only after confirmed Stop", () => {
+  for (const [step, shape] of Object.entries({ home: "closed", reset: "closed", closing: "closed", opening: "open", top: "open", lift: "slats", half_open: "middle", half_close: "middle" })) {
+    const scene = calibrationScene({ mode: "geometry", phase: "briefing", step });
+    assert.equal(scene.shape, shape, step);
+    assert.equal(scene.measure, false, step);
+    assert.equal(scene.icon, "", "briefing must not imply movement");
+  }
+  for (const [reading_kind, shape] of Object.entries({ lift: "gap", travel: "open", half_open: "middle", half_close: "middle" })) {
+    assert.equal(calibrationScene({ mode: "geometry", phase: "geometry_wait_stop", reading_kind }).measure, false);
+    const scene = calibrationScene({ mode: "geometry", phase: "reading", reading_kind });
+    assert.equal(scene.shape, shape);
+    assert.equal(scene.measure, true);
+    assert.equal(scene.icon, "");
+  }
+  assert.equal(calibrationScene({ mode: "geometry", phase: "future_phase", step: "future_step" }), null);
+});
+
+test("visual guide follows directions without sending commands or inferring position from elapsed time", async () => {
+  const { host, push, calls } = await mount({ direction: "closing" });
+  const figure = host.querySelector(".cal-visual");
+  assert.equal(figure.dataset.scene, "open");
+  assert.match(figure.textContent, /non è la posizione reale/);
+  assert.equal(host.querySelector(".cal-guide").open, false);
+  push({ phase: "starting_close" });
+  assert.equal(figure.dataset.scene, "neutral");
+  assert.equal(figure.querySelector("ha-icon").getAttribute("icon"), "mdi:timer-sand");
+  push({ phase: "closing", elapsed: 1 });
+  const drawing = figure.querySelector(".cal-visual-drawing");
+  assert.equal(figure.querySelector("ha-icon").getAttribute("icon"), "mdi:arrow-down-bold");
+  const illustration = drawing.innerHTML;
+  push({ phase: "closing", elapsed: 120 });
+  assert.equal(drawing.innerHTML, illustration, "elapsed time is not a position estimate");
+  assert.equal(host.querySelector("#cal-stop").disabled, false);
+  assert.equal(calls.length, 0);
+});
+
+test("geometry illustration preserves reading focus and clears stale motion after disconnection", async () => {
+  const { host, push, calls } = await mount({ mode: "geometry" });
+  const figure = host.querySelector(".cal-visual");
+  push({ phase: "opening", step: "lift" });
+  assert.equal(figure.dataset.scene, "slats");
+  assert.match(figure.textContent, /bordo inferiore/);
+  push({ phase: "geometry_wait_stop", stop_requested: true });
+  assert.equal(figure.dataset.scene, "neutral");
+  assert.equal(figure.querySelector(".cal-visual-measure").hidden, true);
+  push({ phase: "reading", reading_kind: "lift", stop_requested: false });
+  assert.equal(figure.dataset.scene, "gap");
+  assert.equal(figure.querySelector(".cal-visual-measure").hidden, false);
+  const input = host.querySelector('[name="reading_cm"]');
+  input.value = "2.5"; input.focus();
+  push({});
+  assert.equal(input.value, "2.5");
+  assert.equal(document.activeElement, input);
+  push({ recoverable: true, attached: false, attachment: "old" });
+  assert.equal(figure.dataset.scene, "neutral");
+  assert.equal(figure.querySelector(".cal-visual-measure").hidden, true);
+  assert.match(figure.textContent, /Connessione persa/);
+  assert.equal(host.querySelector("#cal-stop").disabled, false);
+  push({ attached: true, attachment: "new" });
+  assert.equal(figure.dataset.scene, "gap");
+  assert.equal(input.value, "2.5");
+  assert.equal(calls.length, 0, "recovery must not issue a movement");
+});
+
+test("automatic and interrupted phases never invite endpoint recording or measurement", async () => {
+  const { host, push, calls } = await mount({ mode: "automatic", entity_ids: ["cover.one", "cover.two"] });
+  const figure = host.querySelector(".cal-visual");
+  for (const phase of ["opening", "closing", "settling", "between_covers", "interrupted"]) {
+    push({ phase });
+    assert.equal(figure.querySelector(".cal-visual-measure").hidden, true);
+    assert.doesNotMatch(figure.textContent, /conferma al finecorsa|conferma con tutte/);
+    if (["settling", "between_covers", "interrupted"].includes(phase)) assert.equal(figure.dataset.scene, "neutral");
+  }
+  assert.equal(calls.length, 0);
+});
 
 async function mount({ call, subscribe, entity_ids, direction, resume, mode = "guided" } = {}) {
   const host = document.createElement("section");
