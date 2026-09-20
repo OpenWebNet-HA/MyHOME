@@ -66,6 +66,7 @@ To completely remove the integration code from Home Assistant:
 ## Step 5: Restart Home Assistant
 
 Restart Home Assistant to flush cached Python bytecode and finalize clean removal:
+
 * Navigate to **Settings → System → Restart**, or run:
   ```bash
   ha core restart

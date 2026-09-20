@@ -70,7 +70,7 @@ Rotary dials (`rotary_cw_slow`, `rotary_ccw_fast`, …) work the same way — se
 Timed shutter actuators (F411/4, LN4661M2 without encoder) do not know where the shutter is. The integration estimates the position from the travel time, so the estimate is only as good as the number.
 
 - Press **Calibrate travel time** on the cover's device page, or run `myhome.calibrate_cover`. The shutter goes fully up, then down (timed), then up (timed); the two values are stored on the config entry and shown as `travel_time_down` / `travel_time_up` attributes.
-- On an MH200 / MH200N, or when the actuator has a 60 s safety cut-off, use the stopwatch in the card's **Covers** panel and save the numbers with `myhome.set_cover_travel_time`.
+- On an MH200 / MH200N, or when the actuator has a 60 s safety cut-off, measure the travel times with a stopwatch and save the numbers with `myhome.set_cover_travel_time`.
 
 With the times right, `cover.set_cover_position` and the position slider behave like a positional actuator:
 

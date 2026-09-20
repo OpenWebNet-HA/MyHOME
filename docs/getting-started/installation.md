@@ -24,7 +24,7 @@ If you have the **Terminal & SSH** add-on installed (or connect via SSH), paste 
 
 ```bash
 # Set target beta release version (check https://github.com/OpenWebNet-HA/MyHOME/releases)
-TAG="2.0.0b12"
+TAG="2.0.0b13"
 
 # Download, extract cleanly, verify, and restart Home Assistant
 mkdir -p /config/custom_components && cd /config/custom_components && \
@@ -80,6 +80,7 @@ If you prefer managing updates through HACS:
 ## Next Steps
 
 Once Home Assistant has restarted:
+
 1. Proceed to [Gateways & Connection Setup](../configuration/gateways.md) to add your gateway via Config Flow.
 2. If you are upgrading from an existing v0.9.4 installation, review the [Upgrade from 0.9.4 Guide](../migration/upgrade-from-094.md).
 3. For uninstallation or clean removal, see the [Removal Guide](removal.md).

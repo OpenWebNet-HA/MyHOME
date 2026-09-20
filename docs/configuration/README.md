@@ -7,6 +7,7 @@ This guide walks you through onboarding, configuring, and automating your Legran
 ## 📋 Prerequisites
 
 Before adding the integration to Home Assistant, ensure:
+
 1. **Network Connectivity**: Your OpenWebNet IP gateway (F454, MyHomeServer1, MH200N/201/202, F453AV) is connected to your local network and powered on.
 2. **Fixed IP Address**: A static IP address or permanent DHCP lease reservation on your local router is strongly recommended.
 3. **OpenWebNet Password**:
@@ -39,6 +40,7 @@ For full parameter specifications and troubleshooting, see [Gateways & Connectio
 ## 🔍 Step 2: First Bus Discovery & Device Creation
 
 Once connected:
+
 * **Automatic Bus Scanning**: The integration queries the SCS bus across supported subsystems (`WHO = 1, 2, 4, 15, 18, 25`).
 * **Device Registry Linking**: Discovered actuators, thermostats, and sensors are automatically grouped and linked to your gateway device via Home Assistant's `via_device_id` registry model.
 * **Non-Destructive Transition**: If you have an existing `/config/myhome.yaml` file from v0.9.4, entity names and physical SCS groups (`#G`) are read on startup as a compatibility overlay.

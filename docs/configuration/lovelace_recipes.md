@@ -195,11 +195,99 @@ cards:
 
 ---
 
+## 🪟 Recipe 6: Shutter Travel-Time Workbench (stock cards only)
+
+Timed covers measure **every** run they make: after any open or close that you stop by hand, the cover exposes `last_run_seconds` and `last_run_direction` as entity attributes (see [Covers → Method 3](covers.md#method-3-set-explicit-travel-time-via-service-action)). This recipe puts those attributes, the stored travel times and a one-click **Save** on the dashboard, using only built-in cards — the natural tool for actuators with the factory 60 s cutoff or for MH200 / MH200N gateways, where on-bus calibration is refused.
+
+Add a small script to `scripts.yaml` once (it saves the last run into the matching direction and keeps the other one):
+
+```yaml
+save_shutter_run:
+  alias: Save the shutter's last run as its travel time
+  fields:
+    cover:
+      description: The timed MyHOME cover
+      selector:
+        entity:
+          domain: cover
+          integration: myhome
+  sequence:
+    - variables:
+        seconds: "{{ state_attr(cover, 'last_run_seconds') }}"
+        direction: "{{ state_attr(cover, 'last_run_direction') }}"
+    - condition: template
+      value_template: "{{ seconds is number and direction in ['open', 'close'] }}"
+    - action: myhome.set_cover_travel_time
+      target:
+        entity_id: "{{ cover }}"
+      data:
+        travel_time_down: "{{ seconds if direction == 'close' else state_attr(cover, 'travel_time_down') }}"
+        travel_time_up: "{{ seconds if direction == 'open' else state_attr(cover, 'travel_time_up') }}"
+```
+
+Then one card per shutter you want to time:
+
+```yaml
+type: entities
+title: 🪟 Living Room Shutter — Travel Time
+entities:
+  - entity: cover.living_room_shutter          # Open / Stop / Close controls
+  - type: attribute
+    entity: cover.living_room_shutter
+    attribute: last_run_seconds
+    name: Last run
+    suffix: " s"
+    icon: mdi:timer-outline
+  - type: attribute
+    entity: cover.living_room_shutter
+    attribute: last_run_direction
+    name: Last run direction
+    icon: mdi:swap-vertical
+  - type: button
+    name: Store last run as travel time
+    icon: mdi:content-save
+    action_name: Save
+    tap_action:
+      action: perform-action
+      perform_action: script.save_shutter_run
+      data:
+        cover: cover.living_room_shutter
+  - type: divider
+  - type: attribute
+    entity: cover.living_room_shutter
+    attribute: travel_time_down
+    name: Stored down time
+    suffix: " s"
+  - type: attribute
+    entity: cover.living_room_shutter
+    attribute: travel_time_up
+    name: Stored up time
+    suffix: " s"
+  - type: attribute
+    entity: cover.living_room_shutter
+    attribute: calibration_source
+    name: Source
+  - entity: button.living_room_shutter_calibrate_travel_time   # on-bus calibration, when the actuator supports it
+```
+
+**Workflow**: press **Close** on the first row, press **Stop** the instant the shutter reaches the bottom, check *Last run* / *Last run direction*, press **Save**. Repeat with **Open**. `calibration_source` flips to `manual` and the position slider follows the new times immediately.
+
+> [!TIP]
+> Only want the number at a glance? A Markdown card does it in one line:
+> ```yaml
+> type: markdown
+> content: "Last run: **{{ state_attr('cover.living_room_shutter', 'last_run_seconds') }} s** ({{ state_attr('cover.living_room_shutter', 'last_run_direction') }})"
+> ```
+> The measurement itself is done by the integration — the clock starts at the real motor start on the bus, so the queue delay is never in the number; only your reaction time on **Stop** is.
+
+---
+
 ## 🤝 Join In & Share Your Creations!
 
 Every MyHOME installation is unique! Do you have a custom card layout, Mushroom card setup, floorplan SVG, or automation dashboard that you are proud of?
 
 **We invite all community members to share their setups:**
+
 - 💬 **GitHub Discussions**: Post your screenshot and YAML in the [Discussions Forum](https://github.com/OpenWebNet-HA/MyHOME/discussions)!
 - 📝 **Contribute a Recipe**: Open a Pull Request adding your recipe to this page in `docs/configuration/lovelace_recipes.md`.
 - 🏷️ **Tag Your Setup**: Share what gateway (F454, MH200N, MyHOMEServer1, USB/Serial 3578) and actuator models you are using.

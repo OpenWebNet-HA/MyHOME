@@ -7,6 +7,7 @@ This guide provides a step-by-step, zero-touch migration path for users transiti
 ## 📌 Executive Summary
 
 Many Legrand & BTicino MyHOME installations were previously integrated into Home Assistant via SDomotica (either through MQTT packages or the custom bridge add-on). In these setups, Home Assistant entity IDs are automatically generated based on each installation's SCS bus addresses and device types:
+
 - **Lights & Relays**: `light.sdomoticabticino<where>` (or `light.sdomoticabticino2_<where>` for secondary gateways)
 - **F422 Bus Interfaces**: `light.sdomoticabticino<where>_4_<interface>` (e.g. `where: 41`, `interface: 01`)
 - **Covers & Shutters**: `cover.sdomoticabticino<where>` (e.g. `cover.sdomoticabticino31`)
@@ -26,6 +27,7 @@ Many Legrand & BTicino MyHOME installations were previously integrated into Home
 ## 🚀 Migration Options
 
 You can migrate using either:
+
 1. **The Automated Migration CLI Tool (`scripts/migrate_from_sdomotica.py`)** *(Recommended)*
 2. **Direct `myhome.yaml` Configuration**
 
@@ -38,6 +40,7 @@ The MyHOME repository includes a multi-source automated migration utility locate
 #### Supported Ingestion Sources & Add-ons
 
 The migration engine automatically scans and discovers all configurations across SDomotica add-ons:
+
 1. **Home Assistant Entity Registry (`.storage/core.entity_registry`)**: Your live HA registry with custom names, icons, and room/area assignments. Automatically recognizes `sdomoticabticino*`, `sdomoticabticino2*` (secondary gateway), `sdomoticabtalarm*` (burglar alarm), and `platform: MyHomeAudio`.
 2. **Sdomotica Gateway `config.json`** (`--sdomotica-json`): The Homebridge-standard config from the SDomotica Add-on WebUI containing device capabilities (`can_dim`, `WindowsAdvance`, `travel_time`, `SAThermoHC`, `Sensor3477inv`, gateway IP and credentials). Discovered automatically in `/config`, `/config/sdomotica/`, or `/share/sdomotica/`.
 3. **Sdomotica Package YAMLs (`--sdomotica-yaml`)**: Discovers and loads all package files in `/config/packages/` (e.g. `sdomoticabticino.yaml`, `sdomoticabticino2.yaml`, and `sdomoticabtalarm.yaml`), parsing lights, covers, switches, climates, media players, power/energy sensors, binary contacts, and burglar alarms simultaneously.
@@ -130,6 +133,7 @@ myhome:
 
 ##### Mode B: In-Place Entity Registry Migration (Zero-Touch)
 To seamlessly adopt your entities directly inside Home Assistant's entity registry without changing any YAML files:
+
 1. **Stop Home Assistant**:
    ```bash
    ha core stop
@@ -139,6 +143,7 @@ To seamlessly adopt your entities directly inside Home Assistant's entity regist
    python scripts/migrate_from_sdomotica.py --config-dir /config --migrate-registry --gateway-mac 00:03:50:20:00:01
    ```
    *Note: A timestamped backup (`core.entity_registry.backup_sdomotica_<timestamp>`) is automatically created before any modification.*
+
 3. **Start Home Assistant**:
    ```bash
    ha core start
@@ -181,6 +186,7 @@ Based on the official **Sdomotica Gateway Manual** (pages 18–23):
 ## 🛡️ Post-Migration Verification Checklist
 
 After restarting Home Assistant with MyHOME:
+
 - [ ] Open **Developer Tools ➔ States** and search for `sdomoticabticino`. Verify all entities report their correct state (`on`, `off`, `open`, `closed`).
 - [ ] Check your Lovelace dashboards (e.g. Active Lights, Covers grid). Ensure no cards show yellow *"Entity not found"* warnings.
 - [ ] Test toggling a light and operating a cover to confirm bidirectional bus feedback.

@@ -14,6 +14,7 @@ The MyHOME integration monitors gateway health, OpenWebNet frames, and hardware 
 
 ### What it means
 OpenWebNet gateways maintain an internal real-time clock (RTC) queried via WHO=13 dimension 0 (`*#13**0##`) or dimension 22 (`*#13**22##`). When a gateway has never had its timezone configured (or following a firmware factory reset), it emits a sentinel placeholder value `999` in the timezone field:
+
 - Dimension 0: `*#13**0*<HH>*<MM>*<SS>*999##`
 - Dimension 22: `*#13**22*<HH>*<MM>*<SS>*999*<DAY>*<MONTH>*<YEAR>##`
 

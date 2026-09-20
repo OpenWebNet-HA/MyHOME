@@ -774,6 +774,61 @@ async def test_setup_entry_myhome_yaml_loading(hass: HomeAssistant):
             assert await hass.config_entries.async_unload(entry_fuzzy_mac.entry_id)
             await hass.async_block_till_done()
 
+        # Secondary bus devices through the real validator (#408): a MAC with a
+        # dropped zero, an unquoted single-digit interface and a routed zone.
+        multibus_yaml = """00:3:50:00:12:34:
+  light:
+    bus0_light:
+      where: '13'
+      name: 'Bus 0 Light'
+    bus3_light:
+      where: '13'
+      interface: 3
+      name: 'Bus 3 Light'
+  climate:
+    bus0_zone:
+      zone: '1'
+      name: 'Bus 0 Zone'
+    bus3_zone:
+      zone: '1'
+      interface: '03'
+      name: 'Bus 3 Zone'
+"""
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".yaml") as tmp:
+            tmp.write(multibus_yaml)
+            multibus_path = tmp.name
+        entry_multibus = MockConfigEntry(
+            domain=DOMAIN,
+            data={"host": "192.168.0.35", "port": 20000, "password": "pass", "mac": "00:03:50:00:12:34"},
+            options={"file_path": multibus_path},
+            unique_id="00:03:50:00:12:34",
+        )
+        entry_multibus.add_to_hass(hass)
+        try:
+            with patch("custom_components.myhome.gateway.OWNSession.test_connection", return_value={"Success": True, "Message": None}), \
+                 patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"), \
+                 patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"):
+                assert await hass.config_entries.async_setup(entry_multibus.entry_id)
+                await hass.async_block_till_done()
+
+                lights = entry_multibus.runtime_data.platforms["light"]
+                assert lights["13"]["name"] == "Bus 0 Light"
+                assert lights["1-13"]["name"] == "Bus 0 Light"
+                assert lights["13#4#03"]["name"] == "Bus 3 Light"
+                assert lights["1-13#4#03"]["name"] == "Bus 3 Light"
+                assert "13#4#3" not in lights  # the validator normalises the interface
+
+                zones = entry_multibus.runtime_data.platforms["climate"]
+                assert zones["1"]["name"] == "Bus 0 Zone"
+                assert zones["zone_1"]["name"] == "Bus 0 Zone"
+                assert zones["1#4#03"]["name"] == "Bus 3 Zone"
+                assert zones["4-1#4#03"]["name"] == "Bus 3 Zone"
+
+                assert await hass.config_entries.async_unload(entry_multibus.entry_id)
+                await hass.async_block_till_done()
+        finally:
+            os.unlink(multibus_path)
+
 
         # Test fallback to /config/myhome.yaml (line 112)
         config_entry_fallback = MockConfigEntry(

@@ -2,6 +2,7 @@
 import asyncio
 import collections
 import contextlib
+import logging
 import time
 from collections.abc import Callable
 from typing import Any, List, cast
@@ -96,6 +97,27 @@ def _compat_gateway_timezone(values: list[str]) -> str:
 
 
 _ownd_msg._gateway_timezone = _compat_gateway_timezone
+
+
+class _StatusRequestLogFilter(logging.Filter):
+    """Downgrade spurious status-request retry errors to DEBUG.
+
+    OWNd < 2.0.0b8 logged intermediate status-request retries (*#...##) as ERROR
+    instead of DEBUG when the gateway NACKed uninstalled optional subsystems
+    (issue #406, OpenWebNet-HA/OWNd#43).
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if (
+            record.levelno == logging.ERROR
+            and "Could not send message `*#" in record.getMessage()
+        ):
+            record.levelno = logging.DEBUG
+            record.levelname = "DEBUG"
+        return True
+
+
+LOGGER.addFilter(_StatusRequestLogFilter())
 
 EVENT_READY_TIMEOUT = 120
 

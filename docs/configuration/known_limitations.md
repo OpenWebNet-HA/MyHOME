@@ -26,8 +26,8 @@ Things the integration does not do, or does with a caveat, and the reason. Where
 
 | Limitation | Why | Workaround |
 | :--- | :--- | :--- |
-| **Timed covers report a calculated position.** It drifts if the motor runs at a different speed than assumed, or after a manual stop mid-travel. | The actuator has no encoder; only position-reporting actuators (dimension 10) know where the shutter is. | Calibrate with `myhome.calibrate_cover` (or the card's stopwatch); a full open or close resynchronises the estimate. |
-| **Calibration on an MH200 / MH200N can fail** with *no stop status from the actuator*. | The single-session gateway delays or drops the actuator's stop status; some actuators also enforce a 60 s safety cut-off that ends the run early. | Use `myhome.set_cover_travel_time` with a stopwatch value. The card's Covers panel preselects manual mode on those gateways. |
+| **Timed covers report a calculated position.** It drifts if the motor runs at a different speed than assumed, or after a manual stop mid-travel. | The actuator has no encoder; only position-reporting actuators (dimension 10) know where the shutter is. | Calibrate with `myhome.calibrate_cover` (or `myhome.set_cover_travel_time`); a full open or close resynchronises the estimate. |
+| **Calibration on an MH200 / MH200N can fail** with *no stop status from the actuator*. | The single-session gateway delays or drops the actuator's stop status; some actuators also enforce a 60 s safety cut-off that ends the run early. | Measure the run with a stopwatch and store the timings via `myhome.set_cover_travel_time`. |
 | **One calibration at a time per gateway.** | Two motors on one paced session make the timings meaningless. | Queue is automatic; `myhome.stop_cover_calibration` cancels it. |
 | **No slat / tilt control.** | Not implemented; the frames exist in OWNd. | `myhome.send_message` with the tilt frame. |
 
@@ -66,7 +66,7 @@ Things the integration does not do, or does with a caveat, and the reason. Where
 | :--- | :--- | :--- |
 | **`entity_name` in `myhome.yaml` only applies to sensors and binary sensors.** On a light, switch, cover, thermostat, audio zone or alarm panel it is ignored: those entities *are* their device and carry the device `name`. | Home Assistant's device / entity naming model; `entity_name` never named those platforms in earlier versions either. | Rename the device in the UI, or change `name`. |
 | **Fresh installs name sensor ids after the device class** (`sensor.house_power`, `binary_sensor.cancello_opening`) where 2.0.0b12 produced `sensor.house`, `sensor.house_2`, `binary_sensor.cancello`. | The previous ids were the device name with numeric suffixes for the second and third sensor of a device. | Existing installations keep their ids; automations on a fresh install use the new ids. |
-| **Strict typing is incomplete.** | `mypy --strict` still reports errors in older modules; being ratcheted down. | — |
+| **Strict typing is complete.** | `mypy --strict` is fully enforced across all 31 source modules as of 2.0.0b13 (Platinum Quality Scale). | — |
 | **`myhome.yaml` is a compatibility path, not the primary configuration.** Devices are discovered from the bus; YAML only adds names, device classes and options. | v2 is UI-first. | Keep `myhome.yaml` for names and `travel_time`; delete devices you no longer want from the device page. |
 | **Deleting a device does not stop it from coming back.** | Devices are re-discovered from bus traffic; a device that still exists reappears on its next status frame. | Only delete devices that are physically gone. |
 | **Home Assistant 2026.3 or newer is required** (`hacs.json`). | Current cores need Python 3.14 and dropped the pre-2026 device-registry and static-path APIs; carrying shims for cores nobody can test any more is not honest support. | Stay on integration 2.0.0b12 on older cores. |

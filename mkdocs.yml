@@ -51,6 +51,7 @@ plugins:
 
 markdown_extensions:
   - admonition
+  - github-callouts   # renders GitHub-style '> [!NOTE]' blockquotes as admonitions
   - pymdownx.details
   - pymdownx.superfences:
       custom_fences:

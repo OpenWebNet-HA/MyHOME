@@ -45,6 +45,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome.config_flow import MyhomeFlowHandler, MyhomeOptionsFlowHandler
 from custom_components.myhome.const import (
+    CONF_ADDRESS,
     CONF_DECODER_ENTITY,
     CONF_DECODER_PRE_GAIN,
     CONF_DECODER_SOURCE,
@@ -55,6 +56,7 @@ from custom_components.myhome.const import (
     CONF_GENERATE_EVENTS,
     CONF_MANUFACTURER,
     CONF_MANUFACTURER_URL,
+    CONF_OWN_PASSWORD,
     CONF_SSDP_LOCATION,
     CONF_SSDP_ST,
     CONF_TRANSITION_MODE,
@@ -317,6 +319,18 @@ class TestMockGatewayHarness:
                 if str(status_cmd) in str(call)
             ]
             assert len(status_warnings) == 0
+
+            # OWNd >= 2.0.0b9 logs status request NACK retries at DEBUG;
+            # on OWNd <= 2.0.0b8 from PyPI, the retry was logged at ERROR before
+            # being downgraded by MyHOME's _StatusRequestLogFilter in gateway.py.
+            import OWNd
+            from packaging.version import Version
+            if Version(getattr(OWNd, "__version__", "0.0.0")) >= Version("2.0.0b9"):
+                status_errors = [
+                    call for call in mock_logger.error.call_args_list
+                    if str(status_cmd) in str(call)
+                ]
+                assert len(status_errors) == 0
         finally:
             await session.close()
             await harness.stop()
@@ -693,7 +707,8 @@ class TestConfigFlowHardening:
         with patch(
             "custom_components.myhome.config_flow.OWNSession.test_connection",
             return_value={"Success": True, "Message": None},
-        ), patch("custom_components.myhome.config_flow.OWNGateway.find_from_address") as mock_find:
+        ), patch("custom_components.myhome.config_flow.OWNGateway.find_from_address") as mock_find, \
+           patch("custom_components.myhome.async_setup_entry", return_value=True):
             mock_gw = MagicMock()
             mock_gw.password = "new_password"
             mock_gw.address = "192.0.2.1"
@@ -754,8 +769,8 @@ class TestConfigFlowHardening:
         assert init_res["step_id"] == "user"
 
         user_input = {
-            "address": "192.0.2.1",
-            "own_password": "p",
+            CONF_ADDRESS: "192.0.2.1",
+            CONF_OWN_PASSWORD: "p",
             CONF_WORKER_COUNT: 3,
             CONF_GENERATE_EVENTS: True,
             CONF_TRANSITION_MODE: "software_stepped",
@@ -773,7 +788,8 @@ class TestConfigFlowHardening:
             CONF_DECODER_PRE_GAIN.format(4): 0,
         }
 
-        save_res = await options_flow.async_step_user(user_input=user_input)
+        with patch.object(hass.config_entries, "async_reload", return_value=True):
+            save_res = await options_flow.async_step_user(user_input=user_input)
         assert save_res["type"] == "create_entry"
         assert save_res["data"][CONF_WORKER_COUNT] == 3
         assert save_res["data"][CONF_GENERATE_EVENTS] is True
@@ -794,8 +810,8 @@ class TestConfigFlowHardening:
 
         # 1. Non-media_player entity rejection
         bad_input = {
-            "address": "192.0.2.1",
-            "own_password": "p",
+            CONF_ADDRESS: "192.0.2.1",
+            CONF_OWN_PASSWORD: "p",
             CONF_WORKER_COUNT: 1,
             CONF_GENERATE_EVENTS: False,
             CONF_DECODER_ENTITY.format(1): "light.keuken",
@@ -806,8 +822,8 @@ class TestConfigFlowHardening:
 
         # 2. Music Assistant entity rejection
         mass_input = {
-            "address": "192.0.2.1",
-            "own_password": "p",
+            CONF_ADDRESS: "192.0.2.1",
+            CONF_OWN_PASSWORD: "p",
             CONF_WORKER_COUNT: 1,
             CONF_GENERATE_EVENTS: False,
             CONF_DECODER_ENTITY.format(1): "media_player.mass_speaker",
@@ -826,8 +842,8 @@ class TestConfigFlowHardening:
         options_flow.hass = hass
 
         bad_ip_input = {
-            "address": "not_an_ip",
-            "own_password": "p",
+            CONF_ADDRESS: "not_an_ip",
+            CONF_OWN_PASSWORD: "p",
             CONF_WORKER_COUNT: 1,
             CONF_GENERATE_EVENTS: False,
         }

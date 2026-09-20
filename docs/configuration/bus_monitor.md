@@ -96,6 +96,7 @@ Two ways to begin a capture. **Both are harmless** — neither can switch a load
   ```
 
   Clear the filters first if you want the whole buffer.
+
 - **📋 Copy Trace / Copy Sweep**: copies the same shown frames as a markdown diagnostic bundle (environment, gateway, capture kind, active filter, frames) to the clipboard and opens the GitHub issue form.
 
 ### 5. Transmit frame (⚠️ direct bus command)
@@ -154,6 +155,7 @@ Every export starts with a `capture` block describing what the file is, so it st
 ## 🩺 Home Assistant Diagnostics Integration
 
 In addition to the real-time Lovelace card, MyHOME fully supports Home Assistant's native **Download Diagnostics** feature:
+
 1. Navigate to **Settings** -> **Devices & Services** -> **MyHOME**.
 2. Click the three-dots menu on your gateway device and select **Download diagnostics**.
 3. The generated report includes sanitized gateway connection stats, active entities, latency metrics, and recent bus activity without exposing passwords or private credentials.

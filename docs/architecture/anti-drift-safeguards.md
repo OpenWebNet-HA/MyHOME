@@ -76,6 +76,7 @@ graph TD
 The most effective safeguard is **Shift-Left Testing**: stopping breaking changes before they are ever merged into `OWNd`.
 
 In `OpenWebNet-HA/OWNd/.github/workflows/ci.yml`, every PR and push to `master` triggers a downstream verification job:
+
 - The runner builds and installs the candidate `OWNd` wheel.
 - It clones the active development branch of `OpenWebNet-HA/MyHOME` (`v2-phase1-architecture` or `master`).
 - It runs the complete automated unit test suite of `MyHOME` with **strict 100.0% line coverage enforcement**.
@@ -88,6 +89,7 @@ In `OpenWebNet-HA/OWNd/.github/workflows/ci.yml`, every PR and push to `master` 
 ### Pillar 2: Upstream Canary CI in `MyHOME` (Nightly Sentinel)
 
 To detect upstream changes before they are tagged and released to PyPI, `MyHOME` runs a nightly scheduled workflow (`.github/workflows/ownd-smoke.yml`):
+
 - Runs daily at 04:00 UTC and on manual `workflow_dispatch`.
 - Installs the cutting-edge development head of `OWNd`:
   ```bash

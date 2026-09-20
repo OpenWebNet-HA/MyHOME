@@ -92,9 +92,9 @@ async def test_standalone_zone_auto_discovery_exposes_fan_by_default(hass: HomeA
 
     assert zone1._fan is True
     assert zone1.supported_features & ClimateEntityFeature.FAN_MODE
-    assert zone1.fan_modes == ["auto", "low", "medium", "high", "off"]
-    assert zone1.fan_mode == "high"
-    assert zone1.extra_state_attributes["fan_mode"] == "high"
+    assert zone1.fan_modes == ["auto", "low", "medium", "high"]
+    assert zone1.fan_mode == "auto"
+    assert zone1.extra_state_attributes["running_fan_speed"] == "high"
 
 
 async def test_central_unit_does_not_expose_fan(hass: HomeAssistant, mock_gateway):
@@ -190,19 +190,20 @@ async def test_fan_off_frame_after_high_transitions_to_off(hass: HomeAssistant, 
     climate.entity_id = "climate.fancoil_zone"
     climate.async_schedule_update_ha_state = MagicMock()
 
-    # Dimension 20: set to high (*20*8), then off (*20*5)
+    # Dimension 20: set running speed to high (*20*8), then off (*20*5)
     climate.handle_event(OWNEvent.parse("*#4*1#2*20*8##"))
-    assert climate.fan_mode == "high"
+    assert climate.extra_state_attributes["running_fan_speed"] == "high"
 
     climate.handle_event(OWNEvent.parse("*#4*1#2*20*5##"))
-    assert climate.fan_mode == "off"
+    assert climate.extra_state_attributes["running_fan_speed"] == "off"
 
-    # Dimension 11: set to high (*11*3), then off (*11*4)
+    # Dimension 11: set to high (*11*3)
     climate.handle_event(OWNEvent.parse("*#4*1*11*3##"))
     assert climate.fan_mode == "high"
 
+    # Dimension 11 frame (*11*4 or fan_on=False) does not overwrite configured fan_mode preset
     climate.handle_event(OWNEvent.parse("*#4*1*11*4##"))
-    assert climate.fan_mode == "off"
+    assert climate.fan_mode == "high"
 
 
 async def test_valve_active_in_auto_or_off_does_not_set_heating(hass: HomeAssistant, mock_gateway):
@@ -312,9 +313,10 @@ async def test_dynamic_fan_mode_activation_on_actuator_event(hass: HomeAssistant
 
     assert climate._fan is True
     assert climate.supported_features & ClimateEntityFeature.FAN_MODE
-    assert climate.fan_modes == ["auto", "low", "medium", "high", "off"]
-    assert climate.fan_mode == "low"
-    # Actuator fan status must not set hvac_action to HEATING
+    assert climate.fan_modes == ["auto", "low", "medium", "high"]
+    assert climate.fan_mode == "auto"
+    assert climate.extra_state_attributes["running_fan_speed"] == "low"
+    # Actuator fan status without heat/cool mode must not set hvac_action to HEATING
     assert climate.hvac_action is None
 
 
@@ -347,16 +349,18 @@ async def test_dimension_20_does_not_corrupt_valve_hvac_action(hass: HomeAssista
     # 2. Fan turns on at high speed: *#4*1#2*20*8## (actuator 2 is fan, val 8 = speed 3)
     event_fan_high = OWNEvent.parse("*#4*1#2*20*8##")
     climate.handle_event(event_fan_high)
-    # Action remains COOLING; fan_mode becomes "high"
+    # Action remains COOLING; fan_mode remains "auto", running_fan_speed is "high"
     assert climate.hvac_action == HVACAction.COOLING
-    assert climate.fan_mode == "high"
+    assert climate.fan_mode == "auto"
+    assert climate.extra_state_attributes["running_fan_speed"] == "high"
 
     # 3. Fan turns off: *#4*1#2*20*5## (val 5 = fan off)
     event_fan_off = OWNEvent.parse("*#4*1#2*20*5##")
     climate.handle_event(event_fan_off)
     # Action remains COOLING because valve is still open; fan off does NOT set IDLE
     assert climate.hvac_action == HVACAction.COOLING
-    assert climate.fan_mode == "off"
+    assert climate.fan_mode == "auto"
+    assert climate.extra_state_attributes["running_fan_speed"] == "off"
 
 
 async def test_dimension_11_event_handling(hass: HomeAssistant, mock_gateway):
@@ -492,19 +496,17 @@ async def test_issue_303_bus_trace_replay(hass: HomeAssistant, mock_gateway):
     for zone in ("1", "2", "3", "5", "6"):
         assert by_where[zone]._fan is True
         assert by_where[zone].supported_features & ClimateEntityFeature.FAN_MODE
-        assert by_where[zone].fan_modes == ["auto", "low", "medium", "high", "off"]
+        assert by_where[zone].fan_modes == ["auto", "low", "medium", "high"]
 
-    # Check resulting fan modes:
-    # Zone 1 ended at speed 3 -> high
-    assert by_where["1"].fan_mode == "high"
-    # Zone 2 received high (*20*8) then fan off (*20*5) -> off
-    assert by_where["2"].fan_mode == "off"
-    # Zone 3 ended at speed 1 -> low
-    assert by_where["3"].fan_mode == "low"
-    # Zone 5 ended at speed 1 -> low
-    assert by_where["5"].fan_mode == "low"
-    # Zone 6 ended with value 5 (fan off) -> off
-    assert by_where["6"].fan_mode == "off"
+    # Check resulting fan modes and running speeds:
+    for zone in ("1", "2", "3", "5", "6"):
+        assert by_where[zone].fan_mode == "auto"
+
+    assert by_where["1"].extra_state_attributes["running_fan_speed"] == "high"
+    assert by_where["2"].extra_state_attributes["running_fan_speed"] == "off"
+    assert by_where["3"].extra_state_attributes["running_fan_speed"] == "low"
+    assert by_where["5"].extra_state_attributes["running_fan_speed"] == "low"
+    assert by_where["6"].extra_state_attributes["running_fan_speed"] == "off"
 
 
 async def test_subordinate_zone_central_mode_update(hass: HomeAssistant, mock_gateway):
@@ -669,9 +671,10 @@ async def test_dimension_20_and_11_all_speed_branches(hass: HomeAssistant, mock_
     climate.entity_id = "climate.zone_1"
     climate.async_schedule_update_ha_state = MagicMock()
 
-    # Dimension 20 val 7 -> speed 2 (medium)
+    # Dimension 20 val 7 -> speed 2 (medium running speed)
     climate.handle_event(OWNEvent.parse("*#4*1#2*20*7##"))
-    assert climate.fan_mode == "medium"
+    assert climate.extra_state_attributes["running_fan_speed"] == "medium"
+    assert climate.fan_mode == "auto"
 
     # Dimension 20 val 9 -> fan_speed None, fan_on True (auto)
     climate.handle_event(OWNEvent.parse("*#4*1#2*20*9##"))
@@ -697,13 +700,14 @@ async def test_dimension_20_and_11_all_speed_branches(hass: HomeAssistant, mock_
     climate.handle_event(OWNEvent.parse("*#4*1#1*20*1##"))
     assert climate.hvac_action == HVACAction.IDLE
 
-    # Dimension 20 fan off frame (*20*5) sets fan_mode to "off"
+    # Dimension 20 fan off frame (*20*5) sets running_fan_speed to "off", fan_mode stays auto
     climate.handle_event(OWNEvent.parse("*#4*1#2*20*5##"))
-    assert climate.fan_mode == "off"
+    assert climate.extra_state_attributes["running_fan_speed"] == "off"
+    assert climate.fan_mode == "auto"
 
-    # Dimension 11 fan off frame (*11*4) sets fan_mode to "off"
+    # Dimension 11 frame (*11*4 or fan_on=False) does not overwrite configured fan_mode preset
     climate.handle_event(OWNEvent.parse("*#4*1*11*4##"))
-    assert climate.fan_mode == "off"
+    assert climate.fan_mode == "auto"
 
     # Dimension 11 mock event with speed None and fan_on True
     mock_d11 = MagicMock()

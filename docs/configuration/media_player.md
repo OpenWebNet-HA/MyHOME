@@ -52,6 +52,7 @@ To bridge modern streaming platforms (such as **Music Assistant**, **Spotify Con
 Switching matrix sources dynamically via OpenWebNet IP commands (`*16*100*WHERE##` to `*16*103*WHERE##`) on MH200/MH201/F454 gateways causes mechanical relay clicks and momentary bus noise.
 
 **Recommended Practice**:
+
 1. **Physical Cabling**: Connect the analog output of your network streamer (e.g. Raspberry Pi running Squeezelite, WiiM Pro, Cambridge Audio) into physical Source 1 on the F441M matrix.
 2. **Matrix Configuration**: Configure your room amplifiers (or physical wall panels) to stay routed to Source 1.
 3. **Automated Power Sequence**: When a stream starts, the integration proxy:
@@ -97,6 +98,7 @@ You configure the Dynamic Proxy directly via the integration's **Options Flow**:
 ## 📻 Standalone Fallback Mode (No Decoders)
 
 If you do not configure any streaming decoders in the Options Flow, the room amplifier entities operate in **Native WHO = 16 Mode**:
+
 - **On / Off**: Toggles the physical amplifier power.
 - **Volume**: Controls the hardware volume step (0 to 30) via dimension 1.
 - **Source Selection**: Allows switching between physical sources 1–4.

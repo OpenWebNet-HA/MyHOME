@@ -291,6 +291,7 @@ We offer **two simple ways** to contribute real-world bus traces, tailored to yo
 
 #### 🏷️ Track A: Zero-CLI via Home Assistant UI (Fastest & Easiest)
 Ideal for standard users running Home Assistant with the MyHOME integration:
+
 1. **Sweep the Bus**: In Home Assistant, go to **Developer Tools** > **Services** and call `myhome.sweep_bus` (or trigger it from the Lovelace Bus Monitor Card). This actively queries all lighting, cover, HVAC, and gateway diagnostic states in under 3 seconds.
 2. **Download Diagnostics**: Navigate to **Settings** > **Devices & Services** > **MyHOME** > click the three dots (`⋮`) > **Download diagnostics** (or click **`📋 Export Trace`** on the `<myhome-bus-card>`).
 3. **Submit**: Attach the downloaded `.json` file to [**RFC Discussion #248**](https://github.com/orgs/OpenWebNet-HA/discussions/248) or open a GitHub Issue.
@@ -298,6 +299,7 @@ Ideal for standard users running Home Assistant with the MyHOME integration:
 
 #### 💻 Track B: Standalone Python Tool (Test Benches & Integrators)
 Ideal for installers, bench testers, and developers testing isolated gateways without Home Assistant installed:
+
 1. **Run the Trace Recorder**:
    ```bash
    python scripts/record_gateway_trace.py --host 192.168.1.35 --password 12345 --model MH202

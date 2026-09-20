@@ -9,6 +9,7 @@ In v2, setup and management are **100% UI-first**: switch relays are automatical
 ## 🚀 Auto-Discovery
 
 When your gateway connects to Home Assistant:
+
 1. **Dynamic Bus Discovery**: The integration listens to OpenWebNet `WHO = 1` relay commands and active addresses.
 2. **Device Creation**: Each physical relay actuator (`WHERE = 1..99` or area/point addresses `WHERE = 01..9999`) is registered as a Home Assistant entity linked to your gateway device.
 3. **UI Customization**: You can rename the switch, assign it to an Area (e.g. *Kitchen*, *Utility Room*), and select a custom icon directly in the Home Assistant UI.

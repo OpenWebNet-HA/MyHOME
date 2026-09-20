@@ -50,7 +50,7 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 | Function | Status | Notes |
 | :--- | :---: | :--- |
 | Open / close / stop | ✅ | |
-| Position (position-reporting actuators) | ✅ | `advanced_shutter: true`, or learned from a dimension 10 frame. |
+| Position (position-reporting actuators) | ✅ | Requires `advanced_shutter: true` in `myhome.yaml`; it is not learned from the bus. |
 | Position (timed actuators) | ✅ | Virtual position from the travel time: `travel_time` in YAML, measured with `myhome.calibrate_cover`, or set by hand with `myhome.set_cover_travel_time`. |
 | Tilt | ❌ | Slat commands are parsed by OWNd but not exposed. |
 | Echo suppression | ✅ | The gateway's relay of our own command is not mistaken for a keypad press. |

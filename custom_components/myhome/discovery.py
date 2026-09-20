@@ -37,11 +37,9 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.entity import Entity
 
-from .const import CONF_BUS_INTERFACE, CONF_WHERE, CONF_WHO, CONF_ZONE, LOGGER
+from .const import BUS_ROUTING, CONF_BUS_INTERFACE, CONF_WHERE, CONF_WHO, CONF_ZONE, LOGGER
 from .data import MyHOMEConfigEntry, MyHOMERuntimeData
 from .myhome_device import MyHOMEEntity
-
-BUS_ROUTING = "#4#"
 
 
 @dataclass(frozen=True)
@@ -115,8 +113,25 @@ def parse_unique_id(unique_id: str, mac: str, entry_mac: str | None = None) -> t
 
 
 def config_for(configured: dict[str, Any], address: Address, *extra_keys: str) -> dict[str, Any]:
-    """The ``myhome.yaml`` entry for an address, tried by key, WHERE, clean WHERE, then extras."""
-    for key in (address.key, address.where, address.clean_where, *extra_keys):
+    """The ``myhome.yaml`` entry for an address.
+
+    An unrouted address is tried by key, WHERE, clean WHERE, then the extras.
+    A routed one (behind an F422) is tried only under interface-qualified
+    keys and the extras: a bare WHERE entry belongs to the local bus, and the
+    same WHERE exists on every bus (#408).
+    """
+    if address.interface is None:
+        candidates = [address.key, address.where, address.clean_where, *extra_keys]
+    else:
+        iface = address.interface.zfill(2) if address.interface.isdigit() else address.interface
+        candidates = [
+            address.key,
+            address.clean_key,
+            f"{address.where}{BUS_ROUTING}{iface}",
+            f"{address.clean_where}{BUS_ROUTING}{iface}",
+            *extra_keys,
+        ]
+    for key in candidates:
         cfg = configured.get(key)
         if cfg:
             return dict(cfg)

@@ -22,6 +22,7 @@ from homeassistant.const import (
     CONF_PORT,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import OWNMessage
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -1020,8 +1021,9 @@ class TestTraceReplayHarness:
         z1 = hass.states.get("climate.climate_zone_1")
         assert z1 is not None, f"Available states: {[s.entity_id for s in hass.states.async_all()]}"
         assert z1.attributes.get("supported_features", 0) & ClimateEntityFeature.FAN_MODE
-        assert z1.attributes.get("fan_modes") == ["auto", "low", "medium", "high", "off"]
-        assert z1.attributes.get("fan_mode") == "high"
+        assert z1.attributes.get("fan_modes") == ["auto", "low", "medium", "high"]
+        assert z1.attributes.get("fan_mode") == "auto"
+        assert z1.attributes.get("running_fan_speed") == "high"
         assert z1.attributes.get("current_temperature") == 23.4
         assert z1.attributes.get("temperature") == 20.0
         assert z1.attributes.get("current_humidity") == 55
@@ -1031,8 +1033,9 @@ class TestTraceReplayHarness:
         z2 = hass.states.get("climate.climate_zone_2")
         assert z2 is not None
         assert z2.attributes.get("supported_features", 0) & ClimateEntityFeature.FAN_MODE
-        assert z2.attributes.get("fan_modes") == ["auto", "low", "medium", "high", "off"]
-        assert z2.attributes.get("fan_mode") == "off"
+        assert z2.attributes.get("fan_modes") == ["auto", "low", "medium", "high"]
+        assert z2.attributes.get("fan_mode") == "auto"
+        assert z2.attributes.get("running_fan_speed") == "off"
         assert z2.attributes.get("current_temperature") == 23.1
         assert z2.attributes.get("temperature") == 26.5
         assert z2.attributes.get("current_humidity") == 54
@@ -1041,7 +1044,9 @@ class TestTraceReplayHarness:
         z3 = hass.states.get("climate.climate_zone_3")
         assert z3 is not None
         assert z3.attributes.get("supported_features", 0) & ClimateEntityFeature.FAN_MODE
-        assert z3.attributes.get("fan_mode") == "low"
+        assert z3.attributes.get("fan_modes") == ["auto", "low", "medium", "high"]
+        assert z3.attributes.get("fan_mode") == "auto"
+        assert z3.attributes.get("running_fan_speed") == "low"
         assert z3.attributes.get("current_temperature") == 23.0
         assert z3.attributes.get("current_humidity") == 59
 
@@ -1049,7 +1054,9 @@ class TestTraceReplayHarness:
         z5 = hass.states.get("climate.climate_zone_5")
         assert z5 is not None
         assert z5.attributes.get("supported_features", 0) & ClimateEntityFeature.FAN_MODE
-        assert z5.attributes.get("fan_mode") == "low"
+        assert z5.attributes.get("fan_modes") == ["auto", "low", "medium", "high"]
+        assert z5.attributes.get("fan_mode") == "auto"
+        assert z5.attributes.get("running_fan_speed") == "low"
         assert z5.attributes.get("current_temperature") == 23.0
         assert z5.attributes.get("current_humidity") == 61
 
@@ -1057,7 +1064,9 @@ class TestTraceReplayHarness:
         z6 = hass.states.get("climate.climate_zone_6")
         assert z6 is not None
         assert z6.attributes.get("supported_features", 0) & ClimateEntityFeature.FAN_MODE
-        assert z6.attributes.get("fan_mode") == "off"
+        assert z6.attributes.get("fan_modes") == ["auto", "low", "medium", "high"]
+        assert z6.attributes.get("fan_mode") == "auto"
+        assert z6.attributes.get("running_fan_speed") == "off"
         assert z6.attributes.get("current_temperature") == 22.8
         assert z6.attributes.get("current_humidity") == 59
 
@@ -1094,16 +1103,25 @@ class TestTraceReplayHarness:
             mock_send.assert_awaited_once()
             assert str(mock_send.call_args[0][0]) == "*#4*1*#11*0##"
 
-        # 6. Service call: change fan mode to off
+        # 6. Service call: change fan mode to high
         with patch.object(handler, "send", new_callable=AsyncMock) as mock_send:
+            await hass.services.async_call(
+                "climate",
+                "set_fan_mode",
+                {"entity_id": "climate.climate_zone_1", "fan_mode": "high"},
+                blocking=True,
+            )
+            mock_send.assert_awaited_once()
+            assert str(mock_send.call_args[0][0]) == "*#4*1*#11*3##"
+
+        # 7. Service call: fan mode off is unsupported and rejected
+        with pytest.raises(ServiceValidationError):
             await hass.services.async_call(
                 "climate",
                 "set_fan_mode",
                 {"entity_id": "climate.climate_zone_1", "fan_mode": "off"},
                 blocking=True,
             )
-            mock_send.assert_awaited_once()
-            assert str(mock_send.call_args[0][0]) == "*#4*1*#11*4##"
 
         await hass.config_entries.async_unload(entry.entry_id)
 

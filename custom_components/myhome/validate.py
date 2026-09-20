@@ -42,6 +42,7 @@ from voluptuous import (
 )
 
 from .const import (
+    BUS_ROUTING,
     CONF_ADVANCED_SHUTTER,
     CONF_BUS_INTERFACE,
     CONF_CENTRAL,
@@ -72,8 +73,17 @@ from .const import (
 
 
 def format_mac(address: str) -> str:
-    mac = re.sub("[.:-]", "", address).upper()
-    mac = "".join(mac.split())
+    if isinstance(address, str):
+        mac = "".join(address.split())
+        for sep in (":", "-", "."):
+            if sep in mac:
+                parts = mac.split(sep)
+                if len(parts) == 6 and all(1 <= len(p) <= 2 for p in parts):
+                    mac = "".join(p.zfill(2) for p in parts)
+                break
+        mac = re.sub("[.:-]", "", mac).upper()
+    else:
+        mac = ""
     if len(mac) != 12 or not mac.isalnum() or re.search("[G-Z]", mac) is not None:
         return None  # type: ignore
     return ha_format_mac(mac)
@@ -177,12 +187,14 @@ class BusInterface(object):
         self.msg = msg
 
     def __call__(self, v):  # type: ignore
-        if isinstance(v, str) and v.isdigit() and len(v) == 2:
+        if v is None:
+            return v
+        # ``interface: 3`` and an unquoted ``interface: 03`` both reach here as "3"
+        if isinstance(v, str) and v.isdigit() and 1 <= len(v) <= 2:
             if int(v) > 15:
                 raise Invalid(f"Invalid Bus Interface number {v}, it must be between 00 and 15.")
-        elif v is not None:
-            raise Invalid(f"Invalid Bus Interface number {v}, it must be a string of 2 digits.")
-        return v
+            return v.zfill(2)
+        raise Invalid(f"Invalid Bus Interface number {v}, it must be a string of 2 digits.")
 
     def __repr__(self):  # type: ignore
         return "BusInterface(%s, msg=%r)" % ("String", self.msg)
@@ -229,15 +241,12 @@ class MyHomeDeviceSchema(Schema):
 
         for device in data:
             data[device][CONF_ENTITIES] = {}
+            interface = data[device].get(CONF_BUS_INTERFACE)
+            routing = f"{BUS_ROUTING}{interface}" if interface is not None else ""
             if CONF_WHERE in data[device]:
-                _new_key = (
-                    f"{data[device][CONF_WHO]}-{data[device][CONF_WHERE]}#4#{data[device][CONF_BUS_INTERFACE]}"
-                    if CONF_BUS_INTERFACE in data[device] and data[device][CONF_BUS_INTERFACE] is not None
-                    else f"{data[device][CONF_WHO]}-{data[device][CONF_WHERE]}"
-                )
-                _rekeyed_data[_new_key] = data[device]
+                _rekeyed_data[f"{data[device][CONF_WHO]}-{data[device][CONF_WHERE]}{routing}"] = data[device]
             elif CONF_ZONE in data[device]:
-                _new_key = f"{data[device][CONF_WHO]}-{data[device][CONF_ZONE]}"
+                _new_key = f"{data[device][CONF_WHO]}-{data[device][CONF_ZONE]}{routing}"
                 data[device][CONF_ZONE] = f"#0#{data[device][CONF_ZONE]}" if data[device][CONF_CENTRAL] and data[device][CONF_ZONE] != "#0" else data[device][CONF_ZONE]
                 data[device][CONF_NAME] = (
                     data[device][CONF_NAME] if CONF_NAME in data[device] else "Central unit" if data[device][CONF_ZONE].startswith("#0") else f"Zone {data[device][CONF_ZONE]}"
@@ -245,9 +254,10 @@ class MyHomeDeviceSchema(Schema):
                 _rekeyed_data[_new_key] = data[device]
                 _rekeyed_data[str(device)] = data[device]
                 clean_zone = str(data[device][CONF_ZONE]).split("#")[-1]
-                _rekeyed_data[clean_zone] = data[device]
-                _rekeyed_data[str(data[device][CONF_ZONE])] = data[device]
-                _rekeyed_data[f"zone_{clean_zone}"] = data[device]
+                _rekeyed_data[f"{clean_zone}{routing}"] = data[device]
+                _rekeyed_data[f"{data[device][CONF_ZONE]}{routing}"] = data[device]
+                if not routing:
+                    _rekeyed_data[f"zone_{clean_zone}"] = data[device]
             if CONF_DEVICE_MODEL not in data[device]:
                 data[device][CONF_DEVICE_MODEL] = None
             if CONF_ICON not in data[device]:
@@ -298,12 +308,9 @@ class MyHomeSensorSchema(Schema):
                     elif data[device][CONF_WHO] != "1":
                         raise Invalid("invalid sensor class for selected who")
             if CONF_WHERE in data[device]:
-                _new_key = (
-                    f"{data[device][CONF_WHO]}-{data[device][CONF_WHERE]}#4#{data[device][CONF_BUS_INTERFACE]}"
-                    if CONF_BUS_INTERFACE in data[device] and data[device][CONF_BUS_INTERFACE] is not None
-                    else f"{data[device][CONF_WHO]}-{data[device][CONF_WHERE]}"
-                )
-                _rekeyed_data[_new_key] = data[device]
+                interface = data[device].get(CONF_BUS_INTERFACE)
+                routing = f"{BUS_ROUTING}{interface}" if interface is not None else ""
+                _rekeyed_data[f"{data[device][CONF_WHO]}-{data[device][CONF_WHERE]}{routing}"] = data[device]
             if CONF_DEVICE_MODEL not in data[device]:
                 data[device][CONF_DEVICE_MODEL] = None
 
@@ -493,6 +500,7 @@ climate_schema = MyHomeDeviceSchema(
         Required(str): {
             Optional(CONF_WHO, default="4"): "4",
             Optional(CONF_ZONE, default="#0"): Coerce(str),
+            Optional(CONF_BUS_INTERFACE): All(Coerce(str), BusInterface()),  # type: ignore
             Optional(CONF_NAME): str,
             Optional(CONF_HEATING_SUPPORT, default=True): Boolean(),
             Optional(CONF_COOLING_SUPPORT, default=False): Boolean(),

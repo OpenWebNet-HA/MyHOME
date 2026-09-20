@@ -42,6 +42,7 @@ from OWNd.message import (
 )
 
 from .const import (
+    BUS_ROUTING,
     CONF_CENTRAL,
     CONF_COOLING_SUPPORT,
     CONF_DEVICE_MODEL,
@@ -141,8 +142,15 @@ def _is_probe(where: str) -> bool:
 
 
 def _zone_config(configured: dict[str, Any], address: Address, key: str) -> dict[str, Any]:
-    """The ``myhome.yaml`` entry of a zone under every spelling older versions accepted."""
+    """The ``myhome.yaml`` entry of a zone under every spelling older versions accepted.
+
+    A routed zone only matches interface-qualified spellings: zone 1 exists
+    on every bus, so the bare ones name the local bus's zone (#408).
+    """
     where, zone = address.where, _zone_number(address.where)
+    if address.interface:
+        routing = f"{BUS_ROUTING}{address.interface}"
+        return config_for(configured, address, key, f"4-{zone}{routing}", f"4-{key}", f"#{zone}{routing}")
     return config_for(
         configured, address, key, zone,
         f"4-{zone}", f"4-{where}", f"4-{key}", f"4-#{zone}", f"4-#{where}",
@@ -201,7 +209,7 @@ def _zone_route_keys(message: Any, address: Address | None) -> list[str]:
     for z in zones:
         keys.append(z)
         if interface:
-            keys.append(f"{z}#4#{interface}")
+            keys.append(f"{z}{BUS_ROUTING}{interface}")
     return keys
 
 
@@ -281,6 +289,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._fan: bool = False
         self._attr_fan_mode: str | None = None
         self._attr_fan_modes: list[str] | None = None
+        self._running_fan_speed: str | None = None
+        self._actuator_states: dict[str, bool] = {}
         if fan:
             self._enable_fan_mode()
 
@@ -299,7 +309,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if not self._fan:
             self._fan = True
             self._attr_supported_features |= ClimateEntityFeature.FAN_MODE
-            self._attr_fan_modes = ["auto", "low", "medium", "high", "off"]
+            self._attr_fan_modes = ["auto", "low", "medium", "high"]
             if self._attr_fan_mode is None:
                 self._attr_fan_mode = "auto"
 
@@ -313,6 +323,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         }
         if self._fan:
             attrs["fan_mode"] = self._attr_fan_mode
+            if self._running_fan_speed is not None:
+                attrs["running_fan_speed"] = self._running_fan_speed
         if self._interface is not None:
             attrs["Int"] = self._interface
         return attrs
@@ -334,6 +346,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._target_temperature = float(target_temp)
                 except (ValueError, TypeError):
                     pass
+            if "fan_mode" in last_state.attributes or bool(
+                last_state.attributes.get("supported_features", 0) & ClimateEntityFeature.FAN_MODE
+            ):
+                self._enable_fan_mode()
+                restored_fan_mode = last_state.attributes.get("fan_mode")
+                if restored_fan_mode in ("auto", "low", "medium", "high"):
+                    self._attr_fan_mode = restored_fan_mode
 
     async def async_update(self) -> None:
         """Request status update from gateway."""
@@ -341,6 +360,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             await self._gateway_handler.send_status_request(OWNHeatingCommand.central_status(self._where))
         else:
             await self._gateway_handler.send_status_request(OWNHeatingCommand.status(self._full_where))
+            if self._fan:
+                await self._gateway_handler.send_status_request(
+                    OWNHeatingCommand.parse(f"*#4*{self._full_where}*11##")
+                )
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
@@ -362,6 +385,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if master_mode == HVACMode.OFF:
             self._attr_hvac_mode = HVACMode.OFF
             self._attr_hvac_action = HVACAction.OFF
+            self._actuator_states.clear()
         elif master_mode in (HVACMode.HEAT, HVACMode.COOL):
             if self._attr_hvac_mode != HVACMode.OFF:
                 self._attr_hvac_mode = master_mode
@@ -378,7 +402,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             "low": 1,
             "medium": 2,
             "high": 3,
-            "off": 4,
         }
         speed_code = fan_mode_map.get(str(fan_mode).lower())
         if speed_code is not None:
@@ -629,6 +652,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 )
                 self._attr_hvac_mode = HVACMode.OFF
                 self._attr_hvac_action = HVACAction.OFF
+                self._actuator_states.clear()
             if (
                 prev_mode == HVACMode.OFF
                 and self._attr_hvac_mode != HVACMode.OFF
@@ -677,6 +701,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 )
                 self._attr_hvac_mode = HVACMode.OFF
                 self._attr_hvac_action = HVACAction.OFF
+                self._actuator_states.clear()
             self._target_temperature = message.set_temperature
             self._local_target_temperature = (
                 self._target_temperature + self._local_offset
@@ -702,19 +727,30 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if is_fan:
                 self._enable_fan_mode()
                 speed = getattr(message, "fan_speed", None)
-                if speed == 0:
-                    self._attr_fan_mode = "auto"
-                elif speed == 1:
-                    self._attr_fan_mode = "low"
+                if speed == 1:
+                    self._running_fan_speed = "low"
                 elif speed == 2:
-                    self._attr_fan_mode = "medium"
+                    self._running_fan_speed = "medium"
                 elif speed == 3:
-                    self._attr_fan_mode = "high"
+                    self._running_fan_speed = "high"
                 elif getattr(message, "fan_on", None) is False or speed == 4:
-                    self._attr_fan_mode = "off"
-                elif getattr(message, "fan_on", None) is True:
-                    self._attr_fan_mode = "auto"
-            elif message.is_active():
+                    self._running_fan_speed = "off"
+                else:
+                    self._running_fan_speed = None
+
+            actuator_id = str(
+                getattr(message, "actuator", None)
+                or getattr(message, "_actuator", None)
+                or (
+                    message._where_param[0]
+                    if getattr(message, "_where_param", None)
+                    else "valve"
+                )
+            )
+            self._actuator_states[actuator_id] = bool(message.is_active())
+            any_active = any(self._actuator_states.values())
+
+            if any_active:
                 if self._heating and self._cooling:
                     if message.is_heating():
                         self._attr_hvac_action = HVACAction.HEATING
@@ -724,6 +760,15 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                         self._attr_hvac_action = HVACAction.COOLING
                     elif self._attr_hvac_mode == HVACMode.HEAT:
                         self._attr_hvac_action = HVACAction.HEATING
+                    elif self._attr_hvac_mode == HVACMode.AUTO:
+                        if (
+                            self._target_temperature is not None
+                            and self._attr_current_temperature is not None
+                        ):
+                            if self._attr_current_temperature < self._target_temperature:
+                                self._attr_hvac_action = HVACAction.HEATING
+                            else:
+                                self._attr_hvac_action = HVACAction.COOLING
                 elif self._heating:
                     self._attr_hvac_action = HVACAction.HEATING
                 elif self._cooling:
@@ -750,8 +795,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._attr_fan_mode = "medium"
             elif speed == 3:
                 self._attr_fan_mode = "high"
-            elif getattr(message, "fan_on", None) is False or speed == 4:
-                self._attr_fan_mode = "off"
             elif getattr(message, "fan_on", None) is True:
                 self._attr_fan_mode = "auto"
 

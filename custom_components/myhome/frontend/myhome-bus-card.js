@@ -2,7 +2,7 @@
  * The panel loads BusMonitorView directly and does not import this adapter.
  * Use the integration route so the /local/ fallback works without copying dependencies.
  */
-import { BusMonitorView } from "/myhome_static/panel/panel-bus-monitor-view.js?v=0.34.0";
+import { BusMonitorView } from "/myhome_static/panel/panel-bus-monitor-view.js?v=0.35.0";
 
 class MyHomeBusCard extends BusMonitorView {
   static getStubConfig() {

@@ -9,7 +9,7 @@ DOMAIN = "myhome"
 
 ATTR_GATEWAY = "gateway"
 ATTR_MESSAGE = "message"
-INTEGRATION_VERSION = "2.0.0b12"
+INTEGRATION_VERSION = "2.0.0b13"
 # hass.data[DOMAIN] key holding the OWNd version resolved off the event loop
 DATA_OWND_VERSION = "_ownd_version"
 
@@ -54,6 +54,8 @@ CONF_PARENT_ID = "parent_id"
 CONF_WHO = "who"
 CONF_WHERE = "where"
 CONF_BUS_INTERFACE = "interface"
+#: F422 bus-routing separator in a WHERE: ``APL#4#<bus>``.
+BUS_ROUTING = "#4#"
 CONF_ZONE = "zone"
 CONF_DIMMABLE = "dimmable"
 CONF_COLOR_TEMP = "color_temp"

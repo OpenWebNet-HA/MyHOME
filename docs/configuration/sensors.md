@@ -9,17 +9,20 @@ In v2, setup and management are **100% UI-first**: sensors are automatically dis
 ## ⚡ Power & Energy Meters (WHO = 18)
 
 The integration natively interfaces with Legrand / BTicino DIN power management actuators:
+
 * **BTicino F520**: Single-phase power and energy meter (`WHERE = 51` through `5255`).
 * **BTicino F522 / F523**: Multi-circuit energy and power management modules (`WHERE = 71` through `7255`).
 
 ### Auto-Discovered Entities
 When an energy meter is detected on the SCS bus, the integration creates:
+
 1. **Instantaneous Power Sensor** (`device_class: power`): Real-time active power consumption in Watts (**W**).
 2. **Total Energy Counter** (`device_class: energy`, `state_class: total_increasing`): Cumulative electrical energy consumption in Watt-hours (**Wh**) or kilowatt-hours (**kWh**).
 3. **Periodic Energy Counters**: Daily and monthly energy sub-counters.
 
 ### Home Assistant Energy Dashboard Integration
 Because energy entities implement standard `state_class: total_increasing` and `device_class: energy`:
+
 1. Navigate to **Settings → Dashboards → Energy**.
 2. Under **Electricity Grid → Add Consumption**, select your discovered MyHOME total energy sensor (e.g. `sensor.total_power_energy`).
 3. Home Assistant automatically generates hourly, daily, and monthly solar/grid tracking graphs.
@@ -39,6 +42,7 @@ data:
 ## 🌡️ Temperature Sensors (WHO = 4)
 
 Standalone and secondary temperature probes operating on WHO 4 are automatically exposed as `sensor` entities with `device_class: temperature`:
+
 * **Main Zone Probes (`WHERE = 1..99`)**: Reports ambient room temperature for individual zones.
 * **Secondary Radio Probes (`WHERE ≥ 100`)**: Reports battery-powered wireless probes (e.g. BTicino `3455` behind `L4577` radio interfaces). The v2 engine utilizes push-driven listening, eliminating unnecessary bus polling.
 
@@ -47,6 +51,7 @@ Standalone and secondary temperature probes operating on WHO 4 are automatically
 ## ☀️ Illuminance Lux Sensors (WHO = 1)
 
 Light intensity sensors (e.g. Legrand `048822` ceiling detectors configured in scenario mode) operating on WHO 1 report ambient lux levels:
+
 * **Entity**: `sensor.<name>_illuminance`
 * **Device Class**: `illuminance` (unit: `lx`)
 * **Use Case**: Drive automated curtain/blind closing when solar glare exceeds threshold, or trigger dusk lighting.

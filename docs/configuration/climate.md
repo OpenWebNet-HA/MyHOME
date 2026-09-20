@@ -9,6 +9,7 @@ In v2, setup and management are **100% UI-first**: climate zones and central uni
 ## 🚀 Auto-Discovery
 
 When your gateway connects to Home Assistant:
+
 1. **Dynamic Bus Discovery**: The integration listens to OpenWebNet `WHO = 4` temperature and setpoint messages broadcast on the SCS bus.
 2. **Entity Creation**: Each active thermoregulation zone (`WHERE = 1..99` or central unit `#0`) is registered as a Home Assistant `climate` entity linked to your gateway.
 3. **UI Customization**: You can rename the zone, assign it to an Area (e.g. *Master Bedroom*, *Living Room*), and adjust temperature step increments directly in the Home Assistant UI.
@@ -46,6 +47,7 @@ In plants with secondary temperature sensors (e.g. BTicino `3455` radio probes c
 ## 🎛️ Supported Features & HVAC Modes
 
 MyHOME climate entities support standard Home Assistant climate controls:
+
 * **HVAC Modes**:
   - `heat`: System active in heating mode.
   - `cool`: System active in cooling / air-conditioning mode.

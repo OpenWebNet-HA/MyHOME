@@ -2,3 +2,4 @@
 mkdocs-material>=9.5.0
 mike>=2.1.0
 pymdown-extensions>=10.7
+markdown-callouts>=0.4

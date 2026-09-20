@@ -74,7 +74,7 @@ Log: `Could not send message *#4*<ZPP>*15##`. Probe addresses (`WHERE ≥ 100`) 
 
 ### Cover position is wrong
 
-Timed covers estimate position from the travel time. Calibrate it (`myhome.calibrate_cover`, the device's **Calibrate travel time** button, or the card's Covers panel) or measure it with the panel's stopwatch and save it with `myhome.set_cover_travel_time`. A full open or close resynchronises the estimate. Position-reporting actuators (dimension 10) are exact; if yours reports position but the entity does not follow, set `advanced_shutter: true` in `myhome.yaml`.
+Timed covers estimate position from the travel time. Calibrate it (`myhome.calibrate_cover` or the device's **Calibrate travel time** button) or measure it with a stopwatch and save it with `myhome.set_cover_travel_time`. A full open or close resynchronises the estimate. Position-reporting actuators (dimension 10) are exact; if yours reports position but the entity does not follow, set `advanced_shutter: true` in `myhome.yaml`.
 
 ### Calibration fails with "no stop status from the actuator"
 

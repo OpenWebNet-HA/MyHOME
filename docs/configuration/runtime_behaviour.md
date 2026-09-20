@@ -32,9 +32,11 @@ Instead, the integration debounces across a bidirectional window:
 
 1. A group/area/general frame checks for **leading echoes** received in the preceding 1.5 s
    (`RESYNC_LEADING_WINDOW_S`). If members already reported their status, no sweep is scheduled.
+
 2. Otherwise, a 0.5 s timer (`RESYNC_DEBOUNCE_S`) is armed for that target.
 3. If member point-to-point status frames arrive before the timer fires (**trailing echoes**),
    the sweep is cancelled:
+
    - For an **area**, only point-to-point echoes in that matching area cancel its timer;
      unrelated areas stay armed.
    - For a **group**, receiving multiple member echoes ($\ge 2$) in the window cancels its

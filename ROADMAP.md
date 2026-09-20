@@ -6,15 +6,15 @@ Our overarching mission is to provide the most reliable, complete, and high-perf
 
 ---
 
-## 🗺️ Current Delivery Status (Unified Beta v2.0.0b12 & Platinum IQS)
+## 🗺️ Current Delivery Status (Unified Beta v2.0.0b13 & Platinum IQS)
 
-Through intense community collaboration and engineering, the major architectural milestones originally planned across Phases 1, 2, 3, and 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** in the **v2.0.0b12 Unified Beta**. Furthermore, **Phase 5 (Home Assistant Integration Quality Scale)** has been achieved ahead of schedule, with the integration officially qualifying for the **🏆 Platinum Quality Scale** and strict typing enforced with zero errors across all modules.
+Through intense community collaboration and engineering, the major architectural milestones originally planned across Phases 1, 2, 3, and 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** in the **v2.0.0b13 Unified Beta**. Furthermore, **Phase 5 (Home Assistant Integration Quality Scale)** has been achieved ahead of schedule, with the integration officially qualifying for the **🏆 Platinum Quality Scale** and strict typing enforced with zero errors across all modules.
 
 ```mermaid
 gantt
     title MyHOME Integration Status & Roadmap
     dateFormat  YYYY-MM-DD
-    section Delivered in v2.0.0b12
+    section Delivered in v2.0.0b13
     Phase 1 - Dual Async Transports, Core Features & Bus Monitor    :done, 2026-08-01, 2026-09-01
     Phase 2 - Standalone OWNd Library (P1) & CEN Triggers (P2)      :done, 2026-09-01, 2026-09-11
     Phase 2 - Native DIN Bus Timers (WHO 1)                         :done, 2026-09-01, 2026-09-11
@@ -24,11 +24,12 @@ gantt
     WHO 18 Energy Power/Meters & WHO 16 Audio Matrix Proxy          :done, 2026-09-01, 2026-09-11
     P7 Lighting Groups & Debounced Resync (#367/#376/#377/#391)     :done, 2026-09-12, 2026-09-17
     Phase 5 - Platinum Quality Scale (IQS) & Strict Typing          :done, 2026-09-15, 2026-09-17
-    OWNd 2.0.0b7 Engine (PEP 561 py.typed & HMAC Refactor)          :done, 2026-09-16, 2026-09-17
+    OWNd 2.0.0b8 Engine (PEP 561 py.typed & HMAC Refactor)          :done, 2026-09-16, 2026-09-18
     Physical MH201 Plant Trace Replay Fixture (#390)                :done, 2026-09-16, 2026-09-17
+    Repairs Framework Expansion (Timezone 999 & Unknown Model #387/#388) :done, 2026-09-16, 2026-09-17
+    Versioned Documentation Platform (MkDocs & Mike #399)           :done, 2026-09-17, 2026-09-17
     section Active Community Collaboration
     RFC - Dedicated Admin Panel & Cover Travel Profiles (#374)      :active, 2026-09-16, 2026-10-15
-    Repairs Framework Expansion (Timezone & Unknown Model #387/#388):active, 2026-09-16, 2026-10-01
     RFC - Scope Resolution for WHO 14, WHO 24, WHO 22               :active, 2026-09-11, 2026-10-15
     section Upstream Milestones
     Upstream Home Assistant Core Integration (PR #232 Merge)        :2026-10-01, 2026-11-15
@@ -37,13 +38,13 @@ gantt
 
 ---
 
-## 📦 What is Shipped & Operational in v2.0.0b12
+## 📦 What is Shipped & Operational in v2.0.0b13
 
 The following table summarizes the completed architectural features and protocol subsystems verified in the current release:
 
 | Priority / Feature | Subsystem | Implementation Status | Highlights |
 |---|---|---|---|
-| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd 2.0.0b7`) | Extracted into an independent, strongly typed Python library on PyPI; PEP 561 `py.typed` compliance, optimized HMAC-SHA256 handshake ($O(N)$ string generation), shared with CLI tools and MCP servers. |
+| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd 2.0.0b8`) | Extracted into an independent, strongly typed Python library on PyPI; PEP 561 `py.typed` compliance, optimized HMAC-SHA256 handshake ($O(N)$ string generation), shared with CLI tools and MCP servers. |
 | **Lighting Groups & General Debounced Resync (P7)** | WHO=1 | ✅ **Shipped** (#367, #376, #377, #391) | Declared groups in `myhome.yaml` (`where: '#G'`, optional `members:`) with aggregate status or `assumed_state`; 250 ms debounced sweep with bidirectional echo window and per-address cancellation; truthful event emission and centralized `FrameRouter` integration. |
 | **Strict Typing & Platinum Quality Seal** | Core / IQS | ✅ **Shipped** (`quality_scale.yaml`) | 100% compliance across all Bronze, Silver, Gold, and Platinum rules; strict `mypy` typing with 0 errors across all 30 integration modules. |
 | **CEN / CEN+ UI Device Triggers (P2)** | WHO=15 / 25 | ✅ **Shipped** | First-class Home Assistant UI device triggers with string-preserved addressing (`"0001"`), gateway MAC isolation, and all 8 press/held/release actions. |

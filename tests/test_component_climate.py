@@ -28,9 +28,11 @@ from OWNd.message import (
 
 from custom_components.myhome.climate import (
     MyHOMEClimate,
+    _zone_config,
     async_setup_entry,
     async_unload_entry,
 )
+from custom_components.myhome.discovery import Address
 from tests.conftest import attach_runtime
 
 
@@ -107,6 +109,18 @@ async def test_legacy_routed_zone_listens_under_clean_spellings(hass):
     assert router.subscribers("4", "4-1#4#01") == 1  # the id it was restored under
     assert router.subscribers("4", "1#4#01") == 1  # the frame's key
     assert router.subscribers("4", "1") == 1  # the bare zone
+
+
+def test_zone_config_routed_zone_never_matches_local_bus():
+    """Zone 1 exists on every bus: a routed zone must only take its own bus's entry (#408)."""
+    configured = {
+        "4-1": {"name": "Bus 0 Zone"}, "1": {"name": "Bus 0 Zone"}, "zone_1": {"name": "Bus 0 Zone"},
+        "4-1#4#03": {"name": "Bus 3 Zone"}, "1#4#03": {"name": "Bus 3 Zone"},
+    }
+    assert _zone_config(configured, Address("1"), "1")["name"] == "Bus 0 Zone"
+    assert _zone_config(configured, Address("1", "03"), "1#4#03")["name"] == "Bus 3 Zone"
+    assert _zone_config(configured, Address("1", "05"), "1#4#05") == {}
+
 
 async def test_climate_properties_and_hvac_modes(hass):
     """Test climate entity properties and set_hvac_mode."""
@@ -585,12 +599,12 @@ async def test_climate_fan_mode_and_attributes(hass):
     climate_fancoil.async_schedule_update_ha_state = MagicMock()
 
     assert climate_fancoil.supported_features & ClimateEntityFeature.FAN_MODE
-    assert climate_fancoil.fan_modes == ["auto", "low", "medium", "high", "off"]
+    assert climate_fancoil.fan_modes == ["auto", "low", "medium", "high"]
     assert climate_fancoil.fan_mode == "auto"
     assert climate_fancoil.extra_state_attributes["local_offset"] == 0
     assert climate_fancoil.extra_state_attributes["fan_mode"] == "auto"
 
-    # Test setting fan modes: low (1), medium (2), high (3), auto (0), off (4)
+    # Test setting fan modes: low (1), medium (2), high (3), auto (0)
     await climate_fancoil.async_set_fan_mode("low")
     assert climate_fancoil.fan_mode == "low"
     assert str(gateway.send.call_args[0][0]) == "*#4*#5*#11*1##"
@@ -603,16 +617,15 @@ async def test_climate_fan_mode_and_attributes(hass):
     assert climate_fancoil.fan_mode == "high"
     assert str(gateway.send.call_args[0][0]) == "*#4*#5*#11*3##"
 
-    await climate_fancoil.async_set_fan_mode("off")
-    assert climate_fancoil.fan_mode == "off"
-    assert str(gateway.send.call_args[0][0]) == "*#4*#5*#11*4##"
-
     await climate_fancoil.async_set_fan_mode("auto")
     assert climate_fancoil.fan_mode == "auto"
     assert str(gateway.send.call_args[0][0]) == "*#4*#5*#11*0##"
 
-    # Unknown fan mode
+    # 'off' or unknown fan mode is not dispatched
     gateway.send.reset_mock()
+    await climate_fancoil.async_set_fan_mode("off")
+    gateway.send.assert_not_called()
+
     await climate_fancoil.async_set_fan_mode("turbo")
     gateway.send.assert_not_called()
 
@@ -633,21 +646,24 @@ async def test_climate_fan_mode_and_attributes(hass):
     climate_fancoil.handle_event(event)
     assert climate_fancoil.fan_mode == "high"
 
+    # fan_on=False does not overwrite configured fan_mode preset
     event.fan_speed = None
     event.fan_on = False
     climate_fancoil.handle_event(event)
-    assert climate_fancoil.fan_mode == "off"
+    assert climate_fancoil.fan_mode == "high"
 
     event.fan_speed = 0
     event.fan_on = True
     climate_fancoil.handle_event(event)
     assert climate_fancoil.fan_mode == "auto"
 
-    # Test async_added_to_hass immediately sends status request
+    # Test async_added_to_hass immediately sends status requests (general + Dimension 11 fan status)
     climate_fancoil.async_on_remove = MagicMock()
     await climate_fancoil.async_added_to_hass()
-    gateway.send_status_request.assert_awaited_once()
-    assert str(gateway.send_status_request.call_args[0][0]) == "*#4*5##"
+    assert gateway.send_status_request.await_count == 2
+    sent_requests = [str(call[0][0]) for call in gateway.send_status_request.call_args_list]
+    assert "*#4*5##" in sent_requests
+    assert "*#4*5*11##" in sent_requests
 
 
 async def test_climate_knob_positions_coverage(hass):

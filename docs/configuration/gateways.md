@@ -159,6 +159,7 @@ unzip -q myhome.zip -d /config/custom_components            # wrong
 A stray `__init__.py` / `manifest.json` in the root of `custom_components` turns that folder into a regular Python package whose init is the integration code. On Home Assistant 2026.9+ the loader then imports **no custom integration at all** — every custom integration shows *Not loaded*, the bus-monitor card 404s, and nothing is logged at `warning` level.
 
 Likewise keep backups **outside** `custom_components` (e.g. `/config/myhome_backup/`). A copy such as `custom_components/myhome_backup_2026…/` registers a second `myhome` domain: the loader logs *We found a custom integration myhome* twice and may load the backup instead of the real one (duplicate CEN units, stale code).
+
 - **Bus Monitor Tap**: Zero-overhead in-band packet tap that copies incoming and outgoing frames directly to the diagnostic Lovelace bus card without opening additional sockets.
 
 ---
@@ -166,6 +167,7 @@ Likewise keep backups **outside** `custom_components` (e.g. `/config/myhome_back
 ## ⚙️ Runtime Options Flow Parameters
 
 You can adjust integration runtime parameters at any time without re-adding the gateway:
+
 1. Navigate to **Settings → Devices & Services → MyHOME**.
 2. Click **Configure** on the gateway integration card.
 

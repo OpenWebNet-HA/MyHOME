@@ -214,13 +214,17 @@ class TestWhereValidators:
             validator(123)
 
     def test_bus_interface_validator(self):
-        """Test BusInterface validator (2 digits, 00-15, or None)."""
+        """Test BusInterface validator (1-2 digits normalised to 2, 00-15, or None)."""
         validator = BusInterface("custom bus msg")
         assert validator("00") == "00"
         assert validator("05") == "05"
         assert validator("15") == "15"
         assert validator(None) is None
         assert repr(validator) == "BusInterface(String, msg='custom bus msg')"
+
+        # A single digit (``interface: 3`` or an unquoted ``03``) is padded (#408)
+        assert validator("3") == "03"
+        assert validator("0") == "00"
 
         # Greater than 15
         with pytest.raises(Invalid, match="between 00 and 15"):
@@ -230,7 +234,7 @@ class TestWhereValidators:
 
         # Invalid format / length
         with pytest.raises(Invalid, match="string of 2 digits"):
-            validator("1")
+            validator("")
         with pytest.raises(Invalid, match="string of 2 digits"):
             validator("001")
         with pytest.raises(Invalid, match="string of 2 digits"):
@@ -637,6 +641,55 @@ class TestFullConfigSchema:
         }
         with pytest.raises(Invalid, match="Invalid MAC address"):
             config_schema(bad_config)
+
+    def test_format_mac_single_digit_octets(self):
+        """Test format_mac normalizes single-digit octets and accepts non-standard formats (#408)."""
+        # User scenario from #408: second octet '3' instead of '03'
+        assert format_mac("00:3:50:CA:32:B6") == "00:03:50:ca:32:b6"
+        assert format_mac("0:3:50:ca:32:b6") == "00:03:50:ca:32:b6"
+        assert format_mac("00-3-50-ca-32-b6") == "00:03:50:ca:32:b6"
+        assert format_mac("00.3.50.ca.32.b6") == "00:03:50:ca:32:b6"
+        assert format_mac("000350ca32b6") == "00:03:50:ca:32:b6"
+        assert format_mac(" 00:3:50:CA:32:B6 ") == "00:03:50:ca:32:b6"
+        assert format_mac(None) is None  # type: ignore
+        assert format_mac(12345) is None  # type: ignore
+
+        # Ensure config_schema parses gateway with single-digit octet MAC
+        cfg = {
+            "gateway_1": {
+                CONF_MAC: "00:3:50:CA:32:B6",
+            }
+        }
+        res = config_schema(cfg)
+        assert "00:03:50:ca:32:b6" in res
+
+    def test_secondary_bus_rekeying(self):
+        """Routed devices are rekeyed under a normalised ``#4#<bus>`` and never under a bare key (#408)."""
+        res = config_schema({
+            "00:03:50:CA:32:B6": {
+                "light": {
+                    "bus0": {CONF_WHERE: "13", CONF_NAME: "Bus 0 Light"},
+                    "bus3": {CONF_WHERE: "13", CONF_BUS_INTERFACE: 3, CONF_NAME: "Bus 3 Light"},
+                },
+                "climate": {
+                    "zone0": {CONF_ZONE: "1", CONF_NAME: "Bus 0 Zone"},
+                    "zone3": {CONF_ZONE: "1", CONF_BUS_INTERFACE: "03", CONF_NAME: "Bus 3 Zone"},
+                },
+            }
+        })
+        lights = res["00:03:50:ca:32:b6"][CONF_PLATFORMS]["light"]
+        assert lights["1-13"][CONF_NAME] == "Bus 0 Light"
+        assert lights["1-13#4#03"][CONF_NAME] == "Bus 3 Light"
+        assert lights["1-13#4#03"][CONF_BUS_INTERFACE] == "03"
+        assert "1-13#4#3" not in lights
+
+        zones = res["00:03:50:ca:32:b6"][CONF_PLATFORMS]["climate"]
+        assert zones["4-1"][CONF_NAME] == "Bus 0 Zone"
+        assert zones["1"][CONF_NAME] == "Bus 0 Zone"
+        assert zones["zone_1"][CONF_NAME] == "Bus 0 Zone"
+        assert zones["4-1#4#03"][CONF_NAME] == "Bus 3 Zone"
+        assert zones["1#4#03"][CONF_NAME] == "Bus 3 Zone"
+        assert "zone_1#4#03" not in zones
 
     def test_device_class_remapping_and_defaults(self):
         """Test string device_class remapping to CONF_DEVICE_CLASS and defaults in schemas."""

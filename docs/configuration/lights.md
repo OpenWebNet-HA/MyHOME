@@ -9,6 +9,7 @@ In v2, setup and management are **100% UI-first**: lighting fixtures are automat
 ## 🚀 Auto-Discovery
 
 When your gateway connects to Home Assistant:
+
 1. **Dynamic Bus Discovery**: The integration listens to OpenWebNet `WHO = 1` frames and scans active addresses.
 2. **Device & Entity Creation**: Each physical lighting actuator (`WHERE = 1..99` or area/point addresses `WHERE = 01..9999`) is registered as a Home Assistant `light` entity linked to the gateway device.
 3. **UI Customization**: Rename lights, assign them to Areas (e.g. *Kitchen*, *Living Room*), or customize icons directly in the Home Assistant UI (**Settings → Devices & Services → Entities**).
@@ -30,6 +31,7 @@ Unlike legacy configurations that required manual flags (such as `dimmable: True
 ## ⚙️ Dimmer Transition Modes (UI Options)
 
 You can customize how dimming transitions are executed globally via the integration's UI Options:
+
 1. Navigate to **Settings → Devices & Services → MyHOME**.
 2. Click **Configure**.
 3. Select your preferred **Dimmer Transition Mode**:

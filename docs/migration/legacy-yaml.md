@@ -3,6 +3,7 @@
 > [!WARNING]
 > **You are viewing the v2 (Beta) Documentation.**
 > In v2.0+, setup and device onboarding are **100% UI-first** via Config Flow and Auto-Discovery. Manual YAML files are **not used** for device creation.
+>
 > * To upgrade an existing v0.9.4 installation, see the [**Upgrade from 0.9.4 Guide**](upgrade-from-094.md).
 > * For the complete, dedicated manual for `/config/myhome.yaml`, visit the [**v0.9.4 Legacy Documentation**](../../0.9.4/).
 
@@ -328,6 +329,7 @@ event_data:
 ```
 `object` and `pushbutton` are the ones defined in the OpenWebNet CEN or CEN+ configuration.
 Supported `events` varies between CEN and CEN+:  
+
 * CEN events:
   * `pushbutton_short_press`
   * `pushbutton_short_release`
@@ -353,6 +355,7 @@ event_data:
 ```
 #### Light events
 3 types of light events exist:
+
 * `myhome_general_light_event`
 * `myhome_area_light_event`
 * `myhome_group_light_event`
@@ -362,6 +365,7 @@ Area events also have an attribute `area` containing the area ID (the 'A' of the
 
 #### Automation (cover) events
 3 types of cover events exist:
+
 * `myhome_general_automation_event`
 * `myhome_area_automation_event`
 * `myhome_group_automation_event`
