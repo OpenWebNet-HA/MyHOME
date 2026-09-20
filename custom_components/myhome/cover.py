@@ -59,6 +59,11 @@ from .const import (
     SERVICE_SET_COVER_TRAVEL_TIME,
     SERVICE_STOP_COVER_CALIBRATION,
 )
+from .cover_geometry import model_name, motion_from_settings
+from .cover_motion import MotionPosition
+from .cover_motion_runtime import CoverMotionTracker
+from .cover_profiles import bind_cover, write_native_timing
+from .cover_settings import resolve
 from .discovery import DeviceContext, PlatformDiscovery, default_known_keys
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
@@ -301,7 +306,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         # Direction-aware travel times. `_travel_time` stays the closing (down) time
         # for compatibility; a stored calibration overrides yaml / default values.
         base_travel = float(travel_time) if travel_time else float(DEFAULT_TRAVEL_TIME)
-        self._travel_time = travel_time if travel_time else DEFAULT_TRAVEL_TIME
+        self._travel_time: float = travel_time if travel_time else DEFAULT_TRAVEL_TIME
         self._travel_time_down = base_travel
         self._travel_time_up = base_travel
         self._calibration_source = travel_time_source
@@ -314,6 +319,15 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._calibration_source = str(calibration.get("source") or "measured")
             self._calibrated_at = calibration.get("measured_at")
             self._copied_from = calibration.get("copied_from") or None
+        self._default_travel_time = base_travel
+        self._default_travel_source = travel_time_source
+        self._motion = CoverMotionTracker()
+        self._profile_store: Any = None
+        self._effective_cover_settings = resolve(profile=None, native=calibration, overrides={},
+                                                 default=base_travel, default_source=travel_time_source)
+        self._pending_profile: tuple[dict[str, Any] | None] | None = None
+        self._calibration: Any = None
+        self._active_cover_profile: dict[str, Any] | None = None
         self._calibrating = False
         self._calibration_interrupted: str | None = None
         self._stopped_event: asyncio.Event = asyncio.Event()
@@ -360,6 +374,50 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._motor_started: asyncio.Event = asyncio.Event()
         self._run_generation: int = 0
 
+    @callback
+    def async_apply_cover_profile(self, profile: dict[str, Any] | None) -> None:
+        """Apply only when stopped, preserving the timing of an in-flight movement."""
+        if self._attr_is_opening or self._attr_is_closing or self._move_start_time is not None:
+            self._pending_profile = (profile,)
+            self._attr_extra_state_attributes["cover_profile_pending"] = True
+            return
+        self._pending_profile = None
+        self._active_cover_profile = profile
+        baseline = self.native_cover_fallback()
+        self._effective_cover_settings = self.resolve_cover_settings(profile)
+        self._motion.configure(motion_from_settings(self._effective_cover_settings))
+        self._travel_time_up = self._effective_cover_settings["opening"]["value"]
+        self._travel_time_down = self._effective_cover_settings["closing"]["value"]
+        self._travel_time = self._travel_time_down
+        self._calibration_source = "panel_profile" if profile else (baseline or {}).get("source", "measured" if baseline else self._default_travel_source)
+        has_overrides = any(item["origin"] == "override" for item in self._effective_cover_settings.values())
+        if has_overrides:
+            self._calibration_source = "panel_override"
+        self._calibrated_at = None if profile or has_overrides else (baseline or {}).get("measured_at")
+        self._copied_from = None if profile or has_overrides else (baseline or {}).get("copied_from")
+        self._refresh_travel_attributes()
+        self._attr_extra_state_attributes["cover_profile"] = profile["name"] if profile else None
+        self._attr_extra_state_attributes["cover_profile_pending"] = False
+
+    def native_cover_fallback(self) -> dict[str, Any] | None:
+        """After binding, only the migrated store is authoritative."""
+        if self._profile_store is not None:
+            stored: dict[str, Any] | None = self._profile_store.data["native_fallbacks"].get(str(self._device_id))
+            return stored
+        entry = getattr(self._gateway_handler, "config_entry", None)
+        return _stored_calibration(entry, str(self._device_id)) if entry else None
+
+    def resolve_cover_settings(self, profile: dict[str, Any] | None) -> dict[str, Any]:
+        record = (self._profile_store.data["covers"].get(self.unique_id, {})
+                  if self._profile_store is not None else {})
+        return resolve(profile=profile, native=self.native_cover_fallback(), overrides=record.get("overrides", {}),
+                       default=self._default_travel_time, default_source=self._default_travel_source,
+                       travel_cm=record.get("travel_cm"))
+
+    def _apply_pending_cover_profile(self) -> None:
+        if self._pending_profile is not None:
+            self.async_apply_cover_profile(self._pending_profile[0])
+
     # ── Travel-time helpers ──────────────────────────────────────────────
 
     def _travel_for(self, opening: bool) -> float:
@@ -368,6 +426,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     def _refresh_travel_attributes(self) -> None:
         attrs = self._attr_extra_state_attributes
+        attrs["cover_motion_model"] = model_name(self._effective_cover_settings)
+        attrs["opening_time"] = self._travel_time_up
+        attrs["closing_time"] = self._travel_time_down
         attrs["travel_time"] = int(round(self._travel_time_down))
         attrs["travel_time_down"] = round(self._travel_time_down, 2)
         attrs["travel_time_up"] = round(self._travel_time_up, 2)
@@ -426,7 +487,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             if self._pending_cmd in ("open", "close") and not self._motor_started.is_set():
                 # Provisional anchor: the motor starts shortly after the write.
                 # The direction echo re-anchors precisely if the gateway relays it.
-                self._anchor_run(write_ts)
+                # Unknown nonlinear position is established only after a whole
+                # motor run; include the fallback start delay when no echo comes.
+                delay = MOTOR_START_DELAY if self._motion.model is not None and self._motion.position is None else 0
+                self._anchor_run(write_ts + delay)
             elif self._pending_cmd == "stop":
                 # Motion stops within ~0.1 s of the write, not at enqueue time.
                 self._freeze_position(write_ts)
@@ -446,6 +510,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     def _anchor_run(self, at: float) -> None:
         """Anchor the running estimate and the run measurement on the motor start."""
+        if self._motion.model is not None:
+            self._motion.start(at)
         self._move_start_time = at  # type: ignore
         self._run_started_at = at
         started = dt_util.utcnow() - timedelta(seconds=max(0.0, time.monotonic() - at))
@@ -463,6 +529,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._run_started_at = None
             self._motion_started_at = None
             self._refresh_travel_attributes()
+        if self._motion.model is not None:
+            self._motion.stop(at)
+            position = self._motion.position
+            self._attr_current_cover_position = round(position.height * 100) if position else None
+            self._move_start_time = None
         if self._move_start_time is not None:
             elapsed = max(0.0, at - self._move_start_time)  # type: ignore
             delta = (elapsed / self._travel_for(self._attr_is_opening)) * 100
@@ -477,6 +548,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if self._attr_current_cover_position is not None:
             self._attr_is_closed = (self._attr_current_cover_position == 0)
 
+        self._apply_pending_cover_profile()
+
     def _abort_motion(self) -> None:
         """Abort motion state when a command frame failed to reach the bus."""
         self._cancel_stop_task()
@@ -489,6 +562,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if self._attr_current_cover_position is not None:
             self._start_position = self._attr_current_cover_position
             self._attr_is_closed = (self._attr_current_cover_position == 0)
+        if self._motion.model is not None:
+            self._motion.abort()
+            if self._motion.anchor is not None:
+                self._attr_is_opening = self._motion.opening
+                self._attr_is_closing = not self._motion.opening
+        self._apply_pending_cover_profile()
         self._refresh_travel_attributes()
         self._publish_state()
 
@@ -557,6 +636,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     @property
     def current_cover_position(self) -> int | None:
         """Return current cover position (interpolated if moving)."""
+        if not self._advanced and self._motion.model is not None:
+            position = self._motion.sample(time.monotonic())
+            return round(position.height * 100) if position else None
         if not self._advanced and self._move_start_time is not None:
             elapsed = time.monotonic() - self._move_start_time  # type: ignore
             delta = (elapsed / self._travel_for(self._attr_is_opening)) * 100
@@ -579,12 +661,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     @property
     def is_closed(self) -> bool:
         """Return if the cover is closed."""
+        if self._motion.model is not None:
+            position = self._motion.sample(time.monotonic())
+            return position == MotionPosition(0, 0) if position is not None else False
         if self.current_cover_position is not None:
             return self.current_cover_position == 0
         return self._attr_is_closed  # type: ignore
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
+        target_hass = self.hass or self._hass
+        if target_hass is not None:
+            await bind_cover(target_hass, self)
         if self._advanced:
             # Advanced covers query live position from bus; do not restore stale state
             self._register_availability_listener()
@@ -594,6 +682,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def async_restore_last_state(self, last_state: typing.Any) -> None:
         """Restore cover position and closure state."""
+        if self._motion.model is not None:
+            # A restored HA percentage cannot establish the hidden slat phase,
+            # nor whether the motor moved while Home Assistant was offline.
+            self._motion.configure(self._motion.model)
+            self._motion.position = None
+            self._attr_current_cover_position = None
+            self._attr_is_closed = False
+            return
         if not self._advanced:
             restored = False
             last_pos = last_state.attributes.get(ATTR_CURRENT_POSITION)
@@ -619,9 +715,42 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Run when entity will be removed from hass."""
         self._run_generation += 1  # a run in flight must not act on a removed entity
         self._cancel_stop_task()
+        if self._calibration:
+            self._calibration.close("cover_unavailable")
         await super().async_will_remove_from_hass()
 
+    @callback
+    def _handle_availability_update(self) -> None:
+        super()._handle_availability_update()
+        if self._calibration and not self.available:
+            self._calibration.interrupt("cover_unavailable")
+
     # ── Calibration ──────────────────────────────────────────────────────
+
+    def native_calibration_busy(self) -> bool:
+        """Whether a native calibration owns or is queued on this gateway."""
+        key = _gateway_key(self._gateway_handler)
+        return bool(_CALIBRATION_ACTIVE.get(key) or _CALIBRATION_QUEUED.get(key))
+
+    def _check_panel_timing_owner(self, *, lock_held: bool = False) -> None:
+        """Native timing writes must not replace an assigned profile or its session."""
+        from .cover_profiles import DATA_KEY
+
+        entry = getattr(self._gateway_handler, "config_entry", None)
+        hass = self.hass or self._hass
+        store = hass.data.get(DATA_KEY, {}).get(getattr(entry, "entry_id", None)) if hass else None
+        if (self._active_cover_profile is not None or self._pending_profile is not None
+                or self._calibration is not None
+                or (store and (store.calibration is not None
+                            or (store.lock.locked() and not lock_held)
+                            or store.profile(self.unique_id) is not None
+                            or store.data["covers"].get(self.unique_id, {}).get("overrides")))):
+            raise ServiceValidationError(
+                "Travel times are managed by the MyHOME panel. Finish its measurement "
+                "and remove the assigned travel profile before using native timing services.",
+                translation_domain=DOMAIN,
+                translation_key="panel_timing_managed",
+            )
 
     def _interrupt_calibration(self, reason: str) -> None:
         if self._calibrating and not self._calibration_interrupted:
@@ -704,6 +833,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         values are the actuator's run times, which equal the physical travel
         when the installer calibrated the actuator (the usual case).
         """
+        self._check_panel_timing_owner()
         if self._advanced:
             raise HomeAssistantError(
                 f"{self._display_name} reports its position; calibration is not needed",
@@ -730,6 +860,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         try:
             async with lock:
+                self._check_panel_timing_owner()
                 _CALIBRATION_QUEUED.setdefault(gw_key, set()).discard(self)
                 if self._calibration_interrupted:
                     self._fire_calibration_event("failed", error=self._calibration_interrupted)  # type: ignore
@@ -764,23 +895,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     translation_placeholders={"name": self._display_name, "direction": label, "seconds": f"{value:.1f}"},
                 )
 
-        self._travel_time_down = round(down, 2)
-        self._travel_time_up = round(up, 2)
-        self._travel_time = int(round(down))
-        self._calibration_source = "measured"
-        self._copied_from = None
-        self._calibrated_at = dt_util.utcnow().isoformat(timespec="seconds")
+        result = {"down": round(down, 2), "up": round(up, 2), "source": "measured",
+                  "measured_at": dt_util.utcnow().isoformat(timespec="seconds")}
+        await self._persist_calibration(result)
+        self.async_apply_cover_profile(None)
         # The sequence ends with the cover fully open.
         self._attr_current_cover_position = 100
         self._start_position = 100
         self._attr_is_closed = False
-        self._refresh_travel_attributes()
-        result = {
-            "down": self._travel_time_down,
-            "up": self._travel_time_up,
-            "measured_at": self._calibrated_at,
-        }
-        self._persist_calibration(result)
         if self.hass is not None:
             self.async_write_ha_state()
         self._fire_calibration_event("done", **result)
@@ -807,6 +929,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         ``copied_from`` records the entity the times were taken from; the source
         is then reported as ``copied`` instead of ``manual``.
         """
+        self._check_panel_timing_owner()
         if self._advanced:
             raise HomeAssistantError(
                 f"{self._display_name} reports its position; travel time cannot be set",
@@ -839,23 +962,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     },
                 )
 
-        self._travel_time_down = round(float(down), 2)
-        self._travel_time_up = round(float(up), 2)  # type: ignore
-        self._travel_time = int(round(self._travel_time_down))
-        self._copied_from = str(copied_from) if copied_from else None
-        self._calibration_source = "copied" if self._copied_from else "manual"
-        self._calibrated_at = dt_util.utcnow().isoformat(timespec="seconds")
-
-        result = {
-            "down": self._travel_time_down,
-            "up": self._travel_time_up,
-            "measured_at": self._calibrated_at,
-            "source": self._calibration_source,
-        }
-        if self._copied_from:
-            result["copied_from"] = self._copied_from
-        self._persist_calibration(result)
-        self._refresh_travel_attributes()
+        result = {"down": round(float(down), 2), "up": round(typing.cast(float, up), 2),
+                  "measured_at": dt_util.utcnow().isoformat(timespec="seconds"),
+                  "source": "copied" if copied_from else "manual"}
+        if copied_from:
+            result["copied_from"] = str(copied_from)
+        await self._persist_calibration(result)
+        self.async_apply_cover_profile(None)
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -869,6 +982,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def async_reset_travel_time(self) -> None:
         """Reset travel times back to default or YAML configuration."""
+        self._check_panel_timing_owner()
         if self._advanced:
             raise HomeAssistantError(
                 f"{self._display_name} reports its position; calibration is not applicable",
@@ -876,16 +990,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 translation_key="cover_reports_position",
                 translation_placeholders={"name": self._display_name},
             )
-
-        entry = getattr(self._gateway_handler, "config_entry", None)
-        hass = self.hass or self._hass
-        if entry is not None and getattr(entry, "entry_id", None) and hass is not None and hasattr(hass, "config_entries"):
-            options = dict(getattr(entry, "options", None) or {})
-            stored = dict(options.get(CONF_COVER_TRAVEL_TIMES) or {})
-            if str(self._device_id) in stored:
-                del stored[str(self._device_id)]
-                options[CONF_COVER_TRAVEL_TIMES] = stored
-                hass.config_entries.async_update_entry(entry, options=options)
 
         cfg = self._device_config() or {}
         if CONF_TRAVEL_TIME in cfg:
@@ -895,14 +999,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             base_travel = float(DEFAULT_TRAVEL_TIME)
             source = "default"
 
-        self._travel_time_down = base_travel
-        self._travel_time_up = base_travel
-        self._travel_time = int(round(base_travel))
-        self._calibration_source = source
-        self._calibrated_at = None
-        self._copied_from = None
-
-        self._refresh_travel_attributes()
+        await self._persist_calibration(None)
+        self._default_travel_time = base_travel
+        self._default_travel_source = source
+        self.async_apply_cover_profile(None)
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -917,20 +1017,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._gateway_handler.log_id, self._full_where, source, base_travel,
         )
 
-    def _persist_calibration(self, result: dict) -> None:  # type: ignore
-        """Store the measurement in the config entry options (survives restarts, applies to discovered covers)."""
+    async def _persist_calibration(self, result: dict[str, Any] | None) -> None:
+        """Publish native timings only after the shared transaction is durable."""
         entry = getattr(self._gateway_handler, "config_entry", None)
         hass = self.hass or self._hass
-        if entry is None or hass is None or not hasattr(hass, "config_entries"):
+        if entry is None or hass is None:
             return
-        try:
-            options = dict(getattr(entry, "options", None) or {})
-            stored = dict(options.get(CONF_COVER_TRAVEL_TIMES) or {})
-            stored[str(self._device_id)] = result
-            options[CONF_COVER_TRAVEL_TIMES] = stored
-            hass.config_entries.async_update_entry(entry, options=options)
-        except Exception as err:  # pragma: no cover - defensive
-            LOGGER.warning("%s Could not persist calibration for %s: %s", self._gateway_handler.log_id, self._full_where, err)
+        await write_native_timing(hass, entry, self, result)
 
     async def async_update(self) -> None:
         """Update the entity.
@@ -948,10 +1041,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def async_open_cover(self, **kwargs: typing.Any) -> None:  # pylint: disable=unused-argument
         """Open the cover."""
+        if self._calibration:
+            self._calibration.interrupt("external_command")
         await self._async_move("open")
 
     async def async_close_cover(self, **kwargs: typing.Any) -> None:  # pylint: disable=unused-argument
         """Close cover."""
+        if self._calibration:
+            self._calibration.interrupt("external_command")
         await self._async_move("close")
 
     async def _async_move(self, direction: str) -> asyncio.Future[typing.Any] | None:
@@ -962,6 +1059,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         else:
             command = OWNAutomationCommand.lower_shutter(self._full_where)
         if not self._advanced:
+            if self._motion.model is not None:
+                self._motion.prepare(direction == "open")
             self._start_position = self.current_cover_position if self.current_cover_position is not None else (0 if direction == "open" else 100)
             # The clock starts when the frame is written (see _track_write),
             # not now: with a busy queue the motor is still idle for a while.
@@ -1003,6 +1102,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def async_set_cover_position(self, **kwargs: typing.Any) -> None:
         """Move the cover to a specific position."""
+        if self._calibration:
+            self._calibration.interrupt("external_command")
         if ATTR_POSITION not in kwargs:
             return
         target_position = kwargs[ATTR_POSITION]
@@ -1027,9 +1128,28 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 translation_placeholders={"entity_id": str(self.entity_id)},
             )
 
+        target_motion = None
+        if self._motion.model is not None:
+            target_motion = MotionPosition.at_height(float(target_position) / 100)
+            current_motion = self._motion.sample(time.monotonic())
+            if current_motion is None:
+                if target_position in (0, 100):
+                    await self._async_move("open" if target_position == 100 else "close")
+                    return
+                raise HomeAssistantError("Complete a full opening or closing run before setting an intermediate position",
+                                         translation_domain=DOMAIN, translation_key="cover_position_unknown")
+            if current_motion == target_motion:
+                if self._attr_is_opening or self._attr_is_closing:
+                    await self.async_stop_cover()
+                return
+            curr_pos = current_motion.height * 100
+            diff = target_position - curr_pos
+            if diff == 0:  # Height zero still owes the closure of the slats.
+                diff = -1
+        else:
+            curr_pos = self.current_cover_position if self.current_cover_position is not None else 50
+            diff = target_position - curr_pos
         self._cancel_stop_task()
-        curr_pos = self.current_cover_position if self.current_cover_position is not None else 50
-        diff = target_position - curr_pos
         if diff == 0:
             return
 
@@ -1044,16 +1164,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 anchor = await self._await_motion_anchor(written)
                 if generation != self._run_generation:
                     return  # a newer command superseded this run
-                await asyncio.sleep(max(0.0, run_duration - (time.monotonic() - anchor)))
+                duration = self._motion.remaining(target_motion) if target_motion is not None else run_duration
+                await asyncio.sleep(max(0.0, duration - (time.monotonic() - anchor)))
                 if generation != self._run_generation:
                     return
                 # By the model we are at the target now; the motor keeps
                 # running until the stop frame is written, so re-anchor the
                 # run here and let the stop's write time freeze the estimate
                 # (target plus whatever the queue delay added).
-                self._start_position = target_position
-                self._attr_current_cover_position = target_position
-                self._move_start_time = time.monotonic()  # type: ignore
+                if target_motion is None:
+                    self._start_position = target_position
+                    self._attr_current_cover_position = target_position
+                    self._move_start_time = time.monotonic()  # type: ignore
                 await self.async_stop_cover()
                 if self.hass is not None:
                     self.async_write_ha_state()
@@ -1066,6 +1188,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def async_stop_cover(self, **kwargs: typing.Any) -> None:  # pylint: disable=unused-argument
         """Stop the cover."""
+        if self._calibration:
+            self._calibration.interrupt("external_command")
         self._cancel_stop_task()
         if not self._advanced:
             # The estimate keeps running until the stop frame is actually
@@ -1128,6 +1252,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if getattr(message, "_what", None) is None and message.current_position is None and not message.is_opening and not message.is_closing:
             return
 
+        if self._calibration:
+            self._calibration.on_event(message)
+
         # Ignore general commands (WHERE=0) and groups/areas during active calibration
         if self._calibrating and (getattr(message, "is_general", False) or str(getattr(message, "where", "")) == "0"):
             LOGGER.debug("%s Ignoring general frame during calibration of %s: %s", self._gateway_handler.log_id, self._full_where, message)
@@ -1156,6 +1283,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             return
         if message.current_position is not None:
             self._cancel_stop_task()
+            if self._motion.model is not None:
+                self._motion.confirm(message.current_position)
             self._attr_current_cover_position = message.current_position
             if not self._advanced:
                 self._start_position = message.current_position
@@ -1174,6 +1303,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._run_generation += 1
             if not self._advanced and not self._attr_is_opening:
                 self._start_position = self.current_cover_position if self.current_cover_position is not None else 0
+                self._motion.prepare(True)
                 self._anchor_run(now)
             self._attr_is_opening = True
             self._attr_is_closing = False
@@ -1186,6 +1316,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._run_generation += 1
             if not self._advanced and not self._attr_is_closing:
                 self._start_position = self.current_cover_position if self.current_cover_position is not None else 100
+                self._motion.prepare(False)
                 self._anchor_run(now)
             self._attr_is_opening = False
             self._attr_is_closing = True
@@ -1204,4 +1335,5 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             elif self._attr_current_cover_position is not None:
                 self._attr_is_closed = (self._attr_current_cover_position == 0)
 
+        self._apply_pending_cover_profile()
         self._publish_state()

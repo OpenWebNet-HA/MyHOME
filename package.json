@@ -1,0 +1,11 @@
+{
+  "name": "myhome-panel-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:panel": "node --test tests/frontend/*.test.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0"
+  }
+}

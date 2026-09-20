@@ -399,7 +399,7 @@ class PlatformDiscovery:
                 announce_new_device(self.hass, self.mac, ctx.who, address, self._name_of(created[0], address))
         return entities
 
-    def _create(self, ctx: DeviceContext) -> list[Entity]:
+    def _create(self, ctx: DeviceContext) -> list[MyHOMEEntity]:
         """Build the entities of a context and remember every key they answer to."""
         built = self.build(ctx)
         if built is None:

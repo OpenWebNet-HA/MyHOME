@@ -66,7 +66,7 @@ async def _yield(n=4):
 
 
 @pytest.fixture
-def gateway():
+def gateway(hass):
     gw = MagicMock()
     gw.mac = "00:03:50:00:00:01"
     gw.log_id = "[MH200 gateway - test]"
@@ -74,8 +74,11 @@ def gateway():
     gw.available = True
     gw.device_registry_id = None
     gw.send_status_request = AsyncMock()
-    gw.config_entry = MagicMock()
-    gw.config_entry.options = {}
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.const import DOMAIN
+    gw.config_entry = MockConfigEntry(domain=DOMAIN, data={"mac": gw.mac})
+    gw.config_entry.add_to_hass(hass)
     gw.deliveries = []
 
     async def _send(message):
@@ -157,12 +160,11 @@ async def test_calibration_measures_down_and_up_and_persists(hass, gateway, cloc
     assert cover.current_cover_position == 100 and cover.is_closed is False
     assert cover._calibrating is False
 
-    # persisted into the config entry options under the cover's device id
-    hass.config_entries.async_update_entry = MagicMock()
-    cover._persist_calibration(result)
-    entry, kwargs = hass.config_entries.async_update_entry.call_args.args[0], hass.config_entries.async_update_entry.call_args.kwargs
-    assert entry is gateway.config_entry
-    assert kwargs["options"][CONF_COVER_TRAVEL_TIMES]["21"] == result
+    # Native timing writes now use the shared durable store; options are a migration backup.
+    from custom_components.myhome.cover_profiles import get_store
+    store = get_store(hass, gateway.config_entry.entry_id)
+    assert {k: v for k, v in store.data["native_fallbacks"]["21"].items() if k != "provenance"} == result
+    assert CONF_COVER_TRAVEL_TIMES not in gateway.config_entry.options
 
     await hass.async_block_till_done()
     phases = [(e["phase"], e.get("direction")) for e in events]
@@ -317,11 +319,11 @@ async def test_calibrations_on_one_gateway_run_sequentially(hass, gateway, clock
             await t
 
 
-def test_persist_is_a_noop_without_config_entry(hass, gateway):
+async def test_persist_is_a_noop_without_config_entry(hass, gateway):
     cover = _make_cover(hass, gateway)
     gateway.config_entry = None
     hass.config_entries.async_update_entry = MagicMock()
-    cover._persist_calibration({"down": 1, "up": 1, "measured_at": "x"})
+    await cover._persist_calibration({"down": 1, "up": 1, "measured_at": "x"})
     hass.config_entries.async_update_entry.assert_not_called()
 
 
@@ -591,7 +593,7 @@ async def test_set_cover_travel_time_manual(hass, gateway):
     assert cover.extra_state_attributes["travel_time_up"] == 19.2
     assert cover.extra_state_attributes["calibration_source"] == "manual"
 
-    stored = _stored_calibration(gateway.config_entry, cover._device_id)
+    stored = cover.native_cover_fallback()
     assert stored["down"] == 18.5
     assert stored["up"] == 19.2
     assert stored["source"] == "manual"
@@ -618,7 +620,7 @@ async def test_reset_cover_travel_time(hass, gateway):
     assert cover.extra_state_attributes["calibration_source"] == "default"
     assert cover.extra_state_attributes["calibrated_at"] is None
 
-    stored = _stored_calibration(gateway.config_entry, cover._device_id)
+    stored = cover.native_cover_fallback()
     assert stored is None
 
 
@@ -731,15 +733,18 @@ async def test_stop_cover_calibration_service_handler(hass, gateway):
 # ── calibration trace is scoped to one gateway (#319 review) ──────────────
 
 
-def _second_gateway(gateway):
+def _second_gateway(gateway, hass):
     other = MagicMock()
     other.mac = "00:03:50:00:00:02"
     other.log_id = "[MH200 gateway - other]"
     other.availability_signal = gateway.availability_signal
     other.available = True
     other.device_registry_id = None
-    other.config_entry = MagicMock()
-    other.config_entry.options = {}
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.const import DOMAIN
+    other.config_entry = MockConfigEntry(domain=DOMAIN, data={"mac": other.mac})
+    other.config_entry.add_to_hass(hass)
     other.deliveries = []
 
     async def _send(message):
@@ -763,7 +768,7 @@ async def _calibrate_on(hass, gateway, clock, *, entity_id, run):
 
 async def test_calibration_trace_frames_carry_their_gateway(hass, gateway, clock, fake_time, sleeps):
     """Two gateways calibrate; each frame names the gateway that recorded it and reads filter on it."""
-    other = _second_gateway(gateway)
+    other = _second_gateway(gateway, hass)
     await _calibrate_on(hass, gateway, clock, entity_id="cover.a_shutter", run=20.0)
     await _calibrate_on(hass, other, clock, entity_id="cover.b_shutter", run=30.0)
 
@@ -796,7 +801,7 @@ async def test_websocket_calibration_trace_is_scoped_to_the_requested_gateway(
     hass, gateway, clock, fake_time, sleeps, attach_gateway
 ):
     """Exporting for gateway A never carries gateway B's frames; omitted mac is the primary gateway; unknown is not_found."""
-    other = _second_gateway(gateway)
+    other = _second_gateway(gateway, hass)
     attach_gateway(gateway.mac, gateway)
     attach_gateway(other.mac, other)
     await _calibrate_on(hass, gateway, clock, entity_id="cover.a_shutter", run=20.0)
@@ -1118,7 +1123,7 @@ async def test_copied_travel_time_reports_its_source(hass, gateway):
     assert attrs["calibration_source"] == "copied"
     assert attrs["copied_from"] == "cover.woonkamer_west"
 
-    stored = _stored_calibration(gateway.config_entry, cover._device_id)
+    stored = cover.native_cover_fallback()
     assert stored["source"] == "copied" and stored["copied_from"] == "cover.woonkamer_west"
 
     # A cover built from the stored calibration (restart) keeps the real source, not "measured"

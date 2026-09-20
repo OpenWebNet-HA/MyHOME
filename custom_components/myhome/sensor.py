@@ -179,7 +179,7 @@ async def async_setup_entry(
             return None
         return Address(_sensor_address("18", message.where)[1], key_suffix=f"-{measurement}")
 
-    def build_energy(ctx: DeviceContext) -> list[SensorEntity] | SensorEntity:
+    def build_energy(ctx: DeviceContext) -> list[MyHOMEEntity] | MyHOMEEntity:
         if ctx.source == "yaml":
             cfg = ctx.cfg
             dev_class = cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class")
@@ -189,7 +189,7 @@ async def async_setup_entry(
                 manufacturer=cfg[CONF_MANUFACTURER], model=cfg[CONF_DEVICE_MODEL], gateway=gateway,
             )
             measurements = list(cfg[CONF_ENTITIES].keys())
-            sensors: list[SensorEntity] = []
+            sensors: list[MyHOMEEntity] = []
             if dev_class == SensorDeviceClass.POWER:
                 _migrate_power_unique_id(hass, device_id)
                 sensors.append(MyHOMEPowerSensor(device_class=dev_class, **common))
@@ -204,7 +204,7 @@ async def async_setup_entry(
             return sensors
         # Restored or discovered: only the measurements the meter actually reported
         where, measurement = ctx.address.where, ctx.address.key_suffix[1:]
-        sensor: SensorEntity
+        sensor: MyHOMEEntity
         if measurement == "power":
             sensor = MyHOMEPowerSensor(
                 hass=hass, device_id=f"18-{where}", who="18", where=where, name=f"Meter {where}",

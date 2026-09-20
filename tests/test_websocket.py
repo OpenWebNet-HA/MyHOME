@@ -1,10 +1,14 @@
 """Tests for MyHOME WebSocket API commands."""
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from aiohttp.resolver import ThreadedResolver
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import Unauthorized
 from OWNd.message import OWNEvent
+from pytest_socket import socket_enabled  # noqa: F401 (socket plugin disabled in pyproject)
 
 from custom_components.myhome.bus_monitor import BusFrame, BusMonitor
 from custom_components.myhome.const import (
@@ -34,7 +38,73 @@ def mock_ws_connection():
     conn.send_error = MagicMock()
     conn.send_message = MagicMock()
     conn.subscriptions = {}
+    conn.user = SimpleNamespace(is_admin=True)
     return conn
+
+
+@pytest.mark.parametrize("user", [None, SimpleNamespace(is_admin=False)])
+@pytest.mark.parametrize("handler,command", [
+    (ws_bus_monitor_history, "history"),
+    (ws_bus_monitor_stream, "stream"),
+    (ws_bus_monitor_send, "send"),
+    (ws_bus_monitor_clear, "clear"),
+    (ws_bus_monitor_info, "info"),
+])
+async def test_bus_diagnostics_reject_non_admins_before_access(
+    hass, mock_ws_connection, user, handler, command
+):
+    """No gateway lookup, stream, buffer access or transmission before authorization."""
+    mock_ws_connection.user = user
+    with patch("custom_components.myhome.websocket._get_gateway_and_monitor") as lookup:
+        with pytest.raises(Unauthorized):
+            handler(hass, mock_ws_connection, {
+                "id": 1, "type": f"myhome/bus_monitor/{command}", "frame": "*1*1*12##",
+            })
+        await hass.async_block_till_done()
+        lookup.assert_not_called()
+    mock_ws_connection.send_result.assert_not_called()
+    mock_ws_connection.send_message.assert_not_called()
+    assert mock_ws_connection.subscriptions == {}
+
+
+@pytest.mark.parametrize("admin", [True, False])
+async def test_bus_diagnostics_websocket_authorization(
+    hass, hass_ws_client, hass_access_token, hass_read_only_access_token, admin, attach_gateway
+):
+    """The actual WebSocket dispatcher reports unauthorized without bus side effects."""
+    gateway = MagicMock(send=AsyncMock())
+    monitor = MagicMock(spec=BusMonitor)
+    monitor.maxlen = 10
+    monitor.get_recent_frames.return_value = []
+    monitor.get_stats.return_value = {}
+    attach_gateway("00:03:50:00:00:01", gateway, monitor)
+    async_setup_websocket_api(hass)
+    token = hass_access_token if admin else hass_read_only_access_token
+    with patch("aiohttp.connector.DefaultResolver", ThreadedResolver):
+        client = await hass_ws_client(hass, access_token=token)
+        try:
+            for msg_id, command in enumerate(["history", "stream", "send", "clear", "info"], 1):
+                message = {
+                    "id": msg_id, "type": f"myhome/bus_monitor/{command}",
+                    "mac": "00:03:50:00:00:01",
+                }
+                if command == "send":
+                    message["frame"] = "*1*1*12##"
+                await client.send_json(message)
+                response = await client.receive_json()
+                assert response["id"] == msg_id
+                assert response["success"] is admin
+                if not admin:
+                    assert response["error"]["code"] == "unauthorized"
+        finally:
+            await client.close()
+    if admin:
+        gateway.send.assert_awaited_once()
+        monitor.subscribe.assert_called_once()
+        monitor.clear.assert_called_once()
+    else:
+        gateway.send.assert_not_called()
+        assert monitor.mock_calls == []
 
 
 async def test_websocket_registration_idempotent(hass: HomeAssistant):
@@ -575,12 +645,12 @@ async def test_mutating_commands_require_admin(hass: HomeAssistant, attach_gatew
             handler(hass, conn, msg)
     gateway.send.assert_not_awaited()
 
-    # Read-only commands stay available to any authenticated user
-    ws_bus_monitor_history(hass, conn, {"id": 3, "type": "myhome/bus_monitor/history"})
-    ws_bus_monitor_info(hass, conn, {"id": 4, "type": "myhome/bus_monitor/info"})
-    ws_bus_monitor_stream(hass, conn, {"id": 5, "type": "myhome/bus_monitor/stream"})
-    await hass.async_block_till_done()
-    assert conn.send_result.call_count == 3
+    # The panel keeps diagnostics administrator-only, including history and stream.
+    for handler, command in [(ws_bus_monitor_history, "history"),
+                             (ws_bus_monitor_info, "info"), (ws_bus_monitor_stream, "stream")]:
+        with pytest.raises(Unauthorized):
+            handler(hass, conn, {"id": 3, "type": f"myhome/bus_monitor/{command}"})
+    assert conn.send_result.call_count == 0
 
 
 def test_cached_ownd_version_without_domain_data(hass: HomeAssistant):

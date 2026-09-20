@@ -170,6 +170,9 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
                 hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_ha_started)
             domain_data["_lovelace_listener_registered"] = True
 
+    from .panel import async_setup_panel
+    await async_setup_panel(hass, versioned_url)
+
 
 async def _async_resolve_ownd_version(hass: HomeAssistant) -> str:
     """Resolve the installed OWNd version once, off the event loop, and cache it."""
@@ -672,3 +675,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> b
     setattr(entry, "runtime_data", None)
 
     return await gateway_handler.close_listener()
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove the sidebar when the last MyHOME gateway is deleted."""
+    from .panel import async_remove_panel_if_last_entry
+
+    async_remove_panel_if_last_entry(hass, entry)
+    from .cover_profiles import remove_entry
+    await remove_entry(hass, entry.entry_id)

@@ -46,7 +46,7 @@ Issues = "https://github.com/OpenWebNet-HA/MyHOME/issues"
 include = ["custom_components*"]
 
 [tool.setuptools.package-data]
-"*" = ["*.json", "*.yaml", "translations/*.json"]
+"*" = ["*.json", "*.yaml", "translations/*.json", "frontend/*.js", "frontend/panel/*.js", "frontend/panel/*.css"]
 
 [tool.check-wheel-contents]
 # W002 flags byte-identical files. strings.json and translations/en.json are

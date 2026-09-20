@@ -875,7 +875,9 @@ async def test_sending_loop_collected_responses_and_pacing(gateway_handler):
         resp_raw = "*#1*0##"
         concurrent_raw = "*#1*1##"
 
-        async def mock_send_with_concurrent_event(message, is_status_request):
+        async def mock_send_with_concurrent_event(
+            message, is_status_request
+        ):
             gateway_handler.bus_monitor.record_frame(direction="rx", raw=concurrent_raw, parsed=None)
             return [resp_msg, concurrent_raw, resp_raw]
 
@@ -1481,3 +1483,57 @@ def test_status_request_log_filter():
 
 
 
+
+
+
+async def test_calibration_jobs_recheck_guard_after_worker_lock(gateway_handler):
+    """A cancelled queued movement never reaches the wire, even after a lock wait."""
+    gateway_handler._event_session_ready.set()
+    command_lock = asyncio.Lock()
+    await command_lock.acquire()
+    allowed = [True]
+    movement = MagicMock(spec=OWNCommand)
+    stop = MagicMock(spec=OWNCommand)
+    movement_written = gateway_handler.async_queue_calibration(movement, lambda: allowed[0], command_lock)
+    stop_written = gateway_handler.async_queue_calibration(stop, lambda: True, command_lock)
+    gateway_handler.send_buffer.put_nowait(None)
+    with patch("custom_components.myhome.gateway.OWNCommandSession") as factory:
+        session = factory.return_value
+        session.connect = AsyncMock(return_value={"Success": True})
+        session.close = AsyncMock()
+        session.send = AsyncMock(return_value=[])
+        worker = asyncio.create_task(gateway_handler.sending_loop(0))
+        await asyncio.sleep(0)
+        allowed[0] = False
+        command_lock.release()
+        await worker
+    assert movement_written.cancelled()
+    assert isinstance(stop_written.result(), float)
+    session.send.assert_awaited_once_with(message=stop, is_status_request=False)
+    assert gateway_handler.send_buffer.empty()
+
+
+async def test_panel_job_cancelled_during_reconnect_never_reaches_bus(gateway_handler):
+    """A lease can expire while the updated v2 worker awaits a new socket."""
+    gateway_handler._event_session_ready.set()
+    allowed = [True]
+    gateway_handler.async_queue_calibration(MagicMock(spec=OWNCommand), lambda: allowed[0], asyncio.Lock())
+    gateway_handler.send_buffer.put_nowait(None)
+    attempts = []
+
+    async def connect():
+        attempts.append(True)
+        if len(attempts) == 2:
+            allowed[0] = False
+        return {"Success": True}
+
+    with patch("custom_components.myhome.gateway.OWNCommandSession") as factory, \
+         patch("custom_components.myhome.gateway._session_is_open", side_effect=[False, True]):
+        session = factory.return_value
+        session.connect = AsyncMock(side_effect=connect)
+        session.close = AsyncMock()
+        session.send = AsyncMock()
+        await gateway_handler.sending_loop(0)
+        session.send.assert_not_awaited()
+    assert len(attempts) == 2
+    assert gateway_handler.send_buffer.empty()
