@@ -50,7 +50,8 @@ test("geometry remains in existing sections and saves cover travel independently
   const data = geometrySnapshot();
   const view = setup({ read: () => data, write: request => ({ ...data, revision: 1, travel_cm: request.travel_cm }) });
   await view.open();
-  assert.equal(view.host.querySelectorAll(".profile-details").length, 3);
+  assert.equal(view.host.querySelectorAll(".profile-details").length, 2);
+  assert.equal(view.host.querySelectorAll(".profile-details[open]").length, 0);
   assert.equal(form(view).elements.travel_cm.value, "150");
   assert.equal(form(view).elements.reference_travel_cm.value, "200");
   assert.match(view.host.querySelector("#profile-scaling-status").textContent, /adattati alla corsa/);
@@ -59,6 +60,7 @@ test("geometry remains in existing sections and saves cover travel independently
   form(view).elements.travel_cm.value = "175.5";
   view.host.querySelector("#profile-calibrate").click();
   assert.match(view.host.querySelector("#profile-error").textContent, /Salva la corsa/);
+  assert.equal(form(view).elements.travel_cm.closest("details").open, true);
   assert.equal(view.editor._calibrating, false);
   await view.editor._selectBatch();
   assert.equal(view.editor._calibrating, false);
@@ -222,13 +224,13 @@ test("profile events leave guided calibration in place and refresh failures allo
   fail = false; other.host.querySelector("#profile-reload").click(); await tick(); assert.equal(form(other).elements.profile_name.value, "Saved 1");
 });
 
-test("unscaled timing profiles explain assignment limits in the existing section", async () => {
+test("unscaled timing profiles explain adjustment limits in the calibration guide", async () => {
   const view = setup({ read: () => ({ ...snapshot(), model: "linear_time", scaling: "unscaled" }) });
   await view.open();
   const note = view.host.querySelector("#profile-unscaled");
   assert.match(note.textContent, /senza adattamento all’altezza/);
-  assert.equal(note.closest("fieldset"), form(view).querySelector("fieldset"));
-  assert.equal(view.host.querySelectorAll(".profile-details").length, 3);
+  assert.equal(note.closest("[data-section]"), form(view).querySelector('[data-section="calibration"]'));
+  assert.equal(view.host.querySelectorAll(".profile-details").length, 2);
 });
 
 test("individual timings save without a profile name, retain assignment and clear each direction explicitly", async () => {
@@ -391,7 +393,7 @@ test("nonlinear geometry uses existing sections, validates manual inputs and sub
   for (const [key, value] of Object.entries(data.profiles[0].geometry)) data.effective[key] = { value, origin: "profile", scaled: true };
   const view = setup({ read: () => structuredClone(data), write: () => structuredClone(data) });
   await view.open();
-  assert.equal(view.host.querySelectorAll(".profile-details").length, 3);
+  assert.equal(view.host.querySelectorAll(".profile-details").length, 2);
   assert.equal(form(view).elements.motion_model.value, "slat_roll");
   assert.match(view.host.querySelector("#profile-motion-status").textContent, /apertura o una chiusura completa/);
   const calls = view.calls.length;
@@ -427,4 +429,96 @@ test("geometry-only shared edits display follower impacts and invalidate confirm
   form(view).elements.motion_model.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
   assert.equal(view.editor._preview, null);
   assert.equal(view.host.querySelector("#profile-impact").hidden, true);
+});
+
+test("cover home separates calibration from profile editing and keeps an edit draft on return", async () => {
+  const view = setup({ read: () => geometrySnapshot() }); await view.open();
+  const f = form(view), screen = f.querySelector('[data-section="edit"]');
+  assert.equal(screen.hidden, true);
+  assert.equal(f.elements.travel_cm.closest('[data-section]').dataset.section, "calibration");
+  assert.equal(view.host.querySelector('.profile-summary .profile-meta').open, false);
+  view.host.querySelector('#profile-edit-open').click();
+  assert.equal(screen.hidden, false);
+  assert.equal(view.host.querySelector('.profile-summary').hidden, true);
+  assert.equal(f.querySelector('[data-section="calibration"]').hidden, true);
+  assert.equal(f.querySelector('[data-profile-action="new"]').hidden, true);
+  assert.equal(f.querySelector('[data-profile-action="update"]').hidden, false);
+  assert.equal(f.querySelector('[data-profile-action="shared"]').hidden, true);
+  f.elements.profile_name.value = "Bozza";
+  view.host.querySelector('#profile-editor-back').click();
+  assert.equal(screen.hidden, true);
+  assert.equal(view.host.querySelector('.profile-summary').hidden, false);
+  view.host.querySelector('#profile-edit-open').click();
+  assert.equal(f.elements.profile_name.value, "Bozza");
+  assert.equal(view.calls.filter(call => call.type.endsWith('/write')).length, 0);
+  f.querySelector('[data-profile-action="update"]').click(); await tick();
+  assert.equal(view.calls.find(call => call.type.endsWith('/write')).profile.name, "Bozza");
+  assert.equal(form(view).querySelector('[data-section="edit"]').hidden, true);
+});
+
+test("manual creation has one save intent, retains its draft on return and does not alter the assigned summary", async () => {
+  const view = setup(); await view.open();
+  const summary = view.host.querySelector('.profile-assigned').textContent;
+  view.host.querySelector('#profile-new-open').click();
+  const f = form(view);
+  assert.equal(f.elements.profile.value, "");
+  assert.equal(f.querySelector('[data-profile-action="new"]').hidden, false);
+  assert.equal(f.querySelector('[data-profile-action="update"]').hidden, true);
+  assert.equal(f.querySelector('[data-profile-action="shared"]').hidden, true);
+  f.elements.profile_name.value = "Nuovo"; f.elements.opening_time.value = "23.5";
+  view.host.querySelector('#profile-editor-back').click();
+  assert.equal(view.host.querySelector('.profile-assigned').textContent, summary);
+  view.host.querySelector('#profile-new-open').click();
+  assert.equal(f.elements.profile_name.value, "Nuovo");
+  assert.equal(f.elements.opening_time.value, "23.5");
+  f.querySelector('[data-profile-action="new"]').click(); await tick();
+  const request = view.calls.find(call => call.type.endsWith('/write'));
+  assert.equal(request.action, "save"); assert.equal(request.profile_id, null);
+  assert.equal(request.profile.opening_time, 23.5);
+  assert.equal('copy_from_profile_id' in request, false);
+});
+
+test("dedicated shared-profile editing still requires preview and blocks a stale draft", async () => {
+  const data = snapshot(); data.profiles[0].uses = 3;
+  const view = setup({ read: () => structuredClone(data) }); await view.open();
+  view.host.querySelector('#profile-edit-open').click();
+  const f = form(view);
+  assert.match(f.querySelector('#profile-edit-scope').textContent, /3 tapparelle/);
+  assert.equal(f.querySelector('[data-profile-action="update"]').hidden, true);
+  assert.equal(f.querySelector('[data-profile-action="shared"]').hidden, false);
+  assert.equal(f.querySelector('[data-profile-action="new"]').hidden, true);
+  f.elements.profile_name.value = "Draft";
+  data.revision++; view.push(data.revision); await tick();
+  assert.equal(f.elements.profile_name.value, "Draft");
+  assert.equal(f.querySelector('[data-profile-action="shared"]').disabled, true);
+  f.querySelector('[data-profile-action="shared"]').click(); await tick();
+  assert.equal(view.calls.filter(call => call.type.endsWith('/write')).length, 0);
+});
+
+test("summary actions reveal profile selection without writes and manual creation returns to its visible entry point", async () => {
+  const view = setup({ read: () => geometrySnapshot() }); await view.open();
+  const f = form(view), summary = f.querySelector('.profile-summary');
+  const button = summary.querySelector('#profile-change-open');
+  const choice = summary.querySelector('#profile-choice');
+  assert.ok(summary.querySelector('#profile-edit-open'));
+  assert.equal(choice.hidden, true);
+  assert.equal(button.getAttribute('aria-expanded'), 'false');
+  assert.equal(f.querySelectorAll('[data-section="calibration"] .profile-meta').length, 1);
+  assert.ok(f.querySelector('#profile-calibration-guide #profile-travel-help'));
+  assert.ok(f.querySelector('#profile-calibration-guide #cal-scope-help'));
+  button.click();
+  assert.equal(choice.hidden, false);
+  assert.equal(button.getAttribute('aria-expanded'), 'true');
+  assert.equal(document.activeElement, f.elements.profile);
+  button.click(); assert.equal(choice.hidden, true);
+  button.click(); summary.querySelector('#profile-new-open').click();
+  assert.equal(summary.hidden, true);
+  f.elements.profile_name.value = 'Nuova bozza';
+  f.querySelector('#profile-editor-back').click();
+  assert.equal(summary.hidden, false);
+  assert.equal(choice.hidden, false);
+  assert.equal(document.activeElement.id, 'profile-new-open');
+  summary.querySelector('#profile-new-open').click();
+  assert.equal(f.elements.profile_name.value, 'Nuova bozza');
+  assert.equal(view.calls.filter(call => call.type.endsWith('/write')).length, 0);
 });

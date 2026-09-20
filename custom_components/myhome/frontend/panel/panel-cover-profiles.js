@@ -4,6 +4,8 @@ url.search = new URL(import.meta.url).search;
 const { escapeHtml: esc } = await import(url.href);
 const geometryUrl = new URL("panel-cover-geometry.js", import.meta.url); geometryUrl.search = url.search;
 const geometry = await import(geometryUrl.href);
+const presentationUrl = new URL("panel-profile-presentation.js", import.meta.url); presentationUrl.search = url.search;
+const { duration, savedEvidence, usageLabel } = await import(presentationUrl.href);
 
 const calibrationUrl = new URL("panel-cover-calibration.js", import.meta.url);
 calibrationUrl.search = url.search;
@@ -28,6 +30,14 @@ export class CoverProfileEditor {
     this.close();
     const generation = this._generation;
     this._context = { host, hass, entity, t, onSaved, generation };
+    this._editorMode = null;
+    this._lastEditorMode = null;
+    const address = entity.address;
+    const addressLabel = address ? [
+      `${t("address")}: ${address.raw ?? t("addressUnknown")}`,
+      ...(address.a != null && address.pl != null ? [`A: ${address.a}`, `PL: ${address.pl}`] : []),
+      ...(address.interface != null ? [`${t("busInterface")}: ${address.interface}`] : []),
+    ].join(" · ") : "";
     this._unavailable = !hass.states?.[entity.entity_id] || ["unknown", "unavailable"].includes(hass.states[entity.entity_id].state);
     this._data = null;
     this._preview = null;
@@ -36,7 +46,8 @@ export class CoverProfileEditor {
     host.innerHTML = `<dialog class="cover-profile-dialog" aria-labelledby="profile-title">
       <header class="dialog-head"><div class="dialog-icon" aria-hidden="true"><ha-icon icon="mdi:window-shutter-settings"></ha-icon></div>
         <div class="dialog-head-text"><h2 id="profile-title">${esc(t("coverProfiles"))}</h2>
-        <p class="muted">${esc(entity.name || entity.original_name || entity.entity_id)}</p></div>
+        <p class="muted">${esc(entity.name || entity.original_name || hass.states?.[entity.entity_id]?.attributes?.friendly_name || entity.entity_id)}</p>
+        ${addressLabel ? `<p class="muted profile-dialog-address">${esc(addressLabel)} · WHO 2</p>` : ""}</div>
         <button type="button" id="profile-export" class="icon-button" title="${esc(t("profileExport"))}" aria-label="${esc(t("profileExport"))}" aria-describedby="profile-export-help"><ha-icon icon="mdi:download-outline" aria-hidden="true"></ha-icon></button>
         <button type="button" class="help" data-help="profile-scope-help" aria-expanded="false" aria-controls="profile-scope-help" title="${esc(t("help"))}" aria-label="${esc(t("help"))}">?</button></header>
       <p id="profile-scope-help" class="help-text muted" hidden>${esc(t("profileScope"))}</p>
@@ -102,7 +113,7 @@ export class CoverProfileEditor {
     for (const direction of ["opening", "closing"]) {
       const effective = this.dialog.querySelector(`#profile-effective-${direction}`);
       const value = attrs[`${direction}_time`] ?? attrs.travel_time;
-      if (effective && value != null) effective.textContent = value;
+      if (effective && value != null) effective.textContent = duration(value, hass.language);
     }
     const pending = this.dialog.querySelector("#profile-pending");
     if (this._data?.effective?.slat_time_s && (attrs.current_position != null) !== this._data.position_known) this._refresh(true);
@@ -181,8 +192,8 @@ export class CoverProfileEditor {
     const scaling = this.dialog.querySelector("#profile-scaling-status");
     const motionStatus = this.dialog.querySelector("#profile-motion-status");
     if (motionStatus) motionStatus.innerHTML = geometry.geometrySummary(data.effective, t, data.position_known);
-    if (scaling) scaling.textContent = ["opening", "closing"].map((direction) => `${t(direction === "opening" ? "calOnlyOpening" : "calOnlyClosing")}: ${t(data.effective?.[direction]?.origin === "override" ? "profilePersonalValue" : data.effective?.[direction]?.scaled ? "profileScaled" : "profileNotScaled")}`).join(" · ");
-    for (const direction of ["opening", "closing"]) this.dialog.querySelector(`#profile-effective-${direction}`).textContent = data[`effective_${direction}_time`] ?? data.effective_travel_time ?? "—";
+    if (scaling) scaling.textContent = ["opening", "closing"].map((direction) => `${t(direction === "opening" ? "calStepOpening" : "calStepClosing")}: ${t(data.effective?.[direction]?.origin === "override" ? "profilePersonalValue" : data.effective?.[direction]?.scaled ? "profileScaled" : "profileNotScaled")}`).join(" · ");
+    for (const direction of ["opening", "closing"]) this.dialog.querySelector(`#profile-effective-${direction}`).textContent = duration(data[`effective_${direction}_time`] ?? data.effective_travel_time, this._context.hass.language);
     this.dialog.querySelector("#profile-pending").hidden = !data.pending;
     const box = this.dialog.querySelector("#cal-recovery");
     box.hidden = !session;
@@ -284,7 +295,7 @@ export class CoverProfileEditor {
       catch { return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)); }
     };
     const icons = { manual: "mdi:pencil-outline", guided: "mdi:timer-outline", automatic: "mdi:robot-outline", unknown: "mdi:help-circle-outline", configured: "mdi:file-code-outline" };
-    const wasOpen = !host.querySelector("#profile-provenance-help")?.hidden;
+    const wasOpen = host.querySelector("#profile-provenance-help")?.hidden === false;
     host.innerHTML = `<div class="profile-origin-head"><span class="muted">${esc(t("profileProvenance"))}</span>
       <button type="button" class="help" data-help="profile-provenance-help" aria-expanded="${wasOpen}" aria-controls="profile-provenance-help" title="${esc(t("help"))}" aria-label="${esc(t("help"))}">?</button></div>
       <p id="profile-provenance-help" class="help-text muted" ${wasOpen ? "" : "hidden"}>${esc(t("profileProvenanceHelp"))}</p>
@@ -293,7 +304,7 @@ export class CoverProfileEditor {
       const source = profile ? (["manual", "guided", "automatic"].includes(meta?.source) ? meta.source : "unknown") : "configured";
       const parts = [
         `<span class="profile-origin-source">${esc(t(`profileSource_${source}`))}</span>`,
-        meta?.inherited ? `<span>${esc(t("profileInherited"))}: ${esc(profile.name)}</span>` : "",
+        meta?.inherited ? `<span>${esc(t("profileEvidenceInherited"))}</span>` : "",
         meta?.origin_entity_id || meta?.inherited ? `<span>${esc(t("profileOriginCover"))}: ${esc(meta.origin_name || meta.origin_entity_id || t("profileMissingCover"))}</span>` : "",
         ["manual", "guided", "automatic"].includes(source) ? `<span>${esc(t(source !== "manual" ? "profileMeasuredAt" : "profileModifiedAt"))}: ${esc(dateText(meta.recorded_at))}</span>` : "",
       ].filter(Boolean);
@@ -306,6 +317,8 @@ export class CoverProfileEditor {
     if (!field || (field.value === "" ? null : Number(field.value)) === (this._data.travel_cm ?? null)) return true;
     const box = this.dialog.querySelector("#profile-error");
     box.textContent = this._context.t("profileSaveTravelFirst"); box.hidden = false;
+    field.closest("details").open = true;
+    this._sections.add("calibration");
     field.focus();
     return false;
   }
@@ -316,29 +329,27 @@ export class CoverProfileEditor {
     this._preview = null;
     const assigned = data.profiles.find((profile) => profile.id === data.assigned_profile_id);
     const disabled = data.writable ? "" : "disabled";
-    this._sections ??= new Set(["calibration"]);
+    this._sections ??= new Set();
     const open = (name) => this._sections.has(name) ? "open" : "";
     const chevron = `<ha-icon class="section-chevron" icon="mdi:chevron-down" aria-hidden="true"></ha-icon>`;
-    const help = (id) => `<button type="button" class="help" data-help="${id}" aria-expanded="false" aria-controls="${id}" title="${esc(t("help"))}" aria-label="${esc(t("help"))}">?</button>`;
-    const helpText = (id, key) => `<p id="${id}" class="help-text muted" hidden>${esc(t(key))}</p>`;
     host.querySelector("#profile-body").innerHTML = `
       ${this._syncFailed ? `<p class="notice">${esc(t("profileSyncFallback"))}</p>` : ""}
+      <form id="profile-form">
       <section class="profile-summary" aria-label="${esc(t("profileSectionStatus"))}">
-        <div class="profile-assigned"><span class="muted">${esc(t("profileAssigned"))}</span><strong>${esc(assigned?.name || t("profileDefault"))}</strong></div>
+        <div class="profile-summary-heading"><div class="profile-assigned"><span class="muted">${esc(t("profileAssigned"))}</span><strong>${esc(assigned?.name || t("profileDefault"))}</strong></div>
+          ${assigned ? `<span class="count"><ha-icon icon="mdi:link-variant" aria-hidden="true"></ha-icon>${esc(usageLabel(assigned.uses ?? assigned.assigned_to?.length ?? 0, t))}</span>` : ""}</div>
         <div class="profile-stats">
           <div class="profile-stat"><ha-icon icon="mdi:arrow-up-bold-outline" aria-hidden="true"></ha-icon><span class="muted">${esc(t("profileEffectiveOpening"))}</span>
-            <span class="profile-stat-value"><span id="profile-effective-opening">${esc(data.effective_opening_time ?? data.effective_travel_time ?? "—")}</span><small>s</small></span></div>
+            <span class="profile-stat-value"><span id="profile-effective-opening">${esc(duration(data.effective_opening_time ?? data.effective_travel_time, this._context.hass.language))}</span><small>s</small></span></div>
           <div class="profile-stat"><ha-icon icon="mdi:arrow-down-bold-outline" aria-hidden="true"></ha-icon><span class="muted">${esc(t("profileEffectiveClosing"))}</span>
-            <span class="profile-stat-value"><span id="profile-effective-closing">${esc(data.effective_closing_time ?? data.effective_travel_time ?? "—")}</span><small>s</small></span></div>
+            <span class="profile-stat-value"><span id="profile-effective-closing">${esc(duration(data.effective_closing_time ?? data.effective_travel_time, this._context.hass.language))}</span><small>s</small></span></div>
         </div>
         <p id="profile-pending" class="profile-pending" role="status" ${data.pending ? "" : "hidden"}>${esc(t("profilePending"))}</p>
-        ${data.height_scaling ? `<p class="muted" id="profile-scaling-status">${["opening", "closing"].map((direction) => `${esc(t(direction === "opening" ? "calOnlyOpening" : "calOnlyClosing"))}: ${esc(t(data.effective?.[direction]?.origin === "override" ? "profilePersonalValue" : data.effective?.[direction]?.scaled ? "profileScaled" : "profileNotScaled"))}`).join(" · ")}</p>` : ""}
-        <p class="muted" id="profile-motion-status">${geometry.geometrySummary(data.effective, t, data.position_known)}</p>
-      </section>
-      ${!data.writable ? `<p class="notice">${esc(t(`profileError_${data.reason}`))}</p>` : ""}
-      <p class="muted" id="profile-override-status" ${Object.values(data.configured || {}).some((item) => item.origin === "override") ? "" : "hidden"}>${esc(t("profileOverridesActive"))}</p>
-      <form id="profile-form">
-        <fieldset class="profile-section"><legend>${esc(t("profileSectionAssign"))}</legend>
+        <div class="actions profile-summary-actions">
+          <button type="button" id="profile-change-open" aria-expanded="${this._sections.has("assign")}" aria-controls="profile-choice" ${disabled}>${esc(t("profileChange"))}</button>
+          <button type="button" id="profile-edit-open" class="ghost" ${!assigned || !data.writable ? "disabled" : ""}>${esc(t("profileEditAssigned"))}</button>
+        </div>
+        <section id="profile-choice" class="profile-choice" data-section="assign" aria-label="${esc(t("profileChange"))}" ${this._sections.has("assign") ? "" : "hidden"}>
           <div class="profile-assign-row">
             <label>${esc(t("profileChoose"))}<select name="profile" ${disabled}>
               <option value="">${esc(t("profileDefault"))}</option>
@@ -346,15 +357,23 @@ export class CoverProfileEditor {
             </select></label>
             <button type="button" class="primary" data-profile-action="assign" ${disabled}>${esc(t("profileAssign"))}</button>
           </div>
-          ${data.scaling || data.height_scaling ? `<p class="muted" id="profile-unscaled"></p>` : ""}
-          ${data.height_scaling ? `<label>${esc(t("profileCoverTravel"))}<span class="input-suffix"><input name="travel_cm" type="number" min="0.1" max="10000" step="any" inputmode="decimal" value="${esc(data.travel_cm ?? "")}" aria-describedby="profile-travel-help" ${disabled}><span>cm</span></span></label>
-            <p class="muted" id="profile-travel-help">${esc(t("profileTravelHelp"))}</p>
-            <button type="button" data-profile-action="travel" ${disabled}>${esc(t("profileSaveTravel"))}</button>` : ""}
-        </fieldset>
-        <details class="profile-details" data-section="calibration" ${open("calibration")}>
-          <summary><span class="profile-details-title">${esc(t("profileSectionCalibrate"))} ${help("cal-help-text")}</span><span class="profile-details-hint" id="cal-hint"></span>${chevron}</summary>
+          <button type="button" id="profile-new-open" class="ghost">${esc(t("profileNewManual"))}</button>
+        </section>
+        <details class="profile-meta"><summary>${esc(t("profileDetails"))}</summary>
+          <div class="profile-summary-evidence"><span class="muted">${esc(t("profileAssignedEvidence"))}</span>${savedEvidence(assigned, t, this._context.hass.language)}</div>
+
+        ${data.height_scaling ? `<p class="muted" id="profile-scaling-status">${["opening", "closing"].map((direction) => `${esc(t(direction === "opening" ? "calStepOpening" : "calStepClosing"))}: ${esc(t(data.effective?.[direction]?.origin === "override" ? "profilePersonalValue" : data.effective?.[direction]?.scaled ? "profileScaled" : "profileNotScaled"))}`).join(" · ")}</p>` : ""}
+        <p class="muted" id="profile-motion-status">${geometry.geometrySummary(data.effective, t, data.position_known)}</p>
+        </details>
+      </section>
+      ${!data.writable ? `<p class="notice">${esc(t(`profileError_${data.reason}`))}</p>` : ""}
+      <p class="muted" id="profile-override-status" ${Object.values(data.configured || {}).some((item) => item.origin === "override") ? "" : "hidden"}>${esc(t("profileOverridesActive"))}</p>
+        <details data-cover-home class="profile-details" data-section="calibration" ${open("calibration")}>
+          <summary><span class="profile-details-title">${esc(t("profileSectionCalibrate"))}</span><span class="profile-details-hint" id="cal-hint"></span>${chevron}</summary>
           <div class="profile-details-body">
-            ${helpText("cal-help-text", "calQuickRequirement")}
+          ${data.height_scaling ? `<label>${esc(t("profileCoverTravel"))}<span class="input-suffix"><input name="travel_cm" type="number" min="0.1" max="10000" step="any" inputmode="decimal" value="${esc(data.travel_cm ?? "")}" aria-describedby="profile-travel-help" ${disabled}><span>cm</span></span></label>
+            <p class="muted">${esc(t("profileTravelPrerequisite"))}</p>
+            <button type="button" data-profile-action="travel" ${disabled}>${esc(t("profileSaveTravel"))}</button>` : ""}
             <div id="cal-recovery" class="notice" hidden><p></p>
               <button type="button" id="cal-resume">${esc(t("calResume"))}</button>
               <button type="button" id="cal-refresh">${esc(t("calRefresh"))}</button>
@@ -363,45 +382,38 @@ export class CoverProfileEditor {
               <label>${esc(t("calMode"))}<select id="cal-mode" ${disabled}><option value="guided">${esc(t("calGuided"))}</option><option value="automatic">${esc(t("calAutomatic"))}</option><option value="geometry">${esc(t("calGeometry"))}</option></select></label>
               <label>${esc(t("calScope"))}<select id="cal-direction" aria-describedby="cal-scope-help" ${disabled}><option value="">${esc(t("calBothDirections"))}</option><option value="opening">${esc(t("calOnlyOpening"))}</option><option value="closing">${esc(t("calOnlyClosing"))}</option></select></label>
             </div>
-            <p id="cal-scope-help" class="muted" role="status">${esc(t("calSingleDirectionGuided"))}</p>
             <button type="button" id="profile-calibrate" class="primary profile-calibrate" ${disabled}><ha-icon icon="mdi:timer-outline" aria-hidden="true"></ha-icon><span id="cal-label">${esc(t("calTitle"))}</span></button>
             <button type="button" id="profile-calibrate-batch" class="ghost profile-calibrate-batch" ${disabled}><ha-icon icon="mdi:select-group" aria-hidden="true"></ha-icon><span>${esc(t("calBatchTitle"))}</span></button>
+            <details class="profile-meta calibration-guide" id="profile-calibration-guide"><summary>${esc(t("profileCalibrationGuide"))}</summary>
+              ${data.height_scaling ? `<p class="muted" id="profile-travel-help">${esc(t("profileTravelHelp"))}</p>` : ""}
+              <p id="cal-scope-help" class="muted">${esc(t("calSingleDirectionGuided"))}</p>
+              <p id="cal-help-text" class="muted">${esc(t("calQuickRequirement"))}</p>
+              ${data.scaling || data.height_scaling ? `<p class="muted" id="profile-unscaled"></p>` : ""}
+            </details>
           </div>
         </details>
-        <details class="profile-details" data-section="edit" ${open("edit")}>
-          <summary><span class="profile-details-title">${esc(t("profileSectionEdit"))} ${help("edit-help-text")}</span><span class="profile-details-hint" id="edit-hint"></span>${chevron}</summary>
+        <section class="profile-editor-screen" data-section="edit" hidden>
+          <button type="button" id="profile-editor-back" class="ghost">← ${esc(t("profileBackCover"))}</button>
+          <h3 id="profile-editor-heading" tabindex="-1"></h3>
+          <p id="edit-hint" class="muted"></p>
           <div class="profile-details-body">
-            ${helpText("edit-help-text", "profileSharedHelp")}
+            <p id="profile-edit-scope" class="notice"></p>
             <label>${esc(t("profileName"))}<input name="profile_name" maxlength="64" required ${disabled}></label>
             ${data.height_scaling ? `<label>${esc(t("profileReferenceTravel"))}<span class="input-suffix"><input name="reference_travel_cm" type="number" min="0.1" max="10000" step="any" inputmode="decimal" aria-describedby="profile-reference-help" ${disabled}><span>cm</span></span></label>
-              <p id="profile-reference-help" class="muted">${esc(t("profileReferenceHelp"))}</p>` : ""}
+              <details class="profile-meta"><summary>${esc(t("profileAdaptation"))}</summary><p id="profile-reference-help" class="muted">${esc(t("profileReferenceHelp"))}</p></details>` : ""}
             <div class="profile-times">
               <label>${esc(t("profileOpeningTime"))}<span class="input-suffix"><input name="opening_time" type="number" min="1" max="600" step="any" inputmode="decimal" required ${disabled}><span>s</span></span></label>
               <label>${esc(t("profileClosingTime"))}<span class="input-suffix"><input name="closing_time" type="number" min="1" max="600" step="any" inputmode="decimal" required ${disabled}><span>s</span></span></label>
             </div>
             ${data.nonlinear ? geometry.geometryFields(t) : ""}
-            <div id="profile-provenance" class="profile-provenance"></div>
+            <details class="profile-meta"><summary>${esc(t("profileProvenance"))}</summary><div id="profile-provenance" class="profile-provenance"></div></details>
             <div class="actions">
-              <button type="button" data-profile-action="update">${esc(t("profileUpdate"))}</button>
-              <button type="button" data-profile-action="shared">${esc(t("profileSharedPreview"))}</button>
+              <button type="button" class="primary" data-profile-action="update">${esc(t("profileUpdate"))}</button>
+              <button type="button" class="primary" data-profile-action="shared">${esc(t("profileSharedPreview"))}</button>
               <button type="button" class="primary" data-profile-action="new" ${disabled}>${esc(t("profileCreate"))}</button>
             </div>
             <div id="profile-impact" class="profile-confirm" hidden aria-live="polite"></div>
-          </div>
-        </details>
-        <details class="profile-details" data-section="advanced" ${open("advanced")}>
-          <summary><span class="profile-details-title">${esc(t("profileSectionAdvanced"))}</span><span class="profile-details-hint">${esc(t("profilePersonalValues"))}</span>${chevron}</summary>
-          <div class="profile-details-body">
-            <fieldset class="profile-section"><legend>${esc(t("profilePersonalValues"))}</legend>
-              <p class="muted">${esc(t("profileOverrideHelp"))}</p>
-              ${["opening", "closing"].map((direction) => {
-                const item = data.configured?.[direction];
-                const own = item?.origin === "override";
-                return `<label class="profile-override"><span class="profile-override-toggle"><input type="checkbox" name="use_${direction}" ${own ? "checked" : ""} ${disabled}> ${esc(t(direction === "opening" ? "profileEffectiveOpening" : "profileEffectiveClosing"))}</span>
-                  <span class="input-suffix"><input name="override_${direction}" aria-label="${esc(t("profilePersonalValues"))}: ${esc(t(direction === "opening" ? "profileEffectiveOpening" : "profileEffectiveClosing"))}" type="number" min="1" max="600" step="any" inputmode="decimal" value="${esc(item?.value ?? data.default_travel_time ?? "")}" ${data.writable && own ? "" : "disabled"}><span>s</span></span></label>`;
-              }).join("")}
-              <button type="button" data-profile-action="overrides" ${disabled}>${esc(t("profileSavePersonal"))}</button>
-            </fieldset>
+            <details class="profile-meta" id="profile-management"><summary>${esc(t("profileMore"))}</summary>
             <p id="profile-usage" class="muted profile-usage"></p>
             <button type="button" id="profile-delete" class="danger"><ha-icon icon="mdi:delete-outline" aria-hidden="true"></ha-icon><span>${esc(t("profileDelete"))}</span></button>
             <div id="profile-delete-confirmation" class="profile-confirm" hidden>
@@ -411,6 +423,23 @@ export class CoverProfileEditor {
                 <button type="button" id="profile-delete-cancel">${esc(t("cancel"))}</button>
               </div>
             </div>
+            </details>
+          </div>
+        </section>
+        <details data-cover-home class="profile-details" data-section="advanced" ${open("advanced")}>
+          <summary><span class="profile-details-title">${esc(t("profileCoverAdvanced"))}</span><span class="profile-details-hint">${esc(t("profilePersonalValues"))}</span>${chevron}</summary>
+          <div class="profile-details-body">
+            <fieldset class="profile-section"><legend>${esc(t("profilePersonalValues"))}</legend>
+              <details class="profile-meta"><summary>${esc(t("profilePersonalHelpTitle"))}</summary><p class="muted">${esc(t("profileOverrideHelp"))}</p></details>
+              ${["opening", "closing"].map((direction) => {
+                const item = data.configured?.[direction];
+                const own = item?.origin === "override";
+                return `<label class="profile-override"><span class="profile-override-toggle"><input type="checkbox" name="use_${direction}" ${own ? "checked" : ""} ${disabled}> ${esc(t(direction === "opening" ? "profileEffectiveOpening" : "profileEffectiveClosing"))}</span>
+                  <span class="input-suffix"><input name="override_${direction}" aria-label="${esc(t("profilePersonalValues"))}: ${esc(t(direction === "opening" ? "profileEffectiveOpening" : "profileEffectiveClosing"))}" type="number" min="1" max="600" step="any" inputmode="decimal" value="${esc(item?.value ?? data.default_travel_time ?? "")}" ${data.writable && own ? "" : "disabled"}><span>s</span></span></label>`;
+              }).join("")}
+              <button type="button" data-profile-action="overrides" ${disabled}>${esc(t("profileSavePersonal"))}</button>
+            </fieldset>
+
           </div>
         </details>
         <p id="profile-error" class="error" role="alert" hidden></p>
@@ -472,7 +501,7 @@ export class CoverProfileEditor {
       geometry.fillGeometry(form, profile, data.writable);
       if (form.elements.reference_travel_cm) form.elements.reference_travel_cm.value = profile?.reference_travel_cm ?? "";
       const scaling = form.querySelector("#profile-unscaled");
-      if (scaling) scaling.textContent = geometry.scalingText(profile, t);
+      if (scaling) scaling.textContent = geometry.scalingText(assigned, t);
       for (const direction of ["opening", "closing"]) {
         form.elements[`${direction}_time`].value = profile?.[`${direction}_time`] ?? profile?.travel_time ?? data.default_travel_time ?? "";
       }
@@ -503,11 +532,58 @@ export class CoverProfileEditor {
       form.querySelector("#profile-delete").focus();
     };
     select();
+    host.querySelector("#profile-change-open").onclick = () => {
+      const choice = host.querySelector("#profile-choice");
+      choice.hidden = !choice.hidden;
+      host.querySelector("#profile-change-open").setAttribute("aria-expanded", String(!choice.hidden));
+      if (choice.hidden) this._sections.delete("assign");
+      else { this._sections.add("assign"); form.elements.profile.focus(); }
+    };
+    host.querySelector("#profile-edit-open").onclick = () => {
+      if (this._stale || !data.writable || !assigned) return;
+      if (form.elements.profile.value !== assigned.id) { form.elements.profile.value = assigned.id; select(); }
+      this._showEditor("edit", true);
+    };
+    host.querySelector("#profile-new-open").disabled = !data.writable;
+    host.querySelector("#profile-new-open").onclick = () => {
+      if (this._stale || !data.writable) return;
+      if (this._lastEditorMode !== "new" || form.elements.profile.value !== "") {
+        form.elements.profile.value = ""; select();
+      }
+      this._showEditor("new", true);
+    };
+    host.querySelector("#profile-editor-back").onclick = () => this._showEditor(null, true);
+    this._showEditor(this._editorMode);
     this._baseline = this._draft();
     form.elements.profile.onchange = select;
     form.onsubmit = (event) => event.preventDefault();
     for (const button of form.querySelectorAll("[data-profile-action]")) button.onclick = () => this._save(button.dataset.profileAction);
     host.querySelector("#profile-reload").onclick = () => this.open(this._context);
+  }
+
+  _showEditor(mode, focus = false) {
+    this._editorMode = mode;
+    if (mode) this._lastEditorMode = mode;
+    const { t } = this._context, form = this.dialog.querySelector("#profile-form");
+    this.dialog.querySelector(".profile-summary").hidden = Boolean(mode);
+    for (const section of form.querySelectorAll("[data-cover-home]")) section.hidden = Boolean(mode);
+    const editor = form.querySelector('[data-section="edit"]');
+    editor.hidden = !mode;
+    form.querySelector("#profile-editor-heading").textContent = t(mode === "new" ? "profileNewManual" : "profileEditAssigned");
+    const profile = this._data.profiles.find((item) => item.id === form.elements.profile.value);
+    form.querySelector("#profile-edit-scope").textContent = mode === "new" ? t("profileNewScope")
+      : `${t("profileSharedScope")} ${usageLabel(profile?.uses ?? 0, t)}.`;
+    // Keep the original mutation checks and preview flow. Only one save intent is visible.
+    form.querySelector('[data-profile-action="new"]').hidden = mode !== "new";
+    form.querySelector('[data-profile-action="update"]').hidden = mode === "new" || !this._data.writable || !profile || profile.id !== this._data.assigned_profile_id || profile.uses > 1;
+    form.querySelector('[data-profile-action="shared"]').hidden = mode === "new" || !this._data.writable || !profile || profile.id !== this._data.assigned_profile_id || profile.uses <= 1;
+    form.querySelector("#profile-management").hidden = mode === "new";
+    if (!mode && this._lastEditorMode === "new") {
+      form.querySelector("#profile-choice").hidden = false;
+      form.querySelector("#profile-change-open").setAttribute("aria-expanded", "true");
+      this._sections.add("assign");
+    }
+    if (focus) this.dialog.querySelector(mode ? "#profile-editor-heading" : this._lastEditorMode === "new" ? "#profile-new-open" : "#profile-edit-open").focus();
   }
 
   _renderImpact(data, message) {
@@ -587,6 +663,8 @@ export class CoverProfileEditor {
         return;
       }
       this._data = data;
+      this._editorMode = null;
+      this._lastEditorMode = null;
       this._render();
       onSaved(action === "delete" ? t("profileDeleted") : data.pending ? t("profilePending") : t("saved"));
     } catch (error) {

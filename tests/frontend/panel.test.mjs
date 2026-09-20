@@ -1033,22 +1033,26 @@ test("profile provenance distinguishes inherited measurements and manual values 
   const opening = root.querySelector('[data-origin-direction="opening"]');
   const closing = root.querySelector('[data-origin-direction="closing"]');
   assert.match(opening.textContent, /Misurata con il wizard guidato/);
-  assert.match(opening.textContent, /Ereditata dal profilo: Kitchen copy/);
+  assert.match(opening.textContent, /Valore ereditato/);
   assert.match(opening.textContent, /<img src=x/);
   assert.equal(root.querySelector("img"), null);
   const formattedDate = new Intl.DateTimeFormat(hass.language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(date));
   assert.ok(opening.textContent.includes(formattedDate));
   assert.match(closing.textContent, /Inserita manualmente/);
-  assert.doesNotMatch(closing.textContent, /Ereditata/);
+  assert.doesNotMatch(closing.textContent, /Valore ereditato/);
   const form = root.querySelector("#profile-form");
   const savedEvidence = opening.textContent;
+  const summaryEvidence = root.querySelector(".profile-summary-evidence").textContent;
+  assert.match(summaryEvidence, /Valore ereditato/);
   change(form.elements.opening_time, "55");
   assert.equal(opening.textContent, savedEvidence);
   change(form.elements.profile, "old");
+  assert.equal(root.querySelector(".profile-summary-evidence").textContent, summaryEvidence);
   const unknown = root.querySelector("#profile-provenance").textContent;
   assert.match(unknown, /Origine non disponibile/);
   assert.doesNotMatch(unknown, /2026|Misurata il|Modificata il/);
   change(form.elements.profile, "");
+  assert.equal(root.querySelector(".profile-summary-evidence").textContent, summaryEvidence);
   assert.match(root.querySelector("#profile-provenance").textContent, /Configurazione YAML \/ predefinita/);
 });
 
@@ -1121,7 +1125,7 @@ test("live profile application updates pending status without replacing an edito
   input.focus();
   panel.hass = { ...hass, states: { ...hass.states, "cover.shutter": { state: "open",
     attributes: { travel_time: 42.5, cover_profile: "Standard", cover_profile_pending: false } } } };
-  assert.equal(root.querySelector("#profile-effective-opening").textContent, "42.5");
+  assert.equal(root.querySelector("#profile-effective-opening").textContent, "42,5");
   assert.equal(root.querySelector("#profile-pending").hidden, true);
   assert.equal(input.value, "My next edit");
   assert.equal(root.activeElement, input);
@@ -1455,7 +1459,7 @@ test("profile-name search keeps WHO 2 navigation visible and association opens t
   change(root.querySelector('#search'), 'Alluminio');
   assert.ok(root.querySelector('[data-action="cover-view"][data-id="devices"]'));
   const card = root.querySelector('.shared-profile-card');
-  card.querySelector('[data-action="toggle-shared-profile"]').click();
+  card.querySelector('[data-profile-part="associations"]').click();
   assert.equal(root.querySelector('.shared-profile-body').hidden, false);
   root.querySelector('.shared-profile-card [data-action="cover-profile"]').click(); await tick();
   assert.ok(root.querySelector('.cover-profile-dialog'));
@@ -1466,8 +1470,8 @@ test("profile-name search keeps WHO 2 navigation visible and association opens t
 test("inventory refresh keeps the expanded profile and keyboard focus and scopes reads after gateway changes", async () => {
   const { root, panel, data, reads } = await mountSharedProfiles();
   root.querySelector('[data-action="cover-view"][data-id="profiles"]').click(); await tick();
-  root.querySelector('[data-action="toggle-shared-profile"]').click();
-  root.querySelector('[data-action="toggle-shared-profile"]').focus();
+  root.querySelector('[data-profile-part="associations"]').click();
+  root.querySelector('[data-profile-part="associations"]').focus();
   data.gateways[0].connected = false;
   await panel._refresh(); await tick();
   assert.equal(root.activeElement.dataset.action, 'toggle-shared-profile');
@@ -1501,7 +1505,7 @@ test("profile-card actions open the gateway editor and protect associated profil
     return original(message);
   };
   root.querySelector('[data-action="cover-view"][data-id="profiles"]').click(); await tick();
-  root.querySelector('[data-action="toggle-shared-profile"]').click();
+  root.querySelector('[data-profile-part="associations"]').click();
   assert.equal(root.querySelector('[data-operation="delete"]').disabled, true);
   root.querySelector('[data-operation="edit"]').click(); await tick();
   assert.equal(root.querySelector('#catalogue-form [name="opening_time"]').value, '35');
@@ -1519,7 +1523,7 @@ test("profile-card actions open the gateway editor and protect associated profil
 test("profile assignment action uses the existing modal and includes inventory addresses", async () => {
   const { root } = await mountSharedProfiles();
   root.querySelector('[data-action="cover-view"][data-id="profiles"]').click(); await tick();
-  root.querySelector('[data-action="toggle-shared-profile"]').click();
+  root.querySelector('[data-profile-part="associations"]').click();
   root.querySelector('[data-operation="assign"]').click(); await tick();
   assert.ok(root.querySelector('#catalogue-form [name="assignment"]'));
   assert.match(root.querySelector('#catalogue-body').textContent, /Indirizzo/);

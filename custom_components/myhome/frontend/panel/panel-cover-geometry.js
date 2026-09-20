@@ -10,7 +10,7 @@ export function scalingText(profile, t) {
 
 export function geometryFields(t) {
   return `<div class="profile-geometry"><label>${esc(t("profileMotionModel"))}<select name="motion_model"><option value="linear_time">${esc(t("profileModel_linear_time"))}</option><option value="slat_roll">${esc(t("profileModel_slat_roll"))}</option></select></label>
-    <p class="muted">${esc(t("profileGeometryHelp"))}</p><div data-geometry-fields class="profile-times" hidden>${geometryKeys.map((key) => `<label>${esc(t(`profileGeometry_${key}`))}<input name="${key}" type="number" required min="${key === "slat_time_s" ? 0 : 1}" max="${key === "slat_time_s" ? 600 : 5}" step="any" inputmode="decimal" disabled></label>`).join("")}</div></div>`;
+    <details class="profile-meta"><summary>${esc(t("profileMeasurementOptions"))}</summary><p class="muted">${esc(t("profileGeometryHelp"))}</p></details><div data-geometry-fields class="profile-times" hidden>${geometryKeys.map((key) => `<label>${esc(t(`profileGeometry_${key}`))}<input name="${key}" type="number" required min="${key === "slat_time_s" ? 0 : 1}" max="${key === "slat_time_s" ? 600 : 5}" step="any" inputmode="decimal" disabled></label>`).join("")}</div></div>`;
 }
 
 export function geometryControls(form, writable = true) {

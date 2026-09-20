@@ -12,7 +12,7 @@ const deferred = () => { let resolve; const promise = new Promise((done) => { re
 const t = (key) => translations.it[key] || translations.en[key] || key;
 const instances = [];
 
-test("profile list distinguishes reference travel, cover travel and per-direction effective scaling", async () => {
+test("catalogue keeps reference travel in profile details and cover-specific settings in the cover editor", async () => {
   const data = overview();
   data.profiles[0].reference_travel_cm = 200;
   data.covers[0].travel_cm = 150;
@@ -21,9 +21,9 @@ test("profile list distinguishes reference travel, cover travel and per-directio
   const { host } = await mount({ read: () => data });
   const card = host.querySelector('[data-profile="shared"]');
   assert.match(card.textContent, /riferimento del profilo \(cm\): 200 cm/);
-  assert.match(card.textContent, /questa tapparella \(cm\): 150 cm/);
-  assert.match(card.textContent, /adattati alla corsa/);
-  assert.match(card.textContent, /personale/);
+  assert.equal(card.querySelector(".shared-profile-details").hidden, true);
+  assert.doesNotMatch(card.querySelector(".shared-profile-summary").textContent, /200 cm|150 cm|adattati alla corsa/);
+  assert.match(card.querySelector(".shared-profile-body").textContent, /Valori personali/);
 });
 
 function overview(entry_id = "one") {
@@ -66,24 +66,41 @@ after(() => dom.window.close());
 test("cards start collapsed and show complete associations, effective times, evidence and pending overrides", async () => {
   const { host, view, calls } = await mount();
   assert.deepEqual(calls, [{ type: "myhome/cover_profiles/overview", entry_id: "one" }]);
-  assert.equal(host.querySelectorAll('.shared-profile-card [aria-expanded="false"]').length, 2);
+  assert.equal(host.querySelectorAll('.shared-profile-card [data-profile-part="details"][aria-expanded="false"]').length, 2);
   const summary = host.querySelector('[data-profile="shared"] header');
-  assert.match(summary.textContent, /Alluminio.*20 s.*30 s.*3 tapparelle/s);
+  assert.match(summary.textContent, /Alluminio.*3 tapparelle/s);
+  const compact = host.querySelector('[data-profile="shared"] .shared-profile-summary');
+  assert.equal(compact.closest("[hidden]"), null);
+  assert.match(compact.textContent, /20 s.*30 s/s);
+  assert.doesNotMatch(compact.textContent, /Misurata|17 set 2026/);
   expand(view);
   const card = host.querySelector('[data-profile="shared"]');
   assert.equal(card.querySelector(".shared-profile-body").hidden, false);
   assert.equal(card.querySelectorAll(".shared-profile-follower").length, 3);
   assert.match(card.textContent, /A: 1 PL: 1/);
-  assert.match(card.textContent, /Segue il profilo/);
-  assert.match(card.textContent, /Valori personali.*Solo apertura/s);
-  assert.match(card.textContent, /15 s.*25 s/s);
-  assert.match(card.textContent, /12 \/ 30 s/);
+  assert.match(card.textContent, /Valori personali.*Apertura/s);
+  assert.match(card.textContent, /sarà applicato/);
   assert.match(card.textContent, /Cucina/);
   assert.match(card.textContent, /17 set 2026/);
   assert.equal(card.querySelectorAll('[data-action="cover-profile"]').length, 2);
   expand(view, "one", "unused");
-  assert.match(host.querySelector('[data-profile="unused"]').textContent, /Nessuna tapparella associata/);
+  assert.match(host.querySelector('[data-profile="unused"]').textContent, /Non utilizzato/);
   assert.equal(host.querySelector('[data-action="calibrate"]'), null);
+});
+
+test("collapsed profiles expose permitted management actions without enabling deletion of used profiles", async () => {
+  const data = overview();
+  data.capabilities = { profile_management: true, profile_assignment: true };
+  const { host } = await mount({ read: () => data });
+  const card = host.querySelector('[data-profile="shared"]');
+  assert.equal(card.querySelector(".shared-profile-body").hidden, true);
+  for (const action of ["assign", "edit", "duplicate", "delete"]) {
+    const button = card.querySelector(`[data-operation="${action}"]`);
+    assert.ok(button);
+    assert.equal(Boolean(button.closest("[hidden]")), ["duplicate", "delete"].includes(action));
+    assert.equal(button.disabled, action === "delete");
+  }
+  assert.equal(host.querySelector('[data-profile="unused"] [data-operation="delete"]').disabled, false);
 });
 
 test("search matches profile names, native cover names and A-PL; matching profiles keep every association", async () => {
@@ -110,7 +127,7 @@ test("same profile ID on two gateways keeps independent expansion and associatio
   assert.equal(calls.length, 2);
   expand(view);
   assert.equal(host.querySelector('.shared-profile-card[data-entry="one"] .shared-profile-body').hidden, false);
-  assert.equal(host.querySelector('.shared-profile-card[data-entry="two"] .shared-profile-body').hidden, true);
+  assert.equal(host.querySelector('.shared-profile-card[data-entry="two"] .shared-profile-body'), null);
   assert.equal(host.querySelector('.shared-profile-card[data-entry="two"] [data-action="cover-profile"]'), null);
   assert.match(host.textContent, /Casa.*Garage/s);
 });
@@ -183,7 +200,7 @@ test("HTML from profiles, names and provenance is escaped; unknown and advanced 
   assert.equal(host.querySelector('img,script'), null);
   assert.match(host.textContent, /<img src=x/);
   assert.match(host.textContent, /Data non disponibile/);
-  assert.match(host.textContent, /— s/);
+  assert.doesNotMatch(host.querySelector(".shared-profile-body").textContent, /\d+ s/);
 });
 
 test("hidden tabs skip refresh and failed event subscriptions still allow visible refresh", async () => {
@@ -198,4 +215,39 @@ test("wrong-gateway responses are rejected rather than shown under another gatew
   const { host } = await mount({ read: () => overview("two") });
   assert.equal(host.querySelector('.shared-profile-card'), null);
   assert.match(host.textContent, /Impossibile aggiornare/);
+});
+
+test("profile associations, technical details and more actions expand independently", async () => {
+  const data = overview(); data.capabilities = { profile_management: true, profile_assignment: true };
+  const { host, view } = await mount({ read: () => data });
+  const card = () => host.querySelector('[data-profile="shared"]');
+  view.toggle(JSON.stringify(['one', 'shared', 'details']));
+  assert.equal(card().querySelector('.shared-profile-details').hidden, false);
+  assert.equal(card().querySelector('.shared-profile-body').hidden, true);
+  assert.equal(card().querySelector('.profile-overflow').hidden, true);
+  expand(view);
+  assert.equal(card().querySelector('.shared-profile-body').hidden, false);
+  assert.equal(card().querySelector('.shared-profile-details').hidden, false);
+  view.toggle(JSON.stringify(['one', 'shared', 'menu']));
+  assert.equal(card().querySelector('.profile-overflow').hidden, false);
+  assert.equal(host.querySelector('[data-profile="unused"] [data-profile-part="associations"]'), null);
+  assert.equal(host.querySelector('[data-profile="unused"] .shared-profile-body'), null);
+});
+
+test("catalogue export downloads authoritative gateway data and ignores late responses after leaving", async () => {
+  const downloads = [], originalClick = dom.window.HTMLAnchorElement.prototype.click;
+  dom.window.HTMLAnchorElement.prototype.click = function () { downloads.push({ href: this.href, name: this.download }); };
+  try {
+    const bundle = { revision: 8, profiles: [{ id: 'saved', opening_time: 23.5 }] };
+    const { view, calls } = await mount({ read: request => request.type.endsWith('/export') ? bundle : overview() });
+    await view.exportProfiles('one');
+    assert.equal(downloads.length, 1);
+    assert.equal(downloads[0].name, 'myhome-calibration-one-r8.json');
+    assert.deepEqual(await (await fetch(downloads[0].href)).json(), bundle);
+    assert.deepEqual(calls.at(-1), { type: 'myhome/cover_profiles/export', entry_id: 'one' });
+    const waiting = deferred();
+    const late = await mount({ read: request => request.type.endsWith('/export') ? waiting.promise : overview() });
+    const pending = late.view.exportProfiles('one'); late.view.clear(); waiting.resolve(bundle); await pending;
+    assert.equal(downloads.length, 1);
+  } finally { dom.window.HTMLAnchorElement.prototype.click = originalClick; }
 });

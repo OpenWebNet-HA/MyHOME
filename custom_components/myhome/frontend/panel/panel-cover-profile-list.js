@@ -5,6 +5,7 @@ const [{ escapeHtml: esc, replacePreservingFocus }, model] = await Promise.all([
 ]);
 
 const geometry = await import(asset("panel-cover-geometry.js"));
+const { duration, usageLabel } = await import(asset("panel-profile-presentation.js"));
 
 export class CoverProfileList {
   constructor() { this._generation = 0; this._expanded = new Set(); this._unsubs = []; this._rows = new Map(); }
@@ -13,6 +14,7 @@ export class CoverProfileList {
     this._generation++;
     for (const unsubscribe of this._unsubs.splice(0)) Promise.resolve(unsubscribe()).catch(() => {});
     this._rows.clear();
+    this._exportMessage = "";
     this._context = null;
     this._key = null;
   }
@@ -114,8 +116,8 @@ export class CoverProfileList {
         try { date = new Intl.DateTimeFormat(hass.language || "en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(evidence.recorded_at)); }
         catch { date = new Date(evidence.recorded_at).toISOString(); }
       }
-      return `<div><strong>${esc(t(direction === "opening" ? "profileOpeningTime" : "profileClosingTime"))}</strong>
-        <p class="muted">${esc(t(`profileSource_${source}`))} · ${esc(date)}</p>
+      return `<div><strong>${esc(t(direction === "opening" ? "calStepOpening" : "calStepClosing"))}</strong>
+        <p class="muted">${esc(t(`profileSource_${source}`))}${evidence?.inherited ? ` · ${esc(t("profileEvidenceInherited"))}` : ""} · ${esc(date)}</p>
         <p class="muted">${esc(evidence?.origin_name || evidence?.origin_entity_id || t(source === "manual" && !evidence?.inherited ? "catalogueManualOrigin" : "profileOriginUnknown"))}</p></div>`;
     }).join("")}</div>`;
   }
@@ -129,42 +131,76 @@ export class CoverProfileList {
       ${entity ? `<button type="button" data-action="cover-profile" data-id="${esc(id)}">${esc(t("profileManageCover"))}</button>` : ""}</div>
       ${entity ? addressDetails(entity) : `<p class="muted">${esc(id)}</p>`}
       ${!cover.available ? `<span class="badge offline">${esc(t("unavailable"))}</span>` : ""}
-      ${cover.advanced ? `<p class="muted">${esc(t("profileError_advanced_cover"))}</p>` : `
-        <p class="muted">${geometry.geometrySummary(cover.effective, t, cover.position_known)}</p>
-        <p class="muted">${esc(t("profileEffectiveTimes"))}: ${esc(t("profileOpeningTime"))} ${esc(cover.effective?.opening?.value ?? "—")} s · ${esc(t("profileClosingTime"))} ${esc(cover.effective?.closing?.value ?? "—")} s</p>
-        ${"travel_cm" in cover ? `<p class="muted">${esc(t("profileCoverTravel"))}: ${esc(cover.travel_cm ?? "—")} cm · ${["opening", "closing"].map((direction) => `${esc(t(direction === "opening" ? "calOnlyOpening" : "calOnlyClosing"))}: ${esc(t(cover.effective?.[direction]?.origin === "override" ? "profilePersonalValue" : cover.effective?.[direction]?.scaled ? "profileScaled" : "profileNotScaled"))}`).join(" · ")}</p>` : ""}
-        <p class="${personal.length ? "notice" : "muted"}">${esc(personal.length
-          ? `${t("profilePersonalDirections")}: ${personal.map((direction) => t(direction === "opening" ? "calOnlyOpening" : "calOnlyClosing")).join(", ")}` : t("profileFollowsAll"))}</p>
-        ${cover.pending ? `<p class="profile-pending">${esc(t("profilePending"))} · ${esc(t("profileConfiguredTimes"))}: ${esc(cover.configured?.opening?.value ?? "—")} / ${esc(cover.configured?.closing?.value ?? "—")} s</p>` : ""}`}
+      ${personal.length ? `<p class="muted">${esc(t("profilePersonalDirections"))}: ${personal.map((direction) => esc(t(direction === "opening" ? "calStepOpening" : "calStepClosing"))).join(", ")}</p>` : ""}
+      ${cover.pending ? `<p class="profile-pending">${esc(t("profilePending"))}</p>` : ""}
     </li>`;
   }
 
   _card(entry, profile, followers) {
-    const { t } = this._context;
+    const { t, hass } = this._context;
     const key = JSON.stringify([entry.entry_id, profile.id]);
-    const expanded = this._expanded.has(key);
+    const detailsKey = JSON.stringify([entry.entry_id, profile.id, "details"]);
+    const menuKey = JSON.stringify([entry.entry_id, profile.id, "menu"]);
     const id = `shared-profile-${encodeURIComponent(key)}`;
+    const count = profile.assigned_to.length;
+    const capabilities = this._rows.get(entry.entry_id).data.capabilities;
+    const toggle = (stateKey, targetId, label, icon = "mdi:chevron-down") => `<button type="button" class="ghost" data-action="toggle-shared-profile" data-profile-part="${stateKey === key ? "associations" : stateKey === detailsKey ? "details" : "menu"}" data-group="${esc(stateKey)}" aria-expanded="${this._expanded.has(stateKey)}" aria-controls="${esc(targetId)}"><span>${esc(label)}</span><ha-icon icon="${icon}" aria-hidden="true"></ha-icon></button>`;
+    const action = (operation, label, icon = "") => `<button type="button" class="${operation === "assign" ? "primary" : operation === "edit" ? "icon-button" : "ghost"}" data-action="manage-profile" data-id="${esc(profile.id)}" data-operation="${operation}" data-entry="${esc(entry.entry_id)}" ${operation === "delete" && count ? `disabled title="${esc(t("profileDeleteHelp"))}"` : `title="${esc(label)}"`} aria-label="${esc(label)}">${icon ? `<ha-icon icon="${icon}" aria-hidden="true"></ha-icon>` : esc(label)}</button>`;
     return `<section class="device-group shared-profile-card" data-entry="${esc(entry.entry_id)}" data-profile="${esc(profile.id)}">
-      <header class="device-group-header"><button type="button" class="device-group-title" data-action="toggle-shared-profile" data-group="${esc(key)}" aria-expanded="${expanded}" aria-controls="${esc(id)}">
-        <ha-icon class="device-chevron" icon="mdi:chevron-down" aria-hidden="true"></ha-icon><span class="device-label"><span class="device-name">${esc(profile.name)}</span>
-        <span class="shared-profile-times muted">${esc(t("profileOpeningTime"))}: ${esc(profile.opening_time)} s · ${esc(t("profileClosingTime"))}: ${esc(profile.closing_time)} s</span></span>
-        <span class="count">${profile.assigned_to.length} ${esc(t("profileAssociatedCovers"))}</span></button></header>
-      <div id="${esc(id)}" class="entity-list shared-profile-body" ${expanded ? "" : "hidden"}>
-        ${this._rows.get(entry.entry_id).data.capabilities?.profile_management ? `<div class="actions catalogue-actions">
-          ${[...(this._rows.get(entry.entry_id).data.capabilities?.profile_assignment ? ["assign"] : []), "edit", "duplicate", "delete"].map((action) => `<button type="button" data-action="manage-profile" data-id="${esc(profile.id)}" data-operation="${action}" data-entry="${esc(entry.entry_id)}" ${action === "delete" && profile.assigned_to.length ? `disabled title="${esc(t("profileDeleteHelp"))}"` : ""}>${esc(t(action === "assign" ? "catalogueAssign" : action === "edit" ? "edit" : action === "duplicate" ? "catalogueDuplicate" : "catalogueDelete"))}</button>`).join("")}
+      <header class="shared-profile-heading"><strong class="device-name">${esc(profile.name)}</strong>
+        <span class="count">${count ? esc(usageLabel(count, t)) : esc(t("profileUnusedShort"))}</span></header>
+      <div class="shared-profile-summary">
+        <p class="profile-times-inline"><span><ha-icon icon="mdi:arrow-up" aria-hidden="true"></ha-icon><span class="muted">${esc(t("calStepOpening"))}</span> <strong>${esc(duration(profile.opening_time ?? profile.travel_time, hass.language))} s</strong></span>
+          <span><ha-icon icon="mdi:arrow-down" aria-hidden="true"></ha-icon><span class="muted">${esc(t("calStepClosing"))}</span> <strong>${esc(duration(profile.closing_time ?? profile.travel_time, hass.language))} s</strong></span></p>
+        ${capabilities?.profile_management ? `<div class="actions catalogue-actions">
+          ${capabilities.profile_assignment ? action("assign", t("catalogueAssign")) : ""}${action("edit", t("edit"), "mdi:pencil-outline")}
+          ${toggle(menuKey, `${id}-menu`, t("profileMore"), "mdi:dots-vertical")}
+        </div><div class="profile-overflow" id="${esc(id)}-menu" ${this._expanded.has(menuKey) ? "" : "hidden"}>
+          ${action("duplicate", t("catalogueDuplicate"))}
+          <button type="button" class="ghost" data-action="export-profiles" data-entry="${esc(entry.entry_id)}">${esc(t("profileExportGateway"))}</button>
+          ${action("delete", t("catalogueDelete"))}
+          ${count ? `<p class="muted">${esc(t("profileDeleteHelp"))}</p>` : ""}
         </div>` : ""}
+        <div class="profile-disclosures">
+          ${count ? toggle(key, id, `${t("profileAssociations")} (${count})`) : ""}
+          ${toggle(detailsKey, `${id}-details`, t("profileTechnicalDetails"))}
+        </div>
+      </div>
+      ${count ? `<div id="${esc(id)}" class="entity-list shared-profile-body" ${this._expanded.has(key) ? "" : "hidden"}>
+        <ul class="shared-profile-followers">${followers.map((item) => this._follower(item)).join("")}</ul></div>` : ""}
+      <div id="${esc(id)}-details" class="shared-profile-details" ${this._expanded.has(detailsKey) ? "" : "hidden"}>
         ${this._provenance(profile)}
         ${profile.geometry ? `<p class="muted">${geometry.geometrySummary(Object.fromEntries(Object.entries(profile.geometry).map(([key, value]) => [key, { value }])), t)}</p>` : ""}
-        ${"reference_travel_cm" in profile ? `<p class="muted">${esc(t("profileReferenceTravel"))}: ${esc(profile.reference_travel_cm ?? "—")} cm. ${esc(geometry.scalingText(profile, t))}</p>` : ""}
-        ${followers.length ? `<ul class="shared-profile-followers">${followers.map((item) => this._follower(item)).join("")}</ul>`
-          : `<p class="muted">${esc(t("profileListUnused"))}</p>`}
+        ${profile.reference_travel_cm != null ? `<p class="muted">${esc(t("profileReferenceTravel"))}: ${esc(duration(profile.reference_travel_cm, hass.language))} cm</p>` : ""}
       </div></section>`;
+  }
+
+  async exportProfiles(entryId) {
+    if (!this._context || !this._rows.get(entryId)?.data || this._exporting === this._generation) return;
+    const generation = this._generation, { hass, t } = this._context;
+    this._exporting = generation;
+    this._exportMessage = t("profileExporting"); this._render();
+    try {
+      const data = await hass.callWS({ type: "myhome/cover_profiles/export", entry_id: entryId });
+      if (!this._current(generation)) return;
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2) + "\n"], { type: "application/json" }));
+      const link = document.createElement("a");
+      try {
+        link.href = url; link.download = `myhome-calibration-${entryId.replace(/[^a-zA-Z0-9_-]/g, "_")}-r${data.revision}.json`;
+        document.body.append(link); link.click();
+      } finally { link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+      this._exportMessage = t("profileExported");
+    } catch { if (this._current(generation)) this._exportMessage = t("profileExportError"); }
+    finally {
+      if (this._exporting === generation) this._exporting = null;
+      if (this._current(generation)) this._render();
+    }
   }
 
   _render() {
     if (!this._context?.host.isConnected) return;
     const { host, gateways, inventory, filters, t } = this._context;
-    const html = `<p class="muted">${esc(t("profileListHelp"))}</p>
+    const html = `<p class="muted">${esc(t("profileListHelp"))}</p><p class="muted" role="status">${esc(this._exportMessage || "")}</p>
       ${filters.query || filters.area || filters.category ? `<p class="muted">${esc(t("profileListFilterHelp"))}</p>` : ""}
       ${gateways.map((entry) => {
         const row = this._rows.get(entry.entry_id);

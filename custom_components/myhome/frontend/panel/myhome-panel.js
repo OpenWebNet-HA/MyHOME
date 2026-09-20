@@ -627,6 +627,8 @@ class MyHomePanel extends HTMLElement {
       this._renderContent();
     } else if (target.dataset.action === "toggle-shared-profile") {
       this._profileList.toggle(target.dataset.group);
+    } else if (target.dataset.action === "export-profiles") {
+      this._profileList.exportProfiles(target.dataset.entry);
     } else if (target.dataset.action === "refresh-profiles") {
       this._profileList.refresh();
     } else if (target.dataset.action === "toggle-device") {
