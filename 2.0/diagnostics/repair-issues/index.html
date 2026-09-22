@@ -2313,7 +2313,7 @@
 <strong>Severity</strong>: <code>WARNING</code><br />
 <strong>Auto-Resolving</strong>: Yes</p>
 <h3 id="what-it-means_1">What it means<a class="headerlink" href="#what-it-means_1" title="Permanent link">&para;</a></h3>
-<p>The gateway reported a hardware device type code on WHO=13 dimension 15 (<code>*#13**15*&lt;code&gt;##</code>) that is unrecognized by both the official BTicino specification and known field data.</p>
+<p>The gateway reported a hardware model code that is unrecognized by the official BTicino specification, by this project's field evidence and by the third-party table taken from Nmap: either a WHO=13 dimension 15 device type (<code>*#13**15*&lt;code&gt;##</code>, shown as the bare code) or a WHO=1013 dimension 1 OBJECT_MODEL (<code>*#1013**1*&lt;code&gt;##</code>, shown as <code>1013-1-&lt;code&gt;</code>; this question is only asked after WHO=13 answered a code shared by several models).</p>
 <h3 id="how-to-resolve_1">How to resolve<a class="headerlink" href="#how-to-resolve_1" title="Permanent link">&para;</a></h3>
 <p>Click <strong>Learn More</strong> on the repair issue. This will open a pre-filled GitHub issue template (<code>device_request.yml</code>). Attach an exported diagnostic trace (<em>Settings → Devices &amp; Services → MyHOME → ⋮ → Download diagnostics</em>) so the community can identify the hardware and add native profiling support.</p>
 <hr />
@@ -2322,7 +2322,7 @@
 <strong>Severity</strong>: <code>WARNING</code><br />
 <strong>Auto-Resolving</strong>: Yes</p>
 <h3 id="what-it-means_2">What it means<a class="headerlink" href="#what-it-means_2" title="Permanent link">&para;</a></h3>
-<p>The hardware model reported by the gateway over the bus contradicts the model you selected in the configuration flow or discovered over SSDP, and the evidence is not conclusive enough for the integration to safely overwrite your setting.</p>
+<p>The hardware model reported by the gateway over the bus — a WHO=13 device type, or a WHO=1013 OBJECT_MODEL (code <code>1013-1-&lt;value&gt;</code>) when WHO=13 answered a shared code — contradicts the model discovered over SSDP or fixed by the serial transport, or a manual choice questioned by field evidence only, and the integration does not overwrite what the device itself announced.</p>
 <h3 id="how-to-resolve_2">How to resolve<a class="headerlink" href="#how-to-resolve_2" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Check the physical hardware label on your gateway unit in the electrical cabinet.</li>
@@ -2335,7 +2335,7 @@
 <strong>Severity</strong>: <code>WARNING</code><br />
 <strong>Auto-Resolving</strong>: Informational</p>
 <h3 id="what-it-means_3">What it means<a class="headerlink" href="#what-it-means_3" title="Permanent link">&para;</a></h3>
-<p>A manually selected model was contradicted by an authoritative, official 2006 BTicino device code (e.g. you selected <code>F454</code> but the gateway reported code <code>6</code>, which is an <code>F452</code>). The integration automatically updated your gateway profile and device registry to match the official hardware code.</p>
+<p>A manually selected model was contradicted by an authoritative code: an official 2006 BTicino device code (e.g. you selected <code>F454</code> but the gateway reported code <code>6</code>, which is an <code>F452</code>), or a WHO=1013 OBJECT_MODEL (e.g. you selected <code>F454</code>, WHO=13 answered the shared code <code>200</code>, and WHO=1013 answered <code>67</code>, which is a <code>MyHomeServer1</code>; shown as <code>1013-1-67</code>). The integration automatically updated your gateway profile and device registry to match.</p>
 <h3 id="how-to-resolve_3">How to resolve<a class="headerlink" href="#how-to-resolve_3" title="Permanent link">&para;</a></h3>
 <p>No action is required unless the correction was incorrect. If your physical hardware truly differs, verify the model label on the device.</p>
 <hr />
