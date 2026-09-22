@@ -826,6 +826,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Step 2 — WHO=1013 dimension 1 (OBJECT_MODEL) settles a shared code">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#one-product-two-brand-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One product, two brand names
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -849,6 +866,17 @@
     <span class="md-ellipsis">
       
         The rule the integration applies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-device-page-shows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the device page shows
       
     </span>
   </a>
@@ -1922,6 +1950,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Step 2 — WHO=1013 dimension 1 (OBJECT_MODEL) settles a shared code">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#one-product-two-brand-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One product, two brand names
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -1945,6 +1990,17 @@
     <span class="md-ellipsis">
       
         The rule the integration applies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-device-page-shows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the device page shows
       
     </span>
   </a>
@@ -2200,7 +2256,15 @@
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>         │   └─────── N_CONF = 15
 </span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>         └─────────── OBJECT_MODEL
 </span></code></pre></div>
-<p>Every gateway traced so far answers the same <code>*15*5*0</code>. <code>N_CONF</code> 15 lies outside the ordinary <code>0..12</code> physical-configurator range and looks like the <code>0xF</code> sentinel, so its gateway-specific meaning stays unresolved. None of the three trailing values identifies the model, so only <code>OBJECT_MODEL</code> is read; <code>BRAND</code> and <code>LINE</code> are metadata a later change could surface. Note that the same SKU does not necessarily answer matching codes in the two families: an F454 is <code>51</code> here but <code>200</code> (or <code>51</code> on 1.x firmware) on <code>WHO=13</code>. The two tables are therefore kept apart, and the <code>WHO=1013</code> one is consulted only after a shared <code>WHO=13</code> code.</p>
+<p>Every gateway traced so far answers the same <code>*15*5*0</code>. <code>N_CONF</code> 15 lies outside the ordinary <code>0..12</code> physical-configurator range and looks like the <code>0xF</code> sentinel, so its gateway-specific meaning stays unresolved. Only <code>OBJECT_MODEL</code> decides the identity; <code>N_CONF</code>, <code>BRAND</code> and <code>LINE</code> are recorded and travel in diagnostics. Note that the same product does not necessarily answer matching codes in the two families: an F454 is <code>51</code> here but <code>200</code> (or <code>51</code> on 1.x firmware) on <code>WHO=13</code>. The two tables are therefore kept apart, and the <code>WHO=1013</code> one is consulted only after a shared <code>WHO=13</code> code.</p>
+<h4 id="one-product-two-brand-names">One product, two brand names<a class="headerlink" href="#one-product-two-brand-names" title="Permanent link">&para;</a></h4>
+<p>Some catalogue entries carry more than one name — <code>51</code> is <code>F454</code> <em>and</em> <code>003598</code>. These are <strong>not</strong> order codes or sub-models: BTicino sold the device as F454, Legrand sold the same hardware as 003598, and nowadays Legrand mostly uses the BTicino names (<a href="https://github.com/OpenWebNet-HA/MyHOME/pull/420">@anotherjulien</a>). The integration therefore:</p>
+<ul>
+<li>always <strong>displays</strong> the BTicino name, and never treats the other as a separate model;</li>
+<li>still <strong>accepts</strong> the other name, so a gateway announcing <code>003598</code> over SSDP is corroborated by OBJECT_MODEL <code>51</code> rather than flagged as a mismatch;</li>
+<li>lists the alternatives in diagnostics as <code>who1013_other_names</code>, so an owner whose box says <code>003598</code> can see why their device page says <code>F454</code>.</li>
+</ul>
+<p>In principle the <code>BRAND</code> field could choose which name to show. It cannot today: the only value ever traced is <code>5</code>, <em>"Legrand BTicino"</em>, which covers both houses.</p>
 <p>Two safeguards keep this off legacy hardware and out of your logs:</p>
 <ul>
 <li><strong>A legacy gateway never gets the question.</strong> An MH200 answers <code>4</code> on <code>WHO=13</code>, which is unambiguous, so the <code>WHO=1013</code> request is never queued (verified on a physical MH200; there is a regression test for it). Only gateways that answer a shared code are asked, and those are all modern Linux gateways that implement <code>WHO=1013</code>.</li>
@@ -2210,6 +2274,7 @@
 <h3 id="how-the-verdict-is-reached">How the verdict is reached<a class="headerlink" href="#how-the-verdict-is-reached" title="Permanent link">&para;</a></h3>
 <p>Each source is recorded separately — what you picked, what the gateway announced, the <code>WHO=13</code> code, the <code>WHO=1013</code> code — and one pure function (<code>resolve_gateway_identity</code> in <code>identity.py</code>) turns all of it into the effective model plus its corroboration or conflict state. The handlers only answer <em>"what did I observe?"</em>; a single resolver answers <em>"what should the integration believe?"</em>. Because the same evidence always yields the same verdict, a repeated broadcast can neither repeat a correction nor flap a repair issue.</p>
 <blockquote>
+<p><strong>Hardware version is deliberately not requested.</strong> Nmap's table calls <code>WHO=13</code> dimension 17 "Hardware Version", and it is documented as such for the <strong>Zigbee</strong> part of OpenWebNet, with the same three-digit <code>V.r.b</code> shape as the firmware version. It has never been canonically described for non-Zigbee OpenWebNet (<a href="https://github.com/OpenWebNet-HA/MyHOME/pull/420">@anotherjulien</a>) — it is probably the same thing, but "probably" is not evidence, so the integration neither asks for it nor fills the device page's <code>hw_version</code> from it.</p>
 <p><strong>The two families are separate number spaces.</strong> They are not two spellings of the same identifier, and the same model carries different numbers in each: an F453 is <code>42</code> for <code>WHO=1013</code> but <code>16</code> for Nmap's <code>WHO=13</code> table, and an H4684 is <code>29</code> against <code>13</code> (2006) or <code>23</code> (Nmap). Several values <em>do</em> coincide — <code>4</code>, <code>12</code>, <code>44</code>, <code>51</code> — which is precisely why the tables are kept apart instead of merged on the ones that agree; a test pins both the overlaps and the clashes.</p>
 <p><strong>Status of the evidence.</strong> Four gateways are verified on real hardware, each with a fixture the test suite replays: the <strong>MH200</strong> answers <code>4</code> and is never asked (<code>mh200_physical_plant</code>), and the <strong>F454</strong>, <strong>MH202</strong> and <strong>MyHomeServer1</strong> answer the shared <code>200</code> and then <code>51</code>, <code>5</code> and <code>67</code> (<code>pr_420_f454</code>, <code>pr_420_mh202</code>, <code>pr_420_myhomeserver1</code>, contributed in #420). Still untraced: the <strong>F461</strong> (reported to answer <code>200</code>), the claim that a 1.x <strong>F454</strong> answers <code>51</code> on <code>WHO=13</code>, and every other code in the catalogue. If you own one of those, the <code>who1013_code</code> field in your diagnostics download (below) is the evidence we are missing — please attach it to an issue.</p>
 </blockquote>
@@ -2262,6 +2327,39 @@
 </ul>
 <p>Neither issue is raised twice for the same finding, and a mismatch issue is withdrawn automatically if the gateway later reports a code that no longer contradicts.</p>
 <hr />
+<h2 id="what-the-device-page-shows">What the device page shows<a class="headerlink" href="#what-the-device-page-shows" title="Permanent link">&para;</a></h2>
+<p><em>Settings → Devices &amp; services → MyHOME → the gateway device:</em></p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">field</th>
+<th style="text-align: left;">where it comes from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>Model</strong></td>
+<td style="text-align: left;">the resolved identity — SSDP or your choice, corrected or labelled by <code>WHO=13</code> / <code>WHO=1013</code> as described above. Always the BTicino name.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Model ID</strong></td>
+<td style="text-align: left;">the <code>OBJECT_MODEL</code> number from <code>WHO=1013</code> (<code>51</code> for an F454). The only model identifier the gateway ever states about itself; absent until the gateway answers, which only happens when <code>WHO=13</code> returned a shared code.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Firmware</strong></td>
+<td style="text-align: left;"><code>WHO=13</code> dimension 16.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Serial number</strong></td>
+<td style="text-align: left;">the gateway's serial as reported by the connection (the MAC for TCP gateways).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Manufacturer</strong></td>
+<td style="text-align: left;">the entry's manufacturer, normally <code>BTicino S.p.A.</code>. Not taken from the <code>BRAND</code> field, which does not distinguish the two houses.</td>
+</tr>
+</tbody>
+</table>
+<p><code>N_CONF</code>, <code>BRAND</code>, <code>LINE</code> and the alternative brand name are <strong>not</strong> on the device page — none of them identifies the hardware, and brand only repeats the manufacturer. They are in the diagnostics download instead.</p>
 <h2 id="check-it-yourself">Check it yourself<a class="headerlink" href="#check-it-yourself" title="Permanent link">&para;</a></h2>
 <p>Every diagnostics download (<em>Settings → Devices &amp; services → MyHOME → ⋮ → Download diagnostics</em>) and every bus-monitor export (Export Trace / Export Sweep) carries:</p>
 <div class="language-json highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">"identification"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
@@ -2278,9 +2376,13 @@
 </span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span><span class="nt">"who13_distribution"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
 </span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span><span class="nt">"who1013_code"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
 </span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">  </span><span class="nt">"who1013_model"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
-</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">  </span><span class="nt">"profile"</span><span class="p">:</span><span class="w"> </span><span class="s2">"MH200NProfile"</span><span class="p">,</span>
-</span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">  </span><span class="nt">"conflict"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
-</span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="p">}</span>
+</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">  </span><span class="nt">"who1013_other_names"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+</span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">  </span><span class="nt">"who1013_n_conf"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+</span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">  </span><span class="nt">"who1013_brand"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+</span><span id="__span-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">  </span><span class="nt">"who1013_line"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+</span><span id="__span-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">  </span><span class="nt">"profile"</span><span class="p">:</span><span class="w"> </span><span class="s2">"MH200NProfile"</span><span class="p">,</span>
+</span><span id="__span-2-20"><a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="w">  </span><span class="nt">"conflict"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+</span><span id="__span-2-21"><a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a><span class="p">}</span>
 </span></code></pre></div>
 <p>Reading it:</p>
 <ul>
@@ -2288,6 +2390,8 @@
 <li><code>who13_code</code> — the raw code your gateway reported; <code>who13_model_official</code> / <code>who13_model_observed</code> — what the 2006 specification and the field evidence say it means (either may be <code>null</code>).</li>
 <li><code>who13_firmware</code>, <code>who13_kernel</code>, <code>who13_distribution</code> — dimensions 16 / 23 / 24, corroborating evidence when the gateway sends them.</li>
 <li><code>who1013_code</code> / <code>who1013_model</code> — the <code>WHO=1013</code> OBJECT_MODEL reply and what the catalogue says it means; both <code>null</code> unless <code>who13_code</code> was a shared code (the question is not asked otherwise) and the gateway answered. On an MH200 they are always <code>null</code>.</li>
+<li><code>who1013_other_names</code> — the same product's other brand name(s), e.g. <code>["003598"]</code> for an F454.</li>
+<li><code>who1013_n_conf</code>, <code>who1013_brand</code>, <code>who1013_line</code> — the rest of the reply, rendered as <code>value (meaning)</code> when the value has been seen before and as the bare value when it has not, so a new one reaches the trace instead of being dropped. A traced gateway shows <code>"5 (Legrand BTicino)"</code> and <code>"0 (Undefined)"</code>.</li>
 <li><code>profile</code> — the OWNd profile actually in use (MH200 and MH200N share <code>MH200NProfile</code>; that is expected).</li>
 <li><code>conflict</code> — non-null exactly when a <em>Gateway model mismatch</em> repair issue is open, with the reason.</li>
 </ul>
