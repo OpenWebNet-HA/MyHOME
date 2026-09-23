@@ -1002,10 +1002,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#advanced-the-myhome_event-bus-stream" class="md-nav__link">
+  <a href="#advanced-listening-to-the-event-bus" class="md-nav__link">
     <span class="md-ellipsis">
       
-        📡 Advanced: The myhome_event Bus Stream
+        📡 Advanced: Listening to the Event Bus
       
     </span>
   </a>
@@ -1964,10 +1964,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#advanced-the-myhome_event-bus-stream" class="md-nav__link">
+  <a href="#advanced-listening-to-the-event-bus" class="md-nav__link">
     <span class="md-ellipsis">
       
-        📡 Advanced: The myhome_event Bus Stream
+        📡 Advanced: Listening to the Event Bus
       
     </span>
   </a>
@@ -2066,10 +2066,11 @@
 <p>In MyHOME v2.0, physical pushbuttons are automatically discovered and registered as <strong>Home Assistant Devices</strong>. You do <strong>not</strong> need to write complex template sensors or manual event listeners to automate them!</p>
 <h3 id="supported-trigger-types">Supported Trigger Types<a class="headerlink" href="#supported-trigger-types" title="Permanent link">&para;</a></h3>
 <ul>
-<li><code>short_press</code>: Fired immediately upon a quick tap.</li>
-<li><code>short_release</code>: Fired when a short tap is released.</li>
-<li><code>long_press</code>: Fired when the button is held down (exceeding ~400ms).</li>
-<li><code>long_release</code>: Fired when a held button is finally released.</li>
+<li><code>pushbutton_short_press</code>: Fired immediately upon a quick tap.</li>
+<li><code>pushbutton_short_release</code>: Fired when a short tap is released.</li>
+<li><code>pushbutton_long_press</code>: Fired when the button is held down (exceeding ~400ms). On CEN+ it fires once per hold.</li>
+<li><code>pushbutton_long_press_repeat</code> (CEN+ only): Fired about every 0.5 s while the button stays held (<code>WHAT = 23</code>). Use it for "hold to dim"; use <code>pushbutton_long_press</code> for actions that should run once.</li>
+<li><code>pushbutton_long_release</code>: Fired when a held button is finally released.</li>
 <li><code>rotary_cw_slow</code>: Clockwise rotation at normal speed.</li>
 <li><code>rotary_cw_fast</code>: Clockwise rotation at fast speed.</li>
 <li><code>rotary_ccw_slow</code>: Counter-clockwise rotation at normal speed.</li>
@@ -2098,14 +2099,14 @@
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">platform</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">device</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">    </span><span class="nt">domain</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome</span>
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="nt">device_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3c9b7410de884218a4521400e2345678</span>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">short_press</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pushbutton_short_press</span>
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">    </span><span class="nt">subtype</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">button_1</span>
 </span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">    </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">short_tap</span>
 </span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>
 </span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">platform</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">device</span>
 </span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">    </span><span class="nt">domain</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome</span>
 </span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">    </span><span class="nt">device_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3c9b7410de884218a4521400e2345678</span>
-</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">long_press</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pushbutton_long_press</span>
 </span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">    </span><span class="nt">subtype</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">button_1</span>
 </span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">    </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hold</span>
 </span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>
@@ -2168,21 +2169,23 @@
 </span><span id="__span-1-36"><a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a><span class="w">              </span><span class="nt">brightness_step_pct</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-10</span>
 </span></code></pre></div>
 <hr />
-<h2 id="advanced-the-myhome_event-bus-stream">📡 Advanced: The <code>myhome_event</code> Bus Stream<a class="headerlink" href="#advanced-the-myhome_event-bus-stream" title="Permanent link">&para;</a></h2>
-<p>If you prefer listening to the global Home Assistant event bus directly (e.g. in AppDaemon or custom automations):</p>
-<ol>
-<li>Enable <strong>Generate Events</strong> in the integration <strong>Options Flow</strong>.</li>
-<li>Listen for events of type <code>myhome_event</code>:</li>
-</ol>
+<h2 id="advanced-listening-to-the-event-bus">📡 Advanced: Listening to the Event Bus<a class="headerlink" href="#advanced-listening-to-the-event-bus" title="Permanent link">&para;</a></h2>
+<p>If you prefer listening to the Home Assistant event bus directly (e.g. in AppDaemon or custom automations), every button event is fired as <code>myhome_cen_event</code> (CEN) or <code>myhome_cenplus_event</code> (CEN+). No option needs to be enabled. The event data holds:</p>
+<ul>
+<li><code>object</code>: the CEN object, or the CEN+ object without its leading <code>2</code> (WHERE <code>21</code> is object <code>1</code>)</li>
+<li><code>pushbutton</code>: the button number</li>
+<li><code>event</code>: one of the trigger types above (<code>pushbutton_short_press</code>, <code>rotary_cw_slow</code>, …)</li>
+<li><code>where</code>, <code>gateway_mac</code> and <code>entry_id</code>, to tell plants and gateways apart</li>
+</ul>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">trigger</span><span class="p">:</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">platform</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">event</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">event_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome_event</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">event_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome_cenplus_event</span>
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="nt">event_data</span><span class="p">:</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">      </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">25</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">      </span><span class="nt">address</span><span class="p">:</span><span class="w"> </span><span class="s">"12"</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">      </span><span class="nt">button</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">short_press</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">      </span><span class="nt">object</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">      </span><span class="nt">pushbutton</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">      </span><span class="nt">event</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pushbutton_short_press</span>
 </span></code></pre></div>
+<p>Enabling <strong>Generate Events</strong> in the <strong>Options Flow</strong> additionally fires every bus frame as <code>myhome_message_event</code>.</p>
 <hr />
 <h2 id="openwebnet-frame-reference">📜 OpenWebNet Frame Reference<a class="headerlink" href="#openwebnet-frame-reference" title="Permanent link">&para;</a></h2>
 <table>
@@ -2223,19 +2226,25 @@
 <td style="text-align: left;"><strong>CEN+ Short Press</strong></td>
 <td style="text-align: center;">25</td>
 <td style="text-align: left;"><code>*25*21#&lt;BUTTON&gt;*&lt;WHERE&gt;##</code></td>
-<td style="text-align: left;"><code>*25*21#1*12##</code> (Btn 1 on addr 12)</td>
+<td style="text-align: left;"><code>*25*21#1*21##</code> (Btn 1 of object 1: WHERE is <code>2</code> + object)</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>CEN+ Start Long</strong></td>
 <td style="text-align: center;">25</td>
 <td style="text-align: left;"><code>*25*22#&lt;BUTTON&gt;*&lt;WHERE&gt;##</code></td>
-<td style="text-align: left;"><code>*25*22#1*12##</code></td>
+<td style="text-align: left;"><code>*25*22#1*21##</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>CEN+ Still Held</strong> (repeats ~0.5 s)</td>
+<td style="text-align: center;">25</td>
+<td style="text-align: left;"><code>*25*23#&lt;BUTTON&gt;*&lt;WHERE&gt;##</code></td>
+<td style="text-align: left;"><code>*25*23#1*21##</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>CEN+ Release</strong></td>
 <td style="text-align: center;">25</td>
 <td style="text-align: left;"><code>*25*24#&lt;BUTTON&gt;*&lt;WHERE&gt;##</code></td>
-<td style="text-align: left;"><code>*25*24#1*12##</code></td>
+<td style="text-align: left;"><code>*25*24#1*21##</code></td>
 </tr>
 </tbody>
 </table>

@@ -2283,7 +2283,7 @@
 <h3 id="3-generate-events-conf_generate_events">3. Generate Events (<code>CONF_GENERATE_EVENTS</code>)<a class="headerlink" href="#3-generate-events-conf_generate_events" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Boolean switch (Default: <code>False</code>).</li>
-<li>When enabled, raw bus telegrams are emitted onto Home Assistant's event bus under the <code>myhome_event</code> topic.</li>
+<li>When enabled, raw bus telegrams are emitted onto Home Assistant's event bus as <code>myhome_message_event</code> events.</li>
 </ul>
 <hr />
 <h2 id="reliability-watchdogs">🛡️ Reliability &amp; Watchdogs<a class="headerlink" href="#reliability-watchdogs" title="Permanent link">&para;</a></h2>
@@ -2400,8 +2400,8 @@
 <td style="text-align: left;"><strong>Event Bus Broadcasting</strong></td>
 <td style="text-align: left;"><code>generate_events</code></td>
 <td style="text-align: center;">Boolean</td>
-<td style="text-align: center;"><code>True</code></td>
-<td style="text-align: left;">Emits raw bus frames as <code>myhome_event</code> events to the Home Assistant global event bus for custom automations.</td>
+<td style="text-align: center;"><code>False</code></td>
+<td style="text-align: left;">Emits raw bus frames as <code>myhome_message_event</code> events to the Home Assistant global event bus for custom automations.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Broadcast Re-sync</strong></td>

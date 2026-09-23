@@ -2085,7 +2085,7 @@
 <tr>
 <td style="text-align: left;"><strong>Zones are not entities; the panel follows the central unit.</strong> Some plants (F454 + 3486) surface several zone objects with no arm / disarm frames answered (#311).</td>
 <td style="text-align: left;">WHO 5 zone and sensor discovery needs a bus trace from a physical central unit to model correctly; the current implementation is built on golden frames.</td>
-<td style="text-align: left;">Zone events are available as <code>myhome_event</code>; a trace attached to #311 unblocks the design.</td>
+<td style="text-align: left;">Zone frames are available as <code>myhome_message_event</code> (with <strong>Generate Events</strong> on) and alarm state changes as <code>myhome_alarm_event</code>; a trace attached to #311 unblocks the design.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Arming requires the central unit to accept the command.</strong></td>
