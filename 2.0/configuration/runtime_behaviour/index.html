@@ -2003,13 +2003,14 @@
 <td style="text-align: left;">Thermoregulation</td>
 </tr>
 <tr>
-<td style="text-align: left;"><code>*#16*0##</code></td>
-<td style="text-align: left;">Sound system</td>
+<td style="text-align: left;"><code>*#16*0*5##</code></td>
+<td style="text-align: left;">Sound system (dimension 5; lists every amplifier)</td>
 </tr>
 </tbody>
 </table>
-<p>Each request is only sent when the gateway's OWNd <strong>profile</strong> advertises that WHO (<code>GatewayProfile.supported_who</code>). An <strong>MH200N</strong>, for example, has no audio subsystem and NACKs <code>*#16*0##</code>; previously that produced a <code>Could not send message … Retrying</code> error on every boot. Unknown gateways keep the full set.</p>
+<p>Each request is only sent when the gateway's OWNd <strong>profile</strong> advertises that WHO (<code>GatewayProfile.supported_who</code>). Unknown gateways keep the full set.</p>
 <blockquote>
+<p>The WHO 16 status request is <code>*#16*WHERE*5##</code> (spec section 1.5.2). Gateways NACK the bare <code>*#16*0##</code> for every address, whether or not the plant has audio, so an old NACK on that frame never meant "no audio".</p>
 <p>WHO=1 has no valid general status request (<code>*#1*0##</code> is not OpenWebNet), so lights are hydrated from their own status replies and bus traffic.</p>
 </blockquote>
 <hr />
