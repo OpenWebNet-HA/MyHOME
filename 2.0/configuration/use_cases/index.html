@@ -2059,10 +2059,11 @@
 </span></code></pre></div>
 <p>The same service accepts <code>switch</code> entities (a socket, a fan).</p>
 <h2 id="5-whole-house-multiroom-audio-with-music-assistant">5. Whole-house multiroom audio with Music Assistant<a class="headerlink" href="#5-whole-house-multiroom-audio-with-music-assistant" title="Permanent link">&para;</a></h2>
-<p>The F441 / F441M analog matrix plays whatever is on its inputs. Map one or more network decoders (a Squeezelite / Raspberry Pi per input) in the options flow (<strong>Configure → Dynamic Proxy Decoders</strong>, one row per input: decoder entity, source number, pre-gain). Every audio zone then advertises <code>play_media</code>, becomes a Music Assistant player, and on playback claims a free decoder, routes the matrix to it and mirrors playback state and metadata.</p>
+<p>The F441 / F441M analog matrix plays whatever is on its inputs. Map one or more network decoders (a Squeezelite / Raspberry Pi per input) in the options flow (<strong>Configure</strong>, one row per decoder: entity, source input, pre-gain), and name the sources wired to the matrix. Every audio zone then advertises <code>play_media</code>, becomes a Music Assistant player, and on playback claims a free decoder, routes its environment to that decoder's input and mirrors playback state and metadata. Without source names the matrix routing is left to the wall panels.</p>
 <ul>
-<li>The wall panels keep working: source 0–4 selection and volume still come from the bus.</li>
-<li>Two decoders = two different streams at once; a third room gets <em>All audio matrix inputs are currently in use</em> until one stops.</li>
+<li>The wall panels keep working: source selection (S1–S4) and volume changes made there are reflected in Home Assistant, and are never overridden.</li>
+<li>Two decoders = two different streams at once, in two different environments; a third room gets <em>All audio matrix inputs are currently in use</em> until one stops.</li>
+<li>Zones in the same environment share one matrix output, so they share one stream: starting a second stream there is refused with an error naming the zone that is already playing.</li>
 </ul>
 <p>Details, the gain-staging notes (why a pre-gain removes the hiss) and the reference frames are in <a href="../media_player/">Sound System</a>.</p>
 <h2 id="6-heating-with-a-central-unit-controlled-from-home-assistant">6. Heating with a central unit, controlled from Home Assistant<a class="headerlink" href="#6-heating-with-a-central-unit-controlled-from-home-assistant" title="Permanent link">&para;</a></h2>

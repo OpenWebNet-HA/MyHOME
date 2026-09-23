@@ -914,6 +914,50 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#source-switching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Source switching
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#naming-your-sources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Naming your sources
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#default-source-per-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Default source per environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#routing-when-streaming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Routing when streaming
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#the-hardware-routing-first-model" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1882,6 +1926,50 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#source-switching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Source switching
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#naming-your-sources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Naming your sources
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#default-source-per-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Default source per environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#routing-when-streaming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Routing when streaming
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#the-hardware-routing-first-model" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1974,7 +2062,7 @@
 </ul>
 <div class="admonition important">
 <p class="admonition-title">Important</p>
-<p><strong>Hardware-Only Analog Matrix</strong>: The BTicino F441 / F441M is a purely analog matrix switcher. It does not contain an Ethernet port or digital audio decoder and cannot stream IP audio by itself. It routes line-level analog signals from physical source inputs (Source 1 to Source 4) to room amplifier outputs (Zone 1 to Zone 9).</p>
+<p><strong>Hardware-Only Analog Matrix</strong>: The BTicino F441 / F441M is a purely analog matrix switcher. It does not contain an Ethernet port or digital audio decoder and cannot stream IP audio by itself. It routes line-level analog signals from physical source inputs (Source 1 to Source 4) to its room outputs, one output per <strong>environment</strong>. Amplifiers are addressed <code>EA</code> (<code>01</code>–<code>99</code>): environment digit, then amplifier number within it.</p>
 </div>
 <hr />
 <h2 id="the-dynamic-proxy-architecture">🔀 The Dynamic Proxy Architecture<a class="headerlink" href="#the-dynamic-proxy-architecture" title="Permanent link">&para;</a></h2>
@@ -1997,14 +2085,95 @@
 </span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>               ▼               ▼
 </span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>       ┌───────────────┐ ┌───────────────┐
 </span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>       │ Audio Streamer│ │ F441M Matrix  │
-</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>       │ (Squeezelite /│ │ &amp; Amplifier   │
-</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>       │  WiiM / Pi)   │ │ (Zone 1..9)   │
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>       │ (Squeezelite /│ │ &amp; Amplifiers  │
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>       │  WiiM / Pi)   │ │ (01..99)      │
 </span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>       └───────┬───────┘ └───────▲───────┘
 </span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>               │ Analog Line-In  │
 </span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>               └─────────────────┘
 </span></code></pre></div>
+<h3 id="source-switching">Source switching<a class="headerlink" href="#source-switching" title="Permanent link">&para;</a></h3>
+<p>Selecting a source sends the same two frames a wall panel puts on the bus:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Frame</th>
+<th style="text-align: left;">Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>*16*3*10S##</code></td>
+<td style="text-align: left;">Activate source device <code>S</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>*16*3*1ES##</code></td>
+<td style="text-align: left;">Route environment <code>E</code> to source <code>S</code></td>
+</tr>
+</tbody>
+</table>
+<p>The routing address carries the <strong>environment</strong> digit of the amplifier
+address, not the amplifier digit. Amplifier addresses are <code>EA</code> — environment
+followed by amplifier — so zone <code>23</code> lives in environment 2 and is routed with
+<code>121</code> (source 1) or <code>122</code> (source 2). The F441M switches per output and an
+output serves a whole environment, so <strong>every amplifier in that environment
+follows the switch</strong>. Zones 22 and 23 cannot play different sources; that is
+matrix hardware, not an integration limitation. The integration holds to it:</p>
+<ul>
+<li><strong>One stream per environment.</strong> While zone 22 streams from a decoder,
+  <code>play_media</code> or a source change on zone 23 is refused with an error naming
+  zone 22, instead of silently switching zone 22 off its stream.</li>
+<li><strong>Environment 0 cannot be switched.</strong> Amplifiers <code>01</code>–<code>09</code> would be routed
+  with <code>10S</code>, which is the source device address itself. Source selection is
+  refused there and no default can be set for it; use a wall panel.</li>
+<li><strong>Only two-digit amplifier addresses are routed.</strong> The WHO=16 address table
+  lists amplifiers as <code>01</code>–<code>99</code>. A single-digit address such as <code>1</code> in a YAML
+  configuration does not say which environment it belongs to (<code>01</code> or <code>11</code>?),
+  so it is never routed. Write the address with both digits.</li>
+</ul>
+<blockquote>
+<p>Earlier releases refused to send these frames, on the assumption that they
+caused relay clicks on MH200-class gateways. Bus captures on an MH200 show
+clean switching. The real problem was a routing address built from the wrong
+digit, which addressed an environment that did not exist.</p>
+</blockquote>
+<h3 id="naming-your-sources">Naming your sources<a class="headerlink" href="#naming-your-sources" title="Permanent link">&para;</a></h3>
+<p>Each F441M input (S1–S4) has a name field in the integration Options. Fill in
+what is physically wired to it and <strong>leave the rest blank</strong>.</p>
+<ul>
+<li>Only named sources are offered in the Home Assistant source list.</li>
+<li>A zone routed to a blank input — typically by someone pressing a stale
+  button on a wall panel — is labelled <code>Source N (not configured)</code> and logged
+  once, so amplified silence or tuner hiss has a visible cause.</li>
+<li>Routing chosen at a wall panel is never overridden. The user pressed a
+  button in the room, and silently switching it back would be its own
+  surprise. Select a configured source to recover.</li>
+</ul>
+<p>If no names are configured the legacy <code>Source 1</code>–<code>Source 4</code> list is used and
+nothing is flagged, so existing installations are unaffected.</p>
+<h3 id="default-source-per-environment">Default source per environment<a class="headerlink" href="#default-source-per-environment" title="Permanent link">&para;</a></h3>
+<p>For every environment that has audio zones, the Options offer a <strong>default
+source</strong>. It is set per environment, not per zone, because two amplifiers in
+one room share a matrix output and cannot sit on different inputs.</p>
+<ul>
+<li>The default is applied when a zone is switched <strong>on from Home Assistant</strong>,
+  so a room left on a stale input comes back on the right source.</li>
+<li>It is not applied to a zone that is already on, nor while another zone of
+  the environment is streaming.</li>
+<li>It never overrides routing announced by a wall panel.</li>
+<li><em>Leave routing as it is</em> (the default) keeps the existing routing.</li>
+</ul>
+<p>Environment 0 is not offered: it has no routing address.</p>
+<h3 id="routing-when-streaming">Routing when streaming<a class="headerlink" href="#routing-when-streaming" title="Permanent link">&para;</a></h3>
+<p>Once sources are named, or a default source is set for an environment,
+<code>play_media</code> routes the zone's environment to the input its decoder is wired
+to, and turning a zone on routes it to its environment default. A zone that is
+already on is not re-routed when it is turned on again, and a default is not
+applied while another zone in the environment is streaming.</p>
+<p>Without either setting the integration does not route while streaming and
+relies on the "Hardware Routing First" model below, as earlier releases did.</p>
 <h3 id="the-hardware-routing-first-model">The "Hardware Routing First" Model<a class="headerlink" href="#the-hardware-routing-first-model" title="Permanent link">&para;</a></h3>
-<p>Switching matrix sources dynamically via OpenWebNet IP commands (<code>*16*100*WHERE##</code> to <code>*16*103*WHERE##</code>) on MH200/MH201/F454 gateways causes mechanical relay clicks and momentary bus noise.</p>
+<p>For installations that have not named their sources, <code>play_media</code> leaves the
+matrix routing to the wall panels.</p>
 <p><strong>Recommended Practice</strong>:</p>
 <ol>
 <li><strong>Physical Cabling</strong>: Connect the analog output of your network streamer (e.g. Raspberry Pi running Squeezelite, WiiM Pro, Cambridge Audio) into physical Source 1 on the F441M matrix.</li>
@@ -2012,10 +2181,10 @@
 <li><strong>Automated Power Sequence</strong>: When a stream starts, the integration proxy:</li>
 <li>Claims an idle decoder from the shared <strong>Decoder Pool</strong>.</li>
 <li>Wakes the decoder if it is in standby.</li>
-<li>Powers ON the BTicino amplifier zone with a smooth <code>*16*1*WHERE##</code> command.</li>
+<li>Powers the BTicino amplifier on with an OFF → ON sequence (<code>*16*13*&lt;WHERE&gt;##</code>, then <code>*16*3*&lt;WHERE&gt;##</code>) if it is not already on.</li>
 <li>Forwards the stream URL to the streaming decoder.</li>
 <li>Mirrors track metadata (title, artist, album art) and state back onto the Home Assistant room entity.</li>
-<li><strong>Shutdown &amp; Release</strong>: When playback stops or the zone is turned off, the amplifier powers off (<code>*16*0*WHERE##</code>) and the decoder is released back to the idle pool.</li>
+<li><strong>Shutdown &amp; Release</strong>: When the zone is turned off, the amplifier powers off (<code>*16*13*&lt;WHERE&gt;##</code>), playback on the decoder is stopped and the decoder is released back to the idle pool.</li>
 </ol>
 <hr />
 <h2 id="gain-staging-bus-noise-elimination">🎛️ Gain Staging &amp; Bus Noise Elimination<a class="headerlink" href="#gain-staging-bus-noise-elimination" title="Permanent link">&para;</a></h2>
@@ -2028,17 +2197,21 @@ $$\text{Decoder Volume} = \text{Zone Volume} + \text{Pre-Gain Offset}$$</p>
 </ul>
 <hr />
 <h2 id="configuration-via-home-assistant-ui">⚙️ Configuration via Home Assistant UI<a class="headerlink" href="#configuration-via-home-assistant-ui" title="Permanent link">&para;</a></h2>
-<p>You configure the Dynamic Proxy directly via the integration's <strong>Options Flow</strong>:</p>
+<p>Sources, defaults and the Dynamic Proxy are all configured in the integration's <strong>Options Flow</strong>:</p>
 <ol>
 <li>Go to <strong>Settings</strong> -&gt; <strong>Devices &amp; Services</strong> -&gt; <strong>MyHOME</strong>.</li>
 <li>Click <strong>Configure</strong>.</li>
-<li>Scroll to the <strong>Audio Decoder Mapping</strong> section:</li>
-<li><strong>Decoder Slot 1 Entity</strong>: Select your backend media player (e.g. <code>media_player.squeezelite_salon</code>).</li>
-<li><strong>Matrix Source Input</strong>: Set to the physical F441M input (e.g. <code>1</code> for Source 1).</li>
-<li><strong>Pre-Gain Offset</strong>: Enter your pre-gain dB/percentage compensation (e.g. <code>15</code>).</li>
-<li><em>(Repeat for Decoders 2 through 4 if you have multiple streaming DACs).</em></li>
+<li><strong>Source names</strong> (<em>Source 1</em>–<em>Source 4</em>): name what is wired to each F441M input and leave unused inputs blank. See <a href="#naming-your-sources">Naming your sources</a>.</li>
+<li><strong>Default source for environment N</strong> (one field per environment with audio zones): pick a source, or keep <em>Leave routing as it is</em>. See <a href="#default-source-per-environment">Default source per environment</a>.</li>
+<li><strong>Decoder mapping</strong>, one row per streaming decoder (up to 4):</li>
+<li><strong>Media player entity</strong>: your backend player (e.g. <code>media_player.squeezelite_salon</code>).</li>
+<li><strong>Source input</strong>: the F441M input it is wired to, chosen from a list that shows your source names (e.g. <code>S1 — Streamer</code>).</li>
+<li><strong>Pre-gain offset</strong>: percentage added to the decoder volume (0–50 %, e.g. <code>15</code>). See <a href="#gain-staging-bus-noise-elimination">Gain Staging</a>.</li>
 <li>Click <strong>Submit</strong>.</li>
 </ol>
+<p>Naming a source or setting a default is what switches on automatic routing for
+streaming (see <a href="#routing-when-streaming">Routing when streaming</a>); leaving both
+empty keeps the wall-panel routing in charge.</p>
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
 <p><strong>Avoid Recursive Loops</strong>: Do NOT select a Music Assistant virtual player as the backend decoder entity. The backend decoder must be the actual hardware device (e.g. <code>media_player.squeezelite_salon</code>, <code>media_player.wiim_dining</code>), while Music Assistant targets the MyHOME zone entity.</p>
@@ -2048,12 +2221,15 @@ $$\text{Decoder Volume} = \text{Zone Volume} + \text{Pre-Gain Offset}$$</p>
 <p>If you do not configure any streaming decoders in the Options Flow, the room amplifier entities operate in <strong>Native WHO = 16 Mode</strong>:</p>
 <ul>
 <li><strong>On / Off</strong>: Toggles the physical amplifier power.</li>
-<li><strong>Volume</strong>: Controls the hardware volume step (0 to 30) via dimension 1.</li>
-<li><strong>Source Selection</strong>: Allows switching between physical sources 1–4.</li>
-<li><strong>Track Controls</strong>: Sends OpenWebNet Next/Previous track commands (<code>WHAT = 20</code> / <code>WHAT = 21</code>) to compatible Legrand FM/DAB tuners.</li>
+<li><strong>Volume</strong>: Steps the volume up and down, or sets it directly on the amplifier's 0–31 scale.</li>
+<li><strong>Source Selection</strong>: Switches the zone's environment between the physical sources (named ones, or <code>Source 1</code>–<code>Source 4</code> when none are named).</li>
 </ul>
+<p>Play, pause, stop and next / previous track are only offered once a decoder is
+configured; they are forwarded to that decoder, not sent on the bus.</p>
 <hr />
 <h2 id="openwebnet-who-16-reference-frames">📜 OpenWebNet WHO = 16 Reference Frames<a class="headerlink" href="#openwebnet-who-16-reference-frames" title="Permanent link">&para;</a></h2>
+<p><code>&lt;WHERE&gt;</code> is an amplifier (<code>01</code>–<code>99</code>), an environment (<code>#0</code>–<code>#9</code>) or <code>0</code> for
+all amplifiers. The integration addresses individual amplifiers.</p>
 <table>
 <thead>
 <tr>
@@ -2064,52 +2240,51 @@ $$\text{Decoder Volume} = \text{Zone Volume} + \text{Pre-Gain Offset}$$</p>
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><strong>Zone Turn ON</strong></td>
-<td style="text-align: left;"><code>*16*1*&lt;WHERE&gt;##</code></td>
-<td style="text-align: left;">Turns ON amplifier in room <code>&lt;WHERE&gt;</code> (1–9).</td>
+<td style="text-align: left;"><strong>Amplifier ON</strong></td>
+<td style="text-align: left;"><code>*16*3*&lt;WHERE&gt;##</code></td>
+<td style="text-align: left;">Stereo channel ON. <code>*16*0*&lt;WHERE&gt;##</code> is the base-band form.</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>Zone Turn OFF</strong></td>
-<td style="text-align: left;"><code>*16*0*&lt;WHERE&gt;##</code></td>
-<td style="text-align: left;">Turns OFF amplifier in room <code>&lt;WHERE&gt;</code> (1–9).</td>
+<td style="text-align: left;"><strong>Amplifier OFF</strong></td>
+<td style="text-align: left;"><code>*16*13*&lt;WHERE&gt;##</code></td>
+<td style="text-align: left;">Stereo channel OFF. <code>*16*10*&lt;WHERE&gt;##</code> is the base-band form.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Volume UP</strong></td>
-<td style="text-align: left;"><code>*16*10*&lt;WHERE&gt;##</code></td>
-<td style="text-align: left;">Steps amplifier volume UP.</td>
+<td style="text-align: left;"><code>*16*1001*&lt;WHERE&gt;##</code></td>
+<td style="text-align: left;">One step up; <code>1001</code>–<code>1015</code> step +1 to +15.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Volume DOWN</strong></td>
-<td style="text-align: left;"><code>*16*11*&lt;WHERE&gt;##</code></td>
-<td style="text-align: left;">Steps amplifier volume DOWN.</td>
+<td style="text-align: left;"><code>*16*1101*&lt;WHERE&gt;##</code></td>
+<td style="text-align: left;">One step down; <code>1101</code>–<code>1115</code> step −1 to −15.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Set Exact Volume</strong></td>
 <td style="text-align: left;"><code>*#16*&lt;WHERE&gt;*#1*&lt;LEVEL&gt;##</code></td>
-<td style="text-align: left;">Sets exact volume level (where <code>&lt;LEVEL&gt;</code> is 0 to 30).</td>
+<td style="text-align: left;">Writes the volume, <code>&lt;LEVEL&gt;</code> 0–31.</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>Select Source 1</strong></td>
-<td style="text-align: left;"><code>*16*100*&lt;WHERE&gt;##</code></td>
-<td style="text-align: left;">Routes input Source 1 to room <code>&lt;WHERE&gt;</code>.</td>
+<td style="text-align: left;"><strong>Volume Report</strong></td>
+<td style="text-align: left;"><code>*#16*&lt;WHERE&gt;*1*&lt;LEVEL&gt;##</code></td>
+<td style="text-align: left;">Amplifier reporting its volume, 0–31.</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>Select Source 2</strong></td>
-<td style="text-align: left;"><code>*16*101*&lt;WHERE&gt;##</code></td>
-<td style="text-align: left;">Routes input Source 2 to room <code>&lt;WHERE&gt;</code>.</td>
+<td style="text-align: left;"><strong>Activate Source <code>S</code></strong></td>
+<td style="text-align: left;"><code>*16*3*10S##</code></td>
+<td style="text-align: left;">Switches source device <code>S</code> on (<code>101</code>–<code>109</code>).</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>Next Track / Station</strong></td>
-<td style="text-align: left;"><code>*16*20*&lt;WHERE&gt;##</code></td>
-<td style="text-align: left;">Skips to next preset/track on active source.</td>
-</tr>
-<tr>
-<td style="text-align: left;"><strong>Prev Track / Station</strong></td>
-<td style="text-align: left;"><code>*16*21*&lt;WHERE&gt;##</code></td>
-<td style="text-align: left;">Skips to previous preset/track on active source.</td>
+<td style="text-align: left;"><strong>Route Environment to Source</strong></td>
+<td style="text-align: left;"><code>*16*3*1ES##</code></td>
+<td style="text-align: left;">Routes every amplifier of environment <code>E</code> to source <code>S</code>. Not in <code>WHO_16.pdf</code>; established from bus captures on two installations.</td>
 </tr>
 </tbody>
 </table>
+<blockquote>
+<p>Released OWNd builds volume down as <code>*16*1000*&lt;WHERE&gt;##</code>, which the
+specification does not define; the library fix is pending.</p>
+</blockquote>
 
 
 
