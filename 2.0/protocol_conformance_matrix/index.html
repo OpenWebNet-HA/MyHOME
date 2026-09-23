@@ -1952,7 +1952,7 @@
 <h1 id="openwebnet-protocol-conformance-capability-matrix">OpenWebNet Protocol Conformance &amp; Capability Matrix<a class="headerlink" href="#openwebnet-protocol-conformance-capability-matrix" title="Permanent link">&para;</a></h1>
 <blockquote>
 <p><strong>Authoritative Specification &amp; Verification Baseline</strong><br />
-<em>Last Updated: September 11, 2026</em><br />
+<em>Last Updated: September 23, 2026</em><br />
 <em>Corpus Version: 1.0.0 (58 Fixtures, 11 Subsystems, 137 Automated Conformance Assertions)</em></p>
 </blockquote>
 <p>This document serves as the <strong>verifiable truth</strong> for OpenWebNet protocol conformance across the Home Assistant (<code>OpenWebNet-HA/MyHOME</code>) and Python protocol driver (<code>OpenWebNet-HA/OWNd</code>) ecosystem.</p>
@@ -2075,11 +2075,11 @@
 <tr>
 <td style="text-align: center;"><strong>15</strong></td>
 <td><strong>CEN Scenarios</strong></td>
-<td>Short press, start long press, release, extended hold</td>
-<td><code>*15*1*01##</code>, <code>*15*2*01##</code>, <code>*15*3*01##</code></td>
+<td>Press, short release, long release, extended hold</td>
+<td><code>*15*02*11##</code>, <code>*15*02#1*11##</code>, <code>*15*02#3*11##</code>, <code>*15*02#2*11##</code></td>
 <td style="text-align: center;">Valid</td>
 <td style="text-align: center;">Matched</td>
-<td style="text-align: center;"><strong>VERIFIED (100%)</strong></td>
+<td style="text-align: center;"><strong>DOCUMENTED (no bus capture)</strong></td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>18</strong></td>
@@ -2093,14 +2093,15 @@
 <tr>
 <td style="text-align: center;"><strong>25</strong></td>
 <td><strong>CEN+ / Dry Contacts</strong></td>
-<td>Short/Long press, release, 5-digit module addresses</td>
-<td><code>*25*21*0001##</code>, <code>*25*23*0001##</code>, <code>*25*22*0001##</code></td>
+<td>Short press; start, hold and release of an extended press; WHERE <code>2</code> + object 0–2047</td>
+<td><code>*25*21#1*21##</code>, <code>*25*22#1*21##</code>, <code>*25*23#1*21##</code>, <code>*25*24#1*21##</code></td>
 <td style="text-align: center;">Valid</td>
 <td style="text-align: center;">Matched</td>
 <td style="text-align: center;"><strong>VERIFIED (100%)</strong></td>
 </tr>
 </tbody>
 </table>
+<p><strong>DOCUMENTED</strong> means the frames follow the <a href="https://github.com/OpenWebNet-HA/OpenWebNet-Encyclopedia">OpenWebNet Encyclopedia</a> but no bus capture backs them yet. The WHO 15 row waits for the traces requested in <a href="https://github.com/OpenWebNet-HA/MyHOME/issues/434">#434</a>. The WHO 25 examples are an MH201 capture from <a href="https://github.com/OpenWebNet-HA/MyHOME/issues/418">#418</a>.</p>
 <hr />
 <h2 id="3-key-architectural-truths-design-decisions">3. Key Architectural Truths &amp; Design Decisions<a class="headerlink" href="#3-key-architectural-truths-design-decisions" title="Permanent link">&para;</a></h2>
 <h3 id="31-string-preservation-for-hardware-addresses">3.1 String Preservation for Hardware Addresses<a class="headerlink" href="#31-string-preservation-for-hardware-addresses" title="Permanent link">&para;</a></h3>
