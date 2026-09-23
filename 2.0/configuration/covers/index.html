@@ -901,6 +901,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#general-area-and-group-covers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🏠 General, Area and Group Covers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#legacy-yaml-note" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1919,6 +1930,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#general-area-and-group-covers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🏠 General, Area and Group Covers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#legacy-yaml-note" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2063,6 +2085,43 @@ Automated on-bus calibration relies entirely on the actuator emitting a stop fra
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">target</span><span class="p">:</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.living_room_shutter</span>
 </span></code></pre></div></p>
+<hr />
+<h2 id="general-area-and-group-covers">🏠 General, Area and Group Covers<a class="headerlink" href="#general-area-and-group-covers" title="Permanent link">&para;</a></h2>
+<p>A cover declared in <code>/config/myhome.yaml</code> on a <strong>general</strong> (<code>where: '0'</code>), <strong>area</strong> (<code>where: '1'</code>, <code>'00'</code>, <code>'100'</code>) or <strong>group</strong> (<code>where: '#3'</code>) address is one button for many shutters: <em>open</em>, <em>close</em> and <em>stop</em> send a single frame to that address, like the general button on a keypad.</p>
+<p>Its state comes from the shutters it moves, not from the bus. At the end of a run every actuator reports its own stop (<code>*2*0*11##</code>, <code>*2*0*12##</code>, …) and none arrives for the general or area address (WHO_2 specification §3.0.1). So the cover shows <em>opening</em> / <em>closing</em> while any of its shutters is moving, <em>closed</em> when all are closed, and the average of their positions:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Address</th>
+<th style="text-align: left;">Shutters it follows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">General <code>0</code></td>
+<td style="text-align: left;">every point-to-point cover of the gateway</td>
+</tr>
+<tr>
+<td style="text-align: left;">Area <code>1</code>…<code>9</code>, <code>00</code>, <code>100</code></td>
+<td style="text-align: left;">the covers of that area on the same bus: area <code>1</code> is <code>11</code>…<code>19</code> and <code>0110</code>…<code>0115</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">Group <code>#1</code>…<code>#255</code></td>
+<td style="text-align: left;">the covers listed under <code>members:</code>; group membership is programmed in the actuators and cannot be read from the bus</td>
+</tr>
+</tbody>
+</table>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">cover</span><span class="p">:</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">all_shutters</span><span class="p">:</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">'1'</span><span class="w">          </span><span class="c1"># area 1: follows covers 11-19 on its own</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">All shutters</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">bedrooms</span><span class="p">:</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">'#3'</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Bedrooms</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">    </span><span class="nt">members</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">'11'</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">'13'</span><span class="p p-Indicator">]</span>
+</span></code></pre></div>
+<p><strong>Behind an F422 interface</strong> (<code>bus_interface: '02'</code>, logical <code>#4#</code> addressing) the gateway does not pass general or area commands through: on an MH200 both <code>*2*2*1##</code> and <code>*2*1*1#4#02##</code> left the covers behind interface 02 standing, while point commands moved them. A general, area or group cover with a <code>bus_interface</code> therefore sends each of its covers its own command (one frame per shutter, paced by the gateway queue); on the main bus it sends the single scope frame.</p>
+<p>A general or area command from a keypad also moves the individual covers in Home Assistant. A group or area cover whose shutters are not known yet ends its run after its own <code>travel_time</code>, so it never stays stuck on <em>opening</em> (<a href="https://github.com/OpenWebNet-HA/MyHOME/issues/433">#433</a>).</p>
 <hr />
 <h2 id="legacy-yaml-note">🔄 Legacy YAML Note<a class="headerlink" href="#legacy-yaml-note" title="Permanent link">&para;</a></h2>
 <div class="admonition note">
