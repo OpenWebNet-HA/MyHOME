@@ -2010,6 +2010,7 @@
 </table>
 <p>Each request is only sent when the gateway's OWNd <strong>profile</strong> advertises that WHO (<code>GatewayProfile.supported_who</code>). Unknown gateways keep the full set.</p>
 <blockquote>
+<p>OWNd 2.0.0b8 and earlier give an <strong>MH200</strong> the MH200N profile, which does not advertise WHO 16, so amplifiers behind an MH200 only appear once they send bus traffic. A live MH200 answers <code>*#16*0*5##</code> with every amplifier and source; <a href="https://github.com/OpenWebNet-HA/OWNd/issues/53">OWNd#53</a> gives it its own profile.</p>
 <p>The WHO 16 status request is <code>*#16*WHERE*5##</code> (spec section 1.5.2). Gateways NACK the bare <code>*#16*0##</code> for every address, whether or not the plant has audio, so an old NACK on that frame never meant "no audio".</p>
 <p>WHO=1 has no valid general status request (<code>*#1*0##</code> is not OpenWebNet), so lights are hydrated from their own status replies and bus traffic.</p>
 </blockquote>
