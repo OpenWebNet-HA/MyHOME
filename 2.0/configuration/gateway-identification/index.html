@@ -2171,7 +2171,7 @@
 </tr>
 </tbody>
 </table>
-<p>That is the whole list. <strong>F454, F455, MH200N, MH201, MH202, MyHOMEServer1, F461 … are not in it.</strong> Newer gateways reuse an old code or invent one, so the reply can <em>corroborate</em> a label but can never <em>establish</em> one for a modern gateway. For example an <strong>MH200N reports <code>4</code></strong> — the code of its 2006 predecessor — which is consistent, not a contradiction.</p>
+<p>That is the whole list. <strong>F454, F455, MH200N, MH201, MH202, MyHOMEServer1, F461 … are not in it.</strong> Newer gateways reuse an old code or invent one, so the reply can <em>corroborate</em> a label but can never <em>establish</em> one for a modern gateway. The <strong>MH200N is the exception that has a code of its own</strong>: <code>44</code> in the <code>WHO=1013</code> catalogue and in Nmap's <code>WHO=13</code> table (below). A gateway answering the 2006 code <code>4</code> is therefore an MH200, not an MH200N: a physical MH200 (firmware 2.1.0) answers <code>*#13**15*4##</code>, and until 2026-09-23 a manual MH200N label on one was wrongly accepted as the same family.</p>
 <h3 id="codes-seen-in-the-field-evidence-not-specification">Codes seen in the field (evidence, not specification)<a class="headerlink" href="#codes-seen-in-the-field-evidence-not-specification" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -2280,12 +2280,12 @@
 </blockquote>
 <hr />
 <h2 id="the-rule-the-integration-applies">The rule the integration applies<a class="headerlink" href="#the-rule-the-integration-applies" title="Permanent link">&para;</a></h2>
-<p>When a dimension-15 reply arrives, the handler compares the reported model with the configured one <strong>by family</strong> (<code>MH200N</code> → <code>MH200</code>, <code>F452V</code> → <code>F452</code>; a variant suffix is never downgraded) and then:</p>
+<p>When a dimension-15 reply arrives, the handler compares the reported model with the configured one. A configured model that one of the tables lists by name has a code of its own, so only that name or a brand variant of it agrees: <code>MH200N</code> (<code>44</code>) is contradicted by <code>4</code> (MH200), and <code>F452V</code> (<code>7</code>) by <code>6</code> (F452), even though each pair shares a family. A name no table lists is compared <strong>by family</strong> (<code>F452X</code> → <code>F452</code>), so an unlisted variant suffix is never downgraded. Then:</p>
 <table>
 <thead>
 <tr>
 <th style="text-align: left;">configured <code>source</code></th>
-<th style="text-align: left;">code agrees (same family)</th>
+<th style="text-align: left;">code agrees</th>
 <th style="text-align: left;">code contradicts — <strong>official</strong> 2006 code</th>
 <th style="text-align: left;">code contradicts — <strong>uncertain</strong> code (field evidence or third-party)</th>
 <th style="text-align: left;">code <strong>shared</strong> (<code>200</code>)</th>
