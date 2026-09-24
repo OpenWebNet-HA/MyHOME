@@ -1459,6 +1459,45 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#5-translation-lifecycle-localization-anti-drift-crowdin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Translation Lifecycle &amp; Localization Anti-Drift (Crowdin)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Translation Lifecycle &amp; Localization Anti-Drift (Crowdin)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#single-source-of-truth-developer-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Single Source of Truth &amp; Developer Workflow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#crowdin-integration-continuous-localization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Crowdin Integration &amp; Continuous Localization
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1941,6 +1980,45 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#5-translation-lifecycle-localization-anti-drift-crowdin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Translation Lifecycle &amp; Localization Anti-Drift (Crowdin)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Translation Lifecycle &amp; Localization Anti-Drift (Crowdin)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#single-source-of-truth-developer-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Single Source of Truth &amp; Developer Workflow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#crowdin-integration-continuous-localization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Crowdin Integration &amp; Continuous Localization
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2091,6 +2169,30 @@
 </tbody>
 </table>
 <p>By combining Shift-Left testing in <code>OWNd</code> with nightly canary builds and automated release bumping in <code>MyHOME</code>, protocol drift is structurally impossible.</p>
+<hr />
+<h2 id="5-translation-lifecycle-localization-anti-drift-crowdin">5. Translation Lifecycle &amp; Localization Anti-Drift (Crowdin)<a class="headerlink" href="#5-translation-lifecycle-localization-anti-drift-crowdin" title="Permanent link">&para;</a></h2>
+<p>Translation catalogs (<code>custom_components/myhome/translations/</code>) are subject to two common failure modes in Home Assistant custom components:
+1. <strong>Schema &amp; String Drift</strong>: Modifying <code>strings.json</code> without updating <code>en.json</code>, or having lingering orphaned keys in community locales (<code>nl</code>, <code>fr</code>, <code>it</code>) when features are deprecated.
+2. <strong>Translation Decay</strong>: Non-English catalogs falling behind the English source over time.</p>
+<h3 id="single-source-of-truth-developer-workflow">Single Source of Truth &amp; Developer Workflow<a class="headerlink" href="#single-source-of-truth-developer-workflow" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Why two English files?</strong>: While standard Home Assistant custom integrations only require <code>translations/en.json</code> at runtime, MyHOME adopts the Home Assistant core convention of maintaining <code>custom_components/myhome/strings.json</code> as the human-authored source of truth. <code>translations/en.json</code> is the compiled runtime and Crowdin distribution file. Maintaining both satisfies Quality Scale Gold rule <code>entity-translations</code> and provides a clean build-target for Crowdin.</li>
+<li><strong>Developer Workflow</strong>: Developers only edit <code>strings.json</code>. Never edit <code>translations/en.json</code> manually.</li>
+<li><strong>Synchronizer Tool (<code>scripts/manage_translations.py</code>)</strong>:</li>
+<li><code>python scripts/manage_translations.py sync-en</code>: Compiles and aligns <code>translations/en.json</code> from <code>strings.json</code> with standard formatting.</li>
+<li><code>python scripts/manage_translations.py prune</code>: Scans all non-English translation catalogs and prunes obsolete keys no longer present in <code>strings.json</code>.</li>
+<li><code>python scripts/manage_translations.py status</code>: Reports coverage percentages, missing keys, and orphaned key counts across all locales.</li>
+<li><code>python scripts/manage_translations.py check</code>: Strict sentinel run in CI (<code>quality-scale.yml</code>) verifying both <code>en.json</code> synchronization and 0 orphaned keys.</li>
+<li><strong>Architectural Enforcer</strong>: <code>scripts/verify_ha_standards.py</code> validates deep structural equality between <code>strings.json</code> and <code>translations/en.json</code> under Quality Scale Gold rule <code>entity-translations</code>.</li>
+</ul>
+<h3 id="crowdin-integration-continuous-localization">Crowdin Integration &amp; Continuous Localization<a class="headerlink" href="#crowdin-integration-continuous-localization" title="Permanent link">&para;</a></h3>
+<p>Community translations are managed through <strong>Crowdin</strong> and synchronized via <code>.github/workflows/crowdin.yml</code>:
+* <strong>Required Repository Secrets</strong>:
+  * <code>CROWDIN_PROJECT_ID</code>: The numeric Crowdin project identifier.
+  * <code>CROWDIN_PERSONAL_TOKEN</code>: An account personal access token with translation project permissions.
+* <strong>One-Time Translation Seeding</strong>: On initial repository setup, maintainers trigger <code>workflow_dispatch</code> with <code>upload_translations: true</code>. This populates Crowdin's translation memory with the existing base translations from <code>nl.json</code>, <code>fr.json</code>, and <code>it.json</code>.
+* <strong>Push to Branch (<code>v2-phase1-architecture</code>)</strong>: Pushing changes to <code>strings.json</code> or <code>en.json</code> automatically uploads updated English sources to Crowdin.
+* <strong>Scheduled / Dispatch Pull Requests</strong>: Weekly scheduled jobs (Sundays at 02:00 UTC) download only <strong>approved</strong> translations (<code>export_only_approved: true</code>) and omit incomplete strings (<code>skip_untranslated_strings: true</code>). This ensures untranslated keys cleanly fall back to Home Assistant's runtime English fallback rather than overwriting catalogs with English source duplicates. Downloads push to a scoped branch (<code>l10n_crowdin_v2</code>) and open clean PRs targeting <code>v2-phase1-architecture</code>.</p>
 
 
 
