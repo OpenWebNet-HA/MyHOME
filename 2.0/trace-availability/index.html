@@ -12,13 +12,13 @@
         <meta name="author" content="OpenWebNet-HA Community">
       
       
-        <link rel="canonical" href="https://openwebnet-ha.github.io/MyHOME/2.0/quality_scale_plan/">
+        <link rel="canonical" href="https://openwebnet-ha.github.io/MyHOME/2.0/trace-availability/">
       
       
-        <link rel="prev" href="../f454-regression-checks/">
+        <link rel="prev" href="../protocol_conformance_matrix/">
       
       
-        <link rel="next" href="../migration/upgrade-from-094/">
+        <link rel="next" href="../f454-regression-checks/">
       
       
         
@@ -29,7 +29,7 @@
     
     
       
-        <title>Quality Scale Roadmap - MyHOME for Home Assistant</title>
+        <title>Hardware Trace Availability - MyHOME for Home Assistant</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#integration-quality-scale-plan-myhome-platinum" class="md-skip">
+        <a href="#hardware-trace-availability-matrix" class="md-skip">
           Skip to content
         </a>
       
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Quality Scale Roadmap
+              Hardware Trace Availability
             
           </span>
         </div>
@@ -1437,10 +1437,19 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../trace-availability/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1456,6 +1465,7 @@
   
 
       </a>
+      
     </li>
   
 
@@ -1493,37 +1503,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Quality Scale Roadmap
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../quality_scale_plan/" class="md-nav__link">
         
   
   
@@ -1539,125 +1522,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#phase-0-land-whats-in-flight-prerequisite-done" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Phase 0 — Land what's in flight (prerequisite) — ✅ done
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#phase-1-bronze-4-rules-the-tier-appears-on-the-badge-3-of-4-done-brands-pending" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Phase 1 — 🥉 Bronze (4 rules → the tier appears on the badge) — 3 of 4 done (brands pending)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#phase-2-gold-documentation-4-rules-no-code-risk-done" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Phase 2 — 🥇 Gold: documentation (4 rules, no code risk) — ✅ done
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#phase-3-gold-entity-audit-3-in_progress-rules-done-teststest_entity_auditpy" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Phase 3 — 🥇 Gold: entity audit (3 in_progress rules) — ✅ done (tests/test_entity_audit.py)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#phase-4-gold-code-rules-4-rules-done" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Phase 4 — 🥇 Gold: code rules (4 rules) — ✅ done
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#phase-5-platinum-strict-typing" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Phase 5 — 🏆 Platinum: strict-typing
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#maintainability-not-a-scale-rule-keeps-the-rules-honest" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Maintainability (not a scale rule, keeps the rules honest)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#throughout" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Throughout
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#order-and-risk" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Order and risk
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1862,113 +1726,6 @@
     
   
   
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#phase-0-land-whats-in-flight-prerequisite-done" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Phase 0 — Land what's in flight (prerequisite) — ✅ done
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#phase-1-bronze-4-rules-the-tier-appears-on-the-badge-3-of-4-done-brands-pending" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Phase 1 — 🥉 Bronze (4 rules → the tier appears on the badge) — 3 of 4 done (brands pending)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#phase-2-gold-documentation-4-rules-no-code-risk-done" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Phase 2 — 🥇 Gold: documentation (4 rules, no code risk) — ✅ done
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#phase-3-gold-entity-audit-3-in_progress-rules-done-teststest_entity_auditpy" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Phase 3 — 🥇 Gold: entity audit (3 in_progress rules) — ✅ done (tests/test_entity_audit.py)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#phase-4-gold-code-rules-4-rules-done" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Phase 4 — 🥇 Gold: code rules (4 rules) — ✅ done
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#phase-5-platinum-strict-typing" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Phase 5 — 🏆 Platinum: strict-typing
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#maintainability-not-a-scale-rule-keeps-the-rules-honest" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Maintainability (not a scale rule, keeps the rules honest)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#throughout" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Throughout
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#order-and-risk" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Order and risk
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
 </nav>
                   </div>
                 </div>
@@ -1987,110 +1744,116 @@
   
 
 
-<h1 id="integration-quality-scale-plan-myhome-platinum">Integration Quality Scale plan: MyHOME → 🏆 Platinum<a class="headerlink" href="#integration-quality-scale-plan-myhome-platinum" title="Permanent link">&para;</a></h1>
-<p><em>Status on 2026-09-14 (<code>scripts/quality_scale_report.py</code>): <strong>no tier reached yet</strong> — 52/54 rules satisfied (Bronze 19/20, Silver 10/10, Gold 21/21, Platinum 2/3). Phases 0–4 are done; 🥉 Bronze is blocked only by <code>brands</code> (an external PR), Platinum by <code>strict-typing</code>. There is no "Diamond" tier in the official scale; the top is 🏆 Platinum. Tiers are formally awarded only by Home Assistant core review — this plan gets the self-audit there, which is the precondition for the upstream submission in ROADMAP Phase 5.</em></p>
-<p>Reference: <a href="https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/">https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/</a><br />
-Manifest: <a href="https://github.com/OpenWebNet-HA/MyHOME/blob/v2-phase1-architecture/custom_components/myhome/quality_scale.yaml"><code>custom_components/myhome/quality_scale.yaml</code></a></p>
-<h2 id="phase-0-land-whats-in-flight-prerequisite-done">Phase 0 — Land what's in flight (prerequisite) — ✅ done<a class="headerlink" href="#phase-0-land-whats-in-flight-prerequisite-done" title="Permanent link">&para;</a></h2>
-<ul>
-<li>Finish, test and merge <code>feat/cover-calibration</code> (<code>cover.py</code>, the bus-monitor card, <code>services.py</code>). It adds new services and ~10 new <code>HomeAssistantError</code> raises that Phases 2–4 must cover (<code>docs-actions</code>, <code>exception-translations</code>); doing quality work on an unmerged branch means doing it twice.</li>
-<li>Fix the local crash in <code>scripts/quality_scale_report.py</code> (cp1252 <code>UnicodeEncodeError</code> on Windows — <code>sys.stdout.reconfigure(encoding="utf-8")</code>) so the report is runnable locally, not only in CI.</li>
-</ul>
-<h2 id="phase-1-bronze-4-rules-the-tier-appears-on-the-badge-3-of-4-done-brands-pending">Phase 1 — 🥉 Bronze (4 rules → the tier appears on the badge) — 3 of 4 done (<code>brands</code> pending)<a class="headerlink" href="#phase-1-bronze-4-rules-the-tier-appears-on-the-badge-3-of-4-done-brands-pending" title="Permanent link">&para;</a></h2>
+<h1 id="hardware-trace-availability-matrix">Hardware Trace Availability Matrix<a class="headerlink" href="#hardware-trace-availability-matrix" title="Permanent link">&para;</a></h1>
+<p>This matrix documents the real-world physical gateways for which we have captured bus traces and diagnostic bundles in our <code>tests/fixtures</code> corpus. It is an honest representation of the hardware configurations that we actively test against to validate our protocol implementation.</p>
+<!-- TRACE_MATRIX_START -->
 <table>
 <thead>
 <tr>
-<th>Rule</th>
-<th>Work</th>
-<th>Size</th>
+<th style="text-align: left;">Gateway Model</th>
+<th style="text-align: center;">WHO 1<br>Lights</th>
+<th style="text-align: center;">WHO 2<br>Autom.</th>
+<th style="text-align: center;">WHO 4<br>Climate</th>
+<th style="text-align: center;">WHO 5<br>Alarm</th>
+<th style="text-align: center;">WHO 9<br>Power</th>
+<th style="text-align: center;">WHO 13<br>Gateway</th>
+<th style="text-align: center;">WHO 14<br>Lock</th>
+<th style="text-align: center;">WHO 16<br>Audio</th>
+<th style="text-align: center;">WHO 18<br>Energy</th>
+<th style="text-align: center;">WHO 25<br>Diag</th>
+<th style="text-align: center;">WHO 1013<br>Diag</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>docs-removal-instructions</code></td>
-<td>Add a "Removing the integration" section to README: delete the config entry → what is cleaned up, leftovers in <code>/config/www</code>, <code>myhome.yaml</code>.</td>
-<td>S</td>
+<td style="text-align: left;"><strong>F454</strong></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
-<td><code>runtime-data</code></td>
-<td>12 files still read <code>hass.data[DOMAIN]</code> (all 9 platforms + <code>services.py</code>, <code>decoder_pool.py</code>, <code>const.py</code>). Refactor to <code>entry.runtime_data</code> (typed <code>MyHOMEConfigEntry</code>); keep the <code>hass.data</code> mapping as a compatibility alias for one release, then delete. Extend <code>scripts/verify_ha_standards.py</code> to fail on <code>hass.data[DOMAIN]</code> in platform files.</td>
-<td>M</td>
+<td style="text-align: left;"><strong>F461</strong></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
 </tr>
 <tr>
-<td><code>has-entity-name</code></td>
-<td><strong>Decision first, then code.</strong> <code>myhome_device.py</code> sets <code>_attr_has_entity_name = False</code>; buttons already set <code>True</code>. Existing installs keep their <code>entity_id</code> (the registry keys on <code>unique_id</code>, it does not rename), so the breakage is limited to new installs / <code>myhome.yaml</code> users relying on generated ids. Proposal: close the community RFC with "migrate in 2.0.0 final, document the naming change"; set <code>_attr_name = None</code> on primary entities (one device = one entity), drop manual <code>self.entity_id</code> overrides, ship a migration note.</td>
-<td>L</td>
+<td style="text-align: left;"><strong>MH200</strong></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
 </tr>
 <tr>
-<td><code>brands</code></td>
-<td>Open the PR to <code>home-assistant/brands</code> (icon + logo, 256/512 px). External latency — open it in week 1 so it is not the last blocker.</td>
-<td>S (+ wait)</td>
+<td style="text-align: left;"><strong>MH201</strong></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>MH202</strong></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>MyHomeServer1</strong></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
 </tr>
 </tbody>
 </table>
-<h2 id="phase-2-gold-documentation-4-rules-no-code-risk-done">Phase 2 — 🥇 Gold: documentation (4 rules, no code risk) — ✅ done<a class="headerlink" href="#phase-2-gold-documentation-4-rules-no-code-risk-done" title="Permanent link">&para;</a></h2>
-<ul>
-<li><code>docs-known-limitations</code> — consolidate the deferred items in ROADMAP (RFC #248 list), gateway-profile gaps and <code>protocol_conformance_matrix.md</code> into one page.</li>
-<li><code>docs-troubleshooting</code> — generalise the README "🩹 Troubleshooting" loader-error section: connection/password failures, NACKs, bus-monitor permissions, log lines to look for.</li>
-<li><code>docs-use-cases</code> — a few end-to-end scenarios (scenes/CEN+ automations, timed covers with calibration, multi-room audio).</li>
-<li><code>docs-supported-functions</code> — audit table per WHO / platform of what is supported, read-only, or not supported.</li>
-</ul>
-<p>Most material already exists (<code>runtime_behaviour.md</code>, <code>protocol_conformance_matrix.md</code>, ROADMAP); this is mostly consolidation.</p>
-<h2 id="phase-3-gold-entity-audit-3-in_progress-rules-done-teststest_entity_auditpy">Phase 3 — 🥇 Gold: entity audit (3 <code>in_progress</code> rules) — ✅ done (<code>tests/test_entity_audit.py</code>)<a class="headerlink" href="#phase-3-gold-entity-audit-3-in_progress-rules-done-teststest_entity_auditpy" title="Permanent link">&para;</a></h2>
-<p>One pass over the 9 platforms producing a table <code>platform × entity → device_class / entity_category / enabled_by_default</code>:</p>
-<ul>
-<li><code>entity-category</code> — only buttons are categorised today (<code>EntityCategory.CONFIG</code>). Diagnostic sensors (gateway, bus telemetry) → <code>EntityCategory.DIAGNOSTIC</code>.</li>
-<li><code>entity-device-class</code> — verify cover (shutter/blind/…), switch (outlet/switch), binary_sensor and sensor classes per WHO.</li>
-<li><code>entity-disabled-by-default</code> — only <code>sensor.py</code> applies it today; decide for noisy/telemetry entities in the other platforms.</li>
-</ul>
-<p>Add a parametrised test that asserts the table so it cannot regress.</p>
-<h2 id="phase-4-gold-code-rules-4-rules-done">Phase 4 — 🥇 Gold: code rules (4 rules) — ✅ done<a class="headerlink" href="#phase-4-gold-code-rules-4-rules-done" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Rule</th>
-<th>Work</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>entity-translations</code></td>
-<td>Follows Phase 1 <code>has-entity-name</code>: add <code>translation_key</code> per entity type and an <code>entity</code> block in <code>strings.json</code> / <code>translations/en.json</code> (the validator already checks the top-level keys stay in sync).</td>
-</tr>
-<tr>
-<td><code>exception-translations</code></td>
-<td>User-facing raises in <code>cover.py</code>, <code>media_player.py</code>, <code>decoder_pool.py</code> are f-string <code>HomeAssistantError</code>s. Convert to <code>HomeAssistantError(translation_domain=DOMAIN, translation_key=..., translation_placeholders=...)</code> with an <code>exceptions</code> block in <code>strings.json</code>; use <code>ServiceValidationError</code> for bad service input (e.g. the <code>travel_time</code> range checks).</td>
-</tr>
-<tr>
-<td><code>repair-issues</code></td>
-<td><code>repairs.py</code> has 4 issue helpers, none called from production code. Wire at least gateway-identity-corrected (from the gateway precedence logic) and bus-collision into <code>gateway.py</code> / <code>__init__.py</code>, with tests.</td>
-</tr>
-<tr>
-<td><code>stale-devices</code></td>
-<td>Implement <code>async_remove_config_entry_device</code> in <code>__init__.py</code> (allow removal when the device has no live entities / is no longer seen on the bus); pair with the existing setup-time prune.</td>
-</tr>
-</tbody>
-</table>
-<h2 id="phase-5-platinum-strict-typing">Phase 5 — 🏆 Platinum: <code>strict-typing</code><a class="headerlink" href="#phase-5-platinum-strict-typing" title="Permanent link">&para;</a></h2>
-<ul>
-<li>✅ Ratchet in place: <code>[tool.mypy]</code> (strict) in <code>pyproject.toml</code>, <code>mypy_baseline.json</code> with a per-module ceiling, <code>scripts/typing_ratchet.py</code> (fails on any regression, <code>--update</code> only lowers), workflow <code>strict-typing.yml</code>. 15 of 28 modules are clean (<code>const</code>, <code>data</code>, <code>gateway</code>, <code>myhome_device</code>, <code>services</code>, <code>device_trigger</code>, <code>decoder_pool</code>, transports, diagnostics, repairs, bus monitor); <strong>504 errors remain in 13 modules</strong> — biggest first: <code>config_flow</code> 105, <code>cover</code> 64, <code>validate</code> 57, <code>binary_sensor</code> 43, <code>light</code> 37, <code>sensor</code> 32, <code>websocket</code> 30, <code>__init__</code> 27, <code>button</code> 27, <code>climate</code> 25, <code>media_player</code> 25, <code>alarm_control_panel</code> 18, <code>switch</code> 14 (<code>discovery</code> and <code>router</code> are clean). Each PR that touches a module should leave it lower and run <code>--update</code>.</li>
-<li>OWNd does <strong>not</strong> ship <code>py.typed</code>; the rule needs an OWNd release that is PEP 561 typed before it can be marked done.</li>
-<li><code>inject-websession</code> is correctly <code>exempt</code> (raw TCP, no HTTP); <code>async-dependency</code> is done.</li>
-</ul>
-<h2 id="maintainability-not-a-scale-rule-keeps-the-rules-honest">Maintainability (not a scale rule, keeps the rules honest)<a class="headerlink" href="#maintainability-not-a-scale-rule-keeps-the-rules-honest" title="Permanent link">&para;</a></h2>
-<ul>
-<li>✅ <code>custom_components/myhome/discovery.py</code> holds the restore / configure / discover / route skeleton once; <code>light</code>, <code>switch</code>, <code>cover</code>, <code>alarm_control_panel</code> and <code>media_player</code> are on it (their setup functions shrank from ~940 to ~260 lines, module coverage stays 100%, the new module is mypy-strict clean).</li>
-<li>✅ <code>sensor</code>, <code>binary_sensor</code> and <code>climate</code> followed (multi-WHO platforms, one entity per measurement, address spellings, direct feed); <code>button</code> uses the shared address helpers. Their setup code is fully typed, which took the ratchet from 537 to 506.</li>
-<li>✅ <code>router.py</code>: one <code>FrameRouter</code> per gateway delivers frames to the entities owning their addresses. The platforms subscribe the entities they create and publish the frames they receive; the <code>myhome_update_{mac}_{who}_{where}</code> dispatcher signals (60+ f-strings across platforms and entities) are gone, and so is the entity-side <code>async_added_to_hass</code> subscription boilerplate. Ratchet 507 → 504.</li>
-</ul>
-<h2 id="throughout">Throughout<a class="headerlink" href="#throughout" title="Permanent link">&para;</a></h2>
-<ul>
-<li>Update <code>quality_scale.yaml</code> in the same PR as each rule — the report is only as honest as the manifest.</li>
-<li>Once Bronze is reached, add <code>--require bronze</code> to <code>.github/workflows/quality-scale.yml</code> and ratchet the tier as phases land so it cannot silently regress.</li>
-</ul>
-<h2 id="order-and-risk">Order and risk<a class="headerlink" href="#order-and-risk" title="Permanent link">&para;</a></h2>
-<p>Phase 0 → 1 (<code>docs-removal</code> + <code>runtime-data</code> + brands PR in week 1, <code>has-entity-name</code> decision in parallel) → 2 → 3 → 4 → 5.<br />
-Phases 1 (<code>has-entity-name</code>) and 4 (<code>stale-devices</code>, <code>repair-issues</code>) are the only ones with breaking-change or behavioural risk; everything else is documentation, audit or typing.</p>
+<!-- TRACE_MATRIX_END -->
+
+<p><em>Checkmarks (✅) indicate that at least one <code>diagnostic_summary.json</code> or <code>.txt</code> bus capture in our test corpus contains frames for that subsystem from the specified gateway model.</em></p>
 
 
 
