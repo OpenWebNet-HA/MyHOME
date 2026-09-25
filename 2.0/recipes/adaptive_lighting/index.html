@@ -12,13 +12,9 @@
         <meta name="author" content="OpenWebNet-HA Community">
       
       
-        <link rel="canonical" href="https://openwebnet-ha.github.io/MyHOME/2.0/configuration/lights/">
+        <link rel="canonical" href="https://openwebnet-ha.github.io/MyHOME/2.0/recipes/adaptive_lighting/">
       
       
-        <link rel="prev" href="../gateway-identification/">
-      
-      
-        <link rel="next" href="../covers/">
       
       
         
@@ -29,7 +25,7 @@
     
     
       
-        <title>Lights & Dimmers - MyHOME for Home Assistant</title>
+        <title>Adaptive Lighting with MyHOME (SCS & DALI-2) - MyHOME for Home Assistant</title>
       
     
     
@@ -80,7 +76,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#lights-dimmers-who-1" class="md-skip">
+        <a href="#adaptive-lighting-with-myhome-scs-dali-2" class="md-skip">
           Skip to content
         </a>
       
@@ -118,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Lights & Dimmers
+              Adaptive Lighting with MyHOME (SCS &amp; DALI-2)
             
           </span>
         </div>
@@ -252,7 +248,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../" class="md-tabs__link">
+        <a href="../../configuration/" class="md-tabs__link">
           
   
   
@@ -268,13 +264,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="../gateways/" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../../configuration/gateways/" class="md-tabs__link">
           
   
   
@@ -294,7 +288,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../bus_monitor/" class="md-tabs__link">
+        <a href="../../configuration/bus_monitor/" class="md-tabs__link">
           
   
   
@@ -498,7 +492,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../" class="md-nav__link">
+      <a href="../../configuration/" class="md-nav__link">
         
   
   
@@ -614,31 +608,28 @@
       
   
   
-    
   
   
-  
     
     
     
     
-      
-        
-        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
             
   
   
@@ -656,7 +647,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -674,7 +665,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../gateways/" class="md-nav__link">
+      <a href="../../configuration/gateways/" class="md-nav__link">
         
   
   
@@ -702,7 +693,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../gateway-identification/" class="md-nav__link">
+      <a href="../../configuration/gateway-identification/" class="md-nav__link">
         
   
   
@@ -727,37 +718,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Lights & Dimmers
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../configuration/lights/" class="md-nav__link">
         
   
   
@@ -773,170 +737,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#auto-discovery" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        🚀 Auto-Discovery
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#dynamic-capability-learning-v2-engine" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        🎨 Dynamic Capability Learning (v2 Engine)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#dimmer-transition-modes-ui-options" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        ⚙️ Dimmer Transition Modes (UI Options)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#native-bus-timers-temporized-lights" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        ⏱️ Native Bus Timers (Temporized Lights)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#lighting-groups-scs-dali-groups" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        💡 Lighting Groups (SCS &amp; DALI Groups)
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="💡 Lighting Groups (SCS &amp; DALI Groups)">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#approach-1-home-assistant-native-light-groups-recommended" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Approach 1: Home Assistant Native Light Groups (Recommended)
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Approach 1: Home Assistant Native Light Groups (Recommended)">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#how-to-configure-in-home-assistant" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        How to Configure in Home Assistant
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#approach-2-physical-scs-hardware-groups-where-g-via-myhomeyaml" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Approach 2: Physical SCS Hardware Groups (where: '#G') via myhome.yaml
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#synchronizing-physical-wall-switches-scs-group-buttons" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Synchronizing Physical Wall Switches (SCS Group Buttons)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#simultaneous-hardware-broadcasts-eliminating-sequential-pacing" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Simultaneous Hardware Broadcasts (Eliminating Sequential Pacing)
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#adaptive-circadian-lighting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        ☀️ Adaptive &amp; Circadian Lighting
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#legacy-yaml-note" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        🔄 Legacy YAML Note
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -949,7 +749,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../covers/" class="md-nav__link">
+      <a href="../../configuration/covers/" class="md-nav__link">
         
   
   
@@ -977,7 +777,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../climate/" class="md-nav__link">
+      <a href="../../configuration/climate/" class="md-nav__link">
         
   
   
@@ -1005,7 +805,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../media_player/" class="md-nav__link">
+      <a href="../../configuration/media_player/" class="md-nav__link">
         
   
   
@@ -1033,7 +833,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../cen_cenplus/" class="md-nav__link">
+      <a href="../../configuration/cen_cenplus/" class="md-nav__link">
         
   
   
@@ -1061,7 +861,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../switches/" class="md-nav__link">
+      <a href="../../configuration/switches/" class="md-nav__link">
         
   
   
@@ -1089,7 +889,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../sensors/" class="md-nav__link">
+      <a href="../../configuration/sensors/" class="md-nav__link">
         
   
   
@@ -1117,7 +917,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../binary-sensors/" class="md-nav__link">
+      <a href="../../configuration/binary-sensors/" class="md-nav__link">
         
   
   
@@ -1145,7 +945,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../alarm/" class="md-nav__link">
+      <a href="../../configuration/alarm/" class="md-nav__link">
         
   
   
@@ -1173,7 +973,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../services/" class="md-nav__link">
+      <a href="../../configuration/services/" class="md-nav__link">
         
   
   
@@ -1262,7 +1062,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../bus_monitor/" class="md-nav__link">
+      <a href="../../configuration/bus_monitor/" class="md-nav__link">
         
   
   
@@ -1318,7 +1118,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../lovelace_recipes/" class="md-nav__link">
+      <a href="../../configuration/lovelace_recipes/" class="md-nav__link">
         
   
   
@@ -1346,7 +1146,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../troubleshooting/" class="md-nav__link">
+      <a href="../../configuration/troubleshooting/" class="md-nav__link">
         
   
   
@@ -1374,7 +1174,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../known_limitations/" class="md-nav__link">
+      <a href="../../configuration/known_limitations/" class="md-nav__link">
         
   
   
@@ -1402,7 +1202,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../use_cases/" class="md-nav__link">
+      <a href="../../configuration/use_cases/" class="md-nav__link">
         
   
   
@@ -1519,7 +1319,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../runtime_behaviour/" class="md-nav__link">
+      <a href="../../configuration/runtime_behaviour/" class="md-nav__link">
         
   
   
@@ -1547,7 +1347,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../supported_functions/" class="md-nav__link">
+      <a href="../../configuration/supported_functions/" class="md-nav__link">
         
   
   
@@ -1914,10 +1714,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#auto-discovery" class="md-nav__link">
+  <a href="#overview-architecture" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚀 Auto-Discovery
+        Overview &amp; Architecture
       
     </span>
   </a>
@@ -1925,10 +1725,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#dynamic-capability-learning-v2-engine" class="md-nav__link">
+  <a href="#supported-hardware" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🎨 Dynamic Capability Learning (v2 Engine)
+        Supported Hardware
       
     </span>
   </a>
@@ -1936,10 +1736,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#dimmer-transition-modes-ui-options" class="md-nav__link">
+  <a href="#recommended-adaptive-lighting-settings" class="md-nav__link">
     <span class="md-ellipsis">
       
-        ⚙️ Dimmer Transition Modes (UI Options)
+        Recommended Adaptive Lighting Settings
       
     </span>
   </a>
@@ -1947,10 +1747,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#native-bus-timers-temporized-lights" class="md-nav__link">
+  <a href="#example-yaml-configuration" class="md-nav__link">
     <span class="md-ellipsis">
       
-        ⏱️ Native Bus Timers (Temporized Lights)
+        Example YAML Configuration
       
     </span>
   </a>
@@ -1958,50 +1758,33 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#lighting-groups-scs-dali-groups" class="md-nav__link">
+  <a href="#dimmer-transition-mode-selection" class="md-nav__link">
     <span class="md-ellipsis">
       
-        💡 Lighting Groups (SCS &amp; DALI Groups)
+        Dimmer Transition Mode Selection
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="💡 Lighting Groups (SCS &amp; DALI Groups)">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#working-with-groups" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Working with Groups
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Working with Groups">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#approach-1-home-assistant-native-light-groups-recommended" class="md-nav__link">
+  <a href="#option-a-home-assistant-light-groups-recommended" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Approach 1: Home Assistant Native Light Groups (Recommended)
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Approach 1: Home Assistant Native Light Groups (Recommended)">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#how-to-configure-in-home-assistant" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        How to Configure in Home Assistant
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#approach-2-physical-scs-hardware-groups-where-g-via-myhomeyaml" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Approach 2: Physical SCS Hardware Groups (where: '#G') via myhome.yaml
+        Option A: Home Assistant Light Groups (Recommended)
       
     </span>
   </a>
@@ -2009,21 +1792,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#synchronizing-physical-wall-switches-scs-group-buttons" class="md-nav__link">
+  <a href="#option-b-myhome-scs-hardware-groups-where-g" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Synchronizing Physical Wall Switches (SCS Group Buttons)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#simultaneous-hardware-broadcasts-eliminating-sequential-pacing" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Simultaneous Hardware Broadcasts (Eliminating Sequential Pacing)
+        Option B: MyHOME SCS Hardware Groups (WHERE = '#G')
       
     </span>
   </a>
@@ -2036,21 +1808,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#adaptive-circadian-lighting" class="md-nav__link">
+  <a href="#troubleshooting-best-practices" class="md-nav__link">
     <span class="md-ellipsis">
       
-        ☀️ Adaptive &amp; Circadian Lighting
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#legacy-yaml-note" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        🔄 Legacy YAML Note
+        Troubleshooting &amp; Best Practices
       
     </span>
   </a>
@@ -2077,112 +1838,136 @@
   
 
 
-<h1 id="lights-dimmers-who-1">Lights &amp; Dimmers (WHO = 1)<a class="headerlink" href="#lights-dimmers-who-1" title="Permanent link">&para;</a></h1>
-<p>The <strong>MyHOME</strong> integration provides full control for on/off actuators, dimmers, and tunable white / RGB fixtures operating on OpenWebNet <strong>WHO = 1</strong>.</p>
-<p>In v2, setup and management are <strong>100% UI-first</strong>: lighting fixtures are automatically discovered over the SCS bus, and capabilities such as dimming, colour temperature, and colour modes are learned dynamically from bus telemetry.</p>
+<h1 id="adaptive-lighting-with-myhome-scs-dali-2">Adaptive Lighting with MyHOME (SCS &amp; DALI-2)<a class="headerlink" href="#adaptive-lighting-with-myhome-scs-dali-2" title="Permanent link">&para;</a></h1>
+<p>This recipe describes how to seamlessly integrate the popular <a href="https://github.com/basnijholt/adaptive-lighting">Adaptive Lighting</a> component with <strong>MyHOME</strong> for natural circadian lighting (smoothly synchronizing brightness and color temperature with the sun's cycle).</p>
 <hr />
-<h2 id="auto-discovery">🚀 Auto-Discovery<a class="headerlink" href="#auto-discovery" title="Permanent link">&para;</a></h2>
-<p>When your gateway connects to Home Assistant:</p>
+<h2 id="overview-architecture">Overview &amp; Architecture<a class="headerlink" href="#overview-architecture" title="Permanent link">&para;</a></h2>
+<p>BTicino MyHOME lighting systems communicate over a physical SCS two-wire bus operating at 9,600 baud. Circadian lighting controllers like Adaptive Lighting send frequent periodic adjustments throughout the day.</p>
+<p>Starting in MyHOME v2, the integration incorporates specific bus-protection and optimization mechanisms designed for adaptive lighting:</p>
 <ol>
-<li><strong>Dynamic Bus Discovery</strong>: The integration listens to OpenWebNet <code>WHO = 1</code> frames and scans active addresses.</li>
-<li><strong>Device &amp; Entity Creation</strong>: Each physical lighting actuator (<code>WHERE = 1..99</code> or area/point addresses <code>WHERE = 01..9999</code>) is registered as a Home Assistant <code>light</code> entity linked to the gateway device.</li>
-<li><strong>UI Customization</strong>: Rename lights, assign them to Areas (e.g. <em>Kitchen</em>, <em>Living Room</em>), or customize icons directly in the Home Assistant UI (<strong>Settings → Devices &amp; Services → Entities</strong>).</li>
+<li><strong>Small-Delta Instant Dispatch &amp; Step Clamping</strong>: For dimmers configured with <code>software_stepped</code> transitions, brightness adjustments \&lt;= 1% execute instantly without spawning a background fade task, and identical brightness writes on lights that are already on are skipped entirely. For adjustments &gt;= 2%, calculation steps are clamped to <code>delta_pct</code> and duplicate integer percentage frames are deduplicated. (For fixtures configured in <code>native</code> transition mode, such as DALI gateways, commands already send a single hardware target frame per adaptation tick). This eliminates bus flooding during periodic circadian adaptations (saving up to ~90% on-wire traffic compared to unclamped 25-step transitions).</li>
+<li><strong>Unified Parameter Dispatch</strong>: When Adaptive Lighting dispatches <code>brightness</code> and <code>color_temp_kelvin</code> together in a single service call, MyHOME dispatches both dimensions (Dimension 1 for dimming, Dimension 14 for tunable white) smoothly.</li>
+<li><strong>Graceful Group Transitions</strong>: Both Home Assistant native <code>light.group</code> helpers and MyHOME SCS hardware groups (<code>MyHOMELightGroup</code>) tolerate <code>transition</code> parameters gracefully without raising configuration errors.</li>
+<li><strong>Optimistic State Tracking</strong>: Native transition commands update Home Assistant's internal entity state immediately, preventing bouncing or visual flicker in circadian loops.</li>
 </ol>
 <hr />
-<h2 id="dynamic-capability-learning-v2-engine">🎨 Dynamic Capability Learning (v2 Engine)<a class="headerlink" href="#dynamic-capability-learning-v2-engine" title="Permanent link">&para;</a></h2>
-<p>Unlike legacy configurations that required manual flags (such as <code>dimmable: True</code>), v2 dynamically learns each fixture's capabilities directly from OpenWebNet bus traffic:</p>
+<h2 id="supported-hardware">Supported Hardware<a class="headerlink" href="#supported-hardware" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>On / Off</strong>: All discovered fixtures initially support standard switching (<code>turn_on</code>, <code>turn_off</code>).</li>
-<li><strong>Brightness / Dimming</strong>: When the actuator reports a brightness frame (<code>Dimension = 1</code>), the integration unlocks the brightness slider in Home Assistant.</li>
-<li><strong>Colour Temperature (Tunable White)</strong>: When a DALI or SCS gateway reports colour temperature telemetry (<code>Dimension = 14</code>), Home Assistant exposes mireds/Kelvin colour temperature control.</li>
-<li><strong>HSV / RGB Colour</strong>: Telemetry reporting hue and saturation (<code>Dimension = 12</code>) dynamically enables the Home Assistant colour picker.</li>
-<li><strong>Additive Retention</strong>: Capabilities are <strong>added, never removed</strong>. A DALI DT8 driver reporting both dimensions <code>12</code> and <code>14</code> ends up with <code>supported_color_modes: [hs, color_temp]</code>, and its active <code>color_mode</code> smoothly tracks incoming bus frames.</li>
+<li><strong>DALI-2 Tunable White / DT8 Fixtures</strong>: Controlled via BTicino DALI gateways (e.g., <strong>F429</strong>, <strong>F429G</strong>). Operates using OpenWebNet <strong>Dimension 14</strong> (Color Temperature in Mireds / Kelvin).</li>
+<li><strong>SCS Dimmers</strong>: BTicino standard dimmers (e.g., <strong>F418</strong>, <strong>F418U2</strong>, <strong>F413</strong>, <strong>002611</strong>, <strong>067557</strong>). Operates using OpenWebNet <strong>Dimension 1</strong> (Dimming percentage 0–100%).</li>
+<li><strong>On/Off Actuators</strong>: Standard relays (e.g., <strong>F411</strong>). Adaptive Lighting will manage on/off state or 'sleep mode' brightness if linked with dimmable fixtures.</li>
 </ul>
 <hr />
-<h2 id="dimmer-transition-modes-ui-options">⚙️ Dimmer Transition Modes (UI Options)<a class="headerlink" href="#dimmer-transition-modes-ui-options" title="Permanent link">&para;</a></h2>
-<p>You can customize how dimming transitions are executed globally via the integration's UI Options:</p>
-<ol>
-<li>Navigate to <strong>Settings → Devices &amp; Services → MyHOME</strong>.</li>
-<li>Click <strong>Configure</strong>.</li>
-<li>Select your preferred <strong>Dimmer Transition Mode</strong>:</li>
-<li><strong><code>software_stepped</code></strong> (<em>Default / Recommended</em>): Home Assistant manages incremental step fading, providing smooth transitions across all actuators.</li>
-<li><strong><code>native</code></strong>: Lets the physical hardware dimmer module perform its internal hardware fade ramp.</li>
-</ol>
+<h2 id="recommended-adaptive-lighting-settings">Recommended Adaptive Lighting Settings<a class="headerlink" href="#recommended-adaptive-lighting-settings" title="Permanent link">&para;</a></h2>
+<p>When configuring an Adaptive Lighting instance for MyHOME lights, use the following recommended parameters:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Setting</th>
+<th style="text-align: left;">Recommended Value</th>
+<th style="text-align: left;">Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong><code>transition</code></strong></td>
+<td style="text-align: left;"><code>1</code> or <code>2</code> seconds</td>
+<td style="text-align: left;">Prevents long software step chains from queuing across the 9600-baud SCS bus.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong><code>interval</code></strong></td>
+<td style="text-align: left;"><code>90</code> seconds (min floor <code>60</code>s)</td>
+<td style="text-align: left;">A 90s interval is imperceptible to the human eye while keeping bus load minimal.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong><code>min_color_temp</code></strong></td>
+<td style="text-align: left;"><code>2000</code> K (or fixture min)</td>
+<td style="text-align: left;">Sets the warmest evening/night color temperature.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong><code>max_color_temp</code></strong></td>
+<td style="text-align: left;"><code>6535</code> K (or fixture max)</td>
+<td style="text-align: left;">OpenWebNet Dimension 14 supports up to 6535 K (153 mireds).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong><code>separate_turn_on_commands</code></strong></td>
+<td style="text-align: left;"><code>false</code></td>
+<td style="text-align: left;">MyHOME handles simultaneous brightness and color temperature in a unified call.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong><code>detect_non_ha_changes</code></strong></td>
+<td style="text-align: left;"><code>false</code> (or test carefully)</td>
+<td style="text-align: left;">Disabling prevents physical wall switch dimming from falsely triggering "manual control override" locks due to bus round-trip latency. <strong>Trade-off note</strong>: with <code>manual_control_on_external_turn_on: true</code>, toggling a light on or off at the physical wall switch still pauses circadian adaptation as expected, but physical dimmer adjustments made while the light is already on will not pause adaptation until the light is toggled off and back on.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong><code>manual_control_on_external_turn_on</code></strong></td>
+<td style="text-align: left;"><code>true</code></td>
+<td style="text-align: left;">Allows physical BTicino wall switches to pause circadian adaptation when toggled manually.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong><code>take_over_control</code></strong></td>
+<td style="text-align: left;"><code>true</code></td>
+<td style="text-align: left;">Resets manual override when turning on via Home Assistant UI or automations.</td>
+</tr>
+</tbody>
+</table>
 <hr />
-<h2 id="native-bus-timers-temporized-lights">⏱️ Native Bus Timers (Temporized Lights)<a class="headerlink" href="#native-bus-timers-temporized-lights" title="Permanent link">&para;</a></h2>
-<p>MyHOME light actuators feature built-in hardware timers on the SCS bus. Running timers directly in hardware guarantees lights turn off even if Home Assistant restarts, reloads, or experiences network interruptions.</p>
-<p>You can trigger native hardware timers using the <code>myhome.turn_on_timed</code> service in automations or Developer Tools:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.turn_on_timed</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">target</span><span class="p">:</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">light.hallway_light</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nt">data</span><span class="p">:</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">time</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">120</span><span class="w">   </span><span class="c1"># Turn on and automatically turn off after 2 minutes</span>
+<h2 id="example-yaml-configuration">Example YAML Configuration<a class="headerlink" href="#example-yaml-configuration" title="Permanent link">&para;</a></h2>
+<p>If configuring via <code>configuration.yaml</code> (or via the UI Integration Options):</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">adaptive_lighting</span><span class="p">:</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"Living</span><span class="nv"> </span><span class="s">Room</span><span class="nv"> </span><span class="s">Circadian"</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nt">lights</span><span class="p">:</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">light.living_room_dali_pendant</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">light.living_room_spots</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="nt">transition</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">    </span><span class="nt">interval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">90</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">    </span><span class="nt">min_color_temp</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2200</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">    </span><span class="nt">max_color_temp</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">6535</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">    </span><span class="nt">min_brightness</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">    </span><span class="nt">max_brightness</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">    </span><span class="nt">sleep_color_temp</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2000</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">    </span><span class="nt">sleep_brightness</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">    </span><span class="nt">separate_turn_on_commands</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">    </span><span class="nt">detect_non_ha_changes</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">    </span><span class="nt">manual_control_on_external_turn_on</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">    </span><span class="nt">take_over_control</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span></code></pre></div>
 <hr />
-<h2 id="lighting-groups-scs-dali-groups">💡 Lighting Groups (SCS &amp; DALI Groups)<a class="headerlink" href="#lighting-groups-scs-dali-groups" title="Permanent link">&para;</a></h2>
-<p>In MyHOME systems, lighting actuators can be grouped physically via configurators or MyHOME Suite into <strong>SCS Groups</strong> (<code>WHERE = #1</code> through <code>#255</code>), which is also the standard mechanism used to group fixtures on DALI gateway interfaces such as the <strong>F429G</strong>.</p>
-<h3 id="approach-1-home-assistant-native-light-groups-recommended">Approach 1: Home Assistant Native Light Groups (Recommended)<a class="headerlink" href="#approach-1-home-assistant-native-light-groups-recommended" title="Permanent link">&para;</a></h3>
-<p>For Home Assistant installations, <strong>managing lighting groups software-side using Home Assistant's native Light Group helper (<code>light.group</code>) is the officially recommended approach</strong>:</p>
-<ol>
-<li><strong>No Protocol Discovery</strong>: The OpenWebNet protocol provides no mechanism to query the gateway for group memberships (there is no command to ask <em>"which lights belong to Group #1?"</em>).</li>
-<li><strong>Preventing Desynchronization</strong>: On many physical gateways and area configurations, individual actuators do not emit status updates after executing group commands on the bus. Exposing hardware groups directly would cause individual entity states in Home Assistant to drift out of sync. Home Assistant Light Groups avoid this by maintaining 100% accurate aggregate state tracking across all members.</li>
-<li><strong>Cross-Technology Support</strong>: Home Assistant Light Groups allow combining DALI fixtures, standard F411 relays, F418 dimmers, and third-party smart bulbs (Zigbee, Hue, etc.) into a unified group entity.</li>
-</ol>
-<h4 id="how-to-configure-in-home-assistant">How to Configure in Home Assistant<a class="headerlink" href="#how-to-configure-in-home-assistant" title="Permanent link">&para;</a></h4>
-<ol>
-<li>In Home Assistant, go to <strong>Settings → Devices &amp; Services → Helpers</strong>.</li>
-<li>Click <strong>Create Helper → Group → Light Group</strong>.</li>
-<li>Name your group (e.g. <em>Living Room DALI Lights</em>) and select all discovered member lights.</li>
-</ol>
-<hr />
-<h3 id="approach-2-physical-scs-hardware-groups-where-g-via-myhomeyaml">Approach 2: Physical SCS Hardware Groups (<code>where: '#G'</code>) via <code>myhome.yaml</code><a class="headerlink" href="#approach-2-physical-scs-hardware-groups-where-g-via-myhomeyaml" title="Permanent link">&para;</a></h3>
-<p>If your actuators are physically configured into an SCS group (e.g. <code>WHERE = #1</code> programmed via physical configurators or MyHOME_Suite) and you prefer Home Assistant to transmit single group frames directly on the bus, you can declare the group in <code>/config/myhome.yaml</code>:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># /config/myhome.yaml</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">groups</span><span class="p">:</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">living_room_group</span><span class="p">:</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">'#1'</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Living Room Group</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="nt">members</span><span class="p">:</span>
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">'11'</span>
-</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">'12'</span>
-</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">'13'</span>
-</span></code></pre></div>
+<h2 id="dimmer-transition-mode-selection">Dimmer Transition Mode Selection<a class="headerlink" href="#dimmer-transition-mode-selection" title="Permanent link">&para;</a></h2>
+<p>In <strong>Settings → Devices &amp; Services → MyHOME → Configure</strong>:</p>
 <ul>
-<li><strong>With <code>members:</code> list</strong>: Home Assistant tracks individual member states and calculates an accurate aggregate state (on/off and brightness).</li>
-<li><strong>Without <code>members:</code> list</strong>: The entity operates in <code>assumed_state: true</code>, rendering separate On and Off buttons.</li>
+<li><strong><code>software_stepped</code> (Default)</strong>: Best for standard dimmers (F418) when you want uniform, stepped fading. The integration's deduplication logic prevents redundant bus frames.</li>
+<li><strong><code>native</code></strong>: Best if your fixtures or DALI drivers have hardware-configured fade times (fade rate programmed via DALI tool or MyHOME Suite). Commands send a single hardware target frame.</li>
 </ul>
 <hr />
-<h3 id="synchronizing-physical-wall-switches-scs-group-buttons">Synchronizing Physical Wall Switches (SCS Group Buttons)<a class="headerlink" href="#synchronizing-physical-wall-switches-scs-group-buttons" title="Permanent link">&para;</a></h3>
-<p>If you have physical BTicino wall switches configured to trigger an SCS group (e.g. <code>WHERE = #1</code>), the integration automatically dispatches a bus event named <code>myhome_group_light_event</code> whenever group frames are intercepted on the SCS bus. You can keep your Home Assistant Light Group perfectly synchronized with a simple automation:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">alias</span><span class="p">:</span><span class="w"> </span><span class="s">"Sync</span><span class="nv"> </span><span class="s">MyHOME</span><span class="nv"> </span><span class="s">Group</span><span class="nv"> </span><span class="s">1</span><span class="nv"> </span><span class="s">Wall</span><span class="nv"> </span><span class="s">Switch"</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">trigger</span><span class="p">:</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">platform</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">event</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="nt">event_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome_group_light_event</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="nt">event_data</span><span class="p">:</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">      </span><span class="nt">group</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="nt">action</span><span class="p">:</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">service</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">light.turn_{{ trigger.event.data.event }}</span>
-</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="nt">target</span><span class="p">:</span>
-</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">      </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">light.living_room_dali_lights</span>
+<h2 id="working-with-groups">Working with Groups<a class="headerlink" href="#working-with-groups" title="Permanent link">&para;</a></h2>
+<h3 id="option-a-home-assistant-light-groups-recommended">Option A: Home Assistant Light Groups (Recommended)<a class="headerlink" href="#option-a-home-assistant-light-groups-recommended" title="Permanent link">&para;</a></h3>
+<p>Create a Light Group helper (<strong>Settings → Devices &amp; Services → Helpers → Create Helper → Light Group</strong>) combining your MyHOME fixtures. Point Adaptive Lighting directly to the <code>light.group_...</code> entity. Home Assistant will distribute the target brightness and color temperature across all members. This is the recommended default because it maintains 100% accurate per-entity state tracking regardless of physical actuator model.</p>
+<h3 id="option-b-myhome-scs-hardware-groups-where-g">Option B: MyHOME SCS Hardware Groups (<code>WHERE = '#G'</code>)<a class="headerlink" href="#option-b-myhome-scs-hardware-groups-where-g" title="Permanent link">&para;</a></h3>
+<p>If you define SCS groups in <code>/config/myhome.yaml</code> under your gateway MAC address:
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">00:03:50:xx:xx:xx</span><span class="p">:</span><span class="w">  </span><span class="c1"># Your gateway MAC address</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">light</span><span class="p">:</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="nt">living_room_dali_group</span><span class="p">:</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">'#1'</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Living Room DALI Group</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">      </span><span class="nt">dimmable</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">      </span><span class="nt">color_temp</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">      </span><span class="nt">members</span><span class="p">:</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">'11'</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">'12'</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">'13'</span>
 </span></code></pre></div>
-<h3 id="simultaneous-hardware-broadcasts-eliminating-sequential-pacing">Simultaneous Hardware Broadcasts (Eliminating Sequential Pacing)<a class="headerlink" href="#simultaneous-hardware-broadcasts-eliminating-sequential-pacing" title="Permanent link">&para;</a></h3>
-<p>If you have a large DALI group and want to broadcast a simultaneous color temperature or dimming level across all ballasts in a single on-wire frame (avoiding sequential command pacing), you can send an OpenWebNet frame directly using <code>myhome.send_message</code>:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Example: Broadcast 153 mireds (6500K) to SCS Group #1 via DALI interface</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.send_message</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nt">data</span><span class="p">:</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">"*#1*#1*#14*153##"</span>
-</span></code></pre></div>
+Adaptive Lighting can control <code>light.living_room_dali_group</code> directly. MyHOME dispatches both brightness and color temperature across the group without transition errors. Targeting an SCS hardware group issues a single pair of frames on the bus for all ballasts, significantly cutting bus traffic compared to individually addressing many fixtures.</p>
 <hr />
-<h2 id="adaptive-circadian-lighting">☀️ Adaptive &amp; Circadian Lighting<a class="headerlink" href="#adaptive-circadian-lighting" title="Permanent link">&para;</a></h2>
-<p>MyHOME seamlessly supports circadian and adaptive lighting automations using the <a href="https://github.com/basnijholt/adaptive-lighting">Adaptive Lighting</a> custom integration.</p>
-<p>Because OpenWebNet operates over a 9,600-baud SCS physical bus, running automated circadian dimmers requires tuning transition steps and adaptation intervals to avoid bus saturation.</p>
-<p>For detailed configuration recommendations, DALI-2 tunable white setup, and group handling, see the <a href="../../recipes/adaptive_lighting/">Adaptive Lighting Recipe</a>.</p>
-<hr />
-<h2 id="legacy-yaml-note">🔄 Legacy YAML Note<a class="headerlink" href="#legacy-yaml-note" title="Permanent link">&para;</a></h2>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>If you are upgrading from legacy v0.9 installations and still have manual <code>light:</code> blocks in <code>/config/myhome.yaml</code>, please refer to the <a href="../../0.9.4/configuration/lights/">v0.9.4 Legacy Light Documentation</a> or the <a href="../../migration/legacy-yaml/">Legacy YAML Migration Guide</a>. In v2, all lights are managed dynamically via Home Assistant's native registry.</p>
-</div>
+<h2 id="troubleshooting-best-practices">Troubleshooting &amp; Best Practices<a class="headerlink" href="#troubleshooting-best-practices" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Slow Reaction or Bus Queuing</strong>:
+   If you have many fixtures (e.g. &gt;10 dimmers in a single zone), do not set <code>interval</code> lower than <code>60</code> seconds. Spreading updates across an interval reduces peak message bursts on the SCS bus.</li>
+<li><strong>Tunable White Range</strong>:
+   BTicino DALI interfaces support color temperatures down to 153 mireds (~6535 K). Ensure <code>max_color_temp</code> does not exceed your driver's rated limits.</li>
+<li><strong>Manual Override Reset</strong>:
+   If someone turns on a light via an SCS wall switch and Adaptive Lighting marks it as "manually controlled", toggle the switch off and on or call <code>adaptive_lighting.set_manual_control</code> (with <code>manual_control: false</code>) in your bedtime/morning routines.</li>
+</ol>
 
 
 
