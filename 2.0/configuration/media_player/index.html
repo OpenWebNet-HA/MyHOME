@@ -996,6 +996,84 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#multi-room-audio-grouping-music-assistant-home-assistant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        👥 Multi-Room Audio Grouping (Music Assistant &amp; Home Assistant)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="👥 Multi-Room Audio Grouping (Music Assistant &amp; Home Assistant)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-grouping-works-with-the-analog-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Grouping Works with the Analog Matrix
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#backend-stream-compatibility-dlna-dmr-cambridge-audio-wiim-squeezelite" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        📡 Backend Stream Compatibility &amp; DLNA DMR (Cambridge Audio, WiiM, Squeezelite)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="📡 Backend Stream Compatibility &amp; DLNA DMR (Cambridge Audio, WiiM, Squeezelite)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-cambridge-audio-dilemma" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Cambridge Audio Dilemma
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#solution-configure-via-dlna-digital-media-renderer-dmr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Solution: Configure via DLNA Digital Media Renderer (DMR)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#passive-source-metadata-tracking-streamer-first-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🎧 Passive Source &amp; Metadata Tracking (Streamer-First Workflow)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#standalone-fallback-mode-no-decoders" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2036,6 +2114,84 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#multi-room-audio-grouping-music-assistant-home-assistant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        👥 Multi-Room Audio Grouping (Music Assistant &amp; Home Assistant)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="👥 Multi-Room Audio Grouping (Music Assistant &amp; Home Assistant)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-grouping-works-with-the-analog-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Grouping Works with the Analog Matrix
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#backend-stream-compatibility-dlna-dmr-cambridge-audio-wiim-squeezelite" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        📡 Backend Stream Compatibility &amp; DLNA DMR (Cambridge Audio, WiiM, Squeezelite)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="📡 Backend Stream Compatibility &amp; DLNA DMR (Cambridge Audio, WiiM, Squeezelite)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-cambridge-audio-dilemma" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Cambridge Audio Dilemma
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#solution-configure-via-dlna-digital-media-renderer-dmr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Solution: Configure via DLNA Digital Media Renderer (DMR)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#passive-source-metadata-tracking-streamer-first-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🎧 Passive Source &amp; Metadata Tracking (Streamer-First Workflow)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#standalone-fallback-mode-no-decoders" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2244,6 +2400,45 @@ empty keeps the wall-panel routing in charge.</p>
 <p class="admonition-title">Warning</p>
 <p><strong>Avoid Recursive Loops</strong>: Do NOT select a Music Assistant virtual player as the backend decoder entity. The backend decoder must be the actual hardware device (e.g. <code>media_player.squeezelite_salon</code>, <code>media_player.wiim_dining</code>), while Music Assistant targets the MyHOME zone entity.</p>
 </div>
+<hr />
+<h2 id="multi-room-audio-grouping-music-assistant-home-assistant">👥 Multi-Room Audio Grouping (Music Assistant &amp; Home Assistant)<a class="headerlink" href="#multi-room-audio-grouping-music-assistant-home-assistant" title="Permanent link">&para;</a></h2>
+<p>The MyHOME integration implements native Home Assistant player grouping (<code>MediaPlayerEntityFeature.GROUPING</code>). This enables synchronized multi-room playback across BTicino audio zones without playing separate concurrent audio streams.</p>
+<h3 id="how-grouping-works-with-the-analog-matrix">How Grouping Works with the Analog Matrix<a class="headerlink" href="#how-grouping-works-with-the-analog-matrix" title="Permanent link">&para;</a></h3>
+<p>When using <strong>Music Assistant (MA)</strong> or Home Assistant's <code>media_player.join</code> service:
+1. <strong>Single Backend Stream</strong>: Only the group <strong>leader</strong> claims a network decoder from the decoder pool and requests the audio stream (e.g. from Spotify, Tidal, or local FLAC).
+2. <strong>Matrix Route Sharing</strong>: Each joined <strong>member</strong> zone routes its physical environment output to the leader's matrix source input (<code>*16*3*1ES##</code>) and powers on its room amplifier (<code>*16*3*&lt;WHERE&gt;##</code>). Routing follows the same opt-in as the rest of the integration: until you name a source or set an environment default, the wall-panel routing is left alone and only the member amplifiers are switched on. A member only shows the leader's track while it is actually on the leader's input.
+3. <strong>Cross-Environment &amp; Same-Environment Synchrony</strong>:
+   - Zones in different environments (e.g. Environment 2 living room and Environment 3 kitchen) are bridged to the same analog source input, guaranteeing <strong>zero latency</strong> and perfectly aligned analog audio across rooms.
+   - Zones within the same environment share the matrix output physically.
+4. <strong>Environment Isolation Protection</strong>:
+   - The F441 / F441M matrix routes an entire environment to one input. If an attempt is made to join a zone whose environment is already actively streaming from another decoder, the operation is rejected with an <code>environment_busy</code> error to prevent cutting off an active listener in that environment. The check runs for every requested member before anything is switched, so a refused join changes nothing. A group that is not playing yet does not block its environments.
+5. <strong>Dynamic Disbanding &amp; Member Lifecycle</strong>:
+   - <strong>Leader turned off or unjoined</strong>: When the group leader turns off or calls <code>unjoin</code>, the entire group is disbanded, and all member amplifiers are powered off.
+   - <strong>Member leaves the group</strong>: A member calling <code>unjoin</code> or turning off powers off its own amplifier and leaves the group; the leader and any other members continue streaming uninterrupted.
+   - <strong>Physical Wall Switch Interaction</strong>: Pressing OFF on a physical wall control sends a bus OFF frame which immediately cleans up group membership in Home Assistant. The OFF → ON wake sequence the integration sends itself is recognised and ignored for 3 seconds; a wall-switch OFF inside that window is corrected by the zone's next status report.
+   - <strong>Reloading the integration</strong> (or renaming an entity) clears the groups in Home Assistant but sends nothing to the bus: rooms keep playing.</p>
+<hr />
+<h2 id="backend-stream-compatibility-dlna-dmr-cambridge-audio-wiim-squeezelite">📡 Backend Stream Compatibility &amp; DLNA DMR (Cambridge Audio, WiiM, Squeezelite)<a class="headerlink" href="#backend-stream-compatibility-dlna-dmr-cambridge-audio-wiim-squeezelite" title="Permanent link">&para;</a></h2>
+<p>When using the Dynamic Proxy, Home Assistant sends direct HTTP streaming URLs to the configured backend decoder.</p>
+<h3 id="the-cambridge-audio-dilemma">The Cambridge Audio Dilemma<a class="headerlink" href="#the-cambridge-audio-dilemma" title="Permanent link">&para;</a></h3>
+<p>The native Home Assistant <code>cambridge_audio</code> integration (for CXN, CXN V2, Edge NQ, Evo 75/150, MXN10, AXN10) uses the Cambridge StreamMagic API. By design, it only accepts built-in presets, Airable, and internet radio — it <strong>does not accept raw HTTP stream URLs</strong> from Music Assistant or Home Assistant, raising an <code>unsupported_media_type</code> exception.</p>
+<h3 id="solution-configure-via-dlna-digital-media-renderer-dmr">Solution: Configure via DLNA Digital Media Renderer (DMR)<a class="headerlink" href="#solution-configure-via-dlna-digital-media-renderer-dmr" title="Permanent link">&para;</a></h3>
+<p>To stream seamlessly to Cambridge Audio network players:
+1. Enable UPnP / DLNA in the Cambridge StreamMagic app settings.
+2. In Home Assistant, install the <strong>DLNA Digital Media Renderer</strong> integration. It will automatically discover your Cambridge Audio streamer (e.g. <code>media_player.cxn_v2_dlna</code>).
+3. In <strong>Settings</strong> -&gt; <strong>Devices &amp; Services</strong> -&gt; <strong>MyHOME</strong> -&gt; <strong>Configure</strong>, map the DLNA DMR entity as your decoder instead of the native <code>cambridge_audio</code> entity.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>Automatic Diagnostic &amp; Repair</strong>:
+If you select a <code>cambridge_audio</code> entity in MyHOME Options, the integration issues a <strong>Home Assistant Repair Issue</strong> as soon as the options are saved, explaining that DLNA DMR is required and linking to the documentation.
+The <code>cambridge_audio</code> decoder stays in the pool: it still provides passive track mirroring and plays presets, Airable and internet radio. A stream URL (Music Assistant, Spotify) skips it and goes to another idle decoder.</p>
+</div>
+<hr />
+<h2 id="passive-source-metadata-tracking-streamer-first-workflow">🎧 Passive Source &amp; Metadata Tracking (Streamer-First Workflow)<a class="headerlink" href="#passive-source-metadata-tracking-streamer-first-workflow" title="Permanent link">&para;</a></h2>
+<p>You do not need to initiate playback through Home Assistant or Music Assistant to see track metadata:
+- If you start Spotify Connect, TIDAL Connect, AirPlay, or internet radio directly in the Cambridge StreamMagic or WiiM mobile app, or via a physical matrix source (CD player, tuner):
+- Any BTicino zone turned ON and routed to that physical source automatically mirrors track title, artist name, album art, and transport state (<code>PLAYING</code>, <code>PAUSED</code>).
+- Transport controls (<code>media_play</code>, <code>media_pause</code>, <code>media_next_track</code>, <code>media_previous_track</code>) operated from the Home Assistant zone card are automatically forwarded to the active source decoder.</p>
 <hr />
 <h2 id="standalone-fallback-mode-no-decoders">📻 Standalone Fallback Mode (No Decoders)<a class="headerlink" href="#standalone-fallback-mode-no-decoders" title="Permanent link">&para;</a></h2>
 <p>If you do not configure any streaming decoders in the Options Flow, the room amplifier entities operate in <strong>Native WHO = 16 Mode</strong>:</p>
