@@ -3,17 +3,17 @@
     "version": "2.0",
     "title": "v2 (beta)",
     "aliases": [
-      "beta",
-      "dev"
+      "dev",
+      "beta"
     ]
   },
   {
     "version": "0.9.4",
     "title": "v0.9.4 (legacy)",
     "aliases": [
+      "latest",
       "v0.9",
-      "legacy",
-      "latest"
+      "legacy"
     ]
   }
 ]
