@@ -197,19 +197,3 @@ reset_cover_travel_time:
     entity:
       domain: cover
       integration: myhome
-
-tuner_seek_up:
-  name: Tuner seek up
-  description: Seek forward to the next receivable FM radio frequency on an F500 tuner source.
-  target:
-    entity:
-      domain: media_player
-      integration: myhome
-
-tuner_seek_down:
-  name: Tuner seek down
-  description: Seek backward to the previous receivable FM radio frequency on an F500 tuner source.
-  target:
-    entity:
-      domain: media_player
-      integration: myhome

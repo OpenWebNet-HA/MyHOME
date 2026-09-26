@@ -17,8 +17,6 @@ This document provides a comprehensive reference for all custom services registe
 | [`myhome.stop_cover_calibration`](#myhomestop_cover_calibration) | Gateway | Stop the running calibration and cancel queued ones. |
 | [`myhome.set_cover_travel_time`](#myhomeset_cover_travel_time) | `cover` | Store stopwatch-measured travel times without driving the cover. |
 | [`myhome.reset_cover_travel_time`](#myhomereset_cover_travel_time) | `cover` | Forget measured / manual travel times; back to YAML or the default. |
-| [`myhome.tuner_seek_up`](#myhometuner_seek_up) | `media_player` | Seek forward to the next receivable FM radio frequency on an F500 tuner. |
-| [`myhome.tuner_seek_down`](#myhometuner_seek_down) | `media_player` | Seek backward to the previous receivable FM radio frequency on an F500 tuner. |
 
 ---
 
@@ -214,40 +212,3 @@ action: myhome.reset_cover_travel_time
 target:
   entity_id: cover.bedroom_shutter
 ```
-
----
-
-## 10. `myhome.tuner_seek_up`
-
-Commands an F500 / F500N sound source tuner entity (`WHERE` 101–109) to seek forward (`*16*5000*10S##`) to the next receivable FM radio frequency on the SCS bus.
-
-### Fields
-| Parameter | Type | Required | Description | Example |
-| :--- | :---: | :---: | :--- | :--- |
-| `entity_id` | target | Yes | Target MyHOME tuner source `media_player` entity. | `media_player.audio_source_1` |
-
-### Example YAML Call
-```yaml
-action: myhome.tuner_seek_up
-target:
-  entity_id: media_player.audio_source_1
-```
-
----
-
-## 11. `myhome.tuner_seek_down`
-
-Commands an F500 / F500N sound source tuner entity (`WHERE` 101–109) to seek backward (`*16*5100*10S##`) to the previous receivable FM radio frequency on the SCS bus.
-
-### Fields
-| Parameter | Type | Required | Description | Example |
-| :--- | :---: | :---: | :--- | :--- |
-| `entity_id` | target | Yes | Target MyHOME tuner source `media_player` entity. | `media_player.audio_source_1` |
-
-### Example YAML Call
-```yaml
-action: myhome.tuner_seek_down
-target:
-  entity_id: media_player.audio_source_1
-```
-

@@ -26,13 +26,6 @@
     },
     "reset_cover_travel_time": {
       "service": "mdi:timer-refresh-outline"
-    },
-    "tuner_seek_up": {
-      "service": "mdi:fast-forward-outline"
-    },
-    "tuner_seek_down": {
-      "service": "mdi:rewind-outline"
     }
   }
 }
-

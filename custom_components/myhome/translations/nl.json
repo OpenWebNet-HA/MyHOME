@@ -71,13 +71,9 @@
         "description": "Gevorderde systeem settings",
         "data": {
           "source_1_name": "Bron 1 — naam van wat op matrix-ingang S1 is aangesloten (leeg laten als er niets op zit)",
-          "source_1_tuner": "Bron 1 is een tuner (F500): voegt een radio-entiteit toe met zenders, frequentie en RDS",
           "source_2_name": "Bron 2 — naam van wat op matrix-ingang S2 is aangesloten (leeg laten als er niets op zit)",
-          "source_2_tuner": "Bron 2 is een tuner (F500): voegt een radio-entiteit toe met zenders, frequentie en RDS",
           "source_3_name": "Bron 3 — naam van wat op matrix-ingang S3 is aangesloten (leeg laten als er niets op zit)",
-          "source_3_tuner": "Bron 3 is een tuner (F500): voegt een radio-entiteit toe met zenders, frequentie en RDS",
           "source_4_name": "Bron 4 — naam van wat op matrix-ingang S4 is aangesloten (leeg laten als er niets op zit)",
-          "source_4_tuner": "Bron 4 is een tuner (F500): voegt een radio-entiteit toe met zenders, frequentie en RDS",
           "address": "IP address",
           "password": "Wachtwoord",
           "config_file_path": "Path onfiguratie bestand",
@@ -184,14 +180,6 @@
           "description": "MAC-adres van de gateway (optioneel; standaard voor alle actieve gateways)."
         }
       }
-    },
-    "tuner_seek_up": {
-      "name": "Tuner vooruit zoeken",
-      "description": "Zoek vooruit naar de volgende ontvangbare FM-frequentie op een F500-tunerbron."
-    },
-    "tuner_seek_down": {
-      "name": "Tuner achteruit zoeken",
-      "description": "Zoek achteruit naar de vorige ontvangbare FM-frequentie op een F500-tunerbron."
     }
   },
   "issues": {
@@ -235,10 +223,6 @@
     },
     "decoder_wake_timeout": {
       "message": "{entity_id}: decoder {decoder} werd niet binnen 5 seconden wakker"
-    },
-    "seek_not_supported": {
-      "message": "{entity_id}: frequentie zoeken wordt alleen ondersteund op tunerbron-entiteiten"
     }
   }
 }
-

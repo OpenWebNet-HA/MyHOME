@@ -31,7 +31,7 @@ rules:
     comment: OWNd is published on PyPI from the public OpenWebNet-HA/OWNd repository with CI; MIT/GPL licensed.
   docs-actions:
     status: done
-    comment: docs/configuration/services.md documents all eleven services and their fields (services.yaml, strings.json and icons.json list the same eleven).
+    comment: docs/configuration/services.md documents all nine services and their fields (services.yaml, strings.json and icons.json list the same nine).
   docs-triggers:
     status: done
     comment: docs/configuration/cen_cenplus.md documents CEN / CEN+ device triggers.
