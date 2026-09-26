@@ -958,6 +958,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#tuner-sources-f500-f500n" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tuner sources (F500 / F500N)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#the-hardware-routing-first-model" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2076,6 +2087,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#tuner-sources-f500-f500n" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tuner sources (F500 / F500N)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#the-hardware-routing-first-model" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2355,6 +2377,69 @@ already on is not re-routed when it is turned on again, and a default is not
 applied while another zone in the environment is streaming.</p>
 <p>Without either setting the integration does not route while streaming and
 relies on the "Hardware Routing First" model below, as earlier releases did.</p>
+<h3 id="tuner-sources-f500-f500n">Tuner sources (F500 / F500N)<a class="headerlink" href="#tuner-sources-f500-f500n" title="Permanent link">&para;</a></h3>
+<p>A matrix input can hold a <strong>tuner</strong> rather than a line interface. Tick <em>Source N
+is a tuner</em> in the options and the integration adds a radio entity for that
+input, alongside the amplifier zones.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Home Assistant</th>
+<th style="text-align: left;">OpenWebNet</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">On / off</td>
+<td style="text-align: left;"><code>*16*3*10S##</code> / <code>*16*13*10S##</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">Next / previous track</td>
+<td style="text-align: left;">next / previous station (<code>*16*6001*10S##</code> / <code>*16*6101*10S##</code>)</td>
+</tr>
+<tr>
+<td style="text-align: left;">Source list</td>
+<td style="text-align: left;">stored stations (defaults to 1–5 for F500, dynamically expands up to 1–15 for F500N: <code>*#16*10S*#7*&lt;N&gt;##</code>)</td>
+</tr>
+<tr>
+<td style="text-align: left;">Seek up / down</td>
+<td style="text-align: left;"><code>myhome.tuner_seek_up</code> / <code>myhome.tuner_seek_down</code> (<code>*16*5000*10S##</code> / <code>*16*5100*10S##</code>)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>play_media</code>, content type <code>channel</code></td>
+<td style="text-align: left;"><code>"1"</code>–<code>"15"</code> selects a station; anything else is read as MHz, so <code>"107.5"</code> tunes there</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>media_title</code></td>
+<td style="text-align: left;">RDS text, reported as eight ASCII codes on <code>DIMENSION 8</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>frequency</code> attribute</td>
+<td style="text-align: left;"><code>DIMENSION 6</code>, in MHz</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>station</code> attribute</td>
+<td style="text-align: left;"><code>DIMENSION 7</code></td>
+</tr>
+</tbody>
+</table>
+<p>The entity asks the tuner to start reporting RDS (<code>*16*101*10S##</code>) when it is
+added, although modern tuners broadcast their RDS text autonomously when active.</p>
+<p>Two notes on the frames, both from the specification rather than choice: a
+station <strong>write</strong> carries its parameter directly (<code>*#16*101*#7*3##</code>) while the
+<strong>report</strong> prefixes it with a zero (<code>*#16*101*7*0*3##</code>), and frequencies are
+described as "expressed in Hz" while every example in the same document uses
+kHz. The integration follows the examples.</p>
+<p>Why declare it instead of detecting it: a source device that has not spoken is
+indistinguishable from one that is not there, and a tuner in standby says
+nothing at all.</p>
+<blockquote>
+<p><strong>Tested on real hardware.</strong> Frequency tuning (<code>*#16*10S*#6*0*&lt;kHz&gt;##</code> with leading zero;
+write without zero is ignored), hardware seek up / down (<code>*16*5000*10S##</code> / <code>*16*5100*10S##</code>),
+station stepping (<code>*16*6001*10S##</code> / <code>*16*6101*10S##</code>), station selection (<code>*#16*10S*#7*&lt;N&gt;##</code>),
+kHz frequency parsing, and autonomous RDS text (<code>DIMENSION 8</code>) are hardware-verified
+against a live MH200N + F500N tuner with antenna (contributed by <code>@manfredgittmaier-afk</code> on PR #427).</p>
+</blockquote>
 <h3 id="the-hardware-routing-first-model">The "Hardware Routing First" Model<a class="headerlink" href="#the-hardware-routing-first-model" title="Permanent link">&para;</a></h3>
 <p>For installations that have not named their sources, <code>play_media</code> leaves the
 matrix routing to the wall panels.</p>
