@@ -119,7 +119,14 @@
           "default_source_env_6": "Default source for environment 6 — used when a zone in that room is turned on from Home Assistant",
           "default_source_env_7": "Default source for environment 7 — used when a zone in that room is turned on from Home Assistant",
           "default_source_env_8": "Default source for environment 8 — used when a zone in that room is turned on from Home Assistant",
-          "default_source_env_9": "Default source for environment 9 — used when a zone in that room is turned on from Home Assistant"
+          "default_source_env_9": "Default source for environment 9 — used when a zone in that room is turned on from Home Assistant",
+          "bus_topology": "Bus topology",
+          "gateway_role": "Gateway role",
+          "primary_gateway": "Primary gateway",
+          "delegated_whos": "Delegated subsystems"
+        },
+        "data_description": {
+          "delegated_whos": "Secondary role only: subsystems whose new devices this gateway discovers. Devices the primary already has stay on the primary."
         }
       }
     },
@@ -132,6 +139,15 @@
       "password_error": "Invalid password",
       "not_a_media_player": "Must be a media_player entity (e.g. media_player.cambridge_audio_cxn)",
       "mass_entity_not_allowed": "Infinite Loop Protection: Do not select Music Assistant clones! Select the original hardware entity instead.",
+      "primary_gateway_required": "A primary gateway must be selected for secondary or standby roles on a shared bus.",
+      "invalid_primary_gateway": "Cannot select this gateway itself as the primary gateway.",
+      "primary_gateway_not_found": "The selected primary gateway could not be found.",
+      "circular_gateway_reference": "Circular reference: the selected primary gateway already points to this gateway.",
+      "primary_gateway_not_shared_primary": "The selected gateway must first be configured with bus topology Shared and role Primary.",
+      "gateway_has_dependents": "Other gateways use this gateway as their primary. Point them at another primary (or make them standalone) first.",
+      "overlapping_delegated_whos": "One or more of the selected WHOs are already delegated to another secondary gateway on this bus.",
+      "who_not_supported_by_gateway": "One or more of the selected WHOs are not supported by this gateway model's profile.",
+      "multiple_standbys": "This primary gateway already has a standby configured. Only one standby is allowed per primary.",
       "duplicate_decoder_source": "Each decoder must be connected to a different matrix source input."
     }
   },
@@ -280,6 +296,18 @@
       "title": "Gateway model corrected to {corrected}",
       "description": "The gateway was configured as {previous} but reports model code {code}, which the OpenWebNet device-type table (WHO=13) or the gateway diagnostic catalogue (WHO=1013, codes prefixed 1013-1-) identifies as {corrected}. The model, gateway profile and device registry were updated to {corrected}. If that is wrong, open the integration's options (Configure) and set the model explicitly."
     },
+    "shared_bus_detected": {
+      "title": "Shared OpenWebNet bus detected ({gateway_a} & {gateway_b})",
+      "description": "Gateways {gateway_a} and {gateway_b} are observing the same SCS bus traffic, but they are not configured on the same bus. Operating several gateways on one bus without that configuration causes duplicate entities, startup sweep contention, and status polling errors.\n\nOpen Configure on the gateway that should lead, set its Bus Topology to Shared and its role to Primary. Then open Configure on the other gateway, set its Bus Topology to Shared, its role to Secondary or Warm standby, and select the first gateway as its Primary gateway."
+    },
+    "gateway_failover_active": {
+      "title": "High Availability failover active: {primary} offline",
+      "description": "Primary MyHOME gateway {primary} is currently offline or unreachable. High Availability warm-standby failover has automatically routed bus traffic and status monitoring through standby gateway {standby}.\n\nWhen {primary} recovers, Home Assistant will automatically fail back to the primary gateway and resolve this issue."
+    },
+    "primary_gateway_missing": {
+      "title": "Primary gateway of {gateway} is missing",
+      "description": "{gateway} is configured as a secondary or warm standby gateway for {primary}, but that gateway is no longer configured as a Shared Primary gateway (it was removed or reconfigured). {gateway} keeps suppressing discovery until it is reconfigured.\n\nOpen Configure on {gateway} and either select another Primary gateway or set its Bus Topology to Standalone."
+    },
     "incompatible_decoder_platform": {
       "title": "Decoder {decoder} uses unsupported integration ({platform})",
       "description": "The configured streaming decoder {decoder} is provided by the {platform} integration, which does not accept HTTP stream URLs via play_media. For multi-room streaming (e.g. Music Assistant), configure this hardware via the DLNA Digital Media Renderer (DMR) integration instead."
@@ -328,6 +356,9 @@
     "decoder_start_failed": {
       "message": "{entity_id}: decoder {decoder} failed to start playback: {error}"
     },
+    "group_no_transition": {
+      "message": "{name}: a lighting group does not support software transition"
+    },
     "group_no_timer": {
       "message": "{name}: timed on/off is not supported for a lighting group"
     },
@@ -374,6 +405,35 @@
       },
       "energy_month": {
         "name": "Energy (current month)"
+      }
+    }
+  },
+  "selector": {
+    "bus_topology": {
+      "options": {
+        "standalone": "Standalone (own SCS bus)",
+        "shared": "Shared SCS bus (same bus as another gateway)"
+      }
+    },
+    "gateway_role": {
+      "options": {
+        "primary": "Primary (discovers and polls the bus)",
+        "secondary": "Secondary (discovers only its delegated subsystems)",
+        "standby": "Warm standby (takes over while the primary is offline)"
+      }
+    },
+    "delegated_whos": {
+      "options": {
+        "1": "1 - Lighting",
+        "2": "2 - Covers / shutters",
+        "4": "4 - Thermoregulation",
+        "5": "5 - Burglar alarm",
+        "9": "9 - Auxiliary",
+        "15": "15 - CEN scenarios",
+        "16": "16 - Sound diffusion",
+        "18": "18 - Energy management",
+        "22": "22 - Sound diffusion (audio matrix)",
+        "25": "25 - CEN+ scenarios"
       }
     }
   }

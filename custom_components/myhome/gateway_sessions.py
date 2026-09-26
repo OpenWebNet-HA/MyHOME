@@ -473,6 +473,7 @@ class CommandWorkerPool:
                         _cancel_written(task)
                     else:
                         _resolve_written(task, written_at)
+                        self.handler._record_tx(written_at, task["message"])
                     if collected and isinstance(collected, list):
                         for resp in collected:
                             raw_resp = str(resp)
@@ -489,6 +490,8 @@ class CommandWorkerPool:
                                 dispatcher_send(
                                     self.hass, f"myhome_message_{self.mac}", resp
                                 )
+                                # A reply to a request sent for an offline primary
+                                self.handler._bridge_to_primary(resp)
                 except asyncio.CancelledError:
                     _cancel_written(task)
                     raise

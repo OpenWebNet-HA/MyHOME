@@ -79,6 +79,15 @@ async def async_get_config_entry_diagnostics(
                 "is_connected": getattr(gateway_handler, "is_connected", False),
                 "send_workers": len(getattr(gateway_handler, "sending_workers", [])),
             }
+            bus_topology = getattr(gateway_handler, "bus_topology", None)
+            if isinstance(bus_topology, str):
+                gw_info["bus_topology"] = bus_topology
+                gw_info["gateway_role"] = str(getattr(gateway_handler, "gateway_role", "primary"))
+                gw_info["is_follower"] = bool(getattr(gateway_handler, "is_follower", False))
+                gw_info["is_standby"] = bool(getattr(gateway_handler, "is_standby", False))
+                gw_info["failover_active"] = bool(getattr(gateway_handler, "failover_active", False))
+                gw_info["primary_gateway"] = getattr(gateway_handler, "primary_gateway_mac", None)
+                gw_info["delegated_whos"] = list(getattr(gateway_handler, "delegated_whos", set()))
             identification = getattr(gateway_handler, "identification", None)
             if callable(identification):
                 gw_info["identification"] = async_redact_data(identification(), TO_REDACT)

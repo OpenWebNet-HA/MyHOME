@@ -105,7 +105,7 @@ class TestMyHOMEEntity:
     async def test_entity_lifecycle_hooks(self, mock_hass, mock_gateway):
         with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
             from custom_components.myhome.myhome_device import MyHOMEEntity
-            mock_gateway.available = True
+            mock_gateway.is_who_available.return_value = True
             mock_gateway.availability_signal = "myhome_test_availability"
             entity = MyHOMEEntity(
                 hass=mock_hass,

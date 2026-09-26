@@ -11,28 +11,46 @@ from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 from .const import (
+    BUS_ROUTING,
     CONF_BROADCAST_RESYNC,
+    CONF_BUS_INTERFACE,
     CONF_ENTITIES,
     CONF_ENTITY,
+    CONF_FILE_PATH,
     CONF_GENERATE_EVENTS,
     CONF_PLATFORMS,
     CONF_WORKER_COUNT,
+    CONF_ZONE,
     DATA_OWND_VERSION,
     DOMAIN,
     INTEGRATION_VERSION,
     LOGGER,
-    PLATFORMS,
     get_ownd_version,
 )
 from .data import MyHOMEConfigEntry, MyHOMERuntimeData
 from .gateway import MyHOMEGatewayHandler, command_session_limit
-from .legacy_yaml import load_legacy_myhome_yaml
-from .migrate import migrate_entry_and_registries, prune_stale_devices
 from .services import async_setup_services
+from .topology import async_check_primary_links, topology_signature
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+PLATFORMS = ["light", "switch", "cover", "climate", "binary_sensor", "sensor", "media_player", "button", "alarm_control_panel"]
+
+
+def _device_for_identifier(
+    device_registry: dr.DeviceRegistry, entry: ConfigEntry, identifier: tuple[str, str]
+) -> dr.DeviceEntry | None:
+    """Return the entry's device carrying ``identifier``.
+
+    Identifiers are only unique per config entry since core 2026.8, so the
+    lookup is scoped to this entry (``async_get_device`` is deprecated).
+    """
+    for device in dr.async_entries_for_config_entry(device_registry, entry.entry_id):
+        if identifier in device.identifiers:
+            return device
+    return None
 
 
 def _get_card_url(card_path: str, base_url: str = "/myhome_static/myhome-bus-card.js") -> str:
@@ -203,15 +221,238 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bo
         configured_entities.setdefault(_platform, {})
 
     # Load legacy myhome.yaml if present for seamless backward-compatibility
-    await load_legacy_myhome_yaml(hass, entry, configured_platforms)
+    _opt_path = entry.options.get(CONF_FILE_PATH) or entry.options.get("file_path")
+    _config_file_path = str(_opt_path) if _opt_path else hass.config.path("myhome.yaml")
+    if not os.path.isfile(_config_file_path) and os.path.isfile("/config/myhome.yaml"):
+        _config_file_path = "/config/myhome.yaml"
+
+    if os.path.isfile(_config_file_path):
+        from homeassistant.util.yaml.loader import load_yaml
+
+        from .validate import config_schema
+        try:
+            raw_yaml = await hass.async_add_executor_job(load_yaml, _config_file_path)
+            if raw_yaml and isinstance(raw_yaml, dict):
+                # Support single-gateway config without MAC address header at root level
+                if any(plat in raw_yaml for plat in PLATFORMS):
+                    configured_gateways = [
+                        e for e in hass.config_entries.async_entries(DOMAIN)
+                        if not getattr(e, "disabled_by", None)
+                    ]
+                    if len(configured_gateways) <= 1:
+                        raw_yaml = {entry.data[CONF_MAC]: raw_yaml}
+                    else:
+                        LOGGER.error(
+                            "myhome.yaml contains top-level platform configurations without a gateway MAC, "
+                            "but %d gateways are configured. Please specify the gateway MAC address header in myhome.yaml.",
+                            len(configured_gateways)
+                        )
+                        raw_yaml = {}
+
+                # Ensure every gateway has mac and every device has where set if omitted
+                for gw_key, gw_val in raw_yaml.items():
+                    if isinstance(gw_val, dict):
+                        if CONF_MAC not in gw_val:
+                            gw_val[CONF_MAC] = str(gw_key)
+                        for plat, devs in gw_val.items():
+                            if isinstance(devs, dict):
+                                for d_key, d_val in devs.items():
+                                    if isinstance(d_val, dict) and "where" not in d_val and "zone" not in d_val:
+                                        d_val["where"] = str(d_key)
+
+                _validated = config_schema(raw_yaml)
+                formatted_entry_mac = dr.format_mac(entry.data[CONF_MAC])
+                mac_key = None
+                if formatted_entry_mac in _validated:
+                    mac_key = formatted_entry_mac
+                elif entry.data[CONF_MAC] in _validated:
+                    mac_key = entry.data[CONF_MAC]
+                else:
+                    for k in _validated.keys():
+                        try:
+                            if dr.format_mac(k) == formatted_entry_mac:
+                                mac_key = k
+                                break
+                        except Exception:
+                            continue
+                if mac_key and mac_key in _validated:
+                    yaml_platforms = _validated[mac_key].get(CONF_PLATFORMS, {})
+                    for plat, devices in yaml_platforms.items():
+                        if plat in configured_platforms:
+                            for d_id, d_cfg in devices.items():
+                                configured_platforms[plat][d_id] = d_cfg
+                                if isinstance(d_cfg, dict):
+                                    who, dash, clean_id = d_id.partition("-")
+                                    if dash and who.isdigit():
+                                        configured_platforms[plat][clean_id] = d_cfg
+                                    iface = d_cfg.get(CONF_BUS_INTERFACE) or d_cfg.get("bus_interface")
+                                    # A routed device never claims the bare key: that is the local bus's (#408)
+                                    routing = f"{BUS_ROUTING}{iface}" if iface is not None else ""
+                                    if "where" in d_cfg:
+                                        configured_platforms[plat][f"{d_cfg['where']}{routing}"] = d_cfg
+                                    if CONF_ZONE in d_cfg or "zone" in d_cfg:
+                                        z_val = str(d_cfg.get(CONF_ZONE) or d_cfg.get("zone"))
+                                        configured_platforms[plat][f"{z_val}{routing}"] = d_cfg
+                                        clean_z = z_val.split("#")[-1]
+                                        configured_platforms[plat][f"{clean_z}{routing}"] = d_cfg
+                                        if not routing:
+                                            configured_platforms[plat][f"zone_{clean_z}"] = d_cfg
+                    LOGGER.info("Loaded legacy myhome.yaml configuration for gateway %s (%s platforms)", entry.data[CONF_MAC], len(yaml_platforms))
+        except Exception as e:
+            LOGGER.error("Failed to parse myhome.yaml from %s: %s", _config_file_path, e)
 
     _generate_events = (
         entry.options.get(CONF_GENERATE_EVENTS, False)
     )
     _broadcast_resync = entry.options.get(CONF_BROADCAST_RESYNC, True)
 
-    # Migrations for config entry, entity registry, and device registry
-    migrate_entry_and_registries(hass, entry, configured_platforms)
+    # Migrating the config entry's unique_id if it was not formated to the recommended hass standard
+    if entry.unique_id != dr.format_mac(entry.unique_id):
+        hass.config_entries.async_update_entry(
+            entry, unique_id=dr.format_mac(entry.unique_id)
+        )
+        LOGGER.warning("Migrating config entry unique_id to %s", entry.unique_id)
+
+    entity_registry = er.async_get(hass)
+    _mac = dr.format_mac(entry.data[CONF_MAC])
+
+    _domain_to_who = {
+        "light": "1",
+        "cover": "2",
+        "switch": "1",
+        "media_player": "16",
+        "climate": "4",
+    }
+
+    registry_entries = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
+    for reg_entry in registry_entries:
+        parts = reg_entry.unique_id.split("-")
+        # Old unique_id format: MAC-WHERE (MAC may be formatted with colons or raw hex)
+        is_matching_mac = False
+        mac_prefix = parts[0] if parts else ""
+        if mac_prefix == _mac or mac_prefix == entry.data[CONF_MAC]:
+            is_matching_mac = True
+        elif mac_prefix:
+            try:
+                is_matching_mac = (dr.format_mac(mac_prefix) == _mac)
+            except Exception:
+                is_matching_mac = False
+
+        if not is_matching_mac:
+            continue
+
+        after_mac = reg_entry.unique_id[len(mac_prefix) + 1:]
+
+        if reg_entry.domain == "button":
+            btn_type = "disable" if after_mac.endswith("-disable") else "enable" if after_mac.endswith("-enable") else None
+            if btn_type:
+                raw_where = after_mac[:-len(btn_type)-1]
+                subparts = raw_where.split("-")
+                if len(subparts) == 1:
+                    # Missing WHO (2.0b3 unique_id format {mac}-{where}-{btn_type})
+                    who = None
+                    device_registry = dr.async_get(hass)
+                    if reg_entry.device_id:
+                        dev = device_registry.async_get(reg_entry.device_id)
+                        if dev:
+                            for ident in dev.identifiers:
+                                if len(ident) == 2 and ident[0] == DOMAIN:
+                                    id_parts = str(ident[1]).split("-")
+                                    if len(id_parts) >= 3 and id_parts[1].isdigit():
+                                        who = id_parts[1]
+                                        break
+                    if not who:
+                        gw_platforms = configured_platforms
+                        if "cover" in gw_platforms and (raw_where in gw_platforms["cover"] or f"2-{raw_where}" in gw_platforms["cover"]):
+                            who = "2"
+                        else:
+                            who = "1"
+
+                    target_unique_id = f"{_mac}-{who}-{raw_where}-{btn_type}"
+                    existing_canonical_id = entity_registry.async_get_entity_id("button", DOMAIN, target_unique_id)
+                    if existing_canonical_id and existing_canonical_id != reg_entry.entity_id:
+                        try:
+                            entity_registry.async_remove(reg_entry.entity_id)
+                            LOGGER.info("Pruned duplicate button entity %s in favor of %s", reg_entry.entity_id, existing_canonical_id)
+                        except Exception as err:
+                            LOGGER.warning("Could not prune duplicate button entity %s: %s", reg_entry.entity_id, err)
+                    else:
+                        try:
+                            if reg_entry.entity_id.endswith("_2") and not entity_registry.async_get(reg_entry.entity_id[:-2]):
+                                entity_registry.async_update_entity(
+                                    reg_entry.entity_id,
+                                    new_unique_id=target_unique_id,
+                                    new_entity_id=reg_entry.entity_id[:-2],
+                                )
+                            else:
+                                entity_registry.async_update_entity(
+                                    reg_entry.entity_id,
+                                    new_unique_id=target_unique_id,
+                                )
+                            reloaded_entry = entity_registry.async_get(reg_entry.entity_id)
+                            if reloaded_entry is not None:
+                                reg_entry = reloaded_entry
+                            LOGGER.info("Migrated button entity %s to canonical unique_id %s", reg_entry.entity_id, target_unique_id)
+                        except ValueError as err:
+                            LOGGER.warning("Could not auto-migrate button entity %s: %s", reg_entry.entity_id, err)
+                elif mac_prefix != _mac:
+                    target_unique_id = f"{_mac}-{after_mac}"
+                    if not entity_registry.async_get_entity_id("button", DOMAIN, target_unique_id):
+                        try:
+                            entity_registry.async_update_entity(reg_entry.entity_id, new_unique_id=target_unique_id)
+                            reloaded_entry = entity_registry.async_get(reg_entry.entity_id)
+                            if reloaded_entry is not None:
+                                reg_entry = reloaded_entry
+                        except ValueError:
+                            pass
+            continue
+
+        # Other platforms (light, cover, switch, media_player, climate)
+        subparts = after_mac.split("-")
+        if len(subparts) == 1:
+            where_part = subparts[0]
+            who = _domain_to_who.get(reg_entry.domain)
+            if who:
+                new_unique_id = f"{_mac}-{who}-{where_part}"
+                if not entity_registry.async_get_entity_id(reg_entry.domain, DOMAIN, new_unique_id):
+                    try:
+                        entity_registry.async_update_entity(
+                            reg_entry.entity_id, new_unique_id=new_unique_id
+                        )
+                        reloaded_entry = entity_registry.async_get(reg_entry.entity_id) # reload
+                        if reloaded_entry is not None:
+                            reg_entry = reloaded_entry
+                        LOGGER.info("Resurrecting orphaned MyHOME entity %s to new unique_id %s", reg_entry.entity_id, new_unique_id)
+                    except ValueError as e:
+                        LOGGER.warning("Could not auto-migrate entity %s to %s: %s", reg_entry.entity_id, new_unique_id, e)
+
+                # Also migrate matching device in device_registry if present so custom device names and areas are preserved
+                device_registry = dr.async_get(hass)
+                old_device = (
+                    _device_for_identifier(device_registry, entry, (DOMAIN, f"{_mac}-{where_part}"))
+                    or _device_for_identifier(device_registry, entry, (DOMAIN, f"{entry.data[CONF_MAC]}-{where_part}"))
+                    or (device_registry.async_get(reg_entry.device_id) if reg_entry.device_id else None)
+                )
+                if old_device:
+                    try:
+                        device_registry.async_update_device(
+                            old_device.id,
+                            new_identifiers={(DOMAIN, f"{_mac}-{who}-{where_part}")},
+                        )
+                    except Exception as e:
+                        LOGGER.warning("Could not auto-migrate device %s to new identifier: %s", old_device.id, e)
+        elif mac_prefix != _mac:
+            new_unique_id = f"{_mac}-{after_mac}"
+            if not entity_registry.async_get_entity_id(reg_entry.domain, DOMAIN, new_unique_id):
+                try:
+                    entity_registry.async_update_entity(
+                        reg_entry.entity_id, new_unique_id=new_unique_id
+                    )
+                    reloaded_entry = entity_registry.async_get(reg_entry.entity_id)
+                    if reloaded_entry is not None:
+                        reg_entry = reloaded_entry
+                except ValueError:
+                    pass
 
     gateway = MyHOMEGatewayHandler(
         hass=hass,
@@ -273,6 +514,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bo
             entry, options={**entry.options, CONF_WORKER_COUNT: _session_limit}
         )
 
+    entity_registry = er.async_get(hass)
     device_registry = dr.async_get(hass)
 
     _mfg = gateway.manufacturer or "BTicino S.p.A."
@@ -301,6 +543,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bo
         CONF_ENTITIES: runtime.entities,
         "bus_monitor": runtime.bus_monitor,
     }
+    async_check_primary_links(hass)
 
     # Start consumers before the platforms enqueue their initial status
     # requests.  With a bounded command queue, forwarding a large plant before
@@ -325,20 +568,70 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bo
     )
 
     # Prune orphaned devices with 0 entities from the device registry
-    prune_stale_devices(hass, entry, gateway_device_entry, gateway)
+    try:
+        gateway_dev_id = getattr(gateway_device_entry, "id", None)
+        gateway_handler = gateway
+        gateway_unique_id = getattr(gateway_handler, "unique_id", None)
+        gateway_id = getattr(gateway_handler, "id", None)
+        for dev in dr.async_entries_for_config_entry(device_registry, entry.entry_id):
+            if dev.id == gateway_dev_id:
+                continue
+            if gateway_unique_id and (DOMAIN, gateway_unique_id) in dev.identifiers:
+                continue
+            if gateway_id and (DOMAIN, gateway_id) in dev.identifiers:
+                continue
+            # Do not prune scenario devices (CEN / CEN+) that intentionally have no entities
+            is_scenario_device = (
+                (dev.model and ("Scenario Control" in dev.model or dev.model.startswith("CEN")))
+                or (dev.name and (dev.name.startswith("CEN") or "Scenario" in dev.name))
+                or any(
+                    isinstance(ident[1], str)
+                    and (
+                        "-15-" in ident[1]
+                        or ident[1].startswith("cen")
+                        or ident[1].startswith("cenplus")
+                    )
+                    for ident in dev.identifiers
+                    if ident[0] == DOMAIN
+                )
+            )
+            if is_scenario_device:
+                continue
+            dev_entries = er.async_entries_for_device(
+                entity_registry, dev.id, include_disabled_entities=True
+            )
+            if len(dev_entries) == 0:
+                LOGGER.info(
+                    "Pruning empty orphaned MyHOME device from registry: %s (%s)",
+                    dev.name,
+                    dev.id,
+                )
+                device_registry.async_remove_device(dev.id)
+    except Exception as err:
+        LOGGER.debug("Error during empty device pruning: %s", err)
 
 
     # ── Register options reload listener (rebuilds decoder pool on UI save) ──
+    topology_at_setup = topology_signature(entry)
+
     async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Rebuild the decoder pool when the user saves new options via the UI.
 
         Releases all active decoder assignments first so that no zone is left
         with a stale claim.  The user will need to re-trigger playback after
         changing decoder config.
+
+        A changed shared-bus role (#453) reloads the entry instead: the startup
+        sweep and the duplicate pruning only run at setup.
         """
         # The same builder as platform setup, so the incompatible-decoder
         # repair issues follow the saved options straight away.
         from .media_player import _build_pool
+
+        if topology_signature(entry) != topology_at_setup:
+            async_check_primary_links(hass)
+            hass.config_entries.async_schedule_reload(entry.entry_id)
+            return
 
         mac = entry.data[CONF_MAC]
         runtime_data = entry.runtime_data
@@ -383,6 +676,11 @@ async def async_remove_config_entry_device(
         LOGGER.debug("Refusing to remove gateway device %s", device_entry.id)
         return False
     return True
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> None:
+    """Flag the secondary/standby gateways a removed primary leaves behind (#453)."""
+    async_check_primary_links(hass, removed=entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bool:

@@ -38,16 +38,20 @@ from voluptuous import (
 from .const import (
     CONF_ADDRESS,
     CONF_BROADCAST_RESYNC,
+    CONF_BUS_TOPOLOGY,
     CONF_DECODER_ENTITY,
     CONF_DECODER_PRE_GAIN,
     CONF_DECODER_SLOTS,
     CONF_DECODER_SOURCE,
+    CONF_DELEGATED_WHOS,
     CONF_DEVICE_TYPE,
     CONF_FIRMWARE,
+    CONF_GATEWAY_ROLE,
     CONF_GENERATE_EVENTS,
     CONF_MANUFACTURER,
     CONF_MANUFACTURER_URL,
     CONF_OWN_PASSWORD,
+    CONF_PRIMARY_GATEWAY,
     CONF_SOURCE_DEFAULT_FIELD,
     CONF_SOURCE_DEFAULTS,
     CONF_SOURCE_NAME,
@@ -61,9 +65,23 @@ from .const import (
     DOMAIN,
     IDENTIFICATION_MANUAL,
     LOGGER,
+    ROLE_PRIMARY,
+    ROLE_SECONDARY,
+    ROLE_STANDBY,
     SUPPORTED_GATEWAY_MODELS,
+    TOPOLOGY_SHARED,
+    TOPOLOGY_STANDALONE,
 )
 from .gateway import MyHOMEGatewayHandler, command_session_limit
+from .topology import (
+    dependents,
+    entry_delegated_whos,
+    entry_for_mac,
+    entry_mac,
+    entry_primary_mac,
+    entry_role,
+    entry_topology,
+)
 
 
 class MACAddress:
@@ -739,6 +757,82 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
         environments.discard("0")
         return sorted(environments)
 
+    def _apply_topology(self, user_input: dict[str, typing.Any], errors: dict[str, str]) -> None:
+        """Validate the shared-bus settings (#453) and store them in the options."""
+        in_topo = user_input.get(CONF_BUS_TOPOLOGY, self.options.get(CONF_BUS_TOPOLOGY, TOPOLOGY_STANDALONE))  # type: ignore
+        in_role = user_input.get(CONF_GATEWAY_ROLE, self.options.get(CONF_GATEWAY_ROLE, ROLE_PRIMARY))  # type: ignore
+        in_pri = user_input.get(CONF_PRIMARY_GATEWAY, self.options.get(CONF_PRIMARY_GATEWAY))  # type: ignore
+        my_mac = entry_mac(self.config_entry)
+        shared = in_topo == TOPOLOGY_SHARED
+        follower = shared and in_role in (ROLE_SECONDARY, ROLE_STANDBY)
+
+        if follower:
+            norm_pri = dr.format_mac(str(in_pri)) if in_pri else None
+            target = entry_for_mac(self.hass, norm_pri) if norm_pri and norm_pri != my_mac else None
+            if not norm_pri:
+                errors[CONF_PRIMARY_GATEWAY] = "primary_gateway_required"
+            elif norm_pri == my_mac:
+                errors[CONF_PRIMARY_GATEWAY] = "invalid_primary_gateway"
+            elif target is None:
+                errors[CONF_PRIMARY_GATEWAY] = "primary_gateway_not_found"
+            elif entry_primary_mac(target) == my_mac:
+                errors[CONF_PRIMARY_GATEWAY] = "circular_gateway_reference"
+            elif entry_topology(target) != TOPOLOGY_SHARED or entry_role(target) != ROLE_PRIMARY:
+                # Otherwise the primary does not know it shares its bus and flags its own standby
+                errors[CONF_PRIMARY_GATEWAY] = "primary_gateway_not_shared_primary"
+
+            if norm_pri and in_role == ROLE_STANDBY and CONF_PRIMARY_GATEWAY not in errors:
+                for other in dependents(self.hass, norm_pri):
+                    if getattr(self.config_entry, "entry_id", None) == other.entry_id:
+                        continue
+                    if entry_role(other) == ROLE_STANDBY:
+                        errors[CONF_GATEWAY_ROLE] = "multiple_standbys"
+                        break
+
+            if in_role == ROLE_SECONDARY and CONF_PRIMARY_GATEWAY not in errors:
+                delegated = [int(w) for w in user_input.get(CONF_DELEGATED_WHOS, [])]
+
+                my_model = self.data.get(CONF_NAME)
+                if my_model:
+                    from OWNd.profiles import get_gateway_profile
+                    profile = get_gateway_profile(my_model)
+                    supports = getattr(profile, "supports_who", None)
+                    if callable(supports):
+                        for w in delegated:
+                            if not supports(int(w)):
+                                errors[CONF_DELEGATED_WHOS] = "who_not_supported_by_gateway"
+                                break
+
+                if norm_pri and CONF_DELEGATED_WHOS not in errors:
+                    for other in dependents(self.hass, norm_pri):
+                        if getattr(self.config_entry, "entry_id", None) == other.entry_id:
+                            continue
+                        if entry_role(other) == ROLE_SECONDARY:
+                            if set(delegated) & entry_delegated_whos(other):
+                                errors[CONF_DELEGATED_WHOS] = "overlapping_delegated_whos"
+                                break
+
+        if not (shared and in_role == ROLE_PRIMARY) and my_mac and dependents(self.hass, my_mac):
+            errors[CONF_GATEWAY_ROLE] = "gateway_has_dependents"
+        if errors:
+            return
+
+        self.options[CONF_BUS_TOPOLOGY] = TOPOLOGY_SHARED if shared else TOPOLOGY_STANDALONE  # type: ignore
+        self.options[CONF_GATEWAY_ROLE] = in_role if shared else ROLE_PRIMARY  # type: ignore
+        if follower:
+            self.options[CONF_PRIMARY_GATEWAY] = in_pri  # type: ignore
+        else:
+            self.options.pop(CONF_PRIMARY_GATEWAY, None)  # type: ignore
+        if follower and in_role == ROLE_SECONDARY:
+            delegated = [int(w) for w in user_input.get(CONF_DELEGATED_WHOS, [])]
+            self.options[CONF_DELEGATED_WHOS] = delegated  # type: ignore
+        else:
+            self.options.pop(CONF_DELEGATED_WHOS, None)  # type: ignore
+
+        if follower and my_mac:
+            from .repairs import async_delete_shared_bus_issue
+            async_delete_shared_bus_issue(self.hass, my_mac, str(in_pri))
+
     async def async_step_user(self, user_input=None, errors=None):  # type: ignore
         """Manage general settings and decoder mapping."""
 
@@ -810,6 +904,8 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
                     self.options[source_key] = int(user_input.get(source_key, i) or i)  # type: ignore
                     self.options[gain_key] = int(float(user_input.get(gain_key, 0) or 0))  # type: ignore
 
+                self._apply_topology(user_input, errors)
+
                 _model_update = False
                 if CONF_NAME in user_input and user_input[CONF_NAME] != self.data.get(CONF_NAME):  # type: ignore
                     self.data[CONF_NAME] = user_input[CONF_NAME]  # type: ignore
@@ -836,7 +932,14 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
                         if _model_update and self.config_entry.title.endswith("Gateway"):
                             update_kwargs["title"] = f"{user_input[CONF_NAME]} Gateway"  # type: ignore
                         self.hass.config_entries.async_update_entry(self.config_entry, **update_kwargs)  # type: ignore
-                        await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+
+                    # We must only reload once. The options flow listener triggers a reload
+                    # if the options dictionary actually changed. If data changed but options
+                    # did not, we must trigger the reload ourselves.
+                    options_changed = self.options != self.config_entry.options
+                    if _data_update and not options_changed:
+                        # Schedule a background reload so we can return the options form close event safely
+                        self.hass.async_create_task(self.hass.config_entries.async_reload(self.config_entry.entry_id))
 
                     return self.async_create_entry(title="", data=self.options)  # type: ignore
 
@@ -979,6 +1082,56 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
                     min=0, max=50, step=1,
                     unit_of_measurement="%",
                     mode=selector.NumberSelectorMode.BOX,
+                )
+            )
+
+        other_gateways = [
+            e for e in self.hass.config_entries.async_entries(DOMAIN)
+            if e.entry_id != getattr(self.config_entry, "entry_id", None)
+        ]
+        if other_gateways:
+            gw_options = [
+                selector.SelectOptionDict(value=str(e.data.get(CONF_MAC) or e.unique_id), label=f"{e.title} ({e.data.get(CONF_HOST)})")
+                for e in other_gateways
+            ]
+            schema_dict[vol.Optional(
+                CONF_BUS_TOPOLOGY,
+                description={"suggested_value": self.options.get(CONF_BUS_TOPOLOGY, TOPOLOGY_STANDALONE)},  # type: ignore
+            )] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[TOPOLOGY_STANDALONE, TOPOLOGY_SHARED],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                    translation_key=CONF_BUS_TOPOLOGY,
+                )
+            )
+            schema_dict[vol.Optional(
+                CONF_GATEWAY_ROLE,
+                description={"suggested_value": self.options.get(CONF_GATEWAY_ROLE, ROLE_PRIMARY)},  # type: ignore
+            )] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[ROLE_PRIMARY, ROLE_SECONDARY, ROLE_STANDBY],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                    translation_key=CONF_GATEWAY_ROLE,
+                )
+            )
+            schema_dict[vol.Optional(
+                CONF_PRIMARY_GATEWAY,
+                description={"suggested_value": self.options.get(CONF_PRIMARY_GATEWAY) or gw_options[0]["value"]},  # type: ignore
+            )] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=gw_options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+            schema_dict[vol.Optional(
+                CONF_DELEGATED_WHOS,
+                description={"suggested_value": [str(w) for w in self.options.get(CONF_DELEGATED_WHOS, [])]},  # type: ignore
+            )] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=["1", "2", "4", "5", "9", "15", "16", "18", "22", "25"],
+                    multiple=True,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                    translation_key=CONF_DELEGATED_WHOS,
                 )
             )
 

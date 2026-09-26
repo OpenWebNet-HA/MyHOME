@@ -172,7 +172,7 @@ class MyHOMEEntity(RestoreEntity):
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
-        return self._gateway_handler.available
+        return self._gateway_handler.is_who_available(self._who)
 
     @callback
     def handle_event(self, msg: Any) -> None:

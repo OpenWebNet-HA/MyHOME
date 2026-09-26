@@ -142,6 +142,8 @@ class GatewayEventDispatcher:
 
         if isinstance(message, OWNMessage):
             dispatcher_send(self.hass, f"myhome_message_{self.handler.mac}", message)
+            self.handler._correlate_shared_bus_traffic(message)
+            self.handler._bridge_to_primary(message)
 
         if not isinstance(message, OWNMessage):
             self._logger.warning(

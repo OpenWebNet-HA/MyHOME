@@ -1499,7 +1499,7 @@ def test_handle_gateway_diagnostics_dimension_0(gateway_handler, mock_config_ent
 
         create_issue.reset_mock()
 
-        # 2. Dim 0: Valid timezone (+1) resolves issue
+        # 2. Valid timezone (+1) resolves issue
         msg_valid = OWNEvent.parse("*#13**0*23*52*03*001##")
         gateway_handler._handle_gateway_diagnostics(msg_valid)
         create_issue.assert_not_called()

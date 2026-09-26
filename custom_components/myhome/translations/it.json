@@ -31,6 +31,14 @@
           "port": "Porta"
         }
       },
+      "custom_manual": {
+        "title": "Inserimento manuale del gateway (rilevamento non riuscito)",
+        "description": "Impossibile rilevare automaticamente il gateway su {host}:{port}. Inserisci manualmente l'indirizzo MAC e il modello.",
+        "data": {
+          "serialNumber": "Indirizzo MAC",
+          "modelName": "Tipo di dispositivo"
+        }
+      },
       "discovery_confirm": {
         "title": "Gateway MyHOME rilevato",
         "description": "Vuoi configurare il gateway {name} ({host})?"
@@ -42,6 +50,15 @@
           "port": "Porta seriale",
           "baudrate": "Baudrate",
           "friendly_name": "Nome descrittivo"
+        }
+      },
+      "reconfigure": {
+        "title": "Riconfigura il gateway MyHome {name}",
+        "description": "Aggiorna le impostazioni di connessione o le credenziali del tuo gateway {name}.",
+        "data": {
+          "host": "Indirizzo IP",
+          "port": "Porta / baudrate",
+          "password": "Password"
         }
       }
     },
@@ -61,7 +78,8 @@
       "cannot_connect": "Impossibile connettersi al gateway",
       "already_configured": "Questo gateway è già configurato",
       "already_in_progress": "La configurazione di questo gateway è già in corso",
-      "reauth_successful": "Nuova password accettata"
+      "reauth_successful": "Nuova password accettata",
+      "reconfigure_successful": "Connessione del gateway riconfigurata con successo."
     }
   },
   "options": {
@@ -80,6 +98,19 @@
           "command_worker_count": "Numero di sessioni di comando simultanee",
           "generate_events": "Genera eventi in Home Assistant per ogni messaggio ricevuto",
           "broadcast_resync": "Interroga gli indirizzi di gruppo/area/generale dopo una finestra di silenzio",
+          "transition_mode": "Metodo di transizione della luminosità",
+          "decoder_1_entity": "Decoder 1 — entità lettore multimediale (ad es. media_player.cambridge_audio_cxn)",
+          "decoder_1_source": "Decoder 1 — numero dell'ingresso sorgente BTicino (1–4)",
+          "decoder_1_pre_gain": "Decoder 1 — correzione pre-guadagno % (0 = Cambridge con Pre-Amp OFF, 20 = squeezelite)",
+          "decoder_2_entity": "Decoder 2 — entità lettore multimediale",
+          "decoder_2_source": "Decoder 2 — numero dell'ingresso sorgente BTicino (1–4)",
+          "decoder_2_pre_gain": "Decoder 2 — correzione pre-guadagno %",
+          "decoder_3_entity": "Decoder 3 — entità lettore multimediale",
+          "decoder_3_source": "Decoder 3 — numero dell'ingresso sorgente BTicino (1–4)",
+          "decoder_3_pre_gain": "Decoder 3 — correzione pre-guadagno %",
+          "decoder_4_entity": "Decoder 4 — entità lettore multimediale",
+          "decoder_4_source": "Decoder 4 — numero dell'ingresso sorgente BTicino (1–4)",
+          "decoder_4_pre_gain": "Decoder 4 — correzione pre-guadagno %",
           "default_source_env_1": "Sorgente predefinita per l'ambiente 1 — usata quando una zona di quella stanza viene accesa da Home Assistant",
           "default_source_env_2": "Sorgente predefinita per l'ambiente 2 — usata quando una zona di quella stanza viene accesa da Home Assistant",
           "default_source_env_3": "Sorgente predefinita per l'ambiente 3 — usata quando una zona di quella stanza viene accesa da Home Assistant",
@@ -88,7 +119,14 @@
           "default_source_env_6": "Sorgente predefinita per l'ambiente 6 — usata quando una zona di quella stanza viene accesa da Home Assistant",
           "default_source_env_7": "Sorgente predefinita per l'ambiente 7 — usata quando una zona di quella stanza viene accesa da Home Assistant",
           "default_source_env_8": "Sorgente predefinita per l'ambiente 8 — usata quando una zona di quella stanza viene accesa da Home Assistant",
-          "default_source_env_9": "Sorgente predefinita per l'ambiente 9 — usata quando una zona di quella stanza viene accesa da Home Assistant"
+          "default_source_env_9": "Sorgente predefinita per l'ambiente 9 — usata quando una zona di quella stanza viene accesa da Home Assistant",
+          "bus_topology": "Topologia del bus",
+          "gateway_role": "Ruolo del gateway",
+          "primary_gateway": "Gateway primario",
+          "delegated_whos": "Sottosistemi delegati"
+        },
+        "data_description": {
+          "delegated_whos": "Solo per il ruolo secondario: sottosistemi di cui questo gateway rileva i nuovi dispositivi. I dispositivi che il primario ha già restano sul primario."
         }
       }
     },
@@ -99,6 +137,14 @@
       "invalid_config_path": "Il file di configurazione non esiste in questo percorso",
       "invalid_password": "Password non valida",
       "password_error": "Errore password",
+      "not_a_media_player": "Deve essere un'entità media_player (ad es. media_player.cambridge_audio_cxn)",
+      "mass_entity_not_allowed": "Protezione dai loop infiniti: non selezionare cloni di Music Assistant! Seleziona invece l'entità hardware originale.",
+      "primary_gateway_required": "Per i ruoli secondario o di riserva su un bus condiviso è necessario selezionare un gateway primario.",
+      "invalid_primary_gateway": "Questo gateway non può essere il proprio gateway primario.",
+      "primary_gateway_not_found": "Il gateway primario selezionato non è stato trovato.",
+      "circular_gateway_reference": "Riferimento circolare: il gateway primario selezionato punta già a questo gateway.",
+      "primary_gateway_not_shared_primary": "Il gateway selezionato deve prima essere configurato con topologia del bus Condiviso e ruolo Primario.",
+      "gateway_has_dependents": "Altri gateway usano questo gateway come primario. Prima falli puntare a un altro primario (o rendili autonomi).",
       "duplicate_decoder_source": "Ciascun decoder deve essere collegato a un ingresso sorgente della matrice diverso."
     }
   },
@@ -180,12 +226,52 @@
           "description": "Indirizzo MAC del gateway (opzionale; predefinito per tutti i gateway attivi)."
         }
       }
+    },
+    "calibrate_cover": {
+      "name": "Calibra il tempo di corsa della tapparella",
+      "description": "Misura i tempi di corsa in salita e in discesa di una tapparella temporizzata sul bus SCS e li salva: la tapparella viene portata tutta su, poi tutta giù (cronometrata), poi di nuovo tutta su (cronometrata). Le tapparelle vengono calibrate una alla volta per gateway."
+    },
+    "stop_cover_calibration": {
+      "name": "Interrompi la calibrazione delle tapparelle",
+      "description": "Interrompe la calibrazione del tempo di corsa in corso e annulla quelle in coda; la tapparella in movimento viene fermata e non viene salvato nulla.",
+      "fields": {
+        "gateway": {
+          "name": "Gateway",
+          "description": "L'indirizzo MAC del gateway (facoltativo; per impostazione predefinita tutti i gateway)."
+        }
+      }
+    },
+    "set_cover_travel_time": {
+      "name": "Imposta il tempo di corsa della tapparella",
+      "description": "Salva manualmente i tempi di corsa fisici di una tapparella temporizzata invece di calibrarli sul bus.",
+      "fields": {
+        "travel_time": {
+          "name": "Tempo di corsa",
+          "description": "Secondi per una corsa completa in entrambe le direzioni (1-180); usato per ogni direzione senza un valore esplicito."
+        },
+        "travel_time_down": {
+          "name": "Tempo di corsa in discesa",
+          "description": "Secondi per una chiusura completa (1-180)."
+        },
+        "travel_time_up": {
+          "name": "Tempo di corsa in salita",
+          "description": "Secondi per un'apertura completa (1-180)."
+        },
+        "copied_from": {
+          "name": "Copiato da",
+          "description": "La tapparella da cui sono stati presi questi tempi; la sorgente viene quindi indicata come \"copied\" invece di \"manual\"."
+        }
+      }
+    },
+    "reset_cover_travel_time": {
+      "name": "Reimposta il tempo di corsa della tapparella",
+      "description": "Dimentica i tempi di corsa misurati o impostati manualmente e torna al travel_time di myhome.yaml o al valore predefinito di 25 s."
     }
   },
   "issues": {
     "unconfigured_timezone": {
-      "title": "Fuso orario non configurato sul gateway MyHOME ({gateway})",
-      "description": "Il gateway MyHOME {gateway} segnala un fuso orario non configurato (codice segnaposto '999'). Questo può causare errori di analisi di data e ora o la perdita di messaggi diagnostici del gateway.\n\nAccedi all'interfaccia web del gateway (o a MyHOME_Suite / MyHOME_Up) per impostare un fuso orario valido, quindi riavvia il gateway."
+      "title": "Unconfigured timezone on MyHOME gateway ({gateway})",
+      "description": "The MyHOME gateway {gateway} is reporting an unconfigured timezone (999). This will cause incorrect timestamps in the bus monitor and potentially alarm logs.\\n\\nPlease log into the gateway web UI or MyHOME Suite and configure a valid timezone, then restart the gateway."
     },
     "unknown_gateway_model": {
       "title": "Codice tipo dispositivo gateway sconosciuto ({code})",
@@ -197,32 +283,127 @@
     }
   },
   "exceptions": {
+    "command_delivery_cancelled": {
+      "message": "{name}: l'invio del comando di direzione è stato annullato prima di raggiungere il bus"
+    },
+    "command_delivery_timeout": {
+      "message": "{name}: il comando di direzione non è stato inviato al bus entro {timeout} s"
+    },
+    "command_delivery_failed": {
+      "message": "{name}: invio del comando di direzione non riuscito: {error}"
+    },
+    "calibration_interrupted": {
+      "message": "{name}: {cause}"
+    },
+    "calibration_no_stop_status": {
+      "message": "{name}: nessuno stato di arresto dall'attuatore entro {timeout} s - potrebbe non segnalare lo stato; imposta travel_time manualmente"
+    },
+    "cover_reports_position": {
+      "message": "{name} segnala la propria posizione; la calibrazione del tempo di corsa non si applica"
+    },
+    "calibration_in_progress": {
+      "message": "{name} è già in fase di calibrazione"
+    },
+    "calibration_implausible_run": {
+      "message": "{name}: corsa {direction} non plausibile di {seconds} s; non salvata"
+    },
+    "travel_time_missing": {
+      "message": "Specifica almeno travel_time oppure travel_time_down/up"
+    },
+    "travel_time_out_of_range": {
+      "message": "{field} deve essere compreso tra {min} s e {max} s"
+    },
+    "cover_command_undelivered": {
+      "message": "Comando non inviato (gateway disconnesso o coda svuotata)"
+    },
+    "cover_busy_calibrating": {
+      "message": "{entity_id} è in fase di calibrazione; riprova quando sarà terminata"
+    },
+    "decoders_busy": {
+      "message": "{entity_id}: tutti gli ingressi della matrice audio sono attualmente usati da altre stanze"
+    },
+    "decoder_start_failed": {
+      "message": "{entity_id}: il decoder {decoder} non è riuscito ad avviare la riproduzione: {error}"
+    },
+    "group_no_transition": {
+      "message": "{name}: un gruppo di luci non supporta la transizione software"
+    },
+    "group_no_timer": {
+      "message": "{name}: l'accensione/spegnimento temporizzato non è supportato per un gruppo di luci"
+    },
+    "unknown_source": {
+      "message": "{entity_id}: sorgente sconosciuta \"{source}\""
+    },
+    "environment_busy": {
+      "message": "{entity_id}: {owner} sta già trasmettendo nell'ambiente {environment}; le zone di uno stesso ambiente condividono un ingresso della matrice"
+    },
+    "routing_unsupported": {
+      "message": "{entity_id}: l'amplificatore {where} non ha un indirizzo di instradamento nella matrice (ambiente 0, o amplificatore non a due cifre); cambia la sorgente da un pannello a parete"
+    },
     "foreign_entity_not_supported": {
       "message": "{entity_id}: impossibile unire l'entità esterna {member}; solo le zone audio MyHOME possono essere raggruppate"
     },
     "grouping_unavailable": {
       "message": "{entity_id}: il raggruppamento audio non è ancora disponibile; il pool di decoder non è stato inizializzato"
     },
-    "decoders_busy": {
-      "message": "{entity_id}: tutti gli ingressi della matrice audio sono attualmente in uso da altre stanze"
-    },
-    "decoder_start_failed": {
-      "message": "{entity_id}: il decoder {decoder} non è riuscito ad avviare la riproduzione: {error}"
-    },
-    "unknown_source": {
-      "message": "{entity_id}: sorgente sconosciuta \"{source}\""
-    },
-    "environment_busy": {
-      "message": "{entity_id}: {owner} sta già trasmettendo nell'ambiente {environment}; le zone nello stesso ambiente condividono un ingresso della matrice"
-    },
-    "routing_unsupported": {
-      "message": "{entity_id}: l'amplificatore {where} non ha un indirizzo di instradamento della matrice (ambiente 0 o non a due cifre); cambia la sorgente dal pannello a parete"
-    },
     "decoder_incompatible_platform": {
       "message": "{entity_id}: il decoder {decoder} ({platform}) non supporta gli URL di streaming; configuralo invece tramite DLNA DMR"
     },
     "decoder_wake_timeout": {
       "message": "{entity_id}: il decoder {decoder} non si è riattivato entro 5 secondi"
+    }
+  },
+  "entity": {
+    "button": {
+      "lock": {
+        "name": "Blocca"
+      },
+      "unlock": {
+        "name": "Sblocca"
+      },
+      "calibrate_travel_time": {
+        "name": "Calibra il tempo di corsa"
+      },
+      "calibrate_all_covers": {
+        "name": "Calibra tutte le tapparelle"
+      }
+    },
+    "sensor": {
+      "energy_today": {
+        "name": "Energia (oggi)"
+      },
+      "energy_month": {
+        "name": "Energia (mese corrente)"
+      }
+    }
+  },
+  "selector": {
+    "bus_topology": {
+      "options": {
+        "standalone": "Autonomo (bus SCS proprio)",
+        "shared": "Bus SCS condiviso (stesso bus di un altro gateway)"
+      }
+    },
+    "gateway_role": {
+      "options": {
+        "primary": "Primario (rileva e interroga il bus)",
+        "secondary": "Secondario (rileva solo i sottosistemi delegati)",
+        "standby": "Riserva attiva (subentra finché il primario è offline)"
+      }
+    },
+    "delegated_whos": {
+      "options": {
+        "1": "1 - Illuminazione",
+        "2": "2 - Tapparelle / tende",
+        "4": "4 - Termoregolazione",
+        "5": "5 - Antifurto",
+        "9": "9 - Ausiliari",
+        "15": "15 - Scenari CEN",
+        "16": "16 - Diffusione sonora",
+        "18": "18 - Gestione energia",
+        "22": "22 - Diffusione sonora (matrice audio)",
+        "25": "25 - Scenari CEN+"
+      }
     }
   }
 }

@@ -41,6 +41,12 @@ from .const import (
     IDENTIFICATION_UNKNOWN,
     IDENTIFICATION_WHO13,
     LOGGER,
+    ROLE_STANDBY,
+    SHARED_BUS_EVIDENCE_COUNT,
+    SHARED_BUS_EVIDENCE_WINDOW_S,
+    SHARED_BUS_RX_WINDOW_S,
+    SHARED_BUS_TX_ECHO_S,
+    TOPOLOGY_SHARED,
     WHO1013_BRANDS,
     WHO1013_LINES,
 )
@@ -73,6 +79,14 @@ from .repairs import (
     async_delete_identity_issue,
     async_delete_unconfigured_timezone_issue,
     async_delete_unknown_model_issue,
+)
+from .topology import (
+    delegated_away_whos,
+    entry_delegated_whos,
+    entry_is_follower,
+    entry_primary_mac,
+    entry_role,
+    entry_topology,
 )
 
 __all__ = [
@@ -179,6 +193,8 @@ class MyHOMEGatewayHandler:
         self.gateway = OWNGateway(build_info)
         self.is_connected = False
         self._available = False
+        self._failover_active = False
+        self._setup_at = time.monotonic()
         self._unavailable_timer: CALLBACK_TYPE | None = None
         self.listening_worker: asyncio.Task[None] | None = None
         self.bus_monitor = BusMonitor()
@@ -392,12 +408,147 @@ class MyHOMEGatewayHandler:
     @property
     def available(self) -> bool:
         """Return the grace-filtered gateway availability."""
-        return self._available
+        if self._available:
+            return True
+        standby = self._get_standby_gateway()
+        if standby is not None and standby.available:
+            return True
+        return False
+
+    def is_who_available(self, who: str | int) -> bool:
+        """Return True if this gateway (or its failover) can currently handle the given WHO."""
+        if self._available:
+            return True
+        standby = self._get_standby_gateway()
+        if standby is not None and standby.available:
+            return standby._profile_supports_who(int(who))
+        return False
 
     @property
     def availability_signal(self) -> str:
         """Return the dispatcher signal for availability changes."""
         return f"{DOMAIN}_{self.mac}_availability"
+
+    @property
+    def bus_topology(self) -> str:
+        """Bus topology for this gateway: 'standalone' or 'shared'."""
+        return entry_topology(self.config_entry)
+
+    @property
+    def gateway_role(self) -> str:
+        """Role of this gateway: 'primary', 'secondary' or 'standby'."""
+        return entry_role(self.config_entry)
+
+    @property
+    def is_follower(self) -> bool:
+        """Return True if this gateway is a secondary or standby gateway on a shared bus."""
+        return entry_is_follower(self.config_entry)
+
+    @property
+    def is_standby(self) -> bool:
+        """Return True if this gateway is configured as a warm standby failover."""
+        return self.bus_topology == TOPOLOGY_SHARED and self.gateway_role == ROLE_STANDBY
+
+    @property
+    def is_primary(self) -> bool:
+        """Return True if this gateway acts as primary (or standalone) on its bus."""
+        return not self.is_follower
+
+    @property
+    def failover_active(self) -> bool:
+        """Return True if failover to standby is currently active."""
+        return self._failover_active
+
+    @property
+    def primary_gateway_mac(self) -> str | None:
+        """The primary gateway MAC if this gateway is secondary."""
+        return entry_primary_mac(self.config_entry)
+
+    @property
+    def delegated_whos(self) -> set[int]:
+        """Subsystems (WHOs) this secondary gateway discovers for the bus."""
+        return entry_delegated_whos(self.config_entry)
+
+    @property
+    def delegated_away_whos(self) -> set[int]:
+        """Subsystems this primary leaves to its secondaries: no sweep, no new entities."""
+        if self.is_follower or not getattr(self, "hass", None):
+            return set()
+        return delegated_away_whos(self.hass, self.mac)
+
+    @property
+    def bus_group(self) -> str:
+        """The configured bus this gateway belongs to (the primary's MAC)."""
+        return self.primary_gateway_mac or self.mac
+
+    def _get_standby_gateway(self) -> "MyHOMEGatewayHandler" | None:
+        """Find the standby gateway configured for this primary gateway."""
+        if not getattr(self, "hass", None):
+            return None
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            runtime_data = getattr(entry, "runtime_data", None)
+            gw: MyHOMEGatewayHandler | None = getattr(runtime_data, "gateway", None)
+            if (
+                gw is not None
+                and gw.bus_topology == TOPOLOGY_SHARED
+                and gw.gateway_role == ROLE_STANDBY
+                and gw.primary_gateway_mac == self.mac
+            ):
+                return gw
+        return None
+
+    def _get_primary_gateway(self) -> "MyHOMEGatewayHandler" | None:
+        """Find the configured primary gateway for this secondary/standby gateway."""
+        if not getattr(self, "hass", None) or not self.primary_gateway_mac:
+            return None
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            runtime_data = getattr(entry, "runtime_data", None)
+            gw: MyHOMEGatewayHandler | None = getattr(runtime_data, "gateway", None)
+            if gw is not None and gw.mac == self.primary_gateway_mac:
+                return gw
+        return None
+
+    def _record_failover_active(self, standby: "MyHOMEGatewayHandler") -> None:
+        """Record that failover to standby is currently active and raise repair issue."""
+        if self._failover_active:
+            return
+        self._failover_active = True
+        LOGGER.warning(
+            "%s Primary gateway offline; warm standby %s now carries its traffic.",
+            self.log_id,
+            standby.log_id,
+        )
+        from .repairs import async_create_failover_issue
+        async_create_failover_issue(
+            self.hass,
+            self.mac,
+            standby.mac,
+            self.name,
+            standby.name,
+        )
+
+    def _clear_failover(self) -> None:
+        """Forget an active failover and resolve its repair issue."""
+        if not self._failover_active:
+            return
+        self._failover_active = False
+        from .repairs import async_delete_failover_issue
+        async_delete_failover_issue(self.hass, self.mac)
+
+    def _bridge_to_primary(self, message: Any) -> None:
+        """Hand a bus frame to the offline primary's entities (warm standby only).
+
+        Only the primary's own standby bridges: a secondary on the same bus sees
+        the same frame, and bridging from both would deliver it twice. Frames of
+        the gateway itself (WHO=13/1013) describe this gateway, not the bus.
+        """
+        if not self.is_standby or getattr(message, "who", None) in (13, 1013):
+            return
+        primary_gw = self._get_primary_gateway()
+        if primary_gw is None or primary_gw.is_connected or primary_gw._get_standby_gateway() is not self:
+            return
+        primary_gw._evaluate_failover()
+        async_dispatcher_send(self.hass, f"myhome_message_{primary_gw.mac}", message)
 
     async def test(self) -> dict[str, Any]:
         """Test gateway connection."""
@@ -411,6 +562,12 @@ class MyHOMEGatewayHandler:
         self._event_runner.is_connected = connected
         self._update_event_watchdog(progress=False)
         if connected:
+            if self._failover_active:
+                self._clear_failover()
+                LOGGER.info(
+                    "%s Primary gateway reconnected; warm standby failover deactivated, returning to primary gateway.",
+                    self.log_id,
+                )
             self._event_session_ready.set()
             self._who1013["pending"] = False
             if self._unavailable_timer is not None:
@@ -441,10 +598,15 @@ class MyHOMEGatewayHandler:
     @callback
     def _mark_unavailable(self, _now: Any) -> None:
         """Mark the gateway unavailable after the reconnect grace period."""
-        self._unavailable_timer = None
+        if self._unavailable_timer is not None:
+            self._unavailable_timer()
+            self._unavailable_timer = None
         if self.is_connected or not self._available:
             return
         self._available = False
+        self._evaluate_failover()
+        if self.available:  # carried by the warm standby; entities stay available
+            return
         LOGGER.warning(
             "%s Gateway unavailable (outage exceeded %ss).",
             self.log_id,
@@ -452,10 +614,36 @@ class MyHOMEGatewayHandler:
         )
         self._notify_availability()
 
+    def _outage_confirmed(self) -> bool:
+        """Down past the reconnect grace, or not up yet a grace period after setup.
+
+        A dropped event session that recovers within the grace is routine; the
+        failover issue is only raised for an outage that outlived it.
+        """
+        return (
+            not self.is_connected
+            and not self._available
+            and time.monotonic() - self._setup_at >= AVAILABILITY_GRACE
+        )
+
+    @callback
+    def _evaluate_failover(self) -> None:
+        """Raise or clear the failover issue from the primary's and standby's state."""
+        standby = self._get_standby_gateway()
+        if standby is not None and standby._available and self._outage_confirmed():
+            self._record_failover_active(standby)
+        else:
+            self._clear_failover()
+
     @callback
     def _notify_availability(self) -> None:
-        """Notify all entities bound to this gateway."""
+        """Notify all entities bound to this gateway, and any primary backed by this standby."""
         async_dispatcher_send(self.hass, self.availability_signal)
+        if self.is_standby:
+            primary = self._get_primary_gateway()
+            if primary is not None and not primary._available:
+                primary._evaluate_failover()
+                async_dispatcher_send(self.hass, primary.availability_signal)
 
     @callback
     def _update_event_watchdog(self, *, progress: bool) -> None:
@@ -476,6 +664,72 @@ class MyHOMEGatewayHandler:
             return bool(supports(who))
         except Exception:  # pragma: no cover - defensive against foreign profile objects
             return True
+
+    def _record_tx(self, written_at: float, message: Any) -> None:
+        """Remember a written frame for shared-bus detection."""
+        if not getattr(self, "hass", None):
+            return
+        domain_data = self.hass.data.setdefault(DOMAIN, {})
+        recent_tx = domain_data.setdefault("_recent_tx", collections.deque(maxlen=50))
+        recent_tx.append((written_at, self.mac, self.bus_group, str(message).strip()))
+
+    def _correlate_shared_bus_traffic(self, message: Any) -> None:
+        """Correlate bus traffic with other gateways to detect unconfigured shared buses.
+
+        Gateways configured on the same bus (one primary and the secondaries or
+        standby pointing at it) are expected to see the same frames; any other
+        pair seeing them is a bus nobody told Home Assistant about.
+        """
+        if not getattr(self, "hass", None) or getattr(message, "who", None) in (13, 1013):
+            return
+        domain_data = self.hass.data.setdefault(DOMAIN, {})
+        now = time.monotonic()
+        raw_msg = str(message).strip()
+        group = self.bus_group
+
+        # 0. The echo of a frame this gateway wrote proves nothing: two isolated buses
+        #    get identical frames whenever an automation sends the same command to both.
+        recent_tx = domain_data.get("_recent_tx") or ()
+        if any(
+            tx_mac == self.mac and tx_frame == raw_msg and now - tx_time <= SHARED_BUS_TX_ECHO_S
+            for tx_time, tx_mac, _tx_group, tx_frame in recent_tx
+        ):
+            return
+
+        # 1. Another gateway wrote this exact frame just now (TX -> RX echo)
+        for tx_time, tx_mac, tx_group, tx_frame in recent_tx:
+            if tx_group != group and tx_frame == raw_msg and now - tx_time <= SHARED_BUS_TX_ECHO_S:
+                self._record_shared_bus_evidence(tx_mac, now, is_tx_echo=True)
+                return
+
+        # 2. Another gateway received this exact frame at the same moment (physical event)
+        recent_rx = domain_data.setdefault("_recent_rx", collections.deque(maxlen=50))
+        for rx_time, rx_mac, rx_group, rx_frame in recent_rx:
+            if rx_group != group and rx_frame == raw_msg and now - rx_time <= SHARED_BUS_RX_WINDOW_S:
+                self._record_shared_bus_evidence(rx_mac, now, is_tx_echo=False)
+                return
+        recent_rx.append((now, self.mac, group, raw_msg))
+
+    def _record_shared_bus_evidence(self, other_mac: str, now: float, is_tx_echo: bool = False) -> None:
+        """Count one correlated frame; raise the repair issue on enough recent ones."""
+        from homeassistant.helpers import device_registry as dr
+        my_mac = dr.format_mac(str(self.mac))
+        other_mac = dr.format_mac(str(other_mac))
+
+        if not other_mac or other_mac == my_mac:
+            return
+        domain_data = self.hass.data.setdefault(DOMAIN, {})
+        evidence_map = domain_data.setdefault("_shared_bus_evidence", {})
+        pair_key = tuple(sorted([my_mac, other_mac]))
+        seen = evidence_map.setdefault(pair_key, collections.deque(maxlen=SHARED_BUS_EVIDENCE_COUNT))
+        seen.append((now, is_tx_echo))
+        # Only evidence inside one window counts: coincidences spread over days do not add up.
+        # Require at least one TX->RX echo to prevent false positives on standalone buses (issue #459).
+        if len(seen) == SHARED_BUS_EVIDENCE_COUNT and seen[-1][0] - seen[0][0] <= SHARED_BUS_EVIDENCE_WINDOW_S:
+            if any(is_tx for _, is_tx in seen):
+                seen.clear()
+                from .repairs import async_create_shared_bus_issue
+                async_create_shared_bus_issue(self.hass, pair_key[0], pair_key[1])
 
     async def _process_message(self, message: Any) -> None:
         """Process a received message and dispatch to Home Assistant."""
@@ -728,6 +982,20 @@ class MyHOMEGatewayHandler:
     async def initial_discovery(self) -> None:
         """Queue the startup sweep that discovers devices missing from the config."""
         for who, frame in ((2, "*#2*0##"), (4, "*#4*0##"), (16, "*#16*0*5##")):
+            if getattr(self, "is_follower", False) is True and who not in getattr(self, "delegated_whos", set()):
+                LOGGER.debug(
+                    "%s Skipping WHO=%s discovery: follower gateway on shared bus.",
+                    self.log_id,
+                    who,
+                )
+                continue
+            if who in getattr(self, "delegated_away_whos", set()):
+                LOGGER.debug(
+                    "%s Skipping WHO=%s discovery: delegated to a secondary gateway.",
+                    self.log_id,
+                    who,
+                )
+                continue
             if not self._profile_supports_who(who):
                 LOGGER.debug(
                     "%s Skipping WHO=%s discovery: not supported by %s profile.",
@@ -749,17 +1017,54 @@ class MyHOMEGatewayHandler:
         self._unavailable_timer = None
         self.is_connected = False
         self._available = False
+        self._clear_failover()
+        if self.is_standby:
+            primary = self._get_primary_gateway()
+            if primary is not None and not primary._available:
+                primary._evaluate_failover()
+                async_dispatcher_send(self.hass, primary.availability_signal)
+
 
         self._event_runner.close()
         self._command_pool.close()
         return True
 
+    def _failover_target(self, message: OWNCommand) -> "MyHOMEGatewayHandler" | None:
+        """The connected warm standby to send through while this primary is disconnected."""
+        msg_who = getattr(message, "who", getattr(message, "_who", None))
+        if msg_who in (13, 1013):
+            return None
+
+        if self.is_connected:
+            return None
+        standby = self._get_standby_gateway()
+        if standby is None or not standby.is_connected:
+            return None
+
+        if msg_who is not None and not standby._profile_supports_who(int(msg_who)):
+            return None
+
+        LOGGER.debug(
+            "%s Primary gateway is disconnected; sending `%s` through standby gateway %s.",
+            self.log_id,
+            message,
+            standby.log_id,
+        )
+        self._evaluate_failover()
+        return standby
+
     async def send(self, message: OWNCommand) -> asyncio.Future[float]:
         """Queue a command; the returned future resolves to the monotonic write time."""
+        standby = self._failover_target(message)
+        if standby is not None:
+            return await standby.send(message)
         return await self._command_pool.send(message)
 
     async def send_status_request(self, message: OWNCommand) -> asyncio.Future[float]:
         """Queue a status request; the returned future resolves to the monotonic write time."""
+        standby = self._failover_target(message)
+        if standby is not None:
+            return await standby.send_status_request(message)
         return await self._command_pool.send_status_request(message)
 
     def _known_light_areas(self) -> list[str]:

@@ -44,6 +44,9 @@ def _get_gateway_handler(hass: HomeAssistant, gateway_identifier: str | None) ->
         return None
 
     if gateway_identifier is None:
+        for handler in gateways.values():
+            if getattr(handler, "is_primary", True):
+                return handler
         return next(iter(gateways.values()))
 
     if gateway_identifier in gateways:
@@ -67,12 +70,20 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         """Handle time synchronization service call."""
         gateway = call.data.get(ATTR_GATEWAY, None)
         if gateway is None:
-            if not _loaded_gateways(hass):
+            gateways = _loaded_gateways(hass)
+            if not gateways:
                 _LOGGER.error("No MyHOME gateways found, cannot sync time.")
                 return
-        else:
-            gateway = dr.format_mac(gateway)
+            timezone = hass.config.as_dict().get("time_zone", "UTC")
+            from OWNd.message import OWNGatewayCommand
+            cmd = OWNGatewayCommand.set_datetime_to_now(timezone)
+            # Once per bus: a secondary/standby shares its primary's bus
+            for gw_handler in gateways.values():
+                if getattr(gw_handler, "is_follower", False) is not True:
+                    await gw_handler.send(cmd)
+            return
 
+        gateway = dr.format_mac(gateway)
         timezone = hass.config.as_dict().get("time_zone", "UTC")
         handler = _get_gateway_handler(hass, gateway)
         if handler is not None:
@@ -139,25 +150,36 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 _LOGGER.error("Gateway `%s` not found for sweep_bus.", gateway)
                 return
         else:
-            target_gateways = gateways
+            target_gateways = {mac: hw for mac, hw in gateways.items() if not hw.is_follower}
 
         if not target_gateways:
             _LOGGER.warning("No active MyHOME gateways found to sweep.")
             return
 
-        sweep_queries = [
-            "*#13**0##",   # Gateway real-time clock
-            "*#13**15##",  # Gateway device model
-            "*#13**16##",  # Gateway firmware version
-            "*#2*0##",     # All cover actuators
-            "*#4*0##",     # Thermoregulation master status
-            "*#5*0##",     # Burglar alarm central unit status
-            "*#16*0*5##",  # Sound system status (lists all amplifiers & sources)
-        ]
-
         for gw_mac, handler in target_gateways.items():
             _LOGGER.info("Executing diagnostic bus sweep on gateway %s", gw_mac)
-            for query in sweep_queries:
+            queries = [
+                "*#13**0##",   # Gateway real-time clock
+                "*#13**15##",  # Gateway device model
+                "*#13**16##",  # Gateway firmware version
+            ]
+            if getattr(handler, "is_follower", False) is True:
+                delegated: set[int] = getattr(handler, "delegated_whos", set())
+                if 2 in delegated:
+                    queries.append("*#2*0##")
+                if 4 in delegated:
+                    queries.append("*#4*0##")
+                if 5 in delegated:
+                    queries.append("*#5*0##")
+                if 16 in delegated:
+                    queries.append("*#16*0*5##")
+            else:
+                delegated_away: object = getattr(handler, "delegated_away_whos", set())
+                if not isinstance(delegated_away, (set, frozenset, list, tuple)):
+                    delegated_away = set()
+                queries.extend(q for who, q in ((2, "*#2*0##"), (4, "*#4*0##"), (5, "*#5*0##"), (16, "*#16*0*5##")) if who not in delegated_away)
+
+            for query in queries:
                 msg = OWNMessage.parse(query)
                 if msg is not None:
                     await handler.send(cast(OWNCommand, msg))

@@ -72,6 +72,7 @@ async def test_registered_actuator_buttons_survive_reload(hass, domain, who, add
         mac=MAC, unique_id=MAC, available=True,
         availability_signal=f"myhome_{MAC}_availability", device_registry_id=None,
     )
+    gateway.is_who_available.side_effect = lambda who: gateway.available
     for _ in range(2):
         # Only the entity registry survives a fresh setup: no YAML/discovery cache.
         hass.data[DOMAIN] = {MAC: {"entity": gateway, "platforms": {"button": {}}}}
