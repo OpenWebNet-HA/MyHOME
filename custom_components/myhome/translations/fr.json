@@ -71,9 +71,13 @@
         "description": "Parametres système avancés",
         "data": {
           "source_1_name": "Source 1 — nom de l'appareil raccordé à l'entrée S1 de la matrice (laisser vide si rien n'est connecté)",
+          "source_1_tuner": "La source 1 est un tuner (F500) : ajoute une entité radio avec stations, fréquence et RDS",
           "source_2_name": "Source 2 — nom de l'appareil raccordé à l'entrée S2 de la matrice (laisser vide si rien n'est connecté)",
+          "source_2_tuner": "La source 2 est un tuner (F500) : ajoute une entité radio avec stations, fréquence et RDS",
           "source_3_name": "Source 3 — nom de l'appareil raccordé à l'entrée S3 de la matrice (laisser vide si rien n'est connecté)",
+          "source_3_tuner": "La source 3 est un tuner (F500) : ajoute une entité radio avec stations, fréquence et RDS",
           "source_4_name": "Source 4 — nom de l'appareil raccordé à l'entrée S4 de la matrice (laisser vide si rien n'est connecté)",
+          "source_4_tuner": "La source 4 est un tuner (F500) : ajoute une entité radio avec stations, fréquence et RDS",
           "address": "Adresse IP",
           "password": "Mot de passe",
           "config_file_path": "Chemin du fichier de configuration",

@@ -131,6 +131,13 @@ CONF_DECODER_SLOTS = 4                        # Maximum number of decoder slots
 CONF_SOURCE_NAME = "source_{}_name"           # Friendly name, e.g. "Cambridge"
 CONF_SOURCE_SLOTS = 4                         # Matrix inputs S1-S4
 SOURCE_UNCONFIGURED_SUFFIX = " (not configured)"
+# A source that is a tuner (F500 / F500N) accepts frequency, station and RDS
+# messages that an RCA interface does not. The user declares it, because a
+# source device that has not spoken yet is indistinguishable on the bus.
+CONF_SOURCE_TUNER = "source_{}_tuner"
+#: Stored stations a WHO=16 tuner exposes (5 for F500, up to 15 for F500N).
+TUNER_STATION_COUNT = 5
+TUNER_MAX_STATION_COUNT = 15
 
 # Default source per environment. The F441M routes per output and an output
 # serves one environment, so a default belongs to an environment, not to a

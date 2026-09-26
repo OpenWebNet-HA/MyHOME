@@ -71,9 +71,13 @@
         "description": "Impostazioni di sistema avanzate",
         "data": {
           "source_1_name": "Sorgente 1 — nome di ciò che è collegato all'ingresso S1 della matrice (lasciare vuoto se non è collegato nulla)",
+          "source_1_tuner": "La sorgente 1 è un sintonizzatore (F500): aggiunge un'entità radio con stazioni, frequenza e RDS",
           "source_2_name": "Sorgente 2 — nome di ciò che è collegato all'ingresso S2 della matrice (lasciare vuoto se non è collegato nulla)",
+          "source_2_tuner": "La sorgente 2 è un sintonizzatore (F500): aggiunge un'entità radio con stazioni, frequenza e RDS",
           "source_3_name": "Sorgente 3 — nome di ciò che è collegato all'ingresso S3 della matrice (lasciare vuoto se non è collegato nulla)",
+          "source_3_tuner": "La sorgente 3 è un sintonizzatore (F500): aggiunge un'entità radio con stazioni, frequenza e RDS",
           "source_4_name": "Sorgente 4 — nome di ciò che è collegato all'ingresso S4 della matrice (lasciare vuoto se non è collegato nulla)",
+          "source_4_tuner": "La sorgente 4 è un sintonizzatore (F500): aggiunge un'entità radio con stazioni, frequenza e RDS",
           "address": "Indirizzo IP",
           "password": "Password",
           "config_file_path": "Percorso del file di configurazione",

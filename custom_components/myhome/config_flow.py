@@ -52,6 +52,7 @@ from .const import (
     CONF_SOURCE_DEFAULTS,
     CONF_SOURCE_NAME,
     CONF_SOURCE_SLOTS,
+    CONF_SOURCE_TUNER,
     CONF_SSDP_LOCATION,
     CONF_SSDP_ST,
     CONF_TRANSITION_MODE,
@@ -798,6 +799,8 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
                 for i in range(1, CONF_SOURCE_SLOTS + 1):
                     name_key = CONF_SOURCE_NAME.format(i)
                     self.options[name_key] = str(user_input.get(name_key, "") or "").strip()  # type: ignore
+                    tuner_key = CONF_SOURCE_TUNER.format(i)
+                    self.options[tuner_key] = bool(user_input.get(tuner_key, False))  # type: ignore
 
                 # Persist decoder slots
                 for i in range(1, CONF_DECODER_SLOTS + 1):
@@ -906,6 +909,14 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
                 name_key,
                 description={"suggested_value": _name},
             )] = selector.TextSelector()
+            # A tuner accepts frequency, station and RDS messages that a line
+            # interface does not, and nothing on the bus tells them apart until
+            # the device speaks, so the user declares it.
+            tuner_key = CONF_SOURCE_TUNER.format(i)
+            schema_dict[vol.Required(
+                tuner_key,
+                default=bool(self.options.get(tuner_key, False)),  # type: ignore
+            )] = selector.BooleanSelector()
 
         # Default source per environment — only for environments that have zones.
         _stored_defaults = self.options.get(CONF_SOURCE_DEFAULTS) or {}  # type: ignore

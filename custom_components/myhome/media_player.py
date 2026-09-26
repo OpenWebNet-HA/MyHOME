@@ -97,6 +97,7 @@ from .const import (
     CONF_SOURCE_DEFAULTS,
     CONF_SOURCE_NAME,
     CONF_SOURCE_SLOTS,
+    CONF_SOURCE_TUNER,
     DOMAIN,
     LOGGER,
     SOURCE_UNCONFIGURED_SUFFIX,
@@ -110,6 +111,7 @@ from .repairs import (
     async_delete_incompatible_decoder_issue,
     async_prune_incompatible_decoder_issues,
 )
+from .sound_source import MyHOMESoundSource, source_address
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -206,11 +208,20 @@ async def async_setup_entry(
             gateway=runtime.gateway,
         )
 
+    # Declared tuner sources exist before any bus traffic; zones are discovered.
+    sound_sources = _build_sound_sources(hass, config_entry, runtime.gateway)
+    for source in sound_sources:
+        source.async_on_remove(
+            runtime.router.subscribe("16", [source.device_key], source.handle_event)
+        )
+    if sound_sources:
+        async_add_entities(sound_sources)
+
     discovery = PlatformDiscovery(
         hass, config_entry, async_add_entities,
         platform=Platform.MEDIA_PLAYER, who="16", event_type=OWNSoundEvent, build=build,
         address=_zone_address, pre_message=_route_pseudo_zones(runtime.router),
-        key_suffix="#16",
+        route_keys=_sound_route_keys, key_suffix="#16",
     )
     # Audio zones are keyed "<zone>#16" in unique ids; the registry restore reads that key back.
     discovery.start()
@@ -227,6 +238,44 @@ def _zone_address(message: Any) -> Address | None:
     if not zone or getattr(message, "is_source_event", False):
         return None
     return Address(str(zone), key_suffix="#16")
+
+
+def _sound_route_keys(message: Any, address: Address | None) -> list[str]:
+    """Return the entity keys a WHO=16 frame belongs to.
+
+    Source frames carry no zone address, so without an explicit key they would
+    be dropped before reaching a declared tuner entity.
+    """
+    if getattr(message, "is_source_event", False):
+        where = str(getattr(message, "zone", "") or "")
+        return [f"{where}#16"] if where else []
+    return [address.key] if address is not None else []
+
+
+def _build_sound_sources(
+    hass: HomeAssistant, config_entry: MyHOMEConfigEntry, gateway: Any
+) -> list[MyHOMESoundSource]:
+    """Create an entity for every matrix input the user declared to be a tuner."""
+    options = config_entry.options
+    sources: list[MyHOMESoundSource] = []
+    for i in range(1, CONF_SOURCE_SLOTS + 1):
+        if not options.get(CONF_SOURCE_TUNER.format(i)):
+            continue
+        where = source_address(i)
+        name = str(options.get(CONF_SOURCE_NAME.format(i), "") or "").strip()
+        sources.append(
+            MyHOMESoundSource(
+                hass=hass,
+                name=name or f"Audio Source {i}",
+                device_id=f"{where}#16",
+                who="16",
+                where=where,
+                manufacturer="BTicino",
+                model="Audio Source",
+                gateway=gateway,
+            )
+        )
+    return sources
 
 
 def _zone_environment(zone: str) -> str | None:

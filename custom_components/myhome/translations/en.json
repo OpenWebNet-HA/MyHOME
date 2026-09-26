@@ -89,9 +89,13 @@
         "description": "Advanced system settings and streaming decoder mapping",
         "data": {
           "source_1_name": "Source 1 — name of what is wired to matrix input S1 (leave blank if nothing is connected)",
+          "source_1_tuner": "Source 1 is a tuner (F500): adds a radio entity with stations, frequency and RDS",
           "source_2_name": "Source 2 — name of what is wired to matrix input S2 (leave blank if nothing is connected)",
+          "source_2_tuner": "Source 2 is a tuner (F500): adds a radio entity with stations, frequency and RDS",
           "source_3_name": "Source 3 — name of what is wired to matrix input S3 (leave blank if nothing is connected)",
+          "source_3_tuner": "Source 3 is a tuner (F500): adds a radio entity with stations, frequency and RDS",
           "source_4_name": "Source 4 — name of what is wired to matrix input S4 (leave blank if nothing is connected)",
+          "source_4_tuner": "Source 4 is a tuner (F500): adds a radio entity with stations, frequency and RDS",
           "address": "IP address",
           "password": "Password",
           "config_file_path": "Configuration file path",
@@ -351,6 +355,15 @@
     },
     "decoder_wake_timeout": {
       "message": "{entity_id}: decoder {decoder} did not wake up within 5 seconds"
+    },
+    "unknown_station": {
+      "message": "{entity_id}: unknown station \"{station}\""
+    },
+    "frequency_out_of_range": {
+      "message": "{entity_id}: {frequency} MHz is outside the FM band"
+    },
+    "invalid_tuner_media": {
+      "message": "{entity_id}: \"{media_id}\" is neither a station nor a frequency"
     }
   },
   "entity": {
