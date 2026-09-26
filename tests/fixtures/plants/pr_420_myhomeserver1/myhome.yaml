@@ -1,0 +1,13 @@
+# Synthetic plant for the PR #420 MyHomeServer1 trace (firmware 2.87.13): the
+# fixture is about gateway identification (WHO=13 dimension 15 = 200, WHO=1013
+# dimension 1 = 67), so only the energy meter whose readings the trace carries
+# is declared.
+
+myhomeserver1:
+  mac: "00:03:50:00:04:23"
+
+  sensor:
+    sensor_52_power:
+      where: "52"
+      name: "Sensor 52"
+      class: power

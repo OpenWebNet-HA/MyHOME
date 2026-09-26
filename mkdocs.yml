@@ -1,0 +1,119 @@
+site_name: MyHOME for Home Assistant
+site_description: Modern async Home Assistant integration for Legrand & BTicino MyHOME SCS bus systems via OpenWebNet.
+site_author: OpenWebNet-HA Community
+site_url: https://openwebnet-ha.github.io/MyHOME/
+repo_name: OpenWebNet-HA/MyHOME
+repo_url: https://github.com/OpenWebNet-HA/MyHOME
+edit_uri: edit/v2-phase1-architecture/docs/
+copyright: "Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0"
+
+theme:
+  name: material
+  language: en
+  palette:
+    # Light mode (Home Assistant standard)
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: light blue
+      accent: blue
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    # Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: light blue
+      accent: blue
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+  font:
+    text: Roboto
+    code: Roboto Mono
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+extra:
+  version:
+    provider: mike
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - github-callouts   # renders GitHub-style '> [!NOTE]' blockquotes as admonitions
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets
+  - md_in_html
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - tables
+  - attr_list
+  - def_list
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Overview: configuration/README.md
+      - Installation: getting-started/installation.md
+      - Hardware Compatibility: getting-started/hardware-compatibility.md
+      - Removal & Clean Uninstall: getting-started/removal.md
+  - Device Configuration:
+      - Gateways & Connection: configuration/gateways.md
+      - Gateway Identification: configuration/gateway-identification.md
+      - Lights & Dimmers: configuration/lights.md
+      - Covers & Shutters: configuration/covers.md
+      - Climate & Heating: configuration/climate.md
+      - Sound System (Diffusione Sonora): configuration/media_player.md
+      - Scenario Buttons (CEN / CEN+): configuration/cen_cenplus.md
+      - Switches & Relays: configuration/switches.md
+      - Sensors & Energy: configuration/sensors.md
+      - Binary Sensors & Contacts: configuration/binary-sensors.md
+      - Burglar Alarm: configuration/alarm.md
+      - Integration Services: configuration/services.md
+  - Diagnostics & Monitoring:
+      - Lovelace Bus Monitor Card: configuration/bus_monitor.md
+      - Home Assistant Repairs: diagnostics/repair-issues.md
+      - Dashboard Recipes: configuration/lovelace_recipes.md
+      - Troubleshooting: configuration/troubleshooting.md
+      - Known Limitations: configuration/known_limitations.md
+      - Use Cases: configuration/use_cases.md
+  - Architecture:
+      - Anti-Drift Sentinel System: architecture/anti-drift-safeguards.md
+      - Runtime Behaviour: configuration/runtime_behaviour.md
+      - Supported Functions Matrix: configuration/supported_functions.md
+      - OpenWebNet Protocol & WHO Archive: openwebnet-who-specifications.md
+      - Protocol Conformance Matrix: protocol_conformance_matrix.md
+      - Hardware Trace Availability: trace-availability.md
+      - F454 Regression Checks: f454-regression-checks.md
+      - Quality Scale Roadmap: quality_scale_plan.md
+  - Migration & Legacy:
+      - Upgrade from v0.9.4 to v2.0: migration/upgrade-from-094.md
+      - Migrating from SDomotica: migration/sdomotica_to_myhome.md
+      - Legacy YAML Configuration (< v0.9): migration/legacy-yaml.md
+  - Roadmap: roadmap.md

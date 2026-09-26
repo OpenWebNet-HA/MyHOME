@@ -1,0 +1,8 @@
+f454:
+  mac: "00:03:50:00:03:70"
+
+  light:
+    light_01:
+      where: "01"
+      name: "Light 01"
+      dimmable: False

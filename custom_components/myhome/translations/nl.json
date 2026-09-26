@@ -28,9 +28,20 @@
         "description": "Vul de informatie in voor uw gateway",
         "data": {
           "address": "IP address",
-          "port": "Port",
-          "serialNumber": "MAC address",
-          "modelName": "Device type"
+          "port": "Port"
+        }
+      },
+      "discovery_confirm": {
+        "title": "Ontdekte MyHOME gateway",
+        "description": "Wilt u de {name} gateway ({host}) instellen?"
+      },
+      "serial": {
+        "title": "USB / Seriële Gateway",
+        "description": "Configureer uw Legrand 3578 / OpenZigBee USB of seriële gateway.",
+        "data": {
+          "port": "Seriële poort",
+          "baudrate": "Baudsnelheid",
+          "friendly_name": "Vriendelijke naam"
         }
       }
     },
@@ -59,20 +70,36 @@
         "title": "MyHome opties",
         "description": "Gevorderde systeem settings",
         "data": {
+          "source_1_name": "Bron 1 — naam van wat op matrix-ingang S1 is aangesloten (leeg laten als er niets op zit)",
+          "source_2_name": "Bron 2 — naam van wat op matrix-ingang S2 is aangesloten (leeg laten als er niets op zit)",
+          "source_3_name": "Bron 3 — naam van wat op matrix-ingang S3 is aangesloten (leeg laten als er niets op zit)",
+          "source_4_name": "Bron 4 — naam van wat op matrix-ingang S4 is aangesloten (leeg laten als er niets op zit)",
           "address": "IP address",
           "password": "Wachtwoord",
           "config_file_path": "Path onfiguratie bestand",
           "command_worker_count": "Aantal open command sessies",
-          "generate_events": "Genereer gebeurtenissen in Home Assistant voor elk ontvangen bericht"
+          "generate_events": "Genereer gebeurtenissen in Home Assistant voor elk ontvangen bericht",
+          "broadcast_resync": "Bevraag groep-/gebied-/algemene adressen na een stille periode",
+          "default_source_env_1": "Standaardbron voor omgeving 1 — gebruikt wanneer een zone in die ruimte vanuit Home Assistant wordt aangezet",
+          "default_source_env_2": "Standaardbron voor omgeving 2 — gebruikt wanneer een zone in die ruimte vanuit Home Assistant wordt aangezet",
+          "default_source_env_3": "Standaardbron voor omgeving 3 — gebruikt wanneer een zone in die ruimte vanuit Home Assistant wordt aangezet",
+          "default_source_env_4": "Standaardbron voor omgeving 4 — gebruikt wanneer een zone in die ruimte vanuit Home Assistant wordt aangezet",
+          "default_source_env_5": "Standaardbron voor omgeving 5 — gebruikt wanneer een zone in die ruimte vanuit Home Assistant wordt aangezet",
+          "default_source_env_6": "Standaardbron voor omgeving 6 — gebruikt wanneer een zone in die ruimte vanuit Home Assistant wordt aangezet",
+          "default_source_env_7": "Standaardbron voor omgeving 7 — gebruikt wanneer een zone in die ruimte vanuit Home Assistant wordt aangezet",
+          "default_source_env_8": "Standaardbron voor omgeving 8 — gebruikt wanneer een zone in die ruimte vanuit Home Assistant wordt aangezet",
+          "default_source_env_9": "Standaardbron voor omgeving 9 — gebruikt wanneer een zone in die ruimte vanuit Home Assistant wordt aangezet"
         }
       }
     },
     "error": {
       "invalid_ip": "Ongeldig IP address",
       "invalid_worker_count": "Aantal workers moet tussen 1 and 10 zijn",
+      "worker_count_above_gateway_limit": "De {model} accepteert maximaal {session_limit} gelijktijdige command sessie(s); met meer reageert hij niet meer.",
       "invalid_config_path": "Ongeldig path voor configuratie bestand",
       "invalid_password": "Ongeldig password",
-      "password_error": "Ongeldig password"
+      "password_error": "Ongeldig password",
+      "duplicate_decoder_source": "Elke decoder moet aangesloten zijn op een andere matrix broningang."
     }
   },
   "services": {
@@ -113,6 +140,89 @@
           "description": "For how long the instant power information will be sent."
         }
       }
+    },
+    "turn_on_timed": {
+      "name": "Tijdelijk inschakelen",
+      "description": "Schakel een lamp of schakelaar in met een hardwarematige SCS-bustimer die automatisch uitschakelt, zelfs als Home Assistant herstart.",
+      "fields": {
+        "duration": {
+          "name": "Tijdsduur",
+          "description": "Tijdsduur in seconden voordat het apparaat automatisch uitschakelt."
+        },
+        "hours": {
+          "name": "Uren",
+          "description": "Optionele uren voor aangepaste timerduur (0-255)."
+        },
+        "minutes": {
+          "name": "Minuten",
+          "description": "Optionele minuten voor aangepaste timerduur (0-59)."
+        },
+        "seconds": {
+          "name": "Seconden",
+          "description": "Optionele seconden voor aangepaste timerduur (0-59)."
+        },
+        "brightness": {
+          "name": "Helderheid",
+          "description": "Optioneel helderheidsniveau (1-255) voor lampen."
+        },
+        "brightness_pct": {
+          "name": "Helderheidspercentage",
+          "description": "Optioneel helderheidspercentage (1-100%) voor lampen."
+        }
+      }
+    },
+    "sweep_bus": {
+      "name": "Busstatus scannen",
+      "description": "Voert een alleen-lezen statusverzoek uit over alle bussubsystemen (verlichting, rolluiken, klimaatregeling, klok en gatewaydiagnostiek) om de diagnostische ringbuffer te vullen.",
+      "fields": {
+        "gateway": {
+          "name": "Gateway",
+          "description": "MAC-adres van de gateway (optioneel; standaard voor alle actieve gateways)."
+        }
+      }
+    }
+  },
+  "issues": {
+    "unconfigured_timezone": {
+      "title": "Niet-geconfigureerde tijdzone op MyHOME-gateway ({gateway})",
+      "description": "De MyHOME-gateway {gateway} meldt een niet-geconfigureerde tijdzone (tijdelijke code '999'). Dit kan leiden tot fouten bij het verwerken van datum en tijd of het verliezen van diagnostische gatewayberichten.\n\nLog in op de webinterface van de gateway (of MyHOME_Suite / MyHOME_Up) om een geldige tijdzone in te stellen en herstart vervolgens de gateway."
+    },
+    "unknown_gateway_model": {
+      "title": "Onbekende apparaattypecode voor gateway ({code})",
+      "description": "De gateway heeft een hardware-apparaattypecode ({code}) gerapporteerd die onbekend is bij de MyHOME-integratie. Klik op 'Meer informatie' om een GitHub-issue te openen en een diagnostische trace bij te voegen, zodat we ondersteuning voor dit model kunnen toevoegen."
+    },
+    "incompatible_decoder_platform": {
+      "title": "Decoder {decoder} gebruikt een niet-ondersteunde integratie ({platform})",
+      "description": "De geconfigureerde streaming-decoder {decoder} wordt geleverd door de {platform}-integratie, die geen HTTP-stream-URL's accepteert via play_media. Voor multi-room streaming (zoals Music Assistant), configureer deze hardware in plaats daarvan via de DLNA Digital Media Renderer (DMR) integratie."
+    }
+  },
+  "exceptions": {
+    "foreign_entity_not_supported": {
+      "message": "{entity_id}: kan externe entiteit {member} niet koppelen; alleen MyHOME-audiozones kunnen worden gegroepeerd"
+    },
+    "grouping_unavailable": {
+      "message": "{entity_id}: audiogroepering is nog niet beschikbaar; de decoderpool is nog niet geïnitialiseerd"
+    },
+    "decoders_busy": {
+      "message": "{entity_id}: alle audiomatrix-ingangen zijn momenteel in gebruik door andere kamers"
+    },
+    "decoder_start_failed": {
+      "message": "{entity_id}: decoder {decoder} kon het afspelen niet starten: {error}"
+    },
+    "unknown_source": {
+      "message": "{entity_id}: onbekende bron \"{source}\""
+    },
+    "environment_busy": {
+      "message": "{entity_id}: {owner} streamt al in omgeving {environment}; zones in dezelfde omgeving delen een matrixingang"
+    },
+    "routing_unsupported": {
+      "message": "{entity_id}: versterker {where} heeft geen matrix-routingadres (omgeving 0 of niet twee cijfers); wissel van bron via een wandpaneel"
+    },
+    "decoder_incompatible_platform": {
+      "message": "{entity_id}: decoder {decoder} ({platform}) ondersteunt geen streaming-URL's; configureer deze via DLNA DMR"
+    },
+    "decoder_wake_timeout": {
+      "message": "{entity_id}: decoder {decoder} werd niet binnen 5 seconden wakker"
     }
   }
 }

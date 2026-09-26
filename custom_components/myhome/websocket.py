@@ -1,0 +1,507 @@
+"""WebSocket API for MyHOME OpenWebNet integration.
+
+Provides real-time bus streaming, historical frame inspection, and diagnostic
+injection for the Lovelace bus monitor card.
+"""
+from __future__ import annotations
+
+import logging
+from typing import Any, Optional
+
+import voluptuous as vol
+from homeassistant.components import websocket_api
+from homeassistant.components.websocket_api.connection import ActiveConnection
+from homeassistant.components.websocket_api.const import (
+    ERR_INVALID_FORMAT,
+    ERR_NOT_FOUND,
+    ERR_UNKNOWN_ERROR,
+)
+from homeassistant.components.websocket_api.decorators import (
+    async_response,
+    require_admin,
+    websocket_command,
+)
+from homeassistant.components.websocket_api.messages import event_message
+from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PORT
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
+from OWNd.message import OWNMessage
+
+from .bus_monitor import BusFrame, BusMonitor
+from .const import (
+    CONF_FIRMWARE,
+    CONF_WORKER_COUNT,
+    DATA_OWND_VERSION,
+    DOMAIN,
+    INTEGRATION_VERSION,
+)
+from .data import get_runtime_data
+
+_LOGGER = logging.getLogger(__name__)
+
+WS_TYPE_HISTORY = "myhome/bus_monitor/history"
+WS_TYPE_STREAM = "myhome/bus_monitor/stream"
+WS_TYPE_SEND = "myhome/bus_monitor/send"
+WS_TYPE_CLEAR = "myhome/bus_monitor/clear"
+WS_TYPE_INFO = "myhome/bus_monitor/info"
+WS_TYPE_CALIBRATION_TRACE = "myhome/cover/calibration_trace"
+
+SCHEMA_WS_CALIBRATION_TRACE: dict[str | vol.Marker, Any] = {
+    vol.Required("type"): WS_TYPE_CALIBRATION_TRACE,
+    vol.Optional("mac"): vol.Any(cv.string, None),
+}
+
+SCHEMA_WS_INFO: dict[str | vol.Marker, Any] = {
+    vol.Required("type"): WS_TYPE_INFO,
+    vol.Optional("mac"): vol.Any(cv.string, None),
+}
+
+SCHEMA_WS_HISTORY: dict[str | vol.Marker, Any] = {
+    vol.Required("type"): WS_TYPE_HISTORY,
+    vol.Optional("mac"): vol.Any(cv.string, None),
+    vol.Optional("limit", default=100): vol.All(vol.Coerce(int), vol.Range(min=1, max=500)),
+    vol.Optional("who"): vol.Any(cv.string, vol.Coerce(int), None),
+    vol.Optional("where"): vol.Any(cv.string, None),
+    vol.Optional("direction"): vol.Any(vol.In(["rx", "tx", "ack", "nack", "all"]), None),
+}
+
+SCHEMA_WS_STREAM: dict[str | vol.Marker, Any] = {
+    vol.Required("type"): WS_TYPE_STREAM,
+    vol.Optional("mac"): vol.Any(cv.string, None),
+    vol.Optional("who"): vol.Any(cv.string, vol.Coerce(int), None),
+    vol.Optional("where"): vol.Any(cv.string, None),
+    vol.Optional("direction"): vol.Any(vol.In(["rx", "tx", "ack", "nack", "all"]), None),
+}
+
+SCHEMA_WS_SEND: dict[str | vol.Marker, Any] = {
+    vol.Required("type"): WS_TYPE_SEND,
+    vol.Required("frame"): cv.string,
+    vol.Optional("mac"): vol.Any(cv.string, None),
+}
+
+SCHEMA_WS_CLEAR: dict[str | vol.Marker, Any] = {
+    vol.Required("type"): WS_TYPE_CLEAR,
+    vol.Optional("mac"): vol.Any(cv.string, None),
+}
+
+
+def _extract_gateway_info(gw: Optional[Any], ownd_version: str = "unknown") -> dict[str, Any]:
+    """Safely extract JSON-serializable gateway runtime and hardware configuration."""
+    if gw is None:
+        return {}
+
+    raw_gw = getattr(gw, "gateway", None)
+    model = ""
+    manufacturer = "BTicino"
+    firmware = ""
+    host = ""
+    port: Optional[int] = 20000
+    profile = None
+
+    if raw_gw is not None:
+        m_name = getattr(raw_gw, "model_name", None)
+        if isinstance(m_name, str):
+            model = m_name
+        elif isinstance(getattr(raw_gw, "model", None), str):
+            model = raw_gw.model
+        m_manuf = getattr(raw_gw, "manufacturer", None)
+        if isinstance(m_manuf, str):
+            manufacturer = m_manuf
+        m_fw = getattr(raw_gw, "firmware", None)
+        if isinstance(m_fw, str) and m_fw.strip().lower() not in ("", "none", "null", "unknown"):
+            firmware = m_fw
+        m_host = getattr(raw_gw, "host", None)
+        if isinstance(m_host, str):
+            host = m_host
+        m_port = getattr(raw_gw, "port", None)
+        if isinstance(m_port, int):
+            port = m_port
+        profile = getattr(raw_gw, "profile", None)
+
+    config_entry = getattr(gw, "config_entry", None)
+    config_data = getattr(config_entry, "data", {}) if config_entry else {}
+    if not isinstance(config_data, dict):
+        config_data = {}
+
+    if not model and isinstance(config_data.get(CONF_NAME), str):
+        model = config_data[CONF_NAME]
+    if not model and isinstance(getattr(gw, "model", None), str):
+        model = gw.model
+    if not model:
+        model = "Generic"
+
+    if not host and isinstance(config_data.get(CONF_HOST), str):
+        host = config_data[CONF_HOST]
+    if port == 20000 and isinstance(config_data.get(CONF_PORT), int):
+        port = config_data[CONF_PORT]
+    cfg_fw = config_data.get(CONF_FIRMWARE)
+    if not firmware and isinstance(cfg_fw, str) and cfg_fw.strip().lower() not in ("", "none", "null", "unknown"):
+        firmware = cfg_fw
+
+    transport_type = config_data.get("transport_type") or getattr(gw, "transport_type", None)
+    is_serial = isinstance(transport_type, str) and transport_type == "serial"
+
+    raw_serial = (
+        config_data.get("serial_port")
+        or config_data.get("device")
+        or getattr(raw_gw, "serial_port", None)
+        or getattr(gw, "serial_port", None)
+    )
+    serial_port: Optional[str] = raw_serial if isinstance(raw_serial, str) else None
+
+    # Check if host or port was used to store serial device path (e.g. /dev/ttyUSB0 or COM3)
+    raw_port = getattr(raw_gw, "port", None)
+    cfg_port = config_data.get(CONF_PORT)
+    if not serial_port:
+        if isinstance(cfg_port, str) and not cfg_port.isdigit():
+            serial_port = cfg_port
+        elif isinstance(raw_port, str) and not raw_port.isdigit():
+            serial_port = raw_port
+        elif is_serial and isinstance(host, str) and host:
+            serial_port = host
+
+    if is_serial or serial_port:
+        host = ""
+        port = None
+
+    mac_val = getattr(gw, "mac", None)
+    if not isinstance(mac_val, str):
+        mac_val = config_data.get(CONF_MAC)
+    mac_addr = mac_val if isinstance(mac_val, str) else ""
+
+    mac_prefix = (
+        ":".join(mac_addr.split(":")[:3])
+        if ":" in mac_addr
+        else (mac_addr[:8] if mac_addr else "Unknown")
+    )
+
+    queue_pacing = 0.0
+    if profile is not None and isinstance(getattr(profile, "command_queue_delay", None), (int, float)):
+        queue_pacing = float(profile.command_queue_delay)
+
+    workers = getattr(gw, "sending_workers", None)
+    worker_count = len(workers) if isinstance(workers, list) else 0
+    if worker_count == 0 and isinstance(config_data.get(CONF_WORKER_COUNT), int):
+        worker_count = config_data[CONF_WORKER_COUNT]
+    if worker_count == 0:
+        worker_count = 1
+
+    send_buffer = getattr(gw, "send_buffer", None)
+    queue_depth = 0
+    if send_buffer is not None:
+        try:
+            q_size = send_buffer.qsize()
+            if isinstance(q_size, int):
+                queue_depth = q_size
+        except Exception:
+            queue_depth = 0
+
+    is_connected = bool(getattr(gw, "is_connected", False))
+
+    identification: dict[str, Any] = {}
+    ident_fn = getattr(gw, "identification", None)
+    if callable(ident_fn):
+        try:
+            raw_ident = ident_fn()
+            if isinstance(raw_ident, dict):
+                identification = {k: v for k, v in raw_ident.items() if k != "ssdp_location"}
+        except Exception:  # pragma: no cover - defensive against mocks
+            identification = {}
+
+    return {
+        "model": model,
+        "manufacturer": manufacturer,
+        "firmware": firmware,
+        "host": host,
+        "port": port,
+        "serial_port": serial_port,
+        "mac_prefix": mac_prefix,
+        "queue_pacing": queue_pacing,
+        "worker_count": worker_count,
+        "queue_depth": queue_depth,
+        "is_connected": is_connected,
+        "identification": identification,
+        "integration_version": INTEGRATION_VERSION,
+        "ownd_version": ownd_version,
+    }
+
+
+def _get_gateway_and_monitor(
+    hass: HomeAssistant, mac: Optional[str] = None
+) -> tuple[Optional[Any], Optional[BusMonitor]]:
+    """Retrieve the gateway handler and bus monitor for a given MAC or the primary gateway.
+
+    Only entries that are set up (``entry.runtime_data`` present) qualify. When
+    ``mac`` is given only that gateway is returned, never a substitute.
+    """
+    wanted = dr.format_mac(mac) if mac else None
+
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if wanted and dr.format_mac(entry.data.get(CONF_MAC, "")) != wanted:
+            continue
+        runtime = get_runtime_data(entry)
+        if runtime is None:
+            continue
+        return runtime.gateway, runtime.bus_monitor
+
+    return None, None
+
+
+def _cached_ownd_version(hass: HomeAssistant) -> str:
+    """Return the OWNd version resolved off the event loop during setup."""
+    domain_data = hass.data.get(DOMAIN)
+    if isinstance(domain_data, dict):
+        return str(domain_data.get(DATA_OWND_VERSION, "unknown"))
+    return "unknown"
+
+
+def _matches_filter(
+    frame: dict[str, Any] | BusFrame,
+    who: Optional[Any] = None,
+    where: Optional[str] = None,
+    direction: Optional[str] = None,
+) -> bool:
+    """Check if a frame matches filter criteria."""
+    raw_who = getattr(frame, "who", None) if isinstance(frame, BusFrame) else frame.get("who")
+    raw_where = getattr(frame, "where", None) if isinstance(frame, BusFrame) else frame.get("where")
+    f_dir = (getattr(frame, "direction", "") if isinstance(frame, BusFrame) else frame.get("direction", "")).lower()
+    is_ack = getattr(frame, "is_ack", False) if isinstance(frame, BusFrame) else frame.get("is_ack", False)
+    is_nack = getattr(frame, "is_nack", False) if isinstance(frame, BusFrame) else frame.get("is_nack", False)
+
+    if direction and direction != "all":
+        d_lower = direction.lower()
+        if d_lower in ("rx", "tx") and f_dir != d_lower:
+            return False
+        if d_lower == "ack" and not is_ack:
+            return False
+        if d_lower == "nack" and not is_nack:
+            return False
+
+    if who is not None and str(who) != "all":
+        if raw_who is None or str(who) != str(raw_who):
+            return False
+
+    if where is not None and str(where) != "":
+        if raw_where is None or str(where) != str(raw_where):
+            return False
+
+    return True
+
+
+@websocket_command(SCHEMA_WS_HISTORY)
+@async_response
+async def ws_bus_monitor_history(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return historical bus frames from the circular ring buffer."""
+    gw, monitor = _get_gateway_and_monitor(hass, msg.get("mac"))
+    if monitor is None:
+        connection.send_error(
+            msg["id"],
+            ERR_NOT_FOUND,
+            "No active MyHOME gateway or bus monitor found",
+        )
+        return
+
+    limit = msg.get("limit", 100)
+    who = msg.get("who")
+    where = msg.get("where")
+    direction = msg.get("direction", "all")
+
+    raw_frames = monitor.get_recent_frames(limit=monitor.maxlen)
+    filtered = [
+        f for f in raw_frames if _matches_filter(f, who=who, where=where, direction=direction)
+    ]
+
+    # Return newest frames up to requested limit
+    if len(filtered) > limit:
+        filtered = filtered[-limit:]
+
+    connection.send_result(
+        msg["id"],
+        {
+            "frames": filtered,
+            "stats": monitor.get_stats(),
+            "gateway": _extract_gateway_info(gw, _cached_ownd_version(hass)),
+        },
+    )
+
+
+@websocket_command(SCHEMA_WS_STREAM)
+@async_response
+async def ws_bus_monitor_stream(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Subscribe to real-time bus monitor frames."""
+    _, monitor = _get_gateway_and_monitor(hass, msg.get("mac"))
+    if monitor is None:
+        connection.send_error(
+            msg["id"],
+            ERR_NOT_FOUND,
+            "No active MyHOME gateway or bus monitor found",
+        )
+        return
+
+    who = msg.get("who")
+    where = msg.get("where")
+    direction = msg.get("direction", "all")
+
+    @callback
+    def forward_frame(frame: BusFrame) -> None:
+        if _matches_filter(frame, who=who, where=where, direction=direction):
+            connection.send_message(
+                event_message(msg["id"], frame.to_dict())
+            )
+
+    unsub = monitor.subscribe(forward_frame)
+    connection.subscriptions[msg["id"]] = unsub
+    connection.send_result(msg["id"])
+
+
+@require_admin
+@websocket_command(SCHEMA_WS_SEND)
+@async_response
+async def ws_bus_monitor_send(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Send an OpenWebNet diagnostic frame directly to the gateway."""
+    gateway, _ = _get_gateway_and_monitor(hass, msg.get("mac"))
+    if gateway is None:
+        connection.send_error(
+            msg["id"],
+            ERR_NOT_FOUND,
+            "No active MyHOME gateway found to transmit frame",
+        )
+        return
+
+    frame_str = msg["frame"].strip()
+    if not (frame_str.startswith("*") and frame_str.endswith("##")):
+        connection.send_error(
+            msg["id"],
+            ERR_INVALID_FORMAT,
+            f"Invalid OpenWebNet frame format: {frame_str}",
+        )
+        return
+
+    try:
+        parsed = OWNMessage.parse(frame_str)
+        if parsed is None:
+            parsed = OWNMessage(frame_str)
+        await gateway.send(parsed)
+    except Exception as ex:  # pylint: disable=broad-except
+        _LOGGER.error("Failed to transmit frame %s via WebSocket: %s", frame_str, ex)
+        connection.send_error(
+            msg["id"],
+            ERR_UNKNOWN_ERROR,
+            f"Failed to transmit frame: {ex}",
+        )
+        return
+
+    connection.send_result(
+        msg["id"],
+        {"success": True, "frame": frame_str},
+    )
+
+
+@require_admin
+@websocket_command(SCHEMA_WS_CLEAR)
+@async_response
+async def ws_bus_monitor_clear(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Clear the in-memory bus monitor ring buffer."""
+    _, monitor = _get_gateway_and_monitor(hass, msg.get("mac"))
+    if monitor is None:
+        connection.send_error(
+            msg["id"],
+            ERR_NOT_FOUND,
+            "No active MyHOME gateway or bus monitor found",
+        )
+        return
+
+    monitor.clear()
+    connection.send_result(msg["id"], {"success": True})
+
+
+@websocket_command(SCHEMA_WS_INFO)
+@async_response
+async def ws_bus_monitor_info(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return runtime gateway telemetry and buffer stats."""
+    gw, monitor = _get_gateway_and_monitor(hass, msg.get("mac"))
+    if monitor is None and gw is None:
+        connection.send_error(
+            msg["id"],
+            ERR_NOT_FOUND,
+            "No active MyHOME gateway or bus monitor found",
+        )
+        return
+
+    connection.send_result(
+        msg["id"],
+        {
+            "stats": monitor.get_stats() if monitor else {},
+            "gateway": _extract_gateway_info(gw, _cached_ownd_version(hass)),
+        },
+    )
+
+
+@websocket_command(SCHEMA_WS_CALIBRATION_TRACE)
+@async_response
+async def ws_cover_calibration_trace(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return the calibration trace frames of one gateway.
+
+    ``mac`` selects the gateway exactly as for the other commands: given, only
+    that gateway (unknown -> ``not_found``); omitted, the primary gateway. The
+    reply names the gateway it was filtered on so the export is self-describing.
+    """
+    from .cover import get_last_calibration_trace
+
+    gw, _ = _get_gateway_and_monitor(hass, msg.get("mac"))
+    if gw is None:
+        connection.send_error(
+            msg["id"],
+            ERR_NOT_FOUND,
+            "No active MyHOME gateway found",
+        )
+        return
+    mac = dr.format_mac(str(getattr(gw, "mac", "") or ""))
+    connection.send_result(
+        msg["id"],
+        {"mac": mac, "frames": get_last_calibration_trace(gateway_mac=mac, hass=hass)},
+    )
+
+
+@callback
+def async_setup_websocket_api(hass: HomeAssistant) -> None:
+    """Register all MyHOME WebSocket commands."""
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    ws_handlers = hass.data.get(websocket_api.DOMAIN, {})
+    if domain_data.get("_ws_registered") and WS_TYPE_HISTORY in ws_handlers:
+        return
+
+    websocket_api.async_register_command(hass, ws_bus_monitor_history)
+    websocket_api.async_register_command(hass, ws_bus_monitor_stream)
+    websocket_api.async_register_command(hass, ws_bus_monitor_send)
+    websocket_api.async_register_command(hass, ws_bus_monitor_clear)
+    websocket_api.async_register_command(hass, ws_bus_monitor_info)
+    websocket_api.async_register_command(hass, ws_cover_calibration_trace)
+
+    domain_data["_ws_registered"] = True
+    _LOGGER.info("Registered MyHOME WebSocket API commands for Bus Monitor")

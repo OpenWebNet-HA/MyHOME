@@ -1,0 +1,161 @@
+{
+  "home_assistant": {
+    "installation_type": "Home Assistant OS",
+    "version": "2026.9.2",
+    "timezone": "UTC"
+  },
+  "custom_components": {
+    "myhome": {
+      "version": "2.0.0b12",
+      "requirements": [
+        "OWNd==2.0.0b6"
+      ]
+    }
+  },
+  "integration_manifest": {
+    "domain": "myhome",
+    "name": "MyHOME",
+    "version": "2.0.0b12"
+  },
+  "setup_times": {
+    "01PLANTISSUE333MYHOMESERVE": {
+      "config_entry_setup": 0.5
+    }
+  },
+  "data": {
+    "integration_version": "2.0.0b12",
+    "ownd_version": "2.0.0b6",
+    "config_entry": {
+      "entry_id": "01PLANTISSUE333MYHOMESERVE",
+      "version": 1,
+      "domain": "myhome",
+      "title": "MyHomeServer1 Gateway",
+      "data": {
+        "host": "192.0.2.1",
+        "id": "00:03:50:00:03:33",
+        "mac": "00:03:50:00:03:33",
+        "manufacturer": "BTicino S.p.A.",
+        "name": "MyHomeServer1",
+        "password": null,
+        "port": 20000
+      },
+      "options": {
+        "command_worker_count": 1
+      }
+    },
+    "gateway": {
+      "model_name": "MyHomeServer1",
+      "manufacturer": "BTicino S.p.A.",
+      "firmware": "Unknown",
+      "is_connected": true,
+      "send_workers": 1
+    },
+    "bus_monitor": {
+      "stats": {
+        "capacity": 200,
+        "captured": 96,
+        "total_rx": 96,
+        "total_tx": 0,
+        "subscribers": 0
+      },
+      "recent_frames": [
+        {"raw": "*9*1*1##", "direction": "rx", "iso_time": "2026-09-15T17:05:10.830322Z"},
+        {"raw": "*9*0*4##", "direction": "rx", "iso_time": "2026-09-15T17:05:12.657680Z"},
+        {"raw": "*9*0*2##", "direction": "rx", "iso_time": "2026-09-15T17:05:13.340697Z"},
+        {"raw": "*#18*77#0*113*424##", "direction": "rx", "iso_time": "2026-09-15T17:05:14.594796Z"},
+        {"raw": "*#18*51*113*1102##", "direction": "rx", "iso_time": "2026-09-15T17:05:16.184037Z"},
+        {"raw": "*9*0*1##", "direction": "rx", "iso_time": "2026-09-15T17:05:16.402097Z"},
+        {"raw": "*#18*74#0*113*0##", "direction": "rx", "iso_time": "2026-09-15T17:05:16.678544Z"},
+        {"raw": "*9*1*1##", "direction": "rx", "iso_time": "2026-09-15T17:05:17.441824Z"},
+        {"raw": "*#18*75#0*113*0##", "direction": "rx", "iso_time": "2026-09-15T17:05:17.555006Z"},
+        {"raw": "*#18*71#0*113*0##", "direction": "rx", "iso_time": "2026-09-15T17:05:19.826529Z"},
+        {"raw": "*9*0*1##", "direction": "rx", "iso_time": "2026-09-15T17:05:21.631774Z"},
+        {"raw": "*#4*#2*#14*0280*1##", "direction": "rx", "iso_time": "2026-09-15T17:05:24.544441Z"},
+        {"raw": "*#4*2*#14*0280*1##", "direction": "rx", "iso_time": "2026-09-15T17:05:24.703799Z"},
+        {"raw": "*#4*2##", "direction": "rx", "iso_time": "2026-09-15T17:05:24.704485Z"},
+        {"raw": "*#18*78#0*113*0##", "direction": "rx", "iso_time": "2026-09-15T17:05:24.993164Z"},
+        {"raw": "*#4*2*0*0262##", "direction": "rx", "iso_time": "2026-09-15T17:05:25.043857Z"},
+        {"raw": "*#4*2*12*0280*3##", "direction": "rx", "iso_time": "2026-09-15T17:05:25.045594Z"},
+        {"raw": "*4*1*2##", "direction": "rx", "iso_time": "2026-09-15T17:05:25.057913Z"},
+        {"raw": "*#4*2*0*0262##", "direction": "rx", "iso_time": "2026-09-15T17:05:25.285118Z"},
+        {"raw": "*4*110*#2##", "direction": "rx", "iso_time": "2026-09-15T17:05:25.315370Z"},
+        {"raw": "*#4*#2*14*0280*1##", "direction": "rx", "iso_time": "2026-09-15T17:05:25.318036Z"},
+        {"raw": "*#4*2*12*0280*3##", "direction": "rx", "iso_time": "2026-09-15T17:05:25.599974Z"},
+        {"raw": "*4*1*2##", "direction": "rx", "iso_time": "2026-09-15T17:05:25.602051Z"},
+        {"raw": "*#4*2*14*0280*3##", "direction": "rx", "iso_time": "2026-09-15T17:05:25.871406Z"},
+        {"raw": "*#4*2*13*00##", "direction": "rx", "iso_time": "2026-09-15T17:05:25.997504Z"},
+        {"raw": "*#4*2*0*0262##", "direction": "rx", "iso_time": "2026-09-15T17:05:26.030924Z"},
+        {"raw": "*#4*2*12*0280*3##", "direction": "rx", "iso_time": "2026-09-15T17:05:26.031672Z"},
+        {"raw": "*4*1*2##", "direction": "rx", "iso_time": "2026-09-15T17:05:26.032109Z"},
+        {"raw": "*#4*2*0*0262##", "direction": "rx", "iso_time": "2026-09-15T17:05:26.032531Z"},
+        {"raw": "*#4*2*12*0280*3##", "direction": "rx", "iso_time": "2026-09-15T17:05:26.032939Z"},
+        {"raw": "*4*1*2##", "direction": "rx", "iso_time": "2026-09-15T17:05:26.033322Z"},
+        {"raw": "*#4*2*14*0280*3##", "direction": "rx", "iso_time": "2026-09-15T17:05:26.033733Z"},
+        {"raw": "*#4*2*13*00##", "direction": "rx", "iso_time": "2026-09-15T17:05:26.034115Z"},
+        {"raw": "*#4*2*0*0262##", "direction": "rx", "iso_time": "2026-09-15T17:05:26.582504Z"},
+        {"raw": "*#4*2*12*0280*3##", "direction": "rx", "iso_time": "2026-09-15T17:05:26.897000Z"},
+        {"raw": "*4*1*2##", "direction": "rx", "iso_time": "2026-09-15T17:05:26.900377Z"},
+        {"raw": "*#4*2*14*0280*3##", "direction": "rx", "iso_time": "2026-09-15T17:05:27.179400Z"},
+        {"raw": "*#4*2*13*00##", "direction": "rx", "iso_time": "2026-09-15T17:05:27.310917Z"},
+        {"raw": "*#4*2#1*#20*1##", "direction": "rx", "iso_time": "2026-09-15T17:05:27.367364Z"},
+        {"raw": "*#4*2#1*20*1##", "direction": "rx", "iso_time": "2026-09-15T17:05:27.383864Z"},
+        {"raw": "*#4*2*12*0280*3##", "direction": "rx", "iso_time": "2026-09-15T17:05:27.878862Z"},
+        {"raw": "*4*1*2##", "direction": "rx", "iso_time": "2026-09-15T17:05:27.881032Z"},
+        {"raw": "*#4*2*12*0280*3##", "direction": "rx", "iso_time": "2026-09-15T17:05:28.025141Z"},
+        {"raw": "*4*1*2##", "direction": "rx", "iso_time": "2026-09-15T17:05:28.054486Z"},
+        {"raw": "*#18*72#0*113*91##", "direction": "rx", "iso_time": "2026-09-15T17:05:28.477585Z"},
+        {"raw": "*#18*79#0*113*0##", "direction": "rx", "iso_time": "2026-09-15T17:05:30.126853Z"},
+        {"raw": "*#18*73#0*113*0##", "direction": "rx", "iso_time": "2026-09-15T17:05:35.051491Z"},
+        {"raw": "*#18*76#0*113*0##", "direction": "rx", "iso_time": "2026-09-15T17:05:36.468469Z"},
+        {"raw": "*#4*#2*#14*0200*1##", "direction": "rx", "iso_time": "2026-09-15T17:05:37.294513Z"},
+        {"raw": "*#4*2*#14*0200*1##", "direction": "rx", "iso_time": "2026-09-15T17:05:37.432006Z"},
+        {"raw": "*#4*2##", "direction": "rx", "iso_time": "2026-09-15T17:05:37.432686Z"},
+        {"raw": "*#4*2*0*0262##", "direction": "rx", "iso_time": "2026-09-15T17:05:37.730331Z"},
+        {"raw": "*#18*77#0*113*415##", "direction": "rx", "iso_time": "2026-09-15T17:05:37.732885Z"},
+        {"raw": "*#4*2*12*0200*3##", "direction": "rx", "iso_time": "2026-09-15T17:05:37.763488Z"},
+        {"raw": "*4*1*2##", "direction": "rx", "iso_time": "2026-09-15T17:05:37.771957Z"},
+        {"raw": "*#4*2*0*0262##", "direction": "rx", "iso_time": "2026-09-15T17:05:38.014913Z"},
+        {"raw": "*4*110*#2##", "direction": "rx", "iso_time": "2026-09-15T17:05:38.043560Z"},
+        {"raw": "*#4*#2*14*0200*1##", "direction": "rx", "iso_time": "2026-09-15T17:05:38.045425Z"},
+        {"raw": "*#4*2*12*0200*3##", "direction": "rx", "iso_time": "2026-09-15T17:05:38.334612Z"},
+        {"raw": "*4*1*2##", "direction": "rx", "iso_time": "2026-09-15T17:05:38.336792Z"},
+        {"raw": "*#4*2*14*0200*3##", "direction": "rx", "iso_time": "2026-09-15T17:05:38.609444Z"},
+        {"raw": "*#4*2*13*00##", "direction": "rx", "iso_time": "2026-09-15T17:05:38.752603Z"},
+        {"raw": "*#4*2*0*0262##", "direction": "rx", "iso_time": "2026-09-15T17:05:38.770227Z"},
+        {"raw": "*#4*2*12*0200*3##", "direction": "rx", "iso_time": "2026-09-15T17:05:38.771552Z"},
+        {"raw": "*4*1*2##", "direction": "rx", "iso_time": "2026-09-15T17:05:38.772439Z"},
+        {"raw": "*#4*2*0*0262##", "direction": "rx", "iso_time": "2026-09-15T17:05:38.773347Z"},
+        {"raw": "*#4*2*12*0200*3##", "direction": "rx", "iso_time": "2026-09-15T17:05:38.774207Z"},
+        {"raw": "*4*1*2##", "direction": "rx", "iso_time": "2026-09-15T17:05:38.775067Z"},
+        {"raw": "*#4*2*14*0200*3##", "direction": "rx", "iso_time": "2026-09-15T17:05:38.775949Z"},
+        {"raw": "*#4*2*13*00##", "direction": "rx", "iso_time": "2026-09-15T17:05:38.776811Z"},
+        {"raw": "*#4*2*0*0262##", "direction": "rx", "iso_time": "2026-09-15T17:05:39.316247Z"},
+        {"raw": "*#4*2*12*0200*3##", "direction": "rx", "iso_time": "2026-09-15T17:05:39.625442Z"},
+        {"raw": "*4*1*2##", "direction": "rx", "iso_time": "2026-09-15T17:05:39.627125Z"},
+        {"raw": "*#4*2*14*0200*3##", "direction": "rx", "iso_time": "2026-09-15T17:05:39.903408Z"},
+        {"raw": "*#4*2*13*00##", "direction": "rx", "iso_time": "2026-09-15T17:05:40.074612Z"},
+        {"raw": "*#4*2*12*0200*3##", "direction": "rx", "iso_time": "2026-09-15T17:05:40.261238Z"},
+        {"raw": "*4*1*2##", "direction": "rx", "iso_time": "2026-09-15T17:05:40.263053Z"},
+        {"raw": "*#18*72#0*113*97##", "direction": "rx", "iso_time": "2026-09-15T17:05:40.329222Z"},
+        {"raw": "*#4*2*12*0200*3##", "direction": "rx", "iso_time": "2026-09-15T17:05:40.441164Z"},
+        {"raw": "*4*1*2##", "direction": "rx", "iso_time": "2026-09-15T17:05:40.443265Z"},
+        {"raw": "*4*4002#2*0#1##", "direction": "rx", "iso_time": "2026-09-15T17:05:41.416815Z"},
+        {"raw": "*4*4002*2##", "direction": "rx", "iso_time": "2026-09-15T17:05:41.475452Z"},
+        {"raw": "*#4*2#1*#20*0##", "direction": "rx", "iso_time": "2026-09-15T17:05:43.461213Z"},
+        {"raw": "*#4*2#1*20*0##", "direction": "rx", "iso_time": "2026-09-15T17:05:43.471012Z"},
+        {"raw": "*9*1*1##", "direction": "rx", "iso_time": "2026-09-15T17:05:45.294785Z"},
+        {"raw": "*#18*51*113*1103##", "direction": "rx", "iso_time": "2026-09-15T17:05:46.099528Z"},
+        {"raw": "*#18*74#0*113*0##", "direction": "rx", "iso_time": "2026-09-15T17:05:46.685245Z"},
+        {"raw": "*#18*75#0*113*0##", "direction": "rx", "iso_time": "2026-09-15T17:05:47.659168Z"},
+        {"raw": "*9*0*1##", "direction": "rx", "iso_time": "2026-09-15T17:05:49.459329Z"},
+        {"raw": "*#18*71#0*113*0##", "direction": "rx", "iso_time": "2026-09-15T17:05:49.868398Z"},
+        {"raw": "*#18*72#0*113*103##", "direction": "rx", "iso_time": "2026-09-15T17:05:53.363334Z"},
+        {"raw": "*9*1*1##", "direction": "rx", "iso_time": "2026-09-15T17:05:54.445441Z"},
+        {"raw": "*#18*78#0*113*0##", "direction": "rx", "iso_time": "2026-09-15T17:05:54.735633Z"},
+        {"raw": "*9*0*1##", "direction": "rx", "iso_time": "2026-09-15T17:05:58.607478Z"},
+        {"raw": "*9*1*1##", "direction": "rx", "iso_time": "2026-09-15T17:05:59.314992Z"},
+        {"raw": "*#18*79#0*113*0##", "direction": "rx", "iso_time": "2026-09-15T17:06:00.229436Z"}
+      ]
+    }
+  }
+}

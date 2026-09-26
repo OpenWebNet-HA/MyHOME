@@ -1,0 +1,340 @@
+# WHO=16 Sound System — captured on real hardware, two independent installations.
+#
+# Plant A: BTicino MH200 + F441M, amplifier addresses 14/17/18/21/22/23/35/36,
+#          sources: L4561 stereo control (S2) and F500 tuner (S1).
+# Plant B: BTicino MH200N + F441M (contributed via PR #422), amplifier addresses
+#          11/12/21/31/41, captured from wall controls and the iMyHome iOS app.
+#
+# The routing fixtures are the reason this file exists. An amplifier address is
+# EA — environment digit, then amplifier within that environment — and the
+# matrix routes per output, one output per environment. The routing pseudo
+# address is therefore "1" + environment + source. Plant B pins the digit order
+# independently of plant A: the same amplifier 11 is routed to source 2 with
+# 112 and to source 1 with 111, and a general power-on sweeps 111..181 (eight
+# environments, one source).
+#
+# No builder is asserted for the routing frames yet: OWNSoundCommand.select_source
+# in OWNd still composes this address from the wrong digits (see PR #422 and the
+# OWNd fix). Add the builder here once that lands, so the corpus locks it in.
+#
+# Frames are verbatim except where a note says otherwise.
+
+# ── Status discovery (DIMENSION 5) ────────────────────────────────────────────
+
+- id: sound.dim.state.request.0
+  frame: "*#16*0*5##"
+  direction: dimension_request
+  who: 16
+  what: null
+  where: "0"
+  dimension: 5
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant A: WHO 16 dimension 5 general status request on MH200. Gateway answers with status of all audio zones and active sources (spec §1.5.2)."
+  roundtrip: true
+
+- id: sound.dim.state.request.101
+  frame: "*#16*101*5##"
+  direction: dimension_request
+  who: 16
+  what: null
+  where: "101"
+  dimension: 5
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant A: request state for stereo source device 101 on MH200."
+  roundtrip: true
+
+# ── Source devices (WHERE 101-109) ────────────────────────────────────────────
+
+- id: sound.cmd.source.on.1
+  frame: "*16*3*101##"
+  direction: command
+  who: 16
+  what: 3
+  where: "101"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Grammar valid. Activate source device 1 (stereo channel). openwebnet-mcp warns WHAT=3 is non-standard, but WHO_16 v1.0.1 defines 3 as 'ON amplifier / source stereo channel'; its catalog is incomplete here."
+  roundtrip: true
+
+- id: sound.cmd.source.on.2
+  frame: "*16*3*102##"
+  direction: command
+  who: 16
+  what: 3
+  where: "102"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Activate source device 2. Plant A: wall panel emits this together with the routing frame when switching a room to the RCA input."
+  roundtrip: true
+
+- id: sound.event.source.off.1
+  frame: "*16*13*101##"
+  direction: event
+  who: 16
+  what: 13
+  where: "101"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Source device 1 to standby (stereo channel OFF). Plant B emits this before routing a room to a different source."
+  roundtrip: true
+
+- id: sound.event.source.off.2
+  frame: "*16*13*102##"
+  direction: event
+  who: 16
+  what: 13
+  where: "102"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant A: source 2 (L4561 stereo control) released; its power LED returns to standby."
+  roundtrip: true
+
+# ── Matrix routing: "1" + environment + source ────────────────────────────────
+
+- id: sound.event.routing.env1.source1
+  frame: "*16*3*111##"
+  direction: event
+  who: 16
+  what: 3
+  where: "111"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant B: route environment 1 to source 1 (tuner). Captured while switching amplifier 11, which stayed the same amplifier across sources — see sound.event.routing.env1.source2."
+  roundtrip: true
+
+- id: sound.event.routing.env1.source2
+  frame: "*16*3*112##"
+  direction: event
+  who: 16
+  what: 3
+  where: "112"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant B: the same amplifier 11, now on source 2 (RCA). Only the last digit changes, which is what fixes the digit order: middle = environment, last = source."
+  roundtrip: true
+
+- id: sound.event.routing.env2.source1
+  frame: "*16*3*121##"
+  direction: event
+  who: 16
+  what: 3
+  where: "121"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant A: route environment 2 to source 1. Audibly switched zone 23 (environment 2, amplifier 3) and the matrix answered with that zone's own volume status."
+  roundtrip: true
+
+- id: sound.event.routing.env2.source2
+  frame: "*16*3*122##"
+  direction: event
+  who: 16
+  what: 3
+  where: "122"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant A: route environment 2 to source 2. Emitted by the wall panel and reproduced from the gateway with identical effect."
+  roundtrip: true
+
+- id: sound.event.routing.env3.source1
+  frame: "*16*3*131##"
+  direction: event
+  who: 16
+  what: 3
+  where: "131"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant B: part of a general power-on that sweeps environments 1..8 onto source 1 (111, 121, 131 ... 181)."
+  roundtrip: true
+
+- id: sound.event.routing.env8.source1
+  frame: "*16*3*181##"
+  direction: event
+  who: 16
+  what: 3
+  where: "181"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant B: last environment of the same sweep. Eight environments on one source rules out reading the middle digit as the source."
+  roundtrip: true
+
+# ── Amplifier zones (WHERE EA) ────────────────────────────────────────────────
+
+- id: sound.cmd.zone.on.11
+  frame: "*16*3*11##"
+  direction: command
+  who: 16
+  what: 3
+  where: "11"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant B: amplifier 1 in environment 1 ON."
+  roundtrip: true
+  builder:
+    class: OWNSoundCommand
+    method: turn_on
+    args: ["11"]
+
+- id: sound.cmd.zone.off.11
+  frame: "*16*13*11##"
+  direction: command
+  who: 16
+  what: 13
+  where: "11"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant B: the same amplifier OFF."
+  roundtrip: true
+  builder:
+    class: OWNSoundCommand
+    method: turn_off
+    args: ["11"]
+
+- id: sound.event.zone.on.23
+  frame: "*16*3*23##"
+  direction: event
+  who: 16
+  what: 3
+  where: "23"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant A: amplifier 3 in environment 2 ON. A two-digit address whose last digit is NOT its environment — the case the old routing formula got wrong."
+  roundtrip: true
+
+- id: sound.event.zone.off.23
+  frame: "*16*13*23##"
+  direction: event
+  who: 16
+  what: 13
+  where: "23"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant A: the same amplifier OFF."
+  roundtrip: true
+
+- id: sound.event.zone.off.21
+  frame: "*16*13*21##"
+  direction: event
+  who: 16
+  what: 13
+  where: "21"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant A: amplifier 1 in environment 2 OFF (returned by MH200 during dimension 5 general sweep)."
+  roundtrip: true
+
+- id: sound.event.zone.on.22
+  frame: "*16*3*22##"
+  direction: event
+  who: 16
+  what: 3
+  where: "22"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant A: amplifier 2 in environment 2 ON."
+  roundtrip: true
+
+# ── Volume (DIMENSION 1) ──────────────────────────────────────────────────────
+
+- id: sound.dim.volume.response.11
+  frame: "*#16*11*1*17##"
+  direction: dimension_response
+  who: 16
+  where: "11"
+  dimension: 1
+  dimension_values: ["17"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant B: amplifier 11 reports volume 17 of 31."
+  roundtrip: true
+
+- id: sound.dim.volume.response.23
+  frame: "*#16*23*1*15##"
+  direction: dimension_response
+  who: 16
+  where: "23"
+  dimension: 1
+  dimension_values: ["15"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant A: the matrix answers a routing command with the volume of the zone in that environment, which is how the environment mapping was confirmed."
+  roundtrip: true
+
+- id: sound.dim.volume.write.23
+  frame: "*#16*23*#1*15##"
+  direction: dimension_write
+  who: 16
+  where: "23"
+  dimension: 1
+  dimension_values: ["15"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant A: set amplifier 23 to volume 15."
+  roundtrip: true
+  builder:
+    class: OWNSoundCommand
+    method: set_volume
+    args: ["23", 15]
+
+- id: sound.dim.volume.request.21
+  frame: "*#16*21*1##"
+  direction: dimension_request
+  who: 16
+  what: null
+  where: "21"
+  dimension: 1
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant A: request volume level for amplifier 21 on MH200."
+  roundtrip: true
+
+- id: sound.dim.volume.response.21
+  frame: "*#16*21*1*15##"
+  direction: dimension_response
+  who: 16
+  where: "21"
+  dimension: 1
+  dimension_values: ["15"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant A: amplifier 21 reports volume 15 of 31 on MH200."
+  roundtrip: true
+
+- id: sound.dim.volume.request.22
+  frame: "*#16*22*1##"
+  direction: dimension_request
+  who: 16
+  what: null
+  where: "22"
+  dimension: 1
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant A: request volume level for amplifier 22 on MH200."
+  roundtrip: true
+
+- id: sound.dim.volume.response.22
+  frame: "*#16*22*1*15##"
+  direction: dimension_response
+  who: 16
+  where: "22"
+  dimension: 1
+  dimension_values: ["15"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant A: amplifier 22 reports volume 15 of 31 on MH200."
+  roundtrip: true
+
+# ── RDS (DIMENSION 8) ─────────────────────────────────────────────────────────
+
+- id: sound.dim.rds.response.101
+  frame: "*#16*101*8*32*82*97*100*105*111*32*49##"
+  direction: dimension_response
+  who: 16
+  where: "101"
+  dimension: 8
+  dimension_values: ["32", "82", "97", "100", "105", "111", "32", "49"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant B captured a live RDS broadcast on source 1 as eight ASCII codes. The station name has been replaced with ' Radio 1' here — the payload is what the contributor happened to be listening to, and only the shape (DIMENSION 8, eight codes) is under test."
+  roundtrip: true

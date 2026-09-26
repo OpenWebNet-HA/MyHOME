@@ -1,0 +1,336 @@
+- id: cover.cmd.up.ptp.93
+  frame: "*2*1*93##"
+  direction: command
+  who: 2
+  what: 1
+  where: "93"
+  source: public-readme
+  mcp_valid: true
+  mcp_notes: "Automation (Covers & Shutters): UP (Open shutter) at address '93'"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: raise_shutter
+    args: ["93"]
+
+- id: cover.cmd.down.ptp.93
+  frame: "*2*2*93##"
+  direction: command
+  who: 2
+  what: 2
+  where: "93"
+  source: public-readme
+  mcp_valid: true
+  mcp_notes: "Automation (Covers & Shutters): DOWN (Close shutter) at address '93'"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: lower_shutter
+    args: ["93"]
+
+- id: cover.cmd.stop.ptp.93
+  frame: "*2*0*93##"
+  direction: command
+  who: 2
+  what: 0
+  where: "93"
+  source: public-readme
+  mcp_valid: true
+  mcp_notes: "Automation (Covers & Shutters): STOP movement at address '93'"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: stop_shutter
+    args: ["93"]
+
+- id: cover.req.status.ptp.93
+  frame: "*#2*93##"
+  direction: status_request
+  who: 2
+  what: null
+  where: "93"
+  source: public-readme
+  mcp_valid: true
+  mcp_notes: "Query status of Automation at address '93'"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: status
+    args: ["93"]
+
+- id: cover.cmd.up.bus.21
+  frame: "*2*1*21#4#1##"
+  direction: command
+  who: 2
+  what: 1
+  where: "21"
+  interface: "1"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Automation: UP at address 21 on private SCS bus 1"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: raise_shutter
+    args: ["21#4#1"]
+
+- id: cover.cmd.stop.bus.21
+  frame: "*2*0*21#4#1##"
+  direction: command
+  who: 2
+  what: 0
+  where: "21"
+  interface: "1"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Automation: STOP at address 21 on private SCS bus 1"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: stop_shutter
+    args: ["21#4#1"]
+
+- id: cover.cmd.up.gen.0
+  frame: "*2*1*0##"
+  direction: command
+  who: 2
+  what: 1
+  where: "0"
+  scope: general
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Automation: General UP for all covers"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: raise_shutter
+    args: ["0"]
+
+- id: cover.cmd.stop.gen.0
+  frame: "*2*0*0##"
+  direction: command
+  who: 2
+  what: 0
+  where: "0"
+  scope: general
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Automation: General STOP for all covers"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: stop_shutter
+    args: ["0"]
+
+- id: cover.dim.write.pos.75
+  frame: "*#2*93*#10*75##"
+  direction: dimension_write
+  who: 2
+  what: null
+  where: "93"
+  dimension: 10
+  dimension_values: ["75"]
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Automation dimension write: Set shutter position to 75%"
+  roundtrip: true
+
+- id: cover.dim.write.tilt.30
+  frame: "*#2*93*#11*30##"
+  direction: dimension_write
+  who: 2
+  what: null
+  where: "93"
+  dimension: 11
+  dimension_values: ["30"]
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Automation dimension write: Set slat tilt angle to 30%"
+  roundtrip: true
+
+- id: cover.cmd.level.75
+  frame: "*#2*93*#11#001*75##"
+  direction: dimension_write
+  who: 2
+  what: null
+  where: "93"
+  dimension: 11
+  dimension_values: ["75"]
+  source: openwebnet4j
+  mcp_valid: true
+  mcp_notes: "Automation: Set shutter level with dimension param 001"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: set_shutter_level
+    args: ["93", 75]
+
+- id: cover.status.dimension10.level10.73
+  frame: "*#2*73*10*10*0*001*0##"
+  direction: dimension_response
+  who: 2
+  what: null
+  where: "73"
+  dimension: 10
+  dimension_values: ["10", "0", "001", "0"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Absolute position level 10% report for address 73 (issue #247 reporter plant)"
+  roundtrip: true
+
+- id: cover.cmd.translation.stop.03
+  frame: "*2*1000#0*03##"
+  direction: command
+  who: 2
+  what: "1000#0"
+  where: "03"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "[Translation] Automation (Covers & Shutters): STOP movement at address '03' (issue #378 reporter plant, TheDarkWizard)"
+  roundtrip: true
+  is_translation: true
+
+- id: cover.cmd.translation.up.03
+  frame: "*2*1000#1*03##"
+  direction: command
+  who: 2
+  what: "1000#1"
+  where: "03"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "[Translation] Automation (Covers & Shutters): UP (Open shutter) at address '03' (issue #378 reporter plant, TheDarkWizard)"
+  roundtrip: true
+  is_translation: true
+
+- id: cover.cmd.translation.down.03
+  frame: "*2*1000#2*03##"
+  direction: command
+  who: 2
+  what: "1000#2"
+  where: "03"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "[Translation] Automation (Covers & Shutters): DOWN (Close shutter) at address '03' (issue #378 reporter plant, TheDarkWizard)"
+  roundtrip: true
+  is_translation: true
+
+- id: cover.evt.stop.routed.interface.02
+  frame: "*2*0*14#4#02##"
+  direction: event
+  who: 2
+  what: 0
+  where: "14"
+  interface: "02"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: STOP event at address '14' routed via private bus interface 02 (MH200 physical plant sweep)"
+  roundtrip: true
+
+
+# MH201 bus capture, MyHOME#433 (anonymized: frames only). A keypad general UP
+# (*2*0*0## then *2*1*0## ~530 ms later, cover.cmd.stop/up.gen.0) produced no
+# per-object UP frames; ~126 s later every actuator reported its own stop and
+# none came for WHERE 0 - the published flow, WHO_2.pdf 3.0.1.2-3: for
+# <where>=GEN,A,GR "as many frames as automation objects".
+- id: cover.evt.stop.area.1
+  frame: "*2*0*1##"
+  direction: event
+  who: 2
+  what: 0
+  where: "1"
+  scope: area
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: STOP to area 1 (points 11-19, WHO_2.pdf Where Table A=[1-9] PL=[1-9]), the gateway's echo of an area command sent by Home Assistant; the covers were idle and no per-object frames followed (MH201 capture, MyHOME#433)"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: stop_shutter
+    args: ["1"]
+
+- id: cover.evt.up.ptp.14
+  frame: "*2*1*14##"
+  direction: event
+  who: 2
+  what: 1
+  where: "14"
+  scope: point
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: UP event of point 14 (area 1, PL 4) from a local keypad; a press usually shows as *2*0*14## then *2*1*14## ~40 ms later (MH201 capture, MyHOME#433)"
+  roundtrip: true
+
+- id: cover.evt.stop.end_of_run.18
+  frame: "*2*0*18##"
+  direction: event
+  who: 2
+  what: 0
+  where: "18"
+  scope: point
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: STOP of point 18 at the end of its run, 127 s after a general UP, the last of eight covers that each reported their own stop within 1 s (MH201 capture, MyHOME#433)"
+  roundtrip: true
+
+# MH200 + F422 live test, 2026-09-23 (the maintainer's plant, tests/fixtures/plants/
+# mh200_physical_plant: covers 11-16, 18, 19 behind interface 02, logical #4#
+# addressing). Scope commands do not cross the F422: only point commands move
+# those covers, while a scope status request is answered per object.
+- id: cover.req.status.area.1.bus.02
+  frame: "*#2*1#4#02##"
+  direction: status_request
+  who: 2
+  what: null
+  where: "1"
+  interface: "02"
+  scope: area
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: status of area 1 behind interface 02. MH200 answers with one *2*0*APL#4#02## per cover (11-16, 18, 19; 50 ms apart) and none for the area"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: status
+    args: ["1#4#02"]
+
+- id: cover.cmd.up.area.1.bus.02
+  frame: "*2*1*1#4#02##"
+  direction: command
+  who: 2
+  what: 1
+  where: "1"
+  interface: "02"
+  scope: area
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: UP to area 1 behind interface 02. Valid grammar, but the MH200 neither echoed it nor moved a cover; the WHO_2 table establishes the #4# form for APL only (Encyclopedia who-2-automation/addressing.md)"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: raise_shutter
+    args: ["1#4#02"]
+
+- id: cover.evt.down.area.1
+  frame: "*2*2*1##"
+  direction: event
+  who: 2
+  what: 2
+  where: "1"
+  scope: area
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: MH200 echo of an area-1 DOWN, 56 ms after *2*0*1## (stop, then direction); the covers of area 1 behind interface 02 did not move"
+  roundtrip: true
+
+- id: cover.evt.up.ptp.11.bus.02
+  frame: "*2*1*11#4#02##"
+  direction: event
+  who: 2
+  what: 1
+  where: "11"
+  interface: "02"
+  scope: point
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: MH200 echo of a point UP behind interface 02, 500 ms after *2*0*11#4#02##; the actuator reported its own stop 60.9 s later (its run-time cutoff)"
+  roundtrip: true

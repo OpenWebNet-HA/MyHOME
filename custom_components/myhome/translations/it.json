@@ -28,9 +28,20 @@
         "description": "Compila con le impostazioni del tuo gateway",
         "data": {
           "address": "Indirizzo IP",
-          "port": "Porta",
-          "serialNumber": "Indirizzo MAC",
-          "modelName": "Tipo di gateway"
+          "port": "Porta"
+        }
+      },
+      "discovery_confirm": {
+        "title": "Gateway MyHOME rilevato",
+        "description": "Vuoi configurare il gateway {name} ({host})?"
+      },
+      "serial": {
+        "title": "Gateway USB / Seriale",
+        "description": "Configura il tuo gateway USB o seriale Legrand 3578 / OpenZigBee.",
+        "data": {
+          "port": "Porta seriale",
+          "baudrate": "Baudrate",
+          "friendly_name": "Nome descrittivo"
         }
       }
     },
@@ -59,20 +70,36 @@
         "title": "Opzioni MyHome",
         "description": "Impostazioni di sistema avanzate",
         "data": {
+          "source_1_name": "Sorgente 1 — nome di ciò che è collegato all'ingresso S1 della matrice (lasciare vuoto se non è collegato nulla)",
+          "source_2_name": "Sorgente 2 — nome di ciò che è collegato all'ingresso S2 della matrice (lasciare vuoto se non è collegato nulla)",
+          "source_3_name": "Sorgente 3 — nome di ciò che è collegato all'ingresso S3 della matrice (lasciare vuoto se non è collegato nulla)",
+          "source_4_name": "Sorgente 4 — nome di ciò che è collegato all'ingresso S4 della matrice (lasciare vuoto se non è collegato nulla)",
           "address": "Indirizzo IP",
           "password": "Password",
           "config_file_path": "Percorso del file di configurazione",
           "command_worker_count": "Numero di sessioni di comando simultanee",
-          "generate_events": "Genera eventi in Home Assistant per ogni messaggio ricevuto"
+          "generate_events": "Genera eventi in Home Assistant per ogni messaggio ricevuto",
+          "broadcast_resync": "Interroga gli indirizzi di gruppo/area/generale dopo una finestra di silenzio",
+          "default_source_env_1": "Sorgente predefinita per l'ambiente 1 — usata quando una zona di quella stanza viene accesa da Home Assistant",
+          "default_source_env_2": "Sorgente predefinita per l'ambiente 2 — usata quando una zona di quella stanza viene accesa da Home Assistant",
+          "default_source_env_3": "Sorgente predefinita per l'ambiente 3 — usata quando una zona di quella stanza viene accesa da Home Assistant",
+          "default_source_env_4": "Sorgente predefinita per l'ambiente 4 — usata quando una zona di quella stanza viene accesa da Home Assistant",
+          "default_source_env_5": "Sorgente predefinita per l'ambiente 5 — usata quando una zona di quella stanza viene accesa da Home Assistant",
+          "default_source_env_6": "Sorgente predefinita per l'ambiente 6 — usata quando una zona di quella stanza viene accesa da Home Assistant",
+          "default_source_env_7": "Sorgente predefinita per l'ambiente 7 — usata quando una zona di quella stanza viene accesa da Home Assistant",
+          "default_source_env_8": "Sorgente predefinita per l'ambiente 8 — usata quando una zona di quella stanza viene accesa da Home Assistant",
+          "default_source_env_9": "Sorgente predefinita per l'ambiente 9 — usata quando una zona di quella stanza viene accesa da Home Assistant"
         }
       }
     },
     "error": {
       "invalid_ip": "Indirizzo IP non valido",
       "invalid_worker_count": "I workers devono essere compresi tra 1 e 10",
+      "worker_count_above_gateway_limit": "Il {model} accetta al massimo {session_limit} sessione/i di comando contemporanee; oltre smette di rispondere.",
       "invalid_config_path": "Il file di configurazione non esiste in questo percorso",
       "invalid_password": "Password non valida",
-      "password_error": "Errore password"
+      "password_error": "Errore password",
+      "duplicate_decoder_source": "Ciascun decoder deve essere collegato a un ingresso sorgente della matrice diverso."
     }
   },
   "services": {
@@ -113,6 +140,89 @@
           "description": "For how long the instant power information will be sent."
         }
       }
+    },
+    "turn_on_timed": {
+      "name": "Accendi a tempo",
+      "description": "Accendi una luce o un interruttore con un timer hardware SCS sul bus che si spegne automaticamente anche in caso di riavvio di Home Assistant.",
+      "fields": {
+        "duration": {
+          "name": "Durata",
+          "description": "Durata in secondi prima dello spegnimento automatico del dispositivo."
+        },
+        "hours": {
+          "name": "Ore",
+          "description": "Ore opzionali per la durata del timer personalizzato (0-255)."
+        },
+        "minutes": {
+          "name": "Minuti",
+          "description": "Minuti opzionali per la durata del timer personalizzato (0-59)."
+        },
+        "seconds": {
+          "name": "Secondi",
+          "description": "Secondi opzionali per la durata del timer personalizzato (0-59)."
+        },
+        "brightness": {
+          "name": "Luminosità",
+          "description": "Livello di luminosità opzionale (1-255) per le luci."
+        },
+        "brightness_pct": {
+          "name": "Percentuale luminosità",
+          "description": "Percentuale di luminosità opzionale (1-100%) per le luci."
+        }
+      }
+    },
+    "sweep_bus": {
+      "name": "Scansione stato bus",
+      "description": "Esegue una richiesta di stato in sola lettura su tutti i sottosistemi del bus (luci, tapparelle, termoregolazione, orologio e diagnostica del gateway) per popolare il buffer circolare di diagnostica.",
+      "fields": {
+        "gateway": {
+          "name": "Gateway",
+          "description": "Indirizzo MAC del gateway (opzionale; predefinito per tutti i gateway attivi)."
+        }
+      }
+    }
+  },
+  "issues": {
+    "unconfigured_timezone": {
+      "title": "Fuso orario non configurato sul gateway MyHOME ({gateway})",
+      "description": "Il gateway MyHOME {gateway} segnala un fuso orario non configurato (codice segnaposto '999'). Questo può causare errori di analisi di data e ora o la perdita di messaggi diagnostici del gateway.\n\nAccedi all'interfaccia web del gateway (o a MyHOME_Suite / MyHOME_Up) per impostare un fuso orario valido, quindi riavvia il gateway."
+    },
+    "unknown_gateway_model": {
+      "title": "Codice tipo dispositivo gateway sconosciuto ({code})",
+      "description": "Il gateway ha segnalato un codice del tipo di dispositivo hardware ({code}) sconosciuto all'integrazione MyHOME. Fai clic su 'Ulteriori informazioni' per aprire una segnalazione su GitHub e allegare una traccia diagnostica per consentirci di aggiungere il supporto per questo modello."
+    },
+    "incompatible_decoder_platform": {
+      "title": "Il decoder {decoder} usa un'integrazione non supportata ({platform})",
+      "description": "Il decoder di streaming configurato {decoder} è fornito dall'integrazione {platform}, che non accetta URL di streaming HTTP tramite play_media. Per lo streaming multi-room (es. Music Assistant), configura questo hardware tramite l'integrazione DLNA Digital Media Renderer (DMR)."
+    }
+  },
+  "exceptions": {
+    "foreign_entity_not_supported": {
+      "message": "{entity_id}: impossibile unire l'entità esterna {member}; solo le zone audio MyHOME possono essere raggruppate"
+    },
+    "grouping_unavailable": {
+      "message": "{entity_id}: il raggruppamento audio non è ancora disponibile; il pool di decoder non è stato inizializzato"
+    },
+    "decoders_busy": {
+      "message": "{entity_id}: tutti gli ingressi della matrice audio sono attualmente in uso da altre stanze"
+    },
+    "decoder_start_failed": {
+      "message": "{entity_id}: il decoder {decoder} non è riuscito ad avviare la riproduzione: {error}"
+    },
+    "unknown_source": {
+      "message": "{entity_id}: sorgente sconosciuta \"{source}\""
+    },
+    "environment_busy": {
+      "message": "{entity_id}: {owner} sta già trasmettendo nell'ambiente {environment}; le zone nello stesso ambiente condividono un ingresso della matrice"
+    },
+    "routing_unsupported": {
+      "message": "{entity_id}: l'amplificatore {where} non ha un indirizzo di instradamento della matrice (ambiente 0 o non a due cifre); cambia la sorgente dal pannello a parete"
+    },
+    "decoder_incompatible_platform": {
+      "message": "{entity_id}: il decoder {decoder} ({platform}) non supporta gli URL di streaming; configuralo invece tramite DLNA DMR"
+    },
+    "decoder_wake_timeout": {
+      "message": "{entity_id}: il decoder {decoder} non si è riattivato entro 5 secondi"
     }
   }
 }

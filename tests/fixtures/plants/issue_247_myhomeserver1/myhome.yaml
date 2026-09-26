@@ -1,0 +1,703 @@
+myhomeserver1:
+  mac: "00:03:50:00:02:47"
+
+  light:
+    light_10:
+      where: "10"
+      name: Light 10
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_11:
+      where: "11"
+      name: Light 11
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_20:
+      where: "20"
+      name: Light 20
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_80:
+      where: "80"
+      name: Light 80
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_30:
+      where: "30"
+      name: Light 30
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_40:
+      where: "40"
+      name: Light 40
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_31:
+      where: "31"
+      name: Light 31
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_41:
+      where: "41"
+      name: Light 41
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_50:
+      where: "50"
+      name: Light 50
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_60:
+      where: "60"
+      name: Light 60
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_90:
+      where: "90"
+      name: Light 90
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_1000:
+      where: "1000"
+      name: Light 1000
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_91:
+      where: "91"
+      name: Light 91
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_1001:
+      where: "1001"
+      name: Light 1001
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_71:
+      where: "71"
+      name: Light 71
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_81:
+      where: "81"
+      name: Light 81
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_72:
+      where: "72"
+      name: Light 72
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_82:
+      where: "82"
+      name: Light 82
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    # ── group 1 ──
+    # ── group 2 ──
+    # ── group 3 ──
+    # ── group 4 ──
+    # ── group 5 ──
+    # ── group 6 ──
+    light_03:
+      where: "03"
+      name: Light 03
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_92:
+      where: "92"
+      name: Light 92
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_93:
+      where: "93"
+      name: Light 93
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_1002:
+      where: "1002"
+      name: Light 1002
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_1003:
+      where: "1003"
+      name: Light 1003
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_94:
+      where: "94"
+      name: Light 94
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_95:
+      where: "95"
+      name: Light 95
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    # ── group 7 ──
+    # ── group 8 ──
+    # ── group 9 ──
+    # ── group 10 ──
+    # ── group 11 ──
+    # ── group 12 ──
+    # ── group 13 ──
+    # ── group 14 ──
+    # ── group 15 ──
+    # ── group 16 ──
+    # ── group 17 ──
+    # ── group 18 ──
+    light_96:
+      where: "96"
+      name: Light 96
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_97:
+      where: "97"
+      name: Light 97
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_98:
+      where: "98"
+      name: Light 98
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+    light_70:
+      where: "70"
+      name: Light 70
+      dimmable: True
+      manufacturer: bticino
+      model: F418
+    light_01:
+      where: "01"
+      name: Light 01
+      dimmable: True
+      manufacturer: bticino
+      model: F413N
+    light_99:
+      where: "99"
+      name: Light 99
+      dimmable: False
+      manufacturer: bticino
+      model: F411U2
+  switch:
+    switch_14:
+      where: "14"
+      name: Switch 14
+      class: outlet
+      manufacturer: BTicino
+      model: F522
+    switch_0910:
+      where: "0910"
+      name: Switch 0910
+      class: outlet
+      manufacturer: BTicino
+      model: F522
+    switch_12:
+      where: "12"
+      name: Switch 12
+      class: outlet
+      manufacturer: BTicino
+      model: F522
+    switch_23:
+      where: "23"
+      name: Switch 23
+      class: outlet
+      manufacturer: BTicino
+      model: F522
+    switch_32:
+      where: "32"
+      name: Switch 32
+      class: outlet
+      manufacturer: BTicino
+      model: F522
+    switch_33:
+      where: "33"
+      name: Switch 33
+      class: outlet
+      manufacturer: BTicino
+      model: F522
+    switch_13:
+      where: "13"
+      name: Switch 13
+      class: outlet
+      manufacturer: BTicino
+      model: F522
+    switch_24:
+      where: "24"
+      name: Switch 24
+      class: switch
+      manufacturer: BTicino
+      model: F522
+    switch_04:
+      where: "04"
+      name: Switch 04
+      class: switch
+      manufacturer: BTicino
+      model: F522
+    switch_83:
+      where: "83"
+      name: Switch 83
+      class: switch
+      manufacturer: BTicino
+      model: F411U2
+    switch_0213:
+      where: "0213"
+      name: Switch 0213
+      class: switch
+      manufacturer: BTicino
+      model: F411U2
+    switch_0214:
+      where: "0214"
+      name: Switch 0214
+      class: switch
+      manufacturer: BTicino
+      model: F411U2
+    switch_1006:
+      where: "1006"
+      name: Switch 1006
+      class: switch
+      manufacturer: BTicino
+      model: F411/4
+    switch_1007:
+      where: "1007"
+      name: Switch 1007
+      class: switch
+      manufacturer: BTicino
+      model: F411/4
+    switch_43:
+      where: "43"
+      name: Switch 43
+      class: switch
+      manufacturer: BTicino
+      model: F411U2
+    switch_84:
+      where: "84"
+      name: Switch 84
+      class: switch
+      manufacturer: BTicino
+      model: F411U2
+  cover:
+    cover_22:
+      where: "22"
+      name: Cover 22
+      advanced: False
+      manufacturer: bticino
+      model: F411U2
+    # ── group 19 ──
+    # ── group 20 ──
+    # ── group 21 ──
+    # ── group 22 ──
+    # ── group 23 ──
+    # ── group 24 ──
+    # ── group 25 ──
+    # ── group 26 ──
+    # ── group 27 ──
+    # ── group 28 ──
+    # ── group 29 ──
+    # ── group 30 ──
+    cover_tenda_oscurante: #configurazione con percentuale di apertura
+      where: "08"
+      name: Cover 22
+      advanced: False
+      manufacturer: BTicino
+      model: F411U2
+    # ── group 31 ──
+    # ── group 32 ──
+    cover_21:
+      where: "21"
+      name: Cover 21
+      advanced: True
+      manufacturer: bticino
+      model: LN4661M2
+    cover_51:
+      where: "51"
+      name: Cover 51
+      advanced: True
+      manufacturer: bticino
+      model: LN4661M2
+    cover_61:
+      where: "61"
+      name: Cover 61
+      advanced: True
+      manufacturer: bticino
+      model: LN4661M2
+    cover_42:
+      where: "42"
+      name: Cover 42
+      advanced: True
+      manufacturer: bticino
+      model: LN4661M2
+    cover_73:
+      where: "73"
+      name: Cover 73
+      advanced: True
+      manufacturer: bticino
+      model: LN4661M2
+    cover_34:
+      where: "34"
+      name: Cover 34
+      advanced: True
+      manufacturer: bticino
+      model: LN4661M2
+    cover_05:
+      where: "05"
+      name: Cover 05
+      advanced: True
+      manufacturer: bticino
+      model: LN4661M2
+    cover_15:
+      where: "15"
+      name: Cover 15
+      advanced: True
+      manufacturer: bticino
+      model: LN4661M2
+    cover_06:
+      where: "06"
+      name: Cover 06
+      advanced: True
+      manufacturer: bticino
+      model: LN4661M2
+  climate:
+    climate_0:
+      zone: "#0"
+      name: Climate Zone 0
+      heat: True
+      cool: False
+      standalone: False
+      manufacturer: BTicino
+      model: 3550
+    climate_1:
+      zone: "1"
+      name: Climate Zone 1
+      heat: True
+      cool: False
+      standalone: False
+      manufacturer: bticino
+      model: LN4691
+    climate_2:
+      zone: "2"
+      name: Climate Zone 2
+      heat: True
+      cool: False
+      standalone: False
+      manufacturer: bticino
+      model: LN4691
+    climate_3:
+      zone: "3"
+      name: Climate Zone 3
+      heat: True
+      cool: False
+      standalone: False
+      manufacturer: bticino
+      model: LN4691
+    climate_4:
+      zone: "4"
+      name: Climate Zone 4
+      heat: True
+      cool: False
+      standalone: False
+      manufacturer: bticino
+      model: LN4691
+    climate_5:
+      zone: "5"
+      name: Climate Zone 5
+      heat: True
+      cool: False
+      standalone: False
+      manufacturer: bticino
+      model: LN4691
+    climate_6:
+      zone: "6"
+      name: Climate Zone 6
+      heat: True
+      cool: False
+      standalone: False
+      manufacturer: bticino
+      model: LN4691
+  binary_sensor:
+    binary_sensor_31_opening:
+      where: "31"
+      who: "25"
+      name: Binary Sensor 31
+      class: opening
+      manufacturer: BTicino
+      model: F428
+    binary_sensor_311_door:
+      where: "311"
+      who: "25"
+      name: Binary Sensor 311
+      class: door
+      manufacturer: BTicino
+      model: F482V12
+    binary_sensor_321_window:
+      where: "321"
+      who: "25"
+      name: Binary Sensor 321
+      class: window
+      manufacturer: BTicino
+      model: F482V12
+    binary_sensor_322_door:
+      where: "322"
+      who: "25"
+      name: Binary Sensor 322
+      class: door
+      manufacturer: BTicino
+      model: F482V12
+    binary_sensor_362_door:
+      where: "362"
+      who: "25"
+      name: Binary Sensor 362
+      class: door
+      manufacturer: BTicino
+      model: F482V12
+    binary_sensor_361_garage_door:
+      where: "361"
+      who: "25"
+      name: Binary Sensor 361
+      class: garage_door
+      manufacturer: BTicino
+      model: F482V12
+    binary_sensor_323_window:
+      where: "323"
+      who: "25"
+      name: Binary Sensor 323
+      class: window
+      manufacturer: BTicino
+      model: F482V12
+    binary_sensor_324_window:
+      where: "324"
+      who: "25"
+      name: Binary Sensor 324
+      class: window
+      manufacturer: BTicino
+      model: F482V12
+    binary_sensor_325_window:
+      where: "325"
+      who: "25"
+      name: Binary Sensor 325
+      class: window
+      manufacturer: BTicino
+      model: F482V12
+    binary_sensor_326_window:
+      where: "326"
+      who: "25"
+      name: Binary Sensor 326
+      class: window
+      manufacturer: BTicino
+      model: F482V12
+    binary_sensor_327_window:
+      where: "327"
+      who: "25"
+      name: Binary Sensor 327
+      class: window
+      manufacturer: BTicino
+      model: F482V12
+    binary_sensor_328_window:
+      where: "328"
+      who: "25"
+      name: Binary Sensor 328
+      class: window
+      manufacturer: BTicino
+      model: F482V12
+    binary_sensor_329_window:
+      where: "329"
+      who: "25"
+      name: Binary Sensor 329
+      class: window
+      manufacturer: BTicino
+      model: F482V12
+    binary_sensor_331_moving:
+      where: "331"
+      who: "25"
+      name: Binary Sensor 331
+      class: moving
+      manufacturer: BTicino
+      model: F482V12
+    binary_sensor_332_moving:
+      where: "332"
+      who: "25"
+      name: Binary Sensor 332
+      class: moving
+      manufacturer: BTicino
+      model: F482V12
+    binary_sensor_333_moving:
+      where: "333"
+      who: "25"
+      name: Binary Sensor 333
+      class: moving
+      manufacturer: BTicino
+      model: F482V12
+    binary_sensor_334_moving:
+      where: "334"
+      who: "25"
+      name: Binary Sensor 334
+      class: moving
+      manufacturer: BTicino
+      model: F482V12
+    binary_sensor_335_moving:
+      where: "335"
+      who: "25"
+      name: Binary Sensor 335
+      class: moving
+      manufacturer: BTicino
+      model: F482V12
+    binary_sensor_336_moving:
+      where: "336"
+      who: "25"
+      name: Binary Sensor 336
+      class: moving
+      manufacturer: BTicino
+      model: F482V12
+    binary_sensor_337_moving:
+      where: "337"
+      who: "25"
+      name: Binary Sensor 337
+      class: moving
+      manufacturer: BTicino
+      model: F482V12
+    binary_sensor_338_moving:
+      where: "338"
+      who: "25"
+      name: Binary Sensor 338
+      class: moving
+      manufacturer: BTicino
+      model: F482V12
+    binary_sensor_339_moving:
+      where: "339"
+      who: "25"
+      name: Binary Sensor 339
+      class: moving
+      manufacturer: BTicino
+      model: F482V12
+    binary_sensor_1_motion:
+      where: "1"
+      who: "9"
+      name: Binary Sensor 1
+      class: motion
+      manufacturer: BTicino
+      model: HC4613
+    binary_sensor_2_motion:
+      where: "2"
+      who: "9"
+      name: Binary Sensor 2
+      class: motion
+      manufacturer: BTicino
+      model: HC4613
+    binary_sensor_3_motion:
+      where: "3"
+      who: "9"
+      name: Binary Sensor 3
+      class: motion
+      manufacturer: BTicino
+      model: HC4613
+    binary_sensor_4_motion:
+      where: "4"
+      who: "9"
+      name: Binary Sensor 4
+      class: motion
+      manufacturer: BTicino
+      model: HC4613
+    binary_sensor_5_motion:
+      where: "5"
+      who: "9"
+      name: Binary Sensor 5
+      class: motion
+      manufacturer: BTicino
+      model: HC4613
+    binary_sensor_6_motion:
+      where: "6"
+      who: "9"
+      name: Binary Sensor 6
+      class: motion
+      manufacturer: BTicino
+      model: HC4613
+  sensor:
+    sensor_72_power:
+      where: "72"
+      name: Sensor 72
+      class: power
+      manufacturer: bticino
+      model: F52X
+    sensor_73_power:
+      where: "73"
+      name: Sensor 73
+      class: power
+      manufacturer: bticino
+      model: F52X
+    sensor_74_power:
+      where: "74"
+      name: Sensor 74
+      class: power
+      manufacturer: bticino
+      model: F52X
+    sensor_75_power:
+      where: "75"
+      name: Sensor 75
+      class: power
+      manufacturer: bticino
+      model: F52X
+    sensor_76_power:
+      where: "76"
+      name: Sensor 76
+      class: power
+      manufacturer: bticino
+      model: F52X
+    sensor_77_power:
+      where: "77"
+      name: Sensor 77
+      class: power
+      manufacturer: bticino
+      model: F52X
+    sensor_78_power:
+      where: "78"
+      name: Sensor 78
+      class: power
+      manufacturer: bticino
+      model: F52X
+    sensor_79_power:
+      where: "79"
+      name: Sensor 79
+      class: power
+      manufacturer: bticino
+      model: F52X
+    sensor_71_power:
+      where: "71"
+      name: Sensor 71
+      class: power
+      manufacturer: bticino
+      model: F52X
+    sensor_51_power:
+      where: "51"
+      name: Sensor 51
+      class: power
+      manufacturer: bticino
+      model: F52X
+
+

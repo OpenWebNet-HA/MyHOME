@@ -28,9 +28,20 @@
         "description": "Remplissez les informations de votre serveur",
         "data": {
           "address": "Adresse IP",
-          "port": "Port",
-          "serialNumber": "Adresse MAC",
-          "modelName": "Type de serveur"
+          "port": "Port"
+        }
+      },
+      "discovery_confirm": {
+        "title": "Passerelle MyHOME découverte",
+        "description": "Voulez-vous configurer la passerelle {name} ({host}) ?"
+      },
+      "serial": {
+        "title": "Passerelle USB / Série",
+        "description": "Configurez votre passerelle USB ou série Legrand 3578 / OpenZigBee.",
+        "data": {
+          "port": "Port série",
+          "baudrate": "Vitesse en bauds",
+          "friendly_name": "Nom convivial"
         }
       }
     },
@@ -59,20 +70,36 @@
         "title": "Options MyHome",
         "description": "Parametres système avancés",
         "data": {
+          "source_1_name": "Source 1 — nom de l'appareil raccordé à l'entrée S1 de la matrice (laisser vide si rien n'est connecté)",
+          "source_2_name": "Source 2 — nom de l'appareil raccordé à l'entrée S2 de la matrice (laisser vide si rien n'est connecté)",
+          "source_3_name": "Source 3 — nom de l'appareil raccordé à l'entrée S3 de la matrice (laisser vide si rien n'est connecté)",
+          "source_4_name": "Source 4 — nom de l'appareil raccordé à l'entrée S4 de la matrice (laisser vide si rien n'est connecté)",
           "address": "Adresse IP",
           "password": "Mot de passe",
           "config_file_path": "Chemin du fichier de configuration",
           "command_worker_count": "Nombre de session de commande simultanées",
-          "generate_events": "Générer des événements dans Home Assistant pour chaque message reçu"
+          "generate_events": "Générer des événements dans Home Assistant pour chaque message reçu",
+          "broadcast_resync": "Interroger les adresses de groupe/zone/générale après une fenêtre de silence",
+          "default_source_env_1": "Source par défaut pour l'environnement 1 — utilisée lorsqu'une zone de cette pièce est allumée depuis Home Assistant",
+          "default_source_env_2": "Source par défaut pour l'environnement 2 — utilisée lorsqu'une zone de cette pièce est allumée depuis Home Assistant",
+          "default_source_env_3": "Source par défaut pour l'environnement 3 — utilisée lorsqu'une zone de cette pièce est allumée depuis Home Assistant",
+          "default_source_env_4": "Source par défaut pour l'environnement 4 — utilisée lorsqu'une zone de cette pièce est allumée depuis Home Assistant",
+          "default_source_env_5": "Source par défaut pour l'environnement 5 — utilisée lorsqu'une zone de cette pièce est allumée depuis Home Assistant",
+          "default_source_env_6": "Source par défaut pour l'environnement 6 — utilisée lorsqu'une zone de cette pièce est allumée depuis Home Assistant",
+          "default_source_env_7": "Source par défaut pour l'environnement 7 — utilisée lorsqu'une zone de cette pièce est allumée depuis Home Assistant",
+          "default_source_env_8": "Source par défaut pour l'environnement 8 — utilisée lorsqu'une zone de cette pièce est allumée depuis Home Assistant",
+          "default_source_env_9": "Source par défaut pour l'environnement 9 — utilisée lorsqu'une zone de cette pièce est allumée depuis Home Assistant"
         }
       }
     },
     "error": {
       "invalid_ip": "Adresse IP invalide",
       "invalid_worker_count": "Workers must be between 1 and 10",
+      "worker_count_above_gateway_limit": "Le {model} accepte au maximum {session_limit} session(s) de commande simultanée(s) ; au-delà, il cesse de répondre.",
       "invalid_config_path": "Fichier de configuration inexistant à ce chemin",
       "invalid_password": "Mot de passe invalide",
-      "password_error": "Mot de passe invalide"
+      "password_error": "Mot de passe invalide",
+      "duplicate_decoder_source": "Chaque décodeur doit être connecté à une entrée source de matrice différente."
     }
   },
   "services": {
@@ -113,6 +140,89 @@
           "description": "Pendant combien de temps la puissance instantanée va-t-elle être automatiquement envoyée."
         }
       }
+    },
+    "turn_on_timed": {
+      "name": "Allumer avec minuterie",
+      "description": "Allumer un éclairage ou un interrupteur avec une minuterie matérielle SCS sur le bus qui s'éteint automatiquement même si Home Assistant redémarre.",
+      "fields": {
+        "duration": {
+          "name": "Durée",
+          "description": "Durée en secondes avant que l'appareil ne s'éteigne automatiquement."
+        },
+        "hours": {
+          "name": "Heures",
+          "description": "Composante optionnelle des heures pour la durée personnalisée (0-255)."
+        },
+        "minutes": {
+          "name": "Minutes",
+          "description": "Composante optionnelle des minutes pour la durée personnalisée (0-59)."
+        },
+        "seconds": {
+          "name": "Secondes",
+          "description": "Composante optionnelle des secondes pour la durée personnalisée (0-59)."
+        },
+        "brightness": {
+          "name": "Luminosité",
+          "description": "Niveau de luminosité optionnel (1-255) pour les lumières."
+        },
+        "brightness_pct": {
+          "name": "Pourcentage de luminosité",
+          "description": "Pourcentage de luminosité optionnel (1-100%) pour les lumières."
+        }
+      }
+    },
+    "sweep_bus": {
+      "name": "Balayage de l'état du bus",
+      "description": "Déclenche une interrogation en lecture seule de tous les sous-systèmes du bus (éclairage, volets, régulation thermique, horloge et diagnostic de la passerelle) pour alimenter le tampon circulaire de diagnostic.",
+      "fields": {
+        "gateway": {
+          "name": "Passerelle",
+          "description": "Adresse MAC de la passerelle (facultatif ; par défaut pour toutes les passerelles actives)."
+        }
+      }
+    }
+  },
+  "issues": {
+    "unconfigured_timezone": {
+      "title": "Fuseau horaire non configuré sur la passerelle MyHOME ({gateway})",
+      "description": "La passerelle MyHOME {gateway} signale un fuseau horaire non configuré (code réservé '999'). Cela peut entraîner des erreurs d'analyse de date et d'heure ou la perte de messages de diagnostic de la passerelle.\n\nVeuillez vous connecter à l'interface web de la passerelle (ou MyHOME_Suite / MyHOME_Up) pour définir un fuseau horaire valide, puis redémarrez la passerelle."
+    },
+    "unknown_gateway_model": {
+      "title": "Code de type d'appareil de passerelle inconnu ({code})",
+      "description": "La passerelle a signalé un code de type d'appareil matériel ({code}) inconnu pour l'intégration MyHOME. Veuillez cliquer sur « En savoir plus » pour ouvrir un ticket GitHub et joindre une trace de diagnostic afin que nous puissions ajouter la prise en charge de ce modèle."
+    },
+    "incompatible_decoder_platform": {
+      "title": "Le décodeur {decoder} utilise une intégration non prise en charge ({platform})",
+      "description": "Le décodeur de streaming configuré {decoder} est fourni par l'intégration {platform}, qui n'accepte pas les URL de flux HTTP via play_media. Pour le streaming multi-pièces (par exemple Music Assistant), configurez ce matériel via l'intégration DLNA Digital Media Renderer (DMR) à la place."
+    }
+  },
+  "exceptions": {
+    "foreign_entity_not_supported": {
+      "message": "{entity_id}: impossible de rejoindre l'entité externe {member} ; seules les zones audio MyHOME peuvent être groupées"
+    },
+    "grouping_unavailable": {
+      "message": "{entity_id}: le regroupement audio n'est pas encore disponible ; le pool de décodeurs n'a pas été initialisé"
+    },
+    "decoders_busy": {
+      "message": "{entity_id}: toutes les entrées de la matrice audio sont actuellement utilisées par d'autres pièces"
+    },
+    "decoder_start_failed": {
+      "message": "{entity_id}: le décodeur {decoder} n'a pas pu démarrer la lecture : {error}"
+    },
+    "unknown_source": {
+      "message": "{entity_id}: source inconnue \"{source}\""
+    },
+    "environment_busy": {
+      "message": "{entity_id}: {owner} diffuse déjà dans l'environnement {environment} ; les zones d'un même environnement partagent une entrée de matrice"
+    },
+    "routing_unsupported": {
+      "message": "{entity_id}: l'amplificateur {where} n'a pas d'adresse de routage de matrice (environnement 0 ou amplificateur à moins de deux chiffres) ; changez sa source sur une commande murale"
+    },
+    "decoder_incompatible_platform": {
+      "message": "{entity_id}: le décodeur {decoder} ({platform}) ne prend pas en charge les URL de flux ; configurez-le plutôt via DLNA DMR"
+    },
+    "decoder_wake_timeout": {
+      "message": "{entity_id}: le décodeur {decoder} ne s'est pas réveillé dans les 5 secondes"
     }
   }
 }

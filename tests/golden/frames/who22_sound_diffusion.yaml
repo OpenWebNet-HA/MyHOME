@@ -1,0 +1,147 @@
+# WHO=22 Sound Diffusion — the mirror frames an MH200N emits alongside WHO=16.
+#
+# Contributed with the plant B captures on PR #422. That gateway announces every
+# sound event twice: once in the WHO=16 dialect and once in WHO=22. The frames
+# below are the WHO=22 halves of those pairs.
+#
+# They are kept because they are independent, structural proof of the WHO=16
+# addressing this integration relies on. WHO=22 writes the environment and the
+# source into separate, separator-delimited fields, where WHO=16 packs them into
+# one three-digit pseudo address:
+#
+#   *16*3*111##  <->  *22*2#4#1*5#2#1##    environment 1, source 1
+#   *16*3*112##  <->  *22*2#4#1*5#2#2##    environment 1, source 2
+#   *16*3*121##  <->  *22*2#4#2*5#2#1##    environment 2, source 1
+#   *16*3*11##   <->  *#22*3#1#1*12*1*4##  area 1, point 1
+#   *16*3*12##   <->  *#22*3#1#2*12*1*4##  area 1, point 2
+#
+# Read with the WHO=22 reference (Encyclopedia, functional/who-22-sound-diffusion):
+# WHAT carries "WHAT#MULTIMEDIA_TYPE#AREA" (2 = source turned on, 4 = stereo),
+# WHERE "2#SOURCE_ID" is a source, "3#AREA#POINT" a speaker and "5#SENDER" the
+# general form. DIMENSION 1 is volume, 12 device state, 10 RDS text.
+#
+# Nothing consumes WHO=22 yet: OWNd parses these as generic events and the
+# integration has no WHO=22 platform, so they are inert. Support for gateways
+# that speak only this dialect is tracked separately.
+
+# ── Routing mirrors: environment and source in separate fields ────────────────
+
+- id: sounddiff.event.routing.env1.source1
+  frame: "*22*2#4#1*5#2#1##"
+  direction: event
+  who: 22
+  what: 2
+  where: "5"
+  source: community-plant-capture
+  mcp_valid: false
+  mcp_notes: "Grammar valid; openwebnet-mcp's WHO=22 catalog is a stub (two WHAT codes, no dimensions) and cannot judge this frame. The Encyclopedia's WHO=22 page is the authority used here: WHAT 2 'source turned on' with multimedia type 4 (stereo) and area 1, WHERE 5#2#1 naming source 1. Mirrors *16*3*111##."
+  roundtrip: true
+
+- id: sounddiff.event.routing.env1.source2
+  frame: "*22*2#4#1*5#2#2##"
+  direction: event
+  who: 22
+  what: 2
+  where: "5"
+  source: community-plant-capture
+  mcp_valid: false
+  mcp_notes: "Same area, source 2. Against sounddiff.event.routing.env1.source1 only the source field moves, which is what pins the last digit of the WHO=16 form. Mirrors *16*3*112##."
+  roundtrip: true
+
+- id: sounddiff.event.routing.env2.source1
+  frame: "*22*2#4#2*5#2#1##"
+  direction: event
+  who: 22
+  what: 2
+  where: "5"
+  source: community-plant-capture
+  mcp_valid: false
+  mcp_notes: "Area 2, source 1: here the area field moves instead. Mirrors *16*3*121##."
+  roundtrip: true
+
+- id: sounddiff.event.routing.env8.source1
+  frame: "*22*2#4#8*5#2#1##"
+  direction: event
+  who: 22
+  what: 2
+  where: "5"
+  source: community-plant-capture
+  mcp_valid: false
+  mcp_notes: "Last frame of a general power-on that sweeps areas 1..8 onto source 1. Mirrors *16*3*181##."
+  roundtrip: true
+
+# ── Speaker mirrors: AREA and POINT are separate fields ───────────────────────
+
+- id: sounddiff.dim.state.area1.point1
+  frame: "*#22*3#1#1*12*1*4##"
+  direction: dimension_response
+  who: 22
+  where: "3"
+  dimension: 12
+  dimension_values: ["1", "4"]
+  source: community-plant-capture
+  mcp_valid: false
+  mcp_notes: "Speaker area 1, point 1: device state ON, multimedia type 4 (stereo). Mirrors *16*3*11## — the WHO=16 address 11 written out as area 1, point 1."
+  roundtrip: true
+
+- id: sounddiff.dim.state.area1.point2
+  frame: "*#22*3#1#2*12*1*4##"
+  direction: dimension_response
+  who: 22
+  where: "3"
+  dimension: 12
+  dimension_values: ["1", "4"]
+  source: community-plant-capture
+  mcp_valid: false
+  mcp_notes: "Area 1, point 2. Mirrors *16*3*12##: same area as 11, different amplifier."
+  roundtrip: true
+
+- id: sounddiff.dim.state.area3.point1
+  frame: "*#22*3#3#1*12*1*4##"
+  direction: dimension_response
+  who: 22
+  where: "3"
+  dimension: 12
+  dimension_values: ["1", "4"]
+  source: community-plant-capture
+  mcp_valid: false
+  mcp_notes: "Area 3, point 1. Mirrors *16*3*31##."
+  roundtrip: true
+
+- id: sounddiff.dim.volume.area1.point1
+  frame: "*#22*3#1#1*1*17##"
+  direction: dimension_response
+  who: 22
+  where: "3"
+  dimension: 1
+  dimension_values: ["17"]
+  source: community-plant-capture
+  mcp_valid: false
+  mcp_notes: "Volume 17 on area 1 point 1, emitted together with *#16*11*1*17##. DIMENSION 1 carries the same 0..31 scale in both dialects."
+  roundtrip: true
+
+# ── Source device and RDS mirrors ─────────────────────────────────────────────
+
+- id: sounddiff.dim.state.source1.on
+  frame: "*#22*2#1*12*1*4##"
+  direction: dimension_response
+  who: 22
+  where: "2"
+  dimension: 12
+  dimension_values: ["1", "4"]
+  source: community-plant-capture
+  mcp_valid: false
+  mcp_notes: "Source 1 active, stereo. Mirrors *16*3*101##."
+  roundtrip: true
+
+- id: sounddiff.dim.rds.source1
+  frame: "*#22*5#2#1*10*32*82*97*100*105*111*32*49##"
+  direction: dimension_response
+  who: 22
+  where: "5"
+  dimension: 10
+  dimension_values: ["32", "82", "97", "100", "105", "111", "32", "49"]
+  source: community-plant-capture
+  mcp_valid: false
+  mcp_notes: "RDS text for source 1 under DIMENSION 10, where WHO=16 reports the same payload under DIMENSION 8. Station name replaced with ' Radio 1' for the same reason as sound.dim.rds.response.101."
+  roundtrip: true
