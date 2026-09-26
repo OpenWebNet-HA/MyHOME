@@ -6,7 +6,7 @@
  */
 
 // Fallback only: the live value comes from the backend (bus_monitor/info -> integration_version).
-const CARD_VERSION = "2.0.0b13";
+const CARD_VERSION = "2.0.0b14";
 // Default display buffer = the backend ring (bus_monitor.DEFAULT_RING_BUFFER_SIZE), so a
 // backfill after an HA restart keeps the whole startup status sweep (#429).
 const DEFAULT_MAX_FRAMES = 500;
