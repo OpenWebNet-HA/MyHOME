@@ -2246,7 +2246,7 @@
 </div>
 <hr />
 <h2 id="current-delivery-status-v200-beta-series-v200b14-milestone">🗺️ Current Delivery Status (v2.0.0 Beta Series &amp; v2.0.0b14 Milestone)<a class="headerlink" href="#current-delivery-status-v200-beta-series-v200b14-milestone" title="Permanent link">&para;</a></h2>
-<p>The major architectural milestones originally planned across Phases 1 through 4 have been <strong>consolidated, fully implemented, and validated with 100% statement and branch test coverage</strong> across the <strong>v2.0.0b1 through v2.0.0b13</strong> releases. The active development branch is finalizing the <strong>v2.0.0b14</strong> milestone in preparation for official upstream Home Assistant Core submission.</p>
+<p>The major architectural milestones originally planned across Phases 1 through 4 have been <strong>consolidated, fully implemented, and validated with 100% statement and branch test coverage</strong> across the <strong>v2.0.0b1 through v2.0.0b13</strong> releases. The active development branch is finalizing the <strong>v2.0.0b14</strong> milestone as part of the v2.0.0 stabilization effort.</p>
 <pre class="mermaid"><code>gantt
     title MyHOME Integration Status &amp; Roadmap
     dateFormat  YYYY-MM-DD
@@ -2272,7 +2272,7 @@
     Cover Centralized Triggers &amp; Tilt Support (#492) :active, 2026-09-23, 2026-09-30
     F520 Proactive Energy Meter Bus Sweeps (#494)    :active, 2026-09-24, 2026-09-30
     section Final Stabilization
-    v2.0.0 Release Candidate &amp; Core Upstream PR      :2026-10-01, 2026-11-15</code></pre>
+    v2.0.0 Release Candidate &amp; Distribution Consultation :2026-10-01, 2026-11-15</code></pre>
 <hr />
 <h2 id="what-is-shipped-operational-in-the-v200-series">📦 What is Shipped &amp; Operational in the v2.0.0 Series<a class="headerlink" href="#what-is-shipped-operational-in-the-v200-series" title="Permanent link">&para;</a></h2>
 <p>The following table summarizes the completed architectural features and protocol subsystems verified across the current beta series:</p>
@@ -2392,7 +2392,18 @@
 </table>
 <hr />
 <h2 id="integration-quality-scale-iqs-alignment">🏆 Integration Quality Scale (IQS) Alignment<a class="headerlink" href="#integration-quality-scale-iqs-alignment" title="Permanent link">&para;</a></h2>
-<p>MyHOME is engineered to achieve the <strong>official Home Assistant 🥇 Platinum Quality Seal</strong> (<a href="https://developers.home-assistant.io/docs/core/integration-quality-scale/">Home Assistant Integration Quality Scale</a>) for its upcoming Core inclusion.</p>
+<p>MyHOME is engineered to achieve the <strong>official Home Assistant 🥇 Platinum Quality Seal</strong> (<a href="https://developers.home-assistant.io/docs/core/integration-quality-scale/">Home Assistant Integration Quality Scale</a>) for potential Core inclusion, ensuring the highest architectural standards regardless of distribution model.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>Community Consultation on Upstream Core Inclusion vs. Independent Distribution</strong>:<br />
+While the integration strictly adheres to 100% of Home Assistant Core Platinum standards, the maintainers and community have <strong>not decided</strong> on upstream Core inclusion. As discussed in community channels (see <a href="https://github.com/orgs/OpenWebNet-HA/discussions/248">RFC Discussion #248</a>), there are important trade-offs:
+- <strong>Benefits of Core inclusion</strong>: Automatic out-of-the-box discovery for new Home Assistant users without requiring HACS; official documentation on <code>home-assistant.io</code>.
+- <strong>Drawbacks &amp; Advantages of remaining an independent custom component</strong>:
+  - <strong>Release Agility</strong>: Rapid deployment of bugfixes, firmware quirk workarounds, and new WHO dimension features without waiting for monthly Home Assistant Core release windows.
+  - <strong>Dedicated Diagnostic Frontend</strong>: Continued bundling and rapid iteration of the in-band <code>&lt;myhome-bus-card&gt;</code> Lovelace tool and live bus monitors, which are constrained within Core repository guidelines.
+  - <strong>Community Traces &amp; Plant Fixtures</strong>: Fast, unencumbered additions of real-world captures and experimental protocol options.</p>
+<p>Feedback from installers and users is actively welcomed in our Discussions.</p>
+</div>
 <p>All 54 quality scale rules are tracked in <code>custom_components/myhome/quality_scale.yaml</code> and continuously validated by <code>scripts/verify_ha_standards.py</code>:</p>
 <pre class="mermaid"><code>graph LR
     subgraph Bronze["🥉 Bronze Tier (100% Satisfied)"]
