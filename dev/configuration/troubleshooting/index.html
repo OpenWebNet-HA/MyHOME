@@ -1526,6 +1526,56 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#multi-gateway-shared-bus-behaviour" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Multi-Gateway &amp; Shared-Bus Behaviour
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Multi-Gateway &amp; Shared-Bus Behaviour">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#unconfigured-shared-bus-detected-shared_bus_detected" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unconfigured Shared Bus Detected (shared_bus_detected)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-to-inspect-automated-topology-inference-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to inspect automated topology inference decisions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gateway-failover-active-gateway_failover_active" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gateway Failover Active (gateway_failover_active)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2442,6 +2492,56 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#multi-gateway-shared-bus-behaviour" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Multi-Gateway &amp; Shared-Bus Behaviour
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Multi-Gateway &amp; Shared-Bus Behaviour">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#unconfigured-shared-bus-detected-shared_bus_detected" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unconfigured Shared Bus Detected (shared_bus_detected)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-to-inspect-automated-topology-inference-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to inspect automated topology inference decisions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gateway-failover-active-gateway_failover_active" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gateway Failover Active (gateway_failover_active)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2537,6 +2637,33 @@
 <p>The card renders in the browser's local time zone; a difference to the logbook means the browser and Home Assistant have different zones (the 2 h offset of 2.0.0b12 was issue #305 and is fixed).</p>
 <h3 id="send-frame-in-the-card-is-greyed-out-or-returns-unauthorized"><code>Send frame</code> in the card is greyed out or returns <code>Unauthorized</code><a class="headerlink" href="#send-frame-in-the-card-is-greyed-out-or-returns-unauthorized" title="Permanent link">&para;</a></h3>
 <p>It needs the <strong>I understand the risk</strong> checkbox and an administrator user; a raw frame can arm or disarm the alarm. Kiosk and long-lived tokens created by non-admins are refused by design.</p>
+<h3 id="multi-gateway-shared-bus-behaviour">Multi-Gateway &amp; Shared-Bus Behaviour<a class="headerlink" href="#multi-gateway-shared-bus-behaviour" title="Permanent link">&para;</a></h3>
+<h4 id="unconfigured-shared-bus-detected-shared_bus_detected">Unconfigured Shared Bus Detected (<code>shared_bus_detected</code>)<a class="headerlink" href="#unconfigured-shared-bus-detected-shared_bus_detected" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Symptoms</strong>: Repair issue <code>shared_bus_detected</code> appears in <strong>Settings → System → Repairs</strong>, duplicate entities are created, or startup sweeps trigger bus collisions.</li>
+<li><strong>Log lines</strong>:
+  <code>Recorded shared bus TX echo #1/3 between &lt;mac_a&gt; and &lt;mac_b&gt; (delta &lt;N&gt;ms)</code></li>
+<li><strong>What to check</strong>:</li>
+<li>Open the Repair issue and review the automated recommendation.</li>
+<li>Click <strong>Submit</strong> to apply the inferred topology automatically (1-click repair).</li>
+<li>If configuring manually in <strong>Configure</strong>, set <code>bus_topology: shared</code> on both gateways, designate one as <code>primary</code>, and point the follower at the primary.</li>
+</ul>
+<h4 id="how-to-inspect-automated-topology-inference-decisions">How to inspect automated topology inference decisions<a class="headerlink" href="#how-to-inspect-automated-topology-inference-decisions" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Log lines</strong>:
+  <code>Evaluating shared bus topology between &lt;Model A&gt; and &lt;Model B&gt;...</code>
+  <code>Inferred shared bus topology: Primary=&lt;Model&gt; (&lt;MAC&gt;), Follower=&lt;Model&gt; (&lt;MAC&gt;, role=&lt;role&gt;, delegated=&lt;whos&gt;)...</code></li>
+<li><strong>What it tells you</strong>:
+  The log details the exact hardware tiers, supported WHOs, capability delta formula ($\Delta = S_{\text{sec}} \setminus S_{\text{pri}}$), and tie-breaking rule used to assign the primary and follower roles.</li>
+</ul>
+<h4 id="gateway-failover-active-gateway_failover_active">Gateway Failover Active (<code>gateway_failover_active</code>)<a class="headerlink" href="#gateway-failover-active-gateway_failover_active" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Symptoms</strong>: The primary gateway is offline, but entities remain controllable and dashboard states still update.</li>
+<li><strong>Log lines</strong>:
+  <code>Primary gateway event session offline (&gt; 60s); engaging warm standby failover via &lt;standby_mac&gt;</code></li>
+<li><strong>What it tells you</strong>:
+  The primary gateway has been offline past the 60-second grace period. The standby gateway has seamlessly assumed outbound command routing and inbound frame bridging. Inspect the primary gateway's network connectivity or power supply.</li>
+</ul>
 <h2 id="getting-help">Getting help<a class="headerlink" href="#getting-help" title="Permanent link">&para;</a></h2>
 <ol>
 <li>Reproduce with debug logging on.</li>
