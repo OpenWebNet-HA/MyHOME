@@ -730,6 +730,12 @@ class TestMyHOMECoverEntity:
         mock_gateway.send.assert_awaited_once()
         assert str(mock_gateway.send.call_args[0][0]) == "*2*0*31##"
 
+        # 5. Call with missing tilt_position (no-op early return)
+        mock_gateway.send_raw.reset_mock()
+        await tilt_cover.async_set_cover_tilt_position()
+        mock_gateway.send_raw.assert_not_called()
+
+
     @pytest.mark.asyncio
     async def test_cover_slat_tilt_calibrating_error(self, tilt_cover):
         """Test that tilt commands are rejected with HomeAssistantError while calibrating."""
@@ -871,6 +877,19 @@ class TestMyHOMECoverEntity:
         assert tilt_cover.current_cover_position == 85
         assert tilt_cover.current_cover_tilt_position == 35
         assert tilt_cover.device_class == CoverDeviceClass.BLIND
+
+        # Test corrupt / non-numeric tilt attribute in last state
+        tilt_cover.async_get_last_state = AsyncMock(
+            return_value=State(
+                "cover.venetian_blind",
+                "open",
+                {ATTR_CURRENT_POSITION: 85, ATTR_CURRENT_TILT_POSITION: "invalid_tilt"},
+            )
+        )
+        tilt_cover._attr_current_cover_tilt_position = None
+        await tilt_cover.async_added_to_hass()
+        assert tilt_cover.current_cover_tilt_position is None
+
 
     def test_cover_slat_tilt_auto_discovery(self, basic_cover):
         """Test that a basic cover dynamically discovers slat tilt when Dimension 11 frame arrives."""
