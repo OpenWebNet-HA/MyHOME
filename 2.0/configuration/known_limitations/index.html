@@ -1155,6 +1155,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../recipes/adaptive_lighting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adaptive Lighting Recipe
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../troubleshooting/" class="md-nav__link">
         
   
@@ -2021,7 +2049,7 @@
 <tbody>
 <tr>
 <td style="text-align: left;"><strong>Group, area and general commands from wall switches re-sync with a ~250 ms delay, and only areas with a known light.</strong> (P7, #368)</td>
-<td style="text-align: left;">A debounced re-sync (see <a href="../runtime_behaviour/#-broadcast-re-sync-group--area--general">runtime behaviour</a>) only sweeps <code>*#1*A##</code> per area/group, or skips the sweep entirely if the gateway already echoed each member's status; there is still no trace from a gateway that echoes <em>nothing</em> to confirm the fallback is sufficient there.</td>
+<td style="text-align: left;">A debounced re-sync (see <a href="../runtime_behaviour/#broadcast-re-sync-group-area-general">runtime behaviour</a>) only sweeps <code>*#1*A##</code> per area/group, or skips the sweep entirely if the gateway already echoed each member's status; there is still no trace from a gateway that echoes <em>nothing</em> to confirm the fallback is sufficient there.</td>
 <td style="text-align: left;">Disable <strong>Sweep group/area/general light addresses for status</strong> in the Options Flow if your gateway needs a different cadence, and report a bus trace on #368.</td>
 </tr>
 <tr>

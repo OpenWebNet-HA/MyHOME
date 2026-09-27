@@ -1224,6 +1224,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../recipes/adaptive_lighting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adaptive Lighting Recipe
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../configuration/troubleshooting/" class="md-nav__link">
         
   
@@ -1864,7 +1892,7 @@
 <td style="text-align: left;">BTicino / Legrand</td>
 <td style="text-align: left;">Ethernet (IP)</td>
 <td style="text-align: center;"><code>20000</code></td>
-<td style="text-align: center;">2–3</td>
+<td style="text-align: center;">4</td>
 <td style="text-align: center;">Optional</td>
 <td style="text-align: left;"><code>F454Profile</code></td>
 </tr>
@@ -1873,18 +1901,27 @@
 <td style="text-align: left;">BTicino</td>
 <td style="text-align: left;">Ethernet (IP)</td>
 <td style="text-align: center;"><code>20000</code></td>
-<td style="text-align: center;">2–3</td>
+<td style="text-align: center;">4</td>
 <td style="text-align: center;">Optional</td>
 <td style="text-align: left;"><code>F455Profile</code></td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>MH200N</strong></td>
+<td style="text-align: left;"><strong>F461</strong></td>
 <td style="text-align: left;">BTicino</td>
 <td style="text-align: left;">Ethernet (IP)</td>
 <td style="text-align: center;"><code>20000</code></td>
-<td style="text-align: center;">1</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: left;"><code>MH200NProfile</code></td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">Optional</td>
+<td style="text-align: left;"><code>F461Profile</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>MH202</strong></td>
+<td style="text-align: left;">BTicino</td>
+<td style="text-align: left;">Ethernet (IP)</td>
+<td style="text-align: center;"><code>20000</code></td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">Optional</td>
+<td style="text-align: left;"><code>MH202Profile</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>MH201</strong></td>
@@ -1896,13 +1933,22 @@
 <td style="text-align: left;"><code>MH201Profile</code></td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>MH202</strong></td>
+<td style="text-align: left;"><strong>MH200N</strong></td>
 <td style="text-align: left;">BTicino</td>
 <td style="text-align: left;">Ethernet (IP)</td>
 <td style="text-align: center;"><code>20000</code></td>
 <td style="text-align: center;">1</td>
 <td style="text-align: center;">No</td>
-<td style="text-align: left;"><code>MH202Profile</code></td>
+<td style="text-align: left;"><code>MH200NProfile</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>MH200</strong></td>
+<td style="text-align: left;">BTicino</td>
+<td style="text-align: left;">Ethernet (IP)</td>
+<td style="text-align: center;"><code>20000</code></td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: left;"><code>MH200Profile</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>F452 / F452V</strong></td>
@@ -1923,15 +1969,6 @@
 <td style="text-align: left;"><code>MHServerProfile</code></td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>F461</strong></td>
-<td style="text-align: left;">BTicino</td>
-<td style="text-align: left;">Ethernet (IP)</td>
-<td style="text-align: center;"><code>20000</code></td>
-<td style="text-align: center;">2</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: left;"><code>F461Profile</code></td>
-</tr>
-<tr>
 <td style="text-align: left;"><strong>Legrand 3578</strong></td>
 <td style="text-align: left;">Legrand</td>
 <td style="text-align: left;">USB / RS232 Serial</td>
@@ -1944,7 +1981,7 @@
 </table>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>Gateways with only <strong>1 concurrent command session</strong> (such as the MH200N or MH201) are automatically tuned with command pacing (150 ms) to avoid queue flooding. Modern multi-session gateways (F454, MyHomeServer1) use 20 ms pacing with worker pools.</p>
+<p>Gateways with only <strong>1 concurrent command session</strong> (such as the MH200N, MH200, or MH201) are automatically tuned with command pacing (100–150 ms) to avoid queue flooding. Modern multi-session gateways (F454, F455, MyHomeServer1) use 20–50 ms pacing with worker pools (up to 4 workers).</p>
 </div>
 <hr />
 <h2 id="supported-bus-subsystems-who">Supported Bus Subsystems (<code>WHO</code>)<a class="headerlink" href="#supported-bus-subsystems-who" title="Permanent link">&para;</a></h2>

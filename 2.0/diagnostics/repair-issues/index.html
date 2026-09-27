@@ -1414,6 +1414,56 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#incompatible-streaming-decoder-platform" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Incompatible Streaming Decoder Platform
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Incompatible Streaming Decoder Platform">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-it-means_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it means
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-to-resolve_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to resolve
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-it-clears_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How it clears
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1438,6 +1488,34 @@
     
   
     Dashboard Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../recipes/adaptive_lighting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adaptive Lighting Recipe
   
 
     
@@ -2281,6 +2359,56 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#incompatible-streaming-decoder-platform" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Incompatible Streaming Decoder Platform
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Incompatible Streaming Decoder Platform">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-it-means_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it means
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-to-resolve_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to resolve
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-it-clears_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How it clears
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2392,6 +2520,29 @@
 <li>Ensure multiple command sessions or third-party gateways are not flooding the bus simultaneously.</li>
 <li>Check the <strong>Lovelace Bus Monitor Card</strong> to identify which device address (<code>WHERE</code>) is generating frequent NACKs.</li>
 </ol>
+<hr />
+<h2 id="incompatible-streaming-decoder-platform">Incompatible Streaming Decoder Platform<a class="headerlink" href="#incompatible-streaming-decoder-platform" title="Permanent link">&para;</a></h2>
+<p><strong>Repair Key</strong>: <code>incompatible_decoder_platform</code><br />
+<strong>Severity</strong>: <code>WARNING</code><br />
+<strong>Auto-Resolving</strong>: Yes<br />
+<strong>Fixable via UI</strong>: Yes (Interactive Repair Flow)</p>
+<h3 id="what-it-means_6">What it means<a class="headerlink" href="#what-it-means_6" title="Permanent link">&para;</a></h3>
+<p>A configured streaming decoder belongs to an integration that does not accept direct HTTP streaming URLs via Home Assistant's <code>media_player.play_media</code> service. This prevents multi-room streaming engines from routing audio to that player.</p>
+<h3 id="how-to-resolve_6">How to resolve<a class="headerlink" href="#how-to-resolve_6" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Interactive Repair Flow (Recommended)</strong>:</li>
+<li>Click <strong>Submit</strong> on the Repair issue card.</li>
+<li>If Home Assistant detects an active <strong>DLNA Digital Media Renderer (DMR)</strong> companion entity for the same physical player, the repair flow automatically updates your MyHOME decoder configuration to use the DLNA companion entity in 1 click.</li>
+<li><strong>Manual Configuration</strong>:</li>
+<li>If the DLNA companion is not yet discovered or configured:<ul>
+<li>Enable UPnP / DLNA in the streamer's mobile app settings.</li>
+<li>In Home Assistant, go to <strong>Settings → Devices &amp; Services → Add Integration</strong> and add the <strong>DLNA Digital Media Renderer</strong> integration for your device.</li>
+<li>Return to the Repair issue and click <strong>Submit</strong>, or update the entity mapping in <strong>Settings → Devices &amp; Services → MyHOME → Configure</strong>.</li>
+</ul>
+</li>
+</ol>
+<h3 id="how-it-clears_1">How it clears<a class="headerlink" href="#how-it-clears_1" title="Permanent link">&para;</a></h3>
+<p>The repair issue automatically withdraws and deletes once the decoder entity is updated to a streaming-compatible entity (e.g. DLNA DMR), or when the decoder is removed from the MyHOME Options Flow.</p>
 
 
 
