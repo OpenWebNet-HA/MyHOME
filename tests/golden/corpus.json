@@ -2023,6 +2023,54 @@
     "_file": "who02_automation.yaml"
   },
   {
+    "id": "cover.cmd.slat_tilt.write.40.31",
+    "frame": "*#2*31*#11#001#1*40##",
+    "direction": "dimension_write",
+    "who": 2,
+    "what": null,
+    "where": "31",
+    "dimension": 11,
+    "dimension_values": [
+      "40"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Automation: Write Venetian blind slat tilt angle 40% with priority 001 and sub-dimension 1 to address 31 (PR #491, #492, #466)",
+    "roundtrip": true,
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.reply.slat_tilt.report.40.31",
+    "frame": "*#2*31*11*40##",
+    "direction": "dimension_response",
+    "who": 2,
+    "what": null,
+    "where": "31",
+    "dimension": 11,
+    "dimension_values": [
+      "40"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Automation: Venetian blind slat tilt angle 40% report from address 31 (WHO 2 Dimension 11)",
+    "roundtrip": true,
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.req.slat_tilt.query.31",
+    "frame": "*#2*31*11##",
+    "direction": "dimension_request",
+    "who": 2,
+    "what": null,
+    "where": "31",
+    "dimension": 11,
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Automation: Query Venetian blind slat tilt angle from address 31 (WHO 2 Dimension 11)",
+    "roundtrip": true,
+    "_file": "who02_automation.yaml"
+  },
+  {
     "id": "thermo.req.temp.zone1",
     "frame": "*#4*1*0##",
     "direction": "dimension_request",
