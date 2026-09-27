@@ -1,10 +1,14 @@
 [
   {
+    "version": "dev",
+    "title": "dev (preview)",
+    "aliases": []
+  },
+  {
     "version": "2.0",
     "title": "v2 (beta)",
     "aliases": [
-      "beta",
-      "dev"
+      "beta"
     ]
   },
   {
@@ -12,8 +16,8 @@
     "title": "v0.9.4 (legacy)",
     "aliases": [
       "legacy",
-      "latest",
-      "v0.9"
+      "v0.9",
+      "latest"
     ]
   }
 ]
