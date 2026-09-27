@@ -751,6 +751,37 @@ class TestMyHOMECoverEntity:
 
         with pytest.raises(HomeAssistantError, match="Failed to send slat tilt command"):
             await tilt_cover.async_set_cover_tilt_position(tilt_position=30)
+        assert tilt_cover._is_tilting is False
+
+        # When send_raw returns a future, wait_for might raise errors
+        fut = asyncio.Future()
+        mock_gateway.send_raw.return_value = fut
+
+        with patch("asyncio.wait_for", side_effect=TimeoutError):
+            with pytest.raises(HomeAssistantError, match="not delivered to the bus within"):
+                await tilt_cover.async_set_cover_tilt_position(tilt_position=30)
+            assert tilt_cover._is_tilting is False
+
+        # Test cancelled task from caller (not our timeout, fut.cancelled() is False)
+        with patch("asyncio.wait_for", side_effect=asyncio.CancelledError):
+            with pytest.raises(asyncio.CancelledError):
+                await tilt_cover.async_set_cover_tilt_position(tilt_position=30)
+            # When caller cancels our task, we re-raise and don't reset state
+            tilt_cover._is_tilting = False
+
+        # Test cancelled future (our write future got cancelled)
+        fut2 = asyncio.Future()
+        fut2.cancel()
+        mock_gateway.send_raw.return_value = fut2
+        with patch("asyncio.wait_for", side_effect=asyncio.CancelledError):
+            with pytest.raises(HomeAssistantError, match="delivery was cancelled before reaching the bus"):
+                await tilt_cover.async_set_cover_tilt_position(tilt_position=30)
+            assert tilt_cover._is_tilting is False
+
+        with patch("asyncio.wait_for", side_effect=Exception("Some weird error")):
+            with pytest.raises(HomeAssistantError, match="tilt command delivery failed: Some weird error"):
+                await tilt_cover.async_set_cover_tilt_position(tilt_position=30)
+            assert tilt_cover._is_tilting is False
 
     def test_cover_slat_tilt_feedback_dimension11_writing(self, tilt_cover):
         """Test feedback handling of Dimension 11 writing frame (*#2*31*#11#001#1*40##)."""
@@ -776,13 +807,34 @@ class TestMyHOMECoverEntity:
         assert tilt_cover.current_cover_tilt_position == 80
 
     def test_cover_slat_tilt_feedback_unknown_position(self, tilt_cover):
-        """Test that unknown/unparsable tilt values are ignored."""
+        """Test that unknown/unparsable tilt values are handled gracefully."""
         tilt_cover._attr_current_cover_tilt_position = 45
-        msg = OWNMessage.parse("*#2*31*11*#0##")
-        if msg is not None:
-            tilt_cover.handle_event(msg)
-            # Should retain 45
-            assert tilt_cover.current_cover_tilt_position == 45
+
+        # 1. Unparsable value (mocked to bypass parse validation)
+        msg_mock = MagicMock()
+        msg_mock.is_translation = False
+        msg_mock.dimension = 11
+        msg_mock.dimension_param = ["1"]
+        msg_mock.message_type = "DIMENSION_REQUEST_REPLY"
+        msg_mock.dimension_value = ["abc"]
+
+        tilt_cover.handle_event(msg_mock)
+        # Should set to None due to ValueError
+        assert tilt_cover.current_cover_tilt_position is None
+
+        # 2. Out of bounds (e.g. 101)
+        tilt_cover._attr_current_cover_tilt_position = 45
+        msg2 = OWNMessage.parse("*#2*31*11*101##")
+        if msg2 is not None:
+            tilt_cover.handle_event(msg2)
+            assert tilt_cover.current_cover_tilt_position is None
+
+        # 3. is_translation is ignored
+        msg_trans = MagicMock()
+        msg_trans.is_translation = True
+        tilt_cover._attr_current_cover_tilt_position = 45
+        tilt_cover.handle_event(msg_trans)
+        assert tilt_cover.current_cover_tilt_position == 45
 
     def test_cover_slat_tilt_stop_handling(self, tilt_cover):
         """Test that receiving a stop command while tilting resets _is_tilting and preserves position."""
