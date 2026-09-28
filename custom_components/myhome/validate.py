@@ -64,6 +64,7 @@ from .const import (
     CONF_MEMBERS,
     CONF_PLATFORMS,
     CONF_RGB,
+    CONF_SLAT_TILT,
     CONF_STANDALONE,
     CONF_TRAVEL_TIME,
     CONF_WHERE,
@@ -268,6 +269,8 @@ class MyHomeDeviceSchema(Schema):
                 data[device][CONF_ENTITY_NAME] = None
             if "advanced_shutter" in data[device] and data[device]["advanced_shutter"]:
                 data[device][CONF_ADVANCED_SHUTTER] = True
+            if "slat_tilt" in data[device] and data[device]["slat_tilt"]:
+                data[device][CONF_SLAT_TILT] = True
             if "device_class" in data[device] and CONF_DEVICE_CLASS not in data[device]:
                 data[device][CONF_DEVICE_CLASS] = data[device]["device_class"]
             if CONF_DEVICE_CLASS not in data[device]:
@@ -398,6 +401,8 @@ cover_schema = MyHomeDeviceSchema(
             Optional(CONF_ENTITY_NAME): str,
             Optional(CONF_ADVANCED_SHUTTER, default=False): Boolean(),
             Optional("advanced_shutter", default=False): Boolean(),
+            Optional(CONF_SLAT_TILT, default=False): Boolean(),
+            Optional("slat_tilt", default=False): Boolean(),
             Optional(CONF_TRAVEL_TIME, default=25): Coerce(int),
             Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
             Optional(CONF_DEVICE_MODEL): Coerce(str),

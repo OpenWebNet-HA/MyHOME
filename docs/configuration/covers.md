@@ -111,6 +111,43 @@ target:
 
 ---
 
+## 🪟 Venetian Blinds & Slat Tilt Positioning (WHO = 2, Dimension 11)
+
+For Venetian blinds, motorized louvres, and external venetian blinds (EVBs/BSO) with adjustable slat tilt angles, the integration supports OpenWebNet **Dimension 11**:
+
+* **Supported Features**: `SET_TILT_POSITION`, `OPEN_TILT` (100%), `CLOSE_TILT` (0%), and `STOP_TILT`.
+* **Device Class**: Automatically sets the entity device class to `blind` (`CoverDeviceClass.BLIND`).
+* **Attributes**: Exposes `current_cover_tilt_position` (0–100%) and entity attribute `slat_tilt: true`.
+
+### Configuration & Auto-Discovery
+
+1. **Auto-Discovery**: Any cover entity dynamically activates slat tilt controls when OpenWebNet Dimension 11 frames arrive from the bus.
+2. **YAML Configuration**: Slat tilt can also be explicitly declared in `/config/myhome.yaml`:
+   ```yaml
+   cover:
+     living_room_venetian:
+       where: '31'
+       name: Living Room Venetian Blind
+       slat_tilt: true
+   ```
+
+### Protocol Grammar & Wire Format
+
+| Operation | OpenWebNet Frame | Description |
+| :--- | :--- | :--- |
+| **Set Slat Tilt** | `*#2*<WHERE>*#11#001#1*<ANGLE>##` | Writes slat tilt angle (0–100%) with priority `001` and sub-dimension `1`. |
+| **Tilt Query** | `*#2*<WHERE>*11##` | Requests the current slat tilt angle from the actuator. |
+| **Tilt Status Report** | `*#2*<WHERE>*11*<ANGLE>##` or `*#2*<WHERE>*11#1*<ANGLE>##` | Feedback or query reply reporting slat tilt angle. |
+
+### Decoupling from Travel Time Calibration
+
+Tilt positioning operates independently from curtain travel-time position estimation:
+* Motor stopwatch calibration and travel times (`travel_time_down` / `travel_time_up`) only track linear curtain travel.
+* Mid-tilt stops do not corrupt or reset linear curtain position estimation.
+* Tilt commands are safely rejected if the cover is actively running automated travel-time calibration.
+
+---
+
 ## 🏠 General, Area and Group Covers
 
 A cover declared in `/config/myhome.yaml` on a **general** (`where: '0'`), **area** (`where: '1'`, `'00'`, `'100'`) or **group** (`where: '#3'`) address is one button for many shutters: *open*, *close* and *stop* send a single frame to that address, like the general button on a keypad.

@@ -9,7 +9,9 @@ from typing import TYPE_CHECKING, Any
 import voluptuous as vol
 from homeassistant.components.cover import (
     ATTR_CURRENT_POSITION,
+    ATTR_CURRENT_TILT_POSITION,
     ATTR_POSITION,
+    ATTR_TILT_POSITION,
     CoverDeviceClass,
     CoverEntity,
     CoverEntityFeature,
@@ -32,6 +34,7 @@ from homeassistant.util import dt as dt_util
 from OWNd.message import (
     OWNAutomationCommand,
     OWNAutomationEvent,
+    OWNMessage,
 )
 
 from .const import (
@@ -47,6 +50,7 @@ from .const import (
     CONF_ENTITY_NAME,
     CONF_MANUFACTURER,
     CONF_MEMBERS,
+    CONF_SLAT_TILT,
     CONF_TRAVEL_TIME,
     DEFAULT_TRAVEL_TIME,
     DOMAIN,
@@ -118,6 +122,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             where=ctx.address.where,
             interface=ctx.address.interface,  # type: ignore
             advanced=cfg.get(CONF_ADVANCED_SHUTTER, cfg.get("advanced_shutter", False)),
+            slat_tilt=cfg.get(CONF_SLAT_TILT, cfg.get("slat_tilt", False)),
             manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
             model=cfg.get(CONF_DEVICE_MODEL, "Shutter / Cover"),
             gateway=runtime.gateway,
@@ -139,7 +144,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
 
     PlatformDiscovery(
         hass, config_entry, async_add_entities,
-        platform=PLATFORM, who="2", event_type=OWNAutomationEvent, build=build, announce=True,
+        platform=PLATFORM, who="2", event_type=(OWNAutomationEvent, OWNAutomationCommand), build=build, announce=True,
         on_general=relay_general, on_scope=relay_scope,
         known_keys=lambda ctx: [*default_known_keys(ctx), "general"],
     ).start()
@@ -195,6 +200,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         travel_time: int = DEFAULT_TRAVEL_TIME,
         travel_time_source: str = "default",
         calibration: dict | None = None,  # type: ignore
+        slat_tilt: bool = False,
     ):
         super().__init__(
             hass=hass,
@@ -215,6 +221,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self.scope: CoverScope | None = None
         self._family: CoverFamily | None = None
         self._advanced = advanced
+        self._slat_tilt = slat_tilt
+        self._is_tilting: bool = False
+        self._attr_current_cover_tilt_position: int | None = None
         # Direction-aware travel times. `_travel_time` stays the closing (down) time
         # for compatibility; a stored calibration overrides yaml / default values.
         base_travel = float(travel_time) if travel_time else float(DEFAULT_TRAVEL_TIME)
@@ -253,6 +262,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         }
         if self._interface is not None:
             self._attr_extra_state_attributes["Int"] = self._interface
+        if self._slat_tilt:
+            self._enable_slat_tilt()
         if not self._advanced:
             self._refresh_travel_attributes()
 
@@ -499,6 +510,24 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             )
         return self._attr_current_cover_position
 
+    def _enable_slat_tilt(self) -> None:
+        """Enable Venetian blind slat / louvre tilt capabilities."""
+        self._slat_tilt = True
+        self._attr_device_class = CoverDeviceClass.BLIND
+        self._attr_supported_features |= (
+            CoverEntityFeature.SET_TILT_POSITION
+            | CoverEntityFeature.OPEN_TILT
+            | CoverEntityFeature.CLOSE_TILT
+            | CoverEntityFeature.STOP_TILT
+        )
+        if getattr(self, "_attr_extra_state_attributes", None) is not None:
+            self._attr_extra_state_attributes["slat_tilt"] = True
+
+    @property
+    def current_cover_tilt_position(self) -> int | None:
+        """Return the current tilt position of the cover."""
+        return self._attr_current_cover_tilt_position
+
     @property
     def is_opening(self) -> bool:
         """Return if the cover is opening."""
@@ -549,6 +578,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._attr_current_cover_position = 100
                     self._start_position = 100
                     self._attr_is_closed = False
+
+        last_tilt = last_state.attributes.get(ATTR_CURRENT_TILT_POSITION)
+        if last_tilt is not None:
+            try:
+                self._attr_current_cover_tilt_position = max(0, min(100, int(round(float(last_tilt)))))
+                self._enable_slat_tilt()
+            except (ValueError, TypeError):
+                pass
 
     async def async_will_remove_from_hass(self) -> None:
         """Run when entity will be removed from hass."""
@@ -881,6 +918,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             await self._gateway_handler.send_status_request(
                 OWNAutomationCommand.status(self._full_where)
             )
+        if self._slat_tilt:
+            tilt_status_cmd = OWNAutomationCommand.parse(f"*#2*{self._full_where}*11##")
+            if tilt_status_cmd is not None:
+                await self._gateway_handler.send_status_request(tilt_status_cmd)
 
     async def async_open_cover(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Open the cover."""
@@ -893,6 +934,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     async def _async_move(self, direction: str) -> asyncio.Future[Any] | None:
         """Queue a direction command and return its delivery future."""
         self._cancel_stop_task()
+        self._is_tilting = False
         if direction == "open":
             command = OWNAutomationCommand.raise_shutter(self._full_where)
         else:
@@ -1003,7 +1045,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     async def async_stop_cover(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Stop the cover."""
         self._cancel_stop_task()
-        if not self._advanced:
+        if not self._advanced and not self._is_tilting:
             # The estimate keeps running until the stop frame is actually
             # written (_track_write freezes it then); if delivery never
             # happens the next status frame will correct us.
@@ -1012,24 +1054,94 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         written = await self._gateway_handler.send(cmd)
         if self._calibrating or self.calibration_hub.is_calibrating:
             _record_calibration_frame(self._gateway_handler, "tx", str(cmd), action="stop", entity_id=self.entity_id)
-        if not self._advanced:
+        if not self._advanced and not self._is_tilting:
             self._track_write(written)
             if not isinstance(written, asyncio.Future):
                 self._freeze_position(time.monotonic())  # type: ignore
         if self.hass is not None:
             self.async_write_ha_state()
 
-    def _handle_echo(self, message: OWNAutomationEvent, now: float) -> bool:
+    async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
+        """Move the cover tilt to a specific position."""
+        if ATTR_TILT_POSITION not in kwargs:
+            return
+        tilt = max(0, min(100, int(round(float(kwargs[ATTR_TILT_POSITION])))))
+        if self._calibrating:
+            raise HomeAssistantError(
+                f"{self.entity_id} is being calibrated; try again when it has finished",
+                translation_domain=DOMAIN,
+                translation_key="cover_busy_calibrating",
+                translation_placeholders={"entity_id": str(self.entity_id)},
+            )
+        self._is_tilting = True
+        frame = f"*#2*{self._full_where}*#11#001#1*{tilt}##"
+        cmd = OWNAutomationCommand.parse(frame)
+        if cmd is None:
+            self._is_tilting = False
+            raise HomeAssistantError(
+                f"Failed to build slat tilt command for {self._full_where}",
+                translation_domain=DOMAIN,
+                translation_key="command_delivery_failed",
+                translation_placeholders={"name": self._display_name, "error": "invalid frame"},
+            )
+        written = await self._gateway_handler.send(cmd)
+        if isinstance(written, asyncio.Future):
+            try:
+                await asyncio.wait_for(asyncio.shield(written), WRITE_TIMEOUT)
+            except TimeoutError as err:
+                self._is_tilting = False
+                raise HomeAssistantError(
+                    f"{self._display_name}: tilt command was not delivered to the bus within {WRITE_TIMEOUT:.0f} s",
+                    translation_domain=DOMAIN,
+                    translation_key="command_delivery_timeout",
+                    translation_placeholders={"name": self._display_name, "timeout": f"{WRITE_TIMEOUT:.0f}"},
+                ) from err
+            except asyncio.CancelledError:
+                if not written.cancelled():
+                    raise
+                self._is_tilting = False
+                raise HomeAssistantError(
+                    f"{self._display_name}: tilt command delivery was cancelled before reaching the bus",
+                    translation_domain=DOMAIN,
+                    translation_key="command_delivery_cancelled",
+                    translation_placeholders={"name": self._display_name},
+                )
+            except Exception as err:
+                self._is_tilting = False
+                raise HomeAssistantError(
+                    f"{self._display_name}: tilt command delivery failed: {err}",
+                    translation_domain=DOMAIN,
+                    translation_key="command_delivery_failed",
+                    translation_placeholders={"name": self._display_name, "error": str(err)},
+                ) from err
+        if self.hass is not None:
+            self.async_write_ha_state()
+
+    async def async_open_cover_tilt(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
+        """Open cover tilt."""
+        await self.async_set_cover_tilt_position(**{ATTR_TILT_POSITION: 100})
+
+    async def async_close_cover_tilt(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
+        """Close cover tilt."""
+        await self.async_set_cover_tilt_position(**{ATTR_TILT_POSITION: 0})
+
+    async def async_stop_cover_tilt(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
+        """Stop cover tilt."""
+        await self.async_stop_cover(**kwargs)
+
+    def _handle_echo(self, message: OWNMessage, now: float) -> bool:
         """Consume frames the gateway relays for our own in-flight command.
 
         Returns True when the frame was an echo and needs no further handling.
         """
         if self._advanced or not self._in_echo_window(now) or self._pending_cmd is None:
             return False
-        is_stop = not message.is_opening and not message.is_closing
+        is_opening = bool(getattr(message, "is_opening", False))
+        is_closing = bool(getattr(message, "is_closing", False))
+        is_stop = not is_opening and not is_closing
         if self._pending_cmd in ("open", "close"):
-            matches = (message.is_opening and self._pending_cmd == "open") or (
-                message.is_closing and self._pending_cmd == "close"
+            matches = (is_opening and self._pending_cmd == "open") or (
+                is_closing and self._pending_cmd == "close"
             )
             if matches:
                 # The relayed direction status marks the real motor start.
@@ -1051,10 +1163,34 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         return False
 
     @callback
-    def handle_event(self, message: OWNAutomationEvent) -> None:
+    def handle_event(self, message: OWNMessage) -> None:
         """Handle an event message."""
         if getattr(message, "is_translation", None) is True:
             return
+
+        dimension = getattr(message, "dimension", getattr(message, "_dimension", None))
+        if dimension == 11:
+            dim_params = getattr(message, "dimension_param", getattr(message, "_dimension_param", [])) or []
+            msg_type = getattr(message, "message_type", getattr(message, "_message_type", None))
+            # Dimension writing with sub-param '1' (*#2*WHERE*#11#001#1*ANGLE##) or reply (*#2*WHERE*11*ANGLE## / *#2*WHERE*11#1*ANGLE##)
+            is_tilt = (msg_type == "DIMENSION_WRITING" and dim_params and dim_params[-1] == "1") or (
+                msg_type == "DIMENSION_REQUEST_REPLY" and (not dim_params or dim_params[-1] == "1")
+            )
+            if is_tilt:
+                dim_values = getattr(message, "dimension_value", getattr(message, "_dimension_value", [])) or []
+                if dim_values:
+                    try:
+                        raw_tilt = int(dim_values[0])
+                        if 0 <= raw_tilt <= 100:
+                            self._attr_current_cover_tilt_position = raw_tilt
+                        else:
+                            self._attr_current_cover_tilt_position = None
+                    except (ValueError, TypeError):
+                        self._attr_current_cover_tilt_position = None
+                    self._enable_slat_tilt()
+                    self._is_tilting = False
+                    self._publish_state()
+                    return
 
         # Ignore status queries/requests (e.g. *#2*...##) - they are polls, not state transitions
         if getattr(message, "_family", None) == "REQUEST" or getattr(message, "_message_type", None) == "STATUS_REQUEST":
@@ -1062,20 +1198,23 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         # shutterLevel 255 means "unknown position", never a level. OWNd releases
         # after 2.0.0b8 report it as is_position_unknown; older ones pass 255 through.
-        position = message.current_position
+        position = getattr(message, "current_position", None)
         position_unknown = getattr(message, "is_position_unknown", False) is True or (
             isinstance(position, int) and not 0 <= position <= 100
         )
         if position_unknown:
             position = None
 
+        is_opening = bool(getattr(message, "is_opening", False))
+        is_closing = bool(getattr(message, "is_closing", False))
+
         # Ignore frames with no what and no movement/position (e.g. unknown queries)
         if (
             getattr(message, "_what", None) is None
             and position is None
             and not position_unknown
-            and not message.is_opening
-            and not message.is_closing
+            and not is_opening
+            and not is_closing
         ):
             return
 
@@ -1104,10 +1243,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         LOGGER.debug(
             "%s %s",
             self._gateway_handler.log_id,
-            message.human_readable_log,
+            getattr(message, "human_readable_log", str(message)),
         )
         now = time.monotonic()
-        moving = bool(message.is_opening or message.is_closing)
+        moving = bool(is_opening or is_closing)
         if moving and position is not None:
             # While the motor runs the actuator repeats the level it started from
             # (*#2*0112*10*12*25*…## until *#2*0112*10*10*0*…##): the status
@@ -1126,11 +1265,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._move_start_time = None
             self._attr_is_opening = False
             self._attr_is_closing = False
-            if message.is_closed is not None:
+            if getattr(message, "is_closed", None) is not None:
                 self._attr_is_closed = message.is_closed
             else:
                 self._attr_is_closed = (self._attr_current_cover_position == 0)
-        elif message.is_opening:
+        elif is_opening:
+            self._is_tilting = False
             if self._calibrating and not self._attr_is_opening:
                 self._interrupt_calibration("an external open command arrived")
             if self._attr_is_closing:
@@ -1142,7 +1282,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._attr_is_opening = True
             self._attr_is_closing = False
             self._attr_is_closed = False
-        elif message.is_closing:
+        elif is_closing:
+            self._is_tilting = False
             if self._calibrating and not self._attr_is_closing:
                 self._interrupt_calibration("an external close command arrived")
             if self._attr_is_opening:
@@ -1155,15 +1296,17 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._attr_is_closing = True
         else:
             # Stopped (state == 0 or other): a genuine stop ends any timed run.
+            was_tilting = self._is_tilting
+            self._is_tilting = False
             self._cancel_stop_task()
             self._run_generation += 1
             self._last_stop_at = now
             self._stopped_event.set()
-            if not self._advanced:
+            if not self._advanced and not was_tilting:
                 self._freeze_position(now)
             self._attr_is_opening = False
             self._attr_is_closing = False
-            if message.is_closed is not None:
+            if getattr(message, "is_closed", None) is not None:
                 self._attr_is_closed = message.is_closed
             elif self._attr_current_cover_position is not None:
                 self._attr_is_closed = (self._attr_current_cover_position == 0)
