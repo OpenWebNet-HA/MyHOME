@@ -925,7 +925,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 OWNAutomationCommand.status(self._full_where)
             )
         if self._slat_tilt:
-            await self._gateway_handler.send_raw(f"*#2*{self._full_where}*11##")
+            tilt_status_cmd = OWNAutomationCommand.parse(f"*#2*{self._full_where}*11##")
+            if tilt_status_cmd is not None:
+                await self._gateway_handler.send_status_request(tilt_status_cmd)
 
     async def async_open_cover(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Open the cover."""
@@ -1079,15 +1081,16 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             )
         self._is_tilting = True
         frame = f"*#2*{self._full_where}*#11#001#1*{tilt}##"
-        written = await self._gateway_handler.send_raw(frame)
-        if written is False:
+        cmd = OWNAutomationCommand.parse(frame)
+        if cmd is None:
             self._is_tilting = False
             raise HomeAssistantError(
-                f"Failed to send slat tilt command to {self._full_where}",
+                f"Failed to build slat tilt command for {self._full_where}",
                 translation_domain=DOMAIN,
                 translation_key="command_delivery_failed",
-                translation_placeholders={"name": self._display_name, "error": "delivery failed"},
+                translation_placeholders={"name": self._display_name, "error": "invalid frame"},
             )
+        written = await self._gateway_handler.send(cmd)
         if isinstance(written, asyncio.Future):
             try:
                 await asyncio.wait_for(asyncio.shield(written), WRITE_TIMEOUT)
