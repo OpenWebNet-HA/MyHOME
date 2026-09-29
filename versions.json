@@ -15,9 +15,9 @@
     "version": "0.9.4",
     "title": "v0.9.4 (legacy)",
     "aliases": [
-      "latest",
       "legacy",
-      "v0.9"
+      "v0.9",
+      "latest"
     ]
   }
 ]
