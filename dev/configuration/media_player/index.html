@@ -1048,10 +1048,32 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#recommended-one-music-assistant-sync-group-for-the-house" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended: one Music Assistant Sync Group for the house
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#how-grouping-works-with-the-analog-matrix" class="md-nav__link">
     <span class="md-ellipsis">
       
         How Grouping Works with the Analog Matrix
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-deselecting-the-group-leader-gives-a-short-gap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why deselecting the group leader gives a short gap
       
     </span>
   </a>
@@ -2334,10 +2356,32 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#recommended-one-music-assistant-sync-group-for-the-house" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended: one Music Assistant Sync Group for the house
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#how-grouping-works-with-the-analog-matrix" class="md-nav__link">
     <span class="md-ellipsis">
       
         How Grouping Works with the Analog Matrix
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-deselecting-the-group-leader-gives-a-short-gap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why deselecting the group leader gives a short gap
       
     </span>
   </a>
@@ -2719,6 +2763,22 @@ empty keeps the wall-panel routing in charge.</p>
 <hr />
 <h2 id="multi-room-audio-grouping-music-assistant-home-assistant">👥 Multi-Room Audio Grouping (Music Assistant &amp; Home Assistant)<a class="headerlink" href="#multi-room-audio-grouping-music-assistant-home-assistant" title="Permanent link">&para;</a></h2>
 <p>The MyHOME integration implements native Home Assistant player grouping (<code>MediaPlayerEntityFeature.GROUPING</code>). This enables synchronized multi-room playback across BTicino audio zones without playing separate concurrent audio streams.</p>
+<h3 id="recommended-one-music-assistant-sync-group-for-the-house">Recommended: one Music Assistant <em>Sync Group</em> for the house<a class="headerlink" href="#recommended-one-music-assistant-sync-group-for-the-house" title="Permanent link">&para;</a></h3>
+<p>When you open a room in Music Assistant and add other rooms to it, that room becomes the group's <strong>leader</strong>. Music Assistant always lists the room you started from as ticked in its group panel, and you cannot untick it. If you untick it while nothing is playing, Music Assistant dissolves the whole group and the other rooms disappear from it. That is Music Assistant's temporary ("ad-hoc") grouping, and MyHOME cannot change it: all that reaches the integration is "remove these rooms".</p>
+<p>Instead, create a <strong>Sync Group player</strong> in Music Assistant once and play to that. The group player owns the queue, so no room is fixed, and every room can be ticked and unticked, including the one you used to start from.</p>
+<ol>
+<li>In Music Assistant open <strong>Settings → Players → Add group player → Sync group</strong>.</li>
+<li>Name it (for example <em>Huis</em>) and add the MyHOME rooms you want to be able to use under <strong>Group members</strong>. These are only the rooms that join when the group starts.</li>
+<li>Turn <strong>Dynamic members</strong> on and press <strong>Save</strong>. Without it the member list is fixed and no room can be removed.</li>
+<li>In the player bar at the bottom, open the player selector (bottom right) and pick <strong>Huis</strong>. The group icon now shows <em>Group members — Huis</em> and lets you tick and untick every room.</li>
+<li>Play to <strong>Huis</strong>, not to a room.</li>
+</ol>
+<p>Behind the scenes Music Assistant still picks one of the rooms as the <em>sync leader</em> and plays the stream to it; MyHOME claims the decoder for that room and routes the other rooms to the same matrix input, as described below. The difference is what happens when that room is unticked:</p>
+<ul>
+<li><strong>Before you press play</strong>, unticking any room only changes the list. Nothing is sent to the bus.</li>
+<li><strong>While music plays</strong>, unticking a room that is not the sync leader switches only that room's amplifier off.</li>
+<li><strong>While music plays</strong>, unticking the sync leader makes Music Assistant re-form the group around the remaining rooms and resume from the same position. This costs the short gap explained in <a href="#why-deselecting-the-group-leader-gives-a-short-gap">Why deselecting the group leader gives a short gap</a>.</li>
+</ul>
 <h3 id="how-grouping-works-with-the-analog-matrix">How Grouping Works with the Analog Matrix<a class="headerlink" href="#how-grouping-works-with-the-analog-matrix" title="Permanent link">&para;</a></h3>
 <p>When using <strong>Music Assistant (MA)</strong> or Home Assistant's <code>media_player.join</code> service:
 1. <strong>Single Backend Stream</strong>: Only the group <strong>leader</strong> claims a network decoder from the decoder pool and requests the audio stream (e.g. from Spotify, Tidal, or local FLAC).
@@ -2731,9 +2791,9 @@ empty keeps the wall-panel routing in charge.</p>
    - The F441 / F441M matrix routes an entire environment to one input. If an attempt is made to join a zone whose environment is already actively streaming from another decoder, the operation is rejected with an <code>environment_busy</code> error to prevent cutting off an active listener in that environment. The check runs for every requested member before anything is switched, so a refused join changes nothing. A group that is not playing yet does not block its environments.
 6. <strong>A decoder paused by another player is left alone</strong>: a decoder that someone paused from outside (for example a Spotify Connect session started straight on the device) is not handed to <code>play_media</code> during the first 5 minutes of that pause; after that it counts as free, so a forgotten pause cannot lock the input for good. A decoder that one of your zones holds is unaffected.
 7. <strong>Dynamic Disbanding &amp; Member Lifecycle</strong>:
-   - <strong>Leader turns off</strong>: The entire group is disbanded and every member amplifier is powered off immediately — there is no longer a shared stream for them to listen to.
-   - <strong>The music stops on its own</strong>: when the leader's decoder goes idle or off, or stays paused, the anti-hiss timer (see below) switches every amplifier of the group off, but the group itself stays as it was, so the group you built in Music Assistant is still there. While parked, the rooms report <code>paused</code> (or <code>idle</code>) and not <code>off</code>, since Music Assistant dissolves a group whose leader is off. Pressing play (or <code>media_play</code>, <code>play_media</code>, <code>turn_on</code>) on the leader wakes the leader and all its members again, routed to the leader's input. Only an explicit turn-off of the leader, or a wall-panel OFF, disbands the group. If another room needs the decoder meanwhile, it takes it and the parked group is dissolved.
-   - <strong>Leader calls <code>unjoin</code></strong>: Leadership and the claimed decoder are handed over to the first remaining member atomically, and the old leader's amplifier is powered off; the new leader and any other members keep streaming uninterrupted, with no audible gap.
+   - <strong>Leader turns off</strong> (Home Assistant <code>turn_off</code>, or OFF at a wall panel) <strong>while rooms are still in its group</strong>: the group is handed to the first remaining member exactly as for <code>unjoin</code> (see below). Only the leader's own amplifier is switched off; the decoder keeps streaming and the other rooms keep their routes. The last room of a group turning off still stops the decoder and releases it. <strong>This changes what OFF on the room you started in means</strong>: it used to end the party in every room, now that room leaves and the others keep playing. To stop everything, stop the playback (pause or stop in Music Assistant, or <code>media_stop</code> on the leader), or turn off the last remaining room. <strong>Music Assistant will still interrupt the music for a moment when this happens</strong>; see <a href="#why-deselecting-the-group-leader-gives-a-short-gap">Why deselecting the leader gives a gap</a>.
+   - <strong>The music stops on its own</strong>: when the leader's decoder goes idle or off, or stays paused, the anti-hiss timer (see below) switches every amplifier of the group off, but the group itself stays as it was, so the group you built in Music Assistant is still there. While parked, the rooms report <code>paused</code> (or <code>idle</code>) and not <code>off</code>, since Music Assistant dissolves a group whose leader is off. Pressing play (or <code>media_play</code>, <code>play_media</code>, <code>turn_on</code>) on the leader wakes the leader and all its members again, routed to the leader's input. Turning the leader of a <em>parked</em> group off (from Home Assistant or a wall panel) disbands it, since it is silent already and that is the "I want silence". A <em>playing</em> leader turned off hands the group on instead (see below). If another room needs the decoder meanwhile, it takes it and the parked group is dissolved.
+   - <strong>Leader calls <code>unjoin</code></strong>: Leadership and the claimed decoder are handed over to the first remaining member atomically, and the old leader's amplifier is powered off. On the bus nothing is interrupted: the new leader and the other members stay on the same matrix input. The player that <em>Music Assistant</em> is playing to does change, though, and that costs a short gap (see below).
    - <strong>Member leaves the group</strong>: unjoining removes it from the group at once, but its amplifier keeps playing through a <strong>5-second grace period</strong> rather than being switched off immediately — covering the same room being reassigned elsewhere right after. The same grace period applies when a room joining a group was itself leading a different one: that group's other members are orphaned and get the same treatment. Powering the room off immediately would create an audible gap for no reason. If nothing claims the room again within the grace period (<code>play_media</code>, <code>turn_on</code>, or being joined into another group), it is switched off exactly as before, just up to 5 seconds later.
    - <strong>Tuner groups are restored too</strong>: a group playing a tuner (F500) has no decoder that could confirm it, so it is restored as soon as its amplifiers report on, not on a decoder's say-so.
    - <strong>Known limit: nothing is sent to the bus at startup</strong>: a member that was moved to another input at a wall panel while Home Assistant was down is restored onto its old leader's decoder, because the bus cannot be asked which input a room is on. The next status report of that room corrects it, and until then the leader's stop switches it off like any other member.
@@ -2746,6 +2806,30 @@ empty keeps the wall-panel routing in charge.</p>
 <li><strong>Rooms found on at startup</strong>: the gateway's startup sweep asks the bus which amplifiers are on (<code>*#16*0*5##</code>). Gateway profiles that leave WHO=16 out of that sweep (the MH200's) instead have each zone ask for its own status (<code>*#16*&lt;zone&gt;*5##</code>) when it is added, so a restart no longer leaves every room showing off. A room reported on in that first status while its decoder is not playing is switched off the same way; a decoder that is two entities (hardware plus streaming companion) counts as playing if either one plays, and one that does not report yet is decided by its first state change. Rooms you switch on afterwards (from Home Assistant or a wall panel) are left alone until the decoder plays and stops again, so you can turn a room on and then start a Spotify Connect session on the decoder. Rooms on an input no decoder is wired to (a tuner) are never touched. A room the restored groups say owns a decoder is judged by that decoder in the same way.</li>
 </ul>
 <hr />
+<h3 id="why-deselecting-the-group-leader-gives-a-short-gap">Why deselecting the group leader gives a short gap<a class="headerlink" href="#why-deselecting-the-group-leader-gives-a-short-gap" title="Permanent link">&para;</a></h3>
+<blockquote>
+<p><strong>In short:</strong> taking the <em>leader</em> out of a Music Assistant group (unticking it, turning it off, or pressing OFF on its wall panel) makes the music stop for a moment (a few seconds) and then start again in the remaining rooms, from the same position. This is how Music Assistant moves a queue between players. <strong>It cannot be avoided by MyHOME</strong>; this integration already does everything on its side that can be done.</p>
+</blockquote>
+<p><strong>What MyHOME does.</strong> The analog bus is independent of the leader's amplifier. A room's sound comes from the matrix input its environment is routed to (<code>*16*3*1ES##</code>), not from the leader's amplifier. So when the leader is removed, MyHOME only switches that one room's amplifier off (<code>*16*13*&lt;WHERE&gt;##</code>), moves the ownership of the decoder and the group to the first remaining member, and leaves the decoder and every other room's routing untouched. Nothing on the bus is re-sent and the decoder is not stopped.</p>
+<p><strong>What Music Assistant does.</strong> Music Assistant attaches one <em>queue</em> to exactly one player, the one it plays to, and the stream URL it hands to the decoder is named after that player's queue. It has no way to move a queue to another player without a break:</p>
+<ol>
+<li>The player Music Assistant plays to (the leader) goes <code>off</code> or is unjoined. Home Assistant's <code>off</code>, <code>standby</code> and <code>unavailable</code> all mean "powered off" to Music Assistant, and a powered-off player cannot own a queue. There is no "off, but still owns the queue" state.</li>
+<li>Music Assistant <em>transfers</em> the queue to another member of the group: it copies the items and the position, <strong>stops</strong> the old queue, loads the new player and resumes. That is a new stream with a new URL.</li>
+<li>MyHOME receives the new <code>play_media</code> on the new leader and plays it on the decoder. A decoder always needs a moment to buffer a new stream, so there is silence in all rooms until that finishes.</li>
+</ol>
+<p>Music Assistant itself calls this "accepting a brief audio gap" in its ad-hoc group leader hand-over. Sonos, BluOS and similar systems hide the same transfer inside their own player firmware; a Music Assistant queue that is attached to a Home Assistant entity cannot do that.</p>
+<p><strong>What we considered and why it is not built.</strong> The only way to get a truly gapless hand-over is that the entity Music Assistant owns the queue on <strong>never goes off while any room is listening</strong>, so that it never has to move. That means Music Assistant plays to something that is <em>not a room</em>: the decoder itself (Cambridge Audio, PNL Audio, ...), or a MyHOME "decoder session" entity that stands in front of it and is always the first entry of <code>group_members</code>. Then any room, including the one you started in, can be unticked without touching the queue. This is possible in principle and was analysed in detail, with these findings:</p>
+<ul>
+<li>Music Assistant only groups entities that advertise the <code>GROUPING</code> feature; the decoders' own entities (from other integrations) do not, so it would have to be a new MyHOME entity.</li>
+<li>Some decoders (Cambridge Audio / StreamMagic) do not accept a Music Assistant stream at all (<code>unsupported_media_type</code>), so they can never own a Music Assistant queue.</li>
+<li>It adds a second entity per decoder next to the room entities, which is easy to pick by mistake, and it needs a policy for when the last room leaves.</li>
+</ul>
+<p>This was judged not worth the extra moving parts; the short gap on leader removal is accepted as the best behaviour available with a room as group leader. What you can do:</p>
+<ul>
+<li><strong>Use a Sync Group</strong> (see <a href="#recommended-one-music-assistant-sync-group-for-the-house">Recommended: one Music Assistant Sync Group for the house</a>). Every room, including the one you started from, can then be unticked. The gap remains only when the room that currently is the sync leader is unticked while music plays.</li>
+<li><strong>With temporary groups, choose the leader deliberately.</strong> The leader is the room you <em>play to</em>. Play to a room that stays on (living room, kitchen) and add rooms that come and go (bathroom, bedroom) as members. Removing a <em>member</em> never causes a gap: only that room's amplifier goes off (after the 5-second grace period).</li>
+</ul>
+<p>Before this hand-over existed, turning the leader off from Home Assistant or a wall panel switched off <strong>every</strong> room of the group and stopped the decoder. Now the other rooms carry on, after the short gap.</p>
 <h2 id="backend-stream-compatibility-dlna-dmr-cambridge-audio-wiim-squeezelite">📡 Backend Stream Compatibility &amp; DLNA DMR (Cambridge Audio, WiiM, Squeezelite)<a class="headerlink" href="#backend-stream-compatibility-dlna-dmr-cambridge-audio-wiim-squeezelite" title="Permanent link">&para;</a></h2>
 <p>When using the Dynamic Proxy, Home Assistant sends direct HTTP streaming URLs to the configured backend decoder.</p>
 <h3 id="the-cambridge-audio-dilemma">The Cambridge Audio Dilemma<a class="headerlink" href="#the-cambridge-audio-dilemma" title="Permanent link">&para;</a></h3>

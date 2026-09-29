@@ -2285,6 +2285,11 @@
 <td style="text-align: left;">Map more decoders in the options flow, or group rooms on the decoder side.</td>
 </tr>
 <tr>
+<td style="text-align: left;"><strong>Removing the group leader interrupts the music briefly.</strong> Unticking the leader in Music Assistant, or turning it off (Home Assistant or wall panel), stops the sound for a few seconds before the remaining rooms resume.</td>
+<td style="text-align: left;">Music Assistant owns one queue per player and can only move it by stopping it and starting a new stream on another player; a powered-off player cannot keep a queue. The bus itself is not interrupted: MyHOME switches only the leader's amplifier off and hands the decoder to the next room. See <a href="../media_player/#why-deselecting-the-group-leader-gives-a-short-gap">Why deselecting the group leader gives a short gap</a>.</td>
+<td style="text-align: left;">Play to a Music Assistant <strong>Sync Group</strong> with <em>Dynamic members</em> on, so any room can be ticked and unticked; see <a href="../media_player/#recommended-one-music-assistant-sync-group-for-the-house">Recommended: one Music Assistant Sync Group for the house</a>. With temporary groups, play to a room that stays on: removing a member never interrupts anything.</td>
+</tr>
+<tr>
 <td style="text-align: left;"><strong>The legacy FM tuner (WHO 22) is not supported.</strong></td>
 <td style="text-align: left;">Deferred in RFC #248; streaming replaces it.</td>
 <td style="text-align: left;">—</td>
