@@ -1022,6 +1022,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="🎛️ Gain Staging &amp; Bus Noise Elimination">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-volume-of-0-is-not-a-mute" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A volume of 0 is not a mute
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1182,6 +1199,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reporting-an-audio-problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🩺 Reporting an audio problem
+      
+    </span>
+  </a>
   
 </li>
       
@@ -2330,6 +2358,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="🎛️ Gain Staging &amp; Bus Noise Elimination">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-volume-of-0-is-not-a-mute" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A volume of 0 is not a mute
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2494,6 +2539,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#reporting-an-audio-problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🩺 Reporting an audio problem
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#openwebnet-who-16-reference-frames" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2551,7 +2607,7 @@
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>         ┌───────────────────────────┐
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>         │ Decoder Pool Management   │
 </span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>         │ - Dynamic claim / release │
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>         │ - Gain staging (+12 dB)   │
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>         │ - Pre-gain (% offset)     │
 </span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>         │ - State &amp; metadata mirror │
 </span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>         └─────┬───────────────┬─────┘
 </span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>               │               │
@@ -2738,6 +2794,14 @@ $$\text{Decoder Volume} = \text{Zone Volume} + \text{Pre-Gain Offset}$$</p>
 <li>Setting <code>pre_gain</code> (e.g., <code>+10%</code> to <code>+20%</code>) drives the network streamer at maximum undistorted line level.</li>
 <li>The room amplifier then operates at lower amplification, pushing the analog noise floor below audibility.</li>
 </ul>
+<h3 id="a-volume-of-0-is-not-a-mute">A volume of 0 is not a mute<a class="headerlink" href="#a-volume-of-0-is-not-a-mute" title="Permanent link">&para;</a></h3>
+<p>Turning a room down to 0, from Music Assistant or a wall panel, leaves it
+unmuted: only the mute button mutes. Music Assistant greys out the slider of a
+muted player and leaves it out of the group volume, so a room that reports 0
+would otherwise be stuck there until you pressed the mute icon. Raising the
+volume above 0 (from anywhere) ends a mute. A volume of 0 does not affect the
+anti-hiss auto-off, which only follows the decoder: when the stream stops, the
+room's amplifier still switches off.</p>
 <hr />
 <h2 id="configuration-via-home-assistant-ui">⚙️ Configuration via Home Assistant UI<a class="headerlink" href="#configuration-via-home-assistant-ui" title="Permanent link">&para;</a></h2>
 <p>Sources, defaults and the Dynamic Proxy are all configured in the integration's <strong>Options Flow</strong>:</p>
@@ -2918,6 +2982,23 @@ configured; they are forwarded to that decoder, not sent on the bus.</p>
 For dedicated multi-room audio dashboard views featuring Sections layout, 1-tap source-switching chips (e.g. FM Radio, Streamer), and area all-off master buttons, see <a href="../lovelace_recipes/#recipe-2-dynamic-multiroom-audio-zone-player">Lovelace Recipes → Recipe 2: Dynamic Multiroom Audio Zone Player</a>.</p>
 </div>
 <hr />
+<h2 id="reporting-an-audio-problem">🩺 Reporting an audio problem<a class="headerlink" href="#reporting-an-audio-problem" title="Permanent link">&para;</a></h2>
+<p>Audio problems usually involve three parties (this integration, Music Assistant
+and the decoder), so a report needs two files and one sentence:</p>
+<ol>
+<li><strong>MyHOME diagnostics</strong>: <em>Settings → Devices &amp; services → MyHOME → ⋮ → Download diagnostics</em>.
+   Its <code>audio</code> block lists every zone (state, source, volume, mute, whether the
+   anti-hiss auto-off has parked it), the decoders (source, pre-gain, state, who
+   holds them) and the groups. Rooms appear as <code>zone_&lt;bus address&gt;</code> and decoders
+   as <code>decoder_&lt;slot&gt;</code>, so it carries no room names. The <code>bus_monitor</code> block holds
+   the last frames on the bus.</li>
+<li><strong>Music Assistant log</strong>, only when the problem is on the Music Assistant side
+   (group does not form, wrong player, slider locked): <em>Settings → System → Logs</em>
+   in Music Assistant, around the time it happened.</li>
+<li>What you did, and when: "21:48, pressed play on the <em>Huis</em> group, Bureau's
+   slider would not move."</li>
+</ol>
+<p>Attach these to the issue instead of pasting log excerpts; two files are enough.</p>
 <h2 id="openwebnet-who-16-reference-frames">📜 OpenWebNet WHO = 16 Reference Frames<a class="headerlink" href="#openwebnet-who-16-reference-frames" title="Permanent link">&para;</a></h2>
 <p><code>&lt;WHERE&gt;</code> is an amplifier (<code>01</code>–<code>99</code>), an environment (<code>#0</code>–<code>#9</code>) or <code>0</code> for
 all amplifiers. The integration addresses individual amplifiers.</p>
@@ -2973,8 +3054,8 @@ all amplifiers. The integration addresses individual amplifiers.</p>
 </tbody>
 </table>
 <blockquote>
-<p>Released OWNd builds volume down as <code>*16*1000*&lt;WHERE&gt;##</code>, which the
-specification does not define; the library fix is pending.</p>
+<p>OWNd 2.0.0b8 and earlier send volume down as <code>*16*1000*&lt;WHERE&gt;##</code>, which the
+specification does not define; OWNd 2.0.0b9 sends <code>*16*1101*&lt;WHERE&gt;##</code>.</p>
 </blockquote>
 
 
