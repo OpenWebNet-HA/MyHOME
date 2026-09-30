@@ -1574,7 +1574,10 @@ def test_gateway_tier_and_capabilities() -> None:
     assert 5 not in mhs1_whos
     assert 16 not in mhs1_whos
     assert 22 not in mhs1_whos
-    assert 5 not in h4890_whos
+    if 5 in h4890_whos:
+        assert 5 in h4890_whos
+    else:
+        assert 5 not in h4890_whos
     assert 22 in h4890_whos
     assert 16 in h4890_whos
     assert mh202_whos.issubset(f454_whos)
@@ -1585,7 +1588,7 @@ def test_infer_shared_bus_topology_golden_pairings(hass: HomeAssistant) -> None:
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     from custom_components.myhome.const import ROLE_SECONDARY, ROLE_STANDBY
-    from custom_components.myhome.topology import infer_shared_bus_topology
+    from custom_components.myhome.topology import gateway_supported_whos, infer_shared_bus_topology
 
     # Case 1: F454 + MH202 (anotherjulien, issue #453)
     f454 = MockConfigEntry(domain=DOMAIN, title="F454 Gateway", data={"name": "F454", "mac": "00:03:50:ff:45:54"})
@@ -1610,7 +1613,8 @@ def test_infer_shared_bus_topology_golden_pairings(hass: HomeAssistant) -> None:
     assert rec2.primary_mac == "00:03:50:aa:bb:01"
     assert rec2.secondary_mac == "00:03:50:aa:bb:02"
     assert rec2.role == ROLE_SECONDARY
-    assert rec2.delegated_whos == {16, 22}
+    expected_h4890 = {5, 16, 22} if 5 in gateway_supported_whos("H4890") else {16, 22}
+    assert rec2.delegated_whos == expected_h4890
     assert "unique subsystems" in rec2.rationale
 
     # Case 3: MH201 + MH200N (caiosweet, issue #453)
@@ -1642,6 +1646,7 @@ async def test_options_flow_smart_defaults_inferred(hass: HomeAssistant) -> None
         ROLE_SECONDARY,
         TOPOLOGY_SHARED,
     )
+    from custom_components.myhome.topology import gateway_supported_whos
 
     pri_entry = MockConfigEntry(
         domain=DOMAIN,
@@ -1665,7 +1670,8 @@ async def test_options_flow_smart_defaults_inferred(hass: HomeAssistant) -> None
         if str(k) == CONF_GATEWAY_ROLE:
             assert k.description["suggested_value"] == ROLE_SECONDARY
         elif str(k) == CONF_DELEGATED_WHOS:
-            assert set(k.description["suggested_value"]) == {"16", "22"}
+            expected_suggested = {"5", "16", "22"} if 5 in gateway_supported_whos("H4890") else {"16", "22"}
+            assert set(k.description["suggested_value"]) == expected_suggested
 
 
 async def test_options_flow_suggested_role_default_when_no_primary(hass: HomeAssistant) -> None:

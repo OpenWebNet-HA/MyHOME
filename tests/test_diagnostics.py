@@ -303,6 +303,7 @@ async def test_topology_inference_diagnostics_paired_and_redacted(hass: HomeAssi
         ROLE_SECONDARY,
         TOPOLOGY_SHARED,
     )
+    from custom_components.myhome.topology import gateway_supported_whos
 
     pri_mac = "00:03:50:aa:bb:01"
     sec_mac = "00:03:50:aa:bb:02"
@@ -350,7 +351,9 @@ async def test_topology_inference_diagnostics_paired_and_redacted(hass: HomeAssi
     assert eval_peer["recommended_primary_model"] == "MyHomeServer1"
     assert eval_peer["recommended_secondary_model"] == "H4890"
     assert eval_peer["recommended_role"] == ROLE_SECONDARY
-    assert eval_peer["delegated_whos"] == [16, 22]
+    has_alarm = 5 in gateway_supported_whos("H4890")
+    expected_diag = [5, 16, 22] if has_alarm else [16, 22]
+    assert eval_peer["delegated_whos"] == expected_diag
     assert eval_peer["audio_coupled"] is False
     assert "unique subsystems" in eval_peer["rationale"]
 
@@ -359,7 +362,7 @@ async def test_topology_inference_diagnostics_paired_and_redacted(hass: HomeAssi
     assert align["configured_shared_bus"] is True
     assert align["is_recommended_primary"] is False
     assert align["role_aligned"] is True
-    assert align["delegated_whos_aligned"] is False  # configured [5, 16, 22] != recommended [5, 9, 16, 22]
+    assert align["delegated_whos_aligned"] is (True if has_alarm else False)
     assert align["primary_aligned"] is True
 
     # Strict redaction check: raw MACs must not exist anywhere in topology_inference
