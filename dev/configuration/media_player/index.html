@@ -1222,6 +1222,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="📜 OpenWebNet WHO = 16 Reference Frames">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#checks-worth-running-on-a-new-plant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checks worth running on a new plant
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -2558,6 +2575,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="📜 OpenWebNet WHO = 16 Reference Frames">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#checks-worth-running-on-a-new-plant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checks worth running on a new plant
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -2903,6 +2937,10 @@ empty keeps the wall-panel routing in charge.</p>
 1. Enable UPnP / DLNA in the Cambridge StreamMagic app settings.
 2. In Home Assistant, install the <strong>DLNA Digital Media Renderer</strong> integration. It will automatically discover your Cambridge Audio streamer (e.g. <code>media_player.cxn_v2_dlna</code>).
 3. In <strong>Settings</strong> -&gt; <strong>Devices &amp; Services</strong> -&gt; <strong>MyHOME</strong> -&gt; <strong>Configure</strong>, map the DLNA DMR entity as your decoder instead of the native <code>cambridge_audio</code> entity.</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p><strong>Streaming companion</strong>: each decoder slot has an optional <strong>Streaming companion</strong> field. Leave it empty and MyHOME looks for the DLNA / UPnP / Cast renderer of the same device, then of the same MAC, then of the same host, then of a device with exactly the same name. If a step finds several different devices (two identical streamers in the rack) MyHOME does not guess: it raises the <em>Several streaming companions found</em> repair and keeps that decoder off streams until you pick the entity here. Control and volume always stay on the decoder entity; only stream URLs go to the companion.</p>
+</div>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p><strong>Automatic Diagnostic &amp; Repair</strong>:
@@ -3057,6 +3095,15 @@ all amplifiers. The integration addresses individual amplifiers.</p>
 <p>OWNd 2.0.0b8 and earlier send volume down as <code>*16*1000*&lt;WHERE&gt;##</code>, which the
 specification does not define; OWNd 2.0.0b9 sends <code>*16*1101*&lt;WHERE&gt;##</code>.</p>
 </blockquote>
+<h3 id="checks-worth-running-on-a-new-plant">Checks worth running on a new plant<a class="headerlink" href="#checks-worth-running-on-a-new-plant" title="Permanent link">&para;</a></h3>
+<p>Grouping, parking and volume are where Music Assistant and the analog matrix meet, so a plant counts as verified once these hold (attach the diagnostics file to the issue, see above):</p>
+<ol>
+<li>Play to the Music Assistant Sync Group, add a third room, then drop the leader. The matrix and the Music Assistant queue stay in step, and no room falls silent for longer than the leader-handover gap.</li>
+<li>Set one member of the group to volume 0, then raise it again. The slider does not lock.</li>
+<li>Let the anti-hiss auto-off silence the house, then press play. The parked members come back as a group.</li>
+<li>With a Cambridge decoder, the diagnostics show a <code>companion</code> that is the DLNA/UPnP renderer, never a <code>mass</code> clone.</li>
+</ol>
+<p>Use the <strong>Audio field report</strong> issue template so the result can be turned into a replay test.</p>
 
 
 
