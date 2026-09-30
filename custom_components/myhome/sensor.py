@@ -61,6 +61,7 @@ from .const import (
     LOGGER,
     normalize_where,
     signed_who4_temperature,
+    who4_raw_to_celsius,
 )
 from .data import MyHOMEConfigEntry
 from .discovery import Address, DeviceContext, PlatformDiscovery
@@ -758,10 +759,7 @@ class MyHOMETemperatureSensor(MyHOMEEntity, SensorEntity):
             if dim_val:
                 raw = dim_val[1] if len(dim_val) >= 2 else dim_val[0]
                 try:
-                    if len(raw) == 4 and raw.startswith("1"):
-                        val = -float(raw[1:]) / 10.0
-                    else:
-                        val = float(raw) / 10.0
+                    val = who4_raw_to_celsius(raw)
                 except (ValueError, TypeError):
                     pass
         elif getattr(message, "dimension", None) == 0:
@@ -769,10 +767,7 @@ class MyHOMETemperatureSensor(MyHOMEEntity, SensorEntity):
             if dim_val:
                 raw = dim_val[0]
                 try:
-                    if len(raw) == 4 and raw.startswith("1"):
-                        val = -float(raw[1:]) / 10.0
-                    else:
-                        val = float(raw) / 10.0
+                    val = who4_raw_to_celsius(raw)
                 except (ValueError, TypeError):
                     pass
         else:

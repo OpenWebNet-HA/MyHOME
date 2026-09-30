@@ -203,8 +203,19 @@ def signed_who4_temperature(message: Any, value: float | None) -> float | None:
     raw = getattr(message, "_dimension_value", None)
     first = raw[0] if isinstance(raw, (list, tuple)) and raw else None
     if value is not None and isinstance(first, str) and len(first) == 4 and first.startswith("1"):
-        return -abs(value)
+        return -abs(value) if value else value  # "1000" is a sign on nothing: 0.0, never -0.0
     return value
+
+
+def who4_raw_to_celsius(raw: str) -> float:
+    """Decode a raw WHO 4 temperature (``SXXX``, tenths of a degree) that OWNd did not decode.
+
+    Raises ``ValueError`` when ``raw`` is not a number. Exactly zero is ``0.0`` whatever the sign digit.
+    """
+    if len(raw) == 4 and raw.startswith("1"):
+        magnitude = float(raw[1:]) / 10.0
+        return -magnitude if magnitude else 0.0
+    return float(raw) / 10.0
 
 
 def eight_bits_to_percent(value: int) -> int:
