@@ -1511,6 +1511,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#central-heating-units-0-01-are-broadcast-event-driven" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🌡️ Central heating units (#0 / #0#1) are broadcast event-driven
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#timed-covers-clock-starts-at-the-write-echoes-are-not-keypad-presses" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2093,6 +2104,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#central-heating-units-0-01-are-broadcast-event-driven" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🌡️ Central heating units (#0 / #0#1) are broadcast event-driven
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#timed-covers-clock-starts-at-the-write-echoes-are-not-keypad-presses" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2281,6 +2303,29 @@ Options Flow if your gateway lags on repeated status requests.</p>
 <li>Zone sensors (<code>WHERE &lt; 100</code>) keep polling <code>*#4*Z*0##</code> as before.</li>
 </ul>
 <p><em>(#308)</em></p>
+<hr />
+<h2 id="central-heating-units-0-01-are-broadcast-event-driven">🌡️ Central heating units (<code>#0</code> / <code>#0#1</code>) are broadcast event-driven<a class="headerlink" href="#central-heating-units-0-01-are-broadcast-event-driven" title="Permanent link">&para;</a></h2>
+<p>Central thermoregulation units (such as the BTicino <strong>3550</strong> at address <code>#0</code> and the <strong>4695</strong> 4-zone unit at <code>#0#1</code>) manage subordinate zones and set plant-wide seasonal modes (heating, cooling, off, auto).</p>
+<p>Unlike subordinate zone thermostats (<code>1..99</code>), central units do not support point-to-point operational status polling:
+- Gateways reject Dimension 14 status queries (<code>*#4*#0*14##</code>) with NACK, as Dimension 14 status reads are only defined for zone thermostats <code>1..99</code>.
+- Gateways also reject general status requests (<code>*#4*#0##</code>) with NACK.</p>
+<p>Instead, OpenWebNet central units operate as purely <strong>event-driven broadcast emitters</strong>:
+1. <strong>Startup Hydration</strong>: On restart, the central unit entity is restored from its previous state (<code>async_restore_last_state()</code>), maintaining the last known mode and target setpoint without querying the gateway.
+2. <strong>Outbound Mode Commands</strong>: When commanded from Home Assistant, the central unit receives seasonal mode commands:
+   - <code>*4*100*#0##</code> (Conditioning OFF command)
+   - <code>*4*101*#0##</code> (Manual Heating command)
+   - <code>*4*102*#0##</code> (Manual Cooling command; integration command mapping. Note that in WHO 4 status grammar, WHAT 102 denotes Antifreeze protection)
+   - <code>*4*103*#0##</code> (Auto Heating/Cooling command; integration command mapping. Note that in WHO 4 status grammar, WHAT 103 denotes Heating OFF)
+   - <code>*#4*#0*#14*&lt;temp&gt;*&lt;mode&gt;##</code> (Target temperature setpoint command)
+3. <strong>Inbound Operating Mode &amp; Status Broadcasts</strong>: The physical central unit broadcasts events across the bus whenever its state changes:
+   - Operating mode status: <code>*4*110*#0##</code> (Manual Heating status), <code>*4*210*#0##</code> (Manual Cooling status), <code>*4*311*#0##</code> (Programmed/automatic generic status; mapped to <code>HVACMode.AUTO</code> in Home Assistant), <code>*4*303*#0##</code> (Generic OFF status).
+   - Target temperature setpoints: <code>*4*110#&lt;temp&gt;*#0##</code> (Heating setpoint), <code>*4*210#&lt;temp&gt;*#0##</code> (Cooling setpoint).
+   - Remote control / local adjustments: <code>*4*20*#0##</code>, <code>*4*21*#0##</code>, <code>*4*40*#0##</code>.
+   - Programs &amp; scenarios: <code>*4*1101*#0##</code> .. <code>*4*1103*#0##</code> (Weekly heating programs 1..3), <code>*4*1201*#0##</code> .. <code>*4*1216*#0##</code> (Scenarios 1..16).
+4. <strong>No Active Polling</strong>: Central units are exempt from <code>async_update()</code> status requests and <code>PollHealth</code> tracking, preventing spurious <code>unresponsive_zone</code> repair alerts.
+5. <strong>Subordinate Coordination</strong>: When the central unit changes seasonal mode (either via command or inbound broadcast event), it dispatches an internal event (<code>myhome_central_mode_&lt;mac&gt;</code>) so non-standalone subordinate zones synchronize their operating mode immediately.
+6. <strong>Bus Discovery Isolation</strong>: All broadcast frames emitted by a 3550 central unit carry address <code>#0</code>. They never resolve to or invent phantom zone <code>99</code> (commercial name <em>"Centrale termoregolazione 99 zone"</em>). If an installation physically includes a Zone 99 thermostat, on-wire frames directed to zone 99 (<code>*4*...*99##</code>) will discover and manage it normally.</p>
+<p><em>(#582)</em></p>
 <hr />
 <h2 id="timed-covers-clock-starts-at-the-write-echoes-are-not-keypad-presses">🪟 Timed covers: clock starts at the write, echoes are not keypad presses<a class="headerlink" href="#timed-covers-clock-starts-at-the-write-echoes-are-not-keypad-presses" title="Permanent link">&para;</a></h2>
 <p>Covers without position feedback (<code>advanced: false</code>) estimate their position from <code>travel_time</code>. Measured on a MyHOMEServer1, this is what the bus does after Home Assistant queues a direction command:</p>
