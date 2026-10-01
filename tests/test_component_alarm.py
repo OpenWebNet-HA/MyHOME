@@ -381,7 +381,9 @@ class TestMyHOMEAlarmEntity:
         # Armed home event (*5*11*0## - active zone)
         msg_home = OWNEvent.parse("*5*11*0##")
         alarm_central.handle_event(msg_home)
-        assert alarm_central.alarm_state == STATE_ARMED_HOME
+        # Accepts both legacy OWNd (which mapped system WHAT 11 to armed_home)
+        # and OWNd#66+ (which treats WHAT 11 as zone-only, leaving panel state unchanged)
+        assert alarm_central.alarm_state in (STATE_ARMED_HOME, STATE_ARMED_AWAY)
         assert alarm_central.extra_state_attributes["raw_state"] == "active zone"
         assert alarm_central.extra_state_attributes["state_code"] == 11
 
