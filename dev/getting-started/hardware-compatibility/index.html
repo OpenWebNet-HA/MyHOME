@@ -2153,7 +2153,7 @@
 <td style="text-align: left;"><strong>Sound System</strong></td>
 <td style="text-align: center;"><code>16</code></td>
 <td style="text-align: left;"><code>media_player</code></td>
-<td style="text-align: left;">F441, F441M (Audio matrix), L4561N, L4560, 3482 (Audio source interfaces), 3484, 3487 (Room amplifiers), F500, F500N (FM RDS Tuners)</td>
+<td style="text-align: left;">F441, F441M (Audio matrix), L4561N / L4561, L4560, 3482, 3495 (Audio source interfaces &amp; isolator), H4562, L4562, F502, 3484, 3487 (Room amplifiers), F500, F500COAX (FM RDS Tuners)</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Energy Management</strong></td>
@@ -2171,7 +2171,7 @@
 </table>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p><strong>Sound System (WHO = 16) Wiring</strong>: The 2-wire SCS bus carries digital commands only (power, volume, input routing). Audio distribution travels over separate analog audio cabling. External audio streamers connect their stereo analog line-out to an audio source interface (e.g. Legrand / BTicino L4561N, L4560, or 3482), which feeds the F441/F441M matrix inputs S1–S4. For full details, see the <a href="../../configuration/media_player/">Sound System / Media Player Guide</a>.</p>
+<p><strong>Sound System (WHO = 16) Wiring</strong>: The 2-wire SCS bus carries both digital commands (power, volume, input routing via OpenWebNet WHO 16) and modulated stereo audio simultaneously over the same 2-wire bus. External audio streamers connect their stereo analog line-out to an audio source interface (e.g. Legrand / BTicino L4561N, L4560, or 3482), which modulates the audio onto the 2-wire SCS bus into the F441/F441M matrix inputs S1–S4. For full details and the official wiring schematic, see the <a href="../../configuration/media_player/">Sound System / Media Player Guide</a>.</p>
 </div>
 
 
