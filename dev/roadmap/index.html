@@ -2477,7 +2477,7 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
         GW_MH202["🟢 MH202&lt;br/&gt;(Physical plant capture #466)"]
         GW_F461["🟢 F461&lt;br/&gt;(DALI DIN Web Server)"]
         GW_H4890["🟢 H4890 / AM4890&lt;br/&gt;(Touchscreen IP gateway #466)"]
-        GW_F455["🟡 F455&lt;br/&gt;(Synthetic profile verified)"]
+        GW_F455["🟢 F455&lt;br/&gt;(Physical plant capture #466)"]
         GW_3578["🟡 Legrand 3578&lt;br/&gt;(Serial/ZigBee Loopback)"]
     end
 
@@ -2510,6 +2510,7 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
     GW_MH202 --&gt; HARNESS
     GW_F461 --&gt; HARNESS
     GW_H4890 --&gt; HARNESS
+    GW_F455 --&gt; HARNESS
     SUB_LIGHT --&gt; HARNESS
     SUB_DALI --&gt; HARNESS
     SUB_F418 --&gt; HARNESS
@@ -2530,8 +2531,8 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
     classDef covered fill:#2e7d32,stroke:#1b5e20,color:#ffffff;
     classDef partial fill:#f57f17,stroke:#e65100,color:#ffffff;
 
-    class GW_MHS1,GW_F454,GW_MH200,GW_MH202,GW_F461,GW_H4890,SUB_LIGHT,SUB_DALI,SUB_F418,SUB_TIMER,SUB_GRP,SUB_COV_V,SUB_COV_H,SUB_CU3550,SUB_CU4695,SUB_FANCOIL,SUB_ENERGY,SUB_DRY,SUB_CEN,SUB_AUDIO,SUB_ALARM,SUB_ROUTER covered;
-    class GW_F455,GW_3578 partial;</code></pre>
+    class GW_MHS1,GW_F454,GW_MH200,GW_MH202,GW_F461,GW_H4890,GW_F455,SUB_LIGHT,SUB_DALI,SUB_F418,SUB_TIMER,SUB_GRP,SUB_COV_V,SUB_COV_H,SUB_CU3550,SUB_CU4695,SUB_FANCOIL,SUB_ENERGY,SUB_DRY,SUB_CEN,SUB_AUDIO,SUB_ALARM,SUB_ROUTER covered;
+    class GW_3578 partial;</code></pre>
 <hr />
 <h3 id="table-1-gateway-models-hardware-transports">🏛️ Table 1: Gateway Models &amp; Hardware Transports<a class="headerlink" href="#table-1-gateway-models-hardware-transports" title="Permanent link">&para;</a></h3>
 <table>
@@ -2582,9 +2583,9 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
 </tr>
 <tr>
 <td><strong>F455</strong></td>
-<td>🟡 <strong>Profile Verified</strong></td>
-<td>Synthetic gateway profile tests in <code>tests/test_gateway.py</code></td>
-<td><strong>Optional</strong>: Normal residential bus captures through an F455 to expand fixture diversity.</td>
+<td>🟢 <strong>Covered</strong></td>
+<td>Real-world plant capture in #466 (@lionelser)</td>
+<td><em>None needed — verified against physical F455 basic gateway.</em></td>
 </tr>
 <tr>
 <td><strong>Legrand 3578 USB/Serial</strong></td>
