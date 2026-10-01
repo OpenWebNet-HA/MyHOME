@@ -2,150 +2,150 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/f454-regression-checks/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/openwebnet-who-specifications/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/protocol_conformance_matrix/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/quality_scale_plan/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/roadmap/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/trace-availability/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/architecture/anti-drift-safeguards/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/configuration/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/configuration/alarm/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/configuration/binary-sensors/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/configuration/bus_monitor/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/configuration/cen_cenplus/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/configuration/climate/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/configuration/covers/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/configuration/gateway-identification/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/configuration/gateways/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/configuration/known_limitations/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/configuration/lights/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/configuration/lovelace_recipes/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/configuration/media_player/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/configuration/runtime_behaviour/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/configuration/sensors/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/configuration/services/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/configuration/supported_functions/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/configuration/switches/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/configuration/troubleshooting/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/configuration/use_cases/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/diagnostics/repair-issues/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/getting-started/hardware-compatibility/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/getting-started/installation/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/getting-started/removal/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/migration/legacy-yaml/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/migration/sdomotica_to_myhome/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/migration/upgrade-from-094/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/recipes/adaptive_lighting/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
     <url>
          <loc>https://openwebnet-ha.github.io/MyHOME/dev/roadmap/beta-differences/</loc>
-         <lastmod>2026-09-30</lastmod>
+         <lastmod>2026-10-01</lastmod>
     </url>
 </urlset>
