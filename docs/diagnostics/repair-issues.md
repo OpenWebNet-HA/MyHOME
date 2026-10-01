@@ -111,6 +111,41 @@ A heating zone (or its central unit) did not answer its startup status request o
 ### How to resolve
 If the zone no longer exists (for example a leftover entity), remove its device or entity in Home Assistant; the issue disappears with it. If it exists, no action is needed: the issue clears as soon as the zone sends any frame, and the zone is asked again after a week.
 
+---
+
+## Unmapped Device Status
+
+**Repair Key**: `unmapped_device_status`  
+**Repair Key**: `unmapped_device_status_autodiag` (when an autodiagnostic report came with the status)  
+**Severity**: `WARNING`  
+**Auto-Resolving**: Yes  
+**Fixable via UI**: No
+
+### What it means
+A lighting actuator (a light or a switch) answered with a status code (`WHAT`) that is not in the published WHO 1 table (`WHAT 0..10, 11..18, 20..31`). Home Assistant cannot tell whether the load is on or off, so the entity shows `unknown` and carries the code in its `unknown_state` attribute.
+
+The issue is raised for every address on the bus, including addresses with no entity in Home Assistant, and names the device once its entity exists.
+
+The only code seen so far is `WHAT 19`, from an actuator on an MH200 that was in a fault state ([#456](https://github.com/OpenWebNet-HA/MyHOME/issues/456); evidence record `EVID-MH200-WHAT19-FAULT` in the OpenWebNet Encyclopedia). It arrived together with a `WHO 1001` autodiagnostic frame:
+
+```text
+*1*19*74##
+*#1001*74*11*111110111111111111110111##
+```
+
+`WHO 1001` dimensions 7 and 11 carry a 24-bit autodiagnostic mask. No source documents what the individual bits mean, so the integration does not decode the mask: when one arrives within 10 seconds of the status, it is shown in the issue exactly as received, as evidence for whoever looks at the device.
+
+### How to resolve
+1. Find the actuator in the electrical cabinet (the issue gives its address).
+2. Look at its status LED.
+3. Check the load connected to it and the wiring of that load.
+4. If the device works normally, the code may be a status this integration does not know yet: open an issue with a diagnostics download attached, so it can be mapped.
+
+### How it clears
+Automatically, as soon as the actuator reports a normal state (on, off or a brightness level). It also disappears when you remove the device's entity, and it is raised again after a restart or reload if the actuator still reports the code.
+
+---
+
 ## High SCS Bus Collision Rate
 
 **Repair Key**: `bus_collision_storm`  
@@ -284,28 +319,3 @@ Keep the audio matrix on one gateway until #426 is fixed, and remove the sound z
 
 ### How it clears
 Automatically, when only one gateway has sound zones.
-
----
-
-## Actuator Hardware Fault
-
-**Repair Key**: `actuator_hardware_fault`  
-**Severity**: `WARNING`  
-**Auto-Resolving**: Yes  
-**Fixable via UI**: No
-
-### What it means
-A lighting actuator on the bus reported an unmapped OpenWebNet status code outside the standard WHO=1 table (`WHAT 0..10, 11..18, 20..31`).
-
-On modular dimmer actuators such as the **BTicino F414**, an unmapped code like `WHAT 19` co-occurs with an autodiagnostic bitmask on `WHO 1001` indicating an internal protection lockout (typically an open-circuit load due to a missing or disconnected load wire, a burnt bulb, or an open T5H 250V internal fuse).
-
-### How to resolve
-1. Locate the physical actuator module in the electrical cabinet.
-2. Inspect the module status LED (a red blinking LED indicates an active anomaly lockout).
-3. Verify that all load wires are securely connected to the output terminals.
-4. Check the internal cartridge fuse (T5H 250V) on the module and replace it if blown.
-5. Verify the connected bulb / load is compatible with the dimmer (e.g. incandescent/ferromagnetic for F414).
-
-### How it clears
-Automatically, once the fault condition is resolved and the actuator responds with a standard lighting status (ON, OFF, or level).
-

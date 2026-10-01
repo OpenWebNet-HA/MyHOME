@@ -45,11 +45,9 @@ ISSUE_UNCONFIGURED_TIMEZONE = "unconfigured_timezone"
 
 ISSUE_GATEWAY_IDENTITY_CORRECTED = "gateway_identity_corrected"
 ISSUE_INCOMPATIBLE_DECODER = "incompatible_decoder_platform"
-ISSUE_UNRESPONSIVE_ZONE = "unresponsive_zone"
 ISSUE_INVALID_DECODER = "invalid_decoder"
 ISSUE_AMBIGUOUS_COMPANION = "ambiguous_companion"
 ISSUE_MULTIPLE_AUDIO_GATEWAYS = "multiple_audio_gateways"
-ISSUE_ACTUATOR_HARDWARE_FAULT = "actuator_hardware_fault"
 
 
 def async_create_unknown_model_issue(hass: HomeAssistant, entry_id: str, code: str) -> None:
@@ -131,24 +129,6 @@ def async_create_identity_corrected_issue(
     )
 
 
-def async_create_unresponsive_zone_issue(hass: HomeAssistant, unique_id: str, zone: str, gateway_name: str) -> None:
-    """Tell the owner a heating zone no longer answers, so its entity can be removed."""
-    async_create_issue(
-        hass,
-        DOMAIN,
-        f"{ISSUE_UNRESPONSIVE_ZONE}_{unique_id}",
-        is_fixable=False,
-        severity=IssueSeverity.WARNING,
-        translation_key=ISSUE_UNRESPONSIVE_ZONE,
-        translation_placeholders={"zone": zone, "gateway": gateway_name},
-    )
-
-
-def async_delete_unresponsive_zone_issue(hass: HomeAssistant, unique_id: str) -> None:
-    """Clear the issue once the zone answers again or its entity is removed."""
-    async_delete_issue(hass, DOMAIN, f"{ISSUE_UNRESPONSIVE_ZONE}_{unique_id}")
-
-
 def async_create_auth_issue(hass: HomeAssistant, entry_id: str, gateway_name: str) -> None:
     """Create a repair issue when gateway authentication fails."""
     async_create_issue(
@@ -183,44 +163,6 @@ def async_create_collision_issue(hass: HomeAssistant, entry_id: str, collision_c
 def async_delete_collision_issue(hass: HomeAssistant, entry_id: str) -> None:
     """Delete the collision repair issue once bus traffic normalizes."""
     async_delete_issue(hass, DOMAIN, f"{ISSUE_BUS_COLLISION}_{entry_id}")
-
-
-def _slug_where(where: str) -> str:
-    """Return a URL-safe issue ID slug for an OpenWebNet WHERE address."""
-    return str(where).replace("#", "_").replace(".", "_")
-
-
-def async_create_actuator_hardware_fault_issue(
-    hass: HomeAssistant,
-    entry_id: str,
-    device_name: str,
-    where: str,
-    what: int | str,
-) -> None:
-    """Create a repair issue when an actuator reports an anomaly status (e.g. WHAT 19)."""
-    slug_where = _slug_where(where)
-    async_create_issue(
-        hass,
-        DOMAIN,
-        f"{ISSUE_ACTUATOR_HARDWARE_FAULT}_{entry_id}_{slug_where}",
-        is_fixable=False,
-        severity=IssueSeverity.WARNING,
-        translation_key=ISSUE_ACTUATOR_HARDWARE_FAULT,
-        translation_placeholders={
-            "device": device_name,
-            "where": str(where),
-            "what": str(what),
-        },
-        learn_more_url="https://openwebnet-ha.github.io/MyHOME/beta/diagnostics/repair-issues/#actuator-hardware-fault",
-    )
-
-
-def async_delete_actuator_hardware_fault_issue(
-    hass: HomeAssistant, entry_id: str, where: str
-) -> None:
-    """Clear the actuator hardware fault repair issue once normal status is restored."""
-    slug_where = _slug_where(where)
-    async_delete_issue(hass, DOMAIN, f"{ISSUE_ACTUATOR_HARDWARE_FAULT}_{entry_id}_{slug_where}")
 
 
 def _canonical_shared_bus_pair(mac_a: str, mac_b: str) -> tuple[str, str, str]:

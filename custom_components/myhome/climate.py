@@ -17,7 +17,6 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, State, callback
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from OWNd.message import (
@@ -58,11 +57,11 @@ from .const import (
     signed_who4_temperature,
 )
 from .data import get_runtime_data
+from .device_health import FaultKind
 from .discovery import Address, DeviceContext, PlatformDiscovery, config_for, default_known_keys
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 from .poll_health import PollHealth
-from .repairs import async_create_unresponsive_zone_issue, async_delete_unresponsive_zone_issue
 from .where_grammar import is_probe, is_pump, where_param, zone_number
 
 PLATFORM = Platform.CLIMATE
@@ -418,13 +417,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*11##"))
             )
 
-    async def async_will_remove_from_hass(self) -> None:
-        """Drop the "zone no longer answers" repair when the owner removes the entity (not on a reload)."""
-        await super().async_will_remove_from_hass()
-        hass = self.hass or self._hass
-        if hass is not None and self.entity_id and er.async_get(hass).async_get(self.entity_id) is None:
-            self._clear_unresponsive_issue()
-
     @callback
     def _poll_answered(self, written: asyncio.Future[float], frames_before: int) -> None:
         """Count a status request the gateway refused or never answered (see ``poll_health``)."""
@@ -440,14 +432,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._publish_state()
 
     def _raise_unresponsive_issue(self) -> None:
-        hass = self.hass or self._hass
-        if hass is not None and self.unique_id:
-            async_create_unresponsive_zone_issue(hass, self.unique_id, self._display_name, self._gateway_handler.name)
+        self._report_fault(FaultKind.UNRESPONSIVE)
 
     def _clear_unresponsive_issue(self) -> None:
-        hass = self.hass or self._hass
-        if hass is not None and self.unique_id:
-            async_delete_unresponsive_zone_issue(hass, self.unique_id)
+        self._clear_fault(FaultKind.UNRESPONSIVE)
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""

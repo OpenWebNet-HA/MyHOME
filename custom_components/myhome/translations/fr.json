@@ -324,9 +324,13 @@
       "title": "Échec de l'authentification de la passerelle MyHOME {gateway}",
       "description": "La passerelle a rejeté les informations d'identification OpenWebNet. Veuillez reconfigurer le mot de passe."
     },
-    "actuator_hardware_fault": {
-      "title": "État d'éclairage non répertorié : {device}",
-      "description": "L'actionneur à l'adresse `{where}` a signalé un code d'état non répertorié (`WHAT {what}`).\n\nSur les actionneurs variateurs modulaires (comme le BTicino F414), un état tel que WHAT 19 indique une anomalie matérielle interne ou un verrouillage de protection (par ex. charge en circuit ouvert due à un fil déconnecté ou manquant, lampe grillée ou fusible interne T5H 250V fondu).\n\nVérifiez le câblage physique et le fusible sur le module actionneur."
+    "unmapped_device_status": {
+      "title": "{device} signale un état non documenté",
+      "description": "{device} (WHO {who}, adresse `{where}`) a signalé le code d'état WHAT {code}, absent de la table OpenWebNet publiée pour ce sous-système ; Home Assistant affiche donc son état comme inconnu.\n\nCe code a été observé sur un actionneur d'éclairage en défaut. Vérifiez l'appareil sur place : son voyant d'état, la charge raccordée et le câblage de cette charge. Si l'appareil fonctionne normalement, signalez ce code pour qu'il puisse être pris en charge.\n\nCe problème disparaît de lui-même lorsque l'appareil signale à nouveau un état normal."
+    },
+    "unmapped_device_status_autodiag": {
+      "title": "{device} signale un état non documenté",
+      "description": "{device} (WHO {who}, adresse `{where}`) a signalé le code d'état WHAT {code}, absent de la table OpenWebNet publiée pour ce sous-système ; Home Assistant affiche donc son état comme inconnu.\n\nCe code a été observé sur un actionneur d'éclairage en défaut. Vérifiez l'appareil sur place : son voyant d'état, la charge raccordée et le câblage de cette charge. Si l'appareil fonctionne normalement, signalez ce code pour qu'il puisse être pris en charge.\n\nCe problème disparaît de lui-même lorsque l'appareil signale à nouveau un état normal.\n\nL'appareil a aussi envoyé un rapport d'autodiagnostic. Ses bits ne sont pas documentés, il est donc affiché tel quel : `{evidence}`."
     },
     "bus_collision_storm": {
       "title": "Taux élevé de collisions sur le bus SCS ({count} NACKs)",

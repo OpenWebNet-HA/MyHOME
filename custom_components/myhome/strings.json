@@ -337,16 +337,12 @@
       "description": "Sound zones are configured on several gateways ({gateways}). Sound addressing does not carry the bus interface yet, so zones of two audio matrices can collide on the same room number, entity and environment (issue #426).\n\nKeep the audio matrix on one gateway until this is resolved."
     },
     "unresponsive_zone": {
-      "title": "Heating zone {zone} no longer answers ({gateway})",
-      "description": "The heating zone {zone} on {gateway} did not answer its status request on two restarts in a row, so MyHOME stopped asking for it at startup (each unanswered request costs the gateway's command queue several seconds). If the zone no longer exists, remove its device or entity in Home Assistant. If it does exist, this clears as soon as it sends any frame, and it is asked again after a week."
+      "title": "Heating zone {device} no longer answers ({gateway})",
+      "description": "The heating zone {device} on {gateway} did not answer its status request on two restarts in a row, so MyHOME stopped asking for it at startup (each unanswered request costs the gateway's command queue several seconds). If the zone no longer exists, remove its device or entity in Home Assistant. If it does exist, this clears as soon as it sends any frame, and it is asked again after a week."
     },
     "gateway_authentication_failed": {
       "title": "Authentication failed for MyHOME gateway {gateway}",
       "description": "The MyHOME gateway refused the configured OpenWebNet password or HMAC negotiation. Please check your credentials using the reconfigure flow."
-    },
-    "actuator_hardware_fault": {
-      "title": "Unmapped lighting status: {device}",
-      "description": "The lighting actuator at address `{where}` reported an unmapped OpenWebNet status code (`WHAT {what}`).\n\nOn modular dimmer actuators (such as the BTicino F414), an unmapped status like WHAT 19 indicates an internal protection lockout (e.g., an open-circuit load due to a missing or disconnected load wire, a burnt bulb, or a blown internal T5H 250V fuse).\n\nCheck the physical wiring and internal fuse on the actuator module."
     },
     "unconfigured_timezone": {
       "title": "Unconfigured timezone on MyHOME gateway ({gateway})",
@@ -355,6 +351,14 @@
     "unknown_gateway_model": {
       "title": "Unknown gateway device type code ({code})",
       "description": "The gateway reported a hardware model code ({code}) that is unknown to the MyHOME integration (WHO=13 device type, or WHO=1013 OBJECT_MODEL when prefixed 1013-1-). Please click 'Learn More' to open a GitHub issue and attach a diagnostic trace so we can add support for this model."
+    },
+    "unmapped_device_status": {
+      "title": "{device} reports an undocumented status",
+      "description": "{device} (WHO {who}, address `{where}`) reported status code WHAT {code}, which is not in the published OpenWebNet table for this subsystem, so Home Assistant shows its state as unknown.\n\nThis has been seen from a lighting actuator that was in a fault state. Check the device on site: its status LED, the load connected to it and the wiring of that load. If the device works normally, please report the code so it can be mapped.\n\nThis clears by itself when the device reports a normal state again."
+    },
+    "unmapped_device_status_autodiag": {
+      "title": "{device} reports an undocumented status",
+      "description": "{device} (WHO {who}, address `{where}`) reported status code WHAT {code}, which is not in the published OpenWebNet table for this subsystem, so Home Assistant shows its state as unknown.\n\nThis has been seen from a lighting actuator that was in a fault state. Check the device on site: its status LED, the load connected to it and the wiring of that load. If the device works normally, please report the code so it can be mapped.\n\nThis clears by itself when the device reports a normal state again.\n\nThe device also sent an autodiagnostic report. Its bits are not documented, so it is shown as received: `{evidence}`."
     },
     "bus_collision_storm": {
       "title": "High SCS bus collision rate detected ({count} NACKs)",

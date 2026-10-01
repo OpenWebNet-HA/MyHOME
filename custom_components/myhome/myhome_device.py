@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
 
 from homeassistant.core import HomeAssistant, State, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
@@ -16,6 +17,7 @@ from homeassistant.helpers.typing import UNDEFINED
 
 from .const import CONF_ENTITIES, DOMAIN, LOGGER
 from .data import get_runtime_data
+from .device_health import DeviceHealth, Fault, FaultKind
 
 __all__ = ["Entity", "MyHOMEEntity"]
 
@@ -164,6 +166,31 @@ class MyHOMEEntity(RestoreEntity):
         if isinstance(entities, dict):
             entities.pop(key, None)
 
+    def _device_health(self) -> DeviceHealth | None:
+        """The gateway's fault tracker (``None`` for a stand-in gateway in tests)."""
+        health = getattr(self._gateway_handler, "device_health", None)
+        return health if isinstance(health, DeviceHealth) else None
+
+    @property
+    def _health_address(self) -> tuple[int, str] | None:
+        """WHO and WHERE (with F422 interface) this device's faults are filed under."""
+        try:
+            return int(self._who), str(getattr(self, "_full_where", self._where))
+        except (TypeError, ValueError):
+            return None
+
+    def _report_fault(self, kind: FaultKind, code: str = "") -> None:
+        """Raise a fault only the entity can see (see ``device_health``)."""
+        health, address = self._device_health(), self._health_address
+        if health is not None and address is not None:
+            health.report(Fault(*address, kind, code), device=self._display_name)
+
+    def _clear_fault(self, kind: FaultKind) -> None:
+        """Withdraw a fault raised by :meth:`_report_fault`."""
+        health, address = self._device_health(), self._health_address
+        if health is not None and address is not None:
+            health.clear(*address, kind)
+
     @property
     def via_device_id(self) -> str:
         """Return gateway unique ID associated with this device."""
@@ -204,6 +231,9 @@ class MyHOMEEntity(RestoreEntity):
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
         self._register_availability_listener()
+        health, address = self._device_health(), self._health_address
+        if health is not None and address is not None:
+            health.name_address(*address, self._device_name)
         await super().async_added_to_hass()
         try:
             last_state = await self.async_get_last_state()
@@ -232,4 +262,14 @@ class MyHOMEEntity(RestoreEntity):
                     setattr(self, "_attr_native_value", last_state.state)
 
     async def async_will_remove_from_hass(self) -> None:
-        """When entity is removed from hass."""
+        """Drop the device's fault issues when the owner removes the entity (not on a reload)."""
+        hass = self.hass or self._hass
+        health, address = self._device_health(), self._health_address
+        if (
+            health is not None
+            and address is not None
+            and hass is not None
+            and self.entity_id
+            and er.async_get(hass).async_get(self.entity_id) is None
+        ):
+            health.forget_address(*address)

@@ -324,9 +324,13 @@
       "title": "Autenticazione non riuscita sul gateway MyHOME {gateway}",
       "description": "Il gateway ha rifiutato le credenziali OpenWebNet. Riconfigura la password."
     },
-    "actuator_hardware_fault": {
-      "title": "Stato luce non mappato: {device}",
-      "description": "L'attuatore luce all'indirizzo `{where}` ha segnalato un codice di stato non mappato (`WHAT {what}`).\n\nSugli attuatori dimmer modulari (come BTicino F414), uno stato non mappato come WHAT 19 indica un'anomalia hardware interna o un blocco di protezione (ad es. carico a circuito aperto per filo mancante/scollegato, lampada bruciata o fusibile interno T5H 250V interrotto).\n\nVerificare il cablaggio fisico e il fusibile sul modulo attuatore."
+    "unmapped_device_status": {
+      "title": "{device} segnala uno stato non documentato",
+      "description": "{device} (WHO {who}, indirizzo `{where}`) ha segnalato il codice di stato WHAT {code}, assente dalla tabella OpenWebNet pubblicata per questo sottosistema, quindi Home Assistant ne mostra lo stato come sconosciuto.\n\nQuesto codice è stato osservato su un attuatore luci in guasto. Controllare il dispositivo sul posto: il LED di stato, il carico collegato e il cablaggio del carico. Se il dispositivo funziona normalmente, segnalare il codice perché possa essere gestito.\n\nIl problema si risolve da solo quando il dispositivo segnala di nuovo uno stato normale."
+    },
+    "unmapped_device_status_autodiag": {
+      "title": "{device} segnala uno stato non documentato",
+      "description": "{device} (WHO {who}, indirizzo `{where}`) ha segnalato il codice di stato WHAT {code}, assente dalla tabella OpenWebNet pubblicata per questo sottosistema, quindi Home Assistant ne mostra lo stato come sconosciuto.\n\nQuesto codice è stato osservato su un attuatore luci in guasto. Controllare il dispositivo sul posto: il LED di stato, il carico collegato e il cablaggio del carico. Se il dispositivo funziona normalmente, segnalare il codice perché possa essere gestito.\n\nIl problema si risolve da solo quando il dispositivo segnala di nuovo uno stato normale.\n\nIl dispositivo ha inviato anche un rapporto di autodiagnostica. I suoi bit non sono documentati, quindi è mostrato così come ricevuto: `{evidence}`."
     },
     "bus_collision_storm": {
       "title": "Rilevato un elevato tasso di collisioni sul bus SCS ({count} NACK)",

@@ -50,6 +50,7 @@ from .const import (
     WHO1013_BRANDS,
     WHO1013_LINES,
 )
+from .device_health import DeviceHealth
 from .gateway_events import GatewayEventDispatcher
 from .gateway_resync import LightingResyncManager
 from .gateway_sessions import (
@@ -214,6 +215,8 @@ class MyHOMEGatewayHandler:
         self._unavailable_timer: CALLBACK_TYPE | None = None
         self.listening_worker: asyncio.Task[None] | None = None
         self.bus_monitor = BusMonitor()
+        # Faults of the devices on this bus, raised as repair issues (device_health.py).
+        self.device_health = DeviceHealth(self)
         self.device_registry_id = None
         self.broadcast_resync = broadcast_resync
 

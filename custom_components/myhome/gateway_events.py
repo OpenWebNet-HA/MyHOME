@@ -40,6 +40,7 @@ from .const import (
     DOMAIN,
     LOGGER,
 )
+from .device_health import DeviceHealth
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -167,6 +168,13 @@ class GatewayEventDispatcher:
             dispatcher_send(self.hass, f"myhome_message_{self.handler.mac}", message)
             self.handler._correlate_shared_bus_traffic(message)
             self.handler._bridge_to_primary(message)
+            # Diagnostic WHOs (1001 for lighting) belong to their functional subsystem:
+            # on a shared bus only that subsystem's owner raises the device's issues.
+            health = getattr(self.handler, "device_health", None)
+            if isinstance(health, DeviceHealth) and self._is_active_for_who(
+                who_int - 1000 if who_int is not None and who_int > 1000 else who_int
+            ):
+                health.observe(message)
 
         if not isinstance(message, OWNMessage):
             self._logger.warning(

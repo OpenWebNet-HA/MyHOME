@@ -8,14 +8,15 @@ from OWNd.message import OWNHeatingEvent
 
 from custom_components.myhome.climate import MyHOMEClimate
 from custom_components.myhome.const import DOMAIN
+from custom_components.myhome.device_health import DeviceHealth, Fault, FaultKind, fault_issue_id
 from custom_components.myhome.poll_health import (
     REPROBE_AFTER,
     SKIP_AFTER_FAILED_POLLS,
     PollHealth,
 )
-from custom_components.myhome.repairs import async_create_unresponsive_zone_issue
 
 NOW = 1_800_000_000.0
+ENTRY_ID = "poll_health_entry"
 
 
 def test_two_failed_polls_make_an_address_unresponsive():
@@ -62,6 +63,9 @@ def _zone(hass, connected=True, where="71", central=False, name=None):
     gateway.log_id = "[poll health]"
     gateway.is_connected = connected
     gateway.send_status_request = AsyncMock()
+    gateway.hass = hass
+    gateway.config_entry.entry_id = ENTRY_ID
+    gateway.device_health = DeviceHealth(gateway)
     model = "Central Unit (3550)" if where == "#0" else ("Central Unit (4695)" if where == "#0#1" else "Heating Zone")
     display_name = name or (f"Central Unit {where}" if central else f"Zone {where}")
     zone = MyHOMEClimate(
@@ -76,7 +80,8 @@ def _zone(hass, connected=True, where="71", central=False, name=None):
 
 
 def _issue(hass, zone):
-    return ir.async_get(hass).async_get_issue(DOMAIN, f"unresponsive_zone_{zone.unique_id}")
+    issue_id = fault_issue_id(ENTRY_ID, FaultKind.UNRESPONSIVE, 4, zone._full_where)
+    return ir.async_get(hass).async_get_issue(DOMAIN, issue_id)
 
 
 async def _poll(hass, zone, gateway, outcome):
@@ -93,7 +98,11 @@ async def test_two_unanswered_startups_skip_the_third_and_raise_a_repair(hass):
     await _poll(hass, zone, gateway, "nack")
     assert _issue(hass, zone) is None  # one miss: keep asking
     await _poll(hass, zone, gateway, "nack")
-    assert _issue(hass, zone) is not None
+    issue = _issue(hass, zone)
+    assert issue is not None
+    assert issue.translation_key == "unresponsive_zone"
+    assert issue.translation_placeholders["device"] == "Zone 71"
+    assert issue.translation_placeholders["gateway"] == "MyHomeServer1 Gateway"
     assert zone.extra_state_attributes["failed_polls"] == 2
 
     gateway.send_status_request.reset_mock()
@@ -185,7 +194,7 @@ async def test_central_unit_restores_cleanly_and_clears_stale_repair(hass):
     central, gateway = _zone(hass, where="#0", central=True, name="Centrale termoregolazione")
 
     # 1. Stale repair issue exists from an earlier run
-    async_create_unresponsive_zone_issue(hass, central.unique_id, central._display_name, gateway.name)
+    gateway.device_health.report(Fault(4, "#0", FaultKind.UNRESPONSIVE))
     assert _issue(hass, central) is not None
 
     # 2. State restored with failed_polls: 2
@@ -199,7 +208,7 @@ async def test_central_unit_restores_cleanly_and_clears_stale_repair(hass):
     assert "failed_polls" not in central.extra_state_attributes
 
     # 3. async_added_to_hass also guarantees issue cleanup
-    async_create_unresponsive_zone_issue(hass, central.unique_id, central._display_name, gateway.name)
+    gateway.device_health.report(Fault(4, "#0", FaultKind.UNRESPONSIVE))
     assert _issue(hass, central) is not None
     await central.async_added_to_hass()
     assert _issue(hass, central) is None

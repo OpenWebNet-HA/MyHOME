@@ -324,9 +324,13 @@
       "title": "Authenticatie mislukt voor MyHOME-gateway {gateway}",
       "description": "De gateway heeft de OpenWebNet-inloggegevens geweigerd. Configureer het wachtwoord opnieuw."
     },
-    "actuator_hardware_fault": {
-      "title": "Statusafwijking verlichting: {device}",
-      "description": "De verlichtingsactor op adres `{where}` heeft een onbekende statuscode gerapporteerd (`WHAT {what}`).\n\nBij modulaire dimmers (zoals de BTicino F414) duidt een onbekende status zoals WHAT 19 op een interne hardwarestoring of beveiligingsvergrendeling (bijv. open circuit door een ontbrekende/losse draad, een doorgebrande lamp of een defecte interne T5H 250V-zekering).\n\nControleer de fysieke bedrading en de interne zekering van de module."
+    "unmapped_device_status": {
+      "title": "{device} meldt een ongedocumenteerde status",
+      "description": "{device} (WHO {who}, adres `{where}`) meldde statuscode WHAT {code}, die niet in de gepubliceerde OpenWebNet-tabel voor dit subsysteem staat; Home Assistant toont de status daarom als onbekend.\n\nDeze code is gezien bij een verlichtingsactor die in storing stond. Controleer het apparaat ter plaatse: de status-LED, de aangesloten belasting en de bedrading daarvan. Werkt het apparaat normaal, meld de code dan zodat hij kan worden toegevoegd.\n\nDit verdwijnt vanzelf zodra het apparaat weer een normale status meldt."
+    },
+    "unmapped_device_status_autodiag": {
+      "title": "{device} meldt een ongedocumenteerde status",
+      "description": "{device} (WHO {who}, adres `{where}`) meldde statuscode WHAT {code}, die niet in de gepubliceerde OpenWebNet-tabel voor dit subsysteem staat; Home Assistant toont de status daarom als onbekend.\n\nDeze code is gezien bij een verlichtingsactor die in storing stond. Controleer het apparaat ter plaatse: de status-LED, de aangesloten belasting en de bedrading daarvan. Werkt het apparaat normaal, meld de code dan zodat hij kan worden toegevoegd.\n\nDit verdwijnt vanzelf zodra het apparaat weer een normale status meldt.\n\nHet apparaat stuurde ook een autodiagnoserapport. De bits daarvan zijn niet gedocumenteerd, dus het wordt getoond zoals ontvangen: `{evidence}`."
     },
     "bus_collision_storm": {
       "title": "Hoge SCS-busbotsingssnelheid gedetecteerd ({count} NACK's)",

@@ -28,6 +28,7 @@ from .const import (
 )
 from .data import MyHOMEConfigEntry, MyHOMERuntimeData
 from .decoder_pool import decoder_pool_store
+from .device_health import DeviceHealth
 from .gateway import MyHOMEGatewayHandler, command_session_limit
 from .legacy_yaml import load_legacy_myhome_yaml
 from .migrate import migrate_entry_and_registries, prune_stale_devices
@@ -379,6 +380,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> b
         return False
 
     gateway_handler = entry.runtime_data.gateway
+    # Device faults are re-raised by the next setup if still there (device_health.py).
+    health = getattr(gateway_handler, "device_health", None)
+    if isinstance(health, DeviceHealth):
+        health.clear_all()
     hass.data[DOMAIN].pop(entry.data[CONF_MAC], None)
     setattr(entry, "runtime_data", None)
 

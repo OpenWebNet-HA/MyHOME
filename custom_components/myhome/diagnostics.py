@@ -20,6 +20,7 @@ from .const import (
     get_ownd_version,
 )
 from .data import MyHOMERuntimeData, get_runtime_data
+from .device_health import DeviceHealth
 
 # A diagnostics download is meant to be attached to a public issue. Secrets go
 # without saying; the rest identifies a household - where the gateway lives on
@@ -116,6 +117,10 @@ async def async_get_config_entry_diagnostics(
                 "queue_depth": send_buffer.qsize(),
                 "max_size": send_buffer.maxsize,
             }
+
+        health = getattr(gateway_handler, "device_health", None)
+        if isinstance(health, DeviceHealth):
+            gw_info["device_faults"] = health.faults
 
         bus_monitor = getattr(gateway_handler, "bus_monitor", None)
         if bus_monitor is not None:

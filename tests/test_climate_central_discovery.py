@@ -31,6 +31,7 @@ from custom_components.myhome.climate import (
     async_unload_entry,
 )
 from custom_components.myhome.const import DOMAIN
+from custom_components.myhome.device_health import DeviceHealth, FaultKind, fault_issue_id
 from tests.conftest import attach_runtime
 
 MAC = "00:03:50:44:55:66"
@@ -169,6 +170,9 @@ async def test_ghost_zone_99_deletion_permanently_clears_repair_and_prevents_res
     gateway.is_connected = True
     gateway.log_id = "[test ghost 99]"
     gateway.name = "MyHomeServer1 Gateway"
+    gateway.hass = hass
+    gateway.config_entry = entry
+    gateway.device_health = DeviceHealth(gateway)
     gateway.send = AsyncMock()
     gateway.send_status_request = AsyncMock()
 
@@ -209,7 +213,7 @@ async def test_ghost_zone_99_deletion_permanently_clears_repair_and_prevents_res
     await asyncio.sleep(0)
 
     # Repair issue is raised for ghost zone 99
-    issue_id = f"unresponsive_zone_{ghost_z99.unique_id}"
+    issue_id = fault_issue_id(entry.entry_id, FaultKind.UNRESPONSIVE, 4, "99")
     issue_reg = ir.async_get(hass)
     assert issue_reg.async_get_issue(DOMAIN, issue_id) is not None
 
