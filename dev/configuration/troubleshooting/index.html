@@ -1455,6 +1455,28 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#playing-music-to-a-room-vs-backend-streamer-why-you-should-never-group-them" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Playing music to a room vs. backend streamer (Why you should never group them)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-can-you-have-stereo-with-only-2-wires-do-i-need-an-l4561n-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How can you have stereo with only 2 wires? / Do I need an L4561N interface?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#all-audio-matrix-inputs-are-currently-in-use" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2432,6 +2454,28 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#playing-music-to-a-room-vs-backend-streamer-why-you-should-never-group-them" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Playing music to a room vs. backend streamer (Why you should never group them)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-can-you-have-stereo-with-only-2-wires-do-i-need-an-l4561n-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How can you have stereo with only 2 wires? / Do I need an L4561N interface?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#all-audio-matrix-inputs-are-currently-in-use" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2647,7 +2691,27 @@
 <h3 id="calibration-fails-with-no-stop-status-from-the-actuator">Calibration fails with "no stop status from the actuator"<a class="headerlink" href="#calibration-fails-with-no-stop-status-from-the-actuator" title="Permanent link">&para;</a></h3>
 <p>The actuator did not report its stop within 180 s, or an MH200 / MH200N delayed the frame. See <a href="../known_limitations/#covers-who-2">Covers</a>; use the manual travel time instead.</p>
 <h3 id="music-assistant-does-not-offer-the-audio-zone-as-a-player">Music Assistant does not offer the audio zone as a player<a class="headerlink" href="#music-assistant-does-not-offer-the-audio-zone-as-a-player" title="Permanent link">&para;</a></h3>
-<p>The zone only advertises <code>play_media</code> when at least one decoder is mapped in the options flow (<strong>Configure → Dynamic Proxy Decoders</strong>). After saving, the zone re-publishes its features; reload Music Assistant's player list. See <a href="../media_player/">Sound System</a>.</p>
+<p>Two conditions must be met for a MyHOME room to appear and accept playback in Music Assistant:</p>
+<ol>
+<li><strong>Home Assistant Player Provider in Music Assistant:</strong> Music Assistant does not expose Home Assistant media players automatically. In Music Assistant, navigate to <strong>Settings → Providers → Add Provider → Home Assistant (Player Provider)</strong>, connect to your Home Assistant instance, and ensure the MyHOME room amplifier entities (<code>media_player.&lt;room&gt;</code>) are selected and enabled.</li>
+<li><strong>Dynamic Proxy Decoders mapped in MyHOME:</strong> A MyHOME room entity only advertises <code>play_media</code> (streaming support) when at least one streaming decoder is mapped in the integration options (<strong>Settings → Devices &amp; Services → MyHOME → Configure → Decoders</strong>). Without a decoder, zones operate in standalone WHO 16 mode (power, volume, source only). After mapping a decoder, reload Music Assistant's player list. See <a href="../media_player/">Sound System</a>.</li>
+</ol>
+<h3 id="playing-music-to-a-room-vs-backend-streamer-why-you-should-never-group-them">Playing music to a room vs. backend streamer (Why you should never group them)<a class="headerlink" href="#playing-music-to-a-room-vs-backend-streamer-why-you-should-never-group-them" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Question / Misconception:</strong> <em>"The streamer plugged into the matrix is <code>Livingroom 1_3519</code>, but I want to hear music in <code>Bathroom</code>. Should I create a group containing <code>Livingroom 1_3519</code> and <code>Bathroom</code> so both play?"</em></li>
+<li><strong>Solution:</strong> <strong>No! Never group your backend streamer with a destination room.</strong></li>
+<li>Map <code>Livingroom 1_3519</code> as a <strong>Decoder</strong> in MyHOME options (<strong>Configure → Decoders</strong>).</li>
+<li>In Music Assistant, target and play directly to <strong><code>Bathroom</code></strong>.</li>
+<li>Behind the scenes, MyHOME automatically claims the streamer from the pool, wakes the Bathroom amplifier, routes the F441/F441M matrix to that input, and forwards the stream URL to the streamer.</li>
+<li>Grouping the streamer and the room causes Music Assistant to stream to both the physical streamer and the virtual proxy at the same time, leading to stream collisions, desynchronization, or audio loops.</li>
+<li>Groups in Music Assistant are <strong>only</strong> for multi-room playback across <strong>multiple destination rooms</strong> (e.g., Bathroom + Living Room). Never add the backend streamer to that group.</li>
+</ul>
+<h3 id="how-can-you-have-stereo-with-only-2-wires-do-i-need-an-l4561n-interface">How can you have stereo with only 2 wires? / Do I need an L4561N interface?<a class="headerlink" href="#how-can-you-have-stereo-with-only-2-wires-do-i-need-an-l4561n-interface" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>The 2-wire SCS bus carries commands only, not audio.</strong> Digital OpenWebNet frames (WHO 16: power, volume, input routing) run over the 2-wire SCS bus. Audio distribution travels over separate analog cabling.</li>
+<li><strong>You need an audio source interface for external streamers.</strong> The F441/F441M matrix connects to audio source interface modules. To plug in a streamer, DAC, or phone with an analog line-out, connect its stereo RCA / 3.5mm jack into an interface module like the Legrand / BTicino <strong>L4561N</strong> (4 DIN stereo source interface) or <strong>L4560 / N4560 / NT4560</strong> (modular RCA socket) / <strong>3482</strong> (auxiliary line preamplifier). The interface feeds the analog signal into matrix inputs S1–S4 and connects to the SCS bus for presence signaling.</li>
+<li><strong>Stereo vs. mono:</strong> The F441/F441M matrix and L4561N interface are true stereo analog devices. Whether you hear stereo in a given room depends on the amplifier installed in that room (e.g. 3484/3487 stereo amplifiers) and whether two speakers (L + R) are wired to it.</li>
+</ul>
 <h3 id="all-audio-matrix-inputs-are-currently-in-use">"All audio matrix inputs are currently in use"<a class="headerlink" href="#all-audio-matrix-inputs-are-currently-in-use" title="Permanent link">&para;</a></h3>
 <p>Every playing zone claims one decoder; map more decoders or stop playback in another room.</p>
 <h3 id="reporting-an-audio-problem">Reporting an audio problem<a class="headerlink" href="#reporting-an-audio-problem" title="Permanent link">&para;</a></h3>

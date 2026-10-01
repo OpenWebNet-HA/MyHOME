@@ -954,10 +954,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#what-options-means" class="md-nav__link">
+  <a href="#the-2-wire-question-control-vs-audio-stereo-sound" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What "Options" means
+        The 2-Wire Question: Control vs. Audio &amp; Stereo Sound
       
     </span>
   </a>
@@ -965,10 +965,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#setting-it-up-end-to-end" class="md-nav__link">
+  <a href="#setting-it-up-step-by-step" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Setting it up, end to end
+        Setting it up, step by step
       
     </span>
   </a>
@@ -976,10 +976,32 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#choosing-a-streamer" class="md-nav__link">
+  <a href="#streamer-vs-room-zone-never-group-the-streamer-with-a-room" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Choosing a streamer
+        Streamer vs. Room Zone: Never Group the Streamer with a Room
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#exposing-myhome-rooms-in-music-assistant-home-assistant-player-provider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exposing MyHOME Rooms in Music Assistant (Home Assistant Player Provider)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#choosing-a-streamer-bluetooth-considerations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choosing a streamer &amp; Bluetooth considerations
       
     </span>
   </a>
@@ -2368,10 +2390,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#what-options-means" class="md-nav__link">
+  <a href="#the-2-wire-question-control-vs-audio-stereo-sound" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What "Options" means
+        The 2-Wire Question: Control vs. Audio &amp; Stereo Sound
       
     </span>
   </a>
@@ -2379,10 +2401,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#setting-it-up-end-to-end" class="md-nav__link">
+  <a href="#setting-it-up-step-by-step" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Setting it up, end to end
+        Setting it up, step by step
       
     </span>
   </a>
@@ -2390,10 +2412,32 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#choosing-a-streamer" class="md-nav__link">
+  <a href="#streamer-vs-room-zone-never-group-the-streamer-with-a-room" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Choosing a streamer
+        Streamer vs. Room Zone: Never Group the Streamer with a Room
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#exposing-myhome-rooms-in-music-assistant-home-assistant-player-provider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exposing MyHOME Rooms in Music Assistant (Home Assistant Player Provider)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#choosing-a-streamer-bluetooth-considerations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choosing a streamer &amp; Bluetooth considerations
       
     </span>
   </a>
@@ -2743,9 +2787,11 @@
 <p>In MyHOME systems, multi-room audio is managed by dedicated hardware analog matrices and room amplifiers communicating over the SCS bus using <strong>OpenWebNet WHO = 16</strong>.</p>
 <h3 id="supported-hardware">Supported Hardware<a class="headerlink" href="#supported-hardware" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Audio Matrix</strong>: F441, F441M (4 audio input sources, up to 8 independent stereo room amplifier outputs)</li>
-<li><strong>Room Amplifiers</strong>: 3484, 3484/1, 3487, F500</li>
-<li><strong>Audio Controls</strong>: L/N/NT4684, 3529</li>
+<li><strong>Audio Matrix</strong>: F441, F441M (4 analog stereo source inputs S1–S4, up to 8 independent stereo room amplifier environment outputs)</li>
+<li><strong>Audio Source Interfaces</strong>: L4561N (stereo source interface with RCA line inputs and IR emitter control, 4 DIN modules), L4560 / N4560 / NT4560 (flush-mount modular RCA line-in sockets), 3482 (auxiliary line-in preamplifier / interface), 3495 (audio ground-loop isolator)</li>
+<li><strong>FM Tuner Modules</strong>: F500, F500N (WHO 16 FM RDS tuner modules)</li>
+<li><strong>Room Amplifiers</strong>: 3484, 3484/1, 3487 (stereo/mono room amplifiers)</li>
+<li><strong>Audio Controls</strong>: L/N/NT4684, 3529 (wall control panels)</li>
 </ul>
 <div class="admonition important">
 <p class="admonition-title">Important</p>
@@ -2753,18 +2799,28 @@
 </div>
 <hr />
 <h2 id="how-it-fits-together-start-here">🧭 How It Fits Together (Start Here)<a class="headerlink" href="#how-it-fits-together-start-here" title="Permanent link">&para;</a></h2>
-<p>New to the audio feature? This section answers the questions that come up first. The rest of the page goes into detail.</p>
+<p>New to the audio feature? This section answers the foundational questions that come up first: how physical wiring and SCS bus commands work, why you never group your streamer with a room, and how to expose your zones in Music Assistant. The rest of the page goes into deep architectural and protocol details.</p>
 <h3 id="what-is-connected-to-what">What is connected to what<a class="headerlink" href="#what-is-connected-to-what" title="Permanent link">&para;</a></h3>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Music Assistant / Home Assistant
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>        │  play, volume, group
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>        │  1. Play, pause, volume target the ROOM entity: media_player.&lt;room&gt; (e.g. Bathroom)
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>        ▼
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>MyHOME room entity  (media_player.&lt;room&gt;)
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>        │  claims a free decoder, wakes the amplifier, forwards the stream
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>        ▼
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>Network streamer  (Squeezelite / piCorePlayer, WiiM, Cast, DLNA ...)
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>        │  analog audio out (cable)
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>        ▼
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>F441 / F441M matrix input S1..S4  ──►  room amplifiers  ──►  speakers
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>MyHOME Dynamic Proxy
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>        ├──► OpenWebNet WHO=16 over 2-wire SCS Bus (CONTROL ONLY)
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>        │       ├── Routes matrix environment output to matrix input S1..S4
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>        │       └── Wakes &amp; powers room amplifier ──► Speakers
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>        │
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>        └──► Claims free decoder &amp; sends stream URL over IP
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>                ▼
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>        Network Streamer / Decoder (WiiM, Squeezelite, Cambridge Audio, DLNA...)
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>                │  Analog stereo line out (RCA / 3.5mm jack)
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>                ▼
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>        Audio Source Interface (Legrand / BTicino L4561N, 3482, L4560)
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>                │  Analog audio distribution wiring
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>                ▼
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>        F441 / F441M Audio Matrix (Source Inputs S1..S4)
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>                │  Analog audio distribution to room amplifiers
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>                ▼
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>        Room Amplifiers (3484, 3487) ──► Speakers
 </span></code></pre></div>
 <table>
 <thead>
@@ -2777,18 +2833,23 @@
 <tbody>
 <tr>
 <td><strong>Streamer ("decoder")</strong></td>
-<td>Receives the stream from Music Assistant or Home Assistant and turns it into analog audio.</td>
-<td>Network in, analog line-level out.</td>
+<td>Receives the stream from Music Assistant or Home Assistant over IP and converts it into analog line-level audio.</td>
+<td>Ethernet / Wi-Fi network in; analog stereo line-level out (RCA / 3.5mm).</td>
+</tr>
+<tr>
+<td><strong>Audio source interface (L4561N / 3482 / L4560)</strong></td>
+<td>Accepts line audio from the streamer and injects it into a matrix input; provides presence signaling on the SCS bus.</td>
+<td>Analog line audio in; connection to matrix source input (S1–S4) &amp; 2-wire SCS bus.</td>
 </tr>
 <tr>
 <td><strong>F441 / F441M matrix</strong></td>
-<td>Switches one of its four inputs (S1–S4) to each room. It has no network audio.</td>
-<td>Analog in from the streamers; analog out to the amplifiers.</td>
+<td>Switches one of its four stereo inputs (S1–S4) to each room environment. It has no network audio.</td>
+<td>Analog audio in from source interfaces; analog audio out to room amplifiers.</td>
 </tr>
 <tr>
 <td><strong>Room amplifiers</strong></td>
-<td>Power the speakers of one room.</td>
-<td>Switched on, off and in volume over the SCS bus.</td>
+<td>Powers the speakers of one room / zone.</td>
+<td>Switched on, off and volume-regulated over the 2-wire SCS bus; audio fed from matrix.</td>
 </tr>
 <tr>
 <td><strong>MyHOME integration</strong></td>
@@ -2797,30 +2858,81 @@
 </tr>
 </tbody>
 </table>
+<hr />
+<h3 id="the-2-wire-question-control-vs-audio-stereo-sound">The 2-Wire Question: Control vs. Audio &amp; Stereo Sound<a class="headerlink" href="#the-2-wire-question-control-vs-audio-stereo-sound" title="Permanent link">&para;</a></h3>
+<p>A common question is: <strong><em>"How can you have stereo sound with only 2 wires, and do I need an audio interface like the L4561N?"</em></strong></p>
 <ul>
-<li><strong>The SCS bus carries commands, not audio.</strong> The 2-wire cable on the source and amplifier modules is the control bus (on, off, volume, routing). The music itself travels on separate analog audio cables. Whether you hear stereo or mono depends on how the streamer is cabled into the matrix input and on your amplifiers and speakers; check the F441M manual for your installation.</li>
-<li><strong>One streamer per concurrent stream.</strong> Rooms in one group share a streamer. Two different songs at the same time need two streamers wired to two matrix inputs.</li>
-<li><strong>The streamer must be the real device</strong>, such as <code>media_player.squeezelite_salon</code>. Never use a Music Assistant player as the decoder.</li>
+<li><strong>The SCS bus carries commands, not audio.</strong> The 2-wire cable (<code>BUS SCS</code>) connects to source interfaces, matrix units, and room amplifiers solely for <strong>digital control</strong> (power on/off, volume up/down, source routing via OpenWebNet WHO = 16). It carries <strong>zero sound</strong>.</li>
+<li><strong>Audio travels over dedicated analog wiring.</strong> The music itself travels on separate analog audio distribution cables linking the source interface, the F441/F441M matrix inputs S1–S4, and the room amplifiers.</li>
+<li><strong>You need an audio source interface for external streamers.</strong> The F441/F441M matrix does not have bare 3.5mm or RCA jacks on its front. External streamers (WiiM, Squeezelite, Cambridge Audio, etc.) plug their analog stereo line-out into a Legrand / BTicino audio source interface module (such as the <strong>L4561N</strong> 4-DIN module with RCA inputs and IR emitter control, or <strong>L4560 / N4560 / NT4560</strong> modular RCA sockets, or <strong>3482</strong> auxiliary line preamplifier). The interface module injects the analog audio into the matrix source input terminals and connects to the SCS bus for presence signaling.</li>
+<li><strong>Stereo vs. mono.</strong> The F441/F441M matrix is a true stereo (L/R) analog switcher. Whether you hear stereo in a given room depends on the amplifier model installed in that room (e.g. 3484/3487 stereo amplifiers vs. mono configurations) and whether two speakers are wired to it. Consult the F441M installation manual for your specific wiring.</li>
 </ul>
-<h3 id="what-options-means">What "Options" means<a class="headerlink" href="#what-options-means" title="Permanent link">&para;</a></h3>
-<p><em>Options</em> is the integration's own settings dialog. Open it from <strong>Settings → Devices &amp; Services → MyHOME → Configure</strong>. It holds:</p>
-<ul>
-<li><strong>Source names</strong> (<em>Source 1</em>–<em>Source 4</em>): what is wired to each matrix input.</li>
-<li><strong>Default source per environment</strong>: optional.</li>
-<li><strong>Decoder rows</strong> (up to 4): the streamer's media player entity, the matrix input it is plugged into and an optional pre-gain.</li>
-</ul>
-<p>Details are in <a href="#configuration-via-home-assistant-ui">Configuration via Home Assistant UI</a>.</p>
-<h3 id="setting-it-up-end-to-end">Setting it up, end to end<a class="headerlink" href="#setting-it-up-end-to-end" title="Permanent link">&para;</a></h3>
+<hr />
+<h3 id="setting-it-up-step-by-step">Setting it up, step by step<a class="headerlink" href="#setting-it-up-step-by-step" title="Permanent link">&para;</a></h3>
 <ol>
-<li><strong>Cable</strong> the analog output of each streamer into a free F441/F441M source input.</li>
-<li><strong>Add the streamer to Home Assistant</strong> with its own integration (for example Squeezelite via Music Assistant's Slimproto provider, WiiM, Cast or DLNA). It must show up as a <code>media_player</code> entity.</li>
-<li><strong>Name the sources and map the decoders</strong> in the integration Options (see above). Leave unused inputs blank.</li>
-<li><strong>Check the rooms.</strong> Each amplifier zone appears as a <code>media_player</code> entity under the MyHOME gateway.</li>
-<li><strong>Music Assistant</strong> picks the rooms up through its Home Assistant media player provider and lists them as players. You play to a room, and MyHOME does the physical work behind it. For a house-wide group that you can freely tick and untick, create a <a href="#recommended-one-music-assistant-sync-group-for-the-house">Sync Group</a>.</li>
-<li><strong>Dashboard:</strong> the stock <code>media-control</code> and <code>tile</code> cards work directly on the room entities. See <a href="#dashboard-display-lovelace-speaker-cards">Dashboard Display</a> for ready-made cards, including one that shows only the rooms that are playing.</li>
+<li><strong>Cable the hardware:</strong> Connect the analog line output of each streamer into an audio source interface (e.g. L4561N, 3482, or L4560) connected to a free F441/F441M source input (S1–S4).</li>
+<li><strong>Add the streamer to Home Assistant:</strong> Use its native integration (for example Squeezelite via Music Assistant's Slimproto provider, WiiM, Cast, or DLNA DMR). It must show up as an active <code>media_player</code> entity.</li>
+<li><strong>Configure MyHOME Options:</strong> Open <strong>Settings → Devices &amp; Services → MyHOME → Configure</strong>:</li>
+<li><strong>Source names</strong> (<em>Source 1</em>–<em>Source 4</em>): name what is physically wired to each input (e.g. <code>S1 — WiiM Streamer</code>) and leave unused inputs blank.</li>
+<li><strong>Default source per environment</strong> (optional): set which source a room starts on when switched on.</li>
+<li><strong>Decoder rows</strong> (up to 4): map each streamer's <code>media_player</code> entity to its matrix input (S1–S4), and set an optional pre-gain offset (e.g. <code>+15%</code>). See <a href="#gain-staging-bus-noise-elimination">Gain Staging</a>.
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Mapping at least one decoder in this step is what unlocks streaming support (<code>play_media</code>) on your MyHOME room entities.</p>
+</div>
+</li>
+<li><strong>Check the room entities:</strong> Each amplifier zone appears as a <code>media_player</code> entity under the MyHOME gateway.</li>
+<li><strong>Set up Music Assistant:</strong></li>
+<li>Add the <strong>Home Assistant Player Provider</strong> in Music Assistant (<strong>Settings → Providers → Add Provider → Home Assistant</strong>).</li>
+<li>Under provider settings, select and enable your MyHOME room amplifier entities (<code>media_player.&lt;room&gt;</code>).</li>
+<li>For smooth multi-room listening across the whole house, create a <a href="#recommended-one-music-assistant-sync-group-for-the-house">Sync Group</a> with <strong>Dynamic members ON</strong>.</li>
+<li><strong>Dashboard:</strong> The stock <code>media-control</code> and <code>tile</code> cards work directly on the room entities. See <a href="#dashboard-display-lovelace-speaker-cards">Dashboard Display</a> for ready-made cards, including dynamic cards that only display actively playing rooms.</li>
 </ol>
-<h3 id="choosing-a-streamer">Choosing a streamer<a class="headerlink" href="#choosing-a-streamer" title="Permanent link">&para;</a></h3>
-<p>Any network streamer with an analog output works as long as Home Assistant can play a stream URL on it. A wired network connection is the most reliable. Bluetooth sources are outside what this integration manages. If playback is choppy over Bluetooth, the cause is almost always radio interference (for example a device sitting on top of the Wi-Fi router) or the Bluetooth stack of the source, not the matrix or the integration. See also <a href="#backend-stream-compatibility-dlna-dmr-cambridge-audio-wiim-squeezelite">Backend Stream Compatibility</a>.</p>
+<hr />
+<h3 id="streamer-vs-room-zone-never-group-the-streamer-with-a-room">Streamer vs. Room Zone: Never Group the Streamer with a Room<a class="headerlink" href="#streamer-vs-room-zone-never-group-the-streamer-with-a-room" title="Permanent link">&para;</a></h3>
+<p>Another frequent question is: <strong><em>"My streamer is <code>Livingroom 1_3519</code>, but I want to listen in the Bathroom. Should I create a group containing <code>Livingroom 1_3519</code> and <code>Bathroom</code> so both play?"</em></strong></p>
+<div class="admonition danger">
+<p class="admonition-title">Caution</p>
+<p><strong>NEVER group your backend streamer with a destination room in Music Assistant or Home Assistant.</strong></p>
+</div>
+<p>Here is why and how the Dynamic Proxy architecture works:</p>
+<ol>
+<li><strong>Understand the distinct roles:</strong></li>
+<li><strong>Backend Streamer / Decoder</strong> (e.g., <code>media_player.livingroom_1_3519</code>, WiiM, Squeezelite): This is the physical hardware audio streamer plugged into the matrix input. It is registered in the <strong>MyHOME Decoder Pool</strong> (via <strong>Configure → Decoders</strong>). It serves as an internal audio feeder. You do <strong>not</strong> target it for playback, and you do <strong>not</strong> add it to speaker groups.</li>
+<li><strong>Destination Room</strong> (e.g., <code>media_player.bathroom_sound</code>): This is the BTicino room amplifier powering the speakers in that room.</li>
+<li><strong>How to play music in a room (e.g. Bathroom):</strong></li>
+<li>Simply select the <strong>Bathroom</strong> player in Music Assistant (or Home Assistant) and press play!</li>
+<li>You do <strong>not</strong> touch or select <code>Livingroom 1_3519</code>.</li>
+<li>Behind the scenes, the MyHOME integration automatically:<ul>
+<li>Claims a free streamer (<code>Livingroom 1_3519</code>) from the pool.</li>
+<li>Wakes and powers on the Bathroom amplifier over the SCS bus.</li>
+<li>Routes the Bathroom environment to Source 1 on the F441/F441M matrix.</li>
+<li>Streams the audio URL to <code>Livingroom 1_3519</code>.</li>
+<li>Mirrors the track title, artist, album art, and volume back onto <code>media_player.bathroom_sound</code>.</li>
+</ul>
+</li>
+<li><strong>What happens if you group the streamer with the room:</strong></li>
+<li>Music Assistant attempts to stream simultaneously to both the physical streamer (<code>Livingroom 1_3519</code>) and the virtual room proxy (<code>Bathroom</code>). This causes duplicated streams, desynchronized playback, queue collisions, or feedback loops.</li>
+<li><strong>When do you use groups?</strong></li>
+<li>Groups are used <strong>only</strong> when you want to play the same audio across <strong>multiple destination rooms at the same time</strong> (e.g., <code>Bathroom</code> + <code>Kitchen</code> + <code>Living Room</code>).</li>
+<li>Even in a multi-room group: <strong>only add the MyHOME room entities — never add the backend streamer!</strong></li>
+</ol>
+<hr />
+<h3 id="exposing-myhome-rooms-in-music-assistant-home-assistant-player-provider">Exposing MyHOME Rooms in Music Assistant (Home Assistant Player Provider)<a class="headerlink" href="#exposing-myhome-rooms-in-music-assistant-home-assistant-player-provider" title="Permanent link">&para;</a></h3>
+<p>If Music Assistant does not list your MyHOME amplifier rooms:</p>
+<ol>
+<li><strong>Add the Player Provider:</strong> Music Assistant does not expose Home Assistant media players automatically. In Music Assistant, navigate to <strong>Settings → Providers → Add Provider → Home Assistant (Player Provider)</strong>.</li>
+<li><strong>Connect to Home Assistant:</strong> Provide your Home Assistant URL and token (or confirm the auto-discovered connection).</li>
+<li><strong>Enable MyHOME Rooms:</strong> Under the player provider settings, select and enable the MyHOME room amplifier entities (<code>media_player.&lt;room&gt;</code>) you want to use.</li>
+<li><strong>Configure Decoders in MyHOME:</strong> A MyHOME room entity only advertises <code>play_media</code> (streaming support) once at least one decoder is mapped in the MyHOME integration options (<strong>Settings → Devices &amp; Services → MyHOME → Configure → Decoders</strong>). If no decoders are configured, the room operates in standalone fallback mode (volume/source only) and Music Assistant will not accept stream commands for it.</li>
+</ol>
+<hr />
+<h3 id="choosing-a-streamer-bluetooth-considerations">Choosing a streamer &amp; Bluetooth considerations<a class="headerlink" href="#choosing-a-streamer-bluetooth-considerations" title="Permanent link">&para;</a></h3>
+<p>Any network streamer with an analog output works as long as Home Assistant can play a stream URL on it. A wired network connection is the most reliable (such as a Raspberry Pi running Squeezelite/piCorePlayer, WiiM Pro, or Cambridge Audio).</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p><strong>Avoid Bluetooth for Streamers</strong>: Attempting to use a Raspberry Pi or other device as an audio source via Bluetooth often leads to choppy audio, dropouts, and stutter. This is caused by RF interference (especially if the device sits near a Wi-Fi router) and Bluetooth audio stack latency. Bluetooth sources are outside what this integration manages. A wired or networked streamer connected to the audio source interface is strongly recommended. See also <a href="#backend-stream-compatibility-dlna-dmr-cambridge-audio-wiim-squeezelite">Backend Stream Compatibility</a>.</p>
+</div>
 <hr />
 <h2 id="the-dynamic-proxy-architecture">🔀 The Dynamic Proxy Architecture<a class="headerlink" href="#the-dynamic-proxy-architecture" title="Permanent link">&para;</a></h2>
 <p>To bridge modern streaming platforms (such as <strong>Music Assistant</strong>, <strong>Spotify Connect</strong>, or <strong>Squeezelite / LMS</strong>) into the analog BTicino matrix without audio artifacts, the MyHOME integration implements the <strong>Dynamic Proxy</strong> pattern.</p>
@@ -2837,16 +2949,21 @@
 </span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>         │ - State &amp; metadata mirror │
 </span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>         └─────┬───────────────┬─────┘
 </span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>               │               │
-</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>      [IP Service Call]   [OpenWebNet SCS Bus]
-</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>               │               │
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>      [IP Service Call]   [OpenWebNet WHO 16 Control]
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>               │               │ (Power, Volume, Routing)
 </span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>               ▼               ▼
 </span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>       ┌───────────────┐ ┌───────────────┐
-</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>       │ Audio Streamer│ │ F441M Matrix  │
-</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>       │ (Squeezelite /│ │ &amp; Amplifiers  │
-</span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>       │  WiiM / Pi)   │ │ (01..99)      │
+</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>       │ Audio Streamer│ │ F441 / F441M  │
+</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>       │ (WiiM / Pi /  │ │ Audio Matrix  │
+</span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>       │  Cambridge)   │ │ &amp; Amplifiers  │
 </span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>       └───────┬───────┘ └───────▲───────┘
-</span><span id="__span-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>               │ Analog Line-In  │
-</span><span id="__span-1-23"><a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>               └─────────────────┘
+</span><span id="__span-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>               │ Analog Line-Out │
+</span><span id="__span-1-23"><a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>               ▼                 │ Analog Audio Distribution
+</span><span id="__span-1-24"><a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>       ┌───────────────┐         │ (Inputs S1..S4)
+</span><span id="__span-1-25"><a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a>       │ Audio Source  ├─────────┘
+</span><span id="__span-1-26"><a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a>       │ Interface     │
+</span><span id="__span-1-27"><a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a>       │ (L4561N/3482) │
+</span><span id="__span-1-28"><a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a>       └───────────────┘
 </span></code></pre></div>
 <h3 id="source-switching">Source switching<a class="headerlink" href="#source-switching" title="Permanent link">&para;</a></h3>
 <p>Selecting a source sends the same two frames a wall panel puts on the bus:</p>
@@ -3050,7 +3167,8 @@ empty keeps the wall-panel routing in charge.</p>
 <p class="admonition-title">Warning</p>
 <p><strong>Avoid Recursive Loops</strong>: Do NOT select a Music Assistant virtual player as the backend decoder entity. The backend decoder must be the actual hardware device (e.g. <code>media_player.squeezelite_salon</code>, <code>media_player.wiim_dining</code>), while Music Assistant targets the MyHOME zone entity.</p>
 </div>
-<hr />
+<p><a id="multi-room-audio-grouping-music-assistant-home-assistant"></a>
+<a id="multi-room-audio-grouping-music-assistant--home-assistant"></a></p>
 <h2 id="multi-room-audio-grouping-music-assistant-home-assistant">👥 Multi-Room Audio Grouping (Music Assistant &amp; Home Assistant)<a class="headerlink" href="#multi-room-audio-grouping-music-assistant-home-assistant" title="Permanent link">&para;</a></h2>
 <p>The MyHOME integration implements native Home Assistant player grouping (<code>MediaPlayerEntityFeature.GROUPING</code>). This enables synchronized multi-room playback across BTicino audio zones without playing separate concurrent audio streams.</p>
 <h3 id="recommended-one-music-assistant-sync-group-for-the-house">Recommended: one Music Assistant <em>Sync Group</em> for the house<a class="headerlink" href="#recommended-one-music-assistant-sync-group-for-the-house" title="Permanent link">&para;</a></h3>
@@ -3155,7 +3273,8 @@ The <code>cambridge_audio</code> decoder stays in the pool: it still provides pa
 </ul>
 <p>Play, pause, stop and next / previous track are only offered once a decoder is
 configured; they are forwarded to that decoder, not sent on the bus.</p>
-<hr />
+<p><a id="dashboard-display-lovelace-speaker-cards"></a>
+<a id="-dashboard-display-lovelace-speaker-cards"></a></p>
 <h2 id="dashboard-display-lovelace-speaker-cards">📊 Dashboard Display (Lovelace Speaker Cards)<a class="headerlink" href="#dashboard-display-lovelace-speaker-cards" title="Permanent link">&para;</a></h2>
 <p>You can monitor and control BTicino audio zones using native Home Assistant cards or dynamic community cards.</p>
 <h3 id="native-home-assistant-cards-stock-ui">Native Home Assistant Cards (Stock UI)<a class="headerlink" href="#native-home-assistant-cards-stock-ui" title="Permanent link">&para;</a></h3>
