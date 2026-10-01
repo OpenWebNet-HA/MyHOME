@@ -2141,7 +2141,9 @@ async def test_mh200_light_74_restored_on_after_the_fix(hass):
 
 
 async def test_unknown_state_actuator_fault_creates_and_clears_repair_issue(hass):
-    """An actuator fault (WHAT 19) creates a repair issue, which is cleared on normal state."""
+    """An actuator fault (WHAT 19 or unmapped code) creates a repair issue, which is cleared on normal state."""
+    from unittest.mock import patch
+
     from homeassistant.helpers import issue_registry as ir
 
     from custom_components.myhome.const import DOMAIN
@@ -2149,17 +2151,57 @@ async def test_unknown_state_actuator_fault_creates_and_clears_repair_issue(hass
 
     issue_registry = ir.async_get(hass)
     light = _unknown_state_light(hass)
+    light._full_where = "74#4#01"
     mock_entry = MagicMock()
     mock_entry.entry_id = "test_entry_light_fault"
     light._gateway_handler.config_entry = mock_entry
 
-    issue_id = f"{ISSUE_ACTUATOR_HARDWARE_FAULT}_test_entry_light_fault_74"
+    issue_id = f"{ISSUE_ACTUATOR_HARDWARE_FAULT}_test_entry_light_fault_74_4_01"
     assert issue_registry.async_get_issue(DOMAIN, issue_id) is None
 
-    light.handle_event(_fault_event(19))
-    assert issue_registry.async_get_issue(DOMAIN, issue_id) is not None
+    # First fault frame creates the issue with slugged address
+    with patch("custom_components.myhome.light.async_create_actuator_hardware_fault_issue") as mock_create:
+        light.handle_event(_fault_event(19))
+        mock_create.assert_called_once_with(
+            hass,
+            "test_entry_light_fault",
+            light._display_name,
+            "74#4#01",
+            19,
+        )
+
+    # Edge-triggering: repeated identical fault frame does NOT create issue again
+    with patch("custom_components.myhome.light.async_create_actuator_hardware_fault_issue") as mock_create:
+        light.handle_event(_fault_event(19))
+        mock_create.assert_not_called()
+
+    # Different unknown code (e.g. 99) triggers update
+    with patch("custom_components.myhome.light.async_create_actuator_hardware_fault_issue") as mock_create:
+        light.handle_event(_fault_event(99))
+        mock_create.assert_called_once_with(
+            hass,
+            "test_entry_light_fault",
+            light._display_name,
+            "74#4#01",
+            99,
+        )
 
     # Normal state from bus clears the repair issue
     normal_off = MagicMock(spec=OWNLightingEvent, is_on=False, brightness=None, brightness_preset=None)
+    with patch("custom_components.myhome.light.async_delete_actuator_hardware_fault_issue") as mock_delete:
+        light.handle_event(normal_off)
+        mock_delete.assert_called_once_with(
+            hass,
+            "test_entry_light_fault",
+            "74#4#01",
+        )
+
+    # Edge-triggering: second normal state frame does NOT delete again
+    with patch("custom_components.myhome.light.async_delete_actuator_hardware_fault_issue") as mock_delete:
+        light.handle_event(normal_off)
+        mock_delete.assert_not_called()
+
+    # Missing config entry or missing hass does not raise
+    light._gateway_handler.config_entry = None
+    light.handle_event(_fault_event(19))
     light.handle_event(normal_off)
-    assert issue_registry.async_get_issue(DOMAIN, issue_id) is None

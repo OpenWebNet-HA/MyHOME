@@ -324,6 +324,10 @@
       "title": "Authenticatie mislukt voor MyHOME-gateway {gateway}",
       "description": "De gateway heeft de OpenWebNet-inloggegevens geweigerd. Configureer het wachtwoord opnieuw."
     },
+    "actuator_hardware_fault": {
+      "title": "Statusafwijking verlichting: {device}",
+      "description": "De verlichtingsactor op adres `{where}` heeft een onbekende statuscode gerapporteerd (`WHAT {what}`).\n\nBij modulaire dimmers (zoals de BTicino F414) duidt een onbekende status zoals WHAT 19 op een interne hardwarestoring of beveiligingsvergrendeling (bijv. open circuit door een ontbrekende/losse draad, een doorgebrande lamp of een defecte interne T5H 250V-zekering).\n\nControleer de fysieke bedrading en de interne zekering van de module."
+    },
     "bus_collision_storm": {
       "title": "Hoge SCS-busbotsingssnelheid gedetecteerd ({count} NACK's)",
       "description": "Er is een ongewoon hoog aantal busbotsingen of NACK-frames gedetecteerd op de SCS-bus. Controleer de bedrading van actuatoren en de fysieke busafsluiting."

@@ -345,8 +345,8 @@
       "description": "The MyHOME gateway refused the configured OpenWebNet password or HMAC negotiation. Please check your credentials using the reconfigure flow."
     },
     "actuator_hardware_fault": {
-      "title": "Actuator Hardware Fault: {device}",
-      "description": "The lighting actuator at address `{where}` reported an anomaly status code (`WHAT {what}`).\n\nOn modular dimmer actuators (e.g., BTicino F414), code 19 indicates an internal protection lockout (typically an open-circuit load due to a missing or disconnected load wire, a burnt bulb, or a blown internal T5H 250V fuse).\n\nCheck the physical wiring and internal fuse on the actuator module."
+      "title": "Unmapped lighting status: {device}",
+      "description": "The lighting actuator at address `{where}` reported an unmapped OpenWebNet status code (`WHAT {what}`).\n\nOn modular dimmer actuators (such as the BTicino F414), an unmapped status like WHAT 19 indicates an internal protection lockout (e.g., an open-circuit load due to a missing or disconnected load wire, a burnt bulb, or a blown internal T5H 250V fuse).\n\nCheck the physical wiring and internal fuse on the actuator module."
     },
     "unconfigured_timezone": {
       "title": "Unconfigured timezone on MyHOME gateway ({gateway})",

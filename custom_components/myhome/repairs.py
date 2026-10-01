@@ -185,6 +185,11 @@ def async_delete_collision_issue(hass: HomeAssistant, entry_id: str) -> None:
     async_delete_issue(hass, DOMAIN, f"{ISSUE_BUS_COLLISION}_{entry_id}")
 
 
+def _slug_where(where: str) -> str:
+    """Return a URL-safe issue ID slug for an OpenWebNet WHERE address."""
+    return str(where).replace("#", "_").replace(".", "_")
+
+
 def async_create_actuator_hardware_fault_issue(
     hass: HomeAssistant,
     entry_id: str,
@@ -193,10 +198,11 @@ def async_create_actuator_hardware_fault_issue(
     what: int | str,
 ) -> None:
     """Create a repair issue when an actuator reports an anomaly status (e.g. WHAT 19)."""
+    slug_where = _slug_where(where)
     async_create_issue(
         hass,
         DOMAIN,
-        f"{ISSUE_ACTUATOR_HARDWARE_FAULT}_{entry_id}_{where}",
+        f"{ISSUE_ACTUATOR_HARDWARE_FAULT}_{entry_id}_{slug_where}",
         is_fixable=False,
         severity=IssueSeverity.WARNING,
         translation_key=ISSUE_ACTUATOR_HARDWARE_FAULT,
@@ -205,7 +211,7 @@ def async_create_actuator_hardware_fault_issue(
             "where": str(where),
             "what": str(what),
         },
-        learn_more_url="https://github.com/OpenWebNet-HA/MyHOME/discussions",
+        learn_more_url="https://openwebnet-ha.github.io/MyHOME/beta/diagnostics/repair-issues/#actuator-hardware-fault",
     )
 
 
@@ -213,7 +219,8 @@ def async_delete_actuator_hardware_fault_issue(
     hass: HomeAssistant, entry_id: str, where: str
 ) -> None:
     """Clear the actuator hardware fault repair issue once normal status is restored."""
-    async_delete_issue(hass, DOMAIN, f"{ISSUE_ACTUATOR_HARDWARE_FAULT}_{entry_id}_{where}")
+    slug_where = _slug_where(where)
+    async_delete_issue(hass, DOMAIN, f"{ISSUE_ACTUATOR_HARDWARE_FAULT}_{entry_id}_{slug_where}")
 
 
 def _canonical_shared_bus_pair(mac_a: str, mac_b: str) -> tuple[str, str, str]:

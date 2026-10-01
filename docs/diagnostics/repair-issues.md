@@ -295,7 +295,9 @@ Automatically, when only one gateway has sound zones.
 **Fixable via UI**: No
 
 ### What it means
-An actuator on the bus reported an internal anomaly or protection lockout state (e.g. `WHAT 19` on lighting subsystem `WHO 1`). On modular dimmer actuators such as the **BTicino F414**, code 19 co-occurs with an autodiagnostic bitmask on `WHO 1001` indicating an open-circuit load (such as a missing or disconnected load wire, a burnt bulb, or an open T5H 250V internal fuse).
+A lighting actuator on the bus reported an unmapped OpenWebNet status code outside the standard WHO=1 table (`WHAT 0..10, 11..18, 20..31`).
+
+On modular dimmer actuators such as the **BTicino F414**, an unmapped code like `WHAT 19` co-occurs with an autodiagnostic bitmask on `WHO 1001` indicating an internal protection lockout (typically an open-circuit load due to a missing or disconnected load wire, a burnt bulb, or an open T5H 250V internal fuse).
 
 ### How to resolve
 1. Locate the physical actuator module in the electrical cabinet.
@@ -305,5 +307,5 @@ An actuator on the bus reported an internal anomaly or protection lockout state 
 5. Verify the connected bulb / load is compatible with the dimmer (e.g. incandescent/ferromagnetic for F414).
 
 ### How it clears
-Automatically, once the fault condition is cleared and the actuator responds with a normal lighting status (ON, OFF, or level).
+Automatically, once the fault condition is resolved and the actuator responds with a standard lighting status (ON, OFF, or level).
 

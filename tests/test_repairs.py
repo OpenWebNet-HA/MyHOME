@@ -61,7 +61,7 @@ async def test_collision_repair_issue_lifecycle(hass: HomeAssistant) -> None:
 
 
 async def test_actuator_hardware_fault_repair_issue_lifecycle(hass: HomeAssistant) -> None:
-    """Test creating and deleting an actuator hardware fault repair issue."""
+    """Test creating and deleting an actuator hardware fault repair issue with slugged address."""
     from custom_components.myhome.repairs import (
         ISSUE_ACTUATOR_HARDWARE_FAULT,
         async_create_actuator_hardware_fault_issue,
@@ -70,8 +70,9 @@ async def test_actuator_hardware_fault_repair_issue_lifecycle(hass: HomeAssistan
 
     issue_registry = ir.async_get(hass)
     entry_id = "test_entry_789"
-    where = "74"
-    issue_id = f"{ISSUE_ACTUATOR_HARDWARE_FAULT}_{entry_id}_{where}"
+    where = "74#4#01"
+    # Slugs '#' to '_' so issue_id remains URL-safe
+    issue_id = f"{ISSUE_ACTUATOR_HARDWARE_FAULT}_{entry_id}_74_4_01"
 
     assert issue_registry.async_get_issue(DOMAIN, issue_id) is None
 
@@ -81,9 +82,10 @@ async def test_actuator_hardware_fault_repair_issue_lifecycle(hass: HomeAssistan
     assert issue.domain == DOMAIN
     assert issue.issue_id == issue_id
     assert issue.severity == ir.IssueSeverity.WARNING
+    assert issue.learn_more_url == "https://openwebnet-ha.github.io/MyHOME/beta/diagnostics/repair-issues/#actuator-hardware-fault"
     assert issue.translation_placeholders == {
         "device": "Light 74",
-        "where": "74",
+        "where": "74#4#01",
         "what": "19",
     }
 

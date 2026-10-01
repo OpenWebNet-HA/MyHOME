@@ -324,6 +324,10 @@
       "title": "Autenticazione non riuscita sul gateway MyHOME {gateway}",
       "description": "Il gateway ha rifiutato le credenziali OpenWebNet. Riconfigura la password."
     },
+    "actuator_hardware_fault": {
+      "title": "Stato luce non mappato: {device}",
+      "description": "L'attuatore luce all'indirizzo `{where}` ha segnalato un codice di stato non mappato (`WHAT {what}`).\n\nSugli attuatori dimmer modulari (come BTicino F414), uno stato non mappato come WHAT 19 indica un'anomalia hardware interna o un blocco di protezione (ad es. carico a circuito aperto per filo mancante/scollegato, lampada bruciata o fusibile interno T5H 250V interrotto).\n\nVerificare il cablaggio fisico e il fusibile sul modulo attuatore."
+    },
     "bus_collision_storm": {
       "title": "Rilevato un elevato tasso di collisioni sul bus SCS ({count} NACK)",
       "description": "È stato rilevato un tasso insolitamente elevato di collisioni sul bus o trame NACK. Controlla il cablaggio degli attuatori e la terminazione fisica della linea."

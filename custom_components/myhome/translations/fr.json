@@ -324,6 +324,10 @@
       "title": "Échec de l'authentification de la passerelle MyHOME {gateway}",
       "description": "La passerelle a rejeté les informations d'identification OpenWebNet. Veuillez reconfigurer le mot de passe."
     },
+    "actuator_hardware_fault": {
+      "title": "État d'éclairage non répertorié : {device}",
+      "description": "L'actionneur à l'adresse `{where}` a signalé un code d'état non répertorié (`WHAT {what}`).\n\nSur les actionneurs variateurs modulaires (comme le BTicino F414), un état tel que WHAT 19 indique une anomalie matérielle interne ou un verrouillage de protection (par ex. charge en circuit ouvert due à un fil déconnecté ou manquant, lampe grillée ou fusible interne T5H 250V fondu).\n\nVérifiez le câblage physique et le fusible sur le module actionneur."
+    },
     "bus_collision_storm": {
       "title": "Taux élevé de collisions sur le bus SCS ({count} NACKs)",
       "description": "Un taux anormalement élevé de collisions ou de trames NACK a été détecté sur le bus SCS. Veuillez vérifier le câblage des actionneurs et la terminaison physique de ligne."
