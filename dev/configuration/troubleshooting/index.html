@@ -1422,6 +1422,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#heating-zone-unresponsive-repair-alert-on-central-unit-3550-4695-or-phantom-climate-zone-99" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        "Heating zone unresponsive" repair alert on central unit (3550 / 4695) or phantom "Climate Zone 99"
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#cover-position-is-wrong" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2421,6 +2432,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#heating-zone-unresponsive-repair-alert-on-central-unit-3550-4695-or-phantom-climate-zone-99" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        "Heating zone unresponsive" repair alert on central unit (3550 / 4695) or phantom "Climate Zone 99"
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#cover-position-is-wrong" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2686,6 +2708,11 @@
 <p>Devices are discovered from bus traffic. Deleting is meant for devices that are physically gone; one that still exists reappears on its next status frame.</p>
 <h3 id="temperature-sensor-shows-nack-errors-every-5-minutes">Temperature sensor shows <code>NACK</code> errors every 5 minutes<a class="headerlink" href="#temperature-sensor-shows-nack-errors-every-5-minutes" title="Permanent link">&para;</a></h3>
 <p>Log: <code>Could not send message *#4*&lt;ZPP&gt;*15##</code>. Probe addresses (<code>WHERE ≥ 100</code>) refuse the explicit poll. Probes are receive-only and are only polled when no reading arrived in the last interval (fixed after 2.0.0b12, issue #308); if you still see it, update the integration.</p>
+<h3 id="heating-zone-unresponsive-repair-alert-on-central-unit-3550-4695-or-phantom-climate-zone-99">"Heating zone unresponsive" repair alert on central unit (3550 / 4695) or phantom "Climate Zone 99"<a class="headerlink" href="#heating-zone-unresponsive-repair-alert-on-central-unit-3550-4695-or-phantom-climate-zone-99" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Central Unit (<code>#0</code> / <code>#0#1</code>) false-positive</strong>: In <code>v2.0.0b14</code>, central units were polled with Dimension 14 status requests (<code>*#4*#0*14##</code>), which central units and gateways reject with NACK because OpenWebNet specifies Dimension 14 status reads only for subordinate zone addresses <code>1..99</code>. Central units receive their setpoints and modes via commands (<code>*#4*#0*#14*T*M##</code>), autonomous broadcast events, or restored state, but do not answer point-to-point status queries. This triggered a false-positive <code>"unresponsive zone"</code> repair alert. Upgrading to <code>v2.0.0b15+</code> automatically dismisses the stale repair alert and exempts central units from point-to-point status polling.</li>
+<li><strong>"Centrale termoregolazione 99 zone" vs "Climate Zone 99"</strong>: The BTicino 3550 is commercially named <em>"Centrale termoregolazione 99 zone"</em> because it supports up to 99 zones, but its OpenWebNet central unit address is strictly <code>#0</code>. If a <code>Climate Zone 99</code> device appears in Home Assistant on an installation with fewer zones, it is an unused zone address whose status request (<code>*#4*99##</code>) failed. You can safely delete the <strong>Climate Zone 99</strong> entity or device in <strong>Settings → Devices &amp; services → Entities</strong>.</li>
+</ul>
 <h3 id="cover-position-is-wrong">Cover position is wrong<a class="headerlink" href="#cover-position-is-wrong" title="Permanent link">&para;</a></h3>
 <p>Timed covers estimate position from the travel time. Calibrate it (<code>myhome.calibrate_cover</code> or the device's <strong>Calibrate travel time</strong> button) or measure it with a stopwatch and save it with <code>myhome.set_cover_travel_time</code>. A full open or close resynchronises the estimate. Position-reporting actuators (dimension 10) are exact; if yours reports position but the entity does not follow, set <code>advanced_shutter: true</code> in <code>myhome.yaml</code>.</p>
 <h3 id="calibration-fails-with-no-stop-status-from-the-actuator">Calibration fails with "no stop status from the actuator"<a class="headerlink" href="#calibration-fails-with-no-stop-status-from-the-actuator" title="Permanent link">&para;</a></h3>
