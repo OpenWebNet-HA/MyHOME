@@ -344,6 +344,10 @@
       "title": "Authentication failed for MyHOME gateway {gateway}",
       "description": "The MyHOME gateway refused the configured OpenWebNet password or HMAC negotiation. Please check your credentials using the reconfigure flow."
     },
+    "actuator_hardware_fault": {
+      "title": "Actuator Hardware Fault: {device}",
+      "description": "The lighting actuator at address `{where}` reported an anomaly status code (`WHAT {what}`).\n\nOn modular dimmer actuators (e.g., BTicino F414), code 19 indicates an internal protection lockout (typically an open-circuit load due to a missing or disconnected load wire, a burnt bulb, or a blown internal T5H 250V fuse).\n\nCheck the physical wiring and internal fuse on the actuator module."
+    },
     "unconfigured_timezone": {
       "title": "Unconfigured timezone on MyHOME gateway ({gateway})",
       "description": "The MyHOME gateway {gateway} is reporting an unconfigured timezone (placeholder code '999'). This can cause date and time parsing failures or dropped gateway diagnostic messages.\n\nPlease log into the gateway web UI or MyHOME Suite and configure a valid timezone, then restart the gateway."

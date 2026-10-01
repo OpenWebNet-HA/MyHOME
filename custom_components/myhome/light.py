@@ -75,6 +75,10 @@ from .light_dali import DaliFeatureLock
 from .light_fade import SoftwareFadeEngine
 from .light_group import MyHOMELightGroup, _color_modes_from_flags
 from .myhome_device import MyHOMEEntity
+from .repairs import (
+    async_create_actuator_hardware_fault_issue,
+    async_delete_actuator_hardware_fault_issue,
+)
 from .typing_compat import as_any
 
 PARALLEL_UPDATES = 0
@@ -962,8 +966,24 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     else "keeping its last state",
                 )
             self._attr_extra_state_attributes["unknown_state"] = unknown_state
+            if self.hass is not None and (entry := getattr(self._gateway_handler, "config_entry", None)) is not None:
+                if entry_id := getattr(entry, "entry_id", None):
+                    async_create_actuator_hardware_fault_issue(
+                        self.hass,
+                        entry_id,
+                        self._display_name,
+                        self._full_where,
+                        unknown_state,
+                    )
         elif message.is_on is not None:
             self._attr_extra_state_attributes.pop("unknown_state", None)
+            if self.hass is not None and (entry := getattr(self._gateway_handler, "config_entry", None)) is not None:
+                if entry_id := getattr(entry, "entry_id", None):
+                    async_delete_actuator_hardware_fault_issue(
+                        self.hass,
+                        entry_id,
+                        self._full_where,
+                    )
 
         is_fading = self._fade_engine.is_fading
 

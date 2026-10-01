@@ -284,3 +284,26 @@ Keep the audio matrix on one gateway until #426 is fixed, and remove the sound z
 
 ### How it clears
 Automatically, when only one gateway has sound zones.
+
+---
+
+## Actuator Hardware Fault
+
+**Repair Key**: `actuator_hardware_fault`  
+**Severity**: `WARNING`  
+**Auto-Resolving**: Yes  
+**Fixable via UI**: No
+
+### What it means
+An actuator on the bus reported an internal anomaly or protection lockout state (e.g. `WHAT 19` on lighting subsystem `WHO 1`). On modular dimmer actuators such as the **BTicino F414**, code 19 co-occurs with an autodiagnostic bitmask on `WHO 1001` indicating an open-circuit load (such as a missing or disconnected load wire, a burnt bulb, or an open T5H 250V internal fuse).
+
+### How to resolve
+1. Locate the physical actuator module in the electrical cabinet.
+2. Inspect the module status LED (a red blinking LED indicates an active anomaly lockout).
+3. Verify that all load wires are securely connected to the output terminals.
+4. Check the internal cartridge fuse (T5H 250V) on the module and replace it if blown.
+5. Verify the connected bulb / load is compatible with the dimmer (e.g. incandescent/ferromagnetic for F414).
+
+### How it clears
+Automatically, once the fault condition is cleared and the actuator responds with a normal lighting status (ON, OFF, or level).
+

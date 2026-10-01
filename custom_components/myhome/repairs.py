@@ -49,6 +49,7 @@ ISSUE_UNRESPONSIVE_ZONE = "unresponsive_zone"
 ISSUE_INVALID_DECODER = "invalid_decoder"
 ISSUE_AMBIGUOUS_COMPANION = "ambiguous_companion"
 ISSUE_MULTIPLE_AUDIO_GATEWAYS = "multiple_audio_gateways"
+ISSUE_ACTUATOR_HARDWARE_FAULT = "actuator_hardware_fault"
 
 
 def async_create_unknown_model_issue(hass: HomeAssistant, entry_id: str, code: str) -> None:
@@ -182,6 +183,37 @@ def async_create_collision_issue(hass: HomeAssistant, entry_id: str, collision_c
 def async_delete_collision_issue(hass: HomeAssistant, entry_id: str) -> None:
     """Delete the collision repair issue once bus traffic normalizes."""
     async_delete_issue(hass, DOMAIN, f"{ISSUE_BUS_COLLISION}_{entry_id}")
+
+
+def async_create_actuator_hardware_fault_issue(
+    hass: HomeAssistant,
+    entry_id: str,
+    device_name: str,
+    where: str,
+    what: int | str,
+) -> None:
+    """Create a repair issue when an actuator reports an anomaly status (e.g. WHAT 19)."""
+    async_create_issue(
+        hass,
+        DOMAIN,
+        f"{ISSUE_ACTUATOR_HARDWARE_FAULT}_{entry_id}_{where}",
+        is_fixable=False,
+        severity=IssueSeverity.WARNING,
+        translation_key=ISSUE_ACTUATOR_HARDWARE_FAULT,
+        translation_placeholders={
+            "device": device_name,
+            "where": str(where),
+            "what": str(what),
+        },
+        learn_more_url="https://github.com/OpenWebNet-HA/MyHOME/discussions",
+    )
+
+
+def async_delete_actuator_hardware_fault_issue(
+    hass: HomeAssistant, entry_id: str, where: str
+) -> None:
+    """Clear the actuator hardware fault repair issue once normal status is restored."""
+    async_delete_issue(hass, DOMAIN, f"{ISSUE_ACTUATOR_HARDWARE_FAULT}_{entry_id}_{where}")
 
 
 def _canonical_shared_bus_pair(mac_a: str, mac_b: str) -> tuple[str, str, str]:

@@ -2138,3 +2138,28 @@ async def test_mh200_light_74_restored_on_after_the_fix(hass):
 
     assert light.is_on is None
     assert light.extra_state_attributes["unknown_state"] == 19
+
+
+async def test_unknown_state_actuator_fault_creates_and_clears_repair_issue(hass):
+    """An actuator fault (WHAT 19) creates a repair issue, which is cleared on normal state."""
+    from homeassistant.helpers import issue_registry as ir
+
+    from custom_components.myhome.const import DOMAIN
+    from custom_components.myhome.repairs import ISSUE_ACTUATOR_HARDWARE_FAULT
+
+    issue_registry = ir.async_get(hass)
+    light = _unknown_state_light(hass)
+    mock_entry = MagicMock()
+    mock_entry.entry_id = "test_entry_light_fault"
+    light._gateway_handler.config_entry = mock_entry
+
+    issue_id = f"{ISSUE_ACTUATOR_HARDWARE_FAULT}_test_entry_light_fault_74"
+    assert issue_registry.async_get_issue(DOMAIN, issue_id) is None
+
+    light.handle_event(_fault_event(19))
+    assert issue_registry.async_get_issue(DOMAIN, issue_id) is not None
+
+    # Normal state from bus clears the repair issue
+    normal_off = MagicMock(spec=OWNLightingEvent, is_on=False, brightness=None, brightness_preset=None)
+    light.handle_event(normal_off)
+    assert issue_registry.async_get_issue(DOMAIN, issue_id) is None
