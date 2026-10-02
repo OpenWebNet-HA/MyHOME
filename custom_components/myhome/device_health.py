@@ -210,7 +210,7 @@ class DeviceHealth:
                 return
             code = str(unknown)
             self._anomaly_seen[where] = time.monotonic()
-            active =self._active.get((1, where, FaultKind.UNMAPPED_STATUS))
+            active = self._active.get((1, where, FaultKind.UNMAPPED_STATUS))
             evidence = self._recent_autodiag(where) or (
                 active.evidence if active is not None and active.code == code else ""
             )
