@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Hashable
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
 
 from homeassistant.core import HomeAssistant, State, callback
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
@@ -179,6 +179,11 @@ class MyHOMEEntity(RestoreEntity):
         except (TypeError, ValueError):
             return None
 
+    @property
+    def _health_owner(self) -> Hashable:
+        """What tells this entity apart from the others on its address (survives a rename)."""
+        return self.unique_id or id(self)
+
     def _report_fault(self, kind: FaultKind, code: str = "") -> None:
         """Raise a fault only the entity can see (see ``device_health``)."""
         health, address = self._device_health(), self._health_address
@@ -233,7 +238,7 @@ class MyHOMEEntity(RestoreEntity):
         self._register_availability_listener()
         health, address = self._device_health(), self._health_address
         if health is not None and address is not None:
-            health.name_address(*address, self._device_name)
+            health.name_address(*address, self._display_name, owner=self._health_owner)
         await super().async_added_to_hass()
         try:
             last_state = await self.async_get_last_state()
@@ -261,15 +266,13 @@ class MyHOMEEntity(RestoreEntity):
                 except (ValueError, TypeError):
                     setattr(self, "_attr_native_value", last_state.state)
 
-    async def async_will_remove_from_hass(self) -> None:
-        """Drop the device's fault issues when the owner removes the entity (not on a reload)."""
-        hass = self.hass or self._hass
+    async def async_removed_from_registry(self) -> None:
+        """Drop the device's fault issues when the owner deletes the entity.
+
+        Home Assistant calls this only for a real registry removal, so neither a reload
+        nor an entity_id rename (which removes the old entity object) reaches it. The
+        tracker keeps the issues while another entity still uses the address.
+        """
         health, address = self._device_health(), self._health_address
-        if (
-            health is not None
-            and address is not None
-            and hass is not None
-            and self.entity_id
-            and er.async_get(hass).async_get(self.entity_id) is None
-        ):
-            health.forget_address(*address)
+        if health is not None and address is not None:
+            health.forget_address(*address, owner=self._health_owner)

@@ -219,7 +219,7 @@ async def test_ghost_zone_99_deletion_permanently_clears_repair_and_prevents_res
 
     # Owner removes the entity from Home Assistant settings
     entity_reg.async_remove(ghost_z99.entity_id)
-    await ghost_z99.async_will_remove_from_hass()
+    await ghost_z99.async_removed_from_registry()
 
     # The repair issue is automatically dropped
     assert issue_reg.async_get_issue(DOMAIN, issue_id) is None

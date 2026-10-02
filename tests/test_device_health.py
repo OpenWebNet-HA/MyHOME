@@ -13,6 +13,7 @@ from OWNd.message import OWNEvent
 from custom_components.myhome import device_health as dh
 from custom_components.myhome.const import DOMAIN
 from custom_components.myhome.device_health import DeviceHealth, Fault, FaultKind, fault_issue_id
+from custom_components.myhome.gateway import MyHOMEGatewayHandler
 from custom_components.myhome.gateway_events import GatewayEventDispatcher
 from custom_components.myhome.light import MyHOMELight
 
@@ -67,15 +68,23 @@ async def test_a_stuck_actuator_does_not_rewrite_the_issue_on_every_poll(hass):
     assert create.call_count == 1
 
 
-async def test_a_normal_status_clears_the_issue_once(hass):
+async def test_a_normal_status_clears_the_issue(hass):
     health = _health(hass)
     health.observe(_frame(FAULT))
-    with patch.object(dh, "async_delete_issue", wraps=dh.async_delete_issue) as delete:
-        health.observe(_frame(OFF))
-        health.observe(_frame(OFF))
+    health.observe(_frame(OFF))
+    health.observe(_frame(OFF))
     assert _issue(hass) is None
-    assert delete.call_count == 1
     assert health.faults == []
+
+
+async def test_a_normal_status_clears_an_issue_the_tracker_does_not_hold(hass):
+    """Raised by an earlier tracker (a frame racing the unload) or a standby that stopped listening."""
+    _health(hass).observe(_frame(FAULT))
+    assert _issue(hass) is not None
+
+    fresh = _health(hass)  # new tracker, same entry: knows nothing of the issue
+    fresh.observe(_frame(OFF))
+    assert _issue(hass) is None
 
 
 async def test_the_autodiagnostic_mask_is_attached_raw_to_the_fault_it_follows(hass):
@@ -106,6 +115,22 @@ async def test_a_stale_mask_is_not_attached(hass):
     with patch.object(dh.time, "monotonic", return_value=1000.0 + dh.EVIDENCE_WINDOW + 1):
         health.observe(_frame(FAULT))
     assert _issue(hass).translation_placeholders["evidence"] == ""
+
+
+async def test_a_mask_long_after_the_last_odd_status_is_not_attached(hass):
+    """The window holds in both directions."""
+    health = _health(hass)
+    with patch.object(dh.time, "monotonic", return_value=1000.0):
+        health.observe(_frame(FAULT))
+    with patch.object(dh.time, "monotonic", return_value=1000.0 + dh.EVIDENCE_WINDOW + 1):
+        health.observe(_frame(MASK))
+    assert _issue(hass).translation_placeholders["evidence"] == ""
+    assert health.faults[0]["evidence"] == ""
+
+    # the actuator answers its next poll with the same code: the fresh mask belongs to it
+    with patch.object(dh.time, "monotonic", return_value=1000.0 + dh.EVIDENCE_WINDOW + 2):
+        health.observe(_frame(FAULT))
+    assert _issue(hass).translation_placeholders["evidence"] == MASK
 
 
 async def test_a_mask_alone_raises_nothing(hass):
@@ -149,6 +174,19 @@ async def test_naming_the_address_renames_the_issue_and_forgetting_it_drops_it(h
     assert health.faults == []
 
 
+async def test_the_issue_stays_while_another_entity_uses_the_address(hass):
+    health = _health(hass)
+    health.observe(_frame(FAULT))
+    health.name_address(1, "74", "Hall", owner="light-uid")
+    health.name_address(1, "74", "Hall", owner="sensor-uid")
+
+    health.forget_address(1, "74", owner="sensor-uid")
+    assert _issue(hass) is not None
+
+    health.forget_address(1, "74", owner="light-uid")
+    assert _issue(hass) is None
+
+
 async def test_entity_reports_share_the_tracker_and_clear_all_drops_everything(hass):
     health = _health(hass)
     health.report(Fault(4, "71", FaultKind.UNRESPONSIVE), device="Zone 71")
@@ -185,6 +223,7 @@ def _dispatcher(hass, delegated_away=()):
     handler.config_entry = SimpleNamespace(entry_id=ENTRY_ID)
     handler.send_status_request = AsyncMock()
     handler.device_health = DeviceHealth(handler)
+    handler.health_owner = lambda: handler.device_health
     return GatewayEventDispatcher(handler)
 
 
@@ -220,11 +259,59 @@ async def test_removing_the_entity_drops_the_issue_of_its_address(hass):
     health = dispatcher.handler.device_health
     light = _light(hass, dispatcher.handler)
     await dispatcher.process_message(_frame(FAULT))
-    health.name_address(*light._health_address, light._device_name)
+    health.name_address(*light._health_address, light._display_name, owner=light._health_owner)
     assert _issue(hass).translation_placeholders["device"] == "Hall"
 
-    await light.async_will_remove_from_hass()  # not in the entity registry: the owner deleted it
+    # a reload, or an entity_id rename (the old object goes while the registry still holds
+    # the entity): the fault is still there, so is its issue
+    await light.async_will_remove_from_hass()
+    assert _issue(hass) is not None
+
+    await light.async_removed_from_registry()  # the owner deleted the entity
     assert _issue(hass) is None
+
+
+async def test_a_failing_tracker_does_not_cost_the_frame_its_handling(hass, caplog):
+    dispatcher = _dispatcher(hass)
+    with patch.object(DeviceHealth, "observe", side_effect=RuntimeError("boom")):
+        await dispatcher.process_message(_frame(FAULT))
+    assert "Device health could not process" in caplog.text
+
+
+async def test_only_lighting_frames_reach_the_tracker(hass):
+    dispatcher = _dispatcher(hass)
+    with patch.object(DeviceHealth, "observe") as observe:
+        await dispatcher.process_message(_frame("*2*1*51##"))
+    observe.assert_not_called()
+
+
+def _gateways(primary_connected):
+    """A primary and its warm standby, each with its own tracker."""
+    primary = SimpleNamespace(is_standby=False, is_connected=primary_connected, device_health=object())
+    standby = SimpleNamespace(is_standby=True, device_health=object(), _get_primary_gateway=lambda: primary)
+    primary._get_standby_gateway = lambda: standby
+    return primary, standby
+
+
+async def test_a_standby_carrying_an_offline_primary_files_faults_under_the_primary(hass):
+    primary, standby = _gateways(primary_connected=False)
+    assert MyHOMEGatewayHandler.health_owner(standby) is primary.device_health
+
+
+async def test_a_standby_files_nothing_once_the_primary_is_back(hass):
+    primary, standby = _gateways(primary_connected=True)
+    assert MyHOMEGatewayHandler.health_owner(standby) is None
+    # from here on the primary's own tracker sees the recovery
+    assert MyHOMEGatewayHandler.health_owner(primary) is primary.device_health
+
+
+async def test_a_standby_without_its_primary_files_nothing(hass):
+    primary, standby = _gateways(primary_connected=False)
+    standby._get_primary_gateway = lambda: None
+    assert MyHOMEGatewayHandler.health_owner(standby) is None
+    standby._get_primary_gateway = lambda: primary
+    primary._get_standby_gateway = lambda: object()  # somebody else's standby
+    assert MyHOMEGatewayHandler.health_owner(standby) is None
 
 
 async def test_frames_without_a_point_address_or_a_binary_mask_are_ignored(hass):

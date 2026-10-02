@@ -29,6 +29,7 @@ TESTS = Path(__file__).resolve().parent
 TRACES = TESTS / "fixtures" / "traces"
 GOLDEN = TESTS / "golden" / "corpus.json"
 FRAME = re.compile(r"\*#?\d+\*[0-9*#]*##")
+LIGHTING_FRAME = re.compile(r"\*#?(?:1|1001)\*")
 
 MASK_74 = "*#1001*74*11*111110111111111111110111##"
 # Captures of the faulty actuator: the faults each must raise (with the evidence the fault
@@ -66,6 +67,10 @@ def _replay(path: Path) -> tuple[set[tuple[str, str, str]], int]:
     clock = 0.0
     for stamp, raw in _frames(path):
         clock = float(stamp) if stamp is not None else clock
+        # Parse only what the tracker reads: other WHOs are not this test's business, and
+        # their decoders (OWNd rejects a malformed WHO 13 frame) must not break the replay.
+        if not LIGHTING_FRAME.match(raw):
+            continue
         message = OWNEvent.parse(raw)
         if message is None or getattr(message, "who", None) not in (1, 1001):
             continue

@@ -175,7 +175,7 @@ async def test_removing_the_entity_drops_its_repair(hass):
     await _poll(hass, zone, gateway, "nack")
     await _poll(hass, zone, gateway, "nack")
     assert _issue(hass, zone) is not None
-    await zone.async_will_remove_from_hass()  # not in the entity registry: the owner deleted it
+    await zone.async_removed_from_registry()  # the owner deleted the entity
     assert _issue(hass, zone) is None
 
 

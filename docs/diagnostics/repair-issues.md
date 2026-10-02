@@ -122,9 +122,9 @@ If the zone no longer exists (for example a leftover entity), remove its device 
 **Fixable via UI**: No
 
 ### What it means
-A lighting actuator (a light or a switch) answered with a status code (`WHAT`) that is not in the published WHO 1 table (`WHAT 0..10, 11..18, 20..31`). Home Assistant cannot tell whether the load is on or off, so the entity shows `unknown` and carries the code in its `unknown_state` attribute.
+A lighting actuator (a light or a switch) answered with a status code (`WHAT`) that is not in the published WHO 1 table (`WHAT 0..10, 11..18, 20..31`). The received status does not allow Home Assistant to determine the current device state. A light entity keeps whatever state it had before, and carries the code in its `unknown_state` attribute.
 
-The issue is raised for every address on the bus, including addresses with no entity in Home Assistant, and names the device once its entity exists.
+The issue is raised for every address on the bus, including addresses with no entity in Home Assistant, and names the device once its entity exists. If you remove the device's entity, the issue goes with it, but the next odd status frame from that address raises it again.
 
 The only code seen so far is `WHAT 19`, from an actuator on an MH200 that was in a fault state ([#456](https://github.com/OpenWebNet-HA/MyHOME/issues/456); evidence record `EVID-MH200-WHAT19-FAULT` in the OpenWebNet Encyclopedia). It arrived together with a `WHO 1001` autodiagnostic frame:
 
@@ -133,7 +133,7 @@ The only code seen so far is `WHAT 19`, from an actuator on an MH200 that was in
 *#1001*74*11*111110111111111111110111##
 ```
 
-`WHO 1001` dimensions 7 and 11 carry a 24-bit autodiagnostic mask. No source documents what the individual bits mean, so the integration does not decode the mask: when one arrives within 10 seconds of the status, it is shown in the issue exactly as received, as evidence for whoever looks at the device.
+`WHO 1001` dimensions 7 and 11 carry a 24-bit autodiagnostic mask. No source documents what the individual bits mean, so the integration does not decode the mask: when one arrives within 10 seconds of the status (before or after it), it is shown in the issue exactly as received, as evidence for whoever looks at the device.
 
 ### How to resolve
 1. Find the actuator in the electrical cabinet (the issue gives its address).
@@ -142,7 +142,11 @@ The only code seen so far is `WHAT 19`, from an actuator on an MH200 that was in
 4. If the device works normally, the code may be a status this integration does not know yet: open an issue with a diagnostics download attached, so it can be mapped.
 
 ### How it clears
-Automatically, as soon as the actuator reports a normal state (on, off or a brightness level). It also disappears when you remove the device's entity, and it is raised again after a restart or reload if the actuator still reports the code.
+Automatically, as soon as an on, off or brightness-level frame for this address is seen on the bus. The bus cannot tell the actuator's own status from a command sent by a wall button or by Home Assistant, which produces the same frame: on a faulty actuator a command can clear the issue early, and the next status request raises it again.
+
+It also disappears when you remove the device's entity (see above). After a restart or reload it is raised again if the device still reports the code, which is guaranteed only for addresses that have an entity (their status is requested at startup); for any other address it comes back the next time the device sends a frame by itself, or when a bus sweep queries it.
+
+With a warm standby gateway, the primary's config entry owns the issue: the standby hands what it sees on the bus to the primary's tracker while the primary is offline, so a recovery seen during a failover or after the failback clears it.
 
 ---
 

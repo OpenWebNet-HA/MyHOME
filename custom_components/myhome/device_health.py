@@ -23,6 +23,7 @@ decoded and never raises an issue on its own.
 from __future__ import annotations
 
 import time
+from collections.abc import Hashable
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
@@ -40,8 +41,9 @@ if TYPE_CHECKING:
 
 ISSUE_DEVICE_FAULT = "device_fault"
 DOCS_URL = "https://openwebnet-ha.github.io/MyHOME/beta/diagnostics/repair-issues/"
-# How long a WHO 1001 autodiagnostic report can still be attached to a fault of its
-# address. On the MH200 it followed the status reply by about 40 ms.
+# How long a WHO 1001 autodiagnostic report and a status outside the table can be apart
+# and still belong together, in either order. On the MH200 (2026-09-26 trace) the mask
+# arrived 3.45 s before the status.
 EVIDENCE_WINDOW = 10.0
 # WHO 1001 dimensions carrying an autodiagnostic bitmask (OPEN.db: 7 on request, 11 pushed).
 AUTODIAG_DIMENSIONS = (7, 11)
@@ -107,8 +109,11 @@ class DeviceHealth:
         self._handler = handler
         self._active: dict[tuple[int, str, FaultKind], Fault] = {}
         self._names: dict[tuple[int, str], str] = {}
+        self._owners: dict[tuple[int, str], set[Hashable]] = {}
         # Last WHO 1001 autodiagnostic frame per address: (frame, monotonic time).
         self._autodiag: dict[str, tuple[str, float]] = {}
+        # When each address last sent a status outside the table (monotonic time).
+        self._anomaly_seen: dict[str, float] = {}
 
     @property
     def faults(self) -> list[dict[str, Any]]:
@@ -120,18 +125,30 @@ class DeviceHealth:
 
     # ── entities ───────────────────────────────────────────────────────
 
-    def name_address(self, who: int | str, where: str, name: str) -> None:
-        """Name the device at an address in its issues (until then: ``WHO x WHERE y``)."""
+    def name_address(self, who: int | str, where: str, name: str, owner: Hashable | None = None) -> None:
+        """Name the device at an address in its issues (until then: ``WHO x WHERE y``).
+
+        ``owner`` identifies the entity (its unique id) so that :meth:`forget_address`
+        knows when the last entity of the address is gone.
+        """
         key = (int(who), where)
+        if owner is not None:
+            self._owners.setdefault(key, set()).add(owner)
         if self._names.get(key) == name:
             return
         self._names[key] = name
         for fault in [f for f in self._active.values() if (f.who, f.where) == key]:
             self._raise(fault)
 
-    def forget_address(self, who: int | str, where: str) -> None:
-        """The owner removed the device's entity: drop its name and its issues."""
+    def forget_address(self, who: int | str, where: str, owner: Hashable | None = None) -> None:
+        """The owner removed an entity of the device: with the last one, drop its name and issues."""
         key = (int(who), where)
+        owners = self._owners.get(key)
+        if owners is not None:
+            owners.discard(owner)
+            if owners:
+                return
+            del self._owners[key]
         self._names.pop(key, None)
         for fault in [f for f in self._active.values() if (f.who, f.where) == key]:
             self.clear(fault.who, fault.where, fault.kind)
@@ -147,12 +164,17 @@ class DeviceHealth:
         self._raise(fault)
 
     def clear(self, who: int | str, where: str, kind: FaultKind) -> None:
-        """Withdraw the fault's issue, if it is raised."""
-        if self._active.pop((int(who), where, kind), None) is None:
-            return
+        """Withdraw the fault's issue.
+
+        The registry is always asked, not only when this tracker holds the fault: an
+        issue it does not know about (raised by a frame that arrived while the entry
+        unloaded) must still clear. Deleting a missing issue is a cheap no-op.
+        """
+        was_active = self._active.pop((int(who), where, kind), None) is not None
         hass, entry_id = self._target()
         if hass is not None and entry_id is not None:
-            LOGGER.debug("%s %s at WHO %s WHERE %s cleared", self._log_id, kind, who, where)
+            if was_active:
+                LOGGER.debug("%s %s at WHO %s WHERE %s cleared", self._log_id, kind, who, where)
             async_delete_issue(hass, DOMAIN, fault_issue_id(entry_id, kind, who, where))
 
     def clear_all(self) -> None:
@@ -181,7 +203,8 @@ class DeviceHealth:
         unknown = getattr(message, "unknown_state", None)
         if isinstance(unknown, int) and not isinstance(unknown, bool):
             code = str(unknown)
-            active = self._active.get((1, where, FaultKind.UNMAPPED_STATUS))
+            self._anomaly_seen[where] = time.monotonic()
+            active =self._active.get((1, where, FaultKind.UNMAPPED_STATUS))
             evidence = self._recent_autodiag(where) or (
                 active.evidence if active is not None and active.code == code else ""
             )
@@ -202,7 +225,9 @@ class DeviceHealth:
         frame = str(message)
         self._autodiag[where] = (frame, time.monotonic())
         active = self._active.get((1, where, FaultKind.UNMAPPED_STATUS))
-        if active is not None:
+        # The window holds in both directions: a mask long after the last odd status is
+        # not evidence for it.
+        if active is not None and time.monotonic() - self._anomaly_seen.get(where, float("-inf")) <= EVIDENCE_WINDOW:
             self.report(replace(active, evidence=frame))
 
     def _recent_autodiag(self, where: str) -> str:

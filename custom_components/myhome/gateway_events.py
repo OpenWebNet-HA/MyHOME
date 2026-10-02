@@ -40,7 +40,6 @@ from .const import (
     DOMAIN,
     LOGGER,
 )
-from .device_health import DeviceHealth
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -140,6 +139,22 @@ class GatewayEventDispatcher:
         # Primary or standalone
         return who is None or who not in getattr(self.handler, "delegated_away_whos", set())
 
+    def _observe_health(self, message: OWNMessage, who: int) -> None:
+        """Feed a lighting frame to the tracker that owns this address's issues.
+
+        A warm standby hands the frame to its primary's tracker: the primary's entry
+        owns the issue, so it still clears when the primary returns and stops
+        listening to the standby. A failure here must not cost the frame its handling.
+        """
+        try:
+            if not self._is_active_for_who(who - 1000 if who > 1000 else who):
+                return
+            health = self.handler.health_owner()
+            if health is not None:
+                health.observe(message)
+        except Exception:
+            self._logger.exception("%s Device health could not process `%s`", self.handler.log_id, message)
+
     async def process_message(self, message: Any) -> None:
         """Process a received message and dispatch to Home Assistant."""
         from . import gateway as gw_module
@@ -170,11 +185,8 @@ class GatewayEventDispatcher:
             self.handler._bridge_to_primary(message)
             # Diagnostic WHOs (1001 for lighting) belong to their functional subsystem:
             # on a shared bus only that subsystem's owner raises the device's issues.
-            health = getattr(self.handler, "device_health", None)
-            if isinstance(health, DeviceHealth) and self._is_active_for_who(
-                who_int - 1000 if who_int is not None and who_int > 1000 else who_int
-            ):
-                health.observe(message)
+            if who_int in (1, 1001):
+                self._observe_health(message, who_int)
 
         if not isinstance(message, OWNMessage):
             self._logger.warning(
