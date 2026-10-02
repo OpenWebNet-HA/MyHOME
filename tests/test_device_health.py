@@ -194,6 +194,7 @@ async def test_entity_reports_share_the_tracker_and_clear_all_drops_everything(h
     zone = _issue(hass, fault_issue_id(ENTRY_ID, FaultKind.UNRESPONSIVE, 4, "71"))
     assert zone.translation_key == "unresponsive_zone"
     assert zone.translation_placeholders["device"] == "Zone 71"
+    assert zone.translation_placeholders["zone"] == "Zone 71"  # a translation may still use {zone}
     assert zone.learn_more_url.endswith("#heating-zone-no-longer-answers")
 
     health.clear_all()

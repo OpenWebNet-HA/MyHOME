@@ -122,7 +122,7 @@ If the zone no longer exists (for example a leftover entity), remove its device 
 **Fixable via UI**: No
 
 ### What it means
-A lighting actuator (a light or a switch) answered with a status code (`WHAT`) that is not in the published WHO 1 table (`WHAT 0..10, 11..18, 20..31`). The received status does not allow Home Assistant to determine the current device state. A light entity keeps whatever state it had before, and carries the code in its `unknown_state` attribute.
+A lighting actuator (a light or a switch) answered with a status code (`WHAT`) that is not in the published WHO 1 table (`WHAT 0..10, 11..18, 20..31`). Three statuses outside that table are documented as events (ZigBee OpenWebNet spec: `32` Toggle, `34` movement detected, `39` end of movement detected); they say nothing about the state and never raise or clear this issue. The received status does not allow Home Assistant to determine the current device state. A light entity keeps whatever state it had before, and carries the code in its `unknown_state` attribute.
 
 The issue is raised for every address on the bus, including addresses with no entity in Home Assistant, and names the device once its entity exists. If you remove the device's entity, the issue goes with it, but the next odd status frame from that address raises it again.
 
@@ -140,6 +140,17 @@ The only code seen so far is `WHAT 19`, from an actuator on an MH200 that was in
 2. Look at its status LED.
 3. Check the load connected to it and the wiring of that load.
 4. If the device works normally, the code may be a status this integration does not know yet: open an issue with a diagnostics download attached, so it can be mapped.
+
+### If the actuator will not be repaired soon
+You can leave a faulty actuator in the cabinet and stop seeing it in Home Assistant, without touching the installation. What each step does and does not do:
+
+| Goal | What to do | What to expect |
+| --- | --- | --- |
+| Remove it from cards and dashboards | Open the device's entity settings and **disable** the entity. Do not delete it. | A disabled entity is kept in the entity registry, so discovery treats the address as known and does not create it again. A *deleted* entity is created again by the next frame from that address. |
+| Stop the repair issue for now | Use **Ignore** on the repair. | Only temporary. The ignore is forgotten when the issue clears (any on, off or level frame for the address, for example a wall-button press) and at every restart or reload, and the next odd status raises the issue again. |
+| Stop the repair issue for good | Not possible yet. | The tracker watches every address on the bus, including addresses without an entity, so disabling or deleting the entity does not stop the issue from coming back while the actuator keeps reporting the code. |
+
+Disabling the entity is the part that lasts. Until the actuator is repaired or replaced, expect the repair to return after a restart. If it bothers you, remember that it clears itself the moment the actuator reports a normal status again, so no cleanup is needed after the repair.
 
 ### How it clears
 Automatically, as soon as an on, off or brightness-level frame for this address is seen on the bus. The bus cannot tell the actuator's own status from a command sent by a wall button or by Home Assistant, which produces the same frame: on a faulty actuator a command can clear the issue early, and the next status request raises it again.

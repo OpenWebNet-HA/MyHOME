@@ -7,7 +7,8 @@
   holds documented frames only: none of them may raise a fault.
 * The published WHO 1 WHAT table (WHO_1.pdf, as the Encyclopedia gives it:
   0..18, 20..29, 30/31, 1000) decides what is "unmapped"; OWNd's decoder is pinned
-  to it here, value by value.
+  to it here, value by value. The ZigBee variant spec adds three events (32 Toggle,
+  34 movement, 39 end of movement); they are not faults. No capture holds any of them.
 
 The healthy MyHomeServer1 interview in the cover-diagnostic captures answers a WHO
 1001 DIMENSION 7 mask with zero bits (``*#1001*0*7*111111111111111101101111##``): a
@@ -119,8 +120,21 @@ def test_a_published_lighting_status_is_not_a_fault(what: int):
     assert health.faults == []
 
 
-@pytest.mark.parametrize("what", [19, 32, 33, 50, 99])
+# 33 is in no source we hold (not SCS WHO 1, not the ZigBee variant): it stays undocumented.
+@pytest.mark.parametrize("what", [19, 33, 50, 99])
 def test_a_status_outside_the_published_table_is_a_fault(what: int):
     health = _tracker()
     health.observe(OWNEvent.parse(f"*1*{what}*51##"))
     assert [(f["where"], f["code"]) for f in health.faults] == [("51", str(what))]
+
+
+@pytest.mark.parametrize("what", sorted(dh.DOCUMENTED_EVENTS))
+def test_a_documented_lighting_event_is_neither_a_fault_nor_a_recovery(what: int):
+    """ZigBee spec 4.0: 32 Toggle, 34 movement, 39 end of movement say nothing about the state."""
+    health = _tracker()
+    health.observe(OWNEvent.parse(f"*1*{what}*51##"))
+    assert health.faults == []
+
+    health.observe(OWNEvent.parse("*1*19*51##"))
+    health.observe(OWNEvent.parse(f"*1*{what}*51##"))
+    assert [(f["where"], f["code"]) for f in health.faults] == [("51", "19")]

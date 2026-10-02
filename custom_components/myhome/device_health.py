@@ -47,6 +47,10 @@ DOCS_URL = "https://openwebnet-ha.github.io/MyHOME/beta/diagnostics/repair-issue
 EVIDENCE_WINDOW = 10.0
 # WHO 1001 dimensions carrying an autodiagnostic bitmask (OPEN.db: 7 on request, 11 pushed).
 AUTODIAG_DIMENSIONS = (7, 11)
+# Statuses outside the SCS WHO 1 table that are documented as events, not faults (ZigBee
+# OpenWebNet spec 4.0: 32 Toggle, 34 movement detected, 39 end of movement detected).
+# They say nothing about the on/off state, so they neither raise nor clear a fault.
+DOCUMENTED_EVENTS = frozenset({32, 34, 39})
 
 
 class FaultKind(StrEnum):
@@ -202,6 +206,8 @@ class DeviceHealth:
             return
         unknown = getattr(message, "unknown_state", None)
         if isinstance(unknown, int) and not isinstance(unknown, bool):
+            if unknown in DOCUMENTED_EVENTS:
+                return
             code = str(unknown)
             self._anomaly_seen[where] = time.monotonic()
             active =self._active.get((1, where, FaultKind.UNMAPPED_STATUS))
@@ -259,6 +265,17 @@ class DeviceHealth:
             "%s %s at WHO %s WHERE %s (code %s, evidence %s)",
             self._log_id, fault.kind, fault.who, fault.where, fault.code or "-", fault.evidence or "-",
         )
+        placeholders = {
+            "device": device,
+            "gateway": str(getattr(self._handler, "name", "")),
+            "who": str(fault.who),
+            "where": fault.where,
+            "code": fault.code,
+            "evidence": fault.evidence,
+        }
+        if fault.kind is FaultKind.UNRESPONSIVE:
+            # The string used {zone} before it was shared; a translation that still has it must render.
+            placeholders["zone"] = device
         async_create_issue(
             hass,
             DOMAIN,
@@ -266,13 +283,6 @@ class DeviceHealth:
             is_fixable=False,
             severity=IssueSeverity.WARNING,
             translation_key=translation_key,
-            translation_placeholders={
-                "device": device,
-                "gateway": str(getattr(self._handler, "name", "")),
-                "who": str(fault.who),
-                "where": fault.where,
-                "code": fault.code,
-                "evidence": fault.evidence,
-            },
+            translation_placeholders=placeholders,
             learn_more_url=f"{DOCS_URL}#{text.anchor}",
         )
