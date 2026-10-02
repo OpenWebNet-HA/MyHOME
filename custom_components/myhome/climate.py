@@ -55,7 +55,6 @@ from .const import (
     CONF_MANUFACTURER,
     CONF_STANDALONE,
     LOGGER,
-    signed_who4_temperature,
 )
 from .data import get_runtime_data
 from .discovery import Address, DeviceContext, PlatformDiscovery, config_for, default_known_keys
@@ -688,7 +687,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._gateway_handler.log_id,
                 message.human_readable_log,
             )
-            self._attr_current_temperature = signed_who4_temperature(message, message.main_temperature)
+            self._attr_current_temperature = message.main_temperature
         elif message.message_type == MESSAGE_TYPE_MAIN_HUMIDITY:
             LOGGER.debug(
                 "%s %s",

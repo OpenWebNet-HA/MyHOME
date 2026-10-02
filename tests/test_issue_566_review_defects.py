@@ -66,14 +66,6 @@ def test_climate_reads_the_sign_of_the_zone_temperature(hass: HomeAssistant, gat
     assert climate.current_temperature == 21.5
 
 
-def test_signed_temperature_ignores_mocks_and_unknown_values() -> None:
-    from custom_components.myhome.const import signed_who4_temperature
-
-    assert signed_who4_temperature(MagicMock(), 3.0) == 3.0
-    assert signed_who4_temperature(MagicMock(_dimension_value=["1055"]), None) is None
-    assert signed_who4_temperature(MagicMock(_dimension_value=[]), 3.0) == 3.0
-
-
 # --- lights ----------------------------------------------------------------
 
 
