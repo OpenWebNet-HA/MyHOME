@@ -2,7 +2,7 @@
 
 Frames are from the MH200 capture EVID-MH200-WHAT19-FAULT: an actuator in a fault
 state answers its status request with ``*1*19*74##`` (WHAT 19 is outside the
-published WHO 1 table) followed ~40 ms later by a WHO 1001 DIMENSION 11 mask.
+published WHO 1 table), with a WHO 1001 DIMENSION 11 mask 3.45 s before it.
 """
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -211,20 +211,20 @@ async def test_no_issue_without_a_config_entry(hass):
     ]
 
 
-def _dispatcher(hass, delegated_away=()):
+def _dispatcher(hass, delegated_away=(), entry_id=ENTRY_ID, mac="00:03:50:00:00:74"):
     handler = MagicMock()
     handler.hass = hass
-    handler.mac = "00:03:50:00:00:74"
+    handler.mac = mac
     handler.log_id = "[health]"
     handler.name = "MH200 Gateway"
     handler.generate_events = False
     handler.is_standby = False
     handler.is_secondary = False
     handler.delegated_away_whos = set(delegated_away)
-    handler.config_entry = SimpleNamespace(entry_id=ENTRY_ID)
+    handler.config_entry = SimpleNamespace(entry_id=entry_id)
     handler.send_status_request = AsyncMock()
     handler.device_health = DeviceHealth(handler)
-    handler.health_owner = lambda: handler.device_health
+    handler.health_owner = lambda: MyHOMEGatewayHandler.health_owner(handler)
     return GatewayEventDispatcher(handler)
 
 
@@ -313,6 +313,48 @@ async def test_a_standby_without_its_primary_files_nothing(hass):
     standby._get_primary_gateway = lambda: primary
     primary._get_standby_gateway = lambda: object()  # somebody else's standby
     assert MyHOMEGatewayHandler.health_owner(standby) is None
+
+
+def _failover_pair(hass):
+    """A primary and its warm standby, each with its own entry, dispatcher and tracker."""
+    primary = _dispatcher(hass, entry_id="primary_entry", mac="00:03:50:00:00:01")
+    standby = _dispatcher(hass, entry_id="standby_entry", mac="00:03:50:00:00:02")
+    standby.handler.is_standby = True
+    standby.handler._get_primary_gateway = lambda: primary.handler
+    standby.handler._profile_supports_who = lambda who: True
+    primary.handler._get_standby_gateway = lambda: standby.handler
+    return primary, standby
+
+
+def _owned_issue(hass, entry_id):
+    return _issue(hass, fault_issue_id(entry_id, FaultKind.UNMAPPED_STATUS, 1, "74"))
+
+
+async def test_a_recovery_seen_by_the_standby_during_a_failover_clears_the_primarys_issue(hass):
+    primary, standby = _failover_pair(hass)
+    primary.handler.is_connected = False
+
+    await standby.process_message(_frame(FAULT))
+    assert _owned_issue(hass, "primary_entry") is not None
+    assert _owned_issue(hass, "standby_entry") is None
+    assert standby.handler.device_health.faults == []
+
+    await standby.process_message(_frame(OFF))
+    assert _owned_issue(hass, "primary_entry") is None
+
+
+async def test_a_fault_raised_during_a_failover_clears_on_the_primary_after_the_failback(hass):
+    primary, standby = _failover_pair(hass)
+    primary.handler.is_connected = False
+    await standby.process_message(_frame(FAULT))
+
+    primary.handler.is_connected = True  # failback: the standby stops filing
+    await standby.process_message(_frame(OFF))
+    assert _owned_issue(hass, "primary_entry") is not None
+
+    await primary.process_message(_frame(OFF))
+    assert _owned_issue(hass, "primary_entry") is None
+    assert _owned_issue(hass, "standby_entry") is None
 
 
 async def test_frames_without_a_point_address_or_a_binary_mask_are_ignored(hass):

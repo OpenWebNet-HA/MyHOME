@@ -273,6 +273,7 @@ class MyHOMEEntity(RestoreEntity):
         nor an entity_id rename (which removes the old entity object) reaches it. The
         tracker keeps the issues while another entity still uses the address.
         """
+        await super().async_removed_from_registry()
         health, address = self._device_health(), self._health_address
         if health is not None and address is not None:
             health.forget_address(*address, owner=self._health_owner)
