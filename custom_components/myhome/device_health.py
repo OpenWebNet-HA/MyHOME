@@ -35,6 +35,7 @@ from homeassistant.helpers.issue_registry import (
 )
 
 from .const import DOMAIN, LOGGER
+from .ignored import IgnoredAddresses
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -118,6 +119,33 @@ class DeviceHealth:
         self._autodiag: dict[str, tuple[str, float]] = {}
         # When each address last sent a status outside the table (monotonic time).
         self._anomaly_seen: dict[str, float] = {}
+        self._clean_ignored_issues()
+
+    @property
+    def ignored_addresses(self) -> IgnoredAddresses:
+        """Addresses configured to be ignored on this gateway."""
+        entry = getattr(self._handler, "config_entry", None)
+        return IgnoredAddresses.from_config_entry(entry)
+
+    def is_ignored(self, who: int | str, where: str) -> bool:
+        """Whether (who, where) is configured to be ignored."""
+        try:
+            who_int = int(who)
+        except (ValueError, TypeError):
+            return False
+        return self.ignored_addresses.is_ignored(who_int, where)
+
+    def _clean_ignored_issues(self) -> None:
+        """Withdraw issues for addresses that are ignored."""
+        hass, entry_id = self._target()
+        if hass is None or entry_id is None:
+            return
+        ignored = self.ignored_addresses
+        if not ignored:
+            return
+        for who, where in ignored:
+            for kind in FaultKind:
+                async_delete_issue(hass, DOMAIN, fault_issue_id(entry_id, kind, who, where))
 
     @property
     def faults(self) -> list[dict[str, Any]]:
@@ -135,6 +163,8 @@ class DeviceHealth:
         ``owner`` identifies the entity (its unique id) so that :meth:`forget_address`
         knows when the last entity of the address is gone.
         """
+        if self.is_ignored(who, where):
+            return
         key = (int(who), where)
         if owner is not None:
             self._owners.setdefault(key, set()).add(owner)
@@ -159,6 +189,8 @@ class DeviceHealth:
 
     def report(self, fault: Fault, device: str | None = None) -> None:
         """Raise ``fault``, or update its issue when its code or evidence changed."""
+        if self.is_ignored(fault.who, fault.where):
+            return
         if device:
             self._names[(fault.who, fault.where)] = device
         key = (fault.who, fault.where, fault.kind)
@@ -202,7 +234,7 @@ class DeviceHealth:
         ):
             return
         where = message_where(message)
-        if where is None:
+        if where is None or self.is_ignored(1, where):
             return
         unknown = getattr(message, "unknown_state", None)
         if isinstance(unknown, int) and not isinstance(unknown, bool):
@@ -222,8 +254,10 @@ class DeviceHealth:
         if getattr(message, "dimension", None) not in AUTODIAG_DIMENSIONS:
             return
         where = message_where(message)
+        if where is None or self.is_ignored(1, where):
+            return
         values = getattr(message, "_dimension_value", None)
-        if where is None or not isinstance(values, list) or not values:
+        if not isinstance(values, list) or not values:
             return
         mask = str(values[0])
         if not mask or set(mask) - {"0", "1"}:

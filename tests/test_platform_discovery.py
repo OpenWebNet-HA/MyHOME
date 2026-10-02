@@ -11,7 +11,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from OWNd.message import OWNAutomationEvent, OWNEvent, OWNLightingEvent
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.myhome.const import DOMAIN
+from custom_components.myhome.const import CONF_IGNORED_ADDRESSES, DOMAIN
 from custom_components.myhome.discovery import (
     Address,
     DeviceContext,
@@ -69,8 +69,8 @@ def test_config_lookup_and_known_devices():
     assert sorted(known) == ["13"]
 
 
-def _entry(hass, platforms):
-    entry = MockConfigEntry(domain=DOMAIN, data={"mac": MAC}, unique_id=MAC)
+def _entry(hass, platforms, options=None):
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": MAC}, options=options or {}, unique_id=MAC)
     entry.add_to_hass(hass)
     gateway = MagicMock()
     gateway.mac = MAC
@@ -238,3 +238,53 @@ async def test_build_may_return_several_entities_or_none(hass):
     assert fed == [("a", "51"), ("b", "51")]  # both entities of the address, once each
     discovery.handle_message(MagicMock(where="53", interface=None, is_translation=False))  # discovered: fed once
     assert fed[2:] == [("a", "53"), ("b", "53")]
+
+
+async def test_discovery_with_ignored_addresses(hass):
+    """Ignored addresses are skipped in YAML, pruned from registry, and ignored on bus."""
+    entry = _entry(
+        hass,
+        {"light": {"kitchen": {"where": "12", "name": "Kitchen"}, "silenced": {"where": "74", "name": "Faulty"}}},
+        options={CONF_IGNORED_ADDRESSES: ["1/74"]},
+    )
+
+    kitchen_entry = MagicMock(domain="light", unique_id=f"{MAC}-1-12", entity_id="light.kitchen", device_id=None)
+    ignored_entry = MagicMock(domain="light", unique_id=f"{MAC}-1-74", entity_id="light.silenced", device_id=None)
+    registry = MagicMock()
+    registry.async_get_entity_id.return_value = None
+
+    added, built = [], []
+
+    def build(ctx: DeviceContext):
+        built.append(ctx)
+        return _entity(ctx.cfg.get("name", f"Light {ctx.suffix}"))
+
+    with patch("custom_components.myhome.discovery.er.async_get", return_value=registry), patch(
+        "custom_components.myhome.discovery.er.async_entries_for_config_entry",
+        return_value=[kitchen_entry, ignored_entry],
+    ):
+        discovery = PlatformDiscovery(
+            hass,
+            entry,
+            added.extend,
+            platform="light",
+            who="1",
+            event_type=OWNLightingEvent,
+            build=build,
+        )
+        entities = discovery.start(listen=False)
+
+    # 1. Silenced entity is pruned from entity registry
+    registry.async_remove.assert_called_once_with("light.silenced")
+
+    # 2. Ignored address 74 was not built or added, but 12 was
+    assert "74" not in discovery.known
+    assert "12" in discovery.known
+    assert [e._device_name for e in entities] == ["Light 12"]
+
+    # 3. Incoming message for ignored address is discarded immediately
+    routed = []
+    entry.runtime_data.router.subscribe("1", ["74"], routed.append)
+    discovery.handle_message(OWNEvent.parse("*1*1*74##"))
+    assert "74" not in discovery.known
+    assert len(routed) == 0
