@@ -31,7 +31,7 @@ from .data import get_runtime_data
 from .typing_compat import as_any
 
 PANEL_URL = "myhome"
-PANEL_VERSION = "0.41.0"
+PANEL_VERSION = "0.42.0"
 PANEL_STATIC_URL = "/myhome_panel"
 WS_INVENTORY = "myhome/panel/inventory"
 _PANEL_REGISTERED = "_panel_registered"

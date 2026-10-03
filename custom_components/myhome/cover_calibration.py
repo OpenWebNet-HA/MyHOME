@@ -534,7 +534,7 @@ class CalibrationSession:
             self.move(action)
         elif action == "endpoint":
             self.endpoint()
-        elif action in {"next", "lift", "reading", "repeat"}:
+        elif action in {"next", "lift", "reading", "repeat", "check"}:
             raise ProfileError("calibration_step")
         elif action == "preview_save":
             if self.phase != "review" or msg.get("save_mode") != "shared" or "shared" not in self.view()["save_modes"]:
@@ -691,8 +691,10 @@ def send_error(connection: Any, msg: dict[str, Any], error: Any) -> None:
 @websocket_command(as_any({
     vol.Required("type"): WS_ACTION, vol.Required("entry_id"): str,
     vol.Required("session_id"): str,
-    vol.Required("action"): vol.In(["run", "open", "close", "endpoint", "stop", "cancel", "save", "preview_save", "heartbeat", "detach", "next", "lift", "reading", "repeat", "continue"]),
+    vol.Required("action"): vol.In(["run", "open", "close", "endpoint", "stop", "cancel", "save", "preview_save", "heartbeat", "detach", "next", "lift", "reading", "repeat", "continue", "check"]),
     vol.Optional("reading_cm"): vol.Any(int, float),
+    vol.Optional("direction"): vol.In(["opening", "closing"]),
+    vol.Optional("target_cm"): vol.Any(int, float),
     vol.Optional("attachment"): str,
     vol.Optional("sequence"): vol.All(int, vol.Range(min=0)),
     vol.Optional("name"): str,

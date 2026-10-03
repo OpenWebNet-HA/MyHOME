@@ -14,16 +14,16 @@ export function calibrationScene(state, lost = false) {
     if (phase === "reading") {
       if (state.reading_kind === "lift") return scene("gap", "measureGap", "", true);
       if (state.reading_kind === "travel") return scene("open", "measureTravel", "", true);
-      if (["half_open", "half_close"].includes(state.reading_kind)) return scene("middle", "measureHeight", "", true);
+      if (["half_open", "half_close", "check"].includes(state.reading_kind)) return scene("middle", "measureHeight", "", true);
     }
     if (phase === "briefing") {
       if (["home", "reset", "closing"].includes(step)) return scene("closed", state.slats === false ? "targetClosedNoSlats" : "targetClosed");
       if (["opening", "top"].includes(step)) return scene("open", "targetOpen");
       if (step === "lift") return scene("slats", "lift");
-      if (["half_open", "half_close"].includes(step)) return scene("middle", "intermediate");
+      if (["half_open", "half_close", "check"].includes(step)) return scene("middle", "intermediate");
     }
     if (phase === "opening" && step === "lift") return scene("slats", "lift", "mdi:arrow-up-bold");
-    if (["opening", "closing"].includes(phase) && ["half_open", "half_close"].includes(step)) {
+    if (["opening", "closing"].includes(phase) && ["half_open", "half_close", "check"].includes(step)) {
       return scene("middle", "autoStop", phase === "opening" ? "mdi:arrow-up-bold" : "mdi:arrow-down-bold");
     }
     if (phase === "closing" && state.slats === false) return scene("middle", "closingNoSlats", "mdi:arrow-down-bold");

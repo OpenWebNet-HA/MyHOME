@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import math
+from collections.abc import Callable
 from typing import Any, cast
 
 import voluptuous as vol
 
 from . import cover_calibration as guided
+from .cover_calibration_check import CHECK_THRESHOLD_CM, GEOMETRY_CHECK_FRACTION, CalibrationCheck
 from .cover_calibration_fit import (
     closing_fit,
     closing_range,
@@ -16,6 +18,8 @@ from .cover_calibration_fit import (
     opening_roll_fit,
     opening_roll_range,
 )
+from .cover_geometry import profile_motion
+from .cover_motion import CoverMotionModel
 from .cover_profile_provenance import evidence
 from .cover_profiles import ProfileError, travel_time, write_profile
 from .cover_settings import centimetres
@@ -31,6 +35,8 @@ MAX_GAP_CM = 20.0
 LIFT_REPEAT_BELOW_TOUCHING = True
 # Floating-point slack on the ends of an intermediate reading range, far below any tape.
 RANGE_SLACK_CM = 1e-9
+# During a check these end it and return to review instead of ending the session.
+CHECK_RETURNS = frozenset({"stopped", "unexpected_stop", "unexpected_movement"})
 
 
 class GeometryCalibrationSession(guided.CalibrationSession):
@@ -54,6 +60,14 @@ class GeometryCalibrationSession(guided.CalibrationSession):
         self.readings: dict[str, float] = {}
         self.geometry: dict[str, float] = {}
         self.geometry_provenance: dict[str, Any] = {}
+        # A verification of the measured model, requested from review; None until one is.
+        self.check: CalibrationCheck | None = None
+        # While a check runs: the verdict it replaces, given back if it is stopped before moving.
+        self.checking = False
+        self.check_before: CalibrationCheck | None = None
+        self.check_interrupted: str | None = None
+        # Where the bottom edge last was for certain, in percent; None once it moved unread.
+        self.edge_position: float | None = None
 
     def view(self) -> Any:
         view = super().view()
@@ -70,17 +84,27 @@ class GeometryCalibrationSession(guided.CalibrationSession):
                 "gap_warn_cm": GAP_WARN_CM, "gap_warning": self.gap_warning,
                 "reading_range": self._reading_range(),
                 # travel_cm is this measurement's; the travel already saved for the cover stays readable.
-                "saved_travel_cm": view["travel_cm"]}
+                "saved_travel_cm": view["travel_cm"],
+                "check": self.check.view() if self.check is not None and self.active else None,
+                "check_threshold_cm": CHECK_THRESHOLD_CM,
+                "check_interrupted": self.check_interrupted if self.active else None}
 
     def interrupt(self, reason: str, send_stop: Any = True) -> None:
         if not self.active or self.phase == "saving":
             return
+        if self.checking and reason in CHECK_RETURNS:
+            # Only the check ends; the measurement stays. Stop before anything moved keeps everything.
+            self._leave_check(reason, keep=reason == "stopped" and self.phase in {"briefing", "reading"},
+                              send_stop=send_stop)
+            return
+        self.checking, self.check_before = False, None
         self.geometry.clear()
         self.geometry_provenance = {}
         self.samples.clear()
         self.readings.clear()
         self.measured_travel = None
         self.still_resting = self.gap_warning = False
+        self.check = None
         super().interrupt(reason, send_stop)
 
     def geometry_action(self, msg: dict[str, Any]) -> None:
@@ -88,9 +112,10 @@ class GeometryCalibrationSession(guided.CalibrationSession):
         if action == "next" and self.phase == "briefing":
             # Moving on accepts a wide gap and ends the still-resting notice of the briefing.
             self.gap_warning = self.still_resting = False
-            direction = "close" if self.step in {"home", "reset", "closing", "half_close"} else "open"
+            direction = "open" if self._rising() else "close"
             written = self.queue_move(direction)
-            written.add_done_callback(self._movement_delivered)
+            self.edge_position = None
+            written.add_done_callback(self._bound(self._movement_delivered))
         elif action == "lift" and self.step == "lift" and self.phase == "opening":
             self._sample_stop()
         elif action == "endpoint" and self.phase in {"opening", "closing"} and self.step in {"home", "reset", "opening", "closing", "top"}:
@@ -102,8 +127,76 @@ class GeometryCalibrationSession(guided.CalibrationSession):
                 raise ProfileError("invalid_reading") from error
         elif action == "repeat" and self.view()["can_repeat"]:
             self._repeat()
+        elif action == "check" and self.phase == "review":
+            self._check(msg)
         else:
             raise ProfileError("calibration_step")
+
+    def _rising(self) -> bool:
+        """The direction of the current step's run."""
+        if self.step == "check":
+            return cast(CalibrationCheck, self.check).opening
+        return self.step in {"lift", "opening", "half_open", "top"}
+
+    def _check(self, msg: dict[str, Any]) -> None:
+        """Verify the measured model before Save: back to the end stop, then a timed run and a reading."""
+        model = profile_motion({**self.values, "geometry": self.geometry})
+        check = CalibrationCheck.plan(cast(CoverMotionModel, model), cast(float, self.measured_travel),
+                                           msg.get("direction"), msg.get("target_cm"), fraction=GEOMETRY_CHECK_FRACTION)
+        self.check, self.check_before, self.checking = check, self.check, True
+        self.check_interrupted = None
+        self._home_for_check()
+
+    def _home_for_check(self) -> None:
+        # Each movement keeps its own briefing: first the end stop, then the check run.
+        self.step = "home" if cast(CalibrationCheck, self.check).opening else "top"
+        self.after_position = "check"
+        self.phase = "briefing"
+        self.emit()
+
+    def _leave_check(self, reason: str, *, keep: bool, send_stop: Any) -> None:
+        """Back to review with the measurement. A check that moved the cover leaves no verdict."""
+        if self.deadline:
+            self.deadline.cancel()
+        self.started_at = None
+        self.stop_written = self.checking = False
+        self.check, self.check_before = self.check_before if keep else None, None
+        self.check_interrupted = reason
+        self.step = self.after_position = "half_close"
+        self.phase = "review"
+        # Whatever the check queued is superseded: a run still in the queue is never written,
+        # and its delivery, or that of its Stop, no longer speaks for this session.
+        self._motion_token = object()
+        if not keep:  # Moved by the check, by a wall switch or by a scenario: nobody read where it stopped.
+            self.edge_position = None
+        if send_stop:
+            self.queue_stop()
+        self.emit()
+
+    def _forget_position(self) -> None:
+        """Nobody read where the cover stopped: no position, as after a restart, until an end stop."""
+        cover = self.cover
+        cover._cancel_stop_task()
+        cover._move_start_time = None
+        cover._motion.configure(cover._motion.model)
+        cover._motion.position = None
+        cover._attr_current_cover_position = None
+        cover._attr_is_opening = cover._attr_is_closing = False
+        cover._attr_is_closed = False
+        cover.async_write_ha_state()
+
+    def _bound(self, callback: Callable[[asyncio.Future[float]], None]) -> Callable[[asyncio.Future[float]], None]:
+        """Deliver to `callback` only while the movement that queued the frame is still the current one.
+
+        A frame refused or acknowledged after a later movement was queued (a new step, a new
+        check, or a check cut short) belongs to a movement that is over, in every phase.
+        """
+        token = self._motion_token
+
+        def deliver(future: asyncio.Future[float]) -> None:
+            if self._motion_token is token:
+                callback(future)
+        return deliver
 
     def _movement_delivered(self, future: asyncio.Future[float]) -> None:
         if future.cancelled() and self.active and not self.closed:
@@ -112,17 +205,17 @@ class GeometryCalibrationSession(guided.CalibrationSession):
     def on_event(self, event: Any) -> None:
         if self.phase == "geometry_wait_stop":
             self.reservation.observe(event)
-            opening = self.step in {"lift", "opening", "half_open", "top"}
-            if (event.is_closing if opening else event.is_opening):
+            if (event.is_closing if self._rising() else event.is_opening):
                 self.interrupt("unexpected_movement")
             elif event.state == 0 and self.stop_written:
                 self._stopped()
             return
         starting = self.phase.startswith("starting_")
         super().on_event(event)
-        if starting and self.phase in {"opening", "closing"} and self.step.startswith("half_"):
-            seconds = (((self.samples["lift"] if self.slats else 0.0) + self.values["opening_time"]) / 2 if self.step == "half_open"
-                       else (self.values["closing_time"] - self.geometry["slat_time_s"]) / 2)
+        if starting and self.phase in {"opening", "closing"} and (self.step.startswith("half_") or self.step == "check"):
+            seconds = (cast(CalibrationCheck, self.check).planned_seconds if self.step == "check"
+                       else ((self.samples["lift"] if self.slats else 0.0) + self.values["opening_time"]) / 2
+                       if self.step == "half_open" else (self.values["closing_time"] - self.geometry["slat_time_s"]) / 2)
             # Reuse the motion deadline: interruption/close already cancels it.
             cast(asyncio.TimerHandle, self.deadline).cancel()
             self.deadline = self.hass.loop.call_later(seconds, self._sample_stop)
@@ -134,7 +227,7 @@ class GeometryCalibrationSession(guided.CalibrationSession):
         if written is None:
             self.interrupt("stop_queue_full", send_stop=False)
             return
-        written.add_done_callback(self._sample_written)
+        written.add_done_callback(self._bound(self._sample_written))
         self.emit()
 
     def _sample_written(self, future: asyncio.Future[float]) -> None:
@@ -147,7 +240,10 @@ class GeometryCalibrationSession(guided.CalibrationSession):
         if not 0 <= elapsed <= guided.MAX_TRAVEL_SECONDS:
             self.interrupt("invalid_measurement")
             return
-        self.samples[self.step] = elapsed
+        if self.step == "check":
+            cast(CalibrationCheck, self.check).ran(elapsed)
+        else:
+            self.samples[self.step] = elapsed
         self.stop_written = True
         if not self.reservation.pending:
             self._stopped()
@@ -164,7 +260,8 @@ class GeometryCalibrationSession(guided.CalibrationSession):
                 raise ProfileError("invalid_profile") from error
             self.values[f"{old_step}_time"] = value
             self.provenance[old_step] = evidence("guided", self.cover.unique_id)
-        self.confirm_position(0 if old_step in {"home", "reset", "closing"} else 100)
+        self.edge_position = 0 if old_step in {"home", "reset", "closing"} else 100
+        self.confirm_position(self.edge_position)
         self.after_stop = "reading" if old_step == "opening" else "briefing"
         self.phase, self.stop_written = "geometry_wait_stop", True
         self.started_at = None
@@ -173,7 +270,7 @@ class GeometryCalibrationSession(guided.CalibrationSession):
         if written is None:
             self.interrupt("stop_queue_full", send_stop=False)
             return
-        written.add_done_callback(self._movement_delivered)
+        written.add_done_callback(self._bound(self._movement_delivered))
         self.emit()
 
     def _stopped(self) -> None:
@@ -208,6 +305,15 @@ class GeometryCalibrationSession(guided.CalibrationSession):
         return None if span is None else {"min_cm": span[0], "max_cm": span[1]}
 
     def _reading(self, value: Any) -> None:
+        if self.step == "check":
+            # The verdict is published with the measurements; Save stays available either way.
+            check = cast(CalibrationCheck, self.check)
+            check.read(value)
+            self.edge_position = 100 * cast(float, check.measured_cm) / check.travel_cm
+            self.checking, self.check_before = False, None
+            self.step, self.phase = "half_close", "review"
+            self.emit()
+            return
         number = self._gap(value) if self.step == "lift" else centimetres(value)
         span = self._reading_range()
         # Outside the computed range no roll from 1 to 5 fits: say which readings would.
@@ -241,6 +347,7 @@ class GeometryCalibrationSession(guided.CalibrationSession):
             self.geometry = {"slat_time_s": slat, "opening_roll": roll}
             self.geometry_provenance = {key: evidence("guided", self.cover.unique_id) for key in self.geometry}
             self.readings["half_open"] = number
+            self.edge_position = 100 * number / cast(float, self.measured_travel)
             self.step, self.after_position = "top", "half_close"
         else:
             roll = closing_fit(self.values["closing_time"], self.geometry["slat_time_s"], self.samples["half_close"],
@@ -248,6 +355,7 @@ class GeometryCalibrationSession(guided.CalibrationSession):
             self.geometry["closing_roll"] = roll
             self.geometry_provenance["closing_roll"] = evidence("guided", self.cover.unique_id)
             self.readings["half_close"] = number
+            self.edge_position = 100 * number / cast(float, self.measured_travel)
             self.phase = "review"
             self.emit()
             return
@@ -256,6 +364,12 @@ class GeometryCalibrationSession(guided.CalibrationSession):
 
     def _repeat(self) -> None:
         target = "lift" if self.gap_warning else "closing" if self.phase == "briefing" and self.step == "half_open" else self.step
+        if target == "check":  # The same check again, from its end stop, keeping nothing of the run.
+            self.check = cast(CalibrationCheck, self.check).again()
+            self._home_for_check()
+            return
+        # Measuring again changes the model: a verification of the old one no longer applies.
+        self.check, self.check_interrupted = None, None
         # Without slats the return to the bottom is the same close as the first one.
         self.step = "top" if target in {"half_close", "closing"} else "reset" if self.slats else "home"
         self.after_position = target
@@ -274,7 +388,11 @@ class GeometryCalibrationSession(guided.CalibrationSession):
             "profile": {"name": msg.get("name", ""), **self.values,
                         "reference_travel_cm": self.measured_travel, "geometry": self.geometry},
         }, calibration=self)
-        # This tape reading is an actual physical observation, not an old-model
-        # estimate. Seed the newly applied model only after the atomic save.
-        self.confirm_position(100 * self.readings["half_close"] / cast(float, self.measured_travel))
+        # The last tape reading or confirmed end stop is an actual physical observation, not
+        # an old-model estimate. Seed the newly applied model only after the atomic save; after
+        # a check that moved the cover unread there is nothing to seed.
+        if self.edge_position is None:
+            self._forget_position()
+        else:
+            self.confirm_position(self.edge_position)
         return result["revision"]

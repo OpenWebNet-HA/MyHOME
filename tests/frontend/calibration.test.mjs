@@ -1541,3 +1541,40 @@ test("a paused cycle has its texts in English and Italian, with the step and the
   }
   assert.equal(calibrationScene({ phase: "paused" }).icon, "mdi:pause-circle-outline");
 });
+
+test("the tape reading of a check travels as the same reading, with a comma or a point", async () => {
+  const { host, push, calls } = await mount({ mode: "geometry" });
+  const form = host.querySelector("#cal-reading"), input = form.elements.reading_cm;
+  const check = { direction: "opening", target_cm: 100, check_seconds: 13.6, expected_cm: 100.2, measured_cm: null,
+    deviation_cm: null, passed: null };
+  push({ phase: "reading", step: "check", reading_kind: "check", can_repeat: true, save_modes: ["new"], check, check_threshold_cm: 4 });
+  assert.equal(form.hidden, false);
+  for (const [value, expected] of [["99,5", 99.5], ["99.5", 99.5], ["104", 104]]) {
+    input.value = value;
+    form.dispatchEvent(new dom.window.Event("submit", { cancelable: true })); await tick();
+    const { sequence, ...message } = calls.at(-1);
+    assert.equal(typeof sequence, "number");
+    assert.deepEqual(message, { type: "myhome/cover_calibration/action", entry_id: "one", session_id: "session-one",
+      action: "reading", reading_cm: expected }, value);
+  }
+});
+
+test("a check run is timed like the intermediate runs: no elapsed time, the same texts and illustrations", async () => {
+  const { host, push, calls } = await mount({ mode: "geometry" });
+  const phase = host.querySelector("#cal-phase"), elapsed = host.querySelector("#cal-elapsed"), figure = host.querySelector(".cal-visual");
+  push({ phase: "briefing", step: "check", save_modes: ["new"], can_repeat: false });
+  assert.equal(figure.dataset.scene, "middle");
+  assert.equal(figure.querySelector(".cal-visual-label").textContent, t("calVisual_intermediate"));
+  for (const [state, text] of [[{ phase: "opening", step: "check" }, "calHalfPositioning"], [{ phase: "closing", step: "check" }, "calHalfPositioning"],
+    [{ phase: "geometry_wait_stop", step: "check" }, "calGeometryWaitStop"]]) {
+    push({ ...state, elapsed: 3.5 });
+    assert.equal(elapsed.hidden, true, `${state.phase} of a check shows no elapsed time`);
+    assert.equal(phase.textContent, t(text));
+    assert.doesNotMatch(figure.textContent, new RegExp(t("calVisual_opening")));
+  }
+  assert.equal(calibrationScene({ mode: "geometry", phase: "opening", step: "check" }).label, "calVisual_autoStop");
+  assert.equal(calibrationScene({ mode: "geometry", phase: "closing", step: "check" }).icon, "mdi:arrow-down-bold");
+  const reading = calibrationScene({ mode: "geometry", phase: "reading", reading_kind: "check" });
+  assert.deepEqual([reading.shape, reading.label, reading.measure], ["middle", "calVisual_measureHeight", true]);
+  assert.equal(calls.length, 0);
+});
