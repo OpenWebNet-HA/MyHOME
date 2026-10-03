@@ -1903,6 +1903,18 @@ async def test_send_paced_skips_a_frame_that_does_not_parse(gateway_handler, mon
     assert queued == ["*#2*0##"]
 
 
+def test_gateway_ignored_addresses(mock_config_entry):
+    """Test handler.ignored_addresses property instantiates IgnoredAddresses."""
+    from custom_components.myhome.const import CONF_IGNORED_ADDRESSES
+
+    mock_config_entry.options = {CONF_IGNORED_ADDRESSES: ["1/74"]}
+    handler = MyHOMEGatewayHandler(MagicMock(), mock_config_entry)
+    ignored = handler.ignored_addresses
+    assert (1, "74") in ignored
+    assert (1, "75") not in ignored
+
+
+
 
 
 

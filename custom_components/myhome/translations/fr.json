@@ -152,11 +152,13 @@
           "bus_topology": "Topologie du bus",
           "gateway_role": "Rôle de la passerelle",
           "primary_gateway": "Passerelle principale",
-          "delegated_whos": "Sous-systèmes délégués"
+          "delegated_whos": "Sous-systèmes délégués",
+          "ignored_addresses": "Adresses ignorées"
         },
         "data_description": {
           "decoder_1_pre_gain": "Calibrez à partir du matériel, pas au jugé : si la sortie ligne de ce décodeur alimente un module BTicino Ingresso RCA (L/N/NT4560) ou Controllo Stereo (L4561), augmentez le Pre-Gain pendant la lecture jusqu'à ce que la led de signal de ce module clignote en orange — ni fixe vert (signal trop faible) ni fixe rouge/orange (écrêtage). Câblez toujours la sortie ligne fixe (« OUT ») du décodeur, jamais une sortie casque/AUX dépendante du volume : un second étage de gain incontrôlé à cet endroit provoque exactement la distorsion contre laquelle le guide de dépannage BTicino met en garde.",
           "delegated_whos": "Rôle secondaire uniquement : sous-systèmes dont cette passerelle découvre les nouveaux appareils. Les appareils que la principale possède déjà restent sur la principale.",
+          "ignored_addresses": "Ignore définitivement les adresses indiquées (ex. 1/74, 1/74#4#01) : ignore la découverte, supprime les entités et désactive le suivi des pannes. Séparez les entrées par des retours à la ligne ou des virgules.",
           "command_worker_count": "Recommandé pour la {model} : {session_default}. Elle accepte au plus {session_limit} session(s) de commande, et chacune, avec la session d'événements, occupe l'une de ses rares connexions, dont l'application Legrand/BTicino et d'autres clients ont aussi besoin. N'augmentez que si les commandes s'accumulent."
         }
       }
@@ -178,7 +180,8 @@
       "gateway_has_dependents": "D'autres passerelles utilisent cette passerelle comme principale. Faites-les d'abord pointer vers une autre principale (ou rendez-les autonomes).",
       "secondary_requires_shared_topology": "Les rôles secondaire et veille active nécessitent que la topologie du bus soit définie sur Partagé.",
       "multiple_shared_primaries": "Une autre passerelle est déjà configurée comme passerelle principale pour ce bus partagé. Sélectionnez Secondaire ou Veille active.",
-      "duplicate_decoder_source": "Chaque décodeur doit être connecté à une entrée source de matrice différente."
+      "duplicate_decoder_source": "Chaque décodeur doit être connecté à une entrée source de matrice différente.",
+      "invalid_ignored_address": "Format d'adresse ignorée invalide (attendu 'WHO/WHERE', ex. '1/74' ou '1/74#4#01')"
     }
   },
   "services": {

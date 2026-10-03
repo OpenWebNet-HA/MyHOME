@@ -160,12 +160,14 @@
           "gateway_role": "Gateway role",
           "primary_gateway": "Primary gateway",
           "delegated_whos": "Delegated subsystems",
-          "auto_join_streaming": "Auto-join streaming groups"
+          "auto_join_streaming": "Auto-join streaming groups",
+          "ignored_addresses": "Ignored addresses"
         },
         "data_description": {
           "decoder_1_pre_gain": "Calibrate against the hardware, not a guess: if this decoder's line-out feeds a BTicino Ingresso RCA (L/N/NT4560) or Controllo Stereo (L4561) module, raise Pre-Gain while playing until that module's signal LED blinks orange — not steady green (signal too low) or steady red/orange (clipping). Always wire the decoder's fixed line-out ('OUT'), never a variable headphone/AUX output — a second uncontrolled gain stage there causes the same distortion BTicino's own troubleshooting guide warns about.",
           "delegated_whos": "Secondary role only: subsystems whose new devices this gateway discovers. Devices the primary already has stay on the primary.",
           "auto_join_streaming": "Automatically join an active streaming group when turning on a room or adjusting volume from a physical wall control.",
+          "ignored_addresses": "Permanently ignore listed addresses (e.g. 1/74, 1/74#4#01): skips discovery, entities and fault tracking. Separate multiple entries with newlines or commas.",
           "command_worker_count": "Recommended for the {model}: {session_default}. It accepts at most {session_limit} command session(s), and each one plus the event session uses one of its few connections, which the Legrand/BTicino app and other clients need too. Raise it only if commands queue up."
         }
       }
@@ -193,7 +195,8 @@
       "multiple_standbys": "This primary gateway already has a standby configured. Only one standby is allowed per primary.",
       "secondary_requires_shared_topology": "Secondary and warm standby roles require the bus topology to be set to Shared.",
       "multiple_shared_primaries": "Another gateway is already configured as the primary gateway for this shared bus. Select Secondary or Warm standby.",
-      "duplicate_decoder_source": "Each decoder must be connected to a different matrix source input."
+      "duplicate_decoder_source": "Each decoder must be connected to a different matrix source input.",
+      "invalid_ignored_address": "Invalid ignored address format (expected 'WHO/WHERE', e.g. '1/74' or '1/74#4#01')"
     }
   },
   "services": {

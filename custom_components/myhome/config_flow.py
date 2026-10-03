@@ -53,6 +53,7 @@ from .const import (
     CONF_FIRMWARE,
     CONF_GATEWAY_ROLE,
     CONF_GENERATE_EVENTS,
+    CONF_IGNORED_ADDRESSES,
     CONF_MANUFACTURER,
     CONF_MANUFACTURER_URL,
     CONF_OWN_PASSWORD,
@@ -81,6 +82,7 @@ from .const import (
 )
 from .decoder_companion import async_get_excluded_decoders
 from .gateway import MyHOMEGatewayHandler, command_session_default, command_session_limit
+from .ignored import validate_ignored_addresses
 from .topology import (
     entry_for_mac,
     entry_is_follower,
@@ -931,6 +933,8 @@ class MyhomeOptionsFlowHandler(OptionsFlowWithReload):
             self.options[CONF_TRANSITION_MODE] = DEFAULT_TRANSITION_MODE  # type: ignore
         if CONF_AUTO_JOIN_STREAMING not in self.options:  # type: ignore
             self.options[CONF_AUTO_JOIN_STREAMING] = DEFAULT_AUTO_JOIN_STREAMING  # type: ignore
+        if CONF_IGNORED_ADDRESSES not in self.options:  # type: ignore
+            self.options[CONF_IGNORED_ADDRESSES] = []  # type: ignore
         return await self.async_step_user()  # type: ignore
 
     def _audio_environments(self) -> list[str]:
@@ -1055,6 +1059,14 @@ class MyhomeOptionsFlowHandler(OptionsFlowWithReload):
             session_limit = command_session_limit(limit_model)
             if session_limit is not None and int(user_input[CONF_WORKER_COUNT]) > session_limit:
                 errors[CONF_WORKER_COUNT] = "worker_count_above_gateway_limit"
+
+            if CONF_IGNORED_ADDRESSES in user_input:
+                ignored_raw = user_input.get(CONF_IGNORED_ADDRESSES)
+                parsed_ignored, is_valid = validate_ignored_addresses(ignored_raw)
+                if not is_valid:
+                    errors[CONF_IGNORED_ADDRESSES] = "invalid_ignored_address"
+                else:
+                    self.options[CONF_IGNORED_ADDRESSES] = parsed_ignored  # type: ignore
 
             if not errors:
                 self.options.update({CONF_WORKER_COUNT: user_input[CONF_WORKER_COUNT]})  # type: ignore
@@ -1194,6 +1206,14 @@ class MyhomeOptionsFlowHandler(OptionsFlowWithReload):
                 },
                 default=DEFAULT_AUTO_JOIN_STREAMING,
             ): selector.BooleanSelector(),
+            vol.Optional(
+                CONF_IGNORED_ADDRESSES,
+                description={
+                    "suggested_value": "\n".join(self.options.get(CONF_IGNORED_ADDRESSES, []))  # type: ignore
+                    if isinstance(self.options.get(CONF_IGNORED_ADDRESSES), list)  # type: ignore
+                    else str(self.options.get(CONF_IGNORED_ADDRESSES) or "")  # type: ignore
+                },
+            ): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
         }
 
         # Matrix source names 1–4 (F441M inputs S1–S4)

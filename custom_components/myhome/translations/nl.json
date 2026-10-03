@@ -152,11 +152,13 @@
           "bus_topology": "Bustopologie",
           "gateway_role": "Gatewayrol",
           "primary_gateway": "Primaire gateway",
-          "delegated_whos": "Gedelegeerde subsystemen"
+          "delegated_whos": "Gedelegeerde subsystemen",
+          "ignored_addresses": "Genegeerde adressen"
         },
         "data_description": {
           "decoder_1_pre_gain": "Kalibreer aan de hand van de hardware, niet op gevoel: voedt de line-out van deze decoder een BTicino Ingresso RCA-module (L/N/NT4560) of Controllo Stereo (L4561), verhoog dan Pre-Gain tijdens het afspelen tot het signaal-ledje van die module oranje knippert — niet vast groen (signaal te laag) of vast rood/oranje (clipping). Sluit altijd de vaste line-out ('OUT') van de decoder aan, nooit een volume-afhankelijke hoofdtelefoon-/AUX-uitgang: een tweede ongecontroleerde versterkingstrap daar veroorzaakt precies de vervorming waar BTicino's eigen storingzoektabel voor waarschuwt.",
           "delegated_whos": "Alleen voor de rol secundair: subsystemen waarvan deze gateway nieuwe apparaten detecteert. Apparaten die de primaire gateway al heeft, blijven bij de primaire.",
+          "ignored_addresses": "Negeer vermelde adressen permanent (bijv. 1/74, 1/74#4#01): slaat detectie, entiteiten en storingsregistratie over. Scheid meerdere vermeldingen met nieuwe regels of komma's.",
           "command_worker_count": "Aanbevolen voor de {model}: {session_default}. Hij accepteert maximaal {session_limit} commandosessie(s), en elke sessie gebruikt samen met de eventsessie een van de weinige verbindingen, die ook de Legrand/BTicino-app en andere clients nodig hebben. Verhoog alleen als commando's in de wachtrij komen."
         }
       }
@@ -178,7 +180,8 @@
       "gateway_has_dependents": "Andere gateways gebruiken deze gateway als primaire gateway. Laat ze eerst naar een andere primaire gateway verwijzen (of maak ze zelfstandig).",
       "secondary_requires_shared_topology": "Voor secundaire en warm-stand-by rollen moet de bustopologie zijn ingesteld op Gedeeld.",
       "multiple_shared_primaries": "Er is al een andere gateway ingesteld als primaire gateway voor deze gedeelde bus. Selecteer Secundair of Warm-stand-by.",
-      "duplicate_decoder_source": "Elke decoder moet aangesloten zijn op een andere matrix broningang."
+      "duplicate_decoder_source": "Elke decoder moet aangesloten zijn op een andere matrix broningang.",
+      "invalid_ignored_address": "Ongeldig formaat voor genegeerd adres (verwacht 'WHO/WHERE', bijv. '1/74' of '1/74#4#01')"
     }
   },
   "services": {

@@ -608,6 +608,13 @@ class MyHOMEGatewayHandler:
             return primary_gw.device_health
         return self.device_health
 
+    @property
+    def ignored_addresses(self) -> Any:
+        """Addresses configured to be ignored on this gateway."""
+        from .ignored import IgnoredAddresses
+
+        return IgnoredAddresses.from_config_entry(self.config_entry)
+
     def _bridge_to_primary(self, message: Any) -> None:
         """Hand a bus frame to the offline primary's entities (warm standby only).
 

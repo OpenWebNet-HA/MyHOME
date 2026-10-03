@@ -1518,6 +1518,7 @@ async def test_options_flow_data_only_reloads_entry(hass: HomeAssistant) -> None
         CONF_DECODER_SOURCE,
         CONF_GATEWAY_ROLE,
         CONF_GENERATE_EVENTS,
+        CONF_IGNORED_ADDRESSES,
         CONF_OWN_PASSWORD,
         CONF_SOURCE_DEFAULTS,
         CONF_SOURCE_NAME,
@@ -1535,6 +1536,7 @@ async def test_options_flow_data_only_reloads_entry(hass: HomeAssistant) -> None
         CONF_GENERATE_EVENTS: False,
         CONF_BROADCAST_RESYNC: True,
         CONF_AUTO_JOIN_STREAMING: DEFAULT_AUTO_JOIN_STREAMING,
+        CONF_IGNORED_ADDRESSES: [],
         CONF_TRANSITION_MODE: "software_stepped",
         CONF_SOURCE_DEFAULTS: {},
         CONF_BUS_TOPOLOGY: TOPOLOGY_STANDALONE,
@@ -2427,3 +2429,73 @@ async def test_ssdp_discovery_null_serial(hass: HomeAssistant) -> None:
         result = await flow.async_step_ssdp(discovery_info)
         assert result["type"] == FlowResultType.ABORT
         assert result["reason"] == "no_serial"
+
+
+async def test_options_flow_ignored_addresses(hass: HomeAssistant) -> None:
+    """Test options flow successfully validates, parses, and saves ignored_addresses."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.const import CONF_IGNORED_ADDRESSES
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "host": "192.168.1.135",
+            "port": 20000,
+            "password": "pass",
+            "name": "F454",
+        },
+        options={
+            "command_worker_count": 1,
+            "generate_events": False,
+            CONF_IGNORED_ADDRESSES: [],
+        },
+        unique_id="00:03:50:00:12:99",
+    )
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.myhome.config_flow.find_gateways"):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "user"
+
+    # Test invalid ignored address format
+    result_invalid = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            "command_worker_count": 1,
+            "generate_events": False,
+            "address": "192.168.1.135",
+            "password": "pass",
+            CONF_IGNORED_ADDRESSES: "1/74\nnot_an_address",
+        },
+    )
+    assert result_invalid["type"] == FlowResultType.FORM
+    assert result_invalid["errors"][CONF_IGNORED_ADDRESSES] == "invalid_ignored_address"
+
+    # Test valid ignored addresses
+    with patch.object(hass.config_entries, "async_reload", return_value=True):
+        result_valid = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            user_input={
+                "command_worker_count": 1,
+                "generate_events": False,
+                "address": "192.168.1.135",
+                "password": "pass",
+                CONF_IGNORED_ADDRESSES: "1/74\n1/74#4#01",
+            },
+        )
+        await hass.async_block_till_done()
+
+    assert result_valid["type"] == FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_IGNORED_ADDRESSES] == ["1/74", "1/74#4#01"]
+
+    # Re-open options flow: verify suggested_value is pre-populated
+    with patch("custom_components.myhome.config_flow.find_gateways"):
+        result_reopen = await hass.config_entries.options.async_init(entry.entry_id)
+
+    schema = result_reopen["data_schema"].schema
+    ignored_key = [k for k in schema if str(k) == CONF_IGNORED_ADDRESSES or getattr(k, "schema", None) == CONF_IGNORED_ADDRESSES][0]
+    assert ignored_key.description["suggested_value"] == "1/74\n1/74#4#01"
+

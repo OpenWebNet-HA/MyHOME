@@ -323,6 +323,7 @@ def generate_gateway_options_table() -> str:
         "| **Proxy Decoder Entity** | `decoder_entity_1`..`4` | Entity (`media_player`) | `\"\"` | 4 Decoder slots | External software audio player entity (e.g. Music Assistant, Squeezelite) mapped to matrix inputs. |",
         "| **Proxy Decoder Source** | `decoder_source_1`..`4` | Select | Slot index | 1–4 | Matrix source input plugged into the external audio player's sound card / DAC. |",
         "| **Proxy Decoder Pre-Gain** | `decoder_pre_gain_1`..`4` | Number | `0` | -20 dB to +20 dB | Gain trim compensation to balance volume levels across streaming sources and physical tuners. |",
+        "| **Ignored Bus Addresses** | `ignored_addresses` | Multiline Text | `[]` | All gateways | Addresses (`WHO/WHERE`, e.g. `1/74`, `1/74#4#01`) silenced from discovery, entity creation, and hardware fault repairs. |",
     ]
     return "\n".join(lines)
 

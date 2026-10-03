@@ -152,11 +152,13 @@
           "bus_topology": "Topologia del bus",
           "gateway_role": "Ruolo del gateway",
           "primary_gateway": "Gateway primario",
-          "delegated_whos": "Sottosistemi delegati"
+          "delegated_whos": "Sottosistemi delegati",
+          "ignored_addresses": "Indirizzi ignorati"
         },
         "data_description": {
           "decoder_1_pre_gain": "Calibra in base all'hardware, non a occhio: se l'uscita di linea di questo decoder alimenta un modulo BTicino Ingresso RCA (L/N/NT4560) o Controllo Stereo (L4561), aumenta il Pre-Gain durante la riproduzione finché il led di segnale di quel modulo lampeggia arancione — non fisso verde (segnale troppo basso) né fisso rosso/arancione (distorsione). Collega sempre l'uscita di linea fissa ('OUT') del decoder, mai un'uscita cuffia/AUX dipendente dal volume: un secondo stadio di guadagno incontrollato in quel punto causa esattamente la distorsione contro cui mette in guardia la guida guasti BTicino.",
           "delegated_whos": "Solo per il ruolo secondario: sottosistemi di cui questo gateway rileva i nuovi dispositivi. I dispositivi che il primario ha già restano sul primario.",
+          "ignored_addresses": "Ignora permanentemente gli indirizzi elencati (es. 1/74, 1/74#4#01): salta il rilevamento, le entità e il tracciamento guasti. Separa le voci con a capo o virgole.",
           "command_worker_count": "Consigliato per il {model}: {session_default}. Accetta al massimo {session_limit} sessione/i di comando, e ognuna, insieme alla sessione eventi, occupa una delle sue poche connessioni, necessarie anche all'app Legrand/BTicino e ad altri client. Aumenta solo se i comandi si accodano."
         }
       }
@@ -178,7 +180,8 @@
       "gateway_has_dependents": "Altri gateway usano questo gateway come primario. Prima falli puntare a un altro primario (o rendili autonomi).",
       "secondary_requires_shared_topology": "I ruoli secondario e di riserva richiedono che la topologia del bus sia impostata su Condiviso.",
       "multiple_shared_primaries": "Un altro gateway è già configurato come gateway primario per questo bus condiviso. Selezionare Secondario o Riserva attiva.",
-      "duplicate_decoder_source": "Ciascun decoder deve essere collegato a un ingresso sorgente della matrice diverso."
+      "duplicate_decoder_source": "Ciascun decoder deve essere collegato a un ingresso sorgente della matrice diverso.",
+      "invalid_ignored_address": "Formato indirizzo ignorato non valido (atteso 'WHO/WHERE', es. '1/74' o '1/74#4#01')"
     }
   },
   "services": {
