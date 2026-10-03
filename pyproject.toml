@@ -7,7 +7,7 @@ name = "custom-components-myhome"
 version = "1.0.0"
 description = "Home Assistant custom integration for BTicino / Legrand MyHOME OpenWebNet gateways"
 readme = "README.md"
-license = "GPL-3.0-or-later"
+license = "Apache-2.0"
 authors = [
     {name = "MyHOME Integration Contributors"}
 ]

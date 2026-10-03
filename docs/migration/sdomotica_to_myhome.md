@@ -196,7 +196,7 @@ After restarting Home Assistant with MyHOME:
 
 ## ⚖️ Legal & Trademark Notice
 
-- **Trademarks**: SDomotica® and BTicino® / Legrand® are trademarks or registered trademarks of their respective owners. The Home Assistant MyHOME integration and this migration tool are independent open-source projects licensed under AGPL-3.0 and are not affiliated with, maintained by, or endorsed by SDomotica or BTicino/Legrand.
+- **Trademarks**: SDomotica® and BTicino® / Legrand® are trademarks or registered trademarks of their respective owners. The Home Assistant MyHOME integration and this migration tool are independent open-source projects licensed under Apache-2.0 and are not affiliated with, maintained by, or endorsed by SDomotica or BTicino/Legrand.
 - **Interoperability & Fair Use**: This migration script operates strictly as a data conversion and configuration translation utility for a user's own Home Assistant configuration files (`core.entity_registry` and YAML packages), in compliance with European Union Directive 2009/24/EC Article 6 (Software Interoperability), GDPR Article 20 (Right to Data Portability), and US Copyright Act Fair Use / 17 U.S.C. § 1201(f).
 - **Clean-Room Compliance**: This utility contains no proprietary software, code, binaries, or reverse-engineered binaries from SDomotica. It strictly parses public Home Assistant entity IDs and standard Home Assistant YAML schemas created by end-users.
 
