@@ -443,57 +443,65 @@ class CommandWorkerPool:
                         task["message"],
                         worker_id,
                     )
-                    task_start = time.time()
-                    self.bus_monitor.record_frame(
-                        direction="tx",
-                        raw=str(task["message"]),
-                        parsed=(
-                            task["message"]
-                            if isinstance(task["message"], OWNMessage)
-                            else None
-                        ),
-                    )
-                    if not session_is_open(_command_session):
-                        res = await _command_session.connect()
-                        if self._connect_refused(res, worker_id):
-                            _cancel_written(task)
-                            return
-                        if not session_is_open(_command_session):
-                            LOGGER.warning(
-                                "%s Command session unavailable; message `%s` not sent.",
-                                self.log_id,
-                                task["message"],
-                            )
+                    async with task.get("command_lock", asyncio.Lock()):
+                        guard = task.get("guard")
+                        if guard is not None and not guard():
                             _cancel_written(task)
                             continue
-                    written_at = time.monotonic()
-                    collected = await _command_session.send(
-                        message=task["message"],
-                        is_status_request=task["is_status_request"],
-                    )
-                    if collected is None:
-                        _cancel_written(task)
-                    else:
-                        _resolve_written(task, written_at)
-                        self.handler._record_tx(written_at, task["message"])
-                    if collected and isinstance(collected, list):
-                        for resp in collected:
-                            raw_resp = str(resp)
-                            if self.bus_monitor.has_frame_since(
-                                task_start, direction="rx", raw=raw_resp
-                            ):
-                                continue
-                            frame = self.bus_monitor.record_frame(
-                                direction="rx",
-                                raw=raw_resp,
-                                parsed=resp if isinstance(resp, OWNMessage) else None,
-                            )
-                            if not getattr(frame, "is_duplicate", False) and isinstance(resp, OWNMessage):
-                                dispatcher_send(
-                                    self.hass, f"myhome_message_{self.mac}", resp
+                        task_start = time.time()
+                        self.bus_monitor.record_frame(
+                            direction="tx",
+                            raw=str(task["message"]),
+                            parsed=(
+                                task["message"]
+                                if isinstance(task["message"], OWNMessage)
+                                else None
+                            ),
+                        )
+                        if not session_is_open(_command_session):
+                            res = await _command_session.connect()
+                            if self._connect_refused(res, worker_id):
+                                _cancel_written(task)
+                                return
+                            if not session_is_open(_command_session):
+                                LOGGER.warning(
+                                    "%s Command session unavailable; message `%s` not sent.",
+                                    self.log_id,
+                                    task["message"],
                                 )
-                                # A reply to a request sent for an offline primary
-                                self.handler._bridge_to_primary(resp)
+                                _cancel_written(task)
+                                continue
+                        if guard is not None and not guard():
+                            _cancel_written(task)
+                            continue
+                        written_at = time.monotonic()
+                        collected = await _command_session.send(
+                            message=task["message"],
+                            is_status_request=task["is_status_request"],
+                        )
+                        if collected is None:
+                            _cancel_written(task)
+                        else:
+                            _resolve_written(task, written_at)
+                            self.handler._record_tx(written_at, task["message"])
+                        if collected and isinstance(collected, list):
+                            for resp in collected:
+                                raw_resp = str(resp)
+                                if self.bus_monitor.has_frame_since(
+                                    task_start, direction="rx", raw=raw_resp
+                                ):
+                                    continue
+                                frame = self.bus_monitor.record_frame(
+                                    direction="rx",
+                                    raw=raw_resp,
+                                    parsed=resp if isinstance(resp, OWNMessage) else None,
+                                )
+                                if not getattr(frame, "is_duplicate", False) and isinstance(resp, OWNMessage):
+                                    dispatcher_send(
+                                        self.hass, f"myhome_message_{self.mac}", resp
+                                    )
+                                    # A reply to a request sent for an offline primary
+                                    self.handler._bridge_to_primary(resp)
                 except asyncio.CancelledError:
                     _cancel_written(task)
                     raise

@@ -207,7 +207,7 @@ class MyHOMEEntity(RestoreEntity):
         return self._gateway_handler.is_who_available(self._who)
 
     @callback
-    def handle_event(self, msg: Any) -> None:
+    def handle_event(self, msg: Any) -> bool | None:
         """Handle a message routed from the gateway bus."""
         raise NotImplementedError  # pragma: no cover
 

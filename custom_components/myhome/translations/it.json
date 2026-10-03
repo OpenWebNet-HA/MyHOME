@@ -158,6 +158,20 @@
           "delegated_whos": "Solo per il ruolo secondario: sottosistemi di cui questo gateway rileva i nuovi dispositivi. I dispositivi che il primario ha già restano sul primario.",
           "command_worker_count": "Consigliato per il {model}: {session_default}. Accetta al massimo {session_limit} sessione/i di comando, e ognuna, insieme alla sessione eventi, occupa una delle sue poche connessioni, necessarie anche all'app Legrand/BTicino e ad altri client. Aumenta solo se i comandi si accodano."
         }
+      },
+      "init": {
+        "title": "MyHOME",
+        "menu_options": {
+          "panel": "Pannello MyHOME",
+          "user": "Impostazioni gateway"
+        }
+      },
+      "panel": {
+        "title": "Pannello MyHOME",
+        "description": "[Apri il pannello MyHOME]({panel_url}) per questo gateway.\n\nLa visibilità nella barra laterale è condivisa da tutti i gateway e dagli amministratori. Il pannello resta accessibile da questo collegamento anche quando la voce è nascosta.",
+        "data": {
+          "show_sidebar": "Mostra MyHOME nella barra laterale"
+        }
       }
     },
     "error": {
@@ -177,7 +191,8 @@
       "gateway_has_dependents": "Altri gateway usano questo gateway come primario. Prima falli puntare a un altro primario (o rendili autonomi).",
       "secondary_requires_shared_topology": "I ruoli secondario e di riserva richiedono che la topologia del bus sia impostata su Condiviso.",
       "multiple_shared_primaries": "Un altro gateway è già configurato come gateway primario per questo bus condiviso. Selezionare Secondario o Riserva attiva.",
-      "duplicate_decoder_source": "Ciascun decoder deve essere collegato a un ingresso sorgente della matrice diverso."
+      "duplicate_decoder_source": "Ciascun decoder deve essere collegato a un ingresso sorgente della matrice diverso.",
+      "panel_save_failed": "Impossibile salvare la preferenza. Riprova."
     }
   },
   "services": {
@@ -439,6 +454,9 @@
     },
     "seek_not_supported": {
       "message": "{entity_id}: la ricerca di frequenza è supportata solo sulle entità sintonizzatore"
+    },
+    "cover_position_unknown": {
+      "message": "Esegui un’apertura o una chiusura completa prima di impostare una posizione intermedia."
     }
   },
   "entity": {

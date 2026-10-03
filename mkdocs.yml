@@ -114,6 +114,18 @@ nav:
       - Hardware Trace Availability: trace-availability.md
       - F454 Regression Checks: f454-regression-checks.md
       - Quality Scale Roadmap: quality_scale_plan.md
+  - Panel Development:
+      - Side Panel: sidepanel.md
+      - Shared Contract: panel-shared-contract.md
+      - WebSocket API: panel-websocket-api.md
+      - Cover Flow Review: cover-flow-review.md
+      - Cover Calibration: cover-calibration.md
+      - Calibration Reservation: cover-calibration-reservation.md
+      - Guided Geometry: cover-guided-geometry.md
+      - Nonlinear Model: cover-nonlinear-model.md
+      - Nonlinear Runtime: cover-nonlinear-runtime.md
+      - Cover Settings Backend: cover-settings-backend.md
+      - Cover Travel Scaling: cover-travel-scaling.md
   - Migration & Legacy:
       - Upgrade from v0.9.4 to v2.0: migration/upgrade-from-094.md
       - Migrating from SDomotica: migration/sdomotica_to_myhome.md

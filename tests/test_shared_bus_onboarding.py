@@ -391,6 +391,8 @@ async def test_calibrate_all_button_reactive_availability_and_no_covers(
         calls = []
         hass.services.async_register(DOMAIN, SERVICE_CALIBRATE_COVER, lambda call: calls.append(call))
         await btn.async_press()
+        # The non-blocking service call may still be queued on newer HA cores.
+        await hass.async_block_till_done()
         assert len(calls) == 1
         assert calls[0].data == {"entity_id": [cover.entity_id]}
 

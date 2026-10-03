@@ -426,6 +426,8 @@ async def test_options_flow_multi_gateway(hass: HomeAssistant) -> None:
     opt_flow = MyhomeOptionsFlowHandler(entry_sec)
     opt_flow.hass = hass
     form = await opt_flow.async_step_init()
+    assert form["type"] == FlowResultType.MENU
+    form = await opt_flow.async_step_user()
     assert form["type"] == FlowResultType.FORM
 
     # 3. Post multi-gateway options and verify issue resolution and reload
@@ -1675,6 +1677,8 @@ async def test_options_flow_smart_defaults_inferred(hass: HomeAssistant) -> None
     sec_entry.add_to_hass(hass)
 
     result = await hass.config_entries.options.async_init(sec_entry.entry_id)
+
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "user"})
     assert result["type"] == "form"
     schema = result["data_schema"]
 
@@ -1711,6 +1715,8 @@ async def test_options_flow_suggested_role_default_when_no_primary(hass: HomeAss
     solo_entry.add_to_hass(hass)
 
     result = await hass.config_entries.options.async_init(solo_entry.entry_id)
+
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "user"})
     assert result["type"] == "form"
     schema = result["data_schema"]
     for k in schema.schema:
@@ -2221,5 +2227,4 @@ def test_validate_shared_bus_topology_scenarios(hass: HomeAssistant) -> None:
         },
     )
     assert errs_circular[CONF_PRIMARY_GATEWAY] == "circular_gateway_reference"
-
 

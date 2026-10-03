@@ -1,7 +1,7 @@
 """WebSocket API for MyHOME OpenWebNet integration.
 
 Provides real-time bus streaming, historical frame inspection, and diagnostic
-injection for the Lovelace bus monitor card.
+injection for the administrator-only MyHOME panel and bus monitor card.
 """
 from __future__ import annotations
 
@@ -290,6 +290,7 @@ def _matches_filter(
 
 
 @websocket_command(SCHEMA_WS_HISTORY)
+@require_admin
 @async_response
 async def ws_bus_monitor_history(
     hass: HomeAssistant,
@@ -331,6 +332,7 @@ async def ws_bus_monitor_history(
 
 
 @websocket_command(SCHEMA_WS_STREAM)
+@require_admin
 @async_response
 async def ws_bus_monitor_stream(
     hass: HomeAssistant,
@@ -363,8 +365,8 @@ async def ws_bus_monitor_stream(
     connection.send_result(msg["id"])
 
 
-@require_admin
 @websocket_command(SCHEMA_WS_SEND)
+@require_admin
 @async_response
 async def ws_bus_monitor_send(
     hass: HomeAssistant,
@@ -410,8 +412,8 @@ async def ws_bus_monitor_send(
     )
 
 
-@require_admin
 @websocket_command(SCHEMA_WS_CLEAR)
+@require_admin
 @async_response
 async def ws_bus_monitor_clear(
     hass: HomeAssistant,
@@ -433,6 +435,7 @@ async def ws_bus_monitor_clear(
 
 
 @websocket_command(SCHEMA_WS_INFO)
+@require_admin
 @async_response
 async def ws_bus_monitor_info(
     hass: HomeAssistant,

@@ -158,4 +158,7 @@ pdf_output.txt
 venv/
 .venv/
 quality_scale.json
+
+# Frontend test dependencies
+/node_modules
 site/
