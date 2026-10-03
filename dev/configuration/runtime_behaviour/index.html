@@ -2192,6 +2192,10 @@
 </thead>
 <tbody>
 <tr>
+<td style="text-align: left;"><code>*#1*0##</code></td>
+<td style="text-align: left;">Lighting</td>
+</tr>
+<tr>
 <td style="text-align: left;"><code>*#2*0##</code></td>
 <td style="text-align: left;">Automation / covers</td>
 </tr>
@@ -2206,10 +2210,10 @@
 </tbody>
 </table>
 <p>Each request is only sent when the gateway's OWNd <strong>profile</strong> advertises that WHO (<code>GatewayProfile.supported_who</code>). Unknown gateways keep the full set.</p>
+<p>The requests go out one at a time. The gateway ACKs a general request at once, but the replies (one frame per device, on the event session) keep coming for seconds on a large plant, and a second request sent in that window cuts the first reply short (<a href="https://github.com/OpenWebNet-HA/MyHOME/issues/578">#578</a>). So after each request is written, the next one waits until the event session has been quiet for 0.75 s, at most 15 s. A request that is NACKed or never written still gets that wait. <code>myhome.sweep_bus</code> paces its general requests the same way, so a sweep on a large plant takes a few seconds per subsystem. Entities restored at startup poll their own state only after the whole sweep has finished.</p>
 <blockquote>
 <p>OWNd 2.0.0b8 and earlier give an <strong>MH200</strong> the MH200N profile, which does not advertise WHO 16, so amplifiers behind an MH200 only appear once they send bus traffic. A live MH200 answers <code>*#16*0*5##</code> with every amplifier and source; <a href="https://github.com/OpenWebNet-HA/OWNd/issues/53">OWNd#53</a> gives it its own profile.</p>
 <p>The WHO 16 status request is <code>*#16*WHERE*5##</code> (spec section 1.5.2). Gateways NACK the bare <code>*#16*0##</code> for every address, whether or not the plant has audio, so an old NACK on that frame never meant "no audio".</p>
-<p>WHO=1 has no valid general status request (<code>*#1*0##</code> is not OpenWebNet), so lights are hydrated from their own status replies and bus traffic.</p>
 </blockquote>
 <hr />
 <h2 id="broadcast-re-sync-group-area-general">🔁 Broadcast re-sync (group / area / general)<a class="headerlink" href="#broadcast-re-sync-group-area-general" title="Permanent link">&para;</a></h2>

@@ -2130,11 +2130,6 @@
 <td style="text-align: left;">Keep the worker count at the profile default. F454 / F455 / MyHOMEServer1 / MH202 take more workers.</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>Lights are not hydrated at startup.</strong> State appears when the actuator first reports, or after <code>myhome.sweep_bus</code>.</td>
-<td style="text-align: left;"><code>*#1*0##</code> is not a valid OpenWebNet request; there is no general status query for WHO 1.</td>
-<td style="text-align: left;">Call <code>myhome.sweep_bus</code> from an automation on <code>homeassistant.start</code>, or turn something on.</td>
-</tr>
-<tr>
 <td style="text-align: left;"><strong>Entities can be unavailable for up to 60 s after a gateway drop.</strong></td>
 <td style="text-align: left;">The availability grace period hides short reconnects instead of flapping every entity.</td>
 <td style="text-align: left;">Nothing needed; a longer outage marks entities unavailable and they recover on reconnect.</td>
