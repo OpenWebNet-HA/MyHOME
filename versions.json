@@ -8,17 +8,17 @@
     "version": "2.0.0b14",
     "title": "v2.0.0b14 (beta)",
     "aliases": [
-      "beta",
-      "2.0"
+      "2.0",
+      "beta"
     ]
   },
   {
     "version": "0.9.4",
     "title": "v0.9.4 (legacy)",
     "aliases": [
-      "latest",
+      "v0.9",
       "legacy",
-      "v0.9"
+      "latest"
     ]
   }
 ]
