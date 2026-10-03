@@ -1065,10 +1065,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#supported-features-states" class="md-nav__link">
+  <a href="#states" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🔒 Supported Features &amp; States
+        🔒 States
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#arming-and-disarming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🔑 Arming and disarming
       
     </span>
   </a>
@@ -2005,10 +2016,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#supported-features-states" class="md-nav__link">
+  <a href="#states" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🔒 Supported Features &amp; States
+        🔒 States
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#arming-and-disarming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🔑 Arming and disarming
       
     </span>
   </a>
@@ -2069,19 +2091,21 @@
 
 
 <h1 id="burglar-alarm-who-5">Burglar Alarm (WHO = 5)<a class="headerlink" href="#burglar-alarm-who-5" title="Permanent link">&para;</a></h1>
-<p>The <strong>MyHOME</strong> integration provides full control and monitoring for BTicino / Legrand intrusion detection systems and partition devices operating on OpenWebNet <strong>WHO = 5</strong> (<code>alarm_control_panel</code>).</p>
-<p>In v2, setup and management are <strong>100% UI-first</strong>: alarm central units and zone partitions are automatically discovered over the SCS bus without manual YAML configuration files.</p>
+<p>The <strong>MyHOME</strong> integration monitors BTicino / Legrand intrusion detection systems on OpenWebNet <strong>WHO = 5</strong> (<code>alarm_control_panel</code>).</p>
+<p>The panel is <strong>read-only</strong>: it shows the central unit's state, but it cannot arm or disarm the alarm. To arm and disarm from Home Assistant, see <a href="#arming-and-disarming">Arming and disarming</a>.</p>
+<p>In v2, setup is <strong>UI-first</strong>: the central unit is discovered from the SCS bus without manual YAML configuration files.</p>
 <hr />
 <h2 id="auto-discovery">🚀 Auto-Discovery<a class="headerlink" href="#auto-discovery" title="Permanent link">&para;</a></h2>
 <p>When your gateway connects to Home Assistant:</p>
 <ol>
-<li><strong>Dynamic Bus Discovery</strong>: Any incoming alarm event frame on the SCS bus (e.g. <code>*5*1*0##</code> for arming, <code>*5*2*0##</code> for disarming, or <code>*5*15*0##</code> for intrusion) automatically registers the <code>alarm_control_panel</code> entity.</li>
-<li><strong>Global Broadcast Zone 0 Listening</strong>: Entities automatically subscribe to global broadcast zone 0 telemetry (<code>myhome_update_&lt;mac&gt;_5_0</code>) alongside their specific zone/partition address (<code>myhome_update_&lt;mac&gt;_5_&lt;where&gt;</code>), guaranteeing synchronized state updates across all alarm panels in your home.</li>
-<li><strong>UI Customization</strong>: You can rename the alarm panel, assign it to an Area (e.g. <em>Entrance</em>, <em>Security</em>), and customize icons directly in the Home Assistant UI.</li>
+<li><strong>Dynamic Bus Discovery</strong>: The first central-unit frame on the SCS bus that names the panel (for example the <code>*5*9*0##</code> a disarmed panel sends when polled, or <code>*5*8*0##</code> when it is armed) registers the <code>alarm_control_panel</code> entity.</li>
+<li><strong>Depends on the gateway.</strong> An MH202 answers a poll with <code>*5*9*0##</code>, so the panel appears at once (<a href="https://github.com/OpenWebNet-HA/MyHOME/issues/564">#564</a>). An F454 answers with system-level frames that have an empty WHERE (<code>*5*1*##</code>, <code>*5*5*##</code>, <code>*5*7*##</code>, <code>*5*9*##</code>, see <a href="https://github.com/OpenWebNet-HA/MyHOME/issues/311">#311</a>), and MyHOME deliberately creates no entity from an empty WHERE. On such a gateway the panel appears at the first <code>*5*8*0##</code> or <code>*5*9*0##</code>, that is the first real arm or disarm after a blank start.</li>
+<li><strong>Global Broadcast Zone 0 Listening</strong>: Entities follow global broadcast zone 0 telemetry (<code>myhome_update_&lt;mac&gt;_5_0</code>) alongside their own address (<code>myhome_update_&lt;mac&gt;_5_&lt;where&gt;</code>), so every alarm panel stays in sync.</li>
+<li><strong>UI Customization</strong>: You can rename the alarm panel, assign it to an Area (e.g. <em>Entrance</em>, <em>Security</em>), and change its icon in the Home Assistant UI.</li>
 </ol>
 <hr />
 <h2 id="supported-hardware">🛡️ Supported Hardware<a class="headerlink" href="#supported-hardware" title="Permanent link">&para;</a></h2>
-<p>The platform interfaces with Legrand / BTicino SCS burglar alarm central units:</p>
+<p>The platform reads Legrand / BTicino SCS burglar alarm central units:</p>
 <ul>
 <li><strong>BTicino 3485 / 3486</strong>: Multi-zone central alarm control units.</li>
 <li><strong>BTicino HC4600 / L4600</strong>: Security control keypads and display terminals.</li>
@@ -2089,8 +2113,8 @@
 <li><strong>Technical Alarm Transmitters</strong>: Flood/water leak detectors and gas safety sensors.</li>
 </ul>
 <hr />
-<h2 id="supported-features-states">🔒 Supported Features &amp; States<a class="headerlink" href="#supported-features-states" title="Permanent link">&para;</a></h2>
-<p>The <code>alarm_control_panel</code> platform provides:</p>
+<h2 id="states">🔒 States<a class="headerlink" href="#states" title="Permanent link">&para;</a></h2>
+<p>The panel follows what the central unit reports on the bus:</p>
 <table>
 <thead>
 <tr>
@@ -2102,46 +2126,85 @@
 <tbody>
 <tr>
 <td style="text-align: left;"><strong><code>disarmed</code></strong></td>
-<td style="text-align: left;"><code>*5*2*&lt;where&gt;##</code></td>
-<td style="text-align: left;">System deactivated, idle, or maintenance mode.</td>
-</tr>
-<tr>
-<td style="text-align: left;"><strong><code>armed_home</code></strong></td>
-<td style="text-align: left;"><code>*5*1*&lt;where&gt;##</code></td>
-<td style="text-align: left;">Partial perimeter arming (e.g. night mode).</td>
+<td style="text-align: left;"><code>*5*9*&lt;where&gt;##</code>, <code>*5*2*&lt;where&gt;##</code>, <code>*5*0*&lt;where&gt;##</code></td>
+<td style="text-align: left;">Disengaged, deactivated, or maintenance.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong><code>armed_away</code></strong></td>
-<td style="text-align: left;"><code>*5*1*&lt;where&gt;##</code></td>
-<td style="text-align: left;">Total plant armed; all zones active.</td>
+<td style="text-align: left;"><code>*5*8*&lt;where&gt;##</code></td>
+<td style="text-align: left;">Engaged.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong><code>triggered</code></strong></td>
-<td style="text-align: left;"><code>*5*15*&lt;where&gt;##</code> / <code>*5*17*&lt;where&gt;##</code></td>
-<td style="text-align: left;">Active intrusion alarm, tampering, anti-panic, or technical emergency.</td>
+<td style="text-align: left;"><code>*5*12*</code>, <code>*5*15*</code>, <code>*5*16*</code>, <code>*5*17*</code>, <code>*5*31*</code></td>
+<td style="text-align: left;">Technical, intrusion, tampering, anti-panic or silent alarm.</td>
 </tr>
 </tbody>
 </table>
+<ul>
+<li><code>*5*1*&lt;where&gt;##</code> (<em>activation</em>) is <strong>not</strong> an armed state. The central unit sends it while disarming (<code>*5*2*0##</code> → <code>*5*1*0##</code> → <code>*5*9*0##</code>) and in the status of a disarmed system, as well as while arming (<code>*5*1*0##</code> → <code>*5*8*0##</code>).</li>
+<li><strong><code>armed_home</code></strong> is never reported: home and away arming look the same on the bus.</li>
+<li>Zones (<code>*5*11*#n##</code> active, <code>*5*18*#n##</code> not active) never change the panel's state.</li>
+</ul>
+<hr />
+<h2 id="arming-and-disarming">🔑 Arming and disarming<a class="headerlink" href="#arming-and-disarming" title="Permanent link">&para;</a></h2>
+<p>Current central-unit firmware rejects arm and disarm commands sent as WHO 5 frames over the SCS bus, whichever gateway sends them. A plant owner reported this, quoting BTicino support (<a href="https://github.com/OpenWebNet-HA/MyHOME/issues/564#issuecomment-5913248544">#564</a>), and no capture shows such a command being accepted. The <code>alarm_control_panel</code> entity therefore offers no arm actions, and a disarm request is refused with an error.</p>
+<p>The route that works is an <strong>auxiliary (WHO 9) command</strong>. Your installer programs the central unit so that receiving, for example, <code>*9*1*7##</code> (AUX channel 7 on) arms a set of zones. Which AUX channels and values arm or disarm depends on that programming: check the central unit's configuration or ask your installer.</p>
+<p>Combine the MyHOME panel's state with those AUX frames in a core <a href="https://www.home-assistant.io/integrations/template/#alarm-control-panel">template alarm control panel</a>.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>The template panel is a separate entity, so the MyHOME panel's refusal does not protect it. Without a code check, anyone who can reach Home Assistant can disarm the burglar alarm with one tap, including from the alarm card. The recipe below therefore asks for a code on disarm and stops unless it matches.</p>
+</div>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">template</span><span class="p">:</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">alarm_control_panel</span><span class="p">:</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Home alarm</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">        </span><span class="nt">unique_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">home_alarm</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">        </span><span class="c1"># Unavailable until the MyHOME panel has reported. Falling back to</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">        </span><span class="c1"># "disarmed" instead would show an armed alarm as disarmed after a restart.</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">        </span><span class="nt">availability</span><span class="p">:</span><span class="w"> </span><span class="s">"{{</span><span class="nv"> </span><span class="s">states('alarm_control_panel.alarm_0')</span><span class="nv"> </span><span class="s">in</span><span class="nv"> </span><span class="s">['disarmed',</span><span class="nv"> </span><span class="s">'armed_away',</span><span class="nv"> </span><span class="s">'triggered']</span><span class="nv"> </span><span class="s">}}"</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">        </span><span class="nt">state</span><span class="p">:</span><span class="w"> </span><span class="s">"{{</span><span class="nv"> </span><span class="s">states('alarm_control_panel.alarm_0')</span><span class="nv"> </span><span class="s">}}"</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">        </span><span class="nt">code_format</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">number</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">        </span><span class="nt">code_arm_required</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">        </span><span class="c1"># Example AUX frames: use the ones your central unit is programmed for</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">        </span><span class="nt">arm_away</span><span class="p">:</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.send_message</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">            </span><span class="nt">data</span><span class="p">:</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">              </span><span class="nt">gateway</span><span class="p">:</span><span class="w"> </span><span class="s">"00:03:50:00:00:00"</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">              </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">"*9*1*7##"</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">        </span><span class="nt">disarm</span><span class="p">:</span>
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">          </span><span class="c1"># Stop here unless the right code was entered</span>
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">condition</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">template</span>
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">            </span><span class="nt">value_template</span><span class="p">:</span><span class="w"> </span><span class="s">"{{</span><span class="nv"> </span><span class="s">code</span><span class="nv"> </span><span class="s">==</span><span class="nv"> </span><span class="s">'1234'</span><span class="nv"> </span><span class="s">}}"</span>
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.send_message</span>
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">            </span><span class="nt">data</span><span class="p">:</span>
+</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">              </span><span class="nt">gateway</span><span class="p">:</span><span class="w"> </span><span class="s">"00:03:50:00:00:00"</span>
+</span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">              </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">"*9*0*7##"</span>
+</span></code></pre></div>
+<p>To keep the code out of the YAML, for example if you share your configuration, move the <strong>whole</strong> template into <code>secrets.yaml</code>. <code>!secret</code> replaces a complete value, so it cannot be used inside the template string (<code>{{ code == !secret ... }}</code> does not work):</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># configuration.yaml</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">condition</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">template</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">            </span><span class="nt">value_template</span><span class="p">:</span><span class="w"> </span><span class="kt">!secret</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">alarm_disarm_check</span>
+</span></code></pre></div>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># secrets.yaml</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">alarm_disarm_check</span><span class="p">:</span><span class="w"> </span><span class="s">"{{</span><span class="nv"> </span><span class="s">code</span><span class="nv"> </span><span class="s">==</span><span class="nv"> </span><span class="s">'1234'</span><span class="nv"> </span><span class="s">}}"</span>
+</span></code></pre></div>
+<p>Alternatively, compare <code>code</code> against a helper, such as an <code>input_text</code> in password mode.</p>
+<p>The template panel's state changes once the central unit reports <code>*5*8*0##</code> (armed) or <code>*5*9*0##</code> (disarmed) on the bus, not when the AUX frame is sent.</p>
 <hr />
 <h2 id="dashboard-display-lovelace-alarm-panel">📊 Dashboard Display (Lovelace Alarm Panel)<a class="headerlink" href="#dashboard-display-lovelace-alarm-panel" title="Permanent link">&para;</a></h2>
-<p>Add the native Home Assistant alarm card to your dashboard:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">alarm-panel</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">entity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">alarm_control_panel.central_alarm</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Home Security System</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nt">states</span><span class="p">:</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">arm_home</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">arm_away</span>
+<p>Use the template panel on the alarm card so the buttons work:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">alarm-panel</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">entity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">alarm_control_panel.home_alarm</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Home Security System</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="nt">states</span><span class="p">:</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">arm_away</span>
 </span></code></pre></div>
 <hr />
 <h2 id="interactive-diagnostics-via-bus-monitor">🧪 Interactive Diagnostics via Bus Monitor<a class="headerlink" href="#interactive-diagnostics-via-bus-monitor" title="Permanent link">&para;</a></h2>
-<p>You can test alarm telemetry and commands using the <a href="../bus_monitor/">Lovelace Bus Monitor Card</a> Command Injector:</p>
+<p>You can query the alarm with the <a href="../bus_monitor/">Lovelace Bus Monitor Card</a> Command Injector:</p>
 <ul>
 <li><strong>Query Central Status</strong>: <code>*#5*0##</code></li>
 <li><strong>Query Zone Status</strong>: <code>*#5*#1##</code> (for zone 1)</li>
-<li><strong>Arm System (Total)</strong>: <code>*5*1*0##</code></li>
-<li><strong>Disarm System</strong>: <code>*5*2*0##</code></li>
-<li><strong>Trigger Panic Alarm</strong>: <code>*5*17*0##</code></li>
-<li><strong>Simulate Intrusion</strong>: <code>*5*15*0##</code></li>
 </ul>
 <hr />
 <h2 id="legacy-yaml-note">🔄 Legacy YAML Note<a class="headerlink" href="#legacy-yaml-note" title="Permanent link">&para;</a></h2>
