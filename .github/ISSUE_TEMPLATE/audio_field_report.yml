@@ -1,0 +1,51 @@
+name: "🔊 Audio field report (Music Assistant / F441)"
+description: "Report how multi-room audio behaves on your plant. Passing runs count too."
+title: "[Audio]: "
+labels: ["audio", "field-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Audio field report
+
+        Grouping is where Music Assistant and the analog matrix meet, and each plant behaves a little differently.
+        The four checks below are the ones we replay as tests. Please attach the **diagnostics file**
+        (*Settings → Devices & services → MyHOME → ⋮ → Download diagnostics*) and, for Music Assistant problems,
+        its log from around the time it happened.
+
+  - type: input
+    id: plant
+    attributes:
+      label: Plant
+      description: Gateway model, matrix (F441 / F441M), number of zones, decoder(s).
+      placeholder: "MH200 + F441M, 6 zones, Squeezelite + Cambridge CXN"
+    validations:
+      required: true
+
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: MyHOME, Home Assistant and Music Assistant versions.
+      placeholder: "MyHOME 2.0.0b14, HA 2026.9.2, Music Assistant 2.x"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Which checks passed?
+      description: Tick what worked. Leave unticked what did not, and describe it below.
+      options:
+        - label: "Played to the Music Assistant Sync Group, added a third room, dropped the leader: matrix and queue stayed in step"
+        - label: "Volume of one member set to 0 and raised again: the slider did not lock"
+        - label: "After the anti-hiss auto-off silenced the house, play brought the parked members back as a group"
+        - label: "Cambridge decoder only: diagnostics show the DLNA/UPnP renderer as companion, not a Music Assistant clone"
+
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What you did, and when
+      description: "For example: 21:48, pressed play on the Huis group, Bureau's slider would not move."
+    validations:
+      required: true

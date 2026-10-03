@@ -1,0 +1,107 @@
+name: Documentation (MkDocs & Mike)
+
+on:
+  push:
+    branches:
+      - master
+      - v2-phase1-architecture
+    paths:
+      - 'docs/**'
+      - 'docs-v0.9/**'
+      - 'mkdocs*.yml'
+      - 'requirements-docs.txt'
+      - 'scripts/**'
+      - 'custom_components/**'
+      - '.github/workflows/docs.yml'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag to (re)deploy, e.g. 2.0.0b14. Empty deploys the branch as dev."
+        required: false
+        default: ""
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build & Deploy Versioned Docs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write # mike pushes the built site to gh-pages
+    steps:
+      # Credentials stay: `mike deploy --push` needs them.
+      - name: Checkout repository with full git history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked]
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.version || github.ref }}
+
+      # No pip cache: this job publishes, and a cache any branch can write
+      # must not feed what lands on the docs site.
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install documentation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-docs.txt
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Validate documentation synchronization against codebase
+        run: |
+          python scripts/sync_documentation.py --check
+
+      - name: Deploy versioned docs via mike
+        env:
+          # The release tag, or the tag given to a manual run; empty for a branch push.
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.ref_name || inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          # 1. Deploy the v0.9.4 legacy documentation (production master)
+          echo "Deploying v0.9.4 legacy documentation..."
+          mike deploy --push --update-aliases -F mkdocs-v0.9.yml 0.9.4 legacy v0.9 latest -t "v0.9.4 (legacy)"
+
+          # 2. Deploy v2 documentation
+          # An alias may not share its name with a version (mike refuses it), so
+          # "dev" is only ever the branch preview version, never an alias.
+          if [ -n "${RELEASE_TAG}" ]; then
+            CLEAN_VER="${RELEASE_TAG#v}"
+            # Check if this is a final stable 2.0 release (without beta/alpha/rc tag)
+            if echo "${CLEAN_VER}" | grep -Eq '^2\.[0-9]+\.[0-9]+$'; then
+              echo "Deploying official stable release: ${CLEAN_VER}"
+              mike deploy --push --update-aliases -F mkdocs.yml "${CLEAN_VER}" stable latest -t "v${CLEAN_VER} (stable)"
+              mike set-default --push stable
+            elif echo "${CLEAN_VER}" | grep -Eq '^2\.[0-9]+\.[0-9]+b[0-9]+$'; then
+              echo "Deploying versioned beta release: ${CLEAN_VER}"
+              # Up to b13 "2.0" was the v2 docs version itself. It becomes an alias
+              # of the newest beta, so the old version has to go first.
+              if mike list --json | python -c 'import json, sys; sys.exit(not any(v["version"] == "2.0" for v in json.load(sys.stdin)))'; then
+                mike delete --push 2.0
+              fi
+              mike deploy --push --update-aliases -F mkdocs.yml "${CLEAN_VER}" beta 2.0 -t "v${CLEAN_VER} (beta)"
+              mike set-default --push latest
+            else
+              echo "Deploying preview release: ${CLEAN_VER}"
+              mike deploy --push -F mkdocs.yml "${CLEAN_VER}" -t "v${CLEAN_VER} (preview)"
+              mike set-default --push latest
+            fi
+          else
+            echo "Deploying branch ${REF_NAME} as development preview (version: dev)"
+            mike deploy --push --update-aliases -F mkdocs.yml dev -t "dev (preview)"
+            # Default root redirect points to latest (production v0.9.4 until 2.0.0 is released)
+            mike set-default --push latest
+          fi

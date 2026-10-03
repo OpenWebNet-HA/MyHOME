@@ -1,0 +1,5 @@
+{
+  "_comment": "Strict-mypy error ceiling per module; lowered by scripts/typing_ratchet.py --update, never raised.",
+  "total": 0,
+  "modules": {}
+}

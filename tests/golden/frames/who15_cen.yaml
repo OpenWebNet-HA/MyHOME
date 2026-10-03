@@ -1,0 +1,54 @@
+- id: cen.event.press.btn2.11
+  frame: "*15*02*11##"
+  direction: event
+  who: 15
+  what: "02"
+  where: "11"
+  source: encyclopedia
+  mcp_valid: true
+  mcp_notes: "CEN: Pressure on button 2 of source 11 (Encyclopedia functional/who-15-cen/README.md @3052786, Action connection table)"
+  roundtrip: true
+
+- id: cen.event.release_short.btn2.11
+  frame: "*15*02#1*11##"
+  direction: event
+  who: 15
+  what: "02#1"
+  where: "11"
+  source: encyclopedia
+  mcp_valid: true
+  mcp_notes: "CEN: Release after short pressure on button 2 of source 11 (Encyclopedia functional/who-15-cen/README.md @3052786, Action connection table)"
+  roundtrip: true
+
+- id: cen.event.start_long_press.btn2.11
+  frame: "*15*02#3*11##"
+  direction: event
+  who: 15
+  what: "02#3"
+  where: "11"
+  source: encyclopedia
+  mcp_valid: true
+  mcp_notes: "CEN: Extended pressure on button 2 of source 11 (Encyclopedia functional/who-15-cen/README.md @3052786, Action connection table)"
+  roundtrip: true
+
+- id: cen.event.release_long.btn2.11
+  frame: "*15*02#2*11##"
+  direction: event
+  who: 15
+  what: "02#2"
+  where: "11"
+  source: encyclopedia
+  mcp_valid: true
+  mcp_notes: "CEN: Release after extended pressure on button 2 of source 11 (Encyclopedia functional/who-15-cen/README.md @3052786, Action connection table)"
+  roundtrip: true
+
+- id: cen.event.extended_press.btn1.0001
+  frame: "*15*01#3*0001##"
+  direction: event
+  who: 15
+  what: "01#3"
+  where: "0001"
+  source: openwebnet4j
+  mcp_valid: true
+  mcp_notes: "CEN: Button 1 extended pressure on module 0001"
+  roundtrip: true

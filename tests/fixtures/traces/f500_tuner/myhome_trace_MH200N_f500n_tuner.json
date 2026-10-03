@@ -1,0 +1,224 @@
+{
+  "capture": {
+    "kind": "trace",
+    "started_at": null,
+    "filters": {
+      "who": null,
+      "where": null,
+      "direction": null
+    },
+    "window": {
+      "first": "2026-09-26T15:35:00.000Z",
+      "last": "2026-09-26T15:36:00.000Z",
+      "frames": 13,
+      "buffer_frames": 13,
+      "buffer_depth": 200,
+      "truncated": false
+    }
+  },
+  "environment": {
+    "home_assistant_version": "2026.9.3",
+    "integration_version": "2.0.0b13",
+    "ownd_version": "2.0.0b8",
+    "exported_at": "2026-09-26T15:37:15.000Z"
+  },
+  "gateway": {
+    "model": "MH200N",
+    "manufacturer": "BTicino S.p.A.",
+    "firmware": "2.0.32",
+    "mac_prefix": "00:03:50",
+    "connection_type": "tcp",
+    "queue_pacing": 0.05,
+    "is_connected": true,
+    "identification": {
+      "model": "MH200N",
+      "source": "bus",
+      "configured_model": "MH200N",
+      "ssdp_model": null,
+      "who13_code": "MH200N",
+      "who13_model": "MH200N",
+      "who13_model_official": "MH200N",
+      "who13_model_observed": "MH200N",
+      "who13_firmware": "2.0.32",
+      "who13_kernel": null,
+      "who13_distribution": null,
+      "profile": "MH200NProfile",
+      "conflict": null
+    }
+  },
+  "telemetry": {
+    "total_rx": 10,
+    "total_tx": 3,
+    "captured_in_buffer": 13,
+    "buffer_depth": 200,
+    "queue_depth": 0
+  },
+  "frames": [
+    {
+      "timestamp": 1790436900.0,
+      "iso_time": "2026-09-26T15:35:00.000000+00:00",
+      "direction": "tx",
+      "raw": "*16*6001*101##",
+      "who": "16",
+      "what": "6001",
+      "where": "101",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790436900.1,
+      "iso_time": "2026-09-26T15:35:00.100000+00:00",
+      "direction": "rx",
+      "raw": "*#16*101*6*0*96200##",
+      "who": "16",
+      "what": null,
+      "where": "101",
+      "dimension": "6",
+      "dimension_values": ["0", "96200"],
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790436900.12,
+      "iso_time": "2026-09-26T15:35:00.120000+00:00",
+      "direction": "rx",
+      "raw": "*#22*5#2#1*5*1*9620##",
+      "who": "22",
+      "what": null,
+      "where": "5#2#1",
+      "dimension": "5",
+      "dimension_values": ["1", "9620"],
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790436900.2,
+      "iso_time": "2026-09-26T15:35:00.200000+00:00",
+      "direction": "rx",
+      "raw": "*#16*101*7*0*2##",
+      "who": "16",
+      "what": null,
+      "where": "101",
+      "dimension": "7",
+      "dimension_values": ["0", "2"],
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790436900.22,
+      "iso_time": "2026-09-26T15:35:00.220000+00:00",
+      "direction": "rx",
+      "raw": "*#22*5#2#1*11*1*9620*2##",
+      "who": "22",
+      "what": null,
+      "where": "5#2#1",
+      "dimension": "11",
+      "dimension_values": ["1", "9620", "2"],
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790436900.25,
+      "iso_time": "2026-09-26T15:35:00.250000+00:00",
+      "direction": "rx",
+      "raw": "*22*2#1*6*2##",
+      "who": "22",
+      "what": "6",
+      "where": "2#1",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790436900.3,
+      "iso_time": "2026-09-26T15:35:00.300000+00:00",
+      "direction": "rx",
+      "raw": "*#16*101*8*75*82*79*78*69*72*73*84##",
+      "who": "16",
+      "what": null,
+      "where": "101",
+      "dimension": "8",
+      "dimension_values": ["75", "82", "79", "78", "69", "72", "73", "84"],
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790436900.32,
+      "iso_time": "2026-09-26T15:35:00.320000+00:00",
+      "direction": "rx",
+      "raw": "*#22*5#2#1*10*75*82*79*78*69*72*73*84##",
+      "who": "22",
+      "what": null,
+      "where": "5#2#1",
+      "dimension": "10",
+      "dimension_values": ["75", "82", "79", "78", "69", "72", "73", "84"],
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790436901.0,
+      "iso_time": "2026-09-26T15:35:01.000000+00:00",
+      "direction": "rx",
+      "raw": "*#16*101*8*107*114*111*110*101*104*105*116##",
+      "who": "16",
+      "what": null,
+      "where": "101",
+      "dimension": "8",
+      "dimension_values": ["107", "114", "111", "110", "101", "104", "105", "116"],
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790436910.0,
+      "iso_time": "2026-09-26T15:35:10.000000+00:00",
+      "direction": "tx",
+      "raw": "*#16*101*#7*3##",
+      "who": "16",
+      "what": null,
+      "where": "101",
+      "dimension": "7",
+      "dimension_values": ["3"],
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790436910.2,
+      "iso_time": "2026-09-26T15:35:10.200000+00:00",
+      "direction": "rx",
+      "raw": "*#16*101*7*0*3##",
+      "who": "16",
+      "what": null,
+      "where": "101",
+      "dimension": "7",
+      "dimension_values": ["0", "3"],
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790436920.0,
+      "iso_time": "2026-09-26T15:35:20.000000+00:00",
+      "direction": "tx",
+      "raw": "*16*6101*101##",
+      "who": "16",
+      "what": "6101",
+      "where": "101",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790436920.2,
+      "iso_time": "2026-09-26T15:35:20.200000+00:00",
+      "direction": "rx",
+      "raw": "*#16*101*7*0*2##",
+      "who": "16",
+      "what": null,
+      "where": "101",
+      "dimension": "7",
+      "dimension_values": ["0", "2"],
+      "is_ack": false,
+      "is_nack": false
+    }
+  ]
+}

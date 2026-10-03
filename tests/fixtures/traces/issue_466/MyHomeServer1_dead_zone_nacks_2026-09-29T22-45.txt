@@ -1,0 +1,44 @@
+2026-09-29 22:45:15.554 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:04:66: climate restored/configured 44 entities (44 addresses known)
+2026-09-29 22:45:15.552 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Message `*#4*76##` was successfully queued.
+2026-09-29 22:45:15.552 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Message `*#4*75##` was successfully queued.
+2026-09-29 22:45:15.552 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Message `*#4*71##` was successfully queued.
+2026-09-29 22:45:15.553 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Message `*#4*33##` was successfully queued.
+2026-09-29 22:45:15.553 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Message `*#4*6##` was successfully queued.
+2026-09-29 22:45:15.554 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Message `*#4*32##` was successfully queued.
+2026-09-29 22:45:15.635 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Message `*#4*0##` was successfully queued.
+2026-09-29 22:46:11.904 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Message `*#4*4##` was successfully unqueued by worker 0.
+2026-09-29 22:46:15.118 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Could not send message `*#4*4##`. Retrying (1)...
+2026-09-29 22:46:18.327 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Gateway rejected status request *#4*4## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-09-29 22:46:18.347 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Message `*#4*2##` was successfully unqueued by worker 0.
+2026-09-29 22:46:21.555 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Could not send message `*#4*2##`. Retrying (1)...
+2026-09-29 22:46:24.763 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Gateway rejected status request *#4*2## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-09-29 22:46:24.783 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Message `*#4*1##` was successfully unqueued by worker 0.
+2026-09-29 22:46:27.991 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Could not send message `*#4*1##`. Retrying (1)...
+2026-09-29 22:46:31.195 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Gateway rejected status request *#4*1## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-09-29 22:46:31.216 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Message `*#4*3##` was successfully unqueued by worker 0.
+2026-09-29 22:46:34.427 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Could not send message `*#4*3##`. Retrying (1)...
+2026-09-29 22:46:37.646 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Gateway rejected status request *#4*3## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-09-29 22:46:37.666 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Message `*#4*76##` was successfully unqueued by worker 0.
+2026-09-29 22:46:40.875 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Could not send message `*#4*76##`. Retrying (1)...
+2026-09-29 22:46:44.081 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Gateway rejected status request *#4*76## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-09-29 22:46:44.102 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Message `*#4*75##` was successfully unqueued by worker 0.
+2026-09-29 22:46:47.309 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Could not send message `*#4*75##`. Retrying (1)...
+2026-09-29 22:46:50.515 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Gateway rejected status request *#4*75## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-09-29 22:46:50.535 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Message `*#4*71##` was successfully unqueued by worker 0.
+2026-09-29 22:46:53.744 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Could not send message `*#4*71##`. Retrying (1)...
+2026-09-29 22:46:56.953 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Gateway rejected status request *#4*71## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-09-29 22:46:56.974 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Message `*#4*33##` was successfully unqueued by worker 0.
+2026-09-29 22:47:00.181 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Could not send message `*#4*33##`. Retrying (1)...
+2026-09-29 22:47:03.389 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Gateway rejected status request *#4*33## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-09-29 22:47:03.409 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Message `*#4*6##` was successfully unqueued by worker 0.
+2026-09-29 22:47:06.618 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Could not send message `*#4*6##`. Retrying (1)...
+2026-09-29 22:47:09.824 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Gateway rejected status request *#4*6## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-09-29 22:47:09.845 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Message `*#4*32##` was successfully unqueued by worker 0.
+2026-09-29 22:47:13.053 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Could not send message `*#4*32##`. Retrying (1)...
+2026-09-29 22:47:16.260 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Gateway rejected status request *#4*32## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-09-29 22:47:20.855 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Message `*#4*0##` was successfully unqueued by worker 0.
+2026-09-29 22:47:20.882 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Could not send message `*#4*0##`. Retrying (1)...
+2026-09-29 22:47:20.905 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Gateway rejected status request *#4*0## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-09-29 22:47:20.925 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Message `*#16*0*5##` was successfully unqueued by worker 0.
+2026-09-29 22:47:20.927 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Could not send message `*#16*0*5##`. Retrying (1)...
+2026-09-29 22:47:20.928 DEBUG (MainThread) [custom_components.myhome] [MyHomeServer1 gateway - 192.0.2.9] Gateway rejected status request *#16*0*5## (NACK, 0 response(s)). Subsystem or device may not be present.

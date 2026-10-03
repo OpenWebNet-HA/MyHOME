@@ -1,0 +1,15 @@
+# Anonymized plant configuration for Issue #311 (F454 with Alarm WHO=5)
+f454:
+  mac: "00:03:50:00:03:11"
+  alarm_control_panel:
+    alarm_0:
+      where: "0"
+      name: "Alarm Zone 0"
+  binary_sensor:
+    auxiliary_1:
+      where: "1"
+      name: "Binary Sensor 1"
+  light:
+    light_31:
+      where: "31"
+      name: "Light 31"

@@ -1,0 +1,55 @@
+{
+ "meta": {
+  "captured": "2026-09-29",
+  "gateway": "BTicino MH200 (firmware 2.1.0) + F441M matrix",
+  "build": "perf/faster-group-wake @ 949f02db (2.0.0b13.dev202609291834), debug log",
+  "how": "pool events and frames the integration wrote (t = seconds after Eetkamer was removed)",
+  "play": "badkamer (36) leads Bureau (21), Eetkamer (23), Keuken (22) and is playing; in Music Assistant Eetkamer and Bureau are unchecked and slaapkamer (35, same environment as the leader) is checked; the leader is not touched"
+ },
+ "events": [
+  {
+   "t": 0.0,
+   "event": "pool: Eetkamer (23) removed from the group"
+  },
+  {
+   "t": 2.598,
+   "event": "pool: Bureau (21) removed from the group"
+  },
+  {
+   "t": 5.468,
+   "event": "pool: group is now Keuken (22) + slaapkamer (35)"
+  }
+ ],
+ "tx": [
+  {
+   "t": 4.62,
+   "frame": "*16*13*35##"
+  },
+  {
+   "t": 5.401,
+   "frame": "*16*3*35##"
+  },
+  {
+   "t": 5.64,
+   "frame": "*16*13*23##"
+  },
+  {
+   "t": 6.431,
+   "frame": "*16*3*102##"
+  },
+  {
+   "t": 7.21,
+   "frame": "*16*3*132##"
+  },
+  {
+   "t": 7.66,
+   "frame": "*16*13*21##"
+  }
+ ],
+ "findings": [
+  "a member that leaves gets exactly one OFF (*16*13*Z##) and nothing else: no decoder stop, no route, no frame for the leader or the members that stay",
+  "the OFFs go out 2.6-5 s after the removal because they queue behind the frames of the room being added (0.8 s each); the added room's own OFF/ON pair and routes come first",
+  "slaapkamer (35) joins with OFF/ON, then the source-on frame (102) and its environment route (132); 'not applying default source' is logged for it because the leader streams in the same environment",
+  "music kept playing in the rooms that stayed"
+ ]
+}

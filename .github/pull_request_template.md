@@ -1,0 +1,1 @@
+- [ ] **V2 Architecture:** New entities implement `handle_event()` and do not manually subscribe via `async_dispatcher_connect`.

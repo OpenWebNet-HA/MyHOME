@@ -1,0 +1,43 @@
+- id: scenario.cmd.activate.1
+  frame: "*0*1*1##"
+  direction: command
+  who: 0
+  what: 1
+  where: "1"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Scenarios (Basic): Activate scenario 1"
+  roundtrip: true
+
+- id: scenario.cmd.stop.5
+  frame: "*0*0*5##"
+  direction: command
+  who: 0
+  what: 0
+  where: "5"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Scenarios (Basic): Stop execution of scenario 5"
+  roundtrip: true
+
+- id: scenario.event.execute.05
+  frame: "*0*2*05##"
+  direction: event
+  who: 0
+  what: 2
+  where: "05"
+  source: openwebnet4j
+  mcp_valid: true
+  mcp_notes: "Scenarios (Basic): Execute scenario 05"
+  roundtrip: true
+
+- id: scenario.event.start.95
+  frame: "*0*14*95##"
+  direction: event
+  who: 0
+  what: 14
+  where: "95"
+  source: openwebnet4j
+  mcp_valid: true
+  mcp_notes: "Scenarios (Basic): Start scenario 95"
+  roundtrip: true
