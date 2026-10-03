@@ -144,7 +144,10 @@ label { display: grid; gap: 6px; font-size: 12px; font-weight: 500; color: var(-
 .tabs button { flex-shrink: 0; background: transparent; border: none; border-radius: 0; padding: 10px 14px; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--panel-text-2); }
 .tabs button:hover { background: var(--panel-accent-soft); color: var(--primary-text-color, #182b37); }
 .tabs button[aria-pressed="true"] { color: var(--panel-accent); border-bottom-color: var(--panel-accent); font-weight: 600; }
-.tabs button[aria-pressed="true"] .count { background: var(--panel-accent-soft); color: var(--panel-accent); }
+/* Counter badges take the colour of their tab or chip: its text colour at 12 % behind a number in that colour. On the
+   selected one the accent is mixed towards the text colour, so the number stays readable on light and dark themes. */
+.tabs button .count { background: color-mix(in srgb, var(--panel-text-2) 12%, transparent); color: var(--panel-text-2); }
+.tabs button[aria-pressed="true"] .count { background: var(--panel-accent-soft); color: color-mix(in srgb, var(--panel-accent) 70%, var(--primary-text-color, #182b37)); }
 .tabs #totals { margin-inline-start: auto; font-size: 12px; padding-block: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -158,10 +161,11 @@ label { display: grid; gap: 6px; font-size: 12px; font-weight: 500; color: var(-
 .who-buttons button { flex-shrink: 0; max-width: 100%; min-height: 40px; padding: 7px 10px; border-radius: 8px; background: var(--panel-surface); }
 .who-label { min-width: 0; overflow-wrap: anywhere; text-align: start; }
 .who-code { font-size: 11px; font-weight: 400; color: var(--panel-text-2); white-space: nowrap; }
-.who-buttons button .count { padding: 1px 5px; border-radius: 5px; background: var(--panel-surface-2); }
+.who-buttons button .count { padding: 1px 5px; border-radius: 5px; background: color-mix(in srgb, var(--panel-text-2) 12%, transparent); color: var(--panel-text-2); }
 .who-buttons button:hover { background: var(--panel-accent-soft); }
 .who-buttons button[aria-pressed="true"] { color: var(--panel-accent); background: var(--panel-accent-soft); border-color: var(--panel-accent); }
 .who-buttons button[aria-pressed="true"] .who-code { color: inherit; }
+.who-buttons button[aria-pressed="true"] .count { background: var(--panel-accent-soft); color: color-mix(in srgb, var(--panel-accent) 70%, var(--primary-text-color, #182b37)); }
 
 /* ---------- Filters ---------- */
 .filters { display: grid; grid-template-columns: minmax(200px, 1fr) repeat(2, minmax(150px, 200px)); gap: 10px; margin-bottom: 20px; }
