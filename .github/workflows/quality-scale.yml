@@ -8,9 +8,10 @@ name: Integration Quality Scale
 
 on:
   push:
-    branches: [main, master, "v2-*", "fix/*", "feat/*"]
+    branches: [main, master, "v2-*"]
   pull_request:
     branches: [main, master, "v2-*"]
+    paths-ignore: ["docs/**", "mkdocs.yml", "**/*.md"]
   schedule:
     - cron: "30 4 * * 1" # weekly, Monday 04:30 UTC
   workflow_dispatch:

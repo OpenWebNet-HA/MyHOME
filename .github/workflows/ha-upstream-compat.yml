@@ -8,6 +8,7 @@ on:
   workflow_dispatch:
   pull_request:
     branches: [main, master, "v2-*"]
+    paths-ignore: ["docs/**", "mkdocs.yml", "**/*.md"]
 
 permissions:
   contents: read
@@ -21,6 +22,8 @@ jobs:
     name: HA Compatibility (${{ matrix.ha-channel }})
     runs-on: ubuntu-24.04
     timeout-minutes: 40
+    # Pull requests run the stable channel only; beta/dev drift is covered on push, weekly.
+    if: github.event_name != 'pull_request' || matrix.ha-channel == 'stable'
     continue-on-error: ${{ matrix.allow-failure }}
     strategy:
       fail-fast: false

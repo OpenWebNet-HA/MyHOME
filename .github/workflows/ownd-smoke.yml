@@ -6,12 +6,12 @@ on:
       - main
       - master
       - "v2-*"
-      - "feat/*"
   pull_request:
     branches:
       - main
       - master
       - "v2-*"
+    paths-ignore: ["docs/**", "mkdocs.yml", "**/*.md"]
   schedule:
     - cron: "0 5 * * 1"  # Weekly run every Monday at 05:00 UTC
   workflow_dispatch:
@@ -28,6 +28,8 @@ jobs:
     name: OWNd (${{ matrix.ownd-target }} / Py${{ matrix.python-version }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    # The allow-failure dev target runs on push and weekly, not on every PR push.
+    if: github.event_name != 'pull_request' || matrix.ownd-target != 'dev'
     strategy:
       fail-fast: false
       matrix:

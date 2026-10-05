@@ -6,12 +6,12 @@ on:
       - main
       - master
       - "v2-*"
-      - "feat/*"
   pull_request:
     branches:
       - main
       - master
       - "v2-*"
+    paths-ignore: ["docs/**", "mkdocs.yml", "**/*.md"]
   schedule:
     - cron: "0 4 * * 1"  # Weekly run every Monday at 04:00 UTC
   workflow_dispatch:
@@ -28,6 +28,8 @@ jobs:
     name: HA Container (${{ matrix.ha-channel }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    # Pull requests run the stable channel only; beta/dev drift is covered on push, weekly.
+    if: github.event_name != 'pull_request' || matrix.ha-channel == 'stable'
     strategy:
       fail-fast: false
       matrix:
