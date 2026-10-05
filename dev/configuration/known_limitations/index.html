@@ -1212,6 +1212,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../guides/hardware-coupled-sensors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hardware-Coupled Sensors & Curfew
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../troubleshooting/" class="md-nav__link">
         
   
@@ -2180,6 +2208,11 @@
 <td style="text-align: left;"><strong>Native transitions depend on the actuator.</strong></td>
 <td style="text-align: left;">Some dimmers ignore the fade parameter.</td>
 <td style="text-align: left;">Keep the default <code>software_stepped</code> transition mode.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Physical sensors sharing an actuator address (e.g. 3477 twilight photocell) trigger the actuator directly on the wire.</strong></td>
+<td style="text-align: left;">Point-to-point SCS physical addressing binds the sensor contact interface directly to the relay. Hardware turn-ons cannot be prevented before they execute on the bus.</td>
+<td style="text-align: left;">Use the <a href="../../guides/hardware-coupled-sensors/">Hardware-Coupled Sensors Guide</a> and Dusk Curfew Blueprint to enforce bedtime curfews and companion synchronization, or decouple the sensor address.</td>
 </tr>
 </tbody>
 </table>

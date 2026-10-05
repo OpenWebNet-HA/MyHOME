@@ -12,13 +12,13 @@
         <meta name="author" content="OpenWebNet-HA Community">
       
       
-        <link rel="canonical" href="https://openwebnet-ha.github.io/MyHOME/dev/getting-started/removal/">
+        <link rel="canonical" href="https://openwebnet-ha.github.io/MyHOME/dev/guides/hardware-coupled-sensors/">
       
       
-        <link rel="prev" href="../../roadmap/beta-differences/">
+        <link rel="prev" href="../../recipes/adaptive_lighting/">
       
       
-        <link rel="next" href="../../configuration/gateways/">
+        <link rel="next" href="../../configuration/troubleshooting/">
       
       
         
@@ -29,7 +29,7 @@
     
     
       
-        <title>Removal & Clean Uninstall - MyHOME for Home Assistant</title>
+        <title>Hardware-Coupled Sensors & Curfew - MyHOME for Home Assistant</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#removal-clean-uninstall-guide" class="md-skip">
+        <a href="#hardware-coupled-sensors-twilight-curfew-guide" class="md-skip">
           Skip to content
         </a>
       
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Removal & Clean Uninstall
+              Hardware-Coupled Sensors & Curfew
             
           </span>
         </div>
@@ -248,12 +248,10 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
+      <li class="md-tabs__item">
         <a href="../../configuration/" class="md-tabs__link">
           
   
@@ -290,10 +288,12 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
+      <li class="md-tabs__item md-tabs__item--active">
         <a href="../../configuration/bus_monitor/" class="md-tabs__link">
           
   
@@ -442,31 +442,28 @@
       
   
   
-    
   
   
-  
     
     
     
     
-      
-        
-        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
         
           
-          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
             
   
   
@@ -484,7 +481,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
@@ -530,7 +527,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../installation/" class="md-nav__link">
+      <a href="../../getting-started/installation/" class="md-nav__link">
         
   
   
@@ -558,7 +555,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../hardware-compatibility/" class="md-nav__link">
+      <a href="../../getting-started/hardware-compatibility/" class="md-nav__link">
         
   
   
@@ -611,37 +608,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Removal & Clean Uninstall
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../getting-started/removal/" class="md-nav__link">
         
   
   
@@ -657,81 +627,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#step-1-remove-gateway-integration-entry" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step 1: Remove Gateway Integration Entry
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#step-2-clean-up-storage-persistent-data" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step 2: Clean Up Storage &amp; Persistent Data
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#step-3-remove-custom-lovelace-bus-monitor-card-if-installed" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step 3: Remove Custom Lovelace Bus Monitor Card (If Installed)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#step-4-remove-integration-files-custom-component" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step 4: Remove Integration Files &amp; Custom Component
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#step-5-restart-home-assistant" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step 5: Restart Home Assistant
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1145,28 +1040,31 @@
       
   
   
+    
   
   
+  
     
     
     
     
+      
+        
+        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
         
           
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
-        
-          
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
             
   
   
@@ -1184,7 +1082,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1311,10 +1209,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../guides/hardware-coupled-sensors/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hardware-Coupled Sensors & Curfew
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1330,6 +1255,165 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#understanding-hardware-coupling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Understanding Hardware Coupling
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Understanding Hardware Coupling">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#diagnostic-investigation-via-who-1001" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Diagnostic Investigation via WHO 1001
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-happens-on-the-wire" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Happens on the Wire
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architectural-challenges-in-home-assistant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architectural Challenges in Home Assistant
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#solution-strategy-1-non-invasive-dusk-curfew-blueprint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Solution Strategy 1: Non-Invasive Dusk Curfew (Blueprint)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Solution Strategy 1: Non-Invasive Dusk Curfew (Blueprint)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#using-the-dusk-curfew-blueprint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🌟 Using the Dusk Curfew Blueprint
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-automation-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Automation Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#temporary-overrides-gardener-power-maintenance-hold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Temporary Overrides: Gardener Power &amp; Maintenance Hold
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#solution-strategy-2-clean-hardware-decoupling-full-ha-authority" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Solution Strategy 2: Clean Hardware Decoupling (Full HA Authority)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Solution Strategy 2: Clean Hardware Decoupling (Full HA Authority)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#option-a-move-3477-to-an-unused-address-physical-decoupling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Option A: Move 3477 to an Unused Address (Physical Decoupling)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#option-b-configure-3477-as-a-dry-contact-interface-who-25" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Option B: Configure 3477 as a Dry Contact Interface (WHO = 25)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -2000,10 +2084,49 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#step-1-remove-gateway-integration-entry" class="md-nav__link">
+  <a href="#understanding-hardware-coupling" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 1: Remove Gateway Integration Entry
+        Understanding Hardware Coupling
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Understanding Hardware Coupling">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#diagnostic-investigation-via-who-1001" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Diagnostic Investigation via WHO 1001
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-happens-on-the-wire" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Happens on the Wire
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architectural-challenges-in-home-assistant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architectural Challenges in Home Assistant
       
     </span>
   </a>
@@ -2011,46 +2134,91 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-2-clean-up-storage-persistent-data" class="md-nav__link">
+  <a href="#solution-strategy-1-non-invasive-dusk-curfew-blueprint" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 2: Clean Up Storage &amp; Persistent Data
+        Solution Strategy 1: Non-Invasive Dusk Curfew (Blueprint)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Solution Strategy 1: Non-Invasive Dusk Curfew (Blueprint)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#using-the-dusk-curfew-blueprint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🌟 Using the Dusk Curfew Blueprint
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#step-3-remove-custom-lovelace-bus-monitor-card-if-installed" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#example-automation-configuration" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 3: Remove Custom Lovelace Bus Monitor Card (If Installed)
+        Example Automation Configuration
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#step-4-remove-integration-files-custom-component" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#temporary-overrides-gardener-power-maintenance-hold" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 4: Remove Integration Files &amp; Custom Component
+        Temporary Overrides: Gardener Power &amp; Maintenance Hold
       
     </span>
   </a>
   
 </li>
+        
+      </ul>
+    </nav>
+  
+</li>
       
         <li class="md-nav__item">
-  <a href="#step-5-restart-home-assistant" class="md-nav__link">
+  <a href="#solution-strategy-2-clean-hardware-decoupling-full-ha-authority" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 5: Restart Home Assistant
+        Solution Strategy 2: Clean Hardware Decoupling (Full HA Authority)
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Solution Strategy 2: Clean Hardware Decoupling (Full HA Authority)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#option-a-move-3477-to-an-unused-address-physical-decoupling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Option A: Move 3477 to an Unused Address (Physical Decoupling)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#option-b-configure-3477-as-a-dry-contact-interface-who-25" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Option B: Configure 3477 as a Dry Contact Interface (WHO = 25)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2074,62 +2242,150 @@
   
 
 
-<h1 id="removal-clean-uninstall-guide">Removal &amp; Clean Uninstall Guide<a class="headerlink" href="#removal-clean-uninstall-guide" title="Permanent link">&para;</a></h1>
-<p>This guide details how to completely remove the <strong>MyHOME</strong> integration and clean up all associated entities, dashboard cards, and persistent storage files from Home Assistant.</p>
+<h1 id="hardware-coupled-sensors-twilight-curfew-guide">Hardware-Coupled Sensors &amp; Twilight Curfew Guide<a class="headerlink" href="#hardware-coupled-sensors-twilight-curfew-guide" title="Permanent link">&para;</a></h1>
+<p>This guide explains how to identify, manage, and decouple physical <strong>BTicino MyHOME sensors</strong> (such as external twilight photocells, contact interfaces, or motion sensors) that share an SCS bus address with a lighting actuator relay.</p>
 <hr />
-<h2 id="step-1-remove-gateway-integration-entry">Step 1: Remove Gateway Integration Entry<a class="headerlink" href="#step-1-remove-gateway-integration-entry" title="Permanent link">&para;</a></h2>
-<ol>
-<li>In Home Assistant, navigate to <strong>Settings → Devices &amp; Services → Integrations</strong>.</li>
-<li>Locate the <strong>MyHOME</strong> integration card.</li>
-<li>Click the three dots (⋮) on the integration entry and select <strong>Delete</strong>.</li>
-<li>When prompted to confirm deletion, click <strong>Delete</strong>.</li>
-<li>Home Assistant will remove the gateway connection, terminate background event listening sessions, and remove all associated discovered devices from the Device Registry.</li>
-</ol>
-<hr />
-<h2 id="step-2-clean-up-storage-persistent-data">Step 2: Clean Up Storage &amp; Persistent Data<a class="headerlink" href="#step-2-clean-up-storage-persistent-data" title="Permanent link">&para;</a></h2>
-<p>The MyHOME integration stores non-volatile calibration data (such as measured cover travel times and device options) in Home Assistant's internal storage:</p>
-<ol>
-<li>Connect to your Home Assistant host via SSH, Terminal, or the Studio Code Server addon.</li>
-<li>Navigate to your configuration directory:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">cd</span><span class="w"> </span>/config/.storage
-</span></code></pre></div></li>
-<li>Remove any integration storage files:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>rm<span class="w"> </span>-f<span class="w"> </span>myhome.*
+<h2 id="understanding-hardware-coupling">Understanding Hardware Coupling<a class="headerlink" href="#understanding-hardware-coupling" title="Permanent link">&para;</a></h2>
+<p>In classic BTicino MyHOME installations, point-to-point automation is established through <strong>physical configurator plugs</strong> (<code>A</code> and <code>PL</code>). Installers frequently configure a control interface with the <strong>identical <code>A</code> and <code>PL</code> address</strong> as an actuator relay:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>[External Twilight Switch] (Photocell)
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>         │ dry contact
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>         ▼
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>[BTicino 3477 Contact Interface]  (Model 129, Configured: A=9, PL=8)
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>         │ SCS Bus Event: *1*1*98##
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>         ▼
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>[BTicino F411/4 Relay Actuator]   (Channel 4: A=9, PL4=8)
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>         │ relay closure
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>         ▼
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>[Outdoor Light Fixture]
 </span></code></pre></div>
-   <em>(This removes stored cover travel time calibrations and cached hardware profiles).</em></li>
-</ol>
-<hr />
-<h2 id="step-3-remove-custom-lovelace-bus-monitor-card-if-installed">Step 3: Remove Custom Lovelace Bus Monitor Card (If Installed)<a class="headerlink" href="#step-3-remove-custom-lovelace-bus-monitor-card-if-installed" title="Permanent link">&para;</a></h2>
-<p>If you installed the custom Lovelace Bus Monitor card (<code>myhome-bus-card</code>):</p>
+<h3 id="diagnostic-investigation-via-who-1001">Diagnostic Investigation via WHO 1001<a class="headerlink" href="#diagnostic-investigation-via-who-1001" title="Permanent link">&para;</a></h3>
+<p>OpenWebNet diagnostics (<code>WHO 1001</code>) can help identify which device sits behind an address, with caveats:</p>
 <ol>
-<li>Navigate to <strong>Settings → Dashboards → Three dots (⋮) in top right → Resources</strong>.</li>
-<li>Locate the resource referencing:
-   <div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>/local/myhome-bus-card.js
-</span></code></pre></div></li>
-<li>Click on the resource and select <strong>Delete</strong>.</li>
-<li>In your Home Assistant <code>/config/www/</code> folder, remove the card JavaScript file if present:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>rm<span class="w"> </span>-f<span class="w"> </span>/config/www/myhome-bus-card.js
-</span></code></pre></div></li>
+<li><strong>Identity request (<code>DIMENSION 1</code>)</strong>: send <code>*#1001*WHERE*1##</code> (for address <code>98</code>: <code>*#1001*98*1##</code>). A device answers with <code>*#1001*WHERE*1*OBJECT_MODEL*N_CONF*BRAND*LINE##</code>: its item/model value, its number of physical configurator positions, and brand and product-line codes. The MyHOME_Suite catalogue lists object model <code>129</code> for the 3477 contact interface.</li>
+<li><strong>Which devices answer</strong>: a device appears to answer diagnostics at the address of its <em>first</em> channel. An F411/4 configured <code>A=9</code>, <code>PL1=5</code> … <code>PL4=8</code> would then answer at <code>95</code>, not <code>98</code>, so a reply at <code>98</code> normally comes from the 3477 (or a single-channel actuator), not from the F411/4 channel that shares the address.</li>
+<li><strong>Configurator readback (<code>DIMENSION 4</code>)</strong>: MyHOME_Suite can read the inserted configurators with <code>*#1001*WHERE*4##</code>, but gateways may NACK it.</li>
 </ol>
-<hr />
-<h2 id="step-4-remove-integration-files-custom-component">Step 4: Remove Integration Files &amp; Custom Component<a class="headerlink" href="#step-4-remove-integration-files-custom-component" title="Permanent link">&para;</a></h2>
-<p>To completely remove the integration code from Home Assistant:</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>These diagnostic replies have not been captured on a test plant for this guide yet. If you can capture them for a 3477 and the actuator it drives, please attach the trace to <a href="https://github.com/OpenWebNet-HA/MyHOME/issues/631">issue #631</a>.</p>
+<p>The practical signal is simpler: if <code>light.light_98</code> turns on by itself at dusk and a 3477 is installed with <code>A=9</code>, <code>PL=8</code>, the address is hardware-coupled.</p>
+</div>
+<h3 id="what-happens-on-the-wire">What Happens on the Wire<a class="headerlink" href="#what-happens-on-the-wire" title="Permanent link">&para;</a></h3>
 <ol>
-<li>Using your terminal or file manager, delete the custom component folder:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>rm<span class="w"> </span>-rf<span class="w"> </span>/config/custom_components/myhome
-</span></code></pre></div></li>
-<li>If you maintain a legacy <code>/config/myhome.yaml</code> file, you can safely archive or delete it:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>rm<span class="w"> </span>-f<span class="w"> </span>/config/myhome.yaml
-</span></code></pre></div></li>
+<li><strong>At Dusk</strong>: As ambient light drops, the external twilight switch closes its dry contact.</li>
+<li><strong>SCS Broadcast</strong>: The <strong>BTicino 3477</strong> senses the transition and broadcasts an unsolicited lighting command:
+   <code>*1*1*98##</code></li>
+<li><strong>Actuator Switching</strong>: Relay Channel 4 on the <strong>F411/4</strong> receives this command directly on the SCS bus and closes, illuminating the outdoor light.</li>
+<li><strong>Edge-Triggered Behavior &amp; Manual Control</strong>: The 3477 is expected to act on state transitions only: it sends one command when the contact closes and does not repeat it while the contact stays closed. When you turn off the light from Home Assistant, an app, or an SCS wall switch, <code>*1*0*98##</code> opens the relay and it stays off for the rest of the evening. Watch the bus for an evening to confirm this on your plant; the curfew approach depends on it.</li>
+<li><strong>At Dawn</strong>: When daylight returns, the twilight switch contact opens, causing the 3477 to broadcast <code>*1*0*98##</code>.</li>
 </ol>
 <hr />
-<h2 id="step-5-restart-home-assistant">Step 5: Restart Home Assistant<a class="headerlink" href="#step-5-restart-home-assistant" title="Permanent link">&para;</a></h2>
-<p>Restart Home Assistant to flush cached Python bytecode and finalize clean removal:</p>
+<h2 id="architectural-challenges-in-home-assistant">Architectural Challenges in Home Assistant<a class="headerlink" href="#architectural-challenges-in-home-assistant" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Hardware-Level Activation</strong>: The initial turn-on at dusk occurs directly on the SCS wire before Home Assistant can intercept or filter it.</li>
+<li><strong>Shadowed Sensor State</strong>: Because the 3477 transmits standard <code>WHO = 1</code> (Lighting) frames to address <code>98</code>, Home Assistant discovers address <code>98</code> as a single <code>Light</code> entity. The physical state of the photocell contact is obscured by the light relay state.</li>
+<li><strong>No Native Curfew</strong>: Without an automation layer, the light remains on all night until dawn unless manually switched off.</li>
+</ol>
+<hr />
+<h2 id="solution-strategy-1-non-invasive-dusk-curfew-blueprint">Solution Strategy 1: Non-Invasive Dusk Curfew (Blueprint)<a class="headerlink" href="#solution-strategy-1-non-invasive-dusk-curfew-blueprint" title="Permanent link">&para;</a></h2>
+<p>If you cannot easily modify physical configurator plugs in electrical panels, use Home Assistant to add an intelligent curfew and companion synchronization layer on top of the hardware behavior.</p>
+<h3 id="using-the-dusk-curfew-blueprint">🌟 Using the Dusk Curfew Blueprint<a class="headerlink" href="#using-the-dusk-curfew-blueprint" title="Permanent link">&para;</a></h3>
+<p><a href="https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FOpenWebNet-HA%2FMyHOME%2Fblob%2Fv2-phase1-architecture%2Fblueprints%2Fautomation%2Fmyhome%2Fdusk_curfew.yaml"><img alt="Open your Home Assistant instance and show the blueprint import dialog with a specific blueprint pre-filled." src="https://my.home-assistant.io/badges/blueprint_import.svg" /></a></p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>During the v2 beta development cycle, the badge above points to the <code>v2-phase1-architecture</code> branch. You can also import directly from this URL in <strong>Settings → Automations &amp; Scenes → Blueprints → Import Blueprint</strong>.</p>
+</div>
 <ul>
-<li>Navigate to <strong>Settings → System → Restart</strong>, or run:
-  <div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>ha<span class="w"> </span>core<span class="w"> </span>restart
-</span></code></pre></div></li>
+<li><strong>Source File</strong>: <code>blueprints/automation/myhome/dusk_curfew.yaml</code></li>
+<li><strong>Manual Installation</strong>:
+  Download <code>dusk_curfew.yaml</code> and save it to <code>&lt;config&gt;/blueprints/automation/myhome/dusk_curfew.yaml</code> in your Home Assistant configuration directory.</li>
+<li><strong>Key Features</strong>:</li>
+<li><strong>Bedtime Curfew</strong>: Enforces a strict cutoff time (<code>curfew_time</code>, e.g. <code>23:00:00</code>) to turn off the hardware-coupled light and all companion lights.</li>
+<li><strong>Configurable Morning Curfew End</strong>: Configurable <code>curfew_end_time</code> (default <code>06:00:00</code>), after which daytime behavior resumes.</li>
+<li><strong>Max Run Duration</strong>: Optional timeout (e.g. 180 minutes) to guarantee the light turns off even on dark winter afternoons when dusk occurs early.</li>
+<li><strong>Companion Synchronization</strong>: When the hardware twilight light turns on at dusk, automatically illuminates additional outdoor lights (e.g. pathway spots, facade accents) and turns them off together at curfew.</li>
+<li><strong>Presence Gating</strong>: Supports <code>zone.*</code> (evaluates as away when occupant count is 0), <code>person.*</code>, <code>device_tracker.*</code>, <code>group.*</code>, <code>binary_sensor.*</code>, or <code>alarm_control_panel.*</code> (away when <code>armed_away</code> or <code>armed_vacation</code>). When occupants are away, reduces the runtime to a configurable <code>away_timeout</code>. Dynamic presence tracking automatically turns off lights if occupants leave mid-evening.</li>
+<li><strong>Optional Daylight Guard</strong>: Optional <code>after_sunset_only</code> (default <code>false</code>) gates companion activation to astronomical night. Keep disabled if your twilight photocell trips before sunset on overcast or winter afternoons. While it is disabled, switching the light on by hand during the day also turns the companion lights on.</li>
+<li><strong>Service &amp; Maintenance Overrides</strong>:<ul>
+<li><strong>Service Power (Gardener / Power Tools)</strong>: Energizes the circuit immediately on demand during daylight hours, suspends curfew and presence shutoffs, and turns everything off again after <code>service_timeout_hours</code> (default 4 hours). A Home Assistant restart re-arms the full timeout.</li>
+<li><strong>Maintenance Hold</strong>: Turns the circuit off and switches any photocell or wall switch turn-on straight back off. It is a convenience, not electrical isolation; see the warning below.</li>
+<li><strong>Pause Automation</strong>: Leaves lights under manual control, temporarily bypassing all curfew and timer logic.</li>
 </ul>
+</li>
+<li><strong>Reconnection Resilience</strong>: Uses <code>from: "off"</code> to ensure temporary gateway drops or Home Assistant restarts (<code>unavailable -&gt; on</code>) do not re-run curfew sequences in the middle of the night.</li>
+<li><strong>Turn-Ons During Curfew</strong>: A turn-on between <code>curfew_time</code> and <code>curfew_end_time</code> is turned off after 2 minutes. This includes deliberate turn-ons from a wall switch; use the <code>pause_automation</code> override if you need the light for longer at night.</li>
+<li><strong>Restarts</strong>: Home Assistant does not keep a running <code>max_duration</code> timer across a restart; the curfew still applies afterwards.</li>
+</ul>
+<h3 id="example-automation-configuration">Example Automation Configuration<a class="headerlink" href="#example-automation-configuration" title="Permanent link">&para;</a></h3>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>By default, the MyHOME integration discovers lights with names reflecting their bus address (e.g. <code>light.light_98</code>). If you have renamed your entity in Home Assistant (e.g. <code>light.outdoor_facade_light</code>), provide that entity ID in the <code>target_light</code> field.</p>
+</div>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">alias</span><span class="p">:</span><span class="w"> </span><span class="s">"Outdoor</span><span class="nv"> </span><span class="s">Light</span><span class="nv"> </span><span class="s">98</span><span class="nv"> </span><span class="s">-</span><span class="nv"> </span><span class="s">Dusk</span><span class="nv"> </span><span class="s">Curfew</span><span class="nv"> </span><span class="s">&amp;</span><span class="nv"> </span><span class="s">Companion</span><span class="nv"> </span><span class="s">Sync"</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">use_blueprint</span><span class="p">:</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome/dusk_curfew.yaml</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">input</span><span class="p">:</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nt">target_light</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">light.light_98</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="nt">curfew_time</span><span class="p">:</span><span class="w"> </span><span class="s">"23:00:00"</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="nt">curfew_end_time</span><span class="p">:</span><span class="w"> </span><span class="s">"06:00:00"</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="nt">max_duration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">180</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="nt">sync_lights</span><span class="p">:</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">      </span><span class="nt">entity_id</span><span class="p">:</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">light.garden_pathway</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">light.driveway_spots</span>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">    </span><span class="nt">presence_entity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">zone.home</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">    </span><span class="nt">away_timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">15</span>
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">    </span><span class="nt">after_sunset_only</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">    </span><span class="c1"># Optional Gardener / Maintenance Override Helper</span>
+</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">    </span><span class="nt">override_entity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">input_boolean.gardener_power</span>
+</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">    </span><span class="nt">override_mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">service_power</span>
+</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">    </span><span class="nt">service_timeout_hours</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span>
+</span></code></pre></div>
+<h3 id="temporary-overrides-gardener-power-maintenance-hold">Temporary Overrides: Gardener Power &amp; Maintenance Hold<a class="headerlink" href="#temporary-overrides-gardener-power-maintenance-hold" title="Permanent link">&para;</a></h3>
+<p>Outdoor lighting circuits frequently double as power lines for garden sockets (lawnmowers, hedge trimmers, pumps) or need maintenance:</p>
+<ol>
+<li><strong>Gardener Service Power</strong>: Create a helper (<code>input_boolean.gardener_power</code> in <strong>Settings → Devices &amp; Services → Helpers</strong>). When turned on (via a dashboard button or NFC tag by the shed), the automation energizes <code>light.light_98</code> immediately and suspends curfew/presence turn-offs. After <code>service_timeout_hours</code> (e.g., 4 hours), it automatically turns off the circuit and resets the helper. Turning the helper off earlier ends the session and cancels the timeout.</li>
+<li><strong>Maintenance Hold</strong>: Configure <code>override_mode: maintenance_hold</code> with a helper such as <code>input_boolean.lighting_maintenance_hold</code>. While it is on, the automation turns the light off and switches any photocell or wall switch turn-on straight back off, so lamps stay dark while you replace bulbs or tidy the garden.</li>
+</ol>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p><strong>Maintenance hold is not electrical isolation.</strong> The 3477 switches the relay directly on the bus; Home Assistant only turns it back off afterwards, so the circuit is briefly live on every dusk trigger or switch press. If Home Assistant, the gateway or the network is down, nothing turns it off at all. Before touching wiring, fixtures or lamp holders, switch off and lock the circuit breaker.</p>
+</div>
+<hr />
+<h2 id="solution-strategy-2-clean-hardware-decoupling-full-ha-authority">Solution Strategy 2: Clean Hardware Decoupling (Full HA Authority)<a class="headerlink" href="#solution-strategy-2-clean-hardware-decoupling-full-ha-authority" title="Permanent link">&para;</a></h2>
+<p>If you prefer Home Assistant to hold <strong>100% software authority</strong> over whether and when the outdoor lights illuminate, decouple the 3477 contact interface from the lighting relay.</p>
+<h3 id="option-a-move-3477-to-an-unused-address-physical-decoupling">Option A: Move 3477 to an Unused Address (Physical Decoupling)<a class="headerlink" href="#option-a-move-3477-to-an-unused-address-physical-decoupling" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Locate the <strong>BTicino 3477</strong> module in your electrical panel.</li>
+<li>Replace the <code>PL</code> configurator with a point in Area 9 that no actuator uses (e.g. change from <code>PL=8</code> to <code>PL=9</code> if nothing answers at <code>99</code>).</li>
+<li><strong>Result</strong>: At dusk, the 3477 broadcasts <code>*1*1*99##</code>. No physical relay clicks or turns on.</li>
+<li>In Home Assistant, address <code>99</code> appears as <code>light.light_99</code> once the integration has seen it on the bus.</li>
+<li>Create a standard Home Assistant automation triggered by <code>light.light_99</code> turning on to evaluate weather, presence, and schedule before commanding the actual fixture <code>light.light_98</code>.</li>
+</ol>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>A light point of 10 or more uses the four-digit address form: <code>A=9</code>, <code>PL=10</code> is <code>0910</code>, not <code>910</code>.</p>
+</div>
+<h3 id="option-b-configure-3477-as-a-dry-contact-interface-who-25">Option B: Configure 3477 as a Dry Contact Interface (<code>WHO = 25</code>)<a class="headerlink" href="#option-b-configure-3477-as-a-dry-contact-interface-who-25" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Using <strong>MyHOME_Suite</strong> (Virtual Configuration), reconfigure the 3477 contact interface into <strong>Dry Contact Mode</strong> (<code>WHO = 25</code>, virtual address range 1..201).</li>
+<li><strong>Result</strong>: The interface transmits OpenWebNet dry contact frames where <code>WHAT</code> is <code>31</code> for contact closed and <code>32</code> for contact open:</li>
+<li>Contact closed (dusk): <code>*25*31#1*WHERE##</code></li>
+<li>Contact opened (dawn): <code>*25*32#1*WHERE##</code></li>
+<li>In Home Assistant, the contact is discovered automatically the first time it changes state (see <a href="../../configuration/binary-sensors/">Binary Sensors</a>). The contact closes at dusk, so the sensor reads <code>on</code> when it is dark. If you want Home Assistant's <strong>Light</strong> device class (<code>on</code> = light detected), declare it in <code>myhome.yaml</code> under your gateway with <code>inverted: true</code>, using its configured address (for example <code>15</code>):
+   <div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">00:03:50:81:22:33</span><span class="p">:</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">binary_sensor</span><span class="p">:</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">twilight_sensor</span><span class="p">:</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">      </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="s">"25"</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"15"</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"Twilight</span><span class="nv"> </span><span class="s">Sensor"</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">      </span><span class="nt">device_class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">light</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">      </span><span class="nt">inverted</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span></code></pre></div></li>
+<li>You now have full separation of concerns:</li>
+<li><code>binary_sensor.twilight_sensor</code> accurately mirrors daylight/darkness in real time.</li>
+<li><code>light.light_98</code> remains a pure actuator controlled exclusively by Home Assistant schedules, presence logic, and automations.</li>
+</ol>
 
 
 
