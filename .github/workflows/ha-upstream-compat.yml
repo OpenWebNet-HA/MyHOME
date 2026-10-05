@@ -22,23 +22,12 @@ jobs:
     name: HA Compatibility (${{ matrix.ha-channel }})
     runs-on: ubuntu-24.04
     timeout-minutes: 40
-    # Pull requests run the stable channel only; beta/dev drift is covered on push, weekly.
-    if: github.event_name != 'pull_request' || matrix.ha-channel == 'stable'
     continue-on-error: ${{ matrix.allow-failure }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          # stable: the core pinned by the latest pytest-homeassistant-custom-component
-          - ha-channel: stable
-            pip-install: "pytest-homeassistant-custom-component"
-            allow-failure: false
-          - ha-channel: beta
-            pip-install: "--pre homeassistant"
-            allow-failure: false
-          - ha-channel: dev
-            pip-install: "git+https://github.com/home-assistant/core.git@dev"
-            allow-failure: true
+      # stable: the core pinned by the latest pytest-homeassistant-custom-component.
+      # Pull requests run stable only; beta/dev drift is covered on push, weekly.
+      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"include":[{"ha-channel":"stable","pip-install":"pytest-homeassistant-custom-component","allow-failure":false}]}' || '{"include":[{"ha-channel":"stable","pip-install":"pytest-homeassistant-custom-component","allow-failure":false},{"ha-channel":"beta","pip-install":"--pre homeassistant","allow-failure":false},{"ha-channel":"dev","pip-install":"git+https://github.com/home-assistant/core.git@dev","allow-failure":true}]}') }}
 
     steps:
       - name: Checkout repository

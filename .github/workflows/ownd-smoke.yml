@@ -28,20 +28,10 @@ jobs:
     name: OWNd (${{ matrix.ownd-target }} / Py${{ matrix.python-version }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    # The allow-failure dev target runs on push and weekly, not on every PR push.
-    if: github.event_name != 'pull_request' || matrix.ownd-target != 'dev'
     strategy:
       fail-fast: false
-      matrix:
-        python-version: ["3.14"]
-        ownd-target: [pinned, latest, dev]
-        include:
-          - ownd-target: pinned
-            allow-failure: false
-          - ownd-target: latest
-            allow-failure: false
-          - ownd-target: dev
-            allow-failure: true
+      # The allow-failure dev target runs on push and weekly, not on every PR push.
+      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"include":[{"python-version":"3.14","ownd-target":"pinned","allow-failure":false},{"python-version":"3.14","ownd-target":"latest","allow-failure":false}]}' || '{"include":[{"python-version":"3.14","ownd-target":"pinned","allow-failure":false},{"python-version":"3.14","ownd-target":"latest","allow-failure":false},{"python-version":"3.14","ownd-target":"dev","allow-failure":true}]}') }}
 
     continue-on-error: ${{ matrix.allow-failure }}
 

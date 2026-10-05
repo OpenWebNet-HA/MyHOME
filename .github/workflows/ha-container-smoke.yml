@@ -28,18 +28,10 @@ jobs:
     name: HA Container (${{ matrix.ha-channel }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    # Pull requests run the stable channel only; beta/dev drift is covered on push, weekly.
-    if: github.event_name != 'pull_request' || matrix.ha-channel == 'stable'
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - ha-channel: stable
-            allow-failure: false
-          - ha-channel: beta
-            allow-failure: false
-          - ha-channel: dev
-            allow-failure: true
+      # Pull requests run the stable channel only; beta/dev drift is covered on push, weekly.
+      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"include":[{"ha-channel":"stable","allow-failure":false}]}' || '{"include":[{"ha-channel":"stable","allow-failure":false},{"ha-channel":"beta","allow-failure":false},{"ha-channel":"dev","allow-failure":true}]}') }}
 
     continue-on-error: ${{ matrix.allow-failure }}
 
