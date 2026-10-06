@@ -2380,6 +2380,14 @@
 <li><code>event</code>: one of the trigger types above (<code>pushbutton_short_press</code>, <code>rotary_cw_slow</code>, …)</li>
 <li><code>where</code>, <code>gateway_mac</code> and <code>entry_id</code>, to tell plants and gateways apart</li>
 </ul>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>For physical CEN (<code>WHO = 15</code>) devices configured with 4-digit SCS addresses ($PL \ge 10$, e.g. <code>0512</code> where Area = 5, Point-Light = 12):
+- <code>object</code> is exposed as an integer (<code>512</code>), preserving backward compatibility for existing automations.
+- <code>where</code> provides the literal wire address string (<code>"0512"</code>).
+- Event-bus listeners (in YAML automations, AppDaemon, or Node-RED) should filter on <code>where: "0512"</code> or <code>object: 512</code>. Outside of Python in this process, string <code>"0512"</code> does not equal the integer <code>object</code>.
+- Home Assistant <strong>Native Device Triggers</strong> match seamlessly whether referenced by Device ID, integer <code>512</code>, or wire string <code>"0512"</code>.</p>
+</div>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">trigger</span><span class="p">:</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">platform</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">event</span>
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">event_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome_cenplus_event</span>
