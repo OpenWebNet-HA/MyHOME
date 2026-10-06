@@ -111,33 +111,47 @@ target:
 
 ---
 
-## 🪟 Venetian Blinds & Slat Tilt Positioning (WHO = 2, Dimension 11)
+## 🪟 Venetian Blinds & Slat Tilt Positioning (Timed Slat Inching)
 
-For Venetian blinds, motorized louvres, and external venetian blinds (EVBs/BSO) with adjustable slat tilt angles, the integration supports OpenWebNet **Dimension 11**:
+For Venetian blinds, motorized louvres, and external venetian blinds (EVBs/BSO) with adjustable slat tilt angles, the integration provides timed slat travel (inching):
 
 * **Supported Features**: `SET_TILT_POSITION`, `OPEN_TILT` (100%), `CLOSE_TILT` (0%), and `STOP_TILT`.
-* **Device Class**: Automatically sets the entity device class to `blind` (`CoverDeviceClass.BLIND`).
-* **Attributes**: Exposes `current_cover_tilt_position` (0–100%) and entity attribute `slat_tilt: true`.
+* **Device Class**: Sets the entity device class to `blind` (`CoverDeviceClass.BLIND`).
+* **Attributes**: Exposes `current_cover_tilt_position` (0–100%), `slat_tilt: true`, and `slat_time: <seconds>`.
 
-### Configuration & Auto-Discovery
+### Physical Architecture & Slat Travel Time
 
-1. **Auto-Discovery**: Any cover entity dynamically activates slat tilt controls when OpenWebNet Dimension 11 frames arrive from the bus.
-2. **YAML Configuration**: Slat tilt can also be explicitly declared in `/config/myhome.yaml`:
-   ```yaml
-   cover:
-     living_room_venetian:
-       where: '31'
-       name: Living Room Venetian Blind
-       slat_tilt: true
-   ```
+Physical BTicino / Legrand MyHOME Venetian blind actuators (such as the F411U2 configured in Venetian mode) control slat tilt angle mechanically through brief motor pulses: when the motor runs, the slats first rotate through their full angular range (typically 1.5–2.5 seconds) before linear curtain lifting or lowering commences.
 
-### Protocol Grammar & Wire Format
+The integration models this behavior with timed travel:
+* When a tilt command is issued, the shutter motor runs in the required direction for a calculated duration:
+  $$\text{duration} = \frac{|\text{target\_tilt} - \text{current\_tilt}|}{100} \times \text{slat\_time}$$
+* When the target duration elapses, an automatic stop command (`*2*0*<WHERE>##`) halts the motor.
+* A stopwatch guard ensures that these short motor pulses do not corrupt or shift linear curtain travel time estimation.
 
-| Operation | OpenWebNet Frame | Description |
-| :--- | :--- | :--- |
-| **Set Slat Tilt** | `*#2*<WHERE>*#11#001#1*<ANGLE>##` | Writes slat tilt angle (0–100%) with priority `001` and sub-dimension `1`. |
-| **Tilt Query** | `*#2*<WHERE>*11##` | Requests the current slat tilt angle from the actuator. |
-| **Tilt Status Report** | `*#2*<WHERE>*11*<ANGLE>##` or `*#2*<WHERE>*11#1*<ANGLE>##` | Feedback or query reply reporting slat tilt angle. |
+### Configuration
+
+Slat tilt and travel duration can be declared in `/config/myhome.yaml`:
+
+```yaml
+cover:
+  living_room_venetian:
+    where: '31'
+    name: Living Room Venetian Blind
+    slat_tilt: true
+    slat_time: 2.0
+```
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `slat_tilt` | boolean | `false` | Enables Venetian blind slat tilt controls and sets device class to `blind`. |
+| `slat_time` | float | `2.0` | Full slat rotation travel time in seconds (allowed range: `0.5`–`10.0` s). |
+
+### Protocol Note: Dimension 11 is Shutter Level
+
+In OpenWebNet WHO 2, **Dimension 11** (`*#2*<WHERE>*#11#PRIORITY*LEVEL##`) represents an absolute **Go to level / Shutter position** command, **not** slat tilt angle. Gateway firmwares (MH200N, MyHomeServer1) reject query frames (`*#2*<WHERE>*11##`) with a NACK because Dimension 11 is write-only.
+
+When an actuator or external controller broadcasts a Dimension 11 event (such as `*#2*31*#11#001#1*40##` indicating 40% level), the integration updates the linear cover position (`current_cover_position = 40`) and synchronizes boundary tilt states (fully closed at 0%, open at 100%).
 
 ### Decoupling from Travel Time Calibration
 

@@ -52,7 +52,9 @@ from .const import (
     CONF_MANUFACTURER,
     CONF_MEMBERS,
     CONF_SLAT_TILT,
+    CONF_SLAT_TIME,
     CONF_TRAVEL_TIME,
+    DEFAULT_SLAT_TIME,
     DEFAULT_TRAVEL_TIME,
     DOMAIN,
     EVENT_COVER_CALIBRATION,
@@ -124,6 +126,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             interface=ctx.address.interface,  # type: ignore
             advanced=cfg.get(CONF_ADVANCED_SHUTTER, cfg.get("advanced_shutter", False)),
             slat_tilt=cfg.get(CONF_SLAT_TILT, cfg.get("slat_tilt", False)),
+            slat_time=float(cfg.get(CONF_SLAT_TIME, cfg.get("slat_time", DEFAULT_SLAT_TIME))),
             manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
             model=cfg.get(CONF_DEVICE_MODEL, "Shutter / Cover"),
             gateway=runtime.gateway,
@@ -207,6 +210,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         travel_time_source: str = "default",
         calibration: dict | None = None,  # type: ignore
         slat_tilt: bool = False,
+        slat_time: float = DEFAULT_SLAT_TIME,
     ):
         super().__init__(
             hass=hass,
@@ -228,6 +232,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._family: CoverFamily | None = None
         self._advanced = advanced
         self._slat_tilt = slat_tilt
+        self._slat_time = float(slat_time) if slat_time else float(DEFAULT_SLAT_TIME)
         self._is_tilting: bool = False
         self._attr_current_cover_tilt_position: int | None = None
         # Direction-aware travel times. `_travel_time` stays the closing (down) time
@@ -431,6 +436,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._motion_started_at = None
         self._attr_is_opening = False
         self._attr_is_closing = False
+        self._is_tilting = False
         if self._attr_current_cover_position is not None:
             self._start_position = self._attr_current_cover_position
             self._attr_is_closed = (self._attr_current_cover_position == 0)
@@ -528,6 +534,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         )
         if getattr(self, "_attr_extra_state_attributes", None) is not None:
             self._attr_extra_state_attributes["slat_tilt"] = True
+            self._attr_extra_state_attributes["slat_time"] = self._slat_time
 
     @property
     def current_cover_tilt_position(self) -> int | None:
@@ -585,13 +592,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._start_position = 100
                     self._attr_is_closed = False
 
-        last_tilt = last_state.attributes.get(ATTR_CURRENT_TILT_POSITION)
-        if last_tilt is not None:
-            try:
-                self._attr_current_cover_tilt_position = max(0, min(100, int(round(float(last_tilt)))))
-                self._enable_slat_tilt()
-            except (ValueError, TypeError):
-                pass
+        if self._slat_tilt:
+            last_tilt = last_state.attributes.get(ATTR_CURRENT_TILT_POSITION)
+            if last_tilt is not None:
+                try:
+                    self._attr_current_cover_tilt_position = max(0, min(100, int(round(float(last_tilt)))))
+                except (ValueError, TypeError):
+                    pass
 
     async def async_will_remove_from_hass(self) -> None:
         """Run when entity will be removed from hass."""
@@ -924,10 +931,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             await self._gateway_handler.send_status_request(
                 OWNAutomationCommand.status(self._full_where)
             )
-        if self._slat_tilt:
-            tilt_status_cmd = OWNAutomationCommand.parse(f"*#2*{self._full_where}*11##")
-            if tilt_status_cmd is not None:
-                await self._gateway_handler.send_status_request(tilt_status_cmd)
 
     async def async_open_cover(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Open the cover."""
@@ -937,10 +940,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Close cover."""
         await self._async_move("close")
 
-    async def _async_move(self, direction: str) -> asyncio.Future[Any] | None:
+    async def _async_move(self, direction: str, is_tilting: bool = False) -> asyncio.Future[Any] | None:
         """Queue a direction command and return its delivery future."""
         self._cancel_stop_task()
-        self._is_tilting = False
+        self._is_tilting = is_tilting
         if direction == "open":
             command = OWNAutomationCommand.raise_shutter(self._full_where)
         else:
@@ -1064,6 +1067,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._track_write(written)
             if not isinstance(written, asyncio.Future):
                 self._freeze_position(time.monotonic())  # type: ignore
+        elif self._is_tilting:
+            self._attr_is_opening = False
+            self._attr_is_closing = False
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -1071,7 +1077,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Move the cover tilt to a specific position."""
         if ATTR_TILT_POSITION not in kwargs:
             return
-        tilt = max(0, min(100, int(round(float(kwargs[ATTR_TILT_POSITION])))))
+        target_tilt = max(0, min(100, int(round(float(kwargs[ATTR_TILT_POSITION])))))
         if self._calibrating:
             raise HomeAssistantError(
                 f"{self.entity_id} is being calibrated; try again when it has finished",
@@ -1079,47 +1085,49 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 translation_key="cover_busy_calibrating",
                 translation_placeholders={"entity_id": str(self.entity_id)},
             )
-        self._is_tilting = True
-        frame = f"*#2*{self._full_where}*#11#001#1*{tilt}##"
-        cmd = OWNAutomationCommand.parse(frame)
-        if cmd is None:
+        self._cancel_stop_task()
+        curr_tilt = self.current_cover_tilt_position if self.current_cover_tilt_position is not None else 0
+        diff = target_tilt - curr_tilt
+        if diff == 0:
+            return
+
+        fraction = abs(diff) / 100.0
+        run_duration = fraction * self._slat_time
+
+        direction = "open" if diff > 0 else "close"
+        try:
+            written = await self._async_move(direction, is_tilting=True)
+        except Exception:
             self._is_tilting = False
-            raise HomeAssistantError(
-                f"Failed to build slat tilt command for {self._full_where}",
-                translation_domain=DOMAIN,
-                translation_key="command_delivery_failed",
-                translation_placeholders={"name": self._display_name, "error": "invalid frame"},
-            )
-        written = await self._gateway_handler.send(cmd)
-        if isinstance(written, asyncio.Future):
+            raise
+        generation = self._run_generation
+
+        async def _auto_stop_tilt() -> None:
             try:
-                await asyncio.wait_for(asyncio.shield(written), WRITE_TIMEOUT)
-            except TimeoutError as err:
+                anchor = await self._await_motion_anchor(written)
+                if generation != self._run_generation:
+                    self._is_tilting = False
+                    return
+                await asyncio.sleep(max(0.0, run_duration - (time.monotonic() - anchor)))
+                if generation != self._run_generation:
+                    self._is_tilting = False
+                    return
+                self._attr_current_cover_tilt_position = target_tilt
+                await self.async_stop_cover()
+                self._attr_is_opening = False
+                self._attr_is_closing = False
                 self._is_tilting = False
-                raise HomeAssistantError(
-                    f"{self._display_name}: tilt command was not delivered to the bus within {WRITE_TIMEOUT:.0f} s",
-                    translation_domain=DOMAIN,
-                    translation_key="command_delivery_timeout",
-                    translation_placeholders={"name": self._display_name, "timeout": f"{WRITE_TIMEOUT:.0f}"},
-                ) from err
+                if self.hass is not None:
+                    self.async_write_ha_state()
+            except HomeAssistantError as err:
+                self._is_tilting = False
+                self._attr_is_opening = False
+                self._attr_is_closing = False
+                LOGGER.error("%s Auto-stop tilt aborted for %s: %s", self._gateway_handler.log_id, self._full_where, err)
             except asyncio.CancelledError:
-                if not written.cancelled():
-                    raise
                 self._is_tilting = False
-                raise HomeAssistantError(
-                    f"{self._display_name}: tilt command delivery was cancelled before reaching the bus",
-                    translation_domain=DOMAIN,
-                    translation_key="command_delivery_cancelled",
-                    translation_placeholders={"name": self._display_name},
-                )
-            except Exception as err:
-                self._is_tilting = False
-                raise HomeAssistantError(
-                    f"{self._display_name}: tilt command delivery failed: {err}",
-                    translation_domain=DOMAIN,
-                    translation_key="command_delivery_failed",
-                    translation_placeholders={"name": self._display_name, "error": str(err)},
-                ) from err
+
+        self._stop_task = asyncio.create_task(_auto_stop_tilt())
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -1176,27 +1184,26 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         dimension = getattr(message, "dimension", getattr(message, "_dimension", None))
         if dimension == 11:
-            dim_params = getattr(message, "dimension_param", getattr(message, "_dimension_param", [])) or []
-            msg_type = getattr(message, "message_type", getattr(message, "_message_type", None))
-            # Dimension writing with sub-param '1' (*#2*WHERE*#11#001#1*ANGLE##) or reply (*#2*WHERE*11*ANGLE## / *#2*WHERE*11#1*ANGLE##)
-            is_tilt = (msg_type == "DIMENSION_WRITING" and dim_params and dim_params[-1] == "1") or (
-                msg_type == "DIMENSION_REQUEST_REPLY" and (not dim_params or dim_params[-1] == "1")
-            )
-            if is_tilt:
-                dim_values = getattr(message, "dimension_value", getattr(message, "_dimension_value", [])) or []
-                if dim_values:
-                    try:
-                        raw_tilt = int(dim_values[0])
-                        if 0 <= raw_tilt <= 100:
-                            self._attr_current_cover_tilt_position = raw_tilt
-                        else:
-                            self._attr_current_cover_tilt_position = None
-                    except (ValueError, TypeError):
-                        self._attr_current_cover_tilt_position = None
-                    self._enable_slat_tilt()
-                    self._is_tilting = False
-                    self._publish_state()
-                    return
+            # Dimension 11 is absolute shutter position (Go to level).
+            # Handles both command writes (*#2*WHERE*#11#001*LEVEL##) and
+            # event-session reflections (*#2*WHERE*#11#001#1*LEVEL##).
+            dim_values = getattr(message, "dimension_value", getattr(message, "_dimension_value", [])) or []
+            if dim_values:
+                try:
+                    level = int(dim_values[0])
+                    if 0 <= level <= 100:
+                        self._attr_current_cover_position = level
+                        self._start_position = level
+                        self._attr_is_closed = (level == 0)
+                        if self._slat_tilt:
+                            if level == 0:
+                                self._attr_current_cover_tilt_position = 0
+                            elif level == 100:
+                                self._attr_current_cover_tilt_position = 100
+                        self._publish_state()
+                except (ValueError, TypeError):
+                    pass
+            return
 
         # Ignore status queries/requests (e.g. *#2*...##) - they are polls, not state transitions
         if getattr(message, "_family", None) == "REQUEST" or getattr(message, "_message_type", None) == "STATUS_REQUEST":
