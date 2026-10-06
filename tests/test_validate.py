@@ -8,7 +8,7 @@ from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.components.switch import SwitchDeviceClass
 from homeassistant.const import CONF_MAC, CONF_NAME
-from voluptuous import ALLOW_EXTRA, Invalid
+from voluptuous import ALLOW_EXTRA, Invalid, MultipleInvalid
 
 from custom_components.myhome.const import (
     CONF_ADVANCED_SHUTTER,
@@ -25,6 +25,7 @@ from custom_components.myhome.const import (
     CONF_MANUFACTURER,
     CONF_PLATFORMS,
     CONF_SLAT_TILT,
+    CONF_SLAT_TIME,
     CONF_WHERE,
     CONF_WHO,
     CONF_ZONE,
@@ -743,9 +744,23 @@ class TestFullConfigSchema:
                 CONF_WHERE: "23",
                 CONF_NAME: "Venetian Blind",
                 "slat_tilt": True,
+                "slat_time": 3.5,
             }
         }
         res_cov_tilt = cover_schema(cov_tilt_data)
         assert res_cov_tilt["2-23"][CONF_SLAT_TILT] is True
+        assert res_cov_tilt["2-23"][CONF_SLAT_TIME] == 3.5
+
+        # Invalid slat_time (< 0.5s or > 10.0s)
+        for invalid_time in (0.2, 12.0, -1.0):
+            with pytest.raises(MultipleInvalid):
+                cover_schema({
+                    "cov_bad": {
+                        CONF_WHERE: "24",
+                        CONF_NAME: "Bad Blind",
+                        "slat_tilt": True,
+                        "slat_time": invalid_time,
+                    }
+                })
 
 

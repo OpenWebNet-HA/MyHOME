@@ -59,6 +59,8 @@ from .const import (
     DOMAIN,
     EVENT_COVER_CALIBRATION,
     LOGGER,
+    MAX_SLAT_TIME,
+    MIN_SLAT_TIME,
     SERVICE_CALIBRATE_COVER,
     SERVICE_RESET_COVER_TRAVEL_TIME,
     SERVICE_SET_COVER_TRAVEL_TIME,
@@ -126,7 +128,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             interface=ctx.address.interface,  # type: ignore
             advanced=cfg.get(CONF_ADVANCED_SHUTTER, cfg.get("advanced_shutter", False)),
             slat_tilt=cfg.get(CONF_SLAT_TILT, cfg.get("slat_tilt", False)),
-            slat_time=float(cfg.get(CONF_SLAT_TIME, cfg.get("slat_time", DEFAULT_SLAT_TIME))),
+            slat_time=float(cfg.get(CONF_SLAT_TIME, cfg.get("slat_time", DEFAULT_SLAT_TIME))) if (cfg.get(CONF_SLAT_TIME) is not None or cfg.get("slat_time") is not None) else DEFAULT_SLAT_TIME,
             manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
             model=cfg.get(CONF_DEVICE_MODEL, "Shutter / Cover"),
             gateway=runtime.gateway,
@@ -162,6 +164,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
         vol.Optional("travel_time"): vol.Coerce(float),
         vol.Optional("travel_time_down"): vol.Coerce(float),
         vol.Optional("travel_time_up"): vol.Coerce(float),
+        vol.Optional(CONF_SLAT_TIME): vol.All(vol.Coerce(float), vol.Range(min=MIN_SLAT_TIME, max=MAX_SLAT_TIME)),
         vol.Optional("copied_from"): cv.string,
     }
 
@@ -232,8 +235,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._family: CoverFamily | None = None
         self._advanced = advanced
         self._slat_tilt = slat_tilt
-        self._slat_time = float(slat_time) if slat_time else float(DEFAULT_SLAT_TIME)
+        self._slat_time = max(MIN_SLAT_TIME, min(MAX_SLAT_TIME, float(slat_time) if slat_time is not None else float(DEFAULT_SLAT_TIME)))
         self._is_tilting: bool = False
+        self._tilt_start_time: float | None = None
+        self._tilt_initial_position: int = 0
+        self._tilt_target_position: int = 0
+        self._tilt_duration: float = 0.0
+        self._tilt_direction: str | None = None
+        self._pending_target_position: int | None = None
         self._attr_current_cover_tilt_position: int | None = None
         # Direction-aware travel times. `_travel_time` stays the closing (down) time
         # for compatibility; a stored calibration overrides yaml / default values.
@@ -288,7 +297,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         # re-anchor: the last completed run is measured from it (stopwatch).
         self._run_started_at: float | None = None
         self._start_position = 50
-        self._stop_task = None
+        self._stop_task: asyncio.Task[None] | None = None
 
         # Echo model state (see ECHO_WINDOW): which command of ours is in
         # flight, until when relayed frames count as its echo, when the motor
@@ -500,7 +509,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     def _cancel_stop_task(self) -> None:
         """Cancel any running scheduled auto-stop task."""
         if self._stop_task is not None:
-            current = asyncio.current_task()  # type: ignore
+            current = asyncio.current_task()
             if self._stop_task is not current and not self._stop_task.done():
                 self._stop_task.cancel()
             self._stop_task = None
@@ -526,8 +535,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Enable Venetian blind slat / louvre tilt capabilities."""
         self._slat_tilt = True
         self._attr_device_class = CoverDeviceClass.BLIND
-        self._attr_supported_features |= (
-            CoverEntityFeature.SET_TILT_POSITION
+        current_features = self._attr_supported_features or CoverEntityFeature(0)
+        self._attr_supported_features = (
+            current_features
+            | CoverEntityFeature.SET_TILT_POSITION
             | CoverEntityFeature.OPEN_TILT
             | CoverEntityFeature.CLOSE_TILT
             | CoverEntityFeature.STOP_TILT
@@ -786,6 +797,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         travel_time: float | None = None,
         travel_time_down: float | None = None,
         travel_time_up: float | None = None,
+        slat_time: float | None = None,
         copied_from: str | None = None,
     ) -> dict:  # type: ignore
         """Set the physical travel times by hand, or copy them from another cover.
@@ -801,33 +813,52 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 translation_placeholders={"name": self._display_name},
             )
 
-        down = travel_time_down if travel_time_down is not None else travel_time
-        up = travel_time_up if travel_time_up is not None else (travel_time if travel_time is not None else down)
-
-        if down is None and up is None:
+        has_travel = travel_time is not None or travel_time_down is not None or travel_time_up is not None
+        if not has_travel and slat_time is None:
             raise ServiceValidationError(
-                "At least travel_time or travel_time_down/up must be specified",
+                "At least travel_time or travel_time_down/up or slat_time must be specified",
                 translation_domain=DOMAIN,
                 translation_key="travel_time_missing",
             )
 
-        if down is None:
-            down = self._travel_time_down
+        if has_travel:
+            down = travel_time_down if travel_time_down is not None else travel_time
+            up = travel_time_up if travel_time_up is not None else (travel_time if travel_time is not None else down)
 
-        for field, value in (("travel_time_down", down), ("travel_time_up", up)):
-            if not CALIBRATION_MIN_RUN <= value <= CALIBRATION_MAX_RUN:  # type: ignore
+            if down is None:
+                down = self._travel_time_down
+            if up is None:
+                up = self._travel_time_up
+
+            for field, value in (("travel_time_down", down), ("travel_time_up", up)):
+                if not CALIBRATION_MIN_RUN <= value <= CALIBRATION_MAX_RUN:
+                    raise ServiceValidationError(
+                        f"{field} must be between {CALIBRATION_MIN_RUN:.0f}s and {CALIBRATION_MAX_RUN:.0f}s",
+                        translation_domain=DOMAIN,
+                        translation_key="travel_time_out_of_range",
+                        translation_placeholders={
+                            "field": field, "min": f"{CALIBRATION_MIN_RUN:.0f}", "max": f"{CALIBRATION_MAX_RUN:.0f}",
+                        },
+                    )
+
+            self._travel_time_down = round(float(down), 2)
+            self._travel_time_up = round(float(up), 2)
+            self._travel_time = int(round(self._travel_time_down))
+
+        if slat_time is not None:
+            if not MIN_SLAT_TIME <= slat_time <= MAX_SLAT_TIME:
                 raise ServiceValidationError(
-                    f"{field} must be between {CALIBRATION_MIN_RUN:.0f}s and {CALIBRATION_MAX_RUN:.0f}s",
+                    f"slat_time must be between {MIN_SLAT_TIME:.1f}s and {MAX_SLAT_TIME:.1f}s",
                     translation_domain=DOMAIN,
                     translation_key="travel_time_out_of_range",
                     translation_placeholders={
-                        "field": field, "min": f"{CALIBRATION_MIN_RUN:.0f}", "max": f"{CALIBRATION_MAX_RUN:.0f}",
+                        "field": "slat_time", "min": f"{MIN_SLAT_TIME:.1f}", "max": f"{MAX_SLAT_TIME:.1f}",
                     },
                 )
+            self._slat_time = round(float(slat_time), 2)
+            if getattr(self, "_attr_extra_state_attributes", None) is not None:
+                self._attr_extra_state_attributes["slat_time"] = self._slat_time
 
-        self._travel_time_down = round(float(down), 2)
-        self._travel_time_up = round(float(up), 2)  # type: ignore
-        self._travel_time = int(round(self._travel_time_down))
         self._copied_from = str(copied_from) if copied_from else None
         self._calibration_source = "copied" if self._copied_from else "manual"
         self._calibrated_at = dt_util.utcnow().isoformat(timespec="seconds")
@@ -838,6 +869,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             "measured_at": self._calibrated_at,
             "source": self._calibration_source,
         }
+        if self._slat_tilt or slat_time is not None:
+            result["slat_time"] = self._slat_time
         if self._copied_from:
             result["copied_from"] = self._copied_from
         self._persist_calibration(result)
@@ -949,21 +982,25 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         else:
             command = OWNAutomationCommand.lower_shutter(self._full_where)
         if not self._advanced:
-            self._start_position = self.current_cover_position if self.current_cover_position is not None else (0 if direction == "open" else 100)
-            # The clock starts when the frame is written (see _track_write),
-            # not now: with a busy queue the motor is still idle for a while.
-            self._move_start_time = None
-            self._run_started_at = None
-            self._motion_started_at = None  # the previous run's anchor is not this run's
-            self._refresh_travel_attributes()
-            self._attr_is_opening = direction == "open"
-            self._attr_is_closing = direction == "close"
-            self._attr_is_closed = False
-            self._begin_command(direction)
+            if not is_tilting:
+                self._start_position = self.current_cover_position if self.current_cover_position is not None else (0 if direction == "open" else 100)
+                # The clock starts when the frame is written (see _track_write),
+                # not now: with a busy queue the motor is still idle for a while.
+                self._move_start_time = None
+                self._run_started_at = None
+                self._motion_started_at = None  # the previous run's anchor is not this run's
+                self._refresh_travel_attributes()
+                self._attr_is_opening = direction == "open"
+                self._attr_is_closing = direction == "close"
+                self._attr_is_closed = False
+                self._begin_command(direction)
+            else:
+                self._attr_is_opening = direction == "open"
+                self._attr_is_closing = direction == "close"
         written = await self._gateway_handler.send(command)
         if self._calibrating or self.calibration_hub.is_calibrating:
             _record_calibration_frame(self._gateway_handler, "tx", str(command), direction_action=direction, entity_id=self.entity_id)
-        if not self._advanced:
+        if not self._advanced and not is_tilting:
             self._track_write(written)
         if isinstance(written, asyncio.Future) and written.done():
             if written.cancelled():
@@ -1049,12 +1086,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             except asyncio.CancelledError:
                 pass
 
-        self._stop_task = asyncio.create_task(_auto_stop())  # type: ignore
+        self._stop_task = asyncio.create_task(_auto_stop())
 
     async def async_stop_cover(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Stop the cover."""
+        was_tilting = self._is_tilting
+        at = kwargs.get("at")
         self._cancel_stop_task()
-        if not self._advanced and not self._is_tilting:
+        if not self._advanced and not was_tilting:
             # The estimate keeps running until the stop frame is actually
             # written (_track_write freezes it then); if delivery never
             # happens the next status frame will correct us.
@@ -1063,15 +1102,33 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         written = await self._gateway_handler.send(cmd)
         if self._calibrating or self.calibration_hub.is_calibrating:
             _record_calibration_frame(self._gateway_handler, "tx", str(cmd), action="stop", entity_id=self.entity_id)
-        if not self._advanced and not self._is_tilting:
+        if not self._advanced and not was_tilting:
             self._track_write(written)
             if not isinstance(written, asyncio.Future):
                 self._freeze_position(time.monotonic())  # type: ignore
-        elif self._is_tilting:
-            self._attr_is_opening = False
-            self._attr_is_closing = False
+        elif was_tilting:
+            self._apply_tilt_stop(at if at is not None else time.monotonic())
         if self.hass is not None:
             self.async_write_ha_state()
+
+    def _apply_tilt_stop(self, at: float | None = None) -> None:
+        """Interpolate and finalize tilt position when tilting stops."""
+        if self._tilt_start_time is not None and self._tilt_duration > 0:
+            stop_time = at if at is not None else time.monotonic()
+            elapsed = max(0.0, stop_time - self._tilt_start_time)
+            fraction = min(1.0, elapsed / self._tilt_duration)
+            interpolated = int(round(
+                self._tilt_initial_position
+                + (self._tilt_target_position - self._tilt_initial_position) * fraction
+            ))
+            self._attr_current_cover_tilt_position = max(0, min(100, interpolated))
+        elif self._tilt_target_position is not None and self._is_tilting:
+            self._attr_current_cover_tilt_position = self._tilt_target_position
+        self._is_tilting = False
+        self._tilt_start_time = None
+        self._tilt_direction = None
+        self._attr_is_opening = False
+        self._attr_is_closing = False
 
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
         """Move the cover tilt to a specific position."""
@@ -1086,7 +1143,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 translation_placeholders={"entity_id": str(self.entity_id)},
             )
         self._cancel_stop_task()
-        curr_tilt = self.current_cover_tilt_position if self.current_cover_tilt_position is not None else 0
+        curr_tilt = self.current_cover_tilt_position
+        if curr_tilt is None:
+            curr_tilt = 0 if self.is_closed else 50
         diff = target_tilt - curr_tilt
         if diff == 0:
             return
@@ -1095,39 +1154,56 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         run_duration = fraction * self._slat_time
 
         direction = "open" if diff > 0 else "close"
+        self._tilt_initial_position = curr_tilt
+        self._tilt_target_position = target_tilt
+        self._tilt_duration = run_duration
+        self._tilt_direction = direction
+        self._tilt_start_time = None
+
         try:
             written = await self._async_move(direction, is_tilting=True)
+            if isinstance(written, asyncio.Future) and written.done():
+                try:
+                    write_ts = written.result()
+                    self._tilt_start_time = write_ts if isinstance(write_ts, (int, float)) else time.monotonic()
+                except Exception:
+                    self._tilt_start_time = time.monotonic()
+            elif not isinstance(written, asyncio.Future):
+                self._tilt_start_time = time.monotonic()
         except Exception:
             self._is_tilting = False
+            self._tilt_direction = None
             raise
         generation = self._run_generation
 
         async def _auto_stop_tilt() -> None:
             try:
-                anchor = await self._await_motion_anchor(written)
+                if isinstance(written, asyncio.Future) and not written.done():
+                    write_ts = await asyncio.wait_for(asyncio.shield(written), WRITE_TIMEOUT)
+                    anchor = write_ts if isinstance(write_ts, (int, float)) else time.monotonic()
+                    self._tilt_start_time = anchor
+                else:
+                    anchor = self._tilt_start_time if self._tilt_start_time is not None else time.monotonic()
                 if generation != self._run_generation:
-                    self._is_tilting = False
                     return
-                await asyncio.sleep(max(0.0, run_duration - (time.monotonic() - anchor)))
+                remaining = max(0.0, run_duration - (time.monotonic() - anchor))
+                if remaining > 0:
+                    await asyncio.sleep(remaining)
                 if generation != self._run_generation:
-                    self._is_tilting = False
                     return
-                self._attr_current_cover_tilt_position = target_tilt
-                await self.async_stop_cover()
-                self._attr_is_opening = False
-                self._attr_is_closing = False
-                self._is_tilting = False
+                at = (self._tilt_start_time + self._tilt_duration) if self._tilt_start_time is not None else None
+                await self.async_stop_cover(at=at)
                 if self.hass is not None:
                     self.async_write_ha_state()
             except HomeAssistantError as err:
-                self._is_tilting = False
-                self._attr_is_opening = False
-                self._attr_is_closing = False
                 LOGGER.error("%s Auto-stop tilt aborted for %s: %s", self._gateway_handler.log_id, self._full_where, err)
+                self._apply_tilt_stop()
             except asyncio.CancelledError:
-                self._is_tilting = False
+                pass
 
         self._stop_task = asyncio.create_task(_auto_stop_tilt())
+        if self.hass is not None:
+            self.async_write_ha_state()
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -1187,20 +1263,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             # Dimension 11 is absolute shutter position (Go to level).
             # Handles both command writes (*#2*WHERE*#11#001*LEVEL##) and
             # event-session reflections (*#2*WHERE*#11#001#1*LEVEL##).
+            # Absolute position operations change state over time; do not snap
+            # linear position immediately so timed estimators do not desync.
             dim_values = getattr(message, "dimension_value", getattr(message, "_dimension_value", [])) or []
             if dim_values:
                 try:
                     level = int(dim_values[0])
                     if 0 <= level <= 100:
-                        self._attr_current_cover_position = level
-                        self._start_position = level
-                        self._attr_is_closed = (level == 0)
-                        if self._slat_tilt:
-                            if level == 0:
-                                self._attr_current_cover_tilt_position = 0
-                            elif level == 100:
-                                self._attr_current_cover_tilt_position = 100
-                        self._publish_state()
+                        self._pending_target_position = level
                 except (ValueError, TypeError):
                     pass
             return
@@ -1276,37 +1346,56 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             if not self._advanced:
                 self._start_position = position
             self._move_start_time = None
+            self._pending_target_position = None
             self._attr_is_opening = False
             self._attr_is_closing = False
+            if self._slat_tilt:
+                if position == 0:
+                    self._attr_current_cover_tilt_position = 0
+                elif position == 100:
+                    self._attr_current_cover_tilt_position = 100
             if getattr(message, "is_closed", None) is not None:
                 self._attr_is_closed = message.is_closed
             else:
                 self._attr_is_closed = (self._attr_current_cover_position == 0)
         elif is_opening:
-            self._is_tilting = False
-            if self._calibrating and not self._attr_is_opening:
-                self._interrupt_calibration("an external open command arrived")
-            if self._attr_is_closing:
-                self._cancel_stop_task()
-                self._run_generation += 1
-            if not self._advanced and not self._attr_is_opening:
-                self._start_position = self.current_cover_position if self.current_cover_position is not None else 0
-                self._anchor_run(now)
-            self._attr_is_opening = True
-            self._attr_is_closing = False
-            self._attr_is_closed = False
+            if self._is_tilting and self._tilt_direction == "open":
+                # Movement frame caused by our tilt pulse: preserve tilt state, do not anchor linear travel
+                self._attr_is_opening = True
+                self._attr_is_closing = False
+            else:
+                if self._is_tilting:
+                    self._apply_tilt_stop(now)
+                if self._calibrating and not self._attr_is_opening:
+                    self._interrupt_calibration("an external open command arrived")
+                if self._attr_is_closing:
+                    self._cancel_stop_task()
+                    self._run_generation += 1
+                if not self._advanced and not self._attr_is_opening:
+                    self._start_position = self.current_cover_position if self.current_cover_position is not None else 0
+                    self._anchor_run(now)
+                self._attr_is_opening = True
+                self._attr_is_closing = False
+                self._attr_is_closed = False
         elif is_closing:
-            self._is_tilting = False
-            if self._calibrating and not self._attr_is_closing:
-                self._interrupt_calibration("an external close command arrived")
-            if self._attr_is_opening:
-                self._cancel_stop_task()
-                self._run_generation += 1
-            if not self._advanced and not self._attr_is_closing:
-                self._start_position = self.current_cover_position if self.current_cover_position is not None else 100
-                self._anchor_run(now)
-            self._attr_is_opening = False
-            self._attr_is_closing = True
+            if self._is_tilting and self._tilt_direction == "close":
+                # Movement frame caused by our tilt pulse: preserve tilt state, do not anchor linear travel
+                self._attr_is_opening = False
+                self._attr_is_closing = True
+            else:
+                if self._is_tilting:
+                    self._apply_tilt_stop(now)
+                if self._calibrating and not self._attr_is_closing:
+                    self._interrupt_calibration("an external close command arrived")
+                if self._attr_is_opening:
+                    self._cancel_stop_task()
+                    self._run_generation += 1
+                if not self._advanced and not self._attr_is_closing:
+                    self._start_position = self.current_cover_position if self.current_cover_position is not None else 100
+                    self._anchor_run(now)
+                self._attr_is_opening = False
+                self._attr_is_closing = True
+                self._attr_is_closed = False
         else:
             # Stopped (state == 0 or other): a genuine stop ends any timed run.
             was_tilting = self._is_tilting
@@ -1315,7 +1404,19 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._run_generation += 1
             self._last_stop_at = now
             self._stopped_event.set()
-            if not self._advanced and not was_tilting:
+            if was_tilting:
+                self._apply_tilt_stop(now)
+            elif self._pending_target_position is not None:
+                self._attr_current_cover_position = self._pending_target_position
+                if not self._advanced:
+                    self._start_position = self._pending_target_position
+                if self._slat_tilt:
+                    if self._pending_target_position == 0:
+                        self._attr_current_cover_tilt_position = 0
+                    elif self._pending_target_position == 100:
+                        self._attr_current_cover_tilt_position = 100
+                self._pending_target_position = None
+            elif not self._advanced:
                 self._freeze_position(now)
             self._attr_is_opening = False
             self._attr_is_closing = False

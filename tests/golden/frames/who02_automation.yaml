@@ -135,7 +135,7 @@
   mcp_notes: "Automation dimension write: Set shutter position to 75%"
   roundtrip: true
 
-- id: cover.dim.write.tilt.30
+- id: cover.dim.write.level.30.unparam
   frame: "*#2*93*#11*30##"
   direction: dimension_write
   who: 2
@@ -145,7 +145,7 @@
   dimension_values: ["30"]
   source: legrand-spec
   mcp_valid: true
-  mcp_notes: "Automation dimension write: Set slat tilt angle to 30%"
+  mcp_notes: "Automation: Unparameterized Dimension 11 write to 30%; listed in legacy 2015 Legrand WHO_2 spec as 'slat tilt' but verified by modern OpenWebNet Encyclopedia and firmware oracle as absolute shutter level (Go to level) operation"
   roundtrip: true
 
 - id: cover.cmd.level.75

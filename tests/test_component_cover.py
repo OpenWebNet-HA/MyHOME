@@ -15,7 +15,7 @@ from homeassistant.const import (
     CONF_NAME,
 )
 from homeassistant.core import HomeAssistant, State, callback
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import (
     OWNAutomationEvent,
@@ -867,23 +867,46 @@ class TestMyHOMECoverEntity:
         assert basic_cover.device_class == CoverDeviceClass.SHUTTER
 
     def test_cover_dimension11_updates_shutter_position(self, tilt_cover, basic_cover):
-        """Test that Dimension 11 writes and events update shutter position."""
-        # 1. Dimension 11 command write (*#2*31*#11#001*50##) updates cover position
+        """Test that Dimension 11 writes set pending target and update position on stop."""
+        # Initial position 100
+        tilt_cover._attr_current_cover_position = 100
+        basic_cover._attr_current_cover_position = 20
+
+        # 1. Dimension 11 command write (*#2*31*#11#001*50##) sets pending target without immediate snap
         msg1 = OWNMessage.parse("*#2*31*#11#001*50##")
         assert msg1 is not None
         tilt_cover.handle_event(msg1)
-        assert tilt_cover.current_cover_position == 50
+        assert tilt_cover._pending_target_position == 50
+        assert tilt_cover.current_cover_position == 100
 
-        # 2. Dimension 11 bus event with selector (*#2*31*#11#001#1*40##) updates cover position
+        # Standard stop frame applies pending target
+        stop_msg = OWNMessage.parse("*2*0*31##")
+        assert stop_msg is not None
+        tilt_cover.handle_event(stop_msg)
+        assert tilt_cover.current_cover_position == 50
+        assert tilt_cover._pending_target_position is None
+
+        # 2. Dimension 11 bus event with selector (*#2*31*#11#001#1*40##) sets pending target
         msg2 = OWNMessage.parse("*#2*31*#11#001#1*40##")
         assert msg2 is not None
         tilt_cover.handle_event(msg2)
-        assert tilt_cover.current_cover_position == 40
+        assert tilt_cover._pending_target_position == 40
+        assert tilt_cover.current_cover_position == 50
 
-        # 3. A basic (non-tilt) cover does NOT turn into a blind when receiving Dimension 11
+        # Dimension 10 stop status applies position
+        dim10_stop = OWNMessage.parse("*#2*31*10*10*40*001*0##")
+        assert dim10_stop is not None
+        tilt_cover.handle_event(dim10_stop)
+        assert tilt_cover.current_cover_position == 40
+        assert tilt_cover._pending_target_position is None
+
+        # 3. A basic (non-tilt) cover does NOT snap on Dimension 11, does NOT turn into blind
         assert basic_cover._slat_tilt is False
         assert basic_cover.device_class == CoverDeviceClass.SHUTTER
         basic_cover.handle_event(msg2)
+        assert basic_cover.current_cover_position == 20  # did not snap!
+        assert basic_cover._pending_target_position == 40
+        basic_cover.handle_event(stop_msg)
         assert basic_cover.current_cover_position == 40
         assert basic_cover._slat_tilt is False
         assert basic_cover.device_class == CoverDeviceClass.SHUTTER
@@ -895,6 +918,117 @@ class TestMyHOMECoverEntity:
         msg_inv.dimension_value = ["invalid"]
         tilt_cover.handle_event(msg_inv)
         assert tilt_cover.current_cover_position == 40
+
+    def test_cover_slat_tilt_movement_frames_preserve_state(self, tilt_cover):
+        """Test that actuator movement frames during tilt pulse do NOT clear _is_tilting or anchor linear travel."""
+        tilt_cover._is_tilting = True
+        tilt_cover._tilt_direction = "open"
+        tilt_cover._tilt_start_time = time.monotonic()
+        tilt_cover._tilt_duration = 2.0
+        tilt_cover._tilt_initial_position = 0
+        tilt_cover._tilt_target_position = 100
+        tilt_cover._attr_current_cover_position = 60
+        tilt_cover._run_started_at = None
+
+        # Actuator movement frame in tilt direction (*2*1*31##)
+        open_msg = OWNMessage.parse("*2*1*31##")
+        assert open_msg is not None
+        tilt_cover.handle_event(open_msg)
+
+        assert tilt_cover._is_tilting is True
+        assert tilt_cover._run_started_at is None
+        assert tilt_cover.current_cover_position == 60
+
+        # Dimension 10 movement frame (*#2*31*10*11*30*001*0##)
+        dim10_move = OWNMessage.parse("*#2*31*10*11*30*001*0##")
+        assert dim10_move is not None
+        tilt_cover.handle_event(dim10_move)
+
+        assert tilt_cover._is_tilting is True
+        assert tilt_cover._run_started_at is None
+        assert tilt_cover.current_cover_position == 60
+
+        # Stop frame ends tilt without corrupting linear position
+        stop_msg = OWNMessage.parse("*2*0*31##")
+        assert stop_msg is not None
+        tilt_cover.handle_event(stop_msg)
+
+        assert tilt_cover._is_tilting is False
+        assert tilt_cover.current_cover_position == 60
+
+    @pytest.mark.asyncio
+    async def test_cover_slat_tilt_manual_stop_interpolates_angle(self, tilt_cover, mock_gateway):
+        """Test that manual stop mid-tilt interpolates angle proportionally."""
+        fut = asyncio.Future()
+        fut.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut
+
+        tilt_cover._attr_current_cover_tilt_position = 0
+        tilt_cover._slat_time = 2.0
+
+        sleep_gate = asyncio.Event()
+        with patch("asyncio.sleep", side_effect=lambda s: sleep_gate.wait()):
+            await tilt_cover.async_set_cover_tilt_position(tilt_position=100)
+            assert tilt_cover._is_tilting is True
+            start_ts = tilt_cover._tilt_start_time or time.monotonic()
+
+            # Simulate stopping 1.0 second into a 2.0s pulse (50% progress)
+            with patch("time.monotonic", return_value=start_ts + 1.0):
+                await tilt_cover.async_stop_cover_tilt()
+
+            assert tilt_cover._is_tilting is False
+            assert tilt_cover.current_cover_tilt_position == 50
+
+    @pytest.mark.asyncio
+    async def test_cover_slat_time_service(self, tilt_cover, basic_cover):
+        """Test setting slat_time via async_set_travel_time and range validation."""
+        # 1. Setting slat_time alone on a tilt cover
+        res = await tilt_cover.async_set_travel_time(slat_time=3.5)
+        assert res["slat_time"] == 3.5
+        assert tilt_cover._slat_time == 3.5
+        assert tilt_cover.extra_state_attributes["slat_time"] == 3.5
+
+        # 2. Out of range slat_time rejected with ServiceValidationError
+        with pytest.raises(ServiceValidationError):
+            await tilt_cover.async_set_travel_time(slat_time=0.2)
+
+        with pytest.raises(ServiceValidationError):
+            await tilt_cover.async_set_travel_time(slat_time=12.0)
+
+        # 3. Missing both travel_time and slat_time raises ServiceValidationError
+        with pytest.raises(ServiceValidationError):
+            await tilt_cover.async_set_travel_time()
+
+        # 4. Advanced cover rejects travel time calibration
+        basic_cover._advanced = True
+        with pytest.raises(HomeAssistantError, match="reports its position"):
+            await basic_cover.async_set_travel_time(travel_time=30)
+
+    @pytest.mark.asyncio
+    async def test_cover_slat_tilt_auto_stop_branches(self, tilt_cover, mock_gateway):
+        """Test auto-stop cancellation, error handling, and superseding branches."""
+        fut = asyncio.Future()
+        fut.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut
+
+        tilt_cover._attr_current_cover_tilt_position = 0
+
+        # Branch 1: Superseded before sleep
+        tilt_cover._run_generation = 1
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            await tilt_cover.async_set_cover_tilt_position(tilt_position=50)
+            tilt_cover._run_generation = 99  # simulate superseding command
+            if tilt_cover._stop_task:
+                await tilt_cover._stop_task
+
+        # Branch 2: HomeAssistantError during auto-stop
+        tilt_cover._attr_current_cover_tilt_position = 0
+        with patch("asyncio.sleep", new_callable=AsyncMock), \
+             patch.object(tilt_cover, "async_stop_cover", side_effect=HomeAssistantError("gateway fail")):
+            await tilt_cover.async_set_cover_tilt_position(tilt_position=50)
+            if tilt_cover._stop_task:
+                await tilt_cover._stop_task
+            assert tilt_cover._is_tilting is False
 
 
 async def test_cover_general_commands_update_all_covers(hass: HomeAssistant, mock_gateway):

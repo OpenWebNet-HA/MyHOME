@@ -230,8 +230,8 @@ class MyHOMEScopeCover(MyHOMECover):
         super().handle_event(message)
         self._watch_run()
 
-    async def _async_move(self, direction: str) -> asyncio.Future[Any] | None:
-        written = await super()._async_move(direction)
+    async def _async_move(self, direction: str, is_tilting: bool = False) -> asyncio.Future[Any] | None:
+        written = await super()._async_move(direction, is_tilting=is_tilting)
         self._watch_run()
         return written
 
