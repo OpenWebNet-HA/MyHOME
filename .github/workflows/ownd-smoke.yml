@@ -34,10 +34,13 @@ jobs:
         python-version: ["3.14"]
         ownd-target: [pinned, latest, dev]
         include:
+          # pinned = the OWNd version manifest.json ships: the only hard gate.
           - ownd-target: pinned
             allow-failure: false
+          # latest = PyPI head and dev = OWNd master: early-warning canaries for
+          # upstream drift, never blocking.
           - ownd-target: latest
-            allow-failure: false
+            allow-failure: true
           - ownd-target: dev
             allow-failure: true
 
