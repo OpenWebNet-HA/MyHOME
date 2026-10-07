@@ -1347,6 +1347,65 @@ class TestTiltAuditRegressions:
         assert cover._is_tilting is False
         assert cover.current_cover_tilt_position == 20
 
+    @pytest.mark.asyncio
+    async def test_setting_current_tilt_mid_pulse_stops_the_motor(self, cover, mock_gateway):
+        """Setting the angle the running pulse has just reached must stop the motor, not strand it."""
+        fut = asyncio.Future()
+        fut.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut
+        cover._attr_current_cover_tilt_position = 0
+        cover._slat_time = 2.0
+        gate = asyncio.Event()
+        real_sleep = asyncio.sleep
+
+        async def fake_sleep(_delay):
+            await gate.wait()
+
+        with patch("asyncio.sleep", side_effect=fake_sleep):
+            await cover.async_set_cover_tilt_position(tilt_position=100)
+            task = cover._stop_task
+            start = cover._tilt_start_time
+            with patch("time.monotonic", return_value=start + 1.0):  # half way: 50 %
+                await cover.async_set_cover_tilt_position(tilt_position=50)
+            assert cover._is_tilting is False
+            assert cover.current_cover_tilt_position == 50
+            assert any(str(c.args[0]) == "*2*0*31##" for c in mock_gateway.send.call_args_list)
+            gate.set()
+            await real_sleep(0)
+            assert task.cancelled()  # the stop cancelled the superseded auto-stop itself
+
+    def test_interpolated_tilt_without_a_running_pulse_is_the_last_angle(self, cover):
+        """A second command can arrive before the first pulse has a start time."""
+        cover._attr_current_cover_tilt_position = 35
+        assert cover._interpolated_tilt(time.monotonic()) == 35
+
+    @pytest.mark.asyncio
+    async def test_new_tilt_target_mid_pulse_starts_from_interpolated_angle(self, cover, mock_gateway):
+        fut = asyncio.Future()
+        fut.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut
+        cover._attr_current_cover_tilt_position = 0
+        cover._slat_time = 2.0
+        gate = asyncio.Event()
+        real_sleep = asyncio.sleep
+
+        async def fake_sleep(_delay):
+            await gate.wait()
+
+        with patch("asyncio.sleep", side_effect=fake_sleep):
+            await cover.async_set_cover_tilt_position(tilt_position=100)
+            first = cover._stop_task
+            start = cover._tilt_start_time
+            with patch("time.monotonic", return_value=start + 1.0):
+                await cover.async_set_cover_tilt_position(tilt_position=25)
+            assert cover._tilt_initial_position == 50  # not the stale 0
+            assert cover._tilt_direction == "close"
+            assert cover._tilt_duration == pytest.approx(0.5)
+            await real_sleep(0)
+            assert first.done()  # the superseded auto-stop is gone
+            gate.set()
+            await cover._stop_task
+
     def test_non_numeric_slat_time_is_a_schema_error(self):
         """Finding 7: a bad slat_time is rejected as a schema error, never a bare ValueError."""
         from voluptuous import Invalid

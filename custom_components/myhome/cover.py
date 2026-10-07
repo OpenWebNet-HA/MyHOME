@@ -1127,6 +1127,16 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if self.hass is not None:
             self.async_write_ha_state()
 
+    def _interpolated_tilt(self, at: float) -> int | None:
+        """The tilt angle ``at`` a moment of the running pulse (the last known angle if none runs)."""
+        if self._tilt_start_time is None or self._tilt_duration <= 0:
+            return self.current_cover_tilt_position
+        fraction = min(1.0, max(0.0, at - self._tilt_start_time) / self._tilt_duration)
+        interpolated = int(round(
+            self._tilt_initial_position + (self._tilt_target_position - self._tilt_initial_position) * fraction
+        ))
+        return max(0, min(100, interpolated))
+
     def _abort_tilt(self) -> None:
         """Forget a tilt pulse that never reached the bus; the tilt angle stays as it was."""
         self._is_tilting = False
@@ -1140,14 +1150,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     def _apply_tilt_stop(self, at: float | None = None) -> None:
         """Interpolate and finalize tilt position when tilting stops."""
         if self._tilt_start_time is not None and self._tilt_duration > 0:
-            stop_time = at if at is not None else time.monotonic()
-            elapsed = max(0.0, stop_time - self._tilt_start_time)
-            fraction = min(1.0, elapsed / self._tilt_duration)
-            interpolated = int(round(
-                self._tilt_initial_position
-                + (self._tilt_target_position - self._tilt_initial_position) * fraction
-            ))
-            self._attr_current_cover_tilt_position = max(0, min(100, interpolated))
+            self._attr_current_cover_tilt_position = self._interpolated_tilt(at if at is not None else time.monotonic())
         self._is_tilting = False
         self._tilt_start_time = None
         self._tilt_direction = None
@@ -1166,13 +1169,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 translation_key="cover_busy_calibrating",
                 translation_placeholders={"entity_id": str(self.entity_id)},
             )
-        self._cancel_stop_task()
-        curr_tilt = self.current_cover_tilt_position
+        was_tilting = self._is_tilting
+        curr_tilt = self._interpolated_tilt(time.monotonic()) if was_tilting else self.current_cover_tilt_position
         if curr_tilt is None:
             curr_tilt = 0 if self.is_closed else 50
         diff = target_tilt - curr_tilt
         if diff == 0:
+            if was_tilting:
+                # Already there while the motor still runs: end the pulse here.
+                await self.async_stop_cover()
             return
+        # _async_move cancels the running auto-stop only once the new command is
+        # on its way, so a failure cannot leave a running pulse without its stop.
 
         fraction = abs(diff) / 100.0
         run_duration = fraction * self._slat_time
