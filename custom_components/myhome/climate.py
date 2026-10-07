@@ -81,7 +81,9 @@ _ZONE_CONTEXT_MODES = {"heating": HVACMode.HEAT, "cooling": HVACMode.COOL, "auto
 # always writes 3 (libqtdevices probe_device.cpp:122, thermal_device.cpp:134)
 # and the mhs1 / F454 firmware forwards 1, 2 and 3 as three different bus
 # codes (90/91/92 for a zone, C1 12/22/02 for the central unit). "auto" makes
-# OWNd write 3, so the plant keeps its own season.
+# OWNd write 3 for a zone, so the plant keeps its own season. The central
+# unit write stays 1/2 because OWNd's set_central_temperature has no
+# generic digit.
 SETPOINT_WRITE_MODE = CLIMATE_MODE_AUTO
 _ZONE_STATES_ON = ("setpoint", "comfort", "eco")
 _ZONE_STATES_OFF = ("protection", "off")
@@ -590,11 +592,14 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             kwargs.get("temperature", self._local_target_temperature)  # type: ignore[arg-type]
         ) - self._local_offset
         if self._central:
+            # OWNd's central-unit builder only knows digits 1 (heat) and 2
+            # (cool), so the central keeps the season-specific write.
+            mode = "heat" if self._attr_hvac_mode != HVACMode.COOL else "cool"
             await self._gateway_handler.send(
                 OWNHeatingCommand.set_central_temperature(
                     where=self._where,
                     temperature=target_temperature,
-                    mode=SETPOINT_WRITE_MODE,
+                    mode=mode,
                 )
             )
             self._target_temperature = target_temperature

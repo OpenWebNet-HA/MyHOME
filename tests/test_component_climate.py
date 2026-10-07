@@ -167,15 +167,15 @@ async def test_climate_properties_and_hvac_modes(hass):
     climate._target_temperature = 22.0
     await climate.async_set_hvac_mode(HVACMode.HEAT)
     gateway.send.assert_called_once()
-    # It sends set_temperature with mode HEAT
-    assert str(gateway.send.call_args[0][0]) == "*#4*1*#14*0220*1##"
+    # Zone setpoint writes always use the generic mode digit 3 (firmware-validated)
+    assert str(gateway.send.call_args[0][0]) == "*#4*1*#14*0220*3##"
     gateway.send.reset_mock()
 
     # Test set_hvac_mode COOL
     await climate.async_set_hvac_mode(HVACMode.COOL)
     gateway.send.assert_called_once()
     # If _target_temperature is set, it will send the set_temperature command for COOL too.
-    assert str(gateway.send.call_args[0][0]) == "*#4*1*#14*0220*2##"
+    assert str(gateway.send.call_args[0][0]) == "*#4*1*#14*0220*3##"
     gateway.send.reset_mock()
 
 async def test_climate_set_temperature(hass):
@@ -204,14 +204,14 @@ async def test_climate_set_temperature(hass):
     climate._attr_hvac_mode = HVACMode.HEAT
     await climate.async_set_temperature(temperature=23.0)
     gateway.send.assert_called_once()
-    assert str(gateway.send.call_args[0][0]) == "*#4*1*#14*0230*1##"
+    assert str(gateway.send.call_args[0][0]) == "*#4*1*#14*0230*3##"
     gateway.send.reset_mock()
 
     # Set temperature when in COOL mode
     climate._attr_hvac_mode = HVACMode.COOL
     await climate.async_set_temperature(temperature=24.0)
     gateway.send.assert_called_once()
-    assert str(gateway.send.call_args[0][0]) == "*#4*1*#14*0240*2##"
+    assert str(gateway.send.call_args[0][0]) == "*#4*1*#14*0240*3##"
     gateway.send.reset_mock()
 
     # Set temperature when in AUTO mode
@@ -386,7 +386,7 @@ async def test_climate_edge_cases_and_properties(hass):
     climate._attr_hvac_mode = HVACMode.HEAT
     await climate.async_set_temperature()
     gateway.send.assert_called_once()
-    assert str(gateway.send.call_args[0][0]) == "*#4*1*#14*0210*1##"
+    assert str(gateway.send.call_args[0][0]) == "*#4*1*#14*0210*3##"
 
 
 async def test_climate_handle_events_mode_and_target_transitions(hass):
@@ -822,7 +822,7 @@ async def test_climate_antifreeze_status_sweep_preserves_target_and_comfort_setp
     # Test toggling back to HEAT restores nominal comfort setpoint (17.0 °C, NOT 7.0 °C!)
     await climate.async_set_hvac_mode(HVACMode.HEAT)
     gateway_mock.send.assert_awaited_once()
-    assert str(gateway_mock.send.call_args[0][0]) == "*#4*2*#14*0170*1##"
+    assert str(gateway_mock.send.call_args[0][0]) == "*#4*2*#14*0170*3##"
 
     # Simulated bus acknowledgment of HEAT mode: target updates to nominal comfort setpoint
     climate.handle_event(OWNHeatingEvent("*4*1*2##"))  # or *4*110*2##
