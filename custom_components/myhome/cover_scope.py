@@ -225,14 +225,51 @@ class MyHOMEScopeCover(MyHOMECover):
             return
         await super().async_set_cover_position(**kwargs)
 
+    async def async_open_cover_tilt(self, **kwargs: Any) -> None:
+        if members := self._fan_out():
+            await asyncio.gather(*(m.async_open_cover_tilt(**kwargs) for m in members if m._slat_tilt))
+            return
+        if self._slat_tilt:
+            await super().async_open_cover_tilt(**kwargs)
+
+    async def async_close_cover_tilt(self, **kwargs: Any) -> None:
+        if members := self._fan_out():
+            await asyncio.gather(*(m.async_close_cover_tilt(**kwargs) for m in members if m._slat_tilt))
+            return
+        if self._slat_tilt:
+            await super().async_close_cover_tilt(**kwargs)
+
+    async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
+        if members := self._fan_out():
+            await asyncio.gather(*(m.async_set_cover_tilt_position(**kwargs) for m in members if m._slat_tilt))
+            return
+        if self._slat_tilt:
+            await super().async_set_cover_tilt_position(**kwargs)
+
+    async def async_stop_cover_tilt(self, **kwargs: Any) -> None:
+        if members := self._fan_out():
+            await asyncio.gather(*(m.async_stop_cover_tilt(**kwargs) for m in members if m._slat_tilt))
+            return
+        if self._slat_tilt:
+            await super().async_stop_cover_tilt(**kwargs)
+
+    @property
+    def current_cover_tilt_position(self) -> int | None:
+        if not (members := self._members()):
+            return super().current_cover_tilt_position
+        tilts = [t for m in members if m._slat_tilt and (t := m.current_cover_tilt_position) is not None]
+        return round(sum(tilts) / len(tilts)) if tilts else None
+
     @callback
     def handle_event(self, message: OWNAutomationEvent) -> None:
         super().handle_event(message)
-        self._watch_run()
+        if not self._is_tilting:
+            self._watch_run()
 
     async def _async_move(self, direction: str, is_tilting: bool = False) -> asyncio.Future[Any] | None:
         written = await super()._async_move(direction, is_tilting=is_tilting)
-        self._watch_run()
+        if not is_tilting:
+            self._watch_run()
         return written
 
     async def async_will_remove_from_hass(self) -> None:
@@ -247,7 +284,7 @@ class MyHOMEScopeCover(MyHOMECover):
     def _watch_run(self) -> None:
         """Without members nothing reports the end of a run: end it after the travel time."""
         moving = "open" if self._attr_is_opening else "close" if self._attr_is_closing else None
-        if moving is None or self.hass is None or self._members():
+        if moving is None or self.hass is None or self._members() or self._is_tilting:
             self._cancel_run_timeout()
             return
         if self._run_timeout is not None and self._run_timeout_direction == moving:

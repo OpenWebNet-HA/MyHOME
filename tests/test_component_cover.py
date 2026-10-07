@@ -186,7 +186,6 @@ class TestMyHOMECoverEntity:
 
     @pytest.fixture
     def tilt_cover(self, hass, mock_gateway):
-        mock_gateway.send_raw = AsyncMock(return_value=True)
         with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
             cover = MyHOMECover(
                 hass=hass,
@@ -879,11 +878,11 @@ class TestMyHOMECoverEntity:
         assert tilt_cover._pending_target_position == 50
         assert tilt_cover.current_cover_position == 100
 
-        # Standard stop frame applies pending target
+        # Standard stop frame does NOT snap pending target on unconfirmed stop, but clears it
         stop_msg = OWNMessage.parse("*2*0*31##")
         assert stop_msg is not None
         tilt_cover.handle_event(stop_msg)
-        assert tilt_cover.current_cover_position == 50
+        assert tilt_cover.current_cover_position == 100
         assert tilt_cover._pending_target_position is None
 
         # 2. Dimension 11 bus event with selector (*#2*31*#11#001#1*40##) sets pending target
@@ -891,7 +890,7 @@ class TestMyHOMECoverEntity:
         assert msg2 is not None
         tilt_cover.handle_event(msg2)
         assert tilt_cover._pending_target_position == 40
-        assert tilt_cover.current_cover_position == 50
+        assert tilt_cover.current_cover_position == 100
 
         # Dimension 10 stop status applies position
         dim10_stop = OWNMessage.parse("*#2*31*10*10*40*001*0##")
@@ -907,6 +906,10 @@ class TestMyHOMECoverEntity:
         assert basic_cover.current_cover_position == 20  # did not snap!
         assert basic_cover._pending_target_position == 40
         basic_cover.handle_event(stop_msg)
+        assert basic_cover.current_cover_position == 20  # plain stop does not snap unconfirmed target!
+        assert basic_cover._pending_target_position is None
+        # Confirmed via Dimension 10
+        basic_cover.handle_event(dim10_stop)
         assert basic_cover.current_cover_position == 40
         assert basic_cover._slat_tilt is False
         assert basic_cover.device_class == CoverDeviceClass.SHUTTER
@@ -973,10 +976,16 @@ class TestMyHOMECoverEntity:
         assert tilt_cover._attr_is_opening is False
 
         # 2. Opposite direction: open arrives while tilting "close"
+        mock_task = MagicMock()
+        mock_task.done.return_value = False
+        tilt_cover._stop_task = mock_task
+        gen_before = tilt_cover._run_generation
         open_msg = OWNMessage.parse("*2*1*31##")
         assert open_msg is not None
         tilt_cover.handle_event(open_msg)
         assert tilt_cover._is_tilting is False
+        mock_task.cancel.assert_called_once()
+        assert tilt_cover._run_generation > gen_before
 
         # 3. Opposite direction: close arrives while tilting "open"
         tilt_cover._is_tilting = True
@@ -999,14 +1008,59 @@ class TestMyHOMECoverEntity:
         tilt_cover.handle_event(dim10_pos100)
         assert tilt_cover.current_cover_tilt_position == 100
 
-        # 5. Stop frame with pending target position 0 and 100 updates tilt
+        # 5. Curtain travel updates tilt model
         stop_msg = OWNMessage.parse("*2*0*31##")
         assert stop_msg is not None
-        tilt_cover._pending_target_position = 0
+
+        # Closing travel >= slat_time rotates slats to 0
+        tilt_cover._attr_current_cover_position = 40
+        tilt_cover._attr_current_cover_tilt_position = 100
+        tilt_cover._slat_time = 2.0
+        tilt_cover._run_started_at = time.monotonic() - 3.0
+        tilt_cover._attr_is_closing = True
+        tilt_cover._attr_is_opening = False
         tilt_cover.handle_event(stop_msg)
         assert tilt_cover.current_cover_tilt_position == 0
 
-        tilt_cover._pending_target_position = 100
+        # Opening travel >= slat_time rotates slats to 100
+        tilt_cover._attr_current_cover_position = 60
+        tilt_cover._attr_current_cover_tilt_position = 0
+        tilt_cover._slat_time = 2.0
+        tilt_cover._run_started_at = time.monotonic() - 3.0
+        tilt_cover._attr_is_closing = False
+        tilt_cover._attr_is_opening = True
+        tilt_cover.handle_event(stop_msg)
+        assert tilt_cover.current_cover_tilt_position == 100
+
+        # Partial travel (1s of 2s slat_time while opening from 0) updates tilt proportionally to 50
+        tilt_cover._attr_current_cover_position = 50
+        tilt_cover._attr_current_cover_tilt_position = 0
+        tilt_cover._slat_time = 2.0
+        tilt_cover._run_started_at = time.monotonic() - 1.0
+        tilt_cover._attr_is_closing = False
+        tilt_cover._attr_is_opening = True
+        tilt_cover.handle_event(stop_msg)
+        assert tilt_cover.current_cover_tilt_position == 50
+
+        # Partial travel (1s of 2s slat_time while closing from 100) updates tilt proportionally to 50
+        tilt_cover._attr_current_cover_position = 50
+        tilt_cover._attr_current_cover_tilt_position = 100
+        tilt_cover._slat_time = 2.0
+        tilt_cover._run_started_at = time.monotonic() - 1.0
+        tilt_cover._attr_is_closing = True
+        tilt_cover._attr_is_opening = False
+        tilt_cover.handle_event(stop_msg)
+        assert tilt_cover.current_cover_tilt_position == 50
+
+        # Cover reaching position 0 endpoint forces tilt to 0
+        tilt_cover._attr_current_cover_position = 0
+        tilt_cover._attr_current_cover_tilt_position = 50
+        tilt_cover.handle_event(stop_msg)
+        assert tilt_cover.current_cover_tilt_position == 0
+
+        # Cover reaching position 100 endpoint forces tilt to 100
+        tilt_cover._attr_current_cover_position = 100
+        tilt_cover._attr_current_cover_tilt_position = 50
         tilt_cover.handle_event(stop_msg)
         assert tilt_cover.current_cover_tilt_position == 100
 
@@ -1036,9 +1090,12 @@ class TestMyHOMECoverEntity:
     @pytest.mark.asyncio
     async def test_cover_slat_time_service(self, tilt_cover, basic_cover):
         """Test setting slat_time via async_set_travel_time and range validation."""
-        # 1. Setting slat_time alone on a tilt cover
+        # 1. Setting slat_time alone on a tilt cover preserves calibration source (e.g. measured)
+        tilt_cover._calibration_source = "measured"
         res = await tilt_cover.async_set_travel_time(slat_time=3.5)
         assert res["slat_time"] == 3.5
+        assert res["source"] == "measured"
+        assert tilt_cover._calibration_source == "measured"
         assert tilt_cover._slat_time == 3.5
         assert tilt_cover.extra_state_attributes["slat_time"] == 3.5
 
