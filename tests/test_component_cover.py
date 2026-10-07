@@ -1523,10 +1523,10 @@ class TestTiltAuditRegressions:
     async def test_tilt_step_below_the_minimum_pulse_sends_nothing(self, cover, mock_gateway):
         cover._attr_current_cover_tilt_position = 50
         cover._slat_time = 2.0
-        await cover.async_set_cover_tilt_position(tilt_position=52)  # a 40 ms pulse
+        await cover.async_set_cover_tilt_position(tilt_position=56)  # a 120 ms pulse (< 0.2s)
         mock_gateway.send.assert_not_called()
         assert cover.current_cover_tilt_position == 50
-        await cover.async_set_cover_tilt_position(tilt_position=56)  # 120 ms
+        await cover.async_set_cover_tilt_position(tilt_position=62)  # 240 ms (>= 0.2s)
         assert mock_gateway.send.call_count == 1
         cover._cancel_stop_task()
 

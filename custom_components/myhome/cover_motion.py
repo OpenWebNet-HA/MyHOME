@@ -13,10 +13,11 @@ ECHO_WINDOW: float = 1.5
 MOTOR_START_DELAY: float = 0.55
 
 # Shortest slat pulse worth sending (#492). Shorter tilt steps are skipped: the
-# direction and stop frames are ~0.1 s apart on the bus at best, so the motor
-# would barely answer while the model records the step. Not measured on a
-# Venetian actuator yet.
-MIN_TILT_PULSE: float = 0.1
+# direction and stop frames are ~0.1 s apart on the bus at best, and on-wire
+# testing on physical hardware (#466 comment 6038376669) demonstrated that pulses
+# under ~0.2 s (130-200 ms) click the actuator relay without overcoming tubular motor
+# inertia/deadband, causing silent mathematical desync.
+MIN_TILT_PULSE: float = 0.2
 
 # Upper bound on how long we wait for the send queue to write our frame before
 # falling back to "now" as the motion anchor. #302 measured the *queue*: with
