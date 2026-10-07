@@ -257,6 +257,15 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._tilt_duration: float = 0.0
         self._tilt_direction: str | None = None
         self._attr_current_cover_tilt_position: int | None = None
+        # Tilt requests run one at a time; a newer target replaces one still waiting.
+        self._tilt_lock = asyncio.Lock()
+        self._tilt_request_seq = 0
+        # Delivery futures of the running pulse's direction frame and of its
+        # stop while that still waits in the send queue.
+        self._pulse_written: Any = None
+        self._pulse_stop_written: asyncio.Future[Any] | None = None
+        # The scope cover whose pulse moves this blind's slats (see _follow_pulse).
+        self._tilt_follows: MyHOMECover | None = None
         # Direction-aware travel times. `_travel_time` stays the closing (down) time
         # for compatibility; a stored calibration overrides yaml / default values.
         base_travel = float(travel_time) if travel_time else float(DEFAULT_TRAVEL_TIME)
@@ -1029,7 +1038,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     async def _async_move(self, direction: str, is_tilting: bool = False) -> asyncio.Future[Any] | None:
         """Queue a direction command and return its delivery future."""
         self._cancel_stop_task()
-        if not is_tilting:
+        if not is_tilting or self._tilt_follows is not None:
+            # A curtain command, or a blind's own pulse, takes the motor over.
             self._end_pulse_for_takeover()
         self._is_tilting = is_tilting
         if direction == "open":
@@ -1175,6 +1185,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._freeze_position(time.monotonic())  # type: ignore
         elif was_tilting and generation == self._run_generation:
             # A pulse started while this stop was being queued is not ours to settle.
+            if isinstance(written, asyncio.Future) and not written.done():
+                self._pulse_stop_written = written
             self._settle_pulse_on_write(written, generation, max(at, queued_at) if at is not None else queued_at)
         if self.hass is not None:
             self.async_write_ha_state()
@@ -1188,6 +1200,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """
 
         def _settle(fut: asyncio.Future[Any] | None = None) -> None:
+            if fut is not None and self._pulse_stop_written is fut:
+                self._pulse_stop_written = None
             if generation != self._run_generation or not self._is_tilting:
                 return  # a newer command, or a stop status, already ended the pulse
             stopped_at: float | None = None
@@ -1218,8 +1232,33 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if self._tilt_start_time is None or self._slat_time <= 0:
             return self.current_cover_tilt_position
         turned = max(0.0, at - self._tilt_start_time) / self._slat_time * 100.0
-        step = 1 if self._tilt_target_position >= self._tilt_initial_position else -1
-        return max(0, min(100, int(round(self._tilt_initial_position + step * turned))))
+        return max(0, min(100, int(round(self._tilt_initial_position + self._tilt_step() * turned))))
+
+    def _tilt_step(self) -> int:
+        """+1 while the running pulse opens the slats, -1 while it closes them."""
+        return 1 if self._tilt_direction == "open" else -1
+
+    def _carry_overshoot_into_curtain(self, at: float) -> None:
+        """Motor time past a full slat rotation moves the curtain (timed covers).
+
+        The slats turn first and the curtain follows, so a stop that reached the
+        bus after the slats were fully turned leaves the curtain moved by the rest.
+        """
+        if self._advanced or self._tilt_start_time is None or self._attr_current_cover_position is None:
+            return
+        opening = self._tilt_step() > 0
+        to_end = (100 - self._tilt_initial_position if opening else self._tilt_initial_position) / 100.0 * self._slat_time
+        excess = (at - self._tilt_start_time) - to_end
+        if excess <= 0:
+            return
+        moved = excess / self._travel_for(opening) * 100.0
+        position = max(0, min(100, int(round(self._attr_current_cover_position + (moved if opening else -moved)))))
+        LOGGER.debug(
+            "%s Slat pulse of %s ran %.2f s past a full rotation: curtain %s -> %s.",
+            self._gateway_handler.log_id, self._full_where, excess, self._attr_current_cover_position, position,
+        )
+        self._attr_current_cover_position = self._start_position = position
+        self._attr_is_closed = position == 0
 
     def _abort_tilt(self) -> None:
         """Forget a tilt pulse that never reached the bus; the tilt angle stays as it was."""
@@ -1227,6 +1266,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._is_tilting = False
         self._tilt_start_time = None
         self._tilt_direction = None
+        self._tilt_follows = None
+        self._pulse_written = None
         self._attr_is_opening = False
         self._attr_is_closing = False
         if self.hass is not None:
@@ -1235,14 +1276,67 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     def _apply_tilt_stop(self, at: float | None = None) -> None:
         """Interpolate and finalize tilt position when tilting stops."""
         if self._tilt_start_time is not None:
-            self._attr_current_cover_tilt_position = self._interpolated_tilt(at if at is not None else time.monotonic())
+            stopped_at = at if at is not None else time.monotonic()
+            self._attr_current_cover_tilt_position = self._interpolated_tilt(stopped_at)
+            self._carry_overshoot_into_curtain(stopped_at)
         # The pulse is over: a direction frame from now on is a keypad press, not its echo.
         self._end_echo_window()
         self._is_tilting = False
         self._tilt_start_time = None
         self._tilt_direction = None
+        self._tilt_follows = None
+        self._pulse_written = None
         self._attr_is_opening = False
         self._attr_is_closing = False
+
+    def _pulse_started(self) -> None:
+        """Hook: the running pulse's motor start (``_tilt_start_time``) is now known."""
+
+    def _follow_pulse(self, leader: MyHOMECover, direction: str) -> None:
+        """Follow a scope cover's slat pulse: its frames turn this blind's slats.
+
+        Without this, the scope's direction and stop frames reach the member as
+        an ordinary curtain run and nudge its position estimate. The leader
+        times the pulse (_pulse_started) and settles it (_apply_tilt_stop).
+        """
+        self._cancel_stop_task()
+        self._end_pulse_for_takeover()
+        current = self.current_cover_tilt_position
+        self._tilt_initial_position = current if current is not None else (0 if self.is_closed else 50)
+        self._tilt_target_position = 100 if direction == "open" else 0
+        self._tilt_direction = direction
+        self._tilt_start_time = None
+        self._tilt_follows = leader
+        self._is_tilting = True
+        # The relayed stop status before the direction status belongs to the pulse.
+        self._begin_command(direction)
+        self._attr_is_opening = direction == "open"
+        self._attr_is_closing = direction == "close"
+        self._publish_state()
+
+    async def _async_wait_pulse_stop_written(self) -> None:
+        """Let a slat pulse's queued stop reach the bus first.
+
+        The queue is FIFO, so a new direction frame could not leave before that
+        stop anyway; waiting settles the angle at the stop's real write, and the
+        next pulse starts from there instead of from an estimate.
+        """
+        pending = self._pulse_stop_written
+        if pending is None or pending.done():
+            return
+        try:
+            await asyncio.wait_for(asyncio.shield(pending), WRITE_TIMEOUT)
+        except asyncio.CancelledError:
+            if not pending.cancelled():
+                raise
+        except Exception:  # noqa: BLE001 - timeout or failed delivery: _settle_pulse_on_write reports it
+            pass
+
+    async def _async_wait_pulse_end(self) -> None:
+        """Wait until the running slat pulse has stopped and its stop is on the bus."""
+        if (task := self._stop_task) is not None and not task.done():
+            await asyncio.wait({task}, timeout=WRITE_TIMEOUT + MAX_SLAT_TIME + ECHO_WINDOW)
+        await self._async_wait_pulse_stop_written()
 
     def _end_pulse_for_takeover(self) -> None:
         """A curtain or level command takes the motor over from a running slat pulse."""
@@ -1262,6 +1356,16 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 translation_key="cover_busy_calibrating",
                 translation_placeholders={"entity_id": str(self.entity_id)},
             )
+        self._tilt_request_seq += 1
+        request = self._tilt_request_seq
+        async with self._tilt_lock:
+            await self._async_wait_pulse_stop_written()
+            if request != self._tilt_request_seq:
+                return  # a newer target arrived meanwhile and is sent instead
+            await self._async_start_tilt(target_tilt)
+
+    async def _async_start_tilt(self, target_tilt: int) -> None:
+        """Start, retarget or end the slat pulse that brings the slats to ``target_tilt``."""
         was_tilting = self._is_tilting
         if not was_tilting and (self._attr_is_opening or self._attr_is_closing):
             # The slats already turned with the curtain run, and a pulse would
@@ -1287,6 +1391,24 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         # on its way, so a failure cannot leave a running pulse without its stop.
 
         direction = "open" if diff > 0 else "close"
+        if (
+            was_tilting
+            and direction == self._tilt_direction
+            and self._tilt_follows is None
+            and self._pulse_written is not None
+            and self._stop_task is not None
+            and not self._stop_task.done()
+        ):
+            # Same direction while the motor still runs (a slider being dragged):
+            # move the pulse's stop and send nothing.
+            self._cancel_stop_task()
+            self._tilt_target_position = target_tilt
+            self._tilt_duration = abs(target_tilt - self._tilt_initial_position) / 100.0 * self._slat_time
+            self._start_pulse_auto_stop(self._pulse_written, self._run_generation, self._motor_started)
+            if self.hass is not None:
+                self.async_write_ha_state()
+            return
+
         self._tilt_initial_position = curr_tilt
         self._tilt_target_position = target_tilt
         self._tilt_duration = run_duration
@@ -1302,8 +1424,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         # _tilt_start_time stays None (no slat travel counted) until the frame is
         # written: on a busy queue the motor is still idle for a while.
-        generation = self._run_generation
-        motor_started = self._motor_started
+        self._pulse_written = written
+        self._start_pulse_auto_stop(written, self._run_generation, self._motor_started)
+        if self.hass is not None:
+            self.async_write_ha_state()
+
+    def _start_pulse_auto_stop(self, written: Any, generation: int, motor_started: asyncio.Event) -> None:
+        """Stop the running pulse once it has turned the slats for ``_tilt_duration``."""
 
         async def _auto_stop_tilt() -> None:
             try:
@@ -1342,8 +1469,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._tilt_start_time = (
                         write_ts + MOTOR_START_DELAY if write_ts is not None else time.monotonic()
                     )
+                    self._pulse_started()
                 if not motor_started.is_set():
-                    wait = self._tilt_start_time + run_duration - time.monotonic()
+                    wait = self._tilt_start_time + self._tilt_duration - time.monotonic()
                     if wait > 0:
                         try:
                             await asyncio.wait_for(motor_started.wait(), wait)
@@ -1352,7 +1480,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 if generation != self._run_generation:
                     return
                 anchor = self._tilt_start_time if self._tilt_start_time is not None else time.monotonic()
-                remaining = max(0.0, run_duration - (time.monotonic() - anchor))
+                remaining = max(0.0, self._tilt_duration - (time.monotonic() - anchor))
                 if remaining > 0:
                     await asyncio.sleep(remaining)
                 if generation != self._run_generation:
@@ -1368,8 +1496,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 pass
 
         self._stop_task = asyncio.create_task(_auto_stop_tilt())
-        if self.hass is not None:
-            self.async_write_ha_state()
 
     async def async_open_cover_tilt(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Open cover tilt."""
@@ -1401,7 +1527,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             if matches:
                 # The relayed direction status marks the real motor start.
                 if self._is_tilting:
-                    self._tilt_start_time = now  # the pulse is timed from here
+                    if self._tilt_follows is None:
+                        # The pulse is timed from here (a follower takes its leader's timing).
+                        self._tilt_start_time = now
+                        self._pulse_started()
                 else:
                     self._anchor_run(now)
                 self._motor_started.set()
