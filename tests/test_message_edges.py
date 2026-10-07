@@ -186,15 +186,19 @@ class TestHeatingEdgeCases:
         assert isinstance(msg, OWNHeatingEvent)
         assert msg.mode == CLIMATE_MODE_AUTO
 
-    def test_mode_auto_weekly_23001(self):
+    def test_mode_holiday_23001(self):
+        # OWNd <= 2.0.0b10 reads 23xxx as auto; OpenWebNet-HA/OWNd#88 reads it
+        # as the conditioning-season holiday (Legrand WHO 4 p. 5 / p. 64).
+        # Accept both until the pin moves past #88.
         msg = OWNEvent.parse("*4*23001*1##")
         assert isinstance(msg, OWNHeatingEvent)
-        assert msg.mode == CLIMATE_MODE_AUTO
+        assert msg.mode in (CLIMATE_MODE_AUTO, CLIMATE_MODE_COOL)
 
-    def test_mode_auto_weekly_13001(self):
+    def test_mode_holiday_13001(self):
+        # Same transition as above for the heating-season holiday (13xxx).
         msg = OWNEvent.parse("*4*13001*1##")
         assert isinstance(msg, OWNHeatingEvent)
-        assert msg.mode == CLIMATE_MODE_AUTO
+        assert msg.mode in (CLIMATE_MODE_AUTO, CLIMATE_MODE_HEAT)
 
     def test_unknown_mode(self):
         msg = OWNEvent.parse("*4*999*1##")
