@@ -1006,7 +1006,7 @@ class TestMyHOMECoverEntity:
 
     @pytest.mark.asyncio
     async def test_cover_slat_tilt_auto_stop_branches(self, tilt_cover, mock_gateway):
-        """Test auto-stop cancellation, error handling, and superseding branches."""
+        """Test auto-stop cancellation, error handling, pending write, and superseding branches."""
         fut = asyncio.Future()
         fut.set_result(time.monotonic())
         mock_gateway.send.return_value = fut
@@ -1021,7 +1021,40 @@ class TestMyHOMECoverEntity:
             if tilt_cover._stop_task:
                 await tilt_cover._stop_task
 
-        # Branch 2: HomeAssistantError during auto-stop
+        # Branch 2: Superseded during sleep
+        tilt_cover._attr_current_cover_tilt_position = 0
+        async def bump_gen_sleep(delay, *args, **kwargs):
+            tilt_cover._run_generation += 1
+
+        with patch("asyncio.sleep", side_effect=bump_gen_sleep):
+            await tilt_cover.async_set_cover_tilt_position(tilt_position=50)
+            if tilt_cover._stop_task:
+                await tilt_cover._stop_task
+
+        # Branch 3: Pending write future resolves with timestamp
+        pending_fut = asyncio.Future()
+        mock_gateway.send.return_value = pending_fut
+        tilt_cover._attr_current_cover_tilt_position = 0
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            await tilt_cover.async_set_cover_tilt_position(tilt_position=50)
+            pending_fut.set_result(time.monotonic())
+            if tilt_cover._stop_task:
+                await tilt_cover._stop_task
+        assert tilt_cover.current_cover_tilt_position == 50
+
+        # Branch 4: Pending write future raises TimeoutError/Exception
+        err_fut = asyncio.Future()
+        mock_gateway.send.return_value = err_fut
+        tilt_cover._attr_current_cover_tilt_position = 0
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            await tilt_cover.async_set_cover_tilt_position(tilt_position=50)
+            err_fut.set_exception(TimeoutError())
+            if tilt_cover._stop_task:
+                await tilt_cover._stop_task
+            _ = err_fut.exception()
+
+        # Branch 5: HomeAssistantError during auto-stop
+        mock_gateway.send.return_value = fut
         tilt_cover._attr_current_cover_tilt_position = 0
         with patch("asyncio.sleep", new_callable=AsyncMock), \
              patch.object(tilt_cover, "async_stop_cover", side_effect=HomeAssistantError("gateway fail")):
@@ -1029,6 +1062,13 @@ class TestMyHOMECoverEntity:
             if tilt_cover._stop_task:
                 await tilt_cover._stop_task
             assert tilt_cover._is_tilting is False
+
+        # Branch 6: CancelledError during auto-stop
+        tilt_cover._attr_current_cover_tilt_position = 0
+        with patch("asyncio.sleep", side_effect=asyncio.CancelledError):
+            await tilt_cover.async_set_cover_tilt_position(tilt_position=50)
+            if tilt_cover._stop_task:
+                await tilt_cover._stop_task
 
 
 async def test_cover_general_commands_update_all_covers(hass: HomeAssistant, mock_gateway):

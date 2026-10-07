@@ -827,8 +827,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
             if down is None:
                 down = self._travel_time_down
-            if up is None:
-                up = self._travel_time_up
+            assert down is not None and up is not None
 
             for field, value in (("travel_time_down", down), ("travel_time_up", up)):
                 if not CALIBRATION_MIN_RUN <= value <= CALIBRATION_MAX_RUN:
@@ -1122,8 +1121,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 + (self._tilt_target_position - self._tilt_initial_position) * fraction
             ))
             self._attr_current_cover_tilt_position = max(0, min(100, interpolated))
-        elif self._tilt_target_position is not None and self._is_tilting:
-            self._attr_current_cover_tilt_position = self._tilt_target_position
         self._is_tilting = False
         self._tilt_start_time = None
         self._tilt_direction = None
@@ -1162,28 +1159,24 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         try:
             written = await self._async_move(direction, is_tilting=True)
-            if isinstance(written, asyncio.Future) and written.done():
-                try:
-                    write_ts = written.result()
-                    self._tilt_start_time = write_ts if isinstance(write_ts, (int, float)) else time.monotonic()
-                except Exception:
-                    self._tilt_start_time = time.monotonic()
-            elif not isinstance(written, asyncio.Future):
-                self._tilt_start_time = time.monotonic()
         except Exception:
             self._is_tilting = False
             self._tilt_direction = None
             raise
+
+        self._tilt_start_time = time.monotonic()
         generation = self._run_generation
 
         async def _auto_stop_tilt() -> None:
             try:
-                if isinstance(written, asyncio.Future) and not written.done():
-                    write_ts = await asyncio.wait_for(asyncio.shield(written), WRITE_TIMEOUT)
-                    anchor = write_ts if isinstance(write_ts, (int, float)) else time.monotonic()
-                    self._tilt_start_time = anchor
-                else:
-                    anchor = self._tilt_start_time if self._tilt_start_time is not None else time.monotonic()
+                if isinstance(written, asyncio.Future):
+                    try:
+                        write_ts = await asyncio.wait_for(asyncio.shield(written), WRITE_TIMEOUT)
+                        if isinstance(write_ts, (int, float)):
+                            self._tilt_start_time = float(write_ts)
+                    except (TimeoutError, asyncio.CancelledError, Exception):
+                        pass
+                anchor = self._tilt_start_time or time.monotonic()
                 if generation != self._run_generation:
                     return
                 remaining = max(0.0, run_duration - (time.monotonic() - anchor))
@@ -1202,8 +1195,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 pass
 
         self._stop_task = asyncio.create_task(_auto_stop_tilt())
-        if self.hass is not None:
-            self.async_write_ha_state()
         if self.hass is not None:
             self.async_write_ha_state()
 
