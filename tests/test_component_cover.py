@@ -956,6 +956,60 @@ class TestMyHOMECoverEntity:
         assert tilt_cover._is_tilting is False
         assert tilt_cover.current_cover_position == 60
 
+    def test_tilt_movement_opposite_direction_and_endpoints(self, tilt_cover):
+        """Test opposite direction movement frames during tilt and 0/100 endpoint tilt updates."""
+        # 1. Closing frame matching tilt direction "close"
+        tilt_cover._is_tilting = True
+        tilt_cover._tilt_direction = "close"
+        tilt_cover._tilt_start_time = time.monotonic()
+        tilt_cover._tilt_duration = 2.0
+        tilt_cover._tilt_initial_position = 100
+        tilt_cover._tilt_target_position = 50
+        close_msg = OWNMessage.parse("*2*2*31##")
+        assert close_msg is not None
+        tilt_cover.handle_event(close_msg)
+        assert tilt_cover._is_tilting is True
+        assert tilt_cover._attr_is_closing is True
+        assert tilt_cover._attr_is_opening is False
+
+        # 2. Opposite direction: open arrives while tilting "close"
+        open_msg = OWNMessage.parse("*2*1*31##")
+        assert open_msg is not None
+        tilt_cover.handle_event(open_msg)
+        assert tilt_cover._is_tilting is False
+
+        # 3. Opposite direction: close arrives while tilting "open"
+        tilt_cover._is_tilting = True
+        tilt_cover._tilt_direction = "open"
+        tilt_cover._tilt_start_time = time.monotonic()
+        tilt_cover._tilt_duration = 2.0
+        tilt_cover._tilt_initial_position = 0
+        tilt_cover._tilt_target_position = 50
+        tilt_cover.handle_event(close_msg)
+        assert tilt_cover._is_tilting is False
+
+        # 4. Status frame reporting position 0 and 100 updates tilt to 0 and 100
+        dim10_pos0 = OWNMessage.parse("*#2*31*10*10*0*001*0##")
+        assert dim10_pos0 is not None
+        tilt_cover.handle_event(dim10_pos0)
+        assert tilt_cover.current_cover_tilt_position == 0
+
+        dim10_pos100 = OWNMessage.parse("*#2*31*10*10*100*001*0##")
+        assert dim10_pos100 is not None
+        tilt_cover.handle_event(dim10_pos100)
+        assert tilt_cover.current_cover_tilt_position == 100
+
+        # 5. Stop frame with pending target position 0 and 100 updates tilt
+        stop_msg = OWNMessage.parse("*2*0*31##")
+        assert stop_msg is not None
+        tilt_cover._pending_target_position = 0
+        tilt_cover.handle_event(stop_msg)
+        assert tilt_cover.current_cover_tilt_position == 0
+
+        tilt_cover._pending_target_position = 100
+        tilt_cover.handle_event(stop_msg)
+        assert tilt_cover.current_cover_tilt_position == 100
+
     @pytest.mark.asyncio
     async def test_cover_slat_tilt_manual_stop_interpolates_angle(self, tilt_cover, mock_gateway):
         """Test that manual stop mid-tilt interpolates angle proportionally."""
