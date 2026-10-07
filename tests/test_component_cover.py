@@ -866,30 +866,27 @@ class TestMyHOMECoverEntity:
         assert basic_cover.device_class == CoverDeviceClass.SHUTTER
 
     def test_cover_dimension11_updates_shutter_position(self, tilt_cover, basic_cover):
-        """Test that Dimension 11 writes set pending target and update position on stop."""
+        """Dimension 11 frames (go-to-level writes and relays) never change state; DIM 10 does."""
         # Initial position 100
         tilt_cover._attr_current_cover_position = 100
         basic_cover._attr_current_cover_position = 20
 
-        # 1. Dimension 11 command write (*#2*31*#11#001*50##) sets pending target without immediate snap
+        # 1. Dimension 11 command write (*#2*31*#11#001*50##) does not move the estimate
         msg1 = OWNMessage.parse("*#2*31*#11#001*50##")
         assert msg1 is not None
         tilt_cover.handle_event(msg1)
-        assert tilt_cover._pending_target_position == 50
         assert tilt_cover.current_cover_position == 100
 
-        # Standard stop frame does NOT snap pending target on unconfirmed stop, but clears it
+        # A plain stop does not snap to the unconfirmed target either
         stop_msg = OWNMessage.parse("*2*0*31##")
         assert stop_msg is not None
         tilt_cover.handle_event(stop_msg)
         assert tilt_cover.current_cover_position == 100
-        assert tilt_cover._pending_target_position is None
 
-        # 2. Dimension 11 bus event with selector (*#2*31*#11#001#1*40##) sets pending target
+        # 2. Dimension 11 bus event with selector (*#2*31*#11#001#1*40##) is ignored too
         msg2 = OWNMessage.parse("*#2*31*#11#001#1*40##")
         assert msg2 is not None
         tilt_cover.handle_event(msg2)
-        assert tilt_cover._pending_target_position == 40
         assert tilt_cover.current_cover_position == 100
 
         # Dimension 10 stop status applies position
@@ -897,17 +894,14 @@ class TestMyHOMECoverEntity:
         assert dim10_stop is not None
         tilt_cover.handle_event(dim10_stop)
         assert tilt_cover.current_cover_position == 40
-        assert tilt_cover._pending_target_position is None
 
         # 3. A basic (non-tilt) cover does NOT snap on Dimension 11, does NOT turn into blind
         assert basic_cover._slat_tilt is False
         assert basic_cover.device_class == CoverDeviceClass.SHUTTER
         basic_cover.handle_event(msg2)
         assert basic_cover.current_cover_position == 20  # did not snap!
-        assert basic_cover._pending_target_position == 40
         basic_cover.handle_event(stop_msg)
-        assert basic_cover.current_cover_position == 20  # plain stop does not snap unconfirmed target!
-        assert basic_cover._pending_target_position is None
+        assert basic_cover.current_cover_position == 20  # plain stop does not snap
         # Confirmed via Dimension 10
         basic_cover.handle_event(dim10_stop)
         assert basic_cover.current_cover_position == 40
@@ -1180,6 +1174,187 @@ class TestMyHOMECoverEntity:
             await tilt_cover.async_set_cover_tilt_position(tilt_position=50)
             if tilt_cover._stop_task:
                 await tilt_cover._stop_task
+
+
+class TestTiltAuditRegressions:
+    """Regressions for the PR #508 audit (findings 1-4 and 7)."""
+
+    @pytest.fixture
+    def make_cover(self, hass, mock_gateway):
+        def _make(advanced=False, **kwargs):
+            with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+                cover = MyHOMECover(
+                    hass=hass, name="Blind", entity_name="Blind", device_id="31", who="2", where="31",
+                    interface=None, advanced=advanced, slat_tilt=True, manufacturer="BTicino",
+                    model="Venetian Blind", gateway=mock_gateway, **kwargs,
+                )
+            cover.entity_id = "cover.blind"
+            cover.hass = hass
+            cover.async_write_ha_state = MagicMock()
+            return cover
+
+        return _make
+
+    @pytest.fixture
+    def cover(self, make_cover):
+        return make_cover()
+
+    @staticmethod
+    def _wire_options(cover, hass, options):
+        entry = MagicMock()
+        entry.options = options
+        cover._gateway_handler.config_entry = entry
+        hass.config_entries.async_update_entry = MagicMock(
+            side_effect=lambda e, options: setattr(e, "options", options)
+        )
+        return entry
+
+    def test_dimension11_leaves_no_dead_state(self, cover):
+        """Finding 1: DIM 11 must not leave unconsumed state behind."""
+        assert not hasattr(cover, "_pending_target_position")
+        cover._attr_current_cover_position = 70
+        cover.handle_event(OWNMessage.parse("*#2*31*#11#001*50##"))
+        assert cover.current_cover_position == 70
+        assert not hasattr(cover, "_pending_target_position")
+
+    @pytest.mark.asyncio
+    async def test_slat_time_only_does_not_store_travel_calibration(self, cover, hass):
+        """Finding 2: a slat-only call must not turn the defaults into a stored calibration."""
+        entry = self._wire_options(cover, hass, {})
+        await cover.async_set_travel_time(slat_time=3.5)
+        stored = entry.options["cover_travel_times"]["31"]
+        assert stored == {"slat_time": 3.5}
+
+    @pytest.mark.asyncio
+    async def test_slat_time_only_keeps_existing_travel_record(self, cover, hass):
+        entry = self._wire_options(
+            cover, hass, {"cover_travel_times": {"31": {"down": 20.0, "up": 22.0, "source": "measured"}}}
+        )
+        await cover.async_set_travel_time(slat_time=1.5)
+        assert entry.options["cover_travel_times"]["31"] == {
+            "down": 20.0, "up": 22.0, "source": "measured", "slat_time": 1.5,
+        }
+
+    @pytest.mark.asyncio
+    async def test_travel_time_call_stores_slat_time_with_it(self, cover, hass):
+        entry = self._wire_options(cover, hass, {})
+        await cover.async_set_travel_time(travel_time=30, slat_time=2.5)
+        stored = entry.options["cover_travel_times"]["31"]
+        assert stored["down"] == 30 and stored["slat_time"] == 2.5
+
+    def test_stored_slat_time_is_restored(self, make_cover):
+        """Finding 2: the service-set slat time survives a restart."""
+        cover = make_cover(calibration={"slat_time": 3.25})
+        assert cover._slat_time == 3.25
+        assert cover._calibration_source == "default"  # a slat-only record is no travel calibration
+
+    def test_stored_slat_time_is_clamped_and_garbage_ignored(self, make_cover):
+        assert make_cover(calibration={"slat_time": 99})._slat_time == 10.0
+        assert make_cover(calibration={"slat_time": "x"})._slat_time == 2.0
+
+    @pytest.mark.asyncio
+    async def test_slat_time_service_allowed_on_advanced_cover(self, make_cover):
+        """Finding 7: advanced covers can still set the slat time, but not travel times."""
+        cover = make_cover(advanced=True)
+        res = await cover.async_set_travel_time(slat_time=2.5)
+        assert res["slat_time"] == 2.5
+        with pytest.raises(HomeAssistantError, match="reports its position"):
+            await cover.async_set_travel_time(travel_time=30)
+        with pytest.raises(HomeAssistantError, match="reports its position"):
+            await cover.async_set_travel_time()
+
+    @pytest.mark.asyncio
+    async def test_status_report_during_tilt_pulse_keeps_auto_stop(self, cover, mock_gateway):
+        """Finding 3: a position report mid-pulse must not cancel the stop."""
+        fut = asyncio.Future()
+        fut.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut
+        cover._attr_current_cover_tilt_position = 0
+        gate = asyncio.Event()
+        real_sleep = asyncio.sleep
+        async def fake_sleep(_delay):
+            await gate.wait()
+
+        with patch("asyncio.sleep", side_effect=fake_sleep):
+            await cover.async_set_cover_tilt_position(tilt_position=50)
+            task = cover._stop_task
+            assert task is not None
+            await real_sleep(0)
+            cover.handle_event(OWNMessage.parse("*#2*31*10*10*40*001*0##"))
+            assert cover._stop_task is task
+            assert not task.cancelled()
+            assert cover._is_tilting is True
+            gate.set()
+            await task
+        assert any(str(c.args[0]) == "*2*0*31##" for c in mock_gateway.send.call_args_list)
+        assert cover._is_tilting is False
+
+    @pytest.mark.asyncio
+    async def test_status_report_without_tilt_still_cancels_stop_task(self, make_cover):
+        """The guard is tilt-only: ordinary runs keep their behaviour."""
+        cover = make_cover()
+        task = asyncio.ensure_future(asyncio.sleep(10))
+        cover._stop_task = task
+        cover.handle_event(OWNMessage.parse("*#2*31*10*10*40*001*0##"))
+        await asyncio.sleep(0)
+        assert task.cancelled()
+
+    @pytest.mark.asyncio
+    async def test_superseded_tilt_task_never_sends_stale_stop(self, cover, mock_gateway):
+        """Finding 4: cancelling the task while it awaits the write ends it quietly."""
+        pending = asyncio.Future()
+        mock_gateway.send.return_value = pending
+        cover._attr_current_cover_tilt_position = 0
+        await cover.async_set_cover_tilt_position(tilt_position=50)
+        task = cover._stop_task
+        await asyncio.sleep(0)  # the task is now waiting for the write
+        sent = mock_gateway.send.call_count
+        cover._cancel_stop_task()
+        await asyncio.sleep(0)
+        assert task.done()
+        pending.set_result(time.monotonic())
+        await asyncio.sleep(0.01)
+        assert mock_gateway.send.call_count == sent  # no stop frame
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("failure", [TimeoutError(), RuntimeError("queue flushed")])
+    async def test_failed_tilt_write_aborts_without_moving_angle(self, cover, mock_gateway, failure):
+        """Finding 4: a pulse that never reached the bus changes nothing and sends no stop."""
+        pending = asyncio.Future()
+        mock_gateway.send.return_value = pending
+        cover._attr_current_cover_tilt_position = 20
+        await cover.async_set_cover_tilt_position(tilt_position=80)
+        task = cover._stop_task
+        await asyncio.sleep(0)
+        sent = mock_gateway.send.call_count
+        pending.set_exception(failure)
+        await task
+        assert cover._is_tilting is False
+        assert cover._attr_is_opening is False
+        assert cover.current_cover_tilt_position == 20
+        assert mock_gateway.send.call_count == sent
+
+    @pytest.mark.asyncio
+    async def test_cancelled_tilt_write_aborts(self, cover, mock_gateway):
+        pending = asyncio.Future()
+        mock_gateway.send.return_value = pending
+        cover._attr_current_cover_tilt_position = 20
+        await cover.async_set_cover_tilt_position(tilt_position=80)
+        task = cover._stop_task
+        await asyncio.sleep(0)
+        pending.cancel()
+        await task
+        assert cover._is_tilting is False
+        assert cover.current_cover_tilt_position == 20
+
+    def test_non_numeric_slat_time_is_a_schema_error(self):
+        """Finding 7: a bad slat_time is rejected as a schema error, never a bare ValueError."""
+        from voluptuous import Invalid
+
+        from custom_components.myhome.validate import cover_schema
+
+        with pytest.raises(Invalid):
+            cover_schema({"c": {"where": "31", "slat_tilt": True, "slat_time": "fast"}})
 
 
 async def test_cover_general_commands_update_all_covers(hass: HomeAssistant, mock_gateway):

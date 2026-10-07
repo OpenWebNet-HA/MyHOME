@@ -128,7 +128,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             interface=ctx.address.interface,  # type: ignore
             advanced=cfg.get(CONF_ADVANCED_SHUTTER, cfg.get("advanced_shutter", False)),
             slat_tilt=cfg.get(CONF_SLAT_TILT, cfg.get("slat_tilt", False)),
-            slat_time=float(cfg.get(CONF_SLAT_TIME, cfg.get("slat_time", DEFAULT_SLAT_TIME))) if (cfg.get(CONF_SLAT_TIME) is not None or cfg.get("slat_time") is not None) else DEFAULT_SLAT_TIME,
+            slat_time=float(cfg.get(CONF_SLAT_TIME) or DEFAULT_SLAT_TIME),
             manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
             model=cfg.get(CONF_DEVICE_MODEL, "Shutter / Cover"),
             gateway=runtime.gateway,
@@ -242,7 +242,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._tilt_target_position: int = 0
         self._tilt_duration: float = 0.0
         self._tilt_direction: str | None = None
-        self._pending_target_position: int | None = None
         self._attr_current_cover_tilt_position: int | None = None
         # Direction-aware travel times. `_travel_time` stays the closing (down) time
         # for compatibility; a stored calibration overrides yaml / default values.
@@ -253,6 +252,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._calibration_source = travel_time_source
         self._calibrated_at: str | None = None
         self._copied_from: str | None = None
+        if calibration and calibration.get("slat_time") is not None:
+            try:
+                self._slat_time = max(MIN_SLAT_TIME, min(MAX_SLAT_TIME, float(calibration["slat_time"])))
+            except (TypeError, ValueError):
+                pass
         if calibration and calibration.get("down") and calibration.get("up"):
             self._travel_time_down = float(calibration["down"])
             self._travel_time_up = float(calibration["up"])
@@ -808,7 +812,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         ``copied_from`` records the entity the times were taken from; the source
         is then reported as ``copied`` instead of ``manual``.
         """
-        if self._advanced:
+        has_travel = travel_time is not None or travel_time_down is not None or travel_time_up is not None
+        if self._advanced and (has_travel or slat_time is None):
             raise HomeAssistantError(
                 f"{self._display_name} reports its position; travel time cannot be set",
                 translation_domain=DOMAIN,
@@ -816,7 +821,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 translation_placeholders={"name": self._display_name},
             )
 
-        has_travel = travel_time is not None or travel_time_down is not None or travel_time_up is not None
         if not has_travel and slat_time is None:
             raise ServiceValidationError(
                 "At least travel_time or travel_time_down/up or slat_time must be specified",
@@ -876,7 +880,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             result["slat_time"] = self._slat_time
         if self._copied_from:
             result["copied_from"] = self._copied_from
-        self._persist_calibration(result)
+        if has_travel:
+            self._persist_calibration(result)
+        else:
+            # Slat time only: keep the stored record's travel times untouched (and
+            # do not turn the current defaults into a stored calibration).
+            self._persist_calibration({**(self._stored_record() or {}), "slat_time": self._slat_time})
         self._refresh_travel_attributes()
         if self.hass is not None:
             self.async_write_ha_state()
@@ -938,6 +947,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             "%s Cover %s travel times reset to %s (%.1f s).",
             self._gateway_handler.log_id, self._full_where, source, base_travel,
         )
+
+    def _stored_record(self) -> dict | None:  # type: ignore
+        """The persisted calibration record of this cover, if any."""
+        return _stored_calibration(getattr(self._gateway_handler, "config_entry", None), str(self._device_id))
 
     def _persist_calibration(self, result: dict) -> None:  # type: ignore
         """Store the measurement in the config entry options (survives restarts, applies to discovered covers)."""
@@ -1114,6 +1127,16 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if self.hass is not None:
             self.async_write_ha_state()
 
+    def _abort_tilt(self) -> None:
+        """Forget a tilt pulse that never reached the bus; the tilt angle stays as it was."""
+        self._is_tilting = False
+        self._tilt_start_time = None
+        self._tilt_direction = None
+        self._attr_is_opening = False
+        self._attr_is_closing = False
+        if self.hass is not None:
+            self.async_write_ha_state()
+
     def _apply_tilt_stop(self, at: float | None = None) -> None:
         """Interpolate and finalize tilt position when tilting stops."""
         if self._tilt_start_time is not None and self._tilt_duration > 0:
@@ -1176,10 +1199,26 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 if isinstance(written, asyncio.Future):
                     try:
                         write_ts = await asyncio.wait_for(asyncio.shield(written), WRITE_TIMEOUT)
-                        if isinstance(write_ts, (int, float)):
-                            self._tilt_start_time = float(write_ts)
-                    except (TimeoutError, asyncio.CancelledError, Exception):
-                        pass
+                    except asyncio.CancelledError:
+                        if not written.cancelled():
+                            raise  # this task was superseded: never go on to stop the new run
+                        write_ts = None
+                        failure: Exception | None = HomeAssistantError("tilt command was cancelled before reaching the bus")
+                    except Exception as err:  # noqa: BLE001 - timeout or delivery failure
+                        write_ts = None
+                        failure = err
+                    else:
+                        failure = None
+                    if failure is not None:
+                        # The motor never started: nothing to stop, nothing moved.
+                        if generation == self._run_generation:
+                            self._abort_tilt()
+                        LOGGER.error(
+                            "%s Tilt pulse for %s was not delivered: %s", self._gateway_handler.log_id, self._full_where, failure
+                        )
+                        return
+                    if isinstance(write_ts, (int, float)):
+                        self._tilt_start_time = float(write_ts)
                 anchor = self._tilt_start_time or time.monotonic()
                 if generation != self._run_generation:
                     return
@@ -1258,16 +1297,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             # Dimension 11 is absolute shutter position (Go to level).
             # Handles both command writes (*#2*WHERE*#11#001*LEVEL##) and
             # event-session reflections (*#2*WHERE*#11#001#1*LEVEL##).
-            # Absolute position operations change state over time; do not snap
-            # linear position immediately so timed estimators do not desync.
-            dim_values = getattr(message, "dimension_value", getattr(message, "_dimension_value", [])) or []
-            if dim_values:
-                try:
-                    level = int(dim_values[0])
-                    if 0 <= level <= 100:
-                        self._pending_target_position = level
-                except (ValueError, TypeError):
-                    pass
+            # The motor needs time to get there and a keypad can stop it midway,
+            # so the frame never changes state: the position comes from the
+            # actuator's own DIM 10 / status reports.
             return
 
         # Ignore status queries/requests (e.g. *#2*...##) - they are polls, not state transitions
@@ -1336,12 +1368,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._publish_state()
             return
         if position is not None:
-            self._cancel_stop_task()
+            if not self._is_tilting:
+                # A status report during a slat pulse (a poll reply, a DIM 10 level)
+                # must not cancel the auto-stop: the motor would run on.
+                self._cancel_stop_task()
             self._attr_current_cover_position = position
             if not self._advanced:
                 self._start_position = position
             self._move_start_time = None
-            self._pending_target_position = None
             self._attr_is_opening = False
             self._attr_is_closing = False
             if self._slat_tilt:
@@ -1354,7 +1388,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             else:
                 self._attr_is_closed = (self._attr_current_cover_position == 0)
         elif is_opening:
-            self._pending_target_position = None
             if self._is_tilting and self._tilt_direction == "open":
                 # Movement frame caused by our tilt pulse: preserve tilt state, do not anchor linear travel
                 self._attr_is_opening = True
@@ -1376,7 +1409,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._attr_is_closing = False
                 self._attr_is_closed = False
         elif is_closing:
-            self._pending_target_position = None
             if self._is_tilting and self._tilt_direction == "close":
                 # Movement frame caused by our tilt pulse: preserve tilt state, do not anchor linear travel
                 self._attr_is_opening = False
@@ -1434,7 +1466,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                         self._attr_current_cover_tilt_position = 0
                     elif self._attr_current_cover_position == 100:
                         self._attr_current_cover_tilt_position = 100
-            self._pending_target_position = None
             self._attr_is_opening = False
             self._attr_is_closing = False
             if getattr(message, "is_closed", None) is not None:

@@ -320,6 +320,10 @@
           "name": "Travel time up",
           "description": "Seconds for a full opening run (1-180)."
         },
+        "slat_time": {
+          "name": "Slat time",
+          "description": "Seconds the slats of a Venetian blind need for a full rotation (0.5-10). Only used by covers with slat_tilt enabled."
+        },
         "copied_from": {
           "name": "Copied from",
           "description": "The cover these times were taken from; the source is then reported as \"copied\" instead of \"manual\"."
