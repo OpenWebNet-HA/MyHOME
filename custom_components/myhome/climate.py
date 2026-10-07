@@ -75,6 +75,14 @@ MESSAGE_TYPE_ZONE_STATE = "zone_state"
 # A dimension 12 frame and the frame that turns the zone OFF follow within ~0.1 s (#454, #383)
 _PROTECTION_FRAME_WINDOW = 2.0
 _ZONE_CONTEXT_MODES = {"heating": HVACMode.HEAT, "cooling": HVACMode.COOL, "automatic": HVACMode.AUTO}
+
+# Mode digit of a setpoint write (*#4*W*#14*TTTT*M##). Legrand WHO 4 p. 8 and
+# p. 23 define M = 1 heating, 2 conditioning, 3 generic; BTicino's own client
+# always writes 3 (libqtdevices probe_device.cpp:122, thermal_device.cpp:134)
+# and the mhs1 / F454 firmware forwards 1, 2 and 3 as three different bus
+# codes (90/91/92 for a zone, C1 12/22/02 for the central unit). "auto" makes
+# OWNd write 3, so the plant keeps its own season.
+SETPOINT_WRITE_MODE = CLIMATE_MODE_AUTO
 _ZONE_STATES_ON = ("setpoint", "comfort", "eco")
 _ZONE_STATES_OFF = ("protection", "off")
 
@@ -561,7 +569,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     OWNHeatingCommand.set_temperature(
                         where=self._where,
                         temperature=self._target_temperature,
-                        mode=CLIMATE_MODE_HEAT,
+                        mode=SETPOINT_WRITE_MODE,
                         standalone=self._standalone,
                     )
                 )
@@ -571,7 +579,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     OWNHeatingCommand.set_temperature(
                         where=self._where,
                         temperature=self._target_temperature,
-                        mode=CLIMATE_MODE_COOL,
+                        mode=SETPOINT_WRITE_MODE,
                         standalone=self._standalone,
                     )
                 )
@@ -582,12 +590,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             kwargs.get("temperature", self._local_target_temperature)  # type: ignore[arg-type]
         ) - self._local_offset
         if self._central:
-            mode = "heat" if self._attr_hvac_mode != HVACMode.COOL else "cool"
             await self._gateway_handler.send(
                 OWNHeatingCommand.set_central_temperature(
                     where=self._where,
                     temperature=target_temperature,
-                    mode=mode,
+                    mode=SETPOINT_WRITE_MODE,
                 )
             )
             self._target_temperature = target_temperature
@@ -599,7 +606,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 OWNHeatingCommand.set_temperature(
                     where=self._where,
                     temperature=target_temperature,
-                    mode=CLIMATE_MODE_HEAT,
+                    mode=SETPOINT_WRITE_MODE,
                     standalone=self._standalone,
                 )
             )
@@ -608,7 +615,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 OWNHeatingCommand.set_temperature(
                     where=self._where,
                     temperature=target_temperature,
-                    mode=CLIMATE_MODE_COOL,
+                    mode=SETPOINT_WRITE_MODE,
                     standalone=self._standalone,
                 )
             )
@@ -753,7 +760,29 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 )
         elif message.message_type == MESSAGE_TYPE_MODE:
             prev_mode = self._attr_hvac_mode
-            if message.mode == CLIMATE_MODE_AUTO and HVACMode.AUTO in self._attr_hvac_modes:
+            # OWNd 2.0.0b10 (the pinned version) has no public ``what``; newer
+            # OWNd exposes it (OpenWebNet-HA/OWNd firmware-validation PR).
+            raw_what = getattr(message, "what", getattr(message, "_what", None))
+            if (
+                raw_what in (0, 1)
+                and not self._central
+                and self._attr_hvac_mode == HVACMode.AUTO
+            ):
+                # *4*0*Z## / *4*1*Z## is the zone's season (conditioning /
+                # heating), not a mode change: Legrand WHO 4 p. 13, 16, 19 and
+                # 63 list it as "zone operation mode acquire frame" next to the
+                # setpoint, mhs1 bt_termo emits it together with every
+                # dimension 12 report (oracle/SCS_OWN_MAP.md section 4, DD 12),
+                # and BTicino's client keeps the zone in AUTO on it
+                # (libqtdevices probe_device.cpp:240-253). A zone running the
+                # central unit's program therefore stays AUTO here; manual
+                # modes arrive as 110/210 (Legrand WHO 4 p. 55).
+                LOGGER.debug(
+                    "%s %s (season only, zone stays AUTO)",
+                    self._gateway_handler.log_id,
+                    message.human_readable_log,
+                )
+            elif message.mode == CLIMATE_MODE_AUTO and HVACMode.AUTO in self._attr_hvac_modes:
                 LOGGER.debug(
                     "%s %s",
                     self._gateway_handler.log_id,
