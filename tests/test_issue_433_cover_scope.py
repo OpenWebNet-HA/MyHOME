@@ -19,6 +19,7 @@ replayed.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from datetime import timedelta
 from types import SimpleNamespace
@@ -34,6 +35,7 @@ from homeassistant.const import (
     CONF_PORT,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
 from OWNd.message import OWNEvent, OWNMessage
@@ -425,3 +427,193 @@ async def test_scope_cover_timeout_edges(hass: HomeAssistant, gateway) -> None:
     await group.async_will_remove_from_hass()
     unsub.assert_called_once()
     assert group._unsub_members is None and group._run_timeout is None
+
+
+async def test_scope_cover_tilt_handling(hass: HomeAssistant, gateway) -> None:
+    """Test that scope covers fan out tilt commands to members and memberless scopes do not arm run timeout on tilt."""
+    fut = asyncio.Future()
+    fut.set_result(time.monotonic())
+    gateway.send.return_value = fut
+
+    # 1. Memberless scope cover with slat_tilt=True: tilt move does not arm full-travel _run_timeout
+    group = _cover(gateway, "#7", scope=CoverScope.of("#7"), slat_tilt=True, slat_time=2.0)
+    group.entity_id = "cover.group_7"
+    group.hass = hass
+    await group.async_set_cover_tilt_position(tilt_position=100)
+    assert group._is_tilting is True
+    assert group._run_timeout is None
+
+    # Receiving a tilt movement event while tilting also does not arm _run_timeout
+    group.handle_event(OWNEvent.parse("*2*1*#7##"))
+    assert group._run_timeout is None
+    await group.async_stop_cover_tilt()
+    assert group._is_tilting is False
+
+    await group.async_close_cover_tilt()
+    await group.async_stop_cover_tilt()
+    await group.async_open_cover_tilt()
+    await group.async_stop_cover_tilt()
+
+    # 2. Scope cover with member covers with slat_tilt=True fans out tilt commands and aggregates tilt
+    family = CoverFamily()
+    p1 = _cover(gateway, "11", "02", slat_tilt=True)
+    p1.entity_id = "cover.point_11_02"
+    p2 = _cover(gateway, "12", "02", slat_tilt=True)
+    p2.entity_id = "cover.point_12_02"
+    area = _cover(gateway, "1", "02", scope=CoverScope.of("1", "02"), slat_tilt=True)
+    area.entity_id = "cover.area_1_02"
+    for c in (p1, p2, area):
+        family.add(c)
+    p1._attr_current_cover_tilt_position = 20
+    p2._attr_current_cover_tilt_position = 40
+    assert area.current_cover_tilt_position == 30
+
+    # Behind the F422 each blind gets its own pulse, one after the other: the next
+    # one starts only once the previous blind's stop is on the bus.
+    order: list[str] = []
+
+    async def fake_set(self, **kwargs):
+        order.append(f"set {self._where} {kwargs['tilt_position']}")
+
+    async def fake_wait(self):
+        order.append(f"end {self._where}")
+
+    with patch.object(MyHOMECover, "async_set_cover_tilt_position", fake_set), \
+         patch.object(MyHOMECover, "_async_wait_pulse_end", fake_wait):
+        await area.async_open_cover_tilt()
+        assert order == ["set 11 100", "end 11", "set 12 100", "end 12"]
+        order.clear()
+        await area.async_close_cover_tilt()
+        assert order == ["set 11 0", "end 11", "set 12 0", "end 12"]
+        order.clear()
+        await area.async_set_cover_tilt_position(tilt_position=60)
+        assert order == ["set 11 60", "end 11", "set 12 60", "end 12"]
+
+    with patch.object(MyHOMECover, "async_stop_cover_tilt", AsyncMock()) as mock_stop:
+        await area.async_stop_cover_tilt()
+        assert mock_stop.await_count == 2
+
+
+def _local_area_with_blinds(gateway):
+    """Area 1 on the local bus with two Venetian blinds, lowered, slats closed."""
+    family = CoverFamily()
+    p1 = _cover(gateway, "11", slat_tilt=True)
+    p2 = _cover(gateway, "12", slat_tilt=True)
+    area = _cover(gateway, "1", scope=CoverScope.of("1"), slat_tilt=True)
+    for c in (p1, p2, area):
+        family.add(c)
+    for m in (p1, p2):
+        m._attr_current_cover_position = m._start_position = 0
+        m._attr_current_cover_tilt_position = 0
+    return area, p1, p2
+
+
+def _write_each_send(gateway, fail: str | None = None):
+    loop = asyncio.get_running_loop()
+
+    async def send(cmd):
+        fut = loop.create_future()
+        if fail is not None and str(cmd) == fail:
+            fut.set_exception(OSError("connection lost"))
+        else:
+            fut.set_result(time.monotonic())
+        return fut
+
+    gateway.send.side_effect = send
+
+
+async def test_scope_tilt_on_the_local_bus_turns_member_slats_not_curtains(gateway) -> None:
+    """One area frame turns every member's slats: members follow the pulse, not a curtain run."""
+    area, p1, p2 = _local_area_with_blinds(gateway)
+    _write_each_send(gateway)
+    with patch("asyncio.sleep", new=AsyncMock()):
+        await area.async_set_cover_tilt_position(tilt_position=50)
+        assert p1._tilt_follows is area and p1._is_tilting
+        for c in (area, p1, p2):
+            c.handle_event(OWNEvent.parse("*2*0*1##"))  # relayed stop before the direction status
+        assert p1._is_tilting and p2._is_tilting
+        for c in (area, p1, p2):
+            c.handle_event(OWNEvent.parse("*2*1*1##"))
+        assert p1._run_started_at is None  # no curtain run anchored
+        assert p1._tilt_start_time == area._tilt_start_time
+        await area._stop_task
+    for m in (p1, p2):
+        m.handle_event(OWNEvent.parse("*2*0*1##"))  # relay of the scope stop
+        assert m.current_cover_tilt_position == 50
+        assert m.current_cover_position == 0
+        assert not m.is_opening
+    assert area.current_cover_tilt_position == 50
+    assert [str(c.args[0]) for c in gateway.send.call_args_list] == ["*2*1*1##", "*2*0*1##"]
+
+
+async def test_curtain_command_right_after_a_scope_pulse_releases_the_followers(gateway) -> None:
+    """Taken over before the motor start was known: no slat travel is counted for anyone."""
+    area, p1, p2 = _local_area_with_blinds(gateway)
+    _write_each_send(gateway)
+    await area.async_set_cover_tilt_position(tilt_position=50)
+    await area.async_close_cover()
+    for m in (p1, p2):
+        assert m._is_tilting is False and m._tilt_follows is None
+        assert m.current_cover_tilt_position == 0
+
+
+async def test_scope_without_slat_tilt_ignores_tilt_commands(gateway) -> None:
+    area = _cover(gateway, "1", scope=CoverScope.of("1"))
+    await area.async_set_cover_tilt_position(tilt_position=50)
+    gateway.send.assert_not_called()
+
+
+async def test_member_error_in_a_one_by_one_tilt_does_not_stop_the_others(gateway) -> None:
+    family = CoverFamily()
+    p1 = _cover(gateway, "11", "02", slat_tilt=True)
+    p2 = _cover(gateway, "12", "02", slat_tilt=True)
+    area = _cover(gateway, "1", "02", scope=CoverScope.of("1", "02"), slat_tilt=True)
+    for c in (p1, p2, area):
+        family.add(c)
+    tilted: list[str] = []
+
+    async def fake_set(self, **kwargs):
+        if self._where == "11":
+            raise HomeAssistantError("Cover 11 is moving; stop it before tilting the slats")
+        tilted.append(self._where)
+
+    with patch.object(MyHOMECover, "async_set_cover_tilt_position", fake_set), \
+         patch.object(MyHOMECover, "_async_wait_pulse_end", AsyncMock()):
+        with pytest.raises(HomeAssistantError, match="Cover 11"):
+            await area.async_set_cover_tilt_position(tilt_position=50)
+    assert tilted == ["12"]
+
+
+async def test_scope_tilt_is_refused_while_a_member_runs(gateway) -> None:
+    area, p1, _p2 = _local_area_with_blinds(gateway)
+    p1.handle_event(OWNEvent.parse("*2*1*11##"))  # keypad run of one member
+    with pytest.raises(HomeAssistantError, match="is moving"):
+        await area.async_set_cover_tilt_position(tilt_position=50)
+    gateway.send.assert_not_called()
+
+
+async def test_undelivered_scope_pulse_releases_its_followers(gateway) -> None:
+    area, p1, p2 = _local_area_with_blinds(gateway)
+    _write_each_send(gateway, fail="*2*1*1##")
+    with pytest.raises(HomeAssistantError):
+        await area.async_set_cover_tilt_position(tilt_position=50)
+    for m in (p1, p2):
+        assert m._is_tilting is False
+        assert m._tilt_follows is None
+        assert m.current_cover_tilt_position == 0
+
+
+async def test_member_command_during_a_scope_pulse_takes_its_motor_over(gateway) -> None:
+    area, p1, p2 = _local_area_with_blinds(gateway)
+    _write_each_send(gateway)
+    with patch("asyncio.sleep", new=AsyncMock()):
+        await area.async_set_cover_tilt_position(tilt_position=100)
+        area.handle_event(OWNEvent.parse("*2*1*1##"))
+        start = area._tilt_start_time
+        with patch("time.monotonic", return_value=start + 0.5):
+            await p1.async_close_cover()  # a quarter of the slat travel done
+        assert p1._tilt_follows is None and p1.is_closing
+        assert p1.current_cover_tilt_position == 25
+        assert p2._tilt_follows is area  # the other blind still follows
+        await area._stop_task
+    assert p2.current_cover_tilt_position == 100

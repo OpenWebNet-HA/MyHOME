@@ -308,6 +308,10 @@
           "name": "Travel time up",
           "description": "Seconds for a full opening run (1-180)."
         },
+        "slat_time": {
+          "name": "Slat time",
+          "description": "Seconds the slats of a Venetian blind need for a full rotation (0.5-10). Only used by covers with slat_tilt enabled."
+        },
         "copied_from": {
           "name": "Copied from",
           "description": "The cover these times were taken from; the source is then reported as \"copied\" instead of \"manual\"."
@@ -459,6 +463,9 @@
     },
     "cover_busy_calibrating": {
       "message": "{entity_id} is being calibrated; try again when it has finished"
+    },
+    "cover_busy_moving": {
+      "message": "{name} is moving; stop it before tilting the slats"
     },
     "decoders_busy": {
       "message": "{entity_id}: all audio matrix inputs are currently in use by other rooms"

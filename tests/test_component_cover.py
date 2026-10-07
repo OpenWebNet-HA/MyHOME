@@ -1,10 +1,12 @@
 """Tests for the MyHOME cover component."""
 import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.components.cover import (
     ATTR_CURRENT_POSITION,
+    ATTR_CURRENT_TILT_POSITION,
     ATTR_POSITION,
     CoverDeviceClass,
     CoverEntityFeature,
@@ -13,16 +15,19 @@ from homeassistant.const import (
     CONF_NAME,
 )
 from homeassistant.core import HomeAssistant, State, callback
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import (
     OWNAutomationEvent,
     OWNEvent,
+    OWNMessage,
 )
 
 from custom_components.myhome.const import (
     CONF_ADVANCED_SHUTTER,
     CONF_BUS_INTERFACE,
     CONF_PLATFORMS,
+    CONF_SLAT_TILT,
     CONF_WHERE,
     DOMAIN,
 )
@@ -32,6 +37,7 @@ from custom_components.myhome.cover import (
     async_setup_entry,
     async_unload_entry,
 )
+from custom_components.myhome.cover_motion import ECHO_WINDOW, MOTOR_START_DELAY
 from custom_components.myhome.router import FrameRouter
 from tests.conftest import attach_runtime
 
@@ -177,6 +183,29 @@ class TestMyHOMECoverEntity:
             cover.hass = hass
             cover.entity_id = cover.entity_id or "test.cover"
             cover.async_schedule_update_ha_state = MagicMock()
+            return cover
+
+    @pytest.fixture
+    def tilt_cover(self, hass, mock_gateway):
+        with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+            cover = MyHOMECover(
+                hass=hass,
+                name="Venetian Blind",
+                entity_name="Venetian Blind",
+                device_id="31",
+                who="2",
+                where="31",
+                interface=None,
+                advanced=False,
+                slat_tilt=True,
+                manufacturer="BTicino",
+                model="Venetian Blind",
+                gateway=mock_gateway,
+            )
+            cover.entity_id = "cover.venetian_blind"
+            cover.hass = hass
+            cover.async_schedule_update_ha_state = MagicMock()
+            cover.async_write_ha_state = MagicMock()
             return cover
 
     def test_cover_attributes(self, basic_cover, advanced_cover):
@@ -666,6 +695,1256 @@ class TestMyHOMECoverEntity:
         )
         assert advanced_cover._attr_current_cover_position == 50
 
+    def test_cover_slat_tilt_attributes_and_features(self, tilt_cover):
+        """Test slat tilt attributes, device class, and supported features."""
+        assert tilt_cover.device_class == CoverDeviceClass.BLIND
+    def test_cover_slat_tilt_init(self, tilt_cover):
+        """Test that slat_tilt: true initializes proper features and device class."""
+        assert tilt_cover._slat_tilt is True
+        assert tilt_cover.device_class == CoverDeviceClass.BLIND
+        assert tilt_cover.supported_features & CoverEntityFeature.SET_TILT_POSITION
+        assert tilt_cover.supported_features & CoverEntityFeature.OPEN_TILT
+        assert tilt_cover.supported_features & CoverEntityFeature.CLOSE_TILT
+        assert tilt_cover.supported_features & CoverEntityFeature.STOP_TILT
+        assert tilt_cover.current_cover_tilt_position is None
+        assert tilt_cover.extra_state_attributes.get("slat_tilt") is True
+        assert tilt_cover.extra_state_attributes.get("slat_time") == 2.0
+
+    @pytest.mark.asyncio
+    async def test_cover_slat_tilt_commands(self, tilt_cover, mock_gateway):
+        """Test set_cover_tilt_position, open_cover_tilt, close_cover_tilt, and stop_cover_tilt."""
+        fut = asyncio.Future()
+        fut.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            # 1. Set tilt position to 40% (starting from 0, diff=40 -> moves UP)
+            tilt_cover._attr_current_cover_tilt_position = 0
+            await tilt_cover.async_set_cover_tilt_position(tilt_position=40)
+            assert mock_gateway.send.await_count == 1
+            assert str(mock_gateway.send.call_args[0][0]) == "*2*1*31##"
+            assert tilt_cover._is_tilting is True
+            tilt_cover._motor_started.set()
+
+            # Let auto-stop task complete
+            if tilt_cover._stop_task:
+                await tilt_cover._stop_task
+            assert tilt_cover.current_cover_tilt_position == 40
+            assert tilt_cover._is_tilting is False
+
+            # 2. Open tilt (100%) (from 40, moves UP)
+            mock_gateway.send.reset_mock()
+            fut_up = asyncio.Future()
+            fut_up.set_result(time.monotonic())
+            mock_gateway.send.return_value = fut_up
+            await tilt_cover.async_open_cover_tilt()
+            assert str(mock_gateway.send.call_args[0][0]) == "*2*1*31##"
+            assert tilt_cover._is_tilting is True
+            tilt_cover._motor_started.set()
+            if tilt_cover._stop_task:
+                await tilt_cover._stop_task
+            assert tilt_cover.current_cover_tilt_position == 100
+            assert tilt_cover._is_tilting is False
+
+            # 3. Close tilt (0%) (from 100, moves DOWN)
+            mock_gateway.send.reset_mock()
+            fut_down = asyncio.Future()
+            fut_down.set_result(time.monotonic())
+            mock_gateway.send.return_value = fut_down
+            await tilt_cover.async_close_cover_tilt()
+            assert str(mock_gateway.send.call_args[0][0]) == "*2*2*31##"
+            assert tilt_cover._is_tilting is True
+            tilt_cover._motor_started.set()
+            if tilt_cover._stop_task:
+                await tilt_cover._stop_task
+            assert tilt_cover.current_cover_tilt_position == 0
+            assert tilt_cover._is_tilting is False
+
+            # 4. Stop tilt
+            mock_gateway.send.reset_mock()
+            fut_stop = asyncio.Future()
+            fut_stop.set_result(time.monotonic())
+            mock_gateway.send.return_value = fut_stop
+            await tilt_cover.async_stop_cover_tilt()
+            mock_gateway.send.assert_awaited_once()
+            assert str(mock_gateway.send.call_args[0][0]) == "*2*0*31##"
+
+            # 5. Call with missing tilt_position (no-op early return)
+            mock_gateway.send.reset_mock()
+            await tilt_cover.async_set_cover_tilt_position()
+            mock_gateway.send.assert_not_called()
+
+            # 6. Call with diff == 0 (no-op early return)
+            tilt_cover._attr_current_cover_tilt_position = 40
+            mock_gateway.send.reset_mock()
+            await tilt_cover.async_set_cover_tilt_position(tilt_position=40)
+            mock_gateway.send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_cover_slat_tilt_calibrating_error(self, tilt_cover):
+        """Test that tilt commands are rejected with HomeAssistantError while calibrating."""
+        tilt_cover._calibrating = True
+
+        with pytest.raises(HomeAssistantError, match="calibrated"):
+            await tilt_cover.async_set_cover_tilt_position(tilt_position=50)
+
+        with pytest.raises(HomeAssistantError, match="calibrated"):
+            await tilt_cover.async_open_cover_tilt()
+
+        with pytest.raises(HomeAssistantError, match="calibrated"):
+            await tilt_cover.async_close_cover_tilt()
+
+    @pytest.mark.asyncio
+    async def test_cover_slat_tilt_delivery_failure(self, tilt_cover, mock_gateway):
+        """Test that delivery failure in async_set_cover_tilt_position raises HomeAssistantError."""
+        fut = asyncio.Future()
+        fut.set_exception(Exception("Bus write error"))
+        mock_gateway.send.return_value = fut
+
+        with pytest.raises(HomeAssistantError, match="direction command delivery failed"):
+            await tilt_cover.async_set_cover_tilt_position(tilt_position=30)
+        assert tilt_cover._is_tilting is False
+
+    def test_cover_slat_tilt_stop_handling(self, tilt_cover):
+        """Test that receiving a stop command while tilting resets _is_tilting and preserves position."""
+        tilt_cover._is_tilting = True
+        tilt_cover._attr_current_cover_position = 75
+        tilt_cover._is_opening = False
+        tilt_cover._is_closing = False
+
+        msg = OWNMessage.parse("*2*0*31##")
+        assert msg is not None
+        tilt_cover.handle_event(msg)
+
+        assert tilt_cover._is_tilting is False
+        assert tilt_cover.current_cover_position == 75
+
+    @pytest.mark.asyncio
+    async def test_cover_slat_tilt_async_update(self, tilt_cover, mock_gateway):
+        """Test that async_update queries standard status and never sends invalid DIM 11 query."""
+        mock_gateway.send_status_request.reset_mock()
+        await tilt_cover.async_update()
+        mock_gateway.send_status_request.assert_awaited_once()
+        assert str(mock_gateway.send_status_request.call_args[0][0]) == "*#2*31##"
+
+    @pytest.mark.asyncio
+    async def test_cover_slat_tilt_restore_state(self, tilt_cover, basic_cover):
+        """Test that slat tilt position is restored from last state only if slat_tilt is enabled."""
+        tilt_cover.async_get_last_state = AsyncMock(
+            return_value=State(
+                "cover.venetian_blind",
+                "open",
+                {ATTR_CURRENT_POSITION: 85, ATTR_CURRENT_TILT_POSITION: 35},
+            )
+        )
+        await tilt_cover.async_added_to_hass()
+        assert tilt_cover.current_cover_position == 85
+        assert tilt_cover.current_cover_tilt_position == 35
+        assert tilt_cover.device_class == CoverDeviceClass.BLIND
+
+        # Test corrupt / non-numeric tilt attribute in last state
+        tilt_cover.async_get_last_state = AsyncMock(
+            return_value=State(
+                "cover.venetian_blind",
+                "open",
+                {ATTR_CURRENT_POSITION: 85, ATTR_CURRENT_TILT_POSITION: "invalid_tilt"},
+            )
+        )
+        tilt_cover._attr_current_cover_tilt_position = 0
+        await tilt_cover.async_added_to_hass()
+        assert tilt_cover.current_cover_tilt_position == 0
+
+        # Test basic cover does NOT enable slat_tilt from restore
+        basic_cover.async_get_last_state = AsyncMock(
+            return_value=State(
+                "cover.shutter",
+                "open",
+                {ATTR_CURRENT_POSITION: 85, ATTR_CURRENT_TILT_POSITION: 50},
+            )
+        )
+        await basic_cover.async_added_to_hass()
+        assert basic_cover._slat_tilt is False
+        assert basic_cover.device_class == CoverDeviceClass.SHUTTER
+
+    def test_cover_dimension11_updates_shutter_position(self, tilt_cover, basic_cover):
+        """Dimension 11 frames (go-to-level writes and relays) never change state; DIM 10 does."""
+        # Initial position 100
+        tilt_cover._attr_current_cover_position = 100
+        basic_cover._attr_current_cover_position = 20
+
+        # 1. Dimension 11 command write (*#2*31*#11#001*50##) does not move the estimate
+        msg1 = OWNMessage.parse("*#2*31*#11#001*50##")
+        assert msg1 is not None
+        tilt_cover.handle_event(msg1)
+        assert tilt_cover.current_cover_position == 100
+
+        # A plain stop does not snap to the unconfirmed target either
+        stop_msg = OWNMessage.parse("*2*0*31##")
+        assert stop_msg is not None
+        tilt_cover.handle_event(stop_msg)
+        assert tilt_cover.current_cover_position == 100
+
+        # 2. Dimension 11 bus event with selector (*#2*31*#11#001#1*40##) is ignored too
+        msg2 = OWNMessage.parse("*#2*31*#11#001#1*40##")
+        assert msg2 is not None
+        tilt_cover.handle_event(msg2)
+        assert tilt_cover.current_cover_position == 100
+
+        # Dimension 10 stop status applies position
+        dim10_stop = OWNMessage.parse("*#2*31*10*10*40*001*0##")
+        assert dim10_stop is not None
+        tilt_cover.handle_event(dim10_stop)
+        assert tilt_cover.current_cover_position == 40
+
+        # 3. A basic (non-tilt) cover does NOT snap on Dimension 11, does NOT turn into blind
+        assert basic_cover._slat_tilt is False
+        assert basic_cover.device_class == CoverDeviceClass.SHUTTER
+        basic_cover.handle_event(msg2)
+        assert basic_cover.current_cover_position == 20  # did not snap!
+        basic_cover.handle_event(stop_msg)
+        assert basic_cover.current_cover_position == 20  # plain stop does not snap
+        # Confirmed via Dimension 10
+        basic_cover.handle_event(dim10_stop)
+        assert basic_cover.current_cover_position == 40
+        assert basic_cover._slat_tilt is False
+        assert basic_cover.device_class == CoverDeviceClass.SHUTTER
+
+        # 4. Out of bounds or invalid values are ignored safely
+        msg_inv = MagicMock()
+        msg_inv.is_translation = False
+        msg_inv.dimension = 11
+        msg_inv.dimension_value = ["invalid"]
+        tilt_cover.handle_event(msg_inv)
+        assert tilt_cover.current_cover_position == 40
+
+    def test_cover_slat_tilt_movement_frames_preserve_state(self, tilt_cover):
+        """Test that actuator movement frames during tilt pulse do NOT clear _is_tilting or anchor linear travel."""
+        tilt_cover._is_tilting = True
+        tilt_cover._tilt_direction = "open"
+        tilt_cover._tilt_start_time = time.monotonic()
+        tilt_cover._tilt_duration = 2.0
+        tilt_cover._tilt_initial_position = 0
+        tilt_cover._tilt_target_position = 100
+        tilt_cover._attr_current_cover_position = 60
+        tilt_cover._run_started_at = None
+
+        # Actuator movement frame in tilt direction (*2*1*31##)
+        open_msg = OWNMessage.parse("*2*1*31##")
+        assert open_msg is not None
+        tilt_cover.handle_event(open_msg)
+
+        assert tilt_cover._is_tilting is True
+        assert tilt_cover._run_started_at is None
+        assert tilt_cover.current_cover_position == 60
+
+        # Dimension 10 movement frame (*#2*31*10*11*30*001*0##)
+        dim10_move = OWNMessage.parse("*#2*31*10*11*30*001*0##")
+        assert dim10_move is not None
+        tilt_cover.handle_event(dim10_move)
+
+        assert tilt_cover._is_tilting is True
+        assert tilt_cover._run_started_at is None
+        assert tilt_cover.current_cover_position == 60
+
+        # Stop frame ends tilt without corrupting linear position
+        stop_msg = OWNMessage.parse("*2*0*31##")
+        assert stop_msg is not None
+        tilt_cover.handle_event(stop_msg)
+
+        assert tilt_cover._is_tilting is False
+        assert tilt_cover.current_cover_position == 60
+
+    def test_tilt_movement_opposite_direction_and_endpoints(self, tilt_cover):
+        """Test opposite direction movement frames during tilt and 0/100 endpoint tilt updates."""
+        # 1. Closing frame matching tilt direction "close"
+        tilt_cover._is_tilting = True
+        tilt_cover._tilt_direction = "close"
+        tilt_cover._tilt_start_time = time.monotonic()
+        tilt_cover._tilt_duration = 2.0
+        tilt_cover._tilt_initial_position = 100
+        tilt_cover._tilt_target_position = 50
+        close_msg = OWNMessage.parse("*2*2*31##")
+        assert close_msg is not None
+        tilt_cover.handle_event(close_msg)
+        assert tilt_cover._is_tilting is True
+        assert tilt_cover._attr_is_closing is True
+        assert tilt_cover._attr_is_opening is False
+
+        # 2. Opposite direction: open arrives while tilting "close"
+        mock_task = MagicMock()
+        mock_task.done.return_value = False
+        tilt_cover._stop_task = mock_task
+        gen_before = tilt_cover._run_generation
+        open_msg = OWNMessage.parse("*2*1*31##")
+        assert open_msg is not None
+        tilt_cover.handle_event(open_msg)
+        assert tilt_cover._is_tilting is False
+        mock_task.cancel.assert_called_once()
+        assert tilt_cover._run_generation > gen_before
+
+        # 3. Opposite direction: close arrives while tilting "open"
+        tilt_cover._is_tilting = True
+        tilt_cover._tilt_direction = "open"
+        tilt_cover._tilt_start_time = time.monotonic()
+        tilt_cover._tilt_duration = 2.0
+        tilt_cover._tilt_initial_position = 0
+        tilt_cover._tilt_target_position = 50
+        tilt_cover.handle_event(close_msg)
+        assert tilt_cover._is_tilting is False
+
+        # 4. Status frame reporting position 0 and 100 updates tilt to 0 and 100
+        dim10_pos0 = OWNMessage.parse("*#2*31*10*10*0*001*0##")
+        assert dim10_pos0 is not None
+        tilt_cover.handle_event(dim10_pos0)
+        assert tilt_cover.current_cover_tilt_position == 0
+
+        dim10_pos100 = OWNMessage.parse("*#2*31*10*10*100*001*0##")
+        assert dim10_pos100 is not None
+        tilt_cover.handle_event(dim10_pos100)
+        assert tilt_cover.current_cover_tilt_position == 100
+
+        # 5. Curtain travel updates tilt model
+        stop_msg = OWNMessage.parse("*2*0*31##")
+        assert stop_msg is not None
+
+        # Closing travel >= slat_time rotates slats to 0
+        tilt_cover._attr_current_cover_position = 40
+        tilt_cover._attr_current_cover_tilt_position = 100
+        tilt_cover._slat_time = 2.0
+        tilt_cover._run_started_at = time.monotonic() - 3.0
+        tilt_cover._attr_is_closing = True
+        tilt_cover._attr_is_opening = False
+        tilt_cover.handle_event(stop_msg)
+        assert tilt_cover.current_cover_tilt_position == 0
+
+        # Opening travel >= slat_time rotates slats to 100
+        tilt_cover._attr_current_cover_position = 60
+        tilt_cover._attr_current_cover_tilt_position = 0
+        tilt_cover._slat_time = 2.0
+        tilt_cover._run_started_at = time.monotonic() - 3.0
+        tilt_cover._attr_is_closing = False
+        tilt_cover._attr_is_opening = True
+        tilt_cover.handle_event(stop_msg)
+        assert tilt_cover.current_cover_tilt_position == 100
+
+        # Partial travel (1s of 2s slat_time while opening from 0) updates tilt proportionally to 50
+        tilt_cover._attr_current_cover_position = 50
+        tilt_cover._attr_current_cover_tilt_position = 0
+        tilt_cover._slat_time = 2.0
+        tilt_cover._run_started_at = time.monotonic() - 1.0
+        tilt_cover._attr_is_closing = False
+        tilt_cover._attr_is_opening = True
+        tilt_cover.handle_event(stop_msg)
+        assert tilt_cover.current_cover_tilt_position == 50
+
+        # Partial travel (1s of 2s slat_time while closing from 100) updates tilt proportionally to 50
+        tilt_cover._attr_current_cover_position = 50
+        tilt_cover._attr_current_cover_tilt_position = 100
+        tilt_cover._slat_time = 2.0
+        tilt_cover._run_started_at = time.monotonic() - 1.0
+        tilt_cover._attr_is_closing = True
+        tilt_cover._attr_is_opening = False
+        tilt_cover.handle_event(stop_msg)
+        assert tilt_cover.current_cover_tilt_position == 50
+
+        # A short run that ends at position 0 forces tilt to 0
+        tilt_cover._attr_current_cover_position = 0
+        tilt_cover._attr_current_cover_tilt_position = 50
+        tilt_cover._run_started_at = time.monotonic() - 0.2
+        tilt_cover._attr_is_closing = True
+        tilt_cover._attr_is_opening = False
+        tilt_cover.handle_event(stop_msg)
+        assert tilt_cover.current_cover_tilt_position == 0
+
+        # A stop with nothing running (the relay of a slat pulse's stop) keeps
+        # the slats of a lowered blind where they are
+        tilt_cover._attr_current_cover_tilt_position = 50
+        tilt_cover.handle_event(stop_msg)
+        assert tilt_cover.current_cover_tilt_position == 50
+
+        # A short run that ends at position 100 forces tilt to 100
+        tilt_cover._attr_current_cover_position = 100
+        tilt_cover._attr_current_cover_tilt_position = 50
+        tilt_cover._run_started_at = time.monotonic() - 0.2
+        tilt_cover._attr_is_closing = False
+        tilt_cover._attr_is_opening = True
+        tilt_cover.handle_event(stop_msg)
+        assert tilt_cover.current_cover_tilt_position == 100
+
+    @pytest.mark.asyncio
+    async def test_cover_slat_tilt_manual_stop_interpolates_angle(self, tilt_cover, mock_gateway):
+        """Test that manual stop mid-tilt interpolates angle proportionally."""
+        fut = asyncio.Future()
+        fut.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut
+
+        tilt_cover._attr_current_cover_tilt_position = 0
+        tilt_cover._slat_time = 2.0
+
+        sleep_gate = asyncio.Event()
+        with patch("asyncio.sleep", side_effect=lambda s: sleep_gate.wait()):
+            await tilt_cover.async_set_cover_tilt_position(tilt_position=100)
+            assert tilt_cover._is_tilting is True
+            tilt_cover.handle_event(OWNMessage.parse("*2*1*31##"))  # motor start
+            start_ts = tilt_cover._tilt_start_time
+
+            # Simulate stopping 1.0 second into a 2.0s pulse (50% progress)
+            with patch("time.monotonic", return_value=start_ts + 1.0):
+                await tilt_cover.async_stop_cover_tilt()
+
+            assert tilt_cover._is_tilting is False
+            assert tilt_cover.current_cover_tilt_position == 50
+
+    @pytest.mark.asyncio
+    async def test_cover_slat_time_service(self, tilt_cover, basic_cover):
+        """Test setting slat_time via async_set_travel_time and range validation."""
+        # 1. Setting slat_time alone on a tilt cover preserves calibration source (e.g. measured)
+        tilt_cover._calibration_source = "measured"
+        res = await tilt_cover.async_set_travel_time(slat_time=3.5)
+        assert res["slat_time"] == 3.5
+        assert res["source"] == "measured"
+        assert tilt_cover._calibration_source == "measured"
+        assert tilt_cover._slat_time == 3.5
+        assert tilt_cover.extra_state_attributes["slat_time"] == 3.5
+
+        # 2. Out of range slat_time rejected with ServiceValidationError
+        with pytest.raises(ServiceValidationError):
+            await tilt_cover.async_set_travel_time(slat_time=0.2)
+
+        with pytest.raises(ServiceValidationError):
+            await tilt_cover.async_set_travel_time(slat_time=12.0)
+
+        # 3. Missing both travel_time and slat_time raises ServiceValidationError
+        with pytest.raises(ServiceValidationError):
+            await tilt_cover.async_set_travel_time()
+
+        # 4. Advanced cover rejects travel time calibration
+        basic_cover._advanced = True
+        with pytest.raises(HomeAssistantError, match="reports its position"):
+            await basic_cover.async_set_travel_time(travel_time=30)
+
+    @pytest.mark.asyncio
+    async def test_cover_slat_tilt_auto_stop_branches(self, tilt_cover, mock_gateway):
+        """Test auto-stop cancellation, error handling, pending write, and superseding branches."""
+        fut = asyncio.Future()
+        fut.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut
+
+        tilt_cover._attr_current_cover_tilt_position = 0
+
+        # Branch 1: Superseded before sleep
+        tilt_cover._run_generation = 1
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            await tilt_cover.async_set_cover_tilt_position(tilt_position=50)
+            tilt_cover._run_generation = 99  # simulate superseding command
+            if tilt_cover._stop_task:
+                await tilt_cover._stop_task
+
+        # Branch 2: Superseded during sleep
+        tilt_cover._attr_current_cover_tilt_position = 0
+        async def bump_gen_sleep(delay, *args, **kwargs):
+            tilt_cover._run_generation += 1
+
+        with patch("asyncio.sleep", side_effect=bump_gen_sleep):
+            await tilt_cover.async_set_cover_tilt_position(tilt_position=50)
+            if tilt_cover._stop_task:
+                await tilt_cover._stop_task
+
+        # Branch 3: Pending write future resolves with timestamp
+        pending_fut = asyncio.Future()
+        mock_gateway.send.return_value = pending_fut
+        tilt_cover._attr_current_cover_tilt_position = 0
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            await tilt_cover.async_set_cover_tilt_position(tilt_position=50)
+            pending_fut.set_result(time.monotonic())
+            if tilt_cover._stop_task:
+                await tilt_cover._stop_task
+        # No direction status: the stop waits in real time until write + delay + pulse,
+        # and whatever the loop adds on top is real slat travel.
+        assert tilt_cover.current_cover_tilt_position == pytest.approx(50, abs=6)
+
+        # Branch 4: Pending write future raises TimeoutError/Exception
+        err_fut = asyncio.Future()
+        mock_gateway.send.return_value = err_fut
+        tilt_cover._attr_current_cover_tilt_position = 0
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            await tilt_cover.async_set_cover_tilt_position(tilt_position=50)
+            err_fut.set_exception(TimeoutError())
+            if tilt_cover._stop_task:
+                await tilt_cover._stop_task
+            _ = err_fut.exception()
+
+        # Branch 5: HomeAssistantError during auto-stop
+        mock_gateway.send.return_value = fut
+        tilt_cover._attr_current_cover_tilt_position = 0
+        with patch("asyncio.sleep", new_callable=AsyncMock), \
+             patch.object(tilt_cover, "async_stop_cover", side_effect=HomeAssistantError("gateway fail")):
+            await tilt_cover.async_set_cover_tilt_position(tilt_position=50)
+            if tilt_cover._stop_task:
+                await tilt_cover._stop_task
+            assert tilt_cover._is_tilting is False
+
+        # Branch 6: CancelledError during auto-stop
+        tilt_cover._attr_current_cover_tilt_position = 0
+        with patch("asyncio.sleep", side_effect=asyncio.CancelledError):
+            await tilt_cover.async_set_cover_tilt_position(tilt_position=50)
+            if tilt_cover._stop_task:
+                await tilt_cover._stop_task
+
+
+class TestTiltAuditRegressions:
+    """Regressions for the PR #508 audit (findings 1-4 and 7)."""
+
+    @pytest.fixture
+    def make_cover(self, hass, mock_gateway):
+        def _make(advanced=False, **kwargs):
+            with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+                cover = MyHOMECover(
+                    hass=hass, name="Blind", entity_name="Blind", device_id="31", who="2", where="31",
+                    interface=None, advanced=advanced, slat_tilt=True, manufacturer="BTicino",
+                    model="Venetian Blind", gateway=mock_gateway, **kwargs,
+                )
+            cover.entity_id = "cover.blind"
+            cover.hass = hass
+            cover.async_write_ha_state = MagicMock()
+            return cover
+
+        return _make
+
+    @pytest.fixture
+    def cover(self, make_cover):
+        return make_cover()
+
+    @staticmethod
+    def _wire_options(cover, hass, options):
+        entry = MagicMock()
+        entry.options = options
+        cover._gateway_handler.config_entry = entry
+        hass.config_entries.async_update_entry = MagicMock(
+            side_effect=lambda e, options: setattr(e, "options", options)
+        )
+        return entry
+
+    def test_dimension11_leaves_no_dead_state(self, cover):
+        """Finding 1: DIM 11 must not leave unconsumed state behind."""
+        assert not hasattr(cover, "_pending_target_position")
+        cover._attr_current_cover_position = 70
+        cover.handle_event(OWNMessage.parse("*#2*31*#11#001*50##"))
+        assert cover.current_cover_position == 70
+        assert not hasattr(cover, "_pending_target_position")
+
+    @pytest.mark.asyncio
+    async def test_slat_time_only_does_not_store_travel_calibration(self, cover, hass):
+        """Finding 2: a slat-only call must not turn the defaults into a stored calibration."""
+        entry = self._wire_options(cover, hass, {})
+        await cover.async_set_travel_time(slat_time=3.5)
+        stored = entry.options["cover_travel_times"]["31"]
+        assert stored == {"slat_time": 3.5}
+
+    @pytest.mark.asyncio
+    async def test_slat_time_only_keeps_existing_travel_record(self, cover, hass):
+        entry = self._wire_options(
+            cover, hass, {"cover_travel_times": {"31": {"down": 20.0, "up": 22.0, "source": "measured"}}}
+        )
+        await cover.async_set_travel_time(slat_time=1.5)
+        assert entry.options["cover_travel_times"]["31"] == {
+            "down": 20.0, "up": 22.0, "source": "measured", "slat_time": 1.5,
+        }
+
+    @pytest.mark.asyncio
+    async def test_travel_time_call_stores_slat_time_with_it(self, cover, hass):
+        entry = self._wire_options(cover, hass, {})
+        await cover.async_set_travel_time(travel_time=30, slat_time=2.5)
+        stored = entry.options["cover_travel_times"]["31"]
+        assert stored["down"] == 30 and stored["slat_time"] == 2.5
+
+    def test_stored_slat_time_is_restored(self, make_cover):
+        """Finding 2: the service-set slat time survives a restart."""
+        cover = make_cover(calibration={"slat_time": 3.25})
+        assert cover._slat_time == 3.25
+        assert cover._calibration_source == "default"  # a slat-only record is no travel calibration
+
+    def test_stored_slat_time_is_clamped_and_garbage_ignored(self, make_cover):
+        assert make_cover(calibration={"slat_time": 99})._slat_time == 10.0
+        assert make_cover(calibration={"slat_time": "x"})._slat_time == 2.0
+
+    @pytest.mark.asyncio
+    async def test_slat_time_service_allowed_on_advanced_cover(self, make_cover):
+        """Finding 7: advanced covers can still set the slat time, but not travel times."""
+        cover = make_cover(advanced=True)
+        res = await cover.async_set_travel_time(slat_time=2.5)
+        assert res["slat_time"] == 2.5
+        with pytest.raises(HomeAssistantError, match="reports its position"):
+            await cover.async_set_travel_time(travel_time=30)
+        with pytest.raises(HomeAssistantError, match="reports its position"):
+            await cover.async_set_travel_time()
+
+    @pytest.mark.asyncio
+    async def test_status_report_during_tilt_pulse_keeps_auto_stop(self, cover, mock_gateway):
+        """Finding 3: a position report mid-pulse must not cancel the stop."""
+        fut = asyncio.Future()
+        fut.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut
+        cover._attr_current_cover_tilt_position = 0
+        gate = asyncio.Event()
+        real_sleep = asyncio.sleep
+        async def fake_sleep(_delay):
+            await gate.wait()
+
+        with patch("asyncio.sleep", side_effect=fake_sleep):
+            await cover.async_set_cover_tilt_position(tilt_position=50)
+            task = cover._stop_task
+            assert task is not None
+            await real_sleep(0)
+            cover.handle_event(OWNMessage.parse("*#2*31*10*10*40*001*0##"))
+            assert cover._stop_task is task
+            assert not task.cancelled()
+            assert cover._is_tilting is True
+            gate.set()
+            await task
+        assert any(str(c.args[0]) == "*2*0*31##" for c in mock_gateway.send.call_args_list)
+        assert cover._is_tilting is False
+
+    @pytest.mark.asyncio
+    async def test_status_report_without_tilt_still_cancels_stop_task(self, make_cover):
+        """The guard is tilt-only: ordinary runs keep their behaviour."""
+        cover = make_cover()
+        task = asyncio.ensure_future(asyncio.sleep(10))
+        cover._stop_task = task
+        cover.handle_event(OWNMessage.parse("*#2*31*10*10*40*001*0##"))
+        await asyncio.sleep(0)
+        assert task.cancelled()
+
+    @pytest.mark.asyncio
+    async def test_superseded_tilt_task_never_sends_stale_stop(self, cover, mock_gateway):
+        """Finding 4: cancelling the task while it awaits the write ends it quietly."""
+        pending = asyncio.Future()
+        mock_gateway.send.return_value = pending
+        cover._attr_current_cover_tilt_position = 0
+        await cover.async_set_cover_tilt_position(tilt_position=50)
+        task = cover._stop_task
+        await asyncio.sleep(0)  # the task is now waiting for the write
+        sent = mock_gateway.send.call_count
+        cover._cancel_stop_task()
+        await asyncio.sleep(0)
+        assert task.done()
+        pending.set_result(time.monotonic())
+        await asyncio.sleep(0.01)
+        assert mock_gateway.send.call_count == sent  # no stop frame
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("failure", [TimeoutError(), RuntimeError("queue flushed")])
+    async def test_failed_tilt_write_aborts_without_moving_angle(self, cover, mock_gateway, failure):
+        """Finding 4: a pulse that never reached the bus changes nothing and sends no stop."""
+        pending = asyncio.Future()
+        mock_gateway.send.return_value = pending
+        cover._attr_current_cover_tilt_position = 20
+        await cover.async_set_cover_tilt_position(tilt_position=80)
+        task = cover._stop_task
+        await asyncio.sleep(0)
+        sent = mock_gateway.send.call_count
+        pending.set_exception(failure)
+        await task
+        assert cover._is_tilting is False
+        assert cover._attr_is_opening is False
+        assert cover.current_cover_tilt_position == 20
+        assert mock_gateway.send.call_count == sent
+
+    @pytest.mark.asyncio
+    async def test_cancelled_tilt_write_aborts(self, cover, mock_gateway):
+        pending = asyncio.Future()
+        mock_gateway.send.return_value = pending
+        cover._attr_current_cover_tilt_position = 20
+        await cover.async_set_cover_tilt_position(tilt_position=80)
+        task = cover._stop_task
+        await asyncio.sleep(0)
+        pending.cancel()
+        await task
+        assert cover._is_tilting is False
+        assert cover.current_cover_tilt_position == 20
+
+    @pytest.mark.asyncio
+    async def test_setting_current_tilt_mid_pulse_stops_the_motor(self, cover, mock_gateway):
+        """Setting the angle the running pulse has just reached must stop the motor, not strand it."""
+        fut = asyncio.Future()
+        fut.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut
+        cover._attr_current_cover_tilt_position = 0
+        cover._slat_time = 2.0
+        gate = asyncio.Event()
+        real_sleep = asyncio.sleep
+
+        async def fake_sleep(_delay):
+            await gate.wait()
+
+        with patch("asyncio.sleep", side_effect=fake_sleep):
+            await cover.async_set_cover_tilt_position(tilt_position=100)
+            task = cover._stop_task
+            cover.handle_event(OWNMessage.parse("*2*1*31##"))  # motor start
+            start = cover._tilt_start_time
+            with patch("time.monotonic", return_value=start + 1.0):  # half way: 50 %
+                await cover.async_set_cover_tilt_position(tilt_position=50)
+            assert cover._is_tilting is False
+            assert cover.current_cover_tilt_position == 50
+            assert any(str(c.args[0]) == "*2*0*31##" for c in mock_gateway.send.call_args_list)
+            gate.set()
+            await real_sleep(0)
+            assert task.cancelled()  # the stop cancelled the superseded auto-stop itself
+
+    def test_interpolated_tilt_without_a_running_pulse_is_the_last_angle(self, cover):
+        """A second command can arrive before the first pulse has a start time."""
+        cover._attr_current_cover_tilt_position = 35
+        assert cover._interpolated_tilt(time.monotonic()) == 35
+
+    @pytest.mark.asyncio
+    async def test_new_tilt_target_mid_pulse_starts_from_interpolated_angle(self, cover, mock_gateway):
+        fut = asyncio.Future()
+        fut.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut
+        cover._attr_current_cover_tilt_position = 0
+        cover._slat_time = 2.0
+        gate = asyncio.Event()
+        real_sleep = asyncio.sleep
+
+        async def fake_sleep(_delay):
+            await gate.wait()
+
+        with patch("asyncio.sleep", side_effect=fake_sleep):
+            await cover.async_set_cover_tilt_position(tilt_position=100)
+            first = cover._stop_task
+            cover.handle_event(OWNMessage.parse("*2*1*31##"))  # motor start
+            start = cover._tilt_start_time
+            with patch("time.monotonic", return_value=start + 1.0):
+                await cover.async_set_cover_tilt_position(tilt_position=25)
+            assert cover._tilt_initial_position == 50  # not the stale 0
+            assert cover._tilt_direction == "close"
+            assert cover._tilt_duration == pytest.approx(0.5)
+            await real_sleep(0)
+            assert first.done()  # the superseded auto-stop is gone
+            gate.set()
+            await cover._stop_task
+
+    # ── Second audit of PR #508 ──────────────────────────────────────────
+
+    @staticmethod
+    def _sent_stops(mock_gateway):
+        return [c for c in mock_gateway.send.call_args_list if str(c.args[0]) == "*2*0*31##"]
+
+    @staticmethod
+    def _written_now(mock_gateway):
+        fut = asyncio.get_running_loop().create_future()
+        fut.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut
+        return fut
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("advanced", [False, True])
+    async def test_relayed_stop_before_direction_status_is_an_echo(self, make_cover, mock_gateway, advanced):
+        """The stop status the gateway relays before the direction status must not end the pulse."""
+        cover = make_cover(advanced=advanced)
+        self._written_now(mock_gateway)
+        cover._attr_current_cover_tilt_position = 0
+        gate = asyncio.Event()
+        real_sleep = asyncio.sleep
+
+        async def fake_sleep(_delay):
+            await gate.wait()
+
+        with patch("asyncio.sleep", side_effect=fake_sleep):
+            await cover.async_set_cover_tilt_position(tilt_position=50)
+            task = cover._stop_task
+            await real_sleep(0)
+            cover.handle_event(OWNMessage.parse("*2*0*31##"))  # relayed stop status
+            assert cover._stop_task is task and not task.done()
+            assert cover._is_tilting is True
+            cover.handle_event(OWNMessage.parse("*2*1*31##"))  # motor start
+            gate.set()
+            await task
+        assert self._sent_stops(mock_gateway)
+        assert cover._is_tilting is False
+        assert cover.current_cover_tilt_position == 50
+
+    @pytest.mark.asyncio
+    async def test_own_stop_relay_on_a_lowered_blind_keeps_the_slats(self, cover, mock_gateway):
+        """Blind fully down, slats tilted open: the relayed stop of the pulse must not close them."""
+        self._written_now(mock_gateway)
+        cover._attr_current_cover_position = 0
+        cover._start_position = 0
+        cover._attr_current_cover_tilt_position = 0
+        with patch("asyncio.sleep", new=AsyncMock()):
+            await cover.async_set_cover_tilt_position(tilt_position=50)
+            cover.handle_event(OWNMessage.parse("*2*1*31##"))  # motor start
+            await cover._stop_task
+        assert self._sent_stops(mock_gateway)
+        assert cover.current_cover_tilt_position == 50
+        cover.handle_event(OWNMessage.parse("*2*0*31##"))  # the gateway relays our stop
+        assert cover.current_cover_tilt_position == 50
+        assert cover.current_cover_position == 0
+
+    def test_advanced_level_report_turns_the_slats_only_at_a_new_end_stop(self, make_cover):
+        cover = make_cover(advanced=True)
+        cover._attr_current_cover_position = 0
+        cover._attr_current_cover_tilt_position = 60
+        cover.handle_event(OWNMessage.parse("*#2*31*10*10*0*001*0##"))  # the same level again
+        assert cover.current_cover_tilt_position == 60
+        cover._attr_current_cover_position = 40
+        cover.handle_event(OWNMessage.parse("*#2*31*10*10*0*001*0##"))  # the curtain came down
+        assert cover.current_cover_tilt_position == 0
+
+    @pytest.mark.asyncio
+    async def test_tilt_is_refused_while_the_curtain_runs(self, cover, mock_gateway):
+        cover._attr_current_cover_position = 100
+        cover.handle_event(OWNMessage.parse("*2*2*31##"))  # keypad close run
+        with pytest.raises(HomeAssistantError, match="is moving") as err:
+            await cover.async_set_cover_tilt_position(tilt_position=50)
+        assert err.value.translation_key == "cover_busy_moving"
+        mock_gateway.send.assert_not_called()
+        assert cover.is_closing is True
+
+    @pytest.mark.asyncio
+    async def test_curtain_command_mid_pulse_settles_the_angle(self, cover, mock_gateway):
+        self._written_now(mock_gateway)
+        cover._attr_current_cover_tilt_position = 0
+        cover._slat_time = 2.0
+        await cover.async_set_cover_tilt_position(tilt_position=100)
+        pulse = cover._stop_task
+        cover.handle_event(OWNMessage.parse("*2*1*31##"))  # motor start
+        start = cover._tilt_start_time
+        with patch("time.monotonic", return_value=start + 1.0):
+            await cover.async_close_cover()
+        assert cover._is_tilting is False
+        assert cover.current_cover_tilt_position == 50
+        assert cover.is_closing is True
+        await asyncio.sleep(0)
+        assert pulse.cancelled()
+        cover._cancel_stop_task()
+
+    @pytest.mark.asyncio
+    async def test_tilt_step_below_the_minimum_pulse_sends_nothing(self, cover, mock_gateway):
+        cover._attr_current_cover_tilt_position = 50
+        cover._slat_time = 2.0
+        await cover.async_set_cover_tilt_position(tilt_position=56)  # a 120 ms pulse (< 0.2s)
+        mock_gateway.send.assert_not_called()
+        assert cover.current_cover_tilt_position == 50
+        await cover.async_set_cover_tilt_position(tilt_position=62)  # 240 ms (>= 0.2s)
+        assert mock_gateway.send.call_count == 1
+        cover._cancel_stop_task()
+
+    @pytest.mark.asyncio
+    async def test_pulse_is_timed_from_the_direction_status(self, cover, mock_gateway):
+        """The motor starts ~0.55 s after the write: a pulse timed from the write loses that."""
+        write_ts = time.monotonic()
+        fut = asyncio.get_running_loop().create_future()
+        fut.set_result(write_ts)
+        mock_gateway.send.return_value = fut
+        cover._attr_current_cover_tilt_position = 0
+        cover._slat_time = 2.0
+        sleeps = []
+
+        async def fake_sleep(delay):
+            sleeps.append(delay)
+
+        with patch("asyncio.sleep", side_effect=fake_sleep):
+            await cover.async_set_cover_tilt_position(tilt_position=50)  # 1.0 s of slat travel
+            assert cover._tilt_start_time is None  # nothing turns before the write
+            cover.handle_event(OWNMessage.parse("*2*1*31##"))
+            assert cover._tilt_start_time >= write_ts
+            await cover._stop_task
+        assert sleeps[0] == pytest.approx(1.0, abs=0.1)
+        assert self._sent_stops(mock_gateway)
+
+    @pytest.mark.asyncio
+    async def test_pulse_without_direction_status_stops_on_time(self, cover, mock_gateway):
+        """A gateway that never relays the direction status: the stop is due at write + delay + pulse.
+
+        Waiting the whole echo window for that status would stretch a 0.2 s pulse to ~1 s.
+        """
+        self._written_now(mock_gateway)
+        cover._attr_current_cover_tilt_position = 0
+        cover._slat_time = 2.0
+        started = time.monotonic()
+        await cover.async_set_cover_tilt_position(tilt_position=10)  # 0.2 s of slat travel
+        await cover._stop_task
+        elapsed = time.monotonic() - started
+        assert MOTOR_START_DELAY + 0.2 - 0.05 <= elapsed < ECHO_WINDOW
+        assert self._sent_stops(mock_gateway)
+        assert cover.current_cover_tilt_position == pytest.approx(10, abs=6)
+
+    # ── Third audit of PR #508 ───────────────────────────────────────────
+
+    @staticmethod
+    def _write_each_send(mock_gateway, delays=None):
+        """Every send gets its own delivery future, written now or after ``delays[frame]`` seconds."""
+        loop = asyncio.get_running_loop()
+
+        async def send(cmd):
+            fut = loop.create_future()
+            delay = (delays or {}).get(str(cmd), 0.0)
+            if delay:
+                loop.call_later(delay, lambda: fut.done() or fut.set_result(time.monotonic()))
+            else:
+                fut.set_result(time.monotonic())
+            return fut
+
+        mock_gateway.send.side_effect = send
+
+    @pytest.mark.asyncio
+    async def test_set_position_to_the_current_level_mid_pulse_stops_the_motor(self, cover, mock_gateway):
+        """A 'close blinds' automation on a lowered blind whose slats are turning."""
+        self._write_each_send(mock_gateway)
+        cover._attr_current_cover_position = 0
+        cover._start_position = 0
+        cover._attr_current_cover_tilt_position = 0
+        gate = asyncio.Event()
+        real_sleep = asyncio.sleep
+
+        async def fake_sleep(_delay):
+            await gate.wait()
+
+        with patch("asyncio.sleep", side_effect=fake_sleep):
+            await cover.async_set_cover_tilt_position(tilt_position=50)
+            cover.handle_event(OWNMessage.parse("*2*1*31##"))
+            await real_sleep(0)
+            await cover.async_set_cover_position(position=0)
+            gate.set()
+            await real_sleep(0)
+        assert self._sent_stops(mock_gateway)
+        assert cover._is_tilting is False
+        assert cover.current_cover_position == 0
+
+    @pytest.mark.asyncio
+    async def test_set_position_to_the_level_a_run_is_passing_stops_it(self, cover, mock_gateway):
+        self._write_each_send(mock_gateway)
+        cover._attr_current_cover_position = 100
+        cover._start_position = 100
+        cover.handle_event(OWNMessage.parse("*2*2*31##"))  # keypad close run
+        cover._move_start_time = cover._run_started_at = time.monotonic() - 10  # ~60 %
+        await cover.async_set_cover_position(position=cover.current_cover_position)
+        assert self._sent_stops(mock_gateway)
+
+    @pytest.mark.asyncio
+    async def test_level_command_takes_the_motor_over_from_a_pulse(self, make_cover, mock_gateway):
+        cover = make_cover(advanced=True)
+        self._write_each_send(mock_gateway)
+        cover._attr_current_cover_tilt_position = 0
+        with patch("asyncio.sleep", new=AsyncMock()):
+            await cover.async_set_cover_tilt_position(tilt_position=50)
+            cover.handle_event(OWNMessage.parse("*2*1*31##"))
+            pulse = cover._stop_task
+            await cover.async_set_cover_position(position=60)
+            await asyncio.gather(pulse, return_exceptions=True)
+        sent = [str(c.args[0]) for c in mock_gateway.send.call_args_list]
+        assert sent[-1] != "*2*0*31##"  # the pulse's auto-stop must not halt the level move
+        assert self._sent_stops(mock_gateway) == []
+        assert cover._is_tilting is False
+
+    @pytest.mark.asyncio
+    async def test_late_stop_write_counts_the_extra_slat_travel(self, cover, mock_gateway):
+        """The FIFO queue writes the stop late: the slats turn on until it reaches the bus."""
+        self._write_each_send(mock_gateway, delays={"*2*0*31##": 0.5})
+        cover._attr_current_cover_tilt_position = 0
+        cover._slat_time = 2.0
+        await cover.async_set_cover_tilt_position(tilt_position=25)  # 0.5 s
+        cover.handle_event(OWNMessage.parse("*2*1*31##"))
+        await cover._stop_task
+        assert cover._is_tilting is True  # the motor still runs until the stop is written
+        await asyncio.sleep(0.6)
+        assert cover._is_tilting is False
+        assert 45 <= cover.current_cover_tilt_position <= 65  # ~1.0 s of travel, not 25 %
+
+    @pytest.mark.asyncio
+    async def test_stop_status_before_our_late_stop_is_written_settles_the_pulse(self, cover, mock_gateway):
+        self._write_each_send(mock_gateway, delays={"*2*0*31##": 0.3})
+        cover._attr_current_cover_tilt_position = 0
+        with patch("asyncio.sleep", new=AsyncMock()):
+            await cover.async_set_cover_tilt_position(tilt_position=50)
+            cover.handle_event(OWNMessage.parse("*2*1*31##"))
+            await cover._stop_task
+        assert cover._is_tilting is True
+        cover.handle_event(OWNMessage.parse("*2*0*31##"))  # a keypad stop beats our queued one
+        settled = cover.current_cover_tilt_position
+        assert cover._is_tilting is False
+        await asyncio.sleep(0.4)  # our stop is written now: it must not settle again
+        assert cover.current_cover_tilt_position == settled
+
+    @pytest.mark.asyncio
+    async def test_undelivered_pulse_stop_is_logged_and_settled(self, cover, mock_gateway, caplog):
+        loop = asyncio.get_running_loop()
+
+        async def send(cmd):
+            fut = loop.create_future()
+            if str(cmd) == "*2*0*31##":
+                loop.call_soon(fut.set_exception, OSError("connection lost"))
+            else:
+                fut.set_result(time.monotonic())
+            return fut
+
+        mock_gateway.send.side_effect = send
+        cover._attr_current_cover_tilt_position = 0
+        with patch("asyncio.sleep", new=AsyncMock()):
+            await cover.async_set_cover_tilt_position(tilt_position=50)
+            cover.handle_event(OWNMessage.parse("*2*1*31##"))
+            await cover._stop_task
+        await asyncio.sleep(0)
+        assert cover._is_tilting is False
+        assert "was not delivered; the motor may still run" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_pulse_superseded_while_waiting_for_the_motor_start_sends_no_stop(self, cover, mock_gateway):
+        self._write_each_send(mock_gateway)
+        cover._attr_current_cover_tilt_position = 0
+        cover._slat_time = 2.0
+        await cover.async_set_cover_tilt_position(tilt_position=10)  # stop due ~0.75 s after the write
+
+        def supersede():
+            cover._run_generation += 1
+
+        asyncio.get_running_loop().call_later(0.1, supersede)
+        await cover._stop_task
+        assert self._sent_stops(mock_gateway) == []
+
+    # ── Queued stops, retargets and overshoot ────────────────────────────
+
+    @staticmethod
+    def _directions(mock_gateway):
+        return [str(c.args[0]) for c in mock_gateway.send.call_args_list if str(c.args[0]) != "*2*0*31##"]
+
+    @pytest.mark.asyncio
+    async def test_next_pulse_starts_from_the_angle_at_the_queued_stops_write(self, cover, mock_gateway):
+        """The FIFO queue holds the stop: the next pulse waits for it and starts from the real angle."""
+        self._write_each_send(mock_gateway, delays={"*2*0*31##": 1.0})
+        cover._attr_current_cover_tilt_position = 0
+        cover._slat_time = 2.0
+        with patch("asyncio.sleep", new=AsyncMock()):
+            await cover.async_set_cover_tilt_position(tilt_position=25)  # 0.5 s, but the stop leaves ~1 s in
+            cover.handle_event(OWNMessage.parse("*2*1*31##"))
+            await cover._stop_task
+            assert cover._pulse_stop_written is not None
+            await cover.async_set_cover_tilt_position(tilt_position=0)
+        assert cover._pulse_stop_written is None
+        assert cover._tilt_direction == "close"
+        assert 45 <= cover._tilt_initial_position <= 60  # the stop's real write, not the 25 % it was due at
+        cover._cancel_stop_task()
+
+    @pytest.mark.asyncio
+    async def test_newer_tilt_target_replaces_one_still_waiting(self, cover, mock_gateway):
+        self._write_each_send(mock_gateway, delays={"*2*0*31##": 0.3})
+        cover._attr_current_cover_tilt_position = 50
+        with patch("asyncio.sleep", new=AsyncMock()):
+            await cover.async_set_cover_tilt_position(tilt_position=75)
+            cover.handle_event(OWNMessage.parse("*2*1*31##"))
+            await cover._stop_task
+            await asyncio.gather(
+                cover.async_set_cover_tilt_position(tilt_position=0),
+                cover.async_set_cover_tilt_position(tilt_position=100),
+            )
+        assert self._directions(mock_gateway) == ["*2*1*31##", "*2*1*31##"]  # 0 % was never sent
+        assert cover._tilt_target_position == 100
+        cover._cancel_stop_task()
+
+    @pytest.mark.asyncio
+    async def test_same_direction_retarget_moves_the_stop_and_sends_nothing(self, cover, mock_gateway):
+        self._write_each_send(mock_gateway)
+        cover._attr_current_cover_tilt_position = 0
+        cover._slat_time = 2.0
+        gate = asyncio.Event()
+        real_sleep = asyncio.sleep
+
+        async def fake_sleep(_delay):
+            await gate.wait()
+
+        with patch("asyncio.sleep", side_effect=fake_sleep):
+            await cover.async_set_cover_tilt_position(tilt_position=50)
+            cover.handle_event(OWNMessage.parse("*2*1*31##"))
+            await real_sleep(0)
+            await cover.async_set_cover_tilt_position(tilt_position=80)  # dragged further open
+            assert mock_gateway.send.call_count == 1
+            assert cover._tilt_target_position == 80
+            assert cover._tilt_duration == pytest.approx(1.6)
+            gate.set()
+            await cover._stop_task
+        assert len(self._sent_stops(mock_gateway)) == 1
+        assert cover.current_cover_tilt_position == 80
+
+    @pytest.mark.parametrize(
+        ("initial", "direction", "position", "overrun", "expected_position", "expected_tilt"),
+        [
+            (0, "open", 0, 2.5, 10, 100),     # 2.5 s past the slats' 2 s: 10 % of a 25 s travel up
+            (100, "close", 50, 5.0, 30, 0),   # 5 s past: 20 % down
+            (0, "open", 0, -0.5, 0, 75),      # stopped before the slats were turned: no curtain travel
+        ],
+    )
+    def test_motor_time_past_a_full_rotation_moves_the_curtain(
+        self, cover, initial, direction, position, overrun, expected_position, expected_tilt,
+    ):
+        start = time.monotonic()
+        cover._slat_time = 2.0
+        cover._attr_current_cover_position = cover._start_position = position
+        cover._is_tilting = True
+        cover._tilt_direction = direction
+        cover._tilt_initial_position = initial
+        cover._tilt_target_position = 100 if direction == "open" else 0
+        cover._tilt_start_time = start
+        cover._apply_tilt_stop(start + 2.0 + overrun)
+        assert cover.current_cover_position == expected_position
+        assert cover.current_cover_tilt_position == expected_tilt
+
+    def test_advanced_blind_reports_its_own_level_after_an_overrun(self, make_cover):
+        cover = make_cover(advanced=True)
+        start = time.monotonic()
+        cover._attr_current_cover_position = 0
+        cover._is_tilting = True
+        cover._tilt_direction = "open"
+        cover._tilt_initial_position, cover._tilt_target_position = 0, 100
+        cover._tilt_start_time = start
+        cover._apply_tilt_stop(start + 5.0)
+        assert cover.current_cover_position == 0
+        assert cover.current_cover_tilt_position == 100
+
+    @pytest.mark.asyncio
+    async def test_tilt_request_cancelled_while_waiting_for_the_queued_stop(self, cover, mock_gateway):
+        self._write_each_send(mock_gateway, delays={"*2*0*31##": 0.3})
+        cover._attr_current_cover_tilt_position = 0
+        real_sleep = asyncio.sleep
+        with patch("asyncio.sleep", new=AsyncMock()):
+            await cover.async_set_cover_tilt_position(tilt_position=50)
+            cover.handle_event(OWNMessage.parse("*2*1*31##"))
+            await cover._stop_task
+            request = asyncio.ensure_future(cover.async_set_cover_tilt_position(tilt_position=0))
+            await real_sleep(0.05)  # the request now waits for the queued stop
+            assert cover._pulse_stop_written is not None
+            request.cancel()
+            await asyncio.gather(request, return_exceptions=True)
+        assert request.cancelled()
+        assert self._directions(mock_gateway) == ["*2*1*31##"]
+        await asyncio.sleep(0.35)  # the queued stop still settles the pulse
+        assert cover._is_tilting is False
+
+    @pytest.mark.asyncio
+    async def test_waiting_for_the_end_of_a_pulse(self, cover, mock_gateway):
+        self._write_each_send(mock_gateway, delays={"*2*0*31##": 0.2})
+        cover._attr_current_cover_tilt_position = 0
+        with patch("asyncio.sleep", new=AsyncMock()):
+            await cover.async_set_cover_tilt_position(tilt_position=50)
+            cover.handle_event(OWNMessage.parse("*2*1*31##"))
+            await cover._async_wait_pulse_end()
+        assert cover._is_tilting is False
+        assert self._sent_stops(mock_gateway)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("outcome", ["failed", "cancelled"])
+    async def test_next_pulse_proceeds_when_the_queued_stop_never_leaves(self, cover, mock_gateway, outcome):
+        loop = asyncio.get_running_loop()
+        stop_fut = loop.create_future()
+
+        async def send(cmd):
+            if str(cmd) == "*2*0*31##":
+                return stop_fut
+            fut = loop.create_future()
+            fut.set_result(time.monotonic())
+            return fut
+
+        mock_gateway.send.side_effect = send
+        cover._attr_current_cover_tilt_position = 0
+        with patch("asyncio.sleep", new=AsyncMock()):
+            await cover.async_set_cover_tilt_position(tilt_position=50)
+            cover.handle_event(OWNMessage.parse("*2*1*31##"))
+            await cover._stop_task
+            if outcome == "failed":
+                loop.call_soon(stop_fut.set_exception, OSError("connection lost"))
+            else:
+                loop.call_soon(stop_fut.cancel)
+            await cover.async_set_cover_tilt_position(tilt_position=0)
+        assert cover._pulse_stop_written is None
+        assert self._directions(mock_gateway) == ["*2*1*31##", "*2*2*31##"]
+        cover._cancel_stop_task()
+
+    @pytest.mark.asyncio
+    async def test_keypad_press_after_a_stopped_pulse_is_not_an_echo(self, cover, mock_gateway):
+        self._write_each_send(mock_gateway)
+        cover._attr_current_cover_tilt_position = 0
+        with patch("asyncio.sleep", new=AsyncMock()):
+            await cover.async_set_cover_tilt_position(tilt_position=50)
+            await cover.async_stop_cover_tilt()  # before any direction status
+        assert cover._is_tilting is False
+        cover.handle_event(OWNMessage.parse("*2*1*31##"))  # keypad UP right after
+        assert cover.is_opening is True
+
+    @pytest.mark.asyncio
+    async def test_reset_on_advanced_blind_restores_the_slat_time(self, make_cover, hass):
+        cover = make_cover(advanced=True)
+        entry = self._wire_options(cover, hass, {"cover_travel_times": {"31": {"slat_time": 4.0}}})
+        cover._slat_time = 4.0
+        with patch.object(cover, "_device_config", return_value={"slat_time": 1.5}):
+            await cover.async_reset_travel_time()
+        assert cover._slat_time == 1.5
+        assert "31" not in entry.options["cover_travel_times"]
+        assert "travel_time" not in cover._attr_extra_state_attributes
+
+    @pytest.mark.asyncio
+    async def test_pulse_superseded_during_its_run_sends_no_stop(self, cover, mock_gateway):
+        self._written_now(mock_gateway)
+        cover._attr_current_cover_tilt_position = 0
+
+        async def superseding_sleep(_delay):
+            cover._run_generation += 1  # a newer command took over while the pulse ran
+
+        with patch("asyncio.sleep", side_effect=superseding_sleep):
+            await cover.async_set_cover_tilt_position(tilt_position=50)
+            cover.handle_event(OWNMessage.parse("*2*1*31##"))  # motor start
+            await cover._stop_task
+        assert self._sent_stops(mock_gateway) == []
+
+    @pytest.mark.asyncio
+    async def test_stop_queued_before_a_new_pulse_does_not_settle_it(self, cover, mock_gateway):
+        cover._is_tilting = True
+        cover._tilt_start_time = time.monotonic()
+        cover._tilt_initial_position, cover._tilt_target_position, cover._tilt_duration = 0, 50, 1.0
+
+        async def send(_cmd):
+            # A new pulse is started while this stop is being queued.
+            cover._begin_command("open")
+            cover._tilt_initial_position, cover._tilt_target_position = 50, 100
+            return None
+
+        mock_gateway.send.side_effect = send
+        await cover.async_stop_cover()
+        assert cover._is_tilting is True
+        assert cover._tilt_start_time is not None
+
+    @pytest.mark.asyncio
+    async def test_failed_tilt_write_on_advanced_cover_adds_no_travel_attributes(self, make_cover, mock_gateway):
+        cover = make_cover(advanced=True)
+        fut = asyncio.get_running_loop().create_future()
+        fut.set_exception(OSError("connection lost"))
+        mock_gateway.send.return_value = fut
+        cover._attr_current_cover_tilt_position = 0
+        with pytest.raises(HomeAssistantError):
+            await cover.async_set_cover_tilt_position(tilt_position=50)
+        assert cover._is_tilting is False
+        assert not cover.is_opening
+        assert cover.current_cover_tilt_position == 0
+        assert "travel_time" not in cover._attr_extra_state_attributes
+
+    @pytest.mark.asyncio
+    async def test_reset_restores_the_configured_slat_time(self, cover, hass):
+        entry = self._wire_options(cover, hass, {"cover_travel_times": {"31": {"slat_time": 4.0}}})
+        cover._slat_time = 4.0
+        with patch.object(cover, "_device_config", return_value={"slat_time": 1.5}):
+            await cover.async_reset_travel_time()
+        assert cover._slat_time == 1.5
+        assert cover._attr_extra_state_attributes["slat_time"] == 1.5
+        assert "31" not in entry.options["cover_travel_times"]
+
+    def test_non_numeric_slat_time_is_a_schema_error(self):
+        """Finding 7: a bad slat_time is rejected as a schema error, never a bare ValueError."""
+        from voluptuous import Invalid
+
+        from custom_components.myhome.validate import cover_schema
+
+        with pytest.raises(Invalid):
+            cover_schema({"c": {"where": "31", "slat_tilt": True, "slat_time": "fast"}})
+
 
 async def test_cover_general_commands_update_all_covers(hass: HomeAssistant, mock_gateway):
     """Test that general cover events (*2*1*0##, *2*2*0##, *2*0*0##) update all covers."""
@@ -913,3 +2192,71 @@ async def test_cover_advanced_shutter_key_precedence(hass, mock_gateway):
 
     assert len(added) == 1
     assert added[0]._advanced is True
+
+
+@pytest.mark.asyncio
+async def test_cover_slat_tilt_setup_entry_config(hass, mock_gateway):
+    """Test that CONF_SLAT_TILT configuration enables slat tilt on setup."""
+    mac = mock_gateway.mac
+    hass.data = {
+        DOMAIN: {
+            mac: {
+                "entity": mock_gateway,
+                CONF_PLATFORMS: {
+                    PLATFORM: {
+                        "41": {
+                            CONF_WHERE: "41",
+                            CONF_NAME: "Blind 41",
+                            CONF_SLAT_TILT: True,
+                        },
+                    }
+                },
+            }
+        }
+    }
+    config_entry = MagicMock()
+    config_entry.data = {"mac": mac}
+    config_entry.entry_id = "test_entry"
+
+    added = []
+    with patch("homeassistant.helpers.entity_registry.async_entries_for_config_entry", return_value=[]), \
+         patch("homeassistant.helpers.entity_registry.async_get", return_value=MagicMock()):
+        attach_runtime(hass, config_entry)
+        await async_setup_entry(hass, config_entry, added.extend)
+
+    assert len(added) == 1
+    assert added[0]._slat_tilt is True
+    assert added[0].device_class == CoverDeviceClass.BLIND
+    assert added[0].supported_features & CoverEntityFeature.SET_TILT_POSITION
+
+
+@pytest.mark.asyncio
+async def test_yaml_cover_restores_a_service_set_slat_time(hass, mock_gateway):
+    """A slat time stored by myhome.set_cover_travel_time wins over myhome.yaml after a restart."""
+    mac = mock_gateway.mac
+    hass.data = {
+        DOMAIN: {
+            mac: {
+                "entity": mock_gateway,
+                CONF_PLATFORMS: {
+                    PLATFORM: {"41": {CONF_WHERE: "41", CONF_NAME: "Blind 41", CONF_SLAT_TILT: True, "slat_time": 2.0}},
+                },
+            }
+        }
+    }
+    config_entry = MagicMock()
+    config_entry.data = {"mac": mac}
+    config_entry.entry_id = "test_entry"
+    config_entry.options = {"cover_travel_times": {"41": {"down": 40.0, "up": 40.0, "slat_time": 3.5}}}
+
+    added = []
+    with patch("homeassistant.helpers.entity_registry.async_entries_for_config_entry", return_value=[]), \
+         patch("homeassistant.helpers.entity_registry.async_get", return_value=MagicMock()):
+        attach_runtime(hass, config_entry)
+        await async_setup_entry(hass, config_entry, added.extend)
+
+    assert len(added) == 1
+    assert added[0]._slat_time == 3.5
+    # yaml covers keep their configured travel time
+    assert added[0]._travel_time_down == 25.0
+    assert added[0]._calibration_source == "default"

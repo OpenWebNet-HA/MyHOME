@@ -373,7 +373,7 @@ class PlatformDiscovery:
         *,
         platform: str,
         who: str,
-        event_type: type | None,
+        event_type: type | tuple[type, ...] | None,
         build: BuildFn,
         announce: bool = False,
         reject_registry_entry: Callable[[er.RegistryEntry, DeviceContext], bool] | None = None,

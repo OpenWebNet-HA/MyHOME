@@ -12,6 +12,13 @@ ECHO_WINDOW: float = 1.5
 # never relays the direction status (measured 0.55 s on a MyHOMEServer1, #302).
 MOTOR_START_DELAY: float = 0.55
 
+# Shortest slat pulse worth sending (#492). Shorter tilt steps are skipped: the
+# direction and stop frames are ~0.1 s apart on the bus at best, and on-wire
+# testing on physical hardware (#466 comment 6038376669) demonstrated that pulses
+# under ~0.2 s (130-200 ms) click the actuator relay without overcoming tubular motor
+# inertia/deadband, causing silent mathematical desync.
+MIN_TILT_PULSE: float = 0.2
+
 # Upper bound on how long we wait for the send queue to write our frame before
 # falling back to "now" as the motion anchor. #302 measured the *queue*: with
 # twelve covers the last frame goes out 1.5-12 s after enqueue (the ~1.6 s often

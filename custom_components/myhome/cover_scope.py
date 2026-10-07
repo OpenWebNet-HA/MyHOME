@@ -6,11 +6,13 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterable
 
+from homeassistant.components.cover import ATTR_TILT_POSITION
 from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from OWNd.message import OWNAutomationEvent
 
-from .const import BUS_ROUTING, area_of_where
+from .const import BUS_ROUTING, DOMAIN, area_of_where
 
 if TYPE_CHECKING:
     from .cover import MyHOMECover
@@ -117,6 +119,7 @@ class MyHOMEScopeCover(MyHOMECover):
         self._run_timeout: CALLBACK_TYPE | None = None
         self._run_timeout_direction: str | None = None
         self._unsub_members: CALLBACK_TYPE | None = None
+        self._pulse_followers: list[MyHOMECover] = []
         # A member can join before this cover is in Home Assistant (no hass yet).
         self._added = False
 
@@ -207,15 +210,98 @@ class MyHOMEScopeCover(MyHOMECover):
             return
         await super().async_set_cover_position(**kwargs)
 
+    async def async_open_cover_tilt(self, **kwargs: Any) -> None:
+        await self.async_set_cover_tilt_position(**{ATTR_TILT_POSITION: 100})
+
+    async def async_close_cover_tilt(self, **kwargs: Any) -> None:
+        await self.async_set_cover_tilt_position(**{ATTR_TILT_POSITION: 0})
+
+    async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
+        if members := self._fan_out():
+            await self._pulse_members_one_by_one([m for m in members if m._slat_tilt], kwargs)
+            return
+        if not self._slat_tilt:
+            return
+        if any((m._attr_is_opening or m._attr_is_closing) and not m._is_tilting for m in self._members()):
+            raise HomeAssistantError(
+                f"{self._display_name} is moving; stop it before tilting the slats",
+                translation_domain=DOMAIN,
+                translation_key="cover_busy_moving",
+                translation_placeholders={"name": self._display_name},
+            )
+        await super().async_set_cover_tilt_position(**kwargs)
+
+    async def _pulse_members_one_by_one(self, members: list[MyHOMECover], kwargs: dict[str, Any]) -> None:
+        """Behind an F422 every blind needs its own pulse: run them one after the other.
+
+        Queued together, each blind's stop would wait in the FIFO send queue
+        behind the other blinds' direction frames, and its slats would turn on
+        (or its curtain move) until then.
+        """
+        errors: list[HomeAssistantError] = []
+        for member in members:
+            try:
+                await member.async_set_cover_tilt_position(**kwargs)
+                await member._async_wait_pulse_end()
+            except HomeAssistantError as err:
+                errors.append(err)
+        if errors:
+            raise errors[0]
+
+    async def _async_move(self, direction: str, is_tilting: bool = False) -> asyncio.Future[Any] | None:
+        if is_tilting and not self._fan_out():
+            # On the local bus one scope frame turns every member's slats: they
+            # follow this pulse instead of reading its frames as a curtain run.
+            self._pulse_followers = [m for m in self._members() if m._slat_tilt]
+            for member in self._pulse_followers:
+                member._follow_pulse(self, direction)
+        written = await super()._async_move(direction, is_tilting=is_tilting)
+        if not is_tilting:
+            self._watch_run()
+        return written
+
+    def _pulse_started(self) -> None:
+        for member in self._pulse_followers:
+            if member._tilt_follows is self and member._is_tilting:
+                member._tilt_start_time = self._tilt_start_time
+
+    def _apply_tilt_stop(self, at: float | None = None) -> None:
+        start = self._tilt_start_time
+        super()._apply_tilt_stop(at)
+        followers, self._pulse_followers = self._pulse_followers, []
+        for member in followers:
+            if member._tilt_follows is self and member._is_tilting:
+                if member._tilt_start_time is None:
+                    member._tilt_start_time = start
+                member._apply_tilt_stop(at)
+                member._publish_state()
+
+    def _abort_tilt(self) -> None:
+        super()._abort_tilt()
+        followers, self._pulse_followers = self._pulse_followers, []
+        for member in followers:
+            if member._tilt_follows is self and member._is_tilting:
+                member._abort_tilt()
+
+    async def async_stop_cover_tilt(self, **kwargs: Any) -> None:
+        if members := self._fan_out():
+            await asyncio.gather(*(m.async_stop_cover_tilt(**kwargs) for m in members if m._slat_tilt))
+            return
+        if self._slat_tilt:
+            await super().async_stop_cover_tilt(**kwargs)
+
+    @property
+    def current_cover_tilt_position(self) -> int | None:
+        if not (members := self._members()):
+            return super().current_cover_tilt_position
+        tilts = [t for m in members if m._slat_tilt and (t := m.current_cover_tilt_position) is not None]
+        return round(sum(tilts) / len(tilts)) if tilts else None
+
     @callback
     def handle_event(self, message: OWNAutomationEvent) -> None:
         super().handle_event(message)
-        self._watch_run()
-
-    async def _async_move(self, direction: str) -> asyncio.Future[Any] | None:
-        written = await super()._async_move(direction)
-        self._watch_run()
-        return written
+        if not self._is_tilting:
+            self._watch_run()
 
     async def async_will_remove_from_hass(self) -> None:
         self._added = False
@@ -229,7 +315,7 @@ class MyHOMEScopeCover(MyHOMECover):
     def _watch_run(self) -> None:
         """Without members nothing reports the end of a run: end it after the travel time."""
         moving = "open" if self._attr_is_opening else "close" if self._attr_is_closing else None
-        if moving is None or self.hass is None or self._members():
+        if moving is None or self.hass is None or self._members() or self._is_tilting:
             self._cancel_run_timeout()
             return
         if self._run_timeout is not None and self._run_timeout_direction == moving:
