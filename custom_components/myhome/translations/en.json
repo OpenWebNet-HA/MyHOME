@@ -494,6 +494,9 @@
     "cover_busy_calibrating": {
       "message": "{entity_id} is being calibrated; try again when it has finished"
     },
+    "cover_busy_moving": {
+      "message": "{name} is moving; stop it before tilting the slats"
+    },
     "decoders_busy": {
       "message": "{entity_id}: all audio matrix inputs are currently in use by other rooms"
     },

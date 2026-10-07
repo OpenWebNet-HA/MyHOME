@@ -126,8 +126,12 @@ Physical BTicino / Legrand MyHOME Venetian blind actuators (such as the F411U2 c
 The integration models this behavior with timed travel:
 * When a tilt command is issued, the shutter motor runs in the required direction for a calculated duration:
   $$\text{duration} = \frac{|\text{target\_tilt} - \text{current\_tilt}|}{100} \times \text{slat\_time}$$
+* The pulse is timed from the **motor start**, not from the frame write: from the direction status the gateway relays (`*2*1*<WHERE>##` / `*2*2*<WHERE>##`), or, when the gateway relays none, from the write plus the measured 0.55 s motor-start delay (see [Runtime behaviour → Timed covers](runtime_behaviour.md)). Timed from the write, a pulse shorter than about half a second would end before the motor started.
 * When the target duration elapses, an automatic stop command (`*2*0*<WHERE>##`) halts the motor.
-* A stopwatch guard ensures that these short motor pulses do not corrupt or shift linear curtain travel time estimation.
+* Like any command, a pulse opens an echo window: the stop status the gateway relays right after our direction frame is ignored, so it cannot cancel the pulse's stop and leave the motor running.
+* Steps shorter than **0.1 s** of motor time (5 % at `slat_time: 2.0`) are skipped: the motor would barely answer while the angle was recorded as changed. This floor has not been measured on a Venetian actuator yet.
+* A tilt command while the curtain itself is running is refused (*"… is moving; stop it before tilting the slats"*). The run turns the slats anyway, and a pulse would leave the curtain's travel estimate behind. Opening, closing or setting the position during a pulse ends the pulse at the angle it reached.
+* After a curtain run the slats follow the run: an opening run turns them towards 100 %, a closing run towards 0 % (proportionally for runs shorter than `slat_time`), and a run that ends at 0 % or 100 % position turns them fully. A stop status with no run behind it (such as the relay of a pulse's own stop) leaves the angle alone, so slats tilted open on a lowered blind stay open.
 
 ### Configuration
 
@@ -145,7 +149,9 @@ cover:
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `slat_tilt` | boolean | `false` | Enables Venetian blind slat tilt controls and sets device class to `blind`. |
-| `slat_time` | float | `2.0` | Full slat rotation travel time in seconds (allowed range: `0.5`–`10.0` s). |
+| `slat_time` | float | `2.0` | Full slat rotation travel time in seconds (allowed range: `0.5`–`10.0` s). A value set with `myhome.set_cover_travel_time` is stored and wins over this one after a restart, until `myhome.reset_cover_travel_time`. |
+
+Higher tilt is assumed to be *open* (an opening pulse raises the angle). This, and the slat time of real actuators, still awaits a keypad / app capture of a Venetian actuator (#492).
 
 ### Protocol Note: Dimension 11 is Shutter Level
 

@@ -80,6 +80,7 @@ from .cover_calibration import (
 )
 from .cover_motion import (
     ECHO_WINDOW,
+    MIN_TILT_PULSE,
     MOTOR_START_DELAY,
     WRITE_TIMEOUT,
     compute_freeze_position,
@@ -95,6 +96,15 @@ if TYPE_CHECKING:
     from .cover_scope import CoverFamily, CoverScope, MyHOMEScopeCover
 
 PARALLEL_UPDATES = 0
+
+
+def _clamp_slat_time(value: Any, fallback: float = DEFAULT_SLAT_TIME) -> float:
+    """A slat time within MIN_SLAT_TIME..MAX_SLAT_TIME; ``fallback`` when the value is unusable."""
+    try:
+        seconds = float(value) if value is not None else float(fallback)
+    except (TypeError, ValueError):
+        seconds = float(fallback)
+    return max(MIN_SLAT_TIME, min(MAX_SLAT_TIME, seconds))
 
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
@@ -114,6 +124,10 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             # start from the configured travel time.
             kwargs["travel_time_source"] = "yaml" if CONF_TRAVEL_TIME in cfg else "default"
             kwargs["calibration"] = _stored_calibration(config_entry, ctx.key)
+        elif (stored := _stored_calibration(config_entry, ctx.key)) and stored.get(CONF_SLAT_TIME) is not None:
+            # yaml covers keep their configured travel time, but a slat time set
+            # with myhome.set_cover_travel_time wins until it is reset.
+            kwargs["calibration"] = {CONF_SLAT_TIME: stored[CONF_SLAT_TIME]}
         cls: type[MyHOMECover] = MyHOMECover
         if (scope := CoverScope.of(ctx.address.where, ctx.address.interface, cfg.get(CONF_MEMBERS) or ())) is not None:
             cls = MyHOMEScopeCover
@@ -127,8 +141,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             where=ctx.address.where,
             interface=ctx.address.interface,  # type: ignore
             advanced=cfg.get(CONF_ADVANCED_SHUTTER, cfg.get("advanced_shutter", False)),
-            slat_tilt=cfg.get(CONF_SLAT_TILT, cfg.get("slat_tilt", False)),
-            slat_time=float(cfg.get(CONF_SLAT_TIME) or DEFAULT_SLAT_TIME),
+            slat_tilt=bool(cfg.get(CONF_SLAT_TILT, False)),
+            slat_time=_clamp_slat_time(cfg.get(CONF_SLAT_TIME)),
             manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
             model=cfg.get(CONF_DEVICE_MODEL, "Shutter / Cover"),
             gateway=runtime.gateway,
@@ -235,7 +249,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._family: CoverFamily | None = None
         self._advanced = advanced
         self._slat_tilt = slat_tilt
-        self._slat_time = max(MIN_SLAT_TIME, min(MAX_SLAT_TIME, float(slat_time) if slat_time is not None else float(DEFAULT_SLAT_TIME)))
+        self._slat_time = _clamp_slat_time(slat_time)
         self._is_tilting: bool = False
         self._tilt_start_time: float | None = None
         self._tilt_initial_position: int = 0
@@ -253,10 +267,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._calibrated_at: str | None = None
         self._copied_from: str | None = None
         if calibration and calibration.get("slat_time") is not None:
-            try:
-                self._slat_time = max(MIN_SLAT_TIME, min(MAX_SLAT_TIME, float(calibration["slat_time"])))
-            except (TypeError, ValueError):
-                pass
+            self._slat_time = _clamp_slat_time(calibration["slat_time"], self._slat_time)
         if calibration and calibration.get("down") and calibration.get("up"):
             self._travel_time_down = float(calibration["down"])
             self._travel_time_up = float(calibration["up"])
@@ -373,13 +384,17 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             if fut.cancelled() or fut.exception() is not None:
                 # The frame never reached the bus: abort motion if this was an open/close
                 # command so the entity does not stay stuck in an opening/closing state.
-                if self._pending_cmd in ("open", "close"):
+                # A slat pulse's own auto-stop task settles a failed pulse.
+                if self._pending_cmd in ("open", "close") and not self._is_tilting:
                     self._abort_motion()
                 else:
                     self._end_echo_window()
                 return
             write_ts = fut.result()
             self._echo_until = write_ts + ECHO_WINDOW
+            if self._is_tilting:
+                # A slat pulse never moves the curtain: no travel clock to start.
+                return
             if self._pending_cmd in ("open", "close") and not self._motor_started.is_set():
                 # Provisional anchor: the motor starts shortly after the write.
                 # The direction echo re-anchors precisely if the gateway relays it.
@@ -455,6 +470,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._attr_is_closed = (self._attr_current_cover_position == 0)
         self._refresh_travel_attributes()
         self._publish_state()
+
+    def _abort_write(self, is_tilting: bool) -> None:
+        """Undo the local state of a direction command that never reached the bus."""
+        if is_tilting:
+            self._end_echo_window()
+            self._abort_tilt()
+        elif not self._advanced:
+            self._abort_motion()
 
     async def _await_motion_anchor(self, written) -> float:  # type: ignore
         """Wait for our frame to be written and for the motor-start echo.
@@ -932,6 +955,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._calibration_source = source
         self._calibrated_at = None
         self._copied_from = None
+        # The stored record (and any slat time set with the service) is gone too.
+        self._slat_time = _clamp_slat_time(cfg.get(CONF_SLAT_TIME))
+        if self._slat_tilt:
+            self._attr_extra_state_attributes["slat_time"] = self._slat_time
 
         self._refresh_travel_attributes()
         if self.hass is not None:
@@ -992,36 +1019,41 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     async def _async_move(self, direction: str, is_tilting: bool = False) -> asyncio.Future[Any] | None:
         """Queue a direction command and return its delivery future."""
         self._cancel_stop_task()
+        if self._is_tilting and not is_tilting:
+            # A curtain command ends a running slat pulse: settle its angle first.
+            self._apply_tilt_stop(time.monotonic())
         self._is_tilting = is_tilting
         if direction == "open":
             command = OWNAutomationCommand.raise_shutter(self._full_where)
         else:
             command = OWNAutomationCommand.lower_shutter(self._full_where)
-        if not self._advanced:
-            if not is_tilting:
-                self._start_position = self.current_cover_position if self.current_cover_position is not None else (0 if direction == "open" else 100)
-                # The clock starts when the frame is written (see _track_write),
-                # not now: with a busy queue the motor is still idle for a while.
-                self._move_start_time = None
-                self._run_started_at = None
-                self._motion_started_at = None  # the previous run's anchor is not this run's
-                self._refresh_travel_attributes()
-                self._attr_is_opening = direction == "open"
-                self._attr_is_closing = direction == "close"
-                self._attr_is_closed = False
-                self._begin_command(direction)
-            else:
-                self._attr_is_opening = direction == "open"
-                self._attr_is_closing = direction == "close"
+        if is_tilting:
+            # A slat pulse opens an echo window like any command (the gateway
+            # relays a stop status before the direction status, which must not
+            # end the pulse), but leaves the curtain's travel clock alone.
+            self._begin_command(direction)
+            self._attr_is_opening = direction == "open"
+            self._attr_is_closing = direction == "close"
+        elif not self._advanced:
+            self._start_position = self.current_cover_position if self.current_cover_position is not None else (0 if direction == "open" else 100)
+            # The clock starts when the frame is written (see _track_write),
+            # not now: with a busy queue the motor is still idle for a while.
+            self._move_start_time = None
+            self._run_started_at = None
+            self._motion_started_at = None  # the previous run's anchor is not this run's
+            self._refresh_travel_attributes()
+            self._attr_is_opening = direction == "open"
+            self._attr_is_closing = direction == "close"
+            self._attr_is_closed = False
+            self._begin_command(direction)
         written = await self._gateway_handler.send(command)
         if self._calibrating or self.calibration_hub.is_calibrating:
             _record_calibration_frame(self._gateway_handler, "tx", str(command), direction_action=direction, entity_id=self.entity_id)
-        if not self._advanced and not is_tilting:
+        if is_tilting or not self._advanced:
             self._track_write(written)
         if isinstance(written, asyncio.Future) and written.done():
             if written.cancelled():
-                if not self._advanced:
-                    self._abort_motion()
+                self._abort_write(is_tilting)
                 raise HomeAssistantError(
                     f"{self._display_name}: direction command delivery was cancelled before reaching the bus",
                     translation_domain=DOMAIN,
@@ -1029,8 +1061,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     translation_placeholders={"name": self._display_name},
                 )
             if (exc := written.exception()) is not None:
-                if not self._advanced:
-                    self._abort_motion()
+                self._abort_write(is_tilting)
                 raise HomeAssistantError(
                     f"{self._display_name}: direction command delivery failed: {exc}",
                     translation_domain=DOMAIN,
@@ -1114,6 +1145,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             # written (_track_write freezes it then); if delivery never
             # happens the next status frame will correct us.
             self._begin_command("stop")
+        generation = self._run_generation
         cmd = OWNAutomationCommand.stop_shutter(self._full_where)
         written = await self._gateway_handler.send(cmd)
         if self._calibrating or self.calibration_hub.is_calibrating:
@@ -1122,7 +1154,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._track_write(written)
             if not isinstance(written, asyncio.Future):
                 self._freeze_position(time.monotonic())  # type: ignore
-        elif was_tilting:
+        elif was_tilting and generation == self._run_generation:
+            # A pulse started while this stop was being queued is not ours to settle.
             self._apply_tilt_stop(at if at is not None else time.monotonic())
         if self.hass is not None:
             self.async_write_ha_state()
@@ -1170,11 +1203,22 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 translation_placeholders={"entity_id": str(self.entity_id)},
             )
         was_tilting = self._is_tilting
+        if not was_tilting and (self._attr_is_opening or self._attr_is_closing):
+            # The slats already turned with the curtain run, and a pulse would
+            # leave the curtain's travel estimate behind: stop the run first.
+            raise HomeAssistantError(
+                f"{self._display_name} is moving; stop it before tilting the slats",
+                translation_domain=DOMAIN,
+                translation_key="cover_busy_moving",
+                translation_placeholders={"name": self._display_name},
+            )
         curr_tilt = self._interpolated_tilt(time.monotonic()) if was_tilting else self.current_cover_tilt_position
         if curr_tilt is None:
             curr_tilt = 0 if self.is_closed else 50
         diff = target_tilt - curr_tilt
-        if diff == 0:
+        run_duration = abs(diff) / 100.0 * self._slat_time
+        if run_duration < MIN_TILT_PULSE:
+            # Nothing to do, or a pulse too short for the motor to answer.
             if was_tilting:
                 # Already there while the motor still runs: end the pulse here.
                 await self.async_stop_cover()
@@ -1182,10 +1226,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         # _async_move cancels the running auto-stop only once the new command is
         # on its way, so a failure cannot leave a running pulse without its stop.
 
-        fraction = abs(diff) / 100.0
-        run_duration = fraction * self._slat_time
-        inverted = getattr(self, "_inverted", False)
-        direction = ("close" if diff > 0 else "open") if inverted else ("open" if diff > 0 else "close")
+        direction = "open" if diff > 0 else "close"
         self._tilt_initial_position = curr_tilt
         self._tilt_target_position = target_tilt
         self._tilt_duration = run_duration
@@ -1199,11 +1240,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._tilt_direction = None
             raise
 
-        self._tilt_start_time = time.monotonic()
+        self._tilt_start_time = time.monotonic()  # provisional, until the motor start is known
         generation = self._run_generation
+        motor_started = self._motor_started
 
         async def _auto_stop_tilt() -> None:
             try:
+                write_ts: float | None = None
                 if isinstance(written, asyncio.Future):
                     try:
                         write_ts = await asyncio.wait_for(asyncio.shield(written), WRITE_TIMEOUT)
@@ -1225,11 +1268,25 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                             "%s Tilt pulse for %s was not delivered: %s", self._gateway_handler.log_id, self._full_where, failure
                         )
                         return
-                    if isinstance(write_ts, (int, float)):
-                        self._tilt_start_time = float(write_ts)
-                anchor = self._tilt_start_time or time.monotonic()
+                    write_ts = float(write_ts) if isinstance(write_ts, (int, float)) else None
+                # The motor starts well after the write (MOTOR_START_DELAY), and a
+                # pulse timed from the write would lose that much slat travel:
+                # time it from the direction status (_handle_echo), else from the
+                # write plus the measured delay.
+                deadline = (write_ts if write_ts is not None else time.monotonic()) + ECHO_WINDOW
+                wait = deadline - time.monotonic()
+                if wait > 0 and not motor_started.is_set():
+                    try:
+                        await asyncio.wait_for(motor_started.wait(), wait)
+                    except TimeoutError:
+                        pass
                 if generation != self._run_generation:
                     return
+                if not motor_started.is_set():
+                    self._tilt_start_time = (
+                        write_ts + MOTOR_START_DELAY if write_ts is not None else time.monotonic()
+                    )
+                anchor = self._tilt_start_time if self._tilt_start_time is not None else time.monotonic()
                 remaining = max(0.0, run_duration - (time.monotonic() - anchor))
                 if remaining > 0:
                     await asyncio.sleep(remaining)
@@ -1266,7 +1323,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         Returns True when the frame was an echo and needs no further handling.
         """
-        if self._advanced or not self._in_echo_window(now) or self._pending_cmd is None:
+        # Slat pulses rely on their auto-stop on every cover, advanced or not.
+        if (self._advanced and not self._is_tilting) or not self._in_echo_window(now) or self._pending_cmd is None:
             return False
         is_opening = bool(getattr(message, "is_opening", False))
         is_closing = bool(getattr(message, "is_closing", False))
@@ -1277,7 +1335,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             )
             if matches:
                 # The relayed direction status marks the real motor start.
-                self._anchor_run(now)
+                if self._is_tilting:
+                    self._tilt_start_time = now  # the pulse is timed from here
+                else:
+                    self._anchor_run(now)
                 self._motor_started.set()
                 self._end_echo_window()
                 LOGGER.debug("%s Motor start echo for %s; clock anchored.", self._gateway_handler.log_id, self._full_where)
@@ -1380,17 +1441,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 # A status report during a slat pulse (a poll reply, a DIM 10 level)
                 # must not cancel the auto-stop: the motor would run on.
                 self._cancel_stop_task()
+            previous_position = self._attr_current_cover_position
             self._attr_current_cover_position = position
             if not self._advanced:
                 self._start_position = position
             self._move_start_time = None
             self._attr_is_opening = False
             self._attr_is_closing = False
-            if self._slat_tilt:
-                if position == 0:
-                    self._attr_current_cover_tilt_position = 0
-                elif position == 100:
-                    self._attr_current_cover_tilt_position = 100
+            if self._slat_tilt and not self._is_tilting and position != previous_position and position in (0, 100):
+                # The curtain reached an end stop, so the slats turned all the way.
+                # A repeated report of the same level says nothing about the slats:
+                # they may have been tilted open on a lowered blind.
+                self._attr_current_cover_tilt_position = position
             if getattr(message, "is_closed", None) is not None:
                 self._attr_is_closed = message.is_closed
             else:
@@ -1453,8 +1515,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 run_started_at = self._run_started_at
                 if not self._advanced:
                     self._freeze_position(now)
-                if self._slat_tilt:
-                    # Physical Venetian actuators rotate slats in the first slat_time of travel
+                if self._slat_tilt and (was_opening or was_closing):
+                    # Physical Venetian actuators rotate slats in the first slat_time of
+                    # travel. Only a curtain run turns them: the relayed stop of our own
+                    # slat pulse arrives with nothing running and must not snap them.
                     run_duration = (now - run_started_at) if run_started_at is not None else (self._slat_time + 1.0)
                     if was_opening:
                         if run_duration >= self._slat_time:

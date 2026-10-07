@@ -275,10 +275,6 @@ class MyHomeDeviceSchema(Schema):
                 data[device][CONF_ENTITY_NAME] = None
             if "advanced_shutter" in data[device] and data[device]["advanced_shutter"]:
                 data[device][CONF_ADVANCED_SHUTTER] = True
-            if "slat_tilt" in data[device] and data[device]["slat_tilt"]:
-                data[device][CONF_SLAT_TILT] = True
-            if "slat_time" in data[device]:
-                data[device][CONF_SLAT_TIME] = float(data[device]["slat_time"])
             if "device_class" in data[device] and CONF_DEVICE_CLASS not in data[device]:
                 data[device][CONF_DEVICE_CLASS] = data[device]["device_class"]
             if CONF_DEVICE_CLASS not in data[device]:
@@ -410,11 +406,7 @@ cover_schema = MyHomeDeviceSchema(
             Optional(CONF_ADVANCED_SHUTTER, default=False): Boolean(),
             Optional("advanced_shutter", default=False): Boolean(),
             Optional(CONF_SLAT_TILT, default=False): Boolean(),
-            Optional("slat_tilt", default=False): Boolean(),
             Optional(CONF_SLAT_TIME, default=DEFAULT_SLAT_TIME): All(
-                Coerce(float), Range(min=MIN_SLAT_TIME, max=MAX_SLAT_TIME)
-            ),
-            Optional("slat_time", default=DEFAULT_SLAT_TIME): All(
                 Coerce(float), Range(min=MIN_SLAT_TIME, max=MAX_SLAT_TIME)
             ),
             Optional(CONF_TRAVEL_TIME, default=25): Coerce(int),

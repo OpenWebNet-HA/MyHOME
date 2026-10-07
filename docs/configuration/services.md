@@ -204,7 +204,7 @@ Stores the physical travel times of a timed cover **by hand** — the manual alt
 | `travel_time` | float | No* | Seconds for a full travel, both directions. | `24.5` |
 | `travel_time_down` | float | No* | Seconds for a full closing run. | `24.5` |
 | `travel_time_up` | float | No* | Seconds for a full opening run. | `26.0` |
-| `slat_time` | float | No* | Seconds a Venetian blind (`slat_tilt: true`) needs for a full slat rotation, 0.5-10 s. Stored on its own it does not touch the stored travel times, and it also works on covers that report their position. | `2.0` |
+| `slat_time` | float | No* | Seconds a Venetian blind (`slat_tilt: true`) needs for a full slat rotation, 0.5-10 s. Stored on its own it does not touch the stored travel times, and it also works on covers that report their position. It survives restarts, also for covers declared in `myhome.yaml` (where it wins over the yaml `slat_time`); `reset_cover_travel_time` returns it to the yaml value or the 2 s default. | `2.0` |
 | `copied_from` | entity id | No | The cover the times were taken from; `calibration_source` becomes `copied` and `copied_from` is exposed as an attribute. | `cover.living_room_west` |
 
 \* at least one of the time fields is required.
