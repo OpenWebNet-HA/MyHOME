@@ -223,7 +223,7 @@ data:
 
 ## 10. `myhome.reset_cover_travel_time`
 
-Forgets the measured or manually set travel times of a timed cover. The cover returns to the `travel_time` from `myhome.yaml` when one is configured, otherwise to the 25 s default, and `calibration_source` reports `yaml` / `default` again.
+Forgets the measured or manually set travel times of a timed cover. The cover returns to the `travel_time` from `myhome.yaml` when one is configured, otherwise to the 25 s default, and `calibration_source` reports `yaml` / `default` again. A stored `slat_time` returns to the yaml value or the 2 s default as well. On a position-reporting Venetian blind (`advanced_shutter` and `slat_tilt`) the service only resets the `slat_time`; other position-reporting covers refuse it.
 
 ### Fields
 | Parameter | Type | Required | Description | Example |

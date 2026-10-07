@@ -474,7 +474,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     def _abort_write(self, is_tilting: bool) -> None:
         """Undo the local state of a direction command that never reached the bus."""
         if is_tilting:
-            self._end_echo_window()
             self._abort_tilt()
         elif not self._advanced:
             self._abort_motion()
@@ -923,7 +922,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def async_reset_travel_time(self) -> None:
         """Reset travel times back to default or YAML configuration."""
-        if self._advanced:
+        if self._advanced and not self._slat_tilt:
             raise HomeAssistantError(
                 f"{self._display_name} reports its position; calibration is not applicable",
                 translation_domain=DOMAIN,
@@ -942,6 +941,17 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 hass.config_entries.async_update_entry(entry, options=options)
 
         cfg = self._device_config() or {}
+        if self._advanced:
+            # A position-reporting blind has no travel times, only the slat time
+            # myhome.set_cover_travel_time may have stored.
+            self._slat_time = _clamp_slat_time(cfg.get(CONF_SLAT_TIME))
+            self._attr_extra_state_attributes["slat_time"] = self._slat_time
+            if self.hass is not None:
+                self.async_write_ha_state()
+            LOGGER.info(
+                "%s Cover %s slat time reset to %.1f s.", self._gateway_handler.log_id, self._full_where, self._slat_time
+            )
+            return
         if CONF_TRAVEL_TIME in cfg:
             base_travel = float(cfg[CONF_TRAVEL_TIME])
             source = "yaml"
@@ -1019,9 +1029,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     async def _async_move(self, direction: str, is_tilting: bool = False) -> asyncio.Future[Any] | None:
         """Queue a direction command and return its delivery future."""
         self._cancel_stop_task()
-        if self._is_tilting and not is_tilting:
-            # A curtain command ends a running slat pulse: settle its angle first.
-            self._apply_tilt_stop(time.monotonic())
+        if not is_tilting:
+            self._end_pulse_for_takeover()
         self._is_tilting = is_tilting
         if direction == "open":
             command = OWNAutomationCommand.raise_shutter(self._full_where)
@@ -1078,6 +1087,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             return
         target_position = kwargs[ATTR_POSITION]
         if self._advanced:
+            # The level command takes the motor over: a running slat pulse must
+            # not stop it with its own auto-stop.
+            self._cancel_stop_task()
+            self._end_pulse_for_takeover()
             if target_position <= 0:
                 await self._gateway_handler.send(
                     OWNAutomationCommand.lower_shutter(self._full_where)
@@ -1098,11 +1111,16 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 translation_placeholders={"entity_id": str(self.entity_id)},
             )
 
-        self._cancel_stop_task()
         curr_pos = self.current_cover_position if self.current_cover_position is not None else 50
         diff = target_position - curr_pos
         if diff == 0:
+            if self._is_tilting or self._attr_is_opening or self._attr_is_closing:
+                # Already there while the motor runs (a slat pulse, or a run passing
+                # this level): stop it here. Only cancelling the running auto-stop
+                # would leave the motor running.
+                await self.async_stop_cover()
             return
+        self._cancel_stop_task()
 
         travel_fraction = abs(diff) / 100.0
         run_duration = travel_fraction * self._travel_for(diff > 0)
@@ -1146,6 +1164,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             # happens the next status frame will correct us.
             self._begin_command("stop")
         generation = self._run_generation
+        queued_at = time.monotonic()
         cmd = OWNAutomationCommand.stop_shutter(self._full_where)
         written = await self._gateway_handler.send(cmd)
         if self._calibrating or self.calibration_hub.is_calibrating:
@@ -1156,22 +1175,55 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._freeze_position(time.monotonic())  # type: ignore
         elif was_tilting and generation == self._run_generation:
             # A pulse started while this stop was being queued is not ours to settle.
-            self._apply_tilt_stop(at if at is not None else time.monotonic())
+            self._settle_pulse_on_write(written, generation, max(at, queued_at) if at is not None else queued_at)
         if self.hass is not None:
             self.async_write_ha_state()
 
+    def _settle_pulse_on_write(self, written: Any, generation: int, not_before: float) -> None:
+        """Settle the slat angle when the stop frame reaches the bus.
+
+        The send queue is FIFO: behind other frames (a scope fan-out, a busy
+        gateway) the stop is written late and the motor turns the slats until
+        then, so the scheduled stop time would understate the angle.
+        """
+
+        def _settle(fut: asyncio.Future[Any] | None = None) -> None:
+            if generation != self._run_generation or not self._is_tilting:
+                return  # a newer command, or a stop status, already ended the pulse
+            stopped_at: float | None = None
+            if fut is not None and not fut.cancelled() and fut.exception() is None:
+                result = fut.result()
+                stopped_at = float(result) if isinstance(result, (int, float)) else None
+            elif fut is not None:
+                LOGGER.error(
+                    "%s Stop for the slat pulse of %s was not delivered; the motor may still run.",
+                    self._gateway_handler.log_id, self._full_where,
+                )
+            # The stop cannot leave before it was queued (nor the auto-stop before it was due).
+            stopped_at = max(stopped_at if stopped_at is not None else time.monotonic(), not_before)
+            self._apply_tilt_stop(stopped_at)
+            self._publish_state()
+
+        if isinstance(written, asyncio.Future) and not written.done():
+            written.add_done_callback(_settle)
+        else:
+            _settle(written if isinstance(written, asyncio.Future) else None)
+
     def _interpolated_tilt(self, at: float) -> int | None:
-        """The tilt angle ``at`` a moment of the running pulse (the last known angle if none runs)."""
-        if self._tilt_start_time is None or self._tilt_duration <= 0:
+        """The tilt angle ``at`` a moment of the running pulse (the last known angle if none runs).
+
+        The slats turn at a full rotation per ``slat_time`` for as long as the
+        motor runs: past the target too, when the stop reaches the bus late.
+        """
+        if self._tilt_start_time is None or self._slat_time <= 0:
             return self.current_cover_tilt_position
-        fraction = min(1.0, max(0.0, at - self._tilt_start_time) / self._tilt_duration)
-        interpolated = int(round(
-            self._tilt_initial_position + (self._tilt_target_position - self._tilt_initial_position) * fraction
-        ))
-        return max(0, min(100, interpolated))
+        turned = max(0.0, at - self._tilt_start_time) / self._slat_time * 100.0
+        step = 1 if self._tilt_target_position >= self._tilt_initial_position else -1
+        return max(0, min(100, int(round(self._tilt_initial_position + step * turned))))
 
     def _abort_tilt(self) -> None:
         """Forget a tilt pulse that never reached the bus; the tilt angle stays as it was."""
+        self._end_echo_window()
         self._is_tilting = False
         self._tilt_start_time = None
         self._tilt_direction = None
@@ -1182,13 +1234,21 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     def _apply_tilt_stop(self, at: float | None = None) -> None:
         """Interpolate and finalize tilt position when tilting stops."""
-        if self._tilt_start_time is not None and self._tilt_duration > 0:
+        if self._tilt_start_time is not None:
             self._attr_current_cover_tilt_position = self._interpolated_tilt(at if at is not None else time.monotonic())
+        # The pulse is over: a direction frame from now on is a keypad press, not its echo.
+        self._end_echo_window()
         self._is_tilting = False
         self._tilt_start_time = None
         self._tilt_direction = None
         self._attr_is_opening = False
         self._attr_is_closing = False
+
+    def _end_pulse_for_takeover(self) -> None:
+        """A curtain or level command takes the motor over from a running slat pulse."""
+        if self._is_tilting:
+            self._run_generation += 1  # the pulse's queued stop must not settle anything now
+            self._apply_tilt_stop(time.monotonic())
 
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
         """Move the cover tilt to a specific position."""
@@ -1240,7 +1300,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._tilt_direction = None
             raise
 
-        self._tilt_start_time = time.monotonic()  # provisional, until the motor start is known
+        # _tilt_start_time stays None (no slat travel counted) until the frame is
+        # written: on a busy queue the motor is still idle for a while.
         generation = self._run_generation
         motor_started = self._motor_started
 
@@ -1269,23 +1330,27 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                         )
                         return
                     write_ts = float(write_ts) if isinstance(write_ts, (int, float)) else None
-                # The motor starts well after the write (MOTOR_START_DELAY), and a
-                # pulse timed from the write would lose that much slat travel:
-                # time it from the direction status (_handle_echo), else from the
-                # write plus the measured delay.
-                deadline = (write_ts if write_ts is not None else time.monotonic()) + ECHO_WINDOW
-                wait = deadline - time.monotonic()
-                if wait > 0 and not motor_started.is_set():
-                    try:
-                        await asyncio.wait_for(motor_started.wait(), wait)
-                    except TimeoutError:
-                        pass
                 if generation != self._run_generation:
                     return
-                if not motor_started.is_set():
+                # The motor starts well after the write (MOTOR_START_DELAY), and a
+                # pulse timed from the write would lose that much slat travel:
+                # time it from the direction status (_handle_echo sets the start),
+                # else from the write plus the measured delay. Wait for that status
+                # no longer than the stop is due without it, or a gateway that never
+                # relays it would stretch every short pulse to the echo window.
+                if self._tilt_start_time is None or not motor_started.is_set():
                     self._tilt_start_time = (
                         write_ts + MOTOR_START_DELAY if write_ts is not None else time.monotonic()
                     )
+                if not motor_started.is_set():
+                    wait = self._tilt_start_time + run_duration - time.monotonic()
+                    if wait > 0:
+                        try:
+                            await asyncio.wait_for(motor_started.wait(), wait)
+                        except TimeoutError:
+                            pass
+                if generation != self._run_generation:
+                    return
                 anchor = self._tilt_start_time if self._tilt_start_time is not None else time.monotonic()
                 remaining = max(0.0, run_duration - (time.monotonic() - anchor))
                 if remaining > 0:
