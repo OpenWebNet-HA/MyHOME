@@ -1,0 +1,201 @@
+{
+  "capture": {
+    "kind": "trace",
+    "started_at": "2026-10-01T07:50:30.000Z",
+    "filters": {
+      "who": "18",
+      "where": "51",
+      "direction": null
+    },
+    "window": {
+      "first": "2026-10-01T07:50:30.100Z",
+      "last": "2026-10-01T07:50:45.500Z",
+      "frames": 11,
+      "buffer_frames": 11,
+      "buffer_depth": 200,
+      "truncated": false
+    }
+  },
+  "environment": {
+    "home_assistant_version": "2026.9.3",
+    "integration_version": "2.0.0b13",
+    "ownd_version": "2.0.0b10",
+    "exported_at": "2026-10-01T07:51:00.000Z"
+  },
+  "gateway": {
+    "model": "MyHomeServer1",
+    "manufacturer": "BTicino S.p.A.",
+    "firmware": "2.87.13",
+    "mac_prefix": "00:03:50",
+    "connection_type": "tcp",
+    "queue_pacing": 0.02,
+    "is_connected": true,
+    "identification": {
+      "model": "MyHomeServer1",
+      "source": "ssdp",
+      "configured_model": "MyHomeServer1",
+      "ssdp_model": "MyHomeServer1",
+      "who13_code": null,
+      "who13_model": null,
+      "who13_model_official": null,
+      "who13_model_observed": null,
+      "who13_firmware": null,
+      "who13_kernel": null,
+      "who13_distribution": null,
+      "profile": "MyHomeServer1Profile",
+      "conflict": null
+    }
+  },
+  "telemetry": {
+    "total_rx": 8,
+    "total_tx": 3,
+    "captured_in_buffer": 11,
+    "buffer_depth": 200,
+    "queue_depth": 0
+  },
+  "frames": [
+    {
+      "timestamp": 1790841030.100000,
+      "iso_time": "2026-10-01T07:50:30.100000+00:00",
+      "direction": "tx",
+      "raw": "*#18*51*#1200#1*125##",
+      "who": "18",
+      "what": null,
+      "where": "51",
+      "description": "Start automatic instantaneous active power stream for 125 minutes",
+      "dimension": "1200",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790841030.125000,
+      "iso_time": "2026-10-01T07:50:30.125000+00:00",
+      "direction": "rx",
+      "raw": "*#*1##",
+      "who": null,
+      "what": null,
+      "where": null,
+      "description": "Gateway ACK",
+      "dimension": null,
+      "is_ack": true,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790841034.476277,
+      "iso_time": "2026-10-01T07:50:34.476277+00:00",
+      "direction": "rx",
+      "raw": "*#18*51*1200#1*125##",
+      "who": "18",
+      "what": null,
+      "where": "51",
+      "description": "Energy meter confirms 125-minute active power stream active",
+      "dimension": "1200",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790841036.878588,
+      "iso_time": "2026-10-01T07:50:36.878588+00:00",
+      "direction": "rx",
+      "raw": "*#18*51*113*377##",
+      "who": "18",
+      "what": null,
+      "where": "51",
+      "description": "Meter 51 reports 377 W instantaneous active power",
+      "dimension": "113",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790841038.883864,
+      "iso_time": "2026-10-01T07:50:38.883864+00:00",
+      "direction": "rx",
+      "raw": "*#18*51*113*424##",
+      "who": "18",
+      "what": null,
+      "where": "51",
+      "description": "Meter 51 reports 424 W instantaneous active power",
+      "dimension": "113",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790841040.873745,
+      "iso_time": "2026-10-01T07:50:40.873745+00:00",
+      "direction": "rx",
+      "raw": "*#18*51*113*500##",
+      "who": "18",
+      "what": null,
+      "where": "51",
+      "description": "Meter 51 reports 500 W instantaneous active power",
+      "dimension": "113",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790841042.100000,
+      "iso_time": "2026-10-01T07:50:42.100000+00:00",
+      "direction": "tx",
+      "raw": "*#18*51*#1200#1*0##",
+      "who": "18",
+      "what": null,
+      "where": "51",
+      "description": "Stop automatic instantaneous active power stream (time = 0)",
+      "dimension": "1200",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790841042.125000,
+      "iso_time": "2026-10-01T07:50:42.125000+00:00",
+      "direction": "rx",
+      "raw": "*#*1##",
+      "who": null,
+      "what": null,
+      "where": null,
+      "description": "Gateway ACK",
+      "dimension": null,
+      "is_ack": true,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790841042.300000,
+      "iso_time": "2026-10-01T07:50:42.300000+00:00",
+      "direction": "rx",
+      "raw": "*#18*51*1200#1*0##",
+      "who": "18",
+      "what": null,
+      "where": "51",
+      "description": "Energy meter confirms active power stream stopped (interval 0)",
+      "dimension": "1200",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790841045.000000,
+      "iso_time": "2026-10-01T07:50:45.000000+00:00",
+      "direction": "tx",
+      "raw": "*#18*51*113##",
+      "who": "18",
+      "what": null,
+      "where": "51",
+      "description": "Query instantaneous active power on demand",
+      "dimension": "113",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790841045.150000,
+      "iso_time": "2026-10-01T07:50:45.150000+00:00",
+      "direction": "rx",
+      "raw": "*#18*51*113*390##",
+      "who": "18",
+      "what": null,
+      "where": "51",
+      "description": "Meter 51 reports 390 W active power in response to query",
+      "dimension": "113",
+      "is_ack": false,
+      "is_nack": false
+    }
+  ]
+}

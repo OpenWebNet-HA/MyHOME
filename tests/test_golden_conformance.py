@@ -15,6 +15,7 @@ try:
         OWNAutomationCommand,
         OWNCenCommand,
         OWNCenPlusCommand,
+        OWNEnergyCommand,
         OWNHeatingCommand,
         OWNLightingCommand,
         OWNMessage,
@@ -32,6 +33,7 @@ except ImportError:
     OWNAlarmCommand = None  # type: ignore[assignment]
     OWNCenCommand = None  # type: ignore[assignment]
     OWNCenPlusCommand = None  # type: ignore[assignment]
+    OWNEnergyCommand = None  # type: ignore[assignment]
     OWNSoundCommand = None  # type: ignore[assignment]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -185,6 +187,7 @@ def test_golden_frame_builder_parity(fixture: Dict[str, Any]):
         "OWNAutomationCommand": OWNAutomationCommand,
         "OWNCenCommand": OWNCenCommand,
         "OWNCenPlusCommand": OWNCenPlusCommand,
+        "OWNEnergyCommand": OWNEnergyCommand,
         "OWNHeatingCommand": OWNHeatingCommand,
         "OWNSoundCommand": OWNSoundCommand,
     }

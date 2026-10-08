@@ -572,3 +572,44 @@ Authentic on-wire bus trace recorded on a physical **BTicino MH200** (firmware 2
 5. **WHO 13 & WHO 1013 (Gateway Identity)**:
    - Model code 4 (MH200), Firmware 2.1.0 (`*#13**16*2*1*0##`), and Object Model 4 (`*#1013**1*4##`).
 
+---
+
+# #466 BTicino MyHomeServer1 & F520 WHO 18 Dimension 1200 Energy Streaming Lifecycle
+
+Authentic on-wire bus trace recorded on a physical **BTicino MyHomeServer1** (firmware 2.87.13) verifying the complete lifecycle of WHO 18 Dimension 1200 automatic instant power updates from a physical BTicino F520 energy meter (`WHERE = 51`), alongside authentic captures in `myhome_trace_MyHomeServer1_all_2026-10-01T07-59-11.json` across meters 51, 52, and 53.
+
+## Hardware Profile
+
+- **Gateway**: BTicino MyHomeServer1
+- **Firmware**: 2.87.13
+- **Energy Meter**: BTicino F520 (3-circuit single-phase electricity meter / load controller)
+- **Addresses**: `WHERE = 51`, `52`, `53`
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_trace_energy_dimension1200_stream.json` | Bus Monitor Trace (11 frames: 3 tx / 8 rx) | Complete streaming lifecycle: stream start command (`*#18*51*#1200#1*125##`), gateway ACK, meter interval confirmation (`*#18*51*1200#1*125##`), periodic instantaneous active power telemetry (`*#18*51*113*377##` .. `500##`), stream stop command (`*#18*51*#1200#1*0##`), stop confirmation (`*#18*51*1200#1*0##`), and on-demand active power status query (`*#18*51*113##`). |
+| `myhome_trace_MyHomeServer1_all_2026-10-01T07-59-11.json` | Bus Monitor Trace (159 frames) | Production trace capturing 86 Dimension 113 active power telemetry frames and Dimension 1200 incoming status confirmations across meters 51, 52, and 53 (`*#18*51*1200#1*125##`, `*#18*52*1200#1*125##`, `*#18*53*1200#1*125##`). |
+
+## Protocol Conformance & Subsystems Verified (WHO 18 Dimension 1200)
+
+1. **Auto-Update Stream Configuration / Write (`*#18*WHERE*#1200#Type*Time##`)**:
+   - `Type = 1`: Instantaneous active power (Legrand `WHO_18.pdf` section 3.2.1).
+   - `Time = 1..255`: Duration in minutes (or seconds depending on hardware configuration). Value `0` cancels and stops the stream immediately.
+   - Gateway returns `*#*1##` (ACK).
+
+2. **Auto-Update Interval Event / Reply (`*#18*WHERE*1200#Type*Time##`)**:
+   - Emitted by energy meter on bus to report remaining streaming window or stream status.
+   - `*#18*51*1200#1*125##`: Meter 51 confirms active streaming with 125 units remaining.
+   - `*#18*51*1200#1*0##`: Meter 51 reports stream is stopped (interval 0).
+
+3. **Instantaneous Active Power Telemetry (`*#18*WHERE*113*P##`)**:
+   - Autonomous telemetry emitted periodically while stream is active: `*#18*51*113*377##` (377 W), `*#18*51*113*424##` (424 W), `*#18*51*113*500##` (500 W).
+
+4. **Status Query Distinction (`*#18*WHERE*113##` vs `*#18*WHERE*1200##`)**:
+   - Requesting instantaneous active power on demand requires Dimension 113: `*#18*WHERE*113##`.
+   - Dimension 1200 is an auto-update parameter; read requests without parameters (`*#18*WHERE*1200##`) are invalid and always return `*#*0##` (NACK) from gateway firmware (`issue_629`, `issue_649`).
+
+

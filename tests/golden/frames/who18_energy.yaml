@@ -148,4 +148,66 @@
   mcp_notes: "Energy Management: Request cumulative energy totalizer from actuator channel 71#0 (MH200 live test verification, issue #494)"
   roundtrip: true
 
+# Physical MyHomeServer1 & F520 Dimension 1200 stream lifecycle (Issue #466, Issue #494, Issue #649)
+- id: energy.cmd.start_stream.meter51.255
+  frame: "*#18*51*#1200#1*255##"
+  direction: dimension_write
+  who: 18
+  what: null
+  where: "51"
+  dimension: 1200
+  dimension_values: ["255"]
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Energy Management: Start 255-minute instantaneous active power auto-update stream on meter 51"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: start_sending_instant_power
+    args: ["51", 255]
+
+- id: energy.resp.auto_update_interval.meter51.125
+  frame: "*#18*51*1200#1*125##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "51"
+  dimension: 1200
+  dimension_values: ["125"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Meter 51 reports 125-minute active power auto-update interval remaining (issue #466 capture)"
+  roundtrip: true
+
+- id: energy.cmd.stop_stream.meter51
+  frame: "*#18*51*#1200#1*0##"
+  direction: dimension_write
+  who: 18
+  what: null
+  where: "51"
+  dimension: 1200
+  dimension_values: ["0"]
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Energy Management: Stop instantaneous active power auto-update stream on meter 51"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: start_sending_instant_power
+    args: ["51", 0]
+
+- id: energy.resp.auto_update_interval.meter51.0
+  frame: "*#18*51*1200#1*0##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "51"
+  dimension: 1200
+  dimension_values: ["0"]
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Energy Management: Meter 51 reports instantaneous active power auto-update stopped (interval 0)"
+  roundtrip: true
+
+
 
