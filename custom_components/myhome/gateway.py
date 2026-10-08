@@ -5,7 +5,7 @@ import asyncio
 import collections
 import logging
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -1267,6 +1267,25 @@ class MyHOMEGatewayHandler:
         )
         self._evaluate_failover()
         return standby
+
+    def async_queue_calibration(
+        self,
+        message: OWNCommand,
+        guard: Callable[[], bool],
+        command_lock: asyncio.Lock,
+    ) -> asyncio.Future[float]:
+        """Queue a calibration command with a guard checked at write time."""
+        written: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+        self.send_buffer.put_nowait(
+            {
+                "message": message,
+                "is_status_request": False,
+                "guard": guard,
+                "command_lock": command_lock,
+                "written": written,
+            }
+        )
+        return written
 
     async def send(self, message: OWNCommand) -> asyncio.Future[float]:
         """Queue a command; the returned future resolves to the monotonic write time."""

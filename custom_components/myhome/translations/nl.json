@@ -161,6 +161,20 @@
           "ignored_addresses": "Negeer vermelde adressen permanent (bijv. 1/74, 1/74#4#01): slaat detectie, entiteiten en storingsregistratie over. Scheid meerdere vermeldingen met nieuwe regels of komma's.",
           "command_worker_count": "Aanbevolen voor de {model}: {session_default}. Hij accepteert maximaal {session_limit} commandosessie(s), en elke sessie gebruikt samen met de eventsessie een van de weinige verbindingen, die ook de Legrand/BTicino-app en andere clients nodig hebben. Verhoog alleen als commando's in de wachtrij komen."
         }
+      },
+      "init": {
+        "title": "MyHOME",
+        "menu_options": {
+          "panel": "MyHOME-paneel",
+          "user": "Gatewayinstellingen"
+        }
+      },
+      "panel": {
+        "title": "MyHOME-paneel",
+        "description": "[Open het MyHOME-paneel]({panel_url}) voor deze gateway.\n\nDe zichtbaarheid in de zijbalk geldt voor alle gateways en beheerders. Het paneel blijft via deze link bereikbaar wanneer de snelkoppeling verborgen is.",
+        "data": {
+          "show_sidebar": "MyHOME in de zijbalk tonen"
+        }
       }
     },
     "error": {
@@ -181,6 +195,7 @@
       "secondary_requires_shared_topology": "Voor secundaire en warm-stand-by rollen moet de bustopologie zijn ingesteld op Gedeeld.",
       "multiple_shared_primaries": "Er is al een andere gateway ingesteld als primaire gateway voor deze gedeelde bus. Selecteer Secundair of Warm-stand-by.",
       "duplicate_decoder_source": "Elke decoder moet aangesloten zijn op een andere matrix broningang.",
+      "panel_save_failed": "De voorkeur kon niet worden opgeslagen. Probeer het opnieuw.",
       "invalid_ignored_address": "Ongeldig formaat voor genegeerd adres (verwacht 'WHO/WHERE', bijv. '1/74' of '1/74#4#01')"
     }
   },

@@ -152,6 +152,9 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
                 hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_ha_started)
             domain_data["_lovelace_listener_registered"] = True
 
+    from .panel import async_setup_panel
+    await async_setup_panel(hass, versioned_url)
+
 
 async def _async_resolve_ownd_version(hass: HomeAssistant) -> str:
     """Resolve the installed OWNd version once, off the event loop, and cache it."""
@@ -365,6 +368,12 @@ async def async_remove_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> N
         if domain == DOMAIN and (issue_id.endswith(f"_{entry.entry_id}") or f"_{entry.entry_id}_" in issue_id):
             ir.async_delete_issue(hass, DOMAIN, issue_id)
     async_check_primary_links(hass, removed=entry.entry_id)
+
+    from .cover_profiles import remove_entry
+    from .panel import async_remove_panel_if_last_entry
+
+    async_remove_panel_if_last_entry(hass, entry)
+    await remove_entry(hass, entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bool:

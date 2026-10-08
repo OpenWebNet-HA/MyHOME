@@ -15,6 +15,16 @@ from custom_components.myhome.config_flow import (
 from custom_components.myhome.const import DOMAIN
 
 
+async def _open_gateway_options(hass: HomeAssistant, entry_id: str):
+    """Follow the panel/user menu to the gateway settings form."""
+    menu = await hass.config_entries.options.async_init(entry_id)
+    assert menu["type"] == FlowResultType.MENU
+    assert menu["menu_options"] == ["panel", "user"]
+    return await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": "user"}
+    )
+
+
 async def test_form(hass: HomeAssistant) -> None:
     """Test the full config flow: user -> custom (auto-discover) -> test_connection creates an entry."""
     mock_discovered = {
@@ -310,6 +320,10 @@ async def test_options_flow(
     with patch("custom_components.myhome.config_flow.find_gateways"):
         # Initialize option flow
         result = await hass.config_entries.options.async_init(entry.entry_id)
+        assert result["type"] == FlowResultType.MENU
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "user"}
+        )
 
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "user"
@@ -762,7 +776,9 @@ async def test_options_flow_existing_decoders_and_handler_lookup(hass: HomeAssis
     # 1. Options flow with config_entry passed
     opt_flow = MyhomeOptionsFlowHandler(entry)
     opt_flow.hass = hass
-    form = await opt_flow.async_step_init()
+    menu = await opt_flow.async_step_init()
+    assert menu["type"] == FlowResultType.MENU
+    form = await opt_flow.async_step_user()
     assert form["type"] == FlowResultType.FORM
     assert form["step_id"] == "user"
 
@@ -968,8 +984,21 @@ async def test_options_flow_update_gateway_model(hass: HomeAssistant) -> None:
     )
     entry.add_to_hass(hass)
 
+    from custom_components.myhome.config_flow import MyhomeOptionsFlowHandler
+
+    opt_flow = MyhomeOptionsFlowHandler(entry)
+    opt_flow.hass = hass
+    menu = await opt_flow.async_step_init()
+    assert menu["type"] == FlowResultType.MENU
+    assert menu["menu_options"] == ["panel", "user"]
+    form = await opt_flow.async_step_user()
+    assert form["type"] == FlowResultType.FORM
+    assert form["step_id"] == "user"
+
     with patch.object(hass.config_entries, "async_reload", return_value=True) as mock_reload:
         form = await hass.config_entries.options.async_init(entry.entry_id)
+        assert form["type"] == FlowResultType.MENU
+        form = await hass.config_entries.options.async_configure(form["flow_id"], {"next_step_id": "user"})
         assert form["type"] == FlowResultType.FORM
         res = await hass.config_entries.options.async_configure(
             form["flow_id"],
@@ -1039,7 +1068,7 @@ async def test_options_flow_model_selection_survives_reload_and_next_who13(
     assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is not None
 
     with patch.object(hass.config_entries, "async_reload", return_value=True) as mock_reload:
-        form = await hass.config_entries.options.async_init(entry.entry_id)
+        form = await _open_gateway_options(hass, entry.entry_id)
         assert form["type"] == FlowResultType.FORM
         res = await hass.config_entries.options.async_configure(
             form["flow_id"],
@@ -1338,7 +1367,7 @@ async def test_options_flow_source_names_and_environment_defaults(hass: HomeAssi
 
     assert flow._audio_environments() == ["2", "3"]
 
-    form = await flow.async_step_init()
+    form = await flow.async_step_user()
     assert form["type"] == FlowResultType.FORM
     keys = {str(k) for k in form["data_schema"].schema}
     assert CONF_SOURCE_NAME.format(2) in keys
@@ -1388,7 +1417,9 @@ async def test_options_flow_auto_join_streaming_toggle(hass: HomeAssistant) -> N
     flow = MyhomeOptionsFlowHandler(entry)
     flow.hass = hass
 
-    form = await flow.async_step_init()
+    menu = await flow.async_step_init()
+    assert menu["type"] == FlowResultType.MENU
+    form = await flow.async_step_user()
     assert form["type"] == FlowResultType.FORM
     assert flow.options[CONF_AUTO_JOIN_STREAMING] is DEFAULT_AUTO_JOIN_STREAMING
 
@@ -1413,7 +1444,9 @@ async def test_options_flow_auto_join_streaming_toggle(hass: HomeAssistant) -> N
 
     flow2 = MyhomeOptionsFlowHandler(entry)
     flow2.hass = hass
-    form2 = await flow2.async_step_init()
+    menu2 = await flow2.async_step_init()
+    assert menu2["type"] == FlowResultType.MENU
+    form2 = await flow2.async_step_user()
     schema_keys2 = {str(k): k for k in form2["data_schema"].schema}
     field2 = schema_keys2[CONF_AUTO_JOIN_STREAMING]
     assert field2.description["suggested_value"] is False
@@ -1475,7 +1508,7 @@ async def test_options_flow_options_only_reloads_entry(hass: HomeAssistant) -> N
     entry.add_to_hass(hass)
 
     with patch.object(hass.config_entries, "async_reload", return_value=True) as mock_reload:
-        form = await hass.config_entries.options.async_init(entry.entry_id)
+        form = await _open_gateway_options(hass, entry.entry_id)
         assert form["type"] == FlowResultType.FORM
         result = await hass.config_entries.options.async_configure(
             form["flow_id"],
@@ -1564,7 +1597,7 @@ async def test_options_flow_data_only_reloads_entry(hass: HomeAssistant) -> None
 
     # Update only data (host IP) with identical options
     with patch.object(hass.config_entries, "async_reload", return_value=True) as mock_reload:
-        form = await hass.config_entries.options.async_init(entry.entry_id)
+        form = await _open_gateway_options(hass, entry.entry_id)
         assert form["type"] == FlowResultType.FORM
         result = await hass.config_entries.options.async_configure(
             form["flow_id"],
@@ -1621,7 +1654,7 @@ async def test_options_flow_data_and_options_combined_reloads_entry(hass: HomeAs
     entry.add_to_hass(hass)
 
     with patch.object(hass.config_entries, "async_reload", return_value=True) as mock_reload:
-        form = await hass.config_entries.options.async_init(entry.entry_id)
+        form = await _open_gateway_options(hass, entry.entry_id)
         assert form["type"] == FlowResultType.FORM
         result = await hass.config_entries.options.async_configure(
             form["flow_id"],
@@ -1770,7 +1803,7 @@ async def test_config_flow_delegated_whos_validation(hass: HomeAssistant) -> Non
     with patch(
         "custom_components.myhome.config_flow.MyHOMEGatewayHandler", return_value=AsyncMock()
     ):
-        result = await hass.config_entries.options.async_init(sec2.entry_id)
+        result = await _open_gateway_options(hass, sec2.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"],
             user_input={
@@ -1858,7 +1891,7 @@ async def test_config_flow_multiple_standbys(hass: HomeAssistant) -> None:
     with patch(
         "custom_components.myhome.config_flow.MyHOMEGatewayHandler", return_value=AsyncMock()
     ):
-        result = await hass.config_entries.options.async_init(stb2.entry_id)
+        result = await _open_gateway_options(hass, stb2.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"],
             user_input={
@@ -1927,7 +1960,7 @@ async def test_config_flow_who_not_supported(hass: HomeAssistant) -> None:
     ):
         mock_profile = type("MockProfile", (), {"supports_who": lambda self, w: False})()
         mock_get_profile.return_value = mock_profile
-        result = await hass.config_entries.options.async_init(sec.entry_id)
+        result = await _open_gateway_options(hass, sec.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"],
             user_input={
@@ -1969,7 +2002,7 @@ async def test_config_flow_unknown_model(hass: HomeAssistant) -> None:
     with patch(
         "custom_components.myhome.config_flow.MyHOMEGatewayHandler", return_value=AsyncMock()
     ):
-        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await _open_gateway_options(hass, entry.entry_id)
         assert result["type"] == FlowResultType.FORM
 
 
@@ -2025,7 +2058,7 @@ async def test_options_flow_update_delegated_whos_self_skip(hass: HomeAssistant)
     with patch(
         "custom_components.myhome.config_flow.MyHOMEGatewayHandler", return_value=AsyncMock()
     ):
-        result = await hass.config_entries.options.async_init(sec.entry_id)
+        result = await _open_gateway_options(hass, sec.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"],
             user_input={
@@ -2455,7 +2488,7 @@ async def test_options_flow_ignored_addresses(hass: HomeAssistant) -> None:
     entry.add_to_hass(hass)
 
     with patch("custom_components.myhome.config_flow.find_gateways"):
-        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await _open_gateway_options(hass, entry.entry_id)
 
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "user"
@@ -2493,9 +2526,8 @@ async def test_options_flow_ignored_addresses(hass: HomeAssistant) -> None:
 
     # Re-open options flow: verify suggested_value is pre-populated
     with patch("custom_components.myhome.config_flow.find_gateways"):
-        result_reopen = await hass.config_entries.options.async_init(entry.entry_id)
+        result_reopen = await _open_gateway_options(hass, entry.entry_id)
 
     schema = result_reopen["data_schema"].schema
     ignored_key = [k for k in schema if str(k) == CONF_IGNORED_ADDRESSES or getattr(k, "schema", None) == CONF_IGNORED_ADDRESSES][0]
     assert ignored_key.description["suggested_value"] == "1/74\n1/74#4#01"
-

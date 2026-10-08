@@ -377,6 +377,7 @@ async def test_role_change_reloads_once_the_options_are_saved(hass: HomeAssistan
         await _set_up(hass, SB, "192.168.0.36", {})
         with patch.object(hass.config_entries, "async_reload", return_value=True) as reload:
             form = await hass.config_entries.options.async_init(entry.entry_id)
+            form = await hass.config_entries.options.async_configure(form["flow_id"], {"next_step_id": "user"})
             assert form["type"] == FlowResultType.FORM
             result = await hass.config_entries.options.async_configure(
                 form["flow_id"],

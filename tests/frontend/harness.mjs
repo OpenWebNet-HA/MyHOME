@@ -10,13 +10,17 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
+import { busText, busLanguage } from "../../custom_components/myhome/frontend/panel/panel-bus-translations.js";
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const CARD_PATH = path.resolve(here, "../../custom_components/myhome/frontend/myhome-bus-card.js");
 
 function makeElement(id) {
   const classes = new Set();
-  return {
+  const element = {
     id,
+    dataset: {},
+    setAttribute(name, value) {this[name] = value;},
     innerHTML: "",
     textContent: "",
     className: "",
@@ -42,6 +46,8 @@ function makeElement(id) {
     focus() {},
     click() {},
   };
+  Object.defineProperty(element, "textContent", {get() {return this.innerHTML;}, set(value) {this.innerHTML = String(value);}});
+  return element;
 }
 
 /**
@@ -98,7 +104,11 @@ export function loadCard() {
   const realConsole = globalThis.console;
   globalThis.console = { ...realConsole, ...silence };
   try {
-    new Function(readFileSync(CARD_PATH, "utf8"))();
+    const shared = readFileSync(path.join(path.dirname(CARD_PATH), "panel/panel-bus-monitor-view.js"), "utf8")
+      .replace(/const textsUrl[\s\S]*?await import\(textsUrl.href\);/, "")
+      .replace("export class BusMonitorView", "class BusMonitorView");
+    const adapter = readFileSync(CARD_PATH, "utf8").replace(/^import .*;$/m, "");
+    new Function("busText", "busLanguage", shared + "\n" + adapter)(busText, busLanguage);
   } finally {
     globalThis.console = realConsole;
   }

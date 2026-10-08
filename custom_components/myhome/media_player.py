@@ -838,7 +838,11 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
 
     async def async_update(self) -> None:
         """Request a status update from the gateway."""
-        await self._gateway_handler.send_status_request(OWNSoundCommand.status(self._where))
+        # WHO=16 zone state uses the extended *5 status request. The library's
+        # generic status() omits it, so ask explicitly for this zone's state.
+        command = OWNSoundCommand.parse(f"*#16*{self._where}*5##")
+        if command is not None:
+            await self._gateway_handler.send_status_request(command)
 
     def _stamp_wake_echo_when_written(self, written: Any) -> None:
         """Start the echo window when the OFF is written, not when it is queued.

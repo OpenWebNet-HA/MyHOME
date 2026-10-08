@@ -170,6 +170,20 @@
           "ignored_addresses": "Permanently ignore listed addresses (e.g. 1/74, 1/74#4#01): skips discovery, entities and fault tracking. Separate multiple entries with newlines or commas.",
           "command_worker_count": "Recommended for the {model}: {session_default}. It accepts at most {session_limit} command session(s), and each one plus the event session uses one of its few connections, which the Legrand/BTicino app and other clients need too. Raise it only if commands queue up."
         }
+      },
+      "init": {
+        "title": "MyHOME",
+        "menu_options": {
+          "panel": "MyHOME panel",
+          "user": "Gateway settings"
+        }
+      },
+      "panel": {
+        "title": "MyHOME panel",
+        "description": "[Open the MyHOME panel]({panel_url}) for this gateway.\n\nSidebar visibility is shared across all gateways and administrators. The panel remains accessible through this link when the shortcut is hidden.",
+        "data": {
+          "show_sidebar": "Show MyHOME in the sidebar"
+        }
       }
     },
     "error": {
@@ -196,6 +210,7 @@
       "secondary_requires_shared_topology": "Secondary and warm standby roles require the bus topology to be set to Shared.",
       "multiple_shared_primaries": "Another gateway is already configured as the primary gateway for this shared bus. Select Secondary or Warm standby.",
       "duplicate_decoder_source": "Each decoder must be connected to a different matrix source input.",
+      "panel_save_failed": "Could not save the preference. Try again.",
       "invalid_ignored_address": "Invalid ignored address format (expected 'WHO/WHERE', e.g. '1/74' or '1/74#4#01')"
     }
   },
@@ -504,6 +519,12 @@
     },
     "seek_not_supported": {
       "message": "{entity_id}: seek is only supported on tuner source entities"
+    },
+    "cover_position_unknown": {
+      "message": "Complete a full opening or closing run before setting an intermediate position."
+    },
+    "panel_timing_managed": {
+      "message": "Travel times are managed by the MyHOME panel. Finish its measurement and remove the assigned travel profile before using native timing services."
     }
   },
   "entity": {

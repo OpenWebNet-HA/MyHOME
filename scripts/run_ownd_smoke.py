@@ -6,12 +6,13 @@ Verifies the integration and protocol engine health of OWNd across:
 2. Latest published PyPI release (pip install --pre -U OWNd)
 3. Upstream development version (git+https://github.com/OpenWebNet-HA/OWNd.git@master)
 
-Executes 5 comprehensive validation gates:
+Executes 6 comprehensive validation gates:
 - Gate 1: Metadata & Version Lockstep Audit
 - Gate 2: OpenWebNet Golden Corpus Conformance (one fixture per tests/golden/corpus.json entry)
 - Gate 3: Integration Platform Import Cleanliness
 - Gate 4: Mock Gateway TCP Handshake & Asynchronous Event Loopback
 - Gate 5: Firmware Oracle Conformance (parser resilience on real firmware outputs & rejection guarantees)
+- Gate 6: Integration worker using the installed OWNd send API
 """
 
 import argparse
@@ -211,6 +212,16 @@ def verify_firmware_oracle() -> Tuple[bool, str]:
     return True, f"{count} oracle inputs checked across {gws} firmware targets (parser extraction & rejection guarantees verified)"
 
 
+def verify_command_worker() -> Tuple[bool, str]:
+    """Exercise the integration worker against the actual installed send API."""
+    result = run_cmd([
+        sys.executable, "-m", "pytest", "tests/test_gateway_send_compat.py", "-q",
+    ], check=False)
+    if result.returncode != 0:
+        return False, "The command worker is incompatible with the installed OWNd send API"
+    return True, "Real OWNd command/status send and ACK processing passed"
+
+
 def run_smoke_suite(target: str, skip_install: bool = False, dev_ref: str = None) -> bool:
     """Execute all smoke test gates for the specified target."""
     pinned = get_pinned_version()
@@ -229,6 +240,7 @@ def run_smoke_suite(target: str, skip_install: bool = False, dev_ref: str = None
         ("Gate 3: Platform Import Cleanliness", verify_platform_imports),
         ("Gate 4: Mock Gateway TCP Handshake & Loopback", lambda: asyncio.run(run_loopback_async())),
         ("Gate 5: Firmware Oracle Conformance", verify_firmware_oracle),
+        ("Gate 6: Installed Command API", verify_command_worker),
     ]
 
     all_passed = True
