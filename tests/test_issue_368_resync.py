@@ -425,3 +425,97 @@ async def test_resync_broadcast_evicts_stale_leading_echoes(hass: HomeAssistant,
     arg = handler.send_status_request.call_args[0][0]
     assert str(arg) == "*#1*3##"
 
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        "*#1*0*7*0*1*21##",  # PIR timeout report (WHERE=0 parsed as is_general)
+        "*#1*0*5*3##",       # PIR sensitivity report (WHERE=0 parsed as is_general)
+        "*#1*1*5*3##",       # PIR sensitivity report (WHERE=1 parsed as is_area)
+        "*#1*1*7*0*1*21##",  # PIR timeout report (WHERE=1 parsed as is_area)
+    ],
+)
+@pytest.mark.asyncio
+async def test_dimension_frames_do_not_trigger_resync_sweep(
+    hass: HomeAssistant, handler: MyHOMEGatewayHandler, frame: str
+):
+    """Dimension responses (e.g. PIR sensitivity / timeout) must never schedule sweeps (Issue #612)."""
+    with patch.object(handler, "_known_light_areas", return_value=["1", "00"]):
+        await handler._process_message(OWNMessage.parse(frame))
+        await _advance(hass)
+
+    assert not handler._resync_timers
+    handler.send_status_request.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        "*1*34*1##",   # Motion detected in area 1
+        "*1*34*00##",  # Motion detected in area 00
+    ],
+)
+@pytest.mark.asyncio
+async def test_motion_sensor_frames_do_not_trigger_resync_sweep(
+    hass: HomeAssistant, handler: MyHOMEGatewayHandler, frame: str
+):
+    """Motion sensor detection events (WHAT=34) must never schedule sweeps (Issue #612)."""
+    with patch.object(handler, "_known_light_areas", return_value=["1", "00"]):
+        await handler._process_message(OWNMessage.parse(frame))
+        await _advance(hass)
+
+    assert not handler._resync_timers
+    handler.send_status_request.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("frame", "expected_targets"),
+    [
+        ("*1*2*0##", {"*#1*1##", "*#1*00##"}),   # General dimmer level 2 (20%)
+        ("*1*10*0##", {"*#1*1##", "*#1*00##"}),  # General dimmer level 10 (100%)
+        ("*1*2*1##", {"*#1*1##"}),                # Area 1 dimmer level 2
+        ("*1*10*#2##", {"*#1*#2##"}),             # Group #2 dimmer level 10
+    ],
+)
+@pytest.mark.asyncio
+async def test_stepped_dimmer_commands_trigger_resync_sweep(
+    hass: HomeAssistant, handler: MyHOMEGatewayHandler, frame: str, expected_targets: set[str]
+):
+    """Stepped dimming level commands (WHAT 2..10) must schedule sweeps for general, area, or group."""
+    with patch.object(handler, "_known_light_areas", return_value=["1", "00"]):
+        await handler._process_message(OWNMessage.parse(frame))
+        await _advance(hass)
+
+    frames = {str(call[0][0]) for call in handler.send_status_request.call_args_list}
+    assert frames == expected_targets
+
+
+@pytest.mark.asyncio
+async def test_dimension_frames_do_not_fire_light_bus_events(
+    hass: HomeAssistant, handler: MyHOMEGatewayHandler
+):
+    """Dimension frames with WHERE=0 must not fire myhome_general_light_event."""
+    events = []
+    hass.bus.async_listen("myhome_general_light_event", events.append)
+
+    await handler._process_message(OWNMessage.parse("*#1*0*7*0*1*21##"))
+    await hass.async_block_till_done()
+
+    assert len(events) == 0
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        "*1*34*1##",    # Motion frame: is_on is None
+        "*#1*0*5*3##",  # Dimension frame: is_dimension is True
+    ],
+)
+def test_lighting_resync_manager_schedule_resync_guards(
+    handler: MyHOMEGatewayHandler, frame: str
+) -> None:
+    """LightingResyncManager.schedule_resync rejects non-actuation and dimension messages defensively."""
+    handler._resync_manager.schedule_resync(OWNMessage.parse(frame))
+    assert not handler._resync_timers
+
+

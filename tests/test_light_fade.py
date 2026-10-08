@@ -308,3 +308,38 @@ async def test_myhome_light_fade_shims(hass):
     # Test _cancel_fade_if_active and _cancel_fade_robustly shims
     light._cancel_fade_if_active()
     await light._cancel_fade_robustly()
+
+
+async def test_myhome_light_set_brightness_instant_zero_switches_off(hass):
+    """Test _set_brightness_instant sends switch_off when pct <= 0 and set_brightness otherwise."""
+    gateway = MagicMock()
+    gateway.log_id = "GW1"
+    gateway.config_entry = None
+    gateway.send = AsyncMock()
+    light = MyHOMELight(
+        hass=hass,
+        name="Test",
+        entity_name="Test",
+        icon=None,
+        icon_on=None,
+        device_id="12",
+        who="1",
+        where="12",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="Dimmer",
+        gateway=gateway,
+    )
+    # pct == 0 sends switch_off (*1*0*12##)
+    await light._set_brightness_instant(0)
+    assert gateway.send.call_count == 1
+    cmd = gateway.send.call_args[0][0]
+    assert str(cmd) == "*1*0*12##"
+
+    # pct == 50 sends set_brightness (*#1*12*#1*150*0##)
+    gateway.send.reset_mock()
+    await light._set_brightness_instant(50)
+    assert gateway.send.call_count == 1
+    cmd = gateway.send.call_args[0][0]
+    assert str(cmd) == "*#1*12*#1*150*0##"

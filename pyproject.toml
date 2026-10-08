@@ -7,7 +7,7 @@ name = "custom-components-myhome"
 version = "1.0.0"
 description = "Home Assistant custom integration for BTicino / Legrand MyHOME OpenWebNet gateways"
 readme = "README.md"
-license = "GPL-3.0-or-later"
+license = "Apache-2.0"
 authors = [
     {name = "MyHOME Integration Contributors"}
 ]
@@ -34,7 +34,7 @@ test = [
     "check-wheel-contents>=0.6.0",
     "validate-pyproject[all]>=0.16",
     "ruff>=0.4.0",
-    "OWNd>=2.0.0b9",
+    "OWNd>=2.0.0b10",
 ]
 
 [project.urls]

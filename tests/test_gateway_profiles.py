@@ -40,6 +40,8 @@ def test_extract_gateway_models_from_const():
     assert "MH200" in models
     assert "AM4890" in models
     assert "F452" in models
+    assert "F452V" in models
+    assert "F453" in models
     assert "F453AV" in models
     assert "Generic" in models
 

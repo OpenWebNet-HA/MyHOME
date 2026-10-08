@@ -6,24 +6,37 @@ on:
   pull_request:
 
 permissions:
-  contents: write
-  issues: write
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Required check on master: keep the job id.
   test-coverage:
-    runs-on: ubuntu-latest
-    env:
-      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      # On main / master / v2-* pushes: commit the coverage badge and generated
+      # doc tables (contents), and sync the trace issue (issues,
+      # scripts/update_trace_matrix.py).
+      contents: write
+      issues: write
 
     steps:
-      - uses: actions/checkout@v7
+      # Credentials are only kept for a push, where the commit step needs them.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: ${{ github.event_name == 'push' }} # zizmor: ignore[artipacked]
 
       # Home Assistant >= 2026.3 requires Python 3.14.2; pytest-homeassistant-custom-component
       # pins the exact core release it was built for, so the suite runs on the core users run.
       - name: Set up Python 3.14
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.14"
+          cache: "pip"
 
       - name: Install dependencies
         run: |
@@ -37,19 +50,25 @@ jobs:
 
       - name: Test coverage tracking
         run: |
-          PYTHONPATH=. pytest tests/ --cov=custom_components.myhome --cov-report=xml --cov-report=html --cov-report=term --junitxml=junit.xml
+          PYTHONPATH=. pytest tests/ --cov=custom_components.myhome --cov-report=xml --cov-report=html --cov-report=term --durations=20 --junitxml=junit.xml
           python scripts/update_readme_coverage.py
-          if [ "${{ github.event_name }}" = "push" ] && ([ "${{ github.ref }}" = "refs/heads/main" ] || [ "${{ github.ref }}" = "refs/heads/master" ] || echo "${{ github.ref }}" | grep -q "refs/heads/v2-"); then
-            python scripts/sync_documentation.py --update || true
-            python scripts/update_trace_matrix.py || true
-            git config --global user.name "github-actions[bot]"
-            git config --global user.email "github-actions[bot]@users.noreply.github.com"
-            git add coverage.svg || true
-            git add README.md docs/trace-availability.md || true
-            if ! git diff --staged --quiet; then
-              git commit -m "chore: auto-generate coverage badge & documentation tables [skip ci]"
-              git push || echo "No files pushed"
-            fi
+
+      # Its own step so the token is only in this step's environment, never in
+      # the test run's.
+      - name: Commit coverage badge & documentation tables
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/v2-'))
+        env:
+          GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }} # update_trace_matrix.py: trace issue sync
+        run: |
+          python scripts/sync_documentation.py --update || true
+          python scripts/update_trace_matrix.py || true
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add coverage.svg || true
+          git add README.md docs/trace-availability.md || true
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: auto-generate coverage badge & documentation tables [skip ci]"
+            git push || echo "No files pushed"
           fi
 
       - name: Enforce 100% test coverage on ownd core
@@ -57,7 +76,7 @@ jobs:
           python scripts/verify_ownd_coverage.py
 
       - name: Upload HTML coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: html-coverage-report
           path: htmlcov/
@@ -84,10 +103,8 @@ jobs:
           "
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.xml
           fail_ci_if_error: false
-
-

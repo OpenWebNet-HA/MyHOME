@@ -185,7 +185,7 @@ async def test_home_assistant_discovers_cenplus_device_triggers(hass: HomeAssist
     entry.add_to_hass(hass)
     device = dr.async_get(hass).async_get_or_create(
         config_entry_id=entry.entry_id,
-        identifiers={(DOMAIN, "00:03:50:ae:9b:9c-25-1")},
+        identifiers={(DOMAIN, "00:03:50:00:00:01-25-1")},
         name="CEN+ Unit 1",
     )
 

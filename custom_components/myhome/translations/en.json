@@ -96,6 +96,7 @@
       "all_configured": "All MyHome gateways are already configured",
       "unknown": "An unknown error occured",
       "cannot_connect": "Cannot connect to the gateway",
+      "no_serial": "The gateway did not report a serial number, so it cannot be identified. Add it manually.",
       "connection_closed": "The gateway closed the connection during setup. It may be busy, out of session slots, require a reboot, or have IP address restrictions enabled.",
       "connection_refused": "The gateway refused the connection request.",
       "connection_error": "Communication error while connecting to the gateway.",
@@ -159,12 +160,14 @@
           "gateway_role": "Gateway role",
           "primary_gateway": "Primary gateway",
           "delegated_whos": "Delegated subsystems",
-          "auto_join_streaming": "Auto-join streaming groups"
+          "auto_join_streaming": "Auto-join streaming groups",
+          "ignored_addresses": "Ignored addresses"
         },
         "data_description": {
           "decoder_1_pre_gain": "Calibrate against the hardware, not a guess: if this decoder's line-out feeds a BTicino Ingresso RCA (L/N/NT4560) or Controllo Stereo (L4561) module, raise Pre-Gain while playing until that module's signal LED blinks orange — not steady green (signal too low) or steady red/orange (clipping). Always wire the decoder's fixed line-out ('OUT'), never a variable headphone/AUX output — a second uncontrolled gain stage there causes the same distortion BTicino's own troubleshooting guide warns about.",
           "delegated_whos": "Secondary role only: subsystems whose new devices this gateway discovers. Devices the primary already has stay on the primary.",
           "auto_join_streaming": "Automatically join an active streaming group when turning on a room or adjusting volume from a physical wall control.",
+          "ignored_addresses": "Permanently ignore listed addresses (e.g. 1/74, 1/74#4#01): skips discovery, entities and fault tracking. Separate multiple entries with newlines or commas.",
           "command_worker_count": "Recommended for the {model}: {session_default}. It accepts at most {session_limit} command session(s), and each one plus the event session uses one of its few connections, which the Legrand/BTicino app and other clients need too. Raise it only if commands queue up."
         }
       },
@@ -207,7 +210,8 @@
       "secondary_requires_shared_topology": "Secondary and warm standby roles require the bus topology to be set to Shared.",
       "multiple_shared_primaries": "Another gateway is already configured as the primary gateway for this shared bus. Select Secondary or Warm standby.",
       "duplicate_decoder_source": "Each decoder must be connected to a different matrix source input.",
-      "panel_save_failed": "Could not save the preference. Try again."
+      "panel_save_failed": "Could not save the preference. Try again.",
+      "invalid_ignored_address": "Invalid ignored address format (expected 'WHO/WHERE', e.g. '1/74' or '1/74#4#01')"
     }
   },
   "services": {
@@ -429,6 +433,12 @@
     }
   },
   "exceptions": {
+    "alarm_read_only": {
+      "message": "{name} is read-only: arm and disarm through the AUX frames your central unit is programmed for"
+    },
+    "fan_speed_zone_only": {
+      "message": "{name} has no fan speed of its own: only a zone (1-99) takes one"
+    },
     "command_delivery_cancelled": {
       "message": "{name}: direction command delivery was cancelled before reaching the bus"
     },

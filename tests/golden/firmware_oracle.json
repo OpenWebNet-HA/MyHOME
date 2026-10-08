@@ -1,0 +1,2372 @@
+{
+  "format_version": "1.0.0",
+  "gateways": [
+    {
+      "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+      "product": "MH200N",
+      "suites": [
+        "energy-params",
+        "interface-routing",
+        "lights-level",
+        "matrix-refused",
+        "ownd-pr82-lights",
+        "thermo-actuator",
+        "thermo-central-mode",
+        "thermo-fan-speed",
+        "thermo-valve",
+        "thermo-zone-mode",
+        "what19",
+        "who25-messages"
+      ],
+      "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+      "version": "010108"
+    },
+    {
+      "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+      "product": "MyHomeServer1",
+      "suites": [
+        "lights-level",
+        "ownd-pr82-heating",
+        "ownd-pr82-lights"
+      ],
+      "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+      "version": "028206"
+    }
+  ],
+  "generator": "own-firmware-oracle",
+  "schema_version": "1.0.0",
+  "total_unique_inputs": 89,
+  "verdicts": {
+    "*#1*0*#1*100*0##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 16,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 16,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "silent",
+        "version": "028206"
+      }
+    ],
+    "*#1*1*#1*20##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 16,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/matrix-refused.tsv",
+        "suite": "matrix-refused",
+        "suite_sha256": "688eb035af81e718cc32afaa824bb19d94e6e84542ed989ee8f31813bb410c40",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*#1*31*#1*100*0##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 17,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 16,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/ownd-pr82-lights.tsv",
+        "suite": "ownd-pr82-lights",
+        "suite_sha256": "57c7e14d5ecbfb59443b3a15a20fe8092e368fa7a7070dc669078175dfd80707",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 17,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "silent",
+        "version": "028206"
+      },
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 16,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-lights.tsv",
+        "suite": "ownd-pr82-lights",
+        "suite_sha256": "57c7e14d5ecbfb59443b3a15a20fe8092e368fa7a7070dc669078175dfd80707",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "silent",
+        "version": "028206"
+      }
+    ],
+    "*#1*31*#1*100*255##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 18,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 18,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "silent",
+        "version": "028206"
+      }
+    ],
+    "*#1*31*#1*100*5##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 19,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 17,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/ownd-pr82-lights.tsv",
+        "suite": "ownd-pr82-lights",
+        "suite_sha256": "57c7e14d5ecbfb59443b3a15a20fe8092e368fa7a7070dc669078175dfd80707",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 19,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "silent",
+        "version": "028206"
+      },
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 17,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-lights.tsv",
+        "suite": "ownd-pr82-lights",
+        "suite_sha256": "57c7e14d5ecbfb59443b3a15a20fe8092e368fa7a7070dc669078175dfd80707",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "silent",
+        "version": "028206"
+      }
+    ],
+    "*#1*31*#1*101*0##": [
+      {
+        "bus_frames": [
+          "24 30 36 44 31 33 31 30 31 34 32 30 44 30 44 30 31 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 20,
+        "product": "MH200N",
+        "reply": "ack",
+        "source_tsv": "results/MH200N/010108/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 33 31 30 31 34 32 30 44 30 44 30 31 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 18,
+        "product": "MH200N",
+        "reply": "ack",
+        "source_tsv": "results/MH200N/010108/oracle/full/ownd-pr82-lights.tsv",
+        "suite": "ownd-pr82-lights",
+        "suite_sha256": "57c7e14d5ecbfb59443b3a15a20fe8092e368fa7a7070dc669078175dfd80707",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 33 31 30 31 34 32 30 44 30 44 30 31 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 20,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 33 31 30 31 34 32 30 44 30 44 30 31 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 18,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-lights.tsv",
+        "suite": "ownd-pr82-lights",
+        "suite_sha256": "57c7e14d5ecbfb59443b3a15a20fe8092e368fa7a7070dc669078175dfd80707",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*#1*31*#1*150*5##": [
+      {
+        "bus_frames": [
+          "24 30 36 44 31 33 31 30 31 34 32 30 44 30 44 33 32 30 35 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 19,
+        "product": "MH200N",
+        "reply": "ack",
+        "source_tsv": "results/MH200N/010108/oracle/full/ownd-pr82-lights.tsv",
+        "suite": "ownd-pr82-lights",
+        "suite_sha256": "57c7e14d5ecbfb59443b3a15a20fe8092e368fa7a7070dc669078175dfd80707",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 33 31 30 31 34 32 30 44 30 44 33 32 30 35 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 19,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-lights.tsv",
+        "suite": "ownd-pr82-lights",
+        "suite_sha256": "57c7e14d5ecbfb59443b3a15a20fe8092e368fa7a7070dc669078175dfd80707",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*#1*31*#1*200*0##": [
+      {
+        "bus_frames": [
+          "24 30 36 44 31 33 31 30 31 34 32 30 44 30 44 36 34 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 20,
+        "product": "MH200N",
+        "reply": "ack",
+        "source_tsv": "results/MH200N/010108/oracle/full/ownd-pr82-lights.tsv",
+        "suite": "ownd-pr82-lights",
+        "suite_sha256": "57c7e14d5ecbfb59443b3a15a20fe8092e368fa7a7070dc669078175dfd80707",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 33 31 30 31 34 32 30 44 30 44 36 34 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 20,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-lights.tsv",
+        "suite": "ownd-pr82-lights",
+        "suite_sha256": "57c7e14d5ecbfb59443b3a15a20fe8092e368fa7a7070dc669078175dfd80707",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*#1*31*#1*220*0##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 21,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/ownd-pr82-lights.tsv",
+        "suite": "ownd-pr82-lights",
+        "suite_sha256": "57c7e14d5ecbfb59443b3a15a20fe8092e368fa7a7070dc669078175dfd80707",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 21,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-lights.tsv",
+        "suite": "ownd-pr82-lights",
+        "suite_sha256": "57c7e14d5ecbfb59443b3a15a20fe8092e368fa7a7070dc669078175dfd80707",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "silent",
+        "version": "028206"
+      }
+    ],
+    "*#1*74##": [
+      {
+        "bus_frames": [
+          "24 30 33 37 34 30 30 31 35 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [
+          "*1*19*74##",
+          "*#1001*74*11*111110111111111111110111##"
+        ],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 16,
+        "product": "MH200N",
+        "reply": "-",
+        "source_tsv": "results/MH200N/010108/oracle/full/what19.tsv",
+        "suite": "what19",
+        "suite_sha256": "f3c061a836cac17ee6bdf5bccab64d53e5c15998c1bb73a737cb27cedda18be4",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      }
+    ],
+    "*#18*51*51##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 16,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/energy-params.tsv",
+        "suite": "energy-params",
+        "suite_sha256": "964322cfdd7a0c940d08853d84d54a43c9e44101ca19e01616553d474d7301a2",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*#18*51*511#10#1##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 17,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/energy-params.tsv",
+        "suite": "energy-params",
+        "suite_sha256": "964322cfdd7a0c940d08853d84d54a43c9e44101ca19e01616553d474d7301a2",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*#18*51*511#10#2##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 18,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/energy-params.tsv",
+        "suite": "energy-params",
+        "suite_sha256": "964322cfdd7a0c940d08853d84d54a43c9e44101ca19e01616553d474d7301a2",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*#18*51*52##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 19,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/energy-params.tsv",
+        "suite": "energy-params",
+        "suite_sha256": "964322cfdd7a0c940d08853d84d54a43c9e44101ca19e01616553d474d7301a2",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 17,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/matrix-refused.tsv",
+        "suite": "matrix-refused",
+        "suite_sha256": "688eb035af81e718cc32afaa824bb19d94e6e84542ed989ee8f31813bb410c40",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*#18*51*52#26#9##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 20,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/energy-params.tsv",
+        "suite": "energy-params",
+        "suite_sha256": "964322cfdd7a0c940d08853d84d54a43c9e44101ca19e01616553d474d7301a2",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*#2*1*#1*50##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 18,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/matrix-refused.tsv",
+        "suite": "matrix-refused",
+        "suite_sha256": "688eb035af81e718cc32afaa824bb19d94e6e84542ed989ee8f31813bb410c40",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*#4*#0#2*#11*1##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 16,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-fan-speed.tsv",
+        "suite": "thermo-fan-speed",
+        "suite_sha256": "96b9b84ce01bb1500269d9242fa143146fd73640e2bfb42f30282f8b038a8bf5",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*#4*#0*#11*1##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 17,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-fan-speed.tsv",
+        "suite": "thermo-fan-speed",
+        "suite_sha256": "96b9b84ce01bb1500269d9242fa143146fd73640e2bfb42f30282f8b038a8bf5",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*#4*#0*20##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 16,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-actuator.tsv",
+        "suite": "thermo-actuator",
+        "suite_sha256": "7d1b7c4a97ecc16d1df9254e69ab09c3b6134cad6093e3961e0ba962e54b325a",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*#4*#1*#11*1##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 18,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-fan-speed.tsv",
+        "suite": "thermo-fan-speed",
+        "suite_sha256": "96b9b84ce01bb1500269d9242fa143146fd73640e2bfb42f30282f8b038a8bf5",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 16,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "silent",
+        "version": "028206"
+      }
+    ],
+    "*#4*#99*#11*1##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 17,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "silent",
+        "version": "028206"
+      }
+    ],
+    "*#4*1#1*20##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 17,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-actuator.tsv",
+        "suite": "thermo-actuator",
+        "suite_sha256": "7d1b7c4a97ecc16d1df9254e69ab09c3b6134cad6093e3961e0ba962e54b325a",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*#4*1*#11*0##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 19,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-fan-speed.tsv",
+        "suite": "thermo-fan-speed",
+        "suite_sha256": "96b9b84ce01bb1500269d9242fa143146fd73640e2bfb42f30282f8b038a8bf5",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*#4*1*#11*1##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 20,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-fan-speed.tsv",
+        "suite": "thermo-fan-speed",
+        "suite_sha256": "96b9b84ce01bb1500269d9242fa143146fd73640e2bfb42f30282f8b038a8bf5",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 30 31 30 33 30 32 30 42 30 31 30 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 18,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*#4*1*#11*2##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 21,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-fan-speed.tsv",
+        "suite": "thermo-fan-speed",
+        "suite_sha256": "96b9b84ce01bb1500269d9242fa143146fd73640e2bfb42f30282f8b038a8bf5",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*#4*1*#11*3##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 22,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-fan-speed.tsv",
+        "suite": "thermo-fan-speed",
+        "suite_sha256": "96b9b84ce01bb1500269d9242fa143146fd73640e2bfb42f30282f8b038a8bf5",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*#4*1*#11*4##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 23,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-fan-speed.tsv",
+        "suite": "thermo-fan-speed",
+        "suite_sha256": "96b9b84ce01bb1500269d9242fa143146fd73640e2bfb42f30282f8b038a8bf5",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*#4*1*19##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 16,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-valve.tsv",
+        "suite": "thermo-valve",
+        "suite_sha256": "d9ee737015eefa43db2093d8a059e278aeaff08e4fcec133a314addc7e5a79bf",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*#4*1*20##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 18,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-actuator.tsv",
+        "suite": "thermo-actuator",
+        "suite_sha256": "7d1b7c4a97ecc16d1df9254e69ab09c3b6134cad6093e3961e0ba962e54b325a",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*#4*40*19##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 17,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-valve.tsv",
+        "suite": "thermo-valve",
+        "suite_sha256": "d9ee737015eefa43db2093d8a059e278aeaff08e4fcec133a314addc7e5a79bf",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*#4*41*19##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 18,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-valve.tsv",
+        "suite": "thermo-valve",
+        "suite_sha256": "d9ee737015eefa43db2093d8a059e278aeaff08e4fcec133a314addc7e5a79bf",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*#4*99*#11*0##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 24,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-fan-speed.tsv",
+        "suite": "thermo-fan-speed",
+        "suite_sha256": "96b9b84ce01bb1500269d9242fa143146fd73640e2bfb42f30282f8b038a8bf5",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*#4*99*#11*1##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 25,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-fan-speed.tsv",
+        "suite": "thermo-fan-speed",
+        "suite_sha256": "96b9b84ce01bb1500269d9242fa143146fd73640e2bfb42f30282f8b038a8bf5",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 36 33 30 33 30 32 30 42 30 31 30 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 19,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*#4*99*#11*2##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 26,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-fan-speed.tsv",
+        "suite": "thermo-fan-speed",
+        "suite_sha256": "96b9b84ce01bb1500269d9242fa143146fd73640e2bfb42f30282f8b038a8bf5",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*#4*99*#11*3##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 27,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-fan-speed.tsv",
+        "suite": "thermo-fan-speed",
+        "suite_sha256": "96b9b84ce01bb1500269d9242fa143146fd73640e2bfb42f30282f8b038a8bf5",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*0*1*31#4#01##": [
+      {
+        "bus_frames": [
+          "24 30 36 45 43 30 31 30 30 30 30 33 31 30 30 31 34 30 31 0d",
+          "24 30 36 45 43 30 31 30 30 30 30 33 31 30 30 31 34 30 31 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 16,
+        "product": "MH200N",
+        "reply": "-",
+        "source_tsv": "results/MH200N/010108/oracle/full/interface-routing.tsv",
+        "suite": "interface-routing",
+        "suite_sha256": "a9a61928900628b6d4e03c40cfbda733ce060f3ad21463befb784e8c184a8968",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      }
+    ],
+    "*0*1*31#4#02##": [
+      {
+        "bus_frames": [
+          "24 30 36 45 43 30 32 30 30 30 30 33 31 30 30 31 34 30 31 0d",
+          "24 30 36 45 43 30 32 30 30 30 30 33 31 30 30 31 34 30 31 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 17,
+        "product": "MH200N",
+        "reply": "-",
+        "source_tsv": "results/MH200N/010108/oracle/full/interface-routing.tsv",
+        "suite": "interface-routing",
+        "suite_sha256": "a9a61928900628b6d4e03c40cfbda733ce060f3ad21463befb784e8c184a8968",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      }
+    ],
+    "*1*0#0*31##": [
+      {
+        "bus_frames": [
+          "24 30 36 44 31 33 31 30 31 34 32 30 44 30 31 30 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 21,
+        "product": "MH200N",
+        "reply": "ack",
+        "source_tsv": "results/MH200N/010108/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 33 31 30 31 34 32 30 44 30 31 30 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 21,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*1*0#1*31##": [
+      {
+        "bus_frames": [
+          "24 30 36 44 31 33 31 30 31 34 32 30 44 30 31 30 30 30 31 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 22,
+        "product": "MH200N",
+        "reply": "ack",
+        "source_tsv": "results/MH200N/010108/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 33 31 30 31 34 32 30 44 30 31 30 30 30 31 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 22,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*1*0#255*31##": [
+      {
+        "bus_frames": [
+          "24 30 36 44 31 33 31 30 31 34 32 30 44 30 31 30 30 46 46 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 23,
+        "product": "MH200N",
+        "reply": "ack",
+        "source_tsv": "results/MH200N/010108/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 33 31 30 31 34 32 30 44 30 31 30 30 46 46 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 23,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*1*0#5*31##": [
+      {
+        "bus_frames": [
+          "24 30 36 44 31 33 31 30 31 34 32 30 44 30 31 30 30 30 35 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 24,
+        "product": "MH200N",
+        "reply": "ack",
+        "source_tsv": "results/MH200N/010108/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 33 31 30 31 34 32 30 44 30 31 30 30 30 35 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 22,
+        "product": "MH200N",
+        "reply": "ack",
+        "source_tsv": "results/MH200N/010108/oracle/full/ownd-pr82-lights.tsv",
+        "suite": "ownd-pr82-lights",
+        "suite_sha256": "57c7e14d5ecbfb59443b3a15a20fe8092e368fa7a7070dc669078175dfd80707",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 33 31 30 31 34 32 30 44 30 31 30 30 30 35 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 24,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 33 31 30 31 34 32 30 44 30 31 30 30 30 35 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 22,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-lights.tsv",
+        "suite": "ownd-pr82-lights",
+        "suite_sha256": "57c7e14d5ecbfb59443b3a15a20fe8092e368fa7a7070dc669078175dfd80707",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*1*0*31##": [
+      {
+        "bus_frames": [
+          "24 30 33 33 31 30 30 31 32 30 31 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 25,
+        "product": "MH200N",
+        "reply": "ack",
+        "source_tsv": "results/MH200N/010108/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 33 33 31 30 30 31 32 30 31 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 23,
+        "product": "MH200N",
+        "reply": "ack",
+        "source_tsv": "results/MH200N/010108/oracle/full/ownd-pr82-lights.tsv",
+        "suite": "ownd-pr82-lights",
+        "suite_sha256": "57c7e14d5ecbfb59443b3a15a20fe8092e368fa7a7070dc669078175dfd80707",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 33 33 31 30 30 31 32 30 31 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 25,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      },
+      {
+        "bus_frames": [
+          "24 30 33 33 31 30 30 31 32 30 31 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 23,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-lights.tsv",
+        "suite": "ownd-pr82-lights",
+        "suite_sha256": "57c7e14d5ecbfb59443b3a15a20fe8092e368fa7a7070dc669078175dfd80707",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*1*1*31##": [
+      {
+        "bus_frames": [
+          "24 30 33 33 31 30 30 31 32 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 26,
+        "product": "MH200N",
+        "reply": "ack",
+        "source_tsv": "results/MH200N/010108/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 33 33 31 30 30 31 32 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 26,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/lights-level.tsv",
+        "suite": "lights-level",
+        "suite_sha256": "f1d47d88ed4afd662fbff17e9dc28967be295cfbea444b5b5eb824c1dc0f093b",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*14*0*31#4#01##": [
+      {
+        "bus_frames": [
+          "24 30 36 45 43 30 31 30 30 30 30 33 31 30 30 31 31 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 18,
+        "product": "MH200N",
+        "reply": "ack",
+        "source_tsv": "results/MH200N/010108/oracle/full/interface-routing.tsv",
+        "suite": "interface-routing",
+        "suite_sha256": "a9a61928900628b6d4e03c40cfbda733ce060f3ad21463befb784e8c184a8968",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      }
+    ],
+    "*14*0*31#4#02##": [
+      {
+        "bus_frames": [
+          "24 30 36 45 43 30 32 30 30 30 30 33 31 30 30 31 31 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 19,
+        "product": "MH200N",
+        "reply": "ack",
+        "source_tsv": "results/MH200N/010108/oracle/full/interface-routing.tsv",
+        "suite": "interface-routing",
+        "suite_sha256": "a9a61928900628b6d4e03c40cfbda733ce060f3ad21463befb784e8c184a8968",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      }
+    ],
+    "*15*01#1*0001##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 19,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/matrix-refused.tsv",
+        "suite": "matrix-refused",
+        "suite_sha256": "688eb035af81e718cc32afaa824bb19d94e6e84542ed989ee8f31813bb410c40",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*15*01#2*0001##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 20,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/matrix-refused.tsv",
+        "suite": "matrix-refused",
+        "suite_sha256": "688eb035af81e718cc32afaa824bb19d94e6e84542ed989ee8f31813bb410c40",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*15*01#3*0001##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 21,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/matrix-refused.tsv",
+        "suite": "matrix-refused",
+        "suite_sha256": "688eb035af81e718cc32afaa824bb19d94e6e84542ed989ee8f31813bb410c40",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*15*01*0001##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 22,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/matrix-refused.tsv",
+        "suite": "matrix-refused",
+        "suite_sha256": "688eb035af81e718cc32afaa824bb19d94e6e84542ed989ee8f31813bb410c40",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*2*1*21#4#1##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 23,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/matrix-refused.tsv",
+        "suite": "matrix-refused",
+        "suite_sha256": "688eb035af81e718cc32afaa824bb19d94e6e84542ed989ee8f31813bb410c40",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*25*11#121*10##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 16,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/who25-messages.tsv",
+        "suite": "who25-messages",
+        "suite_sha256": "57f36863e445aa963e48f4bfcd45297256dab5a2842c6b3c9944e66a845f7bb5",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*25*12*131##": [
+      {
+        "bus_frames": [
+          "24 30 34 42 31 31 46 39 34 30 30 0d",
+          "24 32 34 0d",
+          "24 32 34 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 17,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/who25-messages.tsv",
+        "suite": "who25-messages",
+        "suite_sha256": "57f36863e445aa963e48f4bfcd45297256dab5a2842c6b3c9944e66a845f7bb5",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      }
+    ],
+    "*25*21#1*21##": [
+      {
+        "bus_frames": [
+          "24 30 34 42 32 30 31 39 30 30 31 0d",
+          "24 32 34 0d",
+          "24 32 34 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 18,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/who25-messages.tsv",
+        "suite": "who25-messages",
+        "suite_sha256": "57f36863e445aa963e48f4bfcd45297256dab5a2842c6b3c9944e66a845f7bb5",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      }
+    ],
+    "*25*21*0001##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 24,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/matrix-refused.tsv",
+        "suite": "matrix-refused",
+        "suite_sha256": "688eb035af81e718cc32afaa824bb19d94e6e84542ed989ee8f31813bb410c40",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*25*22*0001##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 25,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/matrix-refused.tsv",
+        "suite": "matrix-refused",
+        "suite_sha256": "688eb035af81e718cc32afaa824bb19d94e6e84542ed989ee8f31813bb410c40",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*25*23#8*233##": [
+      {
+        "bus_frames": [
+          "24 30 34 42 32 32 31 39 32 30 38 0d",
+          "24 32 34 0d",
+          "24 32 34 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 19,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/who25-messages.tsv",
+        "suite": "who25-messages",
+        "suite_sha256": "57f36863e445aa963e48f4bfcd45297256dab5a2842c6b3c9944e66a845f7bb5",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      }
+    ],
+    "*25*23*0001##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 26,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/matrix-refused.tsv",
+        "suite": "matrix-refused",
+        "suite_sha256": "688eb035af81e718cc32afaa824bb19d94e6e84542ed989ee8f31813bb410c40",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*25*31#1*339##": [
+      {
+        "bus_frames": [
+          "24 30 34 42 34 33 39 39 32 30 30 0d",
+          "24 32 34 0d",
+          "24 32 34 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 20,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/who25-messages.tsv",
+        "suite": "who25-messages",
+        "suite_sha256": "57f36863e445aa963e48f4bfcd45297256dab5a2842c6b3c9944e66a845f7bb5",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      }
+    ],
+    "*25*32#1*33##": [
+      {
+        "bus_frames": [
+          "24 30 34 42 34 30 33 39 32 30 31 0d",
+          "24 32 34 0d",
+          "24 32 34 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 21,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/who25-messages.tsv",
+        "suite": "who25-messages",
+        "suite_sha256": "57f36863e445aa963e48f4bfcd45297256dab5a2842c6b3c9944e66a845f7bb5",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "out",
+        "version": "010108"
+      }
+    ],
+    "*4*0*#0##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 16,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-central-mode.tsv",
+        "suite": "thermo-central-mode",
+        "suite_sha256": "c2a003ea3e00d05ee10a22143f2bf83522f987c2491900449d1f8b07a76d57d7",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 30 30 30 33 30 32 43 31 46 31 30 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 20,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*4*0*#0#2##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 17,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-central-mode.tsv",
+        "suite": "thermo-central-mode",
+        "suite_sha256": "c2a003ea3e00d05ee10a22143f2bf83522f987c2491900449d1f8b07a76d57d7",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 30 32 30 33 30 32 43 31 46 31 30 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 21,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*4*0*1##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 16,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-zone-mode.tsv",
+        "suite": "thermo-zone-mode",
+        "suite_sha256": "46cfe1d80f81ff4fec7f38e5d9bd5d2d6a2060cd9d6e9f2e167f0d666252fa5f",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*4*1*#0##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 18,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-central-mode.tsv",
+        "suite": "thermo-central-mode",
+        "suite_sha256": "c2a003ea3e00d05ee10a22143f2bf83522f987c2491900449d1f8b07a76d57d7",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 30 30 30 33 30 32 43 31 46 30 30 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 22,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*4*1*#0#2##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 19,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-central-mode.tsv",
+        "suite": "thermo-central-mode",
+        "suite_sha256": "c2a003ea3e00d05ee10a22143f2bf83522f987c2491900449d1f8b07a76d57d7",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 30 32 30 33 30 32 43 31 46 30 30 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 23,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*4*1*1##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 17,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-zone-mode.tsv",
+        "suite": "thermo-zone-mode",
+        "suite_sha256": "46cfe1d80f81ff4fec7f38e5d9bd5d2d6a2060cd9d6e9f2e167f0d666252fa5f",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      }
+    ],
+    "*4*100*#0##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 20,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-central-mode.tsv",
+        "suite": "thermo-central-mode",
+        "suite_sha256": "c2a003ea3e00d05ee10a22143f2bf83522f987c2491900449d1f8b07a76d57d7",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 24,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "silent",
+        "version": "028206"
+      }
+    ],
+    "*4*100*#0#2##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 25,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "silent",
+        "version": "028206"
+      }
+    ],
+    "*4*101*#0##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 21,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-central-mode.tsv",
+        "suite": "thermo-central-mode",
+        "suite_sha256": "c2a003ea3e00d05ee10a22143f2bf83522f987c2491900449d1f8b07a76d57d7",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 26,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "silent",
+        "version": "028206"
+      }
+    ],
+    "*4*101*#0#2##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 27,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "silent",
+        "version": "028206"
+      }
+    ],
+    "*4*102*#0##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 22,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-central-mode.tsv",
+        "suite": "thermo-central-mode",
+        "suite_sha256": "c2a003ea3e00d05ee10a22143f2bf83522f987c2491900449d1f8b07a76d57d7",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 30 30 30 33 30 32 43 31 31 37 30 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 28,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*4*102*#0#2##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 23,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-central-mode.tsv",
+        "suite": "thermo-central-mode",
+        "suite_sha256": "c2a003ea3e00d05ee10a22143f2bf83522f987c2491900449d1f8b07a76d57d7",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 30 32 30 33 30 32 43 31 31 37 30 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 29,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*4*103*#0##": [
+      {
+        "bus_frames": [
+          "24 30 36 44 31 30 30 30 33 30 32 43 31 31 36 30 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 30,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*4*103*#0#2##": [
+      {
+        "bus_frames": [
+          "24 30 36 44 31 30 32 30 33 30 32 43 31 31 36 30 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 31,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*4*110*#0##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 24,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-central-mode.tsv",
+        "suite": "thermo-central-mode",
+        "suite_sha256": "c2a003ea3e00d05ee10a22143f2bf83522f987c2491900449d1f8b07a76d57d7",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 32,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "silent",
+        "version": "028206"
+      }
+    ],
+    "*4*110*#0#2##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 33,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "silent",
+        "version": "028206"
+      }
+    ],
+    "*4*111*#0##": [
+      {
+        "bus_frames": [
+          "24 30 36 44 31 30 30 30 33 30 32 43 32 30 30 31 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 34,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*4*111*#0#2##": [
+      {
+        "bus_frames": [
+          "24 30 36 44 31 30 32 30 33 30 32 43 32 30 30 31 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 35,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*4*202*#0##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 25,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-central-mode.tsv",
+        "suite": "thermo-central-mode",
+        "suite_sha256": "c2a003ea3e00d05ee10a22143f2bf83522f987c2491900449d1f8b07a76d57d7",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 30 30 30 33 30 32 43 31 32 37 30 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 36,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*4*202*#0#2##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 26,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-central-mode.tsv",
+        "suite": "thermo-central-mode",
+        "suite_sha256": "c2a003ea3e00d05ee10a22143f2bf83522f987c2491900449d1f8b07a76d57d7",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 30 32 30 33 30 32 43 31 32 37 30 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 37,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*4*303*#0##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 27,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-central-mode.tsv",
+        "suite": "thermo-central-mode",
+        "suite_sha256": "c2a003ea3e00d05ee10a22143f2bf83522f987c2491900449d1f8b07a76d57d7",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 30 30 30 33 30 32 43 31 30 36 30 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 38,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*4*303*#0#2##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 28,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-central-mode.tsv",
+        "suite": "thermo-central-mode",
+        "suite_sha256": "c2a003ea3e00d05ee10a22143f2bf83522f987c2491900449d1f8b07a76d57d7",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 30 32 30 33 30 32 43 31 30 36 30 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 39,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*4*303*1##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 18,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-zone-mode.tsv",
+        "suite": "thermo-zone-mode",
+        "suite_sha256": "46cfe1d80f81ff4fec7f38e5d9bd5d2d6a2060cd9d6e9f2e167f0d666252fa5f",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 34 39 33 30 31 33 30 30 46 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 40,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*4*303*99##": [
+      {
+        "bus_frames": [
+          "24 30 34 39 33 36 33 33 30 30 46 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 41,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*4*311*#0##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 29,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-central-mode.tsv",
+        "suite": "thermo-central-mode",
+        "suite_sha256": "c2a003ea3e00d05ee10a22143f2bf83522f987c2491900449d1f8b07a76d57d7",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 30 30 30 33 30 32 43 32 30 30 30 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 42,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*4*311*#0#2##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 30,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-central-mode.tsv",
+        "suite": "thermo-central-mode",
+        "suite_sha256": "c2a003ea3e00d05ee10a22143f2bf83522f987c2491900449d1f8b07a76d57d7",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 30 32 30 33 30 32 43 32 30 30 30 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 43,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*4*311*#1##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 19,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-zone-mode.tsv",
+        "suite": "thermo-zone-mode",
+        "suite_sha256": "46cfe1d80f81ff4fec7f38e5d9bd5d2d6a2060cd9d6e9f2e167f0d666252fa5f",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [
+          "24 30 36 44 31 30 30 30 33 30 32 43 32 30 31 30 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 44,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*4*311*#99##": [
+      {
+        "bus_frames": [
+          "24 30 36 44 31 30 30 30 33 30 32 43 32 36 33 30 30 30 30 0d"
+        ],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 45,
+        "product": "MyHomeServer1",
+        "reply": "ack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "out",
+        "version": "028206"
+      }
+    ],
+    "*4*311*1##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "e32d3404302f3619bbbb564ae50554ab81ac6ef818b6e5a2290142a5e2ab5fb3",
+        "line_number": 20,
+        "product": "MH200N",
+        "reply": "nack",
+        "source_tsv": "results/MH200N/010108/oracle/full/thermo-zone-mode.tsv",
+        "suite": "thermo-zone-mode",
+        "suite_sha256": "46cfe1d80f81ff4fec7f38e5d9bd5d2d6a2060cd9d6e9f2e167f0d666252fa5f",
+        "target_sha256": "4ac640408201240096b09374522a7130967ad074047aa3a0aa455835fd737301",
+        "verdict": "silent",
+        "version": "010108"
+      },
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 46,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "silent",
+        "version": "028206"
+      }
+    ],
+    "*4*311*99##": [
+      {
+        "bus_frames": [],
+        "direction": "down",
+        "emitted_own": [],
+        "image_sha256": "aa1cd393e4ae4262b3b2c4f9f25b8e831adbed648975505e2084c801f2b7f5e7",
+        "line_number": 47,
+        "product": "MyHomeServer1",
+        "reply": "nack",
+        "source_tsv": "results/MyHomeServer1/028206/oracle/full/ownd-pr82-heating.tsv",
+        "suite": "ownd-pr82-heating",
+        "suite_sha256": "adad16dc49a8fc39f23205212bc6365ec702326f5e201764d33b2095fa80f27a",
+        "target_sha256": "5d511f9f848f2ec07d3d14bf9a1084de4084a8b976fb9aece332c7aa9bd3a856",
+        "verdict": "silent",
+        "version": "028206"
+      }
+    ]
+  },
+  "verdicts_sha256": "53df92a0f3f29beac2a84267163779a9b0415a2cc05e28921526a51cdd517c66"
+}

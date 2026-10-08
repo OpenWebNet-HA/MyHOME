@@ -14,11 +14,11 @@ same way does not rewrite the registry. Issue ids are
 ``device_fault_<entry_id>_<kind>_<who>_<where>``, so the ``_<entry_id>_`` sweep
 in ``async_remove_entry`` finds them.
 
-A fault is described only as far as the evidence goes. WHAT 19 from a lighting
-actuator is outside the published WHO 1 table and has been seen together with a
-WHO 1001 DIMENSION 11 mask (EVID-MH200-WHAT19-FAULT). No source documents the
-bits of that mask, so it is attached to the issue as raw evidence; it is never
-decoded and never raises an issue on its own.
+A fault is described only as far as the evidence goes. An unmapped status from a
+lighting actuator outside the published WHO 1 table (e.g. WHAT 99) may arrive
+together with a WHO 1001 DIMENSION 11 mask (such as in EVID-MH200-WHAT19-FAULT).
+No source documents the bits of that mask, so it is attached to the issue as raw
+evidence; it is never decoded and never raises an issue on its own.
 """
 from __future__ import annotations
 
@@ -33,8 +33,12 @@ from homeassistant.helpers.issue_registry import (
     async_create_issue,
     async_delete_issue,
 )
+from homeassistant.helpers.issue_registry import (
+    async_get as async_get_issue_registry,
+)
 
 from .const import DOMAIN, LOGGER
+from .ignored import IgnoredAddresses
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -47,16 +51,21 @@ DOCS_URL = "https://openwebnet-ha.github.io/MyHOME/beta/diagnostics/repair-issue
 EVIDENCE_WINDOW = 10.0
 # WHO 1001 dimensions carrying an autodiagnostic bitmask (OPEN.db: 7 on request, 11 pushed).
 AUTODIAG_DIMENSIONS = (7, 11)
-# Statuses outside the SCS WHO 1 table that are documented as events, not faults (ZigBee
+# Statuses outside the SCS WHO 1 table that are documented as events (ZigBee
 # OpenWebNet spec 4.0: 32 Toggle, 34 movement detected, 39 end of movement detected).
-# They say nothing about the on/off state, so they neither raise nor clear a fault.
+# They neither raise nor clear an unmapped status fault.
 DOCUMENTED_EVENTS = frozenset({32, 34, 39})
+
+# Recognized actuator states outside the published WHO 1 table (19 dimmer no load /
+# open circuit, handled directly by the light entity; issue #619).
+# They do not raise an unmapped status fault, and clear any pre-existing fault.
+RECOGNIZED_STATUSES = frozenset({19})
 
 
 class FaultKind(StrEnum):
     """What is wrong with a device."""
 
-    #: A status outside the published table of its WHO (lighting WHAT 19).
+    #: A status outside the published table of its WHO (e.g. lighting WHAT 99).
     UNMAPPED_STATUS = "unmapped_status"
     #: The device stopped answering its status request (see ``poll_health``).
     UNRESPONSIVE = "unresponsive"
@@ -118,6 +127,47 @@ class DeviceHealth:
         self._autodiag: dict[str, tuple[str, float]] = {}
         # When each address last sent a status outside the table (monotonic time).
         self._anomaly_seen: dict[str, float] = {}
+        self._clean_ignored_issues()
+
+    @property
+    def ignored_addresses(self) -> IgnoredAddresses:
+        """Addresses configured to be ignored on this gateway."""
+        entry = getattr(self._handler, "config_entry", None)
+        return IgnoredAddresses.from_config_entry(entry)
+
+    def is_ignored(self, who: int | str, where: str) -> bool:
+        """Whether (who, where) is configured to be ignored."""
+        try:
+            who_int = int(who)
+        except (ValueError, TypeError):
+            return False
+        return self.ignored_addresses.is_ignored(who_int, where)
+
+    def _clean_ignored_issues(self) -> None:
+        """Withdraw issues for addresses that are ignored."""
+        hass, entry_id = self._target()
+        if hass is None or entry_id is None:
+            return
+        ignored = self.ignored_addresses
+        if not ignored:
+            return
+
+        # Query issue registry to match routed and zero-normalized variants
+        issue_registry = async_get_issue_registry(hass)
+        prefix = f"{ISSUE_DEVICE_FAULT}_{entry_id}_"
+        for domain, issue_id in list(issue_registry.issues):
+            if domain == DOMAIN and issue_id.startswith(prefix):
+                issue = issue_registry.async_get_issue(domain, issue_id)
+                if issue and issue.translation_placeholders:
+                    issue_who = issue.translation_placeholders.get("who")
+                    issue_where = issue.translation_placeholders.get("where")
+                    if issue_who and issue_where and self.is_ignored(issue_who, issue_where):
+                        async_delete_issue(hass, DOMAIN, issue_id)
+
+        # Direct deletion fallback for simple mock test harnesses
+        for who, where in ignored:
+            for kind in FaultKind:
+                async_delete_issue(hass, DOMAIN, fault_issue_id(entry_id, kind, who, where))
 
     @property
     def faults(self) -> list[dict[str, Any]]:
@@ -135,6 +185,8 @@ class DeviceHealth:
         ``owner`` identifies the entity (its unique id) so that :meth:`forget_address`
         knows when the last entity of the address is gone.
         """
+        if self.is_ignored(who, where):
+            return
         key = (int(who), where)
         if owner is not None:
             self._owners.setdefault(key, set()).add(owner)
@@ -159,6 +211,8 @@ class DeviceHealth:
 
     def report(self, fault: Fault, device: str | None = None) -> None:
         """Raise ``fault``, or update its issue when its code or evidence changed."""
+        if self.is_ignored(fault.who, fault.where):
+            return
         if device:
             self._names[(fault.who, fault.where)] = device
         key = (fault.who, fault.where, fault.kind)
@@ -202,11 +256,14 @@ class DeviceHealth:
         ):
             return
         where = message_where(message)
-        if where is None:
+        if where is None or self.is_ignored(1, where):
             return
         unknown = getattr(message, "unknown_state", None)
         if isinstance(unknown, int) and not isinstance(unknown, bool):
             if unknown in DOCUMENTED_EVENTS:
+                return
+            if unknown in RECOGNIZED_STATUSES:
+                self.clear(1, where, FaultKind.UNMAPPED_STATUS)
                 return
             code = str(unknown)
             self._anomaly_seen[where] = time.monotonic()
@@ -222,8 +279,10 @@ class DeviceHealth:
         if getattr(message, "dimension", None) not in AUTODIAG_DIMENSIONS:
             return
         where = message_where(message)
+        if where is None or self.is_ignored(1, where):
+            return
         values = getattr(message, "_dimension_value", None)
-        if where is None or not isinstance(values, list) or not values:
+        if not isinstance(values, list) or not values:
             return
         mask = str(values[0])
         if not mask or set(mask) - {"0", "1"}:

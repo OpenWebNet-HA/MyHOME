@@ -88,7 +88,7 @@ def dummy_gateway():
 
 @pytest.mark.asyncio
 async def test_tcp_transport_connect_event_session_failure(dummy_gateway):
-    """Test connect fails when Event session fails."""
+    """Test connect fails when Event session fails and defaults inactivity_timeout to None."""
     transport = AsyncTcpTransport(gateway=dummy_gateway)
     assert transport.transport_type == "tcp"
 
@@ -100,6 +100,29 @@ async def test_tcp_transport_connect_event_session_failure(dummy_gateway):
         success = await transport.connect()
         assert success is False
         assert transport.is_connected is False
+        mock_event_cls.assert_called_once_with(
+            gateway=dummy_gateway,
+            logger=transport._logger,
+            inactivity_timeout=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_tcp_transport_passes_custom_inactivity_timeout(dummy_gateway):
+    """Test custom inactivity_timeout is propagated to OWNEventSession."""
+    transport = AsyncTcpTransport(gateway=dummy_gateway, inactivity_timeout=7200.0)
+
+    with patch("custom_components.myhome.core.transport.tcp.OWNEventSession") as mock_event_cls:
+        mock_event_sess = MagicMock()
+        mock_event_sess.connect = AsyncMock(return_value={"Success": False, "Message": "auth_failed"})
+        mock_event_cls.return_value = mock_event_sess
+
+        await transport.connect()
+        mock_event_cls.assert_called_once_with(
+            gateway=dummy_gateway,
+            logger=transport._logger,
+            inactivity_timeout=7200.0,
+        )
 
 
 @pytest.mark.asyncio

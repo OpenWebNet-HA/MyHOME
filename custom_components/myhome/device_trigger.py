@@ -114,17 +114,22 @@ def _get_gateway_mac_from_device(device: dr.AnyDeviceEntry) -> str | None:
 
 
 def _get_cen_address_from_device(device: dr.BaseDeviceEntry) -> str | None:
-    """Extract scenario address as string from device entry."""
+    """Extract scenario address as string from device entry deterministically."""
+    candidates: list[str] = []
     for identifier in device.identifiers:
         if identifier[0] != DOMAIN:
             continue
         ident = str(identifier[1])
         parts = ident.split("-")
         if len(parts) >= 3 and parts[-2] in ("15", "25", "cen", "cenplus"):
-            return parts[-1]
+            candidates.append(parts[-1])
         elif ident.startswith("cen_") or ident.startswith("cenplus_"):
-            return ident.split("_", 1)[1]
-    return None
+            candidates.append(ident.split("_", 1)[1])
+    if not candidates:
+        return None
+    # Prefer wire format with leading zero / longer representation, then alphabetical
+    candidates.sort(key=lambda s: (-len(s), s))
+    return candidates[0]
 
 
 def _get_cen_info_from_device(device: dr.BaseDeviceEntry) -> tuple[bool, int | None]:
@@ -145,12 +150,12 @@ def _get_cen_info_from_device(device: dr.BaseDeviceEntry) -> tuple[bool, int | N
         # Identifiers like "{mac}-15-{where}" or "{mac}-25-{where}"
         if len(parts) >= 3 and parts[-2] in ("15", "25", "cen", "cenplus"):
             try:
-                return True, int(parts[-1])
+                return True, int(parts[-1].split("#")[0])
             except ValueError:
                 pass
         elif ident.startswith("cen_") or ident.startswith("cenplus_"):
             try:
-                return True, int(ident.split("_", 1)[1])
+                return True, int(ident.split("_", 1)[1].split("#")[0])
             except ValueError:
                 pass
 
@@ -329,26 +334,71 @@ async def async_attach_trigger(
                 event_where = event_data.get("where")
                 event_raw_where = event_data.get("raw_where")
                 str_target = str(target_address)
-                matches_str = (
-                    (event_where is not None and str(event_where) == str_target)
-                    or (event_object is not None and str(event_object) == str_target)
-                    or (event_raw_where is not None and str(event_raw_where) == str_target)
-                    # CEN+ (WHO 25) wire WHERE is 2<object> (e.g. wire WHERE "21" for object 1)
-                    or (event_object is not None and str_target == f"2{event_object}")
-                )
-                if not matches_str:
-                    try:
-                        int_target = int(target_address)
-                        int_object = int(event_object) if event_object is not None else None
-                        int_raw_where = int(event_raw_where) if event_raw_where is not None else None
-                        if (
-                            int_object != int_target
-                            and int_raw_where != int_target
-                            and (int_object is None or str(int_target) != f"2{int_object}")
-                        ):
+                is_cenplus = event.event_type == "myhome_cenplus_event"
+
+                if is_cenplus:
+                    # CEN+ (WHO 25): object is scenario ID (e.g. 1), wire WHERE is 2<object> (e.g. 21)
+                    matches_str = (
+                        (event_object is not None and str(event_object) == str_target)
+                        or (event_raw_where is not None and str(event_raw_where) == str_target)
+                        or (event_object is not None and str_target == f"2{event_object}")
+                    )
+                    if not matches_str:
+                        try:
+                            target_clean = str(target_address).split("#")[0]
+                            int_target = int(target_clean)
+                            int_object = (
+                                int(str(event_object).split("#")[0])
+                                if event_object is not None
+                                else None
+                            )
+                            int_raw_where = (
+                                int(str(event_raw_where).split("#")[0])
+                                if event_raw_where is not None
+                                else None
+                            )
+                            if (
+                                int_object != int_target
+                                and int_raw_where != int_target
+                                and (int_object is None or str(int_target) != f"2{int_object}")
+                            ):
+                                return
+                        except (ValueError, TypeError):  # pragma: no cover - defensive
                             return
-                    except (ValueError, TypeError):
-                        return
+                else:
+                    # CEN (WHO 15): where is wire address (e.g. "0512"), object is int (e.g. 512)
+                    matches_str = (
+                        (event_where is not None and str(event_where) == str_target)
+                        or (event_object is not None and str(event_object) == str_target)
+                        or (event_raw_where is not None and str(event_raw_where) == str_target)
+                    )
+                    if not matches_str:
+                        try:
+                            target_clean = str(target_address).split("#")[0]
+                            int_target = int(target_clean)
+                            int_object = (
+                                int(str(event_object).split("#")[0])
+                                if event_object is not None
+                                else None
+                            )
+                            int_where = (
+                                int(str(event_where).split("#")[0])
+                                if event_where is not None
+                                else None
+                            )
+                            int_raw_where = (
+                                int(str(event_raw_where).split("#")[0])
+                                if event_raw_where is not None
+                                else None
+                            )
+                            if (
+                                int_object != int_target
+                                and int_where != int_target
+                                and int_raw_where != int_target
+                            ):
+                                return
+                        except (ValueError, TypeError):
+                            return
 
             await action(
                 {

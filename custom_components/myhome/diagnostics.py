@@ -231,6 +231,7 @@ def _build_topology_inference_diagnostics(
     """Assemble structured topology inference audit data."""
     from .topology import (
         entry_delegated_whos,
+        entry_firmware,
         entry_mac,
         entry_model,
         entry_primary_mac,
@@ -244,7 +245,7 @@ def _build_topology_inference_diagnostics(
     my_mac = entry_mac(entry) or ""
     my_model = entry_model(entry)
     my_tier = gateway_tier(my_model)
-    my_whos = gateway_supported_whos(my_model)
+    my_whos = gateway_supported_whos(my_model, entry_firmware(entry))
     configured_topology = entry_topology(entry)
     configured_role = entry_role(entry)
     configured_primary = entry_primary_mac(entry)
@@ -269,7 +270,7 @@ def _build_topology_inference_diagnostics(
         peer_mac = entry_mac(peer) or ""
         peer_model = entry_model(peer)
         peer_tier = gateway_tier(peer_model)
-        peer_whos = gateway_supported_whos(peer_model)
+        peer_whos = gateway_supported_whos(peer_model, entry_firmware(peer))
         rec = infer_shared_bus_topology(entry, peer)
 
         is_target_primary = rec.primary_mac == my_mac

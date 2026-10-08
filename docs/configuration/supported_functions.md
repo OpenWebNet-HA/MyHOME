@@ -12,7 +12,7 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 | 1 | Lighting | `light`, `switch`, `binary_sensor`, `sensor` | ✅ | See the platform table below. |
 | 2 | Automation (shutters, blinds) | `cover` | ✅ | Timed and position-reporting actuators. |
 | 4 | Thermoregulation | `climate`, `sensor` | ✅ | Zone thermostats, central units 3550 (`#0`) and 4695 (`#0#1`), probes. |
-| 5 | Burglar alarm | `alarm_control_panel` | ✅ / 👁️ | Central unit status and arm/disarm; zones are read through the event stream — see limitations. |
+| 5 | Burglar alarm | `alarm_control_panel` | 👁️ | Central unit status (read-only); arm/disarm through installer-programmed AUX frames — see [alarm](alarm.md#arming-and-disarming). |
 | 9 | Auxiliary channels | `binary_sensor` | 👁️ | AUX 1–9 as binary sensors. |
 | 13 | Gateway management | — | ⚙️ | Clock sync (`myhome.sync_time`), firmware / model / identity for the device registry and diagnostics. |
 | 14 | Actuator lock | `button` | ✅ | Lock / unlock buttons on every light, switch and cover device. |
@@ -71,8 +71,9 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 
 | Function | Status | Notes |
 | :--- | :---: | :--- |
-| Arm away / arm home / disarm | ✅ | Central units 3485 / 3486. |
-| Trigger (panic) | ✅ | |
+| State (disarmed / armed away / triggered) | 👁️ | Central units 3485 / 3486. |
+| Arm away / arm home / disarm | ❌ | The central unit rejects WHO 5 arm/disarm over SCS (#564); send the AUX frames it is programmed for with `myhome.send_message`, e.g. from a template alarm panel ([alarm](alarm.md#arming-and-disarming)). |
+| Trigger (panic) | ❌ | Not sent; no capture shows the central unit accepting it. |
 | Zone status | 👁️ | The panel follows the central unit and the zone-0 broadcast; individual zones are not entities (limitations). |
 
 ### `binary_sensor` (WHO 1 / 9 / 25)

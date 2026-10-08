@@ -230,7 +230,7 @@ class TestDryContactEvents:
         assert msg.is_on is True
 
     def test_dry_contact_off(self):
-        msg = OWNEvent.parse("*25*0#1*31##")
+        msg = OWNEvent.parse("*25*32#1*31##")
         assert isinstance(msg, OWNDryContactEvent)
         assert msg.is_on is False
 
@@ -399,7 +399,9 @@ class TestCommandParseRouter:
         assert isinstance(cmd, OWNCommand)
 
     def test_who25_dry_contact(self):
-        cmd = OWNCommand.parse("*25*0*31##")
+        # A dry contact is WHAT 31/32 (frame captured on MyHOME#466 plants);
+        # OWNd routes other WHO 25 WHATs elsewhere (OWNd#77 fix 9).
+        cmd = OWNCommand.parse("*25*31#1*339##")
         assert isinstance(cmd, OWNDryContactCommand)
 
 

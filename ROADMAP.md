@@ -31,9 +31,8 @@ gantt
     section Active Community Collaboration
     RFC - Dedicated Admin Panel & Cover Travel Profiles (#374)      :active, 2026-09-16, 2026-10-15
     RFC - Scope Resolution for WHO 14, WHO 24, WHO 22               :active, 2026-09-11, 2026-10-15
-    section Upstream Milestones
-    Upstream Home Assistant Core Integration (PR #232 Merge)        :2026-10-01, 2026-11-15
-    Official Brands Asset Inclusion (home-assistant/brands#2052)    :2026-09-20, 2026-10-15
+    section Release Milestones
+    Stable v2.0.0 - merge v2 into master (PR #232)                  :2026-10-01, 2026-11-15
 ```
 
 ---
@@ -44,7 +43,7 @@ The following table summarizes the completed architectural features and protocol
 
 | Priority / Feature | Subsystem | Implementation Status | Highlights |
 |---|---|---|---|
-| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd 2.0.0b8`) | Extracted into an independent, strongly typed Python library on PyPI; PEP 561 `py.typed` compliance, optimized HMAC-SHA256 handshake ($O(N)$ string generation), shared with CLI tools and MCP servers. |
+| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd 2.0.0b9`) | Extracted into an independent, strongly typed Python library on PyPI; PEP 561 `py.typed` compliance, optimized HMAC-SHA256 handshake ($O(N)$ string generation), shared with CLI tools and MCP servers. |
 | **Lighting Groups & General Debounced Resync (P7)** | WHO=1 | ✅ **Shipped** (#367, #376, #377, #391) | Declared groups in `myhome.yaml` (`where: '#G'`, optional `members:`) with aggregate status or `assumed_state`; 250 ms debounced sweep with bidirectional echo window and per-address cancellation; truthful event emission and centralized `FrameRouter` integration. |
 | **Strict Typing & Platinum Quality Seal** | Core / IQS | ✅ **Shipped** (`quality_scale.yaml`) | 100% compliance across all Bronze, Silver, Gold, and Platinum rules; strict `mypy` typing with 0 errors across all 30 integration modules. |
 | **CEN / CEN+ UI Device Triggers (P2)** | WHO=15 / 25 | ✅ **Shipped** | First-class Home Assistant UI device triggers with string-preserved addressing (`"0001"`), gateway MAC isolation, and all 8 press/held/release actions. |
@@ -156,17 +155,15 @@ graph LR
         B --> S --> G --> P
     end
 
-    subgraph UpstreamCore["🌐 Upstream Core Inclusion"]
-        U1["home-assistant/brands Assets<br/>(PR #2052 submitted)"]
-        U2["Core Integration PR #232<br/>(Continuous V2 Alignment)"]
-        P --> U1
+    subgraph Release["🌐 Stable v2.0.0"]
+        U2["Merge PR #232 into master<br/>(HACS users receive v2)"]
         P --> U2
     end
 
     classDef done fill:#2e7d32,stroke:#1b5e20,color:#ffffff;
     classDef pending fill:#0277bd,stroke:#01579b,color:#ffffff;
     class B,S,G,P done;
-    class U1,U2 pending;
+    class U2 pending;
 ```
 
 ### 📋 Detailed Quality Scale Audit Summary
@@ -177,7 +174,7 @@ graph LR
 * **`action-setup`**: Service action registrations (`sync_time`, `send_message`, `sweep_bus`, `turn_on_timed`, etc.) are centralized in `services.py` and registered once in `async_setup`, preventing listener teardown during entry reloads.
 
 #### 2. 🥈 Silver Robustness & Quality Hardening — ✅ 100% Complete (10/10)
-* **`test-coverage` (100.0% Strict Statement & Branch Coverage)**: Surpasses the core >95% requirement. MyHOME enforces strict 100.0% statement coverage across all integration modules (over 1,700 automated tests passing with zero misses, guarded by `tests/test_coverage_enforcer.py` and CI).
+* **`test-coverage` (100.0% Strict Statement & Branch Coverage)**: Surpasses the core >95% requirement. MyHOME enforces strict 100.0% statement coverage across all integration modules (over 3,000 automated tests passing with zero misses, guarded by `tests/test_coverage_enforcer.py` and CI).
 * **`action-exceptions`**: Service actions validate all inputs and raise `homeassistant.exceptions.ServiceValidationError` or `HomeAssistantError` mapped directly to localized translation keys under `exceptions` in `strings.json`.
 * **`parallel-updates`**: Declares explicit `PARALLEL_UPDATES = 0` across all platform modules (`light.py`, `switch.py`, `cover.py`, `climate.py`, `sensor.py`, `binary_sensor.py`, `media_player.py`, `button.py`, `alarm_control_panel.py`) for non-blocking local push stream processing.
 
@@ -192,13 +189,13 @@ graph LR
 * **`quality_scale.yaml`**: Official compliance manifest actively tracked at `custom_components/myhome/quality_scale.yaml` and verified by `scripts/quality_scale_report.py`.
 
 #### 4. 🏆 Platinum Engineering Tier — ✅ 100% Complete (3/3)
-* **`async-dependency`**: The underlying `OWNd` protocol engine (v2.0.0b7) is a 100% non-blocking asyncio library with zero synchronous blocking socket calls.
+* **`async-dependency`**: The underlying `OWNd` protocol engine (v2.0.0b9, pinned in `manifest.json`) is a 100% non-blocking asyncio library with zero synchronous blocking socket calls.
 * **`inject-websession`**: Formally exempt (all communication operates over raw OpenWebNet binary/text TCP streams; no HTTP websession required).
 * **`strict-typing`**: Enforces `mypy --strict` with **0 errors across all 30 integration modules**. Cascading type errors were eliminated alongside `OWNd 2.0.0b7`'s PEP 561 `py.typed` marker (PR #393), guarded in CI by `scripts/typing_ratchet.py`.
 
-#### 5. 🌐 Upstream Ecosystem & Core PR Status
-* **Branding Assets (`brands`)**: SVG and high-resolution PNG brand assets submitted in [`home-assistant/brands#2052`](https://github.com/home-assistant/brands/pull/2052).
-* **Core Integration PR #232**: Comprehensive PR [`#232`](https://github.com/OpenWebNet-HA/MyHOME/pull/232) continuously synced to `v2-phase1-architecture`, ready for upstream core maintainer review with full 2026.3+ / Python 3.14 certification.
+#### 5. 🌐 Release Status: Stable v2.0.0
+* **Branding Assets (`brands`)**: Already in place. The MyHOME icon and logo were merged into `home-assistant/brands` in [`#2052`](https://github.com/home-assistant/brands/pull/2052) (2020-11-30, for the original integration); nothing is pending.
+* **PR #232 (`v2-phase1-architecture` → `master`)**: The pull request that brings v2 to `master` inside this repository, so that HACS users receive it as a stable release; it is not a Home Assistant core submission. It is mergeable and awaiting review. Every release so far (latest `v2.0.0b14`) is a pre-release, and the integration requires Home Assistant 2026.3 or newer (Python 3.14).
 
 ---
 
@@ -219,7 +216,7 @@ graph TD
         GW_F461["🟢 F461<br/>(DIN Web Server)"]
         GW_3578["🟡 Legrand 3578<br/>(Serial/ZigBee Loopback)"]
         GW_MH201["🟢 MH201<br/>(100 Frames / Physical Plant)"]
-        GW_MH202["🔴 MH202<br/>(Scenario Gateway)"]
+        GW_MH202["🟡 MH202<br/>(WHO 13 diagnostics only)"]
         GW_F455["🟢 F455<br/>(80 Frames / Physical Plant)"]
     end
 
@@ -265,8 +262,8 @@ graph TD
     classDef needed fill:#c62828,stroke:#b71c1c,color:#ffffff;
 
     class GW_MHS1,GW_F454,GW_MH200,GW_MH201,GW_F461,GW_F455,SUB_LIGHT,SUB_DALI,SUB_GRP,SUB_COV_V,SUB_COV_H,SUB_CU3550,SUB_ENERGY,SUB_DRY,SUB_ROUTER covered;
-    class GW_3578,SUB_TIMER,SUB_CEN,SUB_ALARM partial;
-    class GW_MH202,SUB_COV_CAL,SUB_CU4695 needed;
+    class GW_3578,GW_MH202,SUB_TIMER,SUB_CEN,SUB_ALARM partial;
+    class SUB_COV_CAL,SUB_CU4695 needed;
 ```
 
 ---
@@ -281,7 +278,7 @@ graph TD
 | **F461 Web Server** | 🟢 **Covered** | Issue #273 capture (@lyubomirtraykov) | *None needed — DALI DT8 ballasts verified.* |
 | **Legrand 3578 USB/Serial** | 🟡 **Partial** | Unit test loopback in `tests/test_gateway.py` | **Real-world USB serial stream**: Raw byte capture from physical OpenZigBee installation (`WHERE=<id>#9`). |
 | **MH201** | 🟢 **Covered** | `tests/fixtures/plants/mh201_physical_plant/` (100 on-wire frames from physical MH201, issue #378 / PR #390; anonymized) | *None needed — physical plant active in CI (23 lights, 1 outlet, 7 advanced covers, CEN+ presses, WHO=13 device type / firmware / datetime replies).* |
-| **MH202** | 🔴 **Needed** | Synthetic gateway profile tests only | **Production plant trace**: General residential traffic through an MH202 scenario programmer. |
+| **MH202** | 🟡 **Partial** | `tests/fixtures/plants/pr_420_mh202/` (real WHO 13 / 1013 diagnostic exchanges from a physical MH202) plus synthetic profile tests | **Production plant trace**: General residential traffic through an MH202 scenario programmer. |
 | **F455** | 🟢 **Covered** | `tests/fixtures/plants/issue_466_f455/` (80 on-wire frames, issue #466 @lionelser; anonymized) | *None needed — F455 Basic Gateway active in CI (lighting, dimmers, pushbuttons, gateway diagnostics).* |
 | **F452 / F453AV / AM4890** | 🟡 **Synthetic** | Factory golden frames from `openwebnet4j` | **General trace**: Normal residential bus captures welcomed to expand gateway diversity. |
 

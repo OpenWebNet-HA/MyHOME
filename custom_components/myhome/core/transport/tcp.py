@@ -19,10 +19,12 @@ class AsyncTcpTransport(OWNTransport):
         self,
         gateway: OWNGateway,
         logger: Optional[logging.Logger] = None,
+        inactivity_timeout: Optional[float] = None,
     ) -> None:
         super().__init__(log_id=gateway.log_id)
         self.gateway = gateway
         self._logger = logger or _LOGGER
+        self._inactivity_timeout = inactivity_timeout
         self._event_session: Optional[OWNEventSession] = None
         self._command_session: Optional[OWNCommandSession] = None
         self._listener_task: Optional[asyncio.Task[None]] = None
@@ -41,7 +43,11 @@ class AsyncTcpTransport(OWNTransport):
         """Connect both Event and Command sessions."""
         self._terminate = False
 
-        self._event_session = OWNEventSession(gateway=self.gateway, logger=self._logger)
+        self._event_session = OWNEventSession(
+            gateway=self.gateway,
+            logger=self._logger,
+            inactivity_timeout=self._inactivity_timeout,
+        )
         event_res = await self._event_session.connect()
         if isinstance(event_res, dict) and not event_res.get("Success", True):
             self._logger.error(

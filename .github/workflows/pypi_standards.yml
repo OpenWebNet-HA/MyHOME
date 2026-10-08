@@ -8,18 +8,25 @@ on:
 
 permissions:
   contents: read
-  actions: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   packaging-standards:
+    # Required check on master: keep this name.
     name: Validate PyPI Packaging Standards
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.14"
 
@@ -49,7 +56,7 @@ jobs:
           python -c "import zipfile, glob; whl = glob.glob('dist/*.whl')[0]; z = zipfile.ZipFile(whl); files = z.namelist(); assert any('manifest.json' in f for f in files), f'manifest.json missing from {whl}'; assert any('en.json' in f for f in files), f'translations missing from {whl}'; print('Integration wheel assets verified successfully!')"
 
       - name: Upload distribution packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist-packages
           path: dist/*
@@ -57,7 +64,8 @@ jobs:
 
   unit-tests-and-coverage:
     name: Run Pytest Suite & Coverage (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -65,18 +73,26 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
 
+      # Tries the OWNd branch named like this one first, so a paired OWNd + MyHOME
+      # change is tested together. The branch name reaches the shell through env,
+      # never through ${{ }}: on a fork PR it is chosen by the PR author.
       - name: Install test dependencies
+        env:
+          OWND_REF: ${{ github.head_ref || github.ref_name }}
         run: |
           python -m pip install --upgrade pip
-          pip install .[test] homeassistant python-dateutil pytz pytest-socket
-          pip install --upgrade --force-reinstall "git+https://github.com/OpenWebNet-HA/OWNd.git@${{ github.head_ref || github.ref_name }}" || pip install --upgrade --force-reinstall "git+https://github.com/OpenWebNet-HA/OWNd.git@master"
+          pip install ".[test]" homeassistant python-dateutil pytz pytest-socket
+          pip install --upgrade --force-reinstall "git+https://github.com/OpenWebNet-HA/OWNd.git@${OWND_REF}" \
+            || pip install --upgrade --force-reinstall "git+https://github.com/OpenWebNet-HA/OWNd.git@master"
 
       - name: Run test suite with coverage tracking
         run: |
@@ -88,7 +104,7 @@ jobs:
 
       - name: Upload coverage report
         if: matrix.python-version == '3.14'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-report
           path: coverage.xml

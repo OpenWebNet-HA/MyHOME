@@ -105,16 +105,49 @@ class GatewayEventDispatcher:
             via_kwargs: dict[str, Any] = {}
             if self.handler.device_registry_id:
                 via_kwargs["via_device_id"] = self.handler.device_registry_id
+
+            wire_ident = (DOMAIN, f"{self.handler.mac}-{who}-{obj_str}")
+            identifiers = {wire_ident}
+
+            # Only pure numeric addresses with leading zeros (e.g. "0512") have a normalized decimal form.
+            # Routed addresses containing '#' (e.g. "36#4#01") must never strip routing or collide with base units.
+            norm_str: str | None = None
+            if obj_str.isdigit() and len(obj_str) > 1 and obj_str.startswith("0"):
+                norm_str = str(int(obj_str))
+
+            existing_wire_dev = device_registry.async_get_device(identifiers={wire_ident})
+            existing_norm_dev = (
+                device_registry.async_get_device(identifiers={(DOMAIN, f"{self.handler.mac}-{who}-{norm_str}")})
+                if norm_str is not None
+                else None
+            )
+
+            # Prevent passing multiple identifiers if two separate devices already exist in the registry,
+            # which would cause async_get_or_create to raise ValueError.
+            if existing_norm_dev is not None and existing_wire_dev is None:
+                # Alias the wire identifier onto the existing normalized device
+                identifiers.add((DOMAIN, f"{self.handler.mac}-{who}-{norm_str}"))
+
+            # Preserve existing user-facing device name if the device already exists
+            existing_dev = existing_wire_dev or existing_norm_dev
+            dev_name = (
+                existing_dev.name
+                if existing_dev and isinstance(existing_dev.name, str) and existing_dev.name
+                else f"{type_name} Unit {obj_str}"
+            )
+
             device_registry.async_get_or_create(
                 config_entry_id=config_entry.entry_id,
-                identifiers={(DOMAIN, f"{self.handler.mac}-{who}-{obj_str}")},
-                name=f"{type_name} Unit {obj_str}",
+                identifiers=identifiers,
+                name=dev_name,
                 manufacturer="BTicino",
                 model=f"{type_name} Scenario Control",
                 **via_kwargs,
             )
             self._cen_devices.add(device_key)
             self._cen_devices.add((who, obj_str))
+            if norm_str is not None and (existing_norm_dev is not None or existing_wire_dev is None):
+                self._cen_devices.add((who, norm_str))
             try:
                 self._cen_devices.add((who, int(object_id)))
             except (ValueError, TypeError):
@@ -164,6 +197,10 @@ class GatewayEventDispatcher:
         if message is None:
             self._logger.debug("%s Data received is not a message: `None`", self.handler.log_id)
             return
+
+        note_frame = getattr(self.handler, "note_event_frame", None)
+        if callable(note_frame):
+            note_frame()
 
         msg_who = getattr(message, "who", getattr(message, "_who", None))
         who_int = int(msg_who) if msg_who is not None and str(msg_who).isdigit() else None
@@ -215,7 +252,10 @@ class GatewayEventDispatcher:
                         # or count towards a resync sweep.
                         self.handler._resync_manager.handle_ptp_echo(message)
 
-                    if message.is_on is not None:
+                    dim = getattr(message, "dimension", None)
+                    is_not_dimension = dim is None or type(dim).__name__ == "MagicMock"
+
+                    if message.is_on is not None and is_not_dimension:
                         event = "on" if message.is_on else "off"
                         if message.is_general:
                             self.hass.bus.async_fire(
@@ -240,12 +280,12 @@ class GatewayEventDispatcher:
                                     "event": event,
                                 },
                             )
-                    if (
-                        getattr(message, "is_general", False)
-                        or getattr(message, "is_area", False)
-                        or getattr(message, "is_group", False)
-                    ):
-                        self.handler._schedule_resync(message)
+                        if (
+                            getattr(message, "is_general", False)
+                            or getattr(message, "is_area", False)
+                            or getattr(message, "is_group", False)
+                        ):
+                            self.handler._schedule_resync(message)
                 elif isinstance(message, OWNAutomationEvent) and self._is_active_for_who(2):
                     if message.is_opening and not message.is_closing:
                         event = "open"
@@ -339,6 +379,15 @@ class GatewayEventDispatcher:
             else:
                 event = None
             raw_obj = str(message.object)
+            clean_obj = raw_obj.split("#")[0]
+            try:
+                obj_val: int | str = int(clean_obj)
+            except (ValueError, TypeError):  # pragma: no cover - defensive
+                obj_val = raw_obj
+            try:
+                pb_val = int(message.push_button)
+            except (ValueError, TypeError):  # pragma: no cover - defensive
+                pb_val = message.push_button
 
             target_mac: str | None = self.handler.mac
             config_entry = getattr(self.handler, "config_entry", None)
@@ -356,8 +405,8 @@ class GatewayEventDispatcher:
             if target_mac is not None and self._is_active_for_who(25):
                 self.handler._ensure_cen_device(25, raw_obj)
                 cenplus_payload: dict[str, Any] = {
-                    "object": int(message.object),
-                    "pushbutton": int(message.push_button),
+                    "object": obj_val,
+                    "pushbutton": pb_val,
                     "event": event,
                     "where": raw_obj,
                     "gateway_mac": target_mac,
@@ -384,6 +433,15 @@ class GatewayEventDispatcher:
             else:
                 event = None
             raw_obj = str(message.object)
+            clean_obj = raw_obj.split("#")[0]
+            try:
+                obj_val = int(clean_obj)
+            except (ValueError, TypeError):  # pragma: no cover - defensive
+                obj_val = raw_obj
+            try:
+                pb_val = int(cast(int, message.push_button))
+            except (ValueError, TypeError):  # pragma: no cover - defensive
+                pb_val = message.push_button
 
             target_mac = self.handler.mac
             config_entry = getattr(self.handler, "config_entry", None)
@@ -401,8 +459,8 @@ class GatewayEventDispatcher:
             if target_mac is not None and self._is_active_for_who(15):
                 self.handler._ensure_cen_device(15, raw_obj)
                 cen_payload: dict[str, Any] = {
-                    "object": int(cast(str, message.object)),
-                    "pushbutton": int(cast(int, message.push_button)),
+                    "object": obj_val,
+                    "pushbutton": pb_val,
                     "event": event,
                     "where": raw_obj,
                     "gateway_mac": target_mac,

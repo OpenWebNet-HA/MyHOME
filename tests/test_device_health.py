@@ -12,7 +12,7 @@ from homeassistant.helpers import issue_registry as ir
 from OWNd.message import OWNEvent
 
 from custom_components.myhome import device_health as dh
-from custom_components.myhome.const import DOMAIN
+from custom_components.myhome.const import CONF_IGNORED_ADDRESSES, DOMAIN
 from custom_components.myhome.device_health import DeviceHealth, Fault, FaultKind, fault_issue_id
 from custom_components.myhome.gateway import MyHOMEGatewayHandler
 from custom_components.myhome.gateway_events import GatewayEventDispatcher
@@ -20,15 +20,21 @@ from custom_components.myhome.light import MyHOMELight
 from custom_components.myhome.sensor import MyHOMETemperatureSensor
 
 ENTRY_ID = "health_entry"
-FAULT = "*1*19*74##"
+FAULT = "*1*99*74##"
 MASK = "*#1001*74*11*111110111111111111110111##"
 OFF = "*1*0*74##"
 ISSUE_74 = fault_issue_id(ENTRY_ID, FaultKind.UNMAPPED_STATUS, 1, "74")
 
 
-def _health(hass):
+def _health(hass, ignored_addresses=None):
+    options = {}
+    if ignored_addresses is not None:
+        options[CONF_IGNORED_ADDRESSES] = ignored_addresses
     handler = SimpleNamespace(
-        hass=hass, config_entry=SimpleNamespace(entry_id=ENTRY_ID), name="MH200 Gateway", log_id="[health]"
+        hass=hass,
+        config_entry=SimpleNamespace(entry_id=ENTRY_ID, options=options, data={}),
+        name="MH200 Gateway",
+        log_id="[health]",
     )
     return DeviceHealth(handler)
 
@@ -55,11 +61,11 @@ async def test_unmapped_lighting_status_raises_an_issue_for_an_unconfigured_addr
         "gateway": "MH200 Gateway",
         "who": "1",
         "where": "74",
-        "code": "19",
+        "code": "99",
         "evidence": "",
     }
     assert issue.learn_more_url.endswith("/diagnostics/repair-issues/#unmapped-device-status")
-    assert health.faults == [{"who": 1, "where": "74", "kind": "unmapped_status", "code": "19", "evidence": ""}]
+    assert health.faults == [{"who": 1, "where": "74", "kind": "unmapped_status", "code": "99", "evidence": ""}]
 
 
 async def test_a_stuck_actuator_does_not_rewrite_the_issue_on_every_poll(hass):
@@ -146,7 +152,7 @@ async def test_a_mask_alone_raises_nothing(hass):
 
 async def test_an_address_behind_an_f422_keeps_its_interface(hass):
     health = _health(hass)
-    health.observe(_frame("*1*19*74#4#01##"))
+    health.observe(_frame("*1*99*74#4#01##"))
     issue = _issue(hass, fault_issue_id(ENTRY_ID, FaultKind.UNMAPPED_STATUS, 1, "74#4#01"))
     assert issue is not None
     assert issue.issue_id.endswith("_unmapped_status_1_74_4_01")
@@ -157,9 +163,9 @@ async def test_an_address_behind_an_f422_keeps_its_interface(hass):
 async def test_scope_frames_are_not_device_faults(hass):
     health = _health(hass)
     health.observe(_frame(FAULT))
-    for raw in ("*1*19*0##", "*1*19*7##", "*1*19*#5##", "*1*0*0##"):
+    for raw in ("*1*99*0##", "*1*99*7##", "*1*99*#5##", "*1*0*0##"):
         health.observe(_frame(raw))
-    assert health.faults == [{"who": 1, "where": "74", "kind": "unmapped_status", "code": "19", "evidence": ""}]
+    assert health.faults == [{"who": 1, "where": "74", "kind": "unmapped_status", "code": "99", "evidence": ""}]
 
 
 async def test_naming_the_address_renames_the_issue_and_forgetting_it_drops_it(hass):
@@ -361,7 +367,9 @@ async def test_a_fault_raised_during_a_failover_clears_on_the_primary_after_the_
 
 async def test_frames_without_a_point_address_or_a_binary_mask_are_ignored(hass):
     health = _health(hass)
-    health.observe(SimpleNamespace(who=1, where=None, unknown_state=19, is_on=None))
+    health.observe(SimpleNamespace(who=1, where=None, unknown_state=99, is_on=None))
+    health.observe(SimpleNamespace(who=1, where="74", unknown_state=32, is_on=None))
+    health.observe(SimpleNamespace(who=1001, where="74", dimension=99, _dimension_value=["01"]))
     health.observe(SimpleNamespace(who=1001, where="74", dimension=11, _dimension_value=[]))
     health.observe(SimpleNamespace(who=1001, where="74", dimension=11, _dimension_value=["1201"]))
     health.observe(_frame(FAULT))
@@ -373,7 +381,7 @@ async def test_an_entity_without_a_numeric_who_files_no_fault(hass):
     light = _light(hass, dispatcher.handler)
     light._who = "light"
     assert light._health_address is None
-    light._report_fault(FaultKind.UNMAPPED_STATUS, "19")
+    light._report_fault(FaultKind.UNMAPPED_STATUS, "99")
     assert dispatcher.handler.device_health.faults == []
 
 
@@ -410,3 +418,72 @@ async def test_sub_entity_added_to_hass_preserves_device_name_on_issue(hass):
     updated_issue = _issue(hass, fault_issue_id(ENTRY_ID, FaultKind.UNRESPONSIVE, 4, "71"))
     assert updated_issue.translation_placeholders["device"] == "Heating zone Zone 71"
 
+
+async def test_ignored_address_suppresses_actuator_fault(hass):
+    """An ignored address emits no repair issues on abnormal status."""
+    health = _health(hass, ignored_addresses=["1/74"])
+    health.observe(_frame(FAULT))
+    assert _issue(hass) is None
+    assert health.faults == []
+
+
+async def test_ignored_address_suppresses_autodiag(hass):
+    """An ignored address suppresses both autodiagnostic frame tracking and fault reporting."""
+    health = _health(hass, ignored_addresses=["1/74"])
+    health.observe(_frame(MASK))
+    health.observe(_frame(FAULT))
+    assert _issue(hass) is None
+    assert health.faults == []
+
+
+async def test_ignored_address_cleans_preexisting_issues_at_startup(hass):
+    """Configuring an address as ignored removes pre-existing repair issues on startup."""
+    normal_health = _health(hass)
+    normal_health.observe(_frame(FAULT))
+    assert _issue(hass) is not None
+
+    # Gateway reloads with 1/74 in ignored_addresses
+    _ignored_health = _health(hass, ignored_addresses=["1/74"])
+    assert _issue(hass) is None
+
+    # Pre-existing routed issue on 74#4#01 is cleaned by bare 1/74
+    routed_issue_id = fault_issue_id(ENTRY_ID, FaultKind.UNMAPPED_STATUS, 1, "74#4#01")
+    normal_health.observe(_frame("*1*99*74#4#01##"))
+    assert _issue(hass, routed_issue_id) is not None
+
+    _ignored_routed = _health(hass, ignored_addresses=["1/74"])
+    assert _issue(hass, routed_issue_id) is None
+
+    # Pre-existing issue on 74 is cleaned by zero-padded 1/074
+    _health(hass).observe(_frame(FAULT))
+    assert _issue(hass) is not None
+
+    _ignored_padded = _health(hass, ignored_addresses=["1/074"])
+    assert _issue(hass) is None
+
+
+async def test_ignored_address_suppresses_name_address_and_report(hass):
+    """name_address and direct report calls do nothing for ignored addresses."""
+    health = _health(hass, ignored_addresses=["1/74"])
+    health.name_address(1, "74", "Ignored Lamp")
+    assert (1, "74") not in health._names
+
+    fault = Fault(1, "74", FaultKind.UNMAPPED_STATUS, "99")
+    health.report(fault)
+    assert _issue(hass) is None
+    assert health.faults == []
+    assert health.is_ignored("invalid_who", "74") is False
+
+
+async def test_what_19_no_load_does_not_raise_an_issue(hass):
+    """WHAT 19 (dimmer no-load / open circuit) is a recognized state: raises no issue and clears prior fault."""
+    health = _health(hass)
+    # Prior unmapped anomaly on 74
+    health.observe(_frame("*1*99*74##"))
+    assert _issue(hass) is not None
+    assert len(health.faults) == 1
+
+    # WHAT 19 clears the anomaly and raises no new fault
+    health.observe(_frame("*1*19*74##"))
+    assert _issue(hass) is None
+    assert health.faults == []

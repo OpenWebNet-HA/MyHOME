@@ -1,6 +1,7 @@
 """Test the MyHOME climate component."""
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from homeassistant.components.climate.const import ClimateEntityFeature, HVACAction, HVACMode
 from homeassistant.const import UnitOfTemperature
 from OWNd.message import (
@@ -159,7 +160,7 @@ async def test_climate_properties_and_hvac_modes(hass):
     # Test set_hvac_mode AUTO
     await climate.async_set_hvac_mode(HVACMode.AUTO)
     gateway.send.assert_called_once()
-    assert str(gateway.send.call_args[0][0]) == "*4*311*1##"
+    assert str(gateway.send.call_args[0][0]) == "*4*311*#1##"
     gateway.send.reset_mock()
 
     # Test set_hvac_mode HEAT
@@ -203,14 +204,14 @@ async def test_climate_set_temperature(hass):
     climate._attr_hvac_mode = HVACMode.HEAT
     await climate.async_set_temperature(temperature=23.0)
     gateway.send.assert_called_once()
-    assert str(gateway.send.call_args[0][0]) == "*#4*1*#14*0230*1##"
+    assert str(gateway.send.call_args[0][0]) == "*#4*1*#14*0230*3##"
     gateway.send.reset_mock()
 
     # Set temperature when in COOL mode
     climate._attr_hvac_mode = HVACMode.COOL
     await climate.async_set_temperature(temperature=24.0)
     gateway.send.assert_called_once()
-    assert str(gateway.send.call_args[0][0]) == "*#4*1*#14*0240*2##"
+    assert str(gateway.send.call_args[0][0]) == "*#4*1*#14*0240*3##"
     gateway.send.reset_mock()
 
     # Set temperature when in AUTO mode
@@ -385,7 +386,7 @@ async def test_climate_edge_cases_and_properties(hass):
     climate._attr_hvac_mode = HVACMode.HEAT
     await climate.async_set_temperature()
     gateway.send.assert_called_once()
-    assert str(gateway.send.call_args[0][0]) == "*#4*1*#14*0210*1##"
+    assert str(gateway.send.call_args[0][0]) == "*#4*1*#14*0210*3##"
 
 
 async def test_climate_handle_events_mode_and_target_transitions(hass):
@@ -607,19 +608,19 @@ async def test_climate_fan_mode_and_attributes(hass):
     # Test setting fan modes: low (1), medium (2), high (3), auto (0)
     await climate_fancoil.async_set_fan_mode("low")
     assert climate_fancoil.fan_mode == "low"
-    assert str(gateway.send.call_args[0][0]) == "*#4*#5*#11*1##"
+    assert str(gateway.send.call_args[0][0]) == "*#4*5*#11*1##"
 
     await climate_fancoil.async_set_fan_mode("medium")
     assert climate_fancoil.fan_mode == "medium"
-    assert str(gateway.send.call_args[0][0]) == "*#4*#5*#11*2##"
+    assert str(gateway.send.call_args[0][0]) == "*#4*5*#11*2##"
 
     await climate_fancoil.async_set_fan_mode("high")
     assert climate_fancoil.fan_mode == "high"
-    assert str(gateway.send.call_args[0][0]) == "*#4*#5*#11*3##"
+    assert str(gateway.send.call_args[0][0]) == "*#4*5*#11*3##"
 
     await climate_fancoil.async_set_fan_mode("auto")
     assert climate_fancoil.fan_mode == "auto"
-    assert str(gateway.send.call_args[0][0]) == "*#4*#5*#11*0##"
+    assert str(gateway.send.call_args[0][0]) == "*#4*5*#11*0##"
 
     # 'off' or unknown fan mode is not dispatched
     gateway.send.reset_mock()
@@ -664,6 +665,48 @@ async def test_climate_fan_mode_and_attributes(hass):
     sent_requests = [str(call[0][0]) for call in gateway.send_status_request.call_args_list]
     assert "*#4*5##" in sent_requests
     assert "*#4*5*11##" in sent_requests
+
+
+async def test_climate_central_fan_mode_guard(hass):
+    """Test that central units cannot enable fan mode and calls raise ServiceValidationError."""
+    from homeassistant.exceptions import ServiceValidationError
+
+    from custom_components.myhome.const import DOMAIN
+
+    gateway = AsyncMock()
+    gateway.mac = "00:11:22:33:44:55"
+
+    # 1. Central unit initialized with fan=True ignores fan mode
+    cu = MyHOMEClimate(
+        hass=hass,
+        name="Central Unit",
+        device_id="climate_cu",
+        who="4",
+        where="#0",
+        heating=True,
+        cooling=True,
+        fan=True,
+        standalone=False,
+        central=True,
+        manufacturer="BTicino",
+        model="Central Unit (3550)",
+        gateway=gateway,
+    )
+    cu.entity_id = "climate.cu"
+    assert not (cu.supported_features & ClimateEntityFeature.FAN_MODE)
+    assert cu.fan_modes is None
+
+    # Dynamic enable attempt on central unit is rejected
+    cu._enable_fan_mode()
+    assert not (cu.supported_features & ClimateEntityFeature.FAN_MODE)
+
+    # Calling async_set_fan_mode on central unit raises ServiceValidationError
+    with pytest.raises(ServiceValidationError) as excinfo:
+        await cu.async_set_fan_mode("low")
+    gateway.send.assert_not_called()
+    assert excinfo.value.translation_domain == DOMAIN
+    assert excinfo.value.translation_key == "fan_speed_zone_only"
+
 
 
 async def test_climate_knob_positions_coverage(hass):

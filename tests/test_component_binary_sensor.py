@@ -402,6 +402,7 @@ async def test_binary_sensor_dispatcher_and_discovery(hass):
     # Test async_added_to_hass
     sensor = added[0]
     sensor.async_on_remove = MagicMock()
+    sensor._poll_on_add = True
     await sensor.async_added_to_hass()
     mock_gateway.send_status_request.assert_awaited()
 

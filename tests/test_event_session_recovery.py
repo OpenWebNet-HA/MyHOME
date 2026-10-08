@@ -33,10 +33,20 @@ HANG_CONNECT: list[Step] = []
 class FakeEventSession:
     """Stands in for OWNEventSession; each get_next() runs the next scripted step."""
 
-    def __init__(self, steps: list[Step], *, gateway: Any, logger: Any, on_state_change: Callable[[bool], None]) -> None:
+    def __init__(
+        self,
+        steps: list[Step],
+        *,
+        gateway: Any,
+        logger: Any,
+        on_state_change: Callable[[bool], None],
+        inactivity_timeout: float | None = None,
+        **kwargs: Any,
+    ) -> None:
         self._connect_hangs = steps is HANG_CONNECT
         self._steps = iter(steps)
         self.on_state_change = on_state_change
+        self.inactivity_timeout = inactivity_timeout
         self._stream_reader: object | None = None
         self._stream_writer: object | None = None
         self.closed = False
@@ -342,3 +352,26 @@ async def test_cancel_during_restart_backoff_still_releases_the_gateway(
     assert not handler._event_session_ready.is_set()
     assert handler._terminate_listener
     assert "Destroying listening worker" in caplog.text
+
+
+async def test_event_session_disables_inactivity_timeout_by_default(
+    hass: HomeAssistant, handler: MyHOMEGatewayHandler
+) -> None:
+    """Event sessions opened by the listener disable OWNd's inactivity watchdog."""
+    patcher, sessions = script_sessions([terminate(handler)])
+    with patcher:
+        await run_listener(handler)
+    assert len(sessions) == 1
+    assert sessions[0].inactivity_timeout is None
+
+
+async def test_event_session_passes_custom_inactivity_timeout(
+    hass: HomeAssistant, handler: MyHOMEGatewayHandler, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If EVENT_INACTIVITY_TIMEOUT is configured/patched, it is passed down to the session."""
+    monkeypatch.setattr(gw_module, "EVENT_INACTIVITY_TIMEOUT", 7200.0)
+    patcher, sessions = script_sessions([terminate(handler)])
+    with patcher:
+        await run_listener(handler)
+    assert len(sessions) == 1
+    assert sessions[0].inactivity_timeout == 7200.0

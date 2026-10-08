@@ -121,8 +121,8 @@ async def test_initial_discovery_skips_non_delegated_on_secondary(hass: HomeAssi
     gw_primary.send_status_request = AsyncMock()
 
     await gw_primary.initial_discovery()
-    # Primary queries WHO=2 (*#2*0##), WHO=4 (*#4*0##), WHO=16 (*#16*0##)
-    assert gw_primary.send_status_request.call_count == 3
+    # Primary queries WHO=1 (*#1*0##), WHO=2 (*#2*0##), WHO=4 (*#4*0##), WHO=16 (*#16*0*5##)
+    assert gw_primary.send_status_request.call_count == 4
 
     # Secondary with WHO=16 delegated only
     _, gw_secondary = _create_mock_gateway(
@@ -320,7 +320,7 @@ async def test_shared_bus_traffic_detection_tx_echo(hass: HomeAssistant) -> None
 
 
 @pytest.mark.asyncio
-async def test_services_multi_gateway(hass: HomeAssistant) -> None:
+async def test_services_multi_gateway(hass: HomeAssistant, fast_bus_pacing) -> None:
     """Test domain service dispatching across multiple gateways."""
     await async_setup_services(hass)
 
@@ -336,6 +336,8 @@ async def test_services_multi_gateway(hass: HomeAssistant) -> None:
 
     gw_a.send = AsyncMock()
     gw_b.send = AsyncMock()
+    gw_a.send_status_request = AsyncMock()
+    gw_b.send_status_request = AsyncMock()
 
     # 1. _get_gateway_handler prefers primary gateway when unspecified
     assert _get_gateway_handler(hass, None) == gw_a
@@ -350,20 +352,34 @@ async def test_services_multi_gateway(hass: HomeAssistant) -> None:
 
     # 3. sweep_bus filters queries: WHO=2/4/5/16/18 are delegated, so only the secondary sweeps them
     await hass.services.async_call(DOMAIN, SERVICE_SWEEP_BUS, {}, blocking=True)
-    # Primary gets: RTC (*#13**0##), Model (*#13**15##), FW (*#13**16##), plus covers/climate/audio/energy are delegated away = 3
-    assert gw_a.send.call_count == 3
-    assert gw_b.send.call_count == 0
+    # Primary sends RTC (*#13**0##), Model (*#13**15##), FW (*#13**16##); covers/climate/audio/energy
+    # are delegated away, so its only general request is Lighting (*#1*0##). All are status requests.
+    gw_a.send.assert_not_called()
+    assert [str(c.args[0]) for c in gw_a.send_status_request.call_args_list] == [
+        "*#13**0##", "*#13**15##", "*#13**16##", "*#1*0##",
+    ]
+    gw_b.send.assert_not_called()
+    gw_b.send_status_request.assert_not_called()
 
     gw_a.send.reset_mock()
     gw_b.send.reset_mock()
+    gw_a.send_status_request.reset_mock()
+    gw_b.send_status_request.reset_mock()
 
     # 4. targeted sweep hits the secondary
     await hass.services.async_call(
         DOMAIN, SERVICE_SWEEP_BUS, {"gateway": "00:03:50:aa:bb:02"}, blocking=True
     )
-    assert gw_a.send.call_count == 0
-    # Secondary gets: RTC, Model, FW, plus delegated WHO=2, 4, 5, 16, 18 (36 energy queries) = 43
-    assert gw_b.send.call_count == 43
+    gw_a.send.assert_not_called()
+    gw_a.send_status_request.assert_not_called()
+    # Secondary sends RTC, Model, FW, the delegated WHO=2, 4, 5, 16 general requests,
+    # plus the 36 delegated WHO=18 energy queries = 43 status requests
+    gw_b.send.assert_not_called()
+    calls_b = [str(c.args[0]) for c in gw_b.send_status_request.call_args_list]
+    assert len(calls_b) == 43
+    assert calls_b[:3] == ["*#13**0##", "*#13**15##", "*#13**16##"]
+    assert calls_b[3:7] == ["*#2*0##", "*#4*0##", "*#5*0##", "*#16*0*5##"]
+    assert len(calls_b[7:]) == 36
 
     # 4. _get_gateway_handler falls back to next(iter(gateways.values())) if no primary
     hass.config_entries.async_update_entry(
@@ -1004,7 +1020,7 @@ async def test_options_flow_standalone_and_standby_resets(hass: HomeAssistant) -
 
 
 @pytest.mark.asyncio
-async def test_service_sweep_delegated_who16_dimension_5(hass: HomeAssistant) -> None:
+async def test_service_sweep_delegated_who16_dimension_5(hass: HomeAssistant, fast_bus_pacing) -> None:
     """Test that sweep_bus sends dimension 5 query (*#16*0*5##) when WHO=16 is delegated."""
     entry_sec, gw_sec = _create_mock_gateway(
         hass,
@@ -1017,8 +1033,12 @@ async def test_service_sweep_delegated_who16_dimension_5(hass: HomeAssistant) ->
     await async_setup_services(hass)
 
     sent_queries = []
-    with patch.object(gw_sec, "send", new_callable=AsyncMock) as mock_send:
+    with (
+        patch.object(gw_sec, "send", new_callable=AsyncMock) as mock_send,
+        patch.object(gw_sec, "send_status_request", new_callable=AsyncMock) as mock_status,
+    ):
         mock_send.side_effect = lambda cmd: sent_queries.append(str(cmd))
+        mock_status.side_effect = lambda cmd: sent_queries.append(str(cmd))
         await hass.services.async_call(
             DOMAIN,
             SERVICE_SWEEP_BUS,
@@ -1319,6 +1339,27 @@ async def test_secondary_initial_discovery_delegated_who4(hass: HomeAssistant) -
     assert gw_sec.send_status_request.call_count == 1
     call_arg = gw_sec.send_status_request.call_args[0][0]
     assert str(call_arg) == "*#4*0##"
+
+
+@pytest.mark.asyncio
+async def test_secondary_initial_discovery_delegated_who1(hass: HomeAssistant) -> None:
+    """Test that a secondary gateway with delegated WHO=1 sweeps *#1*0## on initial discovery (#578)."""
+    _, gw_sec = _create_mock_gateway(
+        hass,
+        "00:03:50:aa:bb:02",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_SECONDARY,
+        primary_gateway="00:03:50:aa:bb:01",
+        delegated_whos=[1],
+    )
+    gw_sec.send_status_request = AsyncMock()
+
+    await gw_sec.initial_discovery()
+
+    # WHO=1 must be queried, while WHO=2, 4, 16 must be skipped on follower
+    assert gw_sec.send_status_request.call_count == 1
+    call_arg = gw_sec.send_status_request.call_args[0][0]
+    assert str(call_arg) == "*#1*0##"
 
 
 @pytest.mark.asyncio
@@ -1760,6 +1801,232 @@ def test_gateway_supported_whos_profile_exception(monkeypatch: pytest.MonkeyPatc
     assert whos == set()
 
 
+def _require_f453av_profile() -> None:
+    """Skip when the installed OWNd does not discriminate F453AV firmware yet (OWNd#80)."""
+    profiles = pytest.importorskip("OWNd.profiles")
+    if not hasattr(profiles, "F453AVProfile"):
+        pytest.skip("installed OWNd does not discriminate F453AV firmware yet (OWNd#80)")
+
+
+def test_gateway_supported_whos_with_firmware() -> None:
+    """Verify gateway_supported_whos discriminates firmware-gated capabilities (e.g. F453AV CEN+)."""
+    _require_f453av_profile()
+
+    from custom_components.myhome.topology import gateway_supported_whos
+
+    # F453AV without firmware or < 2.1.7: no WHO 25
+    assert 25 not in gateway_supported_whos("F453AV")
+    assert 25 not in gateway_supported_whos("F453AV", "1.0.19")
+
+    # F453AV with FW >= 2.1.7: supports WHO 25
+    assert 25 in gateway_supported_whos("F453AV", "2.1.7")
+    assert 25 in gateway_supported_whos("F453AV", "3.0.0")
+
+
+def test_gateway_supported_whos_passes_firmware_to_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify gateway_supported_whos passes firmware to get_gateway_profile when supported."""
+    from custom_components.myhome.topology import gateway_supported_whos
+
+    captured_calls: list[tuple[str, str | None]] = []
+
+    class DummyFirmwareProfile:
+        supported_who = {1, 25}
+
+        def __init__(self, model: str, fw: str | None) -> None:
+            self.model = model
+            self.fw = fw
+
+        def supports_who(self, who: int) -> bool:
+            if who == 25:
+                return self.fw == "2.1.7"
+            return True
+
+    def mock_two_arg_get_profile(model: str | None, fw: str | None = None) -> Any:
+        captured_calls.append((model or "", fw))
+        return DummyFirmwareProfile(model or "", fw)
+
+    monkeypatch.setattr(
+        "OWNd.profiles.get_gateway_profile",
+        mock_two_arg_get_profile,
+    )
+
+    whos_old = gateway_supported_whos("F453AV", "1.0.0")
+    assert 25 not in whos_old
+    assert captured_calls[-1] == ("F453AV", "1.0.0")
+
+    whos_new = gateway_supported_whos("F453AV", "2.1.7")
+    assert 25 in whos_new
+    assert captured_calls[-1] == ("F453AV", "2.1.7")
+
+
+def test_validate_shared_bus_topology_firmware_delegation(hass: HomeAssistant) -> None:
+    """Verify validate_shared_bus_topology permits WHO 25 when secondary F453AV has FW >= 2.1.7."""
+    _require_f453av_profile()
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.topology import validate_shared_bus_topology
+
+    primary = MockConfigEntry(
+        domain="myhome",
+        title="F454 Gateway",
+        data={
+            "address": "192.168.1.1",
+            "model": "F454",
+            "firmware": "2.0.0",
+            "bus_topology": "shared",
+            "gateway_role": "primary",
+        },
+        unique_id="00:03:50:00:00:01",
+    )
+    primary.add_to_hass(hass)
+
+    # Follower F453AV with FW < 2.1.7 fails delegating WHO 25
+    follower_old = MockConfigEntry(
+        domain="myhome",
+        title="F453AV Gateway",
+        data={"address": "192.168.1.2", "model": "F453AV", "firmware": "1.0.19"},
+        unique_id="00:03:50:00:00:02",
+    )
+    errors_old = validate_shared_bus_topology(
+        hass,
+        follower_old,
+        {
+            "bus_topology": "shared",
+            "gateway_role": "secondary",
+            "primary_gateway": "00:03:50:00:00:01",
+            "delegated_whos": ["25"],
+        },
+    )
+    assert errors_old.get("delegated_whos") == "who_not_supported_by_gateway"
+
+    # Follower F453AV with FW >= 2.1.7 succeeds delegating WHO 25
+    follower_new = MockConfigEntry(
+        domain="myhome",
+        title="F453AV Gateway",
+        data={"address": "192.168.1.3", "model": "F453AV", "firmware": "2.1.7"},
+        unique_id="00:03:50:00:00:03",
+    )
+    errors_new = validate_shared_bus_topology(
+        hass,
+        follower_new,
+        {
+            "bus_topology": "shared",
+            "gateway_role": "secondary",
+            "primary_gateway": "00:03:50:00:00:01",
+            "delegated_whos": ["25"],
+        },
+    )
+    assert "delegated_whos" not in errors_new
+
+
+def test_validate_shared_bus_topology_firmware_delegation_mocked(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify validate_shared_bus_topology delegates based on entry firmware version."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.topology import validate_shared_bus_topology
+
+    def mock_supported_whos(model: str | None, firmware: str | None = None) -> set[int]:
+        if model == "F453AV" and firmware == "2.1.7":
+            return {1, 2, 4, 15, 25}
+        return {1, 2, 4, 15}
+
+    monkeypatch.setattr(
+        "custom_components.myhome.topology.gateway_supported_whos",
+        mock_supported_whos,
+    )
+
+    primary = MockConfigEntry(
+        domain="myhome",
+        title="F454 Gateway",
+        data={
+            "address": "192.168.1.1",
+            "model": "F454",
+            "firmware": "2.0.0",
+            "bus_topology": "shared",
+            "gateway_role": "primary",
+        },
+        unique_id="00:03:50:00:00:01",
+    )
+    primary.add_to_hass(hass)
+
+    follower_old = MockConfigEntry(
+        domain="myhome",
+        title="F453AV Gateway",
+        data={"address": "192.168.1.2", "model": "F453AV", "firmware": "1.0.19"},
+        unique_id="00:03:50:00:00:02",
+    )
+    errors_old = validate_shared_bus_topology(
+        hass,
+        follower_old,
+        {
+            "bus_topology": "shared",
+            "gateway_role": "secondary",
+            "primary_gateway": "00:03:50:00:00:01",
+            "delegated_whos": ["25"],
+        },
+    )
+    assert errors_old.get("delegated_whos") == "who_not_supported_by_gateway"
+
+    follower_new = MockConfigEntry(
+        domain="myhome",
+        title="F453AV Gateway",
+        data={"address": "192.168.1.3", "model": "F453AV", "firmware": "2.1.7"},
+        unique_id="00:03:50:00:00:03",
+    )
+    errors_new = validate_shared_bus_topology(
+        hass,
+        follower_new,
+        {
+            "bus_topology": "shared",
+            "gateway_role": "secondary",
+            "primary_gateway": "00:03:50:00:00:01",
+            "delegated_whos": ["25"],
+        },
+    )
+    assert "delegated_whos" not in errors_new
+
+
+def test_entry_firmware_extraction() -> None:
+    """Verify entry_firmware extracts firmware version from data or options."""
+    from custom_components.myhome.topology import entry_firmware
+
+    entry_data = MagicMock(data={"firmware": "2.1.7"}, options={})
+    assert entry_firmware(entry_data) == "2.1.7"
+
+    entry_opts = MagicMock(data={}, options={"firmware": "1.0.19"})
+    assert entry_firmware(entry_opts) == "1.0.19"
+
+    entry_none = MagicMock(data={}, options={})
+    assert entry_firmware(entry_none) is None
+
+
+def test_gateway_supported_whos_single_arg_profile_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify gateway_supported_whos falls back when get_gateway_profile only takes 1 argument."""
+    from custom_components.myhome.topology import gateway_supported_whos
+
+    class DummyLegacyProfile:
+        supported_who = {1, 2, 4}
+
+        def supports_who(self, who: int) -> bool:
+            return True
+
+    def mock_single_arg_get_profile(model: str | None) -> Any:
+        return DummyLegacyProfile()
+
+    monkeypatch.setattr(
+        "OWNd.profiles.get_gateway_profile",
+        mock_single_arg_get_profile,
+    )
+
+    whos = gateway_supported_whos("F453AV", "2.1.7")
+    assert 1 in whos
+    assert 2 in whos
+    assert 4 in whos
+
+
 def test_infer_shared_bus_topology_equal_tier_b_has_more_whos(hass: HomeAssistant) -> None:
     """Test infer_shared_bus_topology when tier_a == tier_b but entry_b has more supported WHOs."""
     from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -1798,7 +2065,7 @@ def test_infer_shared_bus_topology_audio_coupling_who22_added(monkeypatch: pytes
     entry_b.title = "GW_B"
 
     # Gateway A supports 1, 2, 22. Gateway B supports 1, 2, 16, 22. Both Tier 3.
-    def mock_whos(model: str | None) -> set[int]:
+    def mock_whos(model: str | None, firmware: str | None = None) -> set[int]:
         if model == "GW_A":
             return {1, 2, 22}
         return {1, 2, 16, 22}
@@ -1823,7 +2090,7 @@ def test_infer_shared_bus_topology_audio_coupling_who22_added(monkeypatch: pytes
 
     # Inverted audio test: GW_A supports 1, 2, 16. GW_B supports 1, 2, 16, 22.
     # WHO 22 is in delta; WHO 16 is added via audio coupling.
-    def mock_whos_inv(model: str | None) -> set[int]:
+    def mock_whos_inv(model: str | None, firmware: str | None = None) -> set[int]:
         if model == "GW_A":
             return {1, 2, 16}
         return {1, 2, 16, 22}

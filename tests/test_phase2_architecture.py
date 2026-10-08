@@ -215,21 +215,21 @@ async def test_p4_central_unit_3550_initialization_and_commands(hass: HomeAssist
     await cu99.async_set_hvac_mode(HVACMode.HEAT)
     assert gateway.send.call_count == 1
     sent_cmd = gateway.send.call_args[0][0]
-    assert str(sent_cmd) == "*4*101*#0##"
+    assert str(sent_cmd) == "*4*1*#0##"
     assert cu99._attr_hvac_mode == HVACMode.HEAT
 
-    # Set master cool mode -> *4*102*#0##
+    # Set master cool mode -> *4*0*#0##
     gateway.send.reset_mock()
     await cu99.async_set_hvac_mode(HVACMode.COOL)
     sent_cmd = gateway.send.call_args[0][0]
-    assert str(sent_cmd) == "*4*102*#0##"
+    assert str(sent_cmd) == "*4*0*#0##"
     assert cu99._attr_hvac_mode == HVACMode.COOL
 
-    # Set master off mode -> *4*100*#0##
+    # Set master off mode -> *4*303*#0##
     gateway.send.reset_mock()
     await cu99.async_set_hvac_mode(HVACMode.OFF)
     sent_cmd = gateway.send.call_args[0][0]
-    assert str(sent_cmd) == "*4*100*#0##"
+    assert str(sent_cmd) == "*4*303*#0##"
     assert cu99._attr_hvac_mode == HVACMode.OFF
 
     # Set master temperature setpoint -> *#4*#0*#14*0215*1##
@@ -239,9 +239,10 @@ async def test_p4_central_unit_3550_initialization_and_commands(hass: HomeAssist
     sent_cmd = gateway.send.call_args[0][0]
     assert str(sent_cmd) == "*#4*#0*#14*0215*1##"
 
-    # Status update is a no-op for central units (no *#4*#0*14## status poll, #582)
+    # Status update queries plain status for 99-zone central units (*#4*#0##, #629)
     await cu99.async_update()
-    gateway.send_status_request.assert_not_called()
+    gateway.send_status_request.assert_called_once()
+    assert str(gateway.send_status_request.call_args[0][0]) == "*#4*#0##"
 
 
 @pytest.mark.asyncio
@@ -273,10 +274,10 @@ async def test_p4_central_unit_4695_four_zone(hass: HomeAssistant):
     assert cu4._central is True
     assert cu4._standalone is False
 
-    # Set master heat mode on 4-zone CU -> *4*101*#0#1##
+    # Set master heat mode on 4-zone CU -> *4*1*#0#1##
     await cu4.async_set_hvac_mode(HVACMode.HEAT)
     sent_cmd = gateway.send.call_args[0][0]
-    assert str(sent_cmd) == "*4*101*#0#1##"
+    assert str(sent_cmd) == "*4*1*#0#1##"
 
     # Status update is a no-op for central units (no *#4*#0#1*14## status poll, #582)
     await cu4.async_update()

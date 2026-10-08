@@ -59,36 +59,36 @@
     args: ["93"]
 
 - id: cover.cmd.up.bus.21
-  frame: "*2*1*21#4#1##"
+  frame: "*2*1*21#4#01##"
   direction: command
   who: 2
   what: 1
   where: "21"
-  interface: "1"
-  source: legrand-spec
+  interface: "01"
+  source: encyclopedia
   mcp_valid: true
-  mcp_notes: "Automation: UP at address 21 on private SCS bus 1"
+  mcp_notes: "Automation: UP at address 21 on local bus interface 01 (Encyclopedia functional/who-2-automation/addressing.md: APL#4#INTERFACE, INTERFACE = [0-1][1-9]). Corrected from *2*1*21#4#1##: the MyHomeServer1 firmware refuses a one-digit interface (*2*1*31#4#1## NACK, *2*1*31#4#01## ACK, au2.own, OWNd#77) and so does the MH200N emulation; every interface capture in this file uses two digits"
   roundtrip: true
   builder:
     class: OWNAutomationCommand
     method: raise_shutter
-    args: ["21#4#1"]
+    args: ["21#4#01"]
 
 - id: cover.cmd.stop.bus.21
-  frame: "*2*0*21#4#1##"
+  frame: "*2*0*21#4#01##"
   direction: command
   who: 2
   what: 0
   where: "21"
-  interface: "1"
-  source: legrand-spec
+  interface: "01"
+  source: encyclopedia
   mcp_valid: true
-  mcp_notes: "Automation: STOP at address 21 on private SCS bus 1"
+  mcp_notes: "Automation: STOP at address 21 on local bus interface 01 (Encyclopedia who-2-automation/addressing.md, INTERFACE = [0-1][1-9]). Corrected from *2*0*21#4#1##, a one-digit interface the firmware refuses (au2.own, OWNd#77)"
   roundtrip: true
   builder:
     class: OWNAutomationCommand
     method: stop_shutter
-    args: ["21#4#1"]
+    args: ["21#4#01"]
 
 - id: cover.cmd.up.gen.0
   frame: "*2*1*0##"

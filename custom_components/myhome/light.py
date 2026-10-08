@@ -64,6 +64,7 @@ from .const import (
     TRANSITION_MODE_NATIVE,
     TRANSITION_MODE_SOFTWARE,
     build_timed_turn_on_command,
+    eight_bits_to_min_percent,
     eight_bits_to_percent,
     normalize_where,
     percent_to_eight_bits,
@@ -142,9 +143,11 @@ async def async_setup_entry(
         lock_features = cfg.get(CONF_LOCK_FEATURES, False)
         dimmable = cfg.get(CONF_DIMMABLE, False)
         if ctx.source == "bus" and not dimmable and not lock_features:
-            # Auto-detect a dimmer from the first frame that carries a level
+            # Auto-detect a dimmer from the first frame that carries a level or no-load status
             dimmable = (
-                ctx.message.brightness is not None or ctx.message.brightness_preset is not None
+                ctx.message.brightness is not None
+                or ctx.message.brightness_preset is not None
+                or getattr(ctx.message, "unknown_state", None) == 19
             )
         kwargs = {"lock_features": lock_features}
         if ctx.source != "bus":
@@ -410,7 +413,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
 
         self._attr_is_on = None
         # True while is_on is only what Home Assistant restored at startup: not
-        # worth keeping against a fault report (an actuator stuck at WHAT 19).
+        # worth keeping against a fault report (e.g. an actuator reporting an unmapped WHAT).
         self._is_on_restored = False
         self._attr_brightness: int | None = None
         self._attr_brightness_pct: int | None = None
@@ -615,10 +618,13 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         return self._fade_engine.should_use_software_stepped(transition)
 
     async def _set_brightness_instant(self, pct: int) -> None:
-        """Send set_brightness with transition=0."""
-        await self._gateway_handler.send(
-            OWNLightingCommand.set_brightness(self._full_where, pct, 0)
-        )
+        """Send set_brightness with transition=0, or switch_off when pct <= 0."""
+        if pct <= 0:
+            await self._gateway_handler.send(OWNLightingCommand.switch_off(self._full_where))
+        else:
+            await self._gateway_handler.send(
+                OWNLightingCommand.set_brightness(self._full_where, pct, 0)
+            )
 
     async def _maybe_instant_brightness(
         self, start_pct: int, target_pct: int, is_on: bool | None = None
@@ -671,7 +677,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         if brightness_pct is not None:
             target_pct = brightness_pct
         elif brightness is not None:
-            target_pct = eight_bits_to_percent(brightness)
+            target_pct = eight_bits_to_min_percent(brightness)
 
         if (
             target_pct is not None
@@ -737,7 +743,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
 
             # Determine Value (brightness 0-100%)
             if ATTR_BRIGHTNESS in kwargs:
-                v = eight_bits_to_percent(kwargs[ATTR_BRIGHTNESS])
+                v = eight_bits_to_min_percent(kwargs[ATTR_BRIGHTNESS])
             elif ATTR_BRIGHTNESS_PCT in kwargs:
                 v = kwargs[ATTR_BRIGHTNESS_PCT]
             elif self._attr_brightness_pct is not None and self._attr_brightness_pct > 0:
@@ -938,16 +944,41 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             self._gateway_handler.log_id,
             message.human_readable_log,
         )
-        if message.is_on is not None:
+        unknown_state = getattr(message, "unknown_state", None)
+        is_no_load = unknown_state == 19
+
+        if is_no_load:
+            self._attr_is_on = False
+            self._is_on_restored = False
+            was_no_load = self._attr_extra_state_attributes.get("no_load", False)
+            self._attr_extra_state_attributes["no_load"] = True
+            self._attr_extra_state_attributes.pop("unknown_state", None)
+            if not was_no_load:
+                LOGGER.info(
+                    "%s light %s reports no load / open circuit (WHAT 19)",
+                    self._gateway_handler.log_id,
+                    self._full_where,
+                )
+            else:
+                LOGGER.debug(
+                    "%s light %s reports no load / open circuit (WHAT 19)",
+                    self._gateway_handler.log_id,
+                    self._full_where,
+                )
+        elif message.is_on is not None:
             self._attr_is_on = message.is_on
             self._is_on_restored = False
-
-        # A WHAT outside the WHO 1 table (e.g. 19 from an MH200 actuator with a
-        # WHO 1001 fault) leaves is_on None: keep a state seen on the bus or set
-        # from Home Assistant, but not one restored at startup - that may be the
-        # "on" a fault left behind before OWNd knew better (light 74, #456).
-        unknown_state = getattr(message, "unknown_state", None)
-        if isinstance(unknown_state, int):
+            self._attr_extra_state_attributes.pop("unknown_state", None)
+            if message.is_on and self._attr_extra_state_attributes.pop("no_load", None):
+                LOGGER.info(
+                    "%s light %s load reconnected / recovered",
+                    self._gateway_handler.log_id,
+                    self._full_where,
+                )
+        elif isinstance(unknown_state, int):
+            # A WHAT outside the WHO 1 table leaves is_on None: keep a state seen on the
+            # bus or set from Home Assistant, but not one restored at startup - that may
+            # be the "on" a fault left behind before OWNd knew better.
             if self._is_on_restored:
                 self._attr_is_on = None
                 self._is_on_restored = False
@@ -962,8 +993,6 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     else "keeping its last state",
                 )
             self._attr_extra_state_attributes["unknown_state"] = unknown_state
-        elif message.is_on is not None:
-            self._attr_extra_state_attributes.pop("unknown_state", None)
 
         is_fading = self._fade_engine.is_fading
 
@@ -1037,8 +1066,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 cast(int, message.color_temp)
             )
 
-        # Auto-promote to dimmable when brightness data is received (always)
-        elif has_level:
+        # Auto-promote to dimmable when brightness data is received (always) or dimmer reports no load
+        elif (has_level or is_no_load) and not self._is_mode_forbidden(ColorMode.BRIGHTNESS):
             if (
                 ColorMode.BRIGHTNESS not in self._attr_supported_color_modes
                 and ColorMode.COLOR_TEMP not in self._attr_supported_color_modes

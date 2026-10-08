@@ -25,7 +25,7 @@ Migration Capabilities:
 
 Legal Notice:
   This script is an independent data conversion and interoperability utility
-  developed under AGPL-3.0. It parses user configuration files and Home
+  developed under Apache-2.0. It parses user configuration files and Home
   Assistant registry databases under EU Directive 2009/24/EC Art. 6, GDPR
   Art. 20 (data portability), and US Copyright Act Fair Use / 17 U.S.C. 1201(f).
   It contains no proprietary software, code, or binaries from SDomotica or Legrand.

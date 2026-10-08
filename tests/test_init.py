@@ -148,7 +148,7 @@ async def test_setup_yaml(hass: HomeAssistant):
     result = await async_setup(hass, {DOMAIN: {}})
     assert result
 
-async def test_services(hass: HomeAssistant):
+async def test_services(hass: HomeAssistant, fast_bus_pacing):
     """Test sync_time and send_message services."""
     from custom_components.myhome.const import ATTR_GATEWAY, ATTR_MESSAGE
 
@@ -186,6 +186,7 @@ async def test_services(hass: HomeAssistant):
 
         gateway = hass.data[DOMAIN]["00:03:50:00:12:34"]["entity"]
         gateway.send = AsyncMock()
+        gateway.send_status_request = AsyncMock()
 
         # Test sync_time service (sends combined datetime *#13**#22... and time *#13**#0...)
         await hass.services.async_call(
@@ -252,18 +253,21 @@ async def test_services(hass: HomeAssistant):
 
         # Test sweep_bus service with specific gateway
         gateway.send.reset_mock()
+        gateway.send_status_request.reset_mock()
         await hass.services.async_call(
             DOMAIN, "sweep_bus", {ATTR_GATEWAY: "00:03:50:00:12:34"}, blocking=True
         )
-        assert gateway.send.call_count >= 5
+        assert gateway.send_status_request.call_count >= 5
         gateway.send.reset_mock()
+        gateway.send_status_request.reset_mock()
 
         # Test sweep_bus without gateway specified (sweeps all active gateways)
         await hass.services.async_call(
             DOMAIN, "sweep_bus", {}, blocking=True
         )
-        assert gateway.send.call_count >= 5
+        assert gateway.send_status_request.call_count >= 5
         gateway.send.reset_mock()
+        gateway.send_status_request.reset_mock()
 
         # Test sweep_bus with unconfigured gateway
         with patch("homeassistant.helpers.device_registry.format_mac", return_value="00:03:50:99:99:99"):
@@ -271,6 +275,7 @@ async def test_services(hass: HomeAssistant):
                 DOMAIN, "sweep_bus", {ATTR_GATEWAY: "00:03:50:99:99:99"}, blocking=True
             )
         gateway.send.assert_not_called()
+        gateway.send_status_request.assert_not_called()
 
         # Test sync_time, send_message, and sweep_bus when no gateway is set up
         # (an entry without runtime_data does not count as a gateway)
@@ -289,6 +294,7 @@ async def test_services(hass: HomeAssistant):
         finally:
             config_entry.runtime_data = saved_runtime
         gateway.send.assert_not_called()
+        gateway.send_status_request.assert_not_called()
 
 
 async def test_options_update_rebuilds_decoder_pool(hass: HomeAssistant):

@@ -6,12 +6,13 @@ Verifies the integration and protocol engine health of OWNd across:
 2. Latest published PyPI release (pip install --pre -U OWNd)
 3. Upstream development version (git+https://github.com/OpenWebNet-HA/OWNd.git@master)
 
-Executes 5 comprehensive validation gates:
+Executes 6 comprehensive validation gates:
 - Gate 1: Metadata & Version Lockstep Audit
-- Gate 2: OpenWebNet Golden Corpus Conformance (191 tests)
+- Gate 2: OpenWebNet Golden Corpus Conformance (one fixture per tests/golden/corpus.json entry)
 - Gate 3: Integration Platform Import Cleanliness
 - Gate 4: Mock Gateway TCP Handshake & Asynchronous Event Loopback
-- Gate 5: Integration worker using the installed OWNd send API
+- Gate 5: Firmware Oracle Conformance (parser resilience on real firmware outputs & rejection guarantees)
+- Gate 6: Integration worker using the installed OWNd send API
 """
 
 import argparse
@@ -102,11 +103,24 @@ def verify_metadata(target: str, pinned_version: str) -> Tuple[bool, str]:
 
 def verify_golden_corpus() -> Tuple[bool, str]:
     """Gate 2: Run Golden Corpus Conformance Suite."""
-    cmd = [sys.executable, "-m", "pytest", "tests/test_golden_conformance.py", "-q"]
+    cmd = [
+        sys.executable,
+        "-m",
+        "pytest",
+        "--noconftest",
+        "-p",
+        "no:homeassistant_custom_component",
+        "tests/test_golden_conformance.py",
+        "-q",
+    ]
     res = run_cmd(cmd, check=False)
     if res.returncode != 0:
         return False, "test_golden_conformance.py failed against installed OWNd"
-    return True, "191 Golden Corpus fixtures verified (parser extraction & builder parity passed)"
+    try:
+        count = len(json.loads((REPO_ROOT / "tests" / "golden" / "corpus.json").read_text(encoding="utf-8")))
+    except (OSError, ValueError, TypeError):
+        count = "all"
+    return True, f"{count} Golden Corpus fixtures verified (parser extraction & builder parity passed)"
 
 
 def verify_platform_imports() -> Tuple[bool, str]:
@@ -174,6 +188,30 @@ async def run_loopback_async() -> Tuple[bool, str]:
         await harness.stop()
 
 
+def verify_firmware_oracle() -> Tuple[bool, str]:
+    """Gate 5: Run Firmware Oracle Conformance Suite."""
+    cmd = [
+        sys.executable,
+        "-m",
+        "pytest",
+        "--noconftest",
+        "-p",
+        "no:homeassistant_custom_component",
+        "tests/test_firmware_oracle_conformance.py",
+        "-q",
+    ]
+    res = run_cmd(cmd, check=False)
+    if res.returncode != 0:
+        return False, "test_firmware_oracle_conformance.py failed against installed OWNd"
+    try:
+        data = json.loads((REPO_ROOT / "tests" / "golden" / "firmware_oracle.json").read_text(encoding="utf-8"))
+        count = data.get("total_unique_inputs", "all")
+        gws = len(data.get("gateways", []))
+    except Exception:
+        count, gws = "all", "all"
+    return True, f"{count} oracle inputs checked across {gws} firmware targets (parser extraction & rejection guarantees verified)"
+
+
 def verify_command_worker() -> Tuple[bool, str]:
     """Exercise the integration worker against the actual installed send API."""
     result = run_cmd([
@@ -201,7 +239,8 @@ def run_smoke_suite(target: str, skip_install: bool = False, dev_ref: str = None
         ("Gate 2: Golden Corpus Conformance", verify_golden_corpus),
         ("Gate 3: Platform Import Cleanliness", verify_platform_imports),
         ("Gate 4: Mock Gateway TCP Handshake & Loopback", lambda: asyncio.run(run_loopback_async())),
-        ("Gate 5: Installed Command API", verify_command_worker),
+        ("Gate 5: Firmware Oracle Conformance", verify_firmware_oracle),
+        ("Gate 6: Installed Command API", verify_command_worker),
     ]
 
     all_passed = True

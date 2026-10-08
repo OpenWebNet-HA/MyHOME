@@ -75,8 +75,8 @@ DOMAIN_METADATA: dict[str, dict[str, str]] = {
     "alarm_control_panel": {
         "label": "**`alarm_control_panel`**",
         "capabilities": (
-            "Central units (3485/3486), partitions, arm away/home, disarm, panic trigger, "
-            "zone 0 broadcast sync"
+            "Central units (3485/3486), read-only state (disarmed / armed away / triggered), "
+            "zone 0 broadcast sync; arm/disarm via AUX frames ([docs](docs/configuration/alarm.md))"
         ),
     },
     "binary_sensor": {

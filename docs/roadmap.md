@@ -10,9 +10,9 @@ Our overarching mission is to provide the most reliable, complete, and high-perf
 
 ---
 
-## 🗺️ Current Delivery Status (v2.0.0 Beta Series & v2.0.0b14 Milestone)
+## 🗺️ Current Delivery Status (v2.0.0 Beta Series, b14 Released)
 
-The major architectural milestones originally planned across Phases 1 through 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** across the **v2.0.0b1 through v2.0.0b13** releases. The active development branch is finalizing the **v2.0.0b14** milestone as part of the v2.0.0 stabilization effort.
+The major architectural milestones originally planned across Phases 1 through 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** across the **v2.0.0b1 through v2.0.0b14** releases. **v2.0.0b14** was published on 2026-09-30. Since then, bug fixes and smaller features have been merged into the development branch for the next beta. The remaining work is v2.0.0 stabilization: see *Final Stabilization* below.
 
 ```mermaid
 gantt
@@ -32,15 +32,22 @@ gantt
     Engine Upgrade: OWNd 2.0.0b8 (HMAC SHA-1/SHA-256) :done, 2026-09-12, 2026-09-18
     Climate Fan Mode Persistence (#404)              :done, 2026-09-15, 2026-09-18
     Home Assistant Platinum Quality Scale Alignment  :done, 2026-09-15, 2026-09-18
-    section v2.0.0b14 Active Milestone
+    section Released in v2.0.0b14 (2026-09-30)
     Multi-Gateway Plant Isolation Architecture (#453) :done, 2026-09-19, 2026-09-24
     Climate Zone HVAC Action & State Diagnostics (#457) :done, 2026-09-20, 2026-09-25
     F500 FM Tuner Dimension Reports & RDS Decoding   :done, 2026-09-21, 2026-09-26
     Touchscreen Profiles (AM4890, H4890, LN4890)     :done, 2026-09-22, 2026-09-27
-    Cover Centralized Triggers & Tilt Support (#492) :active, 2026-09-23, 2026-09-30
-    F520 Proactive Energy Meter Bus Sweeps (#494)    :active, 2026-09-24, 2026-09-30
+    F520 Proactive Energy Meter Bus Sweeps (#494)    :done, 2026-09-24, 2026-09-30
+    section Merged after b14 (unreleased)
+    CEN/CEN+ Trigger Isolation (#601) & Phantom Illuminance Fix (#604) :done, 2026-10-01, 2026-10-02
+    Read-Only Alarm Panel with AUX Arm/Disarm (#564)  :done, 2026-10-01, 2026-10-03
+    Device Fault Repairs (#593) & Blank-Start Discovery (#578) :done, 2026-10-01, 2026-10-03
+    Ignored Addresses Option (#611) & Dimmer No-Load WHAT 19 (#619) :done, 2026-10-03, 2026-10-04
+    Firmware-Aware Gateway Profiles (OWNd#80)         :done, 2026-10-04, 2026-10-05
+    section Open
+    Venetian Blind Slat Tilt (#492, draft PR #508)    :active, 2026-09-23, 2026-10-15
     section Final Stabilization
-    v2.0.0 Release Candidate & Distribution Consultation :2026-10-01, 2026-11-15
+    v2.0.0 Release Candidate & Distribution Consultation :2026-10-05, 2026-11-15
 ```
 
 ---

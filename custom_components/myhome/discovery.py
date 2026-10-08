@@ -31,6 +31,10 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+from homeassistant.components.climate import ClimateEntity
+from homeassistant.components.cover import CoverEntity
+from homeassistant.components.light import LightEntity
+from homeassistant.components.light.const import ColorMode
 from homeassistant.const import CONF_MAC
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
@@ -40,6 +44,7 @@ from homeassistant.helpers.entity import Entity
 
 from .const import BUS_ROUTING, CONF_BUS_INTERFACE, CONF_WHERE, CONF_WHO, CONF_ZONE, DOMAIN, LOGGER
 from .data import MyHOMEConfigEntry, MyHOMERuntimeData
+from .ignored import IgnoredAddresses
 from .myhome_device import MyHOMEEntity
 from .topology import peer_unique_id
 
@@ -257,6 +262,44 @@ def default_known_keys(ctx: DeviceContext) -> list[str]:
     return [k for k in keys if k]
 
 
+def message_has_state(entity: MyHOMEEntity, message: Any) -> bool:
+    """Whether the revealing bus message already carries the entity's complete state.
+
+    When True, poll-on-add is suppressed so the gateway command session is not
+    flooded during general status request bursts. When False (e.g. a moving cover
+    without position, or a dimmer without brightness), the entity retains
+    poll-on-add to query its full state once the general sweep completes.
+    """
+    if message is None:
+        return False
+
+    # Cover: needs current position or dimension 10 reply
+    if isinstance(entity, CoverEntity):
+        return getattr(message, "current_position", None) is not None or getattr(message, "dimension", None) == 10
+
+    # Light: a dimmer or colour light needs brightness or a dimension status
+    if isinstance(entity, LightEntity):
+        modes = set(entity.supported_color_modes or ())
+        if modes - {ColorMode.ONOFF, ColorMode.UNKNOWN}:
+            return getattr(message, "brightness", None) is not None or getattr(message, "dimension", None) is not None
+        return getattr(message, "is_on", None) is not None
+
+    # Heating zone: mode, setpoint and temperature arrive in separate frames, so a
+    # temperature-only frame must not cancel the poll for the rest.
+    if isinstance(entity, ClimateEntity):
+        return False
+
+    # Switch / binary device
+    if getattr(message, "is_on", None) is not None:
+        return True
+
+    # General dimension reply
+    if getattr(message, "dimension", None) is not None:
+        return True
+
+    return False
+
+
 class PlatformDiscovery:
     """Restore / configure / discover / route for one platform of one gateway.
 
@@ -374,6 +417,15 @@ class PlatformDiscovery:
         self.known = KnownDevices()
         self.router = self.runtime.router
         self.configured: dict[str, Any] = self.runtime.platforms.get(platform, {})
+        self.ignored_addresses = IgnoredAddresses.from_config_entry(config_entry)
+
+    def _is_ignored(self, address: Address) -> bool:
+        """Whether this address is configured to be ignored on this gateway."""
+        try:
+            who_int = int(self.who)
+        except (ValueError, TypeError):
+            return False
+        return self.ignored_addresses.is_ignored(who_int, address.where, address.interface)
 
     # ── registry ────────────────────────────────────────────────────────
 
@@ -414,6 +466,19 @@ class PlatformDiscovery:
                         LOGGER.debug("%s: could not remove %s: %s", self.platform, entry.entity_id, err)
                 continue
 
+            # Ignored addresses: permanently skip discovery, entities and fault tracking
+            if self._is_ignored(address):
+                LOGGER.info(
+                    "%s: Pruned ignored entity %s (WHO %s WHERE %s)",
+                    self.platform,
+                    entry.entity_id,
+                    self.who,
+                    address.key,
+                )
+                if registry is not None:
+                    prune_entity(self.hass, registry, entry, self.config_entry.entry_id)
+                continue
+
             # Shared bus: a device the primary already has stays on the primary (#453)
             if registry is not None and self._owned_by_primary(registry, entry.unique_id):
                 LOGGER.info(
@@ -450,6 +515,14 @@ class PlatformDiscovery:
                 address=address, who=str(cfg.get(CONF_WHO, self.who)), cfg=cfg, source="yaml",
                 device_id=self.yaml_device_id(address), config_id=str(dev_id),
             )
+            if self._is_ignored(address):
+                LOGGER.debug(
+                    "%s: Skipping ignored YAML device (WHO %s WHERE %s)",
+                    self.platform,
+                    ctx.who,
+                    address.key,
+                )
+                continue
             if self.one_per_address and (address.clean_key in seen or ctx.key in self.known or dev_id in self.known):
                 continue
             if self.accept and not self.accept(ctx):
@@ -511,6 +584,10 @@ class PlatformDiscovery:
                 return []
         if not created:
             return []
+        if ctx.source == "bus":
+            for entity in created:
+                if message_has_state(entity, ctx.message):
+                    entity._poll_on_add = False
         self.known.add(*keys)
         for entity in created:
             entity.async_on_remove(self.router.subscribe(self.who, keys, entity.handle_event))
@@ -535,6 +612,8 @@ class PlatformDiscovery:
         if address is None and self.route_keys is None:
             return
         if address is not None:
+            if self._is_ignored(address):
+                return
             if getattr(message, "is_group", False) is True or getattr(message, "is_area", False) is True:
                 if self.on_scope:
                     self.on_scope(message, address)

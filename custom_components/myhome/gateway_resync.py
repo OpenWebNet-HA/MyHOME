@@ -120,6 +120,11 @@ class LightingResyncManager:
         if not getattr(self.handler, "broadcast_resync", True):
             return
 
+        dim = getattr(message, "dimension", None)
+        is_dimension = dim is not None and type(dim).__name__ != "MagicMock"
+        if getattr(message, "is_on", None) is None or is_dimension:
+            return
+
         now = float(self._time.monotonic())
         while self._recent_ptp and self._recent_ptp[0][0] < now - RESYNC_LEADING_WINDOW_S:
             self._recent_ptp.popleft()

@@ -102,6 +102,7 @@ nav:
       - Home Assistant Repairs: diagnostics/repair-issues.md
       - Dashboard Recipes: configuration/lovelace_recipes.md
       - Adaptive Lighting Recipe: recipes/adaptive_lighting.md
+      - Hardware-Coupled Sensors & Curfew: guides/hardware-coupled-sensors.md
       - Troubleshooting: configuration/troubleshooting.md
       - Known Limitations: configuration/known_limitations.md
       - Use Cases: configuration/use_cases.md

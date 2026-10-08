@@ -306,3 +306,11 @@ def attach_gateway(hass):
         return entry
 
     return _attach
+
+
+@pytest.fixture
+def fast_bus_pacing(monkeypatch):
+    """Shrink the paced-sweep waits: mock gateways answer at once or never drain the queue."""
+    monkeypatch.setattr("custom_components.myhome.gateway.PACED_WRITE_TIMEOUT", 0.01)
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 0.01)
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_PERIOD", 0.005)

@@ -7,7 +7,6 @@ Things the integration does not do, or does with a caveat, and the reason. Where
 | Limitation | Why | Workaround |
 | :--- | :--- | :--- |
 | **One command session per gateway on MH200 / MH200N / MH201.** Commands are queued and paced (150 / 80 / 60 ms). | Those gateways refuse or drop overlapping sessions; the pacing is what keeps them alive. | Keep the worker count at the profile default. F454 / F455 / MyHOMEServer1 / MH202 take more workers. |
-| **Lights are not hydrated at startup.** State appears when the actuator first reports, or after `myhome.sweep_bus`. | `*#1*0##` is not a valid OpenWebNet request; there is no general status query for WHO 1. | Call `myhome.sweep_bus` from an automation on `homeassistant.start`, or turn something on. |
 | **Entities can be unavailable for up to 60 s after a gateway drop.** | The availability grace period hides short reconnects instead of flapping every entity. | Nothing needed; a longer outage marks entities unavailable and they recover on reconnect. |
 | **A gateway's model can be mislabelled.** | Only the WHO 13 device-type reply is available in-band, and its official table stops at 2006 hardware. | The [identification rules](gateway-identification.md) correct manual choices and raise a repair issue when evidence contradicts SSDP; use the reconfigure flow to set the model explicitly. |
 | **Serial (Legrand 3578) gateways are not discovered.** | No SSDP on a USB port. | Add the integration manually and pick the serial transport. |
@@ -21,6 +20,7 @@ Things the integration does not do, or does with a caveat, and the reason. Where
 | **A declared group (`where: '#G'` in `myhome.yaml`) never auto-discovers its membership.** (P7, #368) | OpenWebNet has no command to read back which actuators a group was programmed with - that is set on the plant itself (MyHOME_Suite or a physical group-programmed actuator), not on the bus. | Declare `members:` yourself if you want derived on/off, brightness and colour state; without it the entity is `assumed_state` and shows separate On/Off controls. |
 | **Colour modes are learned, not configured.** A DALI DT8 light shows colour temperature only after its first dimension 14 frame. | The bus does not describe an actuator's capabilities; it only reports what it does. | Set `color_temp: true` / `rgb: true` / `hs: true` in `myhome.yaml` to declare the mode up front. |
 | **Native transitions depend on the actuator.** | Some dimmers ignore the fade parameter. | Keep the default `software_stepped` transition mode. |
+| **Physical sensors sharing an actuator address (e.g. 3477 twilight photocell) trigger the actuator directly on the wire.** | Point-to-point SCS physical addressing binds the sensor contact interface directly to the relay. Hardware turn-ons cannot be prevented before they execute on the bus. | Use the [Hardware-Coupled Sensors Guide](../guides/hardware-coupled-sensors.md) and Dusk Curfew Blueprint to enforce bedtime curfews and companion synchronization, or decouple the sensor address. |
 
 ## Covers (WHO 2)
 

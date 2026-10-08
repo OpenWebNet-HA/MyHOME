@@ -4,6 +4,7 @@
 Maintains live, automated documentation of test coverage across all components.
 Called locally and by the GitHub Actions test-coverage workflow.
 """
+import json
 import os
 import re
 import subprocess
@@ -14,6 +15,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COVERAGE_XML = os.path.join(REPO_ROOT, "coverage.xml")
 README_MD = os.path.join(REPO_ROOT, "README.md")
 COVERAGE_SVG = os.path.join(REPO_ROOT, "coverage.svg")
+GOLDEN_CORPUS = os.path.join(REPO_ROOT, "tests", "golden", "corpus.json")
 
 START_MARKER = "<!-- START_COVERAGE_TABLE -->"
 END_MARKER = "<!-- END_COVERAGE_TABLE -->"
@@ -97,6 +99,15 @@ def get_test_count() -> int:
             pass
 
     return 701
+
+
+def get_golden_corpus_count() -> int | None:
+    """Number of frame fixtures in the Golden Corpus, or None if it cannot be read."""
+    try:
+        with open(GOLDEN_CORPUS, encoding="utf-8") as f:
+            return len(json.load(f))
+    except (OSError, ValueError, TypeError):
+        return None
 
 
 def normalize_coverage_filename(fn: str) -> str:
@@ -232,6 +243,14 @@ def update_readme_and_svg():
         f"Synthetic mock TCP test harness with {test_count}+ unit tests ({rate_round}% coverage)",
         content,
     )
+
+    corpus_count = get_golden_corpus_count()
+    if corpus_count is not None:
+        content = re.sub(
+            r"(Runs\s+)\d+(\s+OpenWebNet frame fixtures)",
+            rf"\g<1>{corpus_count}\g<2>",
+            content,
+        )
 
     with open(README_MD, "w", encoding="utf-8") as f:
         f.write(content)

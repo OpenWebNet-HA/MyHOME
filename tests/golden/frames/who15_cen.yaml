@@ -50,5 +50,20 @@
   where: "0001"
   source: openwebnet4j
   mcp_valid: true
-  mcp_notes: "CEN: Button 1 extended pressure on module 0001"
+  mcp_notes: "CEN: Button 1 extended pressure on module 0001. Disputed: the Encyclopedia CEN table allows [00][01-15] (functional/who-15-cen/README.md), but the MyHomeServer1 firmware refuses WHERE 0001 (*15*01*0001## produces no bus frame, au1.tsv, OWNd#77; four digits only when A or PL is 10 or more). No capture either way; see cen.event.extended_press.btn3.0512 for a captured four-digit address"
   roundtrip: true
+
+- id: cen.event.extended_press.btn3.0512
+  frame: "*15*03#3*0512##"
+  direction: event
+  who: 15
+  what: "03#3"
+  where: "0512"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "CEN: extended pressure on button 3 of source 0512 (A 5, PL 12: four digits because PL is 10 or more). Captured on an MH200N and a MyHomeServer1 on the same bus, which emit the same WHERE with its leading zero (MyHOME tests/fixtures/traces/issue_624/, MyHOME#624). The full press: *15*03*0512##, *15*03#3*0512## (repeated while held), *15*03#2*0512##"
+  roundtrip: true
+  builder:
+    class: OWNCenCommand
+    method: start_long_press
+    args: ["0512", 3]

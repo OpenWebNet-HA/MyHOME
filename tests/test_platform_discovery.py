@@ -6,12 +6,15 @@ F422 bus-routing form ``APL#4#<bus>`` (``0311#4#01``).
 """
 from unittest.mock import MagicMock, patch
 
+from homeassistant.components.climate import ClimateEntity
+from homeassistant.components.cover import CoverEntity
+from homeassistant.components.light import ColorMode, LightEntity
 from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from OWNd.message import OWNAutomationEvent, OWNEvent, OWNLightingEvent
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.myhome.const import DOMAIN
+from custom_components.myhome.const import CONF_IGNORED_ADDRESSES, DOMAIN
 from custom_components.myhome.discovery import (
     Address,
     DeviceContext,
@@ -69,8 +72,8 @@ def test_config_lookup_and_known_devices():
     assert sorted(known) == ["13"]
 
 
-def _entry(hass, platforms):
-    entry = MockConfigEntry(domain=DOMAIN, data={"mac": MAC}, unique_id=MAC)
+def _entry(hass, platforms, options=None):
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": MAC}, options=options or {}, unique_id=MAC)
     entry.add_to_hass(hass)
     gateway = MagicMock()
     gateway.mac = MAC
@@ -238,3 +241,154 @@ async def test_build_may_return_several_entities_or_none(hass):
     assert fed == [("a", "51"), ("b", "51")]  # both entities of the address, once each
     discovery.handle_message(MagicMock(where="53", interface=None, is_translation=False))  # discovered: fed once
     assert fed[2:] == [("a", "53"), ("b", "53")]
+
+
+def test_message_has_state_cover():
+    """Test message_has_state for covers (#578)."""
+    from custom_components.myhome.discovery import message_has_state
+
+    cover = MagicMock(spec=CoverEntity)
+
+    # Moving message without position
+    msg_moving = MagicMock(current_position=None, dimension=None)
+    assert message_has_state(cover, msg_moving) is False
+
+    # Status message with position
+    msg_status = MagicMock(current_position=50, dimension=10)
+    assert message_has_state(cover, msg_status) is True
+
+    # Dimension 10 reply
+    msg_dim10 = MagicMock(current_position=None, dimension=10)
+    assert message_has_state(cover, msg_dim10) is True
+
+
+def test_message_has_state_light_and_switch():
+    """Test message_has_state for lights (on/off vs dimmer) and switches (#578)."""
+    from custom_components.myhome.discovery import message_has_state
+
+    # Simple on/off light
+    light = MagicMock(spec=LightEntity)
+    light.supported_color_modes = {ColorMode.ONOFF}
+    msg_on = MagicMock(is_on=True, brightness=None, dimension=None)
+    assert message_has_state(light, msg_on) is True
+
+    # Dimmable light
+    dimmer = MagicMock(spec=LightEntity)
+    dimmer.supported_color_modes = {ColorMode.BRIGHTNESS}
+    assert message_has_state(dimmer, msg_on) is False
+
+    msg_dimmer = MagicMock(is_on=True, brightness=128, dimension=None)
+    assert message_has_state(dimmer, msg_dimmer) is True
+
+    # Dimmable light with dimension reply (no explicit brightness)
+    msg_dimmer_dim = MagicMock(is_on=True, brightness=None, dimension=1)
+    assert message_has_state(dimmer, msg_dimmer_dim) is True
+
+    # None message
+    assert message_has_state(light, None) is False
+
+
+def test_message_has_state_climate_needs_poll():
+    """A heating zone seen through a temperature-only frame still polls mode and setpoint (#578)."""
+    from custom_components.myhome.discovery import message_has_state
+
+    zone = MagicMock(spec=ClimateEntity)
+    msg_temp = MagicMock(is_on=None, dimension=0)
+    assert message_has_state(zone, msg_temp) is False
+
+
+async def test_bus_discovery_poll_on_add_scoping(hass):
+    """Test _poll_on_add is suppressed only when bus message carries state (#578)."""
+    entry = _entry(hass, {"light": {}})
+    added = []
+
+    def build_light(ctx):
+        ent = MagicMock(spec=["_poll_on_add", "async_on_remove", "handle_event", "_device_name"])
+        ent._poll_on_add = True
+        return ent
+
+    discovery = PlatformDiscovery(
+        hass, entry, lambda ents: added.extend(ents), platform="light", who="1", event_type=None,
+        build=build_light,
+    )
+    discovery.start(listen=False)
+
+    # Bus message with state: _poll_on_add suppressed
+    msg_with_state = MagicMock(spec=["where", "interface", "is_translation", "is_on", "dimension", "current_position", "brightness"])
+    msg_with_state.where = "21"
+    msg_with_state.interface = None
+    msg_with_state.is_translation = False
+    msg_with_state.is_on = True
+    msg_with_state.dimension = None
+    msg_with_state.current_position = None
+    msg_with_state.brightness = None
+    discovery.handle_message(msg_with_state)
+    assert len(added) == 1
+    assert added[0]._poll_on_add is False
+
+    # Bus message without state: _poll_on_add retained
+    msg_no_state = MagicMock(spec=["where", "interface", "is_translation", "is_on", "dimension", "current_position", "brightness"])
+    msg_no_state.where = "22"
+    msg_no_state.interface = None
+    msg_no_state.is_translation = False
+    msg_no_state.is_on = None
+    msg_no_state.dimension = None
+    msg_no_state.current_position = None
+    msg_no_state.brightness = None
+    discovery.handle_message(msg_no_state)
+    assert len(added) == 2
+    assert added[1]._poll_on_add is True
+
+
+async def test_discovery_with_ignored_addresses(hass):
+    """Ignored addresses are skipped in YAML, pruned from registry, and ignored on bus."""
+    entry = _entry(
+        hass,
+        {"light": {"kitchen": {"where": "12", "name": "Kitchen"}, "silenced": {"where": "74", "name": "Faulty"}}},
+        options={CONF_IGNORED_ADDRESSES: ["1/74"]},
+    )
+
+    kitchen_entry = MagicMock(domain="light", unique_id=f"{MAC}-1-12", entity_id="light.kitchen", device_id=None)
+    ignored_entry = MagicMock(domain="light", unique_id=f"{MAC}-1-74", entity_id="light.silenced", device_id=None)
+    registry = MagicMock()
+    registry.async_get_entity_id.return_value = None
+
+    added, built = [], []
+
+    def build(ctx: DeviceContext):
+        built.append(ctx)
+        return _entity(ctx.cfg.get("name", f"Light {ctx.suffix}"))
+
+    with patch("custom_components.myhome.discovery.er.async_get", return_value=registry), patch(
+        "custom_components.myhome.discovery.er.async_entries_for_config_entry",
+        return_value=[kitchen_entry, ignored_entry],
+    ):
+        discovery = PlatformDiscovery(
+            hass,
+            entry,
+            added.extend,
+            platform="light",
+            who="1",
+            event_type=OWNLightingEvent,
+            build=build,
+        )
+        entities = discovery.start(listen=False)
+
+    # 1. Silenced entity is pruned from entity registry
+    registry.async_remove.assert_called_once_with("light.silenced")
+
+    # 2. Ignored address 74 was not built or added, but 12 was
+    assert "74" not in discovery.known
+    assert "12" in discovery.known
+    assert [e._device_name for e in entities] == ["Light 12"]
+
+    # 3. Incoming message for ignored address is discarded immediately
+    routed = []
+    entry.runtime_data.router.subscribe("1", ["74"], routed.append)
+    discovery.handle_message(OWNEvent.parse("*1*1*74##"))
+    assert "74" not in discovery.known
+    assert len(routed) == 0
+
+    # 4. Non-numeric who returns False safely
+    discovery.who = "not_int"
+    assert discovery._is_ignored(Address("74")) is False

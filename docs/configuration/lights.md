@@ -132,6 +132,14 @@ For detailed configuration recommendations, DALI-2 tunable white setup, and grou
 
 ---
 
+## 🌙 Hardware-Coupled Sensors & Twilight Curfew Control
+
+Physical twilight sensors or contact interfaces (e.g. BTicino 3477) configured with the same SCS address as an actuator relay switch on automatically at dusk on the wire.
+
+To add intelligent bedtime curfews, companion light synchronization, or decouple the sensor into Home Assistant, see the [Hardware-Coupled Sensors Guide](../guides/hardware-coupled-sensors.md).
+
+---
+
 ## 🔄 Legacy YAML Note
 
 > [!NOTE]

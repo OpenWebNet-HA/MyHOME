@@ -1,4 +1,5 @@
 """Tests for OWNHeatingEvent and OWNHeatingCommand protocol translation."""
+import pytest
 from OWNd.message import (
     CLIMATE_MODE_AUTO,
     CLIMATE_MODE_COOL,
@@ -32,14 +33,22 @@ class TestHeatingEventParsing:
     def test_mode_heat(self):
         msg = OWNEvent.parse("*4*1*1##")
         assert isinstance(msg, OWNHeatingEvent)
-        assert msg.message_type == MESSAGE_TYPE_MODE
-        assert msg.mode == CLIMATE_MODE_HEAT
+        if getattr(msg, "message_type", None) == "hvac_season":
+            assert msg.season == "heating"
+            assert msg.mode is None
+        else:
+            assert msg.message_type == MESSAGE_TYPE_MODE
+            assert msg.mode == CLIMATE_MODE_HEAT
 
     def test_mode_cool(self):
         msg = OWNEvent.parse("*4*0*1##")
         assert isinstance(msg, OWNHeatingEvent)
-        assert msg.message_type == MESSAGE_TYPE_MODE
-        assert msg.mode == CLIMATE_MODE_COOL
+        if getattr(msg, "message_type", None) == "hvac_season":
+            assert msg.season == "conditioning"
+            assert msg.mode is None
+        else:
+            assert msg.message_type == MESSAGE_TYPE_MODE
+            assert msg.mode == CLIMATE_MODE_COOL
 
     def test_mode_auto(self):
         msg = OWNEvent.parse("*4*311*1##")
@@ -201,11 +210,11 @@ class TestHeatingCommandGeneration:
         assert msg_off.fan_on is False
 
     def test_set_fan_speed_variations(self):
-        cmd_central = OWNHeatingCommand.set_fan_speed("#0#1", 2)
-        assert "*#4*#0#1*#11*2##" == str(cmd_central)
+        with pytest.raises(ValueError):
+            OWNHeatingCommand.set_fan_speed("#0#1", 2)
 
-        cmd_standalone_zero = OWNHeatingCommand.set_fan_speed("0", 1, standalone=True)
-        assert "*#4*#0*#11*1##" == str(cmd_standalone_zero)
+        with pytest.raises(ValueError):
+            OWNHeatingCommand.set_fan_speed("0", 1, standalone=True)
 
         cmd_standalone_zone = OWNHeatingCommand.set_fan_speed("1", 3, standalone=True)
         assert "*#4*1*#11*3##" == str(cmd_standalone_zone)

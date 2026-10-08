@@ -30,6 +30,7 @@ from OWNd.connection import (
 from OWNd.message import OWNCommand
 from OWNd.profiles import (
     WHO_AUTOMATION,
+    WHO_CEN_PLUS,
     WHO_ENERGY,
     WHO_LIGHTING,
     WHO_SOUND,
@@ -41,6 +42,22 @@ from OWNd.profiles import (
     MyHomeServer1Profile,
     get_gateway_profile,
 )
+
+try:
+    from OWNd.profiles import (
+        F452Profile,
+        F452VProfile,
+        F453AVProfile,
+        F453Profile,
+    )
+
+    _OWND_HAS_DEDICATED_LEGACY_PROFILES = True
+except ImportError:
+    F452Profile = None
+    F452VProfile = None
+    F453AVProfile = None
+    F453Profile = None
+    _OWND_HAS_DEDICATED_LEGACY_PROFILES = False
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome.config_flow import MyhomeFlowHandler, MyhomeOptionsFlowHandler
@@ -190,6 +207,41 @@ class TestGatewayProfiles:
     def test_get_gateway_profile_resolution(self, name, expected_cls):
         profile = get_gateway_profile(name)
         assert isinstance(profile, expected_cls)
+
+    @pytest.mark.skipif(
+        not _OWND_HAS_DEDICATED_LEGACY_PROFILES,
+        reason="installed OWNd does not have dedicated legacy profiles yet (OWNd#80)",
+    )
+    @pytest.mark.parametrize(
+        "name,expected_cls",
+        [
+            ("F452", F452Profile),
+            ("F452V", F452VProfile),
+            ("F453", F453Profile),
+            ("F453AV", F453AVProfile),
+        ],
+    )
+    def test_get_gateway_profile_resolution_legacy(self, name, expected_cls):
+        profile = get_gateway_profile(name)
+        assert isinstance(profile, expected_cls)
+
+    @pytest.mark.skipif(
+        not _OWND_HAS_DEDICATED_LEGACY_PROFILES,
+        reason="installed OWNd does not have dedicated F453AV firmware discrimination yet (OWNd#80)",
+    )
+    def test_f453av_profile_firmware_discrimination(self):
+        """F453AV profile gates WHO 25 (CEN+) on firmware >= 2.1.7."""
+        # Unstated firmware: conservative profile (no WHO 25)
+        prof_default = get_gateway_profile("F453AV")
+        assert prof_default.supports_who(WHO_CEN_PLUS) is False
+
+        # Older firmware: no WHO 25
+        prof_old = get_gateway_profile("F453AV", "1.0.19")
+        assert prof_old.supports_who(WHO_CEN_PLUS) is False
+
+        # Newer firmware >= 2.1.7: supports WHO 25
+        prof_new = get_gateway_profile("F453AV", "2.1.7")
+        assert prof_new.supports_who(WHO_CEN_PLUS) is True
 
     @pytest.mark.xfail(
         _OWND_MH200_IS_MH200N,

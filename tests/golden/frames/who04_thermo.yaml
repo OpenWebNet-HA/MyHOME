@@ -41,25 +41,25 @@
     args: ["1", 20.5, "heat", true]
 
 - id: thermo.cmd.mode.antifreeze.zone1
-  frame: "*4*110*1##"
+  frame: "*4*102*#1##"
   direction: command
   who: 4
-  what: 110
-  where: "1"
-  source: legrand-spec
+  what: 102
+  where: "#1"
+  source: encyclopedia
   mcp_valid: true
-  mcp_notes: "Set Zone 1 to Antifreeze protection mode"
+  mcp_notes: "Set Zone 1 (through the central unit) to Antifreeze, WHAT 102 (Encyclopedia functional/who-4-temperature-control/what.md, zone setup: *4*102*#WHERE##). Corrected from *4*110*1##: 110 is manual heating (same table; libqtdevices TS10_1_0_23 WIN_MANUAL) and the MyHomeServer1 firmware forwards nothing for it (OWNd#77). The MyHomeServer1 captures in this file report an antifreeze zone as *4*102*Z##. The judge's description of 102 is not used"
   roundtrip: true
 
 - id: thermo.cmd.mode.protection.zone1
-  frame: "*4*111*1##"
+  frame: "*4*302*#1##"
   direction: command
   who: 4
-  what: 111
-  where: "1"
-  source: legrand-spec
+  what: 302
+  where: "#1"
+  source: encyclopedia
   mcp_valid: true
-  mcp_notes: "Set Zone 1 to Thermal Protection mode"
+  mcp_notes: "Set Zone 1 (through the central unit) to generic protection, WHAT 302 (Encyclopedia what.md zone setup: *4*302*#WHERE##; libqtdevices TS10_1_0_23 ControlledProbeDevice::setProtection sends PROT_GENERIC 302 to #zone). Corrected from *4*111*1##: 111 is programmed/automatic heating (same table; libqtdevices WIN_AUTOMATIC), which the MyHomeServer1 firmware forwards as automatic heating (OWNd#77). The judge's description of 302 (manual cooling setpoint) is wrong"
   roundtrip: true
 
 - id: thermo.resp.probe.status.neg_temp
@@ -76,14 +76,14 @@
   roundtrip: true
 
 - id: thermo.cmd.central.mode.heat.cu99
-  frame: "*4*101*#0##"
+  frame: "*4*1*#0##"
   direction: command
   who: 4
-  what: 101
+  what: 1
   where: "#0"
-  source: legrand-spec
+  source: encyclopedia
   mcp_valid: true
-  mcp_notes: "Set 99-zone Central Unit to Heating mode"
+  mcp_notes: "Set 99-zone Central Unit to Heating mode (OpenWebNet Encyclopedia what.md; openwebnet-mcp flags non-standard WHAT warning due to legacy summary table)"
   roundtrip: true
   builder:
     class: OWNHeatingCommand
@@ -91,14 +91,14 @@
     args: ["#0", "heat"]
 
 - id: thermo.cmd.central.mode.cool.cu99
-  frame: "*4*102*#0##"
+  frame: "*4*0*#0##"
   direction: command
   who: 4
-  what: 102
+  what: 0
   where: "#0"
-  source: legrand-spec
+  source: encyclopedia
   mcp_valid: true
-  mcp_notes: "Set 99-zone Central Unit to Cooling mode"
+  mcp_notes: "Set 99-zone Central Unit to Cooling mode (OpenWebNet Encyclopedia what.md; openwebnet-mcp flags non-standard WHAT warning due to legacy summary table)"
   roundtrip: true
   builder:
     class: OWNHeatingCommand
@@ -106,14 +106,14 @@
     args: ["#0", "cool"]
 
 - id: thermo.cmd.central.mode.off.cu99
-  frame: "*4*100*#0##"
+  frame: "*4*303*#0##"
   direction: command
   who: 4
-  what: 100
+  what: 303
   where: "#0"
-  source: legrand-spec
+  source: encyclopedia
   mcp_valid: true
-  mcp_notes: "Turn conditioning OFF on 99-zone Central Unit"
+  mcp_notes: "Turn conditioning OFF on 99-zone Central Unit (OpenWebNet Encyclopedia what.md; openwebnet-mcp flags non-standard WHAT warning due to legacy summary table)"
   roundtrip: true
   builder:
     class: OWNHeatingCommand
@@ -138,6 +138,21 @@
     args: ["#0", 20.5, "heat"]
 
 - id: thermo.cmd.central.status.cu99
+  frame: "*#4*#0##"
+  direction: status_request
+  who: 4
+  what: null
+  where: "#0"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Request 99-zone Central Unit plain status (answered in 0.17 s on F454 FW 1.0.34, issue #629)"
+  roundtrip: true
+  builder:
+    class: OWNHeatingCommand
+    method: status
+    args: ["#0"]
+
+- id: thermo.cmd.central.status.cu99.dim14_legacy
   frame: "*#4*#0*14##"
   direction: dimension_request
   who: 4
@@ -147,22 +162,62 @@
   dimension_values: []
   source: legrand-spec
   mcp_valid: true
-  mcp_notes: "Request 99-zone Central Unit status"
+  mcp_notes: "Request 99-zone Central Unit status on Dimension 14 (rejected with NACK on physical F454 firmware, issue #629; a real MyHomeServer1 refuses it too, OWNd#77). No builder block: OWNd#83 deprecates central_status(), which builds this frame; MyHOME polls with status('#0'). roundtrip means OWNd re-serializes it exactly, not that a gateway accepts it"
   roundtrip: true
-  builder:
-    class: OWNHeatingCommand
-    method: central_status
-    args: ["#0"]
+
+- id: thermo.resp.central.status.cu99.off
+  frame: "*4*202*#0##"
+  direction: event
+  who: 4
+  what: 202
+  where: "#0"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Central Unit #0 conditional OFF mode response to *#4*#0## (F454 FW 1.0.34, issue #629 trace 11:14:00)"
+  roundtrip: true
+
+- id: thermo.resp.central.status.cu99.flag21
+  frame: "*4*21*#0##"
+  direction: event
+  who: 4
+  what: 21
+  where: "#0"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Central Unit #0 remote control enabled operational flag (F454 FW 1.0.34, issue #629 trace 11:14:00)"
+  roundtrip: true
+
+- id: thermo.resp.central.status.cu99.flag22
+  frame: "*4*22*#0##"
+  direction: event
+  who: 4
+  what: 22
+  where: "#0"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Central Unit #0 operational status flag (F454 FW 1.0.34, issue #629 trace 11:14:00)"
+  roundtrip: true
+
+- id: thermo.resp.central.status.cu99.flag24
+  frame: "*4*24*#0##"
+  direction: event
+  who: 4
+  what: 24
+  where: "#0"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Central Unit #0 operational status flag (F454 FW 1.0.34, issue #629 trace 11:14:00)"
+  roundtrip: true
 
 - id: thermo.cmd.central.mode.heat.cu4
-  frame: "*4*101*#0#1##"
+  frame: "*4*1*#0#1##"
   direction: command
   who: 4
-  what: 101
+  what: 1
   where: "#0"
-  source: legrand-spec
+  source: encyclopedia
   mcp_valid: true
-  mcp_notes: "Set 4-zone Central Unit to Heating mode"
+  mcp_notes: "Set 4-zone Central Unit to Heating mode (OpenWebNet Encyclopedia what.md; openwebnet-mcp flags non-standard WHAT warning due to legacy summary table)"
   roundtrip: true
   builder:
     class: OWNHeatingCommand

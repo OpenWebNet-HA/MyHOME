@@ -88,15 +88,15 @@
     method: release
     args: ["21", 1]
 
-- id: dry_contact.event.on.15
-  frame: "*25*31#1*15##"
+- id: dry_contact.event.on.339
+  frame: "*25*31#1*339##"
   direction: event
   who: 25
   what: "31#1"
-  where: "15"
-  source: encyclopedia
+  where: "339"
+  source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Dry contact 15 ON / IR detection; #1 marks an event, #0 a state reply (Encyclopedia functional/who-25-transversal/dry-contact-ir.md @c57dcec)"
+  mcp_notes: "Dry contact ON / IR detection at WHERE 339; #1 marks an event, #0 a state reply (Encyclopedia functional/who-25-transversal/dry-contact-ir.md). Captured on an H4890 (MyHOME tests/fixtures/traces/issue_466/myhome_trace_H4890_all_2026-09-26T11-51-26.json, MyHOME#466). Replaces the Encyclopedia-derived *25*31#1*15##: on the bus every captured dry contact has a WHERE that starts with 3 (33, 331..339 on MH200N, MH202, F454 and H4890), and the firmware's bt_luci uses the same rule (gdluck's audit, OWNd#77). The judge warns that 339 is outside the documented 1..201; the captures show the bus form"
   roundtrip: true
 
 - id: cen_plus.event.start_long_press.btn2.22047

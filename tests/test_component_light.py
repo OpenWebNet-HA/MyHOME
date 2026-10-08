@@ -1608,6 +1608,38 @@ async def test_dali_rgb_turn_on_commands(hass):
     assert mock_gateway.send_status_request.call_args_list[1][0][0]._raw == "*#1*25#4#02*12##"
 
 
+async def test_dali_turn_on_brightness_one_clamps_to_one(hass):
+    """Test that turning on DALI light with 1 8-bit brightness clamps to 1%."""
+    mock_gateway = MagicMock()
+    mock_gateway.send = AsyncMock()
+    mock_gateway.config_entry = MagicMock()
+    mock_gateway.config_entry.options = {}
+
+    light = MyHOMELight(
+        hass=hass,
+        name="DALI RGB Light",
+        entity_name="DALI RGB Light",
+        icon="mdi:lightbulb",
+        icon_on="mdi:lightbulb-on",
+        device_id="25#4#02",
+        who="1",
+        where="25",
+        interface="02",
+        dimmable=True,
+        manufacturer="BTicino",
+        model="DALI Ballast",
+        gateway=mock_gateway,
+        rgb=True,
+    )
+    light.hass = hass
+    light.async_schedule_update_ha_state = MagicMock()
+
+    await light.async_turn_on(hs_color=(255.0, 100.0), brightness=1)
+    mock_gateway.send.assert_called_once()
+    sent_cmd = mock_gateway.send.call_args[0][0]
+    assert sent_cmd._raw == "*#1*25#4#02*#12*255*100*1##"
+
+
 async def test_async_setup_entry_rgb_config(hass):
     """Test light setup from config entry with rgb flag."""
     from homeassistant.const import CONF_NAME
@@ -2030,13 +2062,13 @@ async def test_dimmer_reboot_state_restoration(hass):
 
 
 
-def _unknown_state_light(hass):
+def _unknown_state_light(hass, dimmable=False, lock_features=False):
     gateway = MagicMock()
     gateway.log_id = "[gw]"
     light = MyHOMELight(
         hass=hass, name="L", entity_name="L", icon="mdi:lightbulb-off", icon_on="mdi:lightbulb-on",
-        device_id="74", who="1", where="74", interface=None, dimmable=False,
-        manufacturer="B", model="M", gateway=gateway
+        device_id="74", who="1", where="74", interface=None, dimmable=dimmable,
+        manufacturer="B", model="M", gateway=gateway, lock_features=lock_features,
     )
     light.hass = hass
     light.async_schedule_update_ha_state = MagicMock()
@@ -2044,11 +2076,11 @@ def _unknown_state_light(hass):
 
 
 def test_unknown_state_keeps_last_state_and_is_exposed(hass, caplog):
-    """A WHAT outside the WHO 1 table (MH200 WHAT 19) must not switch the light on."""
+    """A WHAT outside the WHO 1 table (arbitrary code 99) must not switch the light on."""
     light = _unknown_state_light(hass)
     off = MagicMock(spec=OWNLightingEvent, is_on=False, brightness=None, brightness_preset=None)
     fault = MagicMock(spec=OWNLightingEvent, is_on=None, brightness=None, brightness_preset=None)
-    fault.unknown_state = 19
+    fault.unknown_state = 99
 
     light.handle_event(off)
     with caplog.at_level(logging.WARNING, logger="custom_components.myhome"):
@@ -2057,37 +2089,26 @@ def test_unknown_state_keeps_last_state_and_is_exposed(hass, caplog):
 
     assert light.is_on is False
     assert light.icon == "mdi:lightbulb-off"
-    assert light.extra_state_attributes["unknown_state"] == 19
-    warnings = [r for r in caplog.records if "unknown lighting WHAT 19" in r.getMessage()]
+    assert light.extra_state_attributes["unknown_state"] == 99
+    warnings = [r for r in caplog.records if "unknown lighting WHAT 99" in r.getMessage()]
     assert len(warnings) == 1
 
     light.handle_event(off)
     assert "unknown_state" not in light.extra_state_attributes
 
 
-# OWNd up to 2.0.0b8 reports every lighting WHAT in 1..31 as on, WHAT 19
-# included.  Detect the fix instead of pinning a version; strict=True makes an
-# unexpected pass fail so the marker cannot outlive the old behaviour.
-_OWND_WHAT_19_IS_ON = OWNLightingEvent("*1*19*74##").is_on is True
-
-
-@pytest.mark.xfail(
-    _OWND_WHAT_19_IS_ON,
-    reason="installed OWNd reports lighting WHAT 19 (outside the WHO 1 table) as on",
-    strict=True,
-)
-def test_mh200_what_19_reply_does_not_turn_the_light_on(hass):
-    """MH200 live capture 2026-09-24: *#1*74## -> *1*19*74## + WHO 1001 DIMENSION 11."""
+def test_unknown_state_reply_does_not_turn_the_light_on(hass):
+    """A status frame with unmapped WHAT 99 must not switch the light on."""
     light = _unknown_state_light(hass)
 
     light.handle_event(OWNEvent.parse("*1*0*74##"))
-    light.handle_event(OWNEvent.parse("*1*19*74##"))
+    light.handle_event(OWNEvent.parse("*1*99*74##"))
 
     assert light.is_on is False
-    assert light.extra_state_attributes["unknown_state"] == 19
+    assert light.extra_state_attributes["unknown_state"] == 99
 
 
-def _fault_event(value=19):
+def _fault_event(value=99):
     event = MagicMock(spec=OWNLightingEvent, is_on=None, brightness=None, brightness_preset=None)
     event.unknown_state = value
     return event
@@ -2103,7 +2124,7 @@ async def test_unknown_state_does_not_keep_a_restored_state(hass, caplog):
         light.handle_event(_fault_event())
     assert light.is_on is None
     assert light.state is None  # Home Assistant shows "unknown"
-    assert light.extra_state_attributes["unknown_state"] == 19
+    assert light.extra_state_attributes["unknown_state"] == 99
     assert any("its state is unknown" in r.getMessage() for r in caplog.records)
 
     # the next real state from the bus is taken, and then kept against the fault
@@ -2123,18 +2144,153 @@ async def test_unknown_state_keeps_a_state_set_from_home_assistant(hass):
     assert light.is_on is True
 
 
-@pytest.mark.xfail(
-    _OWND_WHAT_19_IS_ON,
-    reason="installed OWNd reports lighting WHAT 19 (outside the WHO 1 table) as on",
-    strict=True,
-)
-async def test_mh200_light_74_restored_on_after_the_fix(hass):
-    """Live 2026-09-24 17:16 on the MH200 test build: light.light_74 came back "on" from the
-    state the bug had left, and the bus only ever answered *1*19*74## (+ WHO 1001 DIMENSION 11)."""
+async def test_unknown_state_restored_on_keeps_unknown_against_fault(hass):
+    """A restored on transitions to unknown when an unmapped WHAT arrives."""
     light = _unknown_state_light(hass)
     await light.async_restore_last_state(State("light.light_74", "on"))
 
-    light.handle_event(OWNEvent.parse("*1*19*74##"))
+    light.handle_event(OWNEvent.parse("*1*99*74##"))
 
     assert light.is_on is None
-    assert light.extra_state_attributes["unknown_state"] == 19
+    assert light.extra_state_attributes["unknown_state"] == 99
+
+
+# ── WHAT 19 / Dimmer No-Load ──────────────────────────────────────────
+
+
+def test_what_19_no_load_sets_off_and_exposes_attribute(hass):
+    """WHAT 19 sets is_on=False, exposes no_load=True, and promotes to dimmable."""
+    light = _unknown_state_light(hass)
+    light.handle_event(OWNEvent.parse("*1*0*74##"))
+    light.handle_event(OWNEvent.parse("*1*19*74##"))
+
+    assert light.is_on is False
+    assert light.extra_state_attributes.get("no_load") is True
+    assert "unknown_state" not in light.extra_state_attributes
+    assert ColorMode.BRIGHTNESS in light.supported_color_modes
+
+
+async def test_what_19_does_not_get_stuck_on(hass):
+    """Turning an unloaded light ON in HA followed by WHAT 19 reverts to OFF."""
+    light = _unknown_state_light(hass)
+    light.entity_id = "light.light_74"
+    light.async_write_ha_state = MagicMock()
+    light._gateway_handler.send = AsyncMock()
+    await light.async_restore_last_state(State("light.light_74", "on"))
+    assert light.is_on is True
+
+    light.handle_event(OWNEvent.parse("*1*19*74##"))
+    assert light.is_on is False
+    assert light.extra_state_attributes.get("no_load") is True
+    assert "unknown_state" not in light.extra_state_attributes
+
+
+async def test_what_19_async_turn_on_reverts_off(hass):
+    """Calling async_turn_on followed by WHAT 19 from bus turns light back to off."""
+    light = _unknown_state_light(hass, dimmable=True)
+    light.entity_id = "light.light_74"
+    light.async_write_ha_state = MagicMock()
+    light._gateway_handler.send = AsyncMock()
+
+    await light.async_turn_on(brightness=128)
+    assert light.is_on is True
+
+    light.handle_event(OWNEvent.parse("*1*19*74##"))
+    assert light.is_on is False
+    assert light.extra_state_attributes.get("no_load") is True
+
+
+def test_what_19_recovers_when_load_connected(hass):
+    """Connecting a load and sending a level frame clears no_load and sets is_on=True."""
+    light = _unknown_state_light(hass)
+    light.handle_event(OWNEvent.parse("*1*19*74##"))
+    assert light.is_on is False
+    assert light.extra_state_attributes.get("no_load") is True
+
+    # Bus emits level 4 (40%) when load is attached and light is turned on
+    light.handle_event(OWNEvent.parse("*1*4*74##"))
+    assert light.is_on is True
+    assert light._attr_brightness_pct == 40
+    assert light.brightness == percent_to_eight_bits(40)
+    assert "no_load" not in light.extra_state_attributes
+    assert "unknown_state" not in light.extra_state_attributes
+
+
+def test_what_19_off_frame_preserves_no_load(hass):
+    """Sending a normal off frame *1*0*WHERE## preserves no_load: True."""
+    light = _unknown_state_light(hass)
+    light.handle_event(OWNEvent.parse("*1*19*74##"))
+    assert light.extra_state_attributes.get("no_load") is True
+
+    light.handle_event(OWNEvent.parse("*1*0*74##"))
+    assert light.is_on is False
+    assert light.extra_state_attributes.get("no_load") is True
+
+
+def test_what_19_respects_lock_features(hass):
+    """An entity with lock_features=True does not promote to dimmable on WHAT 19."""
+    light = _unknown_state_light(hass, dimmable=False, lock_features=True)
+    assert light.supported_color_modes == {ColorMode.ONOFF}
+
+    light.handle_event(OWNEvent.parse("*1*19*74##"))
+    assert light.is_on is False
+    assert light.extra_state_attributes.get("no_load") is True
+    assert light.supported_color_modes == {ColorMode.ONOFF}
+
+
+def test_what_19_state_transition_logging(hass, caplog):
+    """Transitioning to no_load logs INFO once; repeated frames log DEBUG; recovery logs INFO."""
+    import logging
+
+    light = _unknown_state_light(hass)
+    with caplog.at_level(logging.DEBUG, logger="custom_components.myhome"):
+        # First transition -> INFO
+        light.handle_event(OWNEvent.parse("*1*19*74##"))
+        info_records = [r for r in caplog.records if r.levelno == logging.INFO and "reports no load" in r.getMessage()]
+        assert len(info_records) == 1
+
+        # Second WHAT 19 while already in no_load -> DEBUG only
+        caplog.clear()
+        light.handle_event(OWNEvent.parse("*1*19*74##"))
+        info_records = [r for r in caplog.records if r.levelno == logging.INFO and "reports no load" in r.getMessage()]
+        assert len(info_records) == 0
+        debug_records = [r for r in caplog.records if r.levelno == logging.DEBUG and "reports no load" in r.getMessage()]
+        assert len(debug_records) == 1
+
+        # Recovery (turning on with load) -> INFO
+        caplog.clear()
+        light.handle_event(OWNEvent.parse("*1*4*74##"))
+        recovery_records = [r for r in caplog.records if r.levelno == logging.INFO and "recovered" in r.getMessage()]
+        assert len(recovery_records) == 1
+
+
+async def test_unloaded_dimmer_discovered_as_dimmable(hass):
+    """An unloaded dimmer first seen via WHAT 19 is auto-discovered with dimmable=True."""
+    mock_gateway = MagicMock()
+    mock_gateway.mac = "00:03:50:00:00:19"
+    hass.data = {DOMAIN: {"00:03:50:00:00:19": {"entity": mock_gateway}}}
+
+    config_entry = MagicMock()
+    config_entry.data = {"mac": "00:03:50:00:00:19"}
+    config_entry.entry_id = "test_entry_what19"
+
+    with patch(
+        "custom_components.myhome.discovery.er.async_entries_for_config_entry",
+        return_value=[],
+    ), patch(
+        "custom_components.myhome.discovery.er.async_get",
+        return_value=MagicMock(),
+    ):
+        async_add_entities = MagicMock()
+        attach_runtime(hass, config_entry)
+        await async_setup_entry(hass, config_entry, async_add_entities)
+
+        async_dispatcher_send(hass, "myhome_message_00:03:50:00:00:19", OWNEvent.parse("*1*19*74##"))
+
+        assert async_add_entities.call_count >= 1
+        added_entities = async_add_entities.call_args[0][0]
+        discovered = next((e for e in added_entities if getattr(e, "_where", None) == "74"), None)
+        assert discovered is not None
+        assert ColorMode.BRIGHTNESS in discovered.supported_color_modes
+        assert discovered.is_on is False
+        assert discovered.extra_state_attributes.get("no_load") is True

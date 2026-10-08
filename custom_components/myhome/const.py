@@ -11,7 +11,7 @@ DOMAIN = "myhome"
 
 ATTR_GATEWAY = "gateway"
 ATTR_MESSAGE = "message"
-INTEGRATION_VERSION = "2.0.0b14"
+INTEGRATION_VERSION = "2.0.0b15"
 # hass.data[DOMAIN] key holding the OWNd version resolved off the event loop
 DATA_OWND_VERSION = "_ownd_version"
 
@@ -67,6 +67,7 @@ CONF_PARENT_ID = "parent_id"
 CONF_WHO = "who"
 CONF_WHERE = "where"
 CONF_BUS_INTERFACE = "interface"
+CONF_IGNORED_ADDRESSES = "ignored_addresses"
 #: F422 bus-routing separator in a WHERE: ``APL#4#<bus>``.
 BUS_ROUTING = "#4#"
 CONF_ZONE = "zone"
@@ -197,19 +198,6 @@ SHARED_BUS_EVIDENCE_COUNT = 3
 SHARED_BUS_EVIDENCE_WINDOW_S = 600.0
 
 
-def signed_who4_temperature(message: Any, value: float | None) -> float | None:
-    """Apply the sign digit of a WHO 4 temperature frame to the value OWNd decoded.
-
-    The bus sends ``SXXX`` (``S`` = 1 for a negative reading, tenths of a degree),
-    but OWNd reads digits 1-3 only, so ``1055`` reaches us as ``+5.5``.
-    """
-    raw = getattr(message, "_dimension_value", None)
-    first = raw[0] if isinstance(raw, (list, tuple)) and raw else None
-    if value is not None and isinstance(first, str) and len(first) == 4 and first.startswith("1"):
-        return -abs(value) if value else value  # "1000" is a sign on nothing: 0.0, never -0.0
-    return value
-
-
 def who4_raw_to_celsius(raw: str) -> float:
     """Decode a raw WHO 4 temperature (``SXXX``, tenths of a degree) that OWNd did not decode.
 
@@ -224,6 +212,15 @@ def who4_raw_to_celsius(raw: str) -> float:
 def eight_bits_to_percent(value: int) -> int:
     """Convert an 8-bit brightness (0-255) to percentage (0-100)."""
     return int(round((value * 100) / 255, 0))
+
+
+def eight_bits_to_min_percent(value: int) -> int:
+    """Like :func:`eight_bits_to_percent`, but 1..2 of 255 is 1 %, never 0 %.
+
+    Level 0 % cannot be sent as a dimension 1 level (gateways NACK ``*#1*WHERE*#1*100*0##``),
+    so a non-zero brightness must stay "on at minimum".
+    """
+    return max(1, eight_bits_to_percent(value)) if value > 0 else 0
 
 
 def percent_to_eight_bits(value: int) -> int:
@@ -326,7 +323,9 @@ SUPPORTED_GATEWAY_MODELS = [
     "MH200",
     "MH201",
     "F453AV",
+    "F453",
     "F452",
+    "F452V",
     "F461",
     "AM4890",
     "H4890",

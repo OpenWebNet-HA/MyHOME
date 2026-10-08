@@ -165,7 +165,7 @@ External probes (3455 behind an L4577, `WHERE ≥ 100`) appear as temperature se
 
 ## 7. Arm the alarm when the house is empty
 
-With a 3485 / 3486 central unit the `alarm_control_panel` entity supports arm away / arm home / disarm and a panic trigger; the OpenWebNet commands carry no user code, the central unit's own code stays on the keypad. Central units refuse to arm with an open zone; watch the bus-monitor card for the NACK if an automation seems to do nothing.
+The MyHOME `alarm_control_panel` is read-only: the central unit rejects WHO 5 arm/disarm frames, so arming goes through the AUX frame your installer programmed it to act on. Wrap the two in a template alarm panel (see [alarm](alarm.md#arming-and-disarming)) and arm that one. The frames carry no user code; the central unit's own code stays on the keypad. Central units refuse to arm with an open zone; watch the bus-monitor card if an automation seems to do nothing.
 
 ```yaml
 automation:
@@ -178,7 +178,7 @@ automation:
     action:
       - service: alarm_control_panel.alarm_arm_away
         target:
-          entity_id: alarm_control_panel.myhome
+          entity_id: alarm_control_panel.home_alarm
 ```
 
 ## 8. Energy dashboard from the F520 / F521 meters

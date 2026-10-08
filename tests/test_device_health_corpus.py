@@ -1,8 +1,8 @@
 """Device faults against every frame we hold: real captures and the Encyclopedia corpus.
 
 * Every capture under ``tests/fixtures/traces`` is replayed through the tracker.
-  Only the captures of the MH200 actuator in a fault state (EVID-MH200-WHAT19-FAULT)
-  may raise a fault; every other plant is healthy and must raise nothing.
+  Every plant in the corpus is healthy and raises no unmapped faults (actuator 74
+  in the MH200 captures emitted WHAT 19, now recognized as dimmer no-load; issue #619).
 * The golden corpus (``tests/golden``, vendored from the OpenWebNet Encyclopedia)
   holds documented frames only: none of them may raise a fault.
 * The published WHO 1 WHAT table (WHO_1.pdf, as the Encyclopedia gives it:
@@ -34,11 +34,9 @@ LIGHTING_FRAME = re.compile(r"\*#?(?:1|1001)\*")
 
 MASK_74 = "*#1001*74*11*111110111111111111110111##"
 # Captures of the faulty actuator: the faults each must raise (with the evidence the fault
-# ends up carrying), and nothing else.
-EXPECTED = {
-    "myhome_trace_MH200_all_2026-09-26T21-00-00.json": {("74", "19", MASK_74)},
-    "config_entry_mh200_sound_f441m.json": {("74", "19", MASK_74)},
-}
+# ends up carrying), and nothing else. WHAT 19 on actuator 74 was previously expected to raise
+# an unmapped status fault, but is now recognized as dimmer no-load (issue #619).
+EXPECTED: dict[str, set[tuple[str, str, str]]] = {}
 PUBLISHED_WHO1_WHATS = [*range(0, 19), *range(20, 30), 30, 31]
 
 
@@ -121,7 +119,7 @@ def test_a_published_lighting_status_is_not_a_fault(what: int):
 
 
 # 33 is in no source we hold (not SCS WHO 1, not the ZigBee variant): it stays undocumented.
-@pytest.mark.parametrize("what", [19, 33, 50, 99])
+@pytest.mark.parametrize("what", [33, 50, 99])
 def test_a_status_outside_the_published_table_is_a_fault(what: int):
     health = _tracker()
     health.observe(OWNEvent.parse(f"*1*{what}*51##"))
@@ -135,6 +133,19 @@ def test_a_documented_lighting_event_is_neither_a_fault_nor_a_recovery(what: int
     health.observe(OWNEvent.parse(f"*1*{what}*51##"))
     assert health.faults == []
 
-    health.observe(OWNEvent.parse("*1*19*51##"))
+    health.observe(OWNEvent.parse("*1*99*51##"))
     health.observe(OWNEvent.parse(f"*1*{what}*51##"))
-    assert [(f["where"], f["code"]) for f in health.faults] == [("51", "19")]
+    assert [(f["where"], f["code"]) for f in health.faults] == [("51", "99")]
+
+
+@pytest.mark.parametrize("what", sorted(dh.RECOGNIZED_STATUSES))
+def test_a_recognized_lighting_status_is_not_a_fault_and_clears_prior_fault(what: int):
+    """Recognized states (19 dimmer no-load) raise no fault and clear unmapped faults."""
+    health = _tracker()
+    health.observe(OWNEvent.parse(f"*1*{what}*51##"))
+    assert health.faults == []
+
+    health.observe(OWNEvent.parse("*1*99*51##"))
+    assert len(health.faults) == 1
+    health.observe(OWNEvent.parse(f"*1*{what}*51##"))
+    assert health.faults == []

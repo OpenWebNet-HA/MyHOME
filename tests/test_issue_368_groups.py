@@ -663,3 +663,47 @@ async def test_group_turn_on_brightness_rounding(hass: HomeAssistant):
     assert group.brightness == 254
 
 
+async def test_turn_on_brightness_one_clamps_to_one_percent(hass: HomeAssistant):
+    """Brightness 1/255 rounds to 0 %; the group sends 1 % (level 101), not the NACKed 100."""
+    gateway = _gateway()
+    group = _group(hass, gateway, dimmable=True, color_temp=False, rgb=False)
+
+    await group.async_turn_on(**{ATTR_BRIGHTNESS: 1})
+
+    assert gateway.send.await_count == 1
+    assert str(gateway.send.call_args[0][0]) == "*#1*#6*#1*101*0##"
+    assert group.brightness == 1
+
+
+async def test_turn_on_brightness_zero_turns_off(hass: HomeAssistant):
+    """An explicit brightness of 0 switches the group off instead of sending level 100."""
+    gateway = _gateway()
+    group = _group(hass, gateway, dimmable=True, color_temp=False, rgb=False)
+
+    await group.async_turn_on(**{ATTR_BRIGHTNESS: 0})
+
+    assert gateway.send.await_count == 1
+    assert str(gateway.send.call_args[0][0]) == "*1*0*#6##"
+    assert group.is_on is False
+
+
+async def test_turn_on_hs_brightness_one_clamps_hsv_value(hass: HomeAssistant):
+    """The HSV path clamps a 0 % value to 1 % too."""
+    gateway = _gateway()
+    group = _group(hass, gateway, dimmable=False, color_temp=False, rgb=True)
+
+    await group.async_turn_on(**{ATTR_HS_COLOR: (120.0, 50.0), ATTR_BRIGHTNESS: 1})
+
+    assert gateway.send.await_count == 1
+    assert str(gateway.send.call_args[0][0]).endswith("*120*50*1##")
+
+
+async def test_turn_on_hs_brightness_zero_turns_off(hass: HomeAssistant):
+    """An explicit brightness of 0 with a colour switches off instead of sending V=0."""
+    gateway = _gateway()
+    group = _group(hass, gateway, dimmable=False, color_temp=False, rgb=True)
+
+    await group.async_turn_on(**{ATTR_HS_COLOR: (120.0, 50.0), ATTR_BRIGHTNESS: 0})
+
+    assert [str(c.args[0]) for c in gateway.send.call_args_list] == ["*1*0*#6##"]
+    assert group.is_on is False

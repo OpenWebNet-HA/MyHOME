@@ -18,7 +18,6 @@ from homeassistant.core import HomeAssistant
 from OWNd.message import OWNMessage
 
 from custom_components.myhome.climate import MyHOMEClimate
-from custom_components.myhome.const import signed_who4_temperature
 from custom_components.myhome.sensor import MyHOMETemperatureSensor
 
 # (four-digit bus value, expected °C)
@@ -57,33 +56,6 @@ def _sensor(hass: HomeAssistant, gateway: MagicMock, where: str = "1") -> MyHOME
     )
     sensor.async_schedule_update_ha_state = MagicMock()
     return sensor
-
-
-# --- the helper itself -----------------------------------------------------
-
-
-@pytest.mark.parametrize(("raw", "expected"), ALL_CASES)
-def test_helper_on_real_zone_frames(raw: str, expected: float) -> None:
-    message = OWNMessage.parse(f"*#4*1*0*{raw}##")
-    _assert_temperature(signed_who4_temperature(message, message.main_temperature), expected)
-
-
-@pytest.mark.parametrize(("raw", "expected"), ALL_CASES)
-def test_helper_on_real_probe_frames(raw: str, expected: float) -> None:
-    message = OWNMessage.parse(f"*#4*1*15*01*{raw}*3##")
-    _assert_temperature(signed_who4_temperature(message, message.secondary_temperature[1]), expected)
-
-
-def test_helper_passes_through_what_it_cannot_judge() -> None:
-    assert signed_who4_temperature(MagicMock(), 3.0) == 3.0  # a mock has no raw value
-    assert signed_who4_temperature(MagicMock(_dimension_value=["1055"]), None) is None
-    assert signed_who4_temperature(MagicMock(_dimension_value=[]), 3.0) == 3.0
-    assert signed_who4_temperature(MagicMock(_dimension_value=["105"]), 3.0) == 3.0  # not four digits
-
-
-def test_helper_does_not_flip_an_already_negative_value() -> None:
-    """OWNd decodes DIMENSION 15 with its sign; applying the sign again must not turn it positive."""
-    assert signed_who4_temperature(MagicMock(_dimension_value=["1055"]), -5.5) == -5.5
 
 
 # --- zone sensor (DIMENSION 0) ---------------------------------------------

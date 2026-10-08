@@ -147,6 +147,13 @@ If you prefer listening to the Home Assistant event bus directly (e.g. in AppDae
 - `event`: one of the trigger types above (`pushbutton_short_press`, `rotary_cw_slow`, …)
 - `where`, `gateway_mac` and `entry_id`, to tell plants and gateways apart
 
+> [!NOTE]
+> For physical CEN (`WHO = 15`) devices configured with 4-digit SCS addresses ($PL \ge 10$, e.g. `0512` where Area = 5, Point-Light = 12):
+> - `object` is exposed as an integer (`512`), preserving backward compatibility for existing automations.
+> - `where` provides the literal wire address string (`"0512"`).
+> - Event-bus listeners (in YAML automations, AppDaemon, or Node-RED) should filter on `where: "0512"` or `object: 512`. Outside of Python in this process, string `"0512"` does not equal the integer `object`.
+> - Home Assistant **Native Device Triggers** match seamlessly whether referenced by Device ID, integer `512`, or wire string `"0512"`.
+
 ```yaml
 trigger:
   - platform: event

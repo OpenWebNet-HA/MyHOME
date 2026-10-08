@@ -1,0 +1,488 @@
+blueprint:
+  name: "MyHOME - Dusk Curfew & Hardware-Coupled Sensor Control"
+  description: >
+    Manages lights that turn on automatically via hardware-coupled MyHOME SCS sensors
+    (such as a BTicino 3477 contact interface wired to an external twilight photocell,
+    or a BMSE1001 motion sensor sharing an address with a relay actuator).
+
+    Enforces a bedtime curfew cutoff time or a maximum run duration, with optional
+    presence gating, companion light synchronization, and service/maintenance overrides.
+
+    Home Assistant can only react after the sensor has already switched the relay on
+    the bus, and does nothing while Home Assistant or the gateway is down. Nothing in
+    this blueprint isolates a circuit: switch off the breaker before working on wiring.
+  domain: automation
+  input:
+    target_light:
+      name: Hardware-Coupled Light
+      description: The MyHOME light entity triggered by the physical twilight/contact sensor (e.g. light.light_98).
+      selector:
+        entity:
+          domain: light
+    curfew_time:
+      name: Curfew Cutoff Time
+      description: Time of night to force the light off (e.g., 23:00:00).
+      default: "23:00:00"
+      selector:
+        time: {}
+    curfew_end_time:
+      name: Curfew End Time (Morning)
+      description: >
+        Time in the morning when the curfew period ends (e.g., 06:00:00).
+        Between curfew_time and curfew_end_time, any turn-on (including a deliberate one from a
+        wall switch) is turned off again after a 2-minute grace period.
+      default: "06:00:00"
+      selector:
+        time: {}
+    max_duration:
+      name: Maximum Duration (Minutes)
+      description: Optional maximum runtime in minutes after turning on. Set to 0 to disable and rely solely on curfew time.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 720
+          unit_of_measurement: minutes
+          mode: box
+    sync_lights:
+      name: Synchronized Companion Lights (Optional)
+      description: Optional additional outdoor lights to turn on when the twilight sensor triggers, and turn off at curfew.
+      default: {}
+      selector:
+        target:
+          entity:
+            domain: light
+    presence_entity:
+      name: Occupancy / Presence Entity (Optional)
+      description: >
+        Optional presence tracking entity. Supports zone.* (away when person count is 0),
+        person.*, device_tracker.*, group.*, binary_sensor.* (away when 'not_home', 'off' or 'away'),
+        or alarm_control_panel.* (away when 'armed_away' or 'armed_vacation').
+      default: ""
+      selector:
+        entity: {}
+    away_timeout:
+      name: Away Mode Timeout (Minutes)
+      description: Minutes before turning off if the presence entity indicates nobody is home. Set to 0 to disable.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 120
+          unit_of_measurement: minutes
+          mode: box
+    after_sunset_only:
+      name: Only Run Between Sunset and Sunrise
+      description: >
+        When enabled, companion synchronization and automatic turn-off logic only activate when the sun
+        is below the horizon. Keep disabled (default) if your twilight sensor trips before sunset on
+        overcast afternoons or in winter; note that while disabled, switching the light on by hand
+        during the day also turns the companion lights on.
+      default: false
+      selector:
+        boolean: {}
+    override_entity:
+      name: Service / Maintenance Override Entity (Optional)
+      description: >-
+        Optional entity (input_boolean, switch, or timer). When 'on' (or 'active'),
+        the automation applies the Override Behavior Policy below.
+      default: ""
+      selector:
+        entity:
+          domain:
+            - input_boolean
+            - switch
+            - timer
+    override_mode:
+      name: Override Behavior Policy
+      description: >-
+        How the automation responds when the override entity is active:
+        - 'service_power': Turns the target light ON immediately for tools/gardener;
+          suspends bedtime curfew, presence away, and daytime sun stops.
+        - 'maintenance_hold': Turns the target light OFF immediately and switches any
+          dusk photocell or wall switch turn-on straight back off. This is not electrical
+          isolation: the relay still closes briefly, and nothing happens while Home Assistant
+          or the gateway is down. Switch off the breaker before working on wiring.
+        - 'pause_automation': Suspends all curfew and timer logic, leaving manual control untouched.
+      default: service_power
+      selector:
+        select:
+          options:
+            - label: "Service Power (Daytime Gardener / Tool Outlets)"
+              value: service_power
+            - label: "Maintenance Hold (Switch Automatic Turn-Ons Back Off; Not Electrical Isolation)"
+              value: maintenance_hold
+            - label: "Pause Automation (Unrestricted Manual Control)"
+              value: pause_automation
+    service_timeout_hours:
+      name: Service Power Auto-Reset (Hours)
+      description: >-
+        In 'service_power' mode, automatically turn off the circuit and turn off the
+        override entity after this many hours so power is not left on indefinitely (0 = no auto-reset).
+        A Home Assistant restart re-arms the full timeout.
+      default: 4
+      selector:
+        number:
+          min: 0
+          max: 24
+          step: 0.5
+          unit_of_measurement: hours
+          mode: slider
+
+mode: parallel
+max: 10
+
+trigger_variables:
+  target_light: !input target_light
+  curfew_time: !input curfew_time
+  curfew_end_time: !input curfew_end_time
+  presence_entity: !input presence_entity
+  away_timeout: !input away_timeout
+  override_entity: !input override_entity
+
+triggers:
+  - trigger: state
+    entity_id: !input target_light
+    from: "off"
+    to: "on"
+    id: light_turned_on
+  - trigger: state
+    entity_id: !input target_light
+    from: "on"
+    to: "off"
+    id: light_turned_off
+  - trigger: time
+    at: !input curfew_time
+    id: curfew_reached
+  - trigger: homeassistant
+    event: start
+    id: ha_started
+  - trigger: template
+    value_template: >-
+      {% if away_timeout > 0 and presence_entity is defined and presence_entity != '' %}
+        {% set p = presence_entity %}
+        {% if p.startswith('zone.') %}
+          {{ states(p) | int(default=1) == 0 }}
+        {% else %}
+          {{ states(p) in ['not_home', 'off', 'away', 'armed_away', 'armed_vacation'] }}
+        {% endif %}
+      {% else %}
+        {{ false }}
+      {% endif %}
+    for:
+      minutes: !input away_timeout
+    id: presence_away
+  - trigger: template
+    value_template: >-
+      {% if override_entity is defined and override_entity != '' %}
+        {{ states(override_entity) in ['on', 'active'] }}
+      {% else %}
+        {{ false }}
+      {% endif %}
+    id: override_activated
+  - trigger: template
+    value_template: >-
+      {% if override_entity is defined and override_entity != '' %}
+        {{ states(override_entity) in ['off', 'idle'] }}
+      {% else %}
+        {{ false }}
+      {% endif %}
+    id: override_deactivated
+
+variables:
+  target_light: !input target_light
+  curfew_time: !input curfew_time
+  curfew_end_time: !input curfew_end_time
+  max_duration: !input max_duration
+  sync_lights: !input sync_lights
+  presence_entity: !input presence_entity
+  away_timeout: !input away_timeout
+  after_sunset_only: !input after_sunset_only
+  override_entity: !input override_entity
+  override_mode: !input override_mode
+  service_timeout_hours: !input service_timeout_hours
+  sync_lights_defined: "{{ sync_lights is defined and sync_lights != {} and sync_lights != '' and sync_lights != [] }}"
+  is_away: >-
+    {% if presence_entity is defined and presence_entity != '' %}
+      {% set p = presence_entity %}
+      {% if p.startswith('zone.') %}
+        {{ states(p) | int(default=1) == 0 }}
+      {% else %}
+        {{ states(p) in ['not_home', 'off', 'away', 'armed_away', 'armed_vacation'] }}
+      {% endif %}
+    {% else %}
+      {{ false }}
+    {% endif %}
+  is_override_active: >-
+    {% if override_entity is defined and override_entity != '' %}
+      {{ states(override_entity) in ['on', 'active'] }}
+    {% else %}
+      {{ false }}
+    {% endif %}
+
+# Runs overlap (mode: parallel), so every timed turn-off waits with wait_for_trigger
+# instead of delay: a run whose light or override has since changed ends its wait
+# and does nothing, rather than turning off a later, unrelated session.
+actions:
+  - choose:
+      # Branch 1: Override entity activated, or HA restarted while it was active
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ trigger.id == 'override_activated'
+                 or (trigger.id == 'ha_started' and is_override_active | bool) }}
+        sequence:
+          - choose:
+              # Mode 1: Service Power (Daytime Gardener / Tool Outlets)
+              - conditions:
+                  - condition: template
+                    value_template: "{{ override_mode == 'service_power' }}"
+                sequence:
+                  - action: light.turn_on
+                    target:
+                      entity_id: !input target_light
+                  - if:
+                      - condition: template
+                        value_template: "{{ service_timeout_hours | float(default=0) > 0 }}"
+                    then:
+                      # Delays do not survive a restart; the ha_started trigger re-arms this wait.
+                      - wait_for_trigger:
+                          - trigger: template
+                            value_template: "{{ states(override_entity) not in ['on', 'active'] }}"
+                        timeout:
+                          minutes: "{{ (service_timeout_hours | float * 60) | int }}"
+                        continue_on_timeout: true
+                      - if:
+                          - condition: template
+                            value_template: "{{ wait.trigger is none }}"
+                        then:
+                          - action: light.turn_off
+                            target:
+                              entity_id: !input target_light
+                          - if:
+                              - condition: template
+                                value_template: "{{ sync_lights_defined }}"
+                            then:
+                              - action: light.turn_off
+                                target: !input sync_lights
+                          - if:
+                              - condition: template
+                                value_template: "{{ override_entity.startswith('timer.') }}"
+                            then:
+                              - action: timer.finish
+                                target:
+                                  entity_id: "{{ override_entity }}"
+                            else:
+                              - action: homeassistant.turn_off
+                                target:
+                                  entity_id: "{{ override_entity }}"
+
+              # Mode 2: Maintenance Hold (not electrical isolation)
+              - conditions:
+                  - condition: template
+                    value_template: "{{ override_mode == 'maintenance_hold' }}"
+                sequence:
+                  - action: light.turn_off
+                    target:
+                      entity_id: !input target_light
+                  - if:
+                      - condition: template
+                        value_template: "{{ sync_lights_defined }}"
+                    then:
+                      - action: light.turn_off
+                        target: !input sync_lights
+
+      # Branch 2: Override entity deactivated (e.g. Gardener switched off power)
+      - conditions:
+          - condition: trigger
+            id: override_deactivated
+          - condition: template
+            value_template: "{{ override_mode == 'service_power' }}"
+          - condition: state
+            entity_id: !input target_light
+            state: "on"
+        sequence:
+          - action: light.turn_off
+            target:
+              entity_id: !input target_light
+          - if:
+              - condition: template
+                value_template: "{{ sync_lights_defined }}"
+            then:
+              - action: light.turn_off
+                target: !input sync_lights
+
+      # Branch 3: Target light turned off manually or by external switch
+      - conditions:
+          - condition: trigger
+            id: light_turned_off
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ sync_lights_defined }}"
+            then:
+              - action: light.turn_off
+                target: !input sync_lights
+
+      # Branch 4: Bedtime curfew reached
+      - conditions:
+          - condition: trigger
+            id: curfew_reached
+          - condition: state
+            entity_id: !input target_light
+            state: "on"
+          - condition: template
+            value_template: "{{ not (is_override_active | bool and override_mode in ['service_power', 'pause_automation']) }}"
+        sequence:
+          - action: light.turn_off
+            target:
+              entity_id: !input target_light
+          - if:
+              - condition: template
+                value_template: "{{ sync_lights_defined }}"
+            then:
+              - action: light.turn_off
+                target: !input sync_lights
+
+      # Branch 5: HA started during curfew hours with light still on
+      - conditions:
+          - condition: trigger
+            id: ha_started
+          - condition: state
+            entity_id: !input target_light
+            state: "on"
+          - condition: time
+            after: !input curfew_time
+            before: !input curfew_end_time
+          - condition: template
+            value_template: "{{ not (is_override_active | bool and override_mode in ['service_power', 'pause_automation']) }}"
+        sequence:
+          - action: light.turn_off
+            target:
+              entity_id: !input target_light
+          - if:
+              - condition: template
+                value_template: "{{ sync_lights_defined }}"
+            then:
+              - action: light.turn_off
+                target: !input sync_lights
+
+      # Branch 6: Presence changed to away while target light was on
+      - conditions:
+          - condition: trigger
+            id: presence_away
+          - condition: state
+            entity_id: !input target_light
+            state: "on"
+          - condition: template
+            value_template: "{{ not (is_override_active | bool and override_mode in ['service_power', 'pause_automation']) }}"
+        sequence:
+          - action: light.turn_off
+            target:
+              entity_id: !input target_light
+          - if:
+              - condition: template
+                value_template: "{{ sync_lights_defined }}"
+            then:
+              - action: light.turn_off
+                target: !input sync_lights
+
+      # Branch 7: Target light turned on
+      - conditions:
+          - condition: trigger
+            id: light_turned_on
+        sequence:
+          # Maintenance hold: switch the turn-on straight back off
+          - if:
+              - condition: template
+                value_template: "{{ is_override_active | bool and override_mode == 'maintenance_hold' }}"
+            then:
+              - action: light.turn_off
+                target:
+                  entity_id: !input target_light
+              - stop: "Maintenance hold active; turned the light back off."
+
+          # Pause or service power override: unconstrained runtime, bypass curfew and daytime elevation stops
+          - if:
+              - condition: template
+                value_template: "{{ is_override_active | bool and override_mode in ['service_power', 'pause_automation'] }}"
+            then:
+              - stop: "Override active; allowing unconstrained runtime without curfew or sun elevation guards."
+
+          # Optional guard against daytime manual activations
+          - if:
+              - condition: template
+                value_template: >-
+                  {{ after_sunset_only and is_state('sun.sun', 'above_horizon') }}
+            then:
+              - stop: "Sun is above horizon and after_sunset_only is enabled; ignoring daytime turn-on."
+
+          # If turned on during curfew hours (between curfew_time and curfew_end_time)
+          - if:
+              - condition: time
+                after: !input curfew_time
+                before: !input curfew_end_time
+            then:
+              - wait_for_trigger:
+                  - trigger: state
+                    entity_id: !input target_light
+                    to: "off"
+                  - trigger: template
+                    value_template: "{{ override_entity != '' and states(override_entity) in ['on', 'active'] }}"
+                timeout:
+                  minutes: 2
+                continue_on_timeout: true
+              - if:
+                  - condition: template
+                    value_template: "{{ wait.trigger is none }}"
+                then:
+                  - action: light.turn_off
+                    target:
+                      entity_id: !input target_light
+              - stop: "Turned on during curfew hours; turned off after 2-minute grace period."
+
+          # Normal evening dusk activation
+          - if:
+              - condition: template
+                value_template: "{{ sync_lights_defined }}"
+            then:
+              - action: light.turn_on
+                target: !input sync_lights
+
+          - variables:
+              effective_timeout: >-
+                {% if is_away and away_timeout > 0 %}
+                  {{ away_timeout if (max_duration == 0 or away_timeout < max_duration) else max_duration }}
+                {% elif max_duration > 0 %}
+                  {{ max_duration }}
+                {% else %}
+                  0
+                {% endif %}
+
+          - if:
+              - condition: template
+                value_template: "{{ effective_timeout | int > 0 }}"
+            then:
+              # Ends early when this session ends (light off) or an override takes over.
+              - wait_for_trigger:
+                  - trigger: state
+                    entity_id: !input target_light
+                    to: "off"
+                  - trigger: template
+                    value_template: "{{ override_entity != '' and states(override_entity) in ['on', 'active'] }}"
+                timeout:
+                  minutes: "{{ effective_timeout | int }}"
+                continue_on_timeout: true
+              - if:
+                  - condition: template
+                    value_template: "{{ wait.trigger is none }}"
+                then:
+                  - action: light.turn_off
+                    target:
+                      entity_id: !input target_light
+                  - if:
+                      - condition: template
+                        value_template: "{{ sync_lights_defined }}"
+                    then:
+                      - action: light.turn_off
+                        target: !input sync_lights

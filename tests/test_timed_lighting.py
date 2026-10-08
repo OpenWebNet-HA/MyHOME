@@ -178,6 +178,20 @@ class TestLightTimedTurnOn:
         assert dimmable_light.brightness == 128
         assert dimmable_light.is_on is True
 
+    async def test_async_turn_on_timed_with_brightness_one_clamps_to_one(self, dimmable_light, mock_gateway):
+        """Test async_turn_on_timed with 1 8-bit brightness clamps to 1%."""
+        await dimmable_light.async_turn_on_timed(duration=120, brightness=1)
+
+        assert mock_gateway.send.call_count == 2
+        first_cmd = mock_gateway.send.call_args_list[0][0][0]
+        second_cmd = mock_gateway.send.call_args_list[1][0][0]
+        # 1 / 255 -> rounds to 0%, but clamped to 1% -> *#1*21*#1*101*0##
+        assert str(first_cmd) == "*#1*21*#1*101*0##"
+        assert str(second_cmd) == "*1*12*21##"
+        # 1% -> 3 / 255
+        assert dimmable_light.brightness == 3
+        assert dimmable_light.is_on is True
+
     async def test_async_turn_on_timed_with_brightness_pct(self, dimmable_light, mock_gateway):
         """Test async_turn_on_timed with brightness percentage."""
         await dimmable_light.async_turn_on_timed(duration=30, brightness_pct=75)

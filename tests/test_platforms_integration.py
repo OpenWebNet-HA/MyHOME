@@ -1,5 +1,6 @@
 """Integration tests spanning all platforms to ensure setup, unload, and dispatcher wiring."""
 import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -141,7 +142,7 @@ async def test_platform_dynamic_discovery(hass: HomeAssistant, mock_gateway_conn
     await hass.async_block_till_done()
 
 
-async def test_fast_discovery_reply_during_slow_platform_setup(hass: HomeAssistant):
+async def test_fast_discovery_reply_during_slow_platform_setup(hass: HomeAssistant, monkeypatch):
     """A gateway answering the discovery sweep at once must not race platform setup.
 
     Workers still start before the platforms (so a bounded queue cannot block
@@ -168,6 +169,9 @@ async def test_fast_discovery_reply_during_slow_platform_setup(hass: HomeAssista
             if task is None:
                 return
             sent.append(str(task["message"]))
+            written = task.get("written")
+            if written is not None and not written.done():
+                written.set_result(time.monotonic())
             if str(task["message"]) == "*#2*0##":
                 async_dispatcher_send(hass, f"myhome_message_{mac}", OWNEvent.parse("*2*0*31##"))
             self.send_buffer.task_done()
@@ -181,6 +185,7 @@ async def test_fast_discovery_reply_during_slow_platform_setup(hass: HomeAssista
     event_session.close = AsyncMock()
 
     original_forward = hass.config_entries.async_forward_entry_setups
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_PERIOD", 0.01)
 
     async def slow_forward(entry, platforms):
         nonlocal sweep_sent_during_platform_setup, workers_running_during_platform_setup
@@ -222,6 +227,11 @@ async def test_fast_discovery_reply_during_slow_platform_setup(hass: HomeAssista
         assert workers_running_during_platform_setup is True
         assert sent.count("*#1*11##") == queue_size * 3
         assert sweep_sent_during_platform_setup is False
+        # The sweep paces itself on the bus, so the later frames follow the first.
+        async with asyncio.timeout(5):
+            while "*#16*0*5##" not in sent:
+                await asyncio.sleep(0.01)
+            await hass.async_block_till_done()
         assert "*#2*0##" in sent
         cover_entry = er.async_get(hass).async_get_entity_id("cover", DOMAIN, f"{mac}-2-31")
         assert cover_entry is not None, "discovered cover reply was lost"

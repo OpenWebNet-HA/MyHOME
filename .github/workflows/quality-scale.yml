@@ -16,18 +16,29 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   quality-scale:
     name: Audit quality_scale.yaml
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      # Commits the badge and README table on main / master / v2-* pushes.
+      contents: write
     steps:
+      # Credentials are only kept for a push, where the commit step needs them.
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: ${{ github.event_name == 'push' }} # zizmor: ignore[artipacked]
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.14"
 
@@ -43,13 +54,13 @@ jobs:
         run: python scripts/manage_translations.py check
 
       - name: Quality scale audit and badge
+        id: audit
         run: |
           python scripts/quality_scale_report.py --badge quality_scale.svg --json quality_scale.json --update-readme README.md --require platinum
           echo "reached=$(python -c 'import json;print(json.load(open("quality_scale.json"))["reached"])')" >> "$GITHUB_OUTPUT"
-        id: audit
 
       - name: Upload audit result
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: quality-scale-audit
           path: |
@@ -58,11 +69,13 @@ jobs:
 
       - name: Commit badge and README table on the default branch
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/v2-'))
+        env:
+          REACHED: ${{ steps.audit.outputs.reached }}
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add quality_scale.svg README.md
           if ! git diff --staged --quiet; then
-            git commit -m "chore: update quality scale badge and README table (${{ steps.audit.outputs.reached }}) [skip ci]"
+            git commit -m "chore: update quality scale badge and README table (${REACHED}) [skip ci]"
             git push || echo "No files pushed"
           fi

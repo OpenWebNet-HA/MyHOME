@@ -1,7 +1,10 @@
 name: Validate
 
+# Pushes to topic branches are covered by their pull request; running on both
+# only doubled every run.
 on:
   push:
+    branches: [main, master, "v2-*"]
   pull_request:
   schedule:
     - cron: "0 0 * * *"
@@ -9,13 +12,18 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # Required check on master (together with hassfest.yml): keep the job id.
   validate:
-    runs-on: "ubuntu-latest"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - uses: "actions/checkout@v7"
       - name: HACS validation
-        uses: "hacs/action@main"
+        uses: hacs/action@d556e736723344f83838d08488c983a15381059a # 22.5.0
         with:
           category: "integration"
           ignore: "topics issues"

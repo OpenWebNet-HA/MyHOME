@@ -92,12 +92,17 @@ async def test_services_edge_cases(hass: HomeAssistant, attach_gateway) -> None:
 
 
 async def test_sweep_bus_queries_sent(hass: HomeAssistant, attach_gateway) -> None:
-    """Test sweep_bus sends updated queries including firmware and excluding invalid lighting query."""
+    """sweep_bus sends the gateway, general and energy queries; the general ones paced (#578)."""
     from unittest.mock import AsyncMock
     await async_setup_services(hass)
 
     mock_handler = MagicMock()
     mock_handler.send = AsyncMock()
+    mock_handler.send_status_request = AsyncMock()
+    mock_handler.send_paced = AsyncMock()
+    order = MagicMock()
+    order.attach_mock(mock_handler.send_status_request, "send_status_request")
+    order.attach_mock(mock_handler.send_paced, "send_paced")
     gw_mac = "00:03:50:aa:bb:cc"
     attach_gateway(gw_mac, mock_handler)
 
@@ -108,15 +113,20 @@ async def test_sweep_bus_queries_sent(hass: HomeAssistant, attach_gateway) -> No
         blocking=True,
     )
 
-    sent_raw = [str(call.args[0]) for call in mock_handler.send.await_args_list]
-    assert "*#13**0##" in sent_raw
-    assert "*#13**15##" in sent_raw
-    assert "*#13**16##" in sent_raw
-    assert "*#2*0##" in sent_raw
-    assert "*#4*0##" in sent_raw
-    assert "*#5*0##" in sent_raw
-    assert "*#16*0*5##" in sent_raw
-    assert "*#1*0##" not in sent_raw
+    # General requests go through the paced sweep, in one call, as status requests (a NACK is then logged at DEBUG)
+    mock_handler.send_paced.assert_awaited_once_with(
+        ["*#1*0##", "*#2*0##", "*#4*0##", "*#5*0##", "*#16*0*5##"]
+    )
+    # ... after the gateway queries and before the energy queries
+    names = [call[0] for call in order.mock_calls]
+    paced_at = names.index("send_paced")
+    assert names[:paced_at] == ["send_status_request"] * 3
+    assert names[paced_at + 1:] == ["send_status_request"] * 36
+
+    sent_raw = [str(call.args[0]) for call in mock_handler.send_status_request.await_args_list]
+    assert sent_raw[:3] == ["*#13**0##", "*#13**15##", "*#13**16##"]
+    assert not any(raw.startswith(("*#1*", "*#2*", "*#4*", "*#5*", "*#16*")) for raw in sent_raw)
+    mock_handler.send.assert_not_called()
     # Energy Management (WHO 18) F520 discovery queries
     assert "*#18*51*51##" in sent_raw
     assert "*#18*51*1200##" in sent_raw
@@ -130,7 +140,34 @@ async def test_sweep_bus_queries_sent(hass: HomeAssistant, attach_gateway) -> No
     assert "*#18*79#0*1200##" in sent_raw
 
 
-async def test_sweep_bus_discovers_f520_active_power_sensor(hass: HomeAssistant) -> None:
+async def test_sweep_bus_follower_delegated_who1(hass: HomeAssistant, attach_gateway) -> None:
+    """Test sweep_bus sends *#1*0## when a follower gateway has WHO 1 delegated."""
+    from unittest.mock import AsyncMock
+    await async_setup_services(hass)
+
+    mock_handler = MagicMock()
+    mock_handler.send = AsyncMock()
+    mock_handler.send_status_request = AsyncMock()
+    mock_handler.send_paced = AsyncMock()
+    mock_handler.is_follower = True
+    mock_handler.delegated_whos = {1}
+    gw_mac = "00:03:50:aa:bb:dd"
+    attach_gateway(gw_mac, mock_handler)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SWEEP_BUS,
+        {ATTR_GATEWAY: gw_mac},
+        blocking=True,
+    )
+
+    mock_handler.send_paced.assert_awaited_once_with(["*#1*0##"])
+    sent_raw = [str(call.args[0]) for call in mock_handler.send_status_request.await_args_list]
+    assert sent_raw == ["*#13**0##", "*#13**15##", "*#13**16##"]
+    mock_handler.send.assert_not_called()
+
+
+async def test_sweep_bus_discovers_f520_active_power_sensor(hass: HomeAssistant, fast_bus_pacing) -> None:
     """Test sweep_bus sends Dimension 1200 query and successfully discovers active power sensors (#494)."""
     from unittest.mock import AsyncMock, patch
 
@@ -164,12 +201,18 @@ async def test_sweep_bus_discovers_f520_active_power_sensor(hass: HomeAssistant)
 
         sent_frames: list[str] = []
         original_send = handler.send
+        original_status = handler.send_status_request
 
         async def capture_send(msg):
             sent_frames.append(str(msg))
             return await original_send(msg)
 
+        async def capture_status(msg):
+            sent_frames.append(str(msg))
+            return await original_status(msg)
+
         handler.send = capture_send
+        handler.send_status_request = capture_status
 
         # Trigger sweep_bus for this gateway
         await hass.services.async_call(

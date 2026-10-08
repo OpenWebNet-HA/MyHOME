@@ -1,4 +1,5 @@
 import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -230,8 +231,8 @@ async def test_gateway_send_and_send_status_request(gateway_handler):
 
 
 @pytest.mark.asyncio
-async def test_gateway_initial_discovery_queues_sweep(gateway_handler):
-    """The startup sweep queues covers, heating and audio status requests, never *#1*0##.
+async def test_gateway_initial_discovery_queues_sweep(gateway_handler, fast_bus_pacing):
+    """The startup sweep queues lighting, covers, heating and audio status requests.
 
     WHO 16 goes out as dimension 5 (``*#16*0*5##``): gateways NACK the bare ``*#16*0##``.
     """
@@ -241,7 +242,88 @@ async def test_gateway_initial_discovery_queues_sweep(gateway_handler):
         item = gateway_handler.send_buffer.get_nowait()
         assert item["is_status_request"] is True
         queued.append(str(item["message"]))
+    assert queued == ["*#1*0##", "*#2*0##", "*#4*0##", "*#16*0*5##"]
+
+
+@pytest.mark.asyncio
+async def test_gateway_initial_discovery_f454_nack_continues(gateway_handler, fast_bus_pacing, monkeypatch):
+    """A NACK on the WHO 1 general request (F454) neither aborts nor stalls the sweep (#578).
+
+    The worker runs alongside the sweep, so the NACK reaches ``initial_discovery`` as a
+    cancelled write; the write timeout is long, so waiting it out would fail the test.
+    """
+    monkeypatch.setattr("custom_components.myhome.gateway.PACED_WRITE_TIMEOUT", 5.0)
+    with patch("custom_components.myhome.gateway.OWNCommandSession") as mock_cmd_class:
+        mock_cmd_session = MagicMock()
+        mock_cmd_session.connect = AsyncMock(return_value={"Success": True})
+        mock_cmd_session.close = AsyncMock()
+        mock_cmd_class.return_value = mock_cmd_session
+        gateway_handler._event_session_ready.set()
+        gateway_handler.sending_workers = [MagicMock()]
+
+        sent_frames = []
+
+        async def mock_send(message, is_status_request):
+            sent_frames.append(str(message))
+            if str(message) == "*#16*0*5##":
+                gateway_handler._terminate_sender = True
+            if str(message) == "*#1*0##":
+                # F454 NACK returns None/empty without raising
+                return None
+            return []
+
+        mock_cmd_session.send = AsyncMock(side_effect=mock_send)
+
+        worker = asyncio.get_running_loop().create_task(gateway_handler.sending_loop(0))
+        try:
+            start = time.monotonic()
+            await gateway_handler.initial_discovery()
+            elapsed = time.monotonic() - start
+        finally:
+            worker.cancel()
+
+        assert sent_frames == ["*#1*0##", "*#2*0##", "*#4*0##", "*#16*0*5##"]
+        assert elapsed < 2.0
+        assert not gateway_handler.initial_discovery_pending
+
+
+@pytest.mark.asyncio
+async def test_gateway_initial_discovery_skips_who1_when_follower(gateway_handler, fast_bus_pacing, monkeypatch):
+    """A follower gateway skips WHO 1 unless it is delegated to it (#578)."""
+    monkeypatch.setattr(MyHOMEGatewayHandler, "is_follower", property(lambda self: True))
+    monkeypatch.setattr(MyHOMEGatewayHandler, "delegated_whos", property(lambda self: {2}))
+
+    await gateway_handler.initial_discovery()
+    queued = []
+    while not gateway_handler.send_buffer.empty():
+        item = gateway_handler.send_buffer.get_nowait()
+        queued.append(str(item["message"]))
+    assert queued == ["*#2*0##"]
+
+
+@pytest.mark.asyncio
+async def test_gateway_initial_discovery_skips_who1_when_delegated_away(gateway_handler, fast_bus_pacing, monkeypatch):
+    """A primary gateway skips WHO 1 when it is delegated away to a secondary (#578)."""
+    monkeypatch.setattr(MyHOMEGatewayHandler, "delegated_away_whos", property(lambda self: {1}))
+
+    await gateway_handler.initial_discovery()
+    queued = []
+    while not gateway_handler.send_buffer.empty():
+        item = gateway_handler.send_buffer.get_nowait()
+        queued.append(str(item["message"]))
     assert queued == ["*#2*0##", "*#4*0##", "*#16*0*5##"]
+
+
+@pytest.mark.asyncio
+async def test_gateway_initial_discovery_profile_unsupported(gateway_handler, fast_bus_pacing):
+    """When gateway profile does not support WHO 1, it is skipped (#578)."""
+    with patch.object(gateway_handler, "_profile_supports_who", side_effect=lambda who: who != 1):
+        await gateway_handler.initial_discovery()
+        queued = []
+        while not gateway_handler.send_buffer.empty():
+            item = gateway_handler.send_buffer.get_nowait()
+            queued.append(str(item["message"]))
+        assert queued == ["*#2*0##", "*#4*0##", "*#16*0*5##"]
 
 
 @pytest.mark.asyncio
@@ -1066,6 +1148,7 @@ async def test_sending_loop_collected_responses_and_pacing(gateway_handler):
 async def test_gateway_cen_event_and_auto_registration(gateway_handler: MyHOMEGatewayHandler):
     """Test receiving OWNCENEvent dispatches bus event and registers CEN scenario device."""
     mock_dr = MagicMock()
+    mock_dr.async_get_device.return_value = None
     gateway_handler.config_entry.entry_id = "test_entry_123"
     gateway_handler.device_registry_id = "gateway_device_123"
 
@@ -1123,6 +1206,7 @@ async def test_gateway_cen_event_and_auto_registration(gateway_handler: MyHOMEGa
 async def test_gateway_cenplus_event_and_auto_registration(gateway_handler: MyHOMEGatewayHandler):
     """Test receiving OWNCENPlusEvent dispatches bus event and registers CEN+ scenario device."""
     mock_dr = MagicMock()
+    mock_dr.async_get_device.return_value = None
     gateway_handler.config_entry.entry_id = "test_entry_456"
     gateway_handler.device_registry_id = "gateway_device_456"
 
@@ -1640,6 +1724,200 @@ def test_status_request_log_filter():
     assert log_filter.filter(rec_other) is True
     assert rec_other.levelno == logging.ERROR
     assert rec_other.levelname == "ERROR"
+
+
+@pytest.mark.asyncio
+async def test_initial_discovery_waits_for_bus_quiet_between_requests(gateway_handler, monkeypatch):
+    """The next general request waits until the replies to the previous one stopped (#578).
+
+    The gateway ACKs ``*#1*0##`` at once while the WHO 1 replies keep coming for seconds;
+    sending ``*#2*0##`` inside that window truncates them.
+    """
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_PERIOD", 0.2)
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 5.0)
+    sent_at: dict[str, float] = {}
+    last_frame_at = 0.0
+
+    async def worker():
+        while True:
+            item = await gateway_handler.send_buffer.get()
+            sent_at[str(item["message"])] = time.monotonic()
+            item["written"].set_result(time.monotonic())
+            if str(item["message"]) == "*#1*0##":
+                # Replies keep arriving for ~0.5 s after the write.
+                async def replies():
+                    nonlocal last_frame_at
+                    for _ in range(5):
+                        await asyncio.sleep(0.1)
+                        last_frame_at = time.monotonic()
+                        gateway_handler.note_event_frame()
+
+                asyncio.get_running_loop().create_task(replies())
+
+    task = asyncio.get_running_loop().create_task(worker())
+    try:
+        assert gateway_handler.initial_discovery_pending
+        await gateway_handler.initial_discovery()
+    finally:
+        task.cancel()
+    assert sent_at["*#2*0##"] - last_frame_at >= 0.19
+    assert not gateway_handler.initial_discovery_pending
+
+
+@pytest.mark.asyncio
+async def test_initial_discovery_bus_quiet_is_capped(gateway_handler, monkeypatch):
+    """A bus that never goes quiet cannot stall the sweep beyond the cap (#578)."""
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_PERIOD", 10.0)
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 0.05)
+    start = time.monotonic()
+    await gateway_handler._wait_for_bus_quiet(start)
+    assert time.monotonic() - start < 1.0
+
+
+@pytest.mark.asyncio
+async def test_wait_for_initial_discovery(gateway_handler):
+    """Test wait_for_initial_discovery immediate return and timeout handling (#578)."""
+    # 1. When already done: immediate return (covers line 1060)
+    gateway_handler._initial_discovery_done.set()
+    await gateway_handler.wait_for_initial_discovery()
+
+    # 2. When not done and times out (covers lines 1064-1065)
+    gateway_handler._initial_discovery_done.clear()
+    await gateway_handler.wait_for_initial_discovery(timeout=0.01)
+
+
+@pytest.mark.asyncio
+async def test_wait_for_initial_discovery_default_timeout_covers_the_sweep(gateway_handler, monkeypatch):
+    """The default timeout is the longest the sweep can run, not a fixed 90 s (#578)."""
+    monkeypatch.setattr("custom_components.myhome.gateway.PACED_WRITE_TIMEOUT", 0.02)
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 0.03)
+    start = time.monotonic()
+    await gateway_handler.wait_for_initial_discovery()
+    elapsed = time.monotonic() - start
+    # 4 requests x (0.02 + 0.03) s
+    assert 0.19 <= elapsed < 1.0
+
+
+def _paced_worker(gateway_handler, behaviour):
+    """A send worker that hands each frame to ``behaviour(raw, written)`` and records send times."""
+    sent_at: dict[str, float] = {}
+
+    async def worker():
+        while True:
+            item = await gateway_handler.send_buffer.get()
+            raw = str(item["message"])
+            sent_at[raw] = time.monotonic()
+            await behaviour(raw, item["written"])
+
+    return sent_at, asyncio.get_running_loop().create_task(worker())
+
+
+async def _replies(gateway_handler, count: int, gap: float) -> float:
+    """Feed ``count`` event-session frames ``gap`` apart; return when the last one landed."""
+    last = 0.0
+    for _ in range(count):
+        await asyncio.sleep(gap)
+        last = time.monotonic()
+        gateway_handler.note_event_frame()
+    return last
+
+
+@pytest.mark.asyncio
+async def test_send_paced_waits_for_quiet_after_a_late_write(gateway_handler, monkeypatch):
+    """A write that outlasts the quiet cap still gets its quiet gap (#578).
+
+    On a one-session gateway the worker sits in ``send()`` until OWNd returns. The old
+    sweep gave up on the write after the cap and queued the next request, which then
+    went out straight after the late write, inside the reply tail.
+    """
+    monkeypatch.setattr("custom_components.myhome.gateway.PACED_WRITE_TIMEOUT", 5.0)
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 0.5)
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_PERIOD", 0.1)
+    tail: list[asyncio.Task[float]] = []
+
+    async def behaviour(raw, written):
+        write_start = time.monotonic()
+        if raw == "*#1*0##":
+            # Replies run for 0.9 s; the write itself only returns after 0.7 s, past the cap.
+            tail.append(asyncio.get_running_loop().create_task(_replies(gateway_handler, 18, 0.05)))
+            await asyncio.sleep(0.7)
+        written.set_result(write_start)
+
+    sent_at, task = _paced_worker(gateway_handler, behaviour)
+    try:
+        await gateway_handler.send_paced(["*#1*0##", "*#2*0##"])
+        last_frame = await tail[0]
+    finally:
+        task.cancel()
+    assert sent_at["*#2*0##"] - last_frame >= 0.09
+
+
+@pytest.mark.asyncio
+async def test_send_paced_waits_for_quiet_after_a_failed_write(gateway_handler, monkeypatch):
+    """A NACKed or timed-out request may still be answered; the next one waits for quiet (#578)."""
+    monkeypatch.setattr("custom_components.myhome.gateway.PACED_WRITE_TIMEOUT", 5.0)
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 2.0)
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_PERIOD", 0.1)
+    tail: list[asyncio.Task[float]] = []
+
+    async def behaviour(raw, written):
+        if raw == "*#1*0##":
+            tail.append(asyncio.get_running_loop().create_task(_replies(gateway_handler, 4, 0.05)))
+            written.cancel()
+        else:
+            written.set_result(time.monotonic())
+
+    sent_at, task = _paced_worker(gateway_handler, behaviour)
+    try:
+        await gateway_handler.send_paced(["*#1*0##", "*#2*0##"])
+        last_frame = await tail[0]
+    finally:
+        task.cancel()
+    assert sent_at["*#2*0##"] - last_frame >= 0.09
+
+
+@pytest.mark.asyncio
+async def test_send_paced_gives_up_on_a_write_that_never_happens(gateway_handler, monkeypatch, caplog):
+    """No worker drains the queue: the sweep moves on after the write timeout (#578)."""
+    monkeypatch.setattr("custom_components.myhome.gateway.PACED_WRITE_TIMEOUT", 0.05)
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 0.05)
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_PERIOD", 0.01)
+
+    await gateway_handler.send_paced(["*#1*0##", "*#2*0##"], status_request=False)
+
+    queued = []
+    while not gateway_handler.send_buffer.empty():
+        item = gateway_handler.send_buffer.get_nowait()
+        assert item["is_status_request"] is False
+        queued.append(str(item["message"]))
+    assert queued == ["*#1*0##", "*#2*0##"]
+    assert "`*#1*0##` not written after" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_send_paced_skips_a_frame_that_does_not_parse(gateway_handler, monkeypatch):
+    """A frame OWNd cannot parse is dropped; the rest of the sweep still goes out (#578)."""
+    monkeypatch.setattr("custom_components.myhome.gateway.PACED_WRITE_TIMEOUT", 0.05)
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 0.05)
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_PERIOD", 0.01)
+
+    await gateway_handler.send_paced(["not a frame", "*#2*0##"])
+
+    queued = [str(gateway_handler.send_buffer.get_nowait()["message"]) for _ in range(gateway_handler.send_buffer.qsize())]
+    assert queued == ["*#2*0##"]
+
+
+def test_gateway_ignored_addresses(mock_config_entry):
+    """Test handler.ignored_addresses property instantiates IgnoredAddresses."""
+    from custom_components.myhome.const import CONF_IGNORED_ADDRESSES
+
+    mock_config_entry.options = {CONF_IGNORED_ADDRESSES: ["1/74"]}
+    handler = MyHOMEGatewayHandler(MagicMock(), mock_config_entry)
+    ignored = handler.ignored_addresses
+    assert (1, "74") in ignored
+    assert (1, "75") not in ignored
+
+
 
 
 

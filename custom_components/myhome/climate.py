@@ -17,6 +17,7 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, State, callback
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from OWNd.message import (
@@ -44,6 +45,12 @@ from OWNd.message import (
     OWNHeatingEvent,
 )
 
+try:  # OWNd > 2.0.0b10 (OpenWebNet-HA/OWNd#94)
+    from OWNd.message import MESSAGE_TYPE_SEASON, SEASON_HEATING
+except ImportError:  # pragma: no cover - pinned OWNd 2.0.0b10 reports WHAT 1/0 as hvac_mode
+    MESSAGE_TYPE_SEASON = "hvac_season"
+    SEASON_HEATING = "heating"
+
 from .const import (
     BUS_ROUTING,
     CONF_CENTRAL,
@@ -53,8 +60,8 @@ from .const import (
     CONF_HEATING_SUPPORT,
     CONF_MANUFACTURER,
     CONF_STANDALONE,
+    DOMAIN,
     LOGGER,
-    signed_who4_temperature,
 )
 from .data import get_runtime_data
 from .device_health import FaultKind
@@ -76,6 +83,14 @@ _PROTECTION_FRAME_WINDOW = 2.0
 _ZONE_CONTEXT_MODES = {"heating": HVACMode.HEAT, "cooling": HVACMode.COOL, "automatic": HVACMode.AUTO}
 _ZONE_STATES_ON = ("setpoint", "comfort", "eco")
 _ZONE_STATES_OFF = ("protection", "off")
+
+# Mode digit of a setpoint write (*#4*W*#14*TTTT*M##). Legrand WHO 4 p. 8 and
+# p. 23 define M = 1 heating, 2 conditioning, 3 generic; BTicino's own client
+# always writes 3 (libqtdevices probe_device.cpp:122, thermal_device.cpp:134)
+# and the mhs1 / F454 firmware forwards 1, 2 and 3 as three different bus
+# codes (90/91/92 for a zone, C1 12/22/02 for the central unit). Writing generic
+# mode 3 in async_set_temperature keeps the plant's existing season.
+SETPOINT_WRITE_MODE = CLIMATE_MODE_AUTO
 
 
 async def async_setup_entry(
@@ -323,10 +338,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._attr_fan_modes: list[str] | None = None
         self._running_fan_speed: str | None = None
         self._actuator_states: dict[str, bool] = {}
-        if fan:
+        if fan and not self._central:
             self._enable_fan_mode()
 
         self._attr_current_temperature: float | None = None
+        self._season: str | None = None
         self._attr_current_humidity: float | None = None
         self._target_temperature: float | None = None
         self._local_offset: float = 0
@@ -340,6 +356,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
     def _enable_fan_mode(self) -> None:
         """Dynamically enable fan mode support if not already enabled."""
+        if self._central:
+            return
         if not self._fan:
             self._fan = True
             self._attr_supported_features |= ClimateEntityFeature.FAN_MODE
@@ -355,6 +373,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             "local_target_temperature": self._local_target_temperature,
             "knob_pos": self._knob_pos,
         }
+        if self._season is not None:
+            attrs["season"] = self._season
         if self._fan:
             attrs["fan_mode"] = self._attr_fan_mode
             if self._running_fan_speed is not None:
@@ -397,20 +417,23 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
     async def async_update(self) -> None:
         """Request status update from gateway, unless the zone has stopped answering."""
-        if self._central:
-            # Central units (#0, #0#1) do not answer Dimension 14 status requests (*#4*#0*14##);
-            # in OpenWebNet, Dimension 14 status reads only apply to zone addresses 1..99.
-            # Central units receive setpoints via commands (*#4*#0*#14*T*M##), broadcast events,
-            # or restored state, and do not participate in point-to-point status polling or PollHealth tracking.
+        if self._central and self._where not in ("#0", "0"):
+            # 4-zone central units (#0#1) do not participate in point-to-point status polling;
+            # bus captures confirm querying #0#1 times out on plants without a physical 4-zone unit (#629).
+            # They receive setpoints via commands (*#4*#0#1*#14*T*M##), broadcast events, or restored state.
             return
         if self._poll_health.should_skip(time.time()):
             LOGGER.debug("%s %s did not answer its last polls; not asking again yet", self._gateway_handler.log_id, self._display_name)
             self._raise_unresponsive_issue()
             return
+        # A 99-zone central unit (#0) answers the plain status request (*#4*#0##) within ~0.17 s,
+        # reporting its mode via *4*202*#0## (conditional OFF) and operational flags (#629). Dimension 14
+        # (*#4*#0*14##) is NACKed. Only an F454 has been captured so far, so the poll is informational:
+        # an unanswered one never counts towards the "unresponsive zone" repair.
         request = OWNHeatingCommand.status(self._full_where)
         frames_before = self._poll_health.frames
         written = await self._gateway_handler.send_status_request(request)
-        if isinstance(written, asyncio.Future):
+        if isinstance(written, asyncio.Future) and not self._central:
             written.add_done_callback(lambda future: self._poll_answered(future, frames_before))
         if self._fan:
             await self._gateway_handler.send_status_request(
@@ -479,14 +502,23 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         }
         speed_code = fan_mode_map.get(str(fan_mode).lower())
         if speed_code is not None:
-            self._attr_fan_mode = fan_mode
-            await self._gateway_handler.send(
-                OWNHeatingCommand.set_fan_speed(
+            # OWNd raises for a central unit or general zone: the firmware forwards
+            # *#4*Z*#11*S## only for a plain zone 1..99 (OWNd#77, A2).
+            try:
+                command = OWNHeatingCommand.set_fan_speed(
                     where=self._where,
                     speed=speed_code,
                     standalone=self._standalone,
                 )
-            )
+            except ValueError as err:
+                raise ServiceValidationError(
+                    f"{self._display_name} has no fan speed of its own: only a zone (1-99) takes one",
+                    translation_domain=DOMAIN,
+                    translation_key="fan_speed_zone_only",
+                    translation_placeholders={"name": self._display_name},
+                ) from err
+            self._attr_fan_mode = fan_mode
+            await self._gateway_handler.send(command)
             if self.hass is not None:
                 self.async_write_ha_state()
 
@@ -579,33 +611,14 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if self.hass is not None:
                 self.async_write_ha_state()
             return
-        if self._attr_hvac_mode == HVACMode.HEAT:
-            await self._gateway_handler.send(
-                OWNHeatingCommand.set_temperature(
-                    where=self._where,
-                    temperature=target_temperature,
-                    mode=CLIMATE_MODE_HEAT,
-                    standalone=self._standalone,
-                )
+        await self._gateway_handler.send(
+            OWNHeatingCommand.set_temperature(
+                where=self._where,
+                temperature=target_temperature,
+                mode=SETPOINT_WRITE_MODE,
+                standalone=self._standalone,
             )
-        elif self._attr_hvac_mode == HVACMode.COOL:
-            await self._gateway_handler.send(
-                OWNHeatingCommand.set_temperature(
-                    where=self._where,
-                    temperature=target_temperature,
-                    mode=CLIMATE_MODE_COOL,
-                    standalone=self._standalone,
-                )
-            )
-        else:
-            await self._gateway_handler.send(
-                OWNHeatingCommand.set_temperature(
-                    where=self._where,
-                    temperature=target_temperature,
-                    mode=CLIMATE_MODE_AUTO,
-                    standalone=self._standalone,
-                )
-            )
+        )
 
     def _dimension_3_is_protection(self, message: OWNHeatingEvent) -> bool:
         """Whether a dimension 12/14 frame may be a protection setpoint rather than the nominal one.
@@ -676,7 +689,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._gateway_handler.log_id,
                 message.human_readable_log,
             )
-            self._attr_current_temperature = signed_who4_temperature(message, message.main_temperature)
+            self._attr_current_temperature = message.main_temperature
         elif message.message_type == MESSAGE_TYPE_MAIN_HUMIDITY:
             LOGGER.debug(
                 "%s %s",
@@ -735,6 +748,44 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._local_target_temperature - self._local_offset
                     if self._local_target_temperature is not None
                     else None
+                )
+        elif message.message_type == MESSAGE_TYPE_SEASON:
+            # *4*1*Z## / *4*0*Z## is the zone operation mode frame: the zone
+            # (or the central unit) runs in the heating / conditioning season
+            # (Legrand WHO 4 v2.0.0 p. 5, 13, 16, 19, 63). OWNd decodes it as
+            # ``season``; it is not an operating-mode change. A zone that is
+            # AUTO, HEAT or COOL keeps its mode (BTicino's client keeps a zone
+            # in automatic on it, libqtdevices probe_device.cpp:240-253); a
+            # zone that was OFF or not yet known is running again, so it takes
+            # the season's mode. For a central unit the season is the plant
+            # mode Home Assistant shows.
+            self._season = message.season
+            season_mode = HVACMode.HEAT if message.season == SEASON_HEATING else HVACMode.COOL
+            prev_mode = self._attr_hvac_mode
+            if self._central or self._attr_hvac_mode in (None, HVACMode.OFF):
+                if season_mode in self._attr_hvac_modes:
+                    LOGGER.debug("%s %s", self._gateway_handler.log_id, message.human_readable_log)
+                    self._attr_hvac_mode = season_mode
+                    if self._attr_hvac_action == HVACAction.OFF:
+                        self._attr_hvac_action = HVACAction.IDLE
+            else:
+                LOGGER.debug(
+                    "%s %s (season only, zone stays %s)",
+                    self._gateway_handler.log_id,
+                    message.human_readable_log,
+                    self._attr_hvac_mode,
+                )
+            if (
+                prev_mode == HVACMode.OFF
+                and self._attr_hvac_mode != HVACMode.OFF
+                and self._target_temperature is not None
+            ):
+                self._local_target_temperature = self._target_temperature + self._local_offset
+            if self._central and self.hass is not None and self._attr_hvac_mode is not None:
+                async_dispatcher_send(
+                    self.hass,
+                    f"myhome_central_mode_{self._gateway_handler.mac}",
+                    self._attr_hvac_mode,
                 )
         elif message.message_type == MESSAGE_TYPE_MODE:
             prev_mode = self._attr_hvac_mode

@@ -139,8 +139,6 @@ async def async_setup_services(hass: HomeAssistant) -> None:
 
     async def handle_sweep_bus(call: ServiceCall) -> None:
         """Trigger an active status query sweep across bus subsystems to populate the bus monitor."""
-        from OWNd.message import OWNCommand, OWNMessage
-
         gateway = call.data.get(ATTR_GATEWAY, None)
         gateways = _loaded_gateways(hass)
         target_gateways: dict[str, MyHOMEGatewayHandler] = {}
@@ -167,38 +165,41 @@ async def async_setup_services(hass: HomeAssistant) -> None:
 
         for gw_mac, handler in target_gateways.items():
             _LOGGER.info("Executing diagnostic bus sweep on gateway %s", gw_mac)
-            queries = [
+            gateway_queries = [
                 "*#13**0##",   # Gateway real-time clock
                 "*#13**15##",  # Gateway device model
                 "*#13**16##",  # Gateway firmware version
             ]
+            general_queries = ((1, "*#1*0##"), (2, "*#2*0##"), (4, "*#4*0##"), (5, "*#5*0##"), (16, "*#16*0*5##"))
             if getattr(handler, "is_follower", False) is True:
                 delegated: set[int] = getattr(handler, "delegated_whos", set())
-                if 2 in delegated:
-                    queries.append("*#2*0##")
-                if 4 in delegated:
-                    queries.append("*#4*0##")
-                if 5 in delegated:
-                    queries.append("*#5*0##")
-                if 16 in delegated:
-                    queries.append("*#16*0*5##")
-                if 18 in delegated:
-                    queries.extend(energy_queries)
+                general = [q for who, q in general_queries if who in delegated]
+                point_queries = energy_queries if 18 in delegated else []
             else:
                 delegated_away: object = getattr(handler, "delegated_away_whos", set())
                 if not isinstance(delegated_away, (set, frozenset, list, tuple)):
                     delegated_away = set()
-                queries.extend(q for who, q in ((2, "*#2*0##"), (4, "*#4*0##"), (5, "*#5*0##"), (16, "*#16*0*5##")) if who not in delegated_away)
-                if 18 not in delegated_away:
-                    queries.extend(energy_queries)
+                general = [q for who, q in general_queries if who not in delegated_away]
+                point_queries = energy_queries if 18 not in delegated_away else []
 
-            for query in queries:
-                msg = OWNMessage.parse(query)
-                if msg is not None:
-                    await handler.send(cast(OWNCommand, msg))
-                await asyncio.sleep(0.05)
+            for query in gateway_queries:
+                await _send_query(handler, query)
+            # A general request is answered by every device on the bus over seconds;
+            # the next request has to wait for the last reply or it truncates it (#578).
+            await handler.send_paced(general)
+            for query in point_queries:
+                await _send_query(handler, query)
 
         return
+
+    async def _send_query(handler: MyHOMEGatewayHandler, query: str) -> None:
+        """Send one single-reply query of the sweep, paced like any command burst."""
+        from OWNd.message import OWNCommand, OWNMessage
+
+        msg = OWNMessage.parse(query)
+        if msg is not None:
+            await handler.send_status_request(cast(OWNCommand, msg))
+        await asyncio.sleep(0.05)
 
     async def handle_stop_cover_calibration(call: ServiceCall) -> None:
         """Handle stopping active and queued cover calibrations."""

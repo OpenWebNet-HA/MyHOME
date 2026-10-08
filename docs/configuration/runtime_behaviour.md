@@ -10,17 +10,18 @@ After the event session is up, the integration sends a small set of general stat
 
 | Frame | Subsystem |
 | :--- | :--- |
+| `*#1*0##` | Lighting |
 | `*#2*0##` | Automation / covers |
 | `*#4*0##` | Thermoregulation |
 | `*#16*0*5##` | Sound system (dimension 5; lists every amplifier) |
 
 Each request is only sent when the gateway's OWNd **profile** advertises that WHO (`GatewayProfile.supported_who`). Unknown gateways keep the full set.
 
+The requests go out one at a time. The gateway ACKs a general request at once, but the replies (one frame per device, on the event session) keep coming for seconds on a large plant, and a second request sent in that window cuts the first reply short ([#578](https://github.com/OpenWebNet-HA/MyHOME/issues/578)). So after each request is written, the next one waits until the event session has been quiet for 0.75 s, at most 15 s. A request that is NACKed or never written still gets that wait. `myhome.sweep_bus` paces its general requests the same way, so a sweep on a large plant takes a few seconds per subsystem. Entities restored at startup poll their own state only after the whole sweep has finished.
+
 > OWNd 2.0.0b8 and earlier give an **MH200** the MH200N profile, which does not advertise WHO 16, so amplifiers behind an MH200 only appear once they send bus traffic. A live MH200 answers `*#16*0*5##` with every amplifier and source; [OWNd#53](https://github.com/OpenWebNet-HA/OWNd/issues/53) gives it its own profile.
 
 > The WHO 16 status request is `*#16*WHERE*5##` (spec section 1.5.2). Gateways NACK the bare `*#16*0##` for every address, whether or not the plant has audio, so an old NACK on that frame never meant "no audio".
-
-> WHO=1 has no valid general status request (`*#1*0##` is not OpenWebNet), so lights are hydrated from their own status replies and bus traffic.
 
 ---
 
@@ -107,12 +108,13 @@ Behaviour:
 
 Central thermoregulation units (such as the BTicino **3550** at address `#0` and the **4695** 4-zone unit at `#0#1`) manage subordinate zones and set plant-wide seasonal modes (heating, cooling, off, auto).
 
-Unlike subordinate zone thermostats (`1..99`), central units do not support point-to-point operational status polling:
-- Gateways reject Dimension 14 status queries (`*#4*#0*14##`) with NACK, as Dimension 14 status reads are only defined for zone thermostats `1..99`.
-- Gateways also reject general status requests (`*#4*#0##`) with NACK.
+Central units handle status updates differently from subordinate zones (`1..99`):
+- **Dimension 14 queries rejected**: Gateways reject Dimension 14 status queries (`*#4*#0*14##`) with fast NACK, as Dimension 14 status queries are only defined for zone thermostats `1..99` (#629).
+- **Plain status requests supported**: Authentic physical gateway traces (#629) confirm that 99-zone central units (`#0`) reliably answer the plain status request `*#4*#0##` within ~0.17 s, returning their operating mode (`*4*202*#0##` for conditional OFF) and status flags (`*4*21*#0##`, `*4*22*#0##`, `*4*24*#0##`).
+- **Startup Polling**: On startup and poll intervals, the integration queries central unit `#0` with `*#4*#0##`. Answering populates the seasonal mode and coordinates subordinate zones. This poll is informational: an unanswered `*#4*#0##` never raises an `unresponsive_zone` repair (only an F454 has been captured so far). 4-zone central units (`#0#1`) remain exempt to prevent gateway timeouts.
 
-Instead, OpenWebNet central units operate as purely **event-driven broadcast emitters**:
-1. **Startup Hydration**: On restart, the central unit entity is restored from its previous state (`async_restore_last_state()`), maintaining the last known mode and target setpoint without querying the gateway.
+Central units coordinate with the plant as follows:
+1. **Startup Hydration & Polling**: On restart, the central unit entity is restored from its previous state (`async_restore_last_state()`) and sends canonical status request `*#4*#0##`, updating its mode and subordinate zones upon answer.
 2. **Outbound Mode Commands**: When commanded from Home Assistant, the central unit receives seasonal mode commands:
    - `*4*100*#0##` (Conditioning OFF command)
    - `*4*101*#0##` (Manual Heating command)
@@ -120,15 +122,15 @@ Instead, OpenWebNet central units operate as purely **event-driven broadcast emi
    - `*4*103*#0##` (Auto Heating/Cooling command; integration command mapping. Note that in WHO 4 status grammar, WHAT 103 denotes Heating OFF)
    - `*#4*#0*#14*<temp>*<mode>##` (Target temperature setpoint command)
 3. **Inbound Operating Mode & Status Broadcasts**: The physical central unit broadcasts events across the bus whenever its state changes:
-   - Operating mode status: `*4*110*#0##` (Manual Heating status), `*4*210*#0##` (Manual Cooling status), `*4*311*#0##` (Programmed/automatic generic status; mapped to `HVACMode.AUTO` in Home Assistant), `*4*303*#0##` (Generic OFF status).
+   - Operating mode status: `*4*110*#0##` (Manual Heating status), `*4*210*#0##` (Manual Cooling status), `*4*311*#0##` (Programmed/automatic generic status; mapped to `HVACMode.AUTO` in Home Assistant), `*4*303*#0##` (Generic OFF status), `*4*202*#0##` (Conditional OFF status).
    - Target temperature setpoints: `*4*110#<temp>*#0##` (Heating setpoint), `*4*210#<temp>*#0##` (Cooling setpoint).
    - Remote control / local adjustments: `*4*20*#0##`, `*4*21*#0##`, `*4*40*#0##`.
    - Programs & scenarios: `*4*1101*#0##` .. `*4*1103*#0##` (Weekly heating programs 1..3), `*4*1201*#0##` .. `*4*1216*#0##` (Scenarios 1..16).
-4. **No Active Polling**: Central units are exempt from `async_update()` status requests and `PollHealth` tracking, preventing spurious `unresponsive_zone` repair alerts.
+4. **Canonical Status Polling**: Central unit `#0` is queried with plain status request `*#4*#0##`, avoiding the rejected Dimension 14 query (`*#4*#0*14##`) while ensuring the central unit's initial state is populated at startup.
 5. **Subordinate Coordination**: When the central unit changes seasonal mode (either via command or inbound broadcast event), it dispatches an internal event (`myhome_central_mode_<mac>`) so non-standalone subordinate zones synchronize their operating mode immediately.
 6. **Bus Discovery Isolation**: All broadcast frames emitted by a 3550 central unit carry address `#0`. They never resolve to or invent phantom zone `99` (commercial name *"Centrale termoregolazione 99 zone"*). If an installation physically includes a Zone 99 thermostat, on-wire frames directed to zone 99 (`*4*...*99##`) will discover and manage it normally.
 
-*(#582)*
+*(#582, #629)*
 
 ---
 
