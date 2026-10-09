@@ -636,7 +636,7 @@ automated coverage and physical gateway verification steps.
 ### CI Workflows
 - **`hassfest`**: Official Home Assistant manifest, translation, and metadata validation.
 - **`validate`**: Official HACS compliance checks.
-- **`test-coverage`**: 3380 automated unit tests with snapshot matching and 100% line coverage enforcement on the `ownd` core package.
+- **`test-coverage`**: 3491 automated unit tests with snapshot matching and 100% line coverage enforcement on the `ownd` core package.
 - **`ha-container-smoke`**: Automated containerized smoke testing against official Home Assistant Docker images (`stable`, `beta`, `dev`) verifying `check_config`, clean platform module imports, and zero asyncio loop-blocking calls.
 - **`ownd-smoke`**: Automated smoke testing of the `OWNd` protocol engine across `pinned`, `latest`, and `upstream-dev` distributions on Python 3.14.
 - **`ha-upstream-compat`**: Continuous integration testing against upstream Home Assistant Stable, Beta, and Dev channels.
@@ -664,7 +664,7 @@ _Self-audit of [`quality_scale.yaml`](custom_components/myhome/quality_scale.yam
 
 ### 📊 Code Coverage & Quality Assurance
 
-The integration maintains 3380 automated unit tests (100% line coverage across all modules) covering core protocol handling, hardware profiles, discovery, state reconciliation, and error boundaries.
+The integration maintains 3491 automated unit tests (100% line coverage across all modules) covering core protocol handling, hardware profiles, discovery, state reconciliation, and error boundaries.
 
 <!-- START_COVERAGE_TABLE -->
 
@@ -688,6 +688,7 @@ The integration maintains 3380 automated unit tests (100% line coverage across a
 | [`data.py`](custom_components/myhome/data.py) | **100%** | Core integration component |
 | [`decoder_companion.py`](custom_components/myhome/decoder_companion.py) | **100%** | Core integration component |
 | [`decoder_pool.py`](custom_components/myhome/decoder_pool.py) | **100%** | Thread-safe streaming proxy audio pool |
+| [`device_health.py`](custom_components/myhome/device_health.py) | **100%** | Core integration component |
 | [`device_trigger.py`](custom_components/myhome/device_trigger.py) | **100%** | Stateless CEN/CEN+ scenario device automation triggers |
 | [`diagnostics.py`](custom_components/myhome/diagnostics.py) | **100%** | Config entry diagnostics with sensitive data redaction |
 | [`discovery.py`](custom_components/myhome/discovery.py) | **100%** | Core integration component |
@@ -696,6 +697,7 @@ The integration maintains 3380 automated unit tests (100% line coverage across a
 | [`gateway_resync.py`](custom_components/myhome/gateway_resync.py) | **100%** | Core integration component |
 | [`gateway_sessions.py`](custom_components/myhome/gateway_sessions.py) | **100%** | Core integration component |
 | [`identity.py`](custom_components/myhome/identity.py) | **100%** | Core integration component |
+| [`ignored.py`](custom_components/myhome/ignored.py) | **100%** | Core integration component |
 | [`legacy_yaml.py`](custom_components/myhome/legacy_yaml.py) | **100%** | Core integration component |
 | [`light.py`](custom_components/myhome/light.py) | **100%** | Relays, auto-dimmer detection, and brightness transitions |
 | [`light_dali.py`](custom_components/myhome/light_dali.py) | **100%** | Core integration component |
@@ -718,6 +720,7 @@ The integration maintains 3380 automated unit tests (100% line coverage across a
 | [`sound_source.py`](custom_components/myhome/sound_source.py) | **100%** | Core integration component |
 | [`switch.py`](custom_components/myhome/switch.py) | **100%** | Relay actuators, auxiliary switches, socket controllers |
 | [`topology.py`](custom_components/myhome/topology.py) | **100%** | Core integration component |
+| [`typing_compat.py`](custom_components/myhome/typing_compat.py) | **100%** | Core integration component |
 | [`validate.py`](custom_components/myhome/validate.py) | **100%** | Device & gateway schemas, custom WHERE validators, sensor injections |
 | [`websocket.py`](custom_components/myhome/websocket.py) | **100%** | WebSocket API for real-time bus streaming, history, and diagnostics |
 | [`where_grammar.py`](custom_components/myhome/where_grammar.py) | **100%** | Core integration component |
