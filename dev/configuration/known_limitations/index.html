@@ -2242,6 +2242,11 @@
 <td style="text-align: left;">Queue is automatic; <code>myhome.stop_cover_calibration</code> cancels it.</td>
 </tr>
 <tr>
+<td style="text-align: left;"><strong>Rapid concurrent point-to-point commands behind an F422 interface can drop frames.</strong></td>
+<td style="text-align: left;">The physical F422 interface internal FIFO buffer and secondary SCS bus arbitration saturate under rapid unpaced bursts.</td>
+<td style="text-align: left;">Use native General broadcast covers (<code>where: '0'</code>, <code>bus_interface: '&lt;id&gt;'</code>) which send a single OpenWebNet broadcast (<code>*2*WHAT*0#4#&lt;id&gt;##</code>), or rely on the integration's automatic 0.3 s paced member fan-out for position control. See <a href="../covers/#the-bticino-way--real-world-plant-discovery">Covers</a>.</td>
+</tr>
+<tr>
 <td style="text-align: left;"><strong>No slat / tilt control.</strong></td>
 <td style="text-align: left;">Not implemented; the frames exist in OWNd.</td>
 <td style="text-align: left;"><code>myhome.send_message</code> with the tilt frame.</td>

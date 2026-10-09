@@ -1454,6 +1454,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#10-whole-house-secondary-bus-shutter-automations-the-bticino-way" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Whole-house &amp; secondary bus shutter automations (the BTicino way)
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2142,6 +2153,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#10-whole-house-secondary-bus-shutter-automations-the-bticino-way" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Whole-house &amp; secondary bus shutter automations (the BTicino way)
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2322,6 +2344,30 @@
 <li>A raw command sent from the card's <strong>Send frame</strong> bar (administrators only) — <code>*1*1*12##</code> — while watching whether the actuator answers with <code>*1*1*12##</code> or the gateway with a NACK.</li>
 </ol>
 <p>The <a href="../troubleshooting/">troubleshooting guide</a> maps the usual symptoms to what the trace shows.</p>
+<h2 id="10-whole-house-secondary-bus-shutter-automations-the-bticino-way">10. Whole-house &amp; secondary bus shutter automations (the BTicino way)<a class="headerlink" href="#10-whole-house-secondary-bus-shutter-automations-the-bticino-way" title="Permanent link">&para;</a></h2>
+<p>When closing many shutters together at sunset, targeting a dozen individual cover entities causes Home Assistant to dispatch commands concurrently. Behind an F422 interface, sending rapid consecutive point-to-point commands overloads the interface FIFO buffer, causing un-acknowledged shutters to stall open.</p>
+<p>Instead, declare a <strong>General scope cover</strong> (<code>where: "0"</code>, with <code>bus_interface:</code> if on a secondary bus) in <code>myhome.yaml</code>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># /config/myhome.yaml</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nt">00:03:50:81:22:33</span><span class="p">:</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nt">cover</span><span class="p">:</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="nt">all_shutters_east</span><span class="p">:</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"0"</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">      </span><span class="nt">bus_interface</span><span class="p">:</span><span class="w"> </span><span class="s">"02"</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"All</span><span class="nv"> </span><span class="s">East</span><span class="nv"> </span><span class="s">Shutters"</span>
+</span></code></pre></div>
+<p>In your automation, trigger this single entity:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">automation</span><span class="p">:</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">alias</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Close Windows at Sunset</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span><span class="nt">triggers</span><span class="p">:</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">trigger</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sun</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">        </span><span class="nt">event</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sunset</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">        </span><span class="nt">offset</span><span class="p">:</span><span class="w"> </span><span class="s">"00:30:00"</span>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">    </span><span class="nt">actions</span><span class="p">:</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.close_cover</span>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">        </span><span class="nt">target</span><span class="p">:</span>
+</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">          </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.all_shutters_east</span>
+</span></code></pre></div>
+<p>The integration emits a single native OpenWebNet broadcast frame (<code>*2*2*0#4#02##</code>). All actuators energize simultaneously in total synchrony with zero bus queue latency and zero dropped frames. No artificial <code>delay:</code> or manual <code>cover.stop_cover</code> is needed—actuators stop cleanly on their own limit switches.</p>
 
 
 
