@@ -25,6 +25,44 @@ The requests go out one at a time. The gateway ACKs a general request at once, b
 
 ---
 
+## Entity IDs after a device rename
+
+**Update entity IDs when renaming a device** is an optional gateway setting under
+**Settings → Devices & services → MyHOME → Configure**. It is **off by default**,
+including on existing installations. Enabling it does not rename anything.
+
+Once enabled, changing a device's name in Home Assistant also updates its MyHOME
+entity IDs if they match the old device name plus the entity's original name,
+including a numeric collision suffix assigned by Home Assistant (`_2`, `_3`, etc.).
+For example, renaming `Kitchen` to `Dining room` changes `light.kitchen` to
+`light.dining_room` and `button.kitchen_lock` to `button.dining_room_lock`.
+Sensor names such as `power` and `energy` are preserved as suffixes. Disabled
+entities follow the same rules. Clearing a device name uses its integration name.
+Renaming `Light 01` to `Luce 2` also changes `light.light_01_2` to `light.luce_2`:
+the old collision suffix is dropped if the new ID is free.
+
+- Existing IDs are never migrated at startup, reload, or upgrade. Changes in
+  `myhome.yaml`, discovery names, and devices renamed while unloaded do not trigger
+  a rename or a catch-up operation.
+- Entities with a custom display name, a nonmatching ID, or the legacy naming model
+  are left alone. Arbitrary suffixes such as `_custom`, `_02` or `_2_custom` do not
+  qualify. An ID manually set to the exact default spelling (with or without a
+  standard collision suffix) is indistinguishable from an automatically generated ID.
+- Occupied target IDs are skipped, including IDs of disabled entities and live
+  states without a registry entry. No existing entity is overwritten and no numeric
+  suffix is invented. Skipped collisions are reported in the Home Assistant log.
+- Unique IDs, registry identity, areas, icons, enabled/disabled settings and other
+  customisations are preserved. Entities from another integration or gateway are
+  excluded, even on a shared device.
+
+**Enable this only when you want subsequent renames to change entity IDs.** MyHOME
+does not rewrite references in automations, dashboards, YAML, templates or external
+clients. Review those references after renaming; a generated ID may already be in
+use there. Leave the option off to retain Home Assistant's usual stable-ID behavior.
+Disabling it stops future updates; it does not undo earlier renames.
+If a device was already renamed while its ID stayed unchanged, set its name back
+to the original name, save, then rename it again with this option enabled.
+
 ## 🔁 Broadcast re-sync (group / area / general)
 
 A group (`*1*x*#G##`), area (`*1*x*A##`) or general (`*1*x*0##`) command comes from a

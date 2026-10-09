@@ -65,6 +65,7 @@ from .const import (
     CONF_SOURCE_TUNER,
     CONF_SSDP_LOCATION,
     CONF_SSDP_ST,
+    CONF_SYNC_ENTITY_IDS,
     CONF_TRANSITION_MODE,
     CONF_UDN,
     CONF_WORKER_COUNT,
@@ -1073,6 +1074,7 @@ class MyhomeOptionsFlowHandler(OptionsFlowWithReload):
             if not errors:
                 self.options.update({CONF_WORKER_COUNT: user_input[CONF_WORKER_COUNT]})  # type: ignore
                 self.options.update({CONF_GENERATE_EVENTS: user_input[CONF_GENERATE_EVENTS]})  # type: ignore
+                self.options.update({CONF_SYNC_ENTITY_IDS: user_input[CONF_SYNC_ENTITY_IDS]} if CONF_SYNC_ENTITY_IDS in user_input else {})  # type: ignore
                 self.options.update({CONF_BROADCAST_RESYNC: user_input.get(CONF_BROADCAST_RESYNC, True)})  # type: ignore
                 self.options[CONF_TRANSITION_MODE] = user_input.get(CONF_TRANSITION_MODE, DEFAULT_TRANSITION_MODE)  # type: ignore
                 self.options[CONF_AUTO_JOIN_STREAMING] = user_input.get(  # type: ignore
@@ -1178,6 +1180,10 @@ class MyhomeOptionsFlowHandler(OptionsFlowWithReload):
             Required(
                 CONF_GENERATE_EVENTS,
                 description={"suggested_value": self.options.get(CONF_GENERATE_EVENTS, False)},  # type: ignore
+            ): bool,
+            vol.Optional(
+                CONF_SYNC_ENTITY_IDS,
+                description={"suggested_value": self.options.get(CONF_SYNC_ENTITY_IDS, False)},  # type: ignore
             ): bool,
             vol.Optional(
                 CONF_BROADCAST_RESYNC,

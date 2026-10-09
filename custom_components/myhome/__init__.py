@@ -29,6 +29,7 @@ from .const import (
 from .data import MyHOMEConfigEntry, MyHOMERuntimeData
 from .decoder_pool import decoder_pool_store
 from .device_health import DeviceHealth
+from .entity_id_sync import async_setup_entity_id_sync
 from .gateway import MyHOMEGatewayHandler, command_session_limit
 from .legacy_yaml import load_legacy_myhome_yaml
 from .migrate import migrate_entry_and_registries, prune_stale_devices
@@ -327,6 +328,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bo
     entry.async_create_background_task(
         hass, gateway.initial_discovery(), name=f"myhome_{entry.entry_id}_discovery"
     )
+
+    # Register only after setup: existing installations are never renamed on load.
+    async_setup_entity_id_sync(hass, entry)
 
     # Prune orphaned devices with 0 entities from the device registry
     prune_stale_devices(hass, entry, gateway_device_entry, gateway)

@@ -113,6 +113,7 @@
         "title": "Opzioni MyHome",
         "description": "Impostazioni di sistema avanzate",
         "data": {
+          "sync_entity_ids_on_device_rename": "Aggiorna gli ID entità quando rinomini un dispositivo",
           "source_1_name": "Sorgente 1 — nome di ciò che è collegato all'ingresso S1 della matrice (lasciare vuoto se non è collegato nulla)",
           "source_1_tuner": "La sorgente 1 è un sintonizzatore (F500): aggiunge un'entità radio con stazioni, frequenza e RDS",
           "source_2_name": "Sorgente 2 — nome di ciò che è collegato all'ingresso S2 della matrice (lasciare vuoto se non è collegato nulla)",
@@ -156,6 +157,7 @@
           "ignored_addresses": "Indirizzi ignorati"
         },
         "data_description": {
+          "sync_entity_ids_on_device_rename": "Disattivato per impostazione predefinita. Si applica solo alle successive rinomine dei dispositivi in Home Assistant. Aggiorna gli ID corrispondenti al vecchio nome predefinito; salta nomi personalizzati, ID non corrispondenti e conflitti. Controlla automazioni, dashboard, YAML e client esterni che utilizzano i vecchi ID: MyHOME non riscrive questi riferimenti.",
           "decoder_1_pre_gain": "Calibra in base all'hardware, non a occhio: se l'uscita di linea di questo decoder alimenta un modulo BTicino Ingresso RCA (L/N/NT4560) o Controllo Stereo (L4561), aumenta il Pre-Gain durante la riproduzione finché il led di segnale di quel modulo lampeggia arancione — non fisso verde (segnale troppo basso) né fisso rosso/arancione (distorsione). Collega sempre l'uscita di linea fissa ('OUT') del decoder, mai un'uscita cuffia/AUX dipendente dal volume: un secondo stadio di guadagno incontrollato in quel punto causa esattamente la distorsione contro cui mette in guardia la guida guasti BTicino.",
           "delegated_whos": "Solo per il ruolo secondario: sottosistemi di cui questo gateway rileva i nuovi dispositivi. I dispositivi che il primario ha già restano sul primario.",
           "ignored_addresses": "Ignora permanentemente gli indirizzi elencati (es. 1/74, 1/74#4#01): salta il rilevamento, le entità e il tracciamento guasti. Separa le voci con a capo o virgole.",

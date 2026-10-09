@@ -116,6 +116,7 @@
         "title": "MyHome options",
         "description": "Advanced system settings and streaming decoder mapping",
         "data": {
+          "sync_entity_ids_on_device_rename": "Update entity IDs when renaming a device",
           "source_1_name": "Source 1 — name of what is wired to matrix input S1 (leave blank if nothing is connected)",
           "source_1_tuner": "Source 1 is a tuner (F500): adds a radio entity with stations, frequency and RDS",
           "source_2_name": "Source 2 — name of what is wired to matrix input S2 (leave blank if nothing is connected)",
@@ -164,6 +165,7 @@
           "ignored_addresses": "Ignored addresses"
         },
         "data_description": {
+          "sync_entity_ids_on_device_rename": "Disabled by default. Applies only to future device renames in Home Assistant. IDs matching the old default name are updated; custom names, nonmatching IDs and collisions are skipped. Check automations, dashboards, YAML and external clients that reference the old IDs; these references are not rewritten by MyHOME.",
           "decoder_1_pre_gain": "Calibrate against the hardware, not a guess: if this decoder's line-out feeds a BTicino Ingresso RCA (L/N/NT4560) or Controllo Stereo (L4561) module, raise Pre-Gain while playing until that module's signal LED blinks orange — not steady green (signal too low) or steady red/orange (clipping). Always wire the decoder's fixed line-out ('OUT'), never a variable headphone/AUX output — a second uncontrolled gain stage there causes the same distortion BTicino's own troubleshooting guide warns about.",
           "delegated_whos": "Secondary role only: subsystems whose new devices this gateway discovers. Devices the primary already has stay on the primary.",
           "auto_join_streaming": "Automatically join an active streaming group when turning on a room or adjusting volume from a physical wall control.",
