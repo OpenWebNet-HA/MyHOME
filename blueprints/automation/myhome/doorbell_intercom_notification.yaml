@@ -28,14 +28,33 @@ blueprint:
           domain:
             - cover
             - lock
+    language:
+      name: "Notification Language"
+      description: "Language for push notifications and action buttons (English, Italiano, Nederlands, Deutsch, Français)."
+      default: "en"
+      selector:
+        select:
+          options:
+            - label: "English"
+              value: "en"
+            - label: "Italiano"
+              value: "it"
+            - label: "Nederlands"
+              value: "nl"
+            - label: "Deutsch"
+              value: "de"
+            - label: "Français"
+              value: "fr"
     custom_title:
-      name: "Notification Title"
-      default: "🔔 Deurbel: Iemand belt aan!"
+      name: "Custom Notification Title (Optional)"
+      description: "Leave empty to use the standard translated title."
+      default: ""
       selector:
         text:
     custom_message:
-      name: "Notification Message"
-      default: "Er wordt aangebeld bij de buitenpost."
+      name: "Custom Notification Message (Optional)"
+      description: "Leave empty to use the standard translated message."
+      default: ""
       selector:
         text:
 
@@ -49,8 +68,46 @@ trigger:
 variables:
   door_target: !input door_entity
   camera_target: !input camera_entity
+  lang: !input language
+  custom_title_val: !input custom_title
+  custom_message_val: !input custom_message
   action_open: "MYHOME_DOORBELL_OPEN_{{ trigger.event.data.where }}_{{ now().timestamp() | int }}"
   action_dismiss: "MYHOME_DOORBELL_DISMISS_{{ now().timestamp() | int }}"
+  i18n:
+    en:
+      title: "🔔 Doorbell: Someone is ringing!"
+      message: "Incoming call from entrance panel"
+      open_action: "🔓 Open Gate / Door"
+      dismiss_action: "❌ Dismiss"
+    it:
+      title: "🔔 Citofono: Qualcuno sta suonando!"
+      message: "Chiamata in arrivo dal posto esterno"
+      open_action: "🔓 Apri Cancello / Porta"
+      dismiss_action: "❌ Ignora"
+    nl:
+      title: "🔔 Deurbel: Iemand belt aan!"
+      message: "Er wordt aangebeld bij de buitenpost"
+      open_action: "🔓 Open Poort / Deur"
+      dismiss_action: "❌ Negeren"
+    de:
+      title: "🔔 Türklingel: Jemand klingelt!"
+      message: "Eingehender Anruf von der Türstation"
+      open_action: "🔓 Tor / Tür öffnen"
+      dismiss_action: "❌ Ablehnen"
+    fr:
+      title: "🔔 Sonnette: Quelqu'un sonne!"
+      message: "Appel entrant depuis la platine de rue"
+      open_action: "🔓 Ouvrir Portail / Porte"
+      dismiss_action: "❌ Ignorer"
+  resolved_title: >-
+    {{ custom_title_val if custom_title_val != '' else (i18n[lang].title if lang in i18n else i18n['en'].title) }}
+  resolved_message: >-
+    {% set base = custom_message_val if custom_message_val != '' else (i18n[lang].message if lang in i18n else i18n['en'].message) %}
+    {{ base }} ({{ trigger.event.data.where }})
+  action_open_title: >-
+    {{ i18n[lang].open_action if lang in i18n else i18n['en'].open_action }}
+  action_dismiss_title: >-
+    {{ i18n[lang].dismiss_action if lang in i18n else i18n['en'].dismiss_action }}
 
 action:
   - choose:
@@ -67,9 +124,8 @@ action:
 
   - action: !input notify_service
     data:
-      title: !input custom_title
-      message: >-
-        {{ custom_message }} (Oproep van buitenpost {{ trigger.event.data.where }})
+      title: "{{ resolved_title }}"
+      message: "{{ resolved_message }}"
       data:
         image: >-
           {% if camera_target != '' %}/local/myhome_doorbell_latest.jpg?v={{ now().timestamp() | int }}{% else %}{% endif %}
@@ -79,12 +135,12 @@ action:
         actions: >-
           {% if door_target != '' %}
             [
-              {"action": "{{ action_open }}", "title": "🔓 Open Poort / Deur", "destructive": false},
-              {"action": "{{ action_dismiss }}", "title": "❌ Negeren", "destructive": true}
+              {"action": "{{ action_open }}", "title": "{{ action_open_title }}", "destructive": false},
+              {"action": "{{ action_dismiss }}", "title": "{{ action_dismiss_title }}", "destructive": true}
             ]
           {% else %}
             [
-              {"action": "{{ action_dismiss }}", "title": "OK", "destructive": false}
+              {"action": "{{ action_dismiss }}", "title": "{{ action_dismiss_title }}", "destructive": false}
             ]
           {% endif %}
 

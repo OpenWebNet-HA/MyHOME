@@ -19,6 +19,23 @@ blueprint:
       description: "Target mobile app notify action (e.g. notify.mobile_app_iphone)."
       selector:
         text:
+    language:
+      name: "Notification Language"
+      description: "Language for push notifications and action buttons (English, Italiano, Nederlands, Deutsch, Français)."
+      default: "en"
+      selector:
+        select:
+          options:
+            - label: "English"
+              value: "en"
+            - label: "Italiano"
+              value: "it"
+            - label: "Nederlands"
+              value: "nl"
+            - label: "Deutsch"
+              value: "de"
+            - label: "Français"
+              value: "fr"
     notify_on_opening:
       name: "Notify When Opening Starts"
       default: true
@@ -83,6 +100,59 @@ variables:
   notify_closing_enabled: !input notify_on_closing
   notify_closed_enabled: !input notify_on_closed
   open_minutes: !input left_open_minutes
+  lang: !input language
+  i18n:
+    en:
+      opening_title: "🚪 {{ cover_name }} is opening"
+      opening_msg: "The door/gate is moving open."
+      closing_title: "⚠️ {{ cover_name }} is closing"
+      closing_msg: "The door/gate is moving closed."
+      closed_title: "✅ {{ cover_name }} is closed"
+      closed_msg: "The door/gate is now safely and fully closed."
+      left_open_title: "⚠️ Alert: {{ cover_name }} is open!"
+      left_open_msg: "The door/gate has been left open for more than {{ open_minutes }} minutes."
+      close_action: "🔒 Close Now"
+    it:
+      opening_title: "🚪 {{ cover_name }} si sta aprendo"
+      opening_msg: "La porta/cancello è in movimento verso l'apertura."
+      closing_title: "⚠️ {{ cover_name }} si sta chiudendo"
+      closing_msg: "La porta/cancello è in movimento verso la chiusura."
+      closed_title: "✅ {{ cover_name }} è chiuso"
+      closed_msg: "La porta/cancello è ora completamente e sicuramente chiusa."
+      left_open_title: "⚠️ Attenzione: {{ cover_name }} è aperta!"
+      left_open_msg: "La porta/cancello è rimasta aperta per più di {{ open_minutes }} minuti."
+      close_action: "🔒 Chiudi ora"
+    nl:
+      opening_title: "🚪 {{ cover_name }} wordt geopend"
+      opening_msg: "De deur/poort is in beweging richting open."
+      closing_title: "⚠️ {{ cover_name }} begint te sluiten"
+      closing_msg: "De deur/poort is in beweging richting dicht."
+      closed_title: "✅ {{ cover_name }} is gesloten"
+      closed_msg: "De deur/poort is nu veilig en volledig gesloten."
+      left_open_title: "⚠️ Opgelet: {{ cover_name }} staat open!"
+      left_open_msg: "De deur/poort staat al langer dan {{ open_minutes }} minuten open."
+      close_action: "🔒 Sluit Nu"
+    de:
+      opening_title: "🚪 {{ cover_name }} wird geöffnet"
+      opening_msg: "Das Tor/die Tür öffnet sich."
+      closing_title: "⚠️ {{ cover_name }} schließt sich"
+      closing_msg: "Das Tor/die Tür schließt sich."
+      closed_title: "✅ {{ cover_name }} ist geschlossen"
+      closed_msg: "Das Tor/die Tür ist jetzt sicher und vollständig geschlossen."
+      left_open_title: "⚠️ Achtung: {{ cover_name }} ist offen!"
+      left_open_msg: "Das Tor/die Tür steht seit mehr als {{ open_minutes }} Minuten offen."
+      close_action: "🔒 Jetzt schließen"
+    fr:
+      opening_title: "🚪 {{ cover_name }} est en cours d'ouverture"
+      opening_msg: "La porte/le portail est en mouvement vers l'ouverture."
+      closing_title: "⚠️ {{ cover_name }} commence à se fermer"
+      closing_msg: "La porte/le portail est en mouvement vers la fermeture."
+      closed_title: "✅ {{ cover_name }} est fermé"
+      closed_msg: "La porte/le portail est maintenant bien et totalement fermé."
+      left_open_title: "⚠️ Attention: {{ cover_name }} est ouvert!"
+      left_open_msg: "La porte/le portail est ouvert depuis plus de {{ open_minutes }} minutes."
+      close_action: "🔒 Fermer maintenant"
+  dict: "{{ i18n[lang] if lang in i18n else i18n['en'] }}"
 
 action:
   - choose:
@@ -95,8 +165,8 @@ action:
         sequence:
           - action: !input notify_service
             data:
-              title: "🚪 {{ cover_name }} wordt geopend"
-              message: "De deur/poort is in beweging richting open."
+              title: "{{ dict.opening_title }}"
+              message: "{{ dict.opening_msg }}"
               data:
                 tag: "myhome_door_motion_{{ cover_entity }}"
 
@@ -109,8 +179,8 @@ action:
         sequence:
           - action: !input notify_service
             data:
-              title: "⚠️ {{ cover_name }} begint te sluiten"
-              message: "De deur/poort is in beweging richting dicht."
+              title: "{{ dict.closing_title }}"
+              message: "{{ dict.closing_msg }}"
               data:
                 tag: "myhome_door_motion_{{ cover_entity }}"
 
@@ -123,8 +193,8 @@ action:
         sequence:
           - action: !input notify_service
             data:
-              title: "✅ {{ cover_name }} is gesloten"
-              message: "De deur/poort is nu veilig en volledig gesloten."
+              title: "{{ dict.closed_title }}"
+              message: "{{ dict.closed_msg }}"
               data:
                 tag: "myhome_door_motion_{{ cover_entity }}"
 
@@ -137,11 +207,11 @@ action:
         sequence:
           - action: !input notify_service
             data:
-              title: "⚠️ Opgelet: {{ cover_name }} staat open!"
-              message: "De deur/poort staat al langer dan {{ open_minutes }} minuten open."
+              title: "{{ dict.left_open_title }}"
+              message: "{{ dict.left_open_msg }}"
               data:
                 tag: "myhome_door_left_open_{{ cover_entity }}"
                 actions:
                   - action: "MYHOME_CLOSE_LEFT_OPEN_{{ cover_entity }}"
-                    title: "🔒 Sluit Nu"
+                    title: "{{ dict.close_action }}"
                     destructive: true
