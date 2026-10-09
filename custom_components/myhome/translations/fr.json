@@ -113,6 +113,7 @@
         "title": "Options MyHome",
         "description": "Parametres système avancés",
         "data": {
+          "sync_entity_ids_on_device_rename": "Mettre à jour les identifiants des entités lors du renommage d’un appareil",
           "source_1_name": "Source 1 — nom de l'appareil raccordé à l'entrée S1 de la matrice (laisser vide si rien n'est connecté)",
           "source_1_tuner": "La source 1 est un tuner (F500) : ajoute une entité radio avec stations, fréquence et RDS",
           "source_2_name": "Source 2 — nom de l'appareil raccordé à l'entrée S2 de la matrice (laisser vide si rien n'est connecté)",
@@ -156,6 +157,7 @@
           "ignored_addresses": "Adresses ignorées"
         },
         "data_description": {
+          "sync_entity_ids_on_device_rename": "Désactivé par défaut. S’applique uniquement aux prochains renommages d’appareils dans Home Assistant. Met à jour les identifiants qui correspondent encore aux règles de nommage automatique de Home Assistant ; les noms personnalisés et les identifiants non correspondants sont ignorés. En cas de conflit, Home Assistant choisit un identifiant disponible. Vérifiez les automatisations, tableaux de bord, fichiers YAML et clients externes qui utilisent les anciens identifiants : MyHOME ne modifie pas ces références.",
           "decoder_1_pre_gain": "Calibrez à partir du matériel, pas au jugé : si la sortie ligne de ce décodeur alimente un module BTicino Ingresso RCA (L/N/NT4560) ou Controllo Stereo (L4561), augmentez le Pre-Gain pendant la lecture jusqu'à ce que la led de signal de ce module clignote en orange — ni fixe vert (signal trop faible) ni fixe rouge/orange (écrêtage). Câblez toujours la sortie ligne fixe (« OUT ») du décodeur, jamais une sortie casque/AUX dépendante du volume : un second étage de gain incontrôlé à cet endroit provoque exactement la distorsion contre laquelle le guide de dépannage BTicino met en garde.",
           "delegated_whos": "Rôle secondaire uniquement : sous-systèmes dont cette passerelle découvre les nouveaux appareils. Les appareils que la principale possède déjà restent sur la principale.",
           "ignored_addresses": "Ignore définitivement les adresses indiquées (ex. 1/74, 1/74#4#01) : ignore la découverte, supprime les entités et désactive le suivi des pannes. Séparez les entrées par des retours à la ligne ou des virgules.",

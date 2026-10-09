@@ -113,6 +113,7 @@
         "title": "MyHome opties",
         "description": "Gevorderde systeem settings",
         "data": {
+          "sync_entity_ids_on_device_rename": "Entiteits-ID’s bijwerken bij het hernoemen van een apparaat",
           "source_1_name": "Bron 1 — naam van wat op matrix-ingang S1 is aangesloten (leeg laten als er niets op zit)",
           "source_1_tuner": "Bron 1 is een tuner (F500): voegt een radio-entiteit toe met zenders, frequentie en RDS",
           "source_2_name": "Bron 2 — naam van wat op matrix-ingang S2 is aangesloten (leeg laten als er niets op zit)",
@@ -156,6 +157,7 @@
           "ignored_addresses": "Genegeerde adressen"
         },
         "data_description": {
+          "sync_entity_ids_on_device_rename": "Standaard uitgeschakeld. Geldt alleen wanneer apparaten hierna in Home Assistant worden hernoemd. Werkt ID’s bij die nog overeenkomen met de automatische naamgeving van Home Assistant; aangepaste namen en afwijkende ID’s worden overgeslagen. Bij een conflict kiest Home Assistant een beschikbare ID. Controleer automatiseringen, dashboards, YAML en externe clients die naar de oude ID’s verwijzen; MyHOME werkt deze verwijzingen niet bij.",
           "decoder_1_pre_gain": "Kalibreer aan de hand van de hardware, niet op gevoel: voedt de line-out van deze decoder een BTicino Ingresso RCA-module (L/N/NT4560) of Controllo Stereo (L4561), verhoog dan Pre-Gain tijdens het afspelen tot het signaal-ledje van die module oranje knippert — niet vast groen (signaal te laag) of vast rood/oranje (clipping). Sluit altijd de vaste line-out ('OUT') van de decoder aan, nooit een volume-afhankelijke hoofdtelefoon-/AUX-uitgang: een tweede ongecontroleerde versterkingstrap daar veroorzaakt precies de vervorming waar BTicino's eigen storingzoektabel voor waarschuwt.",
           "delegated_whos": "Alleen voor de rol secundair: subsystemen waarvan deze gateway nieuwe apparaten detecteert. Apparaten die de primaire gateway al heeft, blijven bij de primaire.",
           "ignored_addresses": "Negeer vermelde adressen permanent (bijv. 1/74, 1/74#4#01): slaat detectie, entiteiten en storingsregistratie over. Scheid meerdere vermeldingen met nieuwe regels of komma's.",

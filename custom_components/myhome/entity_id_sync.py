@@ -1,31 +1,16 @@
-"""Opt-in entity ID updates after an explicit Home Assistant device rename.
+"""Opt-in entity ID updates using Home Assistant's automatic naming rules.
 
-Never migrate IDs at startup or react to names supplied by discovery/YAML.
-Only default device/entity IDs, optionally followed by Home Assistant's numeric
-collision suffix, are eligible. Arbitrary prefix matches would capture custom IDs.
+Snapshot eligibility before device names change: registry update events arrive
+with the new device name already applied. Never migrate IDs during setup.
 """
 
-import re
-
 from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from homeassistant.util import slugify
 
 from .const import CONF_SYNC_ENTITY_IDS, DOMAIN, LOGGER
 from .data import MyHOMEConfigEntry
-
-
-def _matches_default_id(entity_id: str, expected_id: str) -> bool:
-    """Match the default spelling, including HA collision suffixes (_2, _3, ...).
-
-    A manually chosen ID with exactly this spelling is indistinguishable from
-    an automatically generated one, just as with an unsuffixed default ID.
-    """
-    return (
-        entity_id == expected_id
-        or re.fullmatch(rf"{re.escape(expected_id)}_(?:[2-9]|[1-9][0-9]+)", entity_id) is not None
-    )
 
 
 @callback
@@ -34,58 +19,74 @@ def async_setup_entity_id_sync(hass: HomeAssistant, entry: MyHOMEConfigEntry) ->
     if not entry.options.get(CONF_SYNC_ENTITY_IDS, False):
         return
 
-    device_registry = dr.async_get(hass)
-    entity_registry = er.async_get(hass)
+    devices = dr.async_get(hass)
+    entities = er.async_get(hass)
+    automatic_ids: dict[str, tuple[er.RegistryEntry, str]] = {}
+
+    @callback
+    def remember(entity: er.RegistryEntry) -> None:
+        """Ask Core whether this is still an automatic ID, without changing it."""
+        automatic_ids.pop(entity.entity_id, None)
+        if (
+            entity.platform != DOMAIN
+            or entity.config_entry_id != entry.entry_id
+            or not entity.has_entity_name
+            or entity.name is not None
+            or entity.device_id is None
+            or (device := devices.async_get(entity.device_id)) is None
+            or not (name := device.name_by_user or device.name)
+            or not any(char.isalnum() for char in name)
+        ):
+            return
+        if entities.async_regenerate_entity_id(entity) == entity.entity_id:
+            automatic_ids[entity.entity_id] = (entity, name)
+
+    @callback
+    def refresh(_event: Event[ar.EventAreaRegistryUpdatedData] | None = None) -> None:
+        """Refresh eligibility after setup or area changes; never rename here."""
+        automatic_ids.clear()
+        for entity in er.async_entries_for_config_entry(entities, entry.entry_id):
+            remember(entity)
+
+    @callback
+    def entity_updated(event: Event[er.EventEntityRegistryUpdatedData]) -> None:
+        """Include discovery and discard stale IDs after manual edits/removal."""
+        data = event.data
+        if data["action"] == "update" and "old_entity_id" in data:
+            automatic_ids.pop(data["old_entity_id"], None)
+        automatic_ids.pop(data["entity_id"], None)
+        if (entity := entities.async_get(data["entity_id"])) is not None:
+            remember(entity)
 
     @callback
     def device_updated(event: Event[dr.EventDeviceRegistryUpdatedData]) -> None:
-        """Rename only this gateway's eligible entities, leaving their identity intact."""
+        """Apply Core-generated IDs only to this gateway's eligible entities."""
         data = event.data
-        if data["action"] != "update" or "name_by_user" not in data["changes"]:
+        if data["action"] != "update" or (device := devices.async_get(data["device_id"])) is None:
             return
-        device = device_registry.async_get(data["device_id"])
-        if device is None:
-            return
-
-        old_name = data["changes"]["name_by_user"] or data["changes"].get("name", device.name)
+        changes = data["changes"]
+        old_name = changes.get("name_by_user") or changes.get("name", device.name)
         new_name = device.name_by_user or device.name
-        if (
-            not old_name
-            or not new_name
-            or not any(char.isalnum() for char in old_name)
-            or not any(char.isalnum() for char in new_name)
-        ):
-            return
-        if slugify(old_name) == slugify(new_name):
-            return
-
-        for entity in er.async_entries_for_device(
-            entity_registry, device.id, include_disabled_entities=True
-        ):
+        for entity in er.async_entries_for_device(entities, device.id, include_disabled_entities=True):
             if (
-                entity.platform != DOMAIN
-                or entity.config_entry_id != entry.entry_id
-                or not entity.has_entity_name
-                or entity.name is not None
+                "name_by_user" in changes
+                and old_name
+                and new_name
+                and any(char.isalnum() for char in new_name)
+                and automatic_ids.get(entity.entity_id) == (entity, old_name)
             ):
-                continue
-            suffix = f" {entity.original_name}" if entity.original_name else ""
-            expected_id = f"{entity.domain}.{slugify(f'{old_name}{suffix}')}"
-            if not _matches_default_id(entity.entity_id, expected_id):
-                continue
-            new_id = f"{entity.domain}.{slugify(f'{new_name}{suffix}')}"
-            if new_id == entity.entity_id:
-                continue
-            if entity_registry.async_get(new_id) is not None or hass.states.get(new_id) is not None:
-                LOGGER.warning(
-                    "Keeping %s: device rename would collide with %s", entity.entity_id, new_id
-                )
-                continue
-            try:
-                entity_registry.async_update_entity(entity.entity_id, new_entity_id=new_id)
-            except ValueError as err:
-                # Invalid/overlong names or a registry conflict must never break
-                # the device rename or other entities on the gateway.
-                LOGGER.warning("Keeping %s after device rename: %s", entity.entity_id, err)
+                # Core uses object_id_base (not the translated original_name),
+                # configured name parts/areas and its own collision handling.
+                try:
+                    new_id = entities.async_regenerate_entity_id(entity)
+                    if new_id != entity.entity_id:
+                        automatic_ids.pop(entity.entity_id, None)
+                        entity = entities.async_update_entity(entity.entity_id, new_entity_id=new_id)
+                except ValueError as err:
+                    LOGGER.warning("Keeping %s after device rename: %s", entity.entity_id, err)
+            remember(entity)
 
+    refresh()
+    entry.async_on_unload(hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, entity_updated))
     entry.async_on_unload(hass.bus.async_listen(dr.EVENT_DEVICE_REGISTRY_UPDATED, device_updated))
+    entry.async_on_unload(hass.bus.async_listen(ar.EVENT_AREA_REGISTRY_UPDATED, refresh))

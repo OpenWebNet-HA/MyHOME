@@ -2,6 +2,7 @@
 
 from contextlib import ExitStack
 from unittest.mock import patch
+from uuid import uuid4
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -31,37 +32,40 @@ def registries(hass):
     return entry, devices, entities, device
 
 
-def _entity(registries, domain="light", object_id="kitchen", **kwargs):
+async def _entity(registries, domain="light", object_id=None, **kwargs):
+    """Use Core's real naming path, with explicit overrides only for custom IDs."""
     entry, _devices, entities, device = registries
     defaults = dict(config_entry=entry, device_id=device.id, has_entity_name=True)
     defaults.update(kwargs)
+    defaults.setdefault("object_id_base", defaults.get("original_name"))
     name = defaults.pop("name", None)
-    entity = entities.async_get_or_create(
-        domain, DOMAIN, object_id, suggested_object_id=object_id, **defaults
-    )
+    entity = entities.async_get_or_create(domain, DOMAIN, uuid4().hex, **defaults)
+    if object_id is not None and entity.entity_id != f"{domain}.{object_id}":
+        entity = entities.async_update_entity(entity.entity_id, new_entity_id=f"{domain}.{object_id}")
     if name is not None:
         entity = entities.async_update_entity(entity.entity_id, name=name)
+    await entities.hass.async_block_till_done()
     return entity
 
 
 async def test_rename_primary_secondary_disabled_and_reset(hass, registries):
     """Repeat renames preserve registry identity and all entity customisations."""
     _entry, devices, entities, device = registries
-    primary = _entity(registries)
     area = ar.async_get(hass).async_create("Ground floor")
     devices.async_update_device(device.id, area_id=area.id)
+    primary = await _entity(registries)
     entities.async_update_entity(primary.entity_id, icon="mdi:lamp")
-    power = _entity(registries, "sensor", "kitchen_power", original_name="Power")
-    disabled = _entity(
+    power = await _entity(registries, "sensor", original_name="Power")
+    disabled = await _entity(
         registries,
         "sensor",
-        "kitchen_energy_today",
         original_name="Energy (today)",
         disabled_by=er.RegistryEntryDisabler.INTEGRATION,
     )
     for name, prefix in [("Dining room", "dining_room"), ("Salón", "salon"), (None, "kitchen")]:
         devices.async_update_device(device.id, name_by_user=name)
         await hass.async_block_till_done()
+        prefix = f"ground_floor_{prefix}"
         light = entities.async_get(f"light.{prefix}")
         assert light.id == primary.id and light.unique_id == primary.unique_id
         assert devices.async_get(device.id).area_id == area.id and light.icon == "mdi:lamp"
@@ -88,7 +92,7 @@ async def test_rename_primary_secondary_disabled_and_reset(hass, registries):
 )
 async def test_preserve_custom_and_ambiguous_ids(hass, registries, custom):
     _, devices, entities, device = registries
-    entity = _entity(registries, **custom)
+    entity = await _entity(registries, **custom)
     devices.async_update_device(device.id, name_by_user="Dining room")
     await hass.async_block_till_done()
     assert entities.async_get(entity.entity_id).id == entity.id
@@ -103,7 +107,7 @@ async def test_ownership_and_unrelated_device_updates(hass, registries):
     foreign.add_to_hass(hass)
     devices.async_get_or_create(config_entry_id=other.entry_id, identifiers=device.identifiers)
     devices.async_get_or_create(config_entry_id=foreign.entry_id, identifiers=device.identifiers)
-    other_entity = _entity(
+    other_entity = await _entity(
         registries, "sensor", "kitchen_power", config_entry=other, original_name="Power"
     )
     foreign_entity = entities.async_get_or_create(
@@ -118,7 +122,7 @@ async def test_ownership_and_unrelated_device_updates(hass, registries):
     unrelated = devices.async_get_or_create(
         config_entry_id=other.entry_id, identifiers={(DOMAIN, "other")}, name="Kitchen"
     )
-    own = _entity(registries)
+    own = await _entity(registries)
     devices.async_update_device(unrelated.id, name_by_user="Elsewhere")
     devices.async_update_device(device.id, area_id="somewhere")
     await hass.async_block_till_done()
@@ -132,34 +136,35 @@ async def test_ownership_and_unrelated_device_updates(hass, registries):
 
 @pytest.mark.parametrize("object_id", ["kitchen", "kitchen_2"])
 @pytest.mark.parametrize("occupied", ["registry", "disabled", "state"])
-async def test_target_collision_does_not_overwrite_or_add_suffix(
-    hass, registries, occupied, object_id, caplog
+async def test_target_collision_uses_core_available_suffix(
+    hass, registries, occupied, object_id
 ):
     _, devices, entities, device = registries
-    original = _entity(registries, object_id=object_id)
+    if object_id == "kitchen_2":
+        hass.states.async_set("light.kitchen", "on")
+    original = await _entity(registries, object_id=object_id)
     if occupied == "state":
         hass.states.async_set("light.dining_room", "on")
     else:
-        target = _entity(
+        target = await _entity(
             registries,
             object_id="dining_room",
             disabled_by=(er.RegistryEntryDisabler.USER if occupied == "disabled" else None),
         )
     devices.async_update_device(device.id, name_by_user="Dining room")
     await hass.async_block_till_done()
-    assert entities.async_get(original.entity_id).id == original.id
-    assert entities.async_get("light.dining_room_2") is None
+    assert entities.async_get(original.entity_id) is None
+    assert entities.async_get("light.dining_room_2").id == original.id
     if occupied != "state":
         assert entities.async_get("light.dining_room").id == target.id
     else:
         assert hass.states.get("light.dining_room").state == "on"
-    assert "would collide" in caplog.text
 
 
 @pytest.mark.parametrize("new_name", ["KITCHEN", "!!!", "", "   "])
 async def test_empty_or_unchanged_slug(hass, registries, new_name):
     _, devices, entities, device = registries
-    original = _entity(registries)
+    original = await _entity(registries)
     devices.async_update_device(device.id, name_by_user=new_name)
     await hass.async_block_till_done()
     assert entities.async_get(original.entity_id).id == original.id
@@ -168,7 +173,7 @@ async def test_empty_or_unchanged_slug(hass, registries, new_name):
 @pytest.mark.parametrize("old_name", [None, "!!!"])
 async def test_no_usable_previous_device_name(hass, registries, old_name):
     _, devices, entities, device = registries
-    original = _entity(registries)
+    original = await _entity(registries)
     devices.async_update_device(device.id, name=old_name)
     await hass.async_block_till_done()
     devices.async_update_device(device.id, name_by_user="Dining room")
@@ -178,7 +183,7 @@ async def test_no_usable_previous_device_name(hass, registries, old_name):
 
 async def test_integration_names_and_removed_devices_are_ignored(hass, registries):
     _, devices, entities, device = registries
-    original = _entity(registries)
+    original = await _entity(registries)
     devices.async_update_device(device.id, name="Dining room")
     await hass.async_block_till_done()
     assert entities.async_get(original.entity_id).id == original.id
@@ -198,8 +203,8 @@ async def test_integration_names_and_removed_devices_are_ignored(hass, registrie
 
 async def test_invalid_target_does_not_abort_other_entities(hass, registries, caplog):
     _, devices, entities, device = registries
-    primary = _entity(registries)
-    secondary = _entity(registries, "sensor", "kitchen_power", original_name="Power")
+    primary = await _entity(registries)
+    secondary = await _entity(registries, "sensor", original_name="Power")
     update = entities.async_update_entity
 
     def reject_primary(entity_id, **kwargs):
@@ -335,13 +340,15 @@ async def test_options_opt_in_default_enable_preserve_and_disable(
 async def test_numbered_sensor_id_keeps_entity_suffix(hass, registries, number):
     """Only the old collision number disappears; the sensor's own name survives."""
     _, devices, entities, device = registries
-    original = _entity(
+    for suffix in [""] + [f"_{n}" for n in range(2, number)]:
+        hass.states.async_set(f"sensor.kitchen_power{suffix}", "0")
+    original = await _entity(
         registries,
         "sensor",
-        f"kitchen_power_{number}",
         original_name="Power",
         disabled_by=er.RegistryEntryDisabler.INTEGRATION,
     )
+    assert original.entity_id == f"sensor.kitchen_power_{number}"
     devices.async_update_device(device.id, name_by_user="Dining room")
     await hass.async_block_till_done()
     renamed = entities.async_get("sensor.dining_room_power")
@@ -390,7 +397,8 @@ async def test_previously_renamed_numbered_entity_can_be_retried(hass, registrie
     _, devices, entities, device = registries
     devices.async_update_device(device.id, name="Light 01", name_by_user="Luce 1")
     await hass.async_block_till_done()
-    original = _entity(registries, object_id="light_01_2")
+    hass.states.async_set("light.light_01", "on")
+    original = await _entity(registries, object_id="light_01_2")
     devices.async_update_device(device.id, name_by_user="Luce 2")
     await hass.async_block_till_done()
     assert entities.async_get(original.entity_id).id == original.id
@@ -405,8 +413,140 @@ async def test_previously_renamed_numbered_entity_can_be_retried(hass, registrie
 async def test_new_device_name_already_matches_numbered_id(hass, registries, caplog):
     """Turning the previous collision suffix into the chosen name is a no-op."""
     _, devices, entities, device = registries
-    original = _entity(registries, object_id="kitchen_2")
+    hass.states.async_set("light.kitchen", "on")
+    original = await _entity(registries, object_id="kitchen_2")
     devices.async_update_device(device.id, name_by_user="Kitchen 2")
     await hass.async_block_till_done()
     assert entities.async_get(original.entity_id).id == original.id
     assert "would collide" not in caplog.text
+
+
+async def test_italian_live_entities_follow_native_id_language(hass, tmp_path):
+    """An Italian installation retains Core’s selected language for entity IDs."""
+    hass.config.language = "it"
+    base = _entry(tmp_path)
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=base.data, unique_id=base.unique_id,
+        options={**base.options, CONF_SYNC_ENTITY_IDS: True},
+    )
+    await _setup(hass, entry)
+    entities = er.async_get(hass)
+    original = entities.async_get("button.kitchen_light_blocca")
+    assert original.original_name == "Blocca"
+    assert original.object_id_base == "Blocca"
+    dr.async_get(hass).async_update_device(original.device_id, name_by_user="Luce cucina")
+    await hass.async_block_till_done()
+    renamed = entities.async_get("button.luce_cucina_blocca")
+    assert renamed.id == original.id
+    assert renamed.original_name == "Blocca"
+    assert hass.states.get(renamed.entity_id).attributes["friendly_name"] == "Luce cucina Blocca"
+
+
+async def test_entity_area_and_configured_naming_parts(hass, registries):
+    """Respect native name ordering and an entity area overriding its device area."""
+    _, devices, entities, device = registries
+    areas = ar.async_get(hass)
+    downstairs = areas.async_create("Downstairs")
+    upstairs = areas.async_create("Upstairs")
+    devices.async_update_device(device.id, area_id=downstairs.id)
+    entities.async_update_settings(entity_id_parts=[
+        er.EntityNamePart.DEVICE, er.EntityNamePart.AREA, er.EntityNamePart.ENTITY,
+    ])
+    original = await _entity(registries, "sensor", original_name="Potenza", object_id_base="Power")
+    assert original.entity_id == "sensor.kitchen_downstairs_power"
+    devices.async_update_device(device.id, name_by_user="Dining room")
+    await hass.async_block_till_done()
+    original = entities.async_get("sensor.dining_room_downstairs_power")
+    assert original is not None
+    original = entities.async_update_entity(original.entity_id, area_id=upstairs.id)
+    original = entities.async_update_entity(
+        original.entity_id, new_entity_id=entities.async_regenerate_entity_id(original)
+    )
+    await hass.async_block_till_done()
+    assert original.entity_id == "sensor.upstairs_power"
+    devices.async_update_device(device.id, name_by_user="Bedroom")
+    await hass.async_block_till_done()
+    renamed = entities.async_get("sensor.upstairs_power")
+    assert renamed.id == original.id and renamed.area_id == upstairs.id
+
+
+async def test_manual_edit_after_tracking_and_entity_removal(hass, registries):
+    _, devices, entities, device = registries
+    original = await _entity(registries)
+    custom = entities.async_update_entity(original.entity_id, new_entity_id="light.ceiling_spots")
+    removed = await _entity(registries, "sensor", original_name="Power")
+    entities.async_remove(removed.entity_id)
+    await hass.async_block_till_done()
+    devices.async_update_device(device.id, name_by_user="Dining room")
+    await hass.async_block_till_done()
+    assert entities.async_get(custom.entity_id).id == original.id
+    assert entities.async_get("light.dining_room") is None
+    assert entities.async_get("sensor.dining_room_power") is None
+
+
+async def test_area_changes_do_not_catch_up_old_ids(hass, registries):
+    """An ID no longer matching Core's current default remains untouched."""
+    _, devices, entities, device = registries
+    area = ar.async_get(hass).async_create("Ground floor")
+    devices.async_update_device(device.id, area_id=area.id)
+    original = await _entity(registries)
+    ar.async_get(hass).async_update(area.id, name="Upstairs")
+    await hass.async_block_till_done()
+    devices.async_update_device(device.id, name_by_user="Dining room")
+    await hass.async_block_till_done()
+    assert entities.async_get(original.entity_id).id == original.id
+
+
+async def test_no_device_and_suggested_ids_are_not_rewritten(hass, registries):
+    _, devices, entities, device = registries
+    standalone = await _entity(registries, "sensor", device_id=None, original_name="Power")
+    suggested = await _entity(registries, suggested_object_id="fixed_id")
+    devices.async_update_device(device.id, name_by_user="Dining room")
+    await hass.async_block_till_done()
+    assert entities.async_get(standalone.entity_id).id == standalone.id
+    assert entities.async_get(suggested.entity_id).id == suggested.id
+
+
+async def test_vacated_collision_suffix_is_conservatively_preserved(hass):
+    """Core cannot prove the origin of an old suffix when lower IDs are now free."""
+    entry = MockConfigEntry(domain=DOMAIN, options={CONF_SYNC_ENTITY_IDS: True})
+    entry.add_to_hass(hass)
+    devices, entities = dr.async_get(hass), er.async_get(hass)
+    device = devices.async_get_or_create(
+        config_entry_id=entry.entry_id, identifiers={(DOMAIN, "lamp")}, name="Kitchen"
+    )
+    hass.states.async_set("light.kitchen", "on")
+    original = await _entity((entry, devices, entities, device))
+    assert original.entity_id == "light.kitchen_2"
+    hass.states.async_remove("light.kitchen")
+    async_setup_entity_id_sync(hass, entry)
+    devices.async_update_device(device.id, name_by_user="Dining room")
+    await hass.async_block_till_done()
+    assert entities.async_get(original.entity_id).id == original.id
+
+
+@pytest.mark.parametrize("domain, translated, canonical", [
+    ("button", "Blocca", "Lock"), ("sensor", "Potenza", "Power"),
+])
+async def test_localized_original_name_does_not_define_id(hass, registries, domain, translated, canonical):
+    """A registry's canonical ID base can differ from its translated display name."""
+    _, devices, entities, device = registries
+    original = await _entity(
+        registries, domain, original_name=translated, object_id_base=canonical,
+    )
+    assert original.entity_id == f"{domain}.kitchen_{canonical.lower()}"
+    devices.async_update_device(device.id, name_by_user="Luce cucina")
+    await hass.async_block_till_done()
+    renamed = entities.async_get(f"{domain}.luce_cucina_{canonical.lower()}")
+    assert renamed.id == original.id and renamed.original_name == translated
+
+
+async def test_custom_name_edit_after_tracking_is_preserved(hass, registries):
+    """A previously eligible entity becomes ineligible after a display-name edit."""
+    _, devices, entities, device = registries
+    original = await _entity(registries)
+    entities.async_update_entity(original.entity_id, name="Ceiling spots")
+    devices.async_update_device(device.id, name_by_user="Dining room")
+    await hass.async_block_till_done()
+    assert entities.async_get(original.entity_id).name == "Ceiling spots"
+    assert entities.async_get("light.dining_room") is None

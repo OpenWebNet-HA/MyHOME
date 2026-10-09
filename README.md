@@ -636,7 +636,7 @@ automated coverage and physical gateway verification steps.
 ### CI Workflows
 - **`hassfest`**: Official Home Assistant manifest, translation, and metadata validation.
 - **`validate`**: Official HACS compliance checks.
-- **`test-coverage`**: 3529 automated unit tests with snapshot matching and 100% line coverage enforcement on the `ownd` core package.
+- **`test-coverage`**: 3538 automated unit tests with snapshot matching and 100% line coverage enforcement on the `ownd` core package.
 - **`ha-container-smoke`**: Automated containerized smoke testing against official Home Assistant Docker images (`stable`, `beta`, `dev`) verifying `check_config`, clean platform module imports, and zero asyncio loop-blocking calls.
 - **`ownd-smoke`**: Automated smoke testing of the `OWNd` protocol engine across `pinned`, `latest`, and `upstream-dev` distributions on Python 3.14.
 - **`ha-upstream-compat`**: Continuous integration testing against upstream Home Assistant Stable, Beta, and Dev channels.
@@ -664,7 +664,7 @@ _Self-audit of [`quality_scale.yaml`](custom_components/myhome/quality_scale.yam
 
 ### 📊 Code Coverage & Quality Assurance
 
-The integration maintains 3529 automated unit tests (100% line coverage across all modules) covering core protocol handling, hardware profiles, discovery, state reconciliation, and error boundaries.
+The integration maintains 3538 automated unit tests (100% line coverage across all modules) covering core protocol handling, hardware profiles, discovery, state reconciliation, and error boundaries.
 
 <!-- START_COVERAGE_TABLE -->
 
