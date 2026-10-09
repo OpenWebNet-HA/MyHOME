@@ -1,7 +1,7 @@
 """Tests for Door Entry (WHO=6) doorbell events and gateway handling."""
 from unittest.mock import MagicMock, patch
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from OWNd.message import OWNEvent
 
@@ -33,6 +33,7 @@ async def test_gateway_fires_doorbell_events(hass: HomeAssistant):
 
     dispatcher_payloads = []
 
+    @callback
     def handle_dispatcher(payload):
         dispatcher_payloads.append(payload)
 
