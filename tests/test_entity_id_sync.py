@@ -1,5 +1,6 @@
 """Device renames must be opt-in and conservative about existing entity IDs."""
 
+from contextlib import ExitStack
 from unittest.mock import patch
 
 import pytest
@@ -7,8 +8,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.dispatcher import async_dispatcher_send
+from OWNd.message import OWNMessage
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-from test_entity_naming import _entry, _gateway_patches, _setup
+from test_entity_naming import MAC, _entry, _gateway_patches, _setup
 
 from custom_components.myhome.const import CONF_SYNC_ENTITY_IDS, DOMAIN
 from custom_components.myhome.entity_id_sync import async_setup_entity_id_sync
@@ -75,7 +78,10 @@ async def test_rename_primary_secondary_disabled_and_reset(hass, registries):
     [
         {"object_id": "ceiling_spots"},
         {"object_id": "kitchen_custom"},
-        {"object_id": "kitchen_2"},
+        {"object_id": "kitchen_0"},
+        {"object_id": "kitchen_1"},
+        {"object_id": "kitchen_02"},
+        {"object_id": "kitchen_2_custom"},
         {"name": "Ceiling spots"},
         {"has_entity_name": False},
     ],
@@ -124,12 +130,13 @@ async def test_ownership_and_unrelated_device_updates(hass, registries):
     assert entities.async_get(foreign_entity.entity_id).id == foreign_entity.id
 
 
+@pytest.mark.parametrize("object_id", ["kitchen", "kitchen_2"])
 @pytest.mark.parametrize("occupied", ["registry", "disabled", "state"])
 async def test_target_collision_does_not_overwrite_or_add_suffix(
-    hass, registries, occupied, caplog
+    hass, registries, occupied, object_id, caplog
 ):
     _, devices, entities, device = registries
-    original = _entity(registries)
+    original = _entity(registries, object_id=object_id)
     if occupied == "state":
         hass.states.async_set("light.dining_room", "on")
     else:
@@ -322,3 +329,84 @@ async def test_options_opt_in_default_enable_preserve_and_disable(
     assert entry.options.get(CONF_SYNC_ENTITY_IDS, False) is expected
     if stored is None and submitted is None:
         assert CONF_SYNC_ENTITY_IDS not in entry.options
+
+
+@pytest.mark.parametrize("number", [2, 3, 10, 20, 123])
+async def test_numbered_sensor_id_keeps_entity_suffix(hass, registries, number):
+    """Only the old collision number disappears; the sensor's own name survives."""
+    _, devices, entities, device = registries
+    original = _entity(
+        registries,
+        "sensor",
+        f"kitchen_power_{number}",
+        original_name="Power",
+        disabled_by=er.RegistryEntryDisabler.INTEGRATION,
+    )
+    devices.async_update_device(device.id, name_by_user="Dining room")
+    await hass.async_block_till_done()
+    renamed = entities.async_get("sensor.dining_room_power")
+    assert renamed.id == original.id and renamed.unique_id == original.unique_id
+    assert renamed.disabled_by is er.RegistryEntryDisabler.INTEGRATION
+
+
+async def test_discovered_duplicate_light_01_renames_to_luce_2(hass, tmp_path):
+    """Reproduce the user's device-page rename with an actual HA-generated _2 ID."""
+    base = _entry(tmp_path)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=base.data,
+        unique_id=base.unique_id,
+        options={**base.options, CONF_SYNC_ENTITY_IDS: True},
+    )
+    with ExitStack() as stack:
+        for p in _gateway_patches():
+            stack.enter_context(p)
+        await _setup(hass, entry)
+        entities = er.async_get(hass)
+        existing = entities.async_get_or_create(
+            "light", "test", "existing-light", suggested_object_id="light_01"
+        )
+        async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNMessage.parse("*1*1*01##"))
+        await hass.async_block_till_done()
+        original = entities.async_get("light.light_01_2")
+        assert original is not None
+        devices = dr.async_get(hass)
+        assert devices.async_get(original.device_id).name == "Light 01"
+        devices.async_update_device(original.device_id, name_by_user="Luce 2")
+        await hass.async_block_till_done()
+        renamed = entities.async_get("light.luce_2")
+        assert renamed.id == original.id and renamed.unique_id == original.unique_id
+        assert entities.async_get("light.light_01").id == existing.id
+        assert hass.states.get("light.light_01_2") is None
+        assert hass.states.get("light.luce_2").attributes["friendly_name"] == "Luce 2"
+        assert await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+        assert entities.async_get("light.luce_2").id == original.id
+        assert hass.states.get("light.luce_2") is not None
+
+
+async def test_previously_renamed_numbered_entity_can_be_retried(hass, registries):
+    """Do not catch up automatically; restoring the original name allows a retry."""
+    _, devices, entities, device = registries
+    devices.async_update_device(device.id, name="Light 01", name_by_user="Luce 1")
+    await hass.async_block_till_done()
+    original = _entity(registries, object_id="light_01_2")
+    devices.async_update_device(device.id, name_by_user="Luce 2")
+    await hass.async_block_till_done()
+    assert entities.async_get(original.entity_id).id == original.id
+    devices.async_update_device(device.id, name_by_user="Light 01")
+    await hass.async_block_till_done()
+    assert entities.async_get(original.entity_id).id == original.id
+    devices.async_update_device(device.id, name_by_user="Luce 2")
+    await hass.async_block_till_done()
+    assert entities.async_get("light.luce_2").id == original.id
+
+
+async def test_new_device_name_already_matches_numbered_id(hass, registries, caplog):
+    """Turning the previous collision suffix into the chosen name is a no-op."""
+    _, devices, entities, device = registries
+    original = _entity(registries, object_id="kitchen_2")
+    devices.async_update_device(device.id, name_by_user="Kitchen 2")
+    await hass.async_block_till_done()
+    assert entities.async_get(original.entity_id).id == original.id
+    assert "would collide" not in caplog.text

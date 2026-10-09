@@ -1,9 +1,11 @@
 """Opt-in entity ID updates after an explicit Home Assistant device rename.
 
 Never migrate IDs at startup or react to names supplied by discovery/YAML.
-Only exact, unambiguous device/entity default IDs are eligible; a prefix match
-would also capture user-defined IDs and collision suffixes.
+Only default device/entity IDs, optionally followed by Home Assistant's numeric
+collision suffix, are eligible. Arbitrary prefix matches would capture custom IDs.
 """
+
+import re
 
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
@@ -12,6 +14,18 @@ from homeassistant.util import slugify
 
 from .const import CONF_SYNC_ENTITY_IDS, DOMAIN, LOGGER
 from .data import MyHOMEConfigEntry
+
+
+def _matches_default_id(entity_id: str, expected_id: str) -> bool:
+    """Match the default spelling, including HA collision suffixes (_2, _3, ...).
+
+    A manually chosen ID with exactly this spelling is indistinguishable from
+    an automatically generated one, just as with an unsuffixed default ID.
+    """
+    return (
+        entity_id == expected_id
+        or re.fullmatch(rf"{re.escape(expected_id)}_(?:[2-9]|[1-9][0-9]+)", entity_id) is not None
+    )
 
 
 @callback
@@ -57,9 +71,11 @@ def async_setup_entity_id_sync(hass: HomeAssistant, entry: MyHOMEConfigEntry) ->
                 continue
             suffix = f" {entity.original_name}" if entity.original_name else ""
             expected_id = f"{entity.domain}.{slugify(f'{old_name}{suffix}')}"
-            if entity.entity_id != expected_id:
+            if not _matches_default_id(entity.entity_id, expected_id):
                 continue
             new_id = f"{entity.domain}.{slugify(f'{new_name}{suffix}')}"
+            if new_id == entity.entity_id:
+                continue
             if entity_registry.async_get(new_id) is not None or hass.states.get(new_id) is not None:
                 LOGGER.warning(
                     "Keeping %s: device rename would collide with %s", entity.entity_id, new_id
