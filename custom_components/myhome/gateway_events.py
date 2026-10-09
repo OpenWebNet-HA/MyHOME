@@ -16,6 +16,7 @@ from OWNd.message import (
     OWNAuxEvent,
     OWNCENEvent,
     OWNCENPlusEvent,
+    OWNDoorEntryEvent,
     OWNDryContactEvent,
     OWNEnergyCommand,
     OWNEnergyEvent,
@@ -498,6 +499,31 @@ class GatewayEventDispatcher:
             )
             if isinstance(message, OWNGatewayEvent):
                 self.handler._handle_gateway_diagnostics(message)
+        elif isinstance(message, OWNDoorEntryEvent):
+            if message.is_call:
+                event_name = (
+                    "broadcast_call"
+                    if message.is_broadcast_call
+                    else "chime"
+                    if message.is_chime
+                    else "call"
+                )
+                doorbell_payload = {
+                    "where": str(message.where),
+                    "event": event_name,
+                    "is_broadcast": message.is_broadcast_call,
+                    "gateway_mac": self.handler.mac,
+                }
+                config_entry = getattr(self.handler, "config_entry", None)
+                if config_entry and hasattr(config_entry, "entry_id") and isinstance(config_entry.entry_id, str):
+                    doorbell_payload["entry_id"] = config_entry.entry_id
+                self.hass.bus.async_fire("myhome_doorbell_event", doorbell_payload)
+                dispatcher_send(self.hass, f"myhome_doorbell_event_{self.handler.mac}", doorbell_payload)
+            self._logger.debug(
+                "%s %s",
+                self.handler.log_id,
+                message.human_readable_log,
+            )
         elif getattr(message, "who", None) == 1013:
             if getattr(message, "dimension", getattr(message, "_dimension", None)) == 1:
                 self.handler._handle_gateway_identity_diagnostics(message)

@@ -93,7 +93,7 @@ rules:
     comment: Grace period and connection supervisor log once on loss and once on recovery, without spamming.
   parallel-updates:
     status: done
-    comment: PARALLEL_UPDATES = 0 declared across all 9 platform files for push-driven event streaming.
+    comment: PARALLEL_UPDATES = 0 declared across all 10 platform files for push-driven event streaming.
   reauthentication-flow:
     status: done
     comment: async_setup_entry raises ConfigEntryAuthFailed on password rejection; Home Assistant starts the reauth flow natively.

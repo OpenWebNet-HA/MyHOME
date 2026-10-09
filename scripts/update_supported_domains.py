@@ -33,6 +33,7 @@ PREFERRED_ORDER = [
     "light",
     "switch",
     "cover",
+    "lock",
     "climate",
     "alarm_control_panel",
     "binary_sensor",
@@ -63,6 +64,13 @@ DOMAIN_METADATA: dict[str, dict[str, str]] = {
         "capabilities": (
             "Motorized shutters, blinds, roll-ups with state tracking, "
             "position-reporting actuators & virtual travel-time positioning"
+        ),
+    },
+    "lock": {
+        "label": "**`lock`**",
+        "capabilities": (
+            "Pulse-driven electric strikes and gates (`WHO=1`) with constant-time PIN authentication and lockout protection; "
+            "native door entry strikes and doorbell ring events (`WHO=6`)"
         ),
     },
     "climate": {

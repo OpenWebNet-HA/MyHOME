@@ -27,7 +27,7 @@ CUSTOM_COMPONENTS_DIR = ROOT_DIR / "custom_components" / "myhome"
 # Modules that read per-config-entry state; audited by the runtime-data check.
 RUNTIME_DATA_READERS = [
     "light.py", "switch.py", "cover.py", "climate.py", "binary_sensor.py", "sensor.py",
-    "media_player.py", "button.py", "alarm_control_panel.py",
+    "media_player.py", "button.py", "alarm_control_panel.py", "lock.py",
     "services.py", "websocket.py", "diagnostics.py", "myhome_device.py", "decoder_pool.py",
     "cover_calibration.py",
 ]
@@ -523,6 +523,7 @@ def check_quality_scale_rules(checker: StandardsChecker):
         "climate.py",
         "cover.py",
         "light.py",
+        "lock.py",
         "media_player.py",
         "sensor.py",
         "switch.py",

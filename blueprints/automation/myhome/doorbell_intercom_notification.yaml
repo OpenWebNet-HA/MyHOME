@@ -1,0 +1,117 @@
+blueprint:
+  name: "MyHOME: Intercom & Doorbell Press Notification"
+  description: >-
+    Dispatches an actionable mobile push notification with sound, optional live camera snapshot,
+    and a one-tap 'Open Gate / Unlock Door' button whenever someone rings the BTicino
+    intercom entrance panel (WHO=6 doorbell event).
+  domain: automation
+  source_url: https://github.com/OpenWebNet-HA/MyHOME/blob/v2-phase1-architecture/blueprints/automation/myhome/doorbell_intercom_notification.yaml
+  input:
+    notify_service:
+      name: "Mobile App Notify Action"
+      description: "Target mobile app notify action (e.g. notify.mobile_app_iphone or notify.mobile_app_pixel)."
+      selector:
+        text:
+    camera_entity:
+      name: "Intercom / Entrance Camera (Optional)"
+      description: "Camera entity pointing at the entrance to attach a live snapshot to the notification."
+      default: ""
+      selector:
+        entity:
+          domain: camera
+    door_entity:
+      name: "Gate or Door Lock to Open (Optional)"
+      description: "Cover or lock entity that can be unlocked directly from the notification."
+      default: ""
+      selector:
+        entity:
+          domain:
+            - cover
+            - lock
+    custom_title:
+      name: "Notification Title"
+      default: "🔔 Deurbel: Iemand belt aan!"
+      selector:
+        text:
+    custom_message:
+      name: "Notification Message"
+      default: "Er wordt aangebeld bij de buitenpost."
+      selector:
+        text:
+
+mode: restart
+max_exceeded: silent
+
+trigger:
+  - platform: event
+    event_type: myhome_doorbell_event
+
+variables:
+  door_target: !input door_entity
+  camera_target: !input camera_entity
+  action_open: "MYHOME_DOORBELL_OPEN_{{ trigger.event.data.where }}_{{ now().timestamp() | int }}"
+  action_dismiss: "MYHOME_DOORBELL_DISMISS_{{ now().timestamp() | int }}"
+
+action:
+  - choose:
+      # If camera is configured, take a snapshot first
+      - conditions:
+          - condition: template
+            value_template: "{{ camera_target != '' }}"
+        sequence:
+          - action: camera.snapshot
+            target:
+              entity_id: !input camera_entity
+            data:
+              filename: "/config/www/myhome_doorbell_latest.jpg"
+
+  - action: !input notify_service
+    data:
+      title: !input custom_title
+      message: >-
+        {{ custom_message }} (Oproep van buitenpost {{ trigger.event.data.where }})
+      data:
+        image: >-
+          {% if camera_target != '' %}/local/myhome_doorbell_latest.jpg?v={{ now().timestamp() | int }}{% else %}{% endif %}
+        push:
+          sound: "chime.caf"
+          category: "MYHOME_DOORBELL"
+        actions: >-
+          {% if door_target != '' %}
+            [
+              {"action": "{{ action_open }}", "title": "🔓 Open Poort / Deur", "destructive": false},
+              {"action": "{{ action_dismiss }}", "title": "❌ Negeren", "destructive": true}
+            ]
+          {% else %}
+            [
+              {"action": "{{ action_dismiss }}", "title": "OK", "destructive": false}
+            ]
+          {% endif %}
+
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ door_target != '' }}"
+        sequence:
+          - wait_for_trigger:
+              - platform: event
+                event_type: mobile_app_notification_action
+                event_data:
+                  action: "{{ action_open }}"
+            timeout: "00:01:00"
+            continue_on_timeout: false
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ door_target.startswith('cover.') }}"
+                sequence:
+                  - action: cover.open_cover
+                    target:
+                      entity_id: !input door_entity
+              - conditions:
+                  - condition: template
+                    value_template: "{{ door_target.startswith('lock.') }}"
+                sequence:
+                  - action: lock.unlock
+                    target:
+                      entity_id: !input door_entity

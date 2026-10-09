@@ -13,6 +13,7 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 | 2 | Automation (shutters, blinds) | `cover` | ✅ | Timed and position-reporting actuators. |
 | 4 | Thermoregulation | `climate`, `sensor` | ✅ | Zone thermostats, central units 3550 (`#0`) and 4695 (`#0#1`), probes. |
 | 5 | Burglar alarm | `alarm_control_panel` | 👁️ | Central unit status (read-only); arm/disarm through installer-programmed AUX frames — see [alarm](alarm.md#arming-and-disarming). |
+| 6 | Door entry | `lock`, `event` | ✅ | Door strikes, lock actuators, and doorbell events. |
 | 9 | Auxiliary channels | `binary_sensor` | 👁️ | AUX 1–9 as binary sensors. |
 | 13 | Gateway management | — | ⚙️ | Clock sync (`myhome.sync_time`), firmware / model / identity for the device registry and diagnostics. |
 | 14 | Actuator lock | `button` | ✅ | Lock / unlock buttons on every light, switch and cover device. |
@@ -54,6 +55,13 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 | Position (timed actuators) | ✅ | Virtual position from the travel time: `travel_time` in YAML, measured with `myhome.calibrate_cover`, or set by hand with `myhome.set_cover_travel_time`. |
 | Tilt | ❌ | Slat commands are parsed by OWNd but not exposed. |
 | Echo suppression | ✅ | The gateway's relay of our own command is not mistaken for a keypad press. |
+
+### `lock` (WHO 1 / WHO 6)
+
+| Function | Status | Notes |
+| :--- | :---: | :--- |
+| Impulse lock (WHO 1) | ✅ | Pulse-driven electric strikes and gates with constant-time PIN authentication and lockout protection. |
+| Door entry lock (WHO 6) | ✅ | Door entry strikes and doorbell ring event triggers. |
 
 ### `climate` (WHO 4)
 

@@ -13,8 +13,14 @@ from homeassistant.components.binary_sensor import (  # type: ignore[attr-define
 )
 from homeassistant.components.button import DOMAIN as BUTTON  # type: ignore
 from homeassistant.components.climate import DOMAIN as CLIMATE  # type: ignore
-from homeassistant.components.cover import DOMAIN as COVER
+from homeassistant.components.cover import (
+    DOMAIN as COVER,
+)
+from homeassistant.components.cover import (
+    CoverDeviceClass,
+)
 from homeassistant.components.light import DOMAIN as LIGHT  # type: ignore
+from homeassistant.components.lock import DOMAIN as LOCK  # type: ignore
 from homeassistant.components.sensor import (
     DOMAIN as SENSOR,
 )
@@ -27,7 +33,8 @@ from homeassistant.components.switch import (  # type: ignore
 from homeassistant.components.switch import (  # type: ignore[attr-defined, unused-ignore]
     SwitchDeviceClass,
 )
-from homeassistant.const import CONF_MAC, CONF_NAME
+from homeassistant.const import CONF_CODE, CONF_MAC, CONF_NAME
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.device_registry import format_mac as ha_format_mac
 from voluptuous import (
     All,
@@ -37,15 +44,22 @@ from voluptuous import (
     In,
     Invalid,
     Optional,
+    Range,
     Required,
     Schema,
 )
 
 from .const import (
     BUS_ROUTING,
+    CONF_ACCESS,
     CONF_ADVANCED_SHUTTER,
+    CONF_ALLOWED_USERS,
+    CONF_APPROVAL_TIMEOUT,
+    CONF_APPROVERS,
     CONF_BUS_INTERFACE,
+    CONF_CAMERA,
     CONF_CENTRAL,
+    CONF_CLOSE_BLOCK_ENTITY,
     CONF_COLOR_TEMP,
     CONF_COOLING_SUPPORT,
     CONF_DEVICE_CLASS,
@@ -62,13 +76,25 @@ from .const import (
     CONF_LOCK_FEATURES,
     CONF_MANUFACTURER,
     CONF_MEMBERS,
+    CONF_MIN_CYCLE_TIME,
+    CONF_PIN_CODE,
     CONF_PLATFORMS,
+    CONF_PREWARN_LIGHT,
+    CONF_PREWARN_SECONDS,
+    CONF_PULSE_DURATION,
+    CONF_REMOTE_CLOSE,
     CONF_RGB,
+    CONF_SAFETY_CHECK_DAYS,
+    CONF_SAFETY_DEVICES_VERIFIED,
     CONF_STANDALONE,
+    CONF_STATE_SENSOR,
     CONF_TRAVEL_TIME,
+    CONF_TYPE,
+    CONF_WATCHDOG_MARGIN,
     CONF_WHERE,
     CONF_WHO,
     CONF_ZONE,
+    TYPE_IMPULSE_RELAY,
 )
 
 
@@ -386,16 +412,93 @@ switch_schema = MyHomeDeviceSchema(
     }
 )
 
+def _validate_access(access: dict) -> dict:
+    """Cross-field rules of an impulse cover's access policy."""
+    allowed = set(access[CONF_ALLOWED_USERS])
+    approvers = access[CONF_APPROVERS]
+    missing = sorted(allowed - set(approvers))
+    if missing:
+        raise Invalid(f"every allowed user needs an approver (notify service); missing for {missing}")
+    extra = sorted(set(approvers) - allowed)
+    if extra:
+        raise Invalid(f"approvers lists users that are not in allowed_users: {extra}")
+    for user, service in approvers.items():
+        if not service.startswith("notify.") or service == "notify.":
+            raise Invalid(f"approver of {user} must be a notify service such as notify.mobile_app_phone")
+    if access[CONF_REMOTE_CLOSE] == "with_camera" and CONF_CAMERA not in access:
+        raise Invalid("remote_close: with_camera needs a camera entity")
+    return access
+
+
+access_schema = All(
+    Schema(
+        {
+            Optional(CONF_ALLOWED_USERS, default=[]): [Coerce(str)],
+            Optional(CONF_APPROVERS, default={}): {Coerce(str): Coerce(str)},
+            Optional(CONF_REMOTE_CLOSE, default="never"): In(["never", "at_home", "with_camera"]),
+            Optional(CONF_SAFETY_DEVICES_VERIFIED): cv.date,
+            Optional(CONF_SAFETY_CHECK_DAYS, default=31): All(Coerce(int), Range(min=1, max=366)),
+            Optional(CONF_CAMERA): cv.entity_id,
+            Optional(CONF_PREWARN_LIGHT): cv.entity_id,
+            Optional(CONF_PREWARN_SECONDS, default=5): All(Coerce(float), Range(min=3, max=30)),
+            Optional(CONF_CLOSE_BLOCK_ENTITY): cv.entity_id,
+            Optional(CONF_WATCHDOG_MARGIN, default=10): All(Coerce(float), Range(min=1, max=120)),
+            Optional(CONF_APPROVAL_TIMEOUT, default=60): All(Coerce(float), Range(min=15, max=300)),
+        }
+    ),
+    _validate_access,
+)
+
+
 cover_schema = MyHomeDeviceSchema(
     {
         Required(str): {
-            Optional(CONF_WHO, default="2"): "2",
+            Optional(CONF_WHO, default="2"): In(["1", "2"]),
             Required(CONF_WHERE): All(
                 Coerce(str), Any(General(), Area(), Group(), PointToPoint(), msg="Invalid <WHERE>, expecting a valid General, Area, Group or Point-to-Point <WHERE>")  # type: ignore
             ),
             Optional(CONF_BUS_INTERFACE): All(Coerce(str), BusInterface()),  # type: ignore
             Required(CONF_NAME): str,
             Optional(CONF_ENTITY_NAME): str,
+            Optional(CONF_DEVICE_CLASS): In(
+                [
+                    CoverDeviceClass.AWNING,
+                    CoverDeviceClass.BLIND,
+                    CoverDeviceClass.CURTAIN,
+                    CoverDeviceClass.DAMPER,
+                    CoverDeviceClass.DOOR,
+                    CoverDeviceClass.GARAGE,
+                    CoverDeviceClass.GATE,
+                    CoverDeviceClass.SHADE,
+                    CoverDeviceClass.SHUTTER,
+                    CoverDeviceClass.WINDOW,
+                ]
+            ),
+            Optional("device_class"): In(
+                [
+                    CoverDeviceClass.AWNING,
+                    CoverDeviceClass.BLIND,
+                    CoverDeviceClass.CURTAIN,
+                    CoverDeviceClass.DAMPER,
+                    CoverDeviceClass.DOOR,
+                    CoverDeviceClass.GARAGE,
+                    CoverDeviceClass.GATE,
+                    CoverDeviceClass.SHADE,
+                    CoverDeviceClass.SHUTTER,
+                    CoverDeviceClass.WINDOW,
+                ]
+            ),
+            Optional(CONF_TYPE): In([TYPE_IMPULSE_RELAY, "shutter", "standard"]),
+            Optional("type"): In([TYPE_IMPULSE_RELAY, "shutter", "standard"]),
+            Optional(CONF_PIN_CODE): Coerce(str),
+            Optional("pin_code"): Coerce(str),
+            Optional(CONF_STATE_SENSOR): cv.entity_id,
+            Optional("state_sensor"): cv.entity_id,
+            Optional(CONF_PULSE_DURATION, default=0.5): All(Coerce(float), Range(min=0.2, max=2.0)),
+            Optional("pulse_duration", default=0.5): All(Coerce(float), Range(min=0.2, max=2.0)),
+            Optional(CONF_MIN_CYCLE_TIME, default=5.0): All(Coerce(float), Range(min=1.0, max=120.0)),
+            Optional("min_cycle_time", default=5.0): All(Coerce(float), Range(min=1.0, max=120.0)),
+            Optional(CONF_ACCESS): access_schema,
             Optional(CONF_ADVANCED_SHUTTER, default=False): Boolean(),
             Optional("advanced_shutter", default=False): Boolean(),
             Optional(CONF_TRAVEL_TIME, default=25): Coerce(int),
@@ -417,7 +520,25 @@ def _validate_cover_members(data: dict[str, typing.Any]) -> dict[str, typing.Any
                 raise Invalid("Members can only be defined on a group cover (where must start with #)")
     return data
 
-cover_schema = All(cover_schema, _validate_cover_members)  # type: ignore[assignment]
+
+def _validate_impulse_covers(data: dict) -> dict:
+    """An impulse cover pulses exactly one relay; access settings only apply to impulse covers."""
+    for device, cfg in data.items():
+        is_impulse = str(cfg.get(CONF_WHO)) == "1"
+        if is_impulse:
+            try:
+                PointToPoint()(str(cfg[CONF_WHERE]))  # type: ignore
+            except Invalid as err:
+                raise Invalid(
+                    f"{device}: an impulse cover (who: 1) needs a point-to-point <WHERE>; a general, area or "
+                    "group address would pulse several motors at once"
+                ) from err
+        elif CONF_ACCESS in cfg or CONF_PIN_CODE in cfg or CONF_STATE_SENSOR in cfg:
+            raise Invalid(f"{device}: access, pin_code and state_sensor only apply to impulse covers (who: 1)")
+    return data
+
+
+cover_schema = All(cover_schema, _validate_cover_members, _validate_impulse_covers)  # type: ignore[assignment]
 
 binary_sensor_schema = MyHomeDeviceSchema(
     {
@@ -540,6 +661,24 @@ alarm_control_panel_schema = MyHomeDeviceSchema(
     }
 )
 
+lock_schema = MyHomeDeviceSchema(
+    {
+        Required(str): {
+            Optional(CONF_WHO, default="6"): In(["1", "6"]),
+            Required(CONF_WHERE): All(Coerce(str), Any(General(), Area(), Group(), PointToPoint(), SpecialWhere())),  # type: ignore
+            Optional(CONF_BUS_INTERFACE): BusInterface(),
+            Required(CONF_NAME): str,
+            Optional(CONF_ENTITY_NAME): str,
+            Optional(CONF_CODE): Coerce(str),
+            Optional("code"): Coerce(str),
+            Optional(CONF_PULSE_DURATION, default=0.5): Coerce(float),
+            Optional("pulse_duration", default=0.5): Coerce(float),
+            Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
+            Optional(CONF_DEVICE_MODEL, default="Door Entry Lock"): Coerce(str),
+        }
+    }
+)
+
 # The device schemas are Schema subclasses whose overridden __call__ performs
 # post-processing (rekeying to "who-where" and injecting default keys). Nested
 # schema instances are not guaranteed to be invoked through __call__ by the
@@ -556,6 +695,7 @@ gateway_schema = Schema(
         Optional(SENSOR): lambda v: sensor_schema(v),
         Optional(CLIMATE): lambda v: climate_schema(v),
         Optional(ALARM_CONTROL_PANEL): lambda v: alarm_control_panel_schema(v),
+        Optional(LOCK): lambda v: lock_schema(v),
     }
 )
 

@@ -1,0 +1,92 @@
+blueprint:
+  name: "MyHOME: Secure Door & Gate Biometric Approval"
+  description: >-
+    Dispatches interactive mobile push notifications requiring biometric verification
+    (FaceID/TouchID on iOS, Biometric/Screen Unlock on Android) whenever a protected
+    MyHOME impulse gate or garage door operation is requested. Automatically handles
+    the cryptographic single-use nonce for approval, and allows immediate cancellation.
+  domain: automation
+  source_url: https://github.com/OpenWebNet-HA/MyHOME/blob/master/blueprints/automation/myhome/secure_access_approval.yaml
+  input:
+    notify_service:
+      name: "Mobile App Notify Action"
+      description: "The notify action for your mobile device (e.g. notify.mobile_app_iphone or action notify.mobile_app_pixel)."
+      selector:
+        text:
+    target_cover:
+      name: "Protected Impulse Cover (Optional filter)"
+      description: "Optionally restrict this approval handler to a specific gate or garage door entity."
+      default: ""
+      selector:
+        entity:
+          domain: cover
+          integration: myhome
+
+mode: parallel
+max: 10
+
+trigger:
+  - platform: event
+    event_type: myhome_access_approval_requested
+
+condition:
+  - condition: template
+    value_template: >-
+      {{ not target_cover or trigger.event.data.entity_id == target_cover }}
+
+action:
+  - action: !input notify_service
+    data:
+      title: "⚠️ Beveiligingsverzoek: {{ trigger.event.data.entity_id }}"
+      message: >-
+        Verzoek tot {{ trigger.event.data.intent }} door {{ trigger.event.data.user_id | default('onbekend') }}.
+        Scan gezicht of vingerafdruk om te bevestigen.
+      data:
+        push:
+          category: "MYHOME_SECURE_ACCESS"
+        actions:
+          - action: "MYHOME_APPROVE_{{ trigger.event.data.nonce }}"
+            title: "✅ Bevestig (Biometrisch)"
+            authenticationRequired: true
+            auth_required: true
+            destructive: false
+          - action: "MYHOME_DENY_{{ trigger.event.data.nonce }}"
+            title: "❌ Weigeren"
+            destructive: true
+
+  - wait_for_trigger:
+      - platform: event
+        event_type: mobile_app_notification_action
+        event_data:
+          action: "MYHOME_APPROVE_{{ trigger.event.data.nonce }}"
+      - platform: event
+        event_type: mobile_app_notification_action
+        event_data:
+          action: "MYHOME_DENY_{{ trigger.event.data.nonce }}"
+    timeout:
+      seconds: "{{ trigger.event.data.timeout | default(45) }}"
+    continue_on_timeout: false
+
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ wait.trigger.event.data.action == 'MYHOME_APPROVE_' ~ trigger.event.data.nonce }}"
+        sequence:
+          - action: >-
+              {% if trigger.event.data.intent == 'open' %}
+                cover.open_cover
+              {% else %}
+                cover.close_cover
+              {% endif %}
+            target:
+              entity_id: "{{ trigger.event.data.entity_id }}"
+            data:
+              nonce: "{{ trigger.event.data.nonce }}"
+
+      - conditions:
+          - condition: template
+            value_template: "{{ wait.trigger.event.data.action == 'MYHOME_DENY_' ~ trigger.event.data.nonce }}"
+        sequence:
+          - action: myhome.cancel_cover_request
+            target:
+              entity_id: "{{ trigger.event.data.entity_id }}"

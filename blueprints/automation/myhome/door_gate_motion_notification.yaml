@@ -1,0 +1,147 @@
+blueprint:
+  name: "MyHOME: Door & Gate Motion & Open-Alert Notifications"
+  description: >-
+    Sends real-time push notifications when a protected MyHOME garage door or gate
+    starts opening, begins closing, or reaches confirmed closed state, plus an alert
+    if the door is left open for too long.
+  domain: automation
+  source_url: https://github.com/OpenWebNet-HA/MyHOME/blob/v2-phase1-architecture/blueprints/automation/myhome/door_gate_motion_notification.yaml
+  input:
+    target_cover:
+      name: "Gate or Garage Door"
+      description: "Select the MyHOME cover entity to monitor."
+      selector:
+        entity:
+          domain: cover
+          integration: myhome
+    notify_service:
+      name: "Mobile App Notify Action"
+      description: "Target mobile app notify action (e.g. notify.mobile_app_iphone)."
+      selector:
+        text:
+    notify_on_opening:
+      name: "Notify When Opening Starts"
+      default: true
+      selector:
+        boolean:
+    notify_on_closed:
+      name: "Notify When Fully Closed"
+      default: true
+      selector:
+        boolean:
+    notify_on_closing:
+      name: "Notify When Closing Starts"
+      default: false
+      selector:
+        boolean:
+    left_open_minutes:
+      name: "Alert If Left Open (Minutes)"
+      description: "Send a reminder alert if the door remains open longer than this duration (0 = disabled)."
+      default: 10
+      selector:
+        number:
+          min: 0
+          max: 120
+          step: 1
+          unit_of_measurement: "min"
+          mode: slider
+
+mode: restart
+max_exceeded: silent
+
+trigger:
+  # 1. Door starts opening
+  - platform: state
+    entity_id: !input target_cover
+    to: "opening"
+    id: "opening"
+
+  # 2. Door starts closing
+  - platform: state
+    entity_id: !input target_cover
+    to: "closing"
+    id: "closing"
+
+  # 3. Door confirmed closed
+  - platform: state
+    entity_id: !input target_cover
+    to: "closed"
+    id: "closed"
+
+  # 4. Door left open for prolonged duration
+  - platform: state
+    entity_id: !input target_cover
+    to: "open"
+    for:
+      minutes: !input left_open_minutes
+    id: "left_open"
+
+variables:
+  cover_entity: !input target_cover
+  cover_name: "{{ state_attr(cover_entity, 'friendly_name') | default(cover_entity) }}"
+  notify_opening_enabled: !input notify_on_opening
+  notify_closing_enabled: !input notify_on_closing
+  notify_closed_enabled: !input notify_on_closed
+  open_minutes: !input left_open_minutes
+
+action:
+  - choose:
+      # Opening
+      - conditions:
+          - condition: trigger
+            id: "opening"
+          - condition: template
+            value_template: "{{ notify_opening_enabled }}"
+        sequence:
+          - action: !input notify_service
+            data:
+              title: "🚪 {{ cover_name }} wordt geopend"
+              message: "De deur/poort is in beweging richting open."
+              data:
+                tag: "myhome_door_motion_{{ cover_entity }}"
+
+      # Closing
+      - conditions:
+          - condition: trigger
+            id: "closing"
+          - condition: template
+            value_template: "{{ notify_closing_enabled }}"
+        sequence:
+          - action: !input notify_service
+            data:
+              title: "⚠️ {{ cover_name }} begint te sluiten"
+              message: "De deur/poort is in beweging richting dicht."
+              data:
+                tag: "myhome_door_motion_{{ cover_entity }}"
+
+      # Closed
+      - conditions:
+          - condition: trigger
+            id: "closed"
+          - condition: template
+            value_template: "{{ notify_closed_enabled }}"
+        sequence:
+          - action: !input notify_service
+            data:
+              title: "✅ {{ cover_name }} is gesloten"
+              message: "De deur/poort is nu veilig en volledig gesloten."
+              data:
+                tag: "myhome_door_motion_{{ cover_entity }}"
+
+      # Left Open Alert
+      - conditions:
+          - condition: trigger
+            id: "left_open"
+          - condition: template
+            value_template: "{{ open_minutes > 0 }}"
+        sequence:
+          - action: !input notify_service
+            data:
+              title: "⚠️ Opgelet: {{ cover_name }} staat open!"
+              message: "De deur/poort staat al langer dan {{ open_minutes }} minuten open."
+              data:
+                tag: "myhome_door_left_open_{{ cover_entity }}"
+                actions:
+                  - action: "MYHOME_CLOSE_LEFT_OPEN_{{ cover_entity }}"
+                    title: "🔒 Sluit Nu"
+                    destructive: true

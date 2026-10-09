@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Mapping
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -19,21 +20,33 @@ from homeassistant.components.cover import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
+    CONF_MAC,
     CONF_NAME,
     STATE_CLOSED,
+    STATE_OFF,
+    STATE_ON,
     STATE_OPEN,
 )
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_platform
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.util import dt as dt_util
 from OWNd.message import (
     OWNAutomationCommand,
     OWNAutomationEvent,
+    OWNLightingCommand,
 )
 
+from .access_policy import (
+    AccessConfig,
+    AccessController,
+    Effect,
+    Intent,
+)
 from .const import (
     CALIBRATION_CUTOFF_MAX,
     CALIBRATION_CUTOFF_MIN,
@@ -41,18 +54,29 @@ from .const import (
     CALIBRATION_MIN_RUN,
     CALIBRATION_RUN_TIMEOUT,
     CALIBRATION_SETTLE,
+    CONF_ACCESS,
     CONF_ADVANCED_SHUTTER,
     CONF_COVER_TRAVEL_TIMES,
+    CONF_DEVICE_CLASS,
     CONF_DEVICE_MODEL,
     CONF_ENTITY_NAME,
     CONF_MANUFACTURER,
     CONF_MEMBERS,
+    CONF_MIN_CYCLE_TIME,
+    CONF_PIN_CODE,
+    CONF_PULSE_DURATION,
+    CONF_STATE_SENSOR,
     CONF_TRAVEL_TIME,
+    CONF_WHO,
+    DEFAULT_MIN_CYCLE_TIME,
+    DEFAULT_PULSE_DURATION,
     DEFAULT_TRAVEL_TIME,
     DOMAIN,
     EVENT_COVER_CALIBRATION,
     LOGGER,
+    SERVICE_ACKNOWLEDGE_COVER_FAULT,
     SERVICE_CALIBRATE_COVER,
+    SERVICE_CANCEL_COVER_REQUEST,
     SERVICE_RESET_COVER_TRAVEL_TIME,
     SERVICE_SET_COVER_TRAVEL_TIME,
     SERVICE_STOP_COVER_CALIBRATION,
@@ -78,7 +102,13 @@ from .cover_motion import (
     is_in_echo_window,
     travel_for,
 )
-from .discovery import Address, DeviceContext, PlatformDiscovery, default_known_keys
+from .discovery import (
+    Address,
+    DeviceContext,
+    PlatformDiscovery,
+    default_known_keys,
+    parse_unique_id,
+)
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 
@@ -89,13 +119,35 @@ PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
-    """Set up the covers of a gateway (WHO=2): registry, myhome.yaml, then bus discovery."""
+    """Set up the covers of a gateway: WHO=2 shutters and WHO=1 impulse covers."""
     from .cover_scope import CoverFamily, CoverScope, MyHOMEScopeCover
 
     runtime = config_entry.runtime_data
+    mac = config_entry.data[CONF_MAC]
+    gateway = runtime.gateway
     if runtime.calibration_hub is None:
         runtime.calibration_hub = get_calibration_hub(runtime.gateway)
     family = CoverFamily()
+
+    def cover_registry_address(target_who: str):
+        def address_of(entry: er.RegistryEntry) -> Address | None:
+            who, device_id = parse_unique_id(entry.unique_id or "", gateway.mac, mac)
+            entry_who = who if who is not None else "2"
+            if entry_who != target_who:
+                return None
+            return Address.from_device_id(device_id)
+
+        return address_of
+
+    def accept_shutter(ctx: DeviceContext) -> bool:
+        if ctx.source == "yaml":
+            return str(ctx.cfg.get(CONF_WHO, "2")) == "2"
+        return True
+
+    def accept_impulse(ctx: DeviceContext) -> bool:
+        if ctx.source == "yaml":
+            return str(ctx.cfg.get(CONF_WHO, "2")) == "1"
+        return True
 
     def build(ctx: DeviceContext) -> MyHOMECover:
         cfg = ctx.cfg
@@ -127,6 +179,33 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
         family.add(cover)
         return cover
 
+    def build_impulse(ctx: DeviceContext) -> MyHOMEImpulseCover:
+        cfg = ctx.cfg
+        raw_dev_class = cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class")
+        try:
+            device_class = CoverDeviceClass(str(raw_dev_class)) if raw_dev_class else CoverDeviceClass.GATE
+        except ValueError:
+            device_class = CoverDeviceClass.GATE
+        return MyHOMEImpulseCover(
+            hass=hass,
+            name=cfg.get(CONF_NAME) or f"Gate {ctx.suffix}",
+            entity_name=cfg.get(CONF_ENTITY_NAME),
+            device_id=ctx.key,
+            who=ctx.who,
+            where=ctx.address.where,
+            interface=ctx.address.interface,
+            device_class=device_class,
+            travel_time=float(cfg.get(CONF_TRAVEL_TIME, DEFAULT_TRAVEL_TIME)),
+            pulse_duration=float(cfg.get(CONF_PULSE_DURATION, cfg.get("pulse_duration", DEFAULT_PULSE_DURATION))),
+            min_cycle_time=float(cfg.get(CONF_MIN_CYCLE_TIME, cfg.get("min_cycle_time", DEFAULT_MIN_CYCLE_TIME))),
+            pin_code=str(cfg[CONF_PIN_CODE]) if CONF_PIN_CODE in cfg else (str(cfg["pin_code"]) if "pin_code" in cfg else None),
+            state_sensor=str(cfg[CONF_STATE_SENSOR]) if CONF_STATE_SENSOR in cfg else (str(cfg["state_sensor"]) if "state_sensor" in cfg else None),
+            manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
+            model=cfg.get(CONF_DEVICE_MODEL, "Impulse Cover"),
+            gateway=runtime.gateway,
+            access_config=cfg.get(CONF_ACCESS),
+        )
+
     @callback
     def relay_general(message) -> None:  # type: ignore
         """A general command (WHERE=0) moves every cover."""
@@ -140,9 +219,17 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     PlatformDiscovery(
         hass, config_entry, async_add_entities,
         platform=PLATFORM, who="2", event_type=OWNAutomationEvent, build=build, announce=True,
+        registry_address=cover_registry_address("2"), accept=accept_shutter,
         on_general=relay_general, on_scope=relay_scope,
         known_keys=lambda ctx: [*default_known_keys(ctx), "general"],
     ).start()
+
+    PlatformDiscovery(
+        hass, config_entry, async_add_entities,
+        platform=PLATFORM, who="1", event_type=None, build=build_impulse, announce=True,
+        registry_address=cover_registry_address("1"), accept=accept_impulse,
+        known_keys=lambda ctx: [*default_known_keys(ctx), ctx.address.where, ctx.address.clean_where],
+    ).start(listen=False)
 
     SCHEMA_SET_COVER_TRAVEL_TIME = {
         vol.Optional("travel_time"): vol.Coerce(float),
@@ -164,6 +251,16 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             SERVICE_RESET_COVER_TRAVEL_TIME,
             {},
             "async_reset_travel_time",
+        )
+        platform.async_register_entity_service(
+            SERVICE_CANCEL_COVER_REQUEST,
+            {},
+            "async_cancel_request",
+        )
+        platform.async_register_entity_service(
+            SERVICE_ACKNOWLEDGE_COVER_FAULT,
+            {},
+            "async_acknowledge_fault",
         )
 
 
@@ -1177,6 +1274,277 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._publish_state()
 
 
+class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
+    """An impulse-driven gate or garage door powered by a WHO=1 relay.
+
+    A service call never moves the door. ``open_cover``, ``close_cover`` and
+    ``stop_cover`` create an approval request through the cover's
+    :class:`~.access_policy.AccessController`; the relay is pulsed only after an
+    allowed person approves it on their phone, and a pulse that can close the
+    door additionally needs confirmed safety devices, a requester in sight of
+    the door and a pre-warning. See ``access_policy.py``.
+    """
+
+    _poll_on_add = False
+
+    def __init__(
+        self,
+        hass: HomeAssistant | None,
+        name: str,
+        entity_name: str | None,
+        device_id: str,
+        who: str,
+        where: str,
+        interface: str | None,
+        device_class: CoverDeviceClass,
+        travel_time: float,
+        pulse_duration: float,
+        min_cycle_time: float,
+        pin_code: str | None,
+        state_sensor: str | None,
+        manufacturer: str,
+        model: str,
+        gateway: MyHOMEGatewayHandler,
+        access_config: Mapping[str, Any] | None = None,
+    ) -> None:
+        super().__init__(
+            hass=hass,
+            name=name,
+            platform=PLATFORM,
+            device_id=device_id,
+            who=who,
+            where=where,
+            manufacturer=manufacturer,
+            model=model,
+            gateway=gateway,
+            entity_name=entity_name,
+        )
+        self._interface = interface
+        self._full_where = f"{self._where}#4#{self._interface}" if self._interface is not None else self._where
+        self._attr_device_class = device_class
+        self._travel_time = travel_time
+        self._pulse_duration = pulse_duration
+        self._min_cycle_time = min_cycle_time
+        self._state_sensor = state_sensor
+
+        self._attr_supported_features = (
+            CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.STOP
+        )
+        self._attr_is_opening = False
+        self._attr_is_closing = False
+        self._attr_is_closed: bool | None = None
+        self._attr_assumed_state = state_sensor is None
+
+        self._last_pulse_time: float = -1e9
+        self._pulse_off_cancel: CALLBACK_TYPE | None = None
+        self._travel_timer_cancel: CALLBACK_TYPE | None = None
+
+        self._attr_extra_state_attributes = {
+            "where": self._where,
+            "who": self._who,
+        }
+        if self._state_sensor:
+            self._attr_extra_state_attributes["state_sensor"] = self._state_sensor
+        if self._interface is not None:
+            self._attr_extra_state_attributes["interface"] = self._interface
+
+        self._access = AccessController(
+            hass,
+            name=name,
+            config=AccessConfig.from_config(access_config, pin_code),
+            state_sensor=state_sensor,
+            travel_time=travel_time,
+            send_pulse=self._async_pulse,
+            publish=self._publish_state,
+            entity_id=lambda: self.entity_id,
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Static attributes plus the access policy state (never a PIN or nonce)."""
+        return {**self._attr_extra_state_attributes, **self._access.attributes()}
+
+    async def async_added_to_hass(self) -> None:
+        """Register listeners when added to Home Assistant."""
+        await super().async_added_to_hass()
+        self._access.hass = self.hass
+        if self._state_sensor and self.hass is not None:
+            @callback
+            def _sensor_state_changed(event: Any) -> None:
+                new_state = event.data.get("new_state")
+                self._handle_sensor_update(new_state.state if new_state is not None else None)
+
+            self.async_on_remove(
+                async_track_state_change_event(self.hass, [self._state_sensor], _sensor_state_changed)
+            )
+            initial_state = self.hass.states.get(self._state_sensor)
+            self._handle_sensor_update(initial_state.state if initial_state is not None else None)
+
+    @callback
+    def _handle_sensor_update(self, state_str: str | None) -> None:
+        """Mirror the contact sensor: off = closed, on = not closed, anything else = unknown."""
+        if state_str == STATE_OFF:
+            self._attr_is_closed = True
+        elif state_str == STATE_ON:
+            self._attr_is_closed = False
+        else:
+            self._attr_is_closed = None
+        self._attr_is_opening = False
+        self._attr_is_closing = False
+        self._cancel_travel_timer()
+        self._publish_state()
+
+    def _cancel_travel_timer(self) -> None:
+        if self._travel_timer_cancel is not None:
+            self._travel_timer_cancel()
+            self._travel_timer_cancel = None
+
+    async def _async_send_impulse(self) -> bool:
+        """Send the momentary pulse *1*1*WHERE## followed by *1*0*WHERE##."""
+        now = time.monotonic()
+        if now - self._last_pulse_time < self._min_cycle_time:
+            LOGGER.warning(
+                "%s: Command dropped (within %.1fs deadband lockout)",
+                self._display_name,
+                self._min_cycle_time,
+            )
+            return False
+        self._last_pulse_time = now
+
+        await self._gateway_handler.send(OWNLightingCommand.switch_on(self._full_where))
+
+        if self._pulse_off_cancel is not None:
+            self._pulse_off_cancel()
+            self._pulse_off_cancel = None
+
+        @callback
+        def _turn_off(_now: Any = None) -> None:
+            self._pulse_off_cancel = None
+            if self.hass is not None:
+                self.hass.async_create_task(
+                    self._gateway_handler.send(OWNLightingCommand.switch_off(self._full_where))
+                )
+
+        if self.hass is not None:
+            self._pulse_off_cancel = async_call_later(self.hass, self._pulse_duration, _turn_off)
+        return True
+
+    async def _async_pulse(self, intent: Intent, effect: Effect) -> bool:
+        """Pulse the relay for an approved request and show the expected motion.
+
+        The motion shown is an estimate for the dashboard only; the access
+        policy decides on the state sensor, never on this estimate.
+        """
+        del effect  # the policy already decided; the display follows the request
+        if not await self._async_send_impulse():
+            return False
+        self._cancel_travel_timer()
+        self._attr_is_opening = intent is Intent.OPEN
+        self._attr_is_closing = intent is Intent.CLOSE
+        if intent is Intent.OPEN:
+            self._attr_is_closed = False
+        self._publish_state()
+        if intent is not Intent.STOP and self.hass is not None:
+
+            @callback
+            def _finish(_now: Any = None) -> None:
+                self._travel_timer_cancel = None
+                self._attr_is_opening = False
+                self._attr_is_closing = False
+                if self._state_sensor is None:
+                    self._attr_is_closed = intent is Intent.CLOSE
+                self._publish_state()
+
+            self._travel_timer_cancel = async_call_later(self.hass, self._travel_time, _finish)
+        return True
+
+    async def async_open_cover(self, **kwargs: Any) -> None:
+        """Request approval to open the door (nothing moves until it is approved)."""
+        await self._access.async_request(Intent.OPEN, self._context)
+
+    async def async_close_cover(self, **kwargs: Any) -> None:
+        """Request approval to close the door (nothing moves until it is approved)."""
+        await self._access.async_request(Intent.CLOSE, self._context)
+
+    async def async_stop_cover(self, **kwargs: Any) -> None:
+        """Request approval for a stop pulse; a stop pulse can close the door, so the close policy applies."""
+        await self._access.async_request(Intent.STOP, self._context)
+
+    async def async_cancel_request(self) -> None:
+        """Cancel the pending approval request or the running pre-warning."""
+        await self._access.async_cancel(self._context)
+
+    async def async_acknowledge_fault(self) -> None:
+        """Clear a latched watchdog fault (allowed user, on site)."""
+        await self._access.async_acknowledge_fault(self._context)
+
+    @callback
+    def handle_event(self, message: Any) -> None:
+        """Handle incoming WHO=1 relay frames for this impulse cover.
+
+        A frame never moves anything on its own. A press of the wall button
+        (or any other keypad on the bus) cancels a pending request or a running
+        pre-warning, and - without a state sensor - advances the estimated
+        motion shown on the dashboard.
+        """
+        if getattr(message, "is_translation", None) is True:
+            return
+        is_on = getattr(message, "is_on", False) or getattr(message, "_what", None) == 1
+        if not is_on:
+            return  # Ignore *1*0*... release frames (such as the 5-minute delayed hardware timer)
+
+        # Echo window: ignore frames arriving within 1.0s of our own command
+        if time.monotonic() - self._last_pulse_time < 1.0:
+            return
+
+        if self._access.cancel("wall button pressed"):
+            LOGGER.info("%s: wall button pressed; pending request or warning cancelled", self._display_name)
+
+        if self._state_sensor is None:
+            if self._attr_is_closed or self._attr_is_closing:
+                self._attr_is_opening = True
+                self._attr_is_closing = False
+                self._attr_is_closed = False
+                self._cancel_travel_timer()
+
+                @callback
+                def _finish_open(_now: Any = None) -> None:
+                    self._travel_timer_cancel = None
+                    self._attr_is_opening = False
+                    self._attr_is_closed = False
+                    self._publish_state()
+
+                if self.hass is not None:
+                    self._travel_timer_cancel = async_call_later(self.hass, self._travel_time, _finish_open)
+            elif self._attr_is_opening:
+                self._attr_is_opening = False
+                self._cancel_travel_timer()
+            else:
+                self._attr_is_closing = True
+                self._attr_is_opening = False
+                self._cancel_travel_timer()
+
+                @callback
+                def _finish_close(_now: Any = None) -> None:
+                    self._travel_timer_cancel = None
+                    self._attr_is_closing = False
+                    self._attr_is_closed = True
+                    self._publish_state()
+
+                if self.hass is not None:
+                    self._travel_timer_cancel = async_call_later(self.hass, self._travel_time, _finish_close)
+        self._publish_state()
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Clean up when removed from Home Assistant."""
+        if self._pulse_off_cancel is not None:
+            self._pulse_off_cancel()
+            self._pulse_off_cancel = None
+        self._cancel_travel_timer()
+        await self._access.async_shutdown()
+        await super().async_will_remove_from_hass()
+
+
 def __getattr__(name: str) -> Any:
     if name in ("CoverFamily", "CoverScope", "MyHOMEScopeCover"):
         from . import cover_scope
@@ -1197,6 +1565,7 @@ __all__ = [
     "ECHO_WINDOW",
     "MOTOR_START_DELAY",
     "MyHOMECover",
+    "MyHOMEImpulseCover",
     "MyHOMEScopeCover",
     "WRITE_TIMEOUT",
     "_calibration_lock",
