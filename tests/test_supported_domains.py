@@ -36,7 +36,8 @@ def test_extract_platforms_from_const():
     assert "button" in platforms
     assert "media_player" in platforms
     assert "alarm_control_panel" in platforms
-    assert len(platforms) == 9
+    assert "lock" in platforms
+    assert len(platforms) == 10
 
 
 def test_extract_who_mapping():
@@ -45,6 +46,7 @@ def test_extract_who_mapping():
     assert mapping["light"] == "WHO=1"
     assert mapping["switch"] == "WHO=1"
     assert mapping["cover"] == "WHO=2"
+    assert mapping["lock"] == "WHO=1 / WHO=6"
     assert mapping["climate"] == "WHO=4"
     assert mapping["alarm_control_panel"] == "WHO=5"
     assert mapping["binary_sensor"] == "WHO=1 / 9 / 25"

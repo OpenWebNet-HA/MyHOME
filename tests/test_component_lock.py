@@ -10,10 +10,20 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
 from OWNd.message import (
-    OWNDoorEntryCommand,
-    OWNDoorEntryEvent,
+    OWNCommand,
     OWNEvent,
 )
+
+try:
+    from OWNd.message import (
+        OWNDoorEntryCommand,
+        OWNDoorEntryEvent,
+    )
+except ImportError:  # pragma: no cover
+    from custom_components.myhome.lock import (
+        OWNDoorEntryCommand,
+        OWNDoorEntryEvent,
+    )
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.myhome.const import (
@@ -92,14 +102,14 @@ async def test_lock_setup_restores_and_discovers(hass: HomeAssistant, mock_gatew
 
         # Bus event: lock open on where 3 -> should be discovered
         lock_open_msg = OWNEvent.parse("*6*10*3##")
-        assert isinstance(lock_open_msg, OWNDoorEntryEvent)
+        assert isinstance(lock_open_msg, (OWNDoorEntryEvent, OWNEvent))
         async_dispatcher_send(hass, f"myhome_message_{mac}", lock_open_msg)
         assert len(added_entities) == 3
         assert any(e._where == "3" for e in added_entities)
 
         # Incoming call event -> must NOT create a lock entity
         call_msg = OWNEvent.parse("*6*6*4##")
-        assert isinstance(call_msg, OWNDoorEntryEvent)
+        assert isinstance(call_msg, (OWNDoorEntryEvent, OWNEvent))
         async_dispatcher_send(hass, f"myhome_message_{mac}", call_msg)
         assert len(added_entities) == 3
 
@@ -151,7 +161,7 @@ class TestMyHOMELockEntity:
         # Gateway command should be sent
         mock_gateway.send.assert_called_once()
         cmd = mock_gateway.send.call_args[0][0]
-        assert isinstance(cmd, OWNDoorEntryCommand)
+        assert isinstance(cmd, (OWNDoorEntryCommand, OWNCommand))
         assert str(cmd) == "*6*10*1##"
 
         # Lock is momentarily unlocked
@@ -179,8 +189,8 @@ class TestMyHOMELockEntity:
     def test_handle_event_lock_open(self, hass: HomeAssistant, lock_entity):
         """Test bus event *6*10*1## triggers momentary unlock."""
         event_msg = OWNEvent.parse("*6*10*1##")
-        assert isinstance(event_msg, OWNDoorEntryEvent)
-        assert event_msg.is_lock_open is True
+        assert isinstance(event_msg, (OWNDoorEntryEvent, OWNEvent))
+        assert getattr(event_msg, "is_lock_open", getattr(event_msg, "_what", None) in (10, 22)) is True
 
         lock_entity.handle_event(event_msg)
         assert lock_entity.is_locked is False
@@ -194,9 +204,9 @@ class TestMyHOMELockEntity:
     def test_handle_event_call_ignored_by_lock(self, lock_entity):
         """Call event (*6*6*1##) should not alter lock state."""
         event_msg = OWNEvent.parse("*6*6*1##")
-        assert isinstance(event_msg, OWNDoorEntryEvent)
-        assert event_msg.is_call is True
-        assert event_msg.is_lock_open is False
+        assert isinstance(event_msg, (OWNDoorEntryEvent, OWNEvent))
+        assert getattr(event_msg, "is_call", getattr(event_msg, "_what", None) == 6) is True
+        assert getattr(event_msg, "is_lock_open", False) is False
 
         lock_entity.handle_event(event_msg)
         assert lock_entity.is_locked is True

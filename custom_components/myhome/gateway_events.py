@@ -16,7 +16,6 @@ from OWNd.message import (
     OWNAuxEvent,
     OWNCENEvent,
     OWNCENPlusEvent,
-    OWNDoorEntryEvent,
     OWNDryContactEvent,
     OWNEnergyCommand,
     OWNEnergyEvent,
@@ -27,6 +26,13 @@ from OWNd.message import (
     OWNLightingEvent,
     OWNMessage,
 )
+
+try:
+    from OWNd.message import OWNDoorEntryEvent
+except ImportError:  # pragma: no cover - fallback on released OWNd 2.0.0b10
+    class OWNDoorEntryEvent:  # type: ignore[no-redef]
+        """Fallback stub when running on released OWNd lacking WHO 6 door entry support."""
+        pass
 
 from .const import (
     CONF_LONG_PRESS,
@@ -499,19 +505,25 @@ class GatewayEventDispatcher:
             )
             if isinstance(message, OWNGatewayEvent):
                 self.handler._handle_gateway_diagnostics(message)
-        elif isinstance(message, OWNDoorEntryEvent):
-            if message.is_call:
+        elif isinstance(message, OWNDoorEntryEvent) or getattr(message, "who", None) == 6:
+            what = getattr(message, "_what", None)
+            where_val = getattr(message, "where", "")
+            is_broadcast = getattr(message, "is_broadcast_call", what == 6 and str(where_val) == "4100")
+            is_chime = getattr(message, "is_chime", what == 20)
+            is_incoming = getattr(message, "is_incoming_call", what == 6)
+            is_call = getattr(message, "is_call", is_incoming or is_chime)
+            if is_call:
                 event_name = (
                     "broadcast_call"
-                    if message.is_broadcast_call
+                    if is_broadcast
                     else "chime"
-                    if message.is_chime
+                    if is_chime
                     else "call"
                 )
                 doorbell_payload = {
-                    "where": str(message.where),
+                    "where": str(where_val),
                     "event": event_name,
-                    "is_broadcast": message.is_broadcast_call,
+                    "is_broadcast": is_broadcast,
                     "gateway_mac": self.handler.mac,
                 }
                 config_entry = getattr(self.handler, "config_entry", None)

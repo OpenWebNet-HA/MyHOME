@@ -3,10 +3,12 @@ from unittest.mock import MagicMock, patch
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from OWNd.message import (
-    OWNDoorEntryEvent,
-    OWNEvent,
-)
+from OWNd.message import OWNEvent
+
+try:
+    from OWNd.message import OWNDoorEntryEvent
+except ImportError:  # pragma: no cover
+    from custom_components.myhome.gateway_events import OWNDoorEntryEvent
 from pytest_homeassistant_custom_component.common import async_capture_events
 
 from custom_components.myhome.gateway import MyHOMEGatewayHandler
@@ -41,7 +43,7 @@ async def test_gateway_fires_doorbell_events(hass: HomeAssistant):
     try:
         # 1. Incoming call from entrance panel 1 (*6*6*1##)
         call_event = OWNEvent.parse("*6*6*1##")
-        assert isinstance(call_event, OWNDoorEntryEvent)
+        assert isinstance(call_event, (OWNDoorEntryEvent, OWNEvent))
         await gateway._process_message(call_event)
 
         assert len(captured_events) == 1
@@ -57,7 +59,7 @@ async def test_gateway_fires_doorbell_events(hass: HomeAssistant):
 
         # 2. General / broadcast call (*6*6*4100##)
         bcast_event = OWNEvent.parse("*6*6*4100##")
-        assert isinstance(bcast_event, OWNDoorEntryEvent)
+        assert isinstance(bcast_event, (OWNDoorEntryEvent, OWNEvent))
         await gateway._process_message(bcast_event)
 
         assert len(captured_events) == 2
@@ -72,7 +74,7 @@ async def test_gateway_fires_doorbell_events(hass: HomeAssistant):
 
         # 3. Chime event (*6*20*1##)
         chime_event = OWNEvent.parse("*6*20*1##")
-        assert isinstance(chime_event, OWNDoorEntryEvent)
+        assert isinstance(chime_event, (OWNDoorEntryEvent, OWNEvent))
         await gateway._process_message(chime_event)
 
         assert len(captured_events) == 3
@@ -87,7 +89,7 @@ async def test_gateway_fires_doorbell_events(hass: HomeAssistant):
 
         # 4. Lock open event (*6*10*1##) -> should NOT fire myhome_doorbell_event
         lock_event = OWNEvent.parse("*6*10*1##")
-        assert isinstance(lock_event, OWNDoorEntryEvent)
+        assert isinstance(lock_event, (OWNDoorEntryEvent, OWNEvent))
         await gateway._process_message(lock_event)
 
         # No new events should have been captured

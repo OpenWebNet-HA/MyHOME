@@ -412,7 +412,7 @@ switch_schema = MyHomeDeviceSchema(
     }
 )
 
-def _validate_access(access: dict) -> dict:
+def _validate_access(access: dict[str, typing.Any]) -> dict[str, typing.Any]:
     """Cross-field rules of an impulse cover's access policy."""
     allowed = set(access[CONF_ALLOWED_USERS])
     approvers = access[CONF_APPROVERS]
@@ -521,13 +521,13 @@ def _validate_cover_members(data: dict[str, typing.Any]) -> dict[str, typing.Any
     return data
 
 
-def _validate_impulse_covers(data: dict) -> dict:
+def _validate_impulse_covers(data: dict[str, typing.Any]) -> dict[str, typing.Any]:
     """An impulse cover pulses exactly one relay; access settings only apply to impulse covers."""
     for device, cfg in data.items():
         is_impulse = str(cfg.get(CONF_WHO)) == "1"
         if is_impulse:
             try:
-                PointToPoint()(str(cfg[CONF_WHERE]))  # type: ignore
+                PointToPoint()(str(cfg[CONF_WHERE]))
             except Invalid as err:
                 raise Invalid(
                     f"{device}: an impulse cover (who: 1) needs a point-to-point <WHERE>; a general, area or "
@@ -666,7 +666,7 @@ lock_schema = MyHomeDeviceSchema(
         Required(str): {
             Optional(CONF_WHO, default="6"): In(["1", "6"]),
             Required(CONF_WHERE): All(Coerce(str), Any(General(), Area(), Group(), PointToPoint(), SpecialWhere())),  # type: ignore
-            Optional(CONF_BUS_INTERFACE): BusInterface(),
+            Optional(CONF_BUS_INTERFACE): All(Coerce(str), BusInterface()),  # type: ignore
             Required(CONF_NAME): str,
             Optional(CONF_ENTITY_NAME): str,
             Optional(CONF_CODE): Coerce(str),

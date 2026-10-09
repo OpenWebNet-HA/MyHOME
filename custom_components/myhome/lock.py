@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hmac
+from collections.abc import Callable
 from typing import Any
 
 from homeassistant.components.lock import (
@@ -21,10 +22,28 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 from OWNd.message import (
-    OWNDoorEntryCommand,
-    OWNDoorEntryEvent,
+    OWNCommand,
     OWNLightingCommand,
 )
+
+try:
+    from OWNd.message import (
+        OWNDoorEntryCommand,
+        OWNDoorEntryEvent,
+    )
+except ImportError:  # pragma: no cover - fallback on released OWNd 2.0.0b10
+    class OWNDoorEntryCommand:  # type: ignore[no-redef]
+        """Fallback stub when running on released OWNd lacking WHO 6 commands."""
+
+        @classmethod
+        def open_lock(cls, where: str | int = 0) -> Any:
+            frame = f"*6*10*{where}##"
+            parsed = OWNCommand.parse(frame)
+            return parsed if parsed is not None else OWNCommand(frame)
+
+    class OWNDoorEntryEvent:  # type: ignore[no-redef]
+        """Fallback stub when running on released OWNd lacking WHO 6 events."""
+        pass
 
 from .const import (
     CONF_DEVICE_MODEL,
@@ -64,7 +83,7 @@ async def async_setup_entry(
     mac = config_entry.data[CONF_MAC]
     gateway = runtime.gateway
 
-    def lock_registry_address(target_who: str):
+    def lock_registry_address(target_who: str) -> Callable[[er.RegistryEntry], Address | None]:
         def address_of(entry: er.RegistryEntry) -> Address | None:
             who, device_id = parse_unique_id(entry.unique_id or "", gateway.mac, mac)
             entry_who = who if who is not None else "6"
@@ -129,8 +148,9 @@ async def async_setup_entry(
             return str(ctx.cfg.get(CONF_WHO, "6")) == "6"
         if ctx.source == "bus":
             msg = ctx.message
-            if not isinstance(msg, OWNDoorEntryEvent) or not msg.is_lock_open:
-                return False
+            if getattr(msg, "is_lock_open", False):
+                return True
+            return getattr(msg, "who", None) == 6 and getattr(msg, "_what", None) in (10, 22)
         return True
 
     def accept_who1(ctx: DeviceContext) -> bool:
@@ -144,7 +164,7 @@ async def async_setup_entry(
         async_add_entities,
         platform=PLATFORM,
         who="6",
-        event_type=OWNDoorEntryEvent,
+        event_type=OWNDoorEntryEvent if getattr(OWNDoorEntryEvent, "__module__", "") != __name__ else None,
         build=build_who6,
         announce=True,
         registry_address=lock_registry_address("6"),
@@ -291,7 +311,10 @@ class MyHOMELock(MyHOMEEntity, LockEntity):
                 self._publish_state()
                 self._schedule_auto_relock()
         else:
-            if getattr(message, "is_lock_open", False):
+            is_lock_open = getattr(message, "is_lock_open", False) or (
+                getattr(message, "who", None) == 6 and getattr(message, "_what", None) in (10, 22)
+            )
+            if is_lock_open:
                 self._attr_is_locked = False
                 self._publish_state()
                 self._schedule_auto_relock()

@@ -529,7 +529,7 @@ class AccessController:
 
     def _spawn(self, coro: Awaitable[None]) -> None:
         hass = self._require_hass()
-        task = hass.async_create_task(coro)  # type: ignore[arg-type]
+        task: asyncio.Task[Any] = hass.async_create_task(coro)  # type: ignore[arg-type]
         if isinstance(task, asyncio.Task):
             self._task = task
 

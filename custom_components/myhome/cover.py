@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -129,7 +129,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
         runtime.calibration_hub = get_calibration_hub(runtime.gateway)
     family = CoverFamily()
 
-    def cover_registry_address(target_who: str):
+    def cover_registry_address(target_who: str) -> Callable[[er.RegistryEntry], Address | None]:
         def address_of(entry: er.RegistryEntry) -> Address | None:
             who, device_id = parse_unique_id(entry.unique_id or "", gateway.mac, mac)
             entry_who = who if who is not None else "2"
