@@ -1,8 +1,8 @@
 """Support for MyHome locks (door entry electric strikes WHO=6 and impulse locks WHO=1)."""
 from __future__ import annotations
 
-import asyncio
 import hmac
+import inspect
 from collections.abc import Callable
 from typing import Any
 
@@ -283,16 +283,12 @@ class MyHOMELock(MyHOMEEntity, LockEntity):
             if self._pulse_duration == 0.5:
                 cmd = OWNLightingCommand.switch_on_timed(self._full_where, 18)
                 write_fut = await self._gateway_handler.send(cmd)
-                if write_fut is not None and (
-                    asyncio.isfuture(write_fut) or hasattr(write_fut, "__await__")
-                ):
+                if inspect.isawaitable(write_fut):
                     await write_fut
             else:
                 cmd_on = OWNLightingCommand.switch_on(self._full_where)
                 write_fut = await self._gateway_handler.send(cmd_on)
-                if write_fut is not None and (
-                    asyncio.isfuture(write_fut) or hasattr(write_fut, "__await__")
-                ):
+                if inspect.isawaitable(write_fut):
                     await write_fut
 
                 @callback
@@ -305,9 +301,7 @@ class MyHOMELock(MyHOMEEntity, LockEntity):
                                 fut = await self._gateway_handler.send(
                                     OWNLightingCommand.switch_off(self._full_where)
                                 )
-                                if fut is not None and (
-                                    asyncio.isfuture(fut) or hasattr(fut, "__await__")
-                                ):
+                                if inspect.isawaitable(fut):
                                     await fut
                             except Exception as err:
                                 LOGGER.error(
@@ -326,9 +320,7 @@ class MyHOMELock(MyHOMEEntity, LockEntity):
             write_fut = await self._gateway_handler.send(
                 OWNDoorEntryCommand.open_lock(self._full_where)
             )
-            if write_fut is not None and (
-                asyncio.isfuture(write_fut) or hasattr(write_fut, "__await__")
-            ):
+            if inspect.isawaitable(write_fut):
                 await write_fut
 
         self._attr_is_locked = False
@@ -394,9 +386,7 @@ class MyHOMELock(MyHOMEEntity, LockEntity):
                     write_fut = await self._gateway_handler.send(
                         OWNLightingCommand.switch_off(self._full_where)
                     )
-                    if write_fut is not None and (
-                        asyncio.isfuture(write_fut) or hasattr(write_fut, "__await__")
-                    ):
+                    if inspect.isawaitable(write_fut):
                         await write_fut
                 except Exception as err:
                     LOGGER.warning(

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import time
 from collections.abc import Callable, Mapping
 from datetime import timedelta
@@ -1422,18 +1423,14 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
                 # preventing the relay from ever staying latched if Home Assistant terminates.
                 cmd = OWNLightingCommand.switch_on_timed(self._full_where, 18)
                 write_fut = await self._gateway_handler.send(cmd)
-                if write_fut is not None and (
-                    asyncio.isfuture(write_fut) or hasattr(write_fut, "__await__")
-                ):
+                if inspect.isawaitable(write_fut):
                     await write_fut
                 return True
 
             # Custom duration: send ON, await confirmed write to the bus, then schedule OFF
             cmd_on = OWNLightingCommand.switch_on(self._full_where)
             write_fut = await self._gateway_handler.send(cmd_on)
-            if write_fut is not None and (
-                asyncio.isfuture(write_fut) or hasattr(write_fut, "__await__")
-            ):
+            if inspect.isawaitable(write_fut):
                 await write_fut
 
             @callback
@@ -1446,9 +1443,7 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
                             fut = await self._gateway_handler.send(
                                 OWNLightingCommand.switch_off(self._full_where)
                             )
-                            if fut is not None and (
-                                asyncio.isfuture(fut) or hasattr(fut, "__await__")
-                            ):
+                            if inspect.isawaitable(fut):
                                 await fut
                         except Exception as err:
                             LOGGER.error(
@@ -1587,9 +1582,7 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
                 write_fut = await self._gateway_handler.send(
                     OWNLightingCommand.switch_off(self._full_where)
                 )
-                if write_fut is not None and (
-                    asyncio.isfuture(write_fut) or hasattr(write_fut, "__await__")
-                ):
+                if inspect.isawaitable(write_fut):
                     await write_fut
             except Exception as err:
                 LOGGER.warning(
