@@ -1510,6 +1510,45 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#12-myhomesend_scenario_plus_command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. myhome.send_scenario_plus_command
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="12. myhome.send_scenario_plus_command">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2824,6 +2863,45 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#12-myhomesend_scenario_plus_command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. myhome.send_scenario_plus_command
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="12. myhome.send_scenario_plus_command">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2911,6 +2989,11 @@
 <td style="text-align: left;"><a href="#11-myhometuner_seek_down"><code>myhome.tuner_seek_down</code></a></td>
 <td style="text-align: left;"><code>media_player</code></td>
 <td style="text-align: left;">Seek backward to the previous receivable FM radio frequency on an F500 tuner.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><a href="#12-myhomesend_scenario_plus_command"><code>myhome.send_scenario_plus_command</code></a></td>
+<td style="text-align: left;">Gateway</td>
+<td style="text-align: left;">Send a WHO 25 scenario plus command (on, off, increase, decrease, stop).</td>
 </tr>
 </tbody>
 </table>
@@ -3326,6 +3409,54 @@
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.tuner_seek_down</span>
 </span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nt">target</span><span class="p">:</span>
 </span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">media_player.audio_source_1</span>
+</span></code></pre></div>
+<hr />
+<h2 id="12-myhomesend_scenario_plus_command">12. <code>myhome.send_scenario_plus_command</code><a class="headerlink" href="#12-myhomesend_scenario_plus_command" title="Permanent link">&para;</a></h2>
+<p>Sends a WHO 25 scenario plus command (<code>on</code>, <code>off</code>, <code>increase</code>, <code>decrease</code>, or <code>stop</code>) to an addressed scenario plus object on the SCS bus.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>For <code>increase</code> and <code>decrease</code> actions, step and speed parameters are fixed to standard Legrand protocol defaults (<code>#0#5</code>, as confirmed by physical gateway traces); they are not user-configurable in this service.</p>
+</div>
+<h3 id="fields_11">Fields<a class="headerlink" href="#fields_11" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter</th>
+<th style="text-align: center;">Type</th>
+<th style="text-align: center;">Required</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;">Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>gateway</code></td>
+<td style="text-align: center;">string</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: left;">The MAC address of the target gateway (defaults to primary).</td>
+<td style="text-align: left;"><code>"00:03:50:20:00:01"</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>where</code></td>
+<td style="text-align: center;">string</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: left;">The scenario plus object address on the bus.</td>
+<td style="text-align: left;"><code>"11"</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>action</code></td>
+<td style="text-align: center;">string</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: left;">The scenario plus action (<code>on</code>, <code>off</code>, <code>increase</code>, <code>decrease</code>, <code>stop</code>). Step and speed for <code>increase</code>/<code>decrease</code> are fixed to standard defaults (<code>#0#5</code>).</td>
+<td style="text-align: left;"><code>"on"</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-yaml-call_11">Example YAML Call<a class="headerlink" href="#example-yaml-call_11" title="Permanent link">&para;</a></h3>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.send_scenario_plus_command</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="nt">data</span><span class="p">:</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"11"</span>
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="s">"on"</span>
 </span></code></pre></div>
 
 
