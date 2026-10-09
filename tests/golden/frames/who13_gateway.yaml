@@ -116,3 +116,81 @@
   mcp_notes: "Gateway Management: Gateway reports device type code 200 (F454 / MyHomeServer1, issue #370)"
   roundtrip: true
 
+- id: gateway.resp.model.device_type.h4684
+  frame: "*#13**15*19##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 15
+  dimension_values: ["19"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: Gateway reports device type code 19 (H4684 3.5\" color touch screen)"
+  roundtrip: true
+
+- id: gateway.resp.model.device_type.lgrh4684
+  frame: "*#13**15*26##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 15
+  dimension_values: ["26"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: Gateway reports device type code 26 (LGRH4684 Legrand color touch screen)"
+  roundtrip: true
+
+- id: gateway.req.diagnostic_object_model
+  frame: "*#1013**1##"
+  direction: dimension_request
+  who: 1013
+  what: null
+  where: ""
+  dimension: 1
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Diagnostic: Request gateway diagnostic object model code"
+  roundtrip: true
+
+- id: gateway.resp.diagnostic_object_model.mh200
+  frame: "*#1013**1*4##"
+  direction: dimension_response
+  who: 1013
+  what: null
+  where: ""
+  dimension: 1
+  dimension_values: ["4"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Diagnostic: Physical gateway reports object model 4 (MH200, captured live via myhome-gateway MCP)"
+  roundtrip: true
+
+- id: gateway.resp.diagnostic_object_model.h4684
+  frame: "*#1013**1*19##"
+  direction: dimension_response
+  who: 1013
+  what: null
+  where: ""
+  dimension: 1
+  dimension_values: ["19"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Diagnostic: Gateway reports object model 19 (H4684 3.5\" color touch screen, verified from TiDisplayColor firmware)"
+  roundtrip: true
+
+- id: gateway.resp.diagnostic_object_model.lgrh4684
+  frame: "*#1013**1*26##"
+  direction: dimension_response
+  who: 1013
+  what: null
+  where: ""
+  dimension: 1
+  dimension_values: ["26"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Diagnostic: Gateway reports object model 26 (LGRH4684 Legrand color touch screen, verified from TiDisplayColor firmware)"
+  roundtrip: true
+
+

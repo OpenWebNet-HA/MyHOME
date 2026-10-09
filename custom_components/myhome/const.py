@@ -405,7 +405,7 @@ WHO13_SHARED_DEVICE_TYPES: frozenset[str] = frozenset({"200"})
 #
 # This is a different identifier space from WHO=13 dimension 15, not a newer
 # spelling of it, and the two disagree for the same model: an F453 is 42 here but
-# 16 for Nmap, an H4684 is 29 here but 13 (2006) or 23 (Nmap) there, and no
+# 16 for Nmap, an H4684 is 19 (and 26 for LGRH4684) here but 13 (2006) or 23 (Nmap) there, and no
 # WHO=13 code means what 200 means. Some values do coincide (4, 12, 44, 51 ...),
 # which is why the tables are kept apart rather than merged on the ones that
 # match. This one is consulted only after WHO=13 returned a shared code, and
@@ -422,8 +422,9 @@ WHO13_SHARED_DEVICE_TYPES: frozenset[str] = frozenset({"200"})
 # Four codes are confirmed on physical hardware: 51 F454, 5 MH202, and 67
 # MyHomeServer1 (PR #420, fixtures under tests/fixtures/plants/pr_420_*), and 134
 # F461 (issue #466 comment 5870342995, fixtures under
-# tests/fixtures/plants/issue_466_f461/). The rest of the table is from the
-# database, untraced.
+# tests/fixtures/plants/issue_466_f461/). Codes 19 (H4684) and 26 (LGRH4684) are
+# confirmed by reverse engineering the bt_device binary from H4684 firmware 2.0.54.
+# The rest of the table is from the database, untraced.
 #
 # A dimension-1 reply is four values, not one (@anotherjulien in #420, from the
 # OpenWebNet Encyclopedia's work on MHCatalogue.db):
@@ -441,7 +442,8 @@ WHO1013_OBJECT_MODELS: dict[str, tuple[str, ...]] = {
     "5": ("MH202", "003535"),
     "8": ("F455", "003594"),
     "12": ("F453AV",),
-    "29": ("H4684", "L4684"),
+    "19": ("H4684", "L4684"),
+    "26": ("LGRH4684",),
     "30": ("AM4890", "H4890", "573958", "067292", "078479", "HW4890", "LN4890", "LN4890A"),
     "35": ("BMNE500",),
     "38": ("573992",),
