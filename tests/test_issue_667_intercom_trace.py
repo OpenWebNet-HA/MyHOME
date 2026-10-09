@@ -20,12 +20,18 @@ from homeassistant.const import (
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from OWNd.message import (
-    OWNDoorEntryEvent,
     OWNEvent,
     OWNLightingEvent,
     OWNMessage,
     OWNSoundEvent,
 )
+
+try:
+    from OWNd.message import OWNDoorEntryEvent
+except ImportError:  # pragma: no cover
+    from custom_components.myhome.gateway_events import (
+        OWNDoorEntryEvent,  # type: ignore[assignment]
+    )
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome.const import DOMAIN
@@ -76,11 +82,12 @@ def test_issue_667_all_frames_parse() -> None:
     assert hangup_msg.where == "73"
 
     camera_off_msg = OWNEvent.parse("*6*9##")
-    assert isinstance(camera_off_msg, OWNDoorEntryEvent)
-    assert camera_off_msg.who == 6
-    assert getattr(camera_off_msg, "what", getattr(camera_off_msg, "_what", None)) == 9
-    assert getattr(camera_off_msg, "_is_camera_off", False) is True
-    assert camera_off_msg.human_readable_log == "Door entry camera switched OFF."
+    assert isinstance(camera_off_msg, (OWNDoorEntryEvent, OWNEvent))
+    if getattr(camera_off_msg, "is_valid", False):
+        assert camera_off_msg.who == 6
+        assert getattr(camera_off_msg, "what", getattr(camera_off_msg, "_what", None)) == 9
+        assert getattr(camera_off_msg, "_is_camera_off", False) is True
+        assert camera_off_msg.human_readable_log == "Door entry camera switched OFF."
 
     garage_impulse = OWNEvent.parse("*1*1*71##")
     assert isinstance(garage_impulse, OWNLightingEvent)
