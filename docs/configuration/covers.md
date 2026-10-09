@@ -153,6 +153,96 @@ Because monostable relays only send a momentary pulse (`open` / `stop` / `close`
 > Primary entrapment and crush protection (e.g. European Standard **EN 12453 / EN 12445** or North American **UL 325**) **must be provided by the motorized gate or garage door hardware itself**: certified infrared photocells, safety contact edges, and mechanical force limiters built into the motor control board.
 > Home Assistant's `AccessController` is designed exclusively to prevent Home Assistant from *causing* an unintended, accidental, or unattended movement.
 
+#### 📊 Human-in-the-Loop Access Flow Architecture
+
+```text
+  [ User / Dashboard / Widget / Siri / Alexa ]
+                       │
+                       │ 1. cover.open_cover / close_cover
+                       ▼
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                    MyHOME AccessController                     │
+  │                                                                 │
+  │  [ Check User & Lockout ] ──( unauthorized )──> ❌ AccessDenied │
+  │             │ (authorized)                                      │
+  │             ▼                                                   │
+  │  [ Classify State Sensor ]                                      │
+  │       ├─ Sensor = Closed ─────────> Effect: OPEN                │
+  │       └─ Sensor = Open / Unknown ──> Effect: MAY_CLOSE          │
+  │                                           │                     │
+  │                                  [ Safety Verification ]        │
+  │                                  - Photocells valid (<31d)?     │
+  │                                  - User at home / Camera ok?    │
+  │                                  - Close-block switch off?      │
+  │                                           │ (all pass)          │
+  │             ┌─────────────────────────────┘                     │
+  │             ▼                                                   │
+  │  [ Generate 128-bit CSPRNG Nonce ]                              │
+  │  - Single-use token: secrets.token_urlsafe(16)                  │
+  │  - Bound to: user_id + entity_id + effect + 60s timeout         │
+  └─────────────────────────────┬───────────────────────────────────┘
+                                │ 2. Push Notification
+                                ▼
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                 Companion App (iOS / Android)                   │
+  │                                                                 │
+  │   🔔 "Security Request: Approve garage_door_1 close?"           │
+  │   [ ✅ Area Clear - Close ] (authenticationRequired: true)       │
+  │                                                                 │
+  │   👉 User unlocks phone via FaceID / Fingerprint / Biometrics   │
+  └─────────────────────────────┬───────────────────────────────────┘
+                                │ 3. mobile_app_notification_action
+                                ▼
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                    MyHOME AccessController                     │
+  │                                                                 │
+  │  [ Validate Nonce & User Context (constant-time HMAC) ]         │
+  │             │ (valid)                                           │
+  │             ▼                                                   │
+  │  [ Pre-Warning Phase (optional 5s flasher) ]                    │
+  │       └─( wall switch pressed? )──> ❌ Cancel movement          │
+  │             │ (clear)                                           │
+  │             ▼                                                   │
+  │  [ Bus Impulse ] ──> *1*1*WHERE## (WHO 1 Relay Monostable Pulse)│
+  │             │                                                   │
+  │             ▼                                                   │
+  │  [ Watchdog Timer (travel_time + margin) ]                      │
+  │       ├─ Sensor confirms target state ──> ✅ IDLE (Success)     │
+  │       └─ Sensor fails to reach state  ──> ⚠️ FAULT (Latched)    │
+  │                                           (Zero auto-retry)     │
+  └─────────────────────────────────────────────────────────────────┘
+```
+
+#### 📊 Authentic BTicino Hardware Sequence (MH200 Trace Capture)
+
+```text
+  Entrance Panel (PE1)          MH200 Gateway            Handset (74)         Gate/Garage Relay (71/72)
+          │                           │                       │                           │
+          │ 1. Bell Pressed           │                       │                           │
+          │──────────────────────────>│                       │                           │
+          │   *#16*81*1*1##..88##     │                       │                           │
+          │   (Audio matrix routing)  │                       │                           │
+          │                           │                       │                           │
+          │   *8*1#1#4*74##           │                       │                           │
+          │   (WHO 8 Video Call)      │                       │                           │
+          │                           │─────── Ring ─────────>│                           │
+          │                           │                       │                           │
+          │                           │<─── Pick Up / Talk ───│                           │
+          │                           │   *8*9#1#4*73##       │                           │
+          │                           │   (Caller address)    │                           │
+          │                           │                       │                           │
+          │                           │<── Hang Up / End ─────│                           │
+          │                           │   *6*9##              │                           │
+          │                           │   (Camera OFF)        │                           │
+          │                           │                       │                           │
+          │                           │                       │ 2. Gate Button Pressed    │
+          │                           │<──────────────────────│                           │
+          │                           │   *1*1*72##           │                           │
+          │                           │   (WHO 1 Pulse)       │                           │
+          │                           │──────────────────────────────────────────────────>│
+          │                           │                       │                   [ Gate Moves ]
+```
+
 #### Key Principles of the Human-in-the-Loop Policy:
 
 1. **Zero Direct Movement on Service Calls**:
@@ -171,6 +261,26 @@ Because monostable relays only send a momentary pulse (`open` / `stop` / `close`
    Before a close pulse, an optional pre-warning flasher (`prewarn_light`) triggers for `prewarn_seconds`. If a physical wall button is pressed during this countdown, the movement is aborted. After the pulse, an anti-stuck watchdog monitors motion: if the expected state is not reached within `travel_time + watchdog_margin`, a latching fault is asserted with **zero automatic retries**.
 
 ### ⚠️ Strict Distinction: Covers vs. Locks
+
+```text
+  ┌───────────────────────────────────────┐   ┌───────────────────────────────────────┐
+  │    HEAVY MACHINERY (KINETIC RISK)     │   │      PEDESTRIAN ACCESS (LOW MASS)     │
+  │                                       │   │                                       │
+  │   - Motorized Sliding / Swing Gates   │   │   - Front Door Latch / Strike         │
+  │   - Sectional / Roller Garage Doors   │   │   - Pedestrian Wicket Gate Buzzer     │
+  │                                       │   │   - Elettroserratura (12V AC/DC)      │
+  │                   │                   │   │                   │                   │
+  │                   ▼                   │   │                   ▼                   │
+  │       PLATFORM: cover (impulse)       │   │            PLATFORM: lock             │
+  │                   │                   │   │                   │                   │
+  │  - Enforces AccessController          │   │  - Direct momentary pulse (1-3s)      │
+  │  - Dual binary sensor feedback        │   │  - Optional PIN authentication        │
+  │  - Biometric challenge-response nonce │   │  - Automatic re-lock state machine    │
+  │  - 5s pre-warning flasher             │   │  - Doorbell one-tap unlock safe       │
+  │  - Anti-stuck watchdog (latched fault)│   │                                       │
+  │  - Certified EN 12453 safety check    │   │                                       │
+  └───────────────────────────────────────┘   └───────────────────────────────────────┘
+```
 
 | Physical Device | Required Entity Platform | Why |
 | :--- | :--- | :--- |
