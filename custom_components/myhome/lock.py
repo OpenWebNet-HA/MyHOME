@@ -148,9 +148,10 @@ async def async_setup_entry(
             return str(ctx.cfg.get(CONF_WHO, "6")) == "6"
         if ctx.source == "bus":
             msg = ctx.message
-            if getattr(msg, "is_lock_open", False):
-                return True
-            return getattr(msg, "who", None) == 6 and getattr(msg, "_what", None) in (10, 22)
+            return bool(
+                getattr(msg, "is_lock_open", False)
+                or (getattr(msg, "who", None) == 6 and getattr(msg, "_what", None) in (10, 22))
+            )
         return True
 
     def accept_who1(ctx: DeviceContext) -> bool:
