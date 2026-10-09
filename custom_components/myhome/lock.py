@@ -5,7 +5,7 @@ import hmac
 from collections.abc import Callable
 from typing import Any
 
-from homeassistant.components.lock import (
+from homeassistant.components.lock import (  # type: ignore[attr-defined, unused-ignore]
     LockEntity,
     LockEntityFeature,
 )
