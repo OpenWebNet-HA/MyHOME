@@ -95,6 +95,21 @@ async def test_gateway_fires_doorbell_events(hass: HomeAssistant):
         # No new events should have been captured
         assert len(captured_events) == 3
         assert len(dispatcher_payloads) == 3
+
+        # 5. WHO 8 Video Intercom Call (*8*1#1#4*74##) -> should fire myhome_doorbell_event
+        who8_call_event = OWNEvent.parse("*8*1#1#4*74##")
+        await gateway._process_message(who8_call_event)
+
+        assert len(captured_events) == 4
+        assert captured_events[3].data == {
+            "where": "74",
+            "event": "call",
+            "is_broadcast": False,
+            "gateway_mac": gateway.mac,
+            "entry_id": config_entry.entry_id,
+        }
+        assert len(dispatcher_payloads) == 4
+        assert dispatcher_payloads[3] == captured_events[3].data
     finally:
         unsub()
 

@@ -505,13 +505,15 @@ class GatewayEventDispatcher:
             )
             if isinstance(message, OWNGatewayEvent):
                 self.handler._handle_gateway_diagnostics(message)
-        elif isinstance(message, OWNDoorEntryEvent) or getattr(message, "who", None) == 6:
+        elif isinstance(message, OWNDoorEntryEvent) or getattr(message, "who", None) in (6, 8):
+            who = getattr(message, "who", None)
             what = getattr(message, "_what", None)
             where_val = getattr(message, "where", "")
-            is_broadcast = getattr(message, "is_broadcast_call", what == 6 and str(where_val) == "4100")
-            is_chime = getattr(message, "is_chime", what == 20)
-            is_incoming = getattr(message, "is_incoming_call", what == 6)
-            is_call = getattr(message, "is_call", is_incoming or is_chime)
+            is_who8_call = who == 8 and what == 1
+            is_broadcast = getattr(message, "is_broadcast_call", who == 6 and what == 6 and str(where_val) == "4100")
+            is_chime = getattr(message, "is_chime", who == 6 and what == 20)
+            is_incoming = getattr(message, "is_incoming_call", (who == 6 and what == 6) or is_who8_call)
+            is_call = getattr(message, "is_call", is_incoming or is_chime or is_who8_call)
             if is_call:
                 event_name = (
                     "broadcast_call"
@@ -534,7 +536,7 @@ class GatewayEventDispatcher:
             self._logger.debug(
                 "%s %s",
                 self.handler.log_id,
-                message.human_readable_log,
+                getattr(message, "human_readable_log", str(message)),
             )
         elif getattr(message, "who", None) == 1013:
             if getattr(message, "dimension", getattr(message, "_dimension", None)) == 1:
