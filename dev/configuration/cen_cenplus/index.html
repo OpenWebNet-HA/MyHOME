@@ -1039,6 +1039,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="📡 Advanced: Listening to the Event Bus">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#who-17-scenario-programmer-events-myhome_scene_event" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WHO 17 Scenario Programmer Events (myhome_scene_event)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2175,6 +2192,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="📡 Advanced: Listening to the Event Bus">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#who-17-scenario-programmer-events-myhome_scene_event" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WHO 17 Scenario Programmer Events (myhome_scene_event)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2401,6 +2435,29 @@
 </span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">      </span><span class="nt">pushbutton</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
 </span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">      </span><span class="nt">event</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pushbutton_short_press</span>
 </span></code></pre></div>
+<h3 id="who-17-scenario-programmer-events-myhome_scene_event">WHO 17 Scenario Programmer Events (<code>myhome_scene_event</code>)<a class="headerlink" href="#who-17-scenario-programmer-events-myhome_scene_event" title="Permanent link">&para;</a></h3>
+<p>When a physical scenario programmer (e.g. MH200N, MH201, F420) executes or updates a stored scenario on the OpenWebNet bus, the integration fires <code>myhome_scene_event</code>:</p>
+<ul>
+<li><code>scenario</code>: Integer scenario identifier (e.g. <code>1</code>)</li>
+<li><code>where</code>: Wire scenario address</li>
+<li><code>state</code>: Numeric state (<code>1</code> = started, <code>2</code> = stopped, <code>3</code> = enabled, <code>4</code> = disabled)</li>
+<li><code>is_on</code>: <code>True</code> when started, <code>False</code> when stopped, <code>None</code> for enable/disable</li>
+<li><code>is_enabled</code>: <code>True</code> when enabled, <code>False</code> when disabled, <code>None</code> for start/stop</li>
+<li><code>gateway_mac</code>: Active gateway MAC address (with standby failover support)</li>
+<li><code>entry_id</code>: Config entry identifier</li>
+</ul>
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p><strong>Scenario Lifecycle vs. Load Power State</strong>:<br />
+In OpenWebNet WHO 17 semantics, <code>is_on: true</code> denotes that the <strong>scenario routine has started executing</strong>, not that electrical circuits are turned on. For example, a "Leave Home" scene programmed to switch all lights OFF will emit <code>is_on: true</code> upon start, followed by actuator OFF commands, and <code>is_on: false</code> when execution finishes.</p>
+</div>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">trigger</span><span class="p">:</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">platform</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">event</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">event_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome_scene_event</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="nt">event_data</span><span class="p">:</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">      </span><span class="nt">scenario</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">      </span><span class="nt">is_on</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span></code></pre></div>
 <p>Enabling <strong>Generate Events</strong> in the <strong>Options Flow</strong> additionally fires every bus frame as <code>myhome_message_event</code>.</p>
 <hr />
 <h2 id="openwebnet-frame-reference">📜 OpenWebNet Frame Reference<a class="headerlink" href="#openwebnet-frame-reference" title="Permanent link">&para;</a></h2>
@@ -2491,6 +2548,30 @@
 <td style="text-align: center;">25</td>
 <td style="text-align: left;"><code>*25*15*&lt;WHERE&gt;##</code></td>
 <td style="text-align: left;"><code>*25*15*11##</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Scene Start</strong></td>
+<td style="text-align: center;">17</td>
+<td style="text-align: left;"><code>*17*1*&lt;WHERE&gt;##</code></td>
+<td style="text-align: left;"><code>*17*1*1##</code> (Scenario 1 started)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Scene Stop</strong></td>
+<td style="text-align: center;">17</td>
+<td style="text-align: left;"><code>*17*2*&lt;WHERE&gt;##</code></td>
+<td style="text-align: left;"><code>*17*2*1##</code> (Scenario 1 stopped)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Scene Enable</strong></td>
+<td style="text-align: center;">17</td>
+<td style="text-align: left;"><code>*17*3*&lt;WHERE&gt;##</code></td>
+<td style="text-align: left;"><code>*17*3*1##</code> (Scenario 1 schedule enabled)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Scene Disable</strong></td>
+<td style="text-align: center;">17</td>
+<td style="text-align: left;"><code>*17*4*&lt;WHERE&gt;##</code></td>
+<td style="text-align: left;"><code>*17*4*1##</code> (Scenario 1 schedule disabled)</td>
 </tr>
 </tbody>
 </table>
