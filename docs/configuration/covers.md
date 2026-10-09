@@ -140,7 +140,47 @@ A general or area command from a keypad also moves the individual covers in Home
 
 ---
 
+## 🚪 Impulse Covers: Motorized Gates & Garage Doors (`WHO = 1`)
+
+In BTicino MyHOME installations, motorized garage doors and sliding/swing entrance gates are controlled via **monostable impulse relays** on `WHO = 1` (such as `F411/2` or `F411U2`).
+
+Because monostable relays only send a momentary pulse (`open` / `stop` / `close` / `stop`) with no inherent directional knowledge on the bus, Home Assistant implements the specialized **`MyHOMEImpulseCover`** entity equipped with the **`AccessController`** safety architecture.
+
+### 🛡️ Safety Architecture & Threat Model
+
+> [!CAUTION]
+> **HOME ASSISTANT IS A SUPERVISORY AUTOMATION SYSTEM, NOT A CERTIFIED SAFETY SYSTEM**
+> Primary entrapment and crush protection (e.g. European Standard **EN 12453 / EN 12445** or North American **UL 325**) **must be provided by the motorized gate or garage door hardware itself**: certified infrared photocells, safety contact edges, and mechanical force limiters built into the motor control board.
+> Home Assistant's `AccessController` is designed exclusively to prevent Home Assistant from *causing* an unintended, accidental, or unattended movement.
+
+#### Key Principles of the Human-in-the-Loop Policy:
+
+1. **Zero Direct Movement on Service Calls**:
+   Calls to `cover.open_cover`, `close_cover`, or `stop_cover` (whether from dashboards, mobile widgets, voice assistants, or automations) **never pulse the relay directly**. Instead, they create an authenticated approval request for an authorized person.
+2. **Cryptographic Single-Use Nonce & User Binding**:
+   Each approval request generates a 128-bit CSPRNG token (`secrets.token_urlsafe(16)`), tightly bound to the requesting `user_id`, target entity, and physical direction. Replayed, stale, or forged approval actions are discarded.
+3. **Biometric Phone Unlock Requirement**:
+   Actionable push notifications to the Companion App enforce `authenticationRequired: true` (iOS FaceID/TouchID, Android biometrics/screen lock). The phone must be actively unlocked by the authorized approver.
+4. **Fail-Closed Sensor Direction Checks**:
+   A pulse is classified as a pure **OPEN** *only* when the ground-truth state sensor (`closed_sensor_entity_id`) proves the door is closed. In all other states, the pulse is classified as **MAY_CLOSE**, requiring:
+   - Verified active safety devices within `safety_check_days`.
+   - The user to be on site (`person` entity reports `home`) or visual confirmation via a camera snapshot.
+   - Any external close-block switch to report `off`.
+   - Any missing, unavailable, or non-binary sensor state immediately fails closed.
+5. **Audible / Visual Pre-Warning & Watchdog**:
+   Before a close pulse, an optional pre-warning flasher (`prewarn_light`) triggers for `prewarn_seconds`. If a physical wall button is pressed during this countdown, the movement is aborted. After the pulse, an anti-stuck watchdog monitors motion: if the expected state is not reached within `travel_time + watchdog_margin`, a latching fault is asserted with **zero automatic retries**.
+
+### ⚠️ Strict Distinction: Covers vs. Locks
+
+| Physical Device | Required Entity Platform | Why |
+| :--- | :--- | :--- |
+| **Motorized Gates & Garage Doors** | `cover` (`type: impulse_relay`) | Heavy kinetic machinery with kinetic entrapment/crush risk. Must use `AccessController` with sensor validation and pre-warning. **Never configure a motorized gate or garage as a `lock`**. |
+| **Pedestrian Door Strikes** | `lock` (`platform: lock`) | Low-mass momentary electric door buzzers (elettroserrature) that release a pedestrian latch for 1–3 seconds. |
+
+---
+
 ## 🔄 Legacy YAML Note
 
 > [!NOTE]
 > If you are upgrading from legacy v0.9 installations and still have manual `cover:` blocks in `/config/myhome.yaml`, please refer to the [v0.9.4 Legacy Cover Documentation](../../0.9.4/configuration/covers/) or the [Legacy YAML Migration Guide](../migration/legacy-yaml.md). In v2, all covers are managed dynamically via Home Assistant's native registry.
+

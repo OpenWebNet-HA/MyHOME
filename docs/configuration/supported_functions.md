@@ -46,11 +46,12 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 | On / off | ✅ | Device class `switch` or `outlet` from `myhome.yaml`. |
 | Hardware timer | ✅ | `myhome.turn_on_timed`. |
 
-### `cover` (WHO 2)
+### `cover` (WHO 1 / WHO 2)
 
 | Function | Status | Notes |
 | :--- | :---: | :--- |
-| Open / close / stop | ✅ | |
+| Open / close / stop | ✅ | Standard WHO 2 shutter actuators. |
+| Impulse cover (WHO 1) | ✅ | Pulse-driven gates and garage doors with AccessController multi-factor approval, sensor direction checks, pre-warning, and watchdog. |
 | Position (position-reporting actuators) | ✅ | Requires `advanced_shutter: true` in `myhome.yaml`; it is not learned from the bus. |
 | Position (timed actuators) | ✅ | Virtual position from the travel time: `travel_time` in YAML, measured with `myhome.calibrate_cover`, or set by hand with `myhome.set_cover_travel_time`. |
 | Tilt | ❌ | Slat commands are parsed by OWNd but not exposed. |
@@ -60,8 +61,8 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 
 | Function | Status | Notes |
 | :--- | :---: | :--- |
-| Impulse lock (WHO 1) | ✅ | Pulse-driven electric strikes and gates with constant-time PIN authentication and lockout protection. |
-| Door entry lock (WHO 6) | ✅ | Door entry strikes and doorbell ring event triggers. |
+| Impulse lock (WHO 1) | ✅ | Momentary electric strikes (door buzzers) with optional constant-time PIN authentication and auto-relock. (Never use lock for motorized gates or garage doors). |
+| Door entry lock (WHO 6) | ✅ | Door entry strikes and doorbell call event triggers (WHO 6 / WHO 8). |
 
 ### `climate` (WHO 4)
 

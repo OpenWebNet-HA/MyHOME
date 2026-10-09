@@ -63,14 +63,15 @@ DOMAIN_METADATA: dict[str, dict[str, str]] = {
         "label": "**`cover`**",
         "capabilities": (
             "Motorized shutters, blinds, roll-ups with state tracking, "
-            "position-reporting actuators & virtual travel-time positioning"
+            "position-reporting actuators & virtual travel-time positioning; "
+            "impulse gates & garage doors (`WHO=1`) with AccessController multi-factor safety approval"
         ),
     },
     "lock": {
         "label": "**`lock`**",
         "capabilities": (
-            "Pulse-driven electric strikes and gates (`WHO=1`) with constant-time PIN authentication and lockout protection; "
-            "native door entry strikes and doorbell ring events (`WHO=6`)"
+            "Momentary electric door strikes (`WHO=1`) with constant-time PIN authentication and auto-relock; "
+            "native video door entry strikes (`WHO=6`)"
         ),
     },
     "climate": {

@@ -21,7 +21,9 @@ blueprint:
           domain: camera
     door_entity:
       name: "Gate or Door Lock to Open (Optional)"
-      description: "Cover or lock entity that can be unlocked directly from the notification."
+      description: >-
+        Cover or lock entity to open from the notification.
+        SAFETY NOTE: For impulse covers (motorized gates and garage doors), tapping this will route through the cover's multi-factor access approval policy to ensure area safety before physical movement. For pedestrian door strikes (locks), it triggers the momentary electric release latch. Motorized gates and garage doors must NEVER be configured as lock entities.
       default: ""
       selector:
         entity:
