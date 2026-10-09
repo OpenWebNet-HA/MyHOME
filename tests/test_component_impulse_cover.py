@@ -1,4 +1,5 @@
 """Tests for MyHOME impulse cover platform (gates, garage doors, impulse relays WHO=1)."""
+import time
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -403,4 +404,122 @@ async def test_impulse_cover_deadband_rejections_and_cleanup(hass: HomeAssistant
     await impulse_gate.async_will_remove_from_hass()
     assert impulse_gate._pulse_off_cancel is None
     assert impulse_gate._travel_timer_cancel is None
+
+
+async def test_impulse_cover_additional_branches(hass: HomeAssistant, mock_gateway, impulse_gate):
+    """Cover interface attribute, unknown contact state, duplicate pulse-off, and external bus stop."""
+    # 1. Interface attribute on cover with interface (cover.py:1349)
+    cover_with_iface = MyHOMEImpulseCover(
+        hass=hass,
+        name="Side Gate",
+        entity_name="Side Gate",
+        device_id="1-22-01",
+        who="1",
+        where="22",
+        interface="01",
+        device_class=CoverDeviceClass.GATE,
+        travel_time=10.0,
+        pulse_duration=0.5,
+        min_cycle_time=2.0,
+        pin_code=None,
+        state_sensor=None,
+        manufacturer="BTicino",
+        model="Gate",
+        gateway=mock_gateway,
+    )
+    assert cover_with_iface.extra_state_attributes.get("interface") == "01"
+
+    # 2. Unknown contact sensor state -> None (cover.py:1391)
+    impulse_gate._handle_sensor_update("unknown")
+    assert impulse_gate.is_closed is None
+
+    # 3. Duplicate impulse cancels pending pulse-off timer (cover.py:1417-1418)
+    impulse_gate._min_cycle_time = 0.0
+    await impulse_gate._async_send_impulse()
+    assert impulse_gate._pulse_off_cancel is not None
+    await impulse_gate._async_send_impulse()
+    assert impulse_gate._pulse_off_cancel is not None
+
+    # 4. Bus event outside echo window while access has pending request cancels access (cover.py:1501)
+    user = await hass.auth.async_create_user("Bob")
+    hass.states.async_set("person.bob", "home", {"user_id": user.id})
+    async_mock_service(hass, "notify", "mobile_app_phone")
+    impulse_gate._access.config = AccessConfig(
+        allowed_users=(user.id,),
+        approvers={user.id: "notify.mobile_app_phone"},
+        remote_close=RemoteClose.AT_HOME,
+        safety_devices_verified=dt_util.now().date(),
+        pin_code="1234",
+    )
+    impulse_gate._context = Context(user_id=user.id)
+    await impulse_gate.async_open_cover()
+    assert impulse_gate.extra_state_attributes["access_phase"] == "pending_approval"
+
+    # Advance time beyond echo window
+    impulse_gate._last_pulse_time = time.monotonic() - 5.0
+    msg = OWNEvent.parse("*1*1*22##")
+    impulse_gate.handle_event(msg)
+    assert impulse_gate.extra_state_attributes["access_phase"] == "idle"
+
+    # 5. External pulse while opening stops travel timer on cover without sensor (cover.py:1520-1521)
+    blind_cover = MyHOMEImpulseCover(
+        hass=hass,
+        name="Sensorless Gate",
+        entity_name="Sensorless Gate",
+        device_id="1-23",
+        who="1",
+        where="23",
+        interface=None,
+        device_class=CoverDeviceClass.GATE,
+        travel_time=10.0,
+        pulse_duration=0.5,
+        min_cycle_time=0.0,
+        pin_code=None,
+        state_sensor=None,
+        manufacturer="BTicino",
+        model="Gate",
+        gateway=mock_gateway,
+    )
+    blind_cover._attr_is_closed = True
+    blind_cover._last_pulse_time = time.monotonic() - 5.0
+    msg = OWNEvent.parse("*1*1*23##")
+    blind_cover.handle_event(msg)
+    assert blind_cover.is_opening is True
+
+    # Second external pulse while opening stops it
+    blind_cover._last_pulse_time = time.monotonic() - 5.0
+    blind_cover.handle_event(msg)
+    assert blind_cover.is_opening is False
+    assert blind_cover._travel_timer_cancel is None
+
+
+async def test_impulse_cover_build_invalid_device_class(hass: HomeAssistant, mock_gateway):
+    """Cover fallback to CoverDeviceClass.GATE when invalid device_class provided (cover.py:187-188)."""
+    from custom_components.myhome.cover import async_setup_entry
+    from tests.conftest import attach_runtime
+
+    mac = mock_gateway.mac
+    hass.data.setdefault(DOMAIN, {})[mac] = {
+        "entity": mock_gateway,
+        CONF_PLATFORMS: {
+            "cover": {
+                "24": {
+                    "who": "1",
+                    "where": "24",
+                    "device_class": "completely_invalid_class",
+                    "name": "Invalid Class Gate",
+                }
+            }
+        },
+    }
+    config_entry = MagicMock()
+    config_entry.data = {"mac": mac}
+    config_entry.entry_id = "test_entry_invalid_class"
+    added = []
+
+    attach_runtime(hass, config_entry)
+    await async_setup_entry(hass, config_entry, added.extend)
+    assert len(added) == 1
+    assert added[0].device_class == CoverDeviceClass.GATE
+
 

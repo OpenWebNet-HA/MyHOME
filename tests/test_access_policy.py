@@ -20,6 +20,7 @@ from custom_components.myhome.access_policy import (
     AccessDenied,
     Effect,
     Intent,
+    PendingRequest,
     Phase,
     RemoteClose,
     classify,
@@ -604,3 +605,61 @@ def test_schema_rejects_unsafe_config(cfg, match):
     """Group/area addresses and incomplete access blocks are rejected."""
     with pytest.raises(Invalid, match=match):
         cover_schema(_cover(**cfg))
+
+
+def test_same_with_none():
+    """Verify _same returns False when either argument is None."""
+    from custom_components.myhome.access_policy import _same
+
+    assert _same(None, "123") is False
+    assert _same("123", None) is False
+    assert _same(None, None) is False
+    assert _same("123", "123") is True
+
+
+async def test_async_shutdown_cancels_task_and_event(hass: HomeAssistant):
+    """Verify async_shutdown sets cancel_event and awaits task cancellation."""
+    h = Harness(hass, _config("u1"))
+    h.ctrl._cancel_event = asyncio.Event()
+
+    async def _long():
+        await asyncio.sleep(10)
+
+    h.ctrl._task = hass.async_create_task(_long())
+    await h.ctrl.async_shutdown()
+    assert h.ctrl._task is None
+    assert h.ctrl._cancel_event.is_set()
+
+
+def test_is_home_without_hass(hass: HomeAssistant):
+    """Verify _is_home returns False if hass is None."""
+    h = Harness(hass, _config("u1"))
+    h.ctrl.hass = None
+    assert h.ctrl._is_home("u1") is False
+
+
+def test_on_expired_noop_when_not_pending(hass: HomeAssistant):
+    """Verify _on_expired does nothing if phase is not pending."""
+    h = Harness(hass, _config("u1"))
+    h.ctrl.phase = Phase.IDLE
+    h.ctrl._on_expired()
+    assert h.ctrl.phase is Phase.IDLE
+
+
+def test_revalidate_effect_mismatch_raises(hass: HomeAssistant):
+    """Verify revalidation aborts if sensor state changes before approval."""
+    h = Harness(hass, _config("u1"))
+    pending = PendingRequest(
+        nonce="test_nonce",
+        user_id="u1",
+        intent=Intent.OPEN,
+        effect=Effect.OPEN,
+        at_home=True,
+        notify_service=NOTIFY,
+        created=time.monotonic(),
+    )
+    from unittest.mock import patch
+    with patch("custom_components.myhome.access_policy.classify", return_value=Effect.MAY_CLOSE):
+        with pytest.raises(AccessDenied, match="door state changed"):
+            h.ctrl._revalidate(pending)
+

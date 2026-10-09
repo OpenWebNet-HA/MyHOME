@@ -297,5 +297,66 @@ async def test_impulse_lock_who1_code_and_pulse(hass: HomeAssistant, mock_gatewa
         lock.handle_event(event_msg)
         assert lock.is_locked is False
 
+        # Double unlock cancels and reschedules pulse-off timer (lock.py:273-274)
+        await lock.async_unlock(code="1234")
+        assert lock._pulse_off_unsub is not None
+        await lock.async_unlock(code="1234")
+        assert lock._pulse_off_unsub is not None
+
+        # Removal while pulse is pending cleans up (lock.py:345-346)
         await lock.async_will_remove_from_hass()
+        assert lock._pulse_off_unsub is None
+
+        # Handle event with translation flag returns early (lock.py:306)
+        trans_msg = MagicMock(is_translation=True)
+        lock.handle_event(trans_msg)
+
+
+async def test_lock_setup_who1_and_bus_discovery_branches(hass: HomeAssistant, mock_gateway):
+    """Cover build_who1, accept_who6 bus discovery with is_lock_open, and accept_who1 from registry."""
+    mac = mock_gateway.mac
+    hass.data.setdefault(DOMAIN, {})[mac] = {
+        "entity": mock_gateway,
+        CONF_PLATFORMS: {
+            PLATFORM: {
+                "26": {
+                    "who": "1",
+                    CONF_WHERE: "26",
+                    CONF_NAME: "Side Gate Impulse Lock",
+                    "code": "4321",
+                    "pulse_duration": 1.0,
+                },
+            }
+        },
+    }
+
+    config_entry = MagicMock()
+    config_entry.data = {"mac": mac}
+    config_entry.entry_id = "lock_who1_entry"
+    added = []
+
+    mock_er = MagicMock()
+    reg_who1 = MagicMock()
+    reg_who1.domain = Platform.LOCK
+    reg_who1.unique_id = f"{mac}-1-28"
+
+    with (
+        patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_er),
+        patch("homeassistant.helpers.entity_registry.async_entries_for_config_entry", return_value=[reg_who1]),
+    ):
+        attach_runtime(hass, config_entry)
+        await async_setup_entry(hass, config_entry, added.extend)
+
+        # 1. Restored who: 1 from registry (accept_who1 registry branch: lock.py:159)
+        # 2. Configured who: 1 from YAML (build_who1: lock.py:120-129)
+        assert len(added) == 2
+        assert any(e._who == "1" and e._where == "26" for e in added)
+        assert any(e._who == "1" and e._where == "28" for e in added)
+
+        # 3. Bus discovery: accept_who6 with is_lock_open message (lock.py:152)
+        bus_msg = OWNEvent.parse("*6*10*27##")
+        async_dispatcher_send(hass, f"myhome_message_{mac}", bus_msg)
+        assert len(added) == 3
+        assert any(e._where == "27" for e in added)
+
 
