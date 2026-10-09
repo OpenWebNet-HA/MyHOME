@@ -547,9 +547,9 @@ class AccessController:
             self._check_close_allowed(self._is_home(pending.user_id))
 
     async def _async_execute(self, pending: PendingRequest) -> None:
-        user = await self._user_name(pending.user_id)
-        what = self._describe(pending)
         try:
+            user = await self._user_name(pending.user_id)
+            what = self._describe(pending)
             self._revalidate(pending)
             if pending.effect is Effect.MAY_CLOSE:
                 self.phase = Phase.PREWARNING
@@ -558,14 +558,21 @@ class AccessController:
                     raise AccessDenied(f"{self._name}: cancelled during the warning")
                 self._revalidate(pending)
             if not await self._send_pulse(pending.intent, pending.effect):
-                raise AccessDenied(f"{self._name}: the pulse was dropped (too soon after the previous one)")
+                raise AccessDenied(
+                    f"{self._name}: the pulse was dropped (too soon after previous one or write failed)"
+                )
+            LOGGER.info("%s: %s executed for user %s", self._name, what, pending.user_id)
+            await self._notify_all(f"{self._name}: {what} by {user}")
+            self._start_watchdog(pending)
         except AccessDenied as err:
             self._settle()
             await self._notify(pending.notify_service, f"Not executed: {err}")
             return
-        LOGGER.info("%s: %s executed for user %s", self._name, what, pending.user_id)
-        await self._notify_all(f"{self._name}: {what} by {user}")
-        self._start_watchdog(pending)
+        except Exception as err:
+            LOGGER.exception("%s: unexpected error during execution: %s", self._name, err)
+            self._settle()
+            await self._notify(pending.notify_service, f"Execution failed: {err}")
+            return
 
     async def _prewarn(self) -> bool:
         """Flash the warning light and announce; return True when cancelled."""

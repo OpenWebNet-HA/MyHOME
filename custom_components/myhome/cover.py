@@ -1400,7 +1400,7 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             self._travel_timer_cancel = None
 
     async def _async_send_impulse(self) -> bool:
-        """Send the momentary pulse *1*1*WHERE## followed by *1*0*WHERE##."""
+        """Send the momentary pulse with confirmed delivery to the bus."""
         now = time.monotonic()
         if now - self._last_pulse_time < self._min_cycle_time:
             LOGGER.warning(
@@ -1411,23 +1411,66 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             return False
         self._last_pulse_time = now
 
-        await self._gateway_handler.send(OWNLightingCommand.switch_on(self._full_where))
-
         if self._pulse_off_cancel is not None:
             self._pulse_off_cancel()
             self._pulse_off_cancel = None
 
-        @callback
-        def _turn_off(_now: Any = None) -> None:
-            self._pulse_off_cancel = None
-            if self.hass is not None:
-                self.hass.async_create_task(
-                    self._gateway_handler.send(OWNLightingCommand.switch_off(self._full_where))
-                )
+        try:
+            if self._pulse_duration == 0.5:
+                # Use WHAT 18: Timed ON for 0.5 seconds (official WHO 1 specification).
+                # The physical actuator automatically turns off after 0.5s in hardware,
+                # preventing the relay from ever staying latched if Home Assistant terminates.
+                cmd = OWNLightingCommand.switch_on_timed(self._full_where, 18)
+                write_fut = await self._gateway_handler.send(cmd)
+                if write_fut is not None and (
+                    asyncio.isfuture(write_fut) or hasattr(write_fut, "__await__")
+                ):
+                    await write_fut
+                return True
 
-        if self.hass is not None:
-            self._pulse_off_cancel = async_call_later(self.hass, self._pulse_duration, _turn_off)
-        return True
+            # Custom duration: send ON, await confirmed write to the bus, then schedule OFF
+            cmd_on = OWNLightingCommand.switch_on(self._full_where)
+            write_fut = await self._gateway_handler.send(cmd_on)
+            if write_fut is not None and (
+                asyncio.isfuture(write_fut) or hasattr(write_fut, "__await__")
+            ):
+                await write_fut
+
+            @callback
+            def _turn_off(_now: Any = None) -> None:
+                self._pulse_off_cancel = None
+                if self.hass is not None:
+
+                    async def _send_off() -> None:
+                        try:
+                            fut = await self._gateway_handler.send(
+                                OWNLightingCommand.switch_off(self._full_where)
+                            )
+                            if fut is not None and (
+                                asyncio.isfuture(fut) or hasattr(fut, "__await__")
+                            ):
+                                await fut
+                        except Exception as err:
+                            LOGGER.error(
+                                "%s: Failed to send OFF pulse to gateway: %s",
+                                self._display_name,
+                                err,
+                            )
+
+                    self.hass.async_create_task(_send_off())
+
+            if self.hass is not None:
+                self._pulse_off_cancel = async_call_later(
+                    self.hass, self._pulse_duration, _turn_off
+                )
+            return True
+        except Exception as err:
+            LOGGER.error(
+                "%s: Failed to write impulse command to gateway: %s",
+                self._display_name,
+                err,
+            )
+            return False
 
     async def _async_pulse(self, intent: Intent, effect: Effect) -> bool:
         """Pulse the relay for an approved request and show the expected motion.
@@ -1540,6 +1583,20 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         if self._pulse_off_cancel is not None:
             self._pulse_off_cancel()
             self._pulse_off_cancel = None
+            try:
+                write_fut = await self._gateway_handler.send(
+                    OWNLightingCommand.switch_off(self._full_where)
+                )
+                if write_fut is not None and (
+                    asyncio.isfuture(write_fut) or hasattr(write_fut, "__await__")
+                ):
+                    await write_fut
+            except Exception as err:
+                LOGGER.warning(
+                    "%s: Failed to send OFF pulse to gateway on removal: %s",
+                    self._display_name,
+                    err,
+                )
         self._cancel_travel_timer()
         await self._access.async_shutdown()
         await super().async_will_remove_from_hass()

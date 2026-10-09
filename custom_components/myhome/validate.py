@@ -671,13 +671,41 @@ lock_schema = MyHomeDeviceSchema(
             Optional(CONF_ENTITY_NAME): str,
             Optional(CONF_CODE): Coerce(str),
             Optional("code"): Coerce(str),
-            Optional(CONF_PULSE_DURATION, default=0.5): Coerce(float),
-            Optional("pulse_duration", default=0.5): Coerce(float),
+            Optional(CONF_PULSE_DURATION, default=0.5): All(
+                Coerce(float), Range(min=0.1, max=10.0)
+            ),
+            Optional("pulse_duration", default=0.5): All(
+                Coerce(float), Range(min=0.1, max=10.0)
+            ),
             Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
             Optional(CONF_DEVICE_MODEL, default="Door Entry Lock"): Coerce(str),
         }
     }
 )
+
+
+def _validate_locks(data: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    """An impulse lock pulses exactly one relay (point-to-point); door entry locks require valid entrance addresses."""
+    for device, cfg in data.items():
+        who = str(cfg.get(CONF_WHO, "6"))
+        where = str(cfg.get(CONF_WHERE, ""))
+        if who == "1":
+            try:
+                PointToPoint()(where)
+            except Invalid as err:
+                raise Invalid(
+                    f"{device}: an impulse lock (who: 1) requires a point-to-point <WHERE>; "
+                    "a general ('0'), area, or group address would pulse multiple relays or all lights at once"
+                ) from err
+        elif who == "6":
+            if where in ("0", "") or where.startswith("#"):
+                raise Invalid(
+                    f"{device}: a door entry lock (who: 6) cannot use general ('0') or group ('#') addressing"
+                )
+    return data
+
+
+lock_schema = All(lock_schema, _validate_locks)  # type: ignore[assignment]
 
 # The device schemas are Schema subclasses whose overridden __call__ performs
 # post-processing (rekeying to "who-where" and injecting default keys). Nested

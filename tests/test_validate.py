@@ -43,6 +43,7 @@ from custom_components.myhome.validate import (
     cover_schema,
     format_mac,
     light_schema,
+    lock_schema,
     sensor_schema,
     switch_schema,
 )
@@ -735,4 +736,99 @@ class TestFullConfigSchema:
         }
         res_cov = cover_schema(cov_data)
         assert res_cov["2-22"][CONF_ADVANCED_SHUTTER] is True
+
+
+class TestLockSchemaValidation:
+    """Test validation and restrictions on lock_schema."""
+
+    def test_who1_point_to_point_validates(self):
+        """WHO=1 impulse lock with point-to-point WHERE succeeds."""
+        data = {
+            "lock1": {
+                CONF_WHO: "1",
+                CONF_WHERE: "12",
+                CONF_NAME: "Front Gate Strike",
+                "pulse_duration": 0.5,
+            }
+        }
+        res = lock_schema(data)
+        assert "1-12" in res
+        assert res["1-12"]["pulse_duration"] == 0.5
+
+    def test_who1_general_where_rejected(self):
+        """WHO=1 impulse lock with general WHERE 0 is rejected."""
+        data = {
+            "lock1": {
+                CONF_WHO: "1",
+                CONF_WHERE: "0",
+                CONF_NAME: "Dangerous All Lights Strike",
+            }
+        }
+        with pytest.raises(Invalid, match="requires a point-to-point <WHERE>"):
+            lock_schema(data)
+
+    def test_who1_group_where_rejected(self):
+        """WHO=1 impulse lock with group WHERE is rejected."""
+        data = {
+            "lock1": {
+                CONF_WHO: "1",
+                CONF_WHERE: "#1",
+                CONF_NAME: "Group Lock",
+            }
+        }
+        with pytest.raises(Invalid, match="requires a point-to-point <WHERE>"):
+            lock_schema(data)
+
+    def test_who6_validates(self):
+        """WHO=6 door entry lock with entrance panel WHERE succeeds."""
+        data = {
+            "lock1": {
+                CONF_WHO: "6",
+                CONF_WHERE: "1",
+                CONF_NAME: "Main Entrance Panel",
+            }
+        }
+        res = lock_schema(data)
+        assert "6-1" in res
+
+    def test_who6_general_or_group_rejected(self):
+        """WHO=6 door entry lock cannot use general 0 or group."""
+        with pytest.raises(Invalid, match="cannot use general"):
+            lock_schema({
+                "lock1": {
+                    CONF_WHO: "6",
+                    CONF_WHERE: "0",
+                    CONF_NAME: "General Lock",
+                }
+            })
+        with pytest.raises(Invalid, match="cannot use general"):
+            lock_schema({
+                "lock1": {
+                    CONF_WHO: "6",
+                    CONF_WHERE: "#2",
+                    CONF_NAME: "Group Lock",
+                }
+            })
+
+    def test_pulse_duration_bounds(self):
+        """Pulse duration must be between 0.1 and 10.0 seconds."""
+        with pytest.raises(Invalid):
+            lock_schema({
+                "lock1": {
+                    CONF_WHO: "1",
+                    CONF_WHERE: "12",
+                    CONF_NAME: "Negative Pulse Lock",
+                    "pulse_duration": -3.0,
+                }
+            })
+        with pytest.raises(Invalid):
+            lock_schema({
+                "lock1": {
+                    CONF_WHO: "1",
+                    CONF_WHERE: "12",
+                    CONF_NAME: "Too Long Pulse Lock",
+                    "pulse_duration": 15.0,
+                }
+            })
+
 

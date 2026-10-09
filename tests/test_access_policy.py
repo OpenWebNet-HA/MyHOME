@@ -663,3 +663,35 @@ def test_revalidate_effect_mismatch_raises(hass: HomeAssistant):
         with pytest.raises(AccessDenied, match="door state changed"):
             h.ctrl._revalidate(pending)
 
+
+async def test_pulse_exception_settles_phase_and_does_not_wedge(hass: HomeAssistant):
+    """Verify that an unexpected exception during pulse execution does not wedge the controller."""
+    user = await _user(hass, "Eve")
+    h = Harness(hass, _config(user.id))
+    hass.states.async_set(SENSOR, STATE_OFF)
+    notifs = async_mock_service(hass, "notify", "mobile_app_parent")
+
+    async def _failing_pulse(intent, effect):
+        raise RuntimeError("Gateway connection dropped mid-pulse")
+
+    h.ctrl._send_pulse = _failing_pulse
+
+    await h.ctrl.async_request(Intent.OPEN, Context(user_id=user.id))
+    assert h.ctrl.phase is Phase.PENDING
+    pending = h.ctrl._pending
+    assert pending is not None
+
+    action = _approve_action(notifs)["action"]
+    await _press(hass, action, user.id)
+
+    # The exception was caught, phase settled back to IDLE
+    assert h.ctrl.phase is Phase.IDLE
+    assert any("Execution failed" in str(c.data.get("message", "")) for c in notifs)
+
+    # Next request is accepted cleanly, not blocked by a wedged state machine
+    h.ctrl._send_pulse = Harness(hass, _config(user.id)).ctrl._send_pulse
+    await h.ctrl.async_request(Intent.OPEN, Context(user_id=user.id))
+    assert h.ctrl.phase is Phase.PENDING
+
+    await h.ctrl.async_shutdown()
+

@@ -1,4 +1,5 @@
 """Tests for MyHOME impulse cover platform (gates, garage doors, impulse relays WHO=1)."""
+import asyncio
 import time
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -20,7 +21,11 @@ from OWNd.message import (
     OWNEvent,
     OWNLightingCommand,
 )
-from pytest_homeassistant_custom_component.common import async_fire_time_changed, async_mock_service
+from pytest_homeassistant_custom_component.common import (
+    async_fire_time_changed,
+    async_fire_time_changed_exact,
+    async_mock_service,
+)
 
 from custom_components.myhome.access_policy import (
     AccessConfig,
@@ -160,25 +165,15 @@ async def test_impulse_cover_open_and_close_cycle(hass: HomeAssistant, impulse_g
     # 1. Pulse open
     assert await impulse_gate._async_pulse(Intent.OPEN, Effect.OPEN) is True
 
-    # Relay ON command sent immediately
+    # Hardware-timed WHAT 18 command sent immediately (actuator shuts off after 0.5s)
     assert mock_gateway.send.call_count == 1
     on_cmd = mock_gateway.send.call_args[0][0]
     assert isinstance(on_cmd, OWNLightingCommand)
-    assert str(on_cmd) == "*1*1*22##"
+    assert str(on_cmd) == "*1*18*22##"
     assert impulse_gate.is_opening is True
     assert impulse_gate.is_closed is False
 
-    # 2. Advance time by 0.5s: Auto-reset pulse turns relay OFF
-    future = dt_util.utcnow() + timedelta(seconds=0.6)
-    async_fire_time_changed(hass, future)
-    await hass.async_block_till_done()
-
-    assert mock_gateway.send.call_count == 2
-    off_cmd = mock_gateway.send.call_args[0][0]
-    assert str(off_cmd) == "*1*0*22##"
-    assert impulse_gate.is_opening is True
-
-    # 3. Advance time to complete travel (10s)
+    # 2. Advance time to complete travel (10s)
     future = dt_util.utcnow() + timedelta(seconds=11.0)
     async_fire_time_changed(hass, future)
     await hass.async_block_till_done()
@@ -186,22 +181,15 @@ async def test_impulse_cover_open_and_close_cycle(hass: HomeAssistant, impulse_g
     assert impulse_gate.is_opening is False
     assert impulse_gate.is_closed is False
 
-    # 4. Pulse close
+    # 3. Pulse close
     mock_gateway.send.reset_mock()
     impulse_gate._last_pulse_time = -9999.0
     assert await impulse_gate._async_pulse(Intent.CLOSE, Effect.MAY_CLOSE) is True
 
     assert mock_gateway.send.call_count == 1
     on_cmd = mock_gateway.send.call_args[0][0]
-    assert str(on_cmd) == "*1*1*22##"
+    assert str(on_cmd) == "*1*18*22##"
     assert impulse_gate.is_closing is True
-
-    # Auto-off pulse after 0.5s
-    future = dt_util.utcnow() + timedelta(seconds=0.6)
-    async_fire_time_changed(hass, future)
-    await hass.async_block_till_done()
-    assert mock_gateway.send.call_count == 2
-    assert str(mock_gateway.send.call_args[0][0]) == "*1*0*22##"
 
     # Finish closing travel (10s)
     future = dt_util.utcnow() + timedelta(seconds=11.0)
@@ -318,11 +306,7 @@ async def test_impulse_cover_state_sensor_binding(hass: HomeAssistant, mock_gate
             assert cover.is_opening is True
             assert cover.is_closed is False
 
-            # Advance 0.6s for auto-off pulse
-            future = dt_util.utcnow() + timedelta(seconds=0.6)
-            async_fire_time_changed(hass, future)
-            await hass.async_block_till_done()
-            assert mock_gateway.send.call_count == 2
+            # Reset mock for sensor updates
             mock_gateway.send.reset_mock()
 
             # Sensor state updates to on (open)
@@ -384,8 +368,11 @@ def test_impulse_cover_bus_event_handling(hass: HomeAssistant, impulse_gate):
     assert impulse_gate.is_closed is True
 
 
-async def test_impulse_cover_deadband_rejections_and_cleanup(hass: HomeAssistant, impulse_gate):
+async def test_impulse_cover_deadband_rejections_and_cleanup(hass: HomeAssistant, impulse_gate, mock_gateway):
     """Test deadband drops for close and stop, and cleanup on removal."""
+    # Custom duration (1.0s) uses software off timer and removal fail-safe
+    impulse_gate._pulse_duration = 1.0
+
     # Send open pulse
     assert await impulse_gate._async_pulse(Intent.OPEN, Effect.OPEN) is True
     assert impulse_gate.is_opening is True
@@ -401,9 +388,13 @@ async def test_impulse_cover_deadband_rejections_and_cleanup(hass: HomeAssistant
     # Call async_will_remove_from_hass with pending timers
     assert impulse_gate._pulse_off_cancel is not None
     assert impulse_gate._travel_timer_cancel is not None
+    mock_gateway.send.reset_mock()
     await impulse_gate.async_will_remove_from_hass()
     assert impulse_gate._pulse_off_cancel is None
     assert impulse_gate._travel_timer_cancel is None
+    # Removal while software pulse is active sends OFF to avoid stuck relay
+    assert mock_gateway.send.call_count == 1
+    assert str(mock_gateway.send.call_args[0][0]) == "*1*0*22##"
 
 
 async def test_impulse_cover_additional_branches(hass: HomeAssistant, mock_gateway, impulse_gate):
@@ -434,6 +425,7 @@ async def test_impulse_cover_additional_branches(hass: HomeAssistant, mock_gatew
     assert impulse_gate.is_closed is None
 
     # 3. Duplicate impulse cancels pending pulse-off timer (cover.py:1417-1418)
+    impulse_gate._pulse_duration = 1.0
     impulse_gate._min_cycle_time = 0.0
     await impulse_gate._async_send_impulse()
     assert impulse_gate._pulse_off_cancel is not None
@@ -521,5 +513,88 @@ async def test_impulse_cover_build_invalid_device_class(hass: HomeAssistant, moc
     await async_setup_entry(hass, config_entry, added.extend)
     assert len(added) == 1
     assert added[0].device_class == CoverDeviceClass.GATE
+
+
+async def test_impulse_cover_gateway_write_failure(hass: HomeAssistant, impulse_gate, mock_gateway):
+    """Test that a gateway write failure returns False and does not crash or claim executed."""
+    mock_gateway.send.side_effect = RuntimeError("Socket disconnected")
+    assert await impulse_gate._async_send_impulse() is False
+
+
+async def test_impulse_cover_custom_pulse_duration_cycle(hass: HomeAssistant, impulse_gate, mock_gateway):
+    """Test custom pulse duration (e.g. 1.5s) uses confirmed ON write and timed OFF."""
+    impulse_gate._pulse_duration = 1.5
+    mock_gateway.send.reset_mock()
+
+    assert await impulse_gate._async_pulse(Intent.OPEN, Effect.OPEN) is True
+    assert mock_gateway.send.call_count == 1
+    assert str(mock_gateway.send.call_args[0][0]) == "*1*1*22##"
+
+    # Before 1.5s, no OFF sent yet
+    async_fire_time_changed_exact(hass, dt_util.utcnow() + timedelta(seconds=0.8))
+    await hass.async_block_till_done()
+    assert mock_gateway.send.call_count == 1
+
+    # After 1.5s, OFF sent
+    async_fire_time_changed_exact(hass, dt_util.utcnow() + timedelta(seconds=1.6))
+    await hass.async_block_till_done()
+    assert mock_gateway.send.call_count == 2
+    assert str(mock_gateway.send.call_args[0][0]) == "*1*0*22##"
+
+
+async def test_impulse_cover_confirmed_write_future_and_off_failure(hass: HomeAssistant, impulse_gate, mock_gateway):
+    """Test write_fut await paths and exception handling in timed OFF and removal."""
+    # 1. WHAT 18 with awaitable write_fut
+
+    fut = asyncio.Future()
+    fut.set_result(0.05)
+    mock_gateway.send.return_value = fut
+    impulse_gate._pulse_duration = 0.5
+    impulse_gate._last_pulse_time = 0.0
+    assert await impulse_gate._async_send_impulse() is True
+    assert fut.done()
+
+    # 2. Custom duration with awaitable write_fut and OFF failure handling
+    fut_on = asyncio.Future()
+    fut_on.set_result(0.05)
+    mock_gateway.send.side_effect = None
+    mock_gateway.send.return_value = fut_on
+    impulse_gate._pulse_duration = 1.0
+    impulse_gate._last_pulse_time = 0.0
+    assert await impulse_gate._async_send_impulse() is True
+
+    # When OFF is scheduled, test success with awaitable future
+    fut_off_timed = asyncio.Future()
+    fut_off_timed.set_result(0.05)
+    mock_gateway.send.return_value = fut_off_timed
+    async_fire_time_changed_exact(hass, dt_util.utcnow() + timedelta(seconds=1.2))
+    await hass.async_block_till_done()
+    assert fut_off_timed.done()
+    assert impulse_gate._pulse_off_cancel is None
+
+    # Test error handling in _send_off
+    impulse_gate._last_pulse_time = 0.0
+    mock_gateway.send.return_value = fut_on
+    assert await impulse_gate._async_send_impulse() is True
+    mock_gateway.send.side_effect = RuntimeError("OFF send error")
+    async_fire_time_changed_exact(hass, dt_util.utcnow() + timedelta(seconds=1.2))
+    await hass.async_block_till_done()
+    assert impulse_gate._pulse_off_cancel is None
+
+
+    # 3. Removal fail-safe with awaitable write_fut and exception handling
+    fut_off = asyncio.Future()
+    fut_off.set_result(0.05)
+    mock_gateway.send.side_effect = None
+    mock_gateway.send.return_value = fut_off
+    impulse_gate._pulse_off_cancel = MagicMock()
+    await impulse_gate.async_will_remove_from_hass()
+    assert fut_off.done()
+
+    mock_gateway.send.side_effect = RuntimeError("Removal send error")
+    impulse_gate._pulse_off_cancel = MagicMock()
+    await impulse_gate.async_will_remove_from_hass()
+
+
 
 

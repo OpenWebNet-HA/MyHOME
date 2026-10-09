@@ -20,16 +20,16 @@ blueprint:
         entity:
           domain: camera
     door_entity:
-      name: "Gate or Door Lock to Open (Optional)"
+      name: "Pedestrian Door Lock to Release (Optional)"
       description: >-
-        Cover or lock entity to open from the notification.
-        SAFETY NOTE: For impulse covers (motorized gates and garage doors), tapping this will route through the cover's multi-factor access approval policy to ensure area safety before physical movement. For pedestrian door strikes (locks), it triggers the momentary electric release latch. Motorized gates and garage doors must NEVER be configured as lock entities.
+        Electric pedestrian strike (lock entity) to release from the notification.
+        SAFETY NOTE: Motorized gates and garage doors (covers) are deliberately excluded from this
+        one-tap action. Machinery safety requires motorized impulse covers to be operated interactively
+        via the Home Assistant app to trigger the multi-factor approval and sensor validation policy.
       default: ""
       selector:
         entity:
-          domain:
-            - cover
-            - lock
+          domain: lock
     language:
       name: "Notification Language"
       description: "Language for push notifications and action buttons (English, Italiano, Nederlands, Deutsch, Français)."
@@ -73,33 +73,33 @@ variables:
   lang: !input language
   custom_title_val: !input custom_title
   custom_message_val: !input custom_message
-  action_open: "MYHOME_DOORBELL_OPEN_{{ trigger.event.data.where }}_{{ now().timestamp() | int }}"
-  action_dismiss: "MYHOME_DOORBELL_DISMISS_{{ now().timestamp() | int }}"
+  action_open: "MYHOME_DOORBELL_OPEN_{{ trigger.event.data.where }}_{{ now().timestamp() | int }}_{{ range(100000, 999999) | random }}"
+  action_dismiss: "MYHOME_DOORBELL_DISMISS_{{ now().timestamp() | int }}_{{ range(100000, 999999) | random }}"
   i18n:
     en:
       title: "🔔 Doorbell: Someone is ringing!"
       message: "Incoming call from entrance panel"
-      open_action: "🔓 Open Gate / Door"
+      open_action: "🔓 Release Lock"
       dismiss_action: "❌ Dismiss"
     it:
       title: "🔔 Citofono: Qualcuno sta suonando!"
       message: "Chiamata in arrivo dal posto esterno"
-      open_action: "🔓 Apri Cancello / Porta"
+      open_action: "🔓 Apri Serratura"
       dismiss_action: "❌ Ignora"
     nl:
       title: "🔔 Deurbel: Iemand belt aan!"
       message: "Er wordt aangebeld bij de buitenpost"
-      open_action: "🔓 Open Poort / Deur"
+      open_action: "🔓 Ontgrendel Deur"
       dismiss_action: "❌ Negeren"
     de:
       title: "🔔 Türklingel: Jemand klingelt!"
       message: "Eingehender Anruf von der Türstation"
-      open_action: "🔓 Tor / Tür öffnen"
+      open_action: "🔓 Tür öffnen"
       dismiss_action: "❌ Ablehnen"
     fr:
       title: "🔔 Sonnette: Quelqu'un sonne!"
       message: "Appel entrant depuis la platine de rue"
-      open_action: "🔓 Ouvrir Portail / Porte"
+      open_action: "🔓 Déverrouiller"
       dismiss_action: "❌ Ignorer"
   resolved_title: >-
     {{ custom_title_val if custom_title_val != '' else (i18n[lang].title if lang in i18n else i18n['en'].title) }}
@@ -112,39 +112,27 @@ variables:
     {{ i18n[lang].dismiss_action if lang in i18n else i18n['en'].dismiss_action }}
 
 action:
-  - choose:
-      # If camera is configured, take a snapshot first
-      - conditions:
-          - condition: template
-            value_template: "{{ camera_target != '' }}"
-        sequence:
-          - action: camera.snapshot
-            target:
-              entity_id: !input camera_entity
-            data:
-              filename: "/config/www/myhome_doorbell_latest.jpg"
-
   - action: !input notify_service
     data:
       title: "{{ resolved_title }}"
       message: "{{ resolved_message }}"
-      data:
-        image: >-
-          {% if camera_target != '' %}/local/myhome_doorbell_latest.jpg?v={{ now().timestamp() | int }}{% else %}{% endif %}
-        push:
-          sound: "chime.caf"
-          category: "MYHOME_DOORBELL"
-        actions: >-
-          {% if door_target != '' %}
-            [
-              {"action": "{{ action_open }}", "title": "{{ action_open_title }}", "destructive": false},
-              {"action": "{{ action_dismiss }}", "title": "{{ action_dismiss_title }}", "destructive": true}
-            ]
-          {% else %}
-            [
-              {"action": "{{ action_dismiss }}", "title": "{{ action_dismiss_title }}", "destructive": false}
-            ]
-          {% endif %}
+      data: >-
+        {% set payload = {
+          "push": {
+            "sound": "chime.caf",
+            "category": "MYHOME_DOORBELL"
+          },
+          "actions": [
+            {"action": action_open, "title": action_open_title, "destructive": false, "authenticationRequired": true},
+            {"action": action_dismiss, "title": action_dismiss_title, "destructive": true}
+          ] if door_target != '' else [
+            {"action": action_dismiss, "title": action_dismiss_title, "destructive": false}
+          ]
+        } %}
+        {% if camera_target != '' %}
+          {% set _ = payload.update({"entity_id": camera_target}) %}
+        {% endif %}
+        {{ payload }}
 
   - choose:
       - conditions:
@@ -158,18 +146,6 @@ action:
                   action: "{{ action_open }}"
             timeout: "00:01:00"
             continue_on_timeout: false
-          - choose:
-              - conditions:
-                  - condition: template
-                    value_template: "{{ door_target.startswith('cover.') }}"
-                sequence:
-                  - action: cover.open_cover
-                    target:
-                      entity_id: !input door_entity
-              - conditions:
-                  - condition: template
-                    value_template: "{{ door_target.startswith('lock.') }}"
-                sequence:
-                  - action: lock.unlock
-                    target:
-                      entity_id: !input door_entity
+          - action: lock.unlock
+            target:
+              entity_id: !input door_entity

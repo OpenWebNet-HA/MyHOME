@@ -1,4 +1,5 @@
 """Tests for MyHOME lock platform (WHO=6 door entry electric strikes)."""
+import asyncio
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -24,7 +25,10 @@ except ImportError:  # pragma: no cover
         OWNDoorEntryCommand,
         OWNDoorEntryEvent,
     )
-from pytest_homeassistant_custom_component.common import async_fire_time_changed
+from pytest_homeassistant_custom_component.common import (
+    async_fire_time_changed,
+    async_fire_time_changed_exact,
+)
 
 from custom_components.myhome.const import (
     CONF_PLATFORMS,
@@ -275,21 +279,17 @@ async def test_impulse_lock_who1_code_and_pulse(hass: HomeAssistant, mock_gatewa
         with pytest.raises(ServiceValidationError, match="Invalid code"):
             await lock.async_unlock(code="9999")
 
-        # Valid code unlocks and pulses relay
+        # Valid code unlocks and pulses relay with WHAT 18 hardware timed pulse
         await lock.async_unlock(code="1234")
         assert mock_gateway.send.call_count == 1
         cmd = mock_gateway.send.call_args[0][0]
-        assert str(cmd) == "*1*1*25##"
+        assert str(cmd) == "*1*18*25##"
         assert lock.is_locked is False
 
-        # Advance 0.6s -> auto-off pulse and relock
+        # Advance 0.6s -> auto relock
         future = dt_util.utcnow() + timedelta(seconds=0.6)
         async_fire_time_changed(hass, future)
         await hass.async_block_till_done()
-
-        assert mock_gateway.send.call_count == 2
-        off_cmd = mock_gateway.send.call_args[0][0]
-        assert str(off_cmd) == "*1*0*25##"
         assert lock.is_locked is True
 
         # Handle event: *1*1*25## unlocks momentarily
@@ -297,15 +297,25 @@ async def test_impulse_lock_who1_code_and_pulse(hass: HomeAssistant, mock_gatewa
         lock.handle_event(event_msg)
         assert lock.is_locked is False
 
-        # Double unlock cancels and reschedules pulse-off timer (lock.py:273-274)
+        # Advance 0.6s -> auto relock
+        future = dt_util.utcnow() + timedelta(seconds=0.6)
+        async_fire_time_changed(hass, future)
+        await hass.async_block_till_done()
+        assert lock.is_locked is True
+
+        # Custom duration uses software timer
+        lock._pulse_duration = 1.0
         await lock.async_unlock(code="1234")
         assert lock._pulse_off_unsub is not None
         await lock.async_unlock(code="1234")
         assert lock._pulse_off_unsub is not None
 
-        # Removal while pulse is pending cleans up (lock.py:345-346)
+        # Removal while pulse is pending immediately turns relay off (lock.py:345-346)
+        mock_gateway.send.reset_mock()
         await lock.async_will_remove_from_hass()
         assert lock._pulse_off_unsub is None
+        assert mock_gateway.send.call_count == 1
+        assert str(mock_gateway.send.call_args[0][0]) == "*1*0*25##"
 
         # Handle event with translation flag returns early (lock.py:306)
         trans_msg = MagicMock(is_translation=True)
@@ -358,5 +368,107 @@ async def test_lock_setup_who1_and_bus_discovery_branches(hass: HomeAssistant, m
         async_dispatcher_send(hass, f"myhome_message_{mac}", bus_msg)
         assert len(added) == 3
         assert any(e._where == "27" for e in added)
+
+
+async def test_lock_confirmed_write_future_and_off_failure(hass: HomeAssistant, mock_gateway):
+    """Test write_fut await paths and exception handling in timed OFF and removal."""
+    # 1. WHO 6 unlock with awaitable write_fut
+
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        lock_who6 = MyHOMELock(
+            hass=hass,
+            name="Front Door Lock",
+            entity_name=None,
+            device_id="1",
+            who="6",
+            where="1",
+            interface=None,
+            manufacturer="BTicino",
+            model="Door Entry Lock",
+            gateway=mock_gateway,
+        )
+        lock_who6.hass = hass
+        lock_who6.entity_id = "lock.front_door_lock"
+        lock_who6.async_write_ha_state = MagicMock()
+        lock_who6.async_schedule_update_ha_state = MagicMock()
+
+    fut_who6 = asyncio.Future()
+    fut_who6.set_result(0.05)
+    mock_gateway.send.return_value = fut_who6
+    await lock_who6.async_unlock()
+    assert fut_who6.done()
+    lock_who6._cancel_auto_relock()
+
+    # 2. WHO 1 lock with WHAT 18 and awaitable write_fut
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        lock_who1 = MyHOMELock(
+            hass=hass,
+            name="Impulse Lock",
+            entity_name=None,
+            device_id="1-25",
+            who="1",
+            where="25",
+            interface=None,
+            pulse_duration=0.5,
+            code=None,
+            manufacturer="BTicino",
+            model="Relay Lock",
+            gateway=mock_gateway,
+        )
+        lock_who1.hass = hass
+        lock_who1.entity_id = "lock.impulse_lock"
+        lock_who1.async_write_ha_state = MagicMock()
+
+    fut_who1 = asyncio.Future()
+    fut_who1.set_result(0.05)
+    mock_gateway.send.return_value = fut_who1
+    await lock_who1.async_unlock()
+    assert fut_who1.done()
+    lock_who1._cancel_auto_relock()
+
+    # 3. WHO 1 custom duration with awaitable write_fut and timed OFF
+    lock_who1._pulse_duration = 1.0
+    fut_on = asyncio.Future()
+    fut_on.set_result(0.05)
+    mock_gateway.send.side_effect = None
+    mock_gateway.send.return_value = fut_on
+    await lock_who1.async_unlock()
+    assert fut_on.done()
+    assert lock_who1._pulse_off_unsub is not None
+
+    # Advance timer to trigger _send_off
+    fut_off = asyncio.Future()
+    fut_off.set_result(0.05)
+    mock_gateway.send.return_value = fut_off
+    async_fire_time_changed_exact(hass, dt_util.utcnow() + timedelta(seconds=1.2))
+    await hass.async_block_till_done()
+    assert fut_off.done()
+    lock_who1._cancel_auto_relock()
+
+    # 4. WHO 1 custom duration with OFF send failure
+    lock_who1._pulse_duration = 1.0
+    mock_gateway.send.return_value = None
+    await lock_who1.async_unlock()
+    mock_gateway.send.side_effect = RuntimeError("OFF send error")
+    async_fire_time_changed_exact(hass, dt_util.utcnow() + timedelta(seconds=1.2))
+    await hass.async_block_till_done()
+    assert lock_who1._pulse_off_unsub is None
+    lock_who1._cancel_auto_relock()
+
+    # 5. Removal fail-safe with awaitable write_fut and exception handling
+    fut_rem = asyncio.Future()
+    fut_rem.set_result(0.05)
+    mock_gateway.send.side_effect = None
+    mock_gateway.send.return_value = fut_rem
+    lock_who1._pulse_off_unsub = MagicMock()
+    await lock_who1.async_will_remove_from_hass()
+    assert fut_rem.done()
+
+    mock_gateway.send.side_effect = RuntimeError("Removal send error")
+    lock_who1._pulse_off_unsub = MagicMock()
+    await lock_who1.async_will_remove_from_hass()
+    lock_who1._cancel_auto_relock()
+
+
 
 

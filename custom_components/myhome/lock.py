@@ -1,6 +1,7 @@
 """Support for MyHome locks (door entry electric strikes WHO=6 and impulse locks WHO=1)."""
 from __future__ import annotations
 
+import asyncio
 import hmac
 from collections.abc import Callable
 from typing import Any
@@ -100,7 +101,14 @@ async def async_setup_entry(
         entity_name = str(raw_entity_name) if raw_entity_name is not None else None
         manufacturer = str(cfg.get(CONF_MANUFACTURER, "BTicino"))
         model = str(cfg.get(CONF_DEVICE_MODEL, "Door Entry Lock"))
-        code = str(cfg[CONF_CODE]) if CONF_CODE in cfg else (str(cfg["code"]) if "code" in cfg else None)
+        code = (
+            str(cfg[CONF_CODE])
+            if CONF_CODE in cfg
+            else (str(cfg["code"]) if "code" in cfg else None)
+        )
+        pulse = float(
+            cfg.get(CONF_PULSE_DURATION, cfg.get("pulse_duration", DEFAULT_LOCK_DURATION))
+        )
         return MyHOMELock(
             hass=hass,
             name=name,
@@ -110,7 +118,7 @@ async def async_setup_entry(
             where=ctx.address.where,
             interface=ctx.address.interface,
             code=code,
-            pulse_duration=DEFAULT_LOCK_DURATION,
+            pulse_duration=pulse,
             manufacturer=manufacturer,
             model=model,
             gateway=runtime.gateway,
@@ -268,24 +276,60 @@ class MyHOMELock(MyHOMEEntity, LockEntity):
                 raise ServiceValidationError(f"Invalid code for {self._display_name}")
 
         if self._who == "1":
-            await self._gateway_handler.send(OWNLightingCommand.switch_on(self._full_where))
-
             if self._pulse_off_unsub is not None:
                 self._pulse_off_unsub()
                 self._pulse_off_unsub = None
 
-            @callback
-            def _turn_off(_now: Any = None) -> None:
-                self._pulse_off_unsub = None
-                if self.hass is not None:
-                    self.hass.async_create_task(
-                        self._gateway_handler.send(OWNLightingCommand.switch_off(self._full_where))
-                    )
+            if self._pulse_duration == 0.5:
+                cmd = OWNLightingCommand.switch_on_timed(self._full_where, 18)
+                write_fut = await self._gateway_handler.send(cmd)
+                if write_fut is not None and (
+                    asyncio.isfuture(write_fut) or hasattr(write_fut, "__await__")
+                ):
+                    await write_fut
+            else:
+                cmd_on = OWNLightingCommand.switch_on(self._full_where)
+                write_fut = await self._gateway_handler.send(cmd_on)
+                if write_fut is not None and (
+                    asyncio.isfuture(write_fut) or hasattr(write_fut, "__await__")
+                ):
+                    await write_fut
 
-            if self.hass is not None:
-                self._pulse_off_unsub = async_call_later(self.hass, self._pulse_duration, _turn_off)
+                @callback
+                def _turn_off(_now: Any = None) -> None:
+                    self._pulse_off_unsub = None
+                    if self.hass is not None:
+
+                        async def _send_off() -> None:
+                            try:
+                                fut = await self._gateway_handler.send(
+                                    OWNLightingCommand.switch_off(self._full_where)
+                                )
+                                if fut is not None and (
+                                    asyncio.isfuture(fut) or hasattr(fut, "__await__")
+                                ):
+                                    await fut
+                            except Exception as err:
+                                LOGGER.error(
+                                    "%s: Failed to send OFF pulse to gateway: %s",
+                                    self._display_name,
+                                    err,
+                                )
+
+                        self.hass.async_create_task(_send_off())
+
+                if self.hass is not None:
+                    self._pulse_off_unsub = async_call_later(
+                        self.hass, self._pulse_duration, _turn_off
+                    )
         else:
-            await self._gateway_handler.send(OWNDoorEntryCommand.open_lock(self._full_where))
+            write_fut = await self._gateway_handler.send(
+                OWNDoorEntryCommand.open_lock(self._full_where)
+            )
+            if write_fut is not None and (
+                asyncio.isfuture(write_fut) or hasattr(write_fut, "__await__")
+            ):
+                await write_fut
 
         self._attr_is_locked = False
         self.async_write_ha_state()
@@ -345,4 +389,19 @@ class MyHOMELock(MyHOMEEntity, LockEntity):
         if self._pulse_off_unsub is not None:
             self._pulse_off_unsub()
             self._pulse_off_unsub = None
+            if self._who == "1":
+                try:
+                    write_fut = await self._gateway_handler.send(
+                        OWNLightingCommand.switch_off(self._full_where)
+                    )
+                    if write_fut is not None and (
+                        asyncio.isfuture(write_fut) or hasattr(write_fut, "__await__")
+                    ):
+                        await write_fut
+                except Exception as err:
+                    LOGGER.warning(
+                        "%s: Failed to send OFF pulse to gateway on removal: %s",
+                        self._display_name,
+                        err,
+                    )
         await super().async_will_remove_from_hass()
