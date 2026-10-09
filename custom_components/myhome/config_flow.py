@@ -1074,7 +1074,7 @@ class MyhomeOptionsFlowHandler(OptionsFlowWithReload):
             if not errors:
                 self.options.update({CONF_WORKER_COUNT: user_input[CONF_WORKER_COUNT]})  # type: ignore
                 self.options.update({CONF_GENERATE_EVENTS: user_input[CONF_GENERATE_EVENTS]})  # type: ignore
-                self.options[CONF_SYNC_ENTITY_IDS] = user_input.get(CONF_SYNC_ENTITY_IDS, self.options.get(CONF_SYNC_ENTITY_IDS, False))  # type: ignore
+                self.options.update({CONF_SYNC_ENTITY_IDS: user_input[CONF_SYNC_ENTITY_IDS]} if CONF_SYNC_ENTITY_IDS in user_input else {})  # type: ignore
                 self.options.update({CONF_BROADCAST_RESYNC: user_input.get(CONF_BROADCAST_RESYNC, True)})  # type: ignore
                 self.options[CONF_TRANSITION_MODE] = user_input.get(CONF_TRANSITION_MODE, DEFAULT_TRANSITION_MODE)  # type: ignore
                 self.options[CONF_AUTO_JOIN_STREAMING] = user_input.get(  # type: ignore

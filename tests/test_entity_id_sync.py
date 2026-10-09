@@ -319,4 +319,6 @@ async def test_options_opt_in_default_enable_preserve_and_disable(
         )
         await hass.async_block_till_done()
     assert result["type"] == "create_entry"
-    assert entry.options[CONF_SYNC_ENTITY_IDS] is expected
+    assert entry.options.get(CONF_SYNC_ENTITY_IDS, False) is expected
+    if stored is None and submitted is None:
+        assert CONF_SYNC_ENTITY_IDS not in entry.options
