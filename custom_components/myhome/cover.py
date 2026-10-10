@@ -72,11 +72,14 @@ from .cover_calibration import (
 )
 from .cover_motion import (
     ECHO_WINDOW,
+    MIN_POSITION_DELTA,
     MOTOR_START_DELAY,
     WRITE_TIMEOUT,
     compute_freeze_position,
     compute_interpolated_position,
+    compute_run_duration,
     is_in_echo_window,
+    quantize_position_delta,
     travel_for,
 )
 from .discovery import Address, DeviceContext, PlatformDiscovery, default_known_keys
@@ -948,11 +951,23 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if ATTR_POSITION not in kwargs:
             return
         target_position = kwargs[ATTR_POSITION]
+
         if self._advanced:
-            if target_position <= 0:
-                await self._gateway_handler.send(
-                    OWNAutomationCommand.lower_shutter(self._full_where)
-                )
+            current = self._attr_current_cover_position
+            if current is not None and 0 < target_position < 100:
+                # A 1% level change is a run too short to move the motor while
+                # the actuator still books it (#466, see MIN_POSITION_DELTA).
+                target_position = quantize_position_delta(current, target_position, MIN_POSITION_DELTA)
+                if target_position == current:
+                    return
+            # 0% and 100% are full runs: they end on the motor's limit switch
+            # and so put the actuator's own level back in step with the curtain,
+            # also when it already reports that end. The MH201 rejects the
+            # level command at 0% anyway.
+            if target_position >= 100:
+                await self.async_open_cover()
+            elif target_position <= 0:
+                await self.async_close_cover()
             else:
                 await self._gateway_handler.send(
                     OWNAutomationCommand.set_shutter_level(
@@ -969,16 +984,39 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 translation_placeholders={"entity_id": str(self.entity_id)},
             )
 
+        # 0% and 100% are full runs, like the open/close buttons: the motor stops
+        # on its limit switch, which resets any drift in the estimate, also when
+        # the estimate already says 0% or 100%.
+        if target_position >= 100:
+            await self.async_open_cover()
+            return
+        if target_position <= 0:
+            await self.async_close_cover()
+            return
+
         self._cancel_stop_task()
         curr_pos = self.current_cover_position if self.current_cover_position is not None else 50
         diff = target_position - curr_pos
         if diff == 0:
             return
 
-        travel_fraction = abs(diff) / 100.0
-        run_duration = travel_fraction * self._travel_for(diff > 0)
+        opening = diff > 0
+        travel_time = self._travel_for(opening)
+        run_duration = compute_run_duration(diff, travel_time)
+        # Where the model puts the cover when the run ends: the target, or
+        # further when MIN_MOTOR_PULSE stretched the run. A run that reaches an
+        # end becomes a full run to that end.
+        achieved_position = compute_freeze_position(
+            curr_pos, 0.0, run_duration, travel_time, opening, not opening, target_position
+        )
+        if achieved_position >= 100:
+            await self.async_open_cover()
+            return
+        if achieved_position <= 0:
+            await self.async_close_cover()
+            return
 
-        written = await self._async_move("open" if diff > 0 else "close")
+        written = await self._async_move("open" if opening else "close")
         generation = self._run_generation
 
         async def _auto_stop() -> None:
@@ -989,12 +1027,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 await asyncio.sleep(max(0.0, run_duration - (time.monotonic() - anchor)))
                 if generation != self._run_generation:
                     return
-                # By the model we are at the target now; the motor keeps
+                # By the model we are at achieved_position now; the motor keeps
                 # running until the stop frame is written, so re-anchor the
                 # run here and let the stop's write time freeze the estimate
-                # (target plus whatever the queue delay added).
-                self._start_position = target_position
-                self._attr_current_cover_position = target_position
+                # (that position plus whatever the queue delay added).
+                self._start_position = achieved_position
+                self._attr_current_cover_position = achieved_position
                 self._move_start_time = time.monotonic()
                 await self.async_stop_cover()
                 if self.hass is not None:

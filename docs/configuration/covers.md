@@ -37,10 +37,16 @@ For standard covers without hardware position feedback, the integration provides
 * **Direction-Aware Travel Times**: Because gravity and motor friction cause shutters to fall faster than they rise, the v2 engine tracks separate `travel_time_down` and `travel_time_up` durations (default: `25.0s`).
 * **Frame Anchor Timing**: The run timer starts when the direction frame is **written to the gateway**, not when Home Assistant queues it.
 * **Echo Suppression**: The gateway relays a momentary stop status (~0.1 s) followed by translation and the actual motor start (~0.55 s). The v2 engine recognizes these as command echoes, re-anchoring the timer to the true motor start rather than falsely treating them as manual stop commands.
-* **Resynchronization**: Running a cover to its full travel limit (fully open or fully closed) automatically resets any minor timing drift to 0% or 100%.
+* **Shortest Run (0.4 s)**: A tubular motor needs a moment after the relay closes before the curtain moves. On an F454 with Somfy Ilmo 50 WT motors (20.4 s travel), 1 % steps (~0.2 s) clicked the relay without moving the curtain, while 2 % steps (~0.4 s) moved it ([#466](https://github.com/OpenWebNet-HA/MyHOME/issues/466)). A position change that would run shorter than 0.4 s therefore runs 0.4 s, and the estimate books the movement of that longer run: on a 5 s cover, 50 % → 51 % ends at 58 %. Other motors may need more or less.
+* **0 % and 100 % Are Full Runs**: Setting position to 0 % or 100 % sends a plain close / open, exactly like the buttons, and lets the motor stop on its limit switch instead of timing a stop. This also happens when the cover already reports 0 % or 100 %, so it is the way to put a drifted estimate back in step. A short move whose run would reach an end becomes a full run to that end too.
+
+> [!NOTE]
+> Small moves still drift. The estimate assumes the curtain moves for the whole run, but the motor's start-up time is lost on every run, so a series of short moves books slightly more travel than the curtain made. Send the cover to 0 % or 100 % now and then to re-sync it.
 
 > [!WARNING]
 > **Half the time is not half the height.** The estimate is linear: 50 % means the motor ran for half of the stored travel time. A roller shutter does not move at constant speed — coming down from the top the curtain runs fast on a full roll and is well past the middle at half time; going up from the bottom the first seconds go into gathering the slats and the curtain barely moves. Measured on a 107 cm shutter with exact travel times: `set_cover_position: 50` stopped at 27 cm from the sill coming down and at 37 cm going up, against a true midpoint of about 53 cm, while Home Assistant reported 50 % both times. The end positions (0 % / 100 %) are exact; intermediate positions are approximate and differ by direction. Treat the slider as "roughly there", not as a measurement — this applies to calibrated and manually set times alike.
+
+**Advanced covers** track their own level, but the actuator turns a level change into a timed run the same way, so a 1 % change is just as likely to click without moving. The integration widens a change of less than 2 % to 2 % (50 % → 51 % is sent as 52 %), and sends 0 % and 100 % as plain close / open full runs. The 2 % comes from the 20.4 s motor above; a faster motor may need more, and the behaviour of the level command for small changes is inferred from the step commands in that trace, not captured.
 
 ---
 

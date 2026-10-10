@@ -19,6 +19,62 @@ MOTOR_START_DELAY: float = 0.55
 # the handshake on top.
 WRITE_TIMEOUT: float = 30.0
 
+# Shortest motor run we schedule for a timed cover (#466). A tubular motor needs
+# a moment after the relay closes before the curtain moves. On an F454 with
+# Somfy Ilmo 50 WT motors (20.4 s travel) 1% steps ran 0.18-0.22 s between the
+# start and stop status frames and the relay clicked without moving the curtain,
+# while 2% steps (0.39-0.41 s) moved it (#466 comment 6038376669). So the
+# threshold lies somewhere in 0.22-0.39 s for that motor; the floor is the
+# shortest run known to move it. Other motors may differ.
+MIN_MOTOR_PULSE: float = 0.4
+
+# Smallest level change sent to an advanced actuator (#466). The actuator turns
+# a level change into a timed run of its own, so a 1% change is the same
+# too-short run as above. 2% was enough on the 20.4 s motor in that trace; we
+# do not know the actuator's travel time, so a faster motor may need more. The
+# trace used the step frames (*2*12#1#001*WHERE##), not the level frames
+# (*#2*WHERE*#11#001*LEVEL##) we send: their behaviour is inferred, not captured.
+MIN_POSITION_DELTA: int = 2
+
+
+def quantize_position_delta(
+    curr_pos: int | None,
+    target_pos: int,
+    min_delta: int = MIN_POSITION_DELTA,
+) -> int:
+    """Widen a level change smaller than ``min_delta`` to ``min_delta``.
+
+    If 0 < |target_pos - curr_pos| < min_delta the target moves to min_delta
+    from curr_pos in the commanded direction, clamped to [0, 100]. The result
+    can be 0 or 100: callers route those to a full run.
+    """
+    if curr_pos is None:
+        return max(0, min(100, target_pos))
+    diff = target_pos - curr_pos
+    if diff == 0:
+        return curr_pos
+    if 0 < abs(diff) < min_delta:
+        step = min_delta if diff > 0 else -min_delta
+        return max(0, min(100, curr_pos + step))
+    return max(0, min(100, target_pos))
+
+
+def compute_run_duration(
+    diff: int,
+    travel_time: float,
+    min_pulse: float = MIN_MOTOR_PULSE,
+) -> float:
+    """Return the run time for a position change, at least ``min_pulse`` seconds.
+
+    A run shorter than the motor's start-up time clicks the relay without
+    moving the curtain while the estimate still advances (see MIN_MOTOR_PULSE).
+    """
+    if diff == 0 or travel_time <= 0:
+        return 0.0
+    travel_fraction = abs(diff) / 100.0
+    nominal_duration = travel_fraction * travel_time
+    return max(nominal_duration, min_pulse)
+
 
 def travel_for(travel_time_up: float, travel_time_down: float, opening: bool) -> float:
     """Return full-travel seconds for the given direction (motors are often slower going up)."""

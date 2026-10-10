@@ -13,6 +13,7 @@ from homeassistant.const import (
     CONF_NAME,
 )
 from homeassistant.core import HomeAssistant, State, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import (
     OWNAutomationEvent,
@@ -247,13 +248,13 @@ class TestMyHOMECoverEntity:
             == "*2*2*22#4#02##"
         )
 
-        # 100% remains a calibrated level command because MH201 accepts it.
+        # 100% is a plain UP too: a full run to the limit switch (#466).
         advanced_cover._gateway_handler.send.reset_mock()
         await advanced_cover.async_set_cover_position(**{ATTR_POSITION: 100})
         advanced_cover._gateway_handler.send.assert_awaited_once()
         assert (
             str(advanced_cover._gateway_handler.send.call_args[0][0])
-            == "*#2*22#4#02*#11#001*100##"
+            == "*2*1*22#4#02##"
         )
 
         # Set position without ATTR_POSITION kwarg
@@ -352,6 +353,230 @@ class TestMyHOMECoverEntity:
         # Unload / remove from hass cleans up tasks
         await basic_cover.async_will_remove_from_hass()
         assert basic_cover._stop_task is None
+
+    async def test_set_cover_position_end_stops_and_motor_floor(self, basic_cover, advanced_cover):
+        """0%/100% are full runs; short moves are widened so the motor actually turns (#466)."""
+        # 1. 0% and 100% on a timed cover are full runs with no timed stop, also
+        # when the estimate already says so: the limit switch resets the drift.
+        basic_cover._gateway_handler.send.reset_mock()
+        basic_cover._attr_current_cover_position = 100
+        await basic_cover.async_set_cover_position(**{ATTR_POSITION: 100})
+        basic_cover._gateway_handler.send.assert_awaited_once()
+        assert str(basic_cover._gateway_handler.send.call_args[0][0]) == "*2*1*21##"
+        assert basic_cover._stop_task is None
+
+        basic_cover._gateway_handler.send.reset_mock()
+        basic_cover._attr_current_cover_position = 0
+        await basic_cover.async_set_cover_position(**{ATTR_POSITION: 0})
+        basic_cover._gateway_handler.send.assert_awaited_once()
+        assert str(basic_cover._gateway_handler.send.call_args[0][0]) == "*2*2*21##"
+        assert basic_cover._stop_task is None
+
+        # 2. Same on an advanced cover that already reports the end.
+        advanced_cover._gateway_handler.send.reset_mock()
+        advanced_cover._attr_current_cover_position = 100
+        await advanced_cover.async_set_cover_position(**{ATTR_POSITION: 100})
+        advanced_cover._gateway_handler.send.assert_awaited_once()
+        assert str(advanced_cover._gateway_handler.send.call_args[0][0]) == "*2*1*22#4#02##"
+
+        # 3. Advanced cover: a 1% level change is widened to MIN_POSITION_DELTA.
+        advanced_cover._gateway_handler.send.reset_mock()
+        advanced_cover._attr_current_cover_position = 40
+        await advanced_cover.async_set_cover_position(**{ATTR_POSITION: 41})
+        advanced_cover._gateway_handler.send.assert_awaited_once()
+        assert (
+            str(advanced_cover._gateway_handler.send.call_args[0][0])
+            == "*#2*22#4#02*#11#001*42##"
+        )
+
+        advanced_cover._gateway_handler.send.reset_mock()
+        advanced_cover._attr_current_cover_position = 40
+        await advanced_cover.async_set_cover_position(**{ATTR_POSITION: 39})
+        advanced_cover._gateway_handler.send.assert_awaited_once()
+        assert (
+            str(advanced_cover._gateway_handler.send.call_args[0][0])
+            == "*#2*22#4#02*#11#001*38##"
+        )
+
+        advanced_cover._gateway_handler.send.reset_mock()
+        advanced_cover._attr_current_cover_position = 40
+        await advanced_cover.async_set_cover_position(**{ATTR_POSITION: 40})
+        advanced_cover._gateway_handler.send.assert_not_awaited()
+
+        # 4. Widening that lands on an end becomes a full run to that end.
+        advanced_cover._gateway_handler.send.reset_mock()
+        advanced_cover._attr_current_cover_position = 2
+        await advanced_cover.async_set_cover_position(**{ATTR_POSITION: 1})
+        advanced_cover._gateway_handler.send.assert_awaited_once()
+        assert str(advanced_cover._gateway_handler.send.call_args[0][0]) == "*2*2*22#4#02##"
+
+        # 5. Unknown level (shutterLevel 255): nothing to widen from, the target goes as is.
+        advanced_cover._gateway_handler.send.reset_mock()
+        advanced_cover._attr_current_cover_position = None
+        await advanced_cover.async_set_cover_position(**{ATTR_POSITION: 41})
+        advanced_cover._gateway_handler.send.assert_awaited_once()
+        assert (
+            str(advanced_cover._gateway_handler.send.call_args[0][0])
+            == "*#2*22#4#02*#11#001*41##"
+        )
+
+        # 6. Timed cover: a 1% move on a 5 s cover is 0.05 s, stretched to
+        # MIN_MOTOR_PULSE (0.4 s = 8% of travel). The estimate books the run
+        # that was made (58%), not the 51% asked for.
+        basic_cover._gateway_handler.send.reset_mock()
+        basic_cover._attr_current_cover_position = 50
+        basic_cover._travel_time_up = 5.0
+        slept_durations = []
+
+        async def fake_sleep(duration):
+            slept_durations.append(duration)
+
+        with patch("asyncio.sleep", side_effect=fake_sleep):
+            await basic_cover.async_set_cover_position(**{ATTR_POSITION: 51})
+            assert basic_cover._stop_task is not None
+            await basic_cover._stop_task
+
+        assert any(0.39 <= d <= 0.41 for d in slept_durations), (
+            f"Run duration must be clamped to MIN_MOTOR_PULSE, got: {slept_durations}"
+        )
+        assert basic_cover.current_cover_position == 58
+        assert basic_cover._start_position == 58
+
+        # 7. A stretched run that would reach an end is a full run to that end:
+        # 98% -> 99% on a 25 s cover runs 0.4 s = 1.6%, i.e. to 100%.
+        basic_cover._gateway_handler.send.reset_mock()
+        basic_cover._attr_current_cover_position = 98
+        basic_cover._start_position = 98
+        basic_cover._travel_time_up = 25.0
+        await basic_cover.async_set_cover_position(**{ATTR_POSITION: 99})
+        basic_cover._gateway_handler.send.assert_awaited_once()
+        assert str(basic_cover._gateway_handler.send.call_args[0][0]) == "*2*1*21##"
+        assert basic_cover._stop_task is None
+
+        basic_cover.handle_event(OWNEvent.parse("*2*0*21##"))
+        basic_cover._gateway_handler.send.reset_mock()
+        basic_cover._attr_current_cover_position = 2
+        basic_cover._start_position = 2
+        await basic_cover.async_set_cover_position(**{ATTR_POSITION: 1})
+        basic_cover._gateway_handler.send.assert_awaited_once()
+        assert str(basic_cover._gateway_handler.send.call_args[0][0]) == "*2*2*21##"
+        assert basic_cover._stop_task is None
+
+        # 8. Calibrating cover raises HomeAssistantError
+        basic_cover._calibrating = True
+        with pytest.raises(HomeAssistantError, match="is being calibrated"):
+            await basic_cover.async_set_cover_position(**{ATTR_POSITION: 60})
+        basic_cover._calibrating = False
+
+    def test_quantize_position_delta(self):
+        """Verify quantize_position_delta logic and edge cases."""
+        from custom_components.myhome.cover_motion import (
+            MIN_POSITION_DELTA,
+            quantize_position_delta,
+        )
+
+        assert MIN_POSITION_DELTA == 2
+
+        # None current position returns clamped target
+        assert quantize_position_delta(None, 50) == 50
+        assert quantize_position_delta(None, -10) == 0
+        assert quantize_position_delta(None, 120) == 100
+
+        # Exact match returns current position
+        assert quantize_position_delta(50, 50) == 50
+
+        # Sub-deadband deltas expand to min_delta
+        assert quantize_position_delta(50, 51, min_delta=2) == 52
+        assert quantize_position_delta(50, 49, min_delta=2) == 48
+
+        # Delta already >= min_delta remains unquantized
+        assert quantize_position_delta(50, 55, min_delta=2) == 55
+        assert quantize_position_delta(50, 45, min_delta=2) == 45
+
+        # Boundary clamping
+        assert quantize_position_delta(99, 100, min_delta=2) == 100
+        assert quantize_position_delta(1, 0, min_delta=2) == 0
+        assert quantize_position_delta(2, 1, min_delta=2) == 0
+        assert quantize_position_delta(50, 150, min_delta=2) == 100
+        assert quantize_position_delta(50, -20, min_delta=2) == 0
+
+    @pytest.mark.asyncio
+    async def test_cover_edge_cases_generation_and_translation(self, basic_cover):
+        """Test edge cases: is_translation, superseded generation in _on_written and _auto_stop."""
+        # 1. A WHAT=1000 translation frame is ignored by handle_event.
+        msg = OWNEvent.parse("*2*1000#12#10#001#1*21##")
+        basic_cover.handle_event(msg)
+        assert basic_cover.is_opening is False
+        assert basic_cover.is_closing is False
+
+        # 2. A write that lands after a newer command leaves the echo window and clock alone.
+        basic_cover._echo_until = None
+        fut = asyncio.get_running_loop().create_future()
+        basic_cover._track_write(fut)
+        basic_cover._run_generation += 1
+        fut.set_result(100.0)
+        await asyncio.sleep(0)
+        assert basic_cover._echo_until is None
+        assert basic_cover._move_start_time is None
+
+        def sent_frames() -> list[str]:
+            return [str(c.args[0]) for c in basic_cover._gateway_handler.send.await_args_list]
+
+        # 3. _auto_stop superseded while waiting for the motor start: no stop frame.
+        basic_cover._gateway_handler.send.reset_mock()
+        basic_cover._attr_current_cover_position = 50
+
+        async def fake_await_and_bump(written):
+            basic_cover._run_generation += 1
+            return 100.0
+
+        with patch.object(basic_cover, "_await_motion_anchor", side_effect=fake_await_and_bump):
+            await basic_cover.async_set_cover_position(**{ATTR_POSITION: 60})
+            assert basic_cover._stop_task is not None
+            await basic_cover._stop_task
+        assert sent_frames() == ["*2*1*21##"]
+        assert basic_cover._attr_current_cover_position == 50
+
+        # 4. _auto_stop superseded during the run: no stop frame either.
+        basic_cover._gateway_handler.send.reset_mock()
+        basic_cover._attr_current_cover_position = 50
+
+        async def fake_sleep_and_bump(duration):
+            basic_cover._run_generation += 1
+
+        with patch("asyncio.sleep", side_effect=fake_sleep_and_bump):
+            await basic_cover.async_set_cover_position(**{ATTR_POSITION: 60})
+            assert basic_cover._stop_task is not None
+            await basic_cover._stop_task
+        assert sent_frames() == ["*2*1*21##"]
+        assert basic_cover._attr_current_cover_position == 50
+
+    def test_compute_run_duration(self):
+        """Verify compute_run_duration enforces the motor start-up floor."""
+        from custom_components.myhome.cover_motion import (
+            MIN_MOTOR_PULSE,
+            compute_run_duration,
+        )
+
+        # Zero diff or invalid travel time returns 0.0
+        assert compute_run_duration(0, 25.0) == 0.0
+        assert compute_run_duration(5, 0.0) == 0.0
+        assert compute_run_duration(5, -10.0) == 0.0
+
+        # 1% on a 10 s, 20.4 s (the #466 F454 motor) or 15 s cover is shorter than the floor
+        assert compute_run_duration(1, 10.0) == MIN_MOTOR_PULSE
+        assert compute_run_duration(1, 20.4) == MIN_MOTOR_PULSE
+        assert compute_run_duration(-1, 15.0) == MIN_MOTOR_PULSE
+
+        # 2% on that 20.4 s motor (0.408 s) moved it and is not stretched
+        assert compute_run_duration(2, 20.4) == pytest.approx(0.408)
+
+        # 10% step on 20s cover: nominal is 2.0s -> returns nominal 2.0s
+        assert compute_run_duration(10, 20.0) == 2.0
+        assert compute_run_duration(-10, 20.0) == 2.0
+
+        # Custom min_pulse parameter
+        assert compute_run_duration(1, 20.0, min_pulse=0.5) == 0.5
 
     def test_handle_event(self, basic_cover):
         # Opening event
