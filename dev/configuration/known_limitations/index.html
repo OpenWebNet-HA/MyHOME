@@ -2177,6 +2177,16 @@
 <td style="text-align: left;">Those gateways only implement the numeric (SHA-less) password.</td>
 <td style="text-align: left;">Configure the numeric OpenWebNet password on the gateway.</td>
 </tr>
+<tr>
+<td style="text-align: left;"><strong>Broadcast, Area 00, and General 0 frames do not generate entities.</strong></td>
+<td style="text-align: left;">Broadcast frames (<code>WHERE="0"</code>, <code>"00"</code>) coordinate multiple actuators and do not represent individual physical devices (except WHO 5 where <code>WHERE="0"</code> is the alarm central unit). Creating entities from these frames produced phantom entities like <code>sensor.zone_00</code> or <code>climate.climate_zone_00</code>.</td>
+<td style="text-align: left;">Control individual actuators or use YAML declared groups (<code>where: '#G'</code>) and manual scenes.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Secondary energy meters (<code>52</code>–<code>59</code>) require bus activity or manual configuration for initial setup.</strong></td>
+<td style="text-align: left;">Startup discovery queries factory default meter <code>51</code> (<code>*#18*51*51##</code>, <code>*#18*51*113##</code>) to avoid long startup sweep delays.</td>
+<td style="text-align: left;">Secondary meters appear automatically when they transmit power/energy readings on the bus, or immediately when running <code>myhome.sweep_bus</code>. They can also be declared in <code>myhome.yaml</code>.</td>
+</tr>
 </tbody>
 </table>
 <h2 id="lighting-who-1">Lighting (WHO 1)<a class="headerlink" href="#lighting-who-1" title="Permanent link">&para;</a></h2>

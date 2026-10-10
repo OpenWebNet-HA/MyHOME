@@ -639,6 +639,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#gateway-startup-discovery-capabilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gateway Startup Discovery Capabilities
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1988,6 +1999,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#gateway-startup-discovery-capabilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gateway Startup Discovery Capabilities
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2201,6 +2223,55 @@
 <p class="admonition-title">Note</p>
 <p><strong>Sound System (WHO = 16) Wiring</strong>: The 2-wire SCS bus carries both digital commands (power, volume, input routing via OpenWebNet WHO 16) and modulated stereo audio simultaneously over the same 2-wire bus. External audio streamers connect their stereo analog line-out to an audio source interface (e.g. Legrand / BTicino L4561N, L4560, or 3482), which modulates the audio onto the 2-wire SCS bus into the F441/F441M matrix inputs S1–S4. For full details and the official wiring schematic, see the <a href="../../configuration/media_player/">Sound System / Media Player Guide</a>.</p>
 </div>
+<hr />
+<h2 id="gateway-startup-discovery-capabilities">Gateway Startup Discovery Capabilities<a class="headerlink" href="#gateway-startup-discovery-capabilities" title="Permanent link">&para;</a></h2>
+<p>During startup initial discovery, status queries are gated strictly by gateway profile capabilities to avoid transmitting unsupported commands:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Gateway Model</th>
+<th style="text-align: left;">Initial Discovery Subsystems Queried</th>
+<th style="text-align: left;">Profile Support Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>MH202</strong></td>
+<td style="text-align: left;">WHO 1, 2, 4, 5, 16, 18</td>
+<td style="text-align: left;">Full support including Burglar Alarm (<code>*#5*0##</code>), Sound (<code>*#16*0*5##</code>), and Energy (<code>*#18*51*...</code>).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>H4890 / AM4890</strong></td>
+<td style="text-align: left;">WHO 1, 2, 4, 5, 16, 18</td>
+<td style="text-align: left;">Supports Burglar Alarm, Sound (<code>*#16*0*5##</code>), and Energy meter 51 queries.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>F454</strong></td>
+<td style="text-align: left;">WHO 1, 2, 4, 16, 18</td>
+<td style="text-align: left;">Full lighting, cover, climate, sound, and energy meter 51 queries. Alarm query omitted.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>F455</strong></td>
+<td style="text-align: left;">WHO 1, 2, 4, 18</td>
+<td style="text-align: left;">Entry-level gateway: lighting, cover, climate, and energy meter 51 queries. Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>MyHomeServer1</strong></td>
+<td style="text-align: left;">WHO 1, 2, 4, 16, 18</td>
+<td style="text-align: left;">Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>MH201</strong></td>
+<td style="text-align: left;">WHO 1, 2, 4, 16, 18</td>
+<td style="text-align: left;">Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>MH200 / MH200N</strong></td>
+<td style="text-align: left;">WHO 1, 2, 4, 16</td>
+<td style="text-align: left;">Lighting, cover, climate, and sound queries (hardware verified on both). Alarm and energy queries omitted.</td>
+</tr>
+</tbody>
+</table>
 
 
 

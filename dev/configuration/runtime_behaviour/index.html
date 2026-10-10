@@ -1481,6 +1481,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="🔌 Startup discovery is gated by the gateway profile">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#day-0-blank-start-discovery-matrix-auto-discovered-vs-manual-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Day 0 Blank-Start Discovery Matrix (Auto-discovered vs Manual Configuration)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2074,6 +2091,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="🔌 Startup discovery is gated by the gateway profile">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#day-0-blank-start-discovery-matrix-auto-discovered-vs-manual-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Day 0 Blank-Start Discovery Matrix (Auto-discovered vs Manual Configuration)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2216,24 +2250,44 @@
 <tr>
 <th style="text-align: left;">Frame</th>
 <th style="text-align: left;">Subsystem</th>
+<th style="text-align: left;">Supported Gateways</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td style="text-align: left;"><code>*#1*0##</code></td>
 <td style="text-align: left;">Lighting</td>
+<td style="text-align: left;">All gateways</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>*#2*0##</code></td>
 <td style="text-align: left;">Automation / covers</td>
+<td style="text-align: left;">All gateways</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>*#4*0##</code></td>
 <td style="text-align: left;">Thermoregulation</td>
+<td style="text-align: left;">All gateways</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>*#5*0##</code></td>
+<td style="text-align: left;">Burglar alarm</td>
+<td style="text-align: left;">MH202, H4890</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>*#16*0*5##</code></td>
 <td style="text-align: left;">Sound system (dimension 5; lists every amplifier)</td>
+<td style="text-align: left;">F454, H4890, MH200, MH201, MH202, MyHomeServer1</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>*#18*51*51##</code></td>
+<td style="text-align: left;">Energy management (meter 51 total energy)</td>
+<td style="text-align: left;">F454, F455, MH201, MH202, MyHomeServer1, H4890</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>*#18*51*113##</code></td>
+<td style="text-align: left;">Energy management (meter 51 active power)</td>
+<td style="text-align: left;">F454, F455, MH201, MH202, MyHomeServer1, H4890</td>
 </tr>
 </tbody>
 </table>
@@ -2243,6 +2297,68 @@
 <p>OWNd 2.0.0b8 and earlier give an <strong>MH200</strong> the MH200N profile, which does not advertise WHO 16, so amplifiers behind an MH200 only appear once they send bus traffic. A live MH200 answers <code>*#16*0*5##</code> with every amplifier and source; <a href="https://github.com/OpenWebNet-HA/OWNd/issues/53">OWNd#53</a> gives it its own profile.</p>
 <p>The WHO 16 status request is <code>*#16*WHERE*5##</code> (spec section 1.5.2). Gateways NACK the bare <code>*#16*0##</code> for every address, whether or not the plant has audio, so an old NACK on that frame never meant "no audio".</p>
 </blockquote>
+<h3 id="day-0-blank-start-discovery-matrix-auto-discovered-vs-manual-configuration">Day 0 Blank-Start Discovery Matrix (Auto-discovered vs Manual Configuration)<a class="headerlink" href="#day-0-blank-start-discovery-matrix-auto-discovered-vs-manual-configuration" title="Permanent link">&para;</a></h3>
+<p>On a fresh installation with no <code>myhome.yaml</code> file (Day 0 blank start), the integration automatically queries and hydrates standard residential hardware subsystems according to gateway capabilities:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Subsystem / Feature</th>
+<th style="text-align: center;">Auto-Discovered on Blank Start</th>
+<th style="text-align: center;">Requires <code>myhome.yaml</code> or UI Configuration</th>
+<th style="text-align: left;">Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>Lighting (WHO 1)</strong></td>
+<td style="text-align: center;">✅ Yes (<code>*#1*0##</code>)</td>
+<td style="text-align: center;">Optional (custom names / classes)</td>
+<td style="text-align: left;">Point-to-point lights (<code>11</code>–<code>99</code>) and routed addresses. Area/general broadcasts (<code>WHERE="0"</code> / <code>"00"</code>) do not create entities.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Automation / Covers (WHO 2)</strong></td>
+<td style="text-align: center;">✅ Yes (<code>*#2*0##</code>)</td>
+<td style="text-align: center;">Optional (<code>travel_time</code>, general cover)</td>
+<td style="text-align: left;">Point-to-point standard covers. Venetian tilt and impulse mode require manual configuration.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Thermoregulation (WHO 4)</strong></td>
+<td style="text-align: center;">✅ Yes (<code>*#4*0##</code>)</td>
+<td style="text-align: center;">Optional (<code>cooling</code>, <code>fan</code>)</td>
+<td style="text-align: left;">Standard zones (<code>1</code>–<code>99</code>) and central units (<code>#0</code>, <code>#0#1</code>). Area broadcasts (<code>00</code>) and probe broadcasts do not create climate entities.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Burglar Alarm (WHO 5)</strong></td>
+<td style="text-align: center;">✅ Yes (<code>*#5*0##</code>)</td>
+<td style="text-align: center;">Optional</td>
+<td style="text-align: left;">Discovered on supported gateways (MH202, H4890). Panel tracks the central unit.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Sound System (WHO 16)</strong></td>
+<td style="text-align: center;">✅ Yes (<code>*#16*0*5##</code>)</td>
+<td style="text-align: center;">Optional (streamer mapping)</td>
+<td style="text-align: left;">Discovers all amplifier zones and sources via dimension 5 query.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Energy Management (WHO 18)</strong></td>
+<td style="text-align: center;">✅ First Meter 51 only</td>
+<td style="text-align: center;">Secondary meters (<code>52</code>–<code>59</code>)</td>
+<td style="text-align: left;">Factory default residential meter <code>51</code> is queried at startup for power and total energy. Secondary meters are discovered dynamically upon bus emission or via <code>myhome.sweep_bus</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Scenario Control (WHO 15 / 25)</strong></td>
+<td style="text-align: center;">❌ Stateless</td>
+<td style="text-align: center;">N/A (Device Triggers / Events)</td>
+<td style="text-align: left;">Pushbuttons emit events and device triggers; no entities are created.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Light Groups (<code>where: '#G'</code>)</strong></td>
+<td style="text-align: center;">❌ Bus limitation</td>
+<td style="text-align: center;">Required (<code>members: [...]</code>)</td>
+<td style="text-align: left;">OpenWebNet groups have no bus membership read-back command.</td>
+</tr>
+</tbody>
+</table>
 <hr />
 <h2 id="broadcast-re-sync-group-area-general">🔁 Broadcast re-sync (group / area / general)<a class="headerlink" href="#broadcast-re-sync-group-area-general" title="Permanent link">&para;</a></h2>
 <p>A group (<code>*1*x*#G##</code>), area (<code>*1*x*A##</code>) or general (<code>*1*x*0##</code>) command comes from a
