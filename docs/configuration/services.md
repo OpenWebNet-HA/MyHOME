@@ -21,6 +21,8 @@ This document provides a comprehensive reference for all custom services registe
 | [`myhome.tuner_seek_up`](#11-myhometuner_seek_up) | `media_player` | Seek forward to the next receivable FM radio frequency on an F500 tuner. |
 | [`myhome.tuner_seek_down`](#12-myhometuner_seek_down) | `media_player` | Seek backward to the previous receivable FM radio frequency on an F500 tuner. |
 | [`myhome.send_scenario_plus_command`](#13-myhomesend_scenario_plus_command) | Gateway | Send a WHO 25 scenario plus command (on, off, increase, decrease, stop). |
+| [`myhome.cancel_cover_request`](#14-myhomecancel_cover_request) | `cover` | Cancel a pending approval request or running pre-warning countdown. |
+| [`myhome.acknowledge_cover_fault`](#15-myhomeacknowledge_cover_fault) | `cover` | Clear a latched safety watchdog fault after verifying physical gate/door clearance. |
 
 ---
 
@@ -293,5 +295,41 @@ action: myhome.send_scenario_plus_command
 data:
   where: "11"
   action: "on"
+```
+
+---
+
+## 14. `myhome.cancel_cover_request`
+
+Cancels an active or pending approval request or a running 5-second pre-warning countdown of an impulse gate or garage door (`type: impulse_relay`). Cancelling is always safe: no bus impulse is sent, no relay energizes, and nothing moves.
+
+### Fields
+| Parameter | Type | Required | Description | Example |
+| :--- | :---: | :---: | :--- | :--- |
+| `entity_id` | target | Yes | Target MyHOME impulse cover entity. | `cover.garage_door_1` |
+
+### Example YAML Call
+```yaml
+action: myhome.cancel_cover_request
+target:
+  entity_id: cover.garage_door_1
+```
+
+---
+
+## 15. `myhome.acknowledge_cover_fault`
+
+Clears the safety fault latched when a gate or garage door did not reach its expected state after a pulse (indicating a physical obstacle, safety trip, or reversal). Only an allowed user who is physically at home may clear the fault. Until acknowledged, all remote and automated closing commands from Home Assistant remain strictly blocked.
+
+### Fields
+| Parameter | Type | Required | Description | Example |
+| :--- | :---: | :---: | :--- | :--- |
+| `entity_id` | target | Yes | Target MyHOME impulse cover entity currently in fault. | `cover.garage_door_1` |
+
+### Example YAML Call
+```yaml
+action: myhome.acknowledge_cover_fault
+target:
+  entity_id: cover.garage_door_1
 ```
 

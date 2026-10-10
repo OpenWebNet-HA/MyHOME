@@ -96,6 +96,11 @@ def main(argv: list[str] | None = None) -> int:
         for module, (ceiling, count) in sorted(regressions.items()):
             print(f"  {module}: {count} > {ceiling}", file=sys.stderr)
         print("Fix the new errors; the ceiling is never raised.", file=sys.stderr)
+        if not args.verbose and output:
+            print("\nError details:", file=sys.stderr)
+            for line in output.splitlines():
+                if any(m in line for m in regressions):
+                    print(f"  {line}", file=sys.stderr)
         return 1
 
     if args.update:

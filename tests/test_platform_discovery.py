@@ -133,6 +133,9 @@ async def test_skeleton_configures_discovers_and_routes(hass):
     for frame in ("*1*1000#1*14##", "*1*1*0##", "*1*1*#5##", "*1*1*1##"):
         discovery.handle_message(OWNEvent.parse(frame))
     assert not {"14", "0", "#5", "1"} & set(discovery.known)
+    # an event of the platform class that carries another WHO is not this subsystem's
+    discovery.handle_message(MagicMock(spec=OWNLightingEvent, who=2, where="15", is_translation=False))
+    assert "15" not in discovery.known
     # frames of another subsystem are ignored
     discovery.handle_message(OWNEvent.parse("*2*1*21##"))
     assert "21" not in discovery.known

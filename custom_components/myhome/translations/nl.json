@@ -320,6 +320,14 @@
     "reset_cover_travel_time": {
       "name": "Looptijd rolluik terugzetten",
       "description": "Vergeet de gemeten of handmatig ingestelde looptijden en valt terug op travel_time uit myhome.yaml of de standaardwaarde van 25 s."
+    },
+    "cancel_cover_request": {
+      "name": "Annuleer poort- of garagedeurverzoek",
+      "description": "Annuleert een openstaand goedkeuringsverzoek of een lopende voorwaarschuwing van een impuls-poort of garagedeur. Annuleren is altijd veilig; er beweegt niets."
+    },
+    "acknowledge_cover_fault": {
+      "name": "Bevestig en herstel poort- of garagedeurstoring",
+      "description": "Wist de vergrendelde storing wanneer een poort of garagedeur niet de verwachte status bereikte na een impuls (mogelijk obstakel of omkering). Alleen een geautoriseerde gebruiker die thuis is kan dit bevestigen; tot die tijd blijft sluiten vanuit Home Assistant geblokkeerd."
     }
   },
   "issues": {

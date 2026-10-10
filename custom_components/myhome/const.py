@@ -49,6 +49,7 @@ PLATFORMS: tuple[Platform, ...] = (
     Platform.MEDIA_PLAYER,
     Platform.BUTTON,
     Platform.ALARM_CONTROL_PANEL,
+    Platform.LOCK,
 )
 CONF_ADDRESS = "address"
 CONF_OWN_PASSWORD = "password"
@@ -102,6 +103,32 @@ CONF_CENTRALIZED_SHUTTER_CLOSE = "centralized_shutter_close"
 CONF_CENTRALIZED_SHUTTER_STOP = "centralized_shutter_stop"
 CONF_TRAVEL_TIME = "travel_time"
 DEFAULT_TRAVEL_TIME = 25
+
+# Impulse cover / access controls (gates, garage doors, impulse relays)
+CONF_TYPE = "type"
+TYPE_IMPULSE_RELAY = "impulse_relay"
+CONF_PIN_CODE = "pin_code"
+CONF_STATE_SENSOR = "state_sensor"
+CONF_PULSE_DURATION = "pulse_duration"
+DEFAULT_PULSE_DURATION = 0.5
+CONF_MIN_CYCLE_TIME = "min_cycle_time"
+DEFAULT_MIN_CYCLE_TIME = 5.0
+# Access policy of impulse gates / garage doors (see access_policy.py)
+CONF_ACCESS = "access"
+CONF_ALLOWED_USERS = "allowed_users"
+CONF_APPROVERS = "approvers"
+CONF_REMOTE_CLOSE = "remote_close"
+CONF_SAFETY_DEVICES_VERIFIED = "safety_devices_verified"
+CONF_SAFETY_CHECK_DAYS = "safety_check_days"
+CONF_CAMERA = "camera"
+CONF_PREWARN_LIGHT = "prewarn_light"
+CONF_PREWARN_SECONDS = "prewarn_seconds"
+CONF_CLOSE_BLOCK_ENTITY = "close_block_entity"
+CONF_WATCHDOG_MARGIN = "watchdog_margin"
+CONF_APPROVAL_TIMEOUT = "approval_timeout"
+EVENT_ACCESS_PREWARNING = "myhome_access_prewarning"
+SERVICE_CANCEL_COVER_REQUEST = "cancel_cover_request"
+SERVICE_ACKNOWLEDGE_COVER_FAULT = "acknowledge_cover_fault"
 
 # Cover calibration (timed covers measure their own travel times on the bus)
 CONF_COVER_TRAVEL_TIMES = "cover_travel_times"  # config entry option: {device_id: {...}}

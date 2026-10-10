@@ -31,6 +31,7 @@ from custom_components.myhome.const import (
 from custom_components.myhome.validate import (
     Area,
     BusInterface,
+    DoorEntryWhere,
     General,
     Group,
     MacAddress,
@@ -43,6 +44,7 @@ from custom_components.myhome.validate import (
     cover_schema,
     format_mac,
     light_schema,
+    lock_schema,
     sensor_schema,
     switch_schema,
 )
@@ -736,3 +738,102 @@ class TestFullConfigSchema:
         res_cov = cover_schema(cov_data)
         assert res_cov["2-22"][CONF_ADVANCED_SHUTTER] is True
 
+
+class TestLockSchemaValidation:
+    """Test validation and restrictions on lock_schema."""
+
+    @pytest.mark.parametrize("where", ["12", "72", "4"])
+    def test_who1_lock_rejected(self, where):
+        """A WHO=1 relay can be a motorized gate: as a lock it would bypass the access policy."""
+        with pytest.raises(Invalid):
+            lock_schema({"lock1": {CONF_WHO: "1", CONF_WHERE: where, CONF_NAME: "Gate as lock"}})
+
+    def test_who8_lock_rejected(self):
+        """Only WHO=6 door entry strikes are locks."""
+        with pytest.raises(Invalid):
+            lock_schema({"lock1": {CONF_WHO: "8", CONF_WHERE: "74", CONF_NAME: "Intercom lock"}})
+
+    def test_who_defaults_to_6(self):
+        res = lock_schema({"lock1": {CONF_WHERE: "4001", CONF_NAME: "Front door"}})
+        assert "6-4001" in res
+
+    @pytest.mark.parametrize("where", ["4001#2", "4095#2", "4000", "1"])
+    def test_who6_riser_and_panel_addresses_validate(self, where):
+        """WHO 6 endpoints are 4000..4095, with #2 appended on a riser installation."""
+        res = lock_schema({"lock1": {CONF_WHO: "6", CONF_WHERE: where, CONF_NAME: "Door"}})
+        assert f"6-{where}" in res
+
+    @pytest.mark.parametrize("where", ["4001#3", "#2", "40#2#2", "abc", "12345", "4001#"])
+    def test_who6_malformed_where_rejected(self, where):
+        with pytest.raises(Invalid):
+            lock_schema({"lock1": {CONF_WHO: "6", CONF_WHERE: where, CONF_NAME: "Door"}})
+
+    def test_who6_validates(self):
+        """WHO=6 door entry lock with entrance panel WHERE succeeds."""
+        data = {
+            "lock1": {
+                CONF_WHO: "6",
+                CONF_WHERE: "1",
+                CONF_NAME: "Main Entrance Panel",
+            }
+        }
+        res = lock_schema(data)
+        assert "6-1" in res
+
+    def test_who6_general_or_broadcast_rejected(self):
+        """WHO=6 door entry lock cannot use general 0 or the broadcast address."""
+        for where in ("0", "4100"):
+            with pytest.raises(Invalid, match="cannot use general"):
+                lock_schema({"lock1": {CONF_WHO: "6", CONF_WHERE: where, CONF_NAME: "General Lock"}})
+
+    def test_door_entry_where_repr(self):
+        assert repr(DoorEntryWhere("custom door msg")) == "DoorEntryWhere(msg='custom door msg')"
+
+    def test_who6_group_rejected(self):
+        with pytest.raises(Invalid):
+            lock_schema({"lock1": {CONF_WHO: "6", CONF_WHERE: "#2", CONF_NAME: "Group Lock"}})
+
+    def test_pulse_duration_bounds(self):
+        """Pulse duration must be between 0.1 and 10.0 seconds."""
+        with pytest.raises(Invalid):
+            lock_schema({
+                "lock1": {
+                    CONF_WHO: "6",
+                    CONF_WHERE: "12",
+                    CONF_NAME: "Negative Pulse Lock",
+                    "pulse_duration": -3.0,
+                }
+            })
+        with pytest.raises(Invalid):
+            lock_schema({
+                "lock1": {
+                    CONF_WHO: "6",
+                    CONF_WHERE: "12",
+                    CONF_NAME: "Too Long Pulse Lock",
+                    "pulse_duration": 15.0,
+                }
+            })
+
+
+
+
+class TestImpulseCoverTypeConsistency:
+    """`type` has to agree with `who`; it used to be ignored silently."""
+
+    @staticmethod
+    def _cover(**cfg):
+        return cover_schema({"gate": {CONF_WHERE: "72", CONF_NAME: "Gate", **cfg}})
+
+    def test_impulse_type_with_who2_rejected(self):
+        with pytest.raises(Invalid, match="needs who: 1"):
+            self._cover(**{CONF_WHO: "2", "type": "impulse_relay"})
+
+    @pytest.mark.parametrize("kind", ["shutter", "standard"])
+    def test_shutter_type_with_who1_rejected(self, kind):
+        with pytest.raises(Invalid, match="who: 1 is an impulse relay"):
+            self._cover(**{CONF_WHO: "1", "type": kind})
+
+    def test_matching_types_validate(self):
+        assert "1-72" in self._cover(**{CONF_WHO: "1", "type": "impulse_relay"})
+        assert "1-72" in self._cover(**{CONF_WHO: "1"})
+        assert "2-72" in self._cover(**{CONF_WHO: "2", "type": "shutter"})

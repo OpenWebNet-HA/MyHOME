@@ -62,6 +62,7 @@ def migrate_entry_and_registries(
         "switch": "1",
         "media_player": "16",
         "climate": "4",
+        "lock": "6",
     }
 
     registry_entries = er.async_entries_for_config_entry(entity_registry, entry.entry_id)

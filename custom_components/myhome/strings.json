@@ -353,6 +353,14 @@
           "description": "The scenario plus action to execute (on, off, increase, decrease, or stop; step/speed for increase/decrease is fixed per protocol)."
         }
       }
+    },
+    "cancel_cover_request": {
+      "name": "Cancel gate or garage door request",
+      "description": "Cancels a pending approval request or a running pre-warning of an impulse gate or garage door. Cancelling is always safe; nothing moves."
+    },
+    "acknowledge_cover_fault": {
+      "name": "Acknowledge gate or garage door fault",
+      "description": "Clears the fault latched when a gate or garage door did not reach the expected state after a pulse (possible obstacle or reversal). Only an allowed user who is at home may acknowledge it; until then closing from Home Assistant stays blocked."
     }
   },
   "issues": {

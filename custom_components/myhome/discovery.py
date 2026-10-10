@@ -602,6 +602,9 @@ class PlatformDiscovery:
         """Discover from, then route, one frame of this platform's WHO."""
         if self.event_type is not None and not isinstance(message, self.event_type):
             return
+        msg_who = getattr(message, "who", getattr(message, "_who", None))
+        if isinstance(msg_who, (str, int)) and str(msg_who) != str(self.who):
+            return
         if getattr(message, "is_translation", None) is True:
             return
         if not self.general_is_device and (

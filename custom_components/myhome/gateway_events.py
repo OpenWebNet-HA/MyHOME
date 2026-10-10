@@ -34,6 +34,13 @@ except ImportError:  # pragma: no cover - pinned OWNd 2.0.0b10 fallback
     class OWNScenarioPlusEvent(OWNMessage):  # type: ignore[misc,no-redef]
         pass
 
+try:
+    from OWNd.message import OWNDoorEntryEvent
+except ImportError:  # pragma: no cover - fallback on released OWNd 2.0.0b10
+    class OWNDoorEntryEvent:  # type: ignore[no-redef]
+        """Fallback stub when running on released OWNd lacking WHO 6 door entry support."""
+        pass
+
 from .const import (
     CONF_LONG_PRESS,
     CONF_LONG_PRESS_REPEAT,
@@ -50,6 +57,9 @@ from .const import (
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
+
+# WHO 8 call kinds of the entrance panels PE1..PE4 (6: handset to handset, 14: pager).
+ENTRANCE_PANEL_KINDS = frozenset({1, 2, 3, 4})
 
 
 class GatewayEventDispatcher:
@@ -183,6 +193,18 @@ class GatewayEventDispatcher:
             self._logger.debug("Could not auto-register %s device %s: %s", who, object_id, err)
 
     _ensure_cen_device = ensure_cen_device
+
+    @staticmethod
+    def _intercom_call_kind(message: OWNMessage) -> int | None:
+        """Call kind of a WHO 8 call (`*8*1#<kind>#<mm>*<where>##`), or None when unreadable."""
+        kind = getattr(message, "call_kind", None)
+        if kind is None:
+            params = getattr(message, "_what_param", None) or []
+            kind = params[0] if params else None
+        try:
+            return int(kind) if kind is not None else None
+        except (TypeError, ValueError):
+            return None
 
     def _is_active_for_who(self, who: int | None) -> bool:
         """Return True if this gateway is the active owner for this WHO subsystem."""
@@ -568,6 +590,51 @@ class GatewayEventDispatcher:
             )
             if isinstance(message, OWNGatewayEvent):
                 self.handler._handle_gateway_diagnostics(message)
+        elif isinstance(message, OWNDoorEntryEvent) or getattr(message, "who", None) in (6, 8):
+            who = getattr(message, "who", None)
+            what = getattr(message, "_what", None)
+            where_val = getattr(message, "where", "")
+            # WHO 8 WHAT 1 starts any call session. Only the entrance panels ring the
+            # door; handset-to-handset calls (kind 6) and pager broadcasts (kind 14)
+            # must not, and a kind that cannot be read fails closed. Older OWNd
+            # releases flag every WHAT 1 as an incoming call, so WHO 8 never trusts
+            # the library's is_call / is_incoming_call.
+            is_who8_call = who == 8 and what == 1 and self._intercom_call_kind(message) in ENTRANCE_PANEL_KINDS
+            is_broadcast = getattr(message, "is_broadcast_call", who == 6 and what == 6 and str(where_val) == "4100")
+            # WHO 6 WHAT 20 is not in the published WHO 6 table (WHAT 0, 6, 9, 10, 11, 12,
+            # 18, 22) and no bus capture of it exists in this repository: unverified.
+            is_chime = getattr(message, "is_chime", who == 6 and what == 20)
+            if who == 8:
+                is_call = is_who8_call
+            else:
+                is_incoming = getattr(message, "is_incoming_call", who == 6 and what == 6)
+                is_call = getattr(message, "is_call", is_incoming or is_chime)
+            # On a shared bus every gateway sees the same frame; only the active owner
+            # of the subsystem may announce it or each ring fires once per gateway.
+            if is_call and self._is_active_for_who(who):
+                event_name = (
+                    "broadcast_call"
+                    if is_broadcast
+                    else "chime"
+                    if is_chime
+                    else "call"
+                )
+                doorbell_payload = {
+                    "where": str(where_val),
+                    "event": event_name,
+                    "is_broadcast": is_broadcast,
+                    "gateway_mac": self.handler.mac,
+                }
+                config_entry = getattr(self.handler, "config_entry", None)
+                if config_entry and hasattr(config_entry, "entry_id") and isinstance(config_entry.entry_id, str):
+                    doorbell_payload["entry_id"] = config_entry.entry_id
+                self.hass.bus.async_fire("myhome_doorbell_event", doorbell_payload)
+                dispatcher_send(self.hass, f"myhome_doorbell_event_{self.handler.mac}", doorbell_payload)
+            self._logger.debug(
+                "%s %s",
+                self.handler.log_id,
+                getattr(message, "human_readable_log", str(message)),
+            )
         elif getattr(message, "who", None) == 1013:
             if getattr(message, "dimension", getattr(message, "_dimension", None)) == 1:
                 self.handler._handle_gateway_identity_diagnostics(message)

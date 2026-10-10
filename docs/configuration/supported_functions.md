@@ -13,6 +13,7 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 | 2 | Automation (shutters, blinds) | `cover` | ✅ | Timed and position-reporting actuators. |
 | 4 | Thermoregulation | `climate`, `sensor` | ✅ | Zone thermostats, central units 3550 (`#0`) and 4695 (`#0#1`), probes. |
 | 5 | Burglar alarm | `alarm_control_panel` | 👁️ | Central unit status (read-only); arm/disarm through installer-programmed AUX frames — see [alarm](alarm.md#arming-and-disarming). |
+| 6 | Door entry | `lock`, `event` | ✅ | Door strikes, lock actuators, and doorbell events. |
 | 9 | Auxiliary channels | `binary_sensor` | 👁️ | AUX 1–9 as binary sensors. |
 | 13 | Gateway management | — | ⚙️ | Clock sync (`myhome.sync_time`), firmware / model / identity for the device registry and diagnostics. |
 | 14 | Actuator lock | `button` | ✅ | Lock / unlock buttons on every light, switch and cover device. |
@@ -45,15 +46,23 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 | On / off | ✅ | Device class `switch` or `outlet` from `myhome.yaml`. |
 | Hardware timer | ✅ | `myhome.turn_on_timed`. |
 
-### `cover` (WHO 2)
+### `cover` (WHO 1 / WHO 2)
 
 | Function | Status | Notes |
 | :--- | :---: | :--- |
-| Open / close / stop | ✅ | |
+| Open / close / stop | ✅ | Standard WHO 2 shutter actuators. |
+| Impulse cover (WHO 1) | ✅ | Pulse-driven gates and garage doors with AccessController multi-factor approval, sensor direction checks, pre-warning, and watchdog. |
 | Position (position-reporting actuators) | ✅ | Requires `advanced_shutter: true` in `myhome.yaml`; it is not learned from the bus. |
 | Position (timed actuators) | ✅ | Virtual position from the travel time: `travel_time` in YAML, measured with `myhome.calibrate_cover`, or set by hand with `myhome.set_cover_travel_time`. |
 | Tilt | ❌ | Slat commands are parsed by OWNd but not exposed. |
 | Echo suppression | ✅ | The gateway's relay of our own command is not mistaken for a keypad press. |
+
+### `lock` (WHO 6)
+
+| Function | Status | Notes |
+| :--- | :---: | :--- |
+| Door entry lock (WHO 6) | ✅ | Door entry strikes from `myhome.yaml` with optional constant-time PIN authentication and auto-relock. Never created from bus traffic; `who: 1` relays are rejected (motorized gates and garage doors are impulse covers). |
+| Doorbell event (WHO 6 / WHO 8) | ✅ | `myhome_doorbell_event` for an entrance panel ringing (WHO 8 call kinds 1-4, WHO 6 call), not for handset-to-handset calls or pager broadcasts. Fired by the gateway that owns the subsystem only. The WHO 6 chime (WHAT 20) is unverified: it is not in the published WHO 6 table and has no capture. |
 
 ### `climate` (WHO 4)
 

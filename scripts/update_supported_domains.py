@@ -33,6 +33,7 @@ PREFERRED_ORDER = [
     "light",
     "switch",
     "cover",
+    "lock",
     "climate",
     "alarm_control_panel",
     "binary_sensor",
@@ -62,7 +63,15 @@ DOMAIN_METADATA: dict[str, dict[str, str]] = {
         "label": "**`cover`**",
         "capabilities": (
             "Motorized shutters, blinds, roll-ups with state tracking, "
-            "position-reporting actuators & virtual travel-time positioning"
+            "position-reporting actuators & virtual travel-time positioning; "
+            "impulse gates & garage doors (`WHO=1`) with AccessController multi-factor safety approval"
+        ),
+    },
+    "lock": {
+        "label": "**`lock`**",
+        "capabilities": (
+            "Native video door entry strikes (`WHO=6`, configured in `myhome.yaml`) with constant-time PIN "
+            "authentication and auto-relock"
         ),
     },
     "climate": {
