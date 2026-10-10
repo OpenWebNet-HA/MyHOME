@@ -199,7 +199,12 @@ async def test_primary_leaves_a_delegated_who_to_its_secondary(hass: HomeAssista
 
     gw_p.send_status_request = AsyncMock()
     await gw_p.initial_discovery()
-    assert [str(c.args[0]) for c in gw_p.send_status_request.await_args_list] == ["*#4*0##", "*#16*0*5##"]
+    assert [str(c.args[0]) for c in gw_p.send_status_request.await_args_list] == [
+        "*#4*0##",
+        "*#16*0*5##",
+        "*#18*51*51##",
+        "*#18*51*113##",
+    ]
 
 
 async def test_secondary_does_not_duplicate_a_device_the_primary_already_has(hass: HomeAssistant) -> None:

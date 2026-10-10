@@ -468,6 +468,20 @@ class PlatformDiscovery:
                         LOGGER.debug("%s: could not remove %s: %s", self.platform, entry.entity_id, err)
                 continue
 
+            clean = address.clean_where
+            is_phantom = not clean.startswith("#") and clean.split("#")[0] in ("0", "00")
+            if not self.general_is_device and not ctx.cfg and is_phantom:
+                LOGGER.info(
+                    "%s: Pruned phantom broadcast entity %s (WHO %s WHERE %s)",
+                    self.platform,
+                    entry.entity_id,
+                    self.who,
+                    address.key,
+                )
+                if registry is not None:
+                    prune_entity(self.hass, registry, entry, self.config_entry.entry_id)
+                continue
+
             # Ignored addresses: permanently skip discovery, entities and fault tracking
             if self._is_ignored(address):
                 LOGGER.info(
@@ -604,9 +618,14 @@ class PlatformDiscovery:
             return
         if getattr(message, "is_translation", None) is True:
             return
-        if not self.general_is_device and (
-            getattr(message, "is_general", False) is True or str(getattr(message, "where", "")) == "0"
-        ):
+        where_raw = str(getattr(message, "where", ""))
+        clean_where = where_raw.split("-")[-1].split("#")[0]
+        is_general_msg = (
+            getattr(message, "is_general", False) is True
+            or where_raw in ("0", "00")
+            or clean_where in ("0", "00")
+        )
+        if not self.general_is_device and is_general_msg:
             if self.on_general:
                 self.on_general(message)
             return
@@ -614,6 +633,10 @@ class PlatformDiscovery:
         if address is None and self.route_keys is None:
             return
         if address is not None:
+            clean = address.clean_where
+            is_phantom = not clean.startswith("#") and clean.split("#")[0] in ("0", "00")
+            if not self.general_is_device and is_phantom:
+                return
             if self._is_ignored(address):
                 return
             if getattr(message, "is_group", False) is True or getattr(message, "is_area", False) is True:

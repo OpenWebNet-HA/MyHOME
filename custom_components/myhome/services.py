@@ -175,16 +175,36 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 "*#13**16##",  # Gateway firmware version
             ]
             general_queries = ((1, "*#1*0##"), (2, "*#2*0##"), (4, "*#4*0##"), (5, "*#5*0##"), (16, "*#16*0*5##"))
+            def _profile_supports(who: int) -> bool:
+                fn = getattr(handler, "_profile_supports_who", None)
+                if callable(fn):
+                    return bool(fn(who))
+                return True
+
             if getattr(handler, "is_follower", False) is True:
                 delegated: set[int] = getattr(handler, "delegated_whos", set())
-                general = [q for who, q in general_queries if who in delegated]
-                point_queries = energy_queries if 18 in delegated else []
+                general = [
+                    q for who, q in general_queries
+                    if who in delegated and _profile_supports(who)
+                ]
+                point_queries = (
+                    energy_queries
+                    if 18 in delegated and _profile_supports(18)
+                    else []
+                )
             else:
                 delegated_away: object = getattr(handler, "delegated_away_whos", set())
                 if not isinstance(delegated_away, (set, frozenset, list, tuple)):
                     delegated_away = set()
-                general = [q for who, q in general_queries if who not in delegated_away]
-                point_queries = energy_queries if 18 not in delegated_away else []
+                general = [
+                    q for who, q in general_queries
+                    if who not in delegated_away and _profile_supports(who)
+                ]
+                point_queries = (
+                    energy_queries
+                    if 18 not in delegated_away and _profile_supports(18)
+                    else []
+                )
 
             for query in gateway_queries:
                 await _send_query(handler, query)

@@ -169,6 +169,89 @@ async def test_sweep_bus_follower_delegated_who1(hass: HomeAssistant, attach_gat
     mock_handler.send.assert_not_called()
 
 
+async def test_sweep_bus_profile_filtering(hass: HomeAssistant, attach_gateway) -> None:
+    """Test sweep_bus filters queries according to gateway profile capabilities (#681)."""
+    from unittest.mock import AsyncMock
+    await async_setup_services(hass)
+
+    # 1. MH200N: supports WHO 1, 2, 4, 16, but NOT WHO 5 or WHO 18
+    mock_mh200n = MagicMock()
+    mock_mh200n.send = AsyncMock()
+    mock_mh200n.send_status_request = AsyncMock()
+    mock_mh200n.send_paced = AsyncMock()
+    mock_mh200n.is_follower = False
+    mock_mh200n.delegated_away_whos = set()
+    mock_mh200n._profile_supports_who = lambda who: who in (1, 2, 4, 16)
+    mac_mh200n = "00:03:50:aa:bb:20"
+    attach_gateway(mac_mh200n, mock_mh200n)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SWEEP_BUS,
+        {ATTR_GATEWAY: mac_mh200n},
+        blocking=True,
+    )
+
+    # General requests must NOT include *#5*0##
+    mock_mh200n.send_paced.assert_awaited_once_with(
+        ["*#1*0##", "*#2*0##", "*#4*0##", "*#16*0*5##"]
+    )
+    sent_mh200n = [str(call.args[0]) for call in mock_mh200n.send_status_request.await_args_list]
+    # Point queries must NOT include WHO 18 energy queries
+    assert not any(raw.startswith("*#18*") for raw in sent_mh200n)
+
+    # 2. F454: supports WHO 1, 2, 4, 16, 18, but NOT WHO 5
+    mock_f454 = MagicMock()
+    mock_f454.send = AsyncMock()
+    mock_f454.send_status_request = AsyncMock()
+    mock_f454.send_paced = AsyncMock()
+    mock_f454.is_follower = False
+    mock_f454.delegated_away_whos = set()
+    mock_f454._profile_supports_who = lambda who: who in (1, 2, 4, 16, 18)
+    mac_f454 = "00:03:50:aa:bb:54"
+    attach_gateway(mac_f454, mock_f454)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SWEEP_BUS,
+        {ATTR_GATEWAY: mac_f454},
+        blocking=True,
+    )
+
+    # General requests must NOT include *#5*0##
+    mock_f454.send_paced.assert_awaited_once_with(
+        ["*#1*0##", "*#2*0##", "*#4*0##", "*#16*0*5##"]
+    )
+    sent_f454 = [str(call.args[0]) for call in mock_f454.send_status_request.await_args_list]
+    # Point queries MUST include WHO 18 energy queries
+    assert "*#18*51*51##" in sent_f454
+
+    # 3. MH202: supports WHO 1, 2, 4, 5, 16, 18
+    mock_mh202 = MagicMock()
+    mock_mh202.send = AsyncMock()
+    mock_mh202.send_status_request = AsyncMock()
+    mock_mh202.send_paced = AsyncMock()
+    mock_mh202.is_follower = False
+    mock_mh202.delegated_away_whos = set()
+    mock_mh202._profile_supports_who = lambda who: True
+    mac_mh202 = "00:03:50:aa:bb:02"
+    attach_gateway(mac_mh202, mock_mh202)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SWEEP_BUS,
+        {ATTR_GATEWAY: mac_mh202},
+        blocking=True,
+    )
+
+    # General requests MUST include *#5*0##
+    mock_mh202.send_paced.assert_awaited_once_with(
+        ["*#1*0##", "*#2*0##", "*#4*0##", "*#5*0##", "*#16*0*5##"]
+    )
+    sent_mh202 = [str(call.args[0]) for call in mock_mh202.send_status_request.await_args_list]
+    assert "*#18*51*51##" in sent_mh202
+
+
 async def test_sweep_bus_discovers_f520_active_power_sensor(hass: HomeAssistant, fast_bus_pacing) -> None:
     """Test sweep_bus sends Dimension 1200 query and successfully discovers active power sensors (#494)."""
     from unittest.mock import AsyncMock, patch

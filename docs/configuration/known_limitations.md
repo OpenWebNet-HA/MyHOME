@@ -11,6 +11,8 @@ Things the integration does not do, or does with a caveat, and the reason. Where
 | **A gateway's model can be mislabelled.** | Only the WHO 13 device-type reply is available in-band, and its official table stops at 2006 hardware. | The [identification rules](gateway-identification.md) correct manual choices and raise a repair issue when evidence contradicts SSDP; use the reconfigure flow to set the model explicitly. |
 | **Serial (Legrand 3578) gateways are not discovered.** | No SSDP on a USB port. | Add the integration manually and pick the serial transport. |
 | **No HMAC on MH200 / MH200N / MH201 / AM4890 / 3578.** | Those gateways only implement the numeric (SHA-less) password. | Configure the numeric OpenWebNet password on the gateway. |
+| **Broadcast, Area 00, and General 0 frames do not generate entities.** | Broadcast frames (`WHERE="0"`, `"00"`) coordinate multiple actuators and do not represent individual physical devices (except WHO 5 where `WHERE="0"` is the alarm central unit). Creating entities from these frames produced phantom entities like `sensor.zone_00` or `climate.climate_zone_00`. | Control individual actuators or use YAML declared groups (`where: '#G'`) and manual scenes. |
+| **Secondary energy meters (`52`–`59`) require bus activity or manual configuration for initial setup.** | Startup discovery queries factory default meter `51` (`*#18*51*51##`, `*#18*51*113##`) to avoid long startup sweep delays. | Secondary meters appear automatically when they transmit power/energy readings on the bus, or immediately when running `myhome.sweep_bus`. They can also be declared in `myhome.yaml`. |
 
 ## Lighting (WHO 1)
 

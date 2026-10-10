@@ -18,6 +18,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from OWNd.message import (
@@ -148,10 +149,20 @@ async def async_setup_entry(
         )
 
     def accept(ctx: DeviceContext) -> bool:
+        clean = ctx.address.clean_where
+        is_broadcast = not clean.startswith("#") and clean.split("#")[0] in ("0", "00")
+        if not ctx.cfg and is_broadcast:
+            return False
         if is_probe(ctx.address.where):
             LOGGER.debug("Skipping non-zone address %s for climate platform", ctx.address.where)
             return False
         return True
+
+    def duplicate_climate(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
+        if ctx.cfg:
+            return False
+        clean = ctx.address.clean_where
+        return not clean.startswith("#") and clean.split("#")[0] in ("0", "00")
 
     def known_keys(ctx: DeviceContext) -> list[str]:
         keys = [*default_known_keys(ctx), ctx.address.where, ctx.address.clean_where, ctx.config_id or ""]
@@ -162,7 +173,8 @@ async def async_setup_entry(
     PlatformDiscovery(
         hass, config_entry, async_add_entities,
         platform=PLATFORM, who="4", event_type=OWNHeatingEvent, build=build,
-        accept=accept, known_keys=known_keys, address=_zone_address, route_keys=_zone_route_keys,
+        accept=accept, reject_registry_entry=duplicate_climate, known_keys=known_keys,
+        address=_zone_address, route_keys=_zone_route_keys,
         general_is_device=True,  # WHERE=0 frames name their zone in a parameter; _zone_address decides
     ).start()
     return True
@@ -235,7 +247,9 @@ def _calling_zones(message: Any) -> tuple[list[str], str | None]:
             zones.append(str(int(what_param[0])))
         except (ValueError, TypeError):
             pass
-    if not zones and raw_where and raw_where not in ("0", "") and not is_probe(str(raw_where)):
+    clean_raw = str(raw_where).split("-")[-1] if raw_where is not None else ""
+    is_broadcast = not clean_raw.startswith("#") and clean_raw.split("#")[0] in ("0", "00")
+    if not zones and raw_where and not is_broadcast and clean_raw != "" and not is_probe(str(raw_where)):
         zones.append(str(raw_where))
     return zones, interface
 
