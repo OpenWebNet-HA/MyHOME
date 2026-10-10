@@ -424,26 +424,19 @@ class _PriorityQueueStorage:
     def remove(self, value: Any) -> None:
         """Remove first occurrence of value."""
         tier = _classify_tier(value)
-        if tier == _TIER_COMMANDS:
-            target = self._commands
-        elif tier == _TIER_STATUS:
-            target = self._status
-        else:
-            target = self._others
-
-        try:
-            target.remove(value)
-            return
-        except ValueError:
-            pass
-
-        for q in (self._commands, self._status, self._others):
-            if q is not target:
-                try:
-                    q.remove(value)
-                    return
-                except ValueError:
-                    pass
+        tiers = (
+            (self._commands, self._status, self._others)
+            if tier == _TIER_COMMANDS
+            else (self._status, self._commands, self._others)
+            if tier == _TIER_STATUS
+            else (self._others, self._commands, self._status)
+        )
+        for q in tiers:
+            try:
+                q.remove(value)
+                return
+            except ValueError:
+                pass
         raise ValueError(f"{value!r} not in priority queue")
 
     def clear(self) -> None:
@@ -476,17 +469,26 @@ class CommandPriorityQueue(asyncio.Queue[Any]):
     """Asyncio queue prioritizing user commands over telemetry polls."""
 
     _queue: _PriorityQueueStorage
+    _putters: collections.deque[asyncio.Future[Any]]
 
     def _init(self, maxsize: int) -> None:
         """Initialize custom multi-tier priority queue storage."""
         self._queue = _PriorityQueueStorage()
+
+    def _wakeup_next(self, waiters: collections.deque[asyncio.Future[Any]]) -> None:
+        """Wake up the next waiter that is not cancelled."""
+        while waiters:
+            waiter = waiters.popleft()
+            if not waiter.done():
+                waiter.set_result(None)
+                break
 
     async def put(self, item: Any) -> None:
         """Put an item into the queue, prioritizing command waiters when full."""
         while self.full():
             if getattr(self, "_is_shutdown", False):
                 raise getattr(asyncio, "QueueShutDown", Exception)
-            putter = self._get_loop().create_future()
+            putter: asyncio.Future[None] = asyncio.get_running_loop().create_future()
             is_cmd = _classify_tier(item) == _TIER_COMMANDS
             setattr(putter, "_is_cmd", is_cmd)
             if is_cmd:
@@ -545,7 +547,7 @@ class CommandWorkerPool:
             if hasattr(self.gateway, "profile") and self.gateway.profile
             else 250
         )
-        self.send_buffer: CommandPriorityQueue = CommandPriorityQueue(maxsize=queue_max_size)
+        self.send_buffer: asyncio.Queue[Any] = CommandPriorityQueue(maxsize=queue_max_size)
 
         self._event_session_ready = event_session_ready if event_session_ready is not None else asyncio.Event()
 

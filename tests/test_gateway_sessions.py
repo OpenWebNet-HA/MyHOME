@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -172,6 +173,90 @@ async def test_event_session_runner_read_session_auth_refused(mock_handler: Magi
 
     mock_handler._on_event_connection_state_change.assert_called_once_with(False)
     mock_session.get_next.assert_not_called()
+
+
+async def test_event_session_runner_retry_loop_and_backoff(mock_handler: MagicMock) -> None:
+    """_listening_loop retries _run_event_session with backoff when it returns True."""
+    runner = EventSessionRunner(mock_handler)
+    calls = 0
+
+    async def mock_run() -> bool:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return True
+        return False
+
+    runner._run_event_session = AsyncMock(side_effect=mock_run)
+
+    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        await runner.listening_loop()
+        assert calls == 2
+        mock_sleep.assert_called_once()
+
+
+async def test_event_session_runner_run_event_session_terminated_or_exceptions(
+    mock_handler: MagicMock,
+) -> None:
+    """_run_event_session handles termination, TimeoutError stall, and generic exceptions."""
+    runner = EventSessionRunner(mock_handler)
+
+    # Terminated early return
+    runner._terminate_listener = True
+    assert await runner._run_event_session() is False
+    runner._terminate_listener = False
+
+    # Watchdog TimeoutError stall
+    with patch.object(runner, "_read_event_session", side_effect=TimeoutError("stall")):
+        with patch("asyncio.timeout") as mock_timeout:
+            mock_ctx = MagicMock()
+            mock_ctx.expired.return_value = True
+            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
+            mock_ctx.__aexit__ = AsyncMock(side_effect=TimeoutError("stall"))
+            mock_timeout.return_value = mock_ctx
+            assert await runner._run_event_session() is True
+
+    # Generic exception
+    with patch.object(runner, "_read_event_session", side_effect=RuntimeError("boom")):
+        assert await runner._run_event_session() is True
+
+
+async def test_event_session_runner_read_session_reachable_change_and_process_error(
+    mock_handler: MagicMock,
+) -> None:
+    """_read_event_session logs reachable transitions and survives _process_message exceptions."""
+    runner = EventSessionRunner(mock_handler)
+    mock_session = MagicMock()
+    mock_session.connect = AsyncMock(return_value={"Success": True})
+    mock_session.is_connected = True
+    mock_session._stream_reader = object()
+    mock_session._stream_writer = object()
+
+    msg = OWNMessage("*1*1*11##")
+    mock_handler._process_message.side_effect = ValueError("bad handler")
+
+    step = 0
+
+    async def get_next_side_effect() -> OWNMessage | None:
+        nonlocal step
+        step += 1
+        if step == 1:
+            return msg
+        if step == 2:
+            mock_session.is_connected = False
+            mock_session._stream_reader = None
+            return None
+        if step == 3:
+            mock_session.is_connected = True
+            mock_session._stream_reader = object()
+            return None
+        runner._terminate_listener = True
+        return None
+
+    mock_session.get_next = AsyncMock(side_effect=get_next_side_effect)
+
+    await runner._read_event_session(mock_session)
+    assert step == 4
 
 
 # ── CommandWorkerPool ──────────────────────────────────────────────────────────
@@ -492,6 +577,7 @@ def test_command_priority_queue_storage_methods() -> None:
     assert storage[1:3] == [c2, s1]
     assert list(reversed(storage)) == [custom, None, s1, c2, c1]
     assert storage.index(c2) == 1
+    assert storage.index(c2, 0, 3) == 1
     assert storage.index(custom) == 4
 
     # Copy and equality
@@ -499,14 +585,31 @@ def test_command_priority_queue_storage_methods() -> None:
     assert len(copied) == 5
     assert list(copied) == list(storage)
     assert copied == storage
+    assert storage == list(storage)
+    assert storage == collections.deque(list(storage))
+    assert storage != "not_a_queue"
+    assert storage != [c1]
+
+    # Appendleft across all tiers
+    c0 = {"message": "C0", "is_status_request": False}
+    s0 = {"message": "S0", "is_status_request": True}
+    o0 = "other_0"
+    copied.appendleft(c0)
+    assert copied[0] == c0
+    copied.appendleft(s0)
+    assert s0 in copied
+    copied.appendleft(o0)
+    assert o0 in copied
 
     # Extend and extendleft
     c3 = {"message": "C3", "is_status_request": False}
-    c0 = {"message": "C0", "is_status_request": False}
+    s3 = {"message": "S3", "is_status_request": True}
+    o3 = "other_3"
     copied.extend([c3])
-    assert copied[2] == c3
-    copied.appendleft(c0)
-    assert copied[0] == c0
+    assert c3 in copied
+    copied.extendleft([c3, s3, o3])
+    assert s3 in copied
+    assert o3 in copied
 
     # Remove
     storage.remove(c1)
@@ -526,19 +629,50 @@ def test_command_priority_queue_storage_methods() -> None:
     with pytest.raises(ValueError):
         storage.remove("not_present")
 
-    # Pop tail
-    assert storage.pop() == c2
-    assert len(storage) == 0
+    # Pop tail across all tiers: _others, _status, and _commands
+    pop_storage = _PriorityQueueStorage()
+    pop_storage.append({"message": "CMD", "is_status_request": False})
+    pop_storage.append({"message": "STAT", "is_status_request": True})
+    pop_storage.append("OTHER")
+
+    assert pop_storage.pop() == "OTHER"  # pops from _others
+    assert pop_storage.pop()["message"] == "STAT"  # pops from _status
+    assert pop_storage.pop()["message"] == "CMD"  # pops from _commands
 
     # Pop on empty raises IndexError
     with pytest.raises(IndexError):
-        storage.popleft()
+        pop_storage.popleft()
     with pytest.raises(IndexError):
-        storage.pop()
+        pop_storage.pop()
 
     # Clear
     copied.clear()
     assert len(copied) == 0
+
+
+async def test_command_priority_queue_shutdown_and_wakeup_skip() -> None:
+    """Queue shutdown raises exception and _wakeup_next skips completed waiters."""
+    q: CommandPriorityQueue = CommandPriorityQueue(maxsize=1)
+    await q.put({"message": "S1", "is_status_request": True})
+
+    # Test shutdown
+    setattr(q, "_is_shutdown", True)
+    shutdown_exc = getattr(asyncio, "QueueShutDown", Exception)
+    with pytest.raises(shutdown_exc):
+        await q.put({"message": "C1", "is_status_request": False})
+    setattr(q, "_is_shutdown", False)
+
+    # Test _wakeup_next skipping completed/cancelled waiters
+    waiter1: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+    waiter1.cancel()  # already done/cancelled
+    waiter2: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+
+    waiters: collections.deque[asyncio.Future[Any]] = collections.deque([waiter1, waiter2])
+    q._wakeup_next(waiters)
+
+    assert waiter1.cancelled()
+    assert waiter2.done()
+    assert waiter2.result() is None
 
 
 async def test_worker_sends_user_command_ahead_of_pending_status_polls(
