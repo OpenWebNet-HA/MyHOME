@@ -68,7 +68,7 @@ from .const import (
     who4_raw_to_celsius,
 )
 from .data import MyHOMEConfigEntry
-from .discovery import Address, DeviceContext, PlatformDiscovery
+from .discovery import Address, DeviceContext, PlatformDiscovery, is_broadcast_where
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 from .typing_compat import as_any
@@ -108,7 +108,7 @@ def _spellings(where: str) -> list[str]:
     return [k for k in (where, normalize_where(where), clean, normalize_where(clean)) if k]
 
 
-ENERGY_UNIQUE_ID = re.compile(r"([57]\d+)-(power|total-energy|daily-energy|monthly-energy)")
+ENERGY_UNIQUE_ID = re.compile(r"([0-9#]+)-(power|total-energy|daily-energy|monthly-energy)")
 
 
 
@@ -187,12 +187,20 @@ async def async_setup_entry(
         return Address(where, key_suffix=f"-{measurement}")
 
     def energy_bus_address(message: Any) -> Address | None:
+        where = str(getattr(message, "where", ""))
+        if getattr(message, "is_general", False) is True or is_broadcast_where(where):
+            return None
         measurement = ENERGY_MEASUREMENTS.get(cast(str, getattr(message, "message_type", None)))
         if measurement is None:
             return None
         return Address(_sensor_address("18", message.where)[1], key_suffix=f"-{measurement}")
 
-    def build_energy(ctx: DeviceContext) -> list[MyHOMEEntity] | MyHOMEEntity:
+    def duplicate_energy(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
+        if ctx.cfg:
+            return False
+        return is_broadcast_where(ctx.address.clean_where)
+
+    def build_energy(ctx: DeviceContext) -> list[MyHOMEEntity] | MyHOMEEntity | None:
         if ctx.source == "yaml":
             cfg = ctx.cfg
             dev_class = cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class")
@@ -217,6 +225,8 @@ async def async_setup_entry(
             return sensors
         # Restored or discovered: only the measurements the meter actually reported
         where, measurement = ctx.address.where, ctx.address.key_suffix[1:]
+        if is_broadcast_where(where) or is_broadcast_where(ctx.address.clean_where):
+            return None
         sensor: MyHOMEEntity
         if measurement == "power":
             sensor = MyHOMEPowerSensor(
@@ -254,7 +264,7 @@ async def async_setup_entry(
 
     def duplicate_illuminance(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
         # Broadcast address or obsolete second registry entry, or an address that myhome.yaml configures
-        if ctx.address.where in ("0", "00"):
+        if is_broadcast_where(ctx.address.clean_where):
             return True
         return normalize_where(ctx.address.where) in discovery_for["1"].known or is_configured(
             "1", ctx.address.where, SensorDeviceClass.ILLUMINANCE
@@ -303,14 +313,23 @@ async def async_setup_entry(
         dimension = getattr(message, "dimension", None)
         message_type = getattr(message, "message_type", None)
         where = str(message.where)
+        if is_broadcast_where(where):
+            return None
         clean = where.split("-")[-1].split("#")[0]
+        if not clean:
+            return None
         is_probe_reading = dimension == 15 or message_type == MESSAGE_TYPE_SECONDARY_TEMPERATURE
         is_probe_main = (message_type == MESSAGE_TYPE_MAIN_TEMPERATURE or dimension == 0) and is_probe(clean)
         if dimension in (11, 12, 13, 14, 19, 20) or not (is_probe_reading or is_probe_main):
             return None
         return Address(normalize_where(where) or where)
 
-    def build_temperature(ctx: DeviceContext) -> MyHOMETemperatureSensor:
+    def duplicate_temperature(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
+        if ctx.cfg:
+            return False
+        return is_broadcast_where(ctx.address.clean_where)
+
+    def build_temperature(ctx: DeviceContext) -> MyHOMETemperatureSensor | None:
         if ctx.source == "yaml":
             cfg = ctx.cfg
             return MyHOMETemperatureSensor(
@@ -321,6 +340,8 @@ async def async_setup_entry(
         where = ctx.address.where
         clean = where.split("-")[-1].split("#")[0]
         primary = normalize_where(where) or normalize_where(clean) or where
+        if is_broadcast_where(primary) or is_broadcast_where(clean):
+            return None
         label = normalize_where(clean) or clean
         name = f"Probe {label}" if is_probe(clean) else f"Zone {label}"
         # ``4-<where>``, the id validate.py gives a myhome.yaml probe: one unique id either way (#441)
@@ -348,7 +369,8 @@ async def async_setup_entry(
     )
     discovery_for["18"] = PlatformDiscovery(
         who="18", event_type=OWNEnergyEvent, build=build_energy, accept=yaml_class(SensorDeviceClass.POWER, SensorDeviceClass.ENERGY),
-        registry_address=energy_registry_address, address=energy_bus_address, known_keys=energy_known_keys, **common_args,
+        registry_address=energy_registry_address, reject_registry_entry=duplicate_energy,
+        address=energy_bus_address, known_keys=energy_known_keys, **common_args,
     )
     discovery_for["1"] = PlatformDiscovery(
         who="1", event_type=OWNLightingEvent, build=build_illuminance, accept=yaml_class(SensorDeviceClass.ILLUMINANCE),
@@ -358,6 +380,7 @@ async def async_setup_entry(
     discovery_for["4"] = PlatformDiscovery(
         who="4", event_type=OWNHeatingEvent, build=build_temperature, accept=yaml_class(SensorDeviceClass.TEMPERATURE),
         registry_address=class_registry_address("-temperature", SensorDeviceClass.TEMPERATURE),
+        reject_registry_entry=duplicate_temperature,
         address=temperature_bus_address, known_keys=known_keys, **common_args,
     )
 

@@ -44,3 +44,20 @@ The MyHOME integration supports all official BTicino and Legrand OpenWebNet gate
 
 > [!NOTE]
 > **Sound System (WHO = 16) Wiring**: The 2-wire SCS bus carries both digital commands (power, volume, input routing via OpenWebNet WHO 16) and modulated stereo audio simultaneously over the same 2-wire bus. External audio streamers connect their stereo analog line-out to an audio source interface (e.g. Legrand / BTicino L4561N, L4560, or 3482), which modulates the audio onto the 2-wire SCS bus into the F441/F441M matrix inputs S1–S4. For full details and the official wiring schematic, see the [Sound System / Media Player Guide](../configuration/media_player.md).
+
+---
+
+## Gateway Startup Discovery Capabilities
+
+During startup initial discovery, status queries are gated strictly by gateway profile capabilities to avoid transmitting unsupported commands:
+
+| Gateway Model | Initial Discovery Subsystems Queried | Profile Support Notes |
+| :--- | :--- | :--- |
+| **MH202** | WHO 1, 2, 4, 5, 16, 18 | Full support including Burglar Alarm (`*#5*0##`), Sound (`*#16*0*5##`), and Energy (`*#18*51*...`). |
+| **H4890 / AM4890** | WHO 1, 2, 4, 5, 16, 18 | Supports Burglar Alarm, Sound (`*#16*0*5##`), and Energy meter 51 queries. |
+| **F454** | WHO 1, 2, 4, 16, 18 | Full lighting, cover, climate, sound, and energy meter 51 queries. Alarm query omitted. |
+| **F455** | WHO 1, 2, 4, 18 | Entry-level gateway: lighting, cover, climate, and energy meter 51 queries. Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual. |
+| **MyHomeServer1** | WHO 1, 2, 4, 16, 18 | Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted. |
+| **MH201** | WHO 1, 2, 4, 16, 18 | Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted. |
+| **MH200 / MH200N** | WHO 1, 2, 4, 16 | Lighting, cover, climate, and sound queries (hardware verified on both). Alarm and energy queries omitted. |
+

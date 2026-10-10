@@ -20,6 +20,7 @@ from custom_components.myhome.const import (
     CONF_WHO,
     DOMAIN,
 )
+from custom_components.myhome.discovery import Address, DeviceContext, PlatformDiscovery
 from custom_components.myhome.sensor import (
     MyHOMEIlluminanceSensor,
     MyHOMEPowerSensor,
@@ -678,4 +679,96 @@ async def test_build_illuminance_rejects_where_0_and_00(hass: HomeAssistant):
     assert build_fn(ctx_00) is None
 
 
+@pytest.mark.asyncio
+async def test_temperature_and_energy_reject_and_prune_zero_and_double_zero(hass):
+    """Verify WHO 4 and WHO 18 reject 0/00 in bus address, build, and prune on restore (#681)."""
+    mac = "00:11:22:33:44:55"
+    mock_gateway = MagicMock(mac=mac)
+    hass.data = {
+        DOMAIN: {
+            mac: {
+                CONF_PLATFORMS: {"sensor": {}},
+                CONF_ENTITY: mock_gateway,
+            }
+        }
+    }
+    config_entry = MagicMock()
+    config_entry.data = {CONF_MAC: mac}
+    config_entry.entry_id = "test_sensor_prune"
 
+    attach_runtime(hass, config_entry)
+
+    with patch("custom_components.myhome.sensor.PlatformDiscovery", wraps=PlatformDiscovery) as mock_pd, \
+         patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]), \
+         patch("custom_components.myhome.discovery.er.async_get", return_value=MagicMock()):
+        assert await async_setup_entry(hass, config_entry, lambda e: None) is True
+
+    # Check WHO 4 hooks
+    pd_4 = next(call.kwargs for call in mock_pd.call_args_list if call.kwargs.get("who") == "4")
+    addr_fn_4 = pd_4["address"]
+    build_fn_4 = pd_4["build"]
+    reject_fn_4 = pd_4["reject_registry_entry"]
+
+    # temperature_bus_address rejects 0 and 00
+    msg_temp_00 = MagicMock(where="00", dimension=15, message_type=None)
+    assert addr_fn_4(msg_temp_00) is None
+    msg_temp_0 = MagicMock(where="0", dimension=15, message_type=None)
+    assert addr_fn_4(msg_temp_0) is None
+
+    # build_temperature rejects 0 and 00
+    assert build_fn_4(DeviceContext(address=Address("0"), who="4", source="bus")) is None
+    assert build_fn_4(DeviceContext(address=Address("00"), who="4", source="bus")) is None
+
+    # duplicate_temperature rejects 0 and 00 (and routed 00#4#01) from registry when not configured in YAML
+    assert reject_fn_4(MagicMock(), DeviceContext(address=Address("0"), who="4", source="registry", cfg={})) is True
+    assert reject_fn_4(MagicMock(), DeviceContext(address=Address("00"), who="4", source="registry", cfg={})) is True
+    assert reject_fn_4(MagicMock(), DeviceContext(address=Address("00#4#01"), who="4", source="registry", cfg={})) is True
+    assert reject_fn_4(MagicMock(), DeviceContext(address=Address("1"), who="4", source="registry", cfg={})) is False
+    assert reject_fn_4(MagicMock(), DeviceContext(address=Address("0"), who="4", source="registry", cfg={"who": "4"})) is False
+
+    # Check WHO 18 hooks
+    pd_18 = next(call.kwargs for call in mock_pd.call_args_list if call.kwargs.get("who") == "18")
+    addr_fn_18 = pd_18["address"]
+    build_fn_18 = pd_18["build"]
+    reject_fn_18 = pd_18["reject_registry_entry"]
+
+    # energy_bus_address rejects 0 and 00
+    msg_nrg_0 = MagicMock(where="0", is_general=True, message_type="power")
+    assert addr_fn_18(msg_nrg_0) is None
+    msg_nrg_00 = MagicMock(where="00", is_general=False, message_type="total_energy")
+    assert addr_fn_18(msg_nrg_00) is None
+    msg_nrg_0_notgen = MagicMock(where="0", is_general=False, message_type="power")
+    assert addr_fn_18(msg_nrg_0_notgen) is None
+    msg_nrg_routed_00 = MagicMock(where="00#4#01", is_general=False, message_type="power")
+    assert addr_fn_18(msg_nrg_routed_00) is None
+    msg_nrg_unknown = MagicMock(where="51", is_general=False, message_type="unknown_dimension")
+    assert addr_fn_18(msg_nrg_unknown) is None
+    msg_nrg_valid = MagicMock(where="51", is_general=False, message_type="active_power")
+    assert addr_fn_18(msg_nrg_valid) is not None
+
+    # build_energy rejects 0 and 00
+    assert build_fn_18(DeviceContext(address=Address("0", key_suffix="-power"), who="18", source="bus")) is None
+    assert build_fn_18(DeviceContext(address=Address("00", key_suffix="-total-energy"), who="18", source="bus")) is None
+
+    # duplicate_energy rejects 0, 00, and routed 00#4#01 from registry when not configured in YAML
+    assert reject_fn_18(MagicMock(), DeviceContext(address=Address("0"), who="18", source="registry", cfg={})) is True
+    assert reject_fn_18(MagicMock(), DeviceContext(address=Address("00"), who="18", source="registry", cfg={})) is True
+    assert reject_fn_18(MagicMock(), DeviceContext(address=Address("00#4#01", key_suffix="-total-energy"), who="18", source="registry", cfg={})) is True
+    assert reject_fn_18(MagicMock(), DeviceContext(address=Address("51"), who="18", source="registry", cfg={})) is False
+    assert reject_fn_18(MagicMock(), DeviceContext(address=Address("0"), who="18", source="registry", cfg={"who": "18"})) is False
+
+    # Check WHO 1 illuminance duplicate hook
+    pd_1 = next(call.kwargs for call in mock_pd.call_args_list if call.kwargs.get("who") == "1")
+    reject_fn_1 = pd_1["reject_registry_entry"]
+    assert reject_fn_1(MagicMock(), DeviceContext(address=Address("00#4#01"), who="1", source="registry", cfg={})) is True
+
+    # illuminance_bus_address rejects general/0/00
+    addr_fn_1 = pd_1["address"]
+    msg_illum_0 = MagicMock(message_type="illuminance_value", where="0", is_general=False)
+    assert addr_fn_1(msg_illum_0) is None
+    msg_illum_00 = MagicMock(message_type="illuminance_value", where="00", is_general=False)
+    assert addr_fn_1(msg_illum_00) is None
+    msg_illum_gen = MagicMock(message_type="illuminance_value", where="21", is_general=True)
+    assert addr_fn_1(msg_illum_gen) is None
+    msg_illum_valid = MagicMock(message_type="illuminance_value", where="21", is_general=False)
+    assert addr_fn_1(msg_illum_valid) is not None

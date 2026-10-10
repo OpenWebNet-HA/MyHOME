@@ -393,7 +393,15 @@ async def test_restored_registry_entities_hold_polls_until_sweep_completes(hass:
             all_processed = [m for m in harness.received_messages if m.startswith("*#")] + [
                 str(item["message"]) for item in list(handler.send_buffer._queue)
             ]
-            assert all_processed == ["*#1*0##", "*#2*0##", "*#4*0##", "*#16*0*5##", "*#1*16##"]
+            assert all_processed == [
+                "*#1*0##",
+                "*#2*0##",
+                "*#4*0##",
+                "*#16*0*5##",
+                "*#18*51*51##",
+                "*#18*51*113##",
+                "*#1*16##",
+            ]
     finally:
         sweep_proceed.set()
         await hass.config_entries.async_unload(entry.entry_id)
@@ -485,9 +493,262 @@ async def test_incomplete_state_bus_entity_retains_poll_and_defers(hass: HomeAss
                 if "*#2*19##" in processed():
                     break
                 await asyncio.sleep(0.05)
-            assert processed() == ["*#1*0##", "*#2*0##", "*#4*0##", "*#16*0*5##", "*#2*19##"]
+            assert processed() == [
+                "*#1*0##",
+                "*#2*0##",
+                "*#4*0##",
+                "*#16*0*5##",
+                "*#18*51*51##",
+                "*#18*51*113##",
+                "*#2*19##",
+            ]
     finally:
         sweep_proceed.set()
         await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
         await harness.stop()
+
+
+@pytest.mark.asyncio
+async def test_blank_start_ignores_broadcast_and_area_frames(hass: HomeAssistant) -> None:
+    """Validate that broadcast, general 0, and area frames do not create phantom entities (#681)."""
+    harness = MockGatewayHarness()
+    port = await harness.start()
+
+    mac = "00:03:50:00:00:01"
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_HOST: "127.0.0.1",
+            CONF_PORT: port,
+            CONF_PASSWORD: None,
+            CONF_MAC: mac,
+            CONF_NAME: "MH201",
+            CONF_DEVICE_TYPE: "urn:schemas-bticino-it:device:IP scenario module:1",
+            CONF_FRIENDLY_NAME: "MH201 Gateway",
+            CONF_MANUFACTURER: "BTicino S.p.A.",
+            CONF_FIRMWARE: "3.6.27",
+        },
+        options={},
+        unique_id=mac,
+    )
+    entry.add_to_hass(hass)
+
+    try:
+        with (
+            patch(
+                "custom_components.myhome.gateway.OWNSession.test_connection",
+                return_value={"Success": True, "Message": None},
+            ),
+            patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+        ):
+            assert await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+        handler = hass.data[DOMAIN][mac][CONF_ENTITY]
+        handler._on_event_connection_state_change(True)
+        handler._initial_discovery_done.set()
+
+        # Replay mixed broadcast and point-to-point frames (including routed bus frames)
+        frames = [
+            "*#1*0##",                         # lighting general
+            "*#1*0*6*0##",                     # lighting broadcast illuminance
+            "*#1*0#4#01##",                    # lighting routed general 0
+            "*#4*00*15*0215##",                # heating area 00 probe broadcast
+            "*#4*00#4#01*15*0215##",            # heating routed area 00 broadcast
+            "*#18*0*51##",                     # energy general
+            "*#18*00*51##",                    # energy area 00
+            "*#18*00#4#01*51##",               # energy routed area 00
+            "*1*1*12##",                       # point-to-point light 12
+            "*#18*51*51*1068*12345##",         # point-to-point meter 51 reading
+        ]
+        for raw in frames:
+            msg = OWNMessage.parse(raw)
+            if msg is not None:
+                async_dispatcher_send(hass, f"myhome_message_{mac}", msg)
+        await hass.async_block_till_done()
+
+        # Assert no phantom entities were created (unrouted and routed)
+        assert hass.states.get("light.light_0") is None
+        assert hass.states.get("light.light_00") is None
+        assert hass.states.get("light.light_0_4_01") is None
+        assert hass.states.get("climate.climate_zone_00") is None
+        assert hass.states.get("climate.climate_zone_0") is None
+        assert hass.states.get("climate.climate_zone_00_01") is None
+        assert hass.states.get("climate.climate_zone_00_4_01") is None
+        assert hass.states.get("sensor.zone_00") is None
+        assert hass.states.get("sensor.probe_00") is None
+        assert hass.states.get("sensor.illuminance_0") is None
+        assert hass.states.get("sensor.meter_0") is None
+        assert hass.states.get("sensor.meter_00") is None
+        assert hass.states.get("sensor.meter_00_01") is None
+
+        # Assert legitimate point-to-point devices exist
+        assert hass.states.get("light.light_12") is not None
+        assert hass.states.get("sensor.meter_51_energy") is not None
+    finally:
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        await harness.stop()
+
+
+@pytest.mark.asyncio
+async def test_blank_start_prunes_phantom_registry_entities(hass: HomeAssistant) -> None:
+    """Validate that existing phantom entities in the registry are pruned on startup (#681)."""
+    harness = MockGatewayHarness()
+    port = await harness.start()
+
+    mac = "00:03:50:00:00:01"
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_HOST: "127.0.0.1",
+            CONF_PORT: port,
+            CONF_PASSWORD: None,
+            CONF_MAC: mac,
+            CONF_NAME: "MH201",
+            CONF_DEVICE_TYPE: "urn:schemas-bticino-it:device:IP scenario module:1",
+            CONF_FRIENDLY_NAME: "MH201 Gateway",
+            CONF_MANUFACTURER: "BTicino S.p.A.",
+            CONF_FIRMWARE: "3.6.27",
+        },
+        options={},
+        unique_id=mac,
+    )
+    entry.add_to_hass(hass)
+
+    # Pre-register phantom entries in the registry
+    registry = er.async_get(hass)
+    p_climate = registry.async_get_or_create(
+        domain="climate",
+        platform=DOMAIN,
+        unique_id=f"{mac}-4-00",
+        config_entry=entry,
+        suggested_object_id="climate_zone_00",
+    )
+    p_climate_routed = registry.async_get_or_create(
+        domain="climate",
+        platform=DOMAIN,
+        unique_id=f"{mac}-4-00#4#01",
+        config_entry=entry,
+        suggested_object_id="climate_zone_00_01",
+    )
+    p_temp = registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id=f"{mac}-4-00-temperature",
+        config_entry=entry,
+        suggested_object_id="zone_00",
+    )
+    p_temp_routed = registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id=f"{mac}-4-00#4#01-temperature",
+        config_entry=entry,
+        suggested_object_id="zone_00_01",
+    )
+    p_energy = registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id=f"{mac}-18-00-total-energy",
+        config_entry=entry,
+        suggested_object_id="meter_00",
+    )
+    p_energy_routed = registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id=f"{mac}-18-00#4#01-total-energy",
+        config_entry=entry,
+        suggested_object_id="meter_00_01",
+    )
+    p_illum = registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id=f"{mac}-1-0-illuminance",
+        config_entry=entry,
+        suggested_object_id="illuminance_0",
+    )
+    p_light_routed = registry.async_get_or_create(
+        domain="light",
+        platform=DOMAIN,
+        unique_id=f"{mac}-1-0#4#01",
+        config_entry=entry,
+        suggested_object_id="light_0_01",
+    )
+    p_cover = registry.async_get_or_create(
+        domain="cover",
+        platform=DOMAIN,
+        unique_id=f"{mac}-2-0",
+        config_entry=entry,
+        suggested_object_id="cover_0",
+    )
+    p_cover_routed = registry.async_get_or_create(
+        domain="cover",
+        platform=DOMAIN,
+        unique_id=f"{mac}-2-0#4#01",
+        config_entry=entry,
+        suggested_object_id="cover_0_01",
+    )
+    legit_light = registry.async_get_or_create(
+        domain="light",
+        platform=DOMAIN,
+        unique_id=f"{mac}-1-12",
+        config_entry=entry,
+        suggested_object_id="light_12",
+    )
+    legit_light_01 = registry.async_get_or_create(
+        domain="light",
+        platform=DOMAIN,
+        unique_id=f"{mac}-1-01",
+        config_entry=entry,
+        suggested_object_id="light_01",
+    )
+    legit_climate_zone1 = registry.async_get_or_create(
+        domain="climate",
+        platform=DOMAIN,
+        unique_id=f"{mac}-4-1",
+        config_entry=entry,
+        suggested_object_id="climate_zone_1",
+    )
+    legit_cenplus_20 = registry.async_get_or_create(
+        domain="binary_sensor",
+        platform=DOMAIN,
+        unique_id=f"{mac}-25-20",
+        config_entry=entry,
+        suggested_object_id="scenario_20",
+    )
+
+    try:
+        with (
+            patch(
+                "custom_components.myhome.gateway.OWNSession.test_connection",
+                return_value={"Success": True, "Message": None},
+            ),
+            patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+        ):
+            assert await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+        # The phantom entries should have been pruned from the entity registry
+        assert registry.async_get(p_climate.entity_id) is None
+        assert registry.async_get(p_climate_routed.entity_id) is None
+        assert registry.async_get(p_temp.entity_id) is None
+        assert registry.async_get(p_temp_routed.entity_id) is None
+        assert registry.async_get(p_energy.entity_id) is None
+        assert registry.async_get(p_energy_routed.entity_id) is None
+        assert registry.async_get(p_illum.entity_id) is None
+        assert registry.async_get(p_light_routed.entity_id) is None
+        assert registry.async_get(p_cover.entity_id) is None
+        assert registry.async_get(p_cover_routed.entity_id) is None
+
+        # Legitimate point devices (including Area 0 light 01, Climate 1, and CEN+ 20) must remain
+        assert registry.async_get(legit_light.entity_id) is not None
+        assert registry.async_get(legit_light_01.entity_id) is not None
+        assert registry.async_get(legit_climate_zone1.entity_id) is not None
+        assert registry.async_get(legit_cenplus_20.entity_id) is not None
+    finally:
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        await harness.stop()
+
+

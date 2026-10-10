@@ -65,6 +65,23 @@ def _get_gateway_handler(hass: HomeAssistant, gateway_identifier: str | None) ->
     return None
 
 
+def _handler_supports_who(handler: MyHOMEGatewayHandler, who: int) -> bool:
+    """Return whether the gateway handler profile advertises a WHO subsystem."""
+    fn = getattr(handler, "profile_supports_who", None)
+    private_fn = getattr(handler, "_profile_supports_who", None)
+    target = (
+        private_fn
+        if callable(private_fn) and type(fn).__name__ == "MagicMock" and type(private_fn).__name__ != "MagicMock"
+        else (fn or private_fn)
+    )
+    if callable(target):
+        try:
+            return bool(target(who))
+        except Exception:  # pragma: no cover - defensive against broken handler mocks
+            return True
+    return True
+
+
 async def async_setup_services(hass: HomeAssistant) -> None:
     """Register MyHOME domain services."""
     if hass.services.has_service(DOMAIN, SERVICE_SYNC_TIME):
@@ -167,24 +184,46 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             for query in (f"*#18*{addr}*51##", f"*#18*{addr}*1200##")
         ]
 
+        force = bool(call.data.get("force", False))
+
         for gw_mac, handler in target_gateways.items():
-            _LOGGER.info("Executing diagnostic bus sweep on gateway %s", gw_mac)
+            _LOGGER.info("Executing diagnostic bus sweep on gateway %s (force=%s)", gw_mac, force)
             gateway_queries = [
                 "*#13**0##",   # Gateway real-time clock
                 "*#13**15##",  # Gateway device model
                 "*#13**16##",  # Gateway firmware version
             ]
             general_queries = ((1, "*#1*0##"), (2, "*#2*0##"), (4, "*#4*0##"), (5, "*#5*0##"), (16, "*#16*0*5##"))
+
+            def _profile_supports(who: int) -> bool:
+                if force:
+                    return True
+                return _handler_supports_who(handler, who)
+
             if getattr(handler, "is_follower", False) is True:
                 delegated: set[int] = getattr(handler, "delegated_whos", set())
-                general = [q for who, q in general_queries if who in delegated]
-                point_queries = energy_queries if 18 in delegated else []
+                general = [
+                    q for who, q in general_queries
+                    if who in delegated and _profile_supports(who)
+                ]
+                point_queries = (
+                    energy_queries
+                    if 18 in delegated and _profile_supports(18)
+                    else []
+                )
             else:
                 delegated_away: object = getattr(handler, "delegated_away_whos", set())
                 if not isinstance(delegated_away, (set, frozenset, list, tuple)):
                     delegated_away = set()
-                general = [q for who, q in general_queries if who not in delegated_away]
-                point_queries = energy_queries if 18 not in delegated_away else []
+                general = [
+                    q for who, q in general_queries
+                    if who not in delegated_away and _profile_supports(who)
+                ]
+                point_queries = (
+                    energy_queries
+                    if 18 not in delegated_away and _profile_supports(18)
+                    else []
+                )
 
             for query in gateway_queries:
                 await _send_query(handler, query)
