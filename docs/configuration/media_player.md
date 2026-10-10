@@ -577,6 +577,68 @@ and the decoder), so a report needs two files and one sentence:
 
 Attach these to the issue instead of pasting log excerpts; two files are enough.
 
+## ⚡ Amplifier Power State Machine & Bus Interaction
+
+To ensure predictable behavior across diverse physical hardware (F441/F441M matrices, H4562/F502 amplifiers, L4561N source interfaces, and wall switches), the MyHOME integration centralizes all power-state decision logic into a dedicated state engine (`media_player_power.py`).
+
+### Power States
+
+The amplifier entity transitions between five distinct states:
+
+| State | Entity Status | Hardware Stage | Description |
+| :--- | :--- | :--- | :--- |
+| `OFF` | `off` | Powered Off | Amplifier output stage is unpowered (`*16*13*<WHERE>##`). Zero bus audio is demodulated. Standby power is minimal. |
+| `WAKE_PENDING` | `off` / `on` | Powering Up | Integration initiates an OFF → ON wake sequence (`*16*13*<WHERE>##` followed by `*16*3*<WHERE>##`). A 3-second echo suppression window (`WAKE_ECHO_WINDOW = 3.0s`) ignores the initial OFF echo. |
+| `ON` | `playing` / `on` | Active | Amplifier is powered ON (`*16*3*<WHERE>##`). Demodulating stereo audio and driving room speakers. |
+| `PENDING_OFF` | `paused` / `idle` | Active (Timer) | Decoder has stopped or paused. A safety timer runs (3.0s for idle/off/standby, 60.0s for pause, or 5.0s group leave grace). If audio resumes before timer expiry, the timer cancels and playback continues without interruption. |
+| `PARKED` | `paused` / `idle` | Powered Off | Anti-hiss auto-off has powered off the hardware amplifier (`*16*13*<WHERE>##`) to eliminate analog bus hiss during extended pauses. In Home Assistant, the entity reports `paused`/`idle` and preserves group topology. Resumes immediately upon playback. |
+
+### State Transition Diagram
+
+```mermaid
+stateDiagram-v2
+    [*] --> OFF
+    OFF --> WAKE_PENDING: play_media / turn_on
+    WAKE_PENDING --> ON: *16*3*<WHERE>## confirmed
+    OFF --> ON: Physical Vol-Up Rocker (*16*1001..1015*<WHERE>##)
+    OFF --> ON: External Bus ON (*16*3*<WHERE>##)
+    ON --> PENDING_OFF: Decoder Idle/Off (3s) or Paused (60s)
+    ON --> PENDING_OFF: Member Unjoined (5s grace period)
+    PENDING_OFF --> ON: Decoder resumes playing (Timer Cancelled)
+    PENDING_OFF --> PARKED: Auto-Off Timer Expires (Group Preserved)
+    PENDING_OFF --> OFF: Grace Period Expires (Standalone / Unjoined)
+    PARKED --> ON: media_play / play_media / turn_on
+    PARKED --> OFF: turn_off / Physical Wall Switch OFF (*16*13*<WHERE>##)
+    ON --> OFF: turn_off / Physical Wall Switch OFF (*16*13*<WHERE>##)
+```
+
+### Bus Frame Decision Engine
+
+Every OpenWebNet frame received on the SCS bus is evaluated against the pure decision function `determine_power_transition(...)`. The engine maps frame types to transitions:
+
+| Frame Pattern | Description | Power Transition | Handling & Rationale |
+| :--- | :--- | :--- | :--- |
+| `*16*3*<WHERE>##`<br>`*16*0*<WHERE>##` | Amplifier ON (stereo / mono) | `PowerTransition.WAKE_ON` | Powers the amplifier ON; cancels any pending auto-off or grace timers. |
+| `*16*1001*<WHERE>##`<br>to `*16*1015*<WHERE>##` | Wall switch Volume-UP rocker (+1 to +15) | `PowerTransition.WAKE_ON` | Physical volume-up rocker intentionally wakes and turns ON the amplifier ([#579](https://github.com/OpenWebNet-HA/MyHOME/issues/579)). |
+| `*16*1101*<WHERE>##`<br>to `*16*1115*<WHERE>##` | Wall switch Volume-DOWN rocker (−1 to −15) | `PowerTransition.NO_CHANGE` | Steps volume down only. Never powers on an inactive amplifier. |
+| `*#16*<WHERE>*1*<LEVEL>##`<br>`*#22*3#A#P*1*<LEVEL>##` | Dimension 1 volume status report (0–31) | `PowerTransition.NO_CHANGE` | **CRITICAL**: Updates `volume_level` only. Never wakes or turns on an OFF amplifier ([#669](https://github.com/OpenWebNet-HA/MyHOME/issues/669), [#682](https://github.com/OpenWebNet-HA/MyHOME/issues/682)). |
+| `*#16*<WHERE>*#1*<LEVEL>##` | Dimension #1 volume set command | `PowerTransition.NO_CHANGE` | Writes target volume level. Does not alter amplifier power state. |
+| `*16*3*1ES##` | Matrix environment routing frame | `PowerTransition.NO_CHANGE` | Routes environment `E` to source `S`. Handled by routing logic; does not change power state. |
+| `*16*3*10S##` | Source device activation frame | `PowerTransition.NO_CHANGE` | Toggles source hardware `S`. Does not alter room amplifier power. |
+| `*16*13*<WHERE>##`<br>`*16*10*<WHERE>##` | Amplifier OFF (stereo / mono) | `PowerTransition.WAKE_ECHO_OFF`<br>`PowerTransition.PARKED_CONFIRM_OFF`<br>`PowerTransition.REAL_OFF` | • If within 3.0s of wake: ignored as self-echo.<br>• If amplifier is parked: acknowledged as auto-off echo.<br>• Otherwise: real OFF from wall switch or gateway; powers off entity and disbands group. |
+
+### Video Door Entry (Intercom Ducking) & Sound Diffusion Interaction
+
+In installations equipped with both BTicino Sound Diffusion (F441/F441M, WHO = 16 / WHO = 22) and 2-Wire Video Door Entry / Intercom systems (e.g. Classe 100/300 internal units, 344612, entrance panels):
+
+1. **Hardware Intercom Ducking**: When an incoming door call or intercom conversation begins, the video door entry system or audio matrix hardware performs automatic **hardware audio ducking** or line muting so that door chimes and speech remain clearly audible over background music.
+2. **Dimension 1 Status Broadcasts**: To synchronize volume levels during ducking, the gateway or matrix broadcasts OpenWebNet Dimension 1 volume status reports (`*#16*<WHERE>*1*<vol>##` and WHO 22 mirrors `*#22*3#A#P*1*<vol>##`) across the SCS bus. During the call, volume is lowered (e.g., to 0 or a low ducked level). When the intercom call terminates, the hardware broadcasts restoration Dimension 1 reports restoring previous volume levels (e.g., back to 10 or 15).
+3. **Prevention of False Wake-Ups ([#669](https://github.com/OpenWebNet-HA/MyHOME/issues/669))**: Unpowered room amplifiers retain their hardware volume registers in non-volatile memory and receive these broadcast ducking/restoration frames even while switched OFF. Prior to [#682](https://github.com/OpenWebNet-HA/MyHOME/issues/682), loosely coupled status checks could interpret volume updates as an indication that the amplifier was active, causing unpowered amplifiers throughout the house to falsely power ON whenever the doorbell rang.
+4. **Guaranteed Decoupling**: With `determine_power_transition(...)`, Dimension 1 status reports are strictly classified as `PowerTransition.NO_CHANGE`. Inactive amplifiers stay OFF throughout the intercom call, active amplifiers duck and restore seamlessly, and volume state remains perfectly synchronized.
+5. **Golden Trace Verification**: Validated against an authentic 30-frame MH202 bus capture (`myhome_trace_MH202_sound_intercom_ducking.json`) in `tests/test_intercom_ducking_trace_replay.py`.
+
+---
+
 ## 📜 OpenWebNet WHO = 16 Reference Frames
 
 `<WHERE>` is an amplifier (`01`–`99`), an environment (`#0`–`#9`) or `0` for

@@ -338,3 +338,53 @@
   mcp_valid: true
   mcp_notes: "Plant B captured a live RDS broadcast on source 1 as eight ASCII codes. The station name has been replaced with ' Radio 1' here — the payload is what the contributor happened to be listening to, and only the shape (DIMENSION 8, eight codes) is under test."
   roundtrip: true
+
+# ── Intercom audio ducking & volume restoration (Issue #669) ──────────────────
+
+- id: sound.dim.volume.duck.41
+  frame: "*#16*41*1*1##"
+  direction: dimension_response
+  who: 16
+  where: "41"
+  dimension: 1
+  dimension_values: ["1"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant MH202 (issue #669): video intercom stream start triggers hardware audio ducking to volume 1 on amplifier 41."
+  roundtrip: true
+
+- id: sound.dim.volume.restore.41
+  frame: "*#16*41*1*6##"
+  direction: dimension_response
+  who: 16
+  where: "41"
+  dimension: 1
+  dimension_values: ["6"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant MH202 (issue #669): video intercom stream stop restores volume 6 on amplifier 41."
+  roundtrip: true
+
+- id: sound.dim.volume.restore.61
+  frame: "*#16*61*1*7##"
+  direction: dimension_response
+  who: 16
+  where: "61"
+  dimension: 1
+  dimension_values: ["7"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant MH202 (issue #669): video intercom stream stop restores volume 7 on amplifier 61."
+  roundtrip: true
+
+- id: sound.dim.volume.restore.51
+  frame: "*#16*51*1*0##"
+  direction: dimension_response
+  who: 16
+  where: "51"
+  dimension: 1
+  dimension_values: ["0"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Plant MH202 (issue #669): video intercom stream stop restores volume 0 on amplifier 51."
+  roundtrip: true

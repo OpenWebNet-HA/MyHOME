@@ -145,3 +145,29 @@
   mcp_valid: false
   mcp_notes: "RDS text for source 1 under DIMENSION 10, where WHO=16 reports the same payload under DIMENSION 8. Station name replaced with ' Radio 1' for the same reason as sound.dim.rds.response.101."
   roundtrip: true
+
+# ── Intercom audio ducking & volume restoration mirrors (Issue #669) ──────────
+
+- id: sounddiff.dim.volume.duck.area4.point1
+  frame: "*#22*3#4#1*1*1##"
+  direction: dimension_response
+  who: 22
+  where: "3"
+  dimension: 1
+  dimension_values: ["1"]
+  source: community-plant-capture
+  mcp_valid: false
+  mcp_notes: "Plant MH202 (issue #669): video intercom stream start ducks volume to 1 on area 4 point 1 (zone 41). Mirrors *#16*41*1*1##."
+  roundtrip: true
+
+- id: sounddiff.dim.volume.restore.area4.point1
+  frame: "*#22*3#4#1*1*6##"
+  direction: dimension_response
+  who: 22
+  where: "3"
+  dimension: 1
+  dimension_values: ["6"]
+  source: community-plant-capture
+  mcp_valid: false
+  mcp_notes: "Plant MH202 (issue #669): video intercom stream stop restores volume 6 on area 4 point 1 (zone 41). Mirrors *#16*41*1*6##."
+  roundtrip: true

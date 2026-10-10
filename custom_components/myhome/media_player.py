@@ -120,6 +120,11 @@ from .media_player_pool import (
     build_pool,
     sync_multiple_audio_gateways,
 )
+from .media_player_power import (
+    WAKE_ECHO_WINDOW,
+    PowerTransition,
+    determine_power_transition,
+)
 from .media_player_routing import parse_routing_address, route_pseudo_zones, zone_environment
 from .sound_source import MyHOMESoundSource, source_address
 
@@ -128,7 +133,7 @@ PARALLEL_UPDATES = 0
 # The amplifier wake sequence starts with an OFF frame, and the gateway reports
 # that frame back on the event session like any other bus traffic. An OFF that
 # arrives this soon after a wake is our own and must not tear the zone down.
-_WAKE_ECHO_WINDOW = 3.0  # seconds
+_WAKE_ECHO_WINDOW = WAKE_ECHO_WINDOW  # seconds (centralised in media_player_power)
 _RESTORE_CONFIRM_WINDOW = 120.0  # seconds a restored zone has to show up on the bus
 
 
@@ -946,24 +951,29 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
                     source_num,
                     CONF_SOURCE_SLOTS,
                 )
-        elif message.is_on:
-            self._cancel_pending_off()  # confirmed on: nothing left to time out
-            self._parked = False
-            self._attr_state = MediaPlayerState.ON
-            if not self._status_seen:
-                self._mark_status_seen()
-                self._restore_claim()
-                self._check_stray_at_startup()
-            trigger_auto_join = True
-        elif message.is_off:
-            if self._is_wake_echo():
+        else:
+            transition = determine_power_transition(
+                message=message,
+                is_parked=self._parked,
+                is_wake_echo=self._is_wake_echo(),
+            )
+            if transition == PowerTransition.WAKE_ON:
+                self._cancel_pending_off()  # confirmed on: nothing left to time out
+                self._parked = False
+                self._attr_state = MediaPlayerState.ON
+                if not self._status_seen:
+                    self._mark_status_seen()
+                    self._restore_claim()
+                    self._check_stray_at_startup()
+                trigger_auto_join = True
+            elif transition == PowerTransition.WAKE_ECHO_OFF:
                 # Our own wake sequence's OFF: the ON follows it.
                 LOGGER.debug("%s: ignoring the OFF echo of the wake sequence", self.entity_id)
-            elif self._parked:
+            elif transition == PowerTransition.PARKED_CONFIRM_OFF:
                 # The anti-hiss OFF we sent ourselves: the room stays in its group.
                 self._mark_status_seen()
                 self._attr_state = MediaPlayerState.OFF
-            else:
+            elif transition == PowerTransition.REAL_OFF:
                 self._mark_status_seen()
                 # A real OFF (wall switch or otherwise) makes any pending
                 # group-leave OFF redundant; _async_handle_turn_off below
@@ -972,31 +982,6 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
                 self._attr_state = MediaPlayerState.OFF
                 if not self._turning_off:
                     self.hass.async_create_task(self._async_handle_turn_off(from_bus=True))
-
-        what = getattr(message, "what", getattr(message, "_what", None))
-        is_volume_up = False
-        if what is not None:
-            try:
-                is_volume_up = 1001 <= int(what) <= 1015
-            except (ValueError, TypeError):
-                pass
-
-        # Physical volume-up rocker commands (*16*1001*WHERE## .. *16*1015*WHERE##)
-        # wake an unpowered amplifier and auto-join the active streaming group (#579).
-        # Dimension 1 volume status reports (*#16*WHERE*1*<volume>##, WHO 22 mirror
-        # *#22*3#A#P*1*<volume>##) must NEVER wake an amplifier (#669), as amplifiers
-        # retain configured volume while OFF and hardware audio ducking during intercom
-        # video streams broadcasts volume status frames across all zones.
-        if not message.is_off and is_volume_up:
-            if self._attr_state != MediaPlayerState.ON or self._parked:
-                self._cancel_pending_off()
-                self._parked = False
-                self._attr_state = MediaPlayerState.ON
-                if not self._status_seen:
-                    self._mark_status_seen()
-                    self._restore_claim()
-                    self._check_stray_at_startup()
-                trigger_auto_join = True
 
         if message.volume is not None:
             self._attr_volume_level = message.volume / 31.0

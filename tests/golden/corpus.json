@@ -3717,6 +3717,70 @@
     "_file": "who16_sound.yaml"
   },
   {
+    "id": "sound.dim.volume.duck.41",
+    "frame": "*#16*41*1*1##",
+    "direction": "dimension_response",
+    "who": 16,
+    "where": "41",
+    "dimension": 1,
+    "dimension_values": [
+      "1"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Plant MH202 (issue #669): video intercom stream start triggers hardware audio ducking to volume 1 on amplifier 41.",
+    "roundtrip": true,
+    "_file": "who16_sound.yaml"
+  },
+  {
+    "id": "sound.dim.volume.restore.41",
+    "frame": "*#16*41*1*6##",
+    "direction": "dimension_response",
+    "who": 16,
+    "where": "41",
+    "dimension": 1,
+    "dimension_values": [
+      "6"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Plant MH202 (issue #669): video intercom stream stop restores volume 6 on amplifier 41.",
+    "roundtrip": true,
+    "_file": "who16_sound.yaml"
+  },
+  {
+    "id": "sound.dim.volume.restore.61",
+    "frame": "*#16*61*1*7##",
+    "direction": "dimension_response",
+    "who": 16,
+    "where": "61",
+    "dimension": 1,
+    "dimension_values": [
+      "7"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Plant MH202 (issue #669): video intercom stream stop restores volume 7 on amplifier 61.",
+    "roundtrip": true,
+    "_file": "who16_sound.yaml"
+  },
+  {
+    "id": "sound.dim.volume.restore.51",
+    "frame": "*#16*51*1*0##",
+    "direction": "dimension_response",
+    "who": 16,
+    "where": "51",
+    "dimension": 1,
+    "dimension_values": [
+      "0"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Plant MH202 (issue #669): video intercom stream stop restores volume 0 on amplifier 51.",
+    "roundtrip": true,
+    "_file": "who16_sound.yaml"
+  },
+  {
     "id": "energy.req.active_power.meter1",
     "frame": "*#18*1*1##",
     "direction": "dimension_request",
@@ -4156,6 +4220,38 @@
     "source": "community-plant-capture",
     "mcp_valid": false,
     "mcp_notes": "RDS text for source 1 under DIMENSION 10, where WHO=16 reports the same payload under DIMENSION 8. Station name replaced with ' Radio 1' for the same reason as sound.dim.rds.response.101.",
+    "roundtrip": true,
+    "_file": "who22_sound_diffusion.yaml"
+  },
+  {
+    "id": "sounddiff.dim.volume.duck.area4.point1",
+    "frame": "*#22*3#4#1*1*1##",
+    "direction": "dimension_response",
+    "who": 22,
+    "where": "3",
+    "dimension": 1,
+    "dimension_values": [
+      "1"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": false,
+    "mcp_notes": "Plant MH202 (issue #669): video intercom stream start ducks volume to 1 on area 4 point 1 (zone 41). Mirrors *#16*41*1*1##.",
+    "roundtrip": true,
+    "_file": "who22_sound_diffusion.yaml"
+  },
+  {
+    "id": "sounddiff.dim.volume.restore.area4.point1",
+    "frame": "*#22*3#4#1*1*6##",
+    "direction": "dimension_response",
+    "who": 22,
+    "where": "3",
+    "dimension": 1,
+    "dimension_values": [
+      "6"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": false,
+    "mcp_notes": "Plant MH202 (issue #669): video intercom stream stop restores volume 6 on area 4 point 1 (zone 41). Mirrors *#16*41*1*6##.",
     "roundtrip": true,
     "_file": "who22_sound_diffusion.yaml"
   },

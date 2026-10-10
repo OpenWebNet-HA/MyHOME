@@ -350,3 +350,135 @@ async def test_play_writes_the_same_frames_as_the_live_wake(hass, mock_gateway):
     await _resume_by_play(hass, zones, events)
 
     assert [e for e in events if e != "play_media"] == live
+
+
+@pytest.mark.asyncio
+async def test_multi_cycle_park_and_resume_preserves_topology(hass, mock_gateway):
+    """Multiple park and resume cycles keep the group books intact across pause/wake cycles."""
+    zones, pool = await _plant(hass, mock_gateway)
+
+    # --- Cycle 1: Park via 60s pause timeout, resume via async_turn_on ---
+    await _park(hass, zones)
+    for zone in zones.values():
+        assert zone.state in (MediaPlayerState.PAUSED, MediaPlayerState.IDLE)
+    assert pool.get_members(_entity_id(LEADER)) == [_entity_id(w) for w in MEMBERS]
+
+    # Resume via leader turn_on
+    mock_gateway.send.reset_mock()
+    with patch("asyncio.sleep", return_value=None):
+        await zones[LEADER].async_turn_on()
+    await hass.async_block_till_done()
+
+    for zone in zones.values():
+        assert zone._attr_state == MediaPlayerState.ON
+    assert pool.get_members(_entity_id(LEADER)) == [_entity_id(w) for w in MEMBERS]
+
+    # --- Cycle 2: Park again, receive bus volume report while parked, then resume via play ---
+    await _park(hass, zones)
+    for zone in zones.values():
+        assert zone.state in (MediaPlayerState.PAUSED, MediaPlayerState.IDLE)
+
+    # Dimension 1 volume report arrives during parked state: must NOT wake or dissolve
+    vol_msg = OWNSoundEvent.parse("*#16*36*1*15##")
+    zones[LEADER].handle_event(vol_msg)
+    await hass.async_block_till_done()
+
+    assert zones[LEADER].state in (MediaPlayerState.PAUSED, MediaPlayerState.IDLE)
+    assert pool.get_members(_entity_id(LEADER)) == [_entity_id(w) for w in MEMBERS]
+
+    # Resume via play_media
+    mock_gateway.send.reset_mock()
+    events: list[str] = []
+    _queue_only_send(mock_gateway, events)
+    await _resume_by_play(hass, zones, events)
+    await hass.async_block_till_done()
+
+    for zone in zones.values():
+        assert zone._attr_state == MediaPlayerState.ON
+    assert pool.get_members(_entity_id(LEADER)) == [_entity_id(w) for w in MEMBERS]
+
+    # --- Cycle 3: Park and explicit turn_off disbands group ---
+    await _park(hass, zones)
+    await zones[LEADER].async_turn_off()
+    await hass.async_block_till_done()
+
+    assert pool.get_members(_entity_id(LEADER)) == []
+    assert pool.owned_decoder(_entity_id(LEADER)) is None
+    assert zones[LEADER].state == MediaPlayerState.OFF
+
+
+@pytest.mark.asyncio
+async def test_anti_hiss_auto_off_for_owned_and_unowned_rooms(hass, mock_gateway):
+    """Anti-hiss auto-off (3s) shuts down both owned and unowned rooms hearing a stopped decoder."""
+    runtime = MyHOMERuntimeData(gateway=mock_gateway)
+    pool = DecoderPool(hass, {DECODER: 2})
+    runtime.decoder_pool = pool
+
+    # Owned room (holds decoder claim)
+    owned_zone = _create_test_zone(hass, mock_gateway, runtime, "36", _entity_id("36"))
+    owned_zone._attr_state = MediaPlayerState.ON
+    owned_zone._active_decoder = DECODER
+    await pool.claim(_entity_id("36"))
+
+    # Unowned room (hearing Source 2 on the matrix, but not in any group)
+    unowned_zone = _create_test_zone(hass, mock_gateway, runtime, "21", _entity_id("21"))
+    unowned_zone._attr_state = MediaPlayerState.ON
+    unowned_zone._attr_source = "Cambridge"
+
+    # Tuner room (hearing Source 1 on the matrix, where no decoder is wired)
+    tuner_zone = _create_test_zone(hass, mock_gateway, runtime, "14", _entity_id("14"))
+    tuner_zone._attr_state = MediaPlayerState.ON
+    tuner_zone._attr_source = "Radio"
+
+    # Mock timers to capture anti-hiss callbacks
+    owned_timers = []
+    unowned_timers = []
+    tuner_timers = []
+
+    def mock_call_later_owned(_hass, delay, action):
+        owned_timers.append((delay, action))
+        return MagicMock()
+
+    def mock_call_later_unowned(_hass, delay, action):
+        unowned_timers.append((delay, action))
+        return MagicMock()
+
+    def mock_call_later_tuner(_hass, delay, action):
+        tuner_timers.append((delay, action))
+        return MagicMock()
+
+    # Decoder transitions to idle
+    hass.states.async_set(DECODER, "idle")
+
+    with patch("custom_components.myhome.media_player_decoder.async_call_later", side_effect=mock_call_later_owned):
+        owned_zone._async_decoder_state_changed(
+            MagicMock(data={"entity_id": DECODER, "new_state": State(DECODER, "idle"), "old_state": State(DECODER, "playing")})
+        )
+
+    with patch("custom_components.myhome.media_player_decoder.async_call_later", side_effect=mock_call_later_unowned):
+        unowned_zone._async_decoder_state_changed(
+            MagicMock(data={"entity_id": DECODER, "new_state": State(DECODER, "idle"), "old_state": State(DECODER, "playing")})
+        )
+
+    with patch("custom_components.myhome.media_player_decoder.async_call_later", side_effect=mock_call_later_tuner):
+        tuner_zone._async_decoder_state_changed(
+            MagicMock(data={"entity_id": DECODER, "new_state": State(DECODER, "idle"), "old_state": State(DECODER, "playing")})
+        )
+
+    # 1. Both owned and unowned rooms armed the 3.0s anti-hiss timer
+    assert [d for d, _ in owned_timers] == [3.0]
+    assert [d for d, _ in unowned_timers] == [3.0]
+
+    # Tuner room does not hear this decoder, so no timer was armed
+    assert tuner_timers == []
+
+    # 2. Fire the auto-off timers
+    with patch.object(owned_zone, "async_turn_off", new_callable=AsyncMock) as mock_off_owned, \
+         patch.object(unowned_zone, "async_turn_off", new_callable=AsyncMock) as mock_off_unowned:
+        owned_timers[0][1](None)
+        unowned_timers[0][1](None)
+        await hass.async_block_till_done()
+
+        mock_off_owned.assert_called_once()
+        mock_off_unowned.assert_called_once()
+
