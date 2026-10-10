@@ -606,7 +606,7 @@ async def test_p4_climate_central_unit_bus_events_and_auto_mode(hass: HomeAssist
     cu.handle_event(event_mode)
 
     # 2. Incoming MESSAGE_TYPE_MODE_TARGET on Central Unit -> triggers lines 787-792
-    event_mode_target = OWNHeatingEvent.parse("*4*1#0215*#0##")  # Heating target
+    event_mode_target = OWNHeatingEvent.parse("*4*110#0215*#0##")  # Heating target
     cu.handle_event(event_mode_target)
 
     # 3. Subordinate zone receiving master_mode = HVACMode.AUTO -> triggers lines 514-516

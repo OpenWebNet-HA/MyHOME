@@ -644,8 +644,8 @@ async def test_central_unit_event_dispatches_central_mode(hass: HomeAssistant, m
     central.handle_event(event_mode)
     assert central.hvac_mode == HVACMode.HEAT
 
-    # MESSAGE_TYPE_MODE_TARGET: *4*1#0215*#0## (Mode Heat, Target 21.5)
-    event_target = OWNEvent.parse("*4*1#0215*#0##")
+    # MESSAGE_TYPE_MODE_TARGET: *4*110#0215*#0## (Mode Heat, Target 21.5)
+    event_target = OWNEvent.parse("*4*110#0215*#0##")
     central.handle_event(event_target)
     assert central.hvac_mode == HVACMode.HEAT
     assert central.target_temperature == 21.5
