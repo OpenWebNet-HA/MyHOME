@@ -62,6 +62,9 @@ def _get_gateway_handler(hass: HomeAssistant, gateway_identifier: str | None) ->
             if known_mac.lower() == mac.lower():
                 return handler
 
+    return None
+
+
 def _handler_supports_who(handler: MyHOMEGatewayHandler, who: int) -> bool:
     """Return whether the gateway handler profile advertises a WHO subsystem."""
     fn = getattr(handler, "profile_supports_who", None)
@@ -74,7 +77,7 @@ def _handler_supports_who(handler: MyHOMEGatewayHandler, who: int) -> bool:
     if callable(target):
         try:
             return bool(target(who))
-        except Exception:
+        except Exception:  # pragma: no cover - defensive against broken handler mocks
             return True
     return True
 

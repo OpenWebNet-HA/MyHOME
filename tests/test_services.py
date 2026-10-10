@@ -15,6 +15,7 @@ from custom_components.myhome.services import (
     SERVICE_SWEEP_BUS,
     SERVICE_SYNC_TIME,
     _get_gateway_handler,
+    _handler_supports_who,
     async_setup_services,
 )
 
@@ -70,6 +71,30 @@ async def test_get_gateway_handler_helper(hass: HomeAssistant, attach_gateway) -
     gw_mac_case = "00:03:50:AA:BB:DD"
     attach_gateway(gw_mac_case, mock_handler)
     assert _get_gateway_handler(hass, "000350aabbdd") == mock_handler
+
+
+def test_handler_supports_who_helper() -> None:
+    """Test _handler_supports_who helper fallback and defensive branches."""
+    # 1. Real / mock handler with profile_supports_who
+    h1 = MagicMock()
+    h1.profile_supports_who = lambda who: who in (1, 2)
+    assert _handler_supports_who(h1, 1) is True
+    assert _handler_supports_who(h1, 5) is False
+
+    # 2. Legacy handler with only _profile_supports_who (where profile_supports_who is MagicMock default)
+    h2 = MagicMock()
+    h2._profile_supports_who = lambda who: who == 4
+    assert _handler_supports_who(h2, 4) is True
+    assert _handler_supports_who(h2, 1) is False
+
+    # 3. Handler where target raises Exception
+    h3 = MagicMock()
+    h3.profile_supports_who = MagicMock(side_effect=RuntimeError("bus fault"))
+    assert _handler_supports_who(h3, 1) is True
+
+    # 4. Handler with no callable profile check (both None)
+    h4 = MagicMock(spec=[])
+    assert _handler_supports_who(h4, 1) is True
 
 
 async def test_services_edge_cases(hass: HomeAssistant, attach_gateway) -> None:
