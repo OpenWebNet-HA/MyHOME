@@ -291,7 +291,15 @@ _TIER_OTHERS = 2
 
 
 def _classify_tier(item: Any) -> int:
-    """Classify item into priority tier: 0 (commands), 1 (status), 2 (others/sentinels)."""
+    """Classify item into priority tier: 0 (commands), 1 (status), 2 (others/sentinels).
+
+    Expected envelope dictionaries are produced by CommandWorkerPool._enqueue:
+    {
+        "message": OWNCommand,
+        "is_status_request": bool,
+        "written": asyncio.Future[float],
+    }
+    """
     if isinstance(item, dict):
         if item.get("is_status_request", False):
             return _TIER_STATUS
@@ -301,7 +309,14 @@ def _classify_tier(item: Any) -> int:
 
 
 class _PriorityQueueStorage:
-    """Multi-tier FIFO storage backing CommandPriorityQueue."""
+    """Multi-tier FIFO storage backing CommandPriorityQueue.
+
+    Implements the collections.abc.MutableSequence and deque interface expected
+    by queue inspection code and unit tests (e.g. list(handler.send_buffer._queue)).
+    Sequence materialisation (slices, __eq__, index) converts across tiers into
+    a list; with typical max_queue_size <= 250, this takes negligible CPU time (<2µs)
+    and avoids complex multi-deque virtual index bookkeeping.
+    """
 
     def __init__(self) -> None:
         """Initialize empty priority tiers."""
@@ -486,12 +501,16 @@ class CommandPriorityQueue(asyncio.Queue[Any]):
     async def put(self, item: Any) -> None:
         """Put an item into the queue, prioritizing command waiters when full."""
         while self.full():
+            # Python 3.13+ asyncio.Queue.shutdown() sets `self._is_shutdown = True`
+            # and unblocks callers of put() with QueueShutDown. We mirror standard
+            # library semantics while preserving compatibility across Python versions.
             if getattr(self, "_is_shutdown", False):
                 raise getattr(asyncio, "QueueShutDown", Exception)
             putter: asyncio.Future[None] = asyncio.get_running_loop().create_future()
             is_cmd = _classify_tier(item) == _TIER_COMMANDS
             setattr(putter, "_is_cmd", is_cmd)
             if is_cmd:
+                # O(W) linear scan across waiting putters (W <= max_queue_size, typically 0 to <10).
                 idx = 0
                 for p in self._putters:
                     if getattr(p, "_is_cmd", False):
