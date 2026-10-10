@@ -99,6 +99,7 @@ async def test_sweep_bus_queries_sent(hass: HomeAssistant, attach_gateway) -> No
     await async_setup_services(hass)
 
     mock_handler = MagicMock()
+    mock_handler._profile_supports_who = None
     mock_handler.send = AsyncMock()
     mock_handler.send_status_request = AsyncMock()
     mock_handler.send_paced = AsyncMock()

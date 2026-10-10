@@ -724,6 +724,7 @@ async def test_temperature_and_energy_reject_and_prune_zero_and_double_zero(hass
     assert reject_fn_4(MagicMock(), DeviceContext(address=Address("00"), who="4", source="registry", cfg={})) is True
     assert reject_fn_4(MagicMock(), DeviceContext(address=Address("00#4#01"), who="4", source="registry", cfg={})) is True
     assert reject_fn_4(MagicMock(), DeviceContext(address=Address("1"), who="4", source="registry", cfg={})) is False
+    assert reject_fn_4(MagicMock(), DeviceContext(address=Address("0"), who="4", source="registry", cfg={"who": "4"})) is False
 
     # Check WHO 18 hooks
     pd_18 = next(call.kwargs for call in mock_pd.call_args_list if call.kwargs.get("who") == "18")
@@ -736,6 +737,14 @@ async def test_temperature_and_energy_reject_and_prune_zero_and_double_zero(hass
     assert addr_fn_18(msg_nrg_0) is None
     msg_nrg_00 = MagicMock(where="00", is_general=False, message_type="total_energy")
     assert addr_fn_18(msg_nrg_00) is None
+    msg_nrg_0_notgen = MagicMock(where="0", is_general=False, message_type="power")
+    assert addr_fn_18(msg_nrg_0_notgen) is None
+    msg_nrg_routed_00 = MagicMock(where="00#4#01", is_general=False, message_type="power")
+    assert addr_fn_18(msg_nrg_routed_00) is None
+    msg_nrg_unknown = MagicMock(where="51", is_general=False, message_type="unknown_dimension")
+    assert addr_fn_18(msg_nrg_unknown) is None
+    msg_nrg_valid = MagicMock(where="51", is_general=False, message_type="active_power")
+    assert addr_fn_18(msg_nrg_valid) is not None
 
     # build_energy rejects 0 and 00
     assert build_fn_18(DeviceContext(address=Address("0", key_suffix="-power"), who="18", source="bus")) is None
@@ -746,8 +755,20 @@ async def test_temperature_and_energy_reject_and_prune_zero_and_double_zero(hass
     assert reject_fn_18(MagicMock(), DeviceContext(address=Address("00"), who="18", source="registry", cfg={})) is True
     assert reject_fn_18(MagicMock(), DeviceContext(address=Address("00#4#01", key_suffix="-total-energy"), who="18", source="registry", cfg={})) is True
     assert reject_fn_18(MagicMock(), DeviceContext(address=Address("51"), who="18", source="registry", cfg={})) is False
+    assert reject_fn_18(MagicMock(), DeviceContext(address=Address("0"), who="18", source="registry", cfg={"who": "18"})) is False
 
     # Check WHO 1 illuminance duplicate hook
     pd_1 = next(call.kwargs for call in mock_pd.call_args_list if call.kwargs.get("who") == "1")
     reject_fn_1 = pd_1["reject_registry_entry"]
     assert reject_fn_1(MagicMock(), DeviceContext(address=Address("00#4#01"), who="1", source="registry", cfg={})) is True
+
+    # illuminance_bus_address rejects general/0/00
+    addr_fn_1 = pd_1["address"]
+    msg_illum_0 = MagicMock(message_type="illuminance_value", where="0", is_general=False)
+    assert addr_fn_1(msg_illum_0) is None
+    msg_illum_00 = MagicMock(message_type="illuminance_value", where="00", is_general=False)
+    assert addr_fn_1(msg_illum_00) is None
+    msg_illum_gen = MagicMock(message_type="illuminance_value", where="21", is_general=True)
+    assert addr_fn_1(msg_illum_gen) is None
+    msg_illum_valid = MagicMock(message_type="illuminance_value", where="21", is_general=False)
+    assert addr_fn_1(msg_illum_valid) is not None

@@ -149,10 +149,6 @@ async def async_setup_entry(
         )
 
     def accept(ctx: DeviceContext) -> bool:
-        clean = ctx.address.clean_where
-        is_broadcast = not clean.startswith("#") and clean.split("#")[0] in ("0", "00")
-        if not ctx.cfg and is_broadcast:
-            return False
         if is_probe(ctx.address.where):
             LOGGER.debug("Skipping non-zone address %s for climate platform", ctx.address.where)
             return False

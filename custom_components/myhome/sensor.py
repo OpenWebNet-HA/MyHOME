@@ -187,15 +187,14 @@ async def async_setup_entry(
         return Address(where, key_suffix=f"-{measurement}")
 
     def energy_bus_address(message: Any) -> Address | None:
-        if getattr(message, "is_general", False) is True or str(getattr(message, "where", "")) in ("0", "00"):
+        where = str(getattr(message, "where", ""))
+        clean = where.split("-")[-1].split("#")[0]
+        if getattr(message, "is_general", False) is True or where in ("0", "00") or clean in ("0", "00"):
             return None
         measurement = ENERGY_MEASUREMENTS.get(cast(str, getattr(message, "message_type", None)))
         if measurement is None:
             return None
-        clean_where = _sensor_address("18", message.where)[1]
-        if clean_where in ("0", "00"):
-            return None
-        return Address(clean_where, key_suffix=f"-{measurement}")
+        return Address(_sensor_address("18", message.where)[1], key_suffix=f"-{measurement}")
 
     def duplicate_energy(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
         if ctx.cfg:

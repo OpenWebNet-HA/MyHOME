@@ -675,6 +675,20 @@ async def test_blank_start_prunes_phantom_registry_entities(hass: HomeAssistant)
         config_entry=entry,
         suggested_object_id="light_0_01",
     )
+    p_cover = registry.async_get_or_create(
+        domain="cover",
+        platform=DOMAIN,
+        unique_id=f"{mac}-2-0",
+        config_entry=entry,
+        suggested_object_id="cover_0",
+    )
+    p_cover_routed = registry.async_get_or_create(
+        domain="cover",
+        platform=DOMAIN,
+        unique_id=f"{mac}-2-0#4#01",
+        config_entry=entry,
+        suggested_object_id="cover_0_01",
+    )
     legit_light = registry.async_get_or_create(
         domain="light",
         platform=DOMAIN,
@@ -703,6 +717,8 @@ async def test_blank_start_prunes_phantom_registry_entities(hass: HomeAssistant)
         assert registry.async_get(p_energy_routed.entity_id) is None
         assert registry.async_get(p_illum.entity_id) is None
         assert registry.async_get(p_light_routed.entity_id) is None
+        assert registry.async_get(p_cover.entity_id) is None
+        assert registry.async_get(p_cover_routed.entity_id) is None
 
         # The legitimate light should remain
         assert registry.async_get(legit_light.entity_id) is not None
