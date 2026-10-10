@@ -7,8 +7,11 @@ worker pool (command pacing, send queue, idle disconnect, delivery futures).
 from __future__ import annotations
 
 import asyncio
+import collections
 import contextlib
+import itertools
 import time
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
@@ -282,6 +285,182 @@ class EventSessionRunner:
             self._event_watchdog = None
 
 
+class _PriorityQueueStorage:
+    """Multi-tier FIFO storage backing CommandPriorityQueue."""
+
+    def __init__(self) -> None:
+        """Initialize empty priority tiers."""
+        self._commands: collections.deque[Any] = collections.deque()
+        self._status: collections.deque[Any] = collections.deque()
+        self._others: collections.deque[Any] = collections.deque()
+
+    def __len__(self) -> int:
+        """Return total number of items across all tiers."""
+        return len(self._commands) + len(self._status) + len(self._others)
+
+    def __bool__(self) -> bool:
+        """Return True if any tier has items."""
+        return bool(self._commands or self._status or self._others)
+
+    def __iter__(self) -> Iterator[Any]:
+        """Iterate in priority order: commands, status, others."""
+        return itertools.chain(self._commands, self._status, self._others)
+
+    def __reversed__(self) -> Iterator[Any]:
+        """Iterate in reverse priority order."""
+        return itertools.chain(
+            reversed(self._others),
+            reversed(self._status),
+            reversed(self._commands),
+        )
+
+    def __repr__(self) -> str:
+        """Return string representation of priority tiers."""
+        return (
+            f"_PriorityQueueStorage(commands={list(self._commands)!r}, "
+            f"status={list(self._status)!r}, others={list(self._others)!r})"
+        )
+
+    def __contains__(self, item: Any) -> bool:
+        """Return True if item exists in any tier."""
+        return item in self._commands or item in self._status or item in self._others
+
+    def __getitem__(self, index: int | slice) -> Any:
+        """Get item by index or slice in priority order."""
+        if isinstance(index, slice):
+            return list(self)[index]
+        if not isinstance(index, int):
+            raise TypeError(f"queue indices must be integers or slices, not {type(index).__name__}")
+        total = len(self)
+        if index < 0:
+            index += total
+        if index < 0 or index >= total:
+            raise IndexError("queue index out of range")
+        if index < len(self._commands):
+            return self._commands[index]
+        index -= len(self._commands)
+        if index < len(self._status):
+            return self._status[index]
+        index -= len(self._status)
+        return self._others[index]
+
+    def append(self, item: Any) -> None:
+        """Append item to its corresponding priority tier."""
+        if item is None:
+            self._others.append(item)
+        elif isinstance(item, dict) and item.get("is_status_request", False):
+            self._status.append(item)
+        else:
+            self._commands.append(item)
+
+    def popleft(self) -> Any:
+        """Pop and return the highest priority item."""
+        if self._commands:
+            return self._commands.popleft()
+        if self._status:
+            return self._status.popleft()
+        if self._others:
+            return self._others.popleft()
+        raise IndexError("pop from an empty priority queue")
+
+    def pop(self) -> Any:
+        """Pop and return the lowest priority item from the tail."""
+        if self._others:
+            return self._others.pop()
+        if self._status:
+            return self._status.pop()
+        if self._commands:
+            return self._commands.pop()
+        raise IndexError("pop from an empty priority queue")
+
+    def remove(self, value: Any) -> None:
+        """Remove first occurrence of value."""
+        if value is None:
+            self._others.remove(value)
+            return
+        if isinstance(value, dict) and value.get("is_status_request", False):
+            try:
+                self._status.remove(value)
+                return
+            except ValueError:
+                pass
+        try:
+            self._commands.remove(value)
+        except ValueError:
+            try:
+                self._status.remove(value)
+            except ValueError:
+                self._others.remove(value)
+
+    def clear(self) -> None:
+        """Clear all priority tiers."""
+        self._commands.clear()
+        self._status.clear()
+        self._others.clear()
+
+    def copy(self) -> _PriorityQueueStorage:
+        """Return shallow copy of storage."""
+        new_storage = _PriorityQueueStorage()
+        new_storage._commands = self._commands.copy()
+        new_storage._status = self._status.copy()
+        new_storage._others = self._others.copy()
+        return new_storage
+
+    def count(self, value: Any) -> int:
+        """Return total occurrences of value across all tiers."""
+        return self._commands.count(value) + self._status.count(value) + self._others.count(value)
+
+
+class CommandPriorityQueue(asyncio.Queue[Any]):
+    """Asyncio queue prioritizing user commands over telemetry polls."""
+
+    _queue: _PriorityQueueStorage
+
+    def _init(self, maxsize: int) -> None:
+        """Initialize custom multi-tier priority queue storage."""
+        self._queue = _PriorityQueueStorage()
+
+    async def put(self, item: Any) -> None:
+        """Put an item into the queue, prioritizing command waiters when full."""
+        while self.full():
+            if getattr(self, "_is_shutdown", False):
+                raise getattr(asyncio, "QueueShutDown", Exception)
+            putter = self._get_loop().create_future()
+            is_status = isinstance(item, dict) and item.get("is_status_request", False)
+            is_cmd = not is_status and item is not None
+            setattr(putter, "_is_cmd", is_cmd)
+            if is_cmd:
+                idx = 0
+                for p in self._putters:
+                    if getattr(p, "_is_cmd", False):
+                        idx += 1
+                    else:
+                        break
+                self._putters.insert(idx, putter)
+            else:
+                self._putters.append(putter)
+            try:
+                await putter
+            except Exception:
+                putter.cancel()
+                with contextlib.suppress(ValueError):
+                    self._putters.remove(putter)
+                if not self.full() and not putter.cancelled():
+                    self._wakeup_next(self._putters)
+                raise
+        return self.put_nowait(item)
+
+    @property
+    def command_qsize(self) -> int:
+        """Return the number of queued user commands."""
+        return len(self._queue._commands)
+
+    @property
+    def status_qsize(self) -> int:
+        """Return the number of queued status requests."""
+        return len(self._queue._status)
+
+
 class CommandWorkerPool:
     """Manages the pool of command workers, send queue, and session pacing."""
 
@@ -301,7 +480,7 @@ class CommandWorkerPool:
             if hasattr(self.gateway, "profile") and self.gateway.profile
             else 250
         )
-        self.send_buffer: asyncio.Queue[Any] = asyncio.Queue(maxsize=queue_max_size)
+        self.send_buffer: CommandPriorityQueue = CommandPriorityQueue(maxsize=queue_max_size)
 
         self._event_session_ready = event_session_ready if event_session_ready is not None else asyncio.Event()
 
