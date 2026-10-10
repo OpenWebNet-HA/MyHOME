@@ -1,0 +1,83 @@
+name: "💡 New Device Request"
+description: "Request support for a new or currently unsupported BTicino / Legrand device."
+title: "[Device Request]: "
+labels: ["enhancement", "device-support"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Request Support for BTicino / Legrand Hardware
+
+        Thank you for requesting support for a new BTicino / Legrand device!
+        Please fill out the technical details below so maintainers can verify the OpenWebNet protocol messages and implement native support.
+
+  - type: input
+    id: device_model
+    attributes:
+      label: Device Model / Commercial Catalog Code
+      description: The exact BTicino or Legrand catalog reference (e.g. F411/4, LN4652, 3456, F420, MH201).
+      placeholder: "e.g. F411/4"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: who_system
+    attributes:
+      label: OpenWebNet WHO System Domain
+      description: Which OpenWebNet subsystem (WHO) does this device belong to?
+      options:
+        - "WHO=1 (Lighting / Relays / Actuators / Switches)"
+        - "WHO=2 (Automation / Shutters / Blinds / Motorized actuators)"
+        - "WHO=4 (Heating / Thermoregulation / Thermostats / Zones)"
+        - "WHO=15 (CEN Pushbuttons / Scenario Control)"
+        - "WHO=16 (Sound System / Audio Distribution)"
+        - "WHO=18 (Energy Management / Power Meters / Actuators)"
+        - "WHO=25 (CEN+ / Advanced Scenario Pushbuttons)"
+        - "WHO=13 (Gateway & System Diagnostics)"
+        - "Other / Unknown WHO"
+    validations:
+      required: true
+
+  - type: textarea
+    id: configuration
+    attributes:
+      label: Physical Configurators or Virtual Configuration
+      description: Describe the configuration plugs inserted in the physical sockets (e.g. A=1, PL=2, M=MOD) or virtual parameters set via MyHOME_Suite.
+      placeholder: "e.g. Configured with A=2, PL=3, M=0 (or virtual ID 12345 in MyHOME_Suite)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: sample_bus_frames
+    attributes:
+      label: Sample OpenWebNet Bus Frames
+      description: |
+        Bus frames captured from this device via the Lovelace Bus Monitor Card or integration logs.
+        Please include frames for status queries, state transitions, button presses, etc.
+      render: markdown
+      placeholder: |
+        ```
+        *1*1*23##
+        *#1*23*1*0##
+        *1*0*23##
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: Expected Home Assistant Behavior
+      description: What Home Assistant entity type and controls should this device map to (e.g. Light, Switch, Cover, Climate, Sensor, Event)?
+      placeholder: "e.g. Should be exposed as a 4-channel cover entity with open/close/stop commands..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: documentation_links
+    attributes:
+      label: Documentation / Technical Datasheets
+      description: Links to BTicino / Legrand product manuals, datasheets, or OpenWebNet protocol specifications.
+      placeholder: "https://..."
+    validations:
+      required: false

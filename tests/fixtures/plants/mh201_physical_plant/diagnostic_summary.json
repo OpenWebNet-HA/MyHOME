@@ -1,0 +1,257 @@
+{
+  "home_assistant": {
+    "arch": "aarch64",
+    "dev": false,
+    "docker": true,
+    "hassio": false,
+    "installation_type": "Home Assistant Container",
+    "os_name": "Linux",
+    "os_version": "6.18.39+rpt-rpi-v8",
+    "python_version": "3.14.6",
+    "timezone": "UTC",
+    "version": "2026.9.2",
+    "virtualenv": false,
+    "container_arch": "aarch64",
+    "run_as_root": true
+  },
+  "custom_components": {
+    "myhome": {
+      "documentation": "https://github.com/OpenWebNet-HA/MyHOME",
+      "version": "2.0.0b12",
+      "requirements": [
+        "OWNd==2.0.0b6"
+      ]
+    }
+  },
+  "integration_manifest": {
+    "domain": "myhome",
+    "name": "MyHOME",
+    "after_dependencies": [
+      "frontend",
+      "http",
+      "lovelace"
+    ],
+    "codeowners": [
+      "anotherjulien",
+      "GreenGrassBlueOcean"
+    ],
+    "config_flow": true,
+    "documentation": "https://github.com/OpenWebNet-HA/MyHOME",
+    "integration_type": "hub",
+    "iot_class": "local_push",
+    "issue_tracker": "https://github.com/OpenWebNet-HA/MyHOME/issues",
+    "requirements": [
+      "OWNd==2.0.0b6"
+    ],
+    "ssdp": [
+      {"st": "upnp:rootdevice", "manufacturer": "BTicino S.p.A.", "modelName": "HL4684"},
+      {"st": "upnp:rootdevice", "manufacturer": "BTicino S.p.A.", "modelName": "AM4890"},
+      {"st": "upnp:rootdevice", "manufacturer": "BTicino S.p.A.", "modelName": "MyHomeServer1"},
+      {"st": "upnp:rootdevice", "manufacturer": "BTicino S.p.A.", "modelName": "F455"},
+      {"st": "upnp:rootdevice", "manufacturer": "BTicino S.p.A.", "modelName": "F454"},
+      {"st": "upnp:rootdevice", "manufacturer": "BTicino S.p.A.", "modelName": "F453AV"},
+      {"st": "upnp:rootdevice", "manufacturer": "BTicino S.p.A.", "modelName": "F452"},
+      {"st": "upnp:rootdevice", "manufacturer": "BTicino S.p.A.", "modelName": "MH200N"},
+      {"st": "upnp:rootdevice", "manufacturer": "BTicino S.p.A.", "modelName": "MH200"},
+      {"st": "upnp:rootdevice", "manufacturer": "BTicino S.p.A.", "modelName": "MH202"},
+      {"st": "upnp:rootdevice", "manufacturer": "BTicino S.p.A.", "modelName": "MH201"}
+    ],
+    "version": "2.0.0b12",
+    "is_built_in": false,
+    "overwrites_built_in": false
+  },
+  "setup_times": {
+    "null": {
+      "setup": 0.028123688069172204
+    },
+    "01PLANTMH201PHYSICALPLANT0": {
+      "wait_import_platforms": -0.17037800804246217,
+      "config_entry_setup": 0.40147657692432404
+    }
+  },
+  "data": {
+    "integration_version": "2.0.0b12",
+    "ownd_version": "2.0.0b6",
+    "config_entry": {
+      "entry_id": "01PLANTMH201PHYSICALPLANT0",
+      "version": 1,
+      "domain": "myhome",
+      "title": "MH201 Gateway",
+      "data": {
+        "UDN": null,
+        "deviceType": "urn:schemas-bticino-it:device:IP scenario module:1",
+        "firmware": "3.6.27",
+        "friendly_name": null,
+        "host": "192.0.2.1",
+        "id": "00:03:50:00:02:01",
+        "mac": "00:03:50:00:02:01",
+        "manufacturer": "BTicino S.p.A.",
+        "manufacturerURL": "http://www.bticino.it",
+        "name": "MH201",
+        "password": null,
+        "port": 20000,
+        "ssdp_location": "http://192.0.2.1:80/scenMod.xml",
+        "ssdp_st": "upnp:rootdevice"
+      },
+      "options": {
+        "command_worker_count": 1
+      }
+    },
+    "gateway": {
+      "model_name": "MH201",
+      "manufacturer": "BTicino S.p.A.",
+      "firmware": "3.6.27",
+      "is_connected": true,
+      "send_workers": 1,
+      "identification": {
+        "model": "MH201",
+        "source": "ssdp",
+        "configured_model": "MH201",
+        "ssdp_model": "MH201",
+        "ssdp_location": "http://192.0.2.1:80/scenMod.xml",
+        "who13_code": "200",
+        "who13_model": "F454 / MyHomeServer1",
+        "who13_model_official": null,
+        "who13_model_observed": "F454 / MyHomeServer1",
+        "who13_firmware": "3.6.27",
+        "who13_kernel": null,
+        "who13_distribution": null,
+        "profile": "MH201Profile",
+        "conflict": null
+      }
+    },
+    "profile": {
+      "name": "Generic",
+      "command_queue_delay": 0.1,
+      "max_queue_size": 100,
+      "keepalive_interval": 90.0
+    },
+    "queue": {
+      "queue_depth": 0,
+      "max_size": 100
+    },
+    "platforms": {
+      "light": 0,
+      "switch": 0,
+      "cover": 0,
+      "climate": 0,
+      "binary_sensor": 0,
+      "sensor": 0,
+      "media_player": 0,
+      "button": 0,
+      "alarm_control_panel": 0
+    },
+    "bus_monitor": {
+      "stats": {
+        "capacity": 500,
+        "captured": 147,
+        "total_rx": 110,
+        "total_tx": 37,
+        "subscribers": 0
+      },
+      "recent_frames": [
+        {"timestamp": 1789597178.776066, "iso_time": "2026-09-16T22:19:38.776066+00:00", "direction": "rx", "raw": "*1*0*20##", "who": "1", "where": "20", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597178.858003, "iso_time": "2026-09-16T22:19:38.858003+00:00", "direction": "tx", "raw": "*#2*0114*10##", "who": "2", "where": "0114", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597178.982861, "iso_time": "2026-09-16T22:19:38.982861+00:00", "direction": "rx", "raw": "*#2*0114*10*10*75*001*0##", "who": "2", "where": "0114", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597179.03481, "iso_time": "2026-09-16T22:19:39.034810+00:00", "direction": "tx", "raw": "*#2*0115*10##", "who": "2", "where": "0115", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597179.148274, "iso_time": "2026-09-16T22:19:39.148274+00:00", "direction": "rx", "raw": "*2*0*0114##", "who": "2", "where": "0114", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597179.195801, "iso_time": "2026-09-16T22:19:39.195801+00:00", "direction": "rx", "raw": "*#2*0115*10*10*75*001*0##", "who": "2", "where": "0115", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597179.247374, "iso_time": "2026-09-16T22:19:39.247374+00:00", "direction": "tx", "raw": "*#2*0110*10##", "who": "2", "where": "0110", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597179.264085, "iso_time": "2026-09-16T22:19:39.264085+00:00", "direction": "rx", "raw": "*2*0*0115##", "who": "2", "where": "0115", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597179.38995, "iso_time": "2026-09-16T22:19:39.389950+00:00", "direction": "rx", "raw": "*#2*0110*10*10*100*001*0##", "who": "2", "where": "0110", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597179.453884, "iso_time": "2026-09-16T22:19:39.453884+00:00", "direction": "rx", "raw": "*2*0*0110##", "who": "2", "where": "0110", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597179.454389, "iso_time": "2026-09-16T22:19:39.454389+00:00", "direction": "tx", "raw": "*#2*0111*10##", "who": "2", "where": "0111", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597179.648684, "iso_time": "2026-09-16T22:19:39.648684+00:00", "direction": "rx", "raw": "*#2*0110*10*10*100*001*0##", "who": "2", "where": "0110", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597179.675105, "iso_time": "2026-09-16T22:19:39.675105+00:00", "direction": "rx", "raw": "*#2*0111*10*10*81*001*0##", "who": "2", "where": "0111", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597179.742327, "iso_time": "2026-09-16T22:19:39.742327+00:00", "direction": "rx", "raw": "*2*0*0111##", "who": "2", "where": "0111", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597179.745041, "iso_time": "2026-09-16T22:19:39.745041+00:00", "direction": "tx", "raw": "*#2*19*10##", "who": "2", "where": "19", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597180.394827, "iso_time": "2026-09-16T22:19:40.394827+00:00", "direction": "rx", "raw": "*#2*19*10*10*35*001*0##", "who": "2", "where": "19", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597180.395533, "iso_time": "2026-09-16T22:19:40.395533+00:00", "direction": "rx", "raw": "*2*0*19##", "who": "2", "where": "19", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597180.500467, "iso_time": "2026-09-16T22:19:40.500467+00:00", "direction": "tx", "raw": "*#2*0112*10##", "who": "2", "where": "0112", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597180.629395, "iso_time": "2026-09-16T22:19:40.629395+00:00", "direction": "rx", "raw": "*#2*0112*10*10*25*001*0##", "who": "2", "where": "0112", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597180.692674, "iso_time": "2026-09-16T22:19:40.692674+00:00", "direction": "rx", "raw": "*2*0*0112##", "who": "2", "where": "0112", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597180.721726, "iso_time": "2026-09-16T22:19:40.721726+00:00", "direction": "tx", "raw": "*#2*0113*10##", "who": "2", "where": "0113", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597180.850082, "iso_time": "2026-09-16T22:19:40.850082+00:00", "direction": "rx", "raw": "*#2*0113*10*10*25*001*0##", "who": "2", "where": "0113", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597180.911474, "iso_time": "2026-09-16T22:19:40.911474+00:00", "direction": "rx", "raw": "*2*0*0113##", "who": "2", "where": "0113", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597180.924507, "iso_time": "2026-09-16T22:19:40.924507+00:00", "direction": "tx", "raw": "*#2*0##", "who": "2", "where": "0", "what": null, "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597181.006536, "iso_time": "2026-09-16T22:19:41.006536+00:00", "direction": "rx", "raw": "*#2*0##", "who": "2", "where": "0", "what": null, "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597181.022277, "iso_time": "2026-09-16T22:19:41.022277+00:00", "direction": "rx", "raw": "*1*0*20##", "who": "1", "where": "20", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597181.060007, "iso_time": "2026-09-16T22:19:41.060007+00:00", "direction": "rx", "raw": "*#2*0112*10*10*25*001*0##", "who": "2", "where": "0112", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597181.114278, "iso_time": "2026-09-16T22:19:41.114278+00:00", "direction": "rx", "raw": "*#2*19*10*10*35*001*0##", "who": "2", "where": "19", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597181.114831, "iso_time": "2026-09-16T22:19:41.114831+00:00", "direction": "tx", "raw": "*#4*0##", "who": "4", "where": "0", "what": null, "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597182.820429, "iso_time": "2026-09-16T22:19:42.820429+00:00", "direction": "rx", "raw": "*1*0*15##", "who": "1", "where": "15", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597182.821072, "iso_time": "2026-09-16T22:19:42.821072+00:00", "direction": "rx", "raw": "*#2*0111*10*10*81*001*0##", "who": "2", "where": "0111", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597182.821512, "iso_time": "2026-09-16T22:19:42.821512+00:00", "direction": "rx", "raw": "*#2*0113*10*10*25*001*0##", "who": "2", "where": "0113", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597182.821923, "iso_time": "2026-09-16T22:19:42.821923+00:00", "direction": "rx", "raw": "*1*0*16##", "who": "1", "where": "16", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597182.822545, "iso_time": "2026-09-16T22:19:42.822545+00:00", "direction": "rx", "raw": "*2*0*0113##", "who": "2", "where": "0113", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597182.822915, "iso_time": "2026-09-16T22:19:42.822915+00:00", "direction": "rx", "raw": "*2*0*0112##", "who": "2", "where": "0112", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597182.839826, "iso_time": "2026-09-16T22:19:42.839826+00:00", "direction": "rx", "raw": "*1*0*0015##", "who": "1", "where": "0015", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597182.850898, "iso_time": "2026-09-16T22:19:42.850898+00:00", "direction": "rx", "raw": "*1*0*18##", "who": "1", "where": "18", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597182.86715, "iso_time": "2026-09-16T22:19:42.867150+00:00", "direction": "rx", "raw": "*1*1*21##", "who": "1", "where": "21", "what": "1", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597182.885986, "iso_time": "2026-09-16T22:19:42.885986+00:00", "direction": "rx", "raw": "*1*0*0013##", "who": "1", "where": "0013", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597182.886799, "iso_time": "2026-09-16T22:19:42.886799+00:00", "direction": "rx", "raw": "*1*0*0315##", "who": "1", "where": "0315", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597182.887268, "iso_time": "2026-09-16T22:19:42.887268+00:00", "direction": "rx", "raw": "*1*0*0314##", "who": "1", "where": "0314", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597182.911698, "iso_time": "2026-09-16T22:19:42.911698+00:00", "direction": "tx", "raw": "*#16*0##", "who": "16", "where": "0", "what": null, "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597182.942039, "iso_time": "2026-09-16T22:19:42.942039+00:00", "direction": "rx", "raw": "*1*0*0313##", "who": "1", "where": "0313", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597183.002446, "iso_time": "2026-09-16T22:19:43.002446+00:00", "direction": "rx", "raw": "*1*0*0312##", "who": "1", "where": "0312", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597290.670827, "iso_time": "2026-09-16T22:21:30.670827+00:00", "direction": "rx", "raw": "*2*0*#1##", "who": "2", "where": "#1", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597290.718284, "iso_time": "2026-09-16T22:21:30.718284+00:00", "direction": "rx", "raw": "*#2*0110*10*10*100*001*0##", "who": "2", "where": "0110", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597290.768274, "iso_time": "2026-09-16T22:21:30.768274+00:00", "direction": "rx", "raw": "*#2*0113*10*10*25*001*0##", "who": "2", "where": "0113", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597290.818003, "iso_time": "2026-09-16T22:21:30.818003+00:00", "direction": "rx", "raw": "*#2*0111*10*10*81*001*0##", "who": "2", "where": "0111", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597290.868004, "iso_time": "2026-09-16T22:21:30.868004+00:00", "direction": "rx", "raw": "*2*0*0113##", "who": "2", "where": "0113", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597290.917939, "iso_time": "2026-09-16T22:21:30.917939+00:00", "direction": "rx", "raw": "*#2*0115*10*10*75*001*0##", "who": "2", "where": "0115", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597290.978233, "iso_time": "2026-09-16T22:21:30.978233+00:00", "direction": "rx", "raw": "*#2*19*10*10*35*001*0##", "who": "2", "where": "19", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597291.028123, "iso_time": "2026-09-16T22:21:31.028123+00:00", "direction": "rx", "raw": "*2*0*0110##", "who": "2", "where": "0110", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597291.068157, "iso_time": "2026-09-16T22:21:31.068157+00:00", "direction": "rx", "raw": "*#2*0114*10*10*75*001*0##", "who": "2", "where": "0114", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597291.117959, "iso_time": "2026-09-16T22:21:31.117959+00:00", "direction": "rx", "raw": "*2*0*0115##", "who": "2", "where": "0115", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597291.168171, "iso_time": "2026-09-16T22:21:31.168171+00:00", "direction": "rx", "raw": "*#2*0112*10*10*25*001*0##", "who": "2", "where": "0112", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597291.217996, "iso_time": "2026-09-16T22:21:31.217996+00:00", "direction": "rx", "raw": "*2*0*0112##", "who": "2", "where": "0112", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597291.257968, "iso_time": "2026-09-16T22:21:31.257968+00:00", "direction": "rx", "raw": "*2*2*#1##", "who": "2", "where": "#1", "what": "2", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597291.298016, "iso_time": "2026-09-16T22:21:31.298016+00:00", "direction": "rx", "raw": "*2*0*19##", "who": "2", "where": "19", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597291.398097, "iso_time": "2026-09-16T22:21:31.398097+00:00", "direction": "rx", "raw": "*#2*19*10*12*35*001*0##", "who": "2", "where": "19", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597291.44803, "iso_time": "2026-09-16T22:21:31.448030+00:00", "direction": "rx", "raw": "*2*0*0114##", "who": "2", "where": "0114", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597291.488125, "iso_time": "2026-09-16T22:21:31.488125+00:00", "direction": "rx", "raw": "*#2*0110*10*12*100*001*0##", "who": "2", "where": "0110", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597291.538097, "iso_time": "2026-09-16T22:21:31.538097+00:00", "direction": "rx", "raw": "*#2*0113*10*12*25*001*0##", "who": "2", "where": "0113", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597291.588212, "iso_time": "2026-09-16T22:21:31.588212+00:00", "direction": "rx", "raw": "*2*0*0112##", "who": "2", "where": "0112", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597291.628074, "iso_time": "2026-09-16T22:21:31.628074+00:00", "direction": "rx", "raw": "*#2*0112*10*12*25*001*0##", "who": "2", "where": "0112", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597291.667983, "iso_time": "2026-09-16T22:21:31.667983+00:00", "direction": "rx", "raw": "*2*0*0111##", "who": "2", "where": "0111", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597291.707994, "iso_time": "2026-09-16T22:21:31.707994+00:00", "direction": "rx", "raw": "*2*2*0113##", "who": "2", "where": "0113", "what": "2", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597291.737918, "iso_time": "2026-09-16T22:21:31.737918+00:00", "direction": "rx", "raw": "*2*2*19##", "who": "2", "where": "19", "what": "2", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597291.788009, "iso_time": "2026-09-16T22:21:31.788009+00:00", "direction": "rx", "raw": "*2*2*0112##", "who": "2", "where": "0112", "what": "2", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597291.82808, "iso_time": "2026-09-16T22:21:31.828080+00:00", "direction": "rx", "raw": "*#2*0115*10*12*75*001*0##", "who": "2", "where": "0115", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597291.877931, "iso_time": "2026-09-16T22:21:31.877931+00:00", "direction": "rx", "raw": "*2*2*0110##", "who": "2", "where": "0110", "what": "2", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597291.928135, "iso_time": "2026-09-16T22:21:31.928135+00:00", "direction": "rx", "raw": "*#2*0114*10*12*75*001*0##", "who": "2", "where": "0114", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597291.978047, "iso_time": "2026-09-16T22:21:31.978047+00:00", "direction": "rx", "raw": "*#2*0111*10*10*81*001*0##", "who": "2", "where": "0111", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597292.037882, "iso_time": "2026-09-16T22:21:32.037882+00:00", "direction": "rx", "raw": "*2*2*0115##", "who": "2", "where": "0115", "what": "2", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597292.077872, "iso_time": "2026-09-16T22:21:32.077872+00:00", "direction": "rx", "raw": "*2*2*0114##", "who": "2", "where": "0114", "what": "2", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597292.128094, "iso_time": "2026-09-16T22:21:32.128094+00:00", "direction": "rx", "raw": "*2*0*0111##", "who": "2", "where": "0111", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597292.18809, "iso_time": "2026-09-16T22:21:32.188090+00:00", "direction": "rx", "raw": "*#2*0111*10*12*81*001*0##", "who": "2", "where": "0111", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597292.247975, "iso_time": "2026-09-16T22:21:32.247975+00:00", "direction": "rx", "raw": "*2*2*0111##", "who": "2", "where": "0111", "what": "2", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597296.038229, "iso_time": "2026-09-16T22:21:36.038229+00:00", "direction": "rx", "raw": "*#2*0112*10*10*0*001*0##", "who": "2", "where": "0112", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597296.08799, "iso_time": "2026-09-16T22:21:36.087990+00:00", "direction": "rx", "raw": "*2*0*0112##", "who": "2", "where": "0112", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597297.397824, "iso_time": "2026-09-16T22:21:37.397824+00:00", "direction": "rx", "raw": "*#2*19*10*10*0*001*0##", "who": "2", "where": "19", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597297.44787, "iso_time": "2026-09-16T22:21:37.447870+00:00", "direction": "rx", "raw": "*2*0*19##", "who": "2", "where": "19", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597297.608094, "iso_time": "2026-09-16T22:21:37.608094+00:00", "direction": "rx", "raw": "*#2*0113*10*10*0*001*0##", "who": "2", "where": "0113", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597297.677903, "iso_time": "2026-09-16T22:21:37.677903+00:00", "direction": "rx", "raw": "*2*0*0113##", "who": "2", "where": "0113", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597302.927674, "iso_time": "2026-09-16T22:21:42.927674+00:00", "direction": "rx", "raw": "*#2*0114*10*10*0*001*0##", "who": "2", "where": "0114", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597302.987667, "iso_time": "2026-09-16T22:21:42.987667+00:00", "direction": "rx", "raw": "*2*0*0114##", "who": "2", "where": "0114", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597309.157712, "iso_time": "2026-09-16T22:21:49.157712+00:00", "direction": "rx", "raw": "*#2*0115*10*10*0*001*0##", "who": "2", "where": "0115", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597309.207626, "iso_time": "2026-09-16T22:21:49.207626+00:00", "direction": "rx", "raw": "*2*0*0115##", "who": "2", "where": "0115", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597310.857545, "iso_time": "2026-09-16T22:21:50.857545+00:00", "direction": "rx", "raw": "*#2*0111*10*10*0*001*0##", "who": "2", "where": "0111", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597310.907449, "iso_time": "2026-09-16T22:21:50.907449+00:00", "direction": "rx", "raw": "*2*0*0111##", "who": "2", "where": "0111", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597314.917487, "iso_time": "2026-09-16T22:21:54.917487+00:00", "direction": "rx", "raw": "*#2*0110*10*10*0*001*0##", "who": "2", "where": "0110", "what": null, "dimension": "10", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597314.987479, "iso_time": "2026-09-16T22:21:54.987479+00:00", "direction": "rx", "raw": "*2*0*0110##", "who": "2", "where": "0110", "what": "0", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597319.007896, "iso_time": "2026-09-16T22:21:59.007896+00:00", "direction": "rx", "raw": "*25*21#2*21##", "who": "25", "where": "21", "what": "21", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597324.867326, "iso_time": "2026-09-16T22:22:04.867326+00:00", "direction": "rx", "raw": "*25*22#1*21##", "who": "25", "where": "21", "what": "22", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597325.347385, "iso_time": "2026-09-16T22:22:05.347385+00:00", "direction": "rx", "raw": "*25*24#1*21##", "who": "25", "where": "21", "what": "24", "dimension": null, "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597376.327935, "iso_time": "2026-09-16T22:22:56.327935+00:00", "direction": "tx", "raw": "*#13**15##", "who": "13", "where": "", "what": null, "dimension": "15", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597376.397244, "iso_time": "2026-09-16T22:22:56.397244+00:00", "direction": "rx", "raw": "*#13**15*200##", "who": "13", "where": "", "what": null, "dimension": "15", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597389.655399, "iso_time": "2026-09-16T22:23:09.655399+00:00", "direction": "tx", "raw": "*#13**16##", "who": "13", "where": "", "what": null, "dimension": "16", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597389.676196, "iso_time": "2026-09-16T22:23:09.676196+00:00", "direction": "rx", "raw": "*#13**16*3*6*27##", "who": "13", "where": "", "what": null, "dimension": "16", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597406.761487, "iso_time": "2026-09-16T22:23:26.761487+00:00", "direction": "tx", "raw": "*#13**22##", "who": "13", "where": "", "what": null, "dimension": "22", "is_ack": false, "is_nack": false, "is_duplicate": false},
+        {"timestamp": 1789597406.838056, "iso_time": "2026-09-16T22:23:26.838056+00:00", "direction": "rx", "raw": "*#13**22*00*22*43**04*17*09*2026##", "who": "13", "where": "", "what": null, "dimension": "22", "is_ack": false, "is_nack": false, "is_duplicate": false}
+      ]
+    }
+  },
+  "issues": []
+}

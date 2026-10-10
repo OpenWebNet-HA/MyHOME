@@ -1,0 +1,60 @@
+name: Home Assistant Container Smoke Test
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - "v2-*"
+      - "feat/*"
+  pull_request:
+    branches:
+      - main
+      - master
+      - "v2-*"
+  schedule:
+    - cron: "0 4 * * 1"  # Weekly run every Monday at 04:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ha-container-smoke:
+    name: HA Container (${{ matrix.ha-channel }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ha-channel: stable
+            allow-failure: false
+          - ha-channel: beta
+            allow-failure: false
+          - ha-channel: dev
+            allow-failure: true
+
+    continue-on-error: ${{ matrix.allow-failure }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Run Container Smoke Test (${{ matrix.ha-channel }})
+        env:
+          HA_CHANNEL: ${{ matrix.ha-channel }}
+          OWND_REF: ${{ github.head_ref || github.ref_name }}
+        run: |
+          python scripts/run_ha_container_smoke.py --channel "$HA_CHANNEL"

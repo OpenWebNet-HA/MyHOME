@@ -1,0 +1,78 @@
+{
+  "home_assistant": {
+    "installation_type": "Home Assistant OS",
+    "version": "2026.9.2",
+    "timezone": "UTC"
+  },
+  "data": {
+    "integration_version": "2.0.0b13",
+    "ownd_version": "2.0.0b8",
+    "config_entry": {
+      "entry_id": "01PLANTPR420MYHOMESERVER10",
+      "version": 1,
+      "domain": "myhome",
+      "title": "MyHomeServer1 Gateway",
+      "data": {
+        "host": "192.0.2.1",
+        "id": "00:03:50:00:04:23",
+        "mac": "00:03:50:00:04:23",
+        "manufacturer": "BTicino S.p.A.",
+        "name": "MyHomeServer1",
+        "password": null,
+        "port": 20000,
+        "ssdp_location": "http://192.0.2.1:49153/description.xml",
+        "firmware": "2.87.13"
+      },
+      "options": {
+        "command_worker_count": 1
+      }
+    },
+    "gateway": {
+      "model_name": "MyHomeServer1",
+      "manufacturer": "BTicino S.p.A.",
+      "firmware": "2.87.13",
+      "is_connected": true,
+      "send_workers": 1,
+      "identification": {
+        "model": "MyHomeServer1",
+        "source": "ssdp",
+        "configured_model": "MyHomeServer1",
+        "ssdp_model": "MyHomeServer1",
+        "who13_code": "200",
+        "who13_model": "F454 / MyHomeServer1",
+        "who13_model_official": null,
+        "who13_model_observed": "F454 / MyHomeServer1",
+        "who13_firmware": null,
+        "who13_kernel": null,
+        "who13_distribution": null,
+        "profile": "MyHomeServer1Profile",
+        "conflict": null
+      }
+    },
+    "bus_monitor": {
+      "capture": {
+        "kind": "trace",
+        "started_at": null
+      },
+      "stats": {
+        "capacity": 200,
+        "captured": 10,
+        "total_rx": 7,
+        "total_tx": 3,
+        "subscribers": 0
+      },
+      "recent_frames": [
+        {"raw": "*#13**15##", "direction": "tx", "iso_time": "2026-09-22T08:07:13.617759+00:00"},
+        {"raw": "*#13**15*200##", "direction": "rx", "iso_time": "2026-09-22T08:07:13.652543+00:00"},
+        {"raw": "*#18*52*113*183##", "direction": "rx", "iso_time": "2026-09-22T08:07:30.967530+00:00"},
+        {"raw": "*#18*51*113*480##", "direction": "rx", "iso_time": "2026-09-22T08:07:35.804170+00:00"},
+        {"raw": "*#1013*0*1##", "direction": "tx", "iso_time": "2026-09-22T08:07:39.329798+00:00"},
+        {"raw": "*#1013**1*67*15*5*0##", "direction": "rx", "iso_time": "2026-09-22T08:07:39.384208+00:00"},
+        {"raw": "*#1013*0*1##", "direction": "tx", "iso_time": "2026-09-22T08:07:46.196091+00:00"},
+        {"raw": "*#1013**1*67*15*5*0##", "direction": "rx", "iso_time": "2026-09-22T08:07:46.245024+00:00"},
+        {"raw": "*#18*52*113*183##", "direction": "rx", "iso_time": "2026-09-22T08:08:00.943767+00:00"},
+        {"raw": "*#18*51*113*498##", "direction": "rx", "iso_time": "2026-09-22T08:08:04.697429+00:00"}
+      ]
+    }
+  }
+}

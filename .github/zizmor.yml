@@ -1,0 +1,10 @@
+# zizmor (workflow-lint.yml) configuration.
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        # hassfest has no releases and must enforce the rules of the current
+        # Home Assistant core, so it tracks the branch on purpose.
+        "home-assistant/actions/hassfest": any
+        # Everything else: a full commit SHA, kept current by Dependabot.
+        "*": hash-pin

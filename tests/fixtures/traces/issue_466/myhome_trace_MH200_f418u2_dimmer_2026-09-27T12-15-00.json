@@ -1,0 +1,368 @@
+{
+  "capture": {
+    "kind": "dimmer_test",
+    "started_at": "2026-09-27T10:11:55.659Z",
+    "notes": "Empirical bus capture on an authentic physical BTicino MH200 gateway (firmware 2.1.0) testing a modern physical BTicino F418U2 universal modular dimmer on WHERE=62 (Hal inkom plafond bureau). Demonstrates F418U2 behavior on older gateway firmware: accepts fine Dimension 1 writes (*#1*62*#1*150*0## -> *#1*62*1*150*5##), preserves identical non-linear WHAT-to-percentage dimming curves (Level 5 -> 30% [130], Level 3 -> 10% [110], Level 7 -> 50% [150]) as seen on F454, ignores Dimension 4 writes (*#1*62*#4*130*0##), and responds to Dimension 1 queries when OFF (*#1*62*1## -> *#1*62*1*100*2##).",
+    "subsystem": "WHO 1 (Lighting)",
+    "device_tested": {
+      "address": "62",
+      "model": "BTicino F418U2 (Universal 2-channel modular dimmer, 300 VA)",
+      "friendly_name": "Hal inkom plafond bureau"
+    },
+    "window": {
+      "first": "2026-09-27T10:11:55.659Z",
+      "last": "2026-09-27T10:15:38.799Z",
+      "frames": 30
+    }
+  },
+  "environment": {
+    "gateway_model": "MH200",
+    "gateway_firmware": "2.1.0",
+    "who13_device_type": 4,
+    "connection": "TCP OpenWebNet (Port 20000)",
+    "source_comment": "https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-5854469497"
+  },
+  "frames": [
+    {
+      "timestamp": 1790503915.659,
+      "iso_time": "2026-09-27T10:11:55.659000+00:00",
+      "direction": "tx",
+      "raw": "*#1*62*1##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": "1",
+      "description": "Initial status request: query Dimension 1 level on F418U2 dimmer 62"
+    },
+    {
+      "timestamp": 1790503915.783,
+      "iso_time": "2026-09-27T10:11:55.783000+00:00",
+      "direction": "rx",
+      "raw": "*#1*62*1*200*2##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": "1",
+      "dimension_values": ["200", "2"],
+      "description": "F418U2 dimmer reports initial 100% brightness (LEVEL100=200) at transition speed 2"
+    },
+    {
+      "timestamp": 1790503922.020,
+      "iso_time": "2026-09-27T10:12:02.020000+00:00",
+      "direction": "tx",
+      "raw": "*#1*62*4##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": "4",
+      "description": "Query Dimension 4 level on F418U2 dimmer 62 (unhandled by MH200 gateway)"
+    },
+    {
+      "timestamp": 1790504045.460,
+      "iso_time": "2026-09-27T10:14:05.460000+00:00",
+      "direction": "tx",
+      "raw": "*#1*62*#1*150*0##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": "1",
+      "dimension_values": ["150", "0"],
+      "description": "Send fine Dimension 1 write command setting 50% brightness (LEVEL100=150) at transition speed 0"
+    },
+    {
+      "timestamp": 1790504045.706,
+      "iso_time": "2026-09-27T10:14:05.706000+00:00",
+      "direction": "rx",
+      "raw": "*#1*62*1*150*5##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": "1",
+      "dimension_values": ["150", "5"],
+      "description": "F418U2 dimmer accepts Dimension 1 write, reporting 50% brightness with active transition speed 5"
+    },
+    {
+      "timestamp": 1790504053.964,
+      "iso_time": "2026-09-27T10:14:13.964000+00:00",
+      "direction": "tx",
+      "raw": "*#1*62##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": null,
+      "description": "Query standard status to observe discrete WHAT mapping after 50% Dimension 1 write"
+    },
+    {
+      "timestamp": 1790504054.039,
+      "iso_time": "2026-09-27T10:14:14.039000+00:00",
+      "direction": "rx",
+      "raw": "*1*7*62##",
+      "who": "1",
+      "what": "7",
+      "where": "62",
+      "dimension": null,
+      "description": "F418U2 dimmer maps 50% brightness to discrete WHAT level 7"
+    },
+    {
+      "timestamp": 1790504070.207,
+      "iso_time": "2026-09-27T10:14:30.207000+00:00",
+      "direction": "tx",
+      "raw": "*#1*62*1##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": "1",
+      "description": "Query steady-state Dimension 1 level after transition completes"
+    },
+    {
+      "timestamp": 1790504070.324,
+      "iso_time": "2026-09-27T10:14:30.324000+00:00",
+      "direction": "rx",
+      "raw": "*#1*62*1*150*2##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": "1",
+      "dimension_values": ["150", "2"],
+      "description": "F418U2 dimmer confirms steady-state 50% brightness at speed 2"
+    },
+    {
+      "timestamp": 1790504074.121,
+      "iso_time": "2026-09-27T10:14:34.121000+00:00",
+      "direction": "tx",
+      "raw": "*#1*62*4##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": "4",
+      "description": "Query Dimension 4 level on F418U2 dimmer 62 (unhandled by MH200 gateway)"
+    },
+    {
+      "timestamp": 1790504079.773,
+      "iso_time": "2026-09-27T10:14:39.773000+00:00",
+      "direction": "tx",
+      "raw": "*#1*62*#4*130*0##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": "4",
+      "dimension_values": ["130", "0"],
+      "description": "Send Dimension 4 write command to 30% (LEVEL100=130); ignored by F418U2 dimmer hardware"
+    },
+    {
+      "timestamp": 1790504090.855,
+      "iso_time": "2026-09-27T10:14:50.855000+00:00",
+      "direction": "tx",
+      "raw": "*#1*62*1##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": "1",
+      "description": "Query Dimension 1 level to verify Dimension 4 write was ignored"
+    },
+    {
+      "timestamp": 1790504091.027,
+      "iso_time": "2026-09-27T10:14:51.027000+00:00",
+      "direction": "rx",
+      "raw": "*#1*62*1*150*2##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": "1",
+      "dimension_values": ["150", "2"],
+      "description": "F418U2 dimmer confirms brightness remains unchanged at 50% (LEVEL100=150)"
+    },
+    {
+      "timestamp": 1790504095.519,
+      "iso_time": "2026-09-27T10:14:55.519000+00:00",
+      "direction": "tx",
+      "raw": "*1*3*62##",
+      "who": "1",
+      "what": "3",
+      "where": "62",
+      "dimension": null,
+      "description": "Send discrete Level 3 command"
+    },
+    {
+      "timestamp": 1790504095.586,
+      "iso_time": "2026-09-27T10:14:55.586000+00:00",
+      "direction": "rx",
+      "raw": "*1*3*62##",
+      "who": "1",
+      "what": "3",
+      "where": "62",
+      "dimension": null,
+      "description": "F418U2 dimmer confirms discrete WHAT level 3"
+    },
+    {
+      "timestamp": 1790504103.745,
+      "iso_time": "2026-09-27T10:15:03.745000+00:00",
+      "direction": "tx",
+      "raw": "*#1*62*1##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": "1",
+      "description": "Query resulting Dimension 1 level after discrete Level 3"
+    },
+    {
+      "timestamp": 1790504103.873,
+      "iso_time": "2026-09-27T10:15:03.873000+00:00",
+      "direction": "rx",
+      "raw": "*#1*62*1*110*2##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": "1",
+      "dimension_values": ["110", "2"],
+      "description": "F418U2 internal dimming curve maps discrete Level 3 to 10% brightness (LEVEL100=110) at speed 2"
+    },
+    {
+      "timestamp": 1790504110.514,
+      "iso_time": "2026-09-27T10:15:10.514000+00:00",
+      "direction": "tx",
+      "raw": "*1*5*62##",
+      "who": "1",
+      "what": "5",
+      "where": "62",
+      "dimension": null,
+      "description": "Send discrete Level 5 command"
+    },
+    {
+      "timestamp": 1790504110.600,
+      "iso_time": "2026-09-27T10:15:10.600000+00:00",
+      "direction": "rx",
+      "raw": "*1*5*62##",
+      "who": "1",
+      "what": "5",
+      "where": "62",
+      "dimension": null,
+      "description": "F418U2 dimmer confirms discrete WHAT level 5"
+    },
+    {
+      "timestamp": 1790504115.442,
+      "iso_time": "2026-09-27T10:15:15.442000+00:00",
+      "direction": "tx",
+      "raw": "*#1*62*1##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": "1",
+      "description": "Query resulting Dimension 1 level after discrete Level 5"
+    },
+    {
+      "timestamp": 1790504115.556,
+      "iso_time": "2026-09-27T10:15:15.556000+00:00",
+      "direction": "rx",
+      "raw": "*#1*62*1*130*2##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": "1",
+      "dimension_values": ["130", "2"],
+      "description": "F418U2 internal dimming curve maps discrete Level 5 to 30% brightness (LEVEL100=130), identically matching F454 capture"
+    },
+    {
+      "timestamp": 1790504120.070,
+      "iso_time": "2026-09-27T10:15:20.070000+00:00",
+      "direction": "tx",
+      "raw": "*1*0*62##",
+      "who": "1",
+      "what": "0",
+      "where": "62",
+      "dimension": null,
+      "description": "Send turn OFF command"
+    },
+    {
+      "timestamp": 1790504120.166,
+      "iso_time": "2026-09-27T10:15:20.166000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*62##",
+      "who": "1",
+      "what": "0",
+      "where": "62",
+      "dimension": null,
+      "description": "F418U2 dimmer confirms OFF"
+    },
+    {
+      "timestamp": 1790504125.125,
+      "iso_time": "2026-09-27T10:15:25.125000+00:00",
+      "direction": "tx",
+      "raw": "*#1*62*1##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": "1",
+      "description": "Query Dimension 1 level when OFF"
+    },
+    {
+      "timestamp": 1790504125.255,
+      "iso_time": "2026-09-27T10:15:25.255000+00:00",
+      "direction": "rx",
+      "raw": "*#1*62*1*100*2##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": "1",
+      "dimension_values": ["100", "2"],
+      "description": "On MH200 gateway, querying Dimension 1 when OFF reports Dimension 1 level 100 (0% brightness) at speed 2"
+    },
+    {
+      "timestamp": 1790504129.247,
+      "iso_time": "2026-09-27T10:15:29.247000+00:00",
+      "direction": "tx",
+      "raw": "*#1*62*4##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": "4",
+      "description": "Query Dimension 4 level when OFF (unhandled by MH200 gateway)"
+    },
+    {
+      "timestamp": 1790504134.714,
+      "iso_time": "2026-09-27T10:15:34.714000+00:00",
+      "direction": "tx",
+      "raw": "*#1*62*#1*200*0##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": "1",
+      "dimension_values": ["200", "0"],
+      "description": "Send Dimension 1 write command restoring 100% brightness (LEVEL100=200) with transition speed 0"
+    },
+    {
+      "timestamp": 1790504134.849,
+      "iso_time": "2026-09-27T10:15:34.849000+00:00",
+      "direction": "rx",
+      "raw": "*#1*62*1*200*5##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": "1",
+      "dimension_values": ["200", "5"],
+      "description": "F418U2 dimmer accepts Dimension 1 write, reporting 100% brightness with active transition speed 5"
+    },
+    {
+      "timestamp": 1790504138.708,
+      "iso_time": "2026-09-27T10:15:38.708000+00:00",
+      "direction": "tx",
+      "raw": "*#1*62##",
+      "who": "1",
+      "what": null,
+      "where": "62",
+      "dimension": null,
+      "description": "Query standard status to confirm restoration to 100% brightness"
+    },
+    {
+      "timestamp": 1790504138.799,
+      "iso_time": "2026-09-27T10:15:38.799000+00:00",
+      "direction": "rx",
+      "raw": "*1*10*62##",
+      "who": "1",
+      "what": "10",
+      "where": "62",
+      "dimension": null,
+      "description": "F418U2 dimmer confirms 100% brightness (discrete WHAT level 10) restored"
+    }
+  ]
+}

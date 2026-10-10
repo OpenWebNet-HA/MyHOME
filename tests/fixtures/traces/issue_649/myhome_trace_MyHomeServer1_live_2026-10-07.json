@@ -1,0 +1,917 @@
+{
+  "capture": {
+    "kind": "derived_trace_archive",
+    "source_file": "live_test_monitor_2026-10-07.log",
+    "notes": "Derived archive synthesized from authentic raw monitor log lines. Not an authentic Home Assistant runtime diagnostics export (exported_at timestamp is synthetic, total_tx is 0, and all frames are rx). Descriptions are generated using proposed OWNd WHO 4 season decoding (OWNd #94 / #97); pinned OWNd 2.0.0b10 reports *4*1*Z## as hvac_mode.",
+    "started_at": "2026-10-07T20:06:54.835000+00:00",
+    "filters": {
+      "who": null,
+      "where": null,
+      "direction": null
+    },
+    "window": {
+      "first": "2026-10-07T20:06:54.835000+00:00",
+      "last": "2026-10-07T20:13:22.913000+00:00",
+      "frames": 107,
+      "buffer_frames": 107,
+      "buffer_depth": 500,
+      "truncated": false
+    }
+  },
+  "environment": {
+    "home_assistant_version": "2026.9.4",
+    "integration_version": "2.0.0b15",
+    "ownd_version": "2.0.0b10 (synthesized with proposed WHO 4 season decoder branch)",
+    "exported_at": "2026-10-07T20:20:00.000000+00:00",
+    "archive_type": "derived_monitor_archive"
+  },
+  "gateway": {
+    "model": "MyHomeServer1",
+    "manufacturer": "BTicino",
+    "firmware": "3.87.13",
+    "mac_prefix": "00:03:50",
+    "connection_type": "tcp",
+    "queue_pacing": 0.05,
+    "is_connected": true,
+    "identification": {
+      "model": "MyHomeServer1",
+      "source": "who13",
+      "configured_model": "MyHomeServer1",
+      "ssdp_model": null,
+      "who13_code": 130,
+      "who13_model": "MyHomeServer1",
+      "who13_model_official": "MyHomeServer1",
+      "who13_model_observed": "MyHomeServer1",
+      "who13_firmware": "3.87.13",
+      "who13_kernel": null,
+      "who13_distribution": null,
+      "profile": "MyHomeServer1Profile",
+      "conflict": null
+    }
+  },
+  "telemetry": {
+    "total_rx": 107,
+    "total_tx": 0,
+    "captured_in_buffer": 107,
+    "buffer_depth": 500,
+    "queue_depth": 0
+  },
+  "frames": [
+    {
+      "timestamp": 1791403614.835,
+      "iso_time": "2026-10-07T20:06:54.835000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*0*0235##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's main sensor is reporting a temperature of 23.5\u00b0C."
+    },
+    {
+      "timestamp": 1791403615.145,
+      "iso_time": "2026-10-07T20:06:55.145000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*12*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403615.148,
+      "iso_time": "2026-10-07T20:06:55.148000+00:00",
+      "direction": "rx",
+      "raw": "*4*1*60##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's season is heating."
+    },
+    {
+      "timestamp": 1791403615.443,
+      "iso_time": "2026-10-07T20:06:55.443000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*14*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403615.543,
+      "iso_time": "2026-10-07T20:06:55.543000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*13*00##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local offset is set to 0\u00b0C."
+    },
+    {
+      "timestamp": 1791403632.48,
+      "iso_time": "2026-10-07T20:07:12.480000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*19*5*0##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's cooling fan is off; heating valve is off."
+    },
+    {
+      "timestamp": 1791403639.838,
+      "iso_time": "2026-10-07T20:07:19.838000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60#1*20*0##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's actuator 1 is off."
+    },
+    {
+      "timestamp": 1791403639.891,
+      "iso_time": "2026-10-07T20:07:19.891000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60#2*20*5##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60 actuator 2 is off (tracks heating actuator on this plant; decoded as fan speed 0 by OWNd)."
+    },
+    {
+      "timestamp": 1791403674.864,
+      "iso_time": "2026-10-07T20:07:54.864000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*14*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403682.219,
+      "iso_time": "2026-10-07T20:08:02.219000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*13*00##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local offset is set to 0\u00b0C."
+    },
+    {
+      "timestamp": 1791403682.224,
+      "iso_time": "2026-10-07T20:08:02.224000+00:00",
+      "direction": "rx",
+      "raw": "*4*4002#39*0#1##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 39 external probe/mode report (parsed as zone 0 by OWNd where-param parser)."
+    },
+    {
+      "timestamp": 1791403682.224,
+      "iso_time": "2026-10-07T20:08:02.224000+00:00",
+      "direction": "rx",
+      "raw": "*4*4002*39##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 39's mode is unknown."
+    },
+    {
+      "timestamp": 1791403684.328,
+      "iso_time": "2026-10-07T20:08:04.328000+00:00",
+      "direction": "rx",
+      "raw": "*#4*39#1*#20*0##",
+      "type": "OWNHeatingCommand",
+      "description": "*#4*39#1*#20*0##"
+    },
+    {
+      "timestamp": 1791403684.331,
+      "iso_time": "2026-10-07T20:08:04.331000+00:00",
+      "direction": "rx",
+      "raw": "*#4*39#1*20*0##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 39's actuator 1 is off."
+    },
+    {
+      "timestamp": 1791403689.621,
+      "iso_time": "2026-10-07T20:08:09.621000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*0*0235##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's main sensor is reporting a temperature of 23.5\u00b0C."
+    },
+    {
+      "timestamp": 1791403690.104,
+      "iso_time": "2026-10-07T20:08:10.104000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*0*0235##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's main sensor is reporting a temperature of 23.5\u00b0C."
+    },
+    {
+      "timestamp": 1791403690.397,
+      "iso_time": "2026-10-07T20:08:10.397000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*12*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403690.401,
+      "iso_time": "2026-10-07T20:08:10.401000+00:00",
+      "direction": "rx",
+      "raw": "*4*1*60##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's season is heating."
+    },
+    {
+      "timestamp": 1791403690.693,
+      "iso_time": "2026-10-07T20:08:10.693000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*14*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403691.001,
+      "iso_time": "2026-10-07T20:08:11.001000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*13*00##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local offset is set to 0\u00b0C."
+    },
+    {
+      "timestamp": 1791403691.397,
+      "iso_time": "2026-10-07T20:08:11.397000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*0*0235##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's main sensor is reporting a temperature of 23.5\u00b0C."
+    },
+    {
+      "timestamp": 1791403691.7,
+      "iso_time": "2026-10-07T20:08:11.700000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*12*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403691.702,
+      "iso_time": "2026-10-07T20:08:11.702000+00:00",
+      "direction": "rx",
+      "raw": "*4*1*60##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's season is heating."
+    },
+    {
+      "timestamp": 1791403692.001,
+      "iso_time": "2026-10-07T20:08:12.001000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*14*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403692.297,
+      "iso_time": "2026-10-07T20:08:12.297000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*13*00##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local offset is set to 0\u00b0C."
+    },
+    {
+      "timestamp": 1791403701.897,
+      "iso_time": "2026-10-07T20:08:21.897000+00:00",
+      "direction": "rx",
+      "raw": "*4*0*60##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's season is conditioning."
+    },
+    {
+      "timestamp": 1791403701.954,
+      "iso_time": "2026-10-07T20:08:21.954000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*12*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403701.961,
+      "iso_time": "2026-10-07T20:08:21.961000+00:00",
+      "direction": "rx",
+      "raw": "*4*0*60##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's season is conditioning."
+    },
+    {
+      "timestamp": 1791403702.01,
+      "iso_time": "2026-10-07T20:08:22.010000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*0*0235##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's main sensor is reporting a temperature of 23.5\u00b0C."
+    },
+    {
+      "timestamp": 1791403702.281,
+      "iso_time": "2026-10-07T20:08:22.281000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*0*0235##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's main sensor is reporting a temperature of 23.5\u00b0C."
+    },
+    {
+      "timestamp": 1791403702.598,
+      "iso_time": "2026-10-07T20:08:22.598000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*12*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403702.601,
+      "iso_time": "2026-10-07T20:08:22.601000+00:00",
+      "direction": "rx",
+      "raw": "*4*0*60##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's season is conditioning."
+    },
+    {
+      "timestamp": 1791403702.88,
+      "iso_time": "2026-10-07T20:08:22.880000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*14*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403703.179,
+      "iso_time": "2026-10-07T20:08:23.179000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*13*00##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local offset is set to 0\u00b0C."
+    },
+    {
+      "timestamp": 1791403703.606,
+      "iso_time": "2026-10-07T20:08:23.606000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*0*0235##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's main sensor is reporting a temperature of 23.5\u00b0C."
+    },
+    {
+      "timestamp": 1791403703.875,
+      "iso_time": "2026-10-07T20:08:23.875000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*12*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403703.877,
+      "iso_time": "2026-10-07T20:08:23.877000+00:00",
+      "direction": "rx",
+      "raw": "*4*0*60##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's season is conditioning."
+    },
+    {
+      "timestamp": 1791403704.176,
+      "iso_time": "2026-10-07T20:08:24.176000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*14*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403704.478,
+      "iso_time": "2026-10-07T20:08:24.478000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*13*00##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local offset is set to 0\u00b0C."
+    },
+    {
+      "timestamp": 1791403705.954,
+      "iso_time": "2026-10-07T20:08:25.954000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60#2*#20*6##",
+      "type": "OWNHeatingCommand",
+      "description": "*#4*60#2*#20*6##"
+    },
+    {
+      "timestamp": 1791403706.001,
+      "iso_time": "2026-10-07T20:08:26.001000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60#2*20*6##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60 actuator 2 is active (tracks heating actuator on this plant; decoded as fan speed 1 by OWNd)."
+    },
+    {
+      "timestamp": 1791403714.186,
+      "iso_time": "2026-10-07T20:08:34.186000+00:00",
+      "direction": "rx",
+      "raw": "*4*1*60##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's season is heating."
+    },
+    {
+      "timestamp": 1791403714.247,
+      "iso_time": "2026-10-07T20:08:34.247000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*12*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403714.251,
+      "iso_time": "2026-10-07T20:08:34.251000+00:00",
+      "direction": "rx",
+      "raw": "*4*1*60##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's season is heating."
+    },
+    {
+      "timestamp": 1791403714.285,
+      "iso_time": "2026-10-07T20:08:34.285000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*0*0235##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's main sensor is reporting a temperature of 23.5\u00b0C."
+    },
+    {
+      "timestamp": 1791403714.588,
+      "iso_time": "2026-10-07T20:08:34.588000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*0*0235##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's main sensor is reporting a temperature of 23.5\u00b0C."
+    },
+    {
+      "timestamp": 1791403714.892,
+      "iso_time": "2026-10-07T20:08:34.892000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*12*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403714.896,
+      "iso_time": "2026-10-07T20:08:34.896000+00:00",
+      "direction": "rx",
+      "raw": "*4*1*60##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's season is heating."
+    },
+    {
+      "timestamp": 1791403715.194,
+      "iso_time": "2026-10-07T20:08:35.194000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*14*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403715.475,
+      "iso_time": "2026-10-07T20:08:35.475000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*13*00##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local offset is set to 0\u00b0C."
+    },
+    {
+      "timestamp": 1791403715.884,
+      "iso_time": "2026-10-07T20:08:35.884000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*0*0235##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's main sensor is reporting a temperature of 23.5\u00b0C."
+    },
+    {
+      "timestamp": 1791403716.048,
+      "iso_time": "2026-10-07T20:08:36.048000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60#2*#20*5##",
+      "type": "OWNHeatingCommand",
+      "description": "*#4*60#2*#20*5##"
+    },
+    {
+      "timestamp": 1791403716.126,
+      "iso_time": "2026-10-07T20:08:36.126000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60#2*20*5##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60 actuator 2 is off (tracks heating actuator on this plant; decoded as fan speed 0 by OWNd)."
+    },
+    {
+      "timestamp": 1791403716.595,
+      "iso_time": "2026-10-07T20:08:36.595000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*12*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403716.607,
+      "iso_time": "2026-10-07T20:08:36.607000+00:00",
+      "direction": "rx",
+      "raw": "*4*1*60##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's season is heating."
+    },
+    {
+      "timestamp": 1791403716.622,
+      "iso_time": "2026-10-07T20:08:36.622000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*14*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403716.757,
+      "iso_time": "2026-10-07T20:08:36.757000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*13*00##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local offset is set to 0\u00b0C."
+    },
+    {
+      "timestamp": 1791403740.765,
+      "iso_time": "2026-10-07T20:09:00.765000+00:00",
+      "direction": "rx",
+      "raw": "*#130**1*1*0*3*1*8##",
+      "type": "OWNEvent",
+      "description": "*#130**1*1*0*3*1*8##"
+    },
+    {
+      "timestamp": 1791403744.277,
+      "iso_time": "2026-10-07T20:09:04.277000+00:00",
+      "direction": "rx",
+      "raw": "*#4*59*60*80##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 59's main sensor is reporting a humidity of 80.0%."
+    },
+    {
+      "timestamp": 1791403750.839,
+      "iso_time": "2026-10-07T20:09:10.839000+00:00",
+      "direction": "rx",
+      "raw": "*4*303*60##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's mode is set to 'off'."
+    },
+    {
+      "timestamp": 1791403750.888,
+      "iso_time": "2026-10-07T20:09:10.888000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*12*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403750.891,
+      "iso_time": "2026-10-07T20:09:10.891000+00:00",
+      "direction": "rx",
+      "raw": "*4*303*60##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's mode is set to 'off'."
+    },
+    {
+      "timestamp": 1791403750.962,
+      "iso_time": "2026-10-07T20:09:10.962000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*0*0235##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's main sensor is reporting a temperature of 23.5\u00b0C."
+    },
+    {
+      "timestamp": 1791403787.587,
+      "iso_time": "2026-10-07T20:09:47.587000+00:00",
+      "direction": "rx",
+      "raw": "*4*102*60##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's mode is set to 'off'."
+    },
+    {
+      "timestamp": 1791403787.628,
+      "iso_time": "2026-10-07T20:09:47.628000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*12*0070*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local target temperature is set to 7.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403787.637,
+      "iso_time": "2026-10-07T20:09:47.637000+00:00",
+      "direction": "rx",
+      "raw": "*4*102*60##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's mode is set to 'off'."
+    },
+    {
+      "timestamp": 1791403787.681,
+      "iso_time": "2026-10-07T20:09:47.681000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*0*0235##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's main sensor is reporting a temperature of 23.5\u00b0C."
+    },
+    {
+      "timestamp": 1791403814.839,
+      "iso_time": "2026-10-07T20:10:14.839000+00:00",
+      "direction": "rx",
+      "raw": "*#4*40*60*42##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 40's main sensor is reporting a humidity of 42.0%."
+    },
+    {
+      "timestamp": 1791403829.228,
+      "iso_time": "2026-10-07T20:10:29.228000+00:00",
+      "direction": "rx",
+      "raw": "*#4*48*60*53##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 48's main sensor is reporting a humidity of 53.0%."
+    },
+    {
+      "timestamp": 1791403874.276,
+      "iso_time": "2026-10-07T20:11:14.276000+00:00",
+      "direction": "rx",
+      "raw": "*4*4002#50*0#3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 0's mode is unknown."
+    },
+    {
+      "timestamp": 1791403874.34,
+      "iso_time": "2026-10-07T20:11:14.340000+00:00",
+      "direction": "rx",
+      "raw": "*4*4002*50##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 50's mode is unknown."
+    },
+    {
+      "timestamp": 1791403876.28,
+      "iso_time": "2026-10-07T20:11:16.280000+00:00",
+      "direction": "rx",
+      "raw": "*#4*50#1*#20*0##",
+      "type": "OWNHeatingCommand",
+      "description": "*#4*50#1*#20*0##"
+    },
+    {
+      "timestamp": 1791403876.312,
+      "iso_time": "2026-10-07T20:11:16.312000+00:00",
+      "direction": "rx",
+      "raw": "*#4*50#1*20*0##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 50's actuator 1 is off."
+    },
+    {
+      "timestamp": 1791403890.522,
+      "iso_time": "2026-10-07T20:11:30.522000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*43##",
+      "type": "OWNLightingEvent",
+      "description": "Light 43 is switched off."
+    },
+    {
+      "timestamp": 1791403897.0,
+      "iso_time": "2026-10-07T20:11:37+00:00",
+      "direction": "rx",
+      "raw": "*1*0*43##",
+      "type": "OWNLightingEvent",
+      "description": "Light 43 is switched off."
+    },
+    {
+      "timestamp": 1791403903.4,
+      "iso_time": "2026-10-07T20:11:43.400000+00:00",
+      "direction": "rx",
+      "raw": "*1*1*43##",
+      "type": "OWNLightingEvent",
+      "description": "Light 43 is switched on."
+    },
+    {
+      "timestamp": 1791403909.556,
+      "iso_time": "2026-10-07T20:11:49.556000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*43##",
+      "type": "OWNLightingEvent",
+      "description": "Light 43 is switched off."
+    },
+    {
+      "timestamp": 1791403915.726,
+      "iso_time": "2026-10-07T20:11:55.726000+00:00",
+      "direction": "rx",
+      "raw": "*1*1*43##",
+      "type": "OWNLightingEvent",
+      "description": "Light 43 is switched on."
+    },
+    {
+      "timestamp": 1791403920.864,
+      "iso_time": "2026-10-07T20:12:00.864000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*43##",
+      "type": "OWNLightingEvent",
+      "description": "Light 43 is switched off."
+    },
+    {
+      "timestamp": 1791403922.004,
+      "iso_time": "2026-10-07T20:12:02.004000+00:00",
+      "direction": "rx",
+      "raw": "*#1*43*2*0*0*0##",
+      "type": "OWNLightingEvent",
+      "description": "Light 43 is switched on for 0s."
+    },
+    {
+      "timestamp": 1791403922.009,
+      "iso_time": "2026-10-07T20:12:02.009000+00:00",
+      "direction": "rx",
+      "raw": "*#1*43*2*0*0*0##",
+      "type": "OWNLightingEvent",
+      "description": "Light 43 is switched on for 0s."
+    },
+    {
+      "timestamp": 1791403934.429,
+      "iso_time": "2026-10-07T20:12:14.429000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*43##",
+      "type": "OWNLightingEvent",
+      "description": "Light 43 is switched off."
+    },
+    {
+      "timestamp": 1791403946.281,
+      "iso_time": "2026-10-07T20:12:26.281000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*0*0235##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's main sensor is reporting a temperature of 23.5\u00b0C."
+    },
+    {
+      "timestamp": 1791403946.577,
+      "iso_time": "2026-10-07T20:12:26.577000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*12*0070*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local target temperature is set to 7.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403946.579,
+      "iso_time": "2026-10-07T20:12:26.579000+00:00",
+      "direction": "rx",
+      "raw": "*4*102*60##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's mode is set to 'off'."
+    },
+    {
+      "timestamp": 1791403946.871,
+      "iso_time": "2026-10-07T20:12:26.871000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*14*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403946.987,
+      "iso_time": "2026-10-07T20:12:26.987000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*13*00##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local offset is set to 0\u00b0C."
+    },
+    {
+      "timestamp": 1791403994.376,
+      "iso_time": "2026-10-07T20:13:14.376000+00:00",
+      "direction": "rx",
+      "raw": "*4*1*60##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's season is heating."
+    },
+    {
+      "timestamp": 1791403994.413,
+      "iso_time": "2026-10-07T20:13:14.413000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*12*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403994.419,
+      "iso_time": "2026-10-07T20:13:14.419000+00:00",
+      "direction": "rx",
+      "raw": "*4*1*60##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's season is heating."
+    },
+    {
+      "timestamp": 1791403994.458,
+      "iso_time": "2026-10-07T20:13:14.458000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*0*0235##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's main sensor is reporting a temperature of 23.5\u00b0C."
+    },
+    {
+      "timestamp": 1791403994.99,
+      "iso_time": "2026-10-07T20:13:14.990000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*0*0235##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's main sensor is reporting a temperature of 23.5\u00b0C."
+    },
+    {
+      "timestamp": 1791403995.3,
+      "iso_time": "2026-10-07T20:13:15.300000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*12*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403995.304,
+      "iso_time": "2026-10-07T20:13:15.304000+00:00",
+      "direction": "rx",
+      "raw": "*4*1*60##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's season is heating."
+    },
+    {
+      "timestamp": 1791403995.582,
+      "iso_time": "2026-10-07T20:13:15.582000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*14*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403995.889,
+      "iso_time": "2026-10-07T20:13:15.889000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*13*00##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local offset is set to 0\u00b0C."
+    },
+    {
+      "timestamp": 1791403996.293,
+      "iso_time": "2026-10-07T20:13:16.293000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*0*0235##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's main sensor is reporting a temperature of 23.5\u00b0C."
+    },
+    {
+      "timestamp": 1791403996.59,
+      "iso_time": "2026-10-07T20:13:16.590000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*12*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403996.593,
+      "iso_time": "2026-10-07T20:13:16.593000+00:00",
+      "direction": "rx",
+      "raw": "*4*1*60##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's season is heating."
+    },
+    {
+      "timestamp": 1791403996.894,
+      "iso_time": "2026-10-07T20:13:16.894000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*14*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791403997.172,
+      "iso_time": "2026-10-07T20:13:17.172000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*13*00##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local offset is set to 0\u00b0C."
+    },
+    {
+      "timestamp": 1791404001.928,
+      "iso_time": "2026-10-07T20:13:21.928000+00:00",
+      "direction": "rx",
+      "raw": "*#4*59*60*86##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 59's main sensor is reporting a humidity of 86.0%."
+    },
+    {
+      "timestamp": 1791404002.208,
+      "iso_time": "2026-10-07T20:13:22.208000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*0*0235##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's main sensor is reporting a temperature of 23.5\u00b0C."
+    },
+    {
+      "timestamp": 1791404002.505,
+      "iso_time": "2026-10-07T20:13:22.505000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*12*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791404002.507,
+      "iso_time": "2026-10-07T20:13:22.507000+00:00",
+      "direction": "rx",
+      "raw": "*4*1*60##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's season is heating."
+    },
+    {
+      "timestamp": 1791404002.793,
+      "iso_time": "2026-10-07T20:13:22.793000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*14*0230*3##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's target temperature is set to 23.0\u00b0C."
+    },
+    {
+      "timestamp": 1791404002.913,
+      "iso_time": "2026-10-07T20:13:22.913000+00:00",
+      "direction": "rx",
+      "raw": "*#4*60*13*00##",
+      "type": "OWNHeatingEvent",
+      "description": "Zone 60's local offset is set to 0\u00b0C."
+    }
+  ]
+}

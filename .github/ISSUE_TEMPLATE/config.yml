@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Community Discussions & Questions
+    url: https://github.com/OpenWebNet-HA/MyHOME/discussions
+    about: Ask questions, get help, or share your MyHOME automation setups with the community.
+  - name: 🧪 v2 Architecture Testing Thread (#229)
+    url: https://github.com/OpenWebNet-HA/MyHOME/issues/229
+    about: Join community testing feedback for the Phase 1 v2 architecture rewrite.
+  - name: 🔀 v2 Architecture Pull Request (#232)
+    url: https://github.com/OpenWebNet-HA/MyHOME/pull/232
+    about: Review code changes, architecture specs, and development progress in PR #232.

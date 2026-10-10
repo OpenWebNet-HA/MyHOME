@@ -1,0 +1,96 @@
+site_name: MyHOME (v0.9.4 Legacy)
+site_description: Legacy YAML configuration documentation for the MyHOME v0.9.4 Home Assistant integration.
+site_url: https://openwebnet-ha.github.io/MyHOME/
+repo_url: https://github.com/OpenWebNet-HA/MyHOME
+repo_name: OpenWebNet-HA/MyHOME
+edit_uri: edit/v2-phase1-architecture/docs-v0.9/
+
+docs_dir: docs-v0.9
+
+theme:
+  name: material
+  language: en
+  palette:
+    # Light mode (Amber theme to signify legacy status)
+    - scheme: default
+      primary: amber
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    # Dark mode
+    - scheme: slate
+      primary: amber
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+
+extra:
+  version:
+    provider: mike
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - attr_list
+  - md_in_html
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Overview: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+  - YAML Configuration:
+      - Configuration Overview: configuration/index.md
+      - Lights: configuration/lights.md
+      - Covers & Shutters: configuration/covers.md
+      - Switches & Relays: configuration/switches.md
+      - Climate & Thermoregulation: configuration/climate.md
+      - Sensors (Energy & Temp): configuration/sensors.md
+      - Binary Sensors (Contacts): configuration/binary-sensors.md
+      - Alarm System: configuration/alarm.md
+      - Complete Sample myhome.yaml: configuration/sample-config.md
+  - Gateways:
+      - Gateway Identification: gateways/identification.md
+      - Gateway Timezone: gateways/timezone.md
+  - Advanced:
+      - Automations & Bus Events: advanced/advanced-uses.md
+  - Protocol Reference:
+      - OpenWebNet & WHO Specs: protocol/who-specifications.md
+  - Migration History:
+      - Pre-v0.9 Legacy Config: migration/legacy-pre-v09.md
