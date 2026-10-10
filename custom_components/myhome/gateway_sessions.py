@@ -11,7 +11,7 @@ import collections
 import contextlib
 import itertools
 import time
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
@@ -285,6 +285,21 @@ class EventSessionRunner:
             self._event_watchdog = None
 
 
+_TIER_COMMANDS = 0
+_TIER_STATUS = 1
+_TIER_OTHERS = 2
+
+
+def _classify_tier(item: Any) -> int:
+    """Classify item into priority tier: 0 (commands), 1 (status), 2 (others/sentinels)."""
+    if isinstance(item, dict):
+        if item.get("is_status_request", False):
+            return _TIER_STATUS
+        if "message" in item or "is_status_request" in item:
+            return _TIER_COMMANDS
+    return _TIER_OTHERS
+
+
 class _PriorityQueueStorage:
     """Multi-tier FIFO storage backing CommandPriorityQueue."""
 
@@ -321,6 +336,18 @@ class _PriorityQueueStorage:
             f"status={list(self._status)!r}, others={list(self._others)!r})"
         )
 
+    def __eq__(self, other: object) -> bool:
+        """Return True if other has identical items in the same priority order."""
+        if isinstance(other, _PriorityQueueStorage):
+            return (
+                self._commands == other._commands
+                and self._status == other._status
+                and self._others == other._others
+            )
+        if isinstance(other, (collections.deque, list)):
+            return list(self) == list(other)
+        return False
+
     def __contains__(self, item: Any) -> bool:
         """Return True if item exists in any tier."""
         return item in self._commands or item in self._status or item in self._others
@@ -346,12 +373,33 @@ class _PriorityQueueStorage:
 
     def append(self, item: Any) -> None:
         """Append item to its corresponding priority tier."""
-        if item is None:
-            self._others.append(item)
-        elif isinstance(item, dict) and item.get("is_status_request", False):
+        tier = _classify_tier(item)
+        if tier == _TIER_COMMANDS:
+            self._commands.append(item)
+        elif tier == _TIER_STATUS:
             self._status.append(item)
         else:
-            self._commands.append(item)
+            self._others.append(item)
+
+    def appendleft(self, item: Any) -> None:
+        """Append item to the head of its corresponding priority tier."""
+        tier = _classify_tier(item)
+        if tier == _TIER_COMMANDS:
+            self._commands.appendleft(item)
+        elif tier == _TIER_STATUS:
+            self._status.appendleft(item)
+        else:
+            self._others.appendleft(item)
+
+    def extend(self, iterable: Iterable[Any]) -> None:
+        """Extend storage by appending elements from the iterable."""
+        for item in iterable:
+            self.append(item)
+
+    def extendleft(self, iterable: Iterable[Any]) -> None:
+        """Extend storage by prepending elements from the iterable."""
+        for item in iterable:
+            self.appendleft(item)
 
     def popleft(self) -> Any:
         """Pop and return the highest priority item."""
@@ -375,22 +423,28 @@ class _PriorityQueueStorage:
 
     def remove(self, value: Any) -> None:
         """Remove first occurrence of value."""
-        if value is None:
-            self._others.remove(value)
-            return
-        if isinstance(value, dict) and value.get("is_status_request", False):
-            try:
-                self._status.remove(value)
-                return
-            except ValueError:
-                pass
+        tier = _classify_tier(value)
+        if tier == _TIER_COMMANDS:
+            target = self._commands
+        elif tier == _TIER_STATUS:
+            target = self._status
+        else:
+            target = self._others
+
         try:
-            self._commands.remove(value)
+            target.remove(value)
+            return
         except ValueError:
-            try:
-                self._status.remove(value)
-            except ValueError:
-                self._others.remove(value)
+            pass
+
+        for q in (self._commands, self._status, self._others):
+            if q is not target:
+                try:
+                    q.remove(value)
+                    return
+                except ValueError:
+                    pass
+        raise ValueError(f"{value!r} not in priority queue")
 
     def clear(self) -> None:
         """Clear all priority tiers."""
@@ -410,6 +464,13 @@ class _PriorityQueueStorage:
         """Return total occurrences of value across all tiers."""
         return self._commands.count(value) + self._status.count(value) + self._others.count(value)
 
+    def index(self, value: Any, start: int = 0, stop: int | None = None) -> int:
+        """Return first index of value."""
+        items = list(self)
+        if stop is None:
+            return items.index(value, start)
+        return items.index(value, start, stop)
+
 
 class CommandPriorityQueue(asyncio.Queue[Any]):
     """Asyncio queue prioritizing user commands over telemetry polls."""
@@ -426,8 +487,7 @@ class CommandPriorityQueue(asyncio.Queue[Any]):
             if getattr(self, "_is_shutdown", False):
                 raise getattr(asyncio, "QueueShutDown", Exception)
             putter = self._get_loop().create_future()
-            is_status = isinstance(item, dict) and item.get("is_status_request", False)
-            is_cmd = not is_status and item is not None
+            is_cmd = _classify_tier(item) == _TIER_COMMANDS
             setattr(putter, "_is_cmd", is_cmd)
             if is_cmd:
                 idx = 0
@@ -441,7 +501,7 @@ class CommandPriorityQueue(asyncio.Queue[Any]):
                 self._putters.append(putter)
             try:
                 await putter
-            except Exception:
+            except BaseException:
                 putter.cancel()
                 with contextlib.suppress(ValueError):
                     self._putters.remove(putter)
@@ -459,6 +519,11 @@ class CommandPriorityQueue(asyncio.Queue[Any]):
     def status_qsize(self) -> int:
         """Return the number of queued status requests."""
         return len(self._queue._status)
+
+    @property
+    def other_qsize(self) -> int:
+        """Return the number of queued sentinels and unclassified items."""
+        return len(self._queue._others)
 
 
 class CommandWorkerPool:

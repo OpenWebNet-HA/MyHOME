@@ -293,30 +293,39 @@ async def test_command_priority_queue_read_back_after_write() -> None:
 
 
 async def test_command_priority_queue_sentinels() -> None:
-    """Worker shutdown sentinels (None) are dequeued only after draining all commands and status polls."""
+    """Worker shutdown sentinels (None and custom objects) are dequeued only after draining all commands and polls."""
     q: CommandPriorityQueue = CommandPriorityQueue()
 
     s1 = {"message": "S1", "is_status_request": True}
     c1 = {"message": "C1", "is_status_request": False}
     sentinel = None
+    custom_sentinel = "WORKER_TERMINATE"
     c2 = {"message": "C2", "is_status_request": False}
 
     await q.put(s1)
     await q.put(c1)
     await q.put(sentinel)
+    await q.put(custom_sentinel)
     await q.put(c2)
 
-    assert [item if item is None else item["message"] for item in list(q._queue)] == [
+    assert q.command_qsize == 2
+    assert q.status_qsize == 1
+    assert q.other_qsize == 2
+    assert q.qsize() == 5
+
+    assert [item if item in (None, custom_sentinel) else item["message"] for item in list(q._queue)] == [
         "C1",
         "C2",
         "S1",
         None,
+        custom_sentinel,
     ]
 
     assert (await q.get())["message"] == "C1"
     assert (await q.get())["message"] == "C2"
     assert (await q.get())["message"] == "S1"
     assert await q.get() is None
+    assert await q.get() == "WORKER_TERMINATE"
     assert q.empty()
 
 
@@ -389,15 +398,46 @@ async def test_command_priority_queue_backpressure_cancellation() -> None:
     t_c2 = asyncio.create_task(q.put(c2))
     await asyncio.sleep(0)
 
-    # Cancel c1 while waiting
+    assert len(q._putters) == 2
+
+    # Cancel c1 while waiting: it must be cleanly removed from _putters
     t_c1.cancel()
     with pytest.raises(asyncio.CancelledError):
         await t_c1
+
+    assert len(q._putters) == 1
 
     # Pop s0; c2 should wake up
     assert (await q.get())["message"] == "S0"
     await asyncio.sleep(0)
     assert t_c2.done()
+    assert (await q.get())["message"] == "C2"
+    assert q.empty()
+    assert len(q._putters) == 0
+
+
+async def test_command_priority_queue_woken_putter_cancellation_unblocks_next() -> None:
+    """A putter cancelled after being woken up by get() does not lose the slot for subsequent waiters."""
+    q: CommandPriorityQueue = CommandPriorityQueue(maxsize=1)
+
+    await q.put({"message": "S0", "is_status_request": True})
+
+    t1 = asyncio.create_task(q.put({"message": "C1", "is_status_request": False}))
+    t2 = asyncio.create_task(q.put({"message": "C2", "is_status_request": False}))
+    await asyncio.sleep(0)
+
+    # Consumer pops S0, which unblocks t1
+    val = q.get_nowait()
+    assert val["message"] == "S0"
+
+    # t1 is cancelled immediately upon waking
+    t1.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await t1
+
+    # t2 must NOT deadlock; it must be unblocked and successfully admit C2
+    done, _ = await asyncio.wait([t2], timeout=0.5)
+    assert t2 in done
     assert (await q.get())["message"] == "C2"
     assert q.empty()
 
@@ -412,13 +452,15 @@ def test_command_priority_queue_storage_methods() -> None:
     c2 = {"message": "C2", "is_status_request": False}
     s1 = {"message": "S1", "is_status_request": True}
     sentinel = None
+    custom = "custom_obj"
 
     storage.append(s1)
     storage.append(c1)
     storage.append(sentinel)
     storage.append(c2)
+    storage.append(custom)
 
-    assert len(storage) == 4
+    assert len(storage) == 5
     assert bool(storage)
     assert repr(storage).startswith("_PriorityQueueStorage(")
 
@@ -426,6 +468,7 @@ def test_command_priority_queue_storage_methods() -> None:
     assert c1 in storage
     assert s1 in storage
     assert sentinel in storage
+    assert custom in storage
     assert "nonexistent" not in storage
     assert storage.count(c1) == 1
     assert storage.count("missing") == 0
@@ -435,35 +478,50 @@ def test_command_priority_queue_storage_methods() -> None:
     assert storage[1] == c2
     assert storage[2] == s1
     assert storage[3] is None
-    assert storage[-1] is None
-    assert storage[-4] == c1
+    assert storage[4] == custom
+    assert storage[-1] == custom
+    assert storage[-5] == c1
 
     with pytest.raises(IndexError):
-        _ = storage[4]
+        _ = storage[5]
     with pytest.raises(IndexError):
-        _ = storage[-5]
+        _ = storage[-6]
     with pytest.raises(TypeError):
         _ = storage["invalid"]  # type: ignore[index]
 
     assert storage[1:3] == [c2, s1]
-    assert list(reversed(storage)) == [None, s1, c2, c1]
+    assert list(reversed(storage)) == [custom, None, s1, c2, c1]
+    assert storage.index(c2) == 1
+    assert storage.index(custom) == 4
 
-    # Copy
+    # Copy and equality
     copied = storage.copy()
-    assert len(copied) == 4
+    assert len(copied) == 5
     assert list(copied) == list(storage)
+    assert copied == storage
+
+    # Extend and extendleft
+    c3 = {"message": "C3", "is_status_request": False}
+    c0 = {"message": "C0", "is_status_request": False}
+    copied.extend([c3])
+    assert copied[2] == c3
+    copied.appendleft(c0)
+    assert copied[0] == c0
 
     # Remove
     storage.remove(c1)
-    assert len(storage) == 3
+    assert len(storage) == 4
     assert storage[0] == c2
 
     storage.remove(s1)
-    assert len(storage) == 2
+    assert len(storage) == 3
 
     storage.remove(None)
-    assert len(storage) == 1
+    assert len(storage) == 2
     assert storage[0] == c2
+
+    storage.remove(custom)
+    assert len(storage) == 1
 
     with pytest.raises(ValueError):
         storage.remove("not_present")
