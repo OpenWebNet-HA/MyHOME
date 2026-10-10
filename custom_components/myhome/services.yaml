@@ -120,6 +120,12 @@ sweep_bus:
       example: "00:03:50:00:00:01"
       selector:
         text:
+    force:
+      name: Force probe
+      description: Force sweep across all subsystems (including Alarm and Energy) regardless of gateway profile restrictions.
+      default: false
+      selector:
+        boolean:
 
 calibrate_cover:
   name: Calibrate cover travel time

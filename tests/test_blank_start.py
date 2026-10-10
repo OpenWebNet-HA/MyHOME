@@ -696,6 +696,27 @@ async def test_blank_start_prunes_phantom_registry_entities(hass: HomeAssistant)
         config_entry=entry,
         suggested_object_id="light_12",
     )
+    legit_light_01 = registry.async_get_or_create(
+        domain="light",
+        platform=DOMAIN,
+        unique_id=f"{mac}-1-01",
+        config_entry=entry,
+        suggested_object_id="light_01",
+    )
+    legit_climate_zone1 = registry.async_get_or_create(
+        domain="climate",
+        platform=DOMAIN,
+        unique_id=f"{mac}-4-1",
+        config_entry=entry,
+        suggested_object_id="climate_zone_1",
+    )
+    legit_cenplus_20 = registry.async_get_or_create(
+        domain="binary_sensor",
+        platform=DOMAIN,
+        unique_id=f"{mac}-25-20",
+        config_entry=entry,
+        suggested_object_id="scenario_20",
+    )
 
     try:
         with (
@@ -720,10 +741,14 @@ async def test_blank_start_prunes_phantom_registry_entities(hass: HomeAssistant)
         assert registry.async_get(p_cover.entity_id) is None
         assert registry.async_get(p_cover_routed.entity_id) is None
 
-        # The legitimate light should remain
+        # Legitimate point devices (including Area 0 light 01, Climate 1, and CEN+ 20) must remain
         assert registry.async_get(legit_light.entity_id) is not None
+        assert registry.async_get(legit_light_01.entity_id) is not None
+        assert registry.async_get(legit_climate_zone1.entity_id) is not None
+        assert registry.async_get(legit_cenplus_20.entity_id) is not None
     finally:
         await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
         await harness.stop()
+
 

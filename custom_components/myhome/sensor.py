@@ -68,7 +68,7 @@ from .const import (
     who4_raw_to_celsius,
 )
 from .data import MyHOMEConfigEntry
-from .discovery import Address, DeviceContext, PlatformDiscovery
+from .discovery import Address, DeviceContext, PlatformDiscovery, is_broadcast_where
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 from .typing_compat import as_any
@@ -188,8 +188,7 @@ async def async_setup_entry(
 
     def energy_bus_address(message: Any) -> Address | None:
         where = str(getattr(message, "where", ""))
-        clean = where.split("-")[-1].split("#")[0]
-        if getattr(message, "is_general", False) is True or where in ("0", "00") or clean in ("0", "00"):
+        if getattr(message, "is_general", False) is True or is_broadcast_where(where):
             return None
         measurement = ENERGY_MEASUREMENTS.get(cast(str, getattr(message, "message_type", None)))
         if measurement is None:
@@ -199,8 +198,7 @@ async def async_setup_entry(
     def duplicate_energy(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
         if ctx.cfg:
             return False
-        clean = ctx.address.clean_where
-        return not clean.startswith("#") and clean.split("#")[0] in ("0", "00")
+        return is_broadcast_where(ctx.address.clean_where)
 
     def build_energy(ctx: DeviceContext) -> list[MyHOMEEntity] | MyHOMEEntity | None:
         if ctx.source == "yaml":
@@ -227,7 +225,7 @@ async def async_setup_entry(
             return sensors
         # Restored or discovered: only the measurements the meter actually reported
         where, measurement = ctx.address.where, ctx.address.key_suffix[1:]
-        if where in ("0", "00") or ctx.address.clean_where in ("0", "00"):
+        if is_broadcast_where(where) or is_broadcast_where(ctx.address.clean_where):
             return None
         sensor: MyHOMEEntity
         if measurement == "power":
@@ -266,8 +264,7 @@ async def async_setup_entry(
 
     def duplicate_illuminance(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
         # Broadcast address or obsolete second registry entry, or an address that myhome.yaml configures
-        clean = ctx.address.clean_where
-        if not clean.startswith("#") and clean.split("#")[0] in ("0", "00"):
+        if is_broadcast_where(ctx.address.clean_where):
             return True
         return normalize_where(ctx.address.where) in discovery_for["1"].known or is_configured(
             "1", ctx.address.where, SensorDeviceClass.ILLUMINANCE
@@ -316,8 +313,10 @@ async def async_setup_entry(
         dimension = getattr(message, "dimension", None)
         message_type = getattr(message, "message_type", None)
         where = str(message.where)
+        if is_broadcast_where(where):
+            return None
         clean = where.split("-")[-1].split("#")[0]
-        if where in ("0", "00") or clean in ("0", "00", ""):
+        if not clean:
             return None
         is_probe_reading = dimension == 15 or message_type == MESSAGE_TYPE_SECONDARY_TEMPERATURE
         is_probe_main = (message_type == MESSAGE_TYPE_MAIN_TEMPERATURE or dimension == 0) and is_probe(clean)
@@ -328,8 +327,7 @@ async def async_setup_entry(
     def duplicate_temperature(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
         if ctx.cfg:
             return False
-        clean = ctx.address.clean_where
-        return not clean.startswith("#") and clean.split("#")[0] in ("0", "00")
+        return is_broadcast_where(ctx.address.clean_where)
 
     def build_temperature(ctx: DeviceContext) -> MyHOMETemperatureSensor | None:
         if ctx.source == "yaml":
@@ -342,7 +340,7 @@ async def async_setup_entry(
         where = ctx.address.where
         clean = where.split("-")[-1].split("#")[0]
         primary = normalize_where(where) or normalize_where(clean) or where
-        if primary in ("0", "00") or clean in ("0", "00"):
+        if is_broadcast_where(primary) or is_broadcast_where(clean):
             return None
         label = normalize_where(clean) or clean
         name = f"Probe {label}" if is_probe(clean) else f"Zone {label}"

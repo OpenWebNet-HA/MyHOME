@@ -66,7 +66,14 @@ from .const import (
 )
 from .data import get_runtime_data
 from .device_health import FaultKind
-from .discovery import Address, DeviceContext, PlatformDiscovery, config_for, default_known_keys
+from .discovery import (
+    Address,
+    DeviceContext,
+    PlatformDiscovery,
+    config_for,
+    default_known_keys,
+    is_broadcast_where,
+)
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 from .poll_health import PollHealth
@@ -157,8 +164,7 @@ async def async_setup_entry(
     def duplicate_climate(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
         if ctx.cfg:
             return False
-        clean = ctx.address.clean_where
-        return not clean.startswith("#") and clean.split("#")[0] in ("0", "00")
+        return is_broadcast_where(ctx.address.clean_where)
 
     def known_keys(ctx: DeviceContext) -> list[str]:
         keys = [*default_known_keys(ctx), ctx.address.where, ctx.address.clean_where, ctx.config_id or ""]
@@ -244,8 +250,7 @@ def _calling_zones(message: Any) -> tuple[list[str], str | None]:
         except (ValueError, TypeError):
             pass
     clean_raw = str(raw_where).split("-")[-1] if raw_where is not None else ""
-    is_broadcast = not clean_raw.startswith("#") and clean_raw.split("#")[0] in ("0", "00")
-    if not zones and raw_where and not is_broadcast and clean_raw != "" and not is_probe(str(raw_where)):
+    if not zones and raw_where and not is_broadcast_where(clean_raw) and clean_raw != "" and not is_probe(str(raw_where)):
         zones.append(str(raw_where))
     return zones, interface
 

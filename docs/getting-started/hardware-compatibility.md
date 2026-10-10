@@ -53,10 +53,11 @@ During startup initial discovery, status queries are gated strictly by gateway p
 
 | Gateway Model | Initial Discovery Subsystems Queried | Profile Support Notes |
 | :--- | :--- | :--- |
-| **MH202** | WHO 1, 2, 4, 5, 16, 18 | Full support including Burglar Alarm (`*#5*0##`) and Energy (`*#18*51*...`). |
-| **H4890 / AM4890** | WHO 1, 2, 4, 5, 18 | Supports Burglar Alarm and Energy; does not query sound matrix. |
-| **F454 / F455** | WHO 1, 2, 4, 16, 18 | Full lighting, cover, climate, sound, and energy meter 51 queries. Alarm query omitted. |
-| **MyHomeServer1** | WHO 1, 2, 4, 16, 18 | Full lighting, cover, climate, sound, and energy meter 51 queries. Alarm query omitted. |
-| **MH201** | WHO 1, 2, 4, 16, 18 | Full lighting, cover, climate, sound, and energy meter 51 queries. Alarm query omitted. |
-| **MH200 / MH200N** | WHO 1, 2, 4, 16 | Lighting, cover, climate, and sound queries. Alarm and energy queries omitted. |
+| **MH202** | WHO 1, 2, 4, 5, 16, 18 | Full support including Burglar Alarm (`*#5*0##`), Sound (`*#16*0*5##`), and Energy (`*#18*51*...`). |
+| **H4890 / AM4890** | WHO 1, 2, 4, 5, 16, 18 | Supports Burglar Alarm, Sound (`*#16*0*5##`), and Energy meter 51 queries. |
+| **F454** | WHO 1, 2, 4, 16, 18 | Full lighting, cover, climate, sound, and energy meter 51 queries. Alarm query omitted. |
+| **F455** | WHO 1, 2, 4, 18 | Entry-level gateway: lighting, cover, climate, and energy meter 51 queries. Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual. |
+| **MyHomeServer1** | WHO 1, 2, 4, 16, 18 | Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted. |
+| **MH201** | WHO 1, 2, 4, 16, 18 | Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted. |
+| **MH200 / MH200N** | WHO 1, 2, 4, 16 | Lighting, cover, climate, and sound queries (hardware verified on both). Alarm and energy queries omitted. |
 

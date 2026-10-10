@@ -14,7 +14,7 @@ After the event session is up, the integration sends a small set of general stat
 | `*#2*0##` | Automation / covers | All gateways |
 | `*#4*0##` | Thermoregulation | All gateways |
 | `*#5*0##` | Burglar alarm | MH202, H4890 |
-| `*#16*0*5##` | Sound system (dimension 5; lists every amplifier) | F454, F455, MH200, MH201, MH202, MyHomeServer1 |
+| `*#16*0*5##` | Sound system (dimension 5; lists every amplifier) | F454, H4890, MH200, MH201, MH202, MyHomeServer1 |
 | `*#18*51*51##` | Energy management (meter 51 total energy) | F454, F455, MH201, MH202, MyHomeServer1, H4890 |
 | `*#18*51*113##` | Energy management (meter 51 active power) | F454, F455, MH201, MH202, MyHomeServer1, H4890 |
 
@@ -37,7 +37,7 @@ On a fresh installation with no `myhome.yaml` file (Day 0 blank start), the inte
 | **Thermoregulation (WHO 4)** | ✅ Yes (`*#4*0##`) | Optional (`cooling`, `fan`) | Standard zones (`1`–`99`) and central units (`#0`, `#0#1`). Area broadcasts (`00`) and probe broadcasts do not create climate entities. |
 | **Burglar Alarm (WHO 5)** | ✅ Yes (`*#5*0##`) | Optional | Discovered on supported gateways (MH202, H4890). Panel tracks the central unit. |
 | **Sound System (WHO 16)** | ✅ Yes (`*#16*0*5##`) | Optional (streamer mapping) | Discovers all amplifier zones and sources via dimension 5 query. |
-| **Energy Management (WHO 18)** | ✅ Default Meter 51 | Secondary meters (`52`–`59`) | Default residential meter `51` is queried at startup for power and total energy. Secondary meters are discovered dynamically upon bus emission or via `myhome.sweep_bus`. |
+| **Energy Management (WHO 18)** | ✅ First Meter 51 only | Secondary meters (`52`–`59`) | Factory default residential meter `51` is queried at startup for power and total energy. Secondary meters are discovered dynamically upon bus emission or via `myhome.sweep_bus`. |
 | **Scenario Control (WHO 15 / 25)** | ❌ Stateless | N/A (Device Triggers / Events) | Pushbuttons emit events and device triggers; no entities are created. |
 | **Light Groups (`where: '#G'`)** | ❌ Bus limitation | Required (`members: [...]`) | OpenWebNet groups have no bus membership read-back command. |
 

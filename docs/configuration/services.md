@@ -140,6 +140,7 @@ Actively queries status across all configured subsystems (lighting, automation, 
 | Parameter | Type | Required | Description | Example |
 | :--- | :---: | :---: | :--- | :--- |
 | `gateway` | string | No | Target gateway MAC address (defaults to all gateways). | `"00:03:50:20:00:01"` |
+| `force` | boolean | No | Force probe across all subsystems regardless of gateway profile restrictions (defaults to `false`). | `true` |
 
 ### Example YAML Call
 ```yaml

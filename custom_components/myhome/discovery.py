@@ -104,6 +104,18 @@ class Address:
         return f"{self.clean_where}I{self.interface}" if self.interface else self.clean_where
 
 
+def is_broadcast_where(where: str | None) -> bool:
+    """Return whether an address is an OpenWebNet general or area broadcast (0 or 00).
+
+    Central units (#0, #0#1) and CEN 4-digit zone 0 pushbuttons (0001..0015)
+    are physical point targets and return False.
+    """
+    if not where:
+        return False
+    clean = str(where).split("-")[-1]
+    return not clean.startswith("#") and clean.split("#")[0] in ("0", "00")
+
+
 def parse_unique_id(unique_id: str, mac: str, entry_mac: str | None = None) -> tuple[str | None, str]:
     """Split ``"{mac}-{who}-{device_id}"`` into ``(who, device_id)``.
 
@@ -468,9 +480,7 @@ class PlatformDiscovery:
                         LOGGER.debug("%s: could not remove %s: %s", self.platform, entry.entity_id, err)
                 continue
 
-            clean = address.clean_where
-            is_phantom = not clean.startswith("#") and clean.split("#")[0] in ("0", "00")
-            if not self.general_is_device and not ctx.cfg and is_phantom:
+            if not self.general_is_device and not ctx.cfg and is_broadcast_where(address.clean_where):
                 LOGGER.info(
                     "%s: Pruned phantom broadcast entity %s (WHO %s WHERE %s)",
                     self.platform,
@@ -619,11 +629,9 @@ class PlatformDiscovery:
         if getattr(message, "is_translation", None) is True:
             return
         where_raw = str(getattr(message, "where", ""))
-        clean_where = where_raw.split("-")[-1].split("#")[0]
         is_general_msg = (
             getattr(message, "is_general", False) is True
-            or where_raw in ("0", "00")
-            or clean_where in ("0", "00")
+            or is_broadcast_where(where_raw)
         )
         if not self.general_is_device and is_general_msg:
             if self.on_general:

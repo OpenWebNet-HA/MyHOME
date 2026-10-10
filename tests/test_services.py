@@ -99,7 +99,7 @@ async def test_sweep_bus_queries_sent(hass: HomeAssistant, attach_gateway) -> No
     await async_setup_services(hass)
 
     mock_handler = MagicMock()
-    mock_handler._profile_supports_who = None
+    mock_handler.profile_supports_who = MagicMock(return_value=True)
     mock_handler.send = AsyncMock()
     mock_handler.send_status_request = AsyncMock()
     mock_handler.send_paced = AsyncMock()
@@ -143,6 +143,49 @@ async def test_sweep_bus_queries_sent(hass: HomeAssistant, attach_gateway) -> No
     assert "*#18*79#0*1200##" in sent_raw
 
 
+async def test_sweep_bus_profile_gating_and_force(hass: HomeAssistant, attach_gateway) -> None:
+    """Test sweep_bus profile filtering and the force override (#681)."""
+    from unittest.mock import AsyncMock
+    await async_setup_services(hass)
+
+    mock_handler = MagicMock()
+    mock_handler.profile_supports_who = MagicMock(side_effect=lambda who: who not in (5, 18))
+    mock_handler.send = AsyncMock()
+    mock_handler.send_status_request = AsyncMock()
+    mock_handler.send_paced = AsyncMock()
+    gw_mac = "00:03:50:aa:bb:ee"
+    attach_gateway(gw_mac, mock_handler)
+
+    # Without force: WHO 5 omitted from general, WHO 18 omitted from point queries
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SWEEP_BUS,
+        {ATTR_GATEWAY: gw_mac, "force": False},
+        blocking=True,
+    )
+    mock_handler.send_paced.assert_awaited_once_with(
+        ["*#1*0##", "*#2*0##", "*#4*0##", "*#16*0*5##"]
+    )
+    sent_raw = [str(call.args[0]) for call in mock_handler.send_status_request.await_args_list]
+    assert not any(raw.startswith("*#18*") for raw in sent_raw)
+
+    # With force=True: all subsystems swept regardless of profile
+    mock_handler.send_paced.reset_mock()
+    mock_handler.send_status_request.reset_mock()
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SWEEP_BUS,
+        {ATTR_GATEWAY: gw_mac, "force": True},
+        blocking=True,
+    )
+    mock_handler.send_paced.assert_awaited_once_with(
+        ["*#1*0##", "*#2*0##", "*#4*0##", "*#5*0##", "*#16*0*5##"]
+    )
+    sent_forced = [str(call.args[0]) for call in mock_handler.send_status_request.await_args_list]
+    assert "*#18*51*51##" in sent_forced
+
+
+
 async def test_sweep_bus_follower_delegated_who1(hass: HomeAssistant, attach_gateway) -> None:
     """Test sweep_bus sends *#1*0## when a follower gateway has WHO 1 delegated."""
     from unittest.mock import AsyncMock
@@ -182,7 +225,8 @@ async def test_sweep_bus_profile_filtering(hass: HomeAssistant, attach_gateway) 
     mock_mh200n.send_paced = AsyncMock()
     mock_mh200n.is_follower = False
     mock_mh200n.delegated_away_whos = set()
-    mock_mh200n._profile_supports_who = lambda who: who in (1, 2, 4, 16)
+    mock_mh200n.profile_supports_who = lambda who: who in (1, 2, 4, 16)
+    mock_mh200n._profile_supports_who = mock_mh200n.profile_supports_who
     mac_mh200n = "00:03:50:aa:bb:20"
     attach_gateway(mac_mh200n, mock_mh200n)
 
@@ -208,7 +252,8 @@ async def test_sweep_bus_profile_filtering(hass: HomeAssistant, attach_gateway) 
     mock_f454.send_paced = AsyncMock()
     mock_f454.is_follower = False
     mock_f454.delegated_away_whos = set()
-    mock_f454._profile_supports_who = lambda who: who in (1, 2, 4, 16, 18)
+    mock_f454.profile_supports_who = lambda who: who in (1, 2, 4, 16, 18)
+    mock_f454._profile_supports_who = mock_f454.profile_supports_who
     mac_f454 = "00:03:50:aa:bb:54"
     attach_gateway(mac_f454, mock_f454)
 
@@ -234,7 +279,8 @@ async def test_sweep_bus_profile_filtering(hass: HomeAssistant, attach_gateway) 
     mock_mh202.send_paced = AsyncMock()
     mock_mh202.is_follower = False
     mock_mh202.delegated_away_whos = set()
-    mock_mh202._profile_supports_who = lambda who: True
+    mock_mh202.profile_supports_who = lambda who: True
+    mock_mh202._profile_supports_who = mock_mh202.profile_supports_who
     mac_mh202 = "00:03:50:aa:bb:02"
     attach_gateway(mac_mh202, mock_mh202)
 

@@ -361,6 +361,24 @@ async def test_gateway_initial_discovery_profiles_who5_who18(mock_config_entry, 
     assert "*#18*51*51##" not in frames_mh200n
     assert "*#18*51*113##" not in frames_mh200n
 
+    # F455: supports WHO 1, 2, 4, 18, but NOT WHO 5 or WHO 16
+    h_f455 = MyHOMEGatewayHandler(mock_hass, mock_config_entry)
+    h_f455.gateway.profile = get_gateway_profile("F455")
+    frames_f455 = h_f455._discovery_frames()
+    assert "*#16*0*5##" not in frames_f455
+    assert "*#5*0##" not in frames_f455
+    assert "*#18*51*51##" in frames_f455
+    assert "*#18*51*113##" in frames_f455
+
+    # H4890: supports WHO 1, 2, 4, 5, 16, 18
+    h_h4890 = MyHOMEGatewayHandler(mock_hass, mock_config_entry)
+    h_h4890.gateway.profile = get_gateway_profile("H4890")
+    frames_h4890 = h_h4890._discovery_frames()
+    assert "*#5*0##" in frames_h4890
+    assert "*#16*0*5##" in frames_h4890
+    assert "*#18*51*51##" in frames_h4890
+    assert "*#18*51*113##" in frames_h4890
+
 
 
 @pytest.mark.asyncio
