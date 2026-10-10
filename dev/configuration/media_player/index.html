@@ -1314,6 +1314,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#amplifier-power-state-machine-bus-interaction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ⚡ Amplifier Power State Machine &amp; Bus Interaction
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="⚡ Amplifier Power State Machine &amp; Bus Interaction">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#power-states" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Power States
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#state-transition-diagram" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        State Transition Diagram
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bus-frame-decision-engine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bus Frame Decision Engine
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#video-door-entry-intercom-ducking-sound-diffusion-interaction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Video Door Entry (Intercom Ducking) &amp; Sound Diffusion Interaction
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#openwebnet-who-16-reference-frames" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2795,6 +2856,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#amplifier-power-state-machine-bus-interaction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ⚡ Amplifier Power State Machine &amp; Bus Interaction
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="⚡ Amplifier Power State Machine &amp; Bus Interaction">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#power-states" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Power States
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#state-transition-diagram" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        State Transition Diagram
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bus-frame-decision-engine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bus Frame Decision Engine
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#video-door-entry-intercom-ducking-sound-diffusion-interaction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Video Door Entry (Intercom Ducking) &amp; Sound Diffusion Interaction
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#openwebnet-who-16-reference-frames" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3425,6 +3547,139 @@ and the decoder), so a report needs two files and one sentence:</p>
    slider would not move."</li>
 </ol>
 <p>Attach these to the issue instead of pasting log excerpts; two files are enough.</p>
+<h2 id="amplifier-power-state-machine-bus-interaction">⚡ Amplifier Power State Machine &amp; Bus Interaction<a class="headerlink" href="#amplifier-power-state-machine-bus-interaction" title="Permanent link">&para;</a></h2>
+<p>To ensure predictable behavior across diverse physical hardware (F441/F441M matrices, H4562/F502 amplifiers, L4561N source interfaces, and wall switches), the MyHOME integration centralizes all power-state decision logic into a dedicated state engine (<code>media_player_power.py</code>).</p>
+<h3 id="power-states">Power States<a class="headerlink" href="#power-states" title="Permanent link">&para;</a></h3>
+<p>The amplifier entity transitions between five distinct states:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">State</th>
+<th style="text-align: left;">Entity Status</th>
+<th style="text-align: left;">Hardware Stage</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>OFF</code></td>
+<td style="text-align: left;"><code>off</code></td>
+<td style="text-align: left;">Powered Off</td>
+<td style="text-align: left;">Amplifier output stage is unpowered (<code>*16*13*&lt;WHERE&gt;##</code>). Zero bus audio is demodulated. Standby power is minimal.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>WAKE_PENDING</code></td>
+<td style="text-align: left;"><code>off</code> / <code>on</code></td>
+<td style="text-align: left;">Powering Up</td>
+<td style="text-align: left;">Integration initiates an OFF → ON wake sequence (<code>*16*13*&lt;WHERE&gt;##</code> followed by <code>*16*3*&lt;WHERE&gt;##</code>). A 3-second echo suppression window (<code>WAKE_ECHO_WINDOW = 3.0s</code>) ignores the initial OFF echo.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ON</code></td>
+<td style="text-align: left;"><code>playing</code> / <code>on</code></td>
+<td style="text-align: left;">Active</td>
+<td style="text-align: left;">Amplifier is powered ON (<code>*16*3*&lt;WHERE&gt;##</code>). Demodulating stereo audio and driving room speakers.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>PENDING_OFF</code></td>
+<td style="text-align: left;"><code>paused</code> / <code>idle</code></td>
+<td style="text-align: left;">Active (Timer)</td>
+<td style="text-align: left;">Decoder has stopped or paused. A safety timer runs (3.0s for idle/off/standby, 60.0s for pause, or 5.0s group leave grace). If audio resumes before timer expiry, the timer cancels and playback continues without interruption.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>PARKED</code></td>
+<td style="text-align: left;"><code>paused</code> / <code>idle</code></td>
+<td style="text-align: left;">Powered Off</td>
+<td style="text-align: left;">Anti-hiss auto-off has powered off the hardware amplifier (<code>*16*13*&lt;WHERE&gt;##</code>) to eliminate analog bus hiss during extended pauses. In Home Assistant, the entity reports <code>paused</code>/<code>idle</code> and preserves group topology. Resumes immediately upon playback.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="state-transition-diagram">State Transition Diagram<a class="headerlink" href="#state-transition-diagram" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>stateDiagram-v2
+    [*] --&gt; OFF
+    OFF --&gt; WAKE_PENDING: play_media / turn_on
+    WAKE_PENDING --&gt; ON: *16*3*&lt;WHERE&gt;## confirmed
+    OFF --&gt; ON: Physical Vol-Up Rocker (*16*1001..1015*&lt;WHERE&gt;##)
+    OFF --&gt; ON: External Bus ON (*16*3*&lt;WHERE&gt;##)
+    ON --&gt; PENDING_OFF: Decoder Idle/Off (3s) or Paused (60s)
+    ON --&gt; PENDING_OFF: Member Unjoined (5s grace period)
+    PENDING_OFF --&gt; ON: Decoder resumes playing (Timer Cancelled)
+    PENDING_OFF --&gt; PARKED: Auto-Off Timer Expires (Group Preserved)
+    PENDING_OFF --&gt; OFF: Grace Period Expires (Standalone / Unjoined)
+    PARKED --&gt; ON: media_play / play_media / turn_on
+    PARKED --&gt; OFF: turn_off / Physical Wall Switch OFF (*16*13*&lt;WHERE&gt;##)
+    ON --&gt; OFF: turn_off / Physical Wall Switch OFF (*16*13*&lt;WHERE&gt;##)</code></pre>
+<h3 id="bus-frame-decision-engine">Bus Frame Decision Engine<a class="headerlink" href="#bus-frame-decision-engine" title="Permanent link">&para;</a></h3>
+<p>Every OpenWebNet frame received on the SCS bus is evaluated against the pure decision function <code>determine_power_transition(...)</code>. The engine maps frame types to transitions:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Frame Pattern</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;">Power Transition</th>
+<th style="text-align: left;">Handling &amp; Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>*16*3*&lt;WHERE&gt;##</code><br><code>*16*0*&lt;WHERE&gt;##</code></td>
+<td style="text-align: left;">Amplifier ON (stereo / mono)</td>
+<td style="text-align: left;"><code>PowerTransition.WAKE_ON</code></td>
+<td style="text-align: left;">Powers the amplifier ON; cancels any pending auto-off or grace timers.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>*16*1001*&lt;WHERE&gt;##</code><br>to <code>*16*1015*&lt;WHERE&gt;##</code></td>
+<td style="text-align: left;">Wall switch Volume-UP rocker (+1 to +15)</td>
+<td style="text-align: left;"><code>PowerTransition.WAKE_ON</code></td>
+<td style="text-align: left;">Physical volume-up rocker intentionally wakes and turns ON the amplifier (<a href="https://github.com/OpenWebNet-HA/MyHOME/issues/579">#579</a>).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>*16*1101*&lt;WHERE&gt;##</code><br>to <code>*16*1115*&lt;WHERE&gt;##</code></td>
+<td style="text-align: left;">Wall switch Volume-DOWN rocker (−1 to −15)</td>
+<td style="text-align: left;"><code>PowerTransition.NO_CHANGE</code></td>
+<td style="text-align: left;">Steps volume down only. Never powers on an inactive amplifier.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>*#16*&lt;WHERE&gt;*1*&lt;LEVEL&gt;##</code><br><code>*#22*3#A#P*1*&lt;LEVEL&gt;##</code></td>
+<td style="text-align: left;">Dimension 1 volume status report (0–31)</td>
+<td style="text-align: left;"><code>PowerTransition.NO_CHANGE</code></td>
+<td style="text-align: left;"><strong>CRITICAL</strong>: Updates <code>volume_level</code> only. Never wakes or turns on an OFF amplifier (<a href="https://github.com/OpenWebNet-HA/MyHOME/issues/669">#669</a>, <a href="https://github.com/OpenWebNet-HA/MyHOME/issues/682">#682</a>).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>*#16*&lt;WHERE&gt;*#1*&lt;LEVEL&gt;##</code></td>
+<td style="text-align: left;">Dimension #1 volume set command</td>
+<td style="text-align: left;"><code>PowerTransition.NO_CHANGE</code></td>
+<td style="text-align: left;">Writes target volume level. Does not alter amplifier power state.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>*16*3*1ES##</code></td>
+<td style="text-align: left;">Matrix environment routing frame</td>
+<td style="text-align: left;"><code>PowerTransition.NO_CHANGE</code></td>
+<td style="text-align: left;">Routes environment <code>E</code> to source <code>S</code>. Handled by routing logic; does not change power state.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>*16*3*10S##</code></td>
+<td style="text-align: left;">Source device activation frame</td>
+<td style="text-align: left;"><code>PowerTransition.NO_CHANGE</code></td>
+<td style="text-align: left;">Toggles source hardware <code>S</code>. Does not alter room amplifier power.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>*16*13*&lt;WHERE&gt;##</code><br><code>*16*10*&lt;WHERE&gt;##</code></td>
+<td style="text-align: left;">Amplifier OFF (stereo / mono)</td>
+<td style="text-align: left;"><code>PowerTransition.WAKE_ECHO_OFF</code><br><code>PowerTransition.PARKED_CONFIRM_OFF</code><br><code>PowerTransition.REAL_OFF</code></td>
+<td style="text-align: left;">• If within 3.0s of wake: ignored as self-echo.<br>• If amplifier is parked: acknowledged as auto-off echo.<br>• Otherwise: real OFF from wall switch or gateway; powers off entity and disbands group.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="video-door-entry-intercom-ducking-sound-diffusion-interaction">Video Door Entry (Intercom Ducking) &amp; Sound Diffusion Interaction<a class="headerlink" href="#video-door-entry-intercom-ducking-sound-diffusion-interaction" title="Permanent link">&para;</a></h3>
+<p>In installations equipped with both BTicino Sound Diffusion (F441/F441M, WHO = 16 / WHO = 22) and 2-Wire Video Door Entry / Intercom systems (e.g. Classe 100/300 internal units, 344612, entrance panels):</p>
+<ol>
+<li><strong>Hardware Intercom Ducking</strong>: When an incoming door call or intercom conversation begins, the video door entry system or audio matrix hardware performs automatic <strong>hardware audio ducking</strong> or line muting so that door chimes and speech remain clearly audible over background music.</li>
+<li><strong>Dimension 1 Status Broadcasts</strong>: To synchronize volume levels during ducking, the gateway or matrix broadcasts OpenWebNet Dimension 1 volume status reports (<code>*#16*&lt;WHERE&gt;*1*&lt;vol&gt;##</code> and WHO 22 mirrors <code>*#22*3#A#P*1*&lt;vol&gt;##</code>) across the SCS bus. During the call, volume is lowered (e.g., to 0 or a low ducked level). When the intercom call terminates, the hardware broadcasts restoration Dimension 1 reports restoring previous volume levels (e.g., back to 10 or 15).</li>
+<li><strong>Prevention of False Wake-Ups (<a href="https://github.com/OpenWebNet-HA/MyHOME/issues/669">#669</a>)</strong>: Unpowered room amplifiers retain their hardware volume registers in non-volatile memory and receive these broadcast ducking/restoration frames even while switched OFF. Prior to <a href="https://github.com/OpenWebNet-HA/MyHOME/issues/682">#682</a>, loosely coupled status checks could interpret volume updates as an indication that the amplifier was active, causing unpowered amplifiers throughout the house to falsely power ON whenever the doorbell rang.</li>
+<li><strong>Guaranteed Decoupling</strong>: With <code>determine_power_transition(...)</code>, Dimension 1 status reports are strictly classified as <code>PowerTransition.NO_CHANGE</code>. Inactive amplifiers stay OFF throughout the intercom call, active amplifiers duck and restore seamlessly, and volume state remains perfectly synchronized.</li>
+<li><strong>Golden Trace Verification</strong>: Validated against an authentic 30-frame MH202 bus capture (<code>myhome_trace_MH202_sound_intercom_ducking.json</code>) in <code>tests/test_intercom_ducking_trace_replay.py</code>.</li>
+</ol>
+<hr />
 <h2 id="openwebnet-who-16-reference-frames">📜 OpenWebNet WHO = 16 Reference Frames<a class="headerlink" href="#openwebnet-who-16-reference-frames" title="Permanent link">&para;</a></h2>
 <p><code>&lt;WHERE&gt;</code> is an amplifier (<code>01</code>–<code>99</code>), an environment (<code>#0</code>–<code>#9</code>) or <code>0</code> for
 all amplifiers. The integration addresses individual amplifiers.</p>
