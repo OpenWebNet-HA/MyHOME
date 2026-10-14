@@ -100,6 +100,8 @@ CONF_CENTRALIZED_SHUTTER_CLOSE = "centralized_shutter_close"
 CONF_CENTRALIZED_SHUTTER_STOP = "centralized_shutter_stop"
 CONF_TRAVEL_TIME = "travel_time"
 DEFAULT_TRAVEL_TIME = 25
+CONF_MIN_MOTOR_PULSE = "min_motor_pulse"
+DEFAULT_MIN_MOTOR_PULSE = 0.4
 
 # Cover calibration (timed covers measure their own travel times on the bus)
 CONF_COVER_TRAVEL_TIMES = "cover_travel_times"  # config entry option: {device_id: {...}}
@@ -111,6 +113,8 @@ EVENT_COVER_CALIBRATION = "myhome_cover_calibration"
 CALIBRATION_RUN_TIMEOUT = 180.0  # s to wait for the actuator's stop status per run
 CALIBRATION_MIN_RUN = 1.0        # s: anything shorter is not a full travel
 CALIBRATION_MAX_RUN = 300.0      # s: anything longer is an actuator with no run-time limit
+CALIBRATION_MIN_MOTOR_PULSE = 0.0  # s: 0.0 disables floor
+CALIBRATION_MAX_MOTOR_PULSE = 5.0  # s: upper limit for motor start-up deadband floor
 CALIBRATION_SETTLE = 1.0         # s pause between runs so the actuator relay settles
 # An actuator with the factory 60 s run-time limit stops itself, not at the end
 # stop: measured 61.5 s for a 14 s shutter on a MyHOMEServer1 (#319). A run that

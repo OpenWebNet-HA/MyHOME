@@ -525,6 +525,11 @@ entities:
     suffix: " s"
   - type: attribute
     entity: cover.living_room_shutter
+    attribute: min_motor_pulse
+    name: Motor floor
+    suffix: " s"
+  - type: attribute
+    entity: cover.living_room_shutter
     attribute: calibration_source
     name: Source
   - entity: button.living_room_shutter_calibrate_travel_time   # on-bus calibration, when the actuator supports it
