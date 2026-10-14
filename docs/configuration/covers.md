@@ -37,6 +37,7 @@ For standard covers without hardware position feedback, the integration provides
 * **Direction-Aware Travel Times**: Because gravity and motor friction cause shutters to fall faster than they rise, the v2 engine tracks separate `travel_time_down` and `travel_time_up` durations (default: `25.0s`).
 * **Frame Anchor Timing**: The run timer starts when the direction frame is **written to the gateway**, not when Home Assistant queues it.
 * **Echo Suppression**: The gateway relays a momentary stop status (~0.1 s) followed by translation and the actual motor start (~0.55 s). The v2 engine recognizes these as command echoes, re-anchoring the timer to the true motor start rather than falsely treating them as manual stop commands.
+* **Stop Status Re-Anchoring**: When a timed run is stopped, the estimate is provisionally frozen at the stop write. If the gateway relays the actuator's stop status (`*2*0*<WHERE>##`) within the echo window, the final position and `last_run_seconds` are re-anchored to the true duration the motor was energised (`stop status - start anchor`), eliminating bus delivery drift ([#705](https://github.com/OpenWebNet-HA/MyHOME/issues/705)).
 * **Resynchronization**: Running a cover to its full travel limit (fully open or fully closed) automatically resets any minor timing drift to 0% or 100%.
 
 > [!WARNING]

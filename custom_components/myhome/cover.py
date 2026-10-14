@@ -282,6 +282,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._echo_until: float | None = None
         self._motor_started: asyncio.Event = asyncio.Event()
         self._run_generation: int = 0
+        self._run_start_position: int | None = None
+        self._pending_stop_context: dict[str, Any] | None = None
+        self._auto_stop_duration: float | None = None
 
     @property
     def calibration_hub(self) -> CoverCalibrationHub:
@@ -371,11 +374,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     def _end_echo_window(self) -> None:
         self._pending_cmd = None
         self._echo_until = None
+        self._pending_stop_context = None
 
     def _anchor_run(self, at: float) -> None:
         """Anchor the running estimate and the run measurement on the motor start."""
         self._move_start_time = at
         self._run_started_at = at
+        if self._run_start_position is None:
+            self._run_start_position = self._start_position
         started = dt_util.utcnow() - timedelta(seconds=max(0.0, time.monotonic() - at))
         self._motion_started_at = started.isoformat(timespec="milliseconds")
         self._refresh_travel_attributes()
@@ -408,6 +414,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._move_start_time = None
         self._attr_is_opening = False
         self._attr_is_closing = False
+        self._run_start_position = None
         if self._attr_current_cover_position is not None:
             self._attr_is_closed = (self._attr_current_cover_position == 0)
 
@@ -415,6 +422,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Abort motion state when a command frame failed to reach the bus."""
         self._cancel_stop_task()
         self._end_echo_window()
+        self._run_start_position = None
+        self._pending_stop_context = None
+        self._auto_stop_duration = None
         self._move_start_time = None
         self._run_started_at = None
         self._motion_started_at = None
@@ -560,6 +570,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Run when entity will be removed from hass."""
         self._run_generation += 1  # a run in flight must not act on a removed entity
         self._cancel_stop_task()
+        self._pending_stop_context = None
         await super().async_will_remove_from_hass()
 
 
@@ -905,6 +916,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             command = OWNAutomationCommand.lower_shutter(self._full_where)
         if not self._advanced:
             self._start_position = self.current_cover_position if self.current_cover_position is not None else (0 if direction == "open" else 100)
+            self._run_start_position = self._start_position
+            self._pending_stop_context = None
+            self._auto_stop_duration = None
             # The clock starts when the frame is written (see _track_write),
             # not now: with a busy queue the motor is still idle for a while.
             self._move_start_time = None
@@ -993,6 +1007,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 # running until the stop frame is written, so re-anchor the
                 # run here and let the stop's write time freeze the estimate
                 # (target plus whatever the queue delay added).
+                self._auto_stop_duration = run_duration
                 self._start_position = target_position
                 self._attr_current_cover_position = target_position
                 self._move_start_time = time.monotonic()
@@ -1013,6 +1028,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             # The estimate keeps running until the stop frame is actually
             # written (_track_write freezes it then); if delivery never
             # happens the next status frame will correct us.
+            self._pending_stop_context = {
+                "run_start_position": self._run_start_position if self._run_start_position is not None else self._start_position,
+                "run_started_at": self._run_started_at,
+                "is_opening": bool(self._attr_is_opening),
+                "is_closing": bool(self._attr_is_closing),
+                "auto_stop_duration": self._auto_stop_duration,
+            }
             self._begin_command("stop")
         cmd = OWNAutomationCommand.stop_shutter(self._full_where)
         written = await self._gateway_handler.send(cmd)
@@ -1052,8 +1074,52 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             # Opposite direction inside the window: somebody else took over.
             self._end_echo_window()
             return False
-        # Pending stop: the relayed stop confirms it, anything else is external.
-        self._end_echo_window()
+        if self._pending_cmd == "stop":
+            is_general = getattr(message, "is_general", False) or str(getattr(message, "where", "")) == "0"
+            if is_stop and not is_general:
+                ctx = self._pending_stop_context
+                self._end_echo_window()
+                self._auto_stop_duration = None
+                self._last_stop_at = now
+                self._stopped_event.set()
+                if ctx and ctx.get("run_started_at") is not None and ctx.get("run_start_position") is not None:
+                    start_anchor = ctx["run_started_at"]
+                    run_start_pos = ctx["run_start_position"]
+                    is_opening = ctx["is_opening"]
+                    is_closing = ctx["is_closing"]
+                    auto_dur = ctx.get("auto_stop_duration")
+                    raw_elapsed = max(0.0, now - start_anchor)
+                    elapsed = max(raw_elapsed, auto_dur) if auto_dur is not None else raw_elapsed
+                    travel_time = self._travel_for(is_opening)
+                    if travel_time > 0 and (is_opening or is_closing):
+                        delta = (elapsed / travel_time) * 100.0
+                        if is_opening:
+                            reanchored = min(100, int(round(run_start_pos + delta)))
+                        else:
+                            reanchored = max(0, int(round(run_start_pos - delta)))
+                        self._attr_current_cover_position = reanchored
+                        self._start_position = reanchored
+                        if reanchored == 0:
+                            self._attr_is_closed = True
+                        elif reanchored == 100:
+                            self._attr_is_closed = False
+                    self._last_run = {
+                        "seconds": round(elapsed, 2),
+                        "direction": "open" if is_opening else "close" if is_closing else None,
+                        "ended_at": dt_util.utcnow().isoformat(timespec="milliseconds"),
+                    }
+                    self._refresh_travel_attributes()
+                    LOGGER.debug(
+                        "%s Stop status echo for %s; re-anchored to %s%% (elapsed %.2f s).",
+                        self._gateway_handler.log_id,
+                        self._full_where,
+                        self._attr_current_cover_position,
+                        elapsed,
+                    )
+                return True
+            # Opposite or external command during stop echo window: end window and handle externally.
+            self._end_echo_window()
+            return False
         return False
 
     @callback
