@@ -955,6 +955,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="🎛️ Supported Features &amp; HVAC Modes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#humidity-support-startup-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        💧 Humidity Support &amp; Startup Behavior
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2119,6 +2136,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="🎛️ Supported Features &amp; HVAC Modes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#humidity-support-startup-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        💧 Humidity Support &amp; Startup Behavior
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2200,6 +2234,15 @@
 <li><code>off</code>: System frost-protection or thermal shutdown.</li>
 <li><strong>Target Temperature</strong>: Adjustable setpoint slider in 0.5 °C increments.</li>
 <li><strong>Current Temperature</strong>: Real-time ambient reading reported by the probe.</li>
+<li><strong>Current Humidity</strong>: Ambient relative humidity percentage for zones equipped with humidity sensors (e.g. Living Now thermostats or humidity probes).</li>
+</ul>
+<h3 id="humidity-support-startup-behavior">💧 Humidity Support &amp; Startup Behavior<a class="headerlink" href="#humidity-support-startup-behavior" title="Permanent link">&para;</a></h3>
+<p>Climate zones equipped with integrated humidity sensors (such as BTicino Living Now or specialized probes) report relative humidity via OpenWebNet <code>WHO = 4</code> Dimension <code>60</code> frames (<code>*#4*&lt;WHERE&gt;*60*&lt;HUMIDITY&gt;##</code>):</p>
+<ul>
+<li><strong>Dynamic Auto-Detection</strong>: When a climate zone emits a humidity reading on the SCS bus, the integration dynamically enables humidity tracking on that entity.</li>
+<li><strong>State Restoration Across Restarts</strong>: The zone remembers that it supports humidity across Home Assistant restarts and restores its last known humidity value immediately.</li>
+<li><strong>Targeted Startup Query</strong>: After startup (once the initial discovery sweep finishes), only climate zones that support humidity are queried with <code>*#4*&lt;WHERE&gt;*60##</code> to refresh the current reading. This avoids unnecessary bus traffic on zones without humidity sensors, and works across both software gateways (MyHomeServer1) and physical SCS gateways (such as F461, F454, F455, MH200N).</li>
+<li><strong>Optional YAML Configuration</strong>: In advanced setups using legacy <code>/config/myhome.yaml</code>, humidity polling can be explicitly pre-enabled on a zone by setting <code>humidity: true</code> under the zone configuration.</li>
 </ul>
 <hr />
 <h2 id="legacy-yaml-note">🔄 Legacy YAML Note<a class="headerlink" href="#legacy-yaml-note" title="Permanent link">&para;</a></h2>
