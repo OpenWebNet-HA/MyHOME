@@ -1167,3 +1167,26 @@ async def test_timed_cover_stop_reanchor_clamps_at_limits(hass, mock_gateway):
         assert cover.extra_state_attributes["last_run_seconds"] == 2.5
         assert cover.extra_state_attributes["last_run_direction"] == "close"
 
+        # Now test clamping at 100% when opening
+        cover._attr_current_cover_position = 95
+        cover._start_position = 95
+        cover._travel_time_up = 20.0
+        current_time = 200.0
+
+        await cover.async_open_cover()
+        cover.handle_event(OWNEvent.parse("*2*1*21##"))
+        assert cover.is_opening is True
+
+        # Stop after 2 seconds (nominally 95% + (2/20)*100 = 105%)
+        current_time = 202.0
+        await cover.async_stop_cover()
+
+        # Stop status arrives at 202.5s
+        current_time = 202.5
+        cover.handle_event(OWNEvent.parse("*2*0*21##"))
+
+        assert cover.current_cover_position == 100
+        assert cover.is_closed is False
+        assert cover.extra_state_attributes["last_run_seconds"] == 2.5
+        assert cover.extra_state_attributes["last_run_direction"] == "open"
+

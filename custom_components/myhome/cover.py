@@ -1074,52 +1074,53 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             # Opposite direction inside the window: somebody else took over.
             self._end_echo_window()
             return False
-        if self._pending_cmd == "stop":
-            is_general = getattr(message, "is_general", False) or str(getattr(message, "where", "")) == "0"
-            if is_stop and not is_general:
-                ctx = self._pending_stop_context
-                self._end_echo_window()
-                self._auto_stop_duration = None
-                self._last_stop_at = now
-                self._stopped_event.set()
-                if ctx and ctx.get("run_started_at") is not None and ctx.get("run_start_position") is not None:
-                    start_anchor = ctx["run_started_at"]
-                    run_start_pos = ctx["run_start_position"]
-                    is_opening = ctx["is_opening"]
-                    is_closing = ctx["is_closing"]
-                    auto_dur = ctx.get("auto_stop_duration")
-                    raw_elapsed = max(0.0, now - start_anchor)
-                    elapsed = max(raw_elapsed, auto_dur) if auto_dur is not None else raw_elapsed
-                    travel_time = self._travel_for(is_opening)
-                    if travel_time > 0 and (is_opening or is_closing):
-                        delta = (elapsed / travel_time) * 100.0
-                        if is_opening:
-                            reanchored = min(100, int(round(run_start_pos + delta)))
-                        else:
-                            reanchored = max(0, int(round(run_start_pos - delta)))
-                        self._attr_current_cover_position = reanchored
-                        self._start_position = reanchored
-                        if reanchored == 0:
-                            self._attr_is_closed = True
-                        elif reanchored == 100:
-                            self._attr_is_closed = False
-                    self._last_run = {
-                        "seconds": round(elapsed, 2),
-                        "direction": "open" if is_opening else "close" if is_closing else None,
-                        "ended_at": dt_util.utcnow().isoformat(timespec="milliseconds"),
-                    }
-                    self._refresh_travel_attributes()
-                    LOGGER.debug(
-                        "%s Stop status echo for %s; re-anchored to %s%% (elapsed %.2f s).",
-                        self._gateway_handler.log_id,
-                        self._full_where,
-                        self._attr_current_cover_position,
-                        elapsed,
-                    )
-                return True
-            # Opposite or external command during stop echo window: end window and handle externally.
+        # Pending stop command:
+        is_general = (
+            getattr(message, "is_general", False)
+            or getattr(message, "is_area", False)
+            or getattr(message, "is_group", False)
+            or str(getattr(message, "where", "")) == "0"
+        )
+        if is_stop and not is_general:
+            ctx = self._pending_stop_context
             self._end_echo_window()
-            return False
+            self._auto_stop_duration = None
+            self._last_stop_at = now
+            self._stopped_event.set()
+            if ctx and ctx.get("run_started_at") is not None and ctx.get("run_start_position") is not None:
+                start_anchor = ctx["run_started_at"]
+                run_start_pos = ctx["run_start_position"]
+                is_opening = ctx["is_opening"]
+                is_closing = ctx["is_closing"]
+                auto_dur = ctx.get("auto_stop_duration")
+                raw_elapsed = max(0.0, now - start_anchor)
+                elapsed = max(raw_elapsed, auto_dur) if auto_dur is not None else raw_elapsed
+                travel_time = self._travel_for(is_opening)
+                if travel_time > 0 and (is_opening or is_closing):
+                    delta = (elapsed / travel_time) * 100.0
+                    if is_opening:
+                        reanchored = min(100, int(round(run_start_pos + delta)))
+                    else:
+                        reanchored = max(0, int(round(run_start_pos - delta)))
+                    self._attr_current_cover_position = reanchored
+                    self._start_position = reanchored
+                    self._attr_is_closed = (reanchored == 0)
+                self._last_run = {
+                    "seconds": round(elapsed, 2),
+                    "direction": "open" if is_opening else "close" if is_closing else None,
+                    "ended_at": dt_util.utcnow().isoformat(timespec="milliseconds"),
+                }
+                self._refresh_travel_attributes()
+                LOGGER.debug(
+                    "%s Stop status echo for %s; re-anchored to %s%% (elapsed %.2f s).",
+                    self._gateway_handler.log_id,
+                    self._full_where,
+                    self._attr_current_cover_position,
+                    elapsed,
+                )
+            return True
+        # Opposite or external command during stop echo window: end window and handle externally.
+        self._end_echo_window()
         return False
 
     @callback
