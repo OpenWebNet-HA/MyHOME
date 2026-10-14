@@ -165,10 +165,10 @@ async def test_set_position_survives_relayed_stop_and_anchors_on_motor_start(cov
     assert cover._move_start_time is None
     assert cover._attr_current_cover_position == 49
 
-    # ... and the relayed stop confirmation changes nothing
+    # ... and the relayed stop confirmation re-anchors the estimate on the stop status (#705)
     clock.now = 7.35
     cover.handle_event(OWNEvent.parse("*2*0*21##"))
-    assert cover._attr_current_cover_position == 49
+    assert cover._attr_current_cover_position == 48
 
 
 async def test_position_estimate_frozen_at_stop_write_not_enqueue(cover, gateway, clock, fake_time):
@@ -196,10 +196,10 @@ async def test_position_estimate_frozen_at_stop_write_not_enqueue(cover, gateway
     assert cover._move_start_time is None
     assert cover.is_opening is False
 
-    # The relayed stop confirmation is then a no-op, not a second freeze
+    # The relayed stop confirmation re-anchors the estimate on the stop status (#705)
     clock.now = 5.6
     cover.handle_event(OWNEvent.parse("*2*0*21##"))
-    assert cover._attr_current_cover_position == 40
+    assert cover._attr_current_cover_position == 41
 
 
 async def test_opposite_direction_inside_window_is_external(cover, gateway, clock, fake_time, sleeps):
