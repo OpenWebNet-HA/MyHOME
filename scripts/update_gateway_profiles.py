@@ -80,6 +80,12 @@ END_MARKER = "<!-- GATEWAY_PROFILES_END -->"
 OPTIONS_START_MARKER = "<!-- GATEWAY_OPTIONS_START -->"
 OPTIONS_END_MARKER = "<!-- GATEWAY_OPTIONS_END -->"
 
+DISCOVERY_START_MARKER = "<!-- GATEWAY_DISCOVERY_START -->"
+DISCOVERY_END_MARKER = "<!-- GATEWAY_DISCOVERY_END -->"
+
+ORACLE_JSON = REPO_ROOT / "tests" / "golden" / "firmware_oracle.json"
+STARTUP_DISCOVERY_WHOS: tuple[int, ...] = (1, 2, 4, 5, 16, 18)
+
 FOOTER_NOTE = (
     "*This table is automatically updated from gateway profile definitions "
     "and hardware specifications.*"
@@ -179,7 +185,7 @@ GATEWAY_METADATA: list[dict[str, object]] = [
         "model": "**H4890 / AM4890**",
         "const_models": ["AM4890", "H4890", "LN4890"],
         "ssdp_models": ["AM4890", "H4890", "LN4890", "LN4890A"],
-        "profile_name": "Generic",
+        "profile_name": "H4890",
         "protocol": "OpenWebNet",
         "max_workers": "1 worker",
         "delay": "50 ms",
@@ -190,10 +196,10 @@ GATEWAY_METADATA: list[dict[str, object]] = [
         "model": "**F452 / F453AV**",
         "const_models": ["F453AV", "F453", "F452", "F452V"],
         "ssdp_models": ["F452", "F453AV"],
-        "profile_name": "Generic",
+        "profile_name": "F453AV",
         "protocol": "OpenWebNet",
         "max_workers": "1 worker",
-        "delay": "50 ms",
+        "delay": "150 ms",
         "upnp": "✅ Port 49153",
         "notes": "Audio/video & web server gateway",
     },
@@ -220,6 +226,65 @@ GATEWAY_METADATA: list[dict[str, object]] = [
         "notes": "USB / Serial gateway & OpenZigBee interface",
     },
 ]
+
+# Authoritative startup discovery capabilities calibrated against OWNd.profiles and firmware_oracle.json
+GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
+    {
+        "model": "**MH202**",
+        "profile_name": "MH202",
+        "queried_whos": [1, 2, 4, 5, 16, 18],
+        "notes": "Full support including Burglar Alarm (`*#5*0##`), Sound (`*#16*0*5##`), and Energy (`*#18*51*...`).",
+    },
+    {
+        "model": "**H4890 / AM4890**",
+        "profile_name": "H4890",
+        "queried_whos": [1, 2, 4, 5, 16, 18],
+        "notes": "Supports Burglar Alarm, Sound (`*#16*0*5##`), and Energy meter 51 queries.",
+    },
+    {
+        "model": "**F454**",
+        "profile_name": "F454",
+        "queried_whos": [1, 2, 4, 16, 18],
+        "notes": "Full lighting, cover, climate, sound (`bt_difson` firmware-verified), and energy meter 51 queries. Alarm query omitted.",
+    },
+    {
+        "model": "**F452 / F453 / F453AV**",
+        "profile_name": "F453AV",
+        "queried_whos": [1, 2, 4, 16, 18],
+        "notes": "Lighting, cover, climate, sound (`bt_difson` firmware-verified on F453/F453AV), and energy meter 51 queries. Alarm query omitted.",
+    },
+    {
+        "model": "**F461**",
+        "profile_name": "F461",
+        "queried_whos": [1, 2, 4, 16, 18],
+        "notes": "Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted.",
+    },
+    {
+        "model": "**F455**",
+        "profile_name": "F455",
+        "queried_whos": [1, 2, 4, 18],
+        "notes": "Entry-level gateway: lighting, cover, climate, and energy meter 51 queries. Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual.",
+    },
+    {
+        "model": "**MyHomeServer1**",
+        "profile_name": "MyHomeServer1",
+        "queried_whos": [1, 2, 4, 16, 18],
+        "notes": "Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted.",
+    },
+    {
+        "model": "**MH201**",
+        "profile_name": "MH201",
+        "queried_whos": [1, 2, 4, 16, 18],
+        "notes": "Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted.",
+    },
+    {
+        "model": "**MH200 / MH200N**",
+        "profile_name": "MH200N",
+        "queried_whos": [1, 2, 4, 16],
+        "notes": "Lighting, cover, climate, and sound queries (`bt_difson` hardware and firmware-verified on both). Alarm and energy queries omitted.",
+    },
+]
+
 
 
 def extract_gateway_models_from_const(const_path: Path = CONST_PY) -> list[str]:
@@ -385,6 +450,132 @@ def build_options_block() -> str:
     """Return the complete marker-wrapped options table block."""
     table = generate_gateway_options_table()
     return f"{OPTIONS_START_MARKER}\n{table}\n{OPTIONS_END_MARKER}"
+
+
+def calibrate_discovery_with_ownd(
+    discovery_metadata: list[dict[str, object]] | None = None,
+) -> list[dict[str, object]]:
+    """Dynamically calibrate startup discovery WHOs against OWNd.profiles."""
+    try:
+        from OWNd.profiles import get_gateway_profile
+    except ImportError:
+        get_gateway_profile = None
+
+    calibrated = copy.deepcopy(
+        GATEWAY_DISCOVERY_METADATA if discovery_metadata is None else discovery_metadata
+    )
+    if get_gateway_profile is not None:
+        for row in calibrated:
+            prof_name = row.get("profile_name")
+            if prof_name:
+                prof = get_gateway_profile(str(prof_name))
+                if prof is not None:
+                    row["queried_whos"] = [
+                        w for w in STARTUP_DISCOVERY_WHOS if prof.supports_who(w)
+                    ]
+    return calibrated
+
+
+def generate_gateway_discovery_table() -> str:
+    """Generate the markdown table for Gateway Startup Discovery Capabilities."""
+    rows = calibrate_discovery_with_ownd()
+    lines = [
+        "| Gateway Model | Initial Discovery Subsystems Queried | Profile Support Notes |",
+        "| :--- | :--- | :--- |",
+    ]
+    for row in rows:
+        model = row["model"]
+        whos = row["queried_whos"]
+        who_str = "WHO " + ", ".join(str(w) for w in whos) if isinstance(whos, list) else str(whos)
+        notes = row["notes"]
+        lines.append(f"| {model} | {who_str} | {notes} |")
+    return "\n".join(lines)
+
+
+def build_discovery_block() -> str:
+    """Return the complete marker-wrapped startup discovery table block."""
+    table = generate_gateway_discovery_table()
+    return f"{DISCOVERY_START_MARKER}\n{table}\n{DISCOVERY_END_MARKER}"
+
+
+def _format_oracle_version(version_code: str) -> str:
+    """Convert 6-digit oracle version code (VVRRBB) to dotted string 'V.R.B'."""
+    if len(version_code) == 6 and version_code.isdigit():
+        return f"{int(version_code[0:2])}.{int(version_code[2:4])}.{int(version_code[4:6])}"
+    return version_code
+
+
+def verify_profiles_against_oracle(oracle_path: Path = ORACLE_JSON) -> list[str]:
+    """Cross-verify OWNd gateway profiles and MyHOME discovery metadata against firmware_oracle.json."""
+    try:
+        from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
+    except ImportError:
+        return []
+
+    if not oracle_path.is_file():
+        return [f"Firmware oracle fixture not found: {oracle_path}"]
+
+    data = json.loads(oracle_path.read_text(encoding="utf-8"))
+    verdicts = data.get("verdicts", {})
+    gateways = data.get("gateways", [])
+
+    def _verdict(product: str, frame: str) -> tuple[str, str] | None:
+        for row in verdicts.get(frame, []):
+            if row.get("product") == product:
+                return (str(row.get("reply")), str(row.get("verdict")))
+        return None
+
+    violations: list[str] = []
+    probe_checks: tuple[tuple[int, str, str], ...] = (
+        (1, "*1*1*31##", "WHO 1 Lighting"),
+        (2, "*2*1*31##", "WHO 2 Automation"),
+        (3, "*3*2*#1##", "WHO 3 Load Control"),
+        (4, "*#4*1*0##", "WHO 4 Heating"),
+        (25, "*25*21#1*21##", "WHO 25 CEN+"),
+    )
+
+    for gw in gateways:
+        if gw.get("status") != "emulated":
+            continue
+        product = str(gw["product"])
+        fw_dotted = _format_oracle_version(str(gw.get("version", "")))
+        profile = get_gateway_profile(product, fw_dotted)
+        if isinstance(profile, GenericGatewayProfile):
+            continue
+
+        if not profile.auth_measured:
+            violations.append(
+                f"{product} ({fw_dotted}) is emulated in firmware oracle but has auth_measured=False."
+            )
+
+        expected_audio = _verdict(product, "*#16*0*5##") == ("ack", "out")
+        if profile.audio_measured != expected_audio:
+            violations.append(
+                f"{product} ({fw_dotted}) audio_measured={profile.audio_measured} disagrees with "
+                f"oracle *#16*0*5## verdict (expected {expected_audio})."
+            )
+
+        for who_code, probe_frame, label in probe_checks:
+            verdict_pair = _verdict(product, probe_frame)
+            expected_supported = verdict_pair is not None and verdict_pair[1] == "out"
+            actual_supported = profile.supports_who(who_code)
+            if actual_supported != expected_supported:
+                violations.append(
+                    f"{product} ({fw_dotted}) supports_who({who_code})={actual_supported} for {label} "
+                    f"disagrees with oracle {probe_frame} verdict (expected {expected_supported})."
+                )
+
+    for row in GATEWAY_DISCOVERY_METADATA:
+        prof_name = str(row.get("profile_name", ""))
+        prof = get_gateway_profile(prof_name)
+        expected_whos = [w for w in STARTUP_DISCOVERY_WHOS if prof.supports_who(w)]
+        if row.get("queried_whos") != expected_whos:
+            violations.append(
+                f"Discovery row {row.get('model')} queried_whos={row.get('queried_whos')} "
+                f"disagrees with {prof_name} profile {expected_whos}."
+            )
+
+    return violations
 
 
 

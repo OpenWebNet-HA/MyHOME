@@ -332,12 +332,23 @@ def test_check_all_documentation_real_tree():
     assert ok is True, f"Real tree documentation drift detected: {messages}"
 
 
+def test_sync_gateway_discovery_detects_drift_and_updates(tmp_path, monkeypatch):
+    """Verify sync_gateway_discovery detects drift and updates hardware-compatibility.md."""
+    (tmp_path / "getting-started").mkdir(parents=True, exist_ok=True)
+    hw_doc = tmp_path / "getting-started" / "hardware-compatibility.md"
+    hw_doc.write_text(
+        f"{syncdoc.DISCOVERY_START_MARKER}\nOutdated Discovery Table\n{syncdoc.DISCOVERY_END_MARKER}",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(syncdoc, "DOCS_DIR", tmp_path)
 
+    ok, messages = syncdoc.sync_gateway_discovery(update=False)
+    assert ok is False
+    assert any("Gateway Discovery table out of sync" in m for m in messages)
 
+    ok_up, messages_up = syncdoc.sync_gateway_discovery(update=True)
+    assert ok_up is True
+    assert any("Updated Gateway Discovery table" in m for m in messages_up)
 
-
-
-
-
-
-
+    ok_after, _ = syncdoc.sync_gateway_discovery(update=False)
+    assert ok_after is True

@@ -154,6 +154,25 @@ def test_calibrate_metadata_with_ownd():
     assert mh200n["delay"] == "150 ms"
     assert mh200n["upnp"] == "✅ SSDP"
 
+    f453av = next(gw for gw in calibrated if "F453AV" in str(gw["model"]))
+    assert f453av["max_workers"] == "1 worker"
+    assert f453av["delay"] == "150 ms"
+    assert f453av["upnp"] == "✅ Port 49153"
+
+
+def test_generate_gateway_discovery_table_and_verify_oracle():
+    """Verify startup discovery table generation and oracle verification."""
+    block = ugp.build_discovery_block()
+    assert ugp.DISCOVERY_START_MARKER in block
+    assert ugp.DISCOVERY_END_MARKER in block
+    assert "| **F454** | WHO 1, 2, 4, 16, 18 |" in block
+    assert "| **F452 / F453 / F453AV** | WHO 1, 2, 4, 16, 18 |" in block
+    assert "| **F461** | WHO 1, 2, 4, 16, 18 |" in block
+    assert "| **F455** | WHO 1, 2, 4, 18 |" in block
+    assert "| **MH200 / MH200N** | WHO 1, 2, 4, 16 |" in block
+
+    assert ugp.verify_profiles_against_oracle() == []
+
 
 def test_missing_files_and_markers_graceful_degradation(tmp_path: Path):
     """Verify graceful degradation when files or markers are missing."""
