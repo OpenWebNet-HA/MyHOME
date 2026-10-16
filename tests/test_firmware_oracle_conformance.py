@@ -76,6 +76,25 @@ def test_emitted_own_frames_parseable_by_ownd():
 
     assert not failures, f"OWNd failed to parse {len(failures)} firmware-emitted frames:\n" + "\n".join(failures)
 
+    # Verify semantic parsing of gateway identification frames for H4684 and MH200
+    from OWNd.message import OWNGatewayEvent
+
+    h4684_id = OWNMessage.parse("*#13**15*13##")
+    assert isinstance(h4684_id, OWNGatewayEvent)
+    assert getattr(h4684_id, "device_type_code", None) == "13" or h4684_id.device_type == "H4684"
+
+    h4684_fw = OWNMessage.parse("*#13**16*2*0*54##")
+    assert isinstance(h4684_fw, OWNGatewayEvent)
+    assert h4684_fw.firmware_version == "2.0.54"
+
+    mh200_id = OWNMessage.parse("*#13**15*4##")
+    assert isinstance(mh200_id, OWNGatewayEvent)
+    assert mh200_id.device_type == "MH200"
+
+    mh200_fw = OWNMessage.parse("*#13**16*2*1*2##")
+    assert isinstance(mh200_fw, OWNGatewayEvent)
+    assert mh200_fw.firmware_version == "2.1.2"
+
 
 # Known protocol discrepancies between spec-derived/openwebnet4j corpus fixtures
 # and actual gateway firmware behavior (audited in own-firmware-oracle):
@@ -222,7 +241,7 @@ def test_what19_fault_emitted_event():
 def test_all_gateway_responses_conform_to_openwebnet_protocol():
     """Verify that every verdict entry adheres strictly to OpenWebNet framing rules."""
     valid_replies = {"ack", "nack", "-"}
-    valid_verdicts = {"out", "silent", "timeout", "crash"}
+    valid_verdicts = {"out", "silent", "timeout"}
 
     for inp, entries in ALL_VERDICTS.items():
         assert inp.startswith("*") and inp.endswith("##"), f"Invalid input frame format: {inp}"

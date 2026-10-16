@@ -149,7 +149,7 @@ def test_third_party_table_is_the_nmap_device_table():
 def test_who13_and_who1013_are_separate_identifier_spaces():
     """The same model has different numbers in the two families, so the tables stay apart (#420).
 
-    F453 is 42 for WHO=1013 but 16 for Nmap's WHO=13 table; H4684 is 29 for
+    F453 is 42 for WHO=1013 but 16 for Nmap's WHO=13 table; H4684 is 19 for
     WHO=1013 but 13 (2006) or 23 (Nmap) for WHO=13. Some values do coincide - 4,
     12, 44, 51 - which is exactly why this is pinned: agreeing on a few codes is
     not a reason to treat one table as the other.
@@ -161,7 +161,7 @@ def test_who13_and_who1013_are_separate_identifier_spaces():
     differ = {m: (by_model_who13[m], by_model_who1013[m]) for m in by_model_who13.keys() & by_model_who1013.keys()
               if by_model_who13[m] != by_model_who1013[m]}
     agree = {m for m in by_model_who13.keys() & by_model_who1013.keys() if by_model_who13[m] == by_model_who1013[m]}
-    assert differ == {"F453": ("16", "42"), "H4684": ("23", "29")}
+    assert differ == {"F453": ("16", "42"), "H4684": ("23", "19")}
     assert agree == {"MH200", "F453AV", "MH200N", "F454"}
     # and the shared WHO=13 code has no counterpart at all in the WHO=1013 space
     assert "200" not in WHO1013_OBJECT_MODELS
@@ -206,6 +206,33 @@ def test_read_who1013():
     assert r.compatible_with("MyHomeServer1") is False
     assert read_who1013("999").known is False
     assert read_who1013("67").describe() == "WHO=1013 OBJECT_MODEL 67"
+
+
+def test_h4684_ground_truth_firmware_mapping():
+    """H4684 reports 19 and LGRH4684 reports 26 in WHO=1013 dimension 1.
+
+    Reverse-engineering of the bt_device binary from H4684 firmware 2.0.54 confirmed
+    these concrete values in dispatch tables (*#1013**1*19## and *#1013**1*26##).
+    """
+    r19 = read_who1013("19")
+    assert r19.canonical == "H4684"
+    assert r19.alternative_names == ("L4684",)
+    assert r19.compatible_with("H4684") is True
+    assert r19.compatible_with("L4684") is True
+
+    r26 = read_who1013("26")
+    assert r26.canonical == "LGRH4684"
+    assert r26.alternative_names == ()
+    assert r26.compatible_with("LGRH4684") is True
+
+    # Resolution when shared code 200 is settled by WHO=1013
+    assert resolve(Evidence(who13_code="200", who1013_code="19")).model == "H4684"
+    assert resolve(Evidence(who13_code="200", who1013_code="26")).model == "LGRH4684"
+
+    # No conflict when manual matches the model
+    assert resolve(Evidence(manual="H4684", who13_code="13")).conflict is None
+    assert resolve(Evidence(manual="H4684", who1013_code="19")).conflict is None
+    assert resolve(Evidence(manual="LGRH4684", who1013_code="26")).conflict is None
 
 
 # ── the resolver: evidence in, verdict out ───────────────────────────────
