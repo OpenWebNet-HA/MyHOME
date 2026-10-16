@@ -6,6 +6,7 @@ MyHOMESwitch.async_turn_on_timed, and kwarg interception in async_turn_on.
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from OWNd.message import OWNLightingCommand
 
 from custom_components.myhome.const import (
     DOMAIN,
@@ -40,54 +41,98 @@ class TestBuildTimedTurnOnCommand:
         """Verify all standard Legrand preset timer WHAT codes."""
         cmd = build_timed_turn_on_command("21", duration=seconds)
         assert str(cmd) == f"*1*{expected_what}*21##"
+        assert isinstance(cmd, OWNLightingCommand)
 
     def test_custom_dimension_2_durations(self):
         """Verify Dimension 2 writing (*#1*WHERE*#2*H*M*S##) for arbitrary durations."""
         # 45 seconds (0h, 0m, 45s)
         cmd45 = build_timed_turn_on_command("21", duration=45)
         assert str(cmd45) == "*#1*21*#2*0*0*45##"
+        assert isinstance(cmd45, OWNLightingCommand)
 
         # 75 seconds (0h, 1m, 15s)
         cmd75 = build_timed_turn_on_command("21", duration=75)
         assert str(cmd75) == "*#1*21*#2*0*1*15##"
+        assert isinstance(cmd75, OWNLightingCommand)
 
         # 3665 seconds (1h, 1m, 5s)
         cmd3665 = build_timed_turn_on_command("21", duration=3665)
         assert str(cmd3665) == "*#1*21*#2*1*1*5##"
+        assert isinstance(cmd3665, OWNLightingCommand)
 
         # Compound arguments: hours=2, minutes=15, seconds=30
         cmd_compound = build_timed_turn_on_command("21", hours=2, minutes=15, seconds=30)
         assert str(cmd_compound) == "*#1*21*#2*2*15*30##"
+        assert isinstance(cmd_compound, OWNLightingCommand)
 
     def test_zero_and_negative_duration_defaults_to_half_second(self):
         """Zero or negative duration should safely fall back to 0.5s pulse."""
         cmd_zero = build_timed_turn_on_command("21", duration=0)
         assert str(cmd_zero) == "*1*18*21##"
+        assert isinstance(cmd_zero, OWNLightingCommand)
 
         cmd_neg = build_timed_turn_on_command("21", duration=-10)
         assert str(cmd_neg) == "*1*18*21##"
+        assert isinstance(cmd_neg, OWNLightingCommand)
 
         cmd_none = build_timed_turn_on_command("21")
         assert str(cmd_none) == "*1*18*21##"
+        assert isinstance(cmd_none, OWNLightingCommand)
 
     def test_private_bus_interface_routing_preserved(self):
         """Private SCS bus routing (#4#INTERFACE) must be preserved in frames."""
         # Preset on bus
         cmd_bus_preset = build_timed_turn_on_command("21#4#01", duration=60)
         assert str(cmd_bus_preset) == "*1*11*21#4#01##"
+        assert isinstance(cmd_bus_preset, OWNLightingCommand)
 
         # Custom on bus
         cmd_bus_custom = build_timed_turn_on_command("21#4#01", duration=45)
         assert str(cmd_bus_custom) == "*#1*21#4#01*#2*0*0*45##"
+        assert isinstance(cmd_bus_custom, OWNLightingCommand)
 
         # 4-digit address on bus 02
         cmd_bus_4digit = build_timed_turn_on_command("0311#4#02", hours=1)
         assert str(cmd_bus_4digit) == "*#1*0311#4#02*#2*1*0*0##"
+        assert isinstance(cmd_bus_4digit, OWNLightingCommand)
 
     def test_clamping_ranges(self):
         """Verify hours are clamped to 255, minutes to 59, seconds to 59."""
         cmd_huge = build_timed_turn_on_command("21", hours=300, minutes=90, seconds=90)
-        assert str(cmd_huge).startswith("*#1*21*#2*255*")
+        assert str(cmd_huge) == "*#1*21*#2*255*31*30##"
+        assert isinstance(cmd_huge, OWNLightingCommand)
+
+    def test_fallback_when_ownlightingcommand_factories_missing(self, monkeypatch):
+        """Verify graceful string-parsing fallback when OWNd lacks b11 builders."""
+        monkeypatch.delattr(OWNLightingCommand, "switch_on_timed", raising=False)
+        monkeypatch.delattr(OWNLightingCommand, "set_variable_timer", raising=False)
+
+        cmd_preset = build_timed_turn_on_command("21", duration=60)
+        assert str(cmd_preset) == "*1*11*21##"
+        assert isinstance(cmd_preset, OWNLightingCommand)
+
+        cmd_custom = build_timed_turn_on_command("21", duration=45)
+        assert str(cmd_custom) == "*#1*21*#2*0*0*45##"
+        assert isinstance(cmd_custom, OWNLightingCommand)
+
+    def test_builder_when_ownlightingcommand_factories_present(self, monkeypatch):
+        """Verify factory path when OWNd has b11 builders."""
+        mock_switch = MagicMock(return_value=OWNLightingCommand("*1*11*21##"))
+        mock_variable = MagicMock(return_value=OWNLightingCommand("*#1*21*#2*0*0*45##"))
+
+        monkeypatch.setattr(OWNLightingCommand, "switch_on_timed", mock_switch, raising=False)
+        monkeypatch.setattr(OWNLightingCommand, "set_variable_timer", mock_variable, raising=False)
+
+        cmd_preset = build_timed_turn_on_command("21", duration=60)
+        assert str(cmd_preset) == "*1*11*21##"
+        assert isinstance(cmd_preset, OWNLightingCommand)
+        mock_switch.assert_called_once_with("21", 11)
+
+        cmd_custom = build_timed_turn_on_command("21", duration=45)
+        assert str(cmd_custom) == "*#1*21*#2*0*0*45##"
+        assert isinstance(cmd_custom, OWNLightingCommand)
+        mock_variable.assert_called_once_with("21", 0, 0, 45)
+
 
 
 # ── 2. MyHOMELight Timed Turn-on Tests ────────────────────────────────────────

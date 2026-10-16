@@ -161,13 +161,15 @@
           "primary_gateway": "Primary gateway",
           "delegated_whos": "Delegated subsystems",
           "auto_join_streaming": "Auto-join streaming groups",
-          "ignored_addresses": "Ignored addresses"
+          "ignored_addresses": "Ignored addresses",
+          "tuner_pictures": "Tuner pictures"
         },
         "data_description": {
           "decoder_1_pre_gain": "Calibrate against the hardware, not a guess: if this decoder's line-out feeds a BTicino Ingresso RCA (L/N/NT4560) or Controllo Stereo (L4561) module, raise Pre-Gain while playing until that module's signal LED blinks orange — not steady green (signal too low) or steady red/orange (clipping). Always wire the decoder's fixed line-out ('OUT'), never a variable headphone/AUX output — a second uncontrolled gain stage there causes the same distortion BTicino's own troubleshooting guide warns about.",
           "delegated_whos": "Secondary role only: subsystems whose new devices this gateway discovers. Devices the primary already has stay on the primary.",
           "auto_join_streaming": "Automatically join an active streaming group when turning on a room or adjusting volume from a physical wall control.",
           "ignored_addresses": "Permanently ignore listed addresses (e.g. 1/74, 1/74#4#01): skips discovery, entities and fault tracking. Separate multiple entries with newlines or commas.",
+          "tuner_pictures": "One MHz=URL per line (e.g. 96.2=/local/radio/one.png): the picture shown while a tuner is on that frequency. Your own images; none are bundled.",
           "command_worker_count": "Recommended for the {model}: {session_default}. It accepts at most {session_limit} command session(s), and each one plus the event session uses one of its few connections, which the Legrand/BTicino app and other clients need too. Raise it only if commands queue up."
         }
       }
@@ -234,7 +236,17 @@
         },
         "duration": {
           "name": "Duration",
-          "description": "For how long the instant power information will be sent."
+          "description": "For how long the instant power information will be sent in minutes (0 to stop)."
+        }
+      }
+    },
+    "stop_sending_instant_power": {
+      "name": "Stop sending instant power",
+      "description": "Stop automatic instant power draw updates for a sensor.",
+      "fields": {
+        "entity_id": {
+          "name": "Entity",
+          "description": "Name(s) of entities that will stop sending instant power information."
         }
       }
     },
@@ -329,6 +341,24 @@
     "tuner_seek_down": {
       "name": "Tuner seek down",
       "description": "Seek backward to the previous receivable FM radio frequency on an F500 tuner source."
+    },
+    "send_scenario_plus_command": {
+      "name": "Send scenario plus command",
+      "description": "Send a WHO 25 scenario plus command (on, off, increase, decrease, stop) to an addressed scenario plus object.",
+      "fields": {
+        "gateway": {
+          "name": "Gateway",
+          "description": "The gateway's MAC address (optional; defaults to primary gateway)."
+        },
+        "where": {
+          "name": "Where",
+          "description": "The scenario plus object address on the bus."
+        },
+        "action": {
+          "name": "Action",
+          "description": "The scenario plus action to execute (on, off, increase, decrease, or stop; step/speed for increase/decrease is fixed per protocol)."
+        }
+      }
     }
   },
   "issues": {
@@ -508,6 +538,21 @@
     },
     "seek_not_supported": {
       "message": "{entity_id}: seek is only supported on tuner source entities"
+    },
+    "scenario_plus_gateway_not_found": {
+      "message": "Gateway \"{gateway}\" not found for scenario plus command"
+    },
+    "scenario_plus_no_gateway": {
+      "message": "No active MyHOME gateways found"
+    },
+    "scenario_plus_missing_where": {
+      "message": "No where/object specified for scenario plus command"
+    },
+    "scenario_plus_unknown_action": {
+      "message": "Unknown scenario plus action \"{action}\""
+    },
+    "scenario_plus_command_invalid": {
+      "message": "Could not build scenario plus command for where \"{where}\" and action \"{action}\""
     }
   },
   "entity": {

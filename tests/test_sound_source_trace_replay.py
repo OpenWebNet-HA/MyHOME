@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from homeassistant.components.media_player.const import MediaType
+from homeassistant.components.media_player.const import MediaPlayerState, MediaType
 from homeassistant.const import CONF_MAC
 from homeassistant.exceptions import HomeAssistantError
 from OWNd.message import OWNSoundEvent
@@ -43,6 +43,14 @@ FIXTURE_ALL_PATH = (
     / "traces"
     / "f500_tuner"
     / "myhome_trace_MH200N_all_2026-09-26T20-00-28.json"
+)
+
+FIXTURE_L4561N_PATH = (
+    Path(__file__).parent
+    / "fixtures"
+    / "traces"
+    / "l4561n_stereo_control"
+    / "myhome_trace_MH200_l4561n_sound_source.json"
 )
 
 
@@ -301,5 +309,116 @@ def test_f500n_station_advance_and_rds_rotation_replay(tuner):
         elif raw == "*#16*101*8*65*78*84*69*78*78*69*32##":
             # "ANTENNE "
             assert tuner.media_title == "ANTENNE"
+
+
+@pytest.fixture
+def l4561n_source(hass, mock_gateway):
+    """Instantiate a test MyHOMESoundSource entity for L4561N Stereo Control."""
+    entity = MyHOMESoundSource(
+        hass=hass,
+        name="Stereo Control Source 2",
+        device_id="102#16",
+        who="16",
+        where="102",
+        manufacturer="BTicino",
+        model="L4561N Stereo Control",
+        gateway=mock_gateway,
+    )
+    entity.hass = hass
+    entity.entity_id = "media_player.stereo_control_source_2"
+    entity.async_schedule_update_ha_state = MagicMock()
+    entry = MagicMock()
+    entry.data = {CONF_MAC: mock_gateway.mac}
+    entry.runtime_data = MyHOMERuntimeData(gateway=mock_gateway)
+    attach_platform(entity, entry)
+    return entity
+
+
+async def test_l4561n_authentic_trace_replay(l4561n_source, mock_gateway):
+    """Replay authentic MH200 + L4561N stereo control trace through the entity."""
+    assert FIXTURE_L4561N_PATH.is_file(), f"Missing trace fixture: {FIXTURE_L4561N_PATH}"
+
+    with open(FIXTURE_L4561N_PATH, encoding="utf-8") as f:
+        trace_data = json.load(f)
+
+    # Verify captured trace ground-truth metadata
+    assert trace_data["gateway"]["model"] == "MH200"
+    assert trace_data["gateway"]["firmware"] == "2.0.32"
+    assert trace_data["target_device"]["model"] == "L4561N"
+    assert trace_data["target_device"]["address"] == "102"
+    assert trace_data["target_device"]["firmware_version"] == "04.00.06"
+    assert trace_data["capture"]["kind"] == "trace"
+    frames = trace_data["frames"]
+    assert len(frames) == 44
+
+    # Initial entity state
+    assert l4561n_source.state is None
+    assert l4561n_source.source_list == [f"Station {i}" for i in range(1, TUNER_STATION_COUNT + 1)]
+
+    # Step through trace frames
+    for frame in frames:
+        if frame.get("direction") != "rx":
+            continue
+
+        raw = frame["raw"]
+        who = frame.get("who")
+        where = frame.get("where")
+
+        # Route frames to L4561N (address 102)
+        if who == "16" and where == "102":
+            event = OWNSoundEvent(raw)
+            l4561n_source.handle_event(event)
+
+            if raw == "*16*3*102##":
+                assert l4561n_source.state == MediaPlayerState.ON
+
+    # Verify transport command execution produces exact on-wire OpenWebNet telegrams
+    await l4561n_source.async_media_next_track()
+    assert str(mock_gateway.send.call_args.args[0]) == "*16*6001*102##"
+
+    await l4561n_source.async_media_previous_track()
+    assert str(mock_gateway.send.call_args.args[0]) == "*16*6101*102##"
+
+    await l4561n_source.async_turn_off()
+    assert str(mock_gateway.send.call_args.args[0]) == "*16*13*102##"
+
+    await l4561n_source.async_turn_on()
+    assert str(mock_gateway.send.call_args.args[0]) == "*16*3*102##"
+
+
+async def test_l4561n_physical_wall_stepping_and_transport(l4561n_source, mock_gateway):
+    """Test multi-step pulse tracking (+1..+5, -1..-4) and direct preset selection."""
+    # Select baseline station 1
+    await l4561n_source.async_select_station(1)
+    assert str(mock_gateway.send.call_args.args[0]) == "*#16*102*#7*1##"
+    assert l4561n_source.source == "Station 1"
+    assert l4561n_source.extra_state_attributes["station"] == 1
+
+    # Multi-step pulses from authentic physical trace
+    # +1 step: *16*6001*102## -> Station 2
+    l4561n_source.handle_event(OWNSoundEvent("*16*6001*102##"))
+    assert l4561n_source.source == "Station 2"
+    assert l4561n_source.extra_state_attributes["station"] == 2
+
+    # +3 step: *16*6003*102## -> Station 5
+    l4561n_source.handle_event(OWNSoundEvent("*16*6003*102##"))
+    assert l4561n_source.source == "Station 5"
+    assert l4561n_source.extra_state_attributes["station"] == 5
+
+    # -2 step: *16*6102*102## -> Station 3
+    l4561n_source.handle_event(OWNSoundEvent("*16*6102*102##"))
+    assert l4561n_source.source == "Station 3"
+    assert l4561n_source.extra_state_attributes["station"] == 3
+
+    # -4 step: *16*6104*102## -> Clamped to min 1
+    l4561n_source.handle_event(OWNSoundEvent("*16*6104*102##"))
+    assert l4561n_source.source == "Station 1"
+    assert l4561n_source.extra_state_attributes["station"] == 1
+
+    # Direct preset jump to Station 5
+    await l4561n_source.async_select_station(5)
+    assert str(mock_gateway.send.call_args.args[0]) == "*#16*102*#7*5##"
+    assert l4561n_source.source == "Station 5"
+
 
 

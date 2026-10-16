@@ -18,6 +18,8 @@ OpenWebNet gateways maintain an internal real-time clock (RTC) queried via WHO=1
 - Dimension 0: `*#13**0*<HH>*<MM>*<SS>*999##`
 - Dimension 22: `*#13**22*<HH>*<MM>*<SS>*999*<DAY>*<MONTH>*<YEAR>##`
 
+*(Note: The F461 gateway is configured via the Home + Project app and its firmware always reports `999` over OpenWebNet; it is automatically exempted from this repair issue).*
+
 ### Why it matters
 1. **Clock & Timestamp Drift**: Without a configured timezone, scheduled scenario triggers and time broadcasts on the SCS bus may diverge from local daylight saving time or Home Assistant's clock.
 2. **Diagnostic Reliability**: Underlying protocol parsers expect a standard UTC offset format (such as `+01:00` or numeric minute offsets).

@@ -86,6 +86,81 @@
   mcp_notes: "Energy Management: Actuator channel 77#0 reports 415 Watts active power (issue #247 reporter plant)"
   roundtrip: true
 
+# Authentic BTicino F454 & F520 Dimension 1200 stream lifecycle (Issue #466, PR #661, @xtimmy86x physical capture)
+- id: energy.cmd.start_stream.meter56.2
+  frame: "*#18*56*#1200#1*2##"
+  direction: dimension_write
+  who: 18
+  what: null
+  where: "56"
+  dimension: 1200
+  dimension_values: ["2"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Start 2-minute instantaneous active power auto-update stream on meter 56 (F454 authentic capture)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: start_sending_instant_power
+    args: ["56", 2]
+
+- id: energy.resp.auto_update_interval.meter56.2
+  frame: "*#18*56*1200#1*2##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "56"
+  dimension: 1200
+  dimension_values: ["2"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Meter 56 reports 2-minute active power auto-update interval active (F454 authentic capture)"
+  roundtrip: true
+
+- id: energy.cmd.stop_stream.meter56
+  frame: "*#18*56*#1200#1*0##"
+  direction: dimension_write
+  who: 18
+  what: null
+  where: "56"
+  dimension: 1200
+  dimension_values: ["0"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Stop instantaneous active power auto-update stream on meter 56"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: start_sending_instant_power
+    args: ["56", 0]
+
+- id: energy.resp.auto_update_interval.meter56.0
+  frame: "*#18*56*1200#1*0##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "56"
+  dimension: 1200
+  dimension_values: ["0"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Meter 56 reports instantaneous active power auto-update stopped / expired (interval 0, F454 authentic capture)"
+  roundtrip: true
+
+- id: energy.resp.auto_update_interval.meter54.255
+  frame: "*#18*54*1200#1*255##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "54"
+  dimension: 1200
+  dimension_values: ["255"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Meter 54 reports 255-minute active power auto-update interval active (F454 authentic capture)"
+  roundtrip: true
+
+
 - id: energy.resp.cumulative_totalizer.meter51
   frame: "*#18*51*51*23791364##"
   direction: dimension_response

@@ -93,11 +93,12 @@ def test_sync_trace_matrix_missing_target(tmp_path, monkeypatch):
 def test_parse_services_yaml():
     """Verify parse_services_yaml extracts services correctly."""
     services = syncdoc.parse_services_yaml()
-    assert len(services) >= 11
+    assert len(services) >= 12
     for expected_svc in (
         "send_message", "turn_on_timed", "sync_time", "sweep_bus",
         "calibrate_cover", "stop_cover_calibration", "set_cover_travel_time",
         "reset_cover_travel_time", "start_sending_instant_power",
+        "stop_sending_instant_power",
         "tuner_seek_up", "tuner_seek_down",
     ):
         assert expected_svc in services

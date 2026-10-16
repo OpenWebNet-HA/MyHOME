@@ -18,6 +18,7 @@ BTicino / Legrand pushbuttons operate in either **CEN** (`WHO = 15`) or **CEN+**
 | **Release Long Press** | `WHAT = 2` | `WHAT = 24` |
 | **Rotary Dials** | Supported via vendor extensions | Supported (CW/CCW slow & fast) |
 | **Dry Contact Status** | N/A | `WHAT = 31` (Closed), `WHAT = 32` (Opened) |
+| **Scenario Plus Actions** | N/A | `WHAT = 11..15` (`on`, `off`, `increase`, `decrease`, `stop`) |
 
 ---
 
@@ -164,6 +165,31 @@ trigger:
       event: pushbutton_short_press
 ```
 
+### WHO 17 Scenario Programmer Events (`myhome_scene_event`)
+
+When a physical scenario programmer (e.g. MH200N, MH201, F420) executes or updates a stored scenario on the OpenWebNet bus, the integration fires `myhome_scene_event`:
+
+- `scenario`: Integer scenario identifier (e.g. `1`)
+- `where`: Wire scenario address
+- `state`: Numeric state (`1` = started, `2` = stopped, `3` = enabled, `4` = disabled)
+- `is_on`: `True` when started, `False` when stopped, `None` for enable/disable
+- `is_enabled`: `True` when enabled, `False` when disabled, `None` for start/stop
+- `gateway_mac`: Active gateway MAC address (with standby failover support)
+- `entry_id`: Config entry identifier
+
+> [!IMPORTANT]
+> **Scenario Lifecycle vs. Load Power State**:  
+> In OpenWebNet WHO 17 semantics, `is_on: true` denotes that the **scenario routine has started executing**, not that electrical circuits are turned on. For example, a "Leave Home" scene programmed to switch all lights OFF will emit `is_on: true` upon start, followed by actuator OFF commands, and `is_on: false` when execution finishes.
+
+```yaml
+trigger:
+  - platform: event
+    event_type: myhome_scene_event
+    event_data:
+      scenario: 1
+      is_on: true
+```
+
 Enabling **Generate Events** in the **Options Flow** additionally fires every bus frame as `myhome_message_event`.
 
 ---
@@ -180,3 +206,12 @@ Enabling **Generate Events** in the **Options Flow** additionally fires every bu
 | **CEN+ Start Long** | 25 | `*25*22#<BUTTON>*<WHERE>##` | `*25*22#1*21##` |
 | **CEN+ Still Held** (repeats ~0.5 s) | 25 | `*25*23#<BUTTON>*<WHERE>##` | `*25*23#1*21##` |
 | **CEN+ Release** | 25 | `*25*24#<BUTTON>*<WHERE>##` | `*25*24#1*21##` |
+| **Scenario Plus On** | 25 | `*25*11#0*<WHERE>##` | `*25*11#0*11##` |
+| **Scenario Plus Off** | 25 | `*25*12*<WHERE>##` | `*25*12*11##` |
+| **Scenario Plus Increase** | 25 | `*25*13#0#5*<WHERE>##` | `*25*13#0#5*11##` |
+| **Scenario Plus Decrease** | 25 | `*25*14#0#5*<WHERE>##` | `*25*14#0#5*11##` |
+| **Scenario Plus Stop** | 25 | `*25*15*<WHERE>##` | `*25*15*11##` |
+| **Scene Start** | 17 | `*17*1*<WHERE>##` | `*17*1*1##` (Scenario 1 started) |
+| **Scene Stop** | 17 | `*17*2*<WHERE>##` | `*17*2*1##` (Scenario 1 stopped) |
+| **Scene Enable** | 17 | `*17*3*<WHERE>##` | `*17*3*1##` (Scenario 1 schedule enabled) |
+| **Scene Disable** | 17 | `*17*4*<WHERE>##` | `*17*4*1##` (Scenario 1 schedule disabled) |

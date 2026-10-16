@@ -35,6 +35,7 @@ from OWNd.message import (
 )
 
 from .const import (
+    BUS_ROUTING,
     CALIBRATION_CUTOFF_MAX,
     CALIBRATION_CUTOFF_MIN,
     CALIBRATION_MAX_MOTOR_PULSE,
@@ -138,8 +139,13 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
 
     @callback
     def relay_general(message) -> None:  # type: ignore
-        """A general command (WHERE=0) moves every cover."""
-        runtime.router.publish("2", ("general",), message)
+        """A general command (WHERE=0) moves every cover, scoped to its interface if behind an F422."""
+        interface = getattr(message, "interface", None)
+        if interface:
+            keys = [f"0{BUS_ROUTING}{interface}", *family.keys_moved_by("0", interface)]
+            runtime.router.publish("2", keys, message)
+        else:
+            runtime.router.publish("2", ("general",), message)
 
     @callback
     def relay_scope(message, address: Address) -> None:  # type: ignore

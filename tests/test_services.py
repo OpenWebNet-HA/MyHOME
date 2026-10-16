@@ -1,7 +1,9 @@
 """Test services module directly."""
 from unittest.mock import MagicMock
 
+import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.myhome.const import (
     ATTR_GATEWAY,
@@ -13,6 +15,7 @@ from custom_components.myhome.services import (
     SERVICE_SWEEP_BUS,
     SERVICE_SYNC_TIME,
     _get_gateway_handler,
+    _handler_supports_who,
     async_setup_services,
 )
 
@@ -70,6 +73,30 @@ async def test_get_gateway_handler_helper(hass: HomeAssistant, attach_gateway) -
     assert _get_gateway_handler(hass, "000350aabbdd") == mock_handler
 
 
+def test_handler_supports_who_helper() -> None:
+    """Test _handler_supports_who helper fallback and defensive branches."""
+    # 1. Real / mock handler with profile_supports_who
+    h1 = MagicMock()
+    h1.profile_supports_who = lambda who: who in (1, 2)
+    assert _handler_supports_who(h1, 1) is True
+    assert _handler_supports_who(h1, 5) is False
+
+    # 2. Legacy handler with only _profile_supports_who (where profile_supports_who is MagicMock default)
+    h2 = MagicMock()
+    h2._profile_supports_who = lambda who: who == 4
+    assert _handler_supports_who(h2, 4) is True
+    assert _handler_supports_who(h2, 1) is False
+
+    # 3. Handler where target raises Exception
+    h3 = MagicMock()
+    h3.profile_supports_who = MagicMock(side_effect=RuntimeError("bus fault"))
+    assert _handler_supports_who(h3, 1) is True
+
+    # 4. Handler with no callable profile check (both None)
+    h4 = MagicMock(spec=[])
+    assert _handler_supports_who(h4, 1) is True
+
+
 async def test_services_edge_cases(hass: HomeAssistant, attach_gateway) -> None:
     """Test edge cases for service calls."""
     await async_setup_services(hass)
@@ -97,6 +124,7 @@ async def test_sweep_bus_queries_sent(hass: HomeAssistant, attach_gateway) -> No
     await async_setup_services(hass)
 
     mock_handler = MagicMock()
+    mock_handler.profile_supports_who = MagicMock(return_value=True)
     mock_handler.send = AsyncMock()
     mock_handler.send_status_request = AsyncMock()
     mock_handler.send_paced = AsyncMock()
@@ -120,11 +148,11 @@ async def test_sweep_bus_queries_sent(hass: HomeAssistant, attach_gateway) -> No
     # ... after the gateway queries and before the energy queries
     names = [call[0] for call in order.mock_calls]
     paced_at = names.index("send_paced")
-    assert names[:paced_at] == ["send_status_request"] * 3
+    assert names[:paced_at] == ["send_status_request"] * 5
     assert names[paced_at + 1:] == ["send_status_request"] * 36
 
     sent_raw = [str(call.args[0]) for call in mock_handler.send_status_request.await_args_list]
-    assert sent_raw[:3] == ["*#13**0##", "*#13**15##", "*#13**16##"]
+    assert sent_raw[:5] == ["*#13**0##", "*#13**15##", "*#13**16##", "*#13**23##", "*#13**24##"]
     assert not any(raw.startswith(("*#1*", "*#2*", "*#4*", "*#5*", "*#16*")) for raw in sent_raw)
     mock_handler.send.assert_not_called()
     # Energy Management (WHO 18) F520 discovery queries
@@ -138,6 +166,49 @@ async def test_sweep_bus_queries_sent(hass: HomeAssistant, attach_gateway) -> No
     assert "*#18*71#0*1200##" in sent_raw
     assert "*#18*79#0*51##" in sent_raw
     assert "*#18*79#0*1200##" in sent_raw
+
+
+async def test_sweep_bus_profile_gating_and_force(hass: HomeAssistant, attach_gateway) -> None:
+    """Test sweep_bus profile filtering and the force override (#681)."""
+    from unittest.mock import AsyncMock
+    await async_setup_services(hass)
+
+    mock_handler = MagicMock()
+    mock_handler.profile_supports_who = MagicMock(side_effect=lambda who: who not in (5, 18))
+    mock_handler.send = AsyncMock()
+    mock_handler.send_status_request = AsyncMock()
+    mock_handler.send_paced = AsyncMock()
+    gw_mac = "00:03:50:aa:bb:ee"
+    attach_gateway(gw_mac, mock_handler)
+
+    # Without force: WHO 5 omitted from general, WHO 18 omitted from point queries
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SWEEP_BUS,
+        {ATTR_GATEWAY: gw_mac, "force": False},
+        blocking=True,
+    )
+    mock_handler.send_paced.assert_awaited_once_with(
+        ["*#1*0##", "*#2*0##", "*#4*0##", "*#16*0*5##"]
+    )
+    sent_raw = [str(call.args[0]) for call in mock_handler.send_status_request.await_args_list]
+    assert not any(raw.startswith("*#18*") for raw in sent_raw)
+
+    # With force=True: all subsystems swept regardless of profile
+    mock_handler.send_paced.reset_mock()
+    mock_handler.send_status_request.reset_mock()
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SWEEP_BUS,
+        {ATTR_GATEWAY: gw_mac, "force": True},
+        blocking=True,
+    )
+    mock_handler.send_paced.assert_awaited_once_with(
+        ["*#1*0##", "*#2*0##", "*#4*0##", "*#5*0##", "*#16*0*5##"]
+    )
+    sent_forced = [str(call.args[0]) for call in mock_handler.send_status_request.await_args_list]
+    assert "*#18*51*51##" in sent_forced
+
 
 
 async def test_sweep_bus_follower_delegated_who1(hass: HomeAssistant, attach_gateway) -> None:
@@ -163,8 +234,94 @@ async def test_sweep_bus_follower_delegated_who1(hass: HomeAssistant, attach_gat
 
     mock_handler.send_paced.assert_awaited_once_with(["*#1*0##"])
     sent_raw = [str(call.args[0]) for call in mock_handler.send_status_request.await_args_list]
-    assert sent_raw == ["*#13**0##", "*#13**15##", "*#13**16##"]
+    assert sent_raw == ["*#13**0##", "*#13**15##", "*#13**16##", "*#13**23##", "*#13**24##"]
     mock_handler.send.assert_not_called()
+
+
+async def test_sweep_bus_profile_filtering(hass: HomeAssistant, attach_gateway) -> None:
+    """Test sweep_bus filters queries according to gateway profile capabilities (#681)."""
+    from unittest.mock import AsyncMock
+    await async_setup_services(hass)
+
+    # 1. MH200N: supports WHO 1, 2, 4, 16, but NOT WHO 5 or WHO 18
+    mock_mh200n = MagicMock()
+    mock_mh200n.send = AsyncMock()
+    mock_mh200n.send_status_request = AsyncMock()
+    mock_mh200n.send_paced = AsyncMock()
+    mock_mh200n.is_follower = False
+    mock_mh200n.delegated_away_whos = set()
+    mock_mh200n.profile_supports_who = lambda who: who in (1, 2, 4, 16)
+    mock_mh200n._profile_supports_who = mock_mh200n.profile_supports_who
+    mac_mh200n = "00:03:50:aa:bb:20"
+    attach_gateway(mac_mh200n, mock_mh200n)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SWEEP_BUS,
+        {ATTR_GATEWAY: mac_mh200n},
+        blocking=True,
+    )
+
+    # General requests must NOT include *#5*0##
+    mock_mh200n.send_paced.assert_awaited_once_with(
+        ["*#1*0##", "*#2*0##", "*#4*0##", "*#16*0*5##"]
+    )
+    sent_mh200n = [str(call.args[0]) for call in mock_mh200n.send_status_request.await_args_list]
+    # Point queries must NOT include WHO 18 energy queries
+    assert not any(raw.startswith("*#18*") for raw in sent_mh200n)
+
+    # 2. F454: supports WHO 1, 2, 4, 16, 18, but NOT WHO 5
+    mock_f454 = MagicMock()
+    mock_f454.send = AsyncMock()
+    mock_f454.send_status_request = AsyncMock()
+    mock_f454.send_paced = AsyncMock()
+    mock_f454.is_follower = False
+    mock_f454.delegated_away_whos = set()
+    mock_f454.profile_supports_who = lambda who: who in (1, 2, 4, 16, 18)
+    mock_f454._profile_supports_who = mock_f454.profile_supports_who
+    mac_f454 = "00:03:50:aa:bb:54"
+    attach_gateway(mac_f454, mock_f454)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SWEEP_BUS,
+        {ATTR_GATEWAY: mac_f454},
+        blocking=True,
+    )
+
+    # General requests must NOT include *#5*0##
+    mock_f454.send_paced.assert_awaited_once_with(
+        ["*#1*0##", "*#2*0##", "*#4*0##", "*#16*0*5##"]
+    )
+    sent_f454 = [str(call.args[0]) for call in mock_f454.send_status_request.await_args_list]
+    # Point queries MUST include WHO 18 energy queries
+    assert "*#18*51*51##" in sent_f454
+
+    # 3. MH202: supports WHO 1, 2, 4, 5, 16, 18
+    mock_mh202 = MagicMock()
+    mock_mh202.send = AsyncMock()
+    mock_mh202.send_status_request = AsyncMock()
+    mock_mh202.send_paced = AsyncMock()
+    mock_mh202.is_follower = False
+    mock_mh202.delegated_away_whos = set()
+    mock_mh202.profile_supports_who = lambda who: True
+    mock_mh202._profile_supports_who = mock_mh202.profile_supports_who
+    mac_mh202 = "00:03:50:aa:bb:02"
+    attach_gateway(mac_mh202, mock_mh202)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SWEEP_BUS,
+        {ATTR_GATEWAY: mac_mh202},
+        blocking=True,
+    )
+
+    # General requests MUST include *#5*0##
+    mock_mh202.send_paced.assert_awaited_once_with(
+        ["*#1*0##", "*#2*0##", "*#4*0##", "*#5*0##", "*#16*0*5##"]
+    )
+    sent_mh202 = [str(call.args[0]) for call in mock_mh202.send_status_request.await_args_list]
+    assert "*#18*51*51##" in sent_mh202
 
 
 async def test_sweep_bus_discovers_f520_active_power_sensor(hass: HomeAssistant, fast_bus_pacing) -> None:
@@ -269,3 +426,153 @@ async def test_stop_cover_calibration_service_forwards_gateway(hass: HomeAssista
     with patch("custom_components.myhome.cover.async_stop_cover_calibration", AsyncMock(return_value=True)) as stop:
         await hass.services.async_call(DOMAIN, "stop_cover_calibration", {ATTR_GATEWAY: "00:03:50:aa:bb:cc"}, blocking=True)
     stop.assert_awaited_once_with(hass, gateway_mac="00:03:50:aa:bb:cc")
+
+
+async def test_send_scenario_plus_command_service(hass: HomeAssistant, attach_gateway) -> None:
+    """Test send_scenario_plus_command service sends expected frames for all actions."""
+    from unittest.mock import AsyncMock
+
+    await async_setup_services(hass)
+
+    mock_handler = MagicMock()
+    mock_handler.send = AsyncMock()
+    gw_mac = "00:03:50:aa:bb:cc"
+    attach_gateway(gw_mac, mock_handler)
+
+    expected_frames = {
+        "on": "*25*11#0*11##",
+        "off": "*25*12*11##",
+        "increase": "*25*13#0#5*11##",
+        "decrease": "*25*14#0#5*11##",
+        "stop": "*25*15*11##",
+    }
+
+    for action, expected_str in expected_frames.items():
+        mock_handler.send.reset_mock()
+        await hass.services.async_call(
+            DOMAIN,
+            "send_scenario_plus_command",
+            {"gateway": gw_mac, "where": "11", "action": action},
+            blocking=True,
+        )
+        assert mock_handler.send.call_count == 1
+        sent_cmd = mock_handler.send.call_args[0][0]
+        assert str(sent_cmd) == expected_str
+
+    mock_handler.send.reset_mock()
+    with pytest.raises(ServiceValidationError) as exc_fallback:
+        await hass.services.async_call(
+            DOMAIN,
+            "send_scenario_plus_command",
+            {"gateway": gw_mac, "where": "11", "action": "invalid_fallback"},
+            blocking=True,
+        )
+    assert exc_fallback.value.translation_key == "scenario_plus_unknown_action"
+    assert exc_fallback.value.translation_placeholders == {"action": "invalid_fallback"}
+    mock_handler.send.assert_not_called()
+
+    # Verify typed OWNScenarioPlusCommand branch when present in OWNd
+    from unittest.mock import patch
+
+    class MockScenarioPlusCommand:
+        @classmethod
+        def turn_on(cls, where: str) -> str:
+            return f"*25*11#0*{where}##"
+
+        @classmethod
+        def turn_off(cls, where: str) -> str:
+            return f"*25*12*{where}##"
+
+        @classmethod
+        def increase(cls, where: str) -> str:
+            return f"*25*13#0#5*{where}##"
+
+        @classmethod
+        def decrease(cls, where: str) -> str:
+            return f"*25*14#0#5*{where}##"
+
+        @classmethod
+        def stop(cls, where: str) -> str:
+            return f"*25*15*{where}##"
+
+    with patch("OWNd.message.OWNScenarioPlusCommand", MockScenarioPlusCommand, create=True):
+        for action, expected_str in expected_frames.items():
+            mock_handler.send.reset_mock()
+            await hass.services.async_call(
+                DOMAIN,
+                "send_scenario_plus_command",
+                {"gateway": gw_mac, "where": "11", "action": action},
+                blocking=True,
+            )
+            assert mock_handler.send.call_count == 1
+            sent_cmd = mock_handler.send.call_args[0][0]
+            assert str(sent_cmd) == expected_str
+
+        mock_handler.send.reset_mock()
+        with pytest.raises(ServiceValidationError) as exc_typed:
+            await hass.services.async_call(
+                DOMAIN,
+                "send_scenario_plus_command",
+                {"gateway": gw_mac, "where": "11", "action": "invalid"},
+                blocking=True,
+            )
+        assert exc_typed.value.translation_key == "scenario_plus_unknown_action"
+        assert exc_typed.value.translation_placeholders == {"action": "invalid"}
+        mock_handler.send.assert_not_called()
+
+    with pytest.raises(ServiceValidationError) as exc_gw:
+        await hass.services.async_call(
+            DOMAIN,
+            "send_scenario_plus_command",
+            {"gateway": "00:03:50:99:99:99", "where": "11", "action": "on"},
+            blocking=True,
+        )
+    assert exc_gw.value.translation_key == "scenario_plus_gateway_not_found"
+    assert exc_gw.value.translation_placeholders == {"gateway": "00:03:50:99:99:99"}
+
+    with pytest.raises(ServiceValidationError) as exc_where:
+        await hass.services.async_call(
+            DOMAIN,
+            "send_scenario_plus_command",
+            {"gateway": gw_mac, "action": "on"},
+            blocking=True,
+        )
+    assert exc_where.value.translation_key == "scenario_plus_missing_where"
+
+    with pytest.raises(ServiceValidationError) as exc_blank:
+        await hass.services.async_call(
+            DOMAIN,
+            "send_scenario_plus_command",
+            {"gateway": gw_mac, "where": "   ", "action": "on"},
+            blocking=True,
+        )
+    assert exc_blank.value.translation_key == "scenario_plus_missing_where"
+
+    # Command parse failure in fallback branch
+    with patch("OWNd.message.OWNScenarioPlusCommand", None, create=True), \
+         patch("OWNd.message.OWNCommand.parse", return_value=None):
+        with pytest.raises(ServiceValidationError) as exc_parse:
+            await hass.services.async_call(
+                DOMAIN,
+                "send_scenario_plus_command",
+                {"gateway": gw_mac, "where": "11", "action": "on"},
+                blocking=True,
+            )
+        assert exc_parse.value.translation_key == "scenario_plus_command_invalid"
+        assert exc_parse.value.translation_placeholders == {"where": "11", "action": "on"}
+
+
+async def test_send_scenario_plus_command_no_gateways(hass: HomeAssistant) -> None:
+    """Test send_scenario_plus_command raises ServiceValidationError when no gateways are configured."""
+    await async_setup_services(hass)
+
+    with pytest.raises(ServiceValidationError) as exc_no_gw:
+        await hass.services.async_call(
+            DOMAIN,
+            "send_scenario_plus_command",
+            {"where": "11", "action": "on"},
+            blocking=True,
+        )
+    assert exc_no_gw.value.translation_key == "scenario_plus_no_gateway"
+
+

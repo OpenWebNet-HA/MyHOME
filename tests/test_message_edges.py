@@ -189,12 +189,16 @@ class TestHeatingEdgeCases:
     def test_mode_auto_weekly_23001(self):
         msg = OWNEvent.parse("*4*23001*1##")
         assert isinstance(msg, OWNHeatingEvent)
-        assert msg.mode == CLIMATE_MODE_AUTO
+        # Legrand WHO 4 v2.0.0 p. 5 / p. 64 and libqtdevices thermal_device.cpp:258-262:
+        # 23xxx is holiday conditioning. OWNd <= 2.0.0b10 reads it as auto, OWNd#88 as cool.
+        assert msg.mode in (CLIMATE_MODE_AUTO, CLIMATE_MODE_COOL)
 
     def test_mode_auto_weekly_13001(self):
         msg = OWNEvent.parse("*4*13001*1##")
         assert isinstance(msg, OWNHeatingEvent)
-        assert msg.mode == CLIMATE_MODE_AUTO
+        # Legrand WHO 4 v2.0.0 p. 5 / p. 64 and libqtdevices thermal_device.cpp:303-307:
+        # 13xxx is holiday heating. OWNd <= 2.0.0b10 reads it as auto, OWNd#88 as heat.
+        assert msg.mode in (CLIMATE_MODE_AUTO, CLIMATE_MODE_HEAT)
 
     def test_unknown_mode(self):
         msg = OWNEvent.parse("*4*999*1##")

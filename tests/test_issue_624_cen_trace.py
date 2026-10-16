@@ -192,6 +192,7 @@ def test_cen_device_registry_new_unit_registration(gateway_handler: MyHOMEGatewa
     """Ensure new CEN 4-digit unit registers wire identifier in the device registry."""
     mock_dr = MagicMock()
     mock_dr.async_get_device.return_value = None
+    mock_dr.async_get_device_by_identifier.return_value = None
     with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
         gateway_handler._ensure_cen_device(15, "0512")
 
@@ -217,6 +218,7 @@ def test_cen_device_registry_aliases_existing_normalized_device(
 
     mock_dr = MagicMock()
     mock_dr.async_get_device.side_effect = _get_device
+    mock_dr.async_get_device_by_identifier.side_effect = lambda ident, **kw: _get_device(identifiers={ident})
 
     with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
         gateway_handler._ensure_cen_device(15, "0512")
@@ -250,6 +252,7 @@ def test_cen_device_registry_two_existing_entries_does_not_raise(
 
     mock_dr = MagicMock()
     mock_dr.async_get_device.side_effect = _get_device
+    mock_dr.async_get_device_by_identifier.side_effect = lambda ident, **kw: _get_device(identifiers={ident})
 
     with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
         gateway_handler._ensure_cen_device(15, "0512")
@@ -267,6 +270,7 @@ def test_cen_device_registry_routed_unit_does_not_steal_base_unit(
     """Ensure a routed unit like 36#4#01 never strips routing into base identifier 36."""
     mock_dr = MagicMock()
     mock_dr.async_get_device.return_value = None
+    mock_dr.async_get_device_by_identifier.return_value = None
 
     with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
         gateway_handler._ensure_cen_device(15, "36#4#01")
@@ -513,6 +517,7 @@ async def test_cen_and_cenplus_non_integer_fallback(hass: HomeAssistant) -> None
 
     mock_dr = MagicMock()
     mock_dr.async_get_device.return_value = None
+    mock_dr.async_get_device_by_identifier.return_value = None
     with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
         await handler._event_dispatcher.process_message(cen_msg)
         await handler._event_dispatcher.process_message(cenplus_msg)

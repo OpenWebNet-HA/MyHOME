@@ -11,21 +11,18 @@ from homeassistant.helpers.event import async_call_later, async_track_state_chan
 from .const import LOGGER
 from .decoder_pool import DecoderPool
 from .media_player_pool import STREAM_INCOMPATIBLE_PLATFORMS
+from .media_player_power import (
+    AUTO_OFF_IDLE_DELAY,
+    AUTO_OFF_PAUSED_DELAY,
+    DECODER_PLAYING_STATES,
+    calculate_auto_off_delay,
+)
 from .media_player_source import ZoneSourceLayer
 
-# Anti-hiss auto-off: how long a room stays on after the decoder it hears
-# stops (idle, standby or off) or pauses.
-_AUTO_OFF_IDLE_DELAY = 3.0  # seconds
-_AUTO_OFF_PAUSED_DELAY = 60.0  # seconds
-
-# Decoder states that mean music is coming out, or about to: a track change
-# or a Spotify Connect handshake passes through "buffering".
-_DECODER_PLAYING_STATES = frozenset({
-    MediaPlayerState.PLAYING,
-    MediaPlayerState.BUFFERING,
-    "playing",
-    "buffering",
-})
+# Anti-hiss auto-off delays and states (centralised in media_player_power)
+_AUTO_OFF_IDLE_DELAY = AUTO_OFF_IDLE_DELAY
+_AUTO_OFF_PAUSED_DELAY = AUTO_OFF_PAUSED_DELAY
+_DECODER_PLAYING_STATES = DECODER_PLAYING_STATES
 
 
 class ZoneDecoderLayer(ZoneSourceLayer):
@@ -50,7 +47,12 @@ class ZoneDecoderLayer(ZoneSourceLayer):
             # bus is not evidence either way, so only a known match mirrors.
             if assigned and source_num == pool.decoder_source(assigned):
                 return assigned
-        if self._attr_state == MediaPlayerState.ON and source_num is not None and pool:
+        if (
+            self._attr_state == MediaPlayerState.ON
+            and self._pending_off_task is None
+            and source_num is not None
+            and pool
+        ):
             return pool.get_decoder_for_source(source_num)
         return None
 
@@ -195,9 +197,11 @@ class ZoneDecoderLayer(ZoneSourceLayer):
         if pool is not None:
             leader_id = pool.get_leader(self.entity_id) or self.entity_id
             decoder_id = pool.owned_decoder(leader_id)
-            state = self.hass.states.get(decoder_id) if decoder_id else None
-            if state is not None and state.state == MediaPlayerState.PAUSED:
-                return MediaPlayerState.PAUSED
+            if decoder_id:
+                for entity_id in {decoder_id, self._streaming_target(decoder_id) or decoder_id}:
+                    state = self.hass.states.get(entity_id)
+                    if state is not None and state.state == MediaPlayerState.PAUSED:
+                        return MediaPlayerState.PAUSED
         return MediaPlayerState.IDLE
 
     @property
@@ -328,14 +332,12 @@ class ZoneDecoderLayer(ZoneSourceLayer):
         should not have taken every room down with it. ``unavailable`` and
         ``unknown`` say nothing about playback and are ignored.
         """
-        if new_state_val in _DECODER_PLAYING_STATES:
-            self._cancel_auto_off()
-        elif new_state_val in (MediaPlayerState.OFF, "off"):
-            self._arm_auto_off(_AUTO_OFF_IDLE_DELAY, decoder_id)
-        elif new_state_val in (MediaPlayerState.IDLE, "idle", "standby"):
-            self._arm_auto_off(_AUTO_OFF_IDLE_DELAY, decoder_id)
-        elif new_state_val in (MediaPlayerState.PAUSED, "paused"):
-            self._arm_auto_off(_AUTO_OFF_PAUSED_DELAY, decoder_id)
+        delay = calculate_auto_off_delay(new_state_val)
+        if delay is None:
+            if new_state_val in _DECODER_PLAYING_STATES:
+                self._cancel_auto_off()
+        else:
+            self._arm_auto_off(delay, decoder_id)
 
     @callback
     def _cancel_auto_off(self) -> None:

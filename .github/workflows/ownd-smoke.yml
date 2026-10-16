@@ -64,5 +64,6 @@ jobs:
       - name: Run OWNd Smoke Test (${{ matrix.ownd-target }})
         env:
           OWND_TARGET: ${{ matrix.ownd-target }}
+          OWND_REF: ${{ github.head_ref || github.ref_name }}
         run: |
           python scripts/run_ownd_smoke.py --target "$OWND_TARGET"

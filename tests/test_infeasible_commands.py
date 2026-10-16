@@ -25,6 +25,13 @@ class TestPointToPointFeasibility:
                 addr = f"{a}{pl}"
                 assert is_apl_address(addr) is True, f"Address {addr} (A={a}, PL={pl}) must be feasible"
 
+    def test_all_feasible_2_digit_area_0_combinations(self):
+        """A = 0 and PL in [1-9] (01-09) must all be valid 2-digit APL addresses accepted by gateway firmware."""
+        for pl in range(1, 10):
+            addr = f"0{pl}"
+            assert is_apl_address(addr) is True, f"Address {addr} (A=0, PL={pl}) must be feasible"
+            assert normalize_where(addr) == addr
+
     def test_all_feasible_4_digit_area_00_combinations(self):
         """A = 00 and PL in [01-15] must all be valid 4-digit APL addresses."""
         for pl in range(1, 16):
@@ -74,6 +81,7 @@ class TestPointToPointFeasibility:
     def test_infeasible_light_point_zero(self):
         """Light point PL can never be 0 in OpenWebNet (PL=0 does not exist; 0 is general broadcast)."""
         infeasible_zero_pl = [
+            "00",     # A=0, PL=0 -> broadcast, not APL
             "10",     # A=1, PL=0 -> invalid APL
             "20",     # A=2, PL=0 -> invalid APL
             "0000",   # A=00, PL=0 -> invalid APL

@@ -62,7 +62,8 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 | Current temperature | ✅ | |
 | Target temperature | ✅ | Manual set-point. |
 | HVAC modes | ✅ | `heat`, `cool`, `auto`, `off`; heating / cooling support per zone from YAML. |
-| Fan speed (3-speed fancoil) | ✅ | `fan: true`. |
+| Fan speed (3-speed fancoil) | ✅ | Auto-detected from dimension 11/20 frames, or explicit `fan: true`. |
+| Current humidity | ✅ | Auto-detected from dimension 60 frames, restored across restarts, or explicit `humidity: true`. |
 | Central unit modes | ✅ | Central unit 3550 (`#0`) and 4695 (`#0#1`) as `central: true` zones; seasonal propagation. Central units operate via autonomous events and are exempt from point-to-point status polling. |
 | Weekly programs / scenarios | ❌ | Program selection frames (`*4*11xx*#0##`) can be sent with `myhome.send_message`. |
 | Temperature-only probes | 👁️ | `sensor` platform (see below). |
@@ -123,7 +124,7 @@ Buttons 0–31 per device; every trigger carries the gateway MAC so multi-gatewa
 
 ## Services
 
-All services are documented in the [Services Reference](services.md): `send_message`, `turn_on_timed`, `sync_time`, `start_sending_instant_power`, `sweep_bus`, `calibrate_cover`, `stop_cover_calibration`, `set_cover_travel_time`, `reset_cover_travel_time`.
+All services are documented in the [Services Reference](services.md): `send_message`, `turn_on_timed`, `sync_time`, `start_sending_instant_power`, `stop_sending_instant_power`, `sweep_bus`, `calibrate_cover`, `stop_cover_calibration`, `set_cover_travel_time`, `reset_cover_travel_time`, `tuner_seek_up`, `tuner_seek_down`.
 
 ## Diagnostics and tooling
 

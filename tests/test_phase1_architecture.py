@@ -1194,6 +1194,33 @@ class TestEntityRegistryMigrationSafety:
 
         await hass.config_entries.async_unload(entry.entry_id)
 
+    @pytest.mark.asyncio
+    async def test_preserve_legacy_compat_name_on_ha_2026_11(self, hass: HomeAssistant):
+        """Verify preserve_legacy_compat_name sets compat_name when RegistryEntry supports it (HA 2026.11+)."""
+        from types import SimpleNamespace
+
+        from custom_components.myhome.migrate import preserve_legacy_compat_name
+
+        fake_entry = SimpleNamespace(entity_id="light.keuken_lamp", compat_name=None)
+        updated_entry = SimpleNamespace(entity_id="light.keuken_lamp", compat_name="Keuken Plafond")
+
+        assert preserve_legacy_compat_name(hass, "light.keuken_lamp", None, "Keuken Plafond") is None
+        assert preserve_legacy_compat_name(hass, "light.keuken_lamp", fake_entry, None) is fake_entry
+        assert preserve_legacy_compat_name(hass, "light.keuken_lamp", updated_entry, "Keuken Plafond") is updated_entry
+
+        with patch.object(
+            er.async_get(hass),
+            "async_update_entity",
+            return_value=updated_entry,
+        ) as mock_update:
+            res = preserve_legacy_compat_name(
+                hass, "light.keuken_lamp", fake_entry, "Keuken Plafond"
+            )
+            assert res is updated_entry
+            mock_update.assert_called_once_with(
+                "light.keuken_lamp", compat_name="Keuken Plafond"
+            )
+
 class TestPhase1GoldenPlantSampleIssue247:
     """End-to-end golden plant conformance tests using real production data from Issue #247.
 

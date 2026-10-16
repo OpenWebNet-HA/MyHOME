@@ -577,6 +577,97 @@ and the decoder), so a report needs two files and one sentence:
 
 Attach these to the issue instead of pasting log excerpts; two files are enough.
 
+## ⚡ Amplifier Power State Machine & Bus Interaction
+
+To ensure predictable behavior across diverse physical hardware (F441/F441M matrices, H4562/F502 amplifiers, L4561N source interfaces, and wall switches), the MyHOME integration centralizes all power-state decision logic into a dedicated state engine (`media_player_power.py`).
+
+### Power States
+
+The amplifier entity transitions between five distinct states:
+
+| State | Entity Status | Hardware Stage | Description |
+| :--- | :--- | :--- | :--- |
+| `OFF` | `off` | Powered Off | Amplifier output stage is unpowered (`*16*13*<WHERE>##`). Zero bus audio is demodulated. Standby power is minimal. |
+| `WAKE_PENDING` | `off` / `on` | Powering Up | Integration initiates an OFF → ON wake sequence (`*16*13*<WHERE>##` followed by `*16*3*<WHERE>##`). A 3-second echo suppression window (`WAKE_ECHO_WINDOW = 3.0s`) ignores the initial OFF echo. |
+| `ON` | `playing` / `on` | Active | Amplifier is powered ON (`*16*3*<WHERE>##`). Demodulating stereo audio and driving room speakers. |
+| `PENDING_OFF` | `paused` / `idle` | Active (Timer) | Decoder has stopped or paused. A safety timer runs (3.0s for idle/off/standby, 60.0s for pause, or 5.0s group leave grace). If audio resumes before timer expiry, the timer cancels and playback continues without interruption. |
+| `PARKED` | `paused` / `idle` | Powered Off | Anti-hiss auto-off has powered off the hardware amplifier (`*16*13*<WHERE>##`) to eliminate analog bus hiss during extended pauses. In Home Assistant, the entity reports `paused`/`idle` and preserves group topology so Music Assistant keeps the sync group intact. Resumes immediately if playback restarts on the group, or yields the idle decoder and transitions cleanly to `OFF` (with zero bus frames) if another room starts a stream. |
+
+### State Transition Diagram
+
+```mermaid
+stateDiagram-v2
+    [*] --> OFF
+    OFF --> WAKE_PENDING: play_media / turn_on
+    WAKE_PENDING --> ON: *16*3*<WHERE>## confirmed
+    OFF --> ON: Physical Vol-Up Rocker (*16*1001..1015*<WHERE>##)
+    OFF --> ON: External Bus ON (*16*3*<WHERE>##)
+    ON --> PENDING_OFF: Decoder Idle/Off (3s) or Paused (60s)
+    ON --> PENDING_OFF: Member Unjoined (5s grace period)
+    PENDING_OFF --> ON: Decoder resumes playing (Timer Cancelled)
+    PENDING_OFF --> OFF: Another room claims paused/idle decoder (< 60s, Amp OFF after 5s grace)
+    PENDING_OFF --> PARKED: Auto-Off Timer Expires (Group Preserved, Amp OFF)
+    PENDING_OFF --> OFF: Grace Period Expires (Standalone / Unjoined)
+    PARKED --> ON: Same group resumes (media_play / play_media / turn_on)
+    PARKED --> OFF: Another room claims idle decoder (>= 60s, Group Dissolved, No Bus Frame)
+    PARKED --> OFF: turn_off / Physical Wall Switch OFF (*16*13*<WHERE>##)
+    ON --> OFF: turn_off / Physical Wall Switch OFF (*16*13*<WHERE>##)
+```
+
+### Parked Group & Cross-Room Decoder Reassignment (Music Assistant Pause-Only UI)
+
+Music Assistant's player UI only offers **Play / Pause** (it has **no Stop button**). When a listener finishes playing music in a multiroom group (`Room A`, e.g. `zone_17` + `zone_18`) and presses **Pause**, the rooms first enter `PENDING_OFF` (`0–60s` while the 60-second anti-hiss pause timer runs and physical amplifiers remain ON) and then enter `PARKED` (`≥ 60s`, after anti-hiss auto-off sends `*16*13*<WHERE>##` to power down the physical amplifiers while reporting `paused` / `idle` in Home Assistant so Music Assistant does not tear down the sync group).
+
+Because the decoder is paused or idle under a MyHOME room's ownership, it remains **soft-held** and can be reclaimed immediately in both windows (the 5-minute `PAUSE_TAKEOVER_AFTER` lock only protects **unassigned** decoders paused by an external non-MyHOME session such as Spotify Connect started directly on the hardware streamer):
+
+- **Same group resumes**: Calling `media_play`, `play_media`, or `turn_on` on `Room A` cancels the timer (if `< 60s`) or wakes its parked amplifiers (`*16*13*<WHERE>##` → `*16*3*<WHERE>##` if `≥ 60s`) and resumes playback on the same decoder.
+- **Another room starts playback `< 60s` after pause (`PENDING_OFF` takeover)**: If `Room B` (`zone_36`) starts playback before the 60-second anti-hiss timer fires, `DecoderPool.claim()` immediately reassigns the paused/idle decoder to `Room B` and records the displaced group (`zone_17` + `zone_18`). `_reconcile_pool_loss()` clears `_active_decoder` and cancels the 60-second timer on `Room A`, prevents `Room A` from passively mirroring or auto-joining `Room B`'s stream, and schedules the 5-second delayed-off grace timer so `zone_17` and `zone_18` send `*16*13*<WHERE>##` and power off their physical amplifiers cleanly.
+- **Another room starts playback `≥ 60s` after pause (`PARKED` takeover)**: Once `Room A` is parked (`_parked = True`, physical amplifiers already OFF), `DecoderPool.claim()` immediately reassigns the decoder to `Room B`, dissolves the parked group in the pool, and reconciles the displaced rooms (`_parked = False`, `_active_decoder = None`, HA state `off`) with **zero bus frames** sent to amplifiers that are already physically powered off.
+
+```mermaid
+stateDiagram-v2
+    state "ON (playing) — Amp ON, HA playing, holds decoder_1" as A_ON
+    state "PENDING_OFF (0–60s after MA Pause) — Amp ON, HA paused/idle, 60s timer" as A_PENDING
+    state "PARKED (>= 60s Soft-Hold) — Amp OFF (*16*13*17/18##), HA idle/paused, group kept" as A_PARKED
+    state "OFF (Displaced < 60s) — Amp OFF (*16*13*17/18## after 5s grace), HA off, group dissolved" as A_OFF_ACTIVE
+    state "OFF (Displaced >= 60s) — Amp already OFF (0 bus frames), HA off, group dissolved" as A_OFF_PARKED
+
+    [*] --> A_ON
+    A_ON --> A_PENDING: User presses Pause in Music Assistant (no Stop button)
+    A_PENDING --> A_ON: Same group resumes (< 60s, timer cancelled)
+    A_PENDING --> A_OFF_ACTIVE: Room B (Zone 36) plays (< 60s, claims decoder_1)
+    A_PENDING --> A_PARKED: 60s anti-hiss timer fires
+    A_PARKED --> A_ON: Same group resumes (wakes 17 & 18)
+    A_PARKED --> A_OFF_PARKED: Room B (Zone 36) plays (>= 60s, claims decoder_1)
+```
+
+### Bus Frame Decision Engine
+
+Every OpenWebNet frame received on the SCS bus is evaluated against the pure decision function `determine_power_transition(...)`. The engine maps frame types to transitions:
+
+| Frame Pattern | Description | Power Transition | Handling & Rationale |
+| :--- | :--- | :--- | :--- |
+| `*16*3*<WHERE>##`<br>`*16*0*<WHERE>##` | Amplifier ON (stereo / mono) | `PowerTransition.WAKE_ON` | Powers the amplifier ON; cancels any pending auto-off or grace timers. |
+| `*16*1001*<WHERE>##`<br>to `*16*1015*<WHERE>##` | Wall switch Volume-UP rocker (+1 to +15) | `PowerTransition.WAKE_ON` | Physical volume-up rocker intentionally wakes and turns ON the amplifier ([#579](https://github.com/OpenWebNet-HA/MyHOME/issues/579)). |
+| `*16*1101*<WHERE>##`<br>to `*16*1115*<WHERE>##` | Wall switch Volume-DOWN rocker (−1 to −15) | `PowerTransition.NO_CHANGE` | Steps volume down only. Never powers on an inactive amplifier. |
+| `*#16*<WHERE>*1*<LEVEL>##`<br>`*#22*3#A#P*1*<LEVEL>##` | Dimension 1 volume status report (0–31) | `PowerTransition.NO_CHANGE` | **CRITICAL**: Updates `volume_level` only. Never wakes or turns on an OFF amplifier ([#669](https://github.com/OpenWebNet-HA/MyHOME/issues/669), [#682](https://github.com/OpenWebNet-HA/MyHOME/issues/682)). |
+| `*#16*<WHERE>*#1*<LEVEL>##` | Dimension #1 volume set command | `PowerTransition.NO_CHANGE` | Writes target volume level. Does not alter amplifier power state. |
+| `*16*3*1ES##` | Matrix environment routing frame | `PowerTransition.NO_CHANGE` | Routes environment `E` to source `S`. Handled by routing logic; does not change power state. |
+| `*16*3*10S##` | Source device activation frame | `PowerTransition.NO_CHANGE` | Toggles source hardware `S`. Does not alter room amplifier power. |
+| `*16*13*<WHERE>##`<br>`*16*10*<WHERE>##` | Amplifier OFF (stereo / mono) | `PowerTransition.WAKE_ECHO_OFF`<br>`PowerTransition.PARKED_CONFIRM_OFF`<br>`PowerTransition.REAL_OFF` | • If within 3.0s of wake: ignored as self-echo.<br>• If amplifier is parked: acknowledged as auto-off echo.<br>• Otherwise: real OFF from wall switch or gateway; powers off entity and disbands group. |
+
+### Video Door Entry (Intercom Ducking) & Sound Diffusion Interaction
+
+In installations equipped with both BTicino Sound Diffusion (F441/F441M, WHO = 16 / WHO = 22) and 2-Wire Video Door Entry / Intercom systems (e.g. Classe 100/300 internal units, 344612, entrance panels):
+
+1. **Hardware Intercom Ducking**: When an incoming door call or intercom conversation begins, the video door entry system or audio matrix hardware performs automatic **hardware audio ducking** or line muting so that door chimes and speech remain clearly audible over background music.
+2. **Dimension 1 Status Broadcasts**: To synchronize volume levels during ducking, the gateway or matrix broadcasts OpenWebNet Dimension 1 volume status reports (`*#16*<WHERE>*1*<vol>##` and WHO 22 mirrors `*#22*3#A#P*1*<vol>##`) across the SCS bus. During the call, volume is lowered (e.g., to 0 or a low ducked level). When the intercom call terminates, the hardware broadcasts restoration Dimension 1 reports restoring previous volume levels (e.g., back to 10 or 15).
+3. **Prevention of False Wake-Ups ([#669](https://github.com/OpenWebNet-HA/MyHOME/issues/669))**: Unpowered room amplifiers retain their hardware volume registers in non-volatile memory and receive these broadcast ducking/restoration frames even while switched OFF. Prior to [#682](https://github.com/OpenWebNet-HA/MyHOME/issues/682), loosely coupled status checks could interpret volume updates as an indication that the amplifier was active, causing unpowered amplifiers throughout the house to falsely power ON whenever the doorbell rang.
+4. **Guaranteed Decoupling**: With `determine_power_transition(...)`, Dimension 1 status reports are strictly classified as `PowerTransition.NO_CHANGE`. Inactive amplifiers stay OFF throughout the intercom call, active amplifiers duck and restore seamlessly, and volume state remains perfectly synchronized.
+5. **Golden Trace Verification**: Validated against an authentic 30-frame MH202 bus capture (`myhome_trace_MH202_sound_intercom_ducking.json`) in `tests/test_intercom_ducking_trace_replay.py`.
+
+---
+
 ## 📜 OpenWebNet WHO = 16 Reference Frames
 
 `<WHERE>` is an amplifier (`01`–`99`), an environment (`#0`–`#9`) or `0` for

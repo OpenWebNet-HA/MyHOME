@@ -153,12 +153,14 @@
           "gateway_role": "Ruolo del gateway",
           "primary_gateway": "Gateway primario",
           "delegated_whos": "Sottosistemi delegati",
-          "ignored_addresses": "Indirizzi ignorati"
+          "ignored_addresses": "Indirizzi ignorati",
+          "tuner_pictures": "Immagini dei sintonizzatori"
         },
         "data_description": {
           "decoder_1_pre_gain": "Calibra in base all'hardware, non a occhio: se l'uscita di linea di questo decoder alimenta un modulo BTicino Ingresso RCA (L/N/NT4560) o Controllo Stereo (L4561), aumenta il Pre-Gain durante la riproduzione finché il led di segnale di quel modulo lampeggia arancione — non fisso verde (segnale troppo basso) né fisso rosso/arancione (distorsione). Collega sempre l'uscita di linea fissa ('OUT') del decoder, mai un'uscita cuffia/AUX dipendente dal volume: un secondo stadio di guadagno incontrollato in quel punto causa esattamente la distorsione contro cui mette in guardia la guida guasti BTicino.",
           "delegated_whos": "Solo per il ruolo secondario: sottosistemi di cui questo gateway rileva i nuovi dispositivi. I dispositivi che il primario ha già restano sul primario.",
           "ignored_addresses": "Ignora permanentemente gli indirizzi elencati (es. 1/74, 1/74#4#01): salta il rilevamento, le entità e il tracciamento guasti. Separa le voci con a capo o virgole.",
+          "tuner_pictures": "Una voce MHz=URL per riga (es. 96.2=/local/radio/one.png): l'immagine mostrata finché un sintonizzatore è su quella frequenza. Immagini tue; nessuna è inclusa.",
           "command_worker_count": "Consigliato per il {model}: {session_default}. Accetta al massimo {session_limit} sessione/i di comando, e ognuna, insieme alla sessione eventi, occupa una delle sue poche connessioni, necessarie anche all'app Legrand/BTicino e ad altri client. Aumenta solo se i comandi si accodano."
         }
       }
@@ -219,7 +221,17 @@
         },
         "duration": {
           "name": "Duration",
-          "description": "For how long the instant power information will be sent."
+          "description": "For how long the instant power information will be sent in minutes (0 to stop)."
+        }
+      }
+    },
+    "stop_sending_instant_power": {
+      "name": "Stop sending instant power",
+      "description": "Stop automatic instant power draw updates for a sensor.",
+      "fields": {
+        "entity_id": {
+          "name": "Entity",
+          "description": "Name(s) of entities that will stop sending instant power information."
         }
       }
     },

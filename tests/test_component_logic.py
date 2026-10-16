@@ -80,7 +80,7 @@ class TestClimateEntity:
     def test_handle_event_main_temperature(self, climate):
         msg = OWNEvent.parse("*#4*01*0*0225##")
         climate.handle_event(msg)
-        assert climate._attr_current_temperature == 22.5
+        assert climate._attr_native_current_temperature == 22.5
 
     def test_handle_event_target_temperature(self, climate):
         msg = OWNEvent.parse("*#4*01*14*0210##")

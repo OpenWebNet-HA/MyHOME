@@ -55,5 +55,6 @@ jobs:
       - name: Run Container Smoke Test (${{ matrix.ha-channel }})
         env:
           HA_CHANNEL: ${{ matrix.ha-channel }}
+          OWND_REF: ${{ github.head_ref || github.ref_name }}
         run: |
           python scripts/run_ha_container_smoke.py --channel "$HA_CHANNEL"

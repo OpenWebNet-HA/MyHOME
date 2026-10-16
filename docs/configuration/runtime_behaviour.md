@@ -8,12 +8,15 @@ How the v2 integration decides *what to poll*, *what to trust from the bus*, and
 
 After the event session is up, the integration sends a small set of general status requests to hydrate entities:
 
-| Frame | Subsystem |
-| :--- | :--- |
-| `*#1*0##` | Lighting |
-| `*#2*0##` | Automation / covers |
-| `*#4*0##` | Thermoregulation |
-| `*#16*0*5##` | Sound system (dimension 5; lists every amplifier) |
+| Frame | Subsystem | Supported Gateways |
+| :--- | :--- | :--- |
+| `*#1*0##` | Lighting | All gateways |
+| `*#2*0##` | Automation / covers | All gateways |
+| `*#4*0##` | Thermoregulation | All gateways |
+| `*#5*0##` | Burglar alarm | MH202, H4890 |
+| `*#16*0*5##` | Sound system (dimension 5; lists every amplifier) | F454, H4890, MH200, MH201, MH202, MyHomeServer1 |
+| `*#18*51*51##` | Energy management (meter 51 total energy) | F454, F455, MH201, MH202, MyHomeServer1, H4890 |
+| `*#18*51*113##` | Energy management (meter 51 active power) | F454, F455, MH201, MH202, MyHomeServer1, H4890 |
 
 Each request is only sent when the gateway's OWNd **profile** advertises that WHO (`GatewayProfile.supported_who`). Unknown gateways keep the full set.
 
@@ -22,6 +25,21 @@ The requests go out one at a time. The gateway ACKs a general request at once, b
 > OWNd 2.0.0b8 and earlier give an **MH200** the MH200N profile, which does not advertise WHO 16, so amplifiers behind an MH200 only appear once they send bus traffic. A live MH200 answers `*#16*0*5##` with every amplifier and source; [OWNd#53](https://github.com/OpenWebNet-HA/OWNd/issues/53) gives it its own profile.
 
 > The WHO 16 status request is `*#16*WHERE*5##` (spec section 1.5.2). Gateways NACK the bare `*#16*0##` for every address, whether or not the plant has audio, so an old NACK on that frame never meant "no audio".
+
+### Day 0 Blank-Start Discovery Matrix (Auto-discovered vs Manual Configuration)
+
+On a fresh installation with no `myhome.yaml` file (Day 0 blank start), the integration automatically queries and hydrates standard residential hardware subsystems according to gateway capabilities:
+
+| Subsystem / Feature | Auto-Discovered on Blank Start | Requires `myhome.yaml` or UI Configuration | Notes |
+| :--- | :---: | :---: | :--- |
+| **Lighting (WHO 1)** | ✅ Yes (`*#1*0##`) | Optional (custom names / classes) | Point-to-point lights (`11`–`99`) and routed addresses. Area/general broadcasts (`WHERE="0"` / `"00"`) do not create entities. |
+| **Automation / Covers (WHO 2)** | ✅ Yes (`*#2*0##`) | Optional (`travel_time`, general cover) | Point-to-point standard covers. Venetian tilt and impulse mode require manual configuration. |
+| **Thermoregulation (WHO 4)** | ✅ Yes (`*#4*0##`) | Optional (`cooling`, `fan`) | Standard zones (`1`–`99`) and central units (`#0`, `#0#1`). Area broadcasts (`00`) and probe broadcasts do not create climate entities. |
+| **Burglar Alarm (WHO 5)** | ✅ Yes (`*#5*0##`) | Optional | Discovered on supported gateways (MH202, H4890). Panel tracks the central unit. |
+| **Sound System (WHO 16)** | ✅ Yes (`*#16*0*5##`) | Optional (streamer mapping) | Discovers all amplifier zones and sources via dimension 5 query. |
+| **Energy Management (WHO 18)** | ✅ First Meter 51 only | Secondary meters (`52`–`59`) | Factory default residential meter `51` is queried at startup for power and total energy. Secondary meters are discovered dynamically upon bus emission or via `myhome.sweep_bus`. |
+| **Scenario Control (WHO 15 / 25)** | ❌ Stateless | N/A (Device Triggers / Events) | Pushbuttons emit events and device triggers; no entities are created. |
+| **Light Groups (`where: '#G'`)** | ❌ Bus limitation | Required (`members: [...]`) | OpenWebNet groups have no bus membership read-back command. |
 
 ---
 

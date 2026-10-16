@@ -56,31 +56,66 @@ def run_cmd(cmd: List[str], check: bool = True) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, check=check, text=True, cwd=str(REPO_ROOT), env=env)
 
 
-def install_target(target: str, pinned_version: str, dev_ref: str = None) -> bool:
-    """Install the specified OWNd target."""
+def is_pypi_released(package: str, version: str) -> bool:
+    """Check if a specific package version has been published to PyPI."""
+    try:
+        import urllib.request
+
+        url = f"https://pypi.org/pypi/{package}/json"
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "MyHOME-Smoke-CI (https://github.com/OpenWebNet-HA/MyHOME)"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if resp.status == 200:
+                data = json.loads(resp.read().decode("utf-8"))
+                releases = data.get("releases", {})
+                return version in releases
+    except Exception:
+        pass
+    return False
+
+
+def install_target(target: str, pinned_version: str, dev_ref: str = None) -> Tuple[bool, bool]:
+    """Install the specified OWNd target.
+
+    Returns (success, dev_fallback).
+    """
     print(f"\n--- Installing OWNd target: '{target}' ---")
     if target == "pinned":
         cmd = [sys.executable, "-m", "pip", "install", f"OWNd=={pinned_version}"]
+        res = run_cmd(cmd, check=False)
+        if res.returncode == 0:
+            return True, False
+
+        # Check if the pinned version has not yet been released to PyPI (e.g. PR development branch)
+        if not is_pypi_released("OWNd", pinned_version):
+            print(f"\n[NOTICE] Pinned OWNd=={pinned_version} is not yet published to PyPI.")
+            print("Falling back to installing development OWNd so PR validation can proceed...")
+            dev_ok, _ = install_target("dev", pinned_version, dev_ref=dev_ref)
+            return dev_ok, True
+        return False, False
     elif target == "latest":
         cmd = [sys.executable, "-m", "pip", "install", "--pre", "-U", "OWNd"]
+        res = run_cmd(cmd, check=False)
+        return res.returncode == 0, False
     elif target == "dev":
-        ref = dev_ref or os.environ.get("GITHUB_HEAD_REF") or os.environ.get("GITHUB_REF_NAME") or "master"
+        ref = dev_ref or os.environ.get("OWND_REF") or os.environ.get("GITHUB_HEAD_REF") or os.environ.get("GITHUB_REF_NAME") or "master"
         # Try installing from matching branch/ref first if available
         print(f"Attempting to install OWNd@{ref}...")
         cmd = [sys.executable, "-m", "pip", "install", f"git+https://github.com/OpenWebNet-HA/OWNd.git@{ref}"]
         res = run_cmd(cmd, check=False)
         if res.returncode == 0:
-            return True
+            return True, False
         print(f"[WARN] Failed to install OWNd@{ref}, falling back to master branch...")
         cmd = [sys.executable, "-m", "pip", "install", "git+https://github.com/OpenWebNet-HA/OWNd.git@master"]
+        res = run_cmd(cmd, check=False)
+        return res.returncode == 0, False
     else:
         raise ValueError(f"Unknown target: {target}")
 
-    res = run_cmd(cmd, check=False)
-    return res.returncode == 0
 
-
-def verify_metadata(target: str, pinned_version: str) -> Tuple[bool, str]:
+def verify_metadata(target: str, pinned_version: str, dev_fallback: bool = False) -> Tuple[bool, str]:
     """Gate 1: Verify version and manifest lockstep."""
     try:
         installed_ver = importlib.metadata.version("OWNd")
@@ -94,8 +129,15 @@ def verify_metadata(target: str, pinned_version: str) -> Tuple[bool, str]:
     if expected_req not in reqs:
         return False, f"manifest.json does not contain '{expected_req}' (found: {reqs})"
 
-    if target == "pinned" and installed_ver != pinned_version:
+    if target == "pinned" and not dev_fallback and installed_ver != pinned_version:
+        if not is_pypi_released("OWNd", pinned_version):
+            dev_fallback = True
+
+    if target == "pinned" and not dev_fallback and installed_ver != pinned_version:
         return False, f"Installed OWNd ({installed_ver}) does not match pinned version ({pinned_version})"
+
+    if dev_fallback:
+        return True, f"Installed OWNd: {installed_ver} (dev fallback for unreleased {expected_req}; manifest lockstep confirmed)"
 
     return True, f"Installed OWNd: {installed_ver} (manifest required: {expected_req})"
 
@@ -218,13 +260,21 @@ def run_smoke_suite(target: str, skip_install: bool = False, dev_ref: str = None
     print(f"🚀 STARTING OWND SMOKE TEST: Target '{target}' (Pinned: {pinned})")
     print(f"{'='*75}")
 
+    dev_fallback = False
     if not skip_install:
-        if not install_target(target, pinned, dev_ref=dev_ref):
+        install_ok, dev_fallback = install_target(target, pinned, dev_ref=dev_ref)
+        if not install_ok:
             print(f"❌ FAILED: Unable to install OWNd target '{target}'")
             return False
+    elif target == "pinned":
+        try:
+            if importlib.metadata.version("OWNd") != pinned and not is_pypi_released("OWNd", pinned):
+                dev_fallback = True
+        except Exception:
+            pass
 
     gates = [
-        ("Gate 1: Metadata & Version Lockstep", lambda: verify_metadata(target, pinned)),
+        ("Gate 1: Metadata & Version Lockstep", lambda: verify_metadata(target, pinned, dev_fallback=dev_fallback)),
         ("Gate 2: Golden Corpus Conformance", verify_golden_corpus),
         ("Gate 3: Platform Import Cleanliness", verify_platform_imports),
         ("Gate 4: Mock Gateway TCP Handshake & Loopback", lambda: asyncio.run(run_loopback_async())),

@@ -25,7 +25,14 @@ from OWNd.message import (
     OWNHeatingEvent,
     OWNLightingEvent,
     OWNMessage,
+    OWNSceneEvent,
 )
+
+try:  # OWNd > 2.0.0b10 (OpenWebNet-HA/OWNd#91)
+    from OWNd.message import OWNScenarioPlusEvent
+except ImportError:  # pragma: no cover - pinned OWNd 2.0.0b10 fallback
+    class OWNScenarioPlusEvent(OWNMessage):  # type: ignore[misc,no-redef]
+        pass
 
 from .const import (
     CONF_LONG_PRESS,
@@ -75,7 +82,12 @@ class GatewayEventDispatcher:
         """Return the registered CEN device set."""
         return self._cen_devices
 
-    def ensure_cen_device(self, who: int, object_id: int | str) -> None:
+    def ensure_cen_device(
+        self,
+        who: int,
+        object_id: int | str,
+        model: str | None = None,
+    ) -> None:
         """Ensure CEN/CEN+ scenario unit is registered in device registry."""
         if getattr(self.handler, "is_standby", False) or not self._is_active_for_who(who):
             # Standby gateways never register devices on their own config entry,
@@ -115,12 +127,27 @@ class GatewayEventDispatcher:
             if obj_str.isdigit() and len(obj_str) > 1 and obj_str.startswith("0"):
                 norm_str = str(int(obj_str))
 
-            existing_wire_dev = device_registry.async_get_device(identifiers={wire_ident})
-            existing_norm_dev = (
-                device_registry.async_get_device(identifiers={(DOMAIN, f"{self.handler.mac}-{who}-{norm_str}")})
-                if norm_str is not None
-                else None
-            )
+            if hasattr(device_registry, "async_get_device_by_identifier"):
+                existing_wire_dev = device_registry.async_get_device_by_identifier(
+                    wire_ident, config_entry_id=config_entry.entry_id
+                )
+                existing_norm_dev = (
+                    device_registry.async_get_device_by_identifier(
+                        (DOMAIN, f"{self.handler.mac}-{who}-{norm_str}"),
+                        config_entry_id=config_entry.entry_id,
+                    )
+                    if norm_str is not None
+                    else None
+                )
+            else:
+                existing_wire_dev = device_registry.async_get_device(identifiers={wire_ident})
+                existing_norm_dev = (
+                    device_registry.async_get_device(
+                        identifiers={(DOMAIN, f"{self.handler.mac}-{who}-{norm_str}")}
+                    )
+                    if norm_str is not None
+                    else None
+                )
 
             # Prevent passing multiple identifiers if two separate devices already exist in the registry,
             # which would cause async_get_or_create to raise ValueError.
@@ -141,7 +168,7 @@ class GatewayEventDispatcher:
                 identifiers=identifiers,
                 name=dev_name,
                 manufacturer="BTicino",
-                model=f"{type_name} Scenario Control",
+                model=model or f"{type_name} Scenario Control",
                 **via_kwargs,
             )
             self._cen_devices.add(device_key)
@@ -239,6 +266,8 @@ class GatewayEventDispatcher:
             or isinstance(message, OWNHeatingEvent)
         ):
             if not message.is_translation:
+                if isinstance(message, OWNHeatingEvent) and str(message.where or "").startswith("#0"):
+                    self.handler.has_central_unit = True
                 if isinstance(message, OWNLightingEvent) and self._is_active_for_who(1):
                     if (
                         not getattr(message, "is_group", False)
@@ -348,6 +377,8 @@ class GatewayEventDispatcher:
                     message,
                 )
         elif isinstance(message, OWNHeatingCommand) and message.dimension is not None and message.dimension == 14 and self._is_active_for_who(4):
+            if not getattr(self.handler, "supports_zone_status", True):
+                return
             where_str = cast(str, message.where)
             where = where_str[1:] if where_str.startswith("#") else where_str
             self._logger.debug(
@@ -415,6 +446,47 @@ class GatewayEventDispatcher:
                     cenplus_payload["entry_id"] = target_entry_id
                 self.hass.bus.async_fire("myhome_cenplus_event", cenplus_payload)
                 dispatcher_send(self.hass, f"myhome_cenplus_event_{target_mac}", cenplus_payload)
+            self._logger.debug(
+                "%s %s",
+                self.handler.log_id,
+                message.human_readable_log,
+            )
+        elif isinstance(message, OWNScenarioPlusEvent):
+            raw_obj = str(message.object) if getattr(message, "object", None) is not None else ""
+            if not raw_obj and getattr(message, "where", None) is not None:  # pragma: no cover - defensive
+                raw_obj = str(message.where)
+            clean_obj = raw_obj.split("#")[0]
+            try:
+                obj_val = int(clean_obj)
+            except (ValueError, TypeError):  # pragma: no cover - defensive
+                obj_val = raw_obj
+
+            target_mac = self.handler.mac
+            config_entry = getattr(self.handler, "config_entry", None)
+            target_entry_id = getattr(config_entry, "entry_id", None) if config_entry else None
+
+            if getattr(self.handler, "is_standby", False):
+                primary_gw = self.handler._get_primary_gateway()
+                if primary_gw is not None and not primary_gw.is_connected and self.handler._profile_supports_who(25):
+                    target_mac = primary_gw.mac
+                    pri_entry = getattr(primary_gw, "config_entry", None)
+                    target_entry_id = getattr(pri_entry, "entry_id", None) if pri_entry else None
+                else:
+                    target_mac = None
+
+            if target_mac is not None and self._is_active_for_who(25):
+                if raw_obj:
+                    self.handler._ensure_cen_device(25, raw_obj, model="CEN+ Scenario Plus Control")
+                scenarioplus_payload: dict[str, Any] = {
+                    "object": obj_val,
+                    "action": getattr(message, "action", None),
+                    "where": raw_obj,
+                    "gateway_mac": target_mac,
+                }
+                if target_entry_id and isinstance(target_entry_id, str):
+                    scenarioplus_payload["entry_id"] = target_entry_id
+                self.hass.bus.async_fire("myhome_scenario_plus_event", scenarioplus_payload)
+                dispatcher_send(self.hass, f"myhome_scenario_plus_event_{target_mac}", scenarioplus_payload)
             self._logger.debug(
                 "%s %s",
                 self.handler.log_id,
@@ -516,6 +588,46 @@ class GatewayEventDispatcher:
                 self.handler.log_id,
                 message,
             )
+        elif isinstance(message, OWNSceneEvent):
+            target_mac = self.handler.mac
+            config_entry = getattr(self.handler, "config_entry", None)
+            target_entry_id = getattr(config_entry, "entry_id", None) if config_entry else None
+
+            if getattr(self.handler, "is_standby", False):
+                primary_gw = self.handler._get_primary_gateway()
+                if primary_gw is not None and not primary_gw.is_connected and self.handler._profile_supports_who(17):
+                    target_mac = primary_gw.mac
+                    pri_entry = getattr(primary_gw, "config_entry", None)
+                    target_entry_id = getattr(pri_entry, "entry_id", None) if pri_entry else None
+                else:
+                    target_mac = None
+
+            if target_mac is not None and self._is_active_for_who(17):
+                scene_val: int | str = message.scenario
+                try:
+                    scene_val = int(message.scenario)
+                except (ValueError, TypeError):
+                    scene_val = message.scenario
+
+                scene_payload: dict[str, Any] = {
+                    "scenario": scene_val,
+                    "where": str(message.where),
+                    "state": message.state,
+                    "is_on": message.is_on,
+                    "is_enabled": message.is_enabled,
+                    "gateway_mac": target_mac,
+                }
+                if target_entry_id and isinstance(target_entry_id, str):
+                    scene_payload["entry_id"] = target_entry_id
+
+                self.hass.bus.async_fire("myhome_scene_event", scene_payload)
+                dispatcher_send(self.hass, f"myhome_scene_event_{target_mac}", scene_payload)
+
+                self._logger.debug(
+                    "%s %s",
+                    self.handler.log_id,
+                    message.human_readable_log,
+                )
         else:
             self._logger.debug(
                 "%s Unsupported message type: `%s`",

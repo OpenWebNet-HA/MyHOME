@@ -11,6 +11,8 @@ DOMAIN = "myhome"
 
 ATTR_GATEWAY = "gateway"
 ATTR_MESSAGE = "message"
+ATTR_WHERE = "where"
+ATTR_ACTION = "action"
 INTEGRATION_VERSION = "2.0.0b15"
 # hass.data[DOMAIN] key holding the OWNd version resolved off the event loop
 DATA_OWND_VERSION = "_ownd_version"
@@ -83,6 +85,7 @@ CONF_ADVANCED_SHUTTER = "advanced"
 CONF_HEATING_SUPPORT = "heat"
 CONF_COOLING_SUPPORT = "cool"
 CONF_FAN_SUPPORT = "fan"
+CONF_HUMIDITY_SUPPORT = "humidity"
 CONF_STANDALONE = "standalone"
 CONF_SDOMOTICA_COMPAT = "sdomotica_compat"
 CONF_CENTRAL = "central"
@@ -109,6 +112,7 @@ SERVICE_CALIBRATE_COVER = "calibrate_cover"
 SERVICE_STOP_COVER_CALIBRATION = "stop_cover_calibration"
 SERVICE_SET_COVER_TRAVEL_TIME = "set_cover_travel_time"
 SERVICE_RESET_COVER_TRAVEL_TIME = "reset_cover_travel_time"
+SERVICE_SEND_SCENARIO_PLUS_COMMAND = "send_scenario_plus_command"
 EVENT_COVER_CALIBRATION = "myhome_cover_calibration"
 CALIBRATION_RUN_TIMEOUT = 180.0  # s to wait for the actuator's stop status per run
 CALIBRATION_MIN_RUN = 1.0        # s: anything shorter is not a full travel
@@ -146,6 +150,8 @@ SOURCE_UNCONFIGURED_SUFFIX = " (not configured)"
 # messages that an RCA interface does not. The user declares it, because a
 # source device that has not spoken yet is indistinguishable on the bus.
 CONF_SOURCE_TUNER = "source_{}_tuner"
+#: Optional user-supplied pictures per FM frequency, one "<MHz>=<url>" per line.
+CONF_TUNER_PICTURES = "tuner_pictures"
 #: Stored stations a WHO=16 tuner exposes (5 for F500, up to 15 for F500N).
 TUNER_STATION_COUNT = 5
 TUNER_MAX_STATION_COUNT = 15
@@ -176,6 +182,9 @@ SOFTWARE_TRANSITION_MAX_STEPS = 25
 # Debounce window for reactive group / area / general broadcast re-sync (issue #368)
 RESYNC_DEBOUNCE_S = 0.5
 RESYNC_LEADING_WINDOW_S = 1.5
+
+# Pacing delay between member commands during scope cover fan-out (prevents F422 buffer overflow)
+PACED_FANOUT_DELAY = 0.3
 
 # ── Multi-Gateway & Shared Bus Support (Issue #453) ─────────────────────────
 CONF_BUS_TOPOLOGY = "bus_topology"
@@ -236,6 +245,7 @@ def is_apl_address(base: str) -> bool:
     """Check if base address is a valid OpenWebNet Point-to-Point (APL) address.
 
     Point-to-point addressing combinations:
+      - A = 0; PL [1-9]        -> 2 digits (e.g. 02 = Area 0, PL 2; accepted by BTicino firmware)
       - A = 00; PL [01-15]     -> 4 digits (e.g. 0015 = Area 00, PL 15)
       - A [1-9]; PL [1-9]      -> 2 digits (e.g. 15 = Area 1, PL 5)
       - A = 10; PL [01-15]     -> 4 digits (e.g. 1015 = Area 10, PL 15)
@@ -246,6 +256,8 @@ def is_apl_address(base: str) -> bool:
     if len(base) == 2:
         a = int(base[0])
         pl = int(base[1])
+        if a == 0:
+            return 1 <= pl <= 9
         return 1 <= a <= 9 and 1 <= pl <= 9
     if len(base) == 4:
         a = int(base[:2])
@@ -269,6 +281,8 @@ def area_of_where(where: str | int | None) -> str | None:
     if not is_apl_address(base):
         return None
     if len(base) == 2:
+        if base[0] == "0":
+            return "00"
         return base[0]
     # Length is 4
     a = base[:2]
@@ -283,6 +297,7 @@ def normalize_where(where: str | int | None) -> str:
     """Normalize OpenWebNet address while preserving Point-to-Point (APL) addressing.
 
     Point-to-point WHERE addresses must never have leading zeros stripped:
+      - '02' means Area 0, Point 2 (2 digits)
       - '0015' means Area 00, Point 15 (4 digits)
       - '15' means Area 1, Point 5 (2 digits)
     Area broadcasts '00' (Area 0) and '100' (Area 10) are also preserved.
@@ -359,13 +374,14 @@ WHO13_OFFICIAL_DEVICE_TYPES = {
 #   200: Confirmed on physical hardware for F454 (PR #420 sweep, firmware 2.0.51;
 #        earlier in issue #370 with SSDP), MH202 (PR #420 sweep, firmware 1.0.21),
 #        MyHOMEServer1 (PR #420 trace, firmware 2.87.13; earlier in issue
-#        #292/#297), H4890 (issue #466 sweep, firmware 4.0.15), and F461 (issue
+#        #292/#297), H4890 (issue #466 sweep, firmware 4.0.15), F461 (issue
 #        #466 comment 5870342995 sweep, firmware 2.0.11; reported without
-#        diagnostics in issue #370). Shared across modern Linux-based
-#        gateway families, so it identifies none of them (see WHO13_SHARED_DEVICE_TYPES).
+#        diagnostics in issue #370), and MH201 (firmware 3.3.6, 3.6.27; OWNd#116).
+#        Shared across modern gateway families (not all Linux-based, e.g. MH201),
+#        so it identifies none of them (see WHO13_SHARED_DEVICE_TYPES).
 #        It contradicts legacy gateways (e.g. MH200/F452), but only as field evidence.
 WHO13_OBSERVED_DEVICE_TYPES: dict[str, tuple[str, ...]] = {
-    "200": ("F454", "MyHomeServer1", "MH202", "F461", "H4890"),
+    "200": ("F454", "MyHomeServer1", "MH202", "F461", "H4890", "MH201"),
 }
 # Codes from an independent implementation: the `device` table of Nmap's
 # openwebnet-discovery.nse, whose `device_dimension["Device Type"] = "15"` is this
@@ -420,11 +436,11 @@ WHO13_SHARED_DEVICE_TYPES: frozenset[str] = frozenset({"200"})
 # only brand value ever traced is 5, "Legrand BTicino", which does not
 # discriminate - so the BTicino name is always the one displayed.
 #
-# Four codes are confirmed on physical hardware: 51 F454, 5 MH202, and 67
-# MyHomeServer1 (PR #420, fixtures under tests/fixtures/plants/pr_420_*), and 134
+# Five codes are confirmed on physical hardware: 51 F454, 5 MH202, and 67
+# MyHomeServer1 (PR #420, fixtures under tests/fixtures/plants/pr_420_*), 134
 # F461 (issue #466 comment 5870342995, fixtures under
-# tests/fixtures/plants/issue_466_f461/). The rest of the table is from the
-# database, untraced.
+# tests/fixtures/plants/issue_466_f461/), and 10 MH201 (OWNd#116). The rest of
+# the table is from the database, untraced.
 #
 # A dimension-1 reply is four values, not one (@anotherjulien in #420, from the
 # OpenWebNet Encyclopedia's work on MHCatalogue.db):
@@ -441,6 +457,7 @@ WHO1013_OBJECT_MODELS: dict[str, tuple[str, ...]] = {
     "4": ("MH200",),
     "5": ("MH202", "003535"),
     "8": ("F455", "003594"),
+    "10": ("MH201",),
     "12": ("F453AV",),
     "29": ("H4684", "L4684"),
     "30": ("AM4890", "H4890", "573958", "067292", "078479", "HW4890", "LN4890", "LN4890A"),
@@ -507,7 +524,7 @@ def build_timed_turn_on_command(
     seconds: float = 0,
 ) -> Any:
     """Build OpenWebNet hardware timer command for WHO=1."""
-    from OWNd.message import OWNCommand
+    from OWNd.message import OWNCommand, OWNLightingCommand
 
     total_seconds = float(duration if duration is not None else 0.0)
     total_seconds += (int(hours) * 3600) + (int(minutes) * 60) + float(seconds)
@@ -518,13 +535,20 @@ def build_timed_turn_on_command(
     rounded_secs = round(total_seconds, 1)
     if rounded_secs in PRESET_TIMERS:
         what = PRESET_TIMERS[rounded_secs]
-        frame = f"*1*{what}*{where}##"
-    else:
-        int_secs = int(round(total_seconds))
-        h = max(0, min(255, int_secs // 3600))
-        m = max(0, min(59, (int_secs % 3600) // 60))
-        s = max(0, min(59, int_secs % 60))
-        frame = f"*#1*{where}*#2*{h}*{m}*{s}##"
+        if hasattr(OWNLightingCommand, "switch_on_timed"):
+            return OWNLightingCommand.switch_on_timed(where, what)
+        frame = f"*1*{what}*{where}##"  # pragma: no cover - fallback on released OWNd 2.0.0b10
+        parsed = OWNCommand.parse(frame)  # pragma: no cover
+        return parsed if parsed is not None else OWNCommand(frame)  # pragma: no cover
 
-    parsed = OWNCommand.parse(frame)
-    return parsed if parsed is not None else OWNCommand(frame)
+    int_secs = int(round(total_seconds))
+    h = max(0, min(255, int_secs // 3600))
+    m = max(0, min(59, (int_secs % 3600) // 60))
+    s = max(0, min(59, int_secs % 60))
+    if hasattr(OWNLightingCommand, "set_variable_timer"):
+        return OWNLightingCommand.set_variable_timer(where, h, m, s)
+    frame = f"*#1*{where}*#2*{h}*{m}*{s}##"  # pragma: no cover - fallback on released OWNd 2.0.0b10
+    parsed = OWNCommand.parse(frame)  # pragma: no cover
+    return parsed if parsed is not None else OWNCommand(frame)  # pragma: no cover
+
+

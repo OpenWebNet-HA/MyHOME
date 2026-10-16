@@ -115,12 +115,13 @@ async def test_seek_commands(hass, tuner, mock_gateway):
 
 @pytest.mark.asyncio
 async def test_set_frequency(hass, tuner, mock_gateway):
-    """Frequency is written as six digits in kHz, per the specification's examples."""
+    """Frequency is written in kHz without zero padding, as the F500N capture shows."""
     tuner._station = 1
     tuner._attr_source = "Station 1"
     await tuner.async_set_frequency(107.0)
-    assert _sent(mock_gateway) == ["*#16*101*#6*0*107000##"]
-    assert tuner.extra_state_attributes["frequency"] == 107.0
+    await tuner.async_set_frequency(96.2)
+    assert _sent(mock_gateway) == ["*#16*101*#6*0*107000##", "*#16*101*#6*0*96200##"]
+    assert tuner.extra_state_attributes["frequency"] == 96.2
     assert "station" not in tuner.extra_state_attributes
     assert tuner.source is None
 

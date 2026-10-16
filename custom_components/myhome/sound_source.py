@@ -37,7 +37,8 @@ here rather than normalised away.
 
 Frequencies are documented as "expressed in Hz ... composed by 6 digits", but
 every example in the same document uses kHz (``107000`` is 107.00 MHz). This
-module follows the examples, as the Encyclopedia does.
+module follows the examples, as the Encyclopedia does. It does not zero-pad
+below 100 MHz: an F500N took ``*#16*101*#6*0*96200##`` (#427).
 
 Scope
 -----
@@ -55,6 +56,7 @@ contributed by @manfredgittmaier-afk on PR #427):
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.media_player import (  # type: ignore[attr-defined, unused-ignore]
@@ -73,37 +75,28 @@ from OWNd.message import OWNSoundCommand, OWNSoundEvent
 
 from .const import DOMAIN, LOGGER, TUNER_MAX_STATION_COUNT, TUNER_STATION_COUNT
 from .myhome_device import MyHOMEEntity
+from .tuner_decode import FM_MAX_KHZ, FM_MIN_KHZ, decode_who22_tuner, rds_text
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
     from .gateway import MyHOMEGatewayHandler
 
-#: Lowest and highest FM frequency accepted, in kHz. Outside this the value is
-#: almost certainly a mistake (a preset number, or MHz passed as kHz).
-FM_MIN_KHZ = 87500
-FM_MAX_KHZ = 108000
+__all__ = [
+    "FM_MAX_KHZ",
+    "FM_MIN_KHZ",
+    "MyHOMESoundSource",
+    "rds_text",
+    "source_address",
+    "who22_source_id",
+    "who22_tuner_listener",
+]
 
 
 def source_address(source: int) -> str:
     """Return the bus address of source device ``source`` (1-9)."""
     return str(100 + int(source))
 
-
-def rds_text(values: list[str] | tuple[str, ...]) -> str | None:
-    """Decode an RDS dimension payload into readable text.
-
-    The payload is eight decimal ASCII codes rather than characters. Codes
-    outside the printable range are dropped instead of rendering control
-    characters into the media title.
-    """
-    chars = [
-        chr(int(value))
-        for value in values
-        if str(value).isdigit() and 32 <= int(value) <= 126
-    ]
-    text = "".join(chars).strip()
-    return text or None
 
 
 class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
@@ -135,8 +128,13 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
         model: str,
         gateway: MyHOMEGatewayHandler,
         entity_name: str | None = None,
+        pictures: dict[int, str] | None = None,
     ) -> None:
-        """Initialise a tuner source entity."""
+        """Initialise a tuner source entity.
+
+        `pictures` maps a frequency in kHz to the image shown while the tuner
+        is on it (see :func:`tuner_decode.parse_tuner_pictures`); none are bundled.
+        """
         super().__init__(
             hass=hass,
             name=name,
@@ -157,6 +155,7 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
         self._frequency_khz: int | None = None
         self._station: int | None = None
         self._station_count: int = TUNER_STATION_COUNT
+        self._pictures: dict[int, str] = dict(pictures or {})
 
     # ── Presentation ──────────────────────────────────────────────────────────
 
@@ -169,6 +168,13 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
     def media_content_type(self) -> str | None:
         """Report playing content as a channel while the tuner is on."""
         return MediaType.CHANNEL if self._attr_state == MediaPlayerState.ON else None
+
+    @property
+    def entity_picture(self) -> str | None:
+        """Return the user's picture for the frequency the tuner is on, if any."""
+        if self._frequency_khz is None:
+            return None
+        return self._pictures.get(self._frequency_khz)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -191,21 +197,23 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
         """
         self._register_availability_listener()
         await self._gateway_handler.send(
-            OWNSoundCommand(f"*16*101*{self._where}##")
+            OWNSoundCommand.start_rds(self._where)
         )
 
     async def async_update(self) -> None:
         """Request the tuner's frequency, station and RDS text."""
-        for dimension in (6, 7, 8):
-            await self._gateway_handler.send_status_request(
-                OWNSoundCommand(f"*#16*{self._where}*{dimension}##")
-            )
+        for cmd in (
+            OWNSoundCommand.request_frequency(self._where),
+            OWNSoundCommand.request_track(self._where),
+            OWNSoundCommand.request_rds(self._where),
+        ):
+            await self._gateway_handler.send_status_request(cmd)
 
     # ── Commands ──────────────────────────────────────────────────────────────
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Switch the source device on."""
-        await self._gateway_handler.send(OWNSoundCommand(f"*16*3*{self._where}##"))
+        await self._gateway_handler.send(OWNSoundCommand.turn_on(self._where))
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Switch the source device to standby.
@@ -213,23 +221,31 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
         Rooms listening to this input fall silent; the matrix routing is not
         changed, so they stay pointed at it.
         """
-        await self._gateway_handler.send(OWNSoundCommand(f"*16*13*{self._where}##"))
+        await self._gateway_handler.send(OWNSoundCommand.turn_off(self._where))
 
     async def async_media_next_track(self) -> None:
         """Advance to the next station."""
-        await self._gateway_handler.send(OWNSoundCommand(f"*16*6001*{self._where}##"))
+        await self._gateway_handler.send(
+            OWNSoundCommand.next_track(self._where)
+        )
 
     async def async_media_previous_track(self) -> None:
         """Return to the previous station."""
-        await self._gateway_handler.send(OWNSoundCommand(f"*16*6101*{self._where}##"))
+        await self._gateway_handler.send(
+            OWNSoundCommand.previous_track(self._where)
+        )
 
     async def async_seek_up(self) -> None:
         """Seek forward to the next receivable FM frequency."""
-        await self._gateway_handler.send(OWNSoundCommand(f"*16*5000*{self._where}##"))
+        await self._gateway_handler.send(
+            OWNSoundCommand.seek_up(self._where)
+        )
 
     async def async_seek_down(self) -> None:
         """Seek backward to the previous receivable FM frequency."""
-        await self._gateway_handler.send(OWNSoundCommand(f"*16*5100*{self._where}##"))
+        await self._gateway_handler.send(
+            OWNSoundCommand.seek_down(self._where)
+        )
 
     async def async_select_source(self, source: str) -> None:
         """Switch to a stored station.
@@ -262,7 +278,7 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
                 },
             )
         await self._gateway_handler.send(
-            OWNSoundCommand(f"*#16*{self._where}*#7*{station}##")
+            OWNSoundCommand.select_track(self._where, station)
         )
         self._station = station
         if station > self._station_count:
@@ -287,7 +303,7 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
                 },
             )
         await self._gateway_handler.send(
-            OWNSoundCommand(f"*#16*{self._where}*#6*0*{kilohertz:06d}##")
+            OWNSoundCommand.set_frequency(self._where, kilohertz)
         )
         self._frequency_khz = kilohertz
         self._station = None
@@ -357,6 +373,21 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
                     len(values),
                     values,
                 )
+        step_forward = getattr(message, "track_step_forward", None)
+        step_backward = getattr(message, "track_step_backward", None)
+
+        if isinstance(step_forward, int):
+            if self._station is not None:
+                new_st = min(
+                    self._station + step_forward, self._station_count
+                )
+                self._station = new_st
+                self._attr_source = f"Station {new_st}"
+        elif isinstance(step_backward, int):
+            if self._station is not None:
+                new_st = max(self._station - step_backward, 1)
+                self._station = new_st
+                self._attr_source = f"Station {new_st}"
         elif getattr(message, "is_on", False):
             self._attr_state = MediaPlayerState.ON
         elif getattr(message, "is_off", False):
@@ -372,17 +403,50 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
             return
         kilohertz = int(raw)
         if FM_MIN_KHZ <= kilohertz <= FM_MAX_KHZ:
-            if self._frequency_khz != kilohertz:
-                self._frequency_khz = kilohertz
-                self._station = None
-                self._attr_source = None
-                self._attr_media_title = None
+            self._apply_frequency(kilohertz)
         else:
             LOGGER.debug(
                 "%s: ignoring reported frequency %s kHz, outside the FM band",
                 self.entity_id,
                 kilohertz,
             )
+
+    def _apply_frequency(self, kilohertz: int) -> None:
+        """Adopt a frequency; a new one drops the station and text of the old."""
+        if self._frequency_khz != kilohertz:
+            self._frequency_khz = kilohertz
+            self._station = None
+            self._attr_source = None
+            self._attr_media_title = None
+
+    @callback
+    def handle_who22_event(self, message: Any) -> None:
+        """Apply a WHO=22 report of this tuner (source address ``5#2#S`` / ``2#S``).
+
+        Dual-stack gateways (MH200N, F454, F453AV) run both ``bt_difson``
+        (WHO=16) and ``bt_multi`` (WHO=22), emitting both families in
+        non-deterministic order for every SCS tuner frame; each update is
+        idempotent, so the repeat changes nothing. On WHO=22-only gateways
+        (MyHomeServer1, F459, F460, F461), ``bt_multi`` is the sole translator
+        of the tuner's state (emitting dim 5 alone on manual tuning and dim 5
+        followed by dim 11 on a stored preset).
+        """
+        raw_dim = getattr(message, "dimension", None)
+        try:
+            dimension = int(raw_dim) if raw_dim is not None else None
+        except (ValueError, TypeError):
+            return
+        values = [str(v) for v in (getattr(message, "dimension_value", None) or [])]
+        report = decode_who22_tuner(dimension, values)
+        if report is None:
+            return
+        if report.frequency_khz is not None:
+            self._apply_frequency(report.frequency_khz)
+        if report.preset is not None:
+            self._set_station_from_bus(str(report.preset))
+        if report.rds is not None or report.rds_blank:
+            self._attr_media_title = report.rds
+        self._publish_state()
 
     def _set_station_from_bus(self, raw: str) -> None:
         """Record a reported stored station."""
@@ -405,3 +469,50 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
             if candidate.isdigit() and 1 <= int(candidate) <= self._station_count:
                 return int(candidate)
         return None
+
+
+def who22_source_id(message: Any) -> int | None:
+    """Return the matrix source a WHO=22 frame is about, or ``None``.
+
+    A tuner is addressed ``5#2#S`` in its own reports and ``2#S`` in queries
+    and their replies. Prefers the number OWNd has already worked out and
+    falls back to reading the address, so a frame is placed the same way
+    whichever OWNd version parsed it.
+    """
+    if str(getattr(message, "who", "")) != "22":
+        return None
+    known = getattr(message, "source_id", None)
+    if isinstance(known, int):
+        return known
+    where = getattr(message, "where", None)
+    if where is None:
+        return None
+    param = getattr(message, "where_param", None)
+    if param is None:
+        param = getattr(message, "_where_param", None)
+    parts = [str(where), *(str(p) for p in (param or []))]
+    if len(parts) == 2 and parts[0] == "2" and parts[1].isdigit():
+        return int(parts[1])
+    if len(parts) == 3 and parts[0] == "5" and parts[1] == "2" and parts[2].isdigit():
+        return int(parts[2])
+    return None
+
+
+def who22_tuner_listener(sources: list[MyHOMESoundSource]) -> Callable[[Any], None]:
+    """Build the gateway-message listener that feeds WHO=22 frames to tuners.
+
+    Only declared tuners ever receive them: WHO=22 frames never create
+    entities, so a plant gains no phantom device from this traffic.
+    """
+    by_source = {int(source._where) - 100: source for source in sources}
+
+    @callback
+    def listener(message: Any) -> None:
+        source_id = who22_source_id(message)
+        if source_id is None:
+            return
+        source = by_source.get(source_id)
+        if source is not None:
+            source.handle_who22_event(message)
+
+    return listener

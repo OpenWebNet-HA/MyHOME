@@ -9,6 +9,9 @@
     "start_sending_instant_power": {
       "service": "mdi:flash"
     },
+    "stop_sending_instant_power": {
+      "service": "mdi:flash-off"
+    },
     "turn_on_timed": {
       "service": "mdi:timer-outline"
     },

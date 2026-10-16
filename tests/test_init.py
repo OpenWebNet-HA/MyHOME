@@ -1118,7 +1118,7 @@ async def test_setup_entry_mfg_fw_fallbacks_and_pruning_branches(hass: HomeAssis
                 "friendly_name": "MyHOME Gateway",
                 "manufacturer": "",
                 "name": "F454",
-                "firmware": None,
+                "firmware": [],
             },
             unique_id="00:03:50:00:88:99",
         )
@@ -1143,7 +1143,6 @@ async def test_setup_entry_mfg_fw_fallbacks_and_pruning_branches(hass: HomeAssis
         mock_dev2 = MagicMock(id="dev_other_2", identifiers={(DOMAIN, "myhome_gw_id")})
 
         with patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.manufacturer", new=["Legrand"]), \
-             patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.firmware", new=[]), \
              patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.id", new="myhome_gw_id", create=True), \
              patch("homeassistant.helpers.device_registry.async_entries_for_config_entry", return_value=[mock_dev1, mock_dev2]):
             assert await hass.config_entries.async_setup(config_entry.entry_id)

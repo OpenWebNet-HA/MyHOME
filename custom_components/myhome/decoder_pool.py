@@ -200,6 +200,7 @@ class DecoderPool:
         self._saved: dict[str, Any] | None = None                # last books handed to the store
         self._released_at: dict[str, datetime] = {}               # decoder → when a zone of ours last let go of it
         self._unconfirmed: set[str] = set()                      # restored zones the bus has not reported yet
+        self._displaced_zones: set[str] = set()                  # zones whose claim or group was taken over by claim()
 
     # ── Persistence ───────────────────────────────────────────────────────────
 
@@ -460,7 +461,10 @@ class DecoderPool:
             for dec_id, owner in self._assignments.items():
                 if owner == zone_entity_id:
                     LOGGER.debug("Decoder %s already claimed by %s", dec_id, zone_entity_id)
+                    prev_leader = self.get_leader(zone_entity_id)
                     self._remove_member_locked(zone_entity_id)
+                    if prev_leader and not self.is_leader(prev_leader) and self.owned_decoder(prev_leader) is None:
+                        self._displaced_zones.add(prev_leader)
                     return (dec_id, self._decoder_map[dec_id])
 
             if environment is not None:
@@ -516,8 +520,19 @@ class DecoderPool:
                 if owner is not None:
                     owner_state = self._hass.states.get(owner)
                     owner_val = owner_state.state if owner_state else None
-                    is_owner_off = (
-                        is_hw_idle and owner_val in (MediaPlayerState.OFF, "off")
+                    # A parked group's amplifiers are off, yet its rooms report
+                    # idle or paused so Music Assistant does not dissolve the
+                    # group (see ZoneDecoderLayer._parked_state). A zone that is
+                    # playing reports playing/buffering (or on when no decoder
+                    # mirrors onto it), so idle/paused with an idle decoder means
+                    # the owner is parked and free to yield the decoder.
+                    is_owner_off = is_hw_idle and owner_val in (
+                        MediaPlayerState.OFF,
+                        MediaPlayerState.IDLE,
+                        MediaPlayerState.PAUSED,
+                        "off",
+                        "idle",
+                        "paused",
                     )
                     if is_owner_off or is_handover:
                         LOGGER.info(
@@ -529,9 +544,12 @@ class DecoderPool:
                             is_handover,
                             zone_entity_id,
                         )
-                        if owner != zone_entity_id and owner_val not in (MediaPlayerState.OFF, "off"):
+                        if owner != zone_entity_id and not is_owner_off:
                             displaced_owner = owner
-                        self._disband_group_locked(owner)
+                        disbanded = self._disband_group_locked(owner)
+                        if owner != zone_entity_id:
+                            self._displaced_zones.add(owner)
+                        self._displaced_zones.update(m for m in disbanded if m != zone_entity_id)
                         self._environments.pop(owner, None)
                         self._unassign_locked(dec_id)
                         owner = None
@@ -539,7 +557,10 @@ class DecoderPool:
                         continue  # already in use by an active zone
 
                 if is_hw_idle or is_handover:
+                    prev_leader = self.get_leader(zone_entity_id)
                     self._remove_member_locked(zone_entity_id)
+                    if prev_leader and not self.is_leader(prev_leader) and self.owned_decoder(prev_leader) is None:
+                        self._displaced_zones.add(prev_leader)
                     self._assignments[dec_id] = zone_entity_id
                     if environment is not None:
                         self._environments[zone_entity_id] = environment
@@ -568,6 +589,17 @@ class DecoderPool:
             "DecoderPool: all decoders busy — zone %s cannot play", zone_entity_id
         )
         return None
+
+    def pop_displaced_zones(self) -> set[str]:
+        """Return and clear zones whose decoder or group was taken over by :meth:`claim`.
+
+        Concurrent claims are serialized by ``self._lock`` and callers consume
+        this set synchronously on the single-threaded event loop immediately
+        after ``await pool.claim(...)`` returns.
+        """
+        displaced = set(self._displaced_zones)
+        self._displaced_zones.clear()
+        return displaced
 
     async def set_group(
         self,
@@ -937,7 +969,14 @@ class DecoderPool:
             if zone_environment == environment and zone not in exclude and self.get_assignment(zone) is not None:
                 state = self._hass.states.get(zone)
                 state_val = state.state if state else None
-                if state_val not in (MediaPlayerState.OFF, "off"):
+                if state_val not in (
+                    MediaPlayerState.OFF,
+                    MediaPlayerState.IDLE,
+                    MediaPlayerState.PAUSED,
+                    "off",
+                    "idle",
+                    "paused",
+                ):
                     active.append(zone)
         return active
 

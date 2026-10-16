@@ -277,3 +277,48 @@ def test_f454_trace_motor_deadband_invariant() -> None:
     full_travel_time = 20.4
     assert compute_run_duration(1, full_travel_time) == MIN_MOTOR_PULSE
     assert compute_run_duration(2, full_travel_time) == pytest.approx(0.408)
+
+
+def test_f454_step_and_full_run_firmware_oracle_conformance() -> None:
+    """Verify F454 step commands (*2*11#..., *2*12#...) and full-run endpoints against firmware_oracle.json."""
+    oracle_path = Path(__file__).resolve().parent / "golden" / "firmware_oracle.json"
+    verdicts = json.loads(oracle_path.read_text(encoding="utf-8"))["verdicts"]
+
+    all_autom_gateways = {
+        "F453AV",
+        "F454",
+        "F459",
+        "F460",
+        "F461",
+        "H4684",
+        "MH200",
+        "MH200N",
+        "MH202",
+        "MyHomeServer1",
+    }
+    advanced_who2_gateways = {"F454", "F459", "F460", "F461", "MH202", "MyHomeServer1"}
+
+    # 1. Step commands *2*11#1#001*31## and *2*12#1#001*31## are forwarded by the 6 advanced
+    # WHO 2 gateways and normalized with #1 selector (*2*1000#11#1#001#1*31##).
+    for step_frame, expected_echo in (
+        ("*2*11#1#001*31##", "*2*1000#11#1#001#1*31##"),
+        ("*2*12#1#001*31##", "*2*1000#12#1#001#1*31##"),
+    ):
+        by_prod = {e["product"]: e for e in verdicts[step_frame]}
+        for prod in advanced_who2_gateways:
+            assert by_prod[prod]["verdict"] == "out"
+            assert len(by_prod[prod]["bus_frames"]) == 1
+            assert by_prod[prod]["emitted_own"] == [expected_echo]
+        for legacy_prod in all_autom_gateways - advanced_who2_gateways:
+            assert by_prod[legacy_prod]["reply"] == "nack"
+            assert by_prod[legacy_prod]["verdict"] == "silent"
+
+    # 2. Full-run endpoint commands (*2*1*31## at 100%, *2*2*31## at 0%) are forwarded
+    # across all 10 automation gateways, and on 9 of 10 gateways (all except MH202)
+    # bt_autom synthesizes a pre-direction STOP telegram ($033100120A) before UP/DOWN.
+    for full_run_frame in ("*2*1*31##", "*2*2*31##"):
+        by_prod = {e["product"]: e for e in verdicts[full_run_frame]}
+        for prod in all_autom_gateways:
+            assert by_prod[prod]["verdict"] == "out"
+            if prod != "MH202":
+                assert len(by_prod[prod]["bus_frames"]) == 2

@@ -44,6 +44,11 @@ from OWNd.message import (
     OWNLightingCommand,
     OWNLightingEvent,
 )
+
+try:
+    from OWNd.message import MESSAGE_TYPE_AUTO_UPDATE_INTERVAL
+except ImportError:  # pragma: no cover - fallback for OWNd < 2.0.0b11
+    MESSAGE_TYPE_AUTO_UPDATE_INTERVAL = "auto_update_interval"
 from voluptuous import (
     All,
     Coerce,
@@ -63,7 +68,7 @@ from .const import (
     who4_raw_to_celsius,
 )
 from .data import MyHOMEConfigEntry
-from .discovery import Address, DeviceContext, PlatformDiscovery
+from .discovery import Address, DeviceContext, PlatformDiscovery, is_broadcast_where
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 from .typing_compat import as_any
@@ -74,6 +79,7 @@ PARALLEL_UPDATES = 0
 SCAN_INTERVAL = timedelta(seconds=300)
 
 SERVICE_SEND_INSTANT_POWER = "start_sending_instant_power"
+SERVICE_STOP_SENDING_INSTANT_POWER = "stop_sending_instant_power"
 
 ATTR_DURATION = "duration"
 ATTR_DATE = "date"
@@ -102,7 +108,7 @@ def _spellings(where: str) -> list[str]:
     return [k for k in (where, normalize_where(where), clean, normalize_where(clean)) if k]
 
 
-ENERGY_UNIQUE_ID = re.compile(r"([57]\d+)-(power|total-energy|daily-energy|monthly-energy)")
+ENERGY_UNIQUE_ID = re.compile(r"([0-9#]+)-(power|total-energy|daily-energy|monthly-energy)")
 
 
 
@@ -144,8 +150,13 @@ async def async_setup_entry(
         if platform is not None:
             platform.async_register_entity_service(
                 SERVICE_SEND_INSTANT_POWER,
-                as_any({Optional(ATTR_DURATION): All(Coerce(int), Range(min=1, max=255))}),
+                as_any({Optional(ATTR_DURATION): All(Coerce(int), Range(min=0, max=255))}),
                 "start_sending_instant_power",
+            )
+            platform.async_register_entity_service(
+                SERVICE_STOP_SENDING_INSTANT_POWER,
+                {},
+                "async_stop_sending_instant_power",
             )
 
     discovery_for: dict[str, PlatformDiscovery] = {}
@@ -164,9 +175,6 @@ async def async_setup_entry(
 
         return accept
 
-    def entity_id_of(ctx: DeviceContext) -> str | None:
-        return ctx.registry_entry.entity_id if ctx.registry_entry is not None else None
-
     # ── WHO 18: energy meters ───────────────────────────────────────────
     def energy_registry_address(entry: er.RegistryEntry) -> Address | None:
         prefix = f"{gateway.mac}-18-"
@@ -179,12 +187,20 @@ async def async_setup_entry(
         return Address(where, key_suffix=f"-{measurement}")
 
     def energy_bus_address(message: Any) -> Address | None:
+        where = str(getattr(message, "where", ""))
+        if getattr(message, "is_general", False) is True or is_broadcast_where(where):
+            return None
         measurement = ENERGY_MEASUREMENTS.get(cast(str, getattr(message, "message_type", None)))
         if measurement is None:
             return None
         return Address(_sensor_address("18", message.where)[1], key_suffix=f"-{measurement}")
 
-    def build_energy(ctx: DeviceContext) -> list[MyHOMEEntity] | MyHOMEEntity:
+    def duplicate_energy(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
+        if ctx.cfg:
+            return False
+        return is_broadcast_where(ctx.address.clean_where)
+
+    def build_energy(ctx: DeviceContext) -> list[MyHOMEEntity] | MyHOMEEntity | None:
         if ctx.source == "yaml":
             cfg = ctx.cfg
             dev_class = cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class")
@@ -209,6 +225,8 @@ async def async_setup_entry(
             return sensors
         # Restored or discovered: only the measurements the meter actually reported
         where, measurement = ctx.address.where, ctx.address.key_suffix[1:]
+        if is_broadcast_where(where) or is_broadcast_where(ctx.address.clean_where):
+            return None
         sensor: MyHOMEEntity
         if measurement == "power":
             sensor = MyHOMEPowerSensor(
@@ -223,7 +241,6 @@ async def async_setup_entry(
                 entity_specific_id=measurement, device_class=SensorDeviceClass.ENERGY,
                 manufacturer=None, model=None, gateway=gateway,
             )
-        sensor.entity_id = entity_id_of(ctx)  # type: ignore[assignment]
         return sensor
 
     def energy_known_keys(ctx: DeviceContext) -> list[str]:
@@ -247,7 +264,7 @@ async def async_setup_entry(
 
     def duplicate_illuminance(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
         # Broadcast address or obsolete second registry entry, or an address that myhome.yaml configures
-        if ctx.address.where in ("0", "00"):
+        if is_broadcast_where(ctx.address.clean_where):
             return True
         return normalize_where(ctx.address.where) in discovery_for["1"].known or is_configured(
             "1", ctx.address.where, SensorDeviceClass.ILLUMINANCE
@@ -289,7 +306,6 @@ async def async_setup_entry(
             # yaml-era ids are `{mac}-1-{where}-illuminance`; a rebuilt id would orphan
             # the registry entry and create a duplicate.
             sensor._attr_unique_id = ctx.registry_entry.unique_id
-        sensor.entity_id = entity_id_of(ctx)  # type: ignore[assignment]
         return sensor
 
     # ── WHO 4: temperature probes ───────────────────────────────────────
@@ -297,14 +313,23 @@ async def async_setup_entry(
         dimension = getattr(message, "dimension", None)
         message_type = getattr(message, "message_type", None)
         where = str(message.where)
+        if is_broadcast_where(where):
+            return None
         clean = where.split("-")[-1].split("#")[0]
+        if not clean:
+            return None
         is_probe_reading = dimension == 15 or message_type == MESSAGE_TYPE_SECONDARY_TEMPERATURE
         is_probe_main = (message_type == MESSAGE_TYPE_MAIN_TEMPERATURE or dimension == 0) and is_probe(clean)
         if dimension in (11, 12, 13, 14, 19, 20) or not (is_probe_reading or is_probe_main):
             return None
         return Address(normalize_where(where) or where)
 
-    def build_temperature(ctx: DeviceContext) -> MyHOMETemperatureSensor:
+    def duplicate_temperature(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
+        if ctx.cfg:
+            return False
+        return is_broadcast_where(ctx.address.clean_where)
+
+    def build_temperature(ctx: DeviceContext) -> MyHOMETemperatureSensor | None:
         if ctx.source == "yaml":
             cfg = ctx.cfg
             return MyHOMETemperatureSensor(
@@ -315,6 +340,8 @@ async def async_setup_entry(
         where = ctx.address.where
         clean = where.split("-")[-1].split("#")[0]
         primary = normalize_where(where) or normalize_where(clean) or where
+        if is_broadcast_where(primary) or is_broadcast_where(clean):
+            return None
         label = normalize_where(clean) or clean
         name = f"Probe {label}" if is_probe(clean) else f"Zone {label}"
         # ``4-<where>``, the id validate.py gives a myhome.yaml probe: one unique id either way (#441)
@@ -322,7 +349,6 @@ async def async_setup_entry(
             hass=hass, device_id=f"4-{primary}", who="4", where=primary, name=name,
             device_class=SensorDeviceClass.TEMPERATURE, manufacturer="BTicino", model="Temperature Probe", gateway=gateway,
         )
-        sensor.entity_id = entity_id_of(ctx)  # type: ignore[assignment]
         return sensor
 
     def known_keys(ctx: DeviceContext) -> list[str]:
@@ -343,7 +369,8 @@ async def async_setup_entry(
     )
     discovery_for["18"] = PlatformDiscovery(
         who="18", event_type=OWNEnergyEvent, build=build_energy, accept=yaml_class(SensorDeviceClass.POWER, SensorDeviceClass.ENERGY),
-        registry_address=energy_registry_address, address=energy_bus_address, known_keys=energy_known_keys, **common_args,
+        registry_address=energy_registry_address, reject_registry_entry=duplicate_energy,
+        address=energy_bus_address, known_keys=energy_known_keys, **common_args,
     )
     discovery_for["1"] = PlatformDiscovery(
         who="1", event_type=OWNLightingEvent, build=build_illuminance, accept=yaml_class(SensorDeviceClass.ILLUMINANCE),
@@ -353,6 +380,7 @@ async def async_setup_entry(
     discovery_for["4"] = PlatformDiscovery(
         who="4", event_type=OWNHeatingEvent, build=build_temperature, accept=yaml_class(SensorDeviceClass.TEMPERATURE),
         registry_address=class_registry_address("-temperature", SensorDeviceClass.TEMPERATURE),
+        reject_registry_entry=duplicate_temperature,
         address=temperature_bus_address, known_keys=known_keys, **common_args,
     )
 
@@ -509,14 +537,48 @@ class MyHOMEPowerSensor(MyHOMEEntity, SensorEntity):
             if str(self._where).startswith("7") and not str(self._where).endswith("#0")
             else str(self._where)
         )
-        cmd = OWNCommand.parse(f"*#18*{where}*1200##")
+        builder = getattr(OWNEnergyCommand, "get_instant_power", None) or getattr(
+            OWNEnergyCommand, "request_active_power", None
+        )
+        if builder is not None:
+            cmd = builder(where)
+        else:
+            cmd = OWNCommand.parse(f"*#18*{where}*113##")
         if cmd is not None:
             await self._gateway_handler.send_status_request(cmd)
 
     @callback
     def handle_event(self, message: OWNEnergyEvent) -> None:
         """Handle an event message."""
-        if message.message_type not in [MESSAGE_TYPE_ACTIVE_POWER]:
+        msg_type = getattr(message, "message_type", None)
+        dim = getattr(message, "dimension", None)
+
+        if msg_type in (MESSAGE_TYPE_AUTO_UPDATE_INTERVAL, "auto_update_interval") or dim == 1200:
+            interval = getattr(message, "update_interval", None)
+            if interval is None:
+                dim_vals = getattr(
+                    message,
+                    "dimension_values",
+                    getattr(message, "_dimension_value", []),
+                )
+                try:
+                    interval = int(dim_vals[0]) if dim_vals else 0
+                except (ValueError, IndexError):
+                    interval = 0
+
+            LOGGER.debug(
+                "%s %s (interval=%s)",
+                self._gateway_handler.log_id,
+                message.human_readable_log,
+                interval,
+            )
+            if interval > 0:
+                self._streaming_until = time.monotonic() + (interval * 60)
+            else:
+                self._streaming_until = 0.0
+            return None
+
+        if msg_type not in [MESSAGE_TYPE_ACTIVE_POWER]:
             return True  # type: ignore
 
         LOGGER.debug(
@@ -528,15 +590,39 @@ class MyHOMEPowerSensor(MyHOMEEntity, SensorEntity):
         self._publish_state()
         return None
 
-    async def start_sending_instant_power(self, duration: int) -> None:
+    async def start_sending_instant_power(self, duration: int = 65) -> None:
         """Request automatic instant power."""
         if duration > 0:
             self._streaming_until = time.monotonic() + (duration * 60)
         else:
             self._streaming_until = 0.0
-        await self._gateway_handler.send(
-            OWNEnergyCommand.start_sending_instant_power(self._where, duration)
-        )
+        builder = getattr(OWNEnergyCommand, "start_sending_instant_power", None)
+        if builder is not None:
+            cmd = builder(self._where, duration)
+        else:
+            where = (
+                f"{self._where}#0"
+                if str(self._where).startswith("7") and not str(self._where).endswith("#0")
+                else str(self._where)
+            )
+            cmd = OWNCommand.parse(f"*#18*{where}*#1200#1*{duration}##")
+        if cmd is not None:
+            await self._gateway_handler.send(cmd)
+
+    async def async_stop_sending_instant_power(self) -> None:
+        """Stop automatic instant power streaming."""
+        builder = getattr(OWNEnergyCommand, "stop_sending_instant_power", None)
+        if builder is not None:
+            self._streaming_until = 0.0
+            cmd = builder(self._where)
+            if cmd is not None:
+                await self._gateway_handler.send(cmd)
+                return
+        await self.start_sending_instant_power(0)
+
+    async def stop_sending_instant_power(self) -> None:
+        """Alias for async_stop_sending_instant_power."""
+        await self.async_stop_sending_instant_power()
 
 
 class MyHOMEEnergySensor(MyHOMEEntity, SensorEntity):

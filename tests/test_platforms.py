@@ -409,3 +409,125 @@ class TestPlatformImportCleanliness:
 
         mod = importlib.import_module("custom_components.myhome.diagnostics")
         assert hasattr(mod, "async_get_config_entry_diagnostics")
+
+    def test_all_integration_modules_import_without_ha_deprecations(self):
+        """Import every module in custom_components/myhome and verify zero HA deprecations."""
+        import importlib
+        import pathlib
+
+        from tests.conftest import get_ha_deprecation_guard
+
+        pkg_dir = pathlib.Path(__file__).resolve().parent.parent / "custom_components" / "myhome"
+        for py_file in sorted(pkg_dir.glob("*.py")):
+            mod_name = (
+                "custom_components.myhome"
+                if py_file.stem == "__init__"
+                else f"custom_components.myhome.{py_file.stem}"
+            )
+            importlib.import_module(mod_name)
+
+        guard = get_ha_deprecation_guard()
+        assert not guard.all_import_time_records, (
+            f"Import-time HA deprecations recorded: {guard.all_import_time_records}"
+        )
+
+    def test_ha_deprecation_guard_catches_all_channels(self):
+        """Verify the CI deprecation guard intercepts frame.report_usage, deprecation helpers, and HA log warnings."""
+        import logging
+        from types import SimpleNamespace
+
+        from homeassistant.helpers import deprecation as ha_deprecation
+        from homeassistant.helpers import frame as ha_frame
+
+        from tests.conftest import capture_ha_deprecations
+
+        fake_frame = SimpleNamespace(
+            integration="myhome",
+            custom_integration=True,
+            module="custom_components.myhome.climate",
+            filename="custom_components/myhome/climate.py",
+            relative_filename="custom_components/myhome/climate.py",
+            line_number=42,
+            line="self._attr_temperature_unit = UnitOfTemperature.CELSIUS",
+        )
+
+        # 1. Channel 1: homeassistant.helpers.frame._report_usage (domain and frame)
+        with capture_ha_deprecations() as captured:
+            ha_frame.report_usage(
+                "calls deprecated_api",
+                breaks_in_ha_version="2027.1.0",
+                integration_domain="myhome",
+                core_behavior=ha_frame.ReportBehavior.LOG,
+            )
+            with patch.object(ha_frame, "get_integration_frame", return_value=fake_frame):
+                ha_frame.report_usage(
+                    "uses deprecated_property",
+                    breaks_in_ha_version="2027.3.0",
+                    core_behavior=ha_frame.ReportBehavior.LOG,
+                )
+        assert len(captured) == 2
+        assert "[frame.report_usage] myhome: calls deprecated_api (breaks in HA 2027.1.0)" in captured[0]
+        assert (
+            "[frame.report_usage] custom_components/myhome/climate.py:42: "
+            "uses deprecated_property (breaks in HA 2027.3.0)"
+        ) in captured[1]
+
+        # 2. Channel 2: homeassistant.helpers.deprecation._print_deprecation_warning_internal_impl
+        with (
+            capture_ha_deprecations() as captured,
+            patch.object(ha_frame, "get_integration_frame", return_value=fake_frame),
+        ):
+            ha_deprecation._print_deprecation_warning_internal_impl(
+                "OLD_CONST",
+                "homeassistant.const",
+                "NewEnum.VALUE",
+                "constant",
+                "used",
+                "2027.2.0",
+                log_when_no_integration_is_found=False,
+            )
+        assert len(captured) == 1
+        assert (
+            "[deprecation] custom_components/myhome/climate.py:42: "
+            "The deprecated constant homeassistant.const.OLD_CONST was used from myhome; "
+            "use NewEnum.VALUE instead (breaks in HA 2027.2.0)"
+        ) in captured[0]
+
+        # 3. Channel 3: Direct HA component/entity deprecation log warnings
+        with capture_ha_deprecations() as captured:
+            logging.getLogger("homeassistant.components.climate").warning(
+                "custom_components.myhome.climate::MyHOMEClimate is overriding the deprecated "
+                "target_temperature property, this will be unsupported from Home Assistant 2027.11"
+            )
+            logging.getLogger("custom_components.myhome.light").warning(
+                "'old_prop' is deprecated. Please rename 'old_prop' to 'new_prop' "
+                "in '/config/custom_components/myhome/light.py' to ensure future support."
+            )
+        assert len(captured) == 2
+        assert "overriding the deprecated target_temperature" in captured[0]
+        assert "Please rename 'old_prop' to 'new_prop'" in captured[1]
+
+        # 4. Fallback resilience: if HA Core renames private helpers (_orig_* is None),
+        # the root logger handler still captures rendered Channel 1 & Channel 2 warnings.
+        from tests.conftest import get_ha_deprecation_guard
+
+        guard = get_ha_deprecation_guard()
+        with (
+            capture_ha_deprecations() as captured,
+            patch.object(guard, "_orig_report_usage", None),
+            patch.object(guard, "_orig_print_deprecation", None),
+        ):
+            logging.getLogger("homeassistant.helpers.frame").warning(
+                "Detected that custom integration 'myhome' calls deprecated_helper "
+                "at custom_components/myhome/light.py, line 10: test. "
+                "This will stop working in Home Assistant 2027.5"
+            )
+            logging.getLogger("homeassistant.const").warning(
+                "The deprecated constant OLD_CONST was used from myhome. "
+                "It will be removed in HA Core 2027.6. Use NewEnum.VALUE instead"
+            )
+        assert len(captured) == 2
+        assert "Detected that custom integration 'myhome' calls deprecated_helper" in captured[0]
+        assert "The deprecated constant OLD_CONST was used from myhome" in captured[1]
+
+

@@ -10,7 +10,7 @@ from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, call
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from OWNd.message import OWNAutomationEvent
 
-from .const import BUS_ROUTING, area_of_where
+from .const import BUS_ROUTING, PACED_FANOUT_DELAY, area_of_where
 
 if TYPE_CHECKING:
     from .cover import MyHOMECover
@@ -175,35 +175,53 @@ class MyHOMEScopeCover(MyHOMECover):
         return attrs
 
     def _fan_out(self) -> list[MyHOMECover]:
-        """The members to command one by one: scope commands do not cross an F422.
+        """The members to command one by one when a scope command cannot cross an F422.
 
-        Tested on an MH200 with covers 11-19 behind interface 02 (logical
-        ``#4#`` addressing): ``*2*2*1##`` was echoed but moved none of them,
-        ``*2*1*1#4#02##`` was not even echoed, ``*2*1*11#4#02##`` worked.
+        General commands (WHERE=0) cross F422 interfaces natively (*2*WHAT*0#4#<bus>##),
+        proven on physical MH200 firmware 2.1.0 where *2*0*0#4#02## moved all actuators on bus 02.
+        Only area and group scope covers behind an interface fan out to point commands.
         """
+        if self.scope is None or self.scope.kind == "general":
+            return []
+        return self._members() if self.scope.interface is not None else []
+
+    def _fan_out_position_members(self) -> list[MyHOMECover]:
+        """Members to position individually: OpenWebNet has no broadcast percentage position."""
         return self._members() if self.scope is not None and self.scope.interface is not None else []
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         if members := self._fan_out():
-            await asyncio.gather(*(m.async_open_cover() for m in members))
+            for i, member in enumerate(members):
+                if i > 0 and PACED_FANOUT_DELAY > 0:
+                    await asyncio.sleep(PACED_FANOUT_DELAY)
+                await member.async_open_cover(**kwargs)
             return
         await super().async_open_cover(**kwargs)
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         if members := self._fan_out():
-            await asyncio.gather(*(m.async_close_cover() for m in members))
+            for i, member in enumerate(members):
+                if i > 0 and PACED_FANOUT_DELAY > 0:
+                    await asyncio.sleep(PACED_FANOUT_DELAY)
+                await member.async_close_cover(**kwargs)
             return
         await super().async_close_cover(**kwargs)
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
         if members := self._fan_out():
-            await asyncio.gather(*(m.async_stop_cover() for m in members))
+            for i, member in enumerate(members):
+                if i > 0 and PACED_FANOUT_DELAY > 0:
+                    await asyncio.sleep(PACED_FANOUT_DELAY)
+                await member.async_stop_cover(**kwargs)
             return
         await super().async_stop_cover(**kwargs)
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
-        if members := self._fan_out():
-            await asyncio.gather(*(m.async_set_cover_position(**kwargs) for m in members))
+        if members := self._fan_out_position_members():
+            for i, member in enumerate(members):
+                if i > 0 and PACED_FANOUT_DELAY > 0:
+                    await asyncio.sleep(PACED_FANOUT_DELAY)
+                await member.async_set_cover_position(**kwargs)
             return
         await super().async_set_cover_position(**kwargs)
 

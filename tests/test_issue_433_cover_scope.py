@@ -425,3 +425,78 @@ async def test_scope_cover_timeout_edges(hass: HomeAssistant, gateway) -> None:
     await group.async_will_remove_from_hass()
     unsub.assert_called_once()
     assert group._unsub_members is None and group._run_timeout is None
+
+
+async def test_general_scope_cover_behind_an_interface_sends_native_broadcast(gateway) -> None:
+    """A general cover (WHERE=0) behind an F422 interface sends native broadcast frames."""
+    family = CoverFamily()
+    points = [_cover(gateway, "11", "02"), _cover(gateway, "12", "02"), _cover(gateway, "13", "02")]
+    general = _cover(gateway, "0", "02", scope=CoverScope.of("0", "02"))
+    for c in (*points, general):
+        family.add(c)
+
+    await general.async_open_cover()
+    assert _sent(gateway) == ["*2*1*0#4#02##"]
+
+    gateway.send.reset_mock()
+    await general.async_stop_cover()
+    assert _sent(gateway) == ["*2*0*0#4#02##"]
+
+    gateway.send.reset_mock()
+    await general.async_close_cover()
+    assert _sent(gateway) == ["*2*2*0#4#02##"]
+
+
+async def test_general_scope_cover_behind_an_interface_paces_member_positioning(gateway) -> None:
+    """OpenWebNet has no broadcast percentage position: members behind an interface are positioned with pacing."""
+    family = CoverFamily()
+    points = [_cover(gateway, "11", "02"), _cover(gateway, "12", "02"), _cover(gateway, "13", "02")]
+    general = _cover(gateway, "0", "02", scope=CoverScope.of("0", "02"))
+    for c in (*points, general):
+        family.add(c)
+
+    with (
+        patch.object(MyHOMECover, "async_set_cover_position", AsyncMock()) as member_pos,
+        patch("asyncio.sleep", AsyncMock()) as mock_sleep,
+    ):
+        await general.async_set_cover_position(position=50)
+
+    assert member_pos.await_count == 3
+    # First member moves immediately (i=0), subsequent members (i=1, 2) sleep PACED_FANOUT_DELAY (0.3s)
+    assert mock_sleep.await_count == 2
+    mock_sleep.assert_awaited_with(0.3)
+
+
+def test_relay_general_scopes_to_interface_covers(gateway) -> None:
+    """A general frame with an interface (e.g. *2*2*0#4#02##) only moves covers on that interface."""
+    family = CoverFamily()
+    c_int = _cover(gateway, "11", "02")
+    c_main = _cover(gateway, "85")
+    general_int = _cover(gateway, "0", "02", scope=CoverScope.of("0", "02"))
+    for c in (c_int, c_main, general_int):
+        family.add(c)
+
+    router = FrameRouter()
+    c_int_events = []
+    c_main_events = []
+    general_int_events = []
+    router.subscribe("2", [c_int._device_id], c_int_events.append)
+    router.subscribe("2", [c_main._device_id], c_main_events.append)
+    router.subscribe("2", [general_int._device_id], general_int_events.append)
+
+    runtime = SimpleNamespace(router=router)
+
+    def relay_general(message) -> None:
+        interface = getattr(message, "interface", None)
+        if interface:
+            keys = [f"0#4#{interface}", *family.keys_moved_by("0", interface)]
+            runtime.router.publish("2", keys, message)
+        else:
+            runtime.router.publish("2", ("general",), message)
+
+    msg_int = OWNEvent.parse("*2*2*0#4#02##")
+    relay_general(msg_int)
+
+    assert len(c_int_events) == 1
+    assert len(general_int_events) == 1
+    assert len(c_main_events) == 0  # main bus cover 85 must not receive interface 02 general frame!

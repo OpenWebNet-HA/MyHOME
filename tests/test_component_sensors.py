@@ -1,4 +1,5 @@
-from unittest.mock import AsyncMock, MagicMock
+import time
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.const import UnitOfPower, UnitOfTemperature
@@ -10,6 +11,8 @@ from OWNd.message import (
     MESSAGE_TYPE_ILLUMINANCE,
     MESSAGE_TYPE_MAIN_TEMPERATURE,
     MESSAGE_TYPE_SECONDARY_TEMPERATURE,
+    OWNCommand,
+    OWNEnergyCommand,
 )
 
 from custom_components.myhome.binary_sensor import (
@@ -78,12 +81,12 @@ class TestSensorsCoverage:
         await sensor.async_added_to_hass()
         await sensor.async_will_remove_from_hass()
 
-        # async_update sends status request for Dimension 1200 when streaming is inactive
+        # async_update sends status request for Dimension 113 (active power) when streaming is inactive
         mock_gateway.send_status_request.reset_mock()
         await sensor.async_update()
         mock_gateway.send_status_request.assert_called_once()
         cmd = mock_gateway.send_status_request.call_args[0][0]
-        assert str(cmd) == "*#18*51*1200##"
+        assert str(cmd) == "*#18*51*113##"
 
         # start_sending_instant_power activates streaming
         await sensor.start_sending_instant_power(120)
@@ -95,17 +98,28 @@ class TestSensorsCoverage:
         await sensor.async_update()
         mock_gateway.send_status_request.assert_not_called()
 
-        # when streaming expires, async_update sends Dimension 1200 query again
+        # when streaming expires, async_update sends Dimension 113 query again
         sensor._streaming_until = 0.0
         assert sensor._is_streaming_active() is False
         await sensor.async_update()
         mock_gateway.send_status_request.assert_called_once()
-        assert str(mock_gateway.send_status_request.call_args[0][0]) == "*#18*51*1200##"
+        assert str(mock_gateway.send_status_request.call_args[0][0]) == "*#18*51*113##"
 
         # stop streaming with duration 0 immediately deactivates streaming
         await sensor.start_sending_instant_power(60)
         assert sensor._is_streaming_active() is True
         await sensor.start_sending_instant_power(0)
+        assert sensor._is_streaming_active() is False
+
+        # async_stop_sending_instant_power and alias stop_sending_instant_power
+        await sensor.start_sending_instant_power(60)
+        assert sensor._is_streaming_active() is True
+        await sensor.async_stop_sending_instant_power()
+        assert sensor._is_streaming_active() is False
+
+        await sensor.start_sending_instant_power(60)
+        assert sensor._is_streaming_active() is True
+        await sensor.stop_sending_instant_power()
         assert sensor._is_streaming_active() is False
 
         # 7x address formats with #0 suffix
@@ -123,11 +137,121 @@ class TestSensorsCoverage:
         mock_gateway.send_status_request.reset_mock()
         await sensor_71.async_update()
         mock_gateway.send_status_request.assert_called_once()
-        assert str(mock_gateway.send_status_request.call_args[0][0]) == "*#18*71#0*1200##"
+        assert str(mock_gateway.send_status_request.call_args[0][0]) == "*#18*71#0*113##"
+
+        # Test async_update with builder method on OWNEnergyCommand (e.g. get_instant_power)
+        with patch.object(OWNEnergyCommand, "get_instant_power", create=True, return_value=OWNCommand.parse("*#18*51*113##")):
+            mock_gateway.send_status_request.reset_mock()
+            await sensor.async_update()
+            mock_gateway.send_status_request.assert_called_once()
+            assert str(mock_gateway.send_status_request.call_args[0][0]) == "*#18*51*113##"
+
+        # Test async_update fallback when builders are absent
+        with patch.object(OWNEnergyCommand, "get_instant_power", None, create=True), patch.object(OWNEnergyCommand, "request_active_power", None, create=True):
+            mock_gateway.send_status_request.reset_mock()
+            await sensor.async_update()
+            mock_gateway.send_status_request.assert_called_once()
+            assert str(mock_gateway.send_status_request.call_args[0][0]) == "*#18*51*113##"
+
+        # Test start_sending_instant_power fallback when builder is absent
+        with patch.object(OWNEnergyCommand, "start_sending_instant_power", None):
+            mock_gateway.send.reset_mock()
+            await sensor.start_sending_instant_power(60)
+            mock_gateway.send.assert_called_once()
+            assert str(mock_gateway.send.call_args[0][0]) == "*#18*51*#1200#1*60##"
+
+            mock_gateway.send.reset_mock()
+            await sensor_71.start_sending_instant_power(60)
+            mock_gateway.send.assert_called_once()
+            assert str(mock_gateway.send.call_args[0][0]) == "*#18*71#0*#1200#1*60##"
+
+        # Test async_stop_sending_instant_power with stop_sending_instant_power builder on OWNEnergyCommand
+        stop_cmd = OWNCommand.parse("*#18*51*#1200#1*0##")
+        with patch.object(OWNEnergyCommand, "stop_sending_instant_power", create=True, return_value=stop_cmd):
+            sensor._streaming_until = time.monotonic() + 100.0
+            mock_gateway.send.reset_mock()
+            await sensor.async_stop_sending_instant_power()
+            assert sensor._is_streaming_active() is False
+            mock_gateway.send.assert_called_once_with(stop_cmd)
+
+        # Test async_stop_sending_instant_power fallback when builder is absent
+        with patch.object(OWNEnergyCommand, "stop_sending_instant_power", None):
+            sensor._streaming_until = time.monotonic() + 100.0
+            mock_gateway.send.reset_mock()
+            await sensor.async_stop_sending_instant_power()
+            assert sensor._is_streaming_active() is False
+            mock_gateway.send.assert_called_once()
+            assert str(mock_gateway.send.call_args[0][0]) == "*#18*51*#1200#1*0##"
+
+        # Test async_stop_sending_instant_power fallback when builder returns None
+        with patch.object(OWNEnergyCommand, "stop_sending_instant_power", create=True, return_value=None):
+            sensor._streaming_until = time.monotonic() + 100.0
+            mock_gateway.send.reset_mock()
+            await sensor.async_stop_sending_instant_power()
+            assert sensor._is_streaming_active() is False
+            mock_gateway.send.assert_called_once()
+            assert str(mock_gateway.send.call_args[0][0]) == "*#18*51*#1200#1*0##"
+
+        # handle_event: auto_update_interval with positive interval
+        auto_interval_msg = MagicMock()
+        auto_interval_msg.message_type = "auto_update_interval"
+        auto_interval_msg.update_interval = 120
+        auto_interval_msg.human_readable_log = "mock interval"
+        assert sensor.handle_event(auto_interval_msg) is None
+        assert sensor._is_streaming_active() is True
+
+        # handle_event: auto_update_interval with 0 interval (stream stopped)
+        auto_interval_stop = MagicMock()
+        auto_interval_stop.message_type = "auto_update_interval"
+        auto_interval_stop.update_interval = 0
+        auto_interval_stop.human_readable_log = "mock stop"
+        assert sensor.handle_event(auto_interval_stop) is None
+        assert sensor._is_streaming_active() is False
+
+        # handle_event: dimension 1200 fallback without message_type
+        dim1200_msg = MagicMock()
+        dim1200_msg.message_type = None
+        dim1200_msg.dimension = 1200
+        dim1200_msg.update_interval = None
+        dim1200_msg.dimension_values = ["90"]
+        dim1200_msg.human_readable_log = "mock dim 1200"
+        assert sensor.handle_event(dim1200_msg) is None
+        assert sensor._is_streaming_active() is True
+
+        # handle_event: dimension 1200 fallback with 0 interval
+        dim1200_stop = MagicMock()
+        dim1200_stop.message_type = None
+        dim1200_stop.dimension = 1200
+        dim1200_stop.update_interval = None
+        dim1200_stop.dimension_values = ["0"]
+        dim1200_stop.human_readable_log = "mock dim 1200 stop"
+        assert sensor.handle_event(dim1200_stop) is None
+        assert sensor._is_streaming_active() is False
+
+        # handle_event: dimension 1200 fallback with invalid non-numeric value
+        dim1200_invalid = MagicMock()
+        dim1200_invalid.message_type = None
+        dim1200_invalid.dimension = 1200
+        dim1200_invalid.update_interval = None
+        dim1200_invalid.dimension_values = ["invalid"]
+        dim1200_invalid.human_readable_log = "mock invalid"
+        assert sensor.handle_event(dim1200_invalid) is None
+        assert sensor._is_streaming_active() is False
+
+        # handle_event: dimension 1200 fallback with empty values
+        dim1200_empty = MagicMock()
+        dim1200_empty.message_type = None
+        dim1200_empty.dimension = 1200
+        dim1200_empty.update_interval = None
+        dim1200_empty.dimension_values = []
+        dim1200_empty.human_readable_log = "mock empty"
+        assert sensor.handle_event(dim1200_empty) is None
+        assert sensor._is_streaming_active() is False
 
         # handle_event: unhandled type returns True
         unhandled_msg = MagicMock()
         unhandled_msg.message_type = "other_type"
+        unhandled_msg.dimension = None
         assert sensor.handle_event(unhandled_msg) is True
 
         # handle_event: active power (a live entity writes its state)
@@ -137,6 +261,7 @@ class TestSensorsCoverage:
         sensor.async_schedule_update_ha_state = MagicMock()
         power_msg = MagicMock()
         power_msg.message_type = MESSAGE_TYPE_ACTIVE_POWER
+        power_msg.dimension = 113
         power_msg.active_power = 320.5
         power_msg.human_readable_log = "mock active power"
         sensor.handle_event(power_msg)

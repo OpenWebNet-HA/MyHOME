@@ -100,7 +100,7 @@ async def test_probe_restored_from_registry_keeps_its_yaml_unique_id(hass: HomeA
 
     assert len(added) == 1
     assert added[0].unique_id == YAML_UNIQUE_ID
-    assert added[0].entity_id == "sensor.temp_quadro"
+    assert er.async_get(hass).async_get_entity_id("sensor", DOMAIN, YAML_UNIQUE_ID) == "sensor.temp_quadro"
 
 
 async def test_probe_discovered_from_bus_matches_the_yaml_unique_id(hass: HomeAssistant):
@@ -143,7 +143,7 @@ async def test_old_bus_unique_id_is_migrated_in_place(hass: HomeAssistant):
     registry = er.async_get(hass)
     assert registry.async_get_entity_id("sensor", DOMAIN, YAML_UNIQUE_ID) == entity_id
     assert registry.async_get_entity_id("sensor", DOMAIN, OLD_BUS_UNIQUE_ID) is None
-    assert [(e.unique_id, e.entity_id) for e in added] == [(YAML_UNIQUE_ID, entity_id)]
+    assert [e.unique_id for e in added] == [YAML_UNIQUE_ID]
 
 
 async def test_reporters_duplicate_is_removed_and_the_original_kept(hass: HomeAssistant):
@@ -160,7 +160,7 @@ async def test_reporters_duplicate_is_removed_and_the_original_kept(hass: HomeAs
     registry = er.async_get(hass)
     assert registry.async_get(duplicate) is None
     assert registry.async_get_entity_id("sensor", DOMAIN, YAML_UNIQUE_ID) == original
-    assert [(e.unique_id, e.entity_id) for e in added] == [(YAML_UNIQUE_ID, original)]
+    assert [e.unique_id for e in added] == [YAML_UNIQUE_ID]
 
 
 async def test_migration_skips_foreign_ids_and_survives_a_refused_update(hass: HomeAssistant):

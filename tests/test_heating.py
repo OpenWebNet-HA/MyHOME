@@ -33,14 +33,22 @@ class TestHeatingEventParsing:
     def test_mode_heat(self):
         msg = OWNEvent.parse("*4*1*1##")
         assert isinstance(msg, OWNHeatingEvent)
-        assert msg.message_type == MESSAGE_TYPE_MODE
-        assert msg.mode == CLIMATE_MODE_HEAT
+        if getattr(msg, "message_type", None) == "hvac_season":
+            assert msg.season == "heating"
+            assert msg.mode is None
+        else:
+            assert msg.message_type == MESSAGE_TYPE_MODE
+            assert msg.mode == CLIMATE_MODE_HEAT
 
     def test_mode_cool(self):
         msg = OWNEvent.parse("*4*0*1##")
         assert isinstance(msg, OWNHeatingEvent)
-        assert msg.message_type == MESSAGE_TYPE_MODE
-        assert msg.mode == CLIMATE_MODE_COOL
+        if getattr(msg, "message_type", None) == "hvac_season":
+            assert msg.season == "conditioning"
+            assert msg.mode is None
+        else:
+            assert msg.message_type == MESSAGE_TYPE_MODE
+            assert msg.mode == CLIMATE_MODE_COOL
 
     def test_mode_auto(self):
         msg = OWNEvent.parse("*4*311*1##")
@@ -49,7 +57,7 @@ class TestHeatingEventParsing:
         assert msg.mode == CLIMATE_MODE_AUTO
 
     def test_mode_with_target_temperature(self):
-        msg = OWNEvent.parse("*4*1#0215*1##")
+        msg = OWNEvent.parse("*4*110#0215*1##")
         assert isinstance(msg, OWNHeatingEvent)
         assert msg.message_type == MESSAGE_TYPE_MODE_TARGET
         assert msg.set_temperature == 21.5

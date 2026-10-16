@@ -66,6 +66,7 @@ from .const import (
     CONF_SSDP_LOCATION,
     CONF_SSDP_ST,
     CONF_TRANSITION_MODE,
+    CONF_TUNER_PICTURES,
     CONF_UDN,
     CONF_WORKER_COUNT,
     DEFAULT_AUTO_JOIN_STREAMING,
@@ -1060,13 +1061,15 @@ class MyhomeOptionsFlowHandler(OptionsFlowWithReload):
             if session_limit is not None and int(user_input[CONF_WORKER_COUNT]) > session_limit:
                 errors[CONF_WORKER_COUNT] = "worker_count_above_gateway_limit"
 
-            if CONF_IGNORED_ADDRESSES in user_input:
-                ignored_raw = user_input.get(CONF_IGNORED_ADDRESSES)
-                parsed_ignored, is_valid = validate_ignored_addresses(ignored_raw)
-                if not is_valid:
-                    errors[CONF_IGNORED_ADDRESSES] = "invalid_ignored_address"
-                else:
-                    self.options[CONF_IGNORED_ADDRESSES] = parsed_ignored  # type: ignore
+            # Home Assistant frontend (ha-selector-text / ha-form) omits non-required
+            # fields from user_input when cleared. Defaulting to "" ensures self.options
+            # is cleared to [] rather than preserving stale addresses (#612).
+            ignored_raw = user_input.get(CONF_IGNORED_ADDRESSES, "")
+            parsed_ignored, is_valid = validate_ignored_addresses(ignored_raw)
+            if not is_valid:
+                errors[CONF_IGNORED_ADDRESSES] = "invalid_ignored_address"
+            else:
+                self.options[CONF_IGNORED_ADDRESSES] = parsed_ignored  # type: ignore
 
             if not errors:
                 self.options.update({CONF_WORKER_COUNT: user_input[CONF_WORKER_COUNT]})  # type: ignore
@@ -1091,6 +1094,11 @@ class MyhomeOptionsFlowHandler(OptionsFlowWithReload):
                     self.options[name_key] = str(user_input.get(name_key, "") or "").strip()  # type: ignore
                     tuner_key = CONF_SOURCE_TUNER.format(i)
                     self.options[tuner_key] = bool(user_input.get(tuner_key, False))  # type: ignore
+                # Written only once set (or already stored), so an untouched form leaves the
+                # options identical and a connection-only change still triggers its reload.
+                pictures = str(user_input.get(CONF_TUNER_PICTURES) or "").strip()
+                if pictures or CONF_TUNER_PICTURES in self.options:  # type: ignore[operator]
+                    self.options[CONF_TUNER_PICTURES] = pictures  # type: ignore
 
                 for i in range(1, CONF_DECODER_SLOTS + 1):
                     entity_key = CONF_DECODER_ENTITY.format(i)
@@ -1213,7 +1221,11 @@ class MyhomeOptionsFlowHandler(OptionsFlowWithReload):
                     if isinstance(self.options.get(CONF_IGNORED_ADDRESSES), list)  # type: ignore
                     else str(self.options.get(CONF_IGNORED_ADDRESSES) or "")  # type: ignore
                 },
-            ): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
+            ): vol.Maybe(selector.TextSelector(selector.TextSelectorConfig(multiline=True))),
+            vol.Optional(
+                CONF_TUNER_PICTURES,
+                description={"suggested_value": str(self.options.get(CONF_TUNER_PICTURES) or "")},  # type: ignore
+            ): vol.Maybe(selector.TextSelector(selector.TextSelectorConfig(multiline=True))),
         }
 
         # Matrix source names 1–4 (F441M inputs S1–S4)

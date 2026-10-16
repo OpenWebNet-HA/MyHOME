@@ -343,7 +343,7 @@ def generate_services_summary_table(services_data: dict[str, Any]) -> str:
                         target = ", ".join(f"`{d}`" for d in dom)
                     elif isinstance(dom, str):
                         target = f"`{dom}`"
-            elif service_name in ("start_sending_instant_power",):
+            elif service_name in ("start_sending_instant_power", "stop_sending_instant_power"):
                 target = "`sensor`"
 
             raw_desc = s_data.get("description", "").strip()

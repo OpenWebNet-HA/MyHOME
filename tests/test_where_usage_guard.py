@@ -35,6 +35,7 @@ REVIEWED: dict[str, str] = {
     "sensor.py::async_setup_entry.energy_bus_address": "WHO 18: WHERE is the meter address",
     "sensor.py::async_setup_entry.illuminance_bus_address": "WHO 1 light sensor: WHERE is the address",
     "media_player.py::_zone_address": "WHO 16: WHERE is the sound zone",
+    "sound_source.py::who22_source_id": "WHO 22: WHERE (5#2#S or 2#S) names the tuner source a frame is about",
     "media_player.py::MyHOMEMediaPlayer.handle_event": "WHO 16: WHERE is the sound zone",
     "cover.py::MyHOMECover.handle_event": "WHO 2 calibration: general frame test and the cover's own WHERE",
     "gateway_resync.py::LightingResyncManager.handle_ptp_echo": "WHO 1 point-to-point echo: WHERE is the APL address",

@@ -160,6 +160,9 @@ OpenWebNet gateways manage an internal real-time clock (RTC) queried via WHO=13 
 
 This placeholder can cause date and time parsing failures or dropped gateway diagnostic messages. When the integration detects this sentinel, it registers a Home Assistant Repair issue advising that the gateway requires configuration. (See also the [Wiki guide on Gateway Timezone Configuration](https://github.com/OpenWebNet-HA/MyHOME/wiki/Gateway-Timezone-Configuration)).
 
+> [!NOTE]
+> The **F461** gateway is configured exclusively via the Home + Project app and maintains its clock via NTP. Its firmware always reports `999` over OpenWebNet even when configured; the integration recognizes this and automatically exempts the F461 from this warning.
+
 ### How to resolve:
 1. Log into the gateway's web administration interface, or open **MyHOME_Suite** / **TiMyHome** / **MyHOME_Up**.
 2. Navigate to the **Date & Time** or **Clock** settings.

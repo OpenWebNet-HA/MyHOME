@@ -63,6 +63,9 @@ filterwarnings = [
     "ignore::PendingDeprecationWarning",
     "ignore::aiohttp.web_exceptions.NotAppKeyWarning",
     "ignore::pluggy.PluggyTeardownRaisedWarning",
+    # anyio is imported by HA's dependency tree before pytest registers it for
+    # assertion rewriting; only affects assert introspection inside anyio itself.
+    "ignore:Module already imported so cannot be rewritten:pytest.PytestAssertRewriteWarning",
 ]
 
 [tool.coverage.run]

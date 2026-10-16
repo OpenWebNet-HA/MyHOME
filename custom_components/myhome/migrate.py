@@ -26,6 +26,33 @@ class GatewayProtocol(Protocol):
     def id(self) -> str | None: ...
 
 
+def preserve_legacy_compat_name(
+    hass: HomeAssistant,
+    entity_id: str,
+    registry_entry: er.RegistryEntry | None,
+    legacy_name: str | None,
+) -> er.RegistryEntry | None:
+    """Preserve a pre-v2 entity's full friendly name as ``compat_name`` on HA 2026.11+.
+
+    Legacy ``MAC-WHERE`` registry entries predated ``has_entity_name = True`` and
+    stored the user's full friendly name in ``entry.name`` without a device prefix.
+    When ``EntityPlatform`` attaches the entity to its v2 device and sets
+    ``has_entity_name = True``, Home Assistant 2026.11+ clears ``compat_name`` and
+    prefixes ``entry.name`` with the default device name unless ``compat_name`` is
+    restored once the entity is registered.
+    """
+    if (
+        not legacy_name
+        or registry_entry is None
+        or getattr(registry_entry, "compat_name", False) is not None
+    ):
+        return registry_entry
+    return er.async_get(hass).async_update_entity(
+        entity_id,
+        compat_name=legacy_name,  # type: ignore[call-arg, unused-ignore]
+    )
+
+
 def _device_for_identifier(
     device_registry: dr.DeviceRegistry, entry: ConfigEntry, identifier: tuple[str, str]
 ) -> dr.DeviceEntry | None:
@@ -191,6 +218,9 @@ def migrate_entry_and_registries(
                     reg_entry.domain, DOMAIN, new_unique_id
                 ):
                     try:
+                        legacy_name = (
+                            reg_entry.name if not reg_entry.has_entity_name else None
+                        )
                         entity_registry.async_update_entity(
                             reg_entry.entity_id, new_unique_id=new_unique_id
                         )
@@ -198,7 +228,15 @@ def migrate_entry_and_registries(
                             reg_entry.entity_id
                         )  # reload
                         if reloaded_entry is not None:
-                            reg_entry = reloaded_entry
+                            reg_entry = (
+                                preserve_legacy_compat_name(
+                                    hass,
+                                    reloaded_entry.entity_id,
+                                    reloaded_entry,
+                                    legacy_name,
+                                )
+                                or reloaded_entry
+                            )
                         LOGGER.info(
                             "Resurrecting orphaned MyHOME entity %s to new unique_id %s",
                             reg_entry.entity_id,

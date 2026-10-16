@@ -186,7 +186,10 @@ DISCOVERY_REQUESTS: tuple[tuple[int, str], ...] = (
     (1, "*#1*0##"),
     (2, "*#2*0##"),
     (4, "*#4*0##"),
+    (5, "*#5*0##"),
     (16, "*#16*0*5##"),
+    (18, "*#18*51*51##"),
+    (18, "*#18*51*113##"),
 )
 
 
@@ -234,6 +237,9 @@ class MyHOMEGatewayHandler:
         self.device_health = DeviceHealth(self)
         self.device_registry_id = None
         self.broadcast_resync = broadcast_resync
+        # A WHO 4 central unit (WHERE #0 / #0#N) is configured or has spoken on this bus. Zones
+        # that do not say whether they are standalone follow it (see climate.MyHOMEClimate).
+        self.has_central_unit = False
 
         # Identity evidence, recorded as observed and exported in diagnostics, the
         # WebSocket info payload and every trace (see identification()). What the
@@ -314,9 +320,9 @@ class MyHOMEGatewayHandler:
         """Event set when the event session is established."""
         return self._event_runner._event_session_ready
 
-    def _ensure_cen_device(self, who: int, object_id: int | str) -> None:
+    def _ensure_cen_device(self, who: int, object_id: int | str, model: str | None = None) -> None:
         """Ensure CEN/CEN+ scenario unit is registered in device registry."""
-        self._event_dispatcher.ensure_cen_device(who, object_id)
+        self._event_dispatcher.ensure_cen_device(who, object_id, model=model)
 
     @property
     def identification_source(self) -> str:
@@ -426,6 +432,38 @@ class MyHOMEGatewayHandler:
         """Return gateway firmware version."""
         firmware: str | None = self.gateway.firmware
         return firmware
+
+    @property
+    def supports_zone_status(self) -> bool:
+        """Whether the gateway supports point-to-point zone status queries (*#4*Z##).
+
+        In OpenWebNet WHO=4, point-to-point zone status queries (*#4*Z##) are NOT part of the
+        standard SCS bus protocol. Physical gateways (F455, F454, MH200N, MH202, etc.) forward
+        the request to the SCS bus, where physical thermostats (LN4691, 3550) ignore it, causing
+        a 10-second command session timeout per zone (#674).
+        MyHomeServer1 intercepts *#4*Z## in software and replies from its internal cache (#649).
+        An F461 (firmware 2.0.11) expands it itself into the four dimension requests and answers
+        within 1.3 s with dimensions 0, 12, 14, 13 and the season frame, while it NACKs the
+        general request *#4*0## of the startup sweep and its thermostats push nothing on their
+        own: polling is the only way such a zone gets a state
+        (tests/fixtures/traces/f461_live_2026-10-15/README.md).
+        """
+        norm = self.model.upper()
+        return not any(
+            k in norm
+            for k in (
+                "F455",
+                "F454",
+                "MH200",
+                "MH201",
+                "MH202",
+                "F452",
+                "F453",
+                "F458",
+                "F459",
+                "H4684",
+            )
+        )
 
     @property
     def profile(self) -> Any:
@@ -842,9 +880,14 @@ class MyHOMEGatewayHandler:
         if dim in (0, 22) and dim_val:
             # Check if timezone is 999. In both dimension 0 and 22, dim_val[3] carries the timezone.
             # The OWNd < 2.0.0b7 compat shim clears the time_zone property, but leaves dim_val[3] as "999".
+            # The F461 gateway is configured via Home + Project app and maintains its clock via NTP.
+            # Its firmware always reports 999 over OpenWebNet; it is exempted from this warning (Issue #709).
             if len(dim_val) > 3 and str(dim_val[3]) == "999":
                 if self.config_entry:
-                    async_create_unconfigured_timezone_issue(self.hass, self.config_entry.entry_id, self.config_entry.title)
+                    if self.model.strip().upper() == "F461" or self._who1013.get("code") == "134":
+                        async_delete_unconfigured_timezone_issue(self.hass, self.config_entry.entry_id)
+                    else:
+                        async_create_unconfigured_timezone_issue(self.hass, self.config_entry.entry_id, self.config_entry.title)
             elif len(dim_val) > 3 and str(dim_val[3]) != "":
                 if self.config_entry:
                     async_delete_unconfigured_timezone_issue(self.hass, self.config_entry.entry_id)
@@ -956,6 +999,8 @@ class MyHOMEGatewayHandler:
 
         # The effective model.
         model = resolution.model or configured
+        if ((model and model.strip().upper() == "F461") or self._who1013.get("code") == "134") and entry_id:
+            async_delete_unconfigured_timezone_issue(self.hass, entry_id)
         if model and model.lower() != configured.lower():
             reading = resolution.corrected_reading
             LOGGER.warning(
@@ -1025,7 +1070,7 @@ class MyHOMEGatewayHandler:
         del self.sending_workers[limit:]
 
     def _request_object_model(self) -> None:
-        """Queue ``*#1013*0*1##`` (Gateway Diagnostic, dimension 1 OBJECT_MODEL) once.
+        """Queue ``*#1013**1##`` (Gateway Diagnostic, dimension 1 OBJECT_MODEL) once.
 
         Sent as a status request: OWNd retries a NACK once and logs both attempts at
         DEBUG, and the delivery future is cancelled, which nobody awaits. Not repeated
@@ -1033,7 +1078,7 @@ class MyHOMEGatewayHandler:
         """
         if self._who1013["pending"]:
             return
-        cmd = OWNCommand.parse("*#1013*0*1##")
+        cmd = OWNCommand.parse("*#1013**1##")
         if cmd is None:
             return
         LOGGER.debug("%s Requesting WHO=1013 dimension 1 (OBJECT_MODEL) to settle the model.", self.log_id)

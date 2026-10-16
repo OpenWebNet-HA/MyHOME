@@ -93,11 +93,12 @@ from homeassistant.components.media_player.const import (
     MediaPlayerEntityFeature,
     MediaPlayerState,
 )
-from homeassistant.const import Platform
+from homeassistant.const import CONF_MAC, Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 from OWNd.message import OWNSoundCommand, OWNSoundEvent
@@ -106,6 +107,7 @@ from .const import (
     CONF_SOURCE_NAME,
     CONF_SOURCE_SLOTS,
     CONF_SOURCE_TUNER,
+    CONF_TUNER_PICTURES,
     DOMAIN,
     LOGGER,
     SERVICE_TUNER_SEEK_DOWN,
@@ -120,15 +122,21 @@ from .media_player_pool import (
     build_pool,
     sync_multiple_audio_gateways,
 )
+from .media_player_power import (
+    WAKE_ECHO_WINDOW,
+    PowerTransition,
+    determine_power_transition,
+)
 from .media_player_routing import parse_routing_address, route_pseudo_zones, zone_environment
-from .sound_source import MyHOMESoundSource, source_address
+from .sound_source import MyHOMESoundSource, source_address, who22_tuner_listener
+from .tuner_decode import parse_tuner_pictures
 
 PARALLEL_UPDATES = 0
 
 # The amplifier wake sequence starts with an OFF frame, and the gateway reports
 # that frame back on the event session like any other bus traffic. An OFF that
 # arrives this soon after a wake is our own and must not tear the zone down.
-_WAKE_ECHO_WINDOW = 3.0  # seconds
+_WAKE_ECHO_WINDOW = WAKE_ECHO_WINDOW  # seconds (centralised in media_player_power)
 _RESTORE_CONFIRM_WINDOW = 120.0  # seconds a restored zone has to show up on the bus
 
 
@@ -186,6 +194,13 @@ async def async_setup_entry(
         )
     if sound_sources:
         async_add_entities(sound_sources)
+        # An F500 mirrors its reports onto WHO=22; a plant may deliver only those.
+        mac = str(config_entry.data.get(CONF_MAC) or runtime.mac)
+        config_entry.async_on_unload(
+            async_dispatcher_connect(
+                hass, f"myhome_message_{mac}", who22_tuner_listener(sound_sources)
+            )
+        )
 
     discovery = PlatformDiscovery(
         hass,
@@ -247,6 +262,7 @@ def _build_sound_sources(
 ) -> list[MyHOMESoundSource]:
     """Create an entity for every matrix input the user declared to be a tuner."""
     options = config_entry.options
+    pictures = parse_tuner_pictures(options.get(CONF_TUNER_PICTURES))
     sources: list[MyHOMESoundSource] = []
     for i in range(1, CONF_SOURCE_SLOTS + 1):
         if not options.get(CONF_SOURCE_TUNER.format(i)):
@@ -263,6 +279,7 @@ def _build_sound_sources(
                 manufacturer="BTicino",
                 model="Audio Source",
                 gateway=gateway,
+                pictures=pictures,
             )
         )
     return sources
@@ -436,6 +453,7 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
         except EnvironmentBusyError as err:
             raise self._environment_busy_error(err.owner, err.environment) from err
         self._write_zone_state(old_leader)
+        self._reconcile_pool_loss(pool)
         if result is None:
             if exclude and set(pool.decoder_entity_ids) <= exclude:
                 # Nothing is busy: no configured decoder can take this media.
@@ -946,24 +964,29 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
                     source_num,
                     CONF_SOURCE_SLOTS,
                 )
-        elif message.is_on:
-            self._cancel_pending_off()  # confirmed on: nothing left to time out
-            self._parked = False
-            self._attr_state = MediaPlayerState.ON
-            if not self._status_seen:
-                self._mark_status_seen()
-                self._restore_claim()
-                self._check_stray_at_startup()
-            trigger_auto_join = True
-        elif message.is_off:
-            if self._is_wake_echo():
+        else:
+            transition = determine_power_transition(
+                message=message,
+                is_parked=self._parked,
+                is_wake_echo=self._is_wake_echo(),
+            )
+            if transition == PowerTransition.WAKE_ON:
+                self._cancel_pending_off()  # confirmed on: nothing left to time out
+                self._parked = False
+                self._attr_state = MediaPlayerState.ON
+                if not self._status_seen:
+                    self._mark_status_seen()
+                    self._restore_claim()
+                    self._check_stray_at_startup()
+                trigger_auto_join = True
+            elif transition == PowerTransition.WAKE_ECHO_OFF:
                 # Our own wake sequence's OFF: the ON follows it.
                 LOGGER.debug("%s: ignoring the OFF echo of the wake sequence", self.entity_id)
-            elif self._parked:
+            elif transition == PowerTransition.PARKED_CONFIRM_OFF:
                 # The anti-hiss OFF we sent ourselves: the room stays in its group.
                 self._mark_status_seen()
                 self._attr_state = MediaPlayerState.OFF
-            else:
+            elif transition == PowerTransition.REAL_OFF:
                 self._mark_status_seen()
                 # A real OFF (wall switch or otherwise) makes any pending
                 # group-leave OFF redundant; _async_handle_turn_off below
@@ -972,25 +995,6 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
                 self._attr_state = MediaPlayerState.OFF
                 if not self._turning_off:
                     self.hass.async_create_task(self._async_handle_turn_off(from_bus=True))
-
-        what = getattr(message, "what", getattr(message, "_what", None))
-        is_volume_up = False
-        if what is not None:
-            try:
-                is_volume_up = 1001 <= int(what) <= 1015
-            except (ValueError, TypeError):
-                pass
-
-        if not message.is_off and (is_volume_up or (message.volume is not None and message.volume > 0)):
-            if self._attr_state != MediaPlayerState.ON or self._parked:
-                self._cancel_pending_off()
-                self._parked = False
-                self._attr_state = MediaPlayerState.ON
-                if not self._status_seen:
-                    self._mark_status_seen()
-                    self._restore_claim()
-                    self._check_stray_at_startup()
-                trigger_auto_join = True
 
         if message.volume is not None:
             self._attr_volume_level = message.volume / 31.0

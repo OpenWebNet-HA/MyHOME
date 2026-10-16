@@ -17,6 +17,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import (
     OWNEvent,
+    OWNMessage,
     OWNSoundEvent,
 )
 
@@ -4026,6 +4027,46 @@ async def test_parked_rooms_do_not_report_off_so_music_assistant_keeps_the_group
 
 
 @pytest.mark.asyncio
+async def test_another_room_playing_takes_the_decoder_and_dissolves_the_parked_group(hass, mock_gateway):
+    """Found live: a parked group on zone 17+18 reported idle and blocked zone 36 from claiming the decoder."""
+    leader, member, pool = await _leader_with_member(hass, mock_gateway)
+    other = _create_test_zone(hass, mock_gateway, leader._runtime_data, "21", "media_player.zone21")
+    hass.states.async_set("media_player.dec1", "off")
+
+    timers, patcher = _capture_timers()
+    with patcher:
+        leader._arm_auto_off(60.0, "media_player.dec1")
+        timers[0][1](None)
+    await hass.async_block_till_done()
+
+    # Record parked leader and member states in hass.states as HA does in production
+    hass.states.async_set(leader.entity_id, leader.state)
+    hass.states.async_set(member.entity_id, member.state)
+    assert leader.state == MediaPlayerState.IDLE
+    assert member.state == MediaPlayerState.IDLE
+    assert leader._parked and member._parked
+
+    async def _fake_service(domain, service, data, blocking=False):
+        if service == "turn_on":
+            hass.states.async_set(data["entity_id"], "idle")
+        elif service == "play_media":
+            hass.states.async_set(data["entity_id"], "playing")
+
+    with patch("homeassistant.core.ServiceRegistry.async_call", side_effect=_fake_service):
+        await other.async_play_media("music", "http://stream/1.flac")
+
+    # The other room claimed the decoder, and the parked group was dissolved and unparked
+    assert other._active_decoder == "media_player.dec1"
+    assert pool.owned_decoder(other.entity_id) == "media_player.dec1"
+    assert pool.owned_decoder(leader.entity_id) is None
+    assert pool.get_members(leader.entity_id) == []
+    assert leader._active_decoder is None
+    assert not leader._parked and not member._parked
+    assert leader.state == MediaPlayerState.OFF
+    assert member.state == MediaPlayerState.OFF
+
+
+@pytest.mark.asyncio
 async def test_members_of_a_parked_group_say_on_before_their_slow_wake_frames_go_out(hass, mock_gateway):
     """Music Assistant dropped a member that still reported paused when the leader came on."""
     leader, member, pool = await _leader_with_member(hass, mock_gateway)
@@ -4310,8 +4351,8 @@ async def test_wall_button_power_on_auto_joins_active_streaming_group(hass, mock
 
 
 @pytest.mark.asyncio
-async def test_wall_button_volume_up_powers_on_and_auto_joins(hass, mock_gateway):
-    """Scenario 2: Zone 36 initially OFF receives absolute volume > 0, wakes to ON and auto-joins."""
+async def test_volume_status_report_when_off_updates_level_without_waking(hass, mock_gateway):
+    """Scenario 2: Zone 36 initially OFF receives Dimension 1 volume report, updates volume without waking or joining."""
     _runtime, pool, leader, zone36 = await _setup_streaming_environment(hass, mock_gateway)
     assert zone36.state == MediaPlayerState.OFF
 
@@ -4319,10 +4360,11 @@ async def test_wall_button_volume_up_powers_on_and_auto_joins(hass, mock_gateway
     zone36.handle_event(msg)
     await hass.async_block_till_done()
 
-    assert zone36._attr_state == MediaPlayerState.ON
+    assert zone36._attr_state == MediaPlayerState.OFF
     assert zone36.volume_level == pytest.approx(20 / 31.0)
-    assert leader.group_members == ["media_player.living_room", "media_player.audio_zone_36"]
-    assert zone36.state == MediaPlayerState.PLAYING
+    assert pool.get_leader("media_player.audio_zone_36") is None
+    assert leader.group_members is None
+    assert zone36.state == MediaPlayerState.OFF
 
 
 @pytest.mark.asyncio
@@ -5031,3 +5073,180 @@ async def test_mute_volume_remembers_previous_volume(hass, player):
 
         await player.async_mute_volume(False)
         set_vol.assert_called_with(0.8)
+
+
+@pytest.mark.asyncio
+async def test_issue_669_intercom_video_stream_volume_ducking_leaves_amplifiers_off(
+    hass, mock_gateway
+):
+    """#669: Video intercom audio ducking and volume restoration frames must keep OFF zones OFF.
+
+    Authentic frames from issue #669 trace where starting intercom stream broadcasts
+    Dimension 1 volume reports (*#16*WHERE*1*1##, *#22*3#AREA#POINT*1*1##) and stream
+    stop restores volume (*#16*41*1*6##, *#22*3#4#1*1*6##, etc.).
+    Amplifiers must remain MediaPlayerState.OFF across both dialects.
+    """
+    runtime = MyHOMERuntimeData(gateway=mock_gateway)
+    pool = DecoderPool(hass, {"media_player.streamer": 2})
+    runtime.decoder_pool = pool
+    hass.states.async_set("media_player.streamer", MediaPlayerState.PLAYING)
+
+    base_options = {
+        CONF_SOURCE_NAME.format(2): "Cambridge",
+        CONF_SOURCE_DEFAULTS: {"3": 2, "4": 2, "5": 2, "6": 2, "7": 2, "8": 2},
+    }
+    mock_gateway.config_entry = MagicMock(options=dict(base_options))
+
+    # An active streaming leader playing in living room (zone 21)
+    leader = _create_test_zone(hass, mock_gateway, runtime, "21", "media_player.living_room")
+    leader._options = lambda: dict(base_options)
+    leader._gateway_handler.config_entry.options = dict(base_options)
+    leader._attr_state = MediaPlayerState.ON
+    leader._attr_source = "Cambridge"
+    await pool.claim("media_player.living_room", preferred_source=2)
+    leader._active_decoder = "media_player.streamer"
+
+    # Six amplifier zones that are currently OFF in the house
+    zones = {}
+    for where in ("31", "41", "51", "61", "71", "81"):
+        z = _create_test_zone(hass, mock_gateway, runtime, where, f"media_player.zone_{where}")
+        z._options = lambda: dict(base_options)
+        z._gateway_handler.config_entry.options = dict(base_options)
+        z._attr_state = MediaPlayerState.OFF
+        zones[where] = z
+
+    def _target_where(raw: str) -> str:
+        """Resolve amplifier WHERE from WHO 16 (*#16*EA*...) or WHO 22 (*#22*3#A#P*...)."""
+        if raw.startswith("*#16*"):
+            return raw.split("*")[2]
+        if raw.startswith("*#22*3#"):
+            _, area, point = raw.split("*")[2].split("#")
+            return f"{area}{point}"
+        raise ValueError(f"Unrecognized frame: {raw}")
+
+    # 1. Video intercom stream starts: matrix ducks all amplifiers to volume 1.
+    # The authentic MH202 trace (#669) interleaves WHO 22 status frames (*#22*3#A#P*1*1##)
+    # with classic WHO 16 volume reports (*#16*AP*1*1##).
+    stream_start_frames = [
+        "*#22*3#4#1*1*1##",
+        "*#16*41*1*1##",
+        "*#22*3#3#1*1*1##",
+        "*#16*31*1*1##",
+        "*#16*61*1*1##",
+        "*#22*3#6#1*1*1##",
+        "*#22*3#5#1*1*1##",
+        "*#16*51*1*1##",
+        "*#16*71*1*1##",
+        "*#22*3#7#1*1*1##",
+        "*#22*3#8#1*1*1##",
+        "*#16*81*1*1##",
+    ]
+    for raw in stream_start_frames:
+        msg = OWNSoundEvent.parse(raw)
+        where = _target_where(raw)
+        zones[where].handle_event(msg)
+
+    await hass.async_block_till_done()
+
+    # Verify all 6 amplifiers remain OFF, volume level is updated to 1/31, and none joined the stream
+    for where, z in zones.items():
+        assert z.state == MediaPlayerState.OFF, f"Zone {where} woke to {z.state} on volume ducking"
+        assert z.volume_level == pytest.approx(1 / 31.0)
+        assert pool.get_leader(z.entity_id) is None
+
+    # Group leader was unaffected
+    assert leader.group_members is None
+
+    # 2. Video intercom stream stops: matrix restores volumes (*6*9**## camera off).
+    # Interleaved WHO 16 and WHO 22 restoration frames across the zones.
+    stream_stop_frames = [
+        "*#22*3#5#1*1*0##",
+        "*#16*51*1*0##",
+        "*#16*31*1*1##",
+        "*#22*3#3#1*1*1##",
+        "*#16*41*1*6##",
+        "*#22*3#4#1*1*6##",
+        "*#22*3#6#1*1*7##",
+        "*#16*61*1*7##",
+    ]
+    for raw in stream_stop_frames:
+        msg = OWNSoundEvent.parse(raw)
+        where = _target_where(raw)
+        zones[where].handle_event(msg)
+
+    await hass.async_block_till_done()
+
+    # Verify amplifiers remain OFF with updated restored volume levels
+    assert zones["51"].state == MediaPlayerState.OFF
+    assert zones["51"].volume_level == pytest.approx(0.0)
+
+    assert zones["31"].state == MediaPlayerState.OFF
+    assert zones["31"].volume_level == pytest.approx(1 / 31.0)
+
+    assert zones["41"].state == MediaPlayerState.OFF
+    assert zones["41"].volume_level == pytest.approx(6 / 31.0)
+
+    assert zones["61"].state == MediaPlayerState.OFF
+    assert zones["61"].volume_level == pytest.approx(7 / 31.0)
+
+    for where, z in zones.items():
+        assert z.state == MediaPlayerState.OFF
+        assert pool.get_leader(z.entity_id) is None
+
+
+@pytest.mark.asyncio
+async def test_who22_volume_reports_do_not_wake_amplifiers(hass, mock_gateway):
+    """Confirm WHO 22 volume status reports do not wake OFF amplifiers or bypass guards.
+
+    In systems with intercom and sound diffusion, ducking and volume restoration frames
+    are broadcast in both WHO 16 and WHO 22 dialects.
+    - If parsed as OWNSoundEvent and dispatched to an amplifier entity (Area 3, Point 6),
+      it updates volume without waking or auto-joining.
+    - On the live gateway bus, OWNMessage.parse produces an OWNEvent (WHO=22) which is
+      safely ignored by PlatformDiscovery (who="16", event_type=OWNSoundEvent).
+    """
+    _runtime, pool, leader, zone36 = await _setup_streaming_environment(hass, mock_gateway)
+    assert zone36.state == MediaPlayerState.OFF
+
+    # 1. Direct handle_event on amplifier entity with parsed WHO 22 sound event (Area 3, Point 6)
+    msg22 = OWNSoundEvent.parse("*#22*3#3#6*1*20##")
+    zone36.handle_event(msg22)
+    await hass.async_block_till_done()
+
+    assert zone36._attr_state == MediaPlayerState.OFF
+    assert zone36.volume_level == pytest.approx(20 / 31.0)
+    assert pool.get_leader("media_player.audio_zone_36") is None
+    assert leader.group_members is None
+    assert zone36.state == MediaPlayerState.OFF
+
+    # 2. Live bus frame parsing via OWNMessage.parse produces an OWNEvent (WHO=22)
+    # which is not an OWNSoundEvent, confirming the gateway discovery filtering.
+    live_msg = OWNMessage.parse("*#22*3#3#6*1*20##")
+    assert not isinstance(live_msg, OWNSoundEvent)
+
+
+@pytest.mark.asyncio
+async def test_parked_state_checks_streaming_companion_for_paused(hass, mock_gateway):
+    """A parked zone whose hardware decoder is idle/on but whose streaming companion is paused reports PAUSED."""
+    runtime = MyHOMERuntimeData(gateway=mock_gateway)
+    pool = DecoderPool(
+        hass,
+        {"media_player.cxn": 1},
+        companion_map={"media_player.cxn": "media_player.cxn_dlna"},
+    )
+    runtime.decoder_pool = pool
+
+    zone = _create_test_zone(hass, mock_gateway, runtime, "17", "media_player.zone_17")
+    hass.states.async_set("media_player.cxn", MediaPlayerState.ON)
+    hass.states.async_set("media_player.cxn_dlna", MediaPlayerState.IDLE)
+
+    await pool.claim("media_player.zone_17", environment="1")
+    zone._attr_state = MediaPlayerState.OFF
+    zone._parked = True
+
+    assert zone.state == MediaPlayerState.IDLE
+    hass.states.async_set("media_player.cxn_dlna", MediaPlayerState.PAUSED)
+    assert zone.state == MediaPlayerState.PAUSED
+
+
+
