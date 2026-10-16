@@ -256,6 +256,9 @@ class MyHOMEGatewayHandler:
         self._recent_ptp: collections.deque[tuple[float, str, str | None]] = self._resync_manager.recent_ptp
         self._sender_stop: asyncio.Event = self._command_pool.sender_stop
         self._initial_discovery_done: asyncio.Event = asyncio.Event()
+        self._active_sweeps: int = 0
+        self._sweep_idle: asyncio.Event = asyncio.Event()
+        self._sweep_idle.set()
         # Monotonic time of the last frame seen on the event session; the startup sweep
         # waits for the bus to go quiet between general requests.
         self._last_event_frame_at: float = 0.0
@@ -1116,6 +1119,22 @@ class MyHOMEGatewayHandler:
         """Whether the startup sweep is still running."""
         return not self._initial_discovery_done.is_set()
 
+    @property
+    def sweep_active(self) -> bool:
+        """Whether a paced bus sweep is currently running."""
+        return self._active_sweeps > 0
+
+    def _begin_sweep(self) -> None:
+        """Mark a paced sweep as active so newly discovered entities defer polls."""
+        self._active_sweeps += 1
+        self._sweep_idle.clear()
+
+    def _end_sweep(self) -> None:
+        """Mark a paced sweep as completed and unblock deferred polls when idle."""
+        self._active_sweeps = max(0, self._active_sweeps - 1)
+        if self._active_sweeps == 0:
+            self._sweep_idle.set()
+
     def note_event_frame(self) -> None:
         """Record that a frame just arrived on the event session."""
         self._last_event_frame_at = time.monotonic()
@@ -1155,7 +1174,13 @@ class MyHOMEGatewayHandler:
                 PACED_WRITE_TIMEOUT,
             )
 
-    async def send_paced(self, frames: Iterable[str], *, status_request: bool = True) -> None:
+    async def send_paced(
+        self,
+        frames: Iterable[str],
+        *,
+        status_request: bool = True,
+        _startup: bool = False,
+    ) -> None:
         """Send general requests one at a time, each once the bus finished answering the last.
 
         A general request is answered by one event-session frame per device, spread over
@@ -1165,13 +1190,19 @@ class MyHOMEGatewayHandler:
         out: a NACKed request may have replies in flight. The startup sweep and
         ``myhome.sweep_bus`` both go through here.
         """
-        for frame in frames:
-            cmd = OWNCommand.parse(frame)
-            if cmd is None:
-                continue
-            written = await (self.send_status_request(cmd) if status_request else self.send(cmd))
-            await self._wait_for_write(written, cmd)
-            await self._wait_for_bus_quiet(time.monotonic())
+        if not _startup:
+            self._begin_sweep()
+        try:
+            for frame in frames:
+                cmd = OWNCommand.parse(frame)
+                if cmd is None:
+                    continue
+                written = await (self.send_status_request(cmd) if status_request else self.send(cmd))
+                await self._wait_for_write(written, cmd)
+                await self._wait_for_bus_quiet(time.monotonic())
+        finally:
+            if not _startup:
+                self._end_sweep()
 
     def _discovery_frames(self) -> list[str]:
         """The startup general requests this gateway sends, after topology and profile gates."""
@@ -1209,23 +1240,26 @@ class MyHOMEGatewayHandler:
         what holds back the polls of restored entities.
         """
         try:
-            await self.send_paced(self._discovery_frames())
+            await self.send_paced(self._discovery_frames(), _startup=True)
         finally:
             self._initial_discovery_done.set()
 
     async def wait_for_initial_discovery(self, timeout: float | None = None) -> None:
-        """Wait until startup initial discovery finishes.
+        """Wait until startup initial discovery and any active paced sweep finish.
 
         The default timeout is the longest the sweep can take: every request waits at
         most PACED_WRITE_TIMEOUT for its write and BUS_QUIET_CAP for the bus.
         """
-        if self._initial_discovery_done.is_set():
+        if self._initial_discovery_done.is_set() and self._sweep_idle.is_set():
             return
         if timeout is None:
             timeout = len(DISCOVERY_REQUESTS) * (PACED_WRITE_TIMEOUT + BUS_QUIET_CAP)
         try:
             async with asyncio.timeout(timeout):
-                await self._initial_discovery_done.wait()
+                if not self._initial_discovery_done.is_set():
+                    await self._initial_discovery_done.wait()
+                if not self._sweep_idle.is_set():
+                    await self._sweep_idle.wait()
         except TimeoutError:
             LOGGER.debug("%s Timed out waiting for initial discovery", self.log_id)
 
@@ -1239,6 +1273,8 @@ class MyHOMEGatewayHandler:
         self.is_connected = False
         self._available = False
         self._clear_failover()
+        self._active_sweeps = 0
+        self._sweep_idle.set()
         self._initial_discovery_done.set()
         if self.is_standby:
             primary = self._get_primary_gateway()

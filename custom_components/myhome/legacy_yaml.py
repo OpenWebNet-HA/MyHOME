@@ -39,6 +39,54 @@ def _read_legacy_yaml(
         return target_path, None, err
 
 
+CONF_MIGRATED_YAML_PLATFORMS = "migrated_yaml_platforms"
+
+
+def _apply_yaml_platforms(
+    yaml_platforms: dict[str, dict[str, dict[str, Any]]],
+    configured_platforms: dict[str, dict[str, dict[str, Any]]],
+) -> None:
+    """Populate configured_platforms from validated YAML platform mappings."""
+    for plat, devices in yaml_platforms.items():
+        if plat in configured_platforms and isinstance(devices, dict):
+            for d_id, d_cfg in devices.items():
+                configured_platforms[plat][d_id] = d_cfg
+                if isinstance(d_cfg, dict):
+                    who, dash, clean_id = d_id.partition("-")
+                    if dash and who.isdigit():
+                        configured_platforms[plat][clean_id] = d_cfg
+                    iface = d_cfg.get(CONF_BUS_INTERFACE) or d_cfg.get("bus_interface")
+                    # A routed device never claims the bare key: that is the local bus's (#408)
+                    routing = f"{BUS_ROUTING}{iface}" if iface is not None else ""
+                    if "where" in d_cfg:
+                        configured_platforms[plat][f"{d_cfg['where']}{routing}"] = d_cfg
+                    if CONF_ZONE in d_cfg or "zone" in d_cfg:
+                        z_val = str(d_cfg.get(CONF_ZONE) or d_cfg.get("zone"))
+                        configured_platforms[plat][f"{z_val}{routing}"] = d_cfg
+                        clean_z = z_val.split("#")[-1]
+                        configured_platforms[plat][f"{clean_z}{routing}"] = d_cfg
+                        if not routing:
+                            configured_platforms[plat][f"zone_{clean_z}"] = d_cfg
+
+
+def migrate_legacy_yaml_to_entry_options(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    yaml_platforms: dict[str, dict[str, dict[str, Any]]],
+) -> bool:
+    """Persist validated legacy YAML platforms into ConfigEntry.options once."""
+    if not yaml_platforms or CONF_MIGRATED_YAML_PLATFORMS in entry.options:
+        return False
+    if hass.config_entries.async_get_entry(entry.entry_id) is None:
+        return False
+    new_options = {
+        **dict(entry.options),
+        CONF_MIGRATED_YAML_PLATFORMS: yaml_platforms,
+    }
+    hass.config_entries.async_update_entry(entry, options=new_options)
+    return True
+
+
 async def load_legacy_myhome_yaml(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -67,6 +115,9 @@ async def load_legacy_myhome_yaml(
         return
 
     if resolved_path is None or not raw_yaml or not isinstance(raw_yaml, dict):
+        migrated = entry.options.get(CONF_MIGRATED_YAML_PLATFORMS)
+        if isinstance(migrated, dict) and migrated:
+            _apply_yaml_platforms(migrated, configured_platforms)
         return
 
     try:
@@ -119,42 +170,8 @@ async def load_legacy_myhome_yaml(
                         continue
             if mac_key and mac_key in _validated:
                 yaml_platforms = _validated[mac_key].get(CONF_PLATFORMS, {})
-                for plat, devices in yaml_platforms.items():
-                    if plat in configured_platforms:
-                        for d_id, d_cfg in devices.items():
-                            configured_platforms[plat][d_id] = d_cfg
-                            if isinstance(d_cfg, dict):
-                                who, dash, clean_id = d_id.partition("-")
-                                if dash and who.isdigit():
-                                    configured_platforms[plat][clean_id] = d_cfg
-                                iface = d_cfg.get(CONF_BUS_INTERFACE) or d_cfg.get(
-                                    "bus_interface"
-                                )
-                                # A routed device never claims the bare key: that is the local bus's (#408)
-                                routing = (
-                                    f"{BUS_ROUTING}{iface}"
-                                    if iface is not None
-                                    else ""
-                                )
-                                if "where" in d_cfg:
-                                    configured_platforms[plat][
-                                        f"{d_cfg['where']}{routing}"
-                                    ] = d_cfg
-                                if CONF_ZONE in d_cfg or "zone" in d_cfg:
-                                    z_val = str(
-                                        d_cfg.get(CONF_ZONE) or d_cfg.get("zone")
-                                    )
-                                    configured_platforms[plat][
-                                        f"{z_val}{routing}"
-                                    ] = d_cfg
-                                    clean_z = z_val.split("#")[-1]
-                                    configured_platforms[plat][
-                                        f"{clean_z}{routing}"
-                                    ] = d_cfg
-                                    if not routing:
-                                        configured_platforms[plat][
-                                            f"zone_{clean_z}"
-                                        ] = d_cfg
+                _apply_yaml_platforms(yaml_platforms, configured_platforms)
+                migrate_legacy_yaml_to_entry_options(hass, entry, yaml_platforms)
                 LOGGER.info(
                     "Loaded legacy myhome.yaml configuration for gateway %s (%s platforms)",
                     entry.data[CONF_MAC],
@@ -164,3 +181,4 @@ async def load_legacy_myhome_yaml(
         LOGGER.error(
             "Failed to parse myhome.yaml from %s: %s", resolved_path, e
         )
+
