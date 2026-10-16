@@ -1117,6 +1117,9 @@ async def test_light_suppresses_sensor_discovery_and_purges_registry(hass):
             "light": {
                 "25": {CONF_WHERE: "25", CONF_NAME: "Light 25"},
             },
+            "lock": {
+                "30": {CONF_WHO: "1", CONF_WHERE: "30", CONF_NAME: "Lock 30"},
+            },
             "binary_sensor": {
                 "bs_21": {CONF_WHO: "1", CONF_WHERE: "21", CONF_NAME: "Motion 21"},
             },

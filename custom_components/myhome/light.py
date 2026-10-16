@@ -254,6 +254,14 @@ class _ForeignAddresses:
             self.switches.update(
                 {str(dev_id), address.where, address.clean_key, address.clean_where}
             )
+        for platform, default_who in (("cover", "2"), ("lock", "6")):
+            for dev_id, cfg in runtime.platforms.get(platform, {}).items():
+                if str(cfg.get(CONF_WHO, default_who)) != "1":
+                    continue
+                address = Address.from_config(dev_id, cfg)
+                self.switches.update(
+                    {str(dev_id), address.where, address.clean_key, address.clean_where}
+                )
         for platform, default_who in (("binary_sensor", "25"), ("sensor", "1")):
             for dev_id, cfg in runtime.platforms.get(platform, {}).items():
                 if str(cfg.get(CONF_WHO, default_who)) != "1":
@@ -268,7 +276,9 @@ class _ForeignAddresses:
             entries = []
         for entry in entries:
             who, device_id = parse_unique_id(entry.unique_id or "", gateway_mac, entry_mac)
-            if entry.domain == "switch":
+            if entry.domain in ("switch", "cover", "lock"):
+                if entry.domain != "switch" and who != "1":
+                    continue
                 self.switches.update({device_id, device_id.split("#4#")[0].split("-")[-1]})
             elif entry.domain in ("binary_sensor", "sensor"):
                 if who == "1":

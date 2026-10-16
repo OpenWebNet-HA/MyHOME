@@ -35,6 +35,12 @@
     },
     "tuner_seek_down": {
       "service": "mdi:rewind-outline"
+    },
+    "cancel_cover_request": {
+      "service": "mdi:shield-remove-outline"
+    },
+    "acknowledge_cover_fault": {
+      "service": "mdi:shield-check-outline"
     }
   }
 }

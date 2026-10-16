@@ -211,7 +211,245 @@ In legacy configurations, users often placed a `delay: 45s` followed by `cover.s
 
 ---
 
+## 🚪 Impulse Covers: Motorized Gates & Garage Doors (`WHO = 1`)
+
+In BTicino MyHOME installations, motorized garage doors and sliding/swing entrance gates are controlled via **monostable impulse relays** on `WHO = 1` (such as `F411/2` or `F411U2`).
+
+Because monostable relays only send a momentary pulse (`open` / `stop` / `close` / `stop`) with no inherent directional knowledge on the bus, Home Assistant implements the specialized **`MyHOMEImpulseCover`** entity.
+
+**By default the cover is a plain hardware interface.** `open_cover`, `close_cover` and `stop_cover` pulse the relay straight away, from a dashboard, a wall tablet, a button, a script or a voice assistant; nobody has to approve anything on a phone. The integration only does what belongs to the hardware:
+
+- It sends the pulse (hardware-timed WHAT 18 where the installed OWNd has it, ON followed by OFF otherwise) and keeps a deadband (`min_cycle_time`) so a double tap cannot send two pulses. A pulse that was not sent raises an error.
+- With a `state_sensor` it knows the real position: `open_cover` on an open or opening door and `close_cover` on a closed or closing door send nothing, because a pulse would only undo the request. Without a sensor the position is assumed and every pulse goes out as asked.
+- `stop_cover` is never withheld.
+- If the OFF that ends a software pulse cannot be delivered it is retried, and the relay is released before the next pulse.
+
+Who may operate the door, from where and with which confirmation is a policy of your installation. Build it with automations or blueprints, or switch on the optional supervised workflow below with an `access:` block.
+
+### 🛡️ Safety Architecture & Threat Model
+
+> [!CAUTION]
+> **HOME ASSISTANT IS A SUPERVISORY AUTOMATION SYSTEM, NOT A CERTIFIED SAFETY SYSTEM**
+> Primary entrapment and crush protection (e.g. European Standard **EN 12453 / EN 12445** or North American **UL 325**) **must be provided by the motorized gate or garage door hardware itself**: certified infrared photocells, safety contact edges, and mechanical force limiters built into the motor control board.
+> The optional `AccessController` is designed exclusively to prevent Home Assistant from *causing* an unintended, accidental, or unattended movement.
+
+#### 📊 Optional Human-in-the-Loop Access Policy (`access:`)
+
+Everything in this part applies **only to a cover that has an `access:` block**. Without it the cover pulses directly, as described above.
+
+```text
+  [ User / Dashboard / Widget / Siri / Alexa ]
+                       │
+                       │ 1. cover.open_cover / close_cover
+                       ▼
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                    MyHOME AccessController                     │
+  │                                                                 │
+  │  [ Check User & Lockout ] ──( unauthorized )──> ❌ AccessDenied │
+  │             │ (authorized)                                      │
+  │             ▼                                                   │
+  │  [ Classify State Sensor ]                                      │
+  │       ├─ Sensor = Closed ─────────> Effect: OPEN                │
+  │       └─ Sensor = Open / Unknown ──> Effect: MAY_CLOSE          │
+  │                                           │                     │
+  │                                  [ Safety Verification ]        │
+  │                                  - Photocells valid (<31d)?     │
+  │                                  - User at home / Camera ok?    │
+  │                                  - Close-block switch off?      │
+  │                                           │ (all pass)          │
+  │             ┌─────────────────────────────┘                     │
+  │             ▼                                                   │
+  │  [ Generate 128-bit CSPRNG Nonce ]                              │
+  │  - Single-use token: secrets.token_urlsafe(16)                  │
+  │  - Bound to: user_id + entity_id + effect + 60s timeout         │
+  └─────────────────────────────┬───────────────────────────────────┘
+                                │ 2. Push Notification
+                                ▼
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                 Companion App (iOS / Android)                   │
+  │                                                                 │
+  │   🔔 "Security Request: Approve garage_door_1 close?"           │
+  │   [ ✅ Area Clear - Close ] (authenticationRequired: true)       │
+  │                                                                 │
+  │   👉 User unlocks phone via FaceID / Fingerprint / Biometrics   │
+  └─────────────────────────────┬───────────────────────────────────┘
+                                │ 3. mobile_app_notification_action
+                                ▼
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                    MyHOME AccessController                     │
+  │                                                                 │
+  │  [ Validate Nonce & User Context (constant-time HMAC) ]         │
+  │             │ (valid)                                           │
+  │             ▼                                                   │
+  │  [ Pre-Warning Phase (optional 5s flasher) ]                    │
+  │       └─( wall switch pressed? )──> ❌ Cancel movement          │
+  │             │ (clear)                                           │
+  │             ▼                                                   │
+  │  [ Bus Impulse ] ──> *1*1*WHERE## (WHO 1 Relay Monostable Pulse)│
+  │             │                                                   │
+  │             ▼                                                   │
+  │  [ Watchdog Timer (travel_time + margin) ]                      │
+  │       ├─ Sensor confirms target state ──> ✅ IDLE (Success)     │
+  │       └─ Sensor fails to reach state  ──> ⚠️ FAULT (Latched)    │
+  │                                           (Zero auto-retry)     │
+  └─────────────────────────────────────────────────────────────────┘
+```
+
+#### 📊 Authentic BTicino Hardware Sequence (MH200 Trace Capture)
+
+```text
+  Entrance Panel (PE1)          MH200 Gateway            Handset (74)         Gate/Garage Relay (71/72)
+          │                           │                       │                           │
+          │ 1. Bell Pressed           │                       │                           │
+          │──────────────────────────>│                       │                           │
+          │   *#16*81*1*1##..88##     │                       │                           │
+          │   (Audio matrix routing)  │                       │                           │
+          │                           │                       │                           │
+          │   *8*1#1#4*74##           │                       │                           │
+          │   (WHO 8 Video Call)      │                       │                           │
+          │                           │─────── Ring ─────────>│                           │
+          │                           │                       │                           │
+          │                           │<─── Pick Up / Talk ───│                           │
+          │                           │   *8*9#1#4*73##       │                           │
+          │                           │   (Caller address)    │                           │
+          │                           │                       │                           │
+          │                           │<── Hang Up / End ─────│                           │
+          │                           │   *6*9##              │                           │
+          │                           │   (Camera OFF)        │                           │
+          │                           │                       │                           │
+          │                           │                       │ 2. Gate Button Pressed    │
+          │                           │<──────────────────────│                           │
+          │                           │   *1*1*72##           │                           │
+          │                           │   (WHO 1 Pulse)       │                           │
+          │                           │──────────────────────────────────────────────────>│
+          │                           │                       │                   [ Gate Moves ]
+```
+
+#### Key Principles of the Optional Human-in-the-Loop Policy (with `access:`):
+
+1. **Zero Direct Movement on Open and Close Calls**:
+   Calls to `cover.open_cover` or `close_cover` (whether from dashboards, mobile widgets, voice assistants, or automations) **never pulse the relay directly**. Instead, they create an authenticated approval request for an authorized person. Automations and scripts are refused because they have no person behind them. **`stop_cover` is the exception**: while a request is pending, the pre-warning runs or the door moves under supervision, it cancels the request or pulses the relay to stop the door at once, for anyone, without approval.
+2. **Cryptographic Single-Use Nonce & User Binding**:
+   Each approval request generates a 128-bit CSPRNG token (`secrets.token_urlsafe(16)`), tightly bound to the requesting `user_id`, target entity, and physical direction. Replayed, stale, or forged approval actions are discarded.
+3. **Biometric Phone Unlock Requirement**:
+   Actionable push notifications to the Companion App enforce `authenticationRequired: true` (iOS FaceID/TouchID, Android biometrics/screen lock). The phone must be actively unlocked by the authorized approver.
+4. **Fail-Closed Sensor Direction Checks**:
+   A pulse is classified as a pure **OPEN** *only* when the ground-truth state sensor (`state_sensor`, a binary sensor that is `off` when the door is closed and `on` otherwise) proves the door is closed. In all other states, the pulse is classified as **MAY_CLOSE**, requiring:
+   - Verified active safety devices within `safety_check_days`.
+   - The user to be on site (`person` entity reports `home`) or visual confirmation via a camera snapshot.
+   - Any external close-block switch to report `off`.
+   - Any missing, unavailable, or non-binary sensor state immediately fails closed.
+5. **Audible / Visual Pre-Warning & Watchdog**:
+   Before a close pulse, an optional pre-warning flasher (`prewarn_light`) triggers for `prewarn_seconds`. After the pulse, an anti-stuck watchdog monitors motion: if the expected state is not reached within `travel_time + watchdog_margin`, a latching fault is asserted with **zero automatic retries**. A latched fault survives a restart or reload of Home Assistant and can only be cleared on site by an authorized user using the `myhome.acknowledge_cover_fault` action; an in-flight request or pre-warning can be cancelled at any time using `myhome.cancel_cover_request` (see [Services](services.md#14-myhomecancel_cover_request)).
+6. **A Wall Button Starts the Gate, It Does Not Stop It**:
+   A press of the wall button (or any other keypad on the bus) closes the relay and energizes the motor by itself; Home Assistant only sees the resulting `*1*1*WHERE##` frame afterwards. When such a frame arrives during an approval request or the pre-warning countdown, Home Assistant therefore *drops its own pending request* so that no second pulse follows and stops or reverses the gate. The movement the button started is not aborted. Use the hardware's own stop input or the remote control for an emergency stop.
+
+### ⚙️ Configuring an Impulse Cover
+
+An impulse cover needs `who: 1` and a single point-to-point `where`. The minimal configuration is a hardware interface with no approval step:
+
+```yaml
+# /config/myhome.yaml
+00:03:50:XX:XX:XX:
+  cover:
+    garage_door:
+      who: 1
+      where: "71"
+      name: Garage door
+      device_class: garage
+      state_sensor: binary_sensor.garage_door_closed   # optional: off = closed, on = not closed
+```
+
+Add an `access:` block to opt in to the supervised workflow (phone approval, PIN, presence, camera, pre-warning, safety audit). **With `access:` an empty `allowed_users` refuses every open and close request** with `AccessDenied`: that policy is fail-closed. The full example:
+
+```yaml
+# /config/myhome.yaml
+00:03:50:XX:XX:XX:
+  cover:
+    garage_door:
+      who: 1
+      type: impulse_relay            # optional; only valid together with who: 1
+      where: "71"                    # one relay, never a general, area or group address
+      name: Garage door
+      device_class: garage           # garage or gate (default gate)
+      state_sensor: binary_sensor.garage_door_closed   # off = closed, on = not closed
+      travel_time: 25                # seconds, for the dashboard estimate and the watchdog
+      pulse_duration: 0.5            # seconds the relay is closed (0.2 - 2.0)
+      min_cycle_time: 5              # seconds between two pulses (1 - 120)
+      pin_code: "1234"               # optional second factor, asked on the phone; needs access:
+      access:
+        allowed_users:               # Home Assistant user ids
+          - 1a2b3c4d5e6f47a8b9c0d1e2f3a4b5c6
+        approvers:                   # one notify service per allowed user
+          1a2b3c4d5e6f47a8b9c0d1e2f3a4b5c6: notify.mobile_app_phone
+        remote_close: at_home        # never (default), at_home or with_camera
+        camera: camera.driveway      # needed for remote_close: with_camera
+        safety_devices_verified: 2026-09-01   # date you last tested photocells and force limiter
+        safety_check_days: 31
+        prewarn_light: light.driveway_flasher
+        prewarn_seconds: 5
+        close_block_entity: input_boolean.gate_close_block
+        watchdog_margin: 10          # seconds added to travel_time before a fault is latched
+        approval_timeout: 60
+```
+
+| Key | Meaning |
+| :--- | :--- |
+| `state_sensor` | Binary sensor of the ground-truth position. Without it the position is assumed and, with `access:`, every pulse is treated as one that can close the door. |
+| `pulse_duration` | Relay pulse in seconds. `0.5` uses the timed WHAT 18 command where the installed OWNd has it, and ON followed by OFF otherwise. |
+| `min_cycle_time` | Deadband after a pulse that reached the bus. A failed send does not start it. |
+| `pin_code` | PIN asked in the approval notification; only valid together with `access:`. A reply that carries no text is refused without counting as a wrong attempt. |
+| `access.*` | Optional. Turns on the supervised workflow, see the flow above: `allowed_users`, `approvers`, `remote_close`, `camera`, `safety_devices_verified`, `safety_check_days`, `prewarn_light`, `prewarn_seconds`, `close_block_entity`, `watchdog_margin`, `approval_timeout`. |
+
+> [!NOTE]
+> `type: impulse_relay` together with `who: 2` (and `type: shutter` or `standard` together with `who: 1`) is rejected when the configuration is validated; it used to fall back to an ordinary shutter silently.
+
+### 🔒 Configuring a Door Strike Lock
+
+```yaml
+00:03:50:XX:XX:XX:
+  lock:
+    front_door:
+      who: 6                         # the only value; WHO 1 relays are covers
+      where: "4001"                  # 4000-4095 style endpoints; append #2 on a riser installation: "4001#2"
+      name: Front door
+      code: "1234"                   # optional; asked on every unlock
+      pulse_duration: 0.5            # seconds until the lock shows locked again
+```
+
+Locks exist only when they are configured here (or were created earlier and are restored from the registry). A lock release seen on the bus never creates a lock entity, because such an entity would carry no code.
+
+### ⚠️ Strict Distinction: Covers vs. Locks
+
+```text
+  ┌───────────────────────────────────────┐   ┌───────────────────────────────────────┐
+  │    HEAVY MACHINERY (KINETIC RISK)     │   │      PEDESTRIAN ACCESS (LOW MASS)     │
+  │                                       │   │                                       │
+  │   - Motorized Sliding / Swing Gates   │   │   - Front Door Latch / Strike         │
+  │   - Sectional / Roller Garage Doors   │   │   - Pedestrian Wicket Gate Buzzer     │
+  │                                       │   │   - Elettroserratura (12V AC/DC)      │
+  │                   │                   │   │                   │                   │
+  │                   ▼                   │   │                   ▼                   │
+  │       PLATFORM: cover (impulse)       │   │            PLATFORM: lock             │
+  │                   │                   │   │                   │                   │
+  │  - Optional AccessController          │   │  - Direct momentary pulse (1-3s)      │
+  │  - Dual binary sensor feedback        │   │  - Optional PIN authentication        │
+  │  - Biometric challenge-response nonce │   │  - Automatic re-lock state machine    │
+  │  - 5s pre-warning flasher             │   │  - Doorbell one-tap unlock safe       │
+  │  - Anti-stuck watchdog (latched fault)│   │                                       │
+  │  - Certified EN 12453 safety check    │   │                                       │
+  └───────────────────────────────────────┘   └───────────────────────────────────────┘
+```
+
+| Physical Device | Required Entity Platform | Why |
+| :--- | :--- | :--- |
+| **Motorized Gates & Garage Doors** | `cover` (`type: impulse_relay`) | Heavy kinetic machinery with kinetic entrapment/crush risk. Use a `state_sensor`, and the optional `access:` workflow where you want supervision. **Never configure a motorized gate or garage as a `lock`**: its door lock-style unlock would carry no sensor feedback. |
+| **Pedestrian Door Strikes** | `lock:` block, `who: 6` only | Low-mass momentary electric door buzzers (elettroserrature) on a WHO 6 entrance panel that release a pedestrian latch. A `lock` cannot be a WHO 1 relay: a motorized gate needs the cover's sensor feedback and stop handling, so `who: 1` is rejected there. |
+
+---
+
 ## 🔄 Legacy YAML Note
 
 > [!NOTE]
 > If you are upgrading from legacy v0.9 installations and still have manual `cover:` blocks in `/config/myhome.yaml`, please refer to the [v0.9.4 Legacy Cover Documentation](../../0.9.4/configuration/covers/) or the [Legacy YAML Migration Guide](../migration/legacy-yaml.md). In v2, all covers are managed dynamically via Home Assistant's native registry.
+

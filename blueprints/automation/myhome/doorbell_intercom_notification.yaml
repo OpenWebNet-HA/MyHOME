@@ -1,0 +1,151 @@
+blueprint:
+  name: "MyHOME: Intercom & Doorbell Press Notification"
+  description: >-
+    Dispatches an actionable mobile push notification with sound, optional live camera snapshot,
+    and a one-tap 'Open Gate / Unlock Door' button whenever someone rings the BTicino
+    intercom entrance panel (WHO=6 doorbell event).
+  domain: automation
+  source_url: https://github.com/OpenWebNet-HA/MyHOME/blob/v2-phase1-architecture/blueprints/automation/myhome/doorbell_intercom_notification.yaml
+  input:
+    notify_service:
+      name: "Mobile App Notify Action"
+      description: "Target mobile app notify action (e.g. notify.mobile_app_iphone or notify.mobile_app_pixel)."
+      selector:
+        text:
+    camera_entity:
+      name: "Intercom / Entrance Camera (Optional)"
+      description: "Camera entity pointing at the entrance to attach a live snapshot to the notification."
+      default: ""
+      selector:
+        entity:
+          domain: camera
+    door_entity:
+      name: "Pedestrian Door Lock to Release (Optional)"
+      description: >-
+        Electric pedestrian strike (lock entity) to release from the notification.
+        SAFETY NOTE: Motorized gates and garage doors (covers) are deliberately excluded from this
+        one-tap action. Machinery safety requires motorized impulse covers to be operated interactively
+        via the Home Assistant app to trigger the multi-factor approval and sensor validation policy.
+      default: ""
+      selector:
+        entity:
+          domain: lock
+    language:
+      name: "Notification Language"
+      description: "Language for push notifications and action buttons (English, Italiano, Nederlands, Deutsch, Français)."
+      default: "en"
+      selector:
+        select:
+          options:
+            - label: "English"
+              value: "en"
+            - label: "Italiano"
+              value: "it"
+            - label: "Nederlands"
+              value: "nl"
+            - label: "Deutsch"
+              value: "de"
+            - label: "Français"
+              value: "fr"
+    custom_title:
+      name: "Custom Notification Title (Optional)"
+      description: "Leave empty to use the standard translated title."
+      default: ""
+      selector:
+        text:
+    custom_message:
+      name: "Custom Notification Message (Optional)"
+      description: "Leave empty to use the standard translated message."
+      default: ""
+      selector:
+        text:
+
+mode: restart
+max_exceeded: silent
+
+trigger:
+  - platform: event
+    event_type: myhome_doorbell_event
+
+variables:
+  door_target: !input door_entity
+  camera_target: !input camera_entity
+  lang: !input language
+  custom_title_val: !input custom_title
+  custom_message_val: !input custom_message
+  action_open: "MYHOME_DOORBELL_OPEN_{{ trigger.event.data.where }}_{{ now().timestamp() | int }}_{{ range(100000, 999999) | random }}"
+  action_dismiss: "MYHOME_DOORBELL_DISMISS_{{ now().timestamp() | int }}_{{ range(100000, 999999) | random }}"
+  i18n:
+    en:
+      title: "🔔 Doorbell: Someone is ringing!"
+      message: "Incoming call from entrance panel"
+      open_action: "🔓 Release Lock"
+      dismiss_action: "❌ Dismiss"
+    it:
+      title: "🔔 Citofono: Qualcuno sta suonando!"
+      message: "Chiamata in arrivo dal posto esterno"
+      open_action: "🔓 Apri Serratura"
+      dismiss_action: "❌ Ignora"
+    nl:
+      title: "🔔 Deurbel: Iemand belt aan!"
+      message: "Er wordt aangebeld bij de buitenpost"
+      open_action: "🔓 Ontgrendel Deur"
+      dismiss_action: "❌ Negeren"
+    de:
+      title: "🔔 Türklingel: Jemand klingelt!"
+      message: "Eingehender Anruf von der Türstation"
+      open_action: "🔓 Tür öffnen"
+      dismiss_action: "❌ Ablehnen"
+    fr:
+      title: "🔔 Sonnette: Quelqu'un sonne!"
+      message: "Appel entrant depuis la platine de rue"
+      open_action: "🔓 Déverrouiller"
+      dismiss_action: "❌ Ignorer"
+  resolved_title: >-
+    {{ custom_title_val if custom_title_val != '' else (i18n[lang].title if lang in i18n else i18n['en'].title) }}
+  resolved_message: >-
+    {% set base = custom_message_val if custom_message_val != '' else (i18n[lang].message if lang in i18n else i18n['en'].message) %}
+    {{ base }} ({{ trigger.event.data.where }})
+  action_open_title: >-
+    {{ i18n[lang].open_action if lang in i18n else i18n['en'].open_action }}
+  action_dismiss_title: >-
+    {{ i18n[lang].dismiss_action if lang in i18n else i18n['en'].dismiss_action }}
+
+action:
+  - action: !input notify_service
+    data:
+      title: "{{ resolved_title }}"
+      message: "{{ resolved_message }}"
+      data: >-
+        {% set payload = {
+          "push": {
+            "sound": "chime.caf",
+            "category": "MYHOME_DOORBELL"
+          },
+          "actions": [
+            {"action": action_open, "title": action_open_title, "destructive": false, "authenticationRequired": true},
+            {"action": action_dismiss, "title": action_dismiss_title, "destructive": true}
+          ] if door_target != '' else [
+            {"action": action_dismiss, "title": action_dismiss_title, "destructive": false}
+          ]
+        } %}
+        {% if camera_target != '' %}
+          {% set _ = payload.update({"entity_id": camera_target}) %}
+        {% endif %}
+        {{ payload }}
+
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ door_target != '' }}"
+        sequence:
+          - wait_for_trigger:
+              - platform: event
+                event_type: mobile_app_notification_action
+                event_data:
+                  action: "{{ action_open }}"
+            timeout: "00:01:00"
+            continue_on_timeout: false
+          - action: lock.unlock
+            target:
+              entity_id: !input door_entity
