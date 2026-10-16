@@ -316,6 +316,10 @@
         "copied_from": {
           "name": "Gekopieerd van",
           "description": "Het rolluik waarvan deze tijden zijn overgenomen; de bron wordt dan gemeld als \"copied\" in plaats van \"manual\"."
+        },
+        "min_motor_pulse": {
+          "name": "Minimale motorpulsduur",
+          "description": "Minimale duur in seconden (0.0-5.0) van een motorpuls om mechanische speling en remtraagheid te overwinnen (0.0 schakelt uit)."
         }
       }
     },
@@ -415,7 +419,7 @@
       "message": "{name}: onwaarschijnlijke {direction}-loop van {seconds} s; niet opgeslagen"
     },
     "travel_time_missing": {
-      "message": "Geef ten minste travel_time of travel_time_down/up op"
+      "message": "Geef ten minste travel_time, travel_time_down/up of min_motor_pulse op"
     },
     "travel_time_out_of_range": {
       "message": "{field} moet tussen {min} s en {max} s liggen"

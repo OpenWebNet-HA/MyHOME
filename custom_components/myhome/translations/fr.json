@@ -316,6 +316,10 @@
         "copied_from": {
           "name": "Copié depuis",
           "description": "Le volet dont ces temps ont été repris ; la source est alors indiquée comme \"copied\" au lieu de \"manual\"."
+        },
+        "min_motor_pulse": {
+          "name": "Seuil de démarrage du moteur",
+          "description": "Durée minimale en secondes (0.0-5.0) d'une impulsion moteur pour surmonter l'inertie et le frein mécanique (0.0 désactive)."
         }
       }
     },
@@ -415,7 +419,7 @@
       "message": "{name} : course {direction} invraisemblable de {seconds} s ; non enregistrée"
     },
     "travel_time_missing": {
-      "message": "Au moins travel_time ou travel_time_down/up doit être indiqué"
+      "message": "Au moins travel_time, travel_time_down/up ou min_motor_pulse doit être indiqué"
     },
     "travel_time_out_of_range": {
       "message": "{field} doit être compris entre {min} s et {max} s"

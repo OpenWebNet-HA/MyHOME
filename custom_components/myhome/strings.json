@@ -323,6 +323,10 @@
         "copied_from": {
           "name": "Copied from",
           "description": "The cover these times were taken from; the source is then reported as \"copied\" instead of \"manual\"."
+        },
+        "min_motor_pulse": {
+          "name": "Motor start-up floor",
+          "description": "Minimum duration in seconds (0.0-5.0) of a motor pulse to overcome mechanical deadband and brake inertia (0.0 disables)."
         }
       }
     },
@@ -479,7 +483,7 @@
       "message": "{name}: implausible {direction} run of {seconds} s; not stored"
     },
     "travel_time_missing": {
-      "message": "At least travel_time or travel_time_down/up must be specified"
+      "message": "At least travel_time, travel_time_down/up, or min_motor_pulse must be specified"
     },
     "travel_time_out_of_range": {
       "message": "{field} must be between {min} s and {max} s"

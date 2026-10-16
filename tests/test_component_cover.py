@@ -1224,3 +1224,110 @@ async def test_cover_advanced_shutter_key_precedence(hass, mock_gateway):
 
     assert len(added) == 1
     assert added[0]._advanced is True
+
+
+@pytest.mark.asyncio
+async def test_cover_custom_min_motor_pulse(hass, mock_gateway):
+    """Test timed cover behaves properly with custom min_motor_pulse configuration."""
+    from tests.conftest import bind_entity
+
+    cover_custom = MyHOMECover(
+        hass=hass,
+        name="Custom Floor Cover",
+        entity_name=None,
+        device_id="25",
+        who="2",
+        where="25",
+        interface=None,
+        advanced=False,
+        manufacturer="BTicino",
+        model="Shutter",
+        gateway=mock_gateway,
+        travel_time=5,
+        min_motor_pulse=0.6,
+    )
+    bind_entity(hass, cover_custom)
+    assert cover_custom.extra_state_attributes["min_motor_pulse"] == 0.6
+
+    # 1% on a 5.0s cover (nominal 0.05s) clamps to 0.6s (12% of travel -> ends at 62%)
+    cover_custom._gateway_handler.send.reset_mock()
+    cover_custom._attr_current_cover_position = 50
+    cover_custom._travel_time_up = 5.0
+    slept_durations = []
+
+    async def fake_sleep(duration):
+        slept_durations.append(duration)
+
+    with patch("asyncio.sleep", side_effect=fake_sleep):
+        await cover_custom.async_set_cover_position(**{ATTR_POSITION: 51})
+        assert cover_custom._stop_task is not None
+        await cover_custom._stop_task
+
+    assert any(0.59 <= d <= 0.61 for d in slept_durations), f"Expected 0.6s clamp, got: {slept_durations}"
+    assert cover_custom.current_cover_position == 62
+
+    # Cover with min_motor_pulse = 0.0 (disabled floor)
+    cover_zero = MyHOMECover(
+        hass=hass,
+        name="Zero Floor Cover",
+        entity_name=None,
+        device_id="26",
+        who="2",
+        where="26",
+        interface=None,
+        advanced=False,
+        manufacturer="BTicino",
+        model="Shutter",
+        gateway=mock_gateway,
+        travel_time=5,
+        min_motor_pulse=0.0,
+    )
+    bind_entity(hass, cover_zero)
+    assert cover_zero.extra_state_attributes["min_motor_pulse"] == 0.0
+
+    cover_zero._gateway_handler.send.reset_mock()
+    cover_zero._attr_current_cover_position = 50
+    cover_zero._travel_time_up = 5.0
+    slept_zero = []
+
+    async def fake_sleep_zero(duration):
+        slept_zero.append(duration)
+
+    with patch("asyncio.sleep", side_effect=fake_sleep_zero):
+        await cover_zero.async_set_cover_position(**{ATTR_POSITION: 51})
+        assert cover_zero._stop_task is not None
+        await cover_zero._stop_task
+
+    assert any(0.04 <= d <= 0.06 for d in slept_zero), f"Expected nominal 0.05s, got: {slept_zero}"
+    assert cover_zero.current_cover_position == 51
+
+
+def test_cover_validate_min_motor_pulse():
+    """Verify voluptuous cover_schema validation for min_motor_pulse."""
+    import voluptuous as vol
+
+    from custom_components.myhome.validate import cover_schema
+
+    # Valid values
+    valid_cfg = {
+        "kitchen": {
+            "where": "21",
+            "name": "Kitchen Shutter",
+            "min_motor_pulse": 0.5,
+        }
+    }
+    validated = cover_schema(valid_cfg)
+    assert validated["2-21"]["min_motor_pulse"] == 0.5
+
+    # Boundary 0.0 and 5.0
+    assert cover_schema({"k": {"where": "21", "name": "K", "min_motor_pulse": 0.0}})["2-21"]["min_motor_pulse"] == 0.0
+    assert cover_schema({"k": {"where": "21", "name": "K", "min_motor_pulse": 5.0}})["2-21"]["min_motor_pulse"] == 5.0
+
+    # Negative value rejected
+    with pytest.raises(vol.Invalid):
+        cover_schema({"k": {"where": "21", "name": "K", "min_motor_pulse": -0.1}})
+
+    # Exceeding maximum rejected
+    with pytest.raises(vol.Invalid):
+        cover_schema({"k": {"where": "21", "name": "K", "min_motor_pulse": 5.1}})
+

@@ -203,6 +203,17 @@ set_cover_travel_time:
         entity:
           domain: cover
           integration: myhome
+    min_motor_pulse:
+      name: Motor start-up floor
+      description: Minimum duration in seconds (0.0-5.0) of a motor pulse to overcome mechanical deadband and brake inertia. Defaults to 0.4 s (0.0 disables).
+      example: 0.4
+      selector:
+        number:
+          min: 0.0
+          max: 5.0
+          step: 0.05
+          unit_of_measurement: s
+          mode: box
 
 reset_cover_travel_time:
   name: Reset cover travel time

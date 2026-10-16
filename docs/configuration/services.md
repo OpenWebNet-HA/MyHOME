@@ -195,7 +195,7 @@ action: myhome.stop_cover_calibration
 
 ## 9. `myhome.set_cover_travel_time`
 
-Stores the physical travel times of a timed cover **by hand** — the manual alternative to `calibrate_cover` for gateways that cannot calibrate reliably (MH200 / MH200N single-session pacing, or actuators with the 60 s safety cut-off). Measure the closing and opening runs with a stopwatch and pass them here. `travel_time` fills whichever direction has no explicit value; note that `travel_time_down` on its own also sets the up time (the two are assumed equal unless `travel_time_up` is given), whereas `travel_time_up` on its own leaves the stored down time untouched — pass both when you only want to change one. Values must lie between 1 s and 180 s; anything else is rejected before the entity is touched. The result is stored exactly like a measured calibration (`calibration_source: manual`).
+Stores the physical travel times of a timed cover **by hand** — the manual alternative to `calibrate_cover` for gateways that cannot calibrate reliably (MH200 / MH200N single-session pacing, or actuators with the 60 s safety cut-off). Measure the closing and opening runs with a stopwatch and pass them here. `travel_time` fills whichever direction has no explicit value; note that `travel_time_down` on its own also sets the up time (the two are assumed equal unless `travel_time_up` is given), whereas `travel_time_up` on its own leaves the stored down time untouched — pass both when you only want to change one. Travel times must lie between 1 s and 180 s. The motor start-up floor (`min_motor_pulse`) can also be configured here (0.0 to 5.0 s, 0.0 disables). The result is stored exactly like a measured calibration (`calibration_source: manual`).
 
 ### Fields
 | Parameter | Type | Required | Description | Example |
@@ -205,8 +205,9 @@ Stores the physical travel times of a timed cover **by hand** — the manual alt
 | `travel_time_down` | float | No* | Seconds for a full closing run. | `24.5` |
 | `travel_time_up` | float | No* | Seconds for a full opening run. | `26.0` |
 | `copied_from` | entity id | No | The cover the times were taken from; `calibration_source` becomes `copied` and `copied_from` is exposed as an attribute. | `cover.living_room_west` |
+| `min_motor_pulse` | float | No | Minimum duration in seconds (0.0–5.0) of a motor pulse to overcome mechanical deadband and brake inertia. Defaults to 0.4 s (0.0 disables). | `0.4` |
 
-\* at least one of the time fields is required.
+\* at least one of the time fields or min_motor_pulse is required.
 
 ### Example YAML Call
 ```yaml
@@ -216,6 +217,7 @@ target:
 data:
   travel_time_down: 24.5
   travel_time_up: 26.0
+  min_motor_pulse: 0.3
 ```
 
 ---
