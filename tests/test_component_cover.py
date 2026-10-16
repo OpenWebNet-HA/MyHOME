@@ -913,3 +913,359 @@ async def test_cover_advanced_shutter_key_precedence(hass, mock_gateway):
 
     assert len(added) == 1
     assert added[0]._advanced is True
+
+
+@pytest.mark.asyncio
+async def test_timed_cover_auto_stop_reanchors_on_stop_status(hass, mock_gateway):
+    """Test that a timed cover's auto-stop re-anchors final position and last_run on stop status echo (#705)."""
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        cover = MyHOMECover(
+            hass=hass,
+            name="Timed Cover Reanchor",
+            entity_name="Timed Cover Reanchor",
+            device_id="21",
+            who="2",
+            where="21",
+            interface=None,
+            advanced=False,
+            manufacturer="BTicino",
+            model="Shutter",
+            gateway=mock_gateway,
+            travel_time=20,
+        )
+        cover.entity_id = "cover.timed_reanchor"
+        cover.async_schedule_update_ha_state = MagicMock()
+
+    cover._attr_current_cover_position = 50
+    cover._start_position = 50
+    cover._travel_time_up = 20.0
+    cover._travel_time_down = 20.0
+
+    current_time = 100.0
+
+    def mock_monotonic():
+        return current_time
+
+    # Run from 50 to 80 (delta = 30%, nominal duration = 6.0s on 20s travel)
+    with patch("time.monotonic", side_effect=mock_monotonic):
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            await cover.async_set_cover_position(**{ATTR_POSITION: 80})
+            assert cover._stop_task is not None
+            # Simulate direction echo arriving at t=100.0
+            cover.handle_event(OWNEvent.parse("*2*1*21##"))
+            # Advance time to auto-stop trigger
+            current_time = 106.0
+            await cover._stop_task
+
+        # Stop command written at 106.0: provisional freeze is 80%
+        assert cover.is_opening is False
+        assert cover.current_cover_position == 80
+
+        # Now simulate gateway relaying the stop status at 106.5s (0.5s bus transit & relay release delay)
+        current_time = 106.5
+        cover.handle_event(OWNEvent.parse("*2*0*21##"))
+
+        # Actual run: 106.5 - 100.0 = 6.5s. Delta: (6.5 / 20.0) * 100 = 32.5% -> 82% (round-to-even) or 83%
+        assert cover.current_cover_position in (82, 83)
+        assert cover.extra_state_attributes["last_run_seconds"] == 6.5
+        assert cover.extra_state_attributes["last_run_direction"] == "open"
+        assert cover._stopped_event.is_set()
+
+
+@pytest.mark.asyncio
+async def test_timed_cover_manual_stop_reanchors_on_stop_status(hass, mock_gateway):
+    """Test that a manually stopped timed cover re-anchors on stop status echo (#705)."""
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        cover = MyHOMECover(
+            hass=hass,
+            name="Timed Cover Manual Reanchor",
+            entity_name="Timed Cover Manual Reanchor",
+            device_id="21",
+            who="2",
+            where="21",
+            interface=None,
+            advanced=False,
+            manufacturer="BTicino",
+            model="Shutter",
+            gateway=mock_gateway,
+            travel_time=25,
+        )
+        cover.entity_id = "cover.timed_manual_reanchor"
+        cover.async_schedule_update_ha_state = MagicMock()
+
+    cover._attr_current_cover_position = 20
+    cover._start_position = 20
+    cover._travel_time_up = 25.0
+    cover._travel_time_down = 25.0
+
+    current_time = 100.0
+
+    def mock_monotonic():
+        return current_time
+
+    with patch("time.monotonic", side_effect=mock_monotonic):
+        await cover.async_open_cover()
+        # Direction echo arrives at 100.0
+        cover.handle_event(OWNEvent.parse("*2*1*21##"))
+        assert cover.is_opening is True
+
+        # Motor runs for 5.0 seconds before user clicks Stop
+        current_time = 105.0
+        await cover.async_stop_cover()
+
+        # Provisional freeze at stop write (5.0s run: 20 + (5/25)*100 = 40%)
+        assert cover.is_opening is False
+        assert cover.current_cover_position == 40
+        assert cover.extra_state_attributes["last_run_seconds"] == 5.0
+
+        # Gateway relays stop status 0.6s later (105.6)
+        current_time = 105.6
+        cover.handle_event(OWNEvent.parse("*2*0*21##"))
+
+        # Re-anchored: 105.6 - 100.0 = 5.6s. Delta: (5.6 / 25.0) * 100 = 22.4% -> 20 + 22.4 = 42.4% -> 42%
+        assert cover.current_cover_position == 42
+        assert cover.extra_state_attributes["last_run_seconds"] == 5.6
+        assert cover.extra_state_attributes["last_run_direction"] == "open"
+
+
+@pytest.mark.asyncio
+async def test_timed_cover_preserves_write_freeze_when_no_stop_status(hass, mock_gateway):
+    """Test that gateways that never relay stop status keep the write-time freeze (#705)."""
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        cover = MyHOMECover(
+            hass=hass,
+            name="Timed Cover No Echo",
+            entity_name="Timed Cover No Echo",
+            device_id="21",
+            who="2",
+            where="21",
+            interface=None,
+            advanced=False,
+            manufacturer="BTicino",
+            model="Shutter",
+            gateway=mock_gateway,
+            travel_time=20,
+        )
+        cover.entity_id = "cover.timed_no_echo"
+        cover.async_schedule_update_ha_state = MagicMock()
+
+    cover._attr_current_cover_position = 50
+    cover._start_position = 50
+    cover._travel_time_up = 20.0
+    cover._travel_time_down = 20.0
+
+    current_time = 100.0
+
+    def mock_monotonic():
+        return current_time
+
+    with patch("time.monotonic", side_effect=mock_monotonic):
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            await cover.async_set_cover_position(**{ATTR_POSITION: 80})
+            cover.handle_event(OWNEvent.parse("*2*1*21##"))
+            current_time = 106.0
+            await cover._stop_task
+
+        assert cover.current_cover_position == 80
+        assert cover.is_opening is False
+
+        # Advance past echo window (ECHO_WINDOW = 1.5s)
+        current_time = 110.0
+        assert not cover._in_echo_window(current_time)
+
+        # Position remains 80
+        assert cover.current_cover_position == 80
+        assert cover.is_opening is False
+
+
+@pytest.mark.asyncio
+async def test_timed_cover_general_stop_not_consumed_as_echo(hass, mock_gateway):
+    """Test that general stop frame (*2*0*0##) is not treated as point-to-point stop echo (#705)."""
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        cover = MyHOMECover(
+            hass=hass,
+            name="Timed Cover General Stop",
+            entity_name="Timed Cover General Stop",
+            device_id="21",
+            who="2",
+            where="21",
+            interface=None,
+            advanced=False,
+            manufacturer="BTicino",
+            model="Shutter",
+            gateway=mock_gateway,
+            travel_time=20,
+        )
+        cover.entity_id = "cover.timed_gen_stop"
+        cover.async_schedule_update_ha_state = MagicMock()
+
+    cover._attr_current_cover_position = 50
+    cover._start_position = 50
+    cover._run_start_position = 50
+    cover._run_started_at = 100.0
+    cover._attr_is_opening = True
+    cover._begin_command("stop")
+    cover._pending_stop_context = {
+        "run_start_position": 50,
+        "run_started_at": 100.0,
+        "is_opening": True,
+        "is_closing": False,
+        "auto_stop_duration": None,
+    }
+
+    # General stop frame arrives
+    gen_stop = OWNEvent.parse("*2*0*0##")
+    # _handle_echo must return False for general stop
+    assert cover._handle_echo(gen_stop, 101.0) is False
+
+
+@pytest.mark.asyncio
+async def test_timed_cover_stop_reanchor_clamps_at_limits(hass, mock_gateway):
+    """Test that stop status re-anchoring clamps at 0% and 100% (#705)."""
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        cover = MyHOMECover(
+            hass=hass,
+            name="Timed Cover Limits",
+            entity_name="Timed Cover Limits",
+            device_id="21",
+            who="2",
+            where="21",
+            interface=None,
+            advanced=False,
+            manufacturer="BTicino",
+            model="Shutter",
+            gateway=mock_gateway,
+            travel_time=20,
+        )
+        cover.entity_id = "cover.timed_limits"
+        cover.async_schedule_update_ha_state = MagicMock()
+
+    cover._attr_current_cover_position = 5
+    cover._start_position = 5
+    cover._travel_time_down = 20.0
+
+    current_time = 100.0
+
+    def mock_monotonic():
+        return current_time
+
+    with patch("time.monotonic", side_effect=mock_monotonic):
+        await cover.async_close_cover()
+        cover.handle_event(OWNEvent.parse("*2*2*21##"))
+        assert cover.is_closing is True
+
+        # Stop after 2 seconds (nominally 5% - (2/20)*100 = -5%)
+        current_time = 102.0
+        await cover.async_stop_cover()
+
+        # Stop status arrives at 102.5s
+        current_time = 102.5
+        cover.handle_event(OWNEvent.parse("*2*0*21##"))
+
+        assert cover.current_cover_position == 0
+        assert cover.is_closed is True
+        assert cover.extra_state_attributes["last_run_seconds"] == 2.5
+        assert cover.extra_state_attributes["last_run_direction"] == "close"
+
+        # Now test clamping at 100% when opening
+        cover._attr_current_cover_position = 95
+        cover._start_position = 95
+        cover._travel_time_up = 20.0
+        current_time = 200.0
+
+        await cover.async_open_cover()
+        cover.handle_event(OWNEvent.parse("*2*1*21##"))
+        assert cover.is_opening is True
+
+        # Stop after 2 seconds (nominally 95% + (2/20)*100 = 105%)
+        current_time = 202.0
+        await cover.async_stop_cover()
+
+        # Stop status arrives at 202.5s
+        current_time = 202.5
+        cover.handle_event(OWNEvent.parse("*2*0*21##"))
+
+        assert cover.current_cover_position == 100
+        assert cover.is_closed is False
+        assert cover.extra_state_attributes["last_run_seconds"] == 2.5
+        assert cover.extra_state_attributes["last_run_direction"] == "open"
+
+
+@pytest.mark.asyncio
+async def test_timed_cover_stop_reanchor_with_firmware_oracle_translation_frames(
+    hass, mock_gateway
+):
+    """Verify stop re-anchoring against immediate *2*1000#0*31## oracle translations (#705)."""
+    import json
+    from pathlib import Path
+
+    oracle_path = Path(__file__).resolve().parent / "golden" / "firmware_oracle.json"
+    verdicts = json.loads(oracle_path.read_text(encoding="utf-8"))["verdicts"]
+
+    # On F454, F459, F460, F461, MH202, MyHomeServer1, sending *2*0*31## immediately
+    # emits *2*1000#0*31## (is_translation=True) before the physical actuator stops.
+    stop_by_prod = {e["product"]: e for e in verdicts["*2*0*31##"]}
+    for prod in ("F454", "F459", "F460", "F461", "MH202", "MyHomeServer1"):
+        assert stop_by_prod[prod]["verdict"] == "out"
+        assert stop_by_prod[prod]["emitted_own"] == ["*2*1000#0*31##"]
+
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        cover = MyHOMECover(
+            hass=hass,
+            name="Timed Cover Oracle Stop",
+            entity_name="Timed Cover Oracle Stop",
+            device_id="31",
+            who="2",
+            where="31",
+            interface=None,
+            advanced=False,
+            manufacturer="BTicino",
+            model="Shutter",
+            gateway=mock_gateway,
+            travel_time=20,
+        )
+        cover.entity_id = "cover.timed_oracle_stop"
+        cover.async_schedule_update_ha_state = MagicMock()
+
+    cover._attr_current_cover_position = 50
+    cover._start_position = 50
+    cover._travel_time_up = 20.0
+
+    current_time = 100.0
+
+    def mock_monotonic():
+        return current_time
+
+    with patch("time.monotonic", side_effect=mock_monotonic):
+        await cover.async_open_cover()
+        # Replay F454 emitted_own on *2*1*31## (*2*1000#0*31##, *2*1000#1*31##)
+        f454_up = next(e for e in verdicts["*2*1*31##"] if e["product"] == "F454")
+        for raw_tr in f454_up["emitted_own"]:
+            cover.handle_event(OWNEvent.parse(raw_tr))
+        # Physical actuator direction echo starts the run at t=100.0
+        cover.handle_event(OWNEvent.parse("*2*1*31##"))
+        assert cover.is_opening is True
+
+        # User presses STOP at t=104.0s (optimistic position: 50 + (4/20)*100 = 70%)
+        current_time = 104.0
+        await cover.async_stop_cover()
+        assert cover.current_cover_position == 70
+        assert cover._pending_stop_context is not None
+
+        # Gateway immediately emits *2*1000#0*31## translation at t=104.02s:
+        # must NOT consume _pending_stop_context!
+        current_time = 104.02
+        for raw_tr in stop_by_prod["F454"]["emitted_own"]:
+            ev = OWNEvent.parse(raw_tr)
+            assert ev.is_translation is True
+            cover.handle_event(ev)
+        assert cover._pending_stop_context is not None
+        assert cover.current_cover_position == 70
+
+        # Physical actuator stops and broadcasts *2*0*31## at t=105.0s (5.0s total run -> 75%)
+        current_time = 105.0
+        cover.handle_event(OWNEvent.parse("*2*0*31##"))
+        assert cover._pending_stop_context is None
+        assert cover.current_cover_position == 75
+        assert cover.extra_state_attributes["last_run_seconds"] == 5.0
+
