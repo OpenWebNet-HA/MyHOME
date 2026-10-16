@@ -20,6 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+
 # Parity patch for OWNd < 2.0.0b12 profile metadata against firmware oracle.
 # Intentionally self-contained here to avoid importing custom_components in minimal CI environments.
 def _ensure_ownd_profile_oracle_parity() -> None:
@@ -508,56 +509,12 @@ def _format_oracle_version(version_code: str) -> str:
     return version_code
 
 
-def _ensure_oracle_verified_profiles() -> None:
-    """Align OWNd.profiles with firmware oracle verdicts when running against pre-2.0.0b11 / pre-OWNd#126."""
-    try:
-        import OWNd.profiles as _ownd_profiles
-    except ImportError:
-        return
-
-    profiles_map = getattr(_ownd_profiles, "_PROFILES", {})
-    for key in ("f453", "f453av", "f454"):
-        prof = profiles_map.get(key)
-        if prof is not None:
-            if not getattr(prof, "auth_measured", True):
-                object.__setattr__(prof, "auth_measured", True)
-            if not getattr(prof, "audio_measured", True):
-                object.__setattr__(prof, "audio_measured", True)
-
-    for key in ("f461", "myhomeserver1"):
-        prof = profiles_map.get(key)
-        if prof is not None and 3 in getattr(prof, "supported_who", ()):
-            object.__setattr__(
-                prof,
-                "supported_who",
-                tuple(w for w in prof.supported_who if w != 3),
-            )
-
-    for key in ("mh200", "mh200n"):
-        prof = profiles_map.get(key)
-        if prof is not None and 3 not in getattr(prof, "supported_who", ()):
-            object.__setattr__(prof, "supported_who", (*prof.supported_who, 3))
-
-    f453av_cls = getattr(_ownd_profiles, "F453AVProfile", None)
-    if f453av_cls is not None and not getattr(f453av_cls(), "auth_measured", True):
-        orig_init = f453av_cls.__init__
-
-        def _patched_f453av_init(self: object, firmware_version: str | None = None) -> None:
-            orig_init(self, firmware_version=firmware_version)
-            object.__setattr__(self, "auth_measured", True)
-            object.__setattr__(self, "audio_measured", True)
-
-        f453av_cls.__init__ = _patched_f453av_init
-
-
 def verify_profiles_against_oracle(oracle_path: Path = ORACLE_JSON) -> list[str]:
     """Cross-verify OWNd gateway profiles and MyHOME discovery metadata against firmware_oracle.json."""
     try:
         from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
     except ImportError:
         return []
-
-    _ensure_oracle_verified_profiles()
 
     if not oracle_path.is_file():
         return [f"Firmware oracle fixture not found: {oracle_path}"]
