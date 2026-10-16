@@ -129,7 +129,7 @@ async def test_fade_step_superseding_and_command_override() -> None:
 
 
 async def test_cancel_command_coalesces_queued_commands_for_same_target() -> None:
-    """A command with is_cancel=True drops queued non-cancel commands for the same target."""
+    """A command with is_cancel=True or WHO=2 WHAT=0 stop drops queued non-cancel commands for the same target."""
     scheduler = FrameScheduler()
     loop = asyncio.get_running_loop()
 
@@ -151,11 +151,11 @@ async def test_cancel_command_coalesces_queued_commands_for_same_target() -> Non
             "written": other_written,
         }
     )
+    # Implicit WHO=2 WHAT=0 stop frame without explicit is_cancel=True
     await scheduler.put(
         {
             "message": OWNCommand("*2*0*12##"),
             "is_status_request": False,
-            "is_cancel": True,
             "written": stop_written,
         }
     )
@@ -167,6 +167,24 @@ async def test_cancel_command_coalesces_queued_commands_for_same_target() -> Non
 
     items = [str((await scheduler.get())["message"]) for _ in range(2)]
     assert items == ["*2*1*15##", "*2*0*12##"]
+
+    # Explicit is_cancel=True on non-WHO=2 command also coalesces non-cancel commands
+    on_written = loop.create_future()
+    off_cancel_written = loop.create_future()
+    await scheduler.put(
+        {"message": OWNCommand("*1*1*21##"), "is_status_request": False, "written": on_written}
+    )
+    await scheduler.put(
+        {
+            "message": OWNCommand("*1*0*21##"),
+            "is_status_request": False,
+            "is_cancel": True,
+            "written": off_cancel_written,
+        }
+    )
+    assert on_written.cancelled()
+    assert not off_cancel_written.done()
+    assert str((await scheduler.get())["message"]) == "*1*0*21##"
 
 
 async def test_multi_worker_cold_vs_warm_socket_preserves_per_target_order() -> None:

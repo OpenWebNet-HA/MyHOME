@@ -339,6 +339,19 @@ def _extract_target_key(item: Any) -> tuple[int, str] | None:
     return None
 
 
+_COVER_STOP_RE = re.compile(r"^\*2\*0\*[^#*]+(?:#[^*]+)?##$")
+
+
+def _is_cancel_item(item: Any) -> bool:
+    """Return True if an envelope dict represents a cancellation or WHO=2 stop command."""
+    if not isinstance(item, dict) or item.get("is_status_request", False):
+        return False
+    if item.get("is_cancel", False):
+        return True
+    msg = item.get("message")
+    return msg is not None and bool(_COVER_STOP_RE.match(str(msg).strip()))
+
+
 class _PriorityQueueStorage:
     """Multi-tier FIFO storage backing FrameScheduler.
 
@@ -520,13 +533,13 @@ class _PriorityQueueStorage:
                 else:
                     kept_fades.append(existing)
             self._fade_steps = kept_fades
-        if new_item.get("is_cancel", False) and self._commands:
+        if _is_cancel_item(new_item) and self._commands:
             kept_cmds: collections.deque[Any] = collections.deque()
             for existing in self._commands:
                 if (
                     _extract_target_key(existing) == target
                     and isinstance(existing, dict)
-                    and not existing.get("is_cancel", False)
+                    and not _is_cancel_item(existing)
                 ):
                     dropped.append(existing)
                 else:
