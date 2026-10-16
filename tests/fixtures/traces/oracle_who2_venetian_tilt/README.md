@@ -17,11 +17,12 @@ Synthetic trace fixture capturing Venetian blind slat tilt inching, direction ec
 >    - Inching step division: `SLATS_ROTATION_STEP_NUMBER = 4` (discrete 500 ms / 25% inching pulses).
 >    - Local button blade control: `LOCAL_BUTTON = 2` (*Comando lamelle e bistabile*: short press <1.5s = slat inching; long press >1.5s = continuous curtain travel).
 >    - Relay contact threshold: `MIN_TILT_PULSE = 0.2s` corresponding to physical motor deadband (`UP_OR_DOWN_PULSE_DURATION` minimum unit).
-> 2. **Gateway daemon translation contracts** in Legrand gateway firmware (`coso` / `automation_tr` on F454 / MyHomeServer1 and `bt_luci` on MH200N) verified via `own-firmware-oracle`:
->    - Gateways translate basic motor commands `*2*1*WHERE##` (Up), `*2*2*WHERE##` (Down), `*2*0*WHERE##` (Stop).
->    - Dimension 11 absolute level write: `*#2*WHERE*#11#001#1*LEVEL##` accepted as absolute curtain position command (0–100%).
+> 2. **Gateway daemon translation contracts** in Legrand/BTicino gateway firmware (`bt_autom` across all 10 emulated automation gateways in `own-firmware-oracle`):
+>    - All 10 automation gateways (`F453AV`, `F454`, `F459`, `F460`, `F461`, `H4684`, `MH200`, `MH200N`, `MH202`, `MyHomeServer1`) translate basic motor commands `*2*1*WHERE##` (Up), `*2*2*WHERE##` (Down), `*2*0*WHERE##` (Stop), and `*#2*WHERE##` (status request) — proving timed Venetian slat pulses work universally across all 10 gateways.
+>    - Pre-direction STOP synthesis: on 9 of 10 automation gateways (`F453AV`, `F454`, `F459`, `F460`, `F461`, `H4684`, `MH200`, `MH200N`, `MyHomeServer1`), `bt_autom` translates `*2*1*31##` and `*2*2*31##` into two consecutive SCS bus frames (`$033100120A` STOP followed by `$0331001208` UP or `$0331001209` DOWN) and emits `*2*1000#0*31##` (`is_translation == True`) before `*2*1000#1*31##` / `*2*1000#2*31##`. `MyHOMECover` ignores `is_translation == True` frames and suppresses premature `*2*0*31##` stop echoes within `_PULSE_ECHO_IGNORE_WINDOW` (0.3s) during `_is_tilting`.
+>    - Dimension 11 absolute level write (`*#2*31*#11#001*40##`) and Dimension 10 status query (`*#2*31*10##`) are accepted and forwarded (`verdict == "out"`) on the 6 advanced WHO 2 gateways (`F454`, `F459`, `F460`, `F461`, `MH202`, `MyHomeServer1`), where `bt_autom` normalizes `*#2*31*#11#001*40##` into `emitted_own == ["*#2*31*#11#001#1*40##"]` (`bus_frames == ["$06D131014209012800"]`), while legacy `bt_autom` builds (`MH200`, `MH200N`, `H4684`, `F453AV`) reject them with `nack`/`silent`.
 >    - Dimension 11 status query rejection: `*#2*WHERE*11##` is strictly **NACKed** (`*#*0##`), proving Dimension 11 is write-only.
->    - Frame `*#2*31*#11#001#1*40##` is verified as the relayed level command (priority `001`, selector `1`, target `40%`) from the authentic F454 sweep trace (`myhome_sweep_F454_all_2026-09-26T16-59-13.json` in #491).
+>    - Frame `*#2*31*#11#001#1*40##` is verified both in `own-firmware-oracle` (`emitted_own` for `*#2*31*#11#001*40##`) and in the authentic F454 sweep trace (`myhome_sweep_F454_all_2026-09-26T16-59-13.json` in #491).
 > 3. **Client-side physical inching algorithm (PR #508)**:
 >    - Pulse duration formula:
 >      $$\text{duration} = \frac{|\text{target\_tilt} - \text{current\_tilt}|}{100} \times \text{slat\_time} = \frac{|50 - 0|}{100} \times 2.0\text{ s} = 1.0\text{ s}$$
@@ -32,7 +33,7 @@ Synthetic trace fixture capturing Venetian blind slat tilt inching, direction ec
 
 | Property | Value |
 |---|---|
-| Gateway Model | F454 (firmware 2.0.51, MAC prefix `00:03:50`, WHO 13 code `13`) |
+| Gateway Model | F454 (firmware 2.0.51, MAC prefix `00:03:50`, WHO 13 code `200`, WHO 1013 code `13`) |
 | Subsystem | WHO 2 (Automation / Covers) |
 | Target Device | Living Room Venetian Blind (`WHERE = 31`, `slat_tilt: true`, `slat_time: 2.0s`) |
 

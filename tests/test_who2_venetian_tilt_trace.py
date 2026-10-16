@@ -237,3 +237,87 @@ async def test_timed_venetian_cover_tilt_pulse_and_poll(mock_gateway: MagicMock)
         "*#2*32##"
     ]
 
+
+@pytest.mark.asyncio
+async def test_who2_venetian_tilt_firmware_oracle_conformance(
+    mock_gateway: MagicMock,
+) -> None:
+    """Verify Venetian tilt frames against emulated bt_autom verdicts in firmware_oracle.json."""
+    oracle_path = Path(__file__).resolve().parent / "golden" / "firmware_oracle.json"
+    verdicts = json.loads(oracle_path.read_text(encoding="utf-8"))["verdicts"]
+
+    all_autom_gateways = {
+        "F453AV",
+        "F454",
+        "F459",
+        "F460",
+        "F461",
+        "H4684",
+        "MH200",
+        "MH200N",
+        "MH202",
+        "MyHomeServer1",
+    }
+    advanced_who2_gateways = {"F454", "F459", "F460", "F461", "MH202", "MyHomeServer1"}
+
+    # 1. Timed slat tilt commands (*2*1*31##, *2*2*31##, *2*0*31##, *#2*31##)
+    # are accepted and forwarded across all 10 automation gateways.
+    for basic_frame in ("*2*1*31##", "*2*2*31##", "*2*0*31##", "*#2*31##"):
+        by_prod = {e["product"]: e for e in verdicts[basic_frame]}
+        for prod in all_autom_gateways:
+            assert by_prod[prod]["verdict"] == "out", f"Expected {prod} to forward {basic_frame}"
+
+    # 2. On 9 of 10 automation gateways (all except MH202), bt_autom synthesizes a
+    # pre-direction STOP telegram ($033100120A) before UP ($0331001208) or DOWN ($0331001209),
+    # and on F454/F459/F460/F461/MyHomeServer1 emits *2*1000#0*31## followed by *2*1000#1*31##.
+    f454_up = next(e for e in verdicts["*2*1*31##"] if e["product"] == "F454")
+    f454_up_bus = [bytes.fromhex(bf).decode("ascii").strip() for bf in f454_up["bus_frames"]]
+    assert f454_up_bus == ["$033100120A", "$0331001208"]
+    assert f454_up["emitted_own"] == ["*2*1000#0*31##", "*2*1000#1*31##"]
+
+    # Verify that the gateway's emitted *2*1000#0*31## translation event and any premature
+    # *2*0*31## stop echo within _PULSE_ECHO_IGNORE_WINDOW (0.3s) do not abort an active tilt pulse.
+    cover = _create_venetian_cover(mock_gateway, "31")
+    cover.handle_event(OWNEvent.parse("*#2*31*10*10*0*001*0##"))
+    fut = asyncio.Future()
+    fut.set_result(time.monotonic())
+    mock_gateway.send.return_value = fut
+
+    with patch("time.monotonic", return_value=300.0):
+        await cover.async_set_cover_tilt_position(tilt_position=50)
+        for own_raw in f454_up["emitted_own"]:
+            ev = OWNEvent.parse(own_raw)
+            assert ev.is_translation is True
+            cover.handle_event(ev)
+        # Early physical stop echo at +0.05s (from pre-direction $033100120A) must be ignored
+        with patch("time.monotonic", return_value=300.05):
+            cover.handle_event(OWNEvent.parse("*2*0*31##"))
+            assert cover._is_tilting is True
+        # Direction echo UP starts the tilt stopwatch
+        cover.handle_event(OWNEvent.parse("*2*1*31##"))
+        assert cover._is_tilting is True
+        assert cover.is_opening
+
+    with patch("time.monotonic", return_value=301.0):
+        cover.handle_event(OWNEvent.parse("*2*0*31##"))
+    assert cover.current_cover_tilt_position == 50
+
+    # 3. Advanced Dimension 11 write (*#2*31*#11#001*40##) and Dimension 10 query (*#2*31*10##)
+    # are forwarded by the 6 advanced WHO 2 gateways and normalized to *#2*31*#11#001#1*40##.
+    dim11_by_prod = {e["product"]: e for e in verdicts["*#2*31*#11#001*40##"]}
+    dim10_by_prod = {e["product"]: e for e in verdicts["*#2*31*10##"]}
+    for prod in advanced_who2_gateways:
+        assert dim11_by_prod[prod]["verdict"] == "out"
+        assert len(dim11_by_prod[prod]["bus_frames"]) == 1
+        assert dim11_by_prod[prod]["emitted_own"] == ["*#2*31*#11#001#1*40##"]
+        assert dim10_by_prod[prod]["verdict"] == "out"
+        assert (
+            len(dim10_by_prod[prod]["bus_frames"]) > 0
+            or len(dim10_by_prod[prod]["emitted_own"]) > 0
+        )
+    for legacy_prod in all_autom_gateways - advanced_who2_gateways:
+        assert dim11_by_prod[legacy_prod]["reply"] == "nack"
+        assert dim11_by_prod[legacy_prod]["verdict"] == "silent"
+        assert dim10_by_prod[legacy_prod]["verdict"] == "silent"
+
+
