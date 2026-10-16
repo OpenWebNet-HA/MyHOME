@@ -1190,3 +1190,82 @@ async def test_timed_cover_stop_reanchor_clamps_at_limits(hass, mock_gateway):
         assert cover.extra_state_attributes["last_run_seconds"] == 2.5
         assert cover.extra_state_attributes["last_run_direction"] == "open"
 
+
+@pytest.mark.asyncio
+async def test_timed_cover_stop_reanchor_with_firmware_oracle_translation_frames(
+    hass, mock_gateway
+):
+    """Verify stop re-anchoring against immediate *2*1000#0*31## oracle translations (#705)."""
+    import json
+    from pathlib import Path
+
+    oracle_path = Path(__file__).resolve().parent / "golden" / "firmware_oracle.json"
+    verdicts = json.loads(oracle_path.read_text(encoding="utf-8"))["verdicts"]
+
+    # On F454, F459, F460, F461, MH202, MyHomeServer1, sending *2*0*31## immediately
+    # emits *2*1000#0*31## (is_translation=True) before the physical actuator stops.
+    stop_by_prod = {e["product"]: e for e in verdicts["*2*0*31##"]}
+    for prod in ("F454", "F459", "F460", "F461", "MH202", "MyHomeServer1"):
+        assert stop_by_prod[prod]["verdict"] == "out"
+        assert stop_by_prod[prod]["emitted_own"] == ["*2*1000#0*31##"]
+
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        cover = MyHOMECover(
+            hass=hass,
+            name="Timed Cover Oracle Stop",
+            entity_name="Timed Cover Oracle Stop",
+            device_id="31",
+            who="2",
+            where="31",
+            interface=None,
+            advanced=False,
+            manufacturer="BTicino",
+            model="Shutter",
+            gateway=mock_gateway,
+            travel_time=20,
+        )
+        cover.entity_id = "cover.timed_oracle_stop"
+        cover.async_schedule_update_ha_state = MagicMock()
+
+    cover._attr_current_cover_position = 50
+    cover._start_position = 50
+    cover._travel_time_up = 20.0
+
+    current_time = 100.0
+
+    def mock_monotonic():
+        return current_time
+
+    with patch("time.monotonic", side_effect=mock_monotonic):
+        await cover.async_open_cover()
+        # Replay F454 emitted_own on *2*1*31## (*2*1000#0*31##, *2*1000#1*31##)
+        f454_up = next(e for e in verdicts["*2*1*31##"] if e["product"] == "F454")
+        for raw_tr in f454_up["emitted_own"]:
+            cover.handle_event(OWNEvent.parse(raw_tr))
+        # Physical actuator direction echo starts the run at t=100.0
+        cover.handle_event(OWNEvent.parse("*2*1*31##"))
+        assert cover.is_opening is True
+
+        # User presses STOP at t=104.0s (optimistic position: 50 + (4/20)*100 = 70%)
+        current_time = 104.0
+        await cover.async_stop_cover()
+        assert cover.current_cover_position == 70
+        assert cover._pending_stop_context is not None
+
+        # Gateway immediately emits *2*1000#0*31## translation at t=104.02s:
+        # must NOT consume _pending_stop_context!
+        current_time = 104.02
+        for raw_tr in stop_by_prod["F454"]["emitted_own"]:
+            ev = OWNEvent.parse(raw_tr)
+            assert ev.is_translation is True
+            cover.handle_event(ev)
+        assert cover._pending_stop_context is not None
+        assert cover.current_cover_position == 70
+
+        # Physical actuator stops and broadcasts *2*0*31## at t=105.0s (5.0s total run -> 75%)
+        current_time = 105.0
+        cover.handle_event(OWNEvent.parse("*2*0*31##"))
+        assert cover._pending_stop_context is None
+        assert cover.current_cover_position == 75
+        assert cover.extra_state_attributes["last_run_seconds"] == 5.0
+
