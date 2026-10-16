@@ -1,6 +1,7 @@
 """Support for MyHome lights."""
 
 import asyncio
+import inspect
 from typing import Any, cast
 
 import voluptuous as vol
@@ -622,9 +623,12 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         if pct <= 0:
             await self._gateway_handler.send(OWNLightingCommand.switch_off(self._full_where))
         else:
-            await self._gateway_handler.send(
-                OWNLightingCommand.set_brightness(self._full_where, pct, 0)
-            )
+            cmd = OWNLightingCommand.set_brightness(self._full_where, pct, 0)
+            send_fade = getattr(self._gateway_handler, "send_fade_step", None)
+            if self._fade_engine.is_fading and inspect.iscoroutinefunction(send_fade):
+                await send_fade(cmd)
+            else:
+                await self._gateway_handler.send(cmd)
 
     async def _maybe_instant_brightness(
         self, start_pct: int, target_pct: int, is_on: bool | None = None
