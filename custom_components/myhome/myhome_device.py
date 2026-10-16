@@ -18,6 +18,7 @@ from homeassistant.helpers.typing import UNDEFINED
 from .const import CONF_ENTITIES, DOMAIN, LOGGER
 from .data import get_runtime_data
 from .device_health import DeviceHealth, Fault, FaultKind
+from .migrate import preserve_legacy_compat_name
 
 __all__ = ["Entity", "MyHOMEEntity"]
 
@@ -40,6 +41,7 @@ class MyHOMEEntity(RestoreEntity):
     _bus_state_complete: bool = False
     # Sensors / binary sensors: let Home Assistant name the entity after its device class.
     _name_from_device_class: bool = False
+    _legacy_compat_name: str | None = None
 
     _attr_has_entity_name = True
 
@@ -241,6 +243,21 @@ class MyHOMEEntity(RestoreEntity):
         if health is not None and address is not None:
             health.name_address(*address, self._device_name, owner=self._health_owner)
         await super().async_added_to_hass()
+        # Must run after EntityPlatform._async_add_entity_impl has attached device_id
+        # and set has_entity_name=True (which clears compat_name on HA 2026.11+),
+        # and before add_to_platform_finish() writes the initial state.
+        if (
+            self._legacy_compat_name
+            and (target_hass := self.hass or self._hass) is not None
+            and self.entity_id
+        ):
+            self.registry_entry = preserve_legacy_compat_name(
+                target_hass,
+                self.entity_id,
+                self.registry_entry,
+                self._legacy_compat_name,
+            )
+            self._cached_friendly_name = None
         try:
             last_state = await self.async_get_last_state()
         except Exception:

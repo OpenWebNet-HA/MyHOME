@@ -109,7 +109,13 @@ async def test_discovered_entities_restore_names_and_disabled_defaults(hass):
     after = {item.unique_id: item for item in sensor_entries(hass, entry)}
     assert before.keys() == after.keys()
     assert after[power.unique_id].entity_id == "sensor.kitchen_power"
-    assert hass.states.get("sensor.kitchen_power").attributes["friendly_name"] == "Kitchen power"
+    assert after[power.unique_id].name == "Kitchen power"
+    expected_power_friendly = (
+        "Meter 51 Kitchen power"
+        if hasattr(after[power.unique_id], "compat_name")
+        else "Kitchen power"
+    )
+    assert hass.states.get("sensor.kitchen_power").attributes["friendly_name"] == expected_power_friendly
     await dispatch(hass, "*#18*51*113*750##")
     assert hass.states.get("sensor.kitchen_power").state == "750"
     assert len(sensor_entries(hass, entry)) == 4

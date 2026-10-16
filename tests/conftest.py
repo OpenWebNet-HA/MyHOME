@@ -1,9 +1,12 @@
 """Fixtures for MyHOME tests using pytest-homeassistant-custom-component."""
 import asyncio
+import contextlib
 import importlib
 import json
+import logging
 import os
 import platform
+import re
 import subprocess
 import sys
 import warnings
@@ -102,6 +105,8 @@ except ImportError:
 
 import pytest
 from homeassistant.core import State
+from homeassistant.helpers import deprecation as ha_deprecation
+from homeassistant.helpers import frame as ha_frame
 from pytest_homeassistant_custom_component.syrupy import (
     ANY,
     HomeAssistantSnapshotExtension,
@@ -116,6 +121,179 @@ try:
 except ImportError:
     pass
 
+
+# NOTE FOR MAINTAINERS:
+# Home Assistant Core emits custom-integration deprecation notices as logging.WARNING
+# records rather than raising Python DeprecationWarning exceptions. If future HA Core
+# releases introduce new deprecation warning phrasings on entity/component loggers,
+# update _LOG_DEPRECATION_RE below (and the matching check in scripts/run_ha_container_smoke.py).
+_LOG_DEPRECATION_RE = re.compile(
+    r"("
+    r"Detected that custom integration 'myhome'"
+    r"|The deprecated .+ from myhome\b"
+    r"|custom_components\.myhome\b.*\b(?:deprecated|will be unsupported from Home Assistant|will stop working in Home Assistant|will be removed in HA Core|will break in Home Assistant)"
+    r"|is deprecated\. Please rename .+ in .*custom_components[/\\]myhome"
+    r"|Entity .+custom_components\.myhome\..+Instead it should use self\.async_write_ha_state\(\)"
+    r")",
+    re.DOTALL,
+)
+
+
+class _HADeprecationGuard(logging.Handler):
+    """Intercept Home Assistant deprecation reports targeting the myhome integration.
+
+    Home Assistant Core reports custom integration deprecations through three
+    ``logging.WARNING`` paths rather than raising ``DeprecationWarning``:
+    1. ``homeassistant.helpers.frame._report_usage`` (runtime API deprecations;
+       normally deduplicated per call-site via ``_REPORTED_INTEGRATIONS``).
+    2. ``homeassistant.helpers.deprecation._print_deprecation_warning_internal_impl``
+       (deprecated constants, aliases, enums, classes, functions, and ``hass`` args).
+    3. Direct ``WARNING`` logs on ``homeassistant.*`` or ``custom_components.myhome.*``
+       from entity ``__init_subclass__`` checks, deprecated attribute checks, or
+       ``@deprecated_substitute`` property wrappers.
+
+    Because channels (1) and (2) hook private HA helper functions to extract exact
+    file/line metadata and bypass per-session deduplication, both hooks are installed
+    via ``getattr(..., None)`` with flexible ``*args, **kwargs`` signatures. If a
+    future HA Core version renames or removes those private helpers, ``emit()``
+    automatically falls back to matching the rendered ``WARNING`` log messages via
+    ``_LOG_DEPRECATION_RE``.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.WARNING)
+        self.import_time_records: list[str] = []
+        self.all_import_time_records: list[str] = []
+        self.current_test_records: list[str] | None = None
+        self.active_capture: list[str] | None = None
+        self._orig_report_usage = getattr(ha_frame, "_report_usage", None)
+        self._orig_print_deprecation = getattr(
+            ha_deprecation, "_print_deprecation_warning_internal_impl", None
+        )
+
+    def install(self) -> None:
+        """Install hooks on Home Assistant's frame, deprecation, and root logger."""
+        if self._orig_report_usage is not None:
+            ha_frame._report_usage = self._on_report_usage
+        if self._orig_print_deprecation is not None:
+            ha_deprecation._print_deprecation_warning_internal_impl = self._on_print_deprecation
+        root_logger = logging.getLogger()
+        if self not in root_logger.handlers:
+            root_logger.addHandler(self)
+
+    def record(self, entry: str) -> None:
+        """Record a deprecation message into the active capture, current test, or import list."""
+        if self.active_capture is not None:
+            if entry not in self.active_capture:
+                self.active_capture.append(entry)
+            return
+        if self.current_test_records is not None:
+            if entry not in self.current_test_records:
+                self.current_test_records.append(entry)
+            return
+        if entry not in self.import_time_records:
+            self.import_time_records.append(entry)
+        if entry not in self.all_import_time_records:
+            self.all_import_time_records.append(entry)
+
+    def _on_report_usage(self, *args, **kwargs):
+        what = args[1] if len(args) > 1 else kwargs.get("what", "<unknown>")
+        breaks_in_ha_version = kwargs.get("breaks_in_ha_version")
+        integration_domain = kwargs.get("integration_domain")
+        integration_frame = kwargs.get("integration_frame")
+        if integration_domain == "myhome" or (
+            integration_frame is not None
+            and getattr(integration_frame, "integration", None) == "myhome"
+        ):
+            loc = (
+                f"{integration_frame.relative_filename}:{integration_frame.line_number}"
+                if integration_frame is not None
+                else "myhome"
+            )
+            breaks = f" (breaks in HA {breaks_in_ha_version})" if breaks_in_ha_version else ""
+            self.record(f"[frame.report_usage] {loc}: {what}{breaks}")
+        return self._orig_report_usage(*args, **kwargs)
+
+    def _on_print_deprecation(self, *args, **kwargs):
+        obj_name = args[0] if len(args) > 0 else kwargs.get("obj_name", "<unknown>")
+        module_name = args[1] if len(args) > 1 else kwargs.get("module_name", "<unknown>")
+        replacement = args[2] if len(args) > 2 else kwargs.get("replacement", "<unknown>")
+        description = args[3] if len(args) > 3 else kwargs.get("description", "object")
+        verb = args[4] if len(args) > 4 else kwargs.get("verb", "used")
+        breaks_in_ha_version = (
+            args[5] if len(args) > 5 else kwargs.get("breaks_in_ha_version")
+        )
+        get_ig_frame = getattr(ha_frame, "get_integration_frame", None)
+        missing_frame_exc = getattr(ha_frame, "MissingIntegrationFrame", Exception)
+        ig_frame = None
+        if callable(get_ig_frame):
+            try:
+                ig_frame = get_ig_frame()
+            except missing_frame_exc:
+                ig_frame = None
+        if ig_frame is not None and getattr(ig_frame, "integration", None) == "myhome":
+            loc = f"{ig_frame.relative_filename}:{ig_frame.line_number}"
+            breaks = f" (breaks in HA {breaks_in_ha_version})" if breaks_in_ha_version else ""
+            self.record(
+                f"[deprecation] {loc}: The deprecated {description} {module_name}.{obj_name} "
+                f"was {verb} from myhome; use {replacement} instead{breaks}"
+            )
+        return self._orig_print_deprecation(*args, **kwargs)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if not record.name.startswith(("homeassistant.", "custom_components.myhome")):
+            return
+        # When _orig_report_usage is hooked, channel 1 already records frame reports
+        # with source file/line metadata; if HA renames _report_usage, fall through.
+        if record.name == "homeassistant.helpers.frame" and self._orig_report_usage is not None:
+            return
+        try:
+            msg = record.getMessage()
+        except Exception:
+            return
+        # Likewise, skip duplicate channel 2 log records only when the private hook is active.
+        if (
+            self._orig_print_deprecation is not None
+            and msg.startswith("The deprecated ")
+            and " from myhome" in msg
+        ):
+            return
+        if _LOG_DEPRECATION_RE.search(msg):
+            self.record(f"[log:{record.name}] {msg}")
+
+
+def get_ha_deprecation_guard() -> _HADeprecationGuard:
+    """Return the process-wide Home Assistant deprecation guard singleton."""
+    guard = getattr(ha_frame, "_myhome_deprecation_guard", None)
+    if guard is None:
+        guard = _HADeprecationGuard()
+        guard.install()
+        setattr(ha_frame, "_myhome_deprecation_guard", guard)
+    else:
+        # Ensure our handler stays attached if pytest resets root logger handlers
+        root_logger = logging.getLogger()
+        if guard not in root_logger.handlers:
+            root_logger.addHandler(guard)
+    return guard
+
+
+@contextlib.contextmanager
+def capture_ha_deprecations():
+    """Temporarily capture HA deprecation notices for assertions in guard tests."""
+    guard = get_ha_deprecation_guard()
+    captured: list[str] = []
+    prev = guard.active_capture
+    guard.active_capture = captured
+    try:
+        yield captured
+    finally:
+        guard.active_capture = prev
+
+
+# Install immediately at conftest load time so collection-time imports are covered.
+get_ha_deprecation_guard()
+
+
 # This fixture allows us to load custom components in tests
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations):
@@ -126,6 +304,28 @@ def auto_enable_custom_integrations(enable_custom_integrations):
     except ImportError:
         pass
     yield
+
+
+@pytest.fixture(autouse=True)
+def fail_on_ha_deprecations():
+    """Fail any test that triggers a Home Assistant deprecation in myhome."""
+    guard = get_ha_deprecation_guard()
+    reported = getattr(ha_frame, "_REPORTED_INTEGRATIONS", None)
+    if hasattr(reported, "clear"):
+        reported.clear()
+    guard.current_test_records = []
+    try:
+        yield
+    finally:
+        records = list(guard.import_time_records) + list(guard.current_test_records or [])
+        guard.import_time_records.clear()
+        guard.current_test_records = None
+    if records:
+        pytest.fail(
+            "Home Assistant deprecation(s) detected in custom_components/myhome:\n  - "
+            + "\n  - ".join(records)
+        )
+
 
 @pytest.fixture(autouse=True)
 def ignore_third_party_warnings():
@@ -155,6 +355,7 @@ def event_loop():
 
 def pytest_configure(config):
     """Configure pytest to ignore third-party HA dependency warnings."""
+    get_ha_deprecation_guard()
     config.addinivalue_line(
         "filterwarnings",
         "ignore::aiohttp.web_exceptions.NotAppKeyWarning",
@@ -179,6 +380,7 @@ def pytest_configure(config):
         "filterwarnings",
         "ignore::pluggy.PluggyTeardownRaisedWarning",
     )
+
 
 def pytest_sessionstart(session):
     """Set the event loop policy to Selector on Windows to avoid _ssock AttributeError."""

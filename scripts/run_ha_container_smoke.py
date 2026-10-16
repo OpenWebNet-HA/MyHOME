@@ -169,10 +169,10 @@ def test_ha_container(
             print(f"ERROR: check_config failed for {test_image}")
             return False
 
-        # 4. Step 2: Test clean module imports
+        # 4. Step 2: Test clean module imports and zero HA deprecations
         print(f"\nTesting platform imports in {test_image}...")
         import_test_script = (
-            "import sys, json, subprocess, re\n"
+            "import sys, json, logging, subprocess, re\n"
             "import importlib.metadata\n"
             "from pathlib import Path\n"
             "print(f'Container Python: {sys.version}')\n"
@@ -186,13 +186,44 @@ def test_ha_container(
             "        print(f'Installing {req}...')\n"
             "        subprocess.run([sys.executable, '-m', 'pip', 'install', req], check=True)\n"
             "sys.path.insert(0, '/config')\n"
-            "platforms = ['myhome', 'myhome.const', 'myhome.gateway', 'myhome.light', 'myhome.switch', "
-            "'myhome.cover', 'myhome.climate', 'myhome.sensor', 'myhome.binary_sensor', 'myhome.button', "
-            "'myhome.alarm_control_panel', 'myhome.media_player', 'myhome.sound_source', 'myhome.diagnostics', 'myhome.websocket']\n"
-            "for p in platforms:\n"
-            "    mod = f'custom_components.{p}'\n"
+            "from homeassistant.helpers import deprecation as ha_dep, frame as ha_frame\n"
+            "deprecations = []\n"
+            "orig_ru = getattr(ha_frame, '_report_usage', None)\n"
+            "if orig_ru is not None:\n"
+            "    def spy_ru(*args, **kw):\n"
+            "        what = args[1] if len(args) > 1 else kw.get('what', '<unknown>')\n"
+            "        ig = kw.get('integration_frame')\n"
+            "        if kw.get('integration_domain') == 'myhome' or (ig and getattr(ig, 'integration', None) == 'myhome'):\n"
+            "            deprecations.append(f'report_usage: {what} (breaks in {kw.get(\"breaks_in_ha_version\")})')\n"
+            "        return orig_ru(*args, **kw)\n"
+            "    ha_frame._report_usage = spy_ru\n"
+            "orig_dep = getattr(ha_dep, '_print_deprecation_warning_internal_impl', None)\n"
+            "if orig_dep is not None:\n"
+            "    def spy_dep(*args, **kw):\n"
+            "        obj_name = args[0] if len(args) > 0 else kw.get('obj_name', '<unknown>')\n"
+            "        module_name = args[1] if len(args) > 1 else kw.get('module_name', '<unknown>')\n"
+            "        replacement = args[2] if len(args) > 2 else kw.get('replacement', '<unknown>')\n"
+            "        description = args[3] if len(args) > 3 else kw.get('description', 'object')\n"
+            "        breaks_in = args[5] if len(args) > 5 else kw.get('breaks_in_ha_version')\n"
+            "        deprecations.append(f'deprecated {description} {module_name}.{obj_name} -> {replacement} (breaks in {breaks_in})')\n"
+            "        return orig_dep(*args, **kw)\n"
+            "    ha_dep._print_deprecation_warning_internal_impl = spy_dep\n"
+            "class _ImportDepLogHandler(logging.Handler):\n"
+            "    def emit(self, record):\n"
+            "        msg = record.getMessage()\n"
+            "        if 'myhome' in msg and any(k in msg for k in ('deprecated', 'will be unsupported', 'will stop working', 'will be removed', 'will break')):\n"
+            "            entry = f'log[{record.name}]: {msg}'\n"
+            "            if entry not in deprecations:\n"
+            "                deprecations.append(entry)\n"
+            "logging.getLogger().addHandler(_ImportDepLogHandler(level=logging.WARNING))\n"
+            "pkg_dir = Path('/config/custom_components/myhome')\n"
+            "for py_file in sorted(pkg_dir.glob('*.py')):\n"
+            "    mod = 'custom_components.myhome' if py_file.stem == '__init__' else f'custom_components.myhome.{py_file.stem}'\n"
             "    __import__(mod)\n"
             "    print(f'  ✓ {mod} imported cleanly')\n"
+            "if deprecations:\n"
+            "    print('ERROR: HA deprecations detected during module import:\\n  - ' + '\\n  - '.join(deprecations))\n"
+            "    sys.exit(1)\n"
         )
 
         res = run_cmd(
@@ -244,6 +275,26 @@ def test_ha_container(
                 line for line in logs.splitlines()
                 if "Detected blocking call" in line and "custom_components/myhome" in line
             ]
+            deprecations = [
+                line for line in logs.splitlines()
+                if (
+                    "Detected that custom integration 'myhome'" in line
+                    or ("The deprecated " in line and " from myhome" in line)
+                    or (
+                        "custom_components.myhome" in line
+                        and any(
+                            kw in line
+                            for kw in (
+                                "deprecated",
+                                "will be unsupported from Home Assistant",
+                                "will stop working in Home Assistant",
+                                "will be removed in HA Core",
+                                "will break in Home Assistant",
+                            )
+                        )
+                    )
+                )
+            ]
 
             if errors:
                 print(f"ERROR: Fatal errors detected in {test_image}:\n" + "\n".join(errors))
@@ -253,7 +304,11 @@ def test_ha_container(
                 print(f"ERROR: Event loop blocking detected in {test_image}:\n" + "\n".join(blocking))
                 return False
 
-            print(f"✓ Container test passed for {test_image} with zero errors and zero loop blocking warnings!")
+            if deprecations:
+                print(f"ERROR: Home Assistant deprecations detected in {test_image}:\n" + "\n".join(deprecations))
+                return False
+
+            print(f"✓ Container test passed for {test_image} with zero errors, zero deprecations, and zero loop blocking warnings!")
             return True
 
         finally:

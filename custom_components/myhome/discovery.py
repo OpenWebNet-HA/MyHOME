@@ -198,7 +198,7 @@ def prune_entity(hass: HomeAssistant, registry: er.EntityRegistry, entry: er.Reg
         if button is not None:
             registry.async_remove(button)
     if entry.device_id and not er.async_entries_for_device(registry, entry.device_id, include_disabled_entities=True):
-        dr.async_get(hass).async_update_device(entry.device_id, remove_config_entry_id=config_entry_id)
+        dr.async_get(hass).async_remove_device(entry.device_id)
 
 
 @callback
@@ -614,6 +614,13 @@ class PlatformDiscovery:
             for entity in created:
                 if message_has_state(entity, ctx.message):
                     entity._poll_on_add = False
+        elif (
+            ctx.registry_entry is not None
+            and not ctx.registry_entry.has_entity_name
+            and ctx.registry_entry.name
+        ):
+            for entity in created:
+                entity._legacy_compat_name = ctx.registry_entry.name
         self.known.add(*keys)
         for entity in created:
             entity.async_on_remove(self.router.subscribe(self.who, keys, entity.handle_event))
