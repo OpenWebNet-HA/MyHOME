@@ -519,3 +519,67 @@ def test_lighting_resync_manager_schedule_resync_guards(
     assert not handler._resync_timers
 
 
+@pytest.mark.asyncio
+async def test_group_resync_ignores_cross_room_and_opposite_polarity_echoes(
+    hass: HomeAssistant, handler: MyHOMEGatewayHandler
+) -> None:
+    """Echoes from another room or opposite polarity must never suppress a group's sweep (#734)."""
+    mgr = handler._resync_manager
+    mgr.register_group_members("#6", ["11", "12"])
+    assert mgr.group_members["#6"] == {"11", "12"}
+
+    # Group #6 turned ON
+    await handler._process_message(OWNMessage.parse("*1*1*#6##"))
+    assert "#6" in handler._resync_timers
+
+    # Unrelated Room 2 echoes arrive -> must NOT cancel #6
+    await handler._process_message(OWNMessage.parse("*1*1*21##"))
+    await handler._process_message(OWNMessage.parse("*1*1*22##"))
+    assert "#6" in handler._resync_timers
+
+    # Opposite polarity frames for #6's members arrive -> must NOT cancel #6
+    await handler._process_message(OWNMessage.parse("*1*0*11##"))
+    await handler._process_message(OWNMessage.parse("*1*0*12##"))
+    assert "#6" in handler._resync_timers
+
+    await _advance(hass)
+    handler.send_status_request.assert_called_once()
+    assert str(handler.send_status_request.call_args[0][0]) == "*#1*#6##"
+
+    # Clearing group members removes the entry
+    mgr.register_group_members("6", [])
+    assert "#6" not in mgr.group_members
+
+
+@pytest.mark.asyncio
+async def test_multi_entity_area_sweep_waits_for_all_known_entities(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """An area sweep only skips/cancels once all known entities in that area have echoed (#734)."""
+    handler = _handler(hass, entry)
+    registry = er.async_get(hass)
+    for where in ("11", "12", "13"):
+        registry.async_get_or_create(
+            "light", DOMAIN, f"{MAC}-1-{where}", config_entry=entry
+        )
+    # Invalid unique_id is ignored by known_area_entities
+    registry.async_get_or_create("light", DOMAIN, f"{MAC}-", config_entry=entry)
+
+    # Area 1 OFF broadcast followed by only 1 of 3 known entities echoing
+    await handler._process_message(OWNMessage.parse("*1*0*1##"))
+    await handler._process_message(OWNMessage.parse("*1*0*11##"))
+    assert "1" in handler._resync_timers
+
+    await _advance(hass)
+    handler.send_status_request.assert_called_once()
+    assert str(handler.send_status_request.call_args[0][0]) == "*#1*1##"
+
+    # Now when all 3 known entities echo, the sweep IS cancelled
+    handler.send_status_request.reset_mock()
+    await handler._process_message(OWNMessage.parse("*1*0*1##"))
+    await handler._process_message(OWNMessage.parse("*1*0*11##"))
+    await handler._process_message(OWNMessage.parse("*1*0*12##"))
+    await handler._process_message(OWNMessage.parse("*1*0*13##"))
+    assert "1" not in handler._resync_timers
+    await _advance(hass)
+    handler.send_status_request.assert_not_called()
