@@ -1348,6 +1348,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#parked-group-cross-room-decoder-reassignment-music-assistant-pause-only-ui" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parked Group &amp; Cross-Room Decoder Reassignment (Music Assistant Pause-Only UI)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#bus-frame-decision-engine" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2890,6 +2901,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#parked-group-cross-room-decoder-reassignment-music-assistant-pause-only-ui" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parked Group &amp; Cross-Room Decoder Reassignment (Music Assistant Pause-Only UI)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#bus-frame-decision-engine" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3589,7 +3611,7 @@ and the decoder), so a report needs two files and one sentence:</p>
 <td style="text-align: left;"><code>PARKED</code></td>
 <td style="text-align: left;"><code>paused</code> / <code>idle</code></td>
 <td style="text-align: left;">Powered Off</td>
-<td style="text-align: left;">Anti-hiss auto-off has powered off the hardware amplifier (<code>*16*13*&lt;WHERE&gt;##</code>) to eliminate analog bus hiss during extended pauses. In Home Assistant, the entity reports <code>paused</code>/<code>idle</code> and preserves group topology. Resumes immediately upon playback.</td>
+<td style="text-align: left;">Anti-hiss auto-off has powered off the hardware amplifier (<code>*16*13*&lt;WHERE&gt;##</code>) to eliminate analog bus hiss during extended pauses. In Home Assistant, the entity reports <code>paused</code>/<code>idle</code> and preserves group topology so Music Assistant keeps the sync group intact. Resumes immediately if playback restarts on the group, or yields the idle decoder and transitions cleanly to <code>OFF</code> (with zero bus frames) if another room starts a stream.</td>
 </tr>
 </tbody>
 </table>
@@ -3603,11 +3625,35 @@ and the decoder), so a report needs two files and one sentence:</p>
     ON --&gt; PENDING_OFF: Decoder Idle/Off (3s) or Paused (60s)
     ON --&gt; PENDING_OFF: Member Unjoined (5s grace period)
     PENDING_OFF --&gt; ON: Decoder resumes playing (Timer Cancelled)
-    PENDING_OFF --&gt; PARKED: Auto-Off Timer Expires (Group Preserved)
+    PENDING_OFF --&gt; OFF: Another room claims paused/idle decoder (&lt; 60s, Amp OFF after 5s grace)
+    PENDING_OFF --&gt; PARKED: Auto-Off Timer Expires (Group Preserved, Amp OFF)
     PENDING_OFF --&gt; OFF: Grace Period Expires (Standalone / Unjoined)
-    PARKED --&gt; ON: media_play / play_media / turn_on
+    PARKED --&gt; ON: Same group resumes (media_play / play_media / turn_on)
+    PARKED --&gt; OFF: Another room claims idle decoder (&gt;= 60s, Group Dissolved, No Bus Frame)
     PARKED --&gt; OFF: turn_off / Physical Wall Switch OFF (*16*13*&lt;WHERE&gt;##)
     ON --&gt; OFF: turn_off / Physical Wall Switch OFF (*16*13*&lt;WHERE&gt;##)</code></pre>
+<h3 id="parked-group-cross-room-decoder-reassignment-music-assistant-pause-only-ui">Parked Group &amp; Cross-Room Decoder Reassignment (Music Assistant Pause-Only UI)<a class="headerlink" href="#parked-group-cross-room-decoder-reassignment-music-assistant-pause-only-ui" title="Permanent link">&para;</a></h3>
+<p>Music Assistant's player UI only offers <strong>Play / Pause</strong> (it has <strong>no Stop button</strong>). When a listener finishes playing music in a multiroom group (<code>Room A</code>, e.g. <code>zone_17</code> + <code>zone_18</code>) and presses <strong>Pause</strong>, the rooms first enter <code>PENDING_OFF</code> (<code>0–60s</code> while the 60-second anti-hiss pause timer runs and physical amplifiers remain ON) and then enter <code>PARKED</code> (<code>≥ 60s</code>, after anti-hiss auto-off sends <code>*16*13*&lt;WHERE&gt;##</code> to power down the physical amplifiers while reporting <code>paused</code> / <code>idle</code> in Home Assistant so Music Assistant does not tear down the sync group).</p>
+<p>Because the decoder is paused or idle under a MyHOME room's ownership, it remains <strong>soft-held</strong> and can be reclaimed immediately in both windows (the 5-minute <code>PAUSE_TAKEOVER_AFTER</code> lock only protects <strong>unassigned</strong> decoders paused by an external non-MyHOME session such as Spotify Connect started directly on the hardware streamer):</p>
+<ul>
+<li><strong>Same group resumes</strong>: Calling <code>media_play</code>, <code>play_media</code>, or <code>turn_on</code> on <code>Room A</code> cancels the timer (if <code>&lt; 60s</code>) or wakes its parked amplifiers (<code>*16*13*&lt;WHERE&gt;##</code> → <code>*16*3*&lt;WHERE&gt;##</code> if <code>≥ 60s</code>) and resumes playback on the same decoder.</li>
+<li><strong>Another room starts playback <code>&lt; 60s</code> after pause (<code>PENDING_OFF</code> takeover)</strong>: If <code>Room B</code> (<code>zone_36</code>) starts playback before the 60-second anti-hiss timer fires, <code>DecoderPool.claim()</code> immediately reassigns the paused/idle decoder to <code>Room B</code> and records the displaced group (<code>zone_17</code> + <code>zone_18</code>). <code>_reconcile_pool_loss()</code> clears <code>_active_decoder</code> and cancels the 60-second timer on <code>Room A</code>, prevents <code>Room A</code> from passively mirroring or auto-joining <code>Room B</code>'s stream, and schedules the 5-second delayed-off grace timer so <code>zone_17</code> and <code>zone_18</code> send <code>*16*13*&lt;WHERE&gt;##</code> and power off their physical amplifiers cleanly.</li>
+<li><strong>Another room starts playback <code>≥ 60s</code> after pause (<code>PARKED</code> takeover)</strong>: Once <code>Room A</code> is parked (<code>_parked = True</code>, physical amplifiers already OFF), <code>DecoderPool.claim()</code> immediately reassigns the decoder to <code>Room B</code>, dissolves the parked group in the pool, and reconciles the displaced rooms (<code>_parked = False</code>, <code>_active_decoder = None</code>, HA state <code>off</code>) with <strong>zero bus frames</strong> sent to amplifiers that are already physically powered off.</li>
+</ul>
+<pre class="mermaid"><code>stateDiagram-v2
+    state "ON (playing) — Amp ON, HA playing, holds decoder_1" as A_ON
+    state "PENDING_OFF (0–60s after MA Pause) — Amp ON, HA paused/idle, 60s timer" as A_PENDING
+    state "PARKED (&gt;= 60s Soft-Hold) — Amp OFF (*16*13*17/18##), HA idle/paused, group kept" as A_PARKED
+    state "OFF (Displaced &lt; 60s) — Amp OFF (*16*13*17/18## after 5s grace), HA off, group dissolved" as A_OFF_ACTIVE
+    state "OFF (Displaced &gt;= 60s) — Amp already OFF (0 bus frames), HA off, group dissolved" as A_OFF_PARKED
+
+    [*] --&gt; A_ON
+    A_ON --&gt; A_PENDING: User presses Pause in Music Assistant (no Stop button)
+    A_PENDING --&gt; A_ON: Same group resumes (&lt; 60s, timer cancelled)
+    A_PENDING --&gt; A_OFF_ACTIVE: Room B (Zone 36) plays (&lt; 60s, claims decoder_1)
+    A_PENDING --&gt; A_PARKED: 60s anti-hiss timer fires
+    A_PARKED --&gt; A_ON: Same group resumes (wakes 17 &amp; 18)
+    A_PARKED --&gt; A_OFF_PARKED: Room B (Zone 36) plays (&gt;= 60s, claims decoder_1)</code></pre>
 <h3 id="bus-frame-decision-engine">Bus Frame Decision Engine<a class="headerlink" href="#bus-frame-decision-engine" title="Permanent link">&para;</a></h3>
 <p>Every OpenWebNet frame received on the SCS bus is evaluated against the pure decision function <code>determine_power_transition(...)</code>. The engine maps frame types to transitions:</p>
 <table>
