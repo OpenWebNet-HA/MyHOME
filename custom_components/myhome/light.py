@@ -591,6 +591,21 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 OWNLightingCommand.status(self._full_where)
             )
 
+    async def async_probe_dimmer_capability(self) -> None:
+        """Query Dimension 1 (*#1*WHERE*1##) after any active sweep to detect ON dimmers (#733)."""
+        if self._lock_features or (
+            set(self._attr_supported_color_modes or ()) - {ColorMode.ONOFF, ColorMode.UNKNOWN}
+        ):
+            return
+        if (
+            hasattr(self._gateway_handler, "wait_for_initial_discovery")
+            and getattr(self._gateway_handler, "sweep_active", False) is True
+        ):
+            await self._gateway_handler.wait_for_initial_discovery()
+        await self._gateway_handler.send_status_request(
+            OWNLightingCommand.get_brightness(self._full_where)
+        )
+
     # ── Transition helpers (software stepped dimming) ────────────────────────
 
     def _get_transition_mode_config(self) -> str:
