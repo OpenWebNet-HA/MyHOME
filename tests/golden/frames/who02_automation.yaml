@@ -135,7 +135,7 @@
   mcp_notes: "Automation dimension write: Set shutter position to 75%"
   roundtrip: true
 
-- id: cover.dim.write.tilt.30
+- id: cover.dim.write.level.30.unparam
   frame: "*#2*93*#11*30##"
   direction: dimension_write
   who: 2
@@ -145,7 +145,7 @@
   dimension_values: ["30"]
   source: legrand-spec
   mcp_valid: true
-  mcp_notes: "Automation dimension write: Set slat tilt angle to 30%"
+  mcp_notes: "Automation: Unparameterized Dimension 11 write to 30%; listed in legacy 2015 Legrand WHO_2 spec as 'slat tilt' but verified by modern OpenWebNet Encyclopedia and firmware oracle as absolute shutter level (Go to level) operation"
   roundtrip: true
 
 - id: cover.cmd.level.75
@@ -447,3 +447,40 @@
   mcp_notes: "Automation: Dimension 10 report with status-code 12 (closing, from initial position 100%) captured mid-movement immediately after the local DOWN event (cover.evt.down.ptp.lnkeypad.02); first real-world confirmation of OWNd's state==12 'closing from initial position' branch (message.py OWNAutomationEvent), previously reachable only via spec inference; openwebnet-mcp reads dimension_values[0] as a raw percentage ('12% open'), which is the grammar-only misreading the README Provenance section warns about"
   roundtrip: true
 
+- id: cover.cmd.slat_tilt.write.40.31
+  frame: "*#2*31*#11#001#1*40##"
+  direction: dimension_write
+  who: 2
+  what: null
+  where: "31"
+  dimension: 11
+  dimension_values: ["40"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Write Venetian blind slat tilt angle 40% with priority 001 and sub-dimension 1 to address 31 (PR #491, #492, #466)"
+  roundtrip: true
+
+- id: cover.reply.slat_tilt.report.40.31
+  frame: "*#2*31*11*40##"
+  direction: dimension_response
+  who: 2
+  what: null
+  where: "31"
+  dimension: 11
+  dimension_values: ["40"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Venetian blind slat tilt angle 40% report from address 31 (WHO 2 Dimension 11)"
+  roundtrip: true
+
+- id: cover.req.slat_tilt.query.31
+  frame: "*#2*31*11##"
+  direction: dimension_request
+  who: 2
+  what: null
+  where: "31"
+  dimension: 11
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Query Venetian blind slat tilt angle from address 31 (WHO 2 Dimension 11)"
+  roundtrip: true
