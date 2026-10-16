@@ -43,8 +43,8 @@
         "who13_model_official": null,
         "who13_model_observed": "F454 / MyHomeServer1 / MH202 / F461 / H4890",
         "who13_firmware": "2.0.11",
-        "who13_kernel": null,
-        "who13_distribution": null,
+        "who13_kernel": "5.10.35",
+        "who13_distribution": "2.26.4",
         "who1013_code": "134",
         "who1013_model": "F461",
         "profile": "F461Profile",
@@ -58,9 +58,9 @@
       },
       "stats": {
         "capacity": 200,
-        "captured": 8,
-        "total_rx": 4,
-        "total_tx": 4,
+        "captured": 12,
+        "total_rx": 6,
+        "total_tx": 6,
         "subscribers": 0
       },
       "recent_frames": [
@@ -70,6 +70,10 @@
         {"raw": "*#13**15*200##", "direction": "rx", "iso_time": "2026-09-28T12:40:52.850296+00:00"},
         {"raw": "*#13**16##", "direction": "tx", "iso_time": "2026-09-28T12:40:52.902374+00:00"},
         {"raw": "*#13**16*2*0*11##", "direction": "rx", "iso_time": "2026-09-28T12:40:52.906499+00:00"},
+        {"raw": "*#13**23##", "direction": "tx", "iso_time": "2026-10-14T09:36:29.880544+00:00"},
+        {"raw": "*#13**23*5*10*35##", "direction": "rx", "iso_time": "2026-10-14T09:36:29.893792+00:00"},
+        {"raw": "*#13**24##", "direction": "tx", "iso_time": "2026-10-14T09:36:57.430056+00:00"},
+        {"raw": "*#13**24*2*26*4##", "direction": "rx", "iso_time": "2026-10-14T09:36:57.441647+00:00"},
         {"raw": "*#1013*0*1##", "direction": "tx", "iso_time": "2026-09-28T12:40:52.960321+00:00"},
         {"raw": "*#1013**1*134*15*5*0##", "direction": "rx", "iso_time": "2026-09-28T12:40:52.966270+00:00"}
       ]

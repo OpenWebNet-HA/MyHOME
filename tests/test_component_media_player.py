@@ -4027,6 +4027,46 @@ async def test_parked_rooms_do_not_report_off_so_music_assistant_keeps_the_group
 
 
 @pytest.mark.asyncio
+async def test_another_room_playing_takes_the_decoder_and_dissolves_the_parked_group(hass, mock_gateway):
+    """Found live: a parked group on zone 17+18 reported idle and blocked zone 36 from claiming the decoder."""
+    leader, member, pool = await _leader_with_member(hass, mock_gateway)
+    other = _create_test_zone(hass, mock_gateway, leader._runtime_data, "21", "media_player.zone21")
+    hass.states.async_set("media_player.dec1", "off")
+
+    timers, patcher = _capture_timers()
+    with patcher:
+        leader._arm_auto_off(60.0, "media_player.dec1")
+        timers[0][1](None)
+    await hass.async_block_till_done()
+
+    # Record parked leader and member states in hass.states as HA does in production
+    hass.states.async_set(leader.entity_id, leader.state)
+    hass.states.async_set(member.entity_id, member.state)
+    assert leader.state == MediaPlayerState.IDLE
+    assert member.state == MediaPlayerState.IDLE
+    assert leader._parked and member._parked
+
+    async def _fake_service(domain, service, data, blocking=False):
+        if service == "turn_on":
+            hass.states.async_set(data["entity_id"], "idle")
+        elif service == "play_media":
+            hass.states.async_set(data["entity_id"], "playing")
+
+    with patch("homeassistant.core.ServiceRegistry.async_call", side_effect=_fake_service):
+        await other.async_play_media("music", "http://stream/1.flac")
+
+    # The other room claimed the decoder, and the parked group was dissolved and unparked
+    assert other._active_decoder == "media_player.dec1"
+    assert pool.owned_decoder(other.entity_id) == "media_player.dec1"
+    assert pool.owned_decoder(leader.entity_id) is None
+    assert pool.get_members(leader.entity_id) == []
+    assert leader._active_decoder is None
+    assert not leader._parked and not member._parked
+    assert leader.state == MediaPlayerState.OFF
+    assert member.state == MediaPlayerState.OFF
+
+
+@pytest.mark.asyncio
 async def test_members_of_a_parked_group_say_on_before_their_slow_wake_frames_go_out(hass, mock_gateway):
     """Music Assistant dropped a member that still reported paused when the leader came on."""
     leader, member, pool = await _leader_with_member(hass, mock_gateway)
@@ -5183,5 +5223,30 @@ async def test_who22_volume_reports_do_not_wake_amplifiers(hass, mock_gateway):
     # which is not an OWNSoundEvent, confirming the gateway discovery filtering.
     live_msg = OWNMessage.parse("*#22*3#3#6*1*20##")
     assert not isinstance(live_msg, OWNSoundEvent)
+
+
+@pytest.mark.asyncio
+async def test_parked_state_checks_streaming_companion_for_paused(hass, mock_gateway):
+    """A parked zone whose hardware decoder is idle/on but whose streaming companion is paused reports PAUSED."""
+    runtime = MyHOMERuntimeData(gateway=mock_gateway)
+    pool = DecoderPool(
+        hass,
+        {"media_player.cxn": 1},
+        companion_map={"media_player.cxn": "media_player.cxn_dlna"},
+    )
+    runtime.decoder_pool = pool
+
+    zone = _create_test_zone(hass, mock_gateway, runtime, "17", "media_player.zone_17")
+    hass.states.async_set("media_player.cxn", MediaPlayerState.ON)
+    hass.states.async_set("media_player.cxn_dlna", MediaPlayerState.IDLE)
+
+    await pool.claim("media_player.zone_17", environment="1")
+    zone._attr_state = MediaPlayerState.OFF
+    zone._parked = True
+
+    assert zone.state == MediaPlayerState.IDLE
+    hass.states.async_set("media_player.cxn_dlna", MediaPlayerState.PAUSED)
+    assert zone.state == MediaPlayerState.PAUSED
+
 
 

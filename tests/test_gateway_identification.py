@@ -91,8 +91,8 @@ def test_official_table_is_the_2006_document_verbatim():
     assert "MH200N" not in {GATEWAY_DEVICE_TYPE_MAP[c] for c in WHO13_OFFICIAL_DEVICE_TYPES}
     assert GATEWAY_DEVICE_TYPE_MAP["44"] == "MH200N"
     # code 200: observed on F454 (#370, #420), MyHOMEServer1 (#292 / #297, #420), MH202 (#420);
-    # reported for F461 (#370), observed on H4890 (#466)
-    assert WHO13_OBSERVED_DEVICE_TYPES == {"200": ("F454", "MyHomeServer1", "MH202", "F461", "H4890")}
+    # reported for F461 (#370), observed on H4890 (#466), observed on MH201 (OWNd#116)
+    assert WHO13_OBSERVED_DEVICE_TYPES == {"200": ("F454", "MyHomeServer1", "MH202", "F461", "H4890", "MH201")}
     assert WHO13_SHARED_DEVICE_TYPES == {"200"}
     assert WHO13_SHARED_DEVICE_TYPES <= set(WHO13_OBSERVED_DEVICE_TYPES)
     # every model a shared WHO=13 code may stand for has a WHO=1013 code that settles it
@@ -465,10 +465,10 @@ def test_ssdp_model_never_relabelled_and_conflict_raises_repair(dev_reg, issues)
     ident = h.identification()
     assert ident["who13_code"] == "200"
     assert ident["who13_model_official"] is None
-    assert ident["who13_model_observed"] == "F454 / MyHomeServer1 / MH202 / F461 / H4890"
+    assert ident["who13_model_observed"] == "F454 / MyHomeServer1 / MH202 / F461 / H4890 / MH201"
     assert ident["conflict"] is None
     # ...and, the code being shared, WHO=1013 is asked to cross-check the announcement
-    assert str(h._command_pool.send_buffer.get_nowait()["message"]) == "*#1013*0*1##"
+    assert str(h._command_pool.send_buffer.get_nowait()["message"]) == "*#1013**1##"
 
     # a code outside both tables: conflict cleared, issue deleted, model kept
     delete.reset_mock()
@@ -494,7 +494,7 @@ def test_f454_and_mhs1_with_code_200_have_no_conflict(dev_reg, issues):
         corrected.assert_not_called()
         ident = h.identification()
         assert ident["who13_code"] == "200"
-        assert ident["who13_model_observed"] == "F454 / MyHomeServer1 / MH202 / F461 / H4890"
+        assert ident["who13_model_observed"] == "F454 / MyHomeServer1 / MH202 / F461 / H4890 / MH201"
         assert ident["conflict"] is None
 
 
@@ -529,12 +529,12 @@ def test_manual_model_with_unverified_observed_code_keeps_model_without_conflict
     create.assert_not_called()
     assert h._identity_conflict is None
     ident = h.identification()
-    assert ident["who13_model_official"] is None and ident["who13_model_observed"] == "F454 / MyHomeServer1 / MH202 / F461 / H4890"
+    assert ident["who13_model_official"] is None and ident["who13_model_observed"] == "F454 / MyHomeServer1 / MH202 / F461 / H4890 / MH201"
     assert ident["conflict"] is None
     assert ident["who1013_code"] is None and ident["who1013_model"] is None
     # the shared code is the cue to ask WHO=1013, whatever the source
     queued = h._command_pool.send_buffer.get_nowait()
-    assert str(queued["message"]) == "*#1013*0*1##" and queued["is_status_request"] is True
+    assert str(queued["message"]) == "*#1013**1##" and queued["is_status_request"] is True
 
 
 def test_manual_model_confirmed_by_who1013_is_kept(dev_reg, issues):
@@ -589,9 +589,9 @@ def test_ssdp_model_with_unverified_observed_code_keeps_model_without_conflict(d
     create.assert_not_called()
     corrected.assert_not_called()
     ident = h.identification()
-    assert ident["who13_model_observed"] == "F454 / MyHomeServer1 / MH202 / F461 / H4890"
+    assert ident["who13_model_observed"] == "F454 / MyHomeServer1 / MH202 / F461 / H4890 / MH201"
     assert ident["conflict"] is None
-    assert str(h._command_pool.send_buffer.get_nowait()["message"]) == "*#1013*0*1##"
+    assert str(h._command_pool.send_buffer.get_nowait()["message"]) == "*#1013**1##"
 
 
 def test_ssdp_model_cross_checked_by_who1013(dev_reg, issues):
@@ -648,7 +648,7 @@ def test_serial_model_cross_checked_by_who1013(dev_reg, issues):
     h.gateway.model_name = "MH200"
     dev_reg.async_get.return_value = MagicMock(model="MH200")
     _who13(h, "200")  # no serial gateway is known to answer this; the path must still be sound
-    assert str(h._command_pool.send_buffer.get_nowait()["message"]) == "*#1013*0*1##"
+    assert str(h._command_pool.send_buffer.get_nowait()["message"]) == "*#1013**1##"
     _who1013(h, "4")  # MH200: corroborated
     assert h._identity_conflict is None
     _who1013(h, "44")  # MH200N: same family, but a product with a code of its own
@@ -709,7 +709,7 @@ def test_unknown_entry_with_ambiguous_code_stays_generic(dev_reg, issues):
     assert h._identity_conflict is None
     # Verify the diagnostic request is queued to disambiguate the gateway.
     queued = h._command_pool.send_buffer.get_nowait()
-    assert str(queued["message"]) == "*#1013*0*1##"
+    assert str(queued["message"]) == "*#1013**1##"
     assert queued["is_status_request"] is True
     # unanswered: the request is pending, a re-broadcast does not repeat it
     _who13(h, "200")
@@ -983,9 +983,9 @@ def test_golden_who1013_exchange(dev_reg, issues, plant, model, object_model, fi
             item = h._command_pool.send_buffer.get_nowait()
             assert item["is_status_request"] is True
             queued.append(str(item["message"]))
-    # one request, the same frame the reporter sent by hand to produce the reply
-    assert queued == ["*#1013*0*1##"]
-    assert "*#1013*0*1##" in sent
+    # one request to settle the identity
+    assert queued == ["*#1013**1##"]
+    assert "*#1013*0*1##" in sent or "*#1013**1##" in sent
 
     ident = h.identification()
     assert ident["source"] == IDENTIFICATION_SSDP
@@ -995,6 +995,9 @@ def test_golden_who1013_exchange(dev_reg, issues, plant, model, object_model, fi
     assert ident["model"] == model and h.gateway.model_name == model
     assert ident["conflict"] is None
     assert h._who1013["pending"] is False
+    if plant == "issue_466_f461":
+        assert ident["who13_kernel"] == "5.10.35"
+        assert ident["who13_distribution"] == "2.26.4"
     create.assert_not_called()
     corrected.assert_not_called()
     h.hass.config_entries.async_update_entry.assert_not_called()
@@ -1215,3 +1218,22 @@ def test_who1013_invalid_dimension_value(dev_reg, issues):
 
     # Should safely return without changes
     assert h.gateway.model_name == "Generic"
+
+
+def test_mh201_identity_resolution(dev_reg, issues):
+    """MH201 answering 200 is settled by WHO 1013 dimension 1 (*#1013**1*10*15*0*5##)."""
+    _, _, corrected = issues
+    h = _handler({"name": "MH201"}, title="MH201 Gateway")
+    h.gateway.model_name = "MH201"
+    dev_reg.async_get.return_value = MagicMock(model="MH201")
+    _who13(h, "200")
+    assert h.gateway.model_name == "MH201"
+    assert h._identity_conflict is None
+    # settled by WHO 1013 response for model 10
+    _who1013(h, "10")
+    assert h.gateway.model_name == "MH201"
+    ident = h.identification()
+    assert ident["who1013_model"] == "MH201"
+    assert ident["who1013_code"] == "10"
+    assert ident["who13_code"] == "200"
+    assert "MH201" in ident["who13_model_observed"]

@@ -85,6 +85,7 @@ CONF_ADVANCED_SHUTTER = "advanced"
 CONF_HEATING_SUPPORT = "heat"
 CONF_COOLING_SUPPORT = "cool"
 CONF_FAN_SUPPORT = "fan"
+CONF_HUMIDITY_SUPPORT = "humidity"
 CONF_STANDALONE = "standalone"
 CONF_SDOMOTICA_COMPAT = "sdomotica_compat"
 CONF_CENTRAL = "central"
@@ -145,6 +146,8 @@ SOURCE_UNCONFIGURED_SUFFIX = " (not configured)"
 # messages that an RCA interface does not. The user declares it, because a
 # source device that has not spoken yet is indistinguishable on the bus.
 CONF_SOURCE_TUNER = "source_{}_tuner"
+#: Optional user-supplied pictures per FM frequency, one "<MHz>=<url>" per line.
+CONF_TUNER_PICTURES = "tuner_pictures"
 #: Stored stations a WHO=16 tuner exposes (5 for F500, up to 15 for F500N).
 TUNER_STATION_COUNT = 5
 TUNER_MAX_STATION_COUNT = 15
@@ -238,6 +241,7 @@ def is_apl_address(base: str) -> bool:
     """Check if base address is a valid OpenWebNet Point-to-Point (APL) address.
 
     Point-to-point addressing combinations:
+      - A = 0; PL [1-9]        -> 2 digits (e.g. 02 = Area 0, PL 2; accepted by BTicino firmware)
       - A = 00; PL [01-15]     -> 4 digits (e.g. 0015 = Area 00, PL 15)
       - A [1-9]; PL [1-9]      -> 2 digits (e.g. 15 = Area 1, PL 5)
       - A = 10; PL [01-15]     -> 4 digits (e.g. 1015 = Area 10, PL 15)
@@ -248,6 +252,8 @@ def is_apl_address(base: str) -> bool:
     if len(base) == 2:
         a = int(base[0])
         pl = int(base[1])
+        if a == 0:
+            return 1 <= pl <= 9
         return 1 <= a <= 9 and 1 <= pl <= 9
     if len(base) == 4:
         a = int(base[:2])
@@ -271,6 +277,8 @@ def area_of_where(where: str | int | None) -> str | None:
     if not is_apl_address(base):
         return None
     if len(base) == 2:
+        if base[0] == "0":
+            return "00"
         return base[0]
     # Length is 4
     a = base[:2]
@@ -285,6 +293,7 @@ def normalize_where(where: str | int | None) -> str:
     """Normalize OpenWebNet address while preserving Point-to-Point (APL) addressing.
 
     Point-to-point WHERE addresses must never have leading zeros stripped:
+      - '02' means Area 0, Point 2 (2 digits)
       - '0015' means Area 00, Point 15 (4 digits)
       - '15' means Area 1, Point 5 (2 digits)
     Area broadcasts '00' (Area 0) and '100' (Area 10) are also preserved.
@@ -361,13 +370,14 @@ WHO13_OFFICIAL_DEVICE_TYPES = {
 #   200: Confirmed on physical hardware for F454 (PR #420 sweep, firmware 2.0.51;
 #        earlier in issue #370 with SSDP), MH202 (PR #420 sweep, firmware 1.0.21),
 #        MyHOMEServer1 (PR #420 trace, firmware 2.87.13; earlier in issue
-#        #292/#297), H4890 (issue #466 sweep, firmware 4.0.15), and F461 (issue
+#        #292/#297), H4890 (issue #466 sweep, firmware 4.0.15), F461 (issue
 #        #466 comment 5870342995 sweep, firmware 2.0.11; reported without
-#        diagnostics in issue #370). Shared across modern Linux-based
-#        gateway families, so it identifies none of them (see WHO13_SHARED_DEVICE_TYPES).
+#        diagnostics in issue #370), and MH201 (firmware 3.3.6, 3.6.27; OWNd#116).
+#        Shared across modern gateway families (not all Linux-based, e.g. MH201),
+#        so it identifies none of them (see WHO13_SHARED_DEVICE_TYPES).
 #        It contradicts legacy gateways (e.g. MH200/F452), but only as field evidence.
 WHO13_OBSERVED_DEVICE_TYPES: dict[str, tuple[str, ...]] = {
-    "200": ("F454", "MyHomeServer1", "MH202", "F461", "H4890"),
+    "200": ("F454", "MyHomeServer1", "MH202", "F461", "H4890", "MH201"),
 }
 # Codes from an independent implementation: the `device` table of Nmap's
 # openwebnet-discovery.nse, whose `device_dimension["Device Type"] = "15"` is this
@@ -422,11 +432,11 @@ WHO13_SHARED_DEVICE_TYPES: frozenset[str] = frozenset({"200"})
 # only brand value ever traced is 5, "Legrand BTicino", which does not
 # discriminate - so the BTicino name is always the one displayed.
 #
-# Four codes are confirmed on physical hardware: 51 F454, 5 MH202, and 67
-# MyHomeServer1 (PR #420, fixtures under tests/fixtures/plants/pr_420_*), and 134
+# Five codes are confirmed on physical hardware: 51 F454, 5 MH202, and 67
+# MyHomeServer1 (PR #420, fixtures under tests/fixtures/plants/pr_420_*), 134
 # F461 (issue #466 comment 5870342995, fixtures under
-# tests/fixtures/plants/issue_466_f461/). The rest of the table is from the
-# database, untraced.
+# tests/fixtures/plants/issue_466_f461/), and 10 MH201 (OWNd#116). The rest of
+# the table is from the database, untraced.
 #
 # A dimension-1 reply is four values, not one (@anotherjulien in #420, from the
 # OpenWebNet Encyclopedia's work on MHCatalogue.db):
@@ -443,6 +453,7 @@ WHO1013_OBJECT_MODELS: dict[str, tuple[str, ...]] = {
     "4": ("MH200",),
     "5": ("MH202", "003535"),
     "8": ("F455", "003594"),
+    "10": ("MH201",),
     "12": ("F453AV",),
     "29": ("H4684", "L4684"),
     "30": ("AM4890", "H4890", "573958", "067292", "078479", "HW4890", "LN4890", "LN4890A"),

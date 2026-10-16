@@ -157,10 +157,25 @@ async def test_climate_properties_and_hvac_modes(hass):
     assert str(gateway.send.call_args[0][0]) == "*4*303*1##"
     gateway.send.reset_mock()
 
-    # Test set_hvac_mode AUTO
+    # Test set_hvac_mode AUTO on a standalone zone without a central unit: *4*311*#1## is a
+    # central-unit command nobody acts on (F461 capture, tests/test_f461_live_plant.py), so the
+    # zone is switched on with a generic setpoint write; without a known setpoint nothing is sent.
+    gateway.has_central_unit = False
+    await climate.async_set_hvac_mode(HVACMode.AUTO)
+    gateway.send.assert_not_called()
+    climate._target_temperature = 21.0
+    await climate.async_set_hvac_mode(HVACMode.AUTO)
+    gateway.send.assert_called_once()
+    assert str(gateway.send.call_args[0][0]) == "*#4*1*#14*0210*3##"
+    gateway.send.reset_mock()
+    # Behind a central unit the automatic program is asked from the central
+    gateway.has_central_unit = True
+    climate._standalone_config = None
     await climate.async_set_hvac_mode(HVACMode.AUTO)
     gateway.send.assert_called_once()
     assert str(gateway.send.call_args[0][0]) == "*4*311*#1##"
+    gateway.has_central_unit = False
+    climate._standalone_config = True
     gateway.send.reset_mock()
 
     # Test set_hvac_mode HEAT

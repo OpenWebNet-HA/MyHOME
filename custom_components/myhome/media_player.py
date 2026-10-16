@@ -93,11 +93,12 @@ from homeassistant.components.media_player.const import (
     MediaPlayerEntityFeature,
     MediaPlayerState,
 )
-from homeassistant.const import Platform
+from homeassistant.const import CONF_MAC, Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 from OWNd.message import OWNSoundCommand, OWNSoundEvent
@@ -106,6 +107,7 @@ from .const import (
     CONF_SOURCE_NAME,
     CONF_SOURCE_SLOTS,
     CONF_SOURCE_TUNER,
+    CONF_TUNER_PICTURES,
     DOMAIN,
     LOGGER,
     SERVICE_TUNER_SEEK_DOWN,
@@ -126,7 +128,8 @@ from .media_player_power import (
     determine_power_transition,
 )
 from .media_player_routing import parse_routing_address, route_pseudo_zones, zone_environment
-from .sound_source import MyHOMESoundSource, source_address
+from .sound_source import MyHOMESoundSource, source_address, who22_tuner_listener
+from .tuner_decode import parse_tuner_pictures
 
 PARALLEL_UPDATES = 0
 
@@ -191,6 +194,13 @@ async def async_setup_entry(
         )
     if sound_sources:
         async_add_entities(sound_sources)
+        # An F500 mirrors its reports onto WHO=22; a plant may deliver only those.
+        mac = str(config_entry.data.get(CONF_MAC) or runtime.mac)
+        config_entry.async_on_unload(
+            async_dispatcher_connect(
+                hass, f"myhome_message_{mac}", who22_tuner_listener(sound_sources)
+            )
+        )
 
     discovery = PlatformDiscovery(
         hass,
@@ -252,6 +262,7 @@ def _build_sound_sources(
 ) -> list[MyHOMESoundSource]:
     """Create an entity for every matrix input the user declared to be a tuner."""
     options = config_entry.options
+    pictures = parse_tuner_pictures(options.get(CONF_TUNER_PICTURES))
     sources: list[MyHOMESoundSource] = []
     for i in range(1, CONF_SOURCE_SLOTS + 1):
         if not options.get(CONF_SOURCE_TUNER.format(i)):
@@ -268,6 +279,7 @@ def _build_sound_sources(
                 manufacturer="BTicino",
                 model="Audio Source",
                 gateway=gateway,
+                pictures=pictures,
             )
         )
     return sources
@@ -441,6 +453,7 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
         except EnvironmentBusyError as err:
             raise self._environment_busy_error(err.owner, err.environment) from err
         self._write_zone_state(old_leader)
+        self._reconcile_pool_loss(pool)
         if result is None:
             if exclude and set(pool.decoder_entity_ids) <= exclude:
                 # Nothing is busy: no configured decoder can take this media.

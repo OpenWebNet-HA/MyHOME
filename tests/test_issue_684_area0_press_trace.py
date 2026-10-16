@@ -53,10 +53,10 @@ def test_press_frame_is_indistinguishable_from_an_area_broadcast() -> None:
     assert area_of_where("2") is None  # not a point-to-point address either
 
 
-def test_four_digit_form_is_apl_but_gateways_do_not_accept_it() -> None:
-    """is_apl_address() calls 0002 canonical; no tested gateway ACKs it on input (oracle lights-area0, MH200 2.1.2)."""
+def test_two_digit_form_is_canonical_apl_accepted_by_gateways() -> None:
+    """is_apl_address() recognizes 02 as the feasible 2-digit APL form for Area 0, PL 1..9 (oracle lights-area0)."""
+    assert is_apl_address("02")
     assert is_apl_address("0002")
-    assert not is_apl_address("02")
 
 
 def test_two_digit_form_is_what_gateways_accept() -> None:
@@ -64,9 +64,11 @@ def test_two_digit_form_is_what_gateways_accept() -> None:
     assert str(OWNLightingCommand.switch_on("02#4#01")) == "*1*1*02#4#01##"
 
 
-def test_two_digit_where_collides_with_area_after_normalisation() -> None:
-    """Known sharp edge: normalize_where() drops the leading zero, so a configured 02 aliases the bare WHERE 2."""
-    assert normalize_where("02") == "2"
+def test_two_digit_where_does_not_collide_with_area_after_normalisation() -> None:
+    """A configured 02 preserves its leading zero and does not alias the bare WHERE 2."""
+    assert normalize_where("02") == "02"
+    assert area_of_where("02") == "00"
+    assert normalize_where("02") != normalize_where("2")
 
 
 @pytest.mark.asyncio

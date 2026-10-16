@@ -47,10 +47,11 @@ from OWNd.message import (
 )
 
 try:  # OWNd > 2.0.0b10 (OpenWebNet-HA/OWNd#94)
-    from OWNd.message import MESSAGE_TYPE_SEASON, SEASON_HEATING
+    from OWNd.message import MESSAGE_TYPE_SEASON, SEASON_CONDITIONING, SEASON_HEATING
 except ImportError:  # pragma: no cover - pinned OWNd 2.0.0b10 reports WHAT 1/0 as hvac_mode
     MESSAGE_TYPE_SEASON = "hvac_season"
     SEASON_HEATING = "heating"
+    SEASON_CONDITIONING = "conditioning"
 
 from .const import (
     BUS_ROUTING,
@@ -59,6 +60,7 @@ from .const import (
     CONF_DEVICE_MODEL,
     CONF_FAN_SUPPORT,
     CONF_HEATING_SUPPORT,
+    CONF_HUMIDITY_SUPPORT,
     CONF_MANUFACTURER,
     CONF_STANDALONE,
     DOMAIN,
@@ -148,6 +150,7 @@ async def async_setup_entry(
             heating=cfg.get(CONF_HEATING_SUPPORT, True),
             cooling=cfg.get(CONF_COOLING_SUPPORT, True),
             fan=cfg.get(CONF_FAN_SUPPORT, False),
+            humidity=cfg.get(CONF_HUMIDITY_SUPPORT, False),
             standalone=cfg.get(CONF_STANDALONE),
             central=is_central,
             manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
@@ -309,6 +312,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         model: str,
         gateway: MyHOMEGatewayHandler,
         interface: str | None = None,
+        humidity: bool = False,
     ) -> None:
         super().__init__(
             hass=hass,
@@ -361,8 +365,17 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._attr_fan_modes: list[str] | None = None
         self._running_fan_speed: str | None = None
         self._actuator_states: dict[str, bool] = {}
+        # Which side of the zone drives a fan coil, from dimension 19
+        # (*#4*Z*19*COOLING*HEATING##: a value of 5..8 on a side is a fan coil, 0..4 a valve).
+        # Empty until a dimension 19 frame has been seen.
+        self._fan_coil_sides: dict[str, bool] = {}
         if fan and not self._central:
             self._enable_fan_mode()
+
+        # Humidity support (dimension 60, Living Now / humidity-capable probes)
+        self._humidity: bool = False
+        if humidity and not self._central:
+            self._enable_humidity()
 
         self._attr_native_current_temperature: float | None = None
         self._season: str | None = None
@@ -380,7 +393,12 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._attr_hvac_mode: HVACMode | None = None
         self._attr_hvac_action: HVACAction | None = None
 
-        if not self._central and not self._gateway_supports_zone_status:
+        if (
+            not self._central
+            and not self._gateway_supports_zone_status
+            and not self._fan
+            and not self._humidity
+        ):
             self._poll_on_add = False
         elif self._central and self._where not in ("#0", "0"):
             self._poll_on_add = False
@@ -397,10 +415,19 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return
         if not self._fan:
             self._fan = True
+            self._poll_on_add = True
             self._attr_supported_features |= ClimateEntityFeature.FAN_MODE
             self._attr_fan_modes = ["auto", "low", "medium", "high"]
             if self._attr_fan_mode is None:
                 self._attr_fan_mode = "auto"
+
+    def _enable_humidity(self) -> None:
+        """Dynamically enable humidity support if not already enabled."""
+        if self._central:
+            return
+        if not self._humidity:
+            self._humidity = True
+            self._poll_on_add = True
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -422,6 +449,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             attrs["fan_mode"] = self._attr_fan_mode
             if self._running_fan_speed is not None:
                 attrs["running_fan_speed"] = self._running_fan_speed
+        if self._fan_coil_sides:
+            attrs["fan_coil_heating"] = self._fan_coil_sides.get("heating", False)
+            attrs["fan_coil_cooling"] = self._fan_coil_sides.get("cooling", False)
         if self._interface is not None:
             attrs["Int"] = self._interface
         if not self._central:
@@ -465,6 +495,17 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._scenario = int(last_state.attributes["scenario"])
                 except (ValueError, TypeError):
                     pass
+            restored_season = last_state.attributes.get("season")
+            if restored_season in (SEASON_HEATING, "cooling"):
+                self._season = str(restored_season)
+            if (
+                "fan_coil_heating" in last_state.attributes
+                or "fan_coil_cooling" in last_state.attributes
+            ):
+                self._fan_coil_sides = {
+                    "heating": bool(last_state.attributes.get("fan_coil_heating", False)),
+                    "cooling": bool(last_state.attributes.get("fan_coil_cooling", False)),
+                }
             if "fan_mode" in last_state.attributes or bool(
                 last_state.attributes.get("supported_features", 0) & ClimateEntityFeature.FAN_MODE
             ):
@@ -472,6 +513,15 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 restored_fan_mode = last_state.attributes.get("fan_mode")
                 if restored_fan_mode in ("auto", "low", "medium", "high"):
                     self._attr_fan_mode = restored_fan_mode
+            if (
+                "current_humidity" in last_state.attributes
+                and last_state.attributes["current_humidity"] is not None
+            ):
+                self._enable_humidity()
+                try:
+                    self._attr_current_humidity = float(last_state.attributes["current_humidity"])
+                except (ValueError, TypeError):
+                    pass
 
     async def async_update(self) -> None:
         """Request status update from gateway, unless the zone has stopped answering."""
@@ -480,30 +530,41 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # bus captures confirm querying #0#1 times out on plants without a physical 4-zone unit (#629).
             # They receive setpoints via commands (*#4*#0#1*#14*T*M##), broadcast events, or restored state.
             return
-        if not self._central and not self._gateway_supports_zone_status:
+        if (
+            not self._central
+            and not self._gateway_supports_zone_status
+            and not self._fan
+            and not self._humidity
+        ):
             # Physical SCS gateways (F455, F454, MH200N, MH202, etc.) do not support
             # dimension-less status requests (*#4*Z##) for regular zones (1-99). The request
             # is forwarded to the SCS bus where physical thermostats have no handler for it,
             # resulting in a 10-second command session timeout per zone (#674).
-            # Only MyHomeServer1 intercepts *#4*Z## in software and replies from its cache (#649).
-            # Physical plants receive all zone telemetry spontaneously via the startup sweep (*#4*0##).
+            # MyHomeServer1 intercepts *#4*Z## in software and replies from its cache (#649),
+            # and F461 expands it into the four dimension requests (#714).
+            # Other physical plants receive standard zone telemetry spontaneously via the startup sweep (*#4*0##).
             return
         if self._poll_health.should_skip(time.time()):
             LOGGER.debug("%s %s did not answer its last polls; not asking again yet", self._gateway_handler.log_id, self._display_name)
             self._raise_unresponsive_issue()
             return
-        # A 99-zone central unit (#0) answers the plain status request (*#4*#0##) within ~0.17 s,
-        # reporting its mode via *4*202*#0## (conditional OFF) and operational flags (#629). Dimension 14
-        # (*#4*#0*14##) is NACKed. Only an F454 has been captured so far, so the poll is informational:
-        # an unanswered one never counts towards the "unresponsive zone" repair.
-        request = OWNHeatingCommand.status(self._full_where)
-        frames_before = self._poll_health.frames
-        written = await self._gateway_handler.send_status_request(request)
-        if isinstance(written, asyncio.Future) and not self._central:
-            written.add_done_callback(lambda future: self._poll_answered(future, frames_before))
-        if self._fan:
+        if self._central or self._gateway_supports_zone_status:
+            # A 99-zone central unit (#0) answers the plain status request (*#4*#0##) within ~0.17 s,
+            # reporting its mode via *4*202*#0## (conditional OFF) and operational flags (#629). Dimension 14
+            # (*#4*#0*14##) is NACKed. Only an F454 has been captured so far, so the poll is informational:
+            # an unanswered one never counts towards the "unresponsive zone" repair.
+            request = OWNHeatingCommand.status(self._full_where)
+            frames_before = self._poll_health.frames
+            written = await self._gateway_handler.send_status_request(request)
+            if isinstance(written, asyncio.Future) and not self._central:
+                written.add_done_callback(lambda future: self._poll_answered(future, frames_before))
+        if self._fan and self._season_has_fan_coil():
             await self._gateway_handler.send_status_request(
                 cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*11##"))
+            )
+        if self._humidity:
+            await self._gateway_handler.send_status_request(
+                cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*60##"))
             )
 
     @callback
@@ -520,6 +581,19 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._clear_unresponsive_issue()
             self._publish_state()
 
+    def _season_has_fan_coil(self) -> bool:
+        """Whether the fan speed request makes sense right now.
+
+        A zone with a valve on one side and a fan coil on the other (F461 plant: heating valve,
+        cooling fan coil) answers *#4*Z*11## only in the fan coil's season and NACKs it in the
+        other one. Until dimension 19 has told which side is which, or while the season is
+        unknown, ask anyway.
+        """
+        if not self._fan_coil_sides or self._season is None:
+            return True
+        side = "heating" if self._season == SEASON_HEATING else "cooling"
+        return self._fan_coil_sides.get(side, False)
+
     @property
     def _standalone(self) -> bool:
         """Whether setpoints and modes are addressed as ``Z`` (thermostat alone) or ``#Z``.
@@ -531,6 +605,16 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if self._standalone_config is not None:
             return self._standalone_config
         return getattr(self._gateway_handler, "has_central_unit", False) is not True
+
+    def _remember_season(self, message: Any) -> None:
+        """Keep the season a mode frame carries (``*4*102*#0##`` heating, ``*4*202*#0##`` conditioning).
+
+        OWNd decodes the off state of a central unit per season (OWNd#97); an older
+        OWNd gives no season and the last known one stays (#699).
+        """
+        season = getattr(message, "season", None)
+        if isinstance(season, str):
+            self._season = season
 
     def _raise_unresponsive_issue(self) -> None:
         self._report_fault(FaultKind.UNRESPONSIVE)
@@ -657,6 +741,33 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if cmd is not None:
                 await self._gateway_handler.send(cmd)
         elif hvac_mode == HVACMode.AUTO:
+            if self._standalone and getattr(self._gateway_handler, "has_central_unit", False) is not True:
+                # Automatic is the central unit's program. On a plant without one the
+                # gateway ACKs *4*311*#Z## and nobody acts on it, and *4*311*Z## is
+                # NACKed (F461 2.0.11, tests/fixtures/traces/f461_live_2026-10-15). The
+                # only frame that takes a standalone thermostat out of OFF or protection
+                # is a setpoint write; mode 3 keeps the thermostat's own season.
+                if self._target_temperature is None:
+                    LOGGER.warning(
+                        "%s %s has no central unit and no known setpoint, cannot switch it on",
+                        self._gateway_handler.log_id,
+                        self._display_name,
+                    )
+                    return
+                LOGGER.debug(
+                    "%s %s is a standalone zone without a central unit: AUTO is written as a setpoint",
+                    self._gateway_handler.log_id,
+                    self._display_name,
+                )
+                await self._gateway_handler.send(
+                    OWNHeatingCommand.set_temperature(
+                        where=self._where,
+                        temperature=self._target_temperature,
+                        mode=SETPOINT_WRITE_MODE,
+                        standalone=True,
+                    )
+                )
+                return
             cmd = OWNHeatingCommand.set_mode(
                 where=self._where,
                 mode=CLIMATE_MODE_AUTO,
@@ -791,6 +902,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._gateway_handler.log_id,
                 message.human_readable_log,
             )
+            self._enable_humidity()
             self._attr_current_humidity = message.main_humidity
         elif message.message_type == MESSAGE_TYPE_TARGET_TEMPERATURE:
             LOGGER.debug(
@@ -884,6 +996,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 )
         elif message.message_type == MESSAGE_TYPE_MODE:
             prev_mode = self._attr_hvac_mode
+            self._remember_season(message)
+            # OWNd releases without MESSAGE_TYPE_SEASON decode the zone operation mode
+            # frame *4*1*Z## / *4*0*Z## as a plain heat / cool mode; it still tells the
+            # season the thermostat runs in, which the fan coil poll needs.
+            raw_what = str(message).split("*")[2] if str(message).startswith("*4*") else ""
+            if raw_what in ("0", "1") and not self._central:
+                self._season = SEASON_HEATING if raw_what == "1" else "cooling"
             self._program = getattr(message, "program", None)
             self._holiday_days = getattr(message, "holiday_days", None)
             self._scenario = getattr(message, "scenario", None)
@@ -937,6 +1056,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._attr_hvac_mode,
                 )
         elif message.message_type == MESSAGE_TYPE_MODE_TARGET:
+            self._remember_season(message)
             self._program = getattr(message, "program", None)
             self._holiday_days = getattr(message, "holiday_days", None)
             self._scenario = getattr(message, "scenario", None)
@@ -1001,6 +1121,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._gateway_handler.log_id,
                 message.human_readable_log,
             )
+            # Valves status (dimension 19): OWNd sets cooling_fan_on / fan_on only for a
+            # fan-coil value (5..8) on that side, so their presence tells which side is a fan coil.
+            if getattr(message, "dimension", None) == 19:
+                self._fan_coil_sides = {
+                    "cooling": isinstance(getattr(message, "cooling_fan_on", None), bool),
+                    "heating": isinstance(getattr(message, "fan_on", None), bool),
+                }
             # Actuator status (Dimension 20) with values >= 5 reports fancoil fan status in OWNd.
             is_fan = isinstance(getattr(message, "fan_speed", None), int) or isinstance(
                 getattr(message, "fan_on", None), bool
@@ -1028,7 +1155,18 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     else "valve"
                 )
             )
-            self._actuator_states[actuator_id] = bool(message.is_active())
+            is_active = bool(message.is_active())
+            if getattr(message, "dimension", None) == 19:
+                # OWNd <= 2.0.0b11 clears _is_active when a fan-coil side is off (value 5),
+                # even if the other side's valve is open (*#4*2*19*5*1##, OWNd#116).
+                is_active = bool(
+                    is_active
+                    or message.is_heating()
+                    or message.is_cooling()
+                    or getattr(message, "cooling_fan_on", None)
+                    or getattr(message, "fan_on", None)
+                )
+            self._actuator_states[actuator_id] = is_active
             any_active = any(self._actuator_states.values())
 
             if any_active:
@@ -1036,6 +1174,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     if message.is_heating():
                         self._attr_hvac_action = HVACAction.HEATING
                     elif message.is_cooling():
+                        self._attr_hvac_action = HVACAction.COOLING
+                    elif self._season == SEASON_HEATING:
+                        self._attr_hvac_action = HVACAction.HEATING
+                    elif self._season in (SEASON_CONDITIONING, "cooling"):
                         self._attr_hvac_action = HVACAction.COOLING
                     elif self._attr_hvac_mode == HVACMode.COOL:
                         self._attr_hvac_action = HVACAction.COOLING

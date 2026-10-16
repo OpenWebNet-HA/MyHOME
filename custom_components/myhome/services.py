@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import TYPE_CHECKING, Any, cast
 
 from homeassistant.const import CONF_MAC
@@ -28,6 +29,8 @@ _LOGGER = logging.getLogger(__name__)
 
 SERVICE_SYNC_TIME = "sync_time"
 SERVICE_SEND_MESSAGE = "send_message"
+# *#4*<where>*22## and *#4*<where>*#22*...## (split control): never forwarded, see handle_send_message.
+_WHO4_DIMENSION_22 = re.compile(r"^\*#4\*[^*]*\*#?22(\*[^#]*)?##$")
 SERVICE_SWEEP_BUS = "sweep_bus"
 
 
@@ -137,6 +140,15 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         if handler is not None:
             if message is not None:
                 from OWNd.message import OWNCommand
+                if _WHO4_DIMENSION_22.match(str(message).strip()):
+                    _LOGGER.error(
+                        "%s Refusing to send `%s`: a WHO 4 dimension 22 request kills the thermostat "
+                        "handler of F461 / F454 / MH200N-class gateways and reboots the gateway "
+                        "about three minutes later (tests/fixtures/traces/f461_live_2026-10-15).",
+                        handler.log_id,
+                        message,
+                    )
+                    return
                 own_message = OWNCommand.parse(message)
                 if own_message is not None and own_message.is_valid:
                     _LOGGER.debug(
@@ -192,6 +204,8 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 "*#13**0##",   # Gateway real-time clock
                 "*#13**15##",  # Gateway device model
                 "*#13**16##",  # Gateway firmware version
+                "*#13**23##",  # Gateway kernel version (modern Linux gateways; NACK ignored on older)
+                "*#13**24##",  # Gateway distribution version (modern Linux gateways; NACK ignored on older)
             ]
             general_queries = ((1, "*#1*0##"), (2, "*#2*0##"), (4, "*#4*0##"), (5, "*#5*0##"), (16, "*#16*0*5##"))
 

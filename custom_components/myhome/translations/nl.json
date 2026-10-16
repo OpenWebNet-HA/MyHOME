@@ -153,12 +153,14 @@
           "gateway_role": "Gatewayrol",
           "primary_gateway": "Primaire gateway",
           "delegated_whos": "Gedelegeerde subsystemen",
-          "ignored_addresses": "Genegeerde adressen"
+          "ignored_addresses": "Genegeerde adressen",
+          "tuner_pictures": "Tunerafbeeldingen"
         },
         "data_description": {
           "decoder_1_pre_gain": "Kalibreer aan de hand van de hardware, niet op gevoel: voedt de line-out van deze decoder een BTicino Ingresso RCA-module (L/N/NT4560) of Controllo Stereo (L4561), verhoog dan Pre-Gain tijdens het afspelen tot het signaal-ledje van die module oranje knippert — niet vast groen (signaal te laag) of vast rood/oranje (clipping). Sluit altijd de vaste line-out ('OUT') van de decoder aan, nooit een volume-afhankelijke hoofdtelefoon-/AUX-uitgang: een tweede ongecontroleerde versterkingstrap daar veroorzaakt precies de vervorming waar BTicino's eigen storingzoektabel voor waarschuwt.",
           "delegated_whos": "Alleen voor de rol secundair: subsystemen waarvan deze gateway nieuwe apparaten detecteert. Apparaten die de primaire gateway al heeft, blijven bij de primaire.",
           "ignored_addresses": "Negeer vermelde adressen permanent (bijv. 1/74, 1/74#4#01): slaat detectie, entiteiten en storingsregistratie over. Scheid meerdere vermeldingen met nieuwe regels of komma's.",
+          "tuner_pictures": "Eén MHz=URL per regel (bijv. 96.2=/local/radio/one.png): de afbeelding die wordt getoond zolang een tuner op die frequentie staat. Je eigen afbeeldingen; er worden er geen meegeleverd.",
           "command_worker_count": "Aanbevolen voor de {model}: {session_default}. Hij accepteert maximaal {session_limit} commandosessie(s), en elke sessie gebruikt samen met de eventsessie een van de weinige verbindingen, die ook de Legrand/BTicino-app en andere clients nodig hebben. Verhoog alleen als commando's in de wachtrij komen."
         }
       }

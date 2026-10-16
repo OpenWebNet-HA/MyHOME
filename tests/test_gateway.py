@@ -1792,7 +1792,42 @@ def test_handle_gateway_diagnostics_dimension_0(gateway_handler, mock_config_ent
         msg_empty = OWNEvent.parse("*#13**0*23*52*03*##")
         gateway_handler._handle_gateway_diagnostics(msg_empty)
         create_issue.assert_not_called()
+        delete_issue.assert_not_called()
 
+        # 7. F461 model is exempted from unconfigured timezone repair (Issue #709)
+        gateway_handler.gateway.model_name = "F461"
+        gateway_handler._handle_gateway_diagnostics(msg)
+        create_issue.assert_not_called()
+        delete_issue.assert_called_once_with(gateway_handler.hass, "entry_diag")
+
+        delete_issue.reset_mock()
+
+        # 8. F461 dimension 22 is also exempted
+        gateway_handler._handle_gateway_diagnostics(msg_dim22_999)
+        create_issue.assert_not_called()
+        delete_issue.assert_called_once_with(gateway_handler.hass, "entry_diag")
+
+        delete_issue.reset_mock()
+
+        # 9. Resolved WHO=1013 object model code 134 also exempts even if model_name was Generic
+        gateway_handler.gateway.model_name = "Generic"
+        gateway_handler._who1013["code"] = "134"
+        gateway_handler._handle_gateway_diagnostics(msg)
+        create_issue.assert_not_called()
+        delete_issue.assert_called_once_with(gateway_handler.hass, "entry_diag")
+
+
+def test_resolve_identity_clears_timezone_issue_for_f461(gateway_handler):
+    """Verify that resolving identity to F461 clears any existing unconfigured timezone issue (Issue #709)."""
+    from OWNd.message import OWNEvent
+
+    gateway_handler.config_entry.entry_id = "entry_diag"
+    gateway_handler.config_entry.data[CONF_NAME] = "Generic"
+    gateway_handler.gateway.model_name = "Generic"
+    with patch("custom_components.myhome.gateway.async_delete_unconfigured_timezone_issue") as delete_issue:
+        msg = OWNEvent.parse("*#1013**1*134*15*5*0##")
+        gateway_handler._handle_gateway_identity_diagnostics(msg)
+        delete_issue.assert_called_once_with(gateway_handler.hass, "entry_diag")
 
 
 def test_compat_gateway_timezone():

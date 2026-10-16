@@ -55,6 +55,16 @@ MyHOME climate entities support standard Home Assistant climate controls:
   - `off`: System frost-protection or thermal shutdown.
 * **Target Temperature**: Adjustable setpoint slider in 0.5 °C increments.
 * **Current Temperature**: Real-time ambient reading reported by the probe.
+* **Current Humidity**: Ambient relative humidity percentage for zones equipped with humidity sensors (e.g. Living Now thermostats or humidity probes).
+
+### 💧 Humidity Support & Startup Behavior
+
+Climate zones equipped with integrated humidity sensors (such as BTicino Living Now or specialized probes) report relative humidity via OpenWebNet `WHO = 4` Dimension `60` frames (`*#4*<WHERE>*60*<HUMIDITY>##`):
+
+* **Dynamic Auto-Detection**: When a climate zone emits a humidity reading on the SCS bus, the integration dynamically enables humidity tracking on that entity.
+* **State Restoration Across Restarts**: The zone remembers that it supports humidity across Home Assistant restarts and restores its last known humidity value immediately.
+* **Targeted Startup Query**: After startup (once the initial discovery sweep finishes), only climate zones that support humidity are queried with `*#4*<WHERE>*60##` to refresh the current reading. This avoids unnecessary bus traffic on zones without humidity sensors, and works across both software gateways (MyHomeServer1) and physical SCS gateways (such as F461, F454, F455, MH200N).
+* **Optional YAML Configuration**: In advanced setups using legacy `/config/myhome.yaml`, humidity polling can be explicitly pre-enabled on a zone by setting `humidity: true` under the zone configuration.
 
 ---
 

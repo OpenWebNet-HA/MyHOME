@@ -1367,6 +1367,44 @@ async def test_options_flow_source_names_and_environment_defaults(hass: HomeAssi
     assert options[CONF_SOURCE_DEFAULTS] == {"2": 2}
 
 
+async def test_options_flow_tuner_pictures_are_stored_only_once_set(hass: HomeAssistant) -> None:
+    """An untouched picture field adds no option; a set one is stored, a cleared one blanked."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.config_flow import MyhomeOptionsFlowHandler
+    from custom_components.myhome.const import CONF_TUNER_PICTURES
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"mac": "00:03:50:00:12:34", "host": "192.168.1.50", "port": 20000},
+        options={},
+        unique_id="00:03:50:00:12:34",
+    )
+    entry.add_to_hass(hass)
+
+    async def submit(**extra):
+        flow = MyhomeOptionsFlowHandler(entry)
+        flow.hass = hass
+        with patch.object(hass.config_entries, "async_reload", return_value=True):
+            return (
+                await flow.async_step_user(
+                    {
+                        "address": "192.168.1.50",
+                        "password": "12345",
+                        "command_worker_count": 1,
+                        "generate_events": False,
+                        **extra,
+                    }
+                )
+            )["data"]
+
+    assert CONF_TUNER_PICTURES not in await submit()
+    stored = await submit(**{CONF_TUNER_PICTURES: "  96.2=/local/radio/one.png  "})
+    assert stored[CONF_TUNER_PICTURES] == "96.2=/local/radio/one.png"
+
+    hass.config_entries.async_update_entry(entry, options=stored)
+    assert (await submit(**{CONF_TUNER_PICTURES: ""}))[CONF_TUNER_PICTURES] == ""
+
 async def test_options_flow_auto_join_streaming_toggle(hass: HomeAssistant) -> None:
     """Validate CONF_AUTO_JOIN_STREAMING default, toggle, and persistence."""
     from pytest_homeassistant_custom_component.common import MockConfigEntry

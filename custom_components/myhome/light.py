@@ -968,6 +968,13 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         elif message.is_on is not None:
             self._attr_is_on = message.is_on
             self._is_on_restored = False
+            # An "off" frame is complete for a dimmer too: there is no brightness to ask for.
+            if (
+                not message.is_on
+                or not (set(self._attr_supported_color_modes or ()) - {ColorMode.ONOFF, ColorMode.UNKNOWN})
+                or getattr(message, "brightness", None) is not None
+            ):
+                self._bus_state_complete = True
             self._attr_extra_state_attributes.pop("unknown_state", None)
             if message.is_on and self._attr_extra_state_attributes.pop("no_load", None):
                 LOGGER.info(

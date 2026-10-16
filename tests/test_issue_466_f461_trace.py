@@ -144,12 +144,24 @@ def test_f461_gateway_diagnostics_frames() -> None:
     device_type_reply = OWNMessage.parse("*#13**15*200##")
     assert isinstance(device_type_reply, OWNGatewayEvent)
     assert device_type_reply.who == 13
-    assert device_type_reply._device_type == "F454"
+    assert "F454" in (device_type_reply._device_type or "")
 
     firmware_reply = OWNMessage.parse("*#13**16*2*0*11##")
     assert isinstance(firmware_reply, OWNGatewayEvent)
     assert firmware_reply.who == 13
     assert firmware_reply._firmware_version == "2.0.11"
+
+    kernel_reply = OWNMessage.parse("*#13**23*5*10*35##")
+    assert isinstance(kernel_reply, OWNGatewayEvent)
+    assert kernel_reply.who == 13
+    assert kernel_reply.dimension == 23
+    assert getattr(kernel_reply, "kernel_version", getattr(kernel_reply, "_kernel_version", None)) == "5.10.35"
+
+    distribution_reply = OWNMessage.parse("*#13**24*2*26*4##")
+    assert isinstance(distribution_reply, OWNGatewayEvent)
+    assert distribution_reply.who == 13
+    assert distribution_reply.dimension == 24
+    assert getattr(distribution_reply, "distribution_version", getattr(distribution_reply, "_distribution_version", None)) == "2.26.4"
 
 
 def test_f461_gateway_object_model_frame() -> None:

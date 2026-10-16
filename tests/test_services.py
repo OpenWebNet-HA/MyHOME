@@ -148,11 +148,11 @@ async def test_sweep_bus_queries_sent(hass: HomeAssistant, attach_gateway) -> No
     # ... after the gateway queries and before the energy queries
     names = [call[0] for call in order.mock_calls]
     paced_at = names.index("send_paced")
-    assert names[:paced_at] == ["send_status_request"] * 3
+    assert names[:paced_at] == ["send_status_request"] * 5
     assert names[paced_at + 1:] == ["send_status_request"] * 36
 
     sent_raw = [str(call.args[0]) for call in mock_handler.send_status_request.await_args_list]
-    assert sent_raw[:3] == ["*#13**0##", "*#13**15##", "*#13**16##"]
+    assert sent_raw[:5] == ["*#13**0##", "*#13**15##", "*#13**16##", "*#13**23##", "*#13**24##"]
     assert not any(raw.startswith(("*#1*", "*#2*", "*#4*", "*#5*", "*#16*")) for raw in sent_raw)
     mock_handler.send.assert_not_called()
     # Energy Management (WHO 18) F520 discovery queries
@@ -234,7 +234,7 @@ async def test_sweep_bus_follower_delegated_who1(hass: HomeAssistant, attach_gat
 
     mock_handler.send_paced.assert_awaited_once_with(["*#1*0##"])
     sent_raw = [str(call.args[0]) for call in mock_handler.send_status_request.await_args_list]
-    assert sent_raw == ["*#13**0##", "*#13**15##", "*#13**16##"]
+    assert sent_raw == ["*#13**0##", "*#13**15##", "*#13**16##", "*#13**23##", "*#13**24##"]
     mock_handler.send.assert_not_called()
 
 

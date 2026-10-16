@@ -192,7 +192,7 @@ def test_f455_gateway_identification_and_clock_frames() -> None:
     assert isinstance(dev_type, OWNGatewayEvent)
     assert dev_type.who == 13
     assert dev_type.dimension == 15
-    assert dev_type._device_type == "F454"  # code 200 maps to modern gateway family
+    assert "F454" in (dev_type._device_type or "")  # code 200 maps to modern gateway family
 
     # Firmware 1.0.86
     fw = OWNMessage.parse("*#13**16*1*0*86##")

@@ -441,7 +441,12 @@ class MyHOMEGatewayHandler:
         standard SCS bus protocol. Physical gateways (F455, F454, MH200N, MH202, etc.) forward
         the request to the SCS bus, where physical thermostats (LN4691, 3550) ignore it, causing
         a 10-second command session timeout per zone (#674).
-        Only MyHomeServer1 intercepts *#4*Z## in software and replies from its internal cache (#649).
+        MyHomeServer1 intercepts *#4*Z## in software and replies from its internal cache (#649).
+        An F461 (firmware 2.0.11) expands it itself into the four dimension requests and answers
+        within 1.3 s with dimensions 0, 12, 14, 13 and the season frame, while it NACKs the
+        general request *#4*0## of the startup sweep and its thermostats push nothing on their
+        own: polling is the only way such a zone gets a state
+        (tests/fixtures/traces/f461_live_2026-10-15/README.md).
         """
         norm = self.model.upper()
         return not any(
@@ -456,7 +461,6 @@ class MyHOMEGatewayHandler:
                 "F453",
                 "F458",
                 "F459",
-                "F461",
                 "H4684",
             )
         )
@@ -876,9 +880,14 @@ class MyHOMEGatewayHandler:
         if dim in (0, 22) and dim_val:
             # Check if timezone is 999. In both dimension 0 and 22, dim_val[3] carries the timezone.
             # The OWNd < 2.0.0b7 compat shim clears the time_zone property, but leaves dim_val[3] as "999".
+            # The F461 gateway is configured via Home + Project app and maintains its clock via NTP.
+            # Its firmware always reports 999 over OpenWebNet; it is exempted from this warning (Issue #709).
             if len(dim_val) > 3 and str(dim_val[3]) == "999":
                 if self.config_entry:
-                    async_create_unconfigured_timezone_issue(self.hass, self.config_entry.entry_id, self.config_entry.title)
+                    if self.model.strip().upper() == "F461" or self._who1013.get("code") == "134":
+                        async_delete_unconfigured_timezone_issue(self.hass, self.config_entry.entry_id)
+                    else:
+                        async_create_unconfigured_timezone_issue(self.hass, self.config_entry.entry_id, self.config_entry.title)
             elif len(dim_val) > 3 and str(dim_val[3]) != "":
                 if self.config_entry:
                     async_delete_unconfigured_timezone_issue(self.hass, self.config_entry.entry_id)
@@ -990,6 +999,8 @@ class MyHOMEGatewayHandler:
 
         # The effective model.
         model = resolution.model or configured
+        if ((model and model.strip().upper() == "F461") or self._who1013.get("code") == "134") and entry_id:
+            async_delete_unconfigured_timezone_issue(self.hass, entry_id)
         if model and model.lower() != configured.lower():
             reading = resolution.corrected_reading
             LOGGER.warning(
@@ -1059,7 +1070,7 @@ class MyHOMEGatewayHandler:
         del self.sending_workers[limit:]
 
     def _request_object_model(self) -> None:
-        """Queue ``*#1013*0*1##`` (Gateway Diagnostic, dimension 1 OBJECT_MODEL) once.
+        """Queue ``*#1013**1##`` (Gateway Diagnostic, dimension 1 OBJECT_MODEL) once.
 
         Sent as a status request: OWNd retries a NACK once and logs both attempts at
         DEBUG, and the delivery future is cancelled, which nobody awaits. Not repeated
@@ -1067,7 +1078,7 @@ class MyHOMEGatewayHandler:
         """
         if self._who1013["pending"]:
             return
-        cmd = OWNCommand.parse("*#1013*0*1##")
+        cmd = OWNCommand.parse("*#1013**1##")
         if cmd is None:
             return
         LOGGER.debug("%s Requesting WHO=1013 dimension 1 (OBJECT_MODEL) to settle the model.", self.log_id)

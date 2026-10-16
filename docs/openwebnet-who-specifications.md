@@ -52,7 +52,7 @@ The table below catalogs every known OpenWebNet function family (`WHO`), its off
 | **1** | **Lighting (Illuminazione)** | `Who = 1 LIGHTING` / `WHO_1.pdf` | **v1.1.0 (2014-11-17)** | 🟢 | `light` | ON, OFF, Dimming (1-100%, 10 levels, steps), Blink, Timer, Speed of transition. Extended lighting & DALI dimensions (tunable white / RGBW via F429/F429G). Contributed by GianlucaCh. |
 | **2** | **Automation (Automazione)** | `Messages - Automation` / `WHO_2.pdf` | **v1.0.0 (2015-11-12)** | 🟢 | `cover` | Roller shutters, venetian blinds, motorized curtains, gates. Standard UP/DOWN/STOP and advanced absolute positioning percentage (0-100%, Legrand 67557). Contributed by GianlucaCh. |
 | **3** | **Load Control (Legacy)** | `OpenWebNet_Community_3_LoadControl` / `WHO_3.pdf` | v1.0.0 (2006) | 🟡 | `switch`, `sensor` | Priority-based load disconnection central unit (F421). Inhibit/force actuators. |
-| **4** | **Thermoregulation (Termoregolazione)** | `Open Web Net Language - Heating adjustment` / `WHO_4 2.pdf` | **v2.0.0 (2013-11-27)** | 🟢 | `climate`, `sensor` | 4-zone / 99-zone central units (3550), standalone thermostats (L/N/NT4691), external probe sensors (3475). Added dimension 22 (offset) and dimension 11 (fancoil 3-speed). Contributed by GianlucaCh. |
+| **4** | **Thermoregulation (Termoregolazione)** | `Open Web Net Language - Heating adjustment` / `WHO_4 2.pdf` | **v2.0.0 (2013-11-27)** | 🟢 | `climate`, `sensor` | 4-zone / 99-zone central units (3550), standalone thermostats (L/N/NT4691, Living Now), external probe sensors (3475). Supports dimension 0 (temperature), dimension 11 (fancoil 3-speed), dimension 12/14 (setpoints), dimension 13 (offset), dimension 20 (actuators), and dimension 60 (relative humidity). Contributed by GianlucaCh. |
 | **5** | **Burglar Alarm (Antifurto)** | `MyHome Burglar Alarm` / `WHO_5.pdf` | **(2008-02-13)** | 🟢 | `alarm_control_panel` | Central units (3485, 3486), partition arming/disarming, panic alarms, gas/water technical alarms, sensor zone status. Authored by Lorenzo Pini. Contributed by GianlucaCh. |
 | **6** | **Door Entry Call & Lock** | `OpenWebNet_Community_DoorEntry` / `WHO_6.pdf` | v1.0.0 (2006) | 🟡 | `lock`, `switch`, `event` | Audio door entry calls, door lock release (`*6*10*<WHERE>##`), staircase light, camera switching, incoming call chimes. |
 | **7** | **Video Door Entry / Multimedia** | `Open Web Net WHO=7` / `WHO_7.pdf` | **v1.0.1 (2011-12-01)** | 🟢 | `camera` | Video session establishment, camera selection, video stream routing over IP for Video Server F453AV. Contributed by GianlucaCh. |
@@ -197,7 +197,9 @@ OpenWebNet messages always begin with `*` and end with `##`. Fields are separate
    ```text
    *#WHO*WHERE*DIMENSION##
    ```
-   *Example*: `*#4*1*0##` (Query measured temperature of Zone 1)
+   *Examples*:
+   - `*#4*1*0##` (Query measured temperature of Zone 1)
+   - `*#4*1*60##` (Query relative humidity of Zone 1)
 
 3. **Dimension Writing (Command with Parameters)**:
    ```text
@@ -209,7 +211,9 @@ OpenWebNet messages always begin with `*` and end with `##`. Fields are separate
    ```text
    *#WHO*WHERE*DIMENSION*VAL1*VAL2*...*VALn##
    ```
-   *Example*: `*#4*1*0*0215*1##` (Zone 1 temperature is 21.5 °C, Heating mode)
+   *Examples*:
+   - `*#4*1*0*0215*1##` (Zone 1 temperature is 21.5 °C, Heating mode)
+   - `*#4*1*60*55##` (Zone 1 relative humidity is 55%)
 
 5. **Acknowledge (ACK / NACK)**:
    - `*#*1##` : **ACK** (Command accepted by gateway/bus)

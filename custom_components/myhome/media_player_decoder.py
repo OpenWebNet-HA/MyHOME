@@ -47,7 +47,12 @@ class ZoneDecoderLayer(ZoneSourceLayer):
             # bus is not evidence either way, so only a known match mirrors.
             if assigned and source_num == pool.decoder_source(assigned):
                 return assigned
-        if self._attr_state == MediaPlayerState.ON and source_num is not None and pool:
+        if (
+            self._attr_state == MediaPlayerState.ON
+            and self._pending_off_task is None
+            and source_num is not None
+            and pool
+        ):
             return pool.get_decoder_for_source(source_num)
         return None
 
@@ -192,9 +197,11 @@ class ZoneDecoderLayer(ZoneSourceLayer):
         if pool is not None:
             leader_id = pool.get_leader(self.entity_id) or self.entity_id
             decoder_id = pool.owned_decoder(leader_id)
-            state = self.hass.states.get(decoder_id) if decoder_id else None
-            if state is not None and state.state == MediaPlayerState.PAUSED:
-                return MediaPlayerState.PAUSED
+            if decoder_id:
+                for entity_id in {decoder_id, self._streaming_target(decoder_id) or decoder_id}:
+                    state = self.hass.states.get(entity_id)
+                    if state is not None and state.state == MediaPlayerState.PAUSED:
+                        return MediaPlayerState.PAUSED
         return MediaPlayerState.IDLE
 
     @property

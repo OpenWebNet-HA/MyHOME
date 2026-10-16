@@ -165,7 +165,8 @@ async def test_delete_and_re_add_keeps_user_names_and_areas(hass: HomeAssistant,
 
     light = registry.async_get("light.kitchen_light")
     assert light is not None and light.name == "Ceiling spots" and light.area_id == area.id and light.icon == "mdi:ceiling-light"
-    assert hass.states.get("light.kitchen_light").attributes["friendly_name"] == "Ceiling spots"
+    expected_light_friendly = "Kitchen Light Ceiling spots" if hasattr(light, "compat_name") else "Ceiling spots"
+    assert hass.states.get("light.kitchen_light").attributes["friendly_name"] == expected_light_friendly
     assert registry.async_get("sensor.mains_power") is not None  # renamed entity id survived
     assert hass.states.get("sensor.house_power") is None
     device = device_registry.async_get(registry.async_get("cover.bedroom_shutter").device_id)

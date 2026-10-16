@@ -361,6 +361,7 @@ async def test_calibrate_all_button_reactive_availability_and_no_covers(
         scan_interval=timedelta(seconds=30),
         entity_namespace=None,
     )
+    platform.config_entry = entry_x
     await platform.async_add_entities([btn])
     await hass.async_block_till_done()
 

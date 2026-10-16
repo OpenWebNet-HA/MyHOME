@@ -37,7 +37,7 @@ def test_firmware_oracle_integrity():
     data = load_firmware_oracle()
     assert data["format_version"] == "1.0.0"
     assert data["generator"] == "own-firmware-oracle"
-    assert data["schema_version"] == "1.0.0"
+    assert data["schema_version"] in ("1.0.0", "1.1.0")
 
     verdicts = data["verdicts"]
     canonical_verdicts = json.dumps(verdicts, sort_keys=True, separators=(",", ":"))
@@ -47,9 +47,10 @@ def test_firmware_oracle_integrity():
     )
 
     assert data["total_unique_inputs"] == len(verdicts)
-    assert len(data["gateways"]) >= 2
+    assert len(data["gateways"]) >= 11
 
     gateway_names = {f"{g['product']} {g['version']}" for g in data["gateways"]}
+    assert "MH200 020102" in gateway_names
     assert "MH200N 010108" in gateway_names
     assert "MyHomeServer1 028206" in gateway_names
 
@@ -79,38 +80,52 @@ def test_emitted_own_frames_parseable_by_ownd():
 # Known protocol discrepancies between spec-derived/openwebnet4j corpus fixtures
 # and actual gateway firmware behavior (audited in own-firmware-oracle):
 KNOWN_GATEWAY_DISCREPANCIES: dict[tuple[str, str], set[str]] = {
-    # Central unit mode commands:
-    ("thermo.cmd.central.mode.heat.cu99", "MH200N"): {"nack"},
-    ("thermo.cmd.central.mode.heat.cu99", "MyHomeServer1"): {"ack", "nack"},
-    ("thermo.cmd.central.mode.heat.cu99", "F450"): {"nack", "-"},
-    ("thermo.cmd.central.mode.heat.cu99", "F460"): {"nack"},
-    ("thermo.cmd.central.mode.heat.cu99", "F461"): {"nack"},
-    ("thermo.cmd.central.mode.cool.cu99", "MH200N"): {"nack"},
-    ("thermo.cmd.central.mode.cool.cu99", "F450"): {"-"},
+    ("aux.cmd.activate.1", "F450"): {"nack"},
+    ("aux.cmd.activate.1", "F453AV"): {"nack"},
+    ("aux.cmd.activate.1", "F460"): {"nack"},
+    ("aux.cmd.activate.1", "F461"): {"nack"},
+    ("aux.cmd.activate.1", "H4684"): {"nack"},
+    ("aux.cmd.activate.1", "MyHomeServer1"): {"nack"},
+    ("aux.cmd.deactivate.1", "F450"): {"nack"},
+    ("aux.cmd.deactivate.1", "F453AV"): {"nack"},
+    ("aux.cmd.deactivate.1", "F460"): {"nack"},
+    ("aux.cmd.deactivate.1", "F461"): {"nack"},
+    ("aux.cmd.deactivate.1", "H4684"): {"nack"},
+    ("aux.cmd.deactivate.1", "MyHomeServer1"): {"nack"},
+    ("light.cmd.off.bus.25", "F450"): {"nack"},
+    ("light.cmd.off.bus.25", "F460"): {"nack"},
+    ("light.cmd.off.bus.25", "F461"): {"nack"},
+    ("light.cmd.off.bus.25", "MH202"): {"nack"},
+    ("light.cmd.off.bus.25", "MyHomeServer1"): {"nack"},
+    ("light.cmd.on.gen.0", "F450"): {"nack"},
+    ("light.cmd.on.gen.0", "F460"): {"nack"},
+    ("light.cmd.on.gen.0", "F461"): {"nack"},
+    ("light.cmd.on.gen.0", "MyHomeServer1"): {"nack"},
+    ("sound.cmd.source.on.1", "F450"): {"nack"},
+    ("sound.cmd.source.on.1", "F459"): {"nack"},
+    ("sound.cmd.source.on.1", "F460"): {"nack"},
+    ("sound.cmd.source.on.1", "F461"): {"nack"},
+    ("sound.cmd.source.on.1", "MH202"): {"nack"},
+    ("sound.cmd.source.on.1", "MyHomeServer1"): {"nack"},
+    ("sound.cmd.source.on.2", "F450"): {"nack"},
+    ("sound.cmd.source.on.2", "F459"): {"nack"},
+    ("sound.cmd.source.on.2", "F460"): {"nack"},
+    ("sound.cmd.source.on.2", "F461"): {"nack"},
+    ("sound.cmd.source.on.2", "MH202"): {"nack"},
+    ("sound.cmd.source.on.2", "MyHomeServer1"): {"nack"},
     ("thermo.cmd.central.mode.cool.cu99", "F460"): {"nack"},
     ("thermo.cmd.central.mode.cool.cu99", "F461"): {"nack"},
-    ("thermo.cmd.central.mode.off.cu99", "MH200N"): {"nack"},
-    ("thermo.cmd.central.mode.off.cu99", "MyHomeServer1"): {"ack", "nack"},
-    ("thermo.cmd.central.mode.off.cu99", "F450"): {"-"},
+    ("thermo.cmd.central.mode.cool.cu99", "H4684"): {"nack"},
+    ("thermo.cmd.central.mode.cool.cu99", "MH200"): {"nack"},
+    ("thermo.cmd.central.mode.cool.cu99", "MyHomeServer1"): {"nack"},
+    ("thermo.cmd.central.mode.heat.cu99", "F460"): {"nack"},
+    ("thermo.cmd.central.mode.heat.cu99", "F461"): {"nack"},
+    ("thermo.cmd.central.mode.heat.cu99", "H4684"): {"nack"},
+    ("thermo.cmd.central.mode.heat.cu99", "MH200"): {"nack"},
+    ("thermo.cmd.central.mode.heat.cu99", "MyHomeServer1"): {"nack"},
     ("thermo.cmd.central.mode.off.cu99", "F460"): {"nack"},
     ("thermo.cmd.central.mode.off.cu99", "F461"): {"nack"},
-    # Zone temperature request without configured probe on unconfigured daemon:
-    ("thermo.req.temp.zone1", "MH200N"): {"nack"},
-    ("thermo.req.temp.zone1", "MyHomeServer1"): {"nack"},
-    ("thermo.req.temp.zone1", "F450"): {"nack"},
-    ("thermo.req.temp.zone1", "F453AV"): {"nack"},
-    ("thermo.req.temp.zone1", "F454"): {"nack"},
-    ("thermo.req.temp.zone1", "F459"): {"nack"},
-    ("thermo.req.temp.zone1", "F460"): {"nack"},
-    ("thermo.req.temp.zone1", "F461"): {"nack"},
-    ("thermo.req.temp.zone1", "MH202"): {"nack"},
-    # Energy dimension 113: refused without configured energy meter:
-    ("energy.req.unit.meter51", "MH200N"): {"nack"},
-    ("energy.req.unit.meter51", "F450"): {"nack"},
-    ("energy.req.unit.meter51", "F454"): {"nack"},
-    # Sound source power on: F454 forwards SCS frame to bus but returns NACK to client session
-    ("sound.cmd.source.on.1", "F454"): {"nack"},
-    ("sound.cmd.source.on.2", "F454"): {"nack"},
+    ("thermo.cmd.central.mode.off.cu99", "MyHomeServer1"): {"nack"},
 }
 
 

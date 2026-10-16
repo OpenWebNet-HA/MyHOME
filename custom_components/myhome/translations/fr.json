@@ -153,12 +153,14 @@
           "gateway_role": "Rôle de la passerelle",
           "primary_gateway": "Passerelle principale",
           "delegated_whos": "Sous-systèmes délégués",
-          "ignored_addresses": "Adresses ignorées"
+          "ignored_addresses": "Adresses ignorées",
+          "tuner_pictures": "Images des tuners"
         },
         "data_description": {
           "decoder_1_pre_gain": "Calibrez à partir du matériel, pas au jugé : si la sortie ligne de ce décodeur alimente un module BTicino Ingresso RCA (L/N/NT4560) ou Controllo Stereo (L4561), augmentez le Pre-Gain pendant la lecture jusqu'à ce que la led de signal de ce module clignote en orange — ni fixe vert (signal trop faible) ni fixe rouge/orange (écrêtage). Câblez toujours la sortie ligne fixe (« OUT ») du décodeur, jamais une sortie casque/AUX dépendante du volume : un second étage de gain incontrôlé à cet endroit provoque exactement la distorsion contre laquelle le guide de dépannage BTicino met en garde.",
           "delegated_whos": "Rôle secondaire uniquement : sous-systèmes dont cette passerelle découvre les nouveaux appareils. Les appareils que la principale possède déjà restent sur la principale.",
           "ignored_addresses": "Ignore définitivement les adresses indiquées (ex. 1/74, 1/74#4#01) : ignore la découverte, supprime les entités et désactive le suivi des pannes. Séparez les entrées par des retours à la ligne ou des virgules.",
+          "tuner_pictures": "Une entrée MHz=URL par ligne (ex. 96.2=/local/radio/one.png) : l'image affichée tant qu'un tuner est sur cette fréquence. Vos propres images ; aucune n'est fournie.",
           "command_worker_count": "Recommandé pour la {model} : {session_default}. Elle accepte au plus {session_limit} session(s) de commande, et chacune, avec la session d'événements, occupe l'une de ses rares connexions, dont l'application Legrand/BTicino et d'autres clients ont aussi besoin. N'augmentez que si les commandes s'accumulent."
         }
       }
