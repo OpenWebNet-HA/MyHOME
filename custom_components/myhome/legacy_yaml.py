@@ -1,6 +1,7 @@
 """Legacy myhome.yaml loader and normalizer for backward compatibility."""
 from __future__ import annotations
 
+import copy
 import os
 from collections.abc import Sequence
 from typing import Any
@@ -50,23 +51,24 @@ def _apply_yaml_platforms(
     for plat, devices in yaml_platforms.items():
         if plat in configured_platforms and isinstance(devices, dict):
             for d_id, d_cfg in devices.items():
-                configured_platforms[plat][d_id] = d_cfg
-                if isinstance(d_cfg, dict):
+                runtime_cfg = copy.deepcopy(d_cfg) if isinstance(d_cfg, dict) else d_cfg
+                configured_platforms[plat][d_id] = runtime_cfg
+                if isinstance(runtime_cfg, dict):
                     who, dash, clean_id = d_id.partition("-")
                     if dash and who.isdigit():
-                        configured_platforms[plat][clean_id] = d_cfg
-                    iface = d_cfg.get(CONF_BUS_INTERFACE) or d_cfg.get("bus_interface")
+                        configured_platforms[plat][clean_id] = runtime_cfg
+                    iface = runtime_cfg.get(CONF_BUS_INTERFACE) or runtime_cfg.get("bus_interface")
                     # A routed device never claims the bare key: that is the local bus's (#408)
                     routing = f"{BUS_ROUTING}{iface}" if iface is not None else ""
-                    if "where" in d_cfg:
-                        configured_platforms[plat][f"{d_cfg['where']}{routing}"] = d_cfg
-                    if CONF_ZONE in d_cfg or "zone" in d_cfg:
-                        z_val = str(d_cfg.get(CONF_ZONE) or d_cfg.get("zone"))
-                        configured_platforms[plat][f"{z_val}{routing}"] = d_cfg
+                    if "where" in runtime_cfg:
+                        configured_platforms[plat][f"{runtime_cfg['where']}{routing}"] = runtime_cfg
+                    if CONF_ZONE in runtime_cfg or "zone" in runtime_cfg:
+                        z_val = str(runtime_cfg.get(CONF_ZONE) or runtime_cfg.get("zone"))
+                        configured_platforms[plat][f"{z_val}{routing}"] = runtime_cfg
                         clean_z = z_val.split("#")[-1]
-                        configured_platforms[plat][f"{clean_z}{routing}"] = d_cfg
+                        configured_platforms[plat][f"{clean_z}{routing}"] = runtime_cfg
                         if not routing:
-                            configured_platforms[plat][f"zone_{clean_z}"] = d_cfg
+                            configured_platforms[plat][f"zone_{clean_z}"] = runtime_cfg
 
 
 def migrate_legacy_yaml_to_entry_options(
@@ -79,9 +81,17 @@ def migrate_legacy_yaml_to_entry_options(
         return False
     if hass.config_entries.async_get_entry(entry.entry_id) is None:
         return False
+    clean_platforms = {
+        plat: {
+            d_id: copy.deepcopy(d_cfg) if isinstance(d_cfg, dict) else d_cfg
+            for d_id, d_cfg in devices.items()
+        }
+        for plat, devices in yaml_platforms.items()
+        if isinstance(devices, dict)
+    }
     new_options = {
         **dict(entry.options),
-        CONF_MIGRATED_YAML_PLATFORMS: yaml_platforms,
+        CONF_MIGRATED_YAML_PLATFORMS: clean_platforms,
     }
     hass.config_entries.async_update_entry(entry, options=new_options)
     return True
