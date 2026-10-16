@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
@@ -301,20 +301,16 @@ class GatewayIdentityMixin:
     send_buffer: Any
     sending_workers: list[asyncio.Task[None]]
 
-    @property
-    def log_id(self) -> str:
-        """Return logging prefix."""
-        return str(self.gateway.log_id)
+    if TYPE_CHECKING:
 
-    @property
-    def model(self) -> str:
-        """Return gateway model name."""
-        return str(self.gateway.model_name)
+        @property
+        def log_id(self) -> str: ...
 
-    @property
-    def profile(self) -> Any:
-        """Return gateway profile."""
-        return self.gateway.profile
+        @property
+        def model(self) -> str: ...
+
+        @property
+        def profile(self) -> Any: ...
 
     @property
     def identification_source(self) -> str:
