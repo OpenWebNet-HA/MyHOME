@@ -362,61 +362,6 @@ class DecoderPool(DecoderAllocationMixin):
         async with self._books():
             return self._set_group_locked(leader_entity_id, dict(members))
 
-    def _set_group_locked(
-        self, leader_entity_id: str, members: dict[str, str | None]
-    ) -> GroupChange:
-        """Validate, then apply, a group snapshot while holding ``self._lock``."""
-        members.pop(leader_entity_id, None)
-        current = self._groups.get(leader_entity_id, set())
-        joining = [zone for zone in members if zone not in current]
-        leaving = sorted(current - members.keys())
-
-        vacated = set(members) | set(leaving)
-        for zone in joining:
-            vacated |= self._groups.get(zone, set())
-        if self.get_leader(leader_entity_id) is not None:
-            vacated.add(leader_entity_id)
-
-        decoder = self._owned_decoder(leader_entity_id)
-        for zone, environment in members.items():
-            if environment is None:
-                continue
-            for owner in self._environment_owners(environment, vacated):
-                if self.get_assignment(owner) != decoder:
-                    raise EnvironmentBusyError(environment, owner)
-
-        change = GroupChange(joined=joining, left=leaving)
-        self._remove_member_locked(leader_entity_id)
-        for zone in leaving:
-            self._remove_member_locked(zone)
-        for zone in joining:
-            change.orphaned.extend(self._disband_group_locked(zone))
-            owned = self._owned_decoder(zone)
-            if owned is not None:
-                self._unassign_locked(owned)
-                change.released.append(owned)
-            self._remove_member_locked(zone)
-        change.orphaned = sorted(set(change.orphaned) - set(members))
-
-        if members:
-            self._groups[leader_entity_id] = set(members)
-        else:
-            self._groups.pop(leader_entity_id, None)
-        for zone, environment in members.items():
-            if environment is None:
-                self._environments.pop(zone, None)
-            else:
-                self._environments[zone] = environment
-
-        if joining or leaving:
-            LOGGER.info(
-                "DecoderPool: group of %s is now %s (decoder %s)",
-                leader_entity_id,
-                sorted(members),
-                decoder,
-            )
-        return change
-
     async def add_member(
         self,
         leader_entity_id: str,
@@ -479,37 +424,6 @@ class DecoderPool(DecoderAllocationMixin):
                     return dec_id
         return None
 
-    def environment_owner(
-        self, environment: str, exclude: str | None = None
-    ) -> str | None:
-        """Return the zone that streams from a decoder in ``environment``."""
-        owners = self._environment_owners(environment, {exclude} if exclude else set())
-        return owners[0] if owners else None
-
-    def _environment_owners(
-        self, environment: str, exclude: Collection[str]
-    ) -> list[str]:
-        """Return every zone outside ``exclude`` actively streaming from a decoder in ``environment``."""
-        active = []
-        for zone, zone_environment in self._environments.items():
-            if (
-                zone_environment == environment
-                and zone not in exclude
-                and self.get_assignment(zone) is not None
-            ):
-                state = self._hass.states.get(zone)
-                state_val = state.state if state else None
-                if state_val not in (
-                    MediaPlayerState.OFF,
-                    MediaPlayerState.IDLE,
-                    MediaPlayerState.PAUSED,
-                    "off",
-                    "idle",
-                    "paused",
-                ):
-                    active.append(zone)
-        return active
-
     def __repr__(self) -> str:  # pragma: no cover
         busy = sum(1 for v in self._assignments.values() if v is not None)
         members = sum(len(m) for m in self._groups.values())
@@ -517,3 +431,4 @@ class DecoderPool(DecoderAllocationMixin):
             f"<DecoderPool decoders={len(self._decoder_map)} "
             f"busy={busy}/{len(self._decoder_map)} members={members}>"
         )
+
