@@ -346,8 +346,8 @@ def _is_cancel_item(item: Any) -> bool:
     """Return True if an envelope dict represents a cancellation or WHO=2 stop command."""
     if not isinstance(item, dict) or item.get("is_status_request", False):
         return False
-    if item.get("is_cancel", False):
-        return True
+    if "is_cancel" in item:
+        return bool(item["is_cancel"])
     msg = item.get("message")
     return msg is not None and bool(_COVER_STOP_RE.match(str(msg).strip()))
 
@@ -921,12 +921,11 @@ class CommandWorkerPool:
         envelope: dict[str, Any] = {
             "message": message,
             "is_status_request": is_status_request,
+            "is_cancel": is_cancel,
             "written": written,
         }
         if is_fade_step:
             envelope["is_fade_step"] = True
-        if is_cancel:
-            envelope["is_cancel"] = True
         await self.send_buffer.put(envelope)
         LOGGER.debug(
             "%s Message `%s` was successfully queued.",
