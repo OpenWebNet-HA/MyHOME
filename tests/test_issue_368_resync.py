@@ -550,6 +550,15 @@ async def test_group_resync_ignores_cross_room_and_opposite_polarity_echoes(
     mgr.register_group_members("6", [])
     assert "#6" not in mgr.group_members
 
+    # Pruning an older entry for WHERE 11 must preserve polarity while a newer entry for 11 remains
+    mgr._recent_ptp.clear()
+    mgr._recent_ptp_polarity.clear()
+    mgr._recent_ptp.append((-10.0, "11", "1"))
+    mgr._recent_ptp.append((float(mgr._time.monotonic()), "11", "1"))
+    mgr._recent_ptp_polarity["11"] = False
+    mgr._prune_recent_ptp(float(mgr._time.monotonic()))
+    assert mgr._recent_ptp_polarity.get("11") is False
+
 
 @pytest.mark.asyncio
 async def test_multi_entity_area_sweep_waits_for_all_known_entities(

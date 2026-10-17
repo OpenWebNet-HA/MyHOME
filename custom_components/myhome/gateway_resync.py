@@ -126,12 +126,17 @@ class LightingResyncManager:
             return known.issubset(echoed_wheres)
         return True
 
+    def _prune_recent_ptp(self, now: float) -> None:
+        """Evict expired leading-window point-to-point entries while preserving active polarity."""
+        while self._recent_ptp and self._recent_ptp[0][0] < now - RESYNC_LEADING_WINDOW_S:
+            _, evicted_w, _ = self._recent_ptp.popleft()
+            if all(w != evicted_w for _, w, _ in self._recent_ptp):
+                self._recent_ptp_polarity.pop(evicted_w, None)
+
     def handle_ptp_echo(self, message: OWNLightingEvent) -> None:
         """Handle point-to-point lighting message echo cancellation."""
         now = float(self._time.monotonic())
-        while self._recent_ptp and self._recent_ptp[0][0] < now - RESYNC_LEADING_WINDOW_S:
-            _, evicted_w, _ = self._recent_ptp.popleft()
-            self._recent_ptp_polarity.pop(evicted_w, None)
+        self._prune_recent_ptp(now)
         where_str = str(message.where)
         area = area_of_where(message.where)
         msg_on = getattr(message, "is_on", None)
@@ -180,9 +185,7 @@ class LightingResyncManager:
             return
 
         now = float(self._time.monotonic())
-        while self._recent_ptp and self._recent_ptp[0][0] < now - RESYNC_LEADING_WINDOW_S:
-            _, evicted_w, _ = self._recent_ptp.popleft()
-            self._recent_ptp_polarity.pop(evicted_w, None)
+        self._prune_recent_ptp(now)
 
         targets: list[str] = []
         if getattr(message, "is_group", False):

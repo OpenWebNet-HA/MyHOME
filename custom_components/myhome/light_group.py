@@ -131,6 +131,7 @@ class MyHOMELightGroup(MyHOMEEntity, LightEntity):
             register_fn = getattr(resync_mgr, "register_group_members", None)
             if callable(register_fn):
                 register_fn(self._full_where, self._declared_members)
+                self.async_on_remove(lambda: register_fn(self._full_where, []))
             registry = er.async_get(self.hass)
             for w in self._declared_members:
                 # The entity unique_id is `{mac}-1-{w}`
