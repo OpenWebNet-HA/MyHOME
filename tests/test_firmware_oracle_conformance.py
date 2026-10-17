@@ -47,9 +47,11 @@ def test_firmware_oracle_integrity():
     )
 
     assert data["total_unique_inputs"] == len(verdicts)
-    assert len(data["gateways"]) >= 11
+    assert len(data["gateways"]) == 17
 
     gateway_names = {f"{g['product']} {g['version']}" for g in data["gateways"]}
+    assert "F453 010100" in gateway_names
+    assert "L4686SDK 012001" in gateway_names
     assert "MH200 020102" in gateway_names
     assert "MH200N 010108" in gateway_names
     assert "MyHomeServer1 028206" in gateway_names
@@ -270,5 +272,14 @@ def test_dimmer_level_cross_gateway_behavior():
     # But their command session replies diverge:
     assert mh200n["reply"] == "ack"
     assert mhs1["reply"] == "nack"
+
+
+def test_gateway_profiles_match_oracle_verdicts():
+    """Verify OWNd gateway profiles and MyHOME startup discovery metadata match firmware oracle verdicts."""
+    from scripts.update_gateway_profiles import verify_profiles_against_oracle
+
+    violations = verify_profiles_against_oracle(ORACLE_JSON_PATH)
+    assert violations == [], "Gateway profile / discovery oracle mismatches:\n" + "\n".join(violations)
+
 
 

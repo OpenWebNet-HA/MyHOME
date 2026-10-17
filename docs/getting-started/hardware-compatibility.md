@@ -18,7 +18,7 @@ The MyHOME integration supports all official BTicino and Legrand OpenWebNet gate
 | **MH200N** | OpenWebNet | 1 worker | 150 ms | ✅ SSDP | Second-generation scenario programmer |
 | **MH200** *(Legacy)* | OpenWebNet | 1 worker | 150 ms | ✅ SSDP | Strict single-session pacing; watchdog hardened |
 | **H4890 / AM4890** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | 3.5" Touch screen display IP gateway (Axolute / Livinglight) |
-| **F452 / F453AV** | OpenWebNet | 1 worker | 50 ms | ✅ Port 49153 | Audio/video & web server gateway |
+| **F452 / F453AV** | OpenWebNet | 1 worker | 150 ms | ✅ Port 49153 | Audio/video & web server gateway |
 | **HL4684** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | 10" Touch screen display IP gateway |
 | **Legrand 3578** | OpenWebNet (Serial) | 1 worker | 50 ms | ❌ Manual (Serial) | USB / Serial gateway & OpenZigBee interface |
 <!-- GATEWAY_PROFILES_END -->
@@ -51,13 +51,17 @@ The MyHOME integration supports all official BTicino and Legrand OpenWebNet gate
 
 During startup initial discovery, status queries are gated strictly by gateway profile capabilities to avoid transmitting unsupported commands:
 
+<!-- GATEWAY_DISCOVERY_START -->
 | Gateway Model | Initial Discovery Subsystems Queried | Profile Support Notes |
 | :--- | :--- | :--- |
 | **MH202** | WHO 1, 2, 4, 5, 16, 18 | Full support including Burglar Alarm (`*#5*0##`), Sound (`*#16*0*5##`), and Energy (`*#18*51*...`). |
 | **H4890 / AM4890** | WHO 1, 2, 4, 5, 16, 18 | Supports Burglar Alarm, Sound (`*#16*0*5##`), and Energy meter 51 queries. |
-| **F454** | WHO 1, 2, 4, 16, 18 | Full lighting, cover, climate, sound, and energy meter 51 queries. Alarm query omitted. |
+| **F454** | WHO 1, 2, 4, 16, 18 | Full lighting, cover, climate, sound (`bt_difson` firmware-verified), and energy meter 51 queries. Alarm query omitted. |
+| **F452 / F453 / F453AV** | WHO 1, 2, 4, 16, 18 | Lighting, cover, climate, sound (`bt_difson` firmware-verified on F453/F453AV), and energy meter 51 queries. Alarm query omitted. |
+| **F461** | WHO 1, 2, 4, 16, 18 | Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted. |
 | **F455** | WHO 1, 2, 4, 18 | Entry-level gateway: lighting, cover, climate, and energy meter 51 queries. Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual. |
 | **MyHomeServer1** | WHO 1, 2, 4, 16, 18 | Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted. |
 | **MH201** | WHO 1, 2, 4, 16, 18 | Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted. |
-| **MH200 / MH200N** | WHO 1, 2, 4, 16 | Lighting, cover, climate, and sound queries (hardware verified on both). Alarm and energy queries omitted. |
+| **MH200 / MH200N** | WHO 1, 2, 4, 16 | Lighting, cover, climate, and sound queries (`bt_difson` hardware and firmware-verified on both). Alarm and energy queries omitted. |
+<!-- GATEWAY_DISCOVERY_END -->
 

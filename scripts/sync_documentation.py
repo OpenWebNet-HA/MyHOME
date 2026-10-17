@@ -53,6 +53,9 @@ GATEWAY_END_MARKER = "<!-- GATEWAY_PROFILES_END -->"
 OPTIONS_START_MARKER = "<!-- GATEWAY_OPTIONS_START -->"
 OPTIONS_END_MARKER = "<!-- GATEWAY_OPTIONS_END -->"
 
+DISCOVERY_START_MARKER = "<!-- GATEWAY_DISCOVERY_START -->"
+DISCOVERY_END_MARKER = "<!-- GATEWAY_DISCOVERY_END -->"
+
 DOMAINS_START_MARKER = "<!-- SUPPORTED_DOMAINS_START -->"
 DOMAINS_END_MARKER = "<!-- SUPPORTED_DOMAINS_END -->"
 
@@ -88,6 +91,20 @@ def sync_gateway_profiles(update: bool = False) -> tuple[bool, list[str]]:
     """Check or update the Gateway Profiles table across all target files."""
     messages: list[str] = []
     all_ok = True
+
+    try:
+        from scripts.update_gateway_profiles import verify_profiles_against_oracle
+    except ImportError:
+        from update_gateway_profiles import verify_profiles_against_oracle
+
+    oracle_violations = verify_profiles_against_oracle()
+    if oracle_violations:
+        for violation in oracle_violations:
+            messages.append(f"Gateway profile oracle mismatch: {violation}")
+        all_ok = False
+    else:
+        messages.append("Gateway profiles are consistent with firmware oracle verdicts")
+
     expected_block = get_gateway_block().strip()
     pattern = re.compile(
         rf"{re.escape(GATEWAY_START_MARKER)}.*?{re.escape(GATEWAY_END_MARKER)}",
@@ -130,6 +147,55 @@ def sync_gateway_profiles(update: bool = False) -> tuple[bool, list[str]]:
             messages.append(f"Gateway Profiles table in sync: {rel_path(target)}")
 
     return all_ok, messages
+
+
+def get_gateway_discovery_block() -> str:
+    """Build the canonical Gateway Startup Discovery Capabilities table block."""
+    try:
+        from scripts.update_gateway_profiles import build_discovery_block
+    except ImportError:
+        from update_gateway_profiles import build_discovery_block
+    return build_discovery_block()
+
+
+def sync_gateway_discovery(update: bool = False) -> tuple[bool, list[str]]:
+    """Check or update the Gateway Startup Discovery Capabilities table in hardware-compatibility.md."""
+    target = DOCS_DIR / "getting-started" / "hardware-compatibility.md"
+    messages: list[str] = []
+    if not target.exists():
+        return False, [f"Hardware compatibility doc not found: {rel_path(target)}"]
+
+    content = target.read_text(encoding="utf-8")
+    if DISCOVERY_START_MARKER not in content or DISCOVERY_END_MARKER not in content:
+        messages.append(
+            f"Missing markers {DISCOVERY_START_MARKER} and/or {DISCOVERY_END_MARKER} "
+            f"in {rel_path(target)}"
+        )
+        return False, messages
+
+    pattern = re.compile(
+        rf"{re.escape(DISCOVERY_START_MARKER)}.*?{re.escape(DISCOVERY_END_MARKER)}",
+        re.DOTALL,
+    )
+    match = pattern.search(content)
+    if not match:
+        messages.append(f"Could not parse discovery marker block in {rel_path(target)}")
+        return False, messages
+
+    expected_block = get_gateway_discovery_block().strip()
+    actual_block = match.group(0).strip()
+    if actual_block != expected_block:
+        if update:
+            new_content = pattern.sub(expected_block, content)
+            target.write_text(new_content, encoding="utf-8")
+            messages.append(f"Updated Gateway Discovery table in {rel_path(target)}")
+            return True, messages
+        else:
+            messages.append(f"Gateway Discovery table out of sync in {rel_path(target)}")
+            return False, messages
+    else:
+        messages.append(f"Gateway Discovery table in sync: {rel_path(target)}")
+        return True, messages
 
 
 def get_gateway_options_block() -> str:
@@ -729,6 +795,11 @@ def check_all_documentation(update: bool = False) -> tuple[bool, list[str]]:
     ok_opt, msgs_opt = sync_gateway_options(update=update)
     overall_ok = overall_ok and ok_opt
     all_messages.extend(msgs_opt)
+
+    # 1c. Gateway startup discovery capabilities
+    ok_disc, msgs_disc = sync_gateway_discovery(update=update)
+    overall_ok = overall_ok and ok_disc
+    all_messages.extend(msgs_disc)
 
     # 2. Supported domains
     ok_dom, msgs_dom = sync_supported_domains(update=update)
