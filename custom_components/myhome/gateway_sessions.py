@@ -10,6 +10,7 @@ import asyncio
 import collections
 import contextlib
 import itertools
+import re
 import time
 from collections.abc import Iterable, Iterator
 from typing import TYPE_CHECKING, Any
@@ -19,7 +20,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.connection import OWNCommandSession, OWNEventSession, OWNGateway
 from OWNd.message import OWNCommand, OWNMessage
 
-from .const import LOGGER
+from .const import LOGGER, area_of_where
 
 if TYPE_CHECKING:
     from .bus_monitor import BusMonitor
@@ -285,6 +286,89 @@ class EventSessionRunner:
             self._event_watchdog = None
 
 
+_COVER_FRAME = re.compile(r"^\*(?P<who>#?2)\*(?P<a>[^*]+)(?:\*(?P<b>[^*]+))?(?:\*[^*]+)*##$")
+_COVER_AREAS = frozenset({"00", "100", *"123456789"})
+
+
+def _cover_frame_parts(message: Any) -> tuple[str, str] | None:
+    """Return ``(what, where)`` of a WHO 2 write, or ``None`` for anything else.
+
+    Covers ``*2*<WHAT>*<WHERE>##`` and dimension writes ``*#2*<WHERE>*#<DIM>*<V>##``;
+    status and dimension requests carry no motion and are not cover frames.
+    """
+    match = _COVER_FRAME.match(str(message))
+    if match is None:
+        return None
+    if match["who"] == "#2":
+        # *#2*<WHERE>*#<DIM>*<VALUE>##: only a write (``*#`` dimension) moves the motor.
+        raw = str(message)
+        return ("#dim", match["a"]) if "*#" in raw[len("*#2*") :] else None
+    if match["b"] is None:
+        return None
+    return match["a"], match["b"]
+
+
+def _cover_where(message: Any) -> str | None:
+    """The WHERE a WHO 2 motion frame addresses, or ``None`` if it is not one."""
+    parts = _cover_frame_parts(message)
+    return parts[1] if parts else None
+
+
+def _is_cover_stop(message: Any) -> bool:
+    """Whether ``message`` is a WHO 2 stop: ``*2*0*<WHERE>##`` or advanced ``*2*10#...*<WHERE>##``."""
+    parts = _cover_frame_parts(message)
+    return parts is not None and (parts[0] == "0" or parts[0] == "10" or parts[0].startswith("10#"))
+
+
+def _split_where(where: str) -> tuple[str, str | None]:
+    """Split ``11#4#02`` into ``("11", "2")``; an address on the main bus has no interface."""
+    base, sep, interface = where.partition("#4#")
+    if not sep:
+        return base, None
+    norm_if = (interface.lstrip("0") or "0") if interface.isdigit() else interface
+    return base, norm_if
+
+
+def _wheres_overlap(first: str, second: str) -> bool:
+    """Whether two WHO 2 WHEREs can move the same actuator (conservative: unknown means overlap).
+
+    A group's membership lives in the actuators and is never seen on the bus, so a
+    group overlaps every address on a compatible bus.
+    """
+    if first == second:
+        return True
+    base_a, if_a = _split_where(first)
+    base_b, if_b = _split_where(second)
+    if if_a == if_b and (
+        base_a == base_b
+        or (
+            base_a not in ("0", "00")
+            and base_b not in ("0", "00")
+            and base_a.isdigit()
+            and base_b.isdigit()
+            and int(base_a) == int(base_b)
+        )
+    ):
+        return True
+    compatible = if_a is None or if_b is None or if_a == if_b
+
+    def _is_scope(base: str) -> bool:
+        return base == "0" or base in _COVER_AREAS or base.startswith("#")
+
+    for scope, scope_if, other, other_if in ((base_a, if_a, base_b, if_b), (base_b, if_b, base_a, if_a)):
+        if not _is_scope(scope):
+            continue
+        if scope == "0":
+            if scope_if is None or scope_if == other_if:
+                return True
+        elif scope.startswith("#"):
+            if compatible:
+                return True
+        elif scope_if == other_if and (other == scope or area_of_where(other) == scope):
+            return True
+    return False
+
+
 _TIER_COMMANDS = 0
 _TIER_STATUS = 1
 _TIER_OTHERS = 2
@@ -387,14 +471,33 @@ class _PriorityQueueStorage:
         return self._others[index]
 
     def append(self, item: Any) -> None:
-        """Append item to its corresponding priority tier."""
+        """Append item to its corresponding priority tier.
+
+        A WHO 2 stop is the exception inside the command tier (#645): it goes right
+        behind the last queued cover frame whose WHERE overlaps its own, or to the
+        front when none does, so it never overtakes a frame it has to stop.
+        """
         tier = _classify_tier(item)
         if tier == _TIER_COMMANDS:
-            self._commands.append(item)
+            self._commands.insert(self._stop_position(item), item)
         elif tier == _TIER_STATUS:
             self._status.append(item)
         else:
             self._others.append(item)
+
+    def _stop_position(self, item: Any) -> int:
+        """Index in the command tier for ``item``: its end, or earlier for a cover stop."""
+        end = len(self._commands)
+        if not isinstance(item, dict) or not _is_cover_stop(item.get("message")):
+            return end
+        # ``_is_cover_stop`` guarantees a parsed frame, hence a WHERE.
+        stop_where = str(_cover_where(item["message"]))
+        for index in range(end - 1, -1, -1):
+            queued = self._commands[index]
+            queued_where = _cover_where(queued.get("message")) if isinstance(queued, dict) else None
+            if queued_where is not None and _wheres_overlap(stop_where, queued_where):
+                return index + 1
+        return 0
 
     def appendleft(self, item: Any) -> None:
         """Append item to the head of its corresponding priority tier."""
@@ -560,6 +663,11 @@ class CommandWorkerPool:
         self._terminate_sender: bool = False
         self._sender_stop = asyncio.Event()
         self.sending_workers: list[asyncio.Task[None]] = []
+        # WHERE of every WHO 2 motion frame a worker is writing right now (#645).
+        # With several command sessions, a stop queued behind a direction frame can be
+        # dequeued while that frame is still on the wire; overlapping frames wait here.
+        self._cover_in_flight: list[str] = []
+        self._cover_waiters: list[asyncio.Future[None]] = []
 
         queue_max_size = (
             self.gateway.profile.max_queue_size
@@ -640,6 +748,32 @@ class CommandWorkerPool:
                 return True
         return False
 
+    async def _enter_cover_write(self, where: str) -> None:
+        """Wait until no overlapping cover frame is being written, then claim ``where``.
+
+        Check and claim run without an ``await`` in between, so on the single event loop
+        two workers can never both pass. Frames only wait for frames already being
+        written, never for queued ones, so this cannot deadlock. With nothing in flight
+        (always the case with one command session) there is no suspension at all.
+        """
+        while any(_wheres_overlap(where, other) for other in self._cover_in_flight):
+            waiter: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+            self._cover_waiters.append(waiter)
+            try:
+                await waiter
+            finally:
+                with contextlib.suppress(ValueError):
+                    self._cover_waiters.remove(waiter)
+        self._cover_in_flight.append(where)
+
+    def _leave_cover_write(self, where: str) -> None:
+        """Release a claim made by :meth:`_enter_cover_write` and wake waiting workers."""
+        with contextlib.suppress(ValueError):
+            self._cover_in_flight.remove(where)
+        for waiter in self._cover_waiters:
+            if not waiter.done():
+                waiter.set_result(None)
+
     async def sending_loop(self, worker_id: int) -> None:
         """Run a single sending worker consuming from send_buffer."""
         from . import gateway as gw_module
@@ -709,9 +843,15 @@ class CommandWorkerPool:
                         await _command_session.close()
                     continue
 
+                cover_where: str | None = None
                 try:
                     if task is None:
                         break
+
+                    wanted_where = _cover_where(task["message"])
+                    if wanted_where is not None:
+                        await self._enter_cover_write(wanted_where)
+                        cover_where = wanted_where
 
                     LOGGER.debug(
                         "%s Message `%s` was successfully unqueued by worker %s.",
@@ -783,6 +923,8 @@ class CommandWorkerPool:
                         task.get("message") if isinstance(task, dict) else task,
                     )
                 finally:
+                    if cover_where is not None:
+                        self._leave_cover_write(cover_where)
                     self.send_buffer.task_done()
 
                 if (

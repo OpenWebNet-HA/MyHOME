@@ -19,9 +19,11 @@ from custom_components.myhome.gateway_sessions import (
     CommandWorkerPool,
     EventSessionRunner,
     _cancel_written,
+    _is_cover_stop,
     _PriorityQueueStorage,
     _resolve_written,
     _session_is_open,
+    _wheres_overlap,
 )
 
 
@@ -723,3 +725,189 @@ async def test_worker_sends_user_command_ahead_of_pending_status_polls(
         "*#1*4##",
         "*#1*5##",
     ]
+
+
+# ── Cover stop priority (#645) ─────────────────────────────────────────────────
+
+
+def _cmd(raw: str) -> dict[str, Any]:
+    return {"message": OWNCommand(raw), "is_status_request": False}
+
+
+def _order(storage: _PriorityQueueStorage) -> list[str]:
+    return [str(item["message"]) for item in storage]
+
+
+@pytest.mark.parametrize(
+    ("raw", "is_stop"),
+    [
+        ("*2*0*11##", True),
+        ("*2*10*11##", True),
+        ("*2*10#001#1*0##", True),
+        ("*2*0*11#4#02##", True),
+        ("*2*1*11##", False),
+        ("*2*2*11##", False),
+        ("*#2*11##", False),
+        ("*#2*11*#10*50##", False),
+        ("*1*0*11##", False),
+        ("*2*0##", False),
+    ],
+)
+def test_is_cover_stop(raw: str, is_stop: bool) -> None:
+    assert _is_cover_stop(raw) is is_stop
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "overlap"),
+    [
+        ("11", "11", True),
+        ("11", "12", False),
+        ("11#4#02", "11", False),
+        ("11#4#02", "11#4#02", True),
+        ("11#4#2", "11#4#02", True),
+        ("02", "2", True),
+        ("02#4#1", "2#4#01", True),
+        ("0", "11", True),
+        ("0", "11#4#02", True),  # main-bus general may reach covers behind an interface: be safe
+        ("1", "11", True),
+        ("1", "21", False),
+        ("1", "11#4#02", False),
+        ("00", "0011", True),
+        ("#3", "21", True),
+        ("#3", "21#4#02", True),  # group membership is unknown: be safe
+        ("0#4#01", "11#4#02", False),
+        ("#3#4#01", "21#4#02", False),
+    ],
+)
+def test_wheres_overlap(first: str, second: str, overlap: bool) -> None:
+    assert _wheres_overlap(first, second) is overlap
+    assert _wheres_overlap(second, first) is overlap
+
+
+def test_stop_overtakes_other_covers_frames() -> None:
+    storage = _PriorityQueueStorage()
+    for raw in ("*2*1*21##", "*2*1*31##", "*1*1*11##"):
+        storage.append(_cmd(raw))
+    storage.append(_cmd("*2*0*11##"))
+    assert _order(storage)[0] == "*2*0*11##"
+
+
+def test_stop_never_overtakes_its_own_cover_frames() -> None:
+    storage = _PriorityQueueStorage()
+    for raw in ("*2*1*21##", "*2*1*11##", "*2*1*31##"):
+        storage.append(_cmd(raw))
+    storage.append(_cmd("*2*0*11##"))
+    assert _order(storage) == ["*2*1*21##", "*2*1*11##", "*2*0*11##", "*2*1*31##"]
+
+
+@pytest.mark.parametrize("scope_frame", ["*2*1*0##", "*2*1*1##", "*2*1*#3##"])
+def test_stop_never_overtakes_scope_frames_covering_it(scope_frame: str) -> None:
+    storage = _PriorityQueueStorage()
+    for raw in ("*2*1*21##", scope_frame, "*2*1*41##"):
+        storage.append(_cmd(raw))
+    storage.append(_cmd("*2*0*11##"))
+    assert _order(storage).index("*2*0*11##") == _order(storage).index(scope_frame) + 1
+
+
+def test_scope_stop_waits_behind_member_frames() -> None:
+    storage = _PriorityQueueStorage()
+    for raw in ("*2*1*21##", "*2*1*11##", "*2*1*31##"):
+        storage.append(_cmd(raw))
+    storage.append(_cmd("*2*0*1##"))
+    assert _order(storage) == ["*2*1*21##", "*2*1*11##", "*2*0*1##", "*2*1*31##"]
+
+
+def test_stop_stays_behind_earlier_stop_of_same_cover() -> None:
+    storage = _PriorityQueueStorage()
+    storage.append(_cmd("*2*1*21##"))
+    storage.append(_cmd("*2*0*11##"))
+    storage.append(_cmd("*2*0*11##"))
+    assert _order(storage) == ["*2*0*11##", "*2*0*11##", "*2*1*21##"]
+
+
+async def test_stop_overtakes_in_real_queue_and_status_stays_behind() -> None:
+    queue: CommandPriorityQueue = CommandPriorityQueue(maxsize=10)
+    await queue.put({"message": OWNCommand("*#2*11##"), "is_status_request": True})
+    await queue.put(_cmd("*2*1*21##"))
+    await queue.put(_cmd("*2*0*11##"))
+    first = await queue.get()
+    assert str(first["message"]) == "*2*0*11##"
+
+
+async def test_workers_keep_overlapping_cover_frames_in_order(mock_handler: MagicMock) -> None:
+    """Two workers: a stop dequeued while its direction frame is still being written waits."""
+    pool = CommandWorkerPool(mock_handler)
+    pool._event_session_ready.set()
+    events: list[str] = []
+    release_direction = asyncio.Event()
+
+    def _session() -> MagicMock:
+        session = MagicMock()
+        session.connect = AsyncMock(return_value={"Success": True})
+        session.close = AsyncMock()
+        session._stream_reader = object()
+        session._stream_writer = object()
+
+        async def send(message: Any, is_status_request: bool = False) -> list[Any]:
+            raw = str(message)
+            events.append(f"start {raw}")
+            if raw == "*2*1*11##":
+                await release_direction.wait()
+            events.append(f"end {raw}")
+            return []
+
+        session.send = AsyncMock(side_effect=send)
+        return session
+
+    with patch("custom_components.myhome.gateway.OWNCommandSession", side_effect=lambda **_: _session()):
+        await pool.send(OWNCommand("*2*1*11##"))
+        workers = [asyncio.create_task(pool.sending_loop(i)) for i in range(2)]
+        await asyncio.sleep(0.05)
+        await pool.send(OWNCommand("*2*0*11##"))  # other cover: independent
+        await pool.send(OWNCommand("*2*0*21##"))
+        await asyncio.sleep(0.05)
+        assert "start *2*0*21##" in events
+        assert "start *2*0*11##" not in events  # waits for the direction frame to finish
+        release_direction.set()
+        await asyncio.sleep(0.05)
+        assert events.index("end *2*1*11##") < events.index("start *2*0*11##")
+        pool.close()
+        await asyncio.gather(*workers)
+    assert pool._cover_in_flight == []
+
+
+def test_cover_stop_priority_with_firmware_oracle_who2_frames() -> None:
+    """Verify _is_cover_stop and _PriorityQueueStorage ordering across WHO 2 firmware oracle frames."""
+    import json
+    from pathlib import Path
+
+    oracle_path = Path(__file__).resolve().parent / "golden" / "firmware_oracle.json"
+    verdicts = json.loads(oracle_path.read_text(encoding="utf-8"))["verdicts"]
+
+    # Every WHO 2 command in firmware_oracle.json must classify cleanly
+    who2_frames = sorted(
+        f for f in verdicts if f.startswith("*2*") or f.startswith("*#2*")
+    )
+    assert len(who2_frames) >= 16
+
+    for frame in who2_frames:
+        if frame.startswith("*2*0*") or frame.startswith("*2*10*") or frame.startswith("*2*10#"):
+            assert _is_cover_stop(frame) is True, f"Expected stop for {frame}"
+        else:
+            assert _is_cover_stop(frame) is False, f"Expected non-stop for {frame}"
+
+    # Verify stop (*2*0*31##) stays behind advanced step (*2*11#1#001*31##) and
+    # Dimension 11 write (*#2*31*#11#001*40##) on the same cover 31 while overtaking
+    # independent cover 11#4#02 (*2*1*11#4#02##).
+    storage = _PriorityQueueStorage()
+    storage.append(_cmd("*2*11#1#001*31##"))
+    storage.append(_cmd("*#2*31*#11#001*40##"))
+    storage.append(_cmd("*2*1*11#4#02##"))
+    storage.append(_cmd("*2*0*31##"))
+    assert _order(storage) == [
+        "*2*11#1#001*31##",
+        "*#2*31*#11#001*40##",
+        "*2*0*31##",
+        "*2*1*11#4#02##",
+    ]
+
