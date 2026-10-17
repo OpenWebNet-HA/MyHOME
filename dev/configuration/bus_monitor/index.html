@@ -2366,6 +2366,10 @@
 </ul>
 <h3 id="5-transmit-frame-direct-bus-command">5. Transmit frame (⚠️ direct bus command)<a class="headerlink" href="#5-transmit-frame-direct-bus-command" title="Permanent link">&para;</a></h3>
 <p>The bar at the bottom writes a raw OpenWebNet frame to the SCS bus exactly as typed. That <strong>can</strong> switch loads, move shutters, or arm/disarm the burglar alarm, so it is disabled until you tick <strong>I understand the risk</strong> in the orange bar above it; the bar turns red while armed. Untick it when you are done. Start Trace and Sweep Bus never use this path. (The backend additionally refuses the command for non-administrator users.)</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>For gateway and bus safety, structurally invalid frames, signaling frames (<code>*#*1##</code>, <code>*#*0##</code>), and commands known to crash gateway hardware (specifically WHO 4 Dimension 22 split-unit IR frames, which crash the thermostat daemon on F461 / F454 / MH200N gateways and trigger a reboot) are blocked by the backend and return <code>ERR_INVALID_FORMAT</code>.</p>
+</div>
 <h3 id="6-time-stamps">6. Time stamps<a class="headerlink" href="#6-time-stamps" title="Permanent link">&para;</a></h3>
 <p>Frames are stamped in <strong>UTC</strong> by the integration (<code>timestamp</code> / <code>iso_time</code>) and rendered by the card in the <strong>browser's local time zone</strong>, so they line up with the Home Assistant logbook. Exports keep the UTC values. <em>(#305)</em></p>
 <h3 id="7-permissions">7. Permissions<a class="headerlink" href="#7-permissions" title="Permanent link">&para;</a></h3>
