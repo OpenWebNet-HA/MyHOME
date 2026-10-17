@@ -3383,7 +3383,7 @@
 </span></code></pre></div>
 <hr />
 <h2 id="9-myhomeset_cover_travel_time">9. <code>myhome.set_cover_travel_time</code><a class="headerlink" href="#9-myhomeset_cover_travel_time" title="Permanent link">&para;</a></h2>
-<p>Stores the physical travel times of a timed cover <strong>by hand</strong> — the manual alternative to <code>calibrate_cover</code> for gateways that cannot calibrate reliably (MH200 / MH200N single-session pacing, or actuators with the 60 s safety cut-off). Measure the closing and opening runs with a stopwatch and pass them here. <code>travel_time</code> fills whichever direction has no explicit value; note that <code>travel_time_down</code> on its own also sets the up time (the two are assumed equal unless <code>travel_time_up</code> is given), whereas <code>travel_time_up</code> on its own leaves the stored down time untouched — pass both when you only want to change one. Values must lie between 1 s and 180 s; anything else is rejected before the entity is touched. The result is stored exactly like a measured calibration (<code>calibration_source: manual</code>).</p>
+<p>Stores the physical travel times of a timed cover <strong>by hand</strong> — the manual alternative to <code>calibrate_cover</code> for gateways that cannot calibrate reliably (MH200 / MH200N single-session pacing, or actuators with the 60 s safety cut-off). Measure the closing and opening runs with a stopwatch and pass them here. <code>travel_time</code> fills whichever direction has no explicit value; note that <code>travel_time_down</code> on its own also sets the up time (the two are assumed equal unless <code>travel_time_up</code> is given), whereas <code>travel_time_up</code> on its own leaves the stored down time untouched — pass both when you only want to change one. Travel times must lie between 1 s and 180 s. The motor start-up floor (<code>min_motor_pulse</code>) can also be configured here (0.0 to 5.0 s, 0.0 disables). When setting travel times, the result is stored like a measured calibration (<code>calibration_source: manual</code>); when only <code>min_motor_pulse</code> is specified, existing travel times, source, and calibration timestamps remain untouched.</p>
 <h3 id="fields_8">Fields<a class="headerlink" href="#fields_8" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -3431,9 +3431,16 @@
 <td style="text-align: left;">The cover the times were taken from; <code>calibration_source</code> becomes <code>copied</code> and <code>copied_from</code> is exposed as an attribute.</td>
 <td style="text-align: left;"><code>cover.living_room_west</code></td>
 </tr>
+<tr>
+<td style="text-align: left;"><code>min_motor_pulse</code></td>
+<td style="text-align: center;">float</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: left;">Minimum duration in seconds (0.0–5.0) of a motor pulse to overcome mechanical deadband and brake inertia. Defaults to 0.4 s (0.0 disables).</td>
+<td style="text-align: left;"><code>0.4</code></td>
+</tr>
 </tbody>
 </table>
-<p>* at least one of the time fields is required.</p>
+<p>* at least one of the time fields or min_motor_pulse is required.</p>
 <h3 id="example-yaml-call_8">Example YAML Call<a class="headerlink" href="#example-yaml-call_8" title="Permanent link">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.set_cover_travel_time</span>
 </span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nt">target</span><span class="p">:</span>
@@ -3441,6 +3448,7 @@
 </span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="nt">data</span><span class="p">:</span>
 </span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">  </span><span class="nt">travel_time_down</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">24.5</span>
 </span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">  </span><span class="nt">travel_time_up</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">26.0</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">  </span><span class="nt">min_motor_pulse</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.3</span>
 </span></code></pre></div>
 <hr />
 <h2 id="10-myhomereset_cover_travel_time">10. <code>myhome.reset_cover_travel_time</code><a class="headerlink" href="#10-myhomereset_cover_travel_time" title="Permanent link">&para;</a></h2>
