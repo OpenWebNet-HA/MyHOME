@@ -381,6 +381,10 @@
     "primary_gateway_missing": {
       "title": "Passerelle principale de {gateway} manquante",
       "description": "{gateway} est configurée comme passerelle secondaire ou de secours pour {primary}, mais cette passerelle n'est plus configurée comme passerelle principale partagée. {gateway} suspend la découverte jusqu'à sa reconfiguration."
+    },
+    "legacy_yaml_imported": {
+      "title": "Configuration myhome.yaml importée pour {gateway}",
+      "description": "Les configurations d'appareils de `myhome.yaml` pour {gateway} ont été importées et enregistrées dans les options de l'entrée de configuration Home Assistant."
     }
   },
   "exceptions": {

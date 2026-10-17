@@ -94,6 +94,11 @@ def migrate_legacy_yaml_to_entry_options(
         CONF_MIGRATED_YAML_PLATFORMS: clean_platforms,
     }
     hass.config_entries.async_update_entry(entry, options=new_options)
+    if hasattr(hass, "data"):
+        from .repairs import async_create_legacy_yaml_imported_issue
+
+        gw_name = str(entry.data.get("name") or entry.data.get(CONF_MAC) or entry.entry_id)
+        async_create_legacy_yaml_imported_issue(hass, entry.entry_id, gw_name)
     return True
 
 

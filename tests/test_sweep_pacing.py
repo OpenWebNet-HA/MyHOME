@@ -162,28 +162,73 @@ async def test_light_async_probe_dimmer_capability(hass: HomeAssistant) -> None:
         await dimmer_entity.async_probe_dimmer_capability()
         mock_send.assert_not_called()
 
+    # Post-sweep recheck: if promoted to dimmable during the sweep, skip probe
+    promoted_entity = MyHOMELight(
+        hass=hass,
+        name="Promoted Light 27",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="1-27",
+        who="1",
+        where="27",
+        interface=None,
+        dimmable=False,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=gw,
+        probe_dimmer_on_add=True,
+    )
+    promoted_entity.entity_id = "light.promoted_light_27"
+    promoted_entity.platform = MagicMock()
+    promoted_entity._poll_on_add = False
 
-async def test_legacy_yaml_migration_and_fallback(tmp_path) -> None:
+    gw._begin_sweep()
+    with patch.object(gw, "send_status_request", new_callable=AsyncMock) as mock_send:
+        with patch.object(
+            promoted_entity, "async_get_last_state", new_callable=AsyncMock, return_value=None
+        ):
+            await promoted_entity.async_added_to_hass()
+        await asyncio.sleep(0)
+        # Promote while sweep is still active
+        promoted_entity._lock_features = True
+        gw._end_sweep()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        mock_send.assert_not_called()
+
+    for cb in list(getattr(promoted_entity, "_on_remove", None) or []):
+        cb()
+
+
+async def test_legacy_yaml_migration_and_fallback(hass: HomeAssistant, tmp_path) -> None:
     """Validated myhome.yaml platforms are migrated to entry.options once and used as fallback."""
-    hass = MagicMock(spec=HomeAssistant)
-    hass.config = MagicMock()
-    hass.config.path = MagicMock(side_effect=lambda p: str(tmp_path / p))
-    hass.async_add_executor_job = AsyncMock(side_effect=lambda f, *args: f(*args))
-    hass.config_entries = MagicMock()
+    from homeassistant.helpers import issue_registry as ir
+
+    from custom_components.myhome.const import DOMAIN
+    from custom_components.myhome.repairs import ISSUE_LEGACY_YAML_IMPORTED
+
+    mock_hass = MagicMock(spec=HomeAssistant)
+    mock_hass.data = hass.data
+    mock_hass.bus = hass.bus
+    mock_hass.config = MagicMock()
+    mock_hass.config.path = MagicMock(side_effect=lambda p: str(tmp_path / p))
+    mock_hass.async_add_executor_job = AsyncMock(side_effect=lambda f, *args: f(*args))
+    mock_hass.config_entries = MagicMock()
 
     entry = MagicMock(spec=ConfigEntry)
     entry.entry_id = "entry_1"
     entry.data = {CONF_MAC: "00:03:50:81:22:33"}
     entry.options = {}
 
-    hass.config_entries.async_entries = MagicMock(return_value=[entry])
-    hass.config_entries.async_get_entry = MagicMock(return_value=entry)
+    mock_hass.config_entries.async_entries = MagicMock(return_value=[entry])
+    mock_hass.config_entries.async_get_entry = MagicMock(return_value=entry)
 
     def _update_entry(target_entry, *, options=None, **kwargs):
         if options is not None:
             target_entry.options = options
 
-    hass.config_entries.async_update_entry = MagicMock(side_effect=_update_entry)
+    mock_hass.config_entries.async_update_entry = MagicMock(side_effect=_update_entry)
 
     yaml_file = tmp_path / "myhome.yaml"
     yaml_file.write_text(
@@ -192,16 +237,18 @@ async def test_legacy_yaml_migration_and_fallback(tmp_path) -> None:
     )
 
     configured_platforms: dict[str, dict[str, dict]] = {"light": {}, "climate": {}}
-    await load_legacy_myhome_yaml(hass, entry, configured_platforms)
+    await load_legacy_myhome_yaml(mock_hass, entry, configured_platforms)
 
     assert "14" in configured_platforms["light"]
     assert CONF_MIGRATED_YAML_PLATFORMS in entry.options
-    assert hass.config_entries.async_update_entry.call_count == 1
+    assert mock_hass.config_entries.async_update_entry.call_count == 1
+    issue_reg = ir.async_get(hass)
+    assert issue_reg.async_get_issue(DOMAIN, f"{ISSUE_LEGACY_YAML_IMPORTED}_entry_1") is not None
 
     # Second call does not re-migrate when already present in entry.options
     assert (
         migrate_legacy_yaml_to_entry_options(
-            hass, entry, entry.options[CONF_MIGRATED_YAML_PLATFORMS]
+            mock_hass, entry, entry.options[CONF_MIGRATED_YAML_PLATFORMS]
         )
         is False
     )
@@ -210,10 +257,10 @@ async def test_legacy_yaml_migration_and_fallback(tmp_path) -> None:
     unregistered = MagicMock(spec=ConfigEntry)
     unregistered.entry_id = "missing"
     unregistered.options = {}
-    hass.config_entries.async_get_entry.return_value = None
+    mock_hass.config_entries.async_get_entry.return_value = None
     assert (
         migrate_legacy_yaml_to_entry_options(
-            hass, unregistered, {"light": {"14": {"where": "14"}}}
+            mock_hass, unregistered, {"light": {"14": {"where": "14"}}}
         )
         is False
     )
@@ -225,8 +272,9 @@ async def test_legacy_yaml_migration_and_fallback(tmp_path) -> None:
         "climate": {},
     }
     with patch("os.path.isfile", return_value=False):
-        await load_legacy_myhome_yaml(hass, entry, configured_platforms_after_removal)
+        await load_legacy_myhome_yaml(mock_hass, entry, configured_platforms_after_removal)
 
     assert "14" in configured_platforms_after_removal["light"]
     assert configured_platforms_after_removal["light"]["14"]["name"] == "Hall Light"
     assert CONF_PLATFORMS != CONF_MIGRATED_YAML_PLATFORMS
+
