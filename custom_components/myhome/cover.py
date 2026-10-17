@@ -123,6 +123,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             model=cfg.get(CONF_DEVICE_MODEL, "Shutter / Cover"),
             gateway=runtime.gateway,
             travel_time=int(cfg.get(CONF_TRAVEL_TIME, DEFAULT_TRAVEL_TIME)),
+            strategy_name=cfg.get("strategy"),
+            tilt_time=cfg.get("tilt_time"),
+            pulse_duration=cfg.get("pulse_duration"),
             **kwargs,
         )
         family.add(cover)
@@ -201,6 +204,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         travel_time: int = DEFAULT_TRAVEL_TIME,
         travel_time_source: str = "default",
         calibration: dict | None = None,  # type: ignore
+        strategy_name: str | None = None,
+        tilt_time: float | None = None,
+        pulse_duration: float | None = None,
     ):
         super().__init__(
             hass=hass,
@@ -246,6 +252,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         self._strategy: CoverKinematicsStrategy = resolve_cover_strategy(
             advanced=bool(self._advanced),
+            strategy_name=strategy_name,
+            tilt_time=tilt_time,
+            pulse_duration=pulse_duration,
         )
         # Both advanced and standard covers support SET_POSITION (standard via travel time estimation)
         self._attr_supported_features = self._strategy.supported_features

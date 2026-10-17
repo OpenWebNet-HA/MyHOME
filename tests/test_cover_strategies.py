@@ -226,6 +226,42 @@ async def test_timed_curtain_strategy_and_myhome_cover_binding(hass) -> None:
         )
         assert isinstance(cover.strategy, TimedCurtainStrategy)
 
+        venetian_cover = MyHOMECover(
+            hass=hass,
+            name="Venetian",
+            entity_name="Venetian",
+            device_id="13",
+            who="2",
+            where="13",
+            interface=None,  # type: ignore[arg-type]
+            advanced=False,
+            manufacturer="BTicino",
+            model="Shutter",
+            gateway=entity._gateway_handler,
+            strategy_name="venetian",
+            tilt_time=1.8,
+        )
+        assert isinstance(venetian_cover.strategy, VenetianTiltStrategy)
+        assert venetian_cover.strategy.tilt_time == 1.8
+
+        impulse_cover = MyHOMECover(
+            hass=hass,
+            name="Gate",
+            entity_name="Gate",
+            device_id="14",
+            who="2",
+            where="14",
+            interface=None,  # type: ignore[arg-type]
+            advanced=False,
+            manufacturer="BTicino",
+            model="Gate",
+            gateway=entity._gateway_handler,
+            strategy_name="impulse",
+            pulse_duration=0.4,
+        )
+        assert isinstance(impulse_cover.strategy, ImpulseDoorStrategy)
+        assert impulse_cover.strategy.pulse_duration == 0.4
+
 
 async def test_venetian_tilt_strategy() -> None:
     """VenetianTiltStrategy exposes slat-tilt features and pulses motor for tilt."""
