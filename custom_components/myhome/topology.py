@@ -507,8 +507,7 @@ class GatewayTopologyMixin:
         @property
         def log_id(self) -> str: ...
 
-    def _profile_supports_who(self, who: int) -> bool:
-        raise NotImplementedError
+        def _profile_supports_who(self, who: int) -> bool: ...
 
     @property
     def available(self) -> bool:
