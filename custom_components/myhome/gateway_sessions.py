@@ -10,6 +10,7 @@ import asyncio
 import collections
 import contextlib
 import itertools
+import re
 import time
 from collections.abc import Iterable, Iterator
 from typing import TYPE_CHECKING, Any
@@ -286,61 +287,113 @@ class EventSessionRunner:
 
 
 _TIER_COMMANDS = 0
-_TIER_STATUS = 1
-_TIER_OTHERS = 2
+_TIER_FADE_STEPS = 1
+_TIER_STATUS = 2
+_TIER_OTHERS = 3
+
+_FRAME_TARGET_RE = re.compile(r"^\*#?(\d+)\*(?:[^*]*\*)*([^#*]+(?:#[^*]+)?|)##$")
 
 
 def _classify_tier(item: Any) -> int:
-    """Classify item into priority tier: 0 (commands), 1 (status), 2 (others/sentinels).
+    """Classify item into priority tier: 0 (commands), 1 (fade steps), 2 (status), 3 (others/sentinels).
 
     Expected envelope dictionaries are produced by CommandWorkerPool._enqueue:
     {
         "message": OWNCommand,
         "is_status_request": bool,
+        "is_fade_step": bool (optional),
+        "is_cancel": bool (optional),
         "written": asyncio.Future[float],
     }
     """
     if isinstance(item, dict):
         if item.get("is_status_request", False):
             return _TIER_STATUS
+        if item.get("is_fade_step", False):
+            return _TIER_FADE_STEPS
         if "message" in item or "is_status_request" in item:
             return _TIER_COMMANDS
     return _TIER_OTHERS
 
 
-class _PriorityQueueStorage:
-    """Multi-tier FIFO storage backing CommandPriorityQueue.
+def _extract_target_key(item: Any) -> tuple[int, str] | None:
+    """Extract a canonical (who, where) target key from an envelope dict."""
+    if not isinstance(item, dict):
+        return None
+    target = item.get("target")
+    if isinstance(target, tuple) and len(target) == 2:
+        return (int(target[0]), str(target[1]))
+    msg = item.get("message")
+    if msg is None:
+        return None
+    who = getattr(msg, "who", None)
+    where = getattr(msg, "where", None)
+    if who is not None and where is not None:
+        where_s = str(where).strip()
+        if where_s:
+            return (int(who), where_s)
+    raw = str(msg).strip()
+    m = _FRAME_TARGET_RE.match(raw)
+    if m and m.group(2):
+        return (int(m.group(1)), m.group(2))
+    return None
 
-    Implements the collections.abc.MutableSequence and deque interface expected
-    by queue inspection code and unit tests (e.g. list(handler.send_buffer._queue)).
-    Sequence materialisation (slices, __eq__, index) converts across tiers into
-    a list; with typical max_queue_size <= 250, this takes negligible CPU time (<2µs)
-    and avoids complex multi-deque virtual index bookkeeping.
+
+_COVER_STOP_RE = re.compile(r"^\*2\*0\*[^#*]+(?:#[^*]+)?##$")
+
+
+def _is_cancel_item(item: Any) -> bool:
+    """Return True if an envelope dict represents a cancellation or WHO=2 stop command."""
+    if not isinstance(item, dict) or item.get("is_status_request", False):
+        return False
+    if "is_cancel" in item:
+        return bool(item["is_cancel"])
+    msg = item.get("message")
+    return msg is not None and bool(_COVER_STOP_RE.match(str(msg).strip()))
+
+
+class _PriorityQueueStorage:
+    """Multi-tier FIFO storage backing FrameScheduler.
+
+    Implements the sequence and deque interface expected by queue inspection
+    code and unit tests (e.g. list(handler.send_buffer._queue)).
     """
 
     def __init__(self) -> None:
         """Initialize empty priority tiers."""
         self._commands: collections.deque[Any] = collections.deque()
+        self._fade_steps: collections.deque[Any] = collections.deque()
         self._status: collections.deque[Any] = collections.deque()
         self._others: collections.deque[Any] = collections.deque()
 
     def __len__(self) -> int:
         """Return total number of items across all tiers."""
-        return len(self._commands) + len(self._status) + len(self._others)
+        return (
+            len(self._commands)
+            + len(self._fade_steps)
+            + len(self._status)
+            + len(self._others)
+        )
 
     def __bool__(self) -> bool:
         """Return True if any tier has items."""
-        return bool(self._commands or self._status or self._others)
+        return bool(self._commands or self._fade_steps or self._status or self._others)
 
     def __iter__(self) -> Iterator[Any]:
-        """Iterate in priority order: commands, status, others."""
-        return itertools.chain(self._commands, self._status, self._others)
+        """Iterate in priority order: commands, fade_steps, status, others."""
+        return itertools.chain(
+            self._commands,
+            self._fade_steps,
+            self._status,
+            self._others,
+        )
 
     def __reversed__(self) -> Iterator[Any]:
         """Iterate in reverse priority order."""
         return itertools.chain(
             reversed(self._others),
             reversed(self._status),
+            reversed(self._fade_steps),
             reversed(self._commands),
         )
 
@@ -348,6 +401,7 @@ class _PriorityQueueStorage:
         """Return string representation of priority tiers."""
         return (
             f"_PriorityQueueStorage(commands={list(self._commands)!r}, "
+            f"fade_steps={list(self._fade_steps)!r}, "
             f"status={list(self._status)!r}, others={list(self._others)!r})"
         )
 
@@ -356,6 +410,7 @@ class _PriorityQueueStorage:
         if isinstance(other, _PriorityQueueStorage):
             return (
                 self._commands == other._commands
+                and self._fade_steps == other._fade_steps
                 and self._status == other._status
                 and self._others == other._others
             )
@@ -365,7 +420,12 @@ class _PriorityQueueStorage:
 
     def __contains__(self, item: Any) -> bool:
         """Return True if item exists in any tier."""
-        return item in self._commands or item in self._status or item in self._others
+        return (
+            item in self._commands
+            or item in self._fade_steps
+            or item in self._status
+            or item in self._others
+        )
 
     def __getitem__(self, index: int | slice) -> Any:
         """Get item by index or slice in priority order."""
@@ -381,6 +441,9 @@ class _PriorityQueueStorage:
         if index < len(self._commands):
             return self._commands[index]
         index -= len(self._commands)
+        if index < len(self._fade_steps):
+            return self._fade_steps[index]
+        index -= len(self._fade_steps)
         if index < len(self._status):
             return self._status[index]
         index -= len(self._status)
@@ -391,6 +454,8 @@ class _PriorityQueueStorage:
         tier = _classify_tier(item)
         if tier == _TIER_COMMANDS:
             self._commands.append(item)
+        elif tier == _TIER_FADE_STEPS:
+            self._fade_steps.append(item)
         elif tier == _TIER_STATUS:
             self._status.append(item)
         else:
@@ -401,6 +466,8 @@ class _PriorityQueueStorage:
         tier = _classify_tier(item)
         if tier == _TIER_COMMANDS:
             self._commands.appendleft(item)
+        elif tier == _TIER_FADE_STEPS:
+            self._fade_steps.appendleft(item)
         elif tier == _TIER_STATUS:
             self._status.appendleft(item)
         else:
@@ -420,11 +487,65 @@ class _PriorityQueueStorage:
         """Pop and return the highest priority item."""
         if self._commands:
             return self._commands.popleft()
+        if self._fade_steps:
+            return self._fade_steps.popleft()
         if self._status:
             return self._status.popleft()
         if self._others:
             return self._others.popleft()
         raise IndexError("pop from an empty priority queue")
+
+    def pop_eligible(self, in_flight_targets: set[tuple[int, str]]) -> Any:
+        """Pop and return the highest priority item whose target is not in flight."""
+        if not in_flight_targets:
+            return self.popleft()
+        for q in (self._commands, self._fade_steps, self._status, self._others):
+            for idx, item in enumerate(q):
+                target = _extract_target_key(item)
+                if target is None or target not in in_flight_targets:
+                    del q[idx]
+                    return item
+        raise IndexError("no eligible item in priority queue")
+
+    def has_eligible(self, in_flight_targets: set[tuple[int, str]]) -> bool:
+        """Return True if at least one queued item's target is not in flight."""
+        if not in_flight_targets:
+            return bool(self)
+        for q in (self._commands, self._fade_steps, self._status, self._others):
+            for item in q:
+                target = _extract_target_key(item)
+                if target is None or target not in in_flight_targets:
+                    return True
+        return False
+
+    def drop_superseded(self, new_item: Any) -> list[dict[str, Any]]:
+        """Drop queued frames superseded by new_item for the same (who, where) target."""
+        target = _extract_target_key(new_item)
+        if target is None or not isinstance(new_item, dict):
+            return []
+        tier = _classify_tier(new_item)
+        dropped: list[dict[str, Any]] = []
+        if tier in (_TIER_COMMANDS, _TIER_FADE_STEPS) and self._fade_steps:
+            kept_fades: collections.deque[Any] = collections.deque()
+            for existing in self._fade_steps:
+                if _extract_target_key(existing) == target and isinstance(existing, dict):
+                    dropped.append(existing)
+                else:
+                    kept_fades.append(existing)
+            self._fade_steps = kept_fades
+        if _is_cancel_item(new_item) and self._commands:
+            kept_cmds: collections.deque[Any] = collections.deque()
+            for existing in self._commands:
+                if (
+                    _extract_target_key(existing) == target
+                    and isinstance(existing, dict)
+                    and not _is_cancel_item(existing)
+                ):
+                    dropped.append(existing)
+                else:
+                    kept_cmds.append(existing)
+            self._commands = kept_cmds
+        return dropped
 
     def pop(self) -> Any:
         """Pop and return the lowest priority item from the tail."""
@@ -432,6 +553,8 @@ class _PriorityQueueStorage:
             return self._others.pop()
         if self._status:
             return self._status.pop()
+        if self._fade_steps:
+            return self._fade_steps.pop()
         if self._commands:
             return self._commands.pop()
         raise IndexError("pop from an empty priority queue")
@@ -439,13 +562,14 @@ class _PriorityQueueStorage:
     def remove(self, value: Any) -> None:
         """Remove first occurrence of value."""
         tier = _classify_tier(value)
-        tiers = (
-            (self._commands, self._status, self._others)
-            if tier == _TIER_COMMANDS
-            else (self._status, self._commands, self._others)
-            if tier == _TIER_STATUS
-            else (self._others, self._commands, self._status)
-        )
+        if tier == _TIER_COMMANDS:
+            tiers = (self._commands, self._fade_steps, self._status, self._others)
+        elif tier == _TIER_FADE_STEPS:
+            tiers = (self._fade_steps, self._commands, self._status, self._others)
+        elif tier == _TIER_STATUS:
+            tiers = (self._status, self._commands, self._fade_steps, self._others)
+        else:
+            tiers = (self._others, self._commands, self._fade_steps, self._status)
         for q in tiers:
             try:
                 q.remove(value)
@@ -457,6 +581,7 @@ class _PriorityQueueStorage:
     def clear(self) -> None:
         """Clear all priority tiers."""
         self._commands.clear()
+        self._fade_steps.clear()
         self._status.clear()
         self._others.clear()
 
@@ -464,13 +589,19 @@ class _PriorityQueueStorage:
         """Return shallow copy of storage."""
         new_storage = _PriorityQueueStorage()
         new_storage._commands = self._commands.copy()
+        new_storage._fade_steps = self._fade_steps.copy()
         new_storage._status = self._status.copy()
         new_storage._others = self._others.copy()
         return new_storage
 
     def count(self, value: Any) -> int:
         """Return total occurrences of value across all tiers."""
-        return self._commands.count(value) + self._status.count(value) + self._others.count(value)
+        return (
+            self._commands.count(value)
+            + self._fade_steps.count(value)
+            + self._status.count(value)
+            + self._others.count(value)
+        )
 
     def index(self, value: Any, start: int = 0, stop: int | None = None) -> int:
         """Return first index of value."""
@@ -480,15 +611,69 @@ class _PriorityQueueStorage:
         return items.index(value, start, stop)
 
 
-class CommandPriorityQueue(asyncio.Queue[Any]):
-    """Asyncio queue prioritizing user commands over telemetry polls."""
+class FrameScheduler:
+    """Standalone multi-tier frame scheduler with per-target worker serialization.
 
-    _queue: _PriorityQueueStorage
-    _putters: collections.deque[asyncio.Future[Any]]
+    Replaces the CPython-coupled ``asyncio.Queue`` subclass while providing a
+    drop-in queue interface plus per-target ``(who, where)`` in-flight locking
+    and stale-frame superseding across concurrent command workers.
+    """
 
-    def _init(self, maxsize: int) -> None:
-        """Initialize custom multi-tier priority queue storage."""
+    def __init__(self, maxsize: int = 0) -> None:
+        """Initialize the scheduler storage, waiter queues, and target locks."""
+        self._maxsize = maxsize
         self._queue = _PriorityQueueStorage()
+        self._getters: collections.deque[asyncio.Future[None]] = collections.deque()
+        self._putters: collections.deque[asyncio.Future[None]] = collections.deque()
+        self._unfinished_tasks = 0
+        self._finished = asyncio.Event()
+        self._finished.set()
+        self._is_shutdown = False
+        self._in_flight_targets: set[tuple[int, str]] = set()
+
+    @property
+    def maxsize(self) -> int:
+        """Number of items allowed in the queue."""
+        return self._maxsize
+
+    def qsize(self) -> int:
+        """Number of items in the queue."""
+        return len(self._queue)
+
+    def empty(self) -> bool:
+        """Return True if the queue is empty, False otherwise."""
+        return not self._queue
+
+    def full(self) -> bool:
+        """Return True if there are maxsize items in the queue."""
+        if self._maxsize <= 0:
+            return False
+        return self.qsize() >= self._maxsize
+
+    @property
+    def command_qsize(self) -> int:
+        """Return the number of queued user commands."""
+        return len(self._queue._commands)
+
+    @property
+    def fade_qsize(self) -> int:
+        """Return the number of queued software fade steps."""
+        return len(self._queue._fade_steps)
+
+    @property
+    def status_qsize(self) -> int:
+        """Return the number of queued status requests."""
+        return len(self._queue._status)
+
+    @property
+    def other_qsize(self) -> int:
+        """Return the number of queued sentinels and unclassified items."""
+        return len(self._queue._others)
+
+    @property
+    def in_flight_targets(self) -> frozenset[tuple[int, str]]:
+        """Return the set of (who, where) targets currently executing on a worker."""
+        return frozenset(self._in_flight_targets)
 
     def _wakeup_next(self, waiters: collections.deque[asyncio.Future[Any]]) -> None:
         """Wake up the next waiter that is not cancelled."""
@@ -498,19 +683,44 @@ class CommandPriorityQueue(asyncio.Queue[Any]):
                 waiter.set_result(None)
                 break
 
+    def _wakeup_all_getters(self) -> None:
+        """Wake up all waiting getters when target locks or items change."""
+        while self._getters:
+            waiter = self._getters.popleft()
+            if not waiter.done():
+                waiter.set_result(None)
+
+    def _drop_superseded_and_cancel(self, item: Any) -> None:
+        """Drop superseded queued frames for the same target and cancel their futures."""
+        dropped = self._queue.drop_superseded(item)
+        for old_item in dropped:
+            _cancel_written(old_item)
+            if self._unfinished_tasks > 0:
+                self._unfinished_tasks -= 1
+
+    def put_nowait(self, item: Any) -> None:
+        """Put an item into the queue without blocking."""
+        if self._is_shutdown:
+            raise getattr(asyncio, "QueueShutDown", Exception)
+        self._drop_superseded_and_cancel(item)
+        if self.full():
+            raise asyncio.QueueFull
+        self._queue.append(item)
+        self._unfinished_tasks += 1
+        self._finished.clear()
+        self._wakeup_next(self._getters)
+
     async def put(self, item: Any) -> None:
         """Put an item into the queue, prioritizing command waiters when full."""
+        if not self._is_shutdown:
+            self._drop_superseded_and_cancel(item)
         while self.full():
-            # Python 3.13+ asyncio.Queue.shutdown() sets `self._is_shutdown = True`
-            # and unblocks callers of put() with QueueShutDown. We mirror standard
-            # library semantics while preserving compatibility across Python versions.
-            if getattr(self, "_is_shutdown", False):
+            if self._is_shutdown:
                 raise getattr(asyncio, "QueueShutDown", Exception)
             putter: asyncio.Future[None] = asyncio.get_running_loop().create_future()
             is_cmd = _classify_tier(item) == _TIER_COMMANDS
             setattr(putter, "_is_cmd", is_cmd)
             if is_cmd:
-                # O(W) linear scan across waiting putters (W <= max_queue_size, typically 0 to <10).
                 idx = 0
                 for p in self._putters:
                     if getattr(p, "_is_cmd", False):
@@ -529,22 +739,103 @@ class CommandPriorityQueue(asyncio.Queue[Any]):
                 if not self.full() and not putter.cancelled():
                     self._wakeup_next(self._putters)
                 raise
+            self._drop_superseded_and_cancel(item)
         return self.put_nowait(item)
 
-    @property
-    def command_qsize(self) -> int:
-        """Return the number of queued user commands."""
-        return len(self._queue._commands)
+    def get_nowait(self) -> Any:
+        """Remove and return an item from the queue without blocking."""
+        if self.empty():
+            raise asyncio.QueueEmpty
+        item = self._queue.popleft()
+        self._wakeup_next(self._putters)
+        return item
 
-    @property
-    def status_qsize(self) -> int:
-        """Return the number of queued status requests."""
-        return len(self._queue._status)
+    async def get(self) -> Any:
+        """Remove and return the highest-priority item from the queue."""
+        while self.empty():
+            if self._is_shutdown:
+                raise getattr(asyncio, "QueueShutDown", Exception)
+            getter: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+            self._getters.append(getter)
+            try:
+                await getter
+            except BaseException:
+                getter.cancel()
+                with contextlib.suppress(ValueError):
+                    self._getters.remove(getter)
+                raise
+        return self.get_nowait()
 
-    @property
-    def other_qsize(self) -> int:
-        """Return the number of queued sentinels and unclassified items."""
-        return len(self._queue._others)
+    def acquire_nowait(self) -> Any:
+        """Pop the highest-priority eligible item and lock its (who, where) target."""
+        if not self._queue.has_eligible(self._in_flight_targets):
+            raise asyncio.QueueEmpty
+        item = self._queue.pop_eligible(self._in_flight_targets)
+        target = _extract_target_key(item)
+        if target is not None:
+            self._in_flight_targets.add(target)
+        self._wakeup_next(self._putters)
+        return item
+
+    async def acquire_next(self) -> Any:
+        """Wait for and pop the highest-priority item whose target is not in flight."""
+        while not self._queue.has_eligible(self._in_flight_targets):
+            if self._is_shutdown and self.empty():
+                raise getattr(asyncio, "QueueShutDown", Exception)
+            getter: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+            self._getters.append(getter)
+            try:
+                await getter
+            except BaseException:
+                getter.cancel()
+                with contextlib.suppress(ValueError):
+                    self._getters.remove(getter)
+                raise
+        return self.acquire_nowait()
+
+    def release_target(self, target: tuple[int, str] | None) -> None:
+        """Release an in-flight target key and wake blocked workers."""
+        if target is not None and target in self._in_flight_targets:
+            self._in_flight_targets.discard(target)
+            if self._queue.has_eligible(self._in_flight_targets):
+                self._wakeup_all_getters()
+
+    def complete_task(self, task: Any) -> None:
+        """Release a task's target lock and mark the queue task done."""
+        target = _extract_target_key(task)
+        self.release_target(target)
+        self.task_done()
+
+    def task_done(self) -> None:
+        """Indicate that a formerly enqueued task is complete."""
+        if self._unfinished_tasks <= 0:
+            raise ValueError("task_done() called too many times")
+        self._unfinished_tasks -= 1
+        if self._unfinished_tasks == 0:
+            self._finished.set()
+
+    async def join(self) -> None:
+        """Block until all items in the queue have been gotten and processed."""
+        if self._unfinished_tasks > 0:
+            await self._finished.wait()
+
+    def shutdown(self, immediate: bool = False) -> None:
+        """Shut down the queue."""
+        self._is_shutdown = True
+        if immediate:
+            while not self.empty():
+                item = self._queue.popleft()
+                if isinstance(item, dict):
+                    _cancel_written(item)
+                if self._unfinished_tasks > 0:
+                    self._unfinished_tasks -= 1
+            self._in_flight_targets.clear()
+            if self._unfinished_tasks == 0:
+                self._finished.set()
+        self._wakeup_all_getters()
+
+
+CommandPriorityQueue = FrameScheduler
 
 
 class CommandWorkerPool:
@@ -566,7 +857,7 @@ class CommandWorkerPool:
             if hasattr(self.gateway, "profile") and self.gateway.profile
             else 250
         )
-        self.send_buffer: asyncio.Queue[Any] = CommandPriorityQueue(maxsize=queue_max_size)
+        self.send_buffer: FrameScheduler | asyncio.Queue[Any] = FrameScheduler(maxsize=queue_max_size)
 
         self._event_session_ready = event_session_ready if event_session_ready is not None else asyncio.Event()
 
@@ -605,20 +896,37 @@ class CommandWorkerPool:
         """Idle timeout before releasing the command session socket."""
         return float(self.handler.command_session_idle_timeout)
 
-    async def send(self, message: OWNCommand) -> asyncio.Future[float]:
+    async def send(self, message: OWNCommand, *, is_cancel: bool = False) -> asyncio.Future[float]:
         """Queue a command; the returned future resolves to the monotonic write time."""
-        return await self._enqueue(message, is_status_request=False)
+        return await self._enqueue(message, is_status_request=False, is_cancel=is_cancel)
+
+    async def send_fade_step(self, message: OWNCommand) -> asyncio.Future[float]:
+        """Queue an intermediate software fade step; superseded by newer steps or commands."""
+        return await self._enqueue(message, is_status_request=False, is_fade_step=True)
 
     async def send_status_request(self, message: OWNCommand) -> asyncio.Future[float]:
         """Queue a status request; the returned future resolves to the monotonic write time."""
         return await self._enqueue(message, is_status_request=True)
 
-    async def _enqueue(self, message: OWNCommand, *, is_status_request: bool) -> asyncio.Future[float]:
+    async def _enqueue(
+        self,
+        message: OWNCommand,
+        *,
+        is_status_request: bool,
+        is_fade_step: bool = False,
+        is_cancel: bool = False,
+    ) -> asyncio.Future[float]:
         """Put a frame on the send queue and hand back its delivery future."""
         written: asyncio.Future[float] = asyncio.get_running_loop().create_future()
-        await self.send_buffer.put(
-            {"message": message, "is_status_request": is_status_request, "written": written}
-        )
+        envelope: dict[str, Any] = {
+            "message": message,
+            "is_status_request": is_status_request,
+            "is_cancel": is_cancel,
+            "written": written,
+        }
+        if is_fade_step:
+            envelope["is_fade_step"] = True
+        await self.send_buffer.put(envelope)
         LOGGER.debug(
             "%s Message `%s` was successfully queued.",
             self.log_id,
@@ -694,9 +1002,14 @@ class CommandWorkerPool:
 
             while not self._terminate_sender:
                 idle_timeout = self.command_session_idle_timeout
+                acquire_coro = (
+                    self.send_buffer.acquire_next()
+                    if isinstance(self.send_buffer, FrameScheduler)
+                    else self.send_buffer.get()
+                )
                 try:
                     task = await asyncio.wait_for(
-                        self.send_buffer.get(),
+                        acquire_coro,
                         timeout=idle_timeout,
                     )
                 except TimeoutError:
@@ -783,7 +1096,10 @@ class CommandWorkerPool:
                         task.get("message") if isinstance(task, dict) else task,
                     )
                 finally:
-                    self.send_buffer.task_done()
+                    if isinstance(self.send_buffer, FrameScheduler):
+                        self.send_buffer.complete_task(task)
+                    else:
+                        self.send_buffer.task_done()
 
                 if (
                     hasattr(self.gateway, "profile")
@@ -809,8 +1125,12 @@ class CommandWorkerPool:
                 _cancel_written(task)
             self.send_buffer.task_done()
 
+        if isinstance(self.send_buffer, FrameScheduler):
+            self.send_buffer._in_flight_targets.clear()
+
         for _ in range(max(1, len(self.sending_workers))):
             try:
                 self.send_buffer.put_nowait(None)
             except (asyncio.QueueFull, Exception):
                 pass
+

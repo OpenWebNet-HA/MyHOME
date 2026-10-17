@@ -60,8 +60,10 @@ from .gateway_sessions import (
     EVENT_RESTART_BACKOFF_MAX,
     EVENT_RESTART_BACKOFF_MIN,
     EVENT_STALL_TIMEOUT,
+    CommandPriorityQueue,
     CommandWorkerPool,
     EventSessionRunner,
+    FrameScheduler,
     _cancel_written,
     _resolve_written,
     _session_is_open,
@@ -94,6 +96,7 @@ from .topology import (
 __all__ = [
     "AVAILABILITY_GRACE",
     "COMMAND_SESSION_IDLE_TIMEOUT",
+    "CommandPriorityQueue",
     "CommandWorkerPool",
     "EVENT_INACTIVITY_TIMEOUT",
     "EVENT_READY_TIMEOUT",
@@ -101,6 +104,7 @@ __all__ = [
     "EVENT_RESTART_BACKOFF_MIN",
     "EVENT_STALL_TIMEOUT",
     "EventSessionRunner",
+    "FrameScheduler",
     "GatewayEventDispatcher",
     "GenericGatewayProfile",
     "LightingResyncManager",
@@ -257,12 +261,12 @@ class MyHOMEGatewayHandler:
         self._last_event_frame_at: float = 0.0
 
     @property
-    def send_buffer(self) -> asyncio.Queue[Any]:
+    def send_buffer(self) -> FrameScheduler | asyncio.Queue[Any]:
         """Return the send queue."""
         return self._command_pool.send_buffer
 
     @send_buffer.setter
-    def send_buffer(self, value: asyncio.Queue[Any]) -> None:
+    def send_buffer(self, value: FrameScheduler | asyncio.Queue[Any]) -> None:
         self._command_pool.send_buffer = value
 
     @property
@@ -1290,15 +1294,31 @@ class MyHOMEGatewayHandler:
         self._evaluate_failover()
         return standby
 
-    async def send(self, message: OWNCommand) -> asyncio.Future[float]:
+    async def send(self, message: OWNCommand, *, is_cancel: bool = False) -> asyncio.Future[float]:
         """Queue a command; the returned future resolves to the monotonic write time."""
         delegated = self._delegated_target(message)
         if delegated is not None:
+            if is_cancel:
+                return await delegated.send(message, is_cancel=True)
             return await delegated.send(message)
         standby = self._failover_target(message)
         if standby is not None:
+            if is_cancel:
+                return await standby.send(message, is_cancel=True)
             return await standby.send(message)
+        if is_cancel:
+            return await self._command_pool.send(message, is_cancel=True)
         return await self._command_pool.send(message)
+
+    async def send_fade_step(self, message: OWNCommand) -> asyncio.Future[float]:
+        """Queue an intermediate software fade step; superseded by newer steps or commands."""
+        delegated = self._delegated_target(message)
+        if delegated is not None:
+            return await delegated.send_fade_step(message)
+        standby = self._failover_target(message)
+        if standby is not None:
+            return await standby.send_fade_step(message)
+        return await self._command_pool.send_fade_step(message)
 
     async def send_status_request(self, message: OWNCommand) -> asyncio.Future[float]:
         """Queue a status request; the returned future resolves to the monotonic write time."""
