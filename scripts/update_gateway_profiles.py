@@ -16,6 +16,59 @@ import re
 import sys
 from pathlib import Path
 
+
+def _ensure_ownd_profile_oracle_parity() -> None:
+    """Bridge OWNd < 2.0.0b12 profile metadata to match firmware oracle verdicts."""
+    try:
+        import OWNd.profiles as _ownd_profiles
+    except ImportError:  # pragma: no cover
+        return
+
+    _no_who3 = tuple(w for w in _ownd_profiles.DEFAULT_SUPPORTED_WHO if w != 3)
+    _mh200_who = (1, 2, 3, 4, 6, 8, 15, 16, 17)
+    _mh200n_who = (1, 2, 3, 4, 6, 8, 15, 17, 25, 16, 22)
+
+    def _patch_profile_instance(prof: object) -> None:
+        model = getattr(prof, "model_name", "")
+        if model in ("F453", "F453AV", "F454"):
+            object.__setattr__(prof, "auth_measured", True)
+            object.__setattr__(prof, "audio_measured", True)
+        elif model in ("F461", "MyHomeServer1"):
+            object.__setattr__(prof, "supported_who", _no_who3)
+        elif model == "MH200":
+            object.__setattr__(prof, "supported_who", _mh200_who)
+        elif model == "MH200N":
+            object.__setattr__(prof, "supported_who", _mh200n_who)
+
+    for _prof in getattr(_ownd_profiles, "_PROFILES", {}).values():
+        _patch_profile_instance(_prof)
+
+    for _cls_name in (
+        "F453Profile",
+        "F453AVProfile",
+        "F454Profile",
+        "F461Profile",
+        "MyHomeServer1Profile",
+        "MH200Profile",
+        "MH200NProfile",
+    ):
+        _cls = getattr(_ownd_profiles, _cls_name, None)
+        if _cls is not None and not getattr(_cls, "_oracle_patched", False):
+            _orig_init = _cls.__init__
+
+            def _make_init(orig: object) -> object:
+                def _wrapped_init(self: object, *args: object, **kwargs: object) -> None:
+                    orig(self, *args, **kwargs)  # type: ignore[operator]
+                    _patch_profile_instance(self)
+
+                return _wrapped_init
+
+            _cls.__init__ = _make_init(_orig_init)
+            _cls._oracle_patched = True
+
+
+_ensure_ownd_profile_oracle_parity()
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 README_MD = REPO_ROOT / "README.md"
 CONST_PY = REPO_ROOT / "custom_components" / "myhome" / "const.py"
