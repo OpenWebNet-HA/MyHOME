@@ -167,9 +167,6 @@ def check_translation_coverage(checker: StandardsChecker):
     if not config_flow_file.exists() or not en_json_file.exists():
         return
 
-    with open(config_flow_file, "r", encoding="utf-8") as f:
-        tree = ast.parse(f.read())
-
     with open(en_json_file, "r", encoding="utf-8") as f:
         en_data = json.load(f)
 
@@ -177,19 +174,23 @@ def check_translation_coverage(checker: StandardsChecker):
     options_translated = set(en_data.get("options", {}).get("step", {}).keys())
     all_translated = config_translated | options_translated
 
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-            if node.func.attr == "async_show_form":
-                for kw in node.keywords:
-                    if kw.arg == "step_id" and isinstance(kw.value, ast.Constant):
-                        step_id = kw.value.value
-                        if step_id not in all_translated:
-                            checker.log_error(
-                                "RULE_TRANSLATION_STEP_MISSING",
-                                config_flow_file,
-                                node.lineno,
-                                f"async_show_form(step_id='{step_id}') has no translation in translations/en.json.",
-                            )
+    for flow_file in sorted(CUSTOM_COMPONENTS_DIR.glob("config_flow*.py")):
+        with open(flow_file, "r", encoding="utf-8") as f:
+            tree = ast.parse(f.read(), filename=str(flow_file))
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                if node.func.attr == "async_show_form":
+                    for kw in node.keywords:
+                        if kw.arg == "step_id" and isinstance(kw.value, ast.Constant):
+                            step_id = kw.value.value
+                            if step_id not in all_translated:
+                                checker.log_error(
+                                    "RULE_TRANSLATION_STEP_MISSING",
+                                    flow_file,
+                                    node.lineno,
+                                    f"async_show_form(step_id='{step_id}') has no translation in translations/en.json.",
+                                )
 
     checker.log_ok("Config flow step translations are complete in en.json.")
 
@@ -302,7 +303,7 @@ def check_no_update_listener_reload_conflict(checker: StandardsChecker, target_d
             tree = ast.parse(py_path.read_text(encoding="utf-8"), filename=str(py_path))
         except SyntaxError:
             continue
-        is_flow = py_path.name == "config_flow.py"
+        is_flow = py_path.name.startswith("config_flow") and py_path.name.endswith(".py")
         for node in ast.walk(tree):
             if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
                 continue
