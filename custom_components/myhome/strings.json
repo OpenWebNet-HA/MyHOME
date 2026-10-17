@@ -428,6 +428,10 @@
       "title": "Primary gateway of {gateway} is missing",
       "description": "{gateway} is configured as a secondary or warm standby gateway for {primary}, but that gateway is no longer configured as a Shared Primary gateway (it was removed or reconfigured). {gateway} keeps suppressing discovery until it is reconfigured.\n\nOpen Configure on {gateway} and either select another Primary gateway or set its Bus Topology to Standalone."
     },
+    "legacy_yaml_imported": {
+      "title": "Legacy myhome.yaml imported for {gateway}",
+      "description": "Device configurations from `myhome.yaml` for {gateway} have been imported and persisted into Home Assistant's config entry options. Your entities will continue to work even if `myhome.yaml` is removed from disk."
+    },
     "incompatible_decoder_platform": {
       "title": "Decoder {decoder} uses unsupported integration ({platform})",
       "fix_flow": {

@@ -381,6 +381,10 @@
     "primary_gateway_missing": {
       "title": "Primaire gateway van {gateway} ontbreekt",
       "description": "{gateway} is geconfigureerd als secundaire of warm-standby gateway voor {primary}, maar die gateway is niet langer geconfigureerd als gedeelde primaire gateway. {gateway} onderdrukt detectie totdat deze opnieuw is geconfigureerd."
+    },
+    "legacy_yaml_imported": {
+      "title": "Verouderde myhome.yaml geïmporteerd voor {gateway}",
+      "description": "Apparaatconfiguraties uit `myhome.yaml` voor {gateway} zijn geïmporteerd en opgeslagen in de configuratie-opties van Home Assistant."
     }
   },
   "exceptions": {

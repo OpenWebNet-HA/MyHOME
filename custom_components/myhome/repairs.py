@@ -48,6 +48,22 @@ ISSUE_INCOMPATIBLE_DECODER = "incompatible_decoder_platform"
 ISSUE_INVALID_DECODER = "invalid_decoder"
 ISSUE_AMBIGUOUS_COMPANION = "ambiguous_companion"
 ISSUE_MULTIPLE_AUDIO_GATEWAYS = "multiple_audio_gateways"
+ISSUE_LEGACY_YAML_IMPORTED = "legacy_yaml_imported"
+
+
+def async_create_legacy_yaml_imported_issue(
+    hass: HomeAssistant, entry_id: str, gateway_name: str
+) -> None:
+    """Create an informational repair issue when myhome.yaml is migrated to ConfigEntry.options."""
+    async_create_issue(
+        hass,
+        DOMAIN,
+        f"{ISSUE_LEGACY_YAML_IMPORTED}_{entry_id}",
+        is_fixable=False,
+        severity=IssueSeverity.WARNING,
+        translation_key=ISSUE_LEGACY_YAML_IMPORTED,
+        translation_placeholders={"gateway": gateway_name},
+    )
 
 
 def async_create_unknown_model_issue(hass: HomeAssistant, entry_id: str, code: str) -> None:
