@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from homeassistant.components.media_player.const import MediaPlayerState
@@ -281,12 +282,16 @@ class ZoneDecoderLayer(ZoneSourceLayer):
             new_state = event.data.get("new_state")
             if new_state:
                 ext_vol = new_state.attributes.get("volume_level")
-                if ext_vol is not None and self._attr_volume_level != ext_vol:
+                if (
+                    isinstance(ext_vol, (int, float))
+                    and math.isfinite(ext_vol)
+                    and self._attr_volume_level != ext_vol
+                ):
                     pool = self._get_pool()
                     if pool and event_entity == eff_dec:
                         pre_gain_pct = pool.get_pre_gain(eff_dec)
                         # Reverse the pre_gain offset to get approximate zone volume
-                        zone_vol = max(0.0, float(ext_vol) - pre_gain_pct / 100.0)
+                        zone_vol = max(0.0, min(1.0, float(ext_vol) - pre_gain_pct / 100.0))
                         self._attr_volume_level = zone_vol
 
         # Auto power-off when decoder stops playing (anti-hiss). Applies to the

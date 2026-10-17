@@ -736,3 +736,16 @@ class TestFullConfigSchema:
         res_cov = cover_schema(cov_data)
         assert res_cov["2-22"][CONF_ADVANCED_SHUTTER] is True
 
+        # Cover travel_time bounds (1..300)
+        for valid_tt in (1, 25, 300):
+            res_tt = cover_schema(
+                {"cov1": {CONF_WHERE: "22", CONF_NAME: "Living Cover", "travel_time": valid_tt}}
+            )
+            assert res_tt["2-22"]["travel_time"] == valid_tt
+
+        for invalid_tt in (0, -5, 301):
+            with pytest.raises(Invalid):
+                cover_schema(
+                    {"cov1": {CONF_WHERE: "22", CONF_NAME: "Living Cover", "travel_time": invalid_tt}}
+                )
+

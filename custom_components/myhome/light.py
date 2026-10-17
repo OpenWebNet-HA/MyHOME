@@ -1007,10 +1007,23 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         if is_fading and not self._attr_is_on:
             self._cancel_fade_if_active()
 
+        raw_val = getattr(message, "value", None)
+        valid_val = not isinstance(raw_val, (int, float)) or 0 <= raw_val <= 100
         hs = getattr(message, "hs", None)
-        has_hs = isinstance(hs, (tuple, list)) and len(hs or ()) == 2
+        has_hs = (
+            isinstance(hs, (tuple, list))
+            and len(hs or ()) == 2
+            and 0 <= hs[0] <= 360
+            and 0 <= hs[1] <= 100
+            and valid_val
+        )
         rgb = getattr(message, "rgb", None)
-        has_rgb = isinstance(rgb, (tuple, list)) and len(rgb or ()) == 3
+        has_rgb = (
+            isinstance(rgb, (tuple, list))
+            and len(rgb or ()) == 3
+            and all(0 <= c <= 255 for c in rgb)
+            and valid_val
+        )
         has_color_temp = isinstance(getattr(message, "color_temp", None), int)
         has_level = message.brightness is not None or message.brightness_preset is not None
 

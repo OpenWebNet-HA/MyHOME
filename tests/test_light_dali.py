@@ -157,3 +157,81 @@ def test_myhome_light_dali_shims(hass, caplog):
     )
     unlocked_light._promote_color_mode(ColorMode.COLOR_TEMP)
     assert ColorMode.COLOR_TEMP in unlocked_light._attr_supported_color_modes
+
+
+def test_light_and_group_reject_out_of_range_hsv_events(hass):
+    """Test MyHOMELight and MyHOMELightGroup ignore out-of-range Dimension 12 HSV values."""
+    from custom_components.myhome.light_group import MyHOMELightGroup
+
+    gateway = MagicMock()
+    gateway.log_id = "GW1"
+    gateway.mac = "00:03:50:00:12:34"
+
+    light = MyHOMELight(
+        hass=hass,
+        name="Test",
+        entity_name="Test",
+        icon=None,
+        icon_on=None,
+        device_id="12",
+        who="1",
+        where="12",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="Dimmer",
+        gateway=gateway,
+        lock_features=False,
+    )
+    light._publish_state = MagicMock()
+
+    bad_event = MagicMock()
+    bad_event.is_translation = False
+    bad_event.human_readable_log = "bad hsv"
+    bad_event.unknown_state = None
+    bad_event.is_on = None
+    bad_event.hs = (400, 150)
+    bad_event.rgb = (510, -170, -255)
+    bad_event.value = 200
+    bad_event.color_temp = None
+    bad_event.brightness = None
+    bad_event.brightness_preset = None
+
+    light.handle_event(bad_event)
+    assert light._attr_hs_color is None
+    assert light._attr_rgb_color is None
+    assert ColorMode.HS not in light._attr_supported_color_modes
+
+    group = MyHOMELightGroup(
+        hass=hass,
+        name="Group 1",
+        device_id="#1",
+        group=1,
+        gateway=gateway,
+        members=[],
+        dimmable=True,
+        color_temp=False,
+        rgb=False,
+        hs=True,
+    )
+    group.async_write_ha_state = MagicMock()
+
+    bad_group_msg = MagicMock()
+    bad_group_msg.who = 1
+    bad_group_msg.is_translation = False
+    bad_group_msg.is_group = True
+    bad_group_msg.group = 1
+    bad_group_msg.dimension = 12
+    bad_group_msg.hs_color = (200, 50)
+    bad_group_msg.value = 150
+
+    group.handle_event(bad_group_msg)
+    assert group._attr_hs_color is None
+
+    from OWNd.message import OWNLightingEvent
+
+    parsed_bad = OWNLightingEvent("*#1*11*12*400*150*200##")
+    assert parsed_bad.hs is None
+    assert parsed_bad.hs_color is None
+
+

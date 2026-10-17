@@ -306,16 +306,19 @@ async def async_setup_services(hass: HomeAssistant) -> None:
 
         cmd: Any = None
         if OWNScenarioPlusCommand is not None:
-            if action == "on":
-                cmd = OWNScenarioPlusCommand.turn_on(where)
-            elif action == "off":
-                cmd = OWNScenarioPlusCommand.turn_off(where)
-            elif action == "increase":
-                cmd = OWNScenarioPlusCommand.increase(where)
-            elif action == "decrease":
-                cmd = OWNScenarioPlusCommand.decrease(where)
-            elif action == "stop":
-                cmd = OWNScenarioPlusCommand.stop(where)
+            try:
+                if action == "on":
+                    cmd = OWNScenarioPlusCommand.turn_on(where)
+                elif action == "off":
+                    cmd = OWNScenarioPlusCommand.turn_off(where)
+                elif action == "increase":
+                    cmd = OWNScenarioPlusCommand.increase(where)
+                elif action == "decrease":
+                    cmd = OWNScenarioPlusCommand.decrease(where)
+                elif action == "stop":
+                    cmd = OWNScenarioPlusCommand.stop(where)
+            except ValueError:
+                cmd = None
         else:
             action_frames = {
                 "on": f"*25*11#0*{where}##",
@@ -328,7 +331,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
 
             cmd = OWNCommand.parse(action_frames[action])
 
-        if cmd is None:
+        if cmd is None or not getattr(cmd, "is_valid", True):
             raise ServiceValidationError(
                 f"Could not build scenario plus command for where '{where}' and action '{action}'",
                 translation_domain=DOMAIN,

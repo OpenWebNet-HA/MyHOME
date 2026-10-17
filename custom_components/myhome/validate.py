@@ -37,12 +37,15 @@ from voluptuous import (
     In,
     Invalid,
     Optional,
+    Range,
     Required,
     Schema,
 )
 
 from .const import (
     BUS_ROUTING,
+    CALIBRATION_MAX_RUN,
+    CALIBRATION_MIN_RUN,
     CONF_ADVANCED_SHUTTER,
     CONF_BUS_INTERFACE,
     CONF_CENTRAL,
@@ -399,7 +402,10 @@ cover_schema = MyHomeDeviceSchema(
             Optional(CONF_ENTITY_NAME): str,
             Optional(CONF_ADVANCED_SHUTTER, default=False): Boolean(),
             Optional("advanced_shutter", default=False): Boolean(),
-            Optional(CONF_TRAVEL_TIME, default=25): Coerce(int),
+            Optional(CONF_TRAVEL_TIME, default=25): All(
+                Coerce(int),
+                Range(min=int(CALIBRATION_MIN_RUN), max=int(CALIBRATION_MAX_RUN)),
+            ),
             Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
             Optional(CONF_DEVICE_MODEL): Coerce(str),
             Optional(CONF_MEMBERS): [All(Coerce(str), PointToPoint())],

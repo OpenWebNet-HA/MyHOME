@@ -85,6 +85,7 @@ builds the :class:`~.decoder_pool.DecoderPool` from the options.
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 from datetime import datetime
 from typing import Any
@@ -785,12 +786,15 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
         Args:
             volume: Target volume in the range 0.0–1.0.
         """
+        if not math.isfinite(volume):
+            return
+
         # Auto-unmute if the user slides the volume up
         if self._attr_is_volume_muted and volume > 0:
             self._attr_is_volume_muted = False
 
         # BTicino hardware uses a 0–31 integer scale
-        hw_volume = int(round(volume * 31.0))
+        hw_volume = max(0, min(31, int(round(volume * 31.0))))
         await self._gateway_handler.send(OWNSoundCommand.set_volume(self._where, hw_volume))
 
         # Gain staging: keep decoder louder than the BTicino analog stage
@@ -798,7 +802,7 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
             pool = self._get_pool()
             if pool:
                 pre_gain_pct = pool.get_pre_gain(self._active_decoder)
-                decoder_volume = min(1.0, volume + pre_gain_pct / 100.0)
+                decoder_volume = max(0.0, min(1.0, volume + pre_gain_pct / 100.0))
                 self._syncing_volume = True
                 try:
                     target_dec = (
@@ -996,7 +1000,7 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
                 if not self._turning_off:
                     self.hass.async_create_task(self._async_handle_turn_off(from_bus=True))
 
-        if message.volume is not None:
+        if message.volume is not None and 0 <= message.volume <= 31:
             self._attr_volume_level = message.volume / 31.0
             # Volume 0 is not a mute: only async_mute_volume() mutes. Music
             # Assistant locks the slider of a muted player and leaves it out of

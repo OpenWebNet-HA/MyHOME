@@ -413,6 +413,35 @@ async def test_volume_controls_and_gain_staging(hass, player, mock_gateway):
         await player.async_mute_volume(False)
         assert player._attr_is_volume_muted is False
 
+        # Out-of-range volume inputs are clamped to hardware 0..31 and decoder 0.0..1.0
+        mock_gateway.send.reset_mock()
+        mock_call.reset_mock()
+        await player.async_set_volume_level(1.5)
+        assert str(mock_gateway.send.call_args.args[0]) == "*#16*1*#1*31##"
+        mock_call.assert_called_once_with(
+            "media_player",
+            "volume_set",
+            {"entity_id": "media_player.squeezelite_1", "volume_level": 1.0},
+        )
+
+        mock_gateway.send.reset_mock()
+        mock_call.reset_mock()
+        await player.async_set_volume_level(-0.5)
+        assert str(mock_gateway.send.call_args.args[0]) == "*#16*1*#1*0##"
+        mock_call.assert_called_once_with(
+            "media_player",
+            "volume_set",
+            {"entity_id": "media_player.squeezelite_1", "volume_level": 0.0},
+        )
+
+        # Non-finite volume inputs (NaN, ±inf) are ignored without raising or sending frames
+        mock_gateway.send.reset_mock()
+        mock_call.reset_mock()
+        for non_finite in (float("nan"), float("inf"), float("-inf")):
+            await player.async_set_volume_level(non_finite)
+        mock_gateway.send.assert_not_called()
+        mock_call.assert_not_called()
+
 
 def test_diagnostics_state_reports_the_zone_without_an_entity_id(player):
     """The diagnostics view of a zone: state, source number, volume, mute, parked - no names."""
@@ -611,6 +640,33 @@ def test_decoder_state_changed_reverse_sync(hass, player, mock_gateway):
     player._async_decoder_state_changed(event)
     assert pytest.approx(player._attr_volume_level, 0.01) == 0.50
 
+    # Clamp reverse-synced volume to [0.0, 1.0]
+    event_high = MagicMock()
+    event_high.data = {
+        "entity_id": "media_player.squeezelite_1",
+        "new_state": State("media_player.squeezelite_1", MediaPlayerState.PLAYING, {"volume_level": 1.50}),
+    }
+    player._async_decoder_state_changed(event_high)
+    assert player._attr_volume_level == 1.0
+
+    event_low = MagicMock()
+    event_low.data = {
+        "entity_id": "media_player.squeezelite_1",
+        "new_state": State("media_player.squeezelite_1", MediaPlayerState.PLAYING, {"volume_level": 0.05}),
+    }
+    player._async_decoder_state_changed(event_low)
+    assert player._attr_volume_level == 0.0
+
+    # Non-finite external decoder volume_level (NaN, ±inf) is ignored
+    for bad_ext_vol in (float("nan"), float("inf"), float("-inf")):
+        event_nan = MagicMock()
+        event_nan.data = {
+            "entity_id": "media_player.squeezelite_1",
+            "new_state": State("media_player.squeezelite_1", MediaPlayerState.PLAYING, {"volume_level": bad_ext_vol}),
+        }
+        player._async_decoder_state_changed(event_nan)
+        assert player._attr_volume_level == 0.0
+
 
 @pytest.mark.asyncio
 async def test_handle_event_bus_messages(hass, player, mock_gateway):
@@ -655,6 +711,13 @@ async def test_handle_event_bus_messages(hass, player, mock_gateway):
     player._attr_is_volume_muted = True
     player.handle_event(msg_vol_0)
     assert player.is_volume_muted is True
+
+    # Out-of-range bus volume reports outside 0..31 are ignored
+    for bad_vol in (32, 100, -1):
+        msg_bad_vol = MagicMock(spec=OWNSoundEvent, is_source_event=False, where="1", is_on=False, is_off=False, volume=bad_vol)
+        player.handle_event(msg_bad_vol)
+        assert player._attr_volume_level == 0.0
+        assert player.is_volume_muted is True
 
     msg_vol_15 = MagicMock(spec=OWNSoundEvent, is_source_event=False, where="1", is_on=False, is_off=False, volume=15)
     player.handle_event(msg_vol_15)

@@ -26,7 +26,7 @@ from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PORT
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
-from OWNd.message import OWNMessage
+from OWNd.message import OWNMessage, OWNSignaling
 
 from .bus_monitor import BusFrame, BusMonitor
 from .const import (
@@ -37,6 +37,7 @@ from .const import (
     INTEGRATION_VERSION,
 )
 from .data import get_runtime_data
+from .services import _WHO4_DIMENSION_22
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -390,10 +391,25 @@ async def ws_bus_monitor_send(
         )
         return
 
+    if _WHO4_DIMENSION_22.match(frame_str):
+        connection.send_error(
+            msg["id"],
+            ERR_INVALID_FORMAT,
+            "WHO 4 dimension 22 is a split-unit IR command and is blocked for safety",
+        )
+        return
+
     try:
         parsed = OWNMessage.parse(frame_str)
         if parsed is None:
             parsed = OWNMessage(frame_str)
+        if isinstance(parsed, OWNSignaling) or not getattr(parsed, "is_valid", False):
+            connection.send_error(
+                msg["id"],
+                ERR_INVALID_FORMAT,
+                f"Invalid OpenWebNet frame format: {frame_str}",
+            )
+            return
         await gateway.send(parsed)
     except Exception as ex:  # pylint: disable=broad-except
         _LOGGER.error("Failed to transmit frame %s via WebSocket: %s", frame_str, ex)

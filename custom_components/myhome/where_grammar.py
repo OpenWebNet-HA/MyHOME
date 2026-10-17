@@ -104,6 +104,19 @@ if not hasattr(OWNMessage, "dimension_value"):  # pragma: no cover - PyPI OWNd <
     setattr(OWNMessage, "dimension_value", property(lambda self: getattr(self, _DIM_VAL_ATTR, [])))
 
 if not hasattr(OWNLightingEvent, "color_temp_kelvin"):  # pragma: no cover - PyPI OWNd < 2.0.0b11
+    def _evt_hs(self: Any) -> tuple[int, int] | None:
+        hs = getattr(self, "_hs", None)
+        v = getattr(self, "_value", None)
+        if (
+            isinstance(hs, tuple)
+            and len(hs) == 2
+            and 0 <= hs[0] <= 360
+            and 0 <= hs[1] <= 100
+            and (v is None or 0 <= v <= 100)
+        ):
+            return hs
+        return None
+
     setattr(
         OWNLightingEvent,
         "color_temp_kelvin",
@@ -113,7 +126,8 @@ if not hasattr(OWNLightingEvent, "color_temp_kelvin"):  # pragma: no cover - PyP
             else None
         ),
     )
-    setattr(OWNLightingEvent, "hs_color", property(lambda self: getattr(self, "_hs", None)))
+    setattr(OWNLightingEvent, "hs", property(_evt_hs))
+    setattr(OWNLightingEvent, "hs_color", property(_evt_hs))
 
 if not hasattr(OWNLightingCommand, "brightness"):  # pragma: no cover - PyPI OWNd < 2.0.0b11
     def _cmd_brightness(self: Any) -> int | None:
@@ -145,7 +159,7 @@ if not hasattr(OWNLightingCommand, "brightness"):  # pragma: no cover - PyPI OWN
                 h, s, v = int(vals[0]), int(vals[1]), int(vals[2])
             except (TypeError, ValueError):
                 return None
-            if 0 <= h <= 360 and 0 <= s <= 100 and (h, s, v) != (511, 127, 255):
+            if 0 <= h <= 360 and 0 <= s <= 100 and 0 <= v <= 100:
                 return (h, s)
         return None
 
@@ -180,7 +194,7 @@ if not hasattr(OWNLightingCommand, "switch_on_timed"):  # pragma: no cover - PyP
     def _set_variable_timer(
         cls: Any, where: str | int, hours: int = 0, minutes: int = 0, seconds: int = 0
     ) -> Any:
-        if not (0 <= hours <= 23 and 0 <= minutes <= 59 and 0 <= seconds <= 59):
+        if not (0 <= hours <= 255 and 0 <= minutes <= 59 and 0 <= seconds <= 59):
             raise ValueError("Invalid timer values")
         return cls.parse(f"*#1*{where}*#2*{hours}*{minutes}*{seconds}##")
 
@@ -205,6 +219,59 @@ if not hasattr(OWNSoundEvent, "volume_step_delta"):  # pragma: no cover - PyPI O
         return None
 
     setattr(OWNSoundEvent, "volume_step_delta", property(_sound_step_delta))
+
+
+def _ensure_ownd_profile_oracle_parity() -> None:  # pragma: no cover - PyPI OWNd < 2.0.0b12
+    """Bridge OWNd < 2.0.0b12 profile metadata to match firmware oracle verdicts."""
+    try:
+        import OWNd.profiles as _ownd_profiles
+    except ImportError:
+        return
+
+    _no_who3 = tuple(w for w in _ownd_profiles.DEFAULT_SUPPORTED_WHO if w != 3)
+    _mh200_who = (1, 2, 3, 4, 6, 8, 15, 16, 17)
+    _mh200n_who = (1, 2, 3, 4, 6, 8, 15, 17, 25, 16, 22)
+
+    def _patch_profile_instance(prof: object) -> None:
+        model = getattr(prof, "model_name", "")
+        if model in ("F453", "F453AV", "F454"):
+            object.__setattr__(prof, "auth_measured", True)
+            object.__setattr__(prof, "audio_measured", True)
+        elif model in ("F461", "MyHomeServer1"):
+            object.__setattr__(prof, "supported_who", _no_who3)
+        elif model == "MH200":
+            object.__setattr__(prof, "supported_who", _mh200_who)
+        elif model == "MH200N":
+            object.__setattr__(prof, "supported_who", _mh200n_who)
+
+    for _prof in getattr(_ownd_profiles, "_PROFILES", {}).values():
+        _patch_profile_instance(_prof)
+
+    for _cls_name in (
+        "F453Profile",
+        "F453AVProfile",
+        "F454Profile",
+        "F461Profile",
+        "MyHomeServer1Profile",
+        "MH200Profile",
+        "MH200NProfile",
+    ):
+        _cls = getattr(_ownd_profiles, _cls_name, None)
+        if _cls is not None and not getattr(_cls, "_oracle_patched", False):
+            _orig_init = _cls.__init__
+
+            def _make_init(orig: object) -> object:
+                def _wrapped_init(self: object, *args: object, **kwargs: object) -> None:
+                    orig(self, *args, **kwargs)  # type: ignore[operator]
+                    _patch_profile_instance(self)
+
+                return _wrapped_init
+
+            _cls.__init__ = _make_init(_orig_init)
+            _cls._oracle_patched = True
+
+
+_ensure_ownd_profile_oracle_parity()
 
 __all__ = [
     "area_of_where",

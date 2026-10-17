@@ -189,11 +189,13 @@ class MyHOMELightGroup(MyHOMEEntity, LightEntity):
                 self._attr_color_temp_kelvin = kelvin
         elif dim == 12:
             hs_val = getattr(msg, "hs_color", getattr(msg, "hs", None))
+            raw_v = getattr(msg, "value", None)
             if (
                 isinstance(hs_val, tuple)
                 and len(hs_val) == 2
                 and 0 <= hs_val[0] <= 360
                 and 0 <= hs_val[1] <= 100
+                and (not isinstance(raw_v, (int, float)) or 0 <= raw_v <= 100)
             ):
                 self._attr_hs_color = hs_val
 

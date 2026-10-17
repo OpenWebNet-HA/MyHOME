@@ -561,6 +561,18 @@ async def test_send_scenario_plus_command_service(hass: HomeAssistant, attach_ga
         assert exc_parse.value.translation_key == "scenario_plus_command_invalid"
         assert exc_parse.value.translation_placeholders == {"where": "11", "action": "on"}
 
+    # Wildcard where rejected by OWNScenarioPlusCommand builder with ValueError
+    with pytest.raises(ServiceValidationError) as exc_wild:
+        await hass.services.async_call(
+            DOMAIN,
+            "send_scenario_plus_command",
+            {"gateway": gw_mac, "where": "11*1", "action": "on"},
+            blocking=True,
+        )
+    assert exc_wild.value.translation_key == "scenario_plus_command_invalid"
+    assert exc_wild.value.translation_placeholders == {"where": "11*1", "action": "on"}
+
+
 
 async def test_send_scenario_plus_command_no_gateways(hass: HomeAssistant) -> None:
     """Test send_scenario_plus_command raises ServiceValidationError when no gateways are configured."""

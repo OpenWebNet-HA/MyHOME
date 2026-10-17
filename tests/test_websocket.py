@@ -307,6 +307,36 @@ async def test_ws_send_frame(hass: HomeAssistant, mock_ws_connection, attach_gat
             24, {"success": True, "frame": "*999*999*999##"}
         )
 
+    # 5. Block WHO 4 dimension 22 split-unit IR frame
+    mock_ws_connection.send_error.reset_mock()
+    ws_bus_monitor_send(
+        hass,
+        mock_ws_connection,
+        {"id": 25, "type": "myhome/bus_monitor/send", "frame": "*#4*1*22##"},
+    )
+    await hass.async_block_till_done()
+    mock_ws_connection.send_error.assert_called_once_with(
+        25,
+        websocket_api.ERR_INVALID_FORMAT,
+        "WHO 4 dimension 22 is a split-unit IR command and is blocked for safety",
+    )
+
+    # 6. Block signaling and syntactically invalid frames that start with * and end with ##
+    for msg_id, bad_frame in ((26, "*#*1##"), (27, "*1*2##"), (28, "*foo*bar##")):
+        mock_ws_connection.send_error.reset_mock()
+        ws_bus_monitor_send(
+            hass,
+            mock_ws_connection,
+            {"id": msg_id, "type": "myhome/bus_monitor/send", "frame": bad_frame},
+        )
+        await hass.async_block_till_done()
+        mock_ws_connection.send_error.assert_called_once_with(
+            msg_id,
+            websocket_api.ERR_INVALID_FORMAT,
+            f"Invalid OpenWebNet frame format: {bad_frame}",
+        )
+
+
 
 async def test_ws_send_no_gateway(hass: HomeAssistant, mock_ws_connection):
     """Test send returns error when no gateway is configured."""
