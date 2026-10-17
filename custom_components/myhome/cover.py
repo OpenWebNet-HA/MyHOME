@@ -12,7 +12,6 @@ from homeassistant.components.cover import (
     ATTR_POSITION,
     CoverDeviceClass,
     CoverEntity,
-    CoverEntityFeature,
 )
 from homeassistant.components.cover import (
     DOMAIN as PLATFORM,
@@ -79,6 +78,7 @@ from .cover_motion import (
     is_in_echo_window,
     travel_for,
 )
+from .cover_strategies import CoverKinematicsStrategy, resolve_cover_strategy
 from .discovery import Address, DeviceContext, PlatformDiscovery, default_known_keys
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
@@ -123,6 +123,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             model=cfg.get(CONF_DEVICE_MODEL, "Shutter / Cover"),
             gateway=runtime.gateway,
             travel_time=int(cfg.get(CONF_TRAVEL_TIME, DEFAULT_TRAVEL_TIME)),
+            strategy_name=cfg.get("strategy"),
+            tilt_time=cfg.get("tilt_time"),
+            pulse_duration=cfg.get("pulse_duration"),
             **kwargs,
         )
         family.add(cover)
@@ -201,6 +204,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         travel_time: int = DEFAULT_TRAVEL_TIME,
         travel_time_source: str = "default",
         calibration: dict | None = None,  # type: ignore
+        strategy_name: str | None = None,
+        tilt_time: float | None = None,
+        pulse_duration: float | None = None,
     ):
         super().__init__(
             hass=hass,
@@ -244,13 +250,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._last_run: dict[str, Any] = {}  # the last completed run as measured, see _freeze_position
         self._motion_started_at: str | None = None
 
-        # Both advanced and standard covers support SET_POSITION (standard via travel time estimation)
-        self._attr_supported_features = (
-            CoverEntityFeature.OPEN
-            | CoverEntityFeature.CLOSE
-            | CoverEntityFeature.STOP
-            | CoverEntityFeature.SET_POSITION
+        self._strategy: CoverKinematicsStrategy = resolve_cover_strategy(
+            advanced=bool(self._advanced),
+            strategy_name=strategy_name,
+            tilt_time=tilt_time,
+            pulse_duration=pulse_duration,
         )
+        # Both advanced and standard covers support SET_POSITION (standard via travel time estimation)
+        self._attr_supported_features = self._strategy.supported_features
         self._gateway_handler = gateway
 
         self._attr_extra_state_attributes = {
@@ -282,6 +289,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._echo_until: float | None = None
         self._motor_started: asyncio.Event = asyncio.Event()
         self._run_generation: int = 0
+
+    @property
+    def strategy(self) -> CoverKinematicsStrategy:
+        """Return the active CoverKinematicsStrategy for this cover."""
+        return self._strategy
 
     @property
     def calibration_hub(self) -> CoverCalibrationHub:
@@ -1199,6 +1211,7 @@ __all__ = [
     "CalibrationInterrupted",
     "CoverCalibrationHub",
     "CoverFamily",
+    "CoverKinematicsStrategy",
     "CoverScope",
     "ECHO_WINDOW",
     "MOTOR_START_DELAY",
@@ -1218,5 +1231,6 @@ __all__ = [
     "get_calibration_hub",
     "get_last_calibration_trace",
     "is_in_echo_window",
+    "resolve_cover_strategy",
     "travel_for",
 ]
