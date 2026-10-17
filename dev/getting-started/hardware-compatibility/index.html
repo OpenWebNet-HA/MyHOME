@@ -2123,7 +2123,7 @@
 <td><strong>F452 / F453AV</strong></td>
 <td>OpenWebNet</td>
 <td>1 worker</td>
-<td>50 ms</td>
+<td>150 ms</td>
 <td>✅ Port 49153</td>
 <td>Audio/video &amp; web server gateway</td>
 </tr>
@@ -2226,6 +2226,7 @@
 <hr />
 <h2 id="gateway-startup-discovery-capabilities">Gateway Startup Discovery Capabilities<a class="headerlink" href="#gateway-startup-discovery-capabilities" title="Permanent link">&para;</a></h2>
 <p>During startup initial discovery, status queries are gated strictly by gateway profile capabilities to avoid transmitting unsupported commands:</p>
+<!-- GATEWAY_DISCOVERY_START -->
 <table>
 <thead>
 <tr>
@@ -2248,7 +2249,17 @@
 <tr>
 <td style="text-align: left;"><strong>F454</strong></td>
 <td style="text-align: left;">WHO 1, 2, 4, 16, 18</td>
-<td style="text-align: left;">Full lighting, cover, climate, sound, and energy meter 51 queries. Alarm query omitted.</td>
+<td style="text-align: left;">Full lighting, cover, climate, sound (<code>bt_difson</code> firmware-verified), and energy meter 51 queries. Alarm query omitted.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>F452 / F453 / F453AV</strong></td>
+<td style="text-align: left;">WHO 1, 2, 4, 16, 18</td>
+<td style="text-align: left;">Lighting, cover, climate, sound (<code>bt_difson</code> firmware-verified on F453/F453AV), and energy meter 51 queries. Alarm query omitted.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>F461</strong></td>
+<td style="text-align: left;">WHO 1, 2, 4, 16, 18</td>
+<td style="text-align: left;">Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>F455</strong></td>
@@ -2268,10 +2279,11 @@
 <tr>
 <td style="text-align: left;"><strong>MH200 / MH200N</strong></td>
 <td style="text-align: left;">WHO 1, 2, 4, 16</td>
-<td style="text-align: left;">Lighting, cover, climate, and sound queries (hardware verified on both). Alarm and energy queries omitted.</td>
+<td style="text-align: left;">Lighting, cover, climate, and sound queries (<code>bt_difson</code> hardware and firmware-verified on both). Alarm and energy queries omitted.</td>
 </tr>
 </tbody>
 </table>
+<!-- GATEWAY_DISCOVERY_END -->
 
 
 
