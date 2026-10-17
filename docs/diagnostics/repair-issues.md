@@ -329,3 +329,19 @@ Keep the audio matrix on one gateway until #426 is fixed, and remove the sound z
 
 ### How it clears
 Automatically, when only one gateway has sound zones.
+
+---
+
+## Legacy YAML Configuration Imported
+
+**Repair Key**: `legacy_yaml_imported`  
+**Severity**: `WARNING`  
+**Auto-Resolving**: Informational  
+**Fixable via UI**: No
+
+### What it means
+When the integration validates a legacy `myhome.yaml` file for a gateway for the first time, it automatically imports and persists the validated platform device definitions into `ConfigEntry.options["migrated_yaml_platforms"]`. This ensures your configured devices, custom travel times, and feature flags continue to load cleanly even after `myhome.yaml` is removed from disk.
+
+### How to resolve
+This notice is informational. Once you have verified your entities in Home Assistant, you can safely archive or remove `myhome.yaml` and dismiss the repair notice.
+

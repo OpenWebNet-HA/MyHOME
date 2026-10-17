@@ -162,28 +162,73 @@ async def test_light_async_probe_dimmer_capability(hass: HomeAssistant) -> None:
         await dimmer_entity.async_probe_dimmer_capability()
         mock_send.assert_not_called()
 
+    # Post-sweep recheck: if promoted to dimmable during the sweep, skip probe
+    promoted_entity = MyHOMELight(
+        hass=hass,
+        name="Promoted Light 27",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="1-27",
+        who="1",
+        where="27",
+        interface=None,
+        dimmable=False,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=gw,
+        probe_dimmer_on_add=True,
+    )
+    promoted_entity.entity_id = "light.promoted_light_27"
+    promoted_entity.platform = MagicMock()
+    promoted_entity._poll_on_add = False
 
-async def test_legacy_yaml_migration_and_fallback(tmp_path) -> None:
+    gw._begin_sweep()
+    with patch.object(gw, "send_status_request", new_callable=AsyncMock) as mock_send:
+        with patch.object(
+            promoted_entity, "async_get_last_state", new_callable=AsyncMock, return_value=None
+        ):
+            await promoted_entity.async_added_to_hass()
+        await asyncio.sleep(0)
+        # Promote while sweep is still active
+        promoted_entity._lock_features = True
+        gw._end_sweep()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        mock_send.assert_not_called()
+
+    for cb in list(getattr(promoted_entity, "_on_remove", None) or []):
+        cb()
+
+
+async def test_legacy_yaml_migration_and_fallback(hass: HomeAssistant, tmp_path) -> None:
     """Validated myhome.yaml platforms are migrated to entry.options once and used as fallback."""
-    hass = MagicMock(spec=HomeAssistant)
-    hass.config = MagicMock()
-    hass.config.path = MagicMock(side_effect=lambda p: str(tmp_path / p))
-    hass.async_add_executor_job = AsyncMock(side_effect=lambda f, *args: f(*args))
-    hass.config_entries = MagicMock()
+    from homeassistant.helpers import issue_registry as ir
+
+    from custom_components.myhome.const import DOMAIN
+    from custom_components.myhome.repairs import ISSUE_LEGACY_YAML_IMPORTED
+
+    mock_hass = MagicMock(spec=HomeAssistant)
+    mock_hass.data = hass.data
+    mock_hass.bus = hass.bus
+    mock_hass.config = MagicMock()
+    mock_hass.config.path = MagicMock(side_effect=lambda p: str(tmp_path / p))
+    mock_hass.async_add_executor_job = AsyncMock(side_effect=lambda f, *args: f(*args))
+    mock_hass.config_entries = MagicMock()
 
     entry = MagicMock(spec=ConfigEntry)
     entry.entry_id = "entry_1"
     entry.data = {CONF_MAC: "00:03:50:81:22:33"}
     entry.options = {}
 
-    hass.config_entries.async_entries = MagicMock(return_value=[entry])
-    hass.config_entries.async_get_entry = MagicMock(return_value=entry)
+    mock_hass.config_entries.async_entries = MagicMock(return_value=[entry])
+    mock_hass.config_entries.async_get_entry = MagicMock(return_value=entry)
 
     def _update_entry(target_entry, *, options=None, **kwargs):
         if options is not None:
             target_entry.options = options
 
-    hass.config_entries.async_update_entry = MagicMock(side_effect=_update_entry)
+    mock_hass.config_entries.async_update_entry = MagicMock(side_effect=_update_entry)
 
     yaml_file = tmp_path / "myhome.yaml"
     yaml_file.write_text(
@@ -192,16 +237,18 @@ async def test_legacy_yaml_migration_and_fallback(tmp_path) -> None:
     )
 
     configured_platforms: dict[str, dict[str, dict]] = {"light": {}, "climate": {}}
-    await load_legacy_myhome_yaml(hass, entry, configured_platforms)
+    await load_legacy_myhome_yaml(mock_hass, entry, configured_platforms)
 
     assert "14" in configured_platforms["light"]
     assert CONF_MIGRATED_YAML_PLATFORMS in entry.options
-    assert hass.config_entries.async_update_entry.call_count == 1
+    assert mock_hass.config_entries.async_update_entry.call_count == 1
+    issue_reg = ir.async_get(hass)
+    assert issue_reg.async_get_issue(DOMAIN, f"{ISSUE_LEGACY_YAML_IMPORTED}_entry_1") is not None
 
     # Second call does not re-migrate when already present in entry.options
     assert (
         migrate_legacy_yaml_to_entry_options(
-            hass, entry, entry.options[CONF_MIGRATED_YAML_PLATFORMS]
+            mock_hass, entry, entry.options[CONF_MIGRATED_YAML_PLATFORMS]
         )
         is False
     )
@@ -210,10 +257,10 @@ async def test_legacy_yaml_migration_and_fallback(tmp_path) -> None:
     unregistered = MagicMock(spec=ConfigEntry)
     unregistered.entry_id = "missing"
     unregistered.options = {}
-    hass.config_entries.async_get_entry.return_value = None
+    mock_hass.config_entries.async_get_entry.return_value = None
     assert (
         migrate_legacy_yaml_to_entry_options(
-            hass, unregistered, {"light": {"14": {"where": "14"}}}
+            mock_hass, unregistered, {"light": {"14": {"where": "14"}}}
         )
         is False
     )
@@ -225,8 +272,130 @@ async def test_legacy_yaml_migration_and_fallback(tmp_path) -> None:
         "climate": {},
     }
     with patch("os.path.isfile", return_value=False):
-        await load_legacy_myhome_yaml(hass, entry, configured_platforms_after_removal)
+        await load_legacy_myhome_yaml(mock_hass, entry, configured_platforms_after_removal)
 
     assert "14" in configured_platforms_after_removal["light"]
     assert configured_platforms_after_removal["light"]["14"]["name"] == "Hall Light"
     assert CONF_PLATFORMS != CONF_MIGRATED_YAML_PLATFORMS
+
+
+async def test_f461_live_2026_10_18_yaml_migration_and_sweep_probe(
+    hass: HomeAssistant, tmp_path
+) -> None:
+    """Verify F461 live trace plant myhome.yaml migration and sweep-gated *#1*06*1## dimmer probe (#733, #742)."""
+    import json
+    from pathlib import Path
+
+    from custom_components.myhome.light import MyHOMELight
+
+    trace_path = (
+        Path(__file__).parent
+        / "fixtures"
+        / "traces"
+        / "f461_live_2026-10-18"
+        / "myhome_trace_F461_live_2026-10-18.json"
+    )
+    trace = json.loads(trace_path.read_text(encoding="utf-8"))
+    f461_mac = trace["gateway"]["mac"]
+
+    mock_hass = MagicMock(spec=HomeAssistant)
+    mock_hass.data = hass.data
+    mock_hass.bus = hass.bus
+    mock_hass.config = MagicMock()
+    mock_hass.config.path = MagicMock(side_effect=lambda p: str(tmp_path / p))
+    mock_hass.async_add_executor_job = AsyncMock(side_effect=lambda f, *args: f(*args))
+    mock_hass.config_entries = MagicMock()
+
+    entry = MagicMock(spec=ConfigEntry)
+    entry.entry_id = "entry_f461"
+    entry.data = {CONF_MAC: f461_mac}
+    entry.options = {}
+    mock_hass.config_entries.async_entries = MagicMock(return_value=[entry])
+    mock_hass.config_entries.async_get_entry = MagicMock(return_value=entry)
+
+    def _update_entry(target_entry, *, options=None, **kwargs):
+        if options is not None:
+            target_entry.options = options
+
+    mock_hass.config_entries.async_update_entry = MagicMock(side_effect=_update_entry)
+
+    yaml_file = tmp_path / "myhome.yaml"
+    yaml_file.write_text(
+        f"{f461_mac}:\n"
+        "  light:\n"
+        "    office_light:\n"
+        "      where: '06'\n"
+        "      name: 'Office Light'\n"
+        "      model: 'BT-F411/4'\n"
+        "    bath_light:\n"
+        "      where: '07'\n"
+        "      name: 'Bath Light'\n"
+        "      model: 'BT-F411/4'\n"
+        "  cover:\n"
+        "    shutter_05:\n"
+        "      where: '05'\n"
+        "      name: 'Shutter 05'\n"
+        "      travel_time: 5\n"
+        "  climate:\n"
+        "    thermo_office:\n"
+        "      zone: '2'\n"
+        "      name: 'Thermo Office'\n"
+        "      heat: true\n"
+        "      cool: true\n"
+        "      standalone: true\n",
+        encoding="utf-8",
+    )
+
+    configured_platforms: dict[str, dict[str, dict]] = {
+        "light": {},
+        "cover": {},
+        "climate": {},
+    }
+    await load_legacy_myhome_yaml(mock_hass, entry, configured_platforms)
+    assert "06" in configured_platforms["light"]
+    assert "07" in configured_platforms["light"]
+    assert "05" in configured_platforms["cover"]
+    assert "2" in configured_platforms["climate"]
+
+    # Verify sweep-gated *#1*06*1## probe for F461 light 06 discovered during startup sweep
+    gw = _make_gateway(hass)
+    gw._initial_discovery_done.set()
+    gw._begin_sweep()
+    light_06 = MyHOMELight(
+        hass=hass,
+        name="Office Light",
+        entity_name="Office Light",
+        icon=None,
+        icon_on=None,
+        device_id="1-06",
+        who="1",
+        where="06",
+        interface=None,
+        dimmable=False,
+        manufacturer="BTicino",
+        model="BT-F411/4",
+        gateway=gw,
+        probe_dimmer_on_add=True,
+    )
+    light_06.entity_id = "light.office_light"
+    light_06.platform = MagicMock()
+    light_06._poll_on_add = False
+
+    with patch.object(gw, "send_status_request", new_callable=AsyncMock) as mock_send:
+        with patch.object(
+            light_06, "async_get_last_state", new_callable=AsyncMock, return_value=None
+        ):
+            await light_06.async_added_to_hass()
+        await asyncio.sleep(0)
+        # While startup sweep (*#1*0##, *#2*0##) is active, *#1*06*1## has not been sent yet
+        mock_send.assert_not_called()
+        gw._end_sweep()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        mock_send.assert_awaited_once()
+        assert str(mock_send.call_args[0][0]) == "*#1*06*1##"
+
+    for cb in list(getattr(light_06, "_on_remove", None) or []):
+        cb()
+
+

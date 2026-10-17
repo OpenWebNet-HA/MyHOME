@@ -144,6 +144,7 @@ async def async_setup_entry(
         # never learns another mode from the bus (#288 / #307).
         lock_features = cfg.get(CONF_LOCK_FEATURES, False)
         dimmable = cfg.get(CONF_DIMMABLE, False)
+        probe_dimmer_on_add = False
         if ctx.source == "bus" and not dimmable and not lock_features:
             # Auto-detect a dimmer from the first frame that carries a level or no-load status
             dimmable = (
@@ -151,7 +152,15 @@ async def async_setup_entry(
                 or ctx.message.brightness_preset is not None
                 or getattr(ctx.message, "unknown_state", None) == 19
             )
-        kwargs = {"lock_features": lock_features}
+            if not dimmable and getattr(ctx.message, "is_on", None) is True:
+                probe_dimmer_on_add = (
+                    getattr(gateway, "sweep_active", False) is True
+                    or getattr(gateway, "initial_discovery_pending", False) is True
+                )
+        kwargs: dict[str, Any] = {
+            "lock_features": lock_features,
+            "probe_dimmer_on_add": probe_dimmer_on_add,
+        }
         if ctx.source != "bus":
             kwargs |= {
                 "color_temp": cfg.get(CONF_COLOR_TEMP, False),
@@ -371,6 +380,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         color_temp: bool = False,
         rgb: bool = False,
         lock_features: bool = False,
+        probe_dimmer_on_add: bool = False,
     ) -> None:
         super().__init__(
             hass=hass,
@@ -389,6 +399,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._full_where = (
             f"{self._where}#4#{self._interface}" if self._interface is not None else self._where
         )
+        self._probe_dimmer_on_add = probe_dimmer_on_add
 
         # With lock_features the configuration is authoritative: the light
         # supports exactly the modes declared (rgb / color_temp / dimmable) and
@@ -627,6 +638,23 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 OWNLightingCommand.status(self._full_where)
             )
 
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass."""
+        await super().async_added_to_hass()
+        if self._probe_dimmer_on_add:
+            self._probe_dimmer_on_add = False
+            target_hass = self.hass or self._hass
+            if target_hass is not None:
+                probe_task = target_hass.async_create_background_task(
+                    self.async_probe_dimmer_capability(),
+                    name=f"myhome_{self.entity_id}_probe_dimmer",
+                )
+
+                def _cancel_probe() -> None:
+                    probe_task.cancel()
+
+                self.async_on_remove(_cancel_probe)
+
     async def async_probe_dimmer_capability(self) -> None:
         """Query Dimension 1 (*#1*WHERE*1##) after any active sweep to detect ON dimmers (#733)."""
         if self._lock_features or (
@@ -635,9 +663,16 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             return
         if (
             hasattr(self._gateway_handler, "wait_for_initial_discovery")
-            and getattr(self._gateway_handler, "sweep_active", False) is True
+            and (
+                getattr(self._gateway_handler, "sweep_active", False) is True
+                or getattr(self._gateway_handler, "initial_discovery_pending", False) is True
+            )
         ):
             await self._gateway_handler.wait_for_initial_discovery()
+            if self._lock_features or (
+                set(self._attr_supported_color_modes or ()) - {ColorMode.ONOFF, ColorMode.UNKNOWN}
+            ):
+                return
         await self._gateway_handler.send_status_request(
             OWNLightingCommand.get_brightness(self._full_where)
         )

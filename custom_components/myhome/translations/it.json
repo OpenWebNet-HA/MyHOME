@@ -397,6 +397,10 @@
     "primary_gateway_missing": {
       "title": "Gateway principale di {gateway} mancante",
       "description": "{gateway} è configurato come gateway secondario o standby per {primary}, ma tale gateway non è più configurato come gateway principale condiviso. {gateway} sospende il rilevamento fino alla riconfigurazione."
+    },
+    "legacy_yaml_imported": {
+      "title": "Configurazione myhome.yaml importata per {gateway}",
+      "description": "Le configurazioni dei dispositivi da `myhome.yaml` per {gateway} sono state importate e salvate nelle opzioni della voce di configurazione di Home Assistant."
     }
   },
   "exceptions": {
