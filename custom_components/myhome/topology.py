@@ -496,9 +496,16 @@ class GatewayTopologyMixin:
     _failover_active: bool
     _setup_at: float
     device_health: DeviceHealth
-    mac: str
-    name: str
-    log_id: str
+
+    if TYPE_CHECKING:
+        @property
+        def mac(self) -> str: ...
+
+        @property
+        def name(self) -> str: ...
+
+        @property
+        def log_id(self) -> str: ...
 
     def _profile_supports_who(self, who: int) -> bool:
         raise NotImplementedError

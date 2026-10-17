@@ -82,6 +82,14 @@ def _get_serial_ports() -> list:  # type: ignore
 class ConfigFlowDiscoveryMixin:
     """User, serial, custom IP, connection test, port, password, and reauth config flow steps."""
 
+    hass: typing.Any
+    gateway_handler: typing.Any
+    discovered_gateways: dict[str, dict[str, typing.Any]] | None
+    _existing_entry: typing.Any
+    _pending_entry: tuple[str, dict[str, typing.Any], dict[str, typing.Any]] | None
+    _custom_address: str
+    _custom_port: int
+
     async def async_step_user(self, user_input=None):  # type: ignore
         """Handle a flow initialized by the user."""
         from . import config_flow as _cf
@@ -95,11 +103,11 @@ class ConfigFlowDiscoveryMixin:
 
         if (
             user_input is not None
-            and self.discovered_gateways is not None  # type: ignore[attr-defined]
-            and user_input["serial"] in self.discovered_gateways  # type: ignore[attr-defined]
+            and self.discovered_gateways is not None
+            and user_input["serial"] in self.discovered_gateways
         ):
             self.gateway_handler = await _cf.OWNGateway.build_from_discovery_info(
-                self.discovered_gateways[user_input["serial"]]  # type: ignore[attr-defined]
+                self.discovered_gateways[user_input["serial"]]
             )
             assert self.gateway_handler is not None
             await self.async_set_unique_id(  # type: ignore[attr-defined]
@@ -116,7 +124,7 @@ class ConfigFlowDiscoveryMixin:
         except asyncio.TimeoutError:
             return self.async_abort(reason="discovery_timeout")  # type: ignore[attr-defined]
 
-        self.discovered_gateways = {  # type: ignore[attr-defined]
+        self.discovered_gateways = {
             gateway["serialNumber"]: gateway for gateway in local_gateways
         }
 
@@ -180,7 +188,7 @@ class ConfigFlowDiscoveryMixin:
 
         available_ports = {}
         try:
-            ports = await self.hass.async_add_executor_job(_cf._get_serial_ports)  # type: ignore[attr-defined]
+            ports = await self.hass.async_add_executor_job(_cf._get_serial_ports)
             for p in ports:
                 desc = getattr(p, "description", "")
                 device = getattr(p, "device", str(p))
@@ -382,11 +390,11 @@ class ConfigFlowDiscoveryMixin:
         """Perform reauth upon an authentication error."""
         from . import config_flow as _cf
 
-        entry = self.hass.config_entries.async_get_entry(  # type: ignore[attr-defined]
+        entry = self.hass.config_entries.async_get_entry(
             self.context.get("entry_id")  # type: ignore[attr-defined]
         )
         if entry is None and config and CONF_MAC in config:
-            entry = self.hass.config_entries.async_entry_for_domain_unique_id(  # type: ignore[attr-defined]
+            entry = self.hass.config_entries.async_entry_for_domain_unique_id(
                 DOMAIN, config[CONF_MAC]
             )
         self._existing_entry = entry
@@ -397,7 +405,7 @@ class ConfigFlowDiscoveryMixin:
 
         if self._existing_entry:
             self.gateway_handler = _cf.MyHOMEGatewayHandler(
-                hass=self.hass, config_entry=self._existing_entry  # type: ignore[attr-defined]
+                hass=self.hass, config_entry=self._existing_entry
             ).gateway
         elif config:
             self.gateway_handler = _cf.OWNGateway(config)
@@ -407,13 +415,13 @@ class ConfigFlowDiscoveryMixin:
         )
         self.context.update(  # type: ignore[attr-defined]
             {
-                CONF_HOST: self.gateway_handler.host,  # type: ignore[union-attr]
+                CONF_HOST: self.gateway_handler.host,
                 CONF_NAME: model_val,
-                CONF_MAC: self.gateway_handler.serial,  # type: ignore[union-attr]
+                CONF_MAC: self.gateway_handler.serial,
                 "title_placeholders": {
-                    CONF_HOST: self.gateway_handler.host,  # type: ignore
-                    CONF_NAME: model_val,  # type: ignore
-                    CONF_MAC: self.gateway_handler.serial,  # type: ignore
+                    CONF_HOST: self.gateway_handler.host,
+                    CONF_NAME: model_val,
+                    CONF_MAC: self.gateway_handler.serial,
                 },
             }
         )
@@ -424,14 +432,14 @@ class ConfigFlowDiscoveryMixin:
 
     async def async_step_test_connection(  # pylint: disable=unused-argument
         self, user_input: typing.Any = None, errors: typing.Any = None
-    ) -> typing.Any:  # type: ignore
+    ) -> typing.Any:
         """Testing connection to the OWN Gateway."""
         from . import config_flow as _cf
 
         if errors is None:
             errors = {}
 
-        gateway = self.gateway_handler  # type: ignore[attr-defined]
+        gateway = self.gateway_handler
         assert gateway is not None
 
         self.context.update(  # type: ignore[attr-defined]
@@ -490,11 +498,11 @@ class ConfigFlowDiscoveryMixin:
             test_result = await _run_test_connection()
 
         if test_result.get("Success"):
-            if self._existing_entry:  # type: ignore[attr-defined]
-                new_data = dict(self._existing_entry.data)  # type: ignore[attr-defined]
+            if self._existing_entry:
+                new_data = dict(self._existing_entry.data)
                 new_data[CONF_PASSWORD] = gateway.password
                 return self.async_update_reload_and_abort(  # type: ignore[attr-defined]
-                    self._existing_entry,  # type: ignore[attr-defined]
+                    self._existing_entry,
                     data=new_data,
                     reason="reauth_successful",
                 )
@@ -520,7 +528,7 @@ class ConfigFlowDiscoveryMixin:
             }
 
             if self._bus_primaries():  # type: ignore[attr-defined]
-                self._pending_entry = (  # type: ignore[attr-defined]
+                self._pending_entry = (
                     f"{gateway.model_name} Gateway",
                     _new_entry_data,
                     _new_entry_options,
@@ -561,7 +569,7 @@ class ConfigFlowDiscoveryMixin:
 
         if user_input is not None:
             if 1 <= int(user_input[CONF_PORT]) <= 65535:
-                self.gateway_handler.port = int(user_input[CONF_PORT])  # type: ignore
+                self.gateway_handler.port = int(user_input[CONF_PORT])
                 return await self.async_step_test_connection()
             errors["port"] = "invalid_port"
 
@@ -573,9 +581,9 @@ class ConfigFlowDiscoveryMixin:
                 }
             ),
             description_placeholders={
-                CONF_HOST: self.context[CONF_HOST],  # type: ignore
-                CONF_NAME: self.context[CONF_NAME],  # type: ignore
-                CONF_MAC: self.context[CONF_MAC],  # type: ignore
+                CONF_HOST: self.context[CONF_HOST],  # type: ignore[attr-defined]
+                CONF_NAME: self.context[CONF_NAME],  # type: ignore[attr-defined]
+                CONF_MAC: self.context[CONF_MAC],  # type: ignore[attr-defined]
             },
             errors=errors,
         )
@@ -586,11 +594,11 @@ class ConfigFlowDiscoveryMixin:
             errors = {}
 
         if user_input is not None:
-            self.gateway_handler.password = str(user_input[CONF_OWN_PASSWORD])  # type: ignore
+            self.gateway_handler.password = str(user_input[CONF_OWN_PASSWORD])
             return await self.async_step_test_connection()
         else:
-            if self.gateway_handler.password is not None:  # type: ignore
-                _suggested_password = self.gateway_handler.password  # type: ignore
+            if self.gateway_handler.password is not None:
+                _suggested_password = self.gateway_handler.password
             else:
                 _suggested_password = 12345
 
@@ -605,9 +613,10 @@ class ConfigFlowDiscoveryMixin:
                 }
             ),
             description_placeholders={
-                CONF_HOST: self.context[CONF_HOST],  # type: ignore
-                CONF_NAME: self.context[CONF_NAME],  # type: ignore
-                CONF_MAC: self.context[CONF_MAC],  # type: ignore
+                CONF_HOST: self.context[CONF_HOST],  # type: ignore[attr-defined]
+                CONF_NAME: self.context[CONF_NAME],  # type: ignore[attr-defined]
+                CONF_MAC: self.context[CONF_MAC],  # type: ignore[attr-defined]
             },
             errors=errors,
         )
+
