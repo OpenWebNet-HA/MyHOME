@@ -2505,6 +2505,7 @@
 <li><strong>F500 Tuner Dimension Reports</strong>: Tuner frequency stepping, RDS station name decoding, and FM presets for Legrand sound systems.</li>
 <li><strong>Touchscreen Gateway Profiles</strong>: Authoritative profile matching and SSDP discovery for <code>AM4890</code>, <code>H4890</code>, and <code>LN4890</code> Livinglight / Axolute 3.5" displays.</li>
 <li><strong>WHO=2 Centralized Control Triggers</strong>: Added cover and shutter group/general automation triggers.</li>
+<li><strong>Cover Motor Start-Up Floor &amp; Endpoint Full Runs (#466)</strong>: Timed covers enforce a <code>0.4 s</code> minimum motor pulse floor (<code>MIN_MOTOR_PULSE</code>) and book the stretched run, both timed and advanced covers send plain <code>UP</code> / <code>DOWN</code> (<code>*2*1*WHERE##</code> / <code>*2*2*WHERE##</code>) full runs at <code>0%</code> and <code>100%</code> (and advanced covers widen sub-2% moves when stationary), and timed endpoint runs settle automatically at <code>travel_time + 2 s</code> without waiting for a late or missing actuator stop status.</li>
 </ul>
 <hr />
 <h3 id="v200b13-hmac-authentication-refactor-fan-mode-persistence">🚀 v2.0.0b13 (HMAC Authentication Refactor &amp; Fan Mode Persistence)<a class="headerlink" href="#v200b13-hmac-authentication-refactor-fan-mode-persistence" title="Permanent link">&para;</a></h3>
