@@ -2381,8 +2381,11 @@ Instead, the integration debounces across a bidirectional window:</p>
    the sweep is cancelled:</p>
 </li>
 <li>
-<p>For an <strong>area</strong>, only point-to-point echoes in that matching area cancel its timer;
-     unrelated areas stay armed.</p>
+<p>For an <strong>area</strong>, point-to-point echoes in that matching area only skip or cancel its
+     timer once <em>all</em> known <code>light</code>/<code>switch</code> entities registered in that area have echoed
+     with matching polarity (preventing partial CEN/Scenario bursts such as <code>MH200N</code>
+     scenarios from starving non-echoing actuators in the same area); unrelated areas stay
+     armed.</p>
 </li>
 <li>For a <strong>group</strong>, receiving multiple member echoes ($\ge 2$) in the window cancels its
      timer, protecting against unrelated bus frames.</li>
