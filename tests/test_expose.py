@@ -1429,12 +1429,18 @@ async def test_who18_dim1200_read_query_and_active_streaming_expiry(hass: HomeAs
 async def test_shared_bus_secondary_gateway_delegation_and_phantom_suppression(hass: HomeAssistant):
     """Verify WHO=18 delegated to a secondary gateway uses secondary profile and suppresses phantoms."""
     from homeassistant.helpers.dispatcher import async_dispatcher_send
-    from OWNd.profiles import F454Profile, F455Profile
+    from OWNd.profiles import F454Profile, GatewayProfile
 
     hass.states.async_set("sensor.p1_power", "1800")
 
-    # Primary gateway is an F455 (supports_dimension_response_injection=False natively)
-    gw_primary = _make_gateway(profile=F455Profile(), mac="00:03:50:11:11:11")
+    # Primary gateway has supports_dimension_response_injection=False overridden
+    gw_primary = _make_gateway(
+        profile=GatewayProfile(
+            model_name="F455",
+            supports_dimension_response_injection=False,
+        ),
+        mac="00:03:50:11:11:11",
+    )
     gw_primary.delegated_away_whos = {18}
     entry_primary = _make_entry(
         hass,
@@ -2030,7 +2036,7 @@ async def test_audit_regressions_echo_futures_brightness_off_scope_and_actions(h
     #    while cover WITHOUT position reporting ignores intermediate position ticks while moving
     hass.states.async_set("cover.shutter_h3", "opening", {"current_position": 35})
     await mgr.handle_bus_message(OWNMessage.parse("*2*1*92##"))
-    assert mgr.bindings[1].last_sent_value == ("*2*1*92##", 35, "opening")
+    assert mgr.bindings[1].last_sent_value == ("*2*1*92##", 35)
 
     hass.states.async_set("cover.simple_shutter", "closed", {"current_position": 0})
     b_simple = ExposeBinding(who=2, where="94", entity_id="cover.simple_shutter", cooldown=0)
@@ -2042,10 +2048,14 @@ async def test_audit_regressions_echo_futures_brightness_off_scope_and_actions(h
     await mgr._async_send_binding_state(b_simple, high_priority=False, force=False, is_reply=False)
     assert gw.send_status_request.call_count == 0
 
-    # 3. M3: General and Area scope matching for WHO=1 and WHO=2 (including local bus #4#xx isolation)
+    # 3. M3: General and Area scope matching for WHO=1 and WHO=2 (including Area 0/10 and local bus #4#xx isolation)
     assert _where_matches_binding(1, "12", "0", allow_scope=True) is True
     assert _where_matches_binding(1, "12", "1", allow_scope=True) is True
     assert _where_matches_binding(1, "12", "2", allow_scope=True) is False
+    assert _where_matches_binding(1, "01", "00", allow_scope=True) is True
+    assert _where_matches_binding(1, "11", "00", allow_scope=True) is False
+    assert _where_matches_binding(1, "1001", "100", allow_scope=True) is True
+    assert _where_matches_binding(1, "11", "100", allow_scope=True) is False
     assert _where_matches_binding(1, "12#4#01", "0#4#01", allow_scope=True) is True
     assert _where_matches_binding(1, "12#4#01", "0#4#02", allow_scope=True) is False
 
@@ -2090,11 +2100,28 @@ async def test_audit_regressions_echo_futures_brightness_off_scope_and_actions(h
     for e in entries_p:
         e.expiry = time.monotonic() - 10.0
         assert e.is_expired(time.monotonic()) is False
+    # Companion frames arriving while write future is still pending are guarded without consuming the guard
+    assert mgr._is_echo_guarded(OWNMessage.parse("*2*1000#0*92##")) is True
+    assert (2, "92") in mgr._pre_move_stop_guard
+    assert mgr._is_echo_guarded(OWNMessage.parse("*2*1000#1*92##")) is True
+    assert "*2*1000#1*92##" in mgr._tx_echo_guard
     # Cancelling the write future immediately removes the echo guard and pre-move stop guard
     pending_fut.cancel()
     await asyncio.sleep(0)
     assert "*2*1*92##" not in mgr._tx_echo_guard
     assert (2, "92") not in mgr._pre_move_stop_guard
+
+    # Late-echo sync: write future resolves after initial TTL -> refreshes expiry and guards post-write echoes
+    late_fut = loop.create_future()
+    entries_late = mgr._record_echo_guard(OWNMessage.parse("*2*1*92##"))
+    mgr._attach_echo_guard_future(entries_late, late_fut)
+    for e in entries_late:
+        e.expiry = time.monotonic() - 5.0
+    late_fut.set_result(True)
+    await asyncio.sleep(0)
+    assert mgr._is_echo_guarded(OWNMessage.parse("*2*1000#0*92##")) is True
+    assert mgr._is_echo_guarded(OWNMessage.parse("*2*1000#1*92##")) is True
+    assert mgr._is_echo_guarded(OWNMessage.parse("*2*1*92##")) is True
 
     # Already-done future refreshes expiry immediately
     done_fut = loop.create_future()
@@ -2217,5 +2244,85 @@ async def test_audit_regressions_echo_futures_brightness_off_scope_and_actions(h
     assert w_exp.done() and not w_exp.cancelled()
 
 
+@pytest.mark.asyncio
+async def test_who2_oracle_40_step_echo_loop_simulation(hass: HomeAssistant):
+    """Simulate a 40-step oracle gateway echoing pre-move STOP + translation + raw status frames."""
+    hass.states.async_set("cover.oracle_shutter", "closed", {"current_position": 0})
+    gw = _make_gateway()
+    entry = _make_entry(
+        hass,
+        gateway=gw,
+        expose_list=[
+            {
+                "who": 2,
+                "where": "98",
+                "entity_id": "cover.oracle_shutter",
+                "bidirectional": True,
+                "cooldown": 0,
+            }
+        ],
+    )
+    mgr = ExposeManager(hass, entry)
+    entry.runtime_data.expose_manager = mgr
+    await mgr.async_start()
 
+    bus_q: list[OWNMessage] = []
+    service_calls: list[str] = []
 
+    async def _rec_service(call):
+        service_calls.append(call.service)
+        if call.service == "open_cover":
+            hass.states.async_set("cover.oracle_shutter", "opening", {"current_position": 50})
+        elif call.service == "close_cover":
+            hass.states.async_set("cover.oracle_shutter", "closing", {"current_position": 50})
+        elif call.service == "stop_cover":
+            hass.states.async_set("cover.oracle_shutter", "open", {"current_position": 50})
+
+    for svc in ("open_cover", "close_cover", "stop_cover"):
+        hass.services.async_register("cover", svc, _rec_service)
+
+    def _oracle_echo(msg, *args, **kwargs):
+        s = str(msg)
+        if s == "*2*1*98##":
+            bus_q.append(OWNMessage.parse("*2*1000#0*98##"))
+            bus_q.append(OWNMessage.parse("*2*1000#1*98##"))
+            bus_q.append(OWNMessage.parse("*2*1*98##"))
+        elif s == "*2*2*98##":
+            bus_q.append(OWNMessage.parse("*2*1000#0*98##"))
+            bus_q.append(OWNMessage.parse("*2*1000#2*98##"))
+            bus_q.append(OWNMessage.parse("*2*2*98##"))
+        elif s == "*2*0*98##":
+            bus_q.append(OWNMessage.parse("*2*1000#0*98##"))
+            bus_q.append(OWNMessage.parse("*2*0*98##"))
+
+    gw.send.side_effect = _oracle_echo
+    gw.send_status_request.side_effect = _oracle_echo
+
+    async def _pump_bus(max_steps: int = 40) -> int:
+        steps = 0
+        while bus_q and steps < max_steps:
+            steps += 1
+            frame = bus_q.pop(0)
+            await mgr.handle_bus_message(frame)
+            await hass.async_block_till_done()
+        return steps
+
+    # 1. Physical UP press -> settles in 4 frames (1 press + 3 echoes) and 1 open_cover call
+    bus_q.append(OWNMessage.parse("*2*1000#1*98##"))
+    steps_up = await _pump_bus(40)
+    assert steps_up == 4
+    assert service_calls == ["open_cover"]
+
+    # 2. Immediate physical STOP press -> not swallowed, settles in 3 frames and 1 stop_cover call
+    bus_q.append(OWNMessage.parse("*2*1000#0*98##"))
+    steps_stop = await _pump_bus(40)
+    assert steps_stop == 3
+    assert service_calls == ["open_cover", "stop_cover"]
+
+    # 3. Immediate physical DOWN press -> settles in 4 frames and 1 close_cover call
+    bus_q.append(OWNMessage.parse("*2*1000#2*98##"))
+    steps_down = await _pump_bus(40)
+    assert steps_down == 4
+    assert service_calls == ["open_cover", "stop_cover", "close_cover"]
+
+    await mgr.async_stop()

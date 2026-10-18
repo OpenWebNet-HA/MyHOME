@@ -729,11 +729,14 @@ class ExposeManager:
                     self._pre_move_stop_guard.pop((2, msg_where), None)
                 elif eff_what == 0 and src not in stop_entry.seen_sources:
                     # Consume the one-shot pre-move STOP echo for this gateway source
-                    stop_entry.seen_sources.add(src)
-                    if not self._subscribed_secondary_macs:
-                        self._pre_move_stop_guard.pop((2, msg_where), None)
+                    if stop_entry.future is None or stop_entry.future.done():
+                        stop_entry.seen_sources.add(src)
+                        if not self._subscribed_secondary_macs:
+                            self._pre_move_stop_guard.pop((2, msg_where), None)
                     return True
-                elif eff_what in (1, 2):
+                elif eff_what in (1, 2) and (
+                    stop_entry.future is None or stop_entry.future.done()
+                ):
                     # Move echo arrived; pre-move STOP window is over
                     self._pre_move_stop_guard.pop((2, msg_where), None)
 
@@ -745,14 +748,23 @@ class ExposeManager:
             return False
         if src in entry.seen_sources:
             return False
+        if entry.future is not None and not entry.future.done():
+            return True
 
-        # Mark this echo (and any older completed entries for the same target) consumed for src
+        is_translation = bool(getattr(message, "is_translation", False))
+        # Mark this echo (and any older completed entries for the same target) consumed for src.
+        # A translation echo (*WHO*1000#WHAT*W##) may precede a raw loopback echo (*WHO*WHAT*W##),
+        # so keep the sibling raw entry alive until the raw echo arrives or is superseded.
         for frame_k, candidate in list(self._tx_echo_guard.items()):
-            if candidate.seq == entry.seq or (
-                entry.target is not None
-                and candidate.target == entry.target
-                and candidate.seq < entry.seq
-                and (candidate.future is None or candidate.future.done())
+            if (
+                candidate is entry
+                or (not is_translation and candidate.seq == entry.seq)
+                or (
+                    entry.target is not None
+                    and candidate.target == entry.target
+                    and candidate.seq < entry.seq
+                    and (candidate.future is None or candidate.future.done())
+                )
             ):
                 candidate.seen_sources.add(src)
                 if not self._subscribed_secondary_macs:
@@ -947,10 +959,9 @@ class ExposeManager:
                 or binding.dimension == 10
                 or query_dimension == 10
             )
-            who2_val_key: tuple[str, int | None, str] = (
+            who2_val_key: tuple[str, int | None] = (
                 str(shutter_cmd),
                 pos_pct if reports_pos else None,
-                raw_str,
             )
             if not force and binding.last_sent_value == who2_val_key:
                 return [], None
@@ -1494,7 +1505,6 @@ class ExposeManager:
                         binding.last_sent_value = (
                             str(stop_cmd),
                             pct if reports_pos else None,
-                            "open" if pct > 0 else "closed",
                         )
                         binding.last_sent_at = time.monotonic()
                         binding.sent_count += 1
@@ -1531,7 +1541,7 @@ class ExposeManager:
                 if eff_what == 1:
                     self._cancel_cooldown_timer(binding.key)
                     confirm = OWNAutomationCommand.raise_shutter(binding.where)
-                    binding.last_sent_value = (str(confirm), cur_pos, "opening")
+                    binding.last_sent_value = (str(confirm), cur_pos)
                     binding.last_sent_at = time.monotonic()
                     binding.sent_count += 1
                     await self._async_dispatch_frames(
@@ -1551,7 +1561,7 @@ class ExposeManager:
                 elif eff_what == 2:
                     self._cancel_cooldown_timer(binding.key)
                     confirm = OWNAutomationCommand.lower_shutter(binding.where)
-                    binding.last_sent_value = (str(confirm), cur_pos, "closing")
+                    binding.last_sent_value = (str(confirm), cur_pos)
                     binding.last_sent_at = time.monotonic()
                     binding.sent_count += 1
                     await self._async_dispatch_frames(
@@ -1571,12 +1581,7 @@ class ExposeManager:
                 elif eff_what == 0:
                     self._cancel_cooldown_timer(binding.key)
                     confirm = OWNAutomationCommand.stop_shutter(binding.where)
-                    cur_raw_str = (
-                        str(cur_state_obj.state).strip().lower()
-                        if cur_state_obj is not None
-                        else "open"
-                    )
-                    binding.last_sent_value = (str(confirm), cur_pos, cur_raw_str)
+                    binding.last_sent_value = (str(confirm), cur_pos)
                     binding.last_sent_at = time.monotonic()
                     binding.sent_count += 1
                     await self._async_dispatch_frames(
