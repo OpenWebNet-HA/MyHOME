@@ -1,4 +1,28 @@
-"""Expose Home Assistant entities and system clock to the OpenWebNet SCS bus."""
+"""Expose Home Assistant entities and system clock to the OpenWebNet SCS bus.
+
+Hardware Verification & Caveats (BTicino F461 `2.0.11` live capture `2026-10-18`):
+- **WHO=2 virtual covers**: Physical F461 gateways immediately broadcast command-translation
+  bursts (`*2*1000#0*WHERE##` followed by `*2*1000#1/2*WHERE##`) on the event monitor
+  session even when no physical shutter actuator is populated at `WHERE`, before returning
+  `NACK` (~0.55 s) on the TCP command session. `_pre_move_stop_guard` and `_tx_echo_guard`
+  absorb both frames without self-oscillation.
+- **WHO=1 virtual lights**: Unpopulated point addresses transmit on the 2-wire SCS bus and
+  return `NACK` after ~2.06 s on the TCP command session (`is_exposed` suppresses retries
+  in `CommandWorkerPool`), whereas Dimension `#1` writes (`*#1*WHERE*#1*level*speed##`) are
+  ACKed in ~126 ms. Physical wall-control LED illumination without a backing actuator and
+  answering `respond_to_read` status queries from a TCP monitor session remain best-effort
+  subject to gateway/control firmware.
+- **WHO=4, WHO=13 & WHO=18**: Dimension writes (`*#4*WHERE*#0*TTTT##` on 2-digit probe
+  addresses, `*#13**#0*...##`, `*#13**#1*...##`, and `*#18*WHERE*113/51/54/#1200#1*...##`)
+  are ACKed in ~125-200 ms on physical F461 hardware.
+
+Security Model for Custom Actions:
+- Bidirectional `turn_on_action`, `turn_off_action`, `step_up_action`, and `step_down_action`
+  entries invoke Home Assistant services in response to OpenWebNet bus frames, evaluating
+  payload templates through Home Assistant's sandboxed `Template` engine. Because any device
+  or client on the SCS bus / OpenWebNet TCP port can emit trigger frames, custom actions
+  should only be configured on trusted physical and network installations.
+"""
 
 from __future__ import annotations
 
