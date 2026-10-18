@@ -12,9 +12,13 @@ from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
+    ConfigSubentryFlow,
     OptionsFlowWithReload,
+    SubentryFlowResult,
 )
 from homeassistant.const import (
+    CONF_ATTRIBUTE,
+    CONF_ENTITY_ID,
     CONF_FRIENDLY_NAME,
     CONF_HOST,
     CONF_ID,
@@ -38,11 +42,15 @@ from voluptuous import (
     Required,
 )
 
+from . import validate
 from .const import (
     CONF_ADDRESS,
     CONF_AUTO_JOIN_STREAMING,
+    CONF_BIDIRECTIONAL,
+    CONF_BRIGHTNESS_STEP_PCT,
     CONF_BROADCAST_RESYNC,
     CONF_BUS_TOPOLOGY,
+    CONF_COOLDOWN,
     CONF_DECODER_COMPANION,
     CONF_DECODER_ENTITY,
     CONF_DECODER_PRE_GAIN,
@@ -50,14 +58,19 @@ from .const import (
     CONF_DECODER_SOURCE,
     CONF_DELEGATED_WHOS,
     CONF_DEVICE_TYPE,
+    CONF_DIMENSION,
     CONF_FIRMWARE,
     CONF_GATEWAY_ROLE,
     CONF_GENERATE_EVENTS,
     CONF_IGNORED_ADDRESSES,
     CONF_MANUFACTURER,
     CONF_MANUFACTURER_URL,
+    CONF_MIN_DELTA,
+    CONF_ON_STATES,
     CONF_OWN_PASSWORD,
+    CONF_PERIODIC_SEND,
     CONF_PRIMARY_GATEWAY,
+    CONF_RESPOND_TO_READ,
     CONF_SOURCE_DEFAULT_FIELD,
     CONF_SOURCE_DEFAULTS,
     CONF_SOURCE_NAME,
@@ -68,6 +81,9 @@ from .const import (
     CONF_TRANSITION_MODE,
     CONF_TUNER_PICTURES,
     CONF_UDN,
+    CONF_VALUE_TEMPLATE,
+    CONF_WHERE,
+    CONF_WHO,
     CONF_WORKER_COUNT,
     DEFAULT_AUTO_JOIN_STREAMING,
     DEFAULT_TRANSITION_MODE,
@@ -77,10 +93,12 @@ from .const import (
     ROLE_PRIMARY,
     ROLE_SECONDARY,
     ROLE_STANDBY,
+    SUBENTRY_TYPE_EXPOSE,
     SUPPORTED_GATEWAY_MODELS,
     TOPOLOGY_SHARED,
     TOPOLOGY_STANDALONE,
 )
+from .data import get_runtime_data
 from .decoder_companion import async_get_excluded_decoders
 from .gateway import MyHOMEGatewayHandler, command_session_default, command_session_limit
 from .ignored import validate_ignored_addresses
@@ -142,6 +160,14 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(config_entry):  # type: ignore
         """Get the options flow for this handler."""
         return MyhomeOptionsFlowHandler(config_entry)
+
+    @classmethod
+    @callback
+    def async_get_supported_subentry_types(
+        cls, config_entry: ConfigEntry
+    ) -> dict[str, type[ConfigSubentryFlow]]:
+        """Return subentries supported by this integration."""
+        return {SUBENTRY_TYPE_EXPOSE: ExposeSubentryFlowHandler}
 
     def __init__(self):  # type: ignore
         """Initialize the MyHome flow."""
@@ -1419,3 +1445,255 @@ class MyhomeOptionsFlowHandler(OptionsFlowWithReload):
                 "model": str(limit_model or current_model),
             },
         )
+
+
+class ExposeSubentryFlowHandler(ConfigSubentryFlow):
+    """Handle ConfigSubentryFlow for exposing Home Assistant entities to the SCS bus."""
+
+    def _build_schema(self, defaults: dict[str, typing.Any]) -> typing.Any:
+        """Build form schema for adding or reconfiguring an expose subentry."""
+        who_default = str(defaults.get(CONF_WHO, "1"))
+        where_default = str(defaults.get(CONF_WHERE, "") or "")
+        entity_default = str(defaults.get(CONF_ENTITY_ID, "") or "")
+        attr_default = str(defaults.get(CONF_ATTRIBUTE, "") or "")
+        dim_default = str(defaults.get(CONF_DIMENSION, "") or "")
+        tpl_default = str(defaults.get(CONF_VALUE_TEMPLATE, "") or "")
+        on_states_raw = defaults.get(CONF_ON_STATES)
+        if isinstance(on_states_raw, (list, tuple)):
+            on_states_default = ", ".join(str(x) for x in on_states_raw)
+        else:
+            on_states_default = str(on_states_raw or "")
+
+        schema_dict: dict[typing.Any, typing.Any] = {
+            Required(CONF_WHO, default=who_default): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(value="1", label="WHO 1 — Lighting / Switch / Virtual Actuator"),
+                        selector.SelectOptionDict(value="2", label="WHO 2 — Automation / Cover"),
+                        selector.SelectOptionDict(value="4", label="WHO 4 — Temperature Probe (Dimension 0)"),
+                        selector.SelectOptionDict(value="13", label="WHO 13 — Bus Clock & DST Sync"),
+                        selector.SelectOptionDict(value="18", label="WHO 18 — Energy / Power Meter"),
+                    ],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(
+                CONF_WHERE,
+                description={"suggested_value": where_default},
+            ): selector.TextSelector(),
+            vol.Optional(
+                CONF_ENTITY_ID,
+                description={"suggested_value": entity_default} if entity_default else None,
+            ): selector.EntitySelector(),
+            vol.Optional(
+                CONF_ATTRIBUTE,
+                description={"suggested_value": attr_default},
+            ): selector.TextSelector(),
+            vol.Optional(
+                CONF_DIMENSION,
+                description={"suggested_value": dim_default},
+            ): selector.TextSelector(),
+            vol.Optional(
+                CONF_COOLDOWN,
+                default=float(defaults.get(CONF_COOLDOWN, 1.0)),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.0, max=3600.0, step=0.5, unit_of_measurement="s",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                CONF_MIN_DELTA,
+                description=(
+                    {"suggested_value": float(defaults[CONF_MIN_DELTA])}
+                    if defaults.get(CONF_MIN_DELTA) is not None
+                    else None
+                ),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.0, max=10000.0, step=0.1,
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                CONF_PERIODIC_SEND,
+                default=float(defaults.get(CONF_PERIODIC_SEND, 0.0)),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.0, max=604800.0, step=1.0, unit_of_measurement="s",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            Required(
+                CONF_RESPOND_TO_READ,
+                default=bool(defaults.get(CONF_RESPOND_TO_READ, True)),
+            ): selector.BooleanSelector(),
+            Required(
+                CONF_BIDIRECTIONAL,
+                default=bool(defaults.get(CONF_BIDIRECTIONAL, True)),
+            ): selector.BooleanSelector(),
+            vol.Optional(
+                CONF_BRIGHTNESS_STEP_PCT,
+                default=int(defaults.get(CONF_BRIGHTNESS_STEP_PCT, 10)),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1, max=100, step=1, unit_of_measurement="%",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                CONF_ON_STATES,
+                description={"suggested_value": on_states_default},
+            ): selector.TextSelector(),
+            vol.Optional(
+                CONF_VALUE_TEMPLATE,
+                description={"suggested_value": tpl_default},
+            ): selector.TextSelector(),
+        }
+        return flow_schema(schema_dict)
+
+    def _validate_and_clean(
+        self,
+        user_input: dict[str, typing.Any],
+        *,
+        exclude_subentry_id: str | None = None,
+    ) -> tuple[dict[str, typing.Any], dict[str, str], str]:
+        """Validate subentry user_input and return (cleaned_data, errors, title)."""
+        errors: dict[str, str] = {}
+        try:
+            who = int(user_input.get(CONF_WHO, 1))
+        except (TypeError, ValueError):
+            errors[CONF_WHO] = "invalid_who"
+            return {}, errors, ""
+
+        where = str(user_input.get(CONF_WHERE) or "").strip()
+        entity_id = str(user_input.get(CONF_ENTITY_ID) or "").strip()
+        raw_dim = str(user_input.get(CONF_DIMENSION) or "").strip()
+        dim: int | None = None
+        if raw_dim:
+            if not raw_dim.isdigit():
+                errors[CONF_DIMENSION] = "invalid_dimension"
+            else:
+                dim = int(raw_dim)
+
+        if who == 13:
+            if dim is not None and dim not in (0, 1, 22):
+                errors[CONF_DIMENSION] = "invalid_dimension"
+            where = ""
+        else:
+            if not where:
+                errors[CONF_WHERE] = "where_required"
+            if not entity_id:
+                errors[CONF_ENTITY_ID] = "entity_required"
+            if who == 4 and dim is not None and dim != 0:
+                errors[CONF_DIMENSION] = "invalid_dimension"
+            elif who == 18 and dim is not None and dim not in (51, 52, 53, 54, 113):
+                errors[CONF_DIMENSION] = "invalid_dimension"
+
+        if errors:
+            return {}, errors, ""
+
+        cleaned: dict[str, typing.Any] = {
+            CONF_WHO: who,
+            CONF_COOLDOWN: float(user_input.get(CONF_COOLDOWN, 1.0)),
+            CONF_RESPOND_TO_READ: bool(user_input.get(CONF_RESPOND_TO_READ, True)),
+            CONF_BIDIRECTIONAL: bool(user_input.get(CONF_BIDIRECTIONAL, who in (1, 2))),
+            CONF_BRIGHTNESS_STEP_PCT: int(user_input.get(CONF_BRIGHTNESS_STEP_PCT, 10)),
+        }
+        if where:
+            cleaned[CONF_WHERE] = where
+        if entity_id:
+            cleaned[CONF_ENTITY_ID] = entity_id
+        attr = str(user_input.get(CONF_ATTRIBUTE) or "").strip()
+        if attr:
+            cleaned[CONF_ATTRIBUTE] = attr
+        if dim is not None:
+            cleaned[CONF_DIMENSION] = dim
+        if user_input.get(CONF_MIN_DELTA) is not None and str(user_input.get(CONF_MIN_DELTA)).strip() != "":
+            cleaned[CONF_MIN_DELTA] = float(user_input[CONF_MIN_DELTA])
+        if user_input.get(CONF_PERIODIC_SEND) is not None and str(user_input.get(CONF_PERIODIC_SEND)).strip() != "":
+            cleaned[CONF_PERIODIC_SEND] = float(user_input[CONF_PERIODIC_SEND])
+        on_states = str(user_input.get(CONF_ON_STATES) or "").strip()
+        if on_states:
+            cleaned[CONF_ON_STATES] = [s.strip() for s in on_states.split(",") if s.strip()]
+        tpl = str(user_input.get(CONF_VALUE_TEMPLATE) or "").strip()
+        if tpl:
+            cleaned[CONF_VALUE_TEMPLATE] = tpl
+
+        try:
+            cleaned = validate.expose_entry_schema(cleaned)
+        except vol.Invalid:
+            errors["base"] = "invalid_expose"
+            return {}, errors, ""
+
+        # Check for duplicate binding on the parent entry
+        entry = self._get_entry()
+        candidate_dim = cleaned.get(CONF_DIMENSION)
+        if candidate_dim is None:
+            candidate_dim = 0 if who == 4 else (22 if who == 13 else None)
+        candidate_key = (int(cleaned[CONF_WHO]), str(cleaned.get(CONF_WHERE) or ""), candidate_dim)
+
+        runtime = get_runtime_data(entry)
+        existing_bindings = (
+            runtime.expose_manager.bindings
+            if runtime is not None and runtime.expose_manager is not None
+            else []
+        )
+        for existing in existing_bindings:
+            if exclude_subentry_id and existing.subentry_id == exclude_subentry_id:
+                continue
+            if existing.key == candidate_key:
+                errors["base"] = "invalid_expose"
+                return {}, errors, ""
+
+        norm_where = str(cleaned.get(CONF_WHERE) or "")
+        if who == 13:
+            title = f"Bus Clock Sync (WHO 13, dim {dim if dim is not None else 22})"
+        else:
+            title = f"WHO {who} / WHERE {norm_where} ({entity_id})"
+        return cleaned, errors, title
+
+    async def async_step_user(
+        self, user_input: dict[str, typing.Any] | None = None
+    ) -> SubentryFlowResult:
+        """Handle adding a new expose subentry."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            cleaned, errors, title = self._validate_and_clean(user_input)
+            if not errors:
+                entry = self._get_entry()
+                self.hass.config_entries.async_schedule_reload(entry.entry_id)
+                return self.async_create_entry(title=title, data=cleaned)
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=self._build_schema(user_input or {}),
+            errors=errors,
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, typing.Any] | None = None
+    ) -> SubentryFlowResult:
+        """Handle reconfiguring an existing expose subentry."""
+        errors: dict[str, str] = {}
+        entry = self._get_entry()
+        subentry = self._get_reconfigure_subentry()
+        if user_input is not None:
+            cleaned, errors, title = self._validate_and_clean(
+                user_input, exclude_subentry_id=subentry.subentry_id
+            )
+            if not errors:
+                self.hass.config_entries.async_schedule_reload(entry.entry_id)
+                return self.async_update_and_abort(
+                    entry, subentry, title=title, data=cleaned
+                )
+
+        defaults = dict(subentry.data)
+        if user_input:
+            defaults.update(user_input)
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self._build_schema(defaults),
+            errors=errors,
+        )
+

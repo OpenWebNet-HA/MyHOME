@@ -241,6 +241,307 @@ if not hasattr(OWNSoundEvent, "volume_step_delta"):  # pragma: no cover - PyPI O
     setattr(OWNSoundEvent, "volume_step_delta", property(_sound_step_delta))
 
 
+def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0.0b12
+    """Bridge OWNd < 2.0.0b12 message builders and profile flags for expose."""
+    from OWNd.message import (
+        OWNAutomationCommand,
+        OWNEnergyCommand,
+        OWNGatewayCommand,
+        OWNHeatingCommand,
+        OWNHeatingEvent,
+    )
+
+    if not hasattr(OWNMessage, "effective_what"):
+        def _effective_what(self: Any) -> int | None:
+            wp = getattr(self, "_what_param", [])
+            if getattr(self, "_what", None) == 1000 and wp and str(wp[0]).isdigit():
+                return int(wp[0])
+            w = getattr(self, "_what", None)
+            return int(w) if isinstance(w, int) else None
+
+        setattr(OWNMessage, "effective_what", property(_effective_what))
+        setattr(
+            OWNMessage,
+            "is_status_request",
+            property(lambda self: getattr(self, "_message_type", None) == "STATUS_REQUEST"),
+        )
+        setattr(
+            OWNMessage,
+            "is_dimension_request",
+            property(lambda self: getattr(self, "_message_type", None) == "DIMENSION_REQUEST"),
+        )
+        setattr(
+            OWNMessage,
+            "is_dimension_writing",
+            property(lambda self: getattr(self, "_message_type", None) == "DIMENSION_WRITING"),
+        )
+        setattr(
+            OWNMessage,
+            "is_dimension_reply",
+            property(
+                lambda self: getattr(self, "_message_type", None)
+                in ("DIMENSION_REQUEST_REPLY", "DIMENSION_REPORTING")
+            ),
+        )
+
+    if not hasattr(OWNLightingCommand, "report_brightness"):
+        setattr(
+            OWNLightingCommand,
+            "is_status_query",
+            property(lambda self: bool(self.is_status_request)),
+        )
+        setattr(
+            OWNLightingCommand,
+            "is_brightness_query",
+            property(lambda self: bool(self.is_dimension_request and self.dimension in (1, 4))),
+        )
+        setattr(
+            OWNLightingCommand,
+            "report_brightness",
+            classmethod(
+                lambda cls, where, level, transition=0: cls.parse(
+                    f"*#1*{where}*1*{min(max(int(level) + 100, 100), 200)}*{max(int(transition), 0)}##"
+                )
+            ),
+        )
+
+    if not hasattr(OWNAutomationCommand, "report_shutter_level"):
+        setattr(
+            OWNAutomationCommand,
+            "is_status_query",
+            property(lambda self: bool(self.is_status_request)),
+        )
+        setattr(
+            OWNAutomationCommand,
+            "is_shutter_status_query",
+            property(lambda self: bool(self.is_dimension_request and self.dimension == 10)),
+        )
+        setattr(
+            OWNAutomationCommand,
+            "report_shutter_level",
+            classmethod(
+                lambda cls, where, level, state=10, priority=0, info=0: cls.parse(
+                    f"*#2*{where}*10*{int(state)}*{255 if int(level) == 255 else min(max(int(level), 0), 100)}*{int(priority)}*{int(info)}##"
+                )
+            ),
+        )
+
+    if OWNHeatingEvent("*#4*000*0*0215##").unique_id != "4-000":
+        _orig_heating_init = OWNHeatingEvent.__init__
+
+        def _patched_heating_init(self: Any, data: str) -> None:
+            _orig_heating_init(self, data)
+            where_str = str(getattr(self, "_where", "") or "")
+            clean_where = where_str[1:] if where_str.startswith("#") else where_str
+            if getattr(self, "_sensor", None) is None and len(clean_where) == 3 and clean_where.isdigit():
+                self._sensor = int(clean_where[0])
+                self._zone = int(clean_where[1:])
+
+        def _patched_heating_unique_id(self: Any) -> str:
+            if getattr(self, "_sensor", None) is not None:
+                return f"{self._who}-{self._where}"
+            if getattr(self, "_zone", None) == 0:
+                return f"{self._who}-#0"
+            return f"{self._who}-{self._zone}"
+
+        setattr(OWNHeatingEvent, "__init__", _patched_heating_init)
+        setattr(OWNHeatingEvent, "unique_id", property(_patched_heating_unique_id))
+
+    if not hasattr(OWNHeatingCommand, "report_temperature"):
+        def _encode_temp(temperature: float) -> str:
+            tenths = max(-999, min(999, round(float(temperature) * 10)))
+            sign = "1" if tenths < 0 else "0"
+            return f"{sign}{abs(tenths):03d}"
+
+        setattr(
+            OWNHeatingCommand,
+            "is_temperature_query",
+            property(
+                lambda self: bool(
+                    self.is_status_request or (self.is_dimension_request and self.dimension == 0)
+                )
+            ),
+        )
+        setattr(OWNHeatingCommand, "encode_temperature", staticmethod(_encode_temp))
+        setattr(
+            OWNHeatingCommand,
+            "report_temperature",
+            classmethod(
+                lambda cls, where, temperature: cls.parse(
+                    f"*#4*{where}*0*{_encode_temp(temperature)}##"
+                )
+            ),
+        )
+
+    if not hasattr(OWNEnergyCommand, "report_active_power"):
+        setattr(
+            OWNEnergyCommand,
+            "is_dimension_query",
+            property(lambda self: bool(self.is_dimension_request)),
+        )
+        setattr(
+            OWNEnergyCommand,
+            "is_auto_update_command",
+            property(lambda self: bool(self.is_dimension_writing and self.dimension == 1200)),
+        )
+        setattr(
+            OWNEnergyCommand,
+            "stream_duration",
+            property(
+                lambda self: (
+                    int(self.dimension_value[0])
+                    if self.is_dimension_writing
+                    and self.dimension == 1200
+                    and self.dimension_value
+                    and str(self.dimension_value[0]).isdigit()
+                    else None
+                )
+            ),
+        )
+        setattr(
+            OWNEnergyCommand,
+            "report_active_power",
+            classmethod(lambda cls, where, watts: cls.parse(f"*#18*{where}*113*{max(round(float(watts)), 0)}##")),
+        )
+        setattr(
+            OWNEnergyCommand,
+            "report_total_energy",
+            classmethod(lambda cls, where, wh: cls.parse(f"*#18*{where}*51*{max(round(float(wh)), 0)}##")),
+        )
+        setattr(
+            OWNEnergyCommand,
+            "report_current_month_energy",
+            classmethod(
+                lambda cls, where, wh, year=None, month=None: cls.parse(
+                    f"*#18*{where}*52#{str(int(year))[-2:]}#{int(month)}*{max(round(float(wh)), 0)}##"
+                    if year is not None and month is not None
+                    else f"*#18*{where}*52*{max(round(float(wh)), 0)}##"
+                )
+            ),
+        )
+        setattr(
+            OWNEnergyCommand,
+            "report_partial_month_energy",
+            classmethod(
+                lambda cls, where, wh, month=None: cls.parse(
+                    f"*#18*{where}*53#{int(month)}*{max(round(float(wh)), 0)}##"
+                    if month is not None
+                    else f"*#18*{where}*53*{max(round(float(wh)), 0)}##"
+                )
+            ),
+        )
+        setattr(
+            OWNEnergyCommand,
+            "report_partial_day_energy",
+            classmethod(
+                lambda cls, where, wh, day=None: cls.parse(
+                    f"*#18*{where}*54#{int(day)}*{max(round(float(wh)), 0)}##"
+                    if day is not None
+                    else f"*#18*{where}*54*{max(round(float(wh)), 0)}##"
+                )
+            ),
+        )
+        setattr(
+            OWNEnergyCommand,
+            "report_streaming_state",
+            classmethod(
+                lambda cls, where, duration=65, energy_type=1: cls.parse(
+                    f"*#18*{where}*1200#{int(energy_type)}*{min(max(int(duration), 0), 255)}##"
+                )
+            ),
+        )
+
+    if not hasattr(OWNGatewayCommand, "is_clock_query") or not hasattr(OWNGatewayCommand, "set_datetime"):
+        from zoneinfo import ZoneInfo
+
+        def _tz_code(target: Any, time_zone: str | None = None) -> str:
+            if hasattr(target, "astimezone") and time_zone:
+                target = target.astimezone(ZoneInfo(time_zone))
+            z = target.strftime("%z") if hasattr(target, "strftime") else ""
+            if (not z or len(z) < 3) and time_zone:
+                import datetime as _dt
+
+                z = _dt.datetime.now(ZoneInfo(time_zone)).strftime("%z")
+            if not z or len(z) < 3:
+                return "000"
+            return f"0{z[1:3]}" if z[0] == "+" else f"1{z[1:3]}"
+
+        setattr(
+            OWNGatewayCommand,
+            "is_clock_query",
+            property(lambda self: bool(self.is_dimension_request and self.dimension in (0, 1, 22))),
+        )
+        setattr(
+            OWNGatewayCommand,
+            "set_datetime",
+            classmethod(
+                lambda cls, dt, time_zone=None: cls.parse(
+                    (
+                        lambda t: f"*#13**#22*{t.strftime('%H*%M*%S')}*{_tz_code(t)}*0{t.strftime('%w*%d*%m*%Y')}##"
+                    )(dt.astimezone(ZoneInfo(time_zone)) if time_zone and hasattr(dt, "astimezone") else dt)
+                )
+            ),
+        )
+        setattr(
+            OWNGatewayCommand,
+            "set_date",
+            classmethod(
+                lambda cls, d, time_zone=None: cls.parse(
+                    (
+                        lambda t: f"*#13**#1*0{t.strftime('%w*%d*%m*%Y')}##"
+                    )(d.astimezone(ZoneInfo(time_zone)) if time_zone and hasattr(d, "astimezone") else d)
+                )
+            ),
+        )
+        setattr(
+            OWNGatewayCommand,
+            "set_time",
+            classmethod(
+                lambda cls, t, time_zone=None: cls.parse(
+                    (
+                        lambda tr: f"*#13**#0*{tr.strftime('%H*%M*%S')}*{_tz_code(tr, time_zone)}##"
+                    )(t.astimezone(ZoneInfo(time_zone)) if time_zone and hasattr(t, "astimezone") else t)
+                )
+            ),
+        )
+        setattr(
+            OWNGatewayCommand,
+            "report_datetime",
+            classmethod(
+                lambda cls, dt, time_zone=None: cls.parse(
+                    (
+                        lambda t: f"*#13**22*{t.strftime('%H*%M*%S')}*{_tz_code(t)}*0{t.strftime('%w*%d*%m*%Y')}##"
+                    )(dt.astimezone(ZoneInfo(time_zone)) if time_zone and hasattr(dt, "astimezone") else dt)
+                )
+            ),
+        )
+        setattr(
+            OWNGatewayCommand,
+            "report_date",
+            classmethod(
+                lambda cls, d, time_zone=None: cls.parse(
+                    (
+                        lambda t: f"*#13**1*0{t.strftime('%w*%d*%m*%Y')}##"
+                    )(d.astimezone(ZoneInfo(time_zone)) if time_zone and hasattr(d, "astimezone") else d)
+                )
+            ),
+        )
+        setattr(
+            OWNGatewayCommand,
+            "report_time",
+            classmethod(
+                lambda cls, t, time_zone=None: cls.parse(
+                    (
+                        lambda tr: f"*#13**0*{tr.strftime('%H*%M*%S')}*{_tz_code(tr, time_zone)}##"
+                    )(t.astimezone(ZoneInfo(time_zone)) if time_zone and hasattr(t, "astimezone") else t)
+                )
+            ),
+        )
+
+
+_ensure_ownd_expose_helpers()
+
+
 def _ensure_ownd_profile_oracle_parity() -> None:  # pragma: no cover - PyPI OWNd < 2.0.0b12
     """Bridge OWNd < 2.0.0b12 profile metadata to match firmware oracle verdicts."""
     try:
@@ -263,6 +564,14 @@ def _ensure_ownd_profile_oracle_parity() -> None:  # pragma: no cover - PyPI OWN
             object.__setattr__(prof, "supported_who", _mh200_who)
         elif model == "MH200N":
             object.__setattr__(prof, "supported_who", _mh200n_who)
+        if not hasattr(prof, "supports_dimension_response_injection"):
+            object.__setattr__(prof, "supports_dimension_response_injection", True)
+        if not hasattr(prof, "supports_who4_command_injection"):
+            object.__setattr__(
+                prof,
+                "supports_who4_command_injection",
+                model not in ("F452", "F453", "F453AV", "MH200", "MH200N"),
+            )
 
     for _prof in getattr(_ownd_profiles, "_PROFILES", {}).values():
         _patch_profile_instance(_prof)
@@ -295,11 +604,13 @@ _ensure_ownd_profile_oracle_parity()
 
 __all__ = [
     "area_of_where",
+    "expose_message_where",
     "is_apl_address",
     "is_probe",
     "is_pump",
     "is_valid_hs_tuple",
     "is_valid_rgb_tuple",
+    "normalize_expose_where",
     "normalize_where",
     "where_param",
     "zone_number",
@@ -312,13 +623,14 @@ def zone_number(where: str) -> str:
 
 
 def is_probe(where: str) -> bool:
-    """A WHERE of ``PZZ``: probe ``P`` of zone ``ZZ`` (``105``, ``0105``, ``#105``, ``4-105``).
+    """A WHERE of ``PZZ``: probe ``P`` of zone ``ZZ`` (``000``, ``105``, ``0105``, ``#105``, ``4-105``).
 
     Only a bare number counts. ``12#1`` is actuator 1 of zone 12, and read
-    digit by digit (``121``) it would look like a probe.
+    digit by digit (``121``) it would look like a probe. 3-digit ``000``..``099``
+    addresses represent external/virtual probes ``P=0, ZZ=00..99``.
     """
     bare = where.split("-")[-1].lstrip("#")
-    return bare.isdigit() and int(bare) >= 100
+    return bare.isdigit() and (int(bare) >= 100 or len(bare) == 3)
 
 
 def where_param(message: Any) -> list[str]:
@@ -329,3 +641,40 @@ def where_param(message: Any) -> list[str]:
 def is_pump(message: Any) -> bool:
     """WHERE ``0#N``: OWNd reports WHERE ``0`` with the pump number as a parameter."""
     return str(getattr(message, "where", None)) == "0" and bool(where_param(message))
+
+
+def normalize_expose_where(who: int, where: str | int | None) -> str:
+    """Return canonical WHERE string for an expose binding on ``who``."""
+    if who == 13 or where is None:
+        return ""
+    raw = str(where).strip()
+    if not raw:
+        return ""
+    if who == 4:
+        clean = raw.split("-")[-1]
+        bare = clean.lstrip("#")
+        if bare == "0":
+            return "000"
+        if bare.isdigit() and (int(bare) >= 100 or len(bare) == 3):
+            return bare
+        return clean
+    if who in (1, 2):
+        return normalize_where(raw) or raw
+    return raw
+
+
+def expose_message_where(message: Any) -> str:
+    """Extract canonical WHERE string from a received OpenWebNet message for expose matching."""
+    who = getattr(message, "who", None)
+    if who == 13:
+        return ""
+    raw_where = getattr(message, "where", None)
+    if raw_where is None:
+        return ""
+    raw_str = str(raw_where).strip()
+    tail = where_param(message)
+    full_str = f"{raw_str}#{'#'.join(str(p) for p in tail)}" if tail else raw_str
+    if isinstance(who, int):
+        return normalize_expose_where(who, full_str)
+    return full_str
+

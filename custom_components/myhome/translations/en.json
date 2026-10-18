@@ -110,6 +110,65 @@
       "reconfigure_successful": "Gateway connection reconfigured successfully."
     }
   },
+  "config_subentries": {
+    "expose": {
+      "initiate_flow": {
+        "user": "Expose entity to SCS bus",
+        "reconfigure": "Reconfigure exposed entity"
+      },
+      "entry_type": "Exposed entity",
+      "step": {
+        "user": {
+          "title": "Expose Home Assistant entity to SCS bus",
+          "description": "Emulate a virtual OpenWebNet device on the SCS bus backed by a Home Assistant entity.",
+          "data": {
+            "who": "WHO subsystem",
+            "where": "WHERE address",
+            "entity_id": "Source entity",
+            "attribute": "State attribute (optional)",
+            "dimension": "OpenWebNet dimension (optional)",
+            "cooldown": "Cooldown (seconds)",
+            "min_delta": "Minimum delta threshold (optional)",
+            "periodic_send": "Periodic broadcast interval (seconds)",
+            "respond_to_read": "Respond to bus status/dimension queries",
+            "bidirectional": "Bidirectional (act on incoming bus commands)",
+            "brightness_step_pct": "Brightness step per dimmer press (%)",
+            "on_states": "Custom 'on' states (comma-separated, optional)",
+            "value_template": "Value template (Jinja2, optional)"
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure exposed entity",
+          "description": "Update the OpenWebNet address, source entity, or throttling parameters for this exposed binding.",
+          "data": {
+            "who": "WHO subsystem",
+            "where": "WHERE address",
+            "entity_id": "Source entity",
+            "attribute": "State attribute (optional)",
+            "dimension": "OpenWebNet dimension (optional)",
+            "cooldown": "Cooldown (seconds)",
+            "min_delta": "Minimum delta threshold (optional)",
+            "periodic_send": "Periodic broadcast interval (seconds)",
+            "respond_to_read": "Respond to bus status/dimension queries",
+            "bidirectional": "Bidirectional (act on incoming bus commands)",
+            "brightness_step_pct": "Brightness step per dimmer press (%)",
+            "on_states": "Custom 'on' states (comma-separated, optional)",
+            "value_template": "Value template (Jinja2, optional)"
+          }
+        }
+      },
+      "error": {
+        "invalid_who": "Unsupported WHO subsystem (supported: 1, 2, 4, 13, 18).",
+        "where_required": "A WHERE address is required for this WHO subsystem.",
+        "entity_required": "A source Home Assistant entity is required for this WHO subsystem.",
+        "invalid_dimension": "Invalid dimension for the selected WHO subsystem.",
+        "invalid_expose": "Invalid expose configuration or duplicate WHO/WHERE/dimension binding."
+      },
+      "abort": {
+        "reconfigure_successful": "Exposed entity binding updated successfully."
+      }
+    }
+  },
   "options": {
     "step": {
       "user": {

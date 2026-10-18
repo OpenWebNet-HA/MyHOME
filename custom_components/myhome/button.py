@@ -36,6 +36,7 @@ from .const import (
 )
 from .data import MyHOMEConfigEntry, get_runtime_data
 from .discovery import Address, parse_unique_id, prune_orphaned_companions
+from .expose import is_exposed_on_bus
 from .myhome_device import MyHOMEEntity
 
 PARALLEL_UPDATES = 0
@@ -78,6 +79,8 @@ async def async_setup_entry(
         dev_str = str(device_id)
         if not dev_str or dev_str in known_calibration_covers:
             return []
+        if is_exposed_on_bus(hass, config_entry, 2, dev_str):
+            return []
         known_calibration_covers.add(dev_str)
         address = Address.from_device_id(dev_str)
         return [
@@ -117,6 +120,8 @@ async def async_setup_entry(
         address = Address.from_config(str(dev_id), cfg)
         if not address.where or address.where.startswith("#"):
             return []  # groups / general have no lock
+        if is_exposed_on_bus(hass, config_entry, who, address.key):
+            return []
 
         actuator_key = f"{who}-{address.key}"
         if actuator_key in known_button_actuators:
@@ -205,6 +210,8 @@ async def async_setup_entry(
         if registered.domain == "light" and device_id in non_light_addresses:
             continue
         where, _, interface = device_id.partition("#4#")
+        if is_exposed_on_bus(hass, config_entry, int(who), device_id):
+            continue
         default_suffix = f"{where}I{interface}" if interface else where
         if registered.device_id and devices is None:
             devices = dr.async_get(hass)
