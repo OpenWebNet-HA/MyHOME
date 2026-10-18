@@ -57,9 +57,11 @@ class TestHeatingEventParsing:
         assert msg.mode == CLIMATE_MODE_AUTO
 
     def test_mode_with_target_temperature(self):
-        msg = OWNEvent.parse("*4*1#0215*1##")
+        # Manual heating with a setpoint uses WHAT 110; WHAT 1 is season only.
+        msg = OWNEvent.parse("*4*110#0215*1##")
         assert isinstance(msg, OWNHeatingEvent)
         assert msg.message_type == MESSAGE_TYPE_MODE_TARGET
+        assert msg.mode == CLIMATE_MODE_HEAT
         assert msg.set_temperature == 21.5
 
     def test_main_temperature(self):
