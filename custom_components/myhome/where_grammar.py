@@ -645,10 +645,8 @@ def is_pump(message: Any) -> bool:
 
 def normalize_expose_where(who: int, where: str | int | None) -> str:
     """Return canonical WHERE string for an expose binding on ``who``."""
-    if who == 13 or where is None:
-        return ""
-    raw = str(where).strip()
-    if not raw:
+    raw = str(where if where is not None else "").strip()
+    if who == 13 or not raw:
         return ""
     if who == 4:
         clean = raw.split("-")[-1]
@@ -666,15 +664,11 @@ def normalize_expose_where(who: int, where: str | int | None) -> str:
 def expose_message_where(message: Any) -> str:
     """Extract canonical WHERE string from a received OpenWebNet message for expose matching."""
     who = getattr(message, "who", None)
-    if who == 13:
-        return ""
     raw_where = getattr(message, "where", None)
-    if raw_where is None:
+    if who == 13 or raw_where is None:
         return ""
     raw_str = str(raw_where).strip()
     tail = where_param(message)
     full_str = f"{raw_str}#{'#'.join(str(p) for p in tail)}" if tail else raw_str
-    if isinstance(who, int):
-        return normalize_expose_where(who, full_str)
-    return full_str
+    return normalize_expose_where(who, full_str) if isinstance(who, int) else full_str
 

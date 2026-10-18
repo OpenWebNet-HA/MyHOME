@@ -101,6 +101,7 @@ def test_where_grammar_probe_and_expose_helpers():
     assert is_probe("") is False
 
     assert normalize_expose_where(1, "99") == "99"
+    assert normalize_expose_where(1, "   ") == ""
     assert normalize_expose_where(4, "0") == "000"
     assert normalize_expose_where(4, "000") == "000"
     assert normalize_expose_where(4, "102") == "102"
@@ -111,6 +112,8 @@ def test_where_grammar_probe_and_expose_helpers():
 
     msg = OWNMessage.parse("*1*1000#1*99##")
     assert expose_message_where(msg) == "99"
+    assert expose_message_where(SimpleNamespace(who=1, where=None)) == ""
+    assert expose_message_where(SimpleNamespace(who="custom", where="51")) == "51"
 
 
 def test_expose_schema_validation():
@@ -140,7 +143,6 @@ def test_expose_schema_validation():
         {
             "who": 4,
             "where": "000",
-            "dimension": 0,
             "entity_id": "sensor.weather_station_outdoor_temperature",
             "cooldown": 30,
             "min_delta": 0.1,
@@ -156,7 +158,6 @@ def test_expose_schema_validation():
         },
         {
             "who": 13,
-            "dimension": 22,
             "periodic_send": 3600,
             "respond_to_read": True,
         },
@@ -165,6 +166,10 @@ def test_expose_schema_validation():
     assert len(validated) == 6
     assert validated[3]["where"] == "000"
     assert validated[5]["who"] == 13
+    assert expose_schema({}) == []
+
+    with pytest.raises(vol.Invalid, match="must be a list of bindings or a mapping"):
+        expose_schema("not_a_list_or_dict")
 
     # Duplicate (who, where, dimension) rejected
     with pytest.raises(vol.Invalid, match="Duplicate expose binding"):
@@ -174,6 +179,14 @@ def test_expose_schema_validation():
                 {"who": 1, "where": "99", "entity_id": "switch.b"},
             ]
         )
+
+    # WHO=1 missing where
+    with pytest.raises(vol.Invalid, match="requires a non-empty 'where'"):
+        expose_entry_schema({"who": 1, "entity_id": "light.test"})
+
+    # WHO=4 missing entity_id
+    with pytest.raises(vol.Invalid, match="requires 'entity_id'"):
+        expose_entry_schema({"who": 4, "where": "000"})
 
     # WHO=1 missing entity_id
     with pytest.raises(vol.Invalid, match="requires 'entity_id'"):
@@ -200,6 +213,12 @@ def test_expose_schema_validation():
     # WHO=18 missing dimension
     with pytest.raises(vol.Invalid, match="requires 'dimension'"):
         expose_entry_schema({"who": 18, "where": "51", "entity_id": "sensor.power"})
+
+    # WHO=18 invalid dimension
+    with pytest.raises(vol.Invalid, match="dimension must be one of"):
+        expose_entry_schema(
+            {"who": 18, "where": "51", "dimension": 99, "entity_id": "sensor.power"}
+        )
 
     # WHO=18 invalid WHERE
     with pytest.raises(vol.Invalid, match="must be '5N'"):
@@ -806,13 +825,16 @@ def test_discovery_suppresses_phantom_entities_for_exposed_addresses(hass: HomeA
 
 @pytest.mark.asyncio
 async def test_button_platform_skips_exposed_virtual_actuators(hass: HomeAssistant):
-    """Verify button.py does not create lock/unlock buttons for exposed virtual WHO=1/2 actuators."""
+    """Verify button.py does not create lock/unlock or calibration buttons for exposed virtual WHO=1/2 actuators."""
+    from homeassistant.helpers import entity_registry as er
+
     gw = _make_gateway()
     entry = _make_entry(
         hass,
         gateway=gw,
         expose_list=[
             {"who": 1, "where": "99", "entity_id": "media_player.living_room_tv"},
+            {"who": 2, "where": "97", "entity_id": "cover.pergola_somfy"},
         ],
     )
     mgr = ExposeManager(hass, entry)
@@ -822,9 +844,18 @@ async def test_button_platform_skips_exposed_virtual_actuators(hass: HomeAssista
         "12": {"where": "12", "who": "1", "name": "Physical Relay"},
     }
 
+    ent_reg = er.async_get(hass)
+    ent_reg.async_get_or_create(
+        "cover",
+        DOMAIN,
+        f"{gw.mac}-2-97",
+        config_entry=entry,
+        original_name="Exposed Cover 97",
+    )
+
     added = []
     await button_setup_entry(hass, entry, added.extend)
-    # Only physical actuator "12" gets lock/unlock buttons; virtual actuator "99" is skipped
+    # Only physical actuator "12" gets lock/unlock buttons; virtual actuators "99" and "97" are skipped
     button_wheres = {
         getattr(btn, "_where", None)
         for btn in added
@@ -893,6 +924,20 @@ async def test_expose_subentry_flow_and_diagnostics(hass: HomeAssistant):
         expose_list=[
             {"who": 1, "where": "99", "entity_id": "media_player.living_room_tv"},
         ],
+        subentries=[
+            {
+                "subentry_type": SUBENTRY_TYPE_EXPOSE,
+                "subentry_id": "sub_1",
+                "title": "WHO 1 / WHERE 98 (light.kitchen)",
+                "unique_id": None,
+                "data": {
+                    "who": 1,
+                    "where": "98",
+                    "entity_id": "light.kitchen",
+                    "on_states": ["on", "playing"],
+                },
+            }
+        ],
     )
     hass.states.async_set("media_player.living_room_tv", "on")
 
@@ -915,6 +960,43 @@ async def test_expose_subentry_flow_and_diagnostics(hass: HomeAssistant):
     assert form_res["type"] == FlowResultType.FORM
     assert form_res["step_id"] == "user"
 
+    # Validation error branches in _validate_and_clean
+    bad_who = await flow.async_step_user({CONF_WHO: "not_an_int"})
+    assert bad_who["errors"][CONF_WHO] == "invalid_who"
+
+    bad_dim_str = await flow.async_step_user(
+        {CONF_WHO: "13", CONF_DIMENSION: "abc"}
+    )
+    assert bad_dim_str["errors"][CONF_DIMENSION] == "invalid_dimension"
+
+    bad_who13_dim = await flow.async_step_user(
+        {CONF_WHO: "13", CONF_DIMENSION: "99"}
+    )
+    assert bad_who13_dim["errors"][CONF_DIMENSION] == "invalid_dimension"
+
+    missing_fields = await flow.async_step_user({CONF_WHO: "4", CONF_DIMENSION: "14"})
+    assert missing_fields["errors"]["where"] == "where_required"
+    assert missing_fields["errors"]["entity_id"] == "entity_required"
+    assert missing_fields["errors"][CONF_DIMENSION] == "invalid_dimension"
+
+    bad_who18_dim = await flow.async_step_user(
+        {CONF_WHO: "18", "where": "51", "entity_id": "sensor.p", CONF_DIMENSION: "99"}
+    )
+    assert bad_who18_dim["errors"][CONF_DIMENSION] == "invalid_dimension"
+
+    # Schema-level invalid_expose error (e.g. WHO=1 with non-point-to-point where="0")
+    bad_schema = await flow.async_step_user(
+        {
+            CONF_WHO: "1",
+            "where": "0",
+            "entity_id": "light.test",
+            "attribute": "brightness",
+            "on_states": "on, playing",
+            "value_template": "{{ value }}",
+        }
+    )
+    assert bad_schema["errors"]["base"] == "invalid_expose"
+
     # Submitting duplicate binding (WHO=1 WHERE=99 already in entry) returns invalid_expose error
     dup_res = await flow.async_step_user(
         {
@@ -929,6 +1011,21 @@ async def test_expose_subentry_flow_and_diagnostics(hass: HomeAssistant):
     )
     assert dup_res["type"] == FlowResultType.FORM
     assert dup_res["errors"]["base"] == "invalid_expose"
+
+    # Submitting valid WHO=13 clock binding succeeds
+    with patch.object(hass.config_entries, "async_schedule_reload"):
+        clock_res = await flow.async_step_user(
+            {
+                CONF_WHO: "13",
+                CONF_DIMENSION: "22",
+                CONF_COOLDOWN: 1,
+                CONF_PERIODIC_SEND: 3600,
+                CONF_RESPOND_TO_READ: True,
+                CONF_BRIGHTNESS_STEP_PCT: 10,
+            }
+        )
+    assert clock_res["type"] == FlowResultType.CREATE_ENTRY
+    assert "Bus Clock Sync" in clock_res["title"]
 
     # Submitting valid WHO=4 probe binding succeeds
     with patch.object(hass.config_entries, "async_schedule_reload") as mock_reload:
@@ -949,11 +1046,41 @@ async def test_expose_subentry_flow_and_diagnostics(hass: HomeAssistant):
     assert ok_res["type"] == FlowResultType.CREATE_ENTRY
     assert ok_res["data"]["who"] == 4
     assert ok_res["data"]["where"] == "000"
+    assert ok_res["data"]["dimension"] == 0
+
+    # Reconfigure step on existing subentry "sub_1"
+    flow.context = {"source": "reconfigure", "subentry_id": "sub_1"}
+    reconf_form = await flow.async_step_reconfigure(None)
+    assert reconf_form["type"] == FlowResultType.FORM
+    assert reconf_form["step_id"] == "reconfigure"
+
+    # Reconfigure with validation error re-renders form with user_input merged
+    reconf_err = await flow.async_step_reconfigure(
+        {CONF_WHO: "1", "where": "", "entity_id": "light.kitchen"}
+    )
+    assert reconf_err["type"] == FlowResultType.FORM
+    assert reconf_err["errors"]["where"] == "where_required"
+
+    # Reconfigure keeping same (who=1, where="98") is allowed via exclude_subentry_id
+    with patch.object(hass.config_entries, "async_schedule_reload"):
+        reconf_ok = await flow.async_step_reconfigure(
+            {
+                CONF_WHO: "1",
+                "where": "98",
+                "entity_id": "light.kitchen",
+                CONF_COOLDOWN: 2,
+                CONF_PERIODIC_SEND: 0,
+                CONF_RESPOND_TO_READ: True,
+                CONF_BRIGHTNESS_STEP_PCT: 15,
+            }
+        )
+    assert reconf_ok["type"] == FlowResultType.ABORT
+    assert reconf_ok["reason"] == "reconfigure_successful"
 
     # Diagnostics includes expose telemetry
     diag = await async_get_config_entry_diagnostics(hass, entry)
     assert "expose" in diag
-    assert len(diag["expose"]) == 1
+    assert len(diag["expose"]) == 2
     assert diag["expose"][0]["who"] == 1
     assert diag["expose"][0]["where"] == "99"
     assert diag["expose"][0]["current_ha_state"] == "on"
@@ -1404,3 +1531,387 @@ async def test_gateway_reconnect_triggers_expose_sync_all(hass: HomeAssistant):
         handler._on_event_connection_state_change(True)
     await hass.async_block_till_done()
     assert mock_mgr.async_sync_all.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_expose_edge_cases_and_timers(hass: HomeAssistant):
+    """Exercise all remaining helper, coercion, timer, echo-guard, and bus-handler branches in expose.py."""
+    import time
+    from types import SimpleNamespace
+
+    from homeassistant.util import dt as dt_util
+
+    from custom_components.myhome.expose import (
+        ExposeBinding,
+        _coerce_action_list,
+        _coerce_on_states,
+        is_exposed_on_bus,
+    )
+
+    # 1. Coercion helpers & is_exposed_on_bus edge cases
+    assert _coerce_action_list([{"service": "light.turn_on"}, "not_a_dict"]) == [
+        {"service": "light.turn_on"}
+    ]
+    assert _coerce_action_list("invalid") is None
+    assert _coerce_on_states("on, playing") == ("on", "playing")
+    assert _coerce_on_states(123) == ("on", "playing", "open", "unlocked")
+
+    assert is_exposed_on_bus(hass, None, 1, "99") is False
+    dummy_entry = MockConfigEntry(domain=DOMAIN, data={}, unique_id="dummy_1")
+    dummy_entry.add_to_hass(hass)
+    assert is_exposed_on_bus(None, dummy_entry, 1, "99") is False
+    assert is_exposed_on_bus(hass, dummy_entry, 1, "99") is False
+
+    # 2. ExposeBinding.from_dict defaults for WHO=18, WHO=13, periodic_send, bidirectional
+    b18 = ExposeBinding.from_dict({"who": 18, "where": "51", "entity_id": "sensor.p"})
+    assert b18.dimension == 113
+    b13 = ExposeBinding.from_dict({"who": 13})
+    assert b13.dimension == 22
+    b4 = ExposeBinding.from_dict(
+        {
+            "who": 4,
+            "where": "000",
+            "entity_id": "sensor.t",
+            "periodic_send": 60,
+            "bidirectional": False,
+        }
+    )
+    assert b4.periodic_send == 60.0
+    assert b4.bidirectional is False
+
+    # 3. ExposeManager init fallbacks (config_entry.data["expose"] and empty) & invalid bindings
+    gw = _make_gateway()
+    entry_data_fallback = MockConfigEntry(
+        domain=DOMAIN,
+        data={"expose": [{"who": 13}, {"who": "invalid"}]},
+        subentries_data=[
+            {
+                "subentry_type": "other_type",
+                "subentry_id": "sub_other",
+                "title": "Other",
+                "unique_id": None,
+                "data": {},
+            },
+            {
+                "subentry_type": SUBENTRY_TYPE_EXPOSE,
+                "subentry_id": "sub_bad",
+                "title": "Bad",
+                "unique_id": None,
+                "data": {"who": "not_int"},
+            },
+        ],
+        unique_id="fallback_1",
+    )
+    mgr_fb = ExposeManager(hass, entry_data_fallback, gateway=gw)
+    assert len(mgr_fb.bindings) == 1
+    assert mgr_fb.is_exposed("bad_who", "99") is False
+    assert mgr_fb.is_exposed(1, None) is False
+
+    entry_empty = MockConfigEntry(domain=DOMAIN, data={}, unique_id="empty_1")
+    mgr_empty = ExposeManager(hass, entry_empty, gateway=gw)
+    assert mgr_empty.bindings == []
+    await mgr_empty.async_start()  # No-op when bindings is empty
+
+    # 4. State listener with removed state (new_state=None), periodic callback, cooldown & streaming timers
+    hass.states.async_set("sensor.power_stream", "500")
+    entry_timers = _make_entry(
+        hass,
+        gateway=gw,
+        expose_list=[
+            {
+                "who": 18,
+                "where": "51",
+                "dimension": 113,
+                "entity_id": "sensor.power_stream",
+                "cooldown": 10.0,
+                "periodic_send": 60.0,
+            },
+        ],
+    )
+    mgr_t = ExposeManager(hass, entry_timers, gateway=gw)
+    await mgr_t.async_start()
+    await mgr_t.async_start()  # Second start is a no-op
+
+    # Remove entity state -> triggers _on_state_change with new_state=None
+    hass.states.async_remove("sensor.power_stream")
+    await hass.async_block_till_done()
+    hass.states.async_set("sensor.power_stream", "600")
+    await hass.async_block_till_done()
+
+    # Periodic callback direct invocation
+    periodic_cb = mgr_t._make_periodic_callback(mgr_t.bindings[0])
+    await periodic_cb(dt_util.now())
+
+    # Active stream shortens effective_cooldown to min(cooldown, 2.0) and schedules trailing timer
+    b_stream = mgr_t.bindings[0]
+    b_stream.stream_expires_at = time.monotonic() + 120.0
+    b_stream.last_sent_at = time.monotonic()
+    captured_trailing = []
+
+    def _capture_call_later(_hass, _delay, action):
+        captured_trailing.append(action)
+        return MagicMock()
+
+    with patch("custom_components.myhome.expose.async_call_later", side_effect=_capture_call_later):
+        mgr_t._schedule_binding_send(b_stream)
+        # Second call while timer already present in _cooldown_timers is a no-op
+        mgr_t._schedule_binding_send(b_stream)
+    assert len(captured_trailing) == 1
+    captured_trailing[0](dt_util.now())
+    await hass.async_block_till_done()
+    await mgr_t.async_stop()
+
+    # 5. Echo guard expiration and WHO=2 direct move echo clearing pre-move STOP guard
+    mgr_t._tx_echo_guard["*1*1*99##"] = time.monotonic() - 5.0
+    mgr_t._pre_move_stop_guard[(2, "97")] = time.monotonic() - 5.0
+    mgr_t._record_echo_guard("*1*0*99##")
+    assert "*1*1*99##" not in mgr_t._tx_echo_guard
+    assert (2, "97") not in mgr_t._pre_move_stop_guard
+
+    mgr_t._pre_move_stop_guard[(2, "97")] = time.monotonic() - 1.0
+    assert mgr_t._is_echo_guarded(OWNMessage.parse("*2*0*97##")) is False
+    assert (2, "97") not in mgr_t._pre_move_stop_guard
+
+    mgr_t._pre_move_stop_guard[(2, "97")] = time.monotonic() + 5.0
+    mgr_t._is_echo_guarded(OWNMessage.parse("*2*1*97##"))
+    assert (2, "97") not in mgr_t._pre_move_stop_guard
+
+    # 6. _effective_profile fallback when profile is None
+    gw_no_prof = _make_gateway()
+    gw_no_prof.profile = None
+    gw_no_prof._gateway = None
+    mgr_np = ExposeManager(hass, entry_empty, gateway=gw_no_prof)
+    assert mgr_np._effective_profile(4) is None
+
+    # 7. _resolve_raw_value and _build_frames edge cases across WHO=1, 2, 4, 18, 13, 99
+    hass.states.async_set("light.unavail_no_def", "unavailable")
+    hass.states.async_set("light.unavail_bool_def", "unavailable")
+    hass.states.async_set("light.attr_with_def", "on", {})
+    hass.states.async_set("light.attr_no_def", "on", {})
+    hass.states.async_set("light.bad_tpl", "on", {"brightness": 128})
+    hass.states.async_set("light.bad_b_val", "on", {"brightness": "not_num"})
+    hass.states.async_set("light.tpl_b_val", "on", {"brightness": 200})
+
+    # Unavailable without default -> (None, state) -> [], None
+    b_u1 = ExposeBinding(who=1, where="11", entity_id="light.unavail_no_def")
+    assert mgr_t._build_frames(b_u1, force=True, is_reply=False) == ([], None)
+
+    # Unavailable with boolean default=True -> raw is bool True
+    b_u2 = ExposeBinding(who=1, where="11", entity_id="light.unavail_bool_def", default=True)
+    frames_u2, val_u2 = mgr_t._build_frames(b_u2, force=True, is_reply=False)
+    assert [str(f) for f in frames_u2] == ["*1*1*11##"]
+    assert val_u2 == (True, None)
+    # Dedup when force=False and last_sent_value matches
+    b_u2.last_sent_value = val_u2
+    assert mgr_t._build_frames(b_u2, force=False, is_reply=False) == ([], None)
+
+    # Missing attribute with default and without default
+    b_attr_def = ExposeBinding(
+        who=1, where="11", entity_id="light.attr_with_def", attribute="missing", default="on"
+    )
+    assert mgr_t._resolve_raw_value(b_attr_def)[0] == "on"
+    b_attr_nodef = ExposeBinding(
+        who=1, where="11", entity_id="light.attr_no_def", attribute="missing"
+    )
+    assert mgr_t._resolve_raw_value(b_attr_nodef)[0] is None
+
+    # Broken template logs warning and returns None
+    b_bad_tpl = ExposeBinding(
+        who=1, where="11", entity_id="light.bad_tpl", value_template="{{ 1 / 0 }}"
+    )
+    assert mgr_t._resolve_raw_value(b_bad_tpl)[0] is None
+
+    # WHO=1 brightness with value_template (0..100 scale) and non-numeric brightness fallback
+    b_tpl_b = ExposeBinding(
+        who=1,
+        where="11",
+        entity_id="light.tpl_b_val",
+        attribute="brightness",
+        dimension=1,
+        value_template="{{ 75 }}",
+    )
+    frames_tb, _ = mgr_t._build_frames(b_tpl_b, force=True, is_reply=False)
+    assert [str(f) for f in frames_tb] == ["*1*1*11##", "*#1*11*1*175*0##"]
+
+    b_bad_b = ExposeBinding(
+        who=1, where="11", entity_id="light.bad_b_val", attribute="brightness", dimension=1
+    )
+    frames_bb, _ = mgr_t._build_frames(b_bad_b, force=True, is_reply=False)
+    assert [str(f) for f in frames_bb] == ["*1*0*11##", "*#1*11*1*100*0##"]
+
+    # WHO=2 numeric state without current_position attribute, "closing" state, dedup, and dimension=10
+    hass.states.async_set("sensor.shutter_pct", "55")
+    b_w2_num = ExposeBinding(who=2, where="21", entity_id="sensor.shutter_pct", dimension=10)
+    frames_w2n, val_w2n = mgr_t._build_frames(b_w2_num, force=True, is_reply=False)
+    assert [str(f) for f in frames_w2n] == ["*2*0*21##", "*#2*21*10*10*55*0*0##"]
+    b_w2_num.last_sent_value = val_w2n
+    assert mgr_t._build_frames(b_w2_num, force=False, is_reply=False) == ([], None)
+
+    hass.states.async_set("cover.closing_cov", "closing", {"current_position": 40})
+    b_w2_cl = ExposeBinding(who=2, where="21", entity_id="cover.closing_cov", dimension=10)
+    frames_w2c, _ = mgr_t._build_frames(b_w2_cl, force=True, is_reply=False)
+    assert [str(f) for f in frames_w2c] == ["*2*2*21##", "*#2*21*10*12*40*0*0##"]
+
+    # WHO=4 & WHO=18 profile gate (supports_dimension_response_injection=False), non-numeric values, min_delta / equality dedup, unknown dim
+    gw_f455 = _make_gateway(profile=SimpleNamespace(supports_dimension_response_injection=False))
+    mgr_f455 = ExposeManager(hass, entry_empty, gateway=gw_f455)
+    hass.states.async_set("sensor.temp_ok", "21.5")
+    hass.states.async_set("sensor.temp_bad", "not_a_float")
+    b_w4 = ExposeBinding(who=4, where="000", entity_id="sensor.temp_ok")
+    assert mgr_f455._build_frames(b_w4, force=True, is_reply=False) == ([], None)
+    assert mgr_t._build_frames(
+        ExposeBinding(who=4, where="000", entity_id="sensor.temp_bad"),
+        force=True,
+        is_reply=False,
+    ) == ([], None)
+    b_w4.last_sent_value = 21.5
+    assert mgr_t._build_frames(b_w4, force=False, is_reply=False) == ([], None)
+
+    b_w18 = ExposeBinding(who=18, where="51", dimension=113, entity_id="sensor.temp_ok")
+    assert mgr_f455._build_frames(b_w18, force=True, is_reply=False) == ([], None)
+    assert mgr_t._build_frames(
+        ExposeBinding(who=18, where="51", dimension=113, entity_id="sensor.temp_bad"),
+        force=True,
+        is_reply=False,
+    ) == ([], None)
+    b_w18_delta = ExposeBinding(
+        who=18, where="51", dimension=113, entity_id="sensor.temp_ok", min_delta=50.0
+    )
+    b_w18_delta.last_sent_value = 20.0
+    assert mgr_t._build_frames(b_w18_delta, force=False, is_reply=False) == ([], None)
+    b_w18.last_sent_value = 21.5
+    assert mgr_t._build_frames(b_w18, force=False, is_reply=False) == ([], None)
+    b_w18_unk = ExposeBinding(who=18, where="51", dimension=999, entity_id="sensor.temp_ok")
+    assert mgr_t._build_frames(b_w18_unk, force=True, is_reply=False) == ([], None)
+
+    # WHO=13 dim 22 reply, dim 0 & dim 1 non-reply, and unsupported WHO=99
+    b_w13_22 = ExposeBinding(who=13, where="", dimension=22)
+    frames_13_r22, _ = mgr_t._build_frames(
+        b_w13_22, force=True, is_reply=True, query_dimension=22
+    )
+    assert len(frames_13_r22) == 1
+    assert str(frames_13_r22[0]).startswith("*#13**22*")
+    frames_13_s0, _ = mgr_t._build_frames(
+        ExposeBinding(who=13, where="", dimension=0), force=True, is_reply=False
+    )
+    assert str(frames_13_s0[0]).startswith("*#13**#0*")
+    frames_13_s1, _ = mgr_t._build_frames(
+        ExposeBinding(who=13, where="", dimension=1), force=True, is_reply=False
+    )
+    assert str(frames_13_s1[0]).startswith("*#13**#1*")
+    assert mgr_t._build_frames(
+        ExposeBinding(who=99, where="11", default="1"), force=True, is_reply=False
+    ) == ([], None)
+
+    # 8. _async_run_actions & _async_execute_who1_* edge cases
+    calls = []
+
+    async def _rec(call):
+        calls.append((call.domain, call.service, dict(call.data)))
+
+    hass.services.async_register("switch", "turn_on", _rec)
+    hass.services.async_register("switch", "turn_off", _rec)
+    await mgr_t._async_run_actions(
+        [
+            {"service": "invalid_no_dot"},
+            {"service": "switch.turn_on", "entity_id": "switch.direct_ent"},
+        ]
+    )
+    assert calls[-1] == ("switch", "turn_on", {"entity_id": "switch.direct_ent"})
+
+    b_no_ent = ExposeBinding(who=1, where="99", entity_id=None)
+    await mgr_t._async_execute_who1_on(b_no_ent)
+    await mgr_t._async_execute_who1_off(b_no_ent)
+    await mgr_t._async_execute_who1_step(b_no_ent, up=True)
+
+    # 9. Bus message handler edge cases: unsupported WHO, respond_to_read=False, bidirectional=False,
+    #    WHO=18 streaming timer replacement, expiry callback, duration=0 stop, WHO=1 preset on non-light,
+    #    and WHO=2 custom turn_on_action / turn_off_action
+    hass.states.async_set("switch.non_light", "off")
+    hass.states.async_set("cover.custom_shutter", "closed", {"current_position": 0})
+    b_noread = ExposeBinding(
+        who=18,
+        where="52",
+        dimension=113,
+        entity_id="sensor.temp_ok",
+        respond_to_read=False,
+    )
+    b_stream51 = ExposeBinding(
+        who=18,
+        where="51",
+        dimension=113,
+        entity_id="sensor.temp_ok",
+        respond_to_read=True,
+    )
+    b_nobidir = ExposeBinding(
+        who=1,
+        where="91",
+        entity_id="switch.non_light",
+        bidirectional=False,
+    )
+    b_switch92 = ExposeBinding(
+        who=1,
+        where="92",
+        entity_id="switch.non_light",
+        bidirectional=True,
+    )
+    b_shutter93 = ExposeBinding(
+        who=2,
+        where="93",
+        entity_id="cover.custom_shutter",
+        bidirectional=True,
+        turn_on_action=[{"service": "switch.turn_on", "entity_id": "switch.shutter_up"}],
+        turn_off_action=[{"service": "switch.turn_off", "entity_id": "switch.shutter_down"}],
+    )
+    mgr_t.bindings = [b_noread, b_stream51, b_nobidir, b_switch92, b_shutter93]
+
+    # Unsupported WHO (WHO=9)
+    await mgr_t.handle_bus_message(OWNMessage.parse("*#9*1*1##"))
+    # Status/dim read & dim 1200 write when respond_to_read=False
+    await mgr_t.handle_bus_message(OWNMessage.parse("*#18*52*113##"))
+    await mgr_t.handle_bus_message(OWNMessage.parse("*#18*52*#1200#1*5##"))
+
+    # WHO=18 dim 1200 write with synthetic message lacking stream_duration attribute, replacing existing timer,
+    # firing expiry callback, and stopping with duration=0
+    stream_callbacks = []
+
+    def _capture_stream_timer(_hass, _delay, cb):
+        stream_callbacks.append(cb)
+        return MagicMock()
+
+    fake_dim1200_msg = SimpleNamespace(
+        who=18,
+        where="51",
+        is_status_request=False,
+        is_dimension_request=False,
+        is_dimension_writing=True,
+        dimension=1200,
+        stream_duration=None,
+        dimension_value=["2"],
+        _dimension_param=["1"],
+    )
+    with patch("custom_components.myhome.expose.async_call_later", side_effect=_capture_stream_timer):
+        await mgr_t.handle_bus_message(fake_dim1200_msg)  # starts stream timer 1
+        await mgr_t.handle_bus_message(fake_dim1200_msg)  # cancels timer 1, starts timer 2
+    assert len(stream_callbacks) == 2
+    stream_callbacks[-1](dt_util.now())  # fire _on_stream_expired
+    await hass.async_block_till_done()
+    assert b_stream51.stream_expires_at == 0.0
+
+    # Stop streaming with duration=0 (*#18*51*#1200#1*0##)
+    await mgr_t.handle_bus_message(OWNMessage.parse("*#18*51*#1200#1*0##"))
+    assert b_stream51.stream_expires_at == 0.0
+
+    # Command on bidirectional=False binding is ignored
+    await mgr_t.handle_bus_message(OWNMessage.parse("*1*1*91##"))
+
+    # WHO=1 preset level (*1*5*92##) on a switch entity falls back to _async_execute_who1_on
+    await mgr_t.handle_bus_message(OWNMessage.parse("*1*5*92##"))
+    assert calls[-1] == ("switch", "turn_on", {"entity_id": "switch.non_light"})
+
+    # WHO=2 UP/DOWN on shutter with custom turn_on_action / turn_off_action
+    await mgr_t.handle_bus_message(OWNMessage.parse("*2*1*93##"))
+    assert calls[-1] == ("switch", "turn_on", {"entity_id": "switch.shutter_up"})
+    await mgr_t.handle_bus_message(OWNMessage.parse("*2*2*93##"))
+    assert calls[-1] == ("switch", "turn_off", {"entity_id": "switch.shutter_down"})
+

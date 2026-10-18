@@ -1456,7 +1456,8 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
         where_default = str(defaults.get(CONF_WHERE, "") or "")
         entity_default = str(defaults.get(CONF_ENTITY_ID, "") or "")
         attr_default = str(defaults.get(CONF_ATTRIBUTE, "") or "")
-        dim_default = str(defaults.get(CONF_DIMENSION, "") or "")
+        dim_raw = defaults.get(CONF_DIMENSION)
+        dim_default = str(dim_raw) if dim_raw is not None else ""
         tpl_default = str(defaults.get(CONF_VALUE_TEMPLATE, "") or "")
         on_states_raw = defaults.get(CONF_ON_STATES)
         if isinstance(on_states_raw, (list, tuple)):
@@ -1568,7 +1569,8 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
 
         where = str(user_input.get(CONF_WHERE) or "").strip()
         entity_id = str(user_input.get(CONF_ENTITY_ID) or "").strip()
-        raw_dim = str(user_input.get(CONF_DIMENSION) or "").strip()
+        dim_val = user_input.get(CONF_DIMENSION)
+        raw_dim = str(dim_val if dim_val is not None else "").strip()
         dim: int | None = None
         if raw_dim:
             if not raw_dim.isdigit():

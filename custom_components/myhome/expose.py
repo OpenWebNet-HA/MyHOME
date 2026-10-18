@@ -317,7 +317,7 @@ class ExposeManager:
         if yaml_configs is None:
             if runtime is not None and getattr(runtime, "expose", None):
                 yaml_configs = list(runtime.expose)
-            elif isinstance(getattr(config_entry, "data", None), dict) and config_entry.data.get(CONF_EXPOSE):
+            elif getattr(config_entry, "data", None) and config_entry.data.get(CONF_EXPOSE):
                 yaml_configs = list(config_entry.data[CONF_EXPOSE])
             else:
                 yaml_configs = []
@@ -553,8 +553,8 @@ class ExposeManager:
         for k in expired:
             self._tx_echo_guard.pop(k, None)
         expired_stop = [k for k, exp in self._pre_move_stop_guard.items() if exp <= now]
-        for k in expired_stop:
-            self._pre_move_stop_guard.pop(k, None)
+        for stop_k in expired_stop:
+            self._pre_move_stop_guard.pop(stop_k, None)
 
         if isinstance(frame, OWNMessage):
             who = getattr(frame, "who", None)
@@ -623,32 +623,12 @@ class ExposeManager:
     def _effective_profile(self, who: int) -> Any:
         """Return the active GatewayProfile for ``who``, accounting for shared-bus delegation."""
         target_gw: Any = self.gateway
-        if target_gw is None:
-            return None
         delegated_away = getattr(target_gw, "delegated_away_whos", None)
         if isinstance(delegated_away, (set, frozenset, list, tuple)) and who in delegated_away:
             get_sec = getattr(target_gw, "_get_secondary_for_who", None)
             sec = get_sec(who) if callable(get_sec) else None
             if sec is not None and getattr(sec, "is_connected", False) is True:
                 target_gw = sec
-            else:
-                from .const import DOMAIN
-
-                for other_entry in self.hass.config_entries.async_entries(DOMAIN):
-                    if other_entry.entry_id == self.config_entry.entry_id:
-                        continue
-                    other_rt = getattr(other_entry, "runtime_data", None)
-                    other_gw = getattr(other_rt, "gateway", None)
-                    other_del = getattr(other_gw, "delegated_whos", None)
-                    if (
-                        other_gw is not None
-                        and getattr(other_gw, "primary_gateway_mac", None)
-                        == getattr(self.gateway, "mac", None)
-                        and isinstance(other_del, (set, frozenset, list, tuple))
-                        and who in other_del
-                    ):
-                        target_gw = other_gw
-                        break
 
         for candidate in (
             getattr(target_gw, "profile", None),
@@ -750,7 +730,7 @@ class ExposeManager:
                 except (TypeError, ValueError):
                     brightness_pct = 100 if is_on else 0
 
-            val_key = (is_on, brightness_pct)
+            val_key: Any = (is_on, brightness_pct)
             if not force and binding.last_sent_value == val_key:
                 return [], None
 
