@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import datetime as dt
+import math
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -147,6 +147,29 @@ def _coerce_on_states(raw: Any, *, entity_id: str | None = None) -> tuple[str, .
     return fallback
 
 
+def _require_finite_float(val: Any, name: str) -> float:
+    """Convert ``val`` to a finite float, rejecting booleans and NaN/inf."""
+    if isinstance(val, bool):
+        raise ValueError(f"{name} must be a finite number")
+    fval = float(val)
+    if not math.isfinite(fval):
+        raise ValueError(f"{name} must be a finite number")
+    return fval
+
+
+def _parse_position_pct(val: Any) -> int | None:
+    """Parse a finite shutter position percentage (clamped to 0..100), or return None."""
+    if val is None or isinstance(val, bool):
+        return None
+    try:
+        fval = float(val)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(fval):
+        return None
+    return min(max(round(fval), 0), 100)
+
+
 def is_exposed_on_bus(
     hass: HomeAssistant | None,
     config_entry: ConfigEntry | None,
@@ -230,10 +253,14 @@ class ExposeBinding:
         subentry_id: str | None = None,
     ) -> ExposeBinding:
         """Construct an :class:`ExposeBinding` from a validated config dictionary."""
+        if isinstance(cfg.get(CONF_WHO), bool):
+            raise ValueError("who must be an integer")
         who = int(cfg[CONF_WHO])
         where = normalize_expose_where(who, cfg.get(CONF_WHERE))
         raw_dim = cfg.get(CONF_DIMENSION)
         if raw_dim is not None and str(raw_dim).strip() != "":
+            if isinstance(raw_dim, bool):
+                raise ValueError("dimension must be an integer")
             dimension: int | None = int(raw_dim)
         elif who == 4:
             dimension = 0
@@ -246,7 +273,9 @@ class ExposeBinding:
 
         raw_periodic = cfg.get(CONF_PERIODIC_SEND)
         if raw_periodic is not None and str(raw_periodic).strip() != "":
-            periodic_send = max(0.0, float(raw_periodic))
+            periodic_send = max(
+                0.0, _require_finite_float(raw_periodic, "periodic_send")
+            )
         elif who == 4:
             periodic_send = 900.0
         elif who == 13:
@@ -261,16 +290,22 @@ class ExposeBinding:
             bidirectional = who in (1, 2)
 
         raw_cooldown = cfg.get(CONF_COOLDOWN)
-        cooldown = max(0.0, float(raw_cooldown)) if raw_cooldown is not None else 1.0
+        cooldown = (
+            max(0.0, _require_finite_float(raw_cooldown, "cooldown"))
+            if raw_cooldown is not None
+            else 1.0
+        )
 
         raw_min_delta = cfg.get(CONF_MIN_DELTA)
         min_delta = (
-            max(0.0, float(raw_min_delta))
+            max(0.0, _require_finite_float(raw_min_delta, "min_delta"))
             if raw_min_delta is not None and str(raw_min_delta).strip() != ""
             else None
         )
 
         raw_step = cfg.get(CONF_BRIGHTNESS_STEP_PCT)
+        if isinstance(raw_step, bool):
+            raise ValueError("brightness_step_pct must be an integer")
         brightness_step_pct = (
             min(max(int(raw_step), 1), 100) if raw_step is not None else 10
         )
@@ -899,9 +934,16 @@ class ExposeManager:
                         and "brightness" in state.attributes
                         and (binding.attribute in (None, "brightness"))
                     )
-                    b_raw = float(raw) if binding.attribute == "brightness" else float(
-                        (state.attributes.get("brightness") if state else 0) or 0
+                    b_cand = (
+                        raw
+                        if binding.attribute == "brightness"
+                        else ((state.attributes.get("brightness") if state else 0) or 0)
                     )
+                    if isinstance(b_cand, bool):
+                        raise ValueError("boolean brightness")
+                    b_raw = float(b_cand)
+                    if not math.isfinite(b_raw):
+                        raise ValueError("non-finite brightness")
                     if from_ha_brightness and not binding.value_template:
                         brightness_pct = round(min(max(b_raw, 0.0), 255.0) * 100.0 / 255.0)
                     else:
@@ -938,11 +980,9 @@ class ExposeManager:
             raw_str = str(raw).strip().lower()
             pos_pct: int | None = None
             if state is not None and "current_position" in state.attributes:
-                with contextlib.suppress(TypeError, ValueError):
-                    pos_pct = min(max(round(float(state.attributes["current_position"])), 0), 100)
-            elif raw_str.lstrip("-").replace(".", "", 1).isdigit():
-                with contextlib.suppress(TypeError, ValueError):
-                    pos_pct = min(max(round(float(raw_str)), 0), 100)
+                pos_pct = _parse_position_pct(state.attributes["current_position"])
+            elif not isinstance(raw, bool):
+                pos_pct = _parse_position_pct(raw)
 
             if raw_str in ("opening", "up"):
                 shutter_cmd = OWNAutomationCommand.raise_shutter(binding.where)
@@ -1000,10 +1040,15 @@ class ExposeManager:
             )
             if not supports_dim_resp and not supports_cmd_inj:
                 return [], None
+            if isinstance(raw, bool):
+                return [], None
             try:
-                temp_c = round(float(raw), 1)
+                fval = float(raw)
             except (TypeError, ValueError):
                 return [], None
+            if not math.isfinite(fval) or not -99.9 <= fval <= 99.9:
+                return [], None
+            temp_c = round(fval, 1)
 
             if not force and binding.last_sent_value is not None:
                 if binding.min_delta is not None:
@@ -1022,9 +1067,13 @@ class ExposeManager:
                 profile, "supports_dimension_response_injection", True
             ):
                 return [], None
+            if isinstance(raw, bool):
+                return [], None
             try:
                 val = float(raw)
             except (TypeError, ValueError):
+                return [], None
+            if not math.isfinite(val) or val < 0.0:
                 return [], None
 
             dim = binding.dimension if binding.dimension is not None else 113
@@ -1034,8 +1083,10 @@ class ExposeManager:
                     val *= 1000.0
                 elif dim in (51, 52, 53, 54) and unit.lower() == "kwh":
                     val *= 1000.0
+            if not math.isfinite(val):
+                return [], None
 
-            rounded = max(round(val), 0)
+            rounded = round(val)
             if not force and binding.last_sent_value is not None:
                 if binding.min_delta is not None:
                     if abs(val - float(binding.last_sent_value)) < binding.min_delta:
@@ -1353,12 +1404,15 @@ class ExposeManager:
                     if duration is None:
                         vals = getattr(message, "dimension_value", [])
                         duration = int(vals[0]) if vals and str(vals[0]).isdigit() else 0
+                    duration = min(max(int(duration), 0), 255)
                     dim_params = getattr(message, "_dimension_param", None) or []
                     energy_type = (
                         int(dim_params[0])
                         if dim_params and str(dim_params[0]).isdigit()
                         else 1
                     )
+                    if not 1 <= energy_type <= 4:
+                        continue
                     confirm = OWNEnergyCommand.report_streaming_state(
                         binding.where, duration=duration, energy_type=energy_type
                     )
@@ -1408,10 +1462,10 @@ class ExposeManager:
             if who == 1:
                 if is_dim_write and dim in (1, 4):
                     vals = getattr(message, "dimension_value", [])
-                    if vals and str(vals[0]).isdigit():
+                    if vals and str(vals[0]).isdigit() and 0 <= int(vals[0]) <= 200:
                         self._cancel_cooldown_timer(binding.key)
                         raw_lvl = int(vals[0])
-                        pct = min(max(raw_lvl - 100 if raw_lvl >= 100 else raw_lvl, 0), 100)
+                        pct = raw_lvl - 100 if raw_lvl >= 100 else raw_lvl
                         confirm_frames: list[OWNMessage] = [
                             OWNLightingCommand.switch_on(binding.where)
                             if pct > 0
@@ -1495,9 +1549,13 @@ class ExposeManager:
                 if is_dim_write and dim in (10, 11):
                     vals = getattr(message, "dimension_value", [])
                     raw_pct_val = vals[1] if len(vals) >= 2 else (vals[0] if vals else None)
-                    if raw_pct_val is not None and str(raw_pct_val).isdigit():
+                    if (
+                        raw_pct_val is not None
+                        and str(raw_pct_val).isdigit()
+                        and 0 <= int(raw_pct_val) <= 100
+                    ):
                         self._cancel_cooldown_timer(binding.key)
-                        pct = min(max(int(raw_pct_val), 0), 100)
+                        pct = int(raw_pct_val)
                         confirm = OWNAutomationCommand.report_shutter_level(
                             binding.where, pct, state=10
                         )
@@ -1526,17 +1584,11 @@ class ExposeManager:
                     if binding.entity_id
                     else None
                 )
-                cur_pos: int | None = None
-                if (
-                    reports_pos
-                    and cur_state_obj is not None
-                    and "current_position" in cur_state_obj.attributes
-                ):
-                    with contextlib.suppress(TypeError, ValueError):
-                        cur_pos = min(
-                            max(round(float(cur_state_obj.attributes["current_position"])), 0),
-                            100,
-                        )
+                cur_pos: int | None = (
+                    _parse_position_pct(cur_state_obj.attributes.get("current_position"))
+                    if reports_pos and cur_state_obj is not None
+                    else None
+                )
 
                 if eff_what == 1:
                     self._cancel_cooldown_timer(binding.key)

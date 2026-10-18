@@ -1,4 +1,5 @@
 """Validator for the MyHome configuration file."""
+import math
 import re
 import typing
 
@@ -33,11 +34,13 @@ from homeassistant.components.switch import (  # type: ignore
 from homeassistant.components.switch import (  # type: ignore[attr-defined, unused-ignore]
     SwitchDeviceClass,
 )
-<<<<<<< HEAD
-from homeassistant.const import CONF_CODE, CONF_MAC, CONF_NAME
-=======
-from homeassistant.const import CONF_ATTRIBUTE, CONF_ENTITY_ID, CONF_MAC, CONF_NAME
->>>>>>> 822c636c (feat(expose): add declarative HA-to-SCS bus expose engine and virtual actuator LED sync)
+from homeassistant.const import (
+    CONF_ATTRIBUTE,
+    CONF_CODE,
+    CONF_ENTITY_ID,
+    CONF_MAC,
+    CONF_NAME,
+)
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.device_registry import format_mac as ha_format_mac
 from voluptuous import (
@@ -62,14 +65,11 @@ from .const import (
     CALIBRATION_MIN_RUN,
     CONF_ACCESS,
     CONF_ADVANCED_SHUTTER,
-<<<<<<< HEAD
     CONF_ALLOWED_USERS,
     CONF_APPROVAL_TIMEOUT,
     CONF_APPROVERS,
-=======
     CONF_BIDIRECTIONAL,
     CONF_BRIGHTNESS_STEP_PCT,
->>>>>>> 822c636c (feat(expose): add declarative HA-to-SCS bus expose engine and virtual actuator LED sync)
     CONF_BUS_INTERFACE,
     CONF_CAMERA,
     CONF_CENTRAL,
@@ -772,13 +772,46 @@ def _validate_locks(data: dict[str, typing.Any]) -> dict[str, typing.Any]:
 lock_schema = All(lock_schema, _validate_locks)  # type: ignore[assignment]
 
 
+def _finite_float(v: typing.Any) -> float:
+    """Coerce ``v`` to a finite float, rejecting booleans and NaN/inf."""
+    if isinstance(v, bool):
+        raise Invalid("boolean is not a valid numeric value")
+    try:
+        fval = float(v)
+    except (TypeError, ValueError) as err:
+        raise Invalid(f"expected a finite number, got {v!r}") from err
+    if not math.isfinite(fval):
+        raise Invalid("numeric value must be finite")
+    return fval
+
+
+def _non_bool_int(v: typing.Any) -> int:
+    """Coerce ``v`` to an int, rejecting booleans and non-finite floats."""
+    if isinstance(v, bool):
+        raise Invalid("boolean is not a valid integer")
+    try:
+        return int(v)
+    except (TypeError, ValueError, OverflowError) as err:
+        raise Invalid(f"expected an integer, got {v!r}") from err
+
+
+_WHO4_EXPOSE_PROBE_RE = re.compile(r"(?:0\d\d|[1-9](?:0[1-9]|[1-9]\d))")
+_WHO18_EXPOSE_WHERE_RE = re.compile(
+    r"(?:5(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])(?:#\d)?|7(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])#0)"
+)
+
+
 def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]:
     """Validate cross-field constraints on a single expose entry."""
-    from .where_grammar import is_probe, normalize_expose_where
+    from .where_grammar import is_apl_address, is_probe, normalize_expose_where
 
     who = int(item[CONF_WHO])
     raw_where = str(item.get(CONF_WHERE) or "").strip()
     dim = item.get(CONF_DIMENSION)
+    default_val = item.get(CONF_DEFAULT)
+    if isinstance(default_val, float) and not math.isfinite(default_val):
+        raise Invalid("expose 'default' must be a finite value")
+
     if who == 13:
         if raw_where:
             raise Invalid(f"WHO=13 does not take a 'where' address (got {raw_where!r})")
@@ -789,8 +822,10 @@ def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]
         item[CONF_WHERE] = ""
         return item
 
-    if not raw_where:
-        raise Invalid(f"expose entry for WHO={who} requires a non-empty 'where' address")
+    if not raw_where or "*" in raw_where:
+        raise Invalid(
+            f"expose entry for WHO={who} requires a non-empty 'where' address without '*'"
+        )
 
     where = normalize_expose_where(who, raw_where)
     item[CONF_WHERE] = where
@@ -825,18 +860,17 @@ def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]
     if who in (1, 2):
         if dim is not None:
             raise Invalid(f"WHO={who} expose does not support 'dimension' (got {dim})")
-        base_where = where.split("#", 1)[0]
+        base_where, sep, suffix = where.partition("#")
         if (
             where.startswith("#")
-            or base_where in ("0", "00", "100")
-            or (base_where.isdigit() and len(base_where) == 1)
-            or not base_where.isdigit()
+            or not is_apl_address(base_where)
+            or (sep and not re.fullmatch(r"4#(0\d|1[0-5])", suffix))
         ):
             raise Invalid(
                 f"WHO={who} expose 'where' must be a point-to-point actuator address (got {raw_where!r})"
             )
     elif who == 4:
-        if not is_probe(where):
+        if not (is_probe(where) and _WHO4_EXPOSE_PROBE_RE.fullmatch(where)):
             raise Invalid(
                 f"WHO=4 expose 'where' must be a probe address ('000'..'099' or '101'..'999', got {raw_where!r})"
             )
@@ -844,6 +878,12 @@ def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]
             raise Invalid(
                 f"WHO=4 temperature probe expose supports only dimension 0 (got {dim})"
             )
+        if default_val is not None:
+            def_temp = _finite_float(default_val)
+            if not -99.9 <= def_temp <= 99.9:
+                raise Invalid(
+                    "WHO=4 expose 'default' must be between -99.9 and 99.9"
+                )
     elif who == 18:
         if dim is None:
             raise Invalid(
@@ -853,10 +893,14 @@ def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]
             raise Invalid(
                 f"WHO=18 energy expose dimension must be one of 51, 52, 53, 54, 113 (got {dim})"
             )
-        if not re.fullmatch(r"(5[1-9]\d*(#\d+)?|7\d+#0)", where):
+        if not _WHO18_EXPOSE_WHERE_RE.fullmatch(where):
             raise Invalid(
                 f"WHO=18 expose 'where' must be '5N' (e.g. '51'..'5255') or '7N#0' (got {raw_where!r})"
             )
+        if default_val is not None:
+            def_en = _finite_float(default_val)
+            if def_en < 0.0:
+                raise Invalid("WHO=18 expose 'default' must be non-negative")
     return item
 
 
@@ -887,18 +931,18 @@ def _validate_expose_list(entries: list[dict[str, typing.Any]]) -> list[dict[str
 expose_entry_schema = All(
     Schema(
         {
-            Required(CONF_WHO): All(Coerce(int), In([1, 2, 4, 13, 18])),
+            Required(CONF_WHO): All(_non_bool_int, In([1, 2, 4, 13, 18])),
             Optional(CONF_WHERE): Coerce(str),
             Optional(CONF_ENTITY_ID): cv.entity_id,
             Optional(CONF_ATTRIBUTE): Coerce(str),
-            Optional(CONF_DIMENSION): Coerce(int),
+            Optional(CONF_DIMENSION): _non_bool_int,
             Optional(CONF_VALUE_TEMPLATE): Coerce(str),
             Optional(CONF_COOLDOWN, default=1.0): All(
-                Coerce(float), Range(min=0.0, max=3600.0)
+                _finite_float, Range(min=0.0, max=3600.0)
             ),
-            Optional(CONF_MIN_DELTA): All(Coerce(float), Range(min=0.0)),
+            Optional(CONF_MIN_DELTA): All(_finite_float, Range(min=0.0)),
             Optional(CONF_PERIODIC_SEND): All(
-                Coerce(float), Range(min=0.0, max=604800.0)
+                _finite_float, Range(min=0.0, max=604800.0)
             ),
             Optional(CONF_RESPOND_TO_READ, default=True): Boolean(),
             Optional(CONF_BIDIRECTIONAL): Boolean(),
@@ -909,7 +953,7 @@ expose_entry_schema = All(
             Optional(CONF_STEP_UP_ACTION): Any([dict], dict),
             Optional(CONF_STEP_DOWN_ACTION): Any([dict], dict),
             Optional(CONF_BRIGHTNESS_STEP_PCT, default=10): All(
-                Coerce(int), Range(min=1, max=100)
+                _non_bool_int, Range(min=1, max=100)
             ),
         }
     ),

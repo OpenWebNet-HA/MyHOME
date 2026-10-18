@@ -1429,13 +1429,13 @@ async def test_who18_dim1200_read_query_and_active_streaming_expiry(hass: HomeAs
 async def test_shared_bus_secondary_gateway_delegation_and_phantom_suppression(hass: HomeAssistant):
     """Verify WHO=18 delegated to a secondary gateway uses secondary profile and suppresses phantoms."""
     from homeassistant.helpers.dispatcher import async_dispatcher_send
-    from OWNd.profiles import F454Profile, GatewayProfile
+    from OWNd.profiles import F454Profile
 
     hass.states.async_set("sensor.p1_power", "1800")
 
     # Primary gateway has supports_dimension_response_injection=False overridden
     gw_primary = _make_gateway(
-        profile=GatewayProfile(
+        profile=SimpleNamespace(
             model_name="F455",
             supports_dimension_response_injection=False,
         ),
@@ -2326,3 +2326,210 @@ async def test_who2_oracle_40_step_echo_loop_simulation(hass: HomeAssistant):
     assert service_calls == ["open_cover", "stop_cover", "close_cover"]
 
     await mgr.async_stop()
+
+
+@pytest.mark.asyncio
+async def test_expose_infeasible_inputs_hardening(hass: HomeAssistant):
+    """Verify expose schema, ExposeBinding.from_dict, _build_frames, and bus handlers reject infeasible inputs."""
+    from custom_components.myhome.expose import (
+        ExposeBinding,
+        _parse_position_pct,
+        _require_finite_float,
+    )
+
+    # 1. Schema validation: booleans, NaN/inf, out-of-range numbers, and malformed WHEREs
+    infeasible_schema_cases = [
+        {"who": True, "where": "99", "entity_id": "light.a"},
+        {"who": "not_int", "where": "99", "entity_id": "light.a"},
+        {"who": float("nan"), "where": "99", "entity_id": "light.a"},
+        {"who": float("inf"), "where": "99", "entity_id": "light.a"},
+        {"who": 18, "where": "51", "dimension": False, "entity_id": "sensor.p"},
+        {"who": 1, "where": "99", "entity_id": "light.a", "brightness_step_pct": True},
+        {"who": 1, "where": "99", "entity_id": "light.a", "brightness_step_pct": 0},
+        {"who": 1, "where": "99", "entity_id": "light.a", "brightness_step_pct": 101},
+        {"who": 1, "where": "99", "entity_id": "light.a", "cooldown": True},
+        {"who": 1, "where": "99", "entity_id": "light.a", "cooldown": "bad"},
+        {"who": 1, "where": "99", "entity_id": "light.a", "cooldown": float("nan")},
+        {"who": 1, "where": "99", "entity_id": "light.a", "cooldown": float("inf")},
+        {"who": 1, "where": "99", "entity_id": "light.a", "cooldown": -1},
+        {"who": 1, "where": "99", "entity_id": "light.a", "periodic_send": False},
+        {"who": 1, "where": "99", "entity_id": "light.a", "periodic_send": float("nan")},
+        {"who": 1, "where": "99", "entity_id": "light.a", "min_delta": True},
+        {"who": 1, "where": "99", "entity_id": "light.a", "min_delta": float("-inf")},
+        {"who": 1, "where": "99", "entity_id": "light.a", "default": float("nan")},
+        {"who": 1, "where": "99", "entity_id": "light.a", "default": float("inf")},
+        {"who": 1, "where": "99*1", "entity_id": "light.a"},
+        {"who": 1, "where": "99999", "entity_id": "light.a"},
+        {"who": 1, "where": "20", "entity_id": "light.a"},
+        {"who": 1, "where": "1119", "entity_id": "light.a"},
+        {"who": 1, "where": "#1", "entity_id": "light.a"},
+        {"who": 1, "where": "99#99#99", "entity_id": "light.a"},
+        {"who": 2, "where": "99#4#99", "entity_id": "cover.a"},
+        {"who": 4, "where": "100", "entity_id": "sensor.t"},
+        {"who": 4, "where": "200", "entity_id": "sensor.t"},
+        {"who": 4, "where": "9999", "entity_id": "sensor.t"},
+        {"who": 4, "where": "000", "entity_id": "sensor.t", "default": 150.0},
+        {"who": 4, "where": "000", "entity_id": "sensor.t", "default": -100.0},
+        {"who": 4, "where": "000", "entity_id": "sensor.t", "default": True},
+        {"who": 4, "where": "000", "entity_id": "sensor.t", "default": "bad"},
+        {"who": 18, "where": "50", "dimension": 113, "entity_id": "sensor.p"},
+        {"who": 18, "where": "5256", "dimension": 113, "entity_id": "sensor.p"},
+        {"who": 18, "where": "70#0", "dimension": 113, "entity_id": "sensor.p"},
+        {"who": 18, "where": "7256#0", "dimension": 113, "entity_id": "sensor.p"},
+        {"who": 18, "where": "71#1", "dimension": 113, "entity_id": "sensor.p"},
+        {"who": 18, "where": "51", "dimension": 113, "entity_id": "sensor.p", "default": -5.0},
+        {"who": 18, "where": "51", "dimension": 113, "entity_id": "sensor.p", "default": True},
+    ]
+    for bad_cfg in infeasible_schema_cases:
+        with pytest.raises(vol.Invalid):
+            expose_entry_schema(dict(bad_cfg))
+
+    # Valid local-bus WHO=1 and valid WHO=4/18 defaults pass
+    valid_local = expose_entry_schema(
+        {"who": 1, "where": "99#4#01", "entity_id": "light.a"}
+    )
+    assert valid_local["where"] == "99#4#01"
+    valid_t = expose_entry_schema(
+        {"who": 4, "where": "101", "entity_id": "sensor.t", "default": -12.5}
+    )
+    assert valid_t["where"] == "101"
+    valid_e = expose_entry_schema(
+        {"who": 18, "where": "71#0", "dimension": 113, "entity_id": "sensor.p", "default": 0}
+    )
+    assert valid_e["where"] == "71#0"
+
+    # 2. Helper & ExposeBinding.from_dict guards
+    with pytest.raises(ValueError, match="finite"):
+        _require_finite_float(True, "cooldown")
+    with pytest.raises(ValueError, match="finite"):
+        _require_finite_float(float("nan"), "cooldown")
+    with pytest.raises(ValueError, match="finite"):
+        _require_finite_float(float("inf"), "cooldown")
+
+    assert _parse_position_pct(None) is None
+    assert _parse_position_pct(True) is None
+    assert _parse_position_pct("bad") is None
+    assert _parse_position_pct(float("nan")) is None
+    assert _parse_position_pct(float("inf")) is None
+    assert _parse_position_pct("120") == 100
+    assert _parse_position_pct("-10") == 0
+
+    for bad_dict in (
+        {"who": True, "where": "99", "entity_id": "light.a"},
+        {"who": 18, "where": "51", "dimension": True, "entity_id": "sensor.p"},
+        {"who": 1, "where": "99", "entity_id": "light.a", "brightness_step_pct": True},
+        {"who": 1, "where": "99", "entity_id": "light.a", "cooldown": float("nan")},
+        {"who": 1, "where": "99", "entity_id": "light.a", "periodic_send": float("inf")},
+        {"who": 1, "where": "99", "entity_id": "light.a", "min_delta": True},
+    ):
+        with pytest.raises(ValueError):
+            ExposeBinding.from_dict(bad_dict)
+
+    # 3. Runtime _build_frames and _async_handle_bus_message guards
+    gw = _make_gateway()
+    entry = _make_entry(
+        hass,
+        gateway=gw,
+        expose_list=[
+            {"who": 1, "where": "96", "entity_id": "light.bad_b", "attribute": "brightness"},
+            {"who": 2, "where": "97", "entity_id": "cover.bad_p", "attribute": "current_position"},
+            {"who": 4, "where": "000", "entity_id": "sensor.bad_t"},
+            {"who": 18, "where": "51", "dimension": 113, "entity_id": "sensor.bad_e"},
+        ],
+    )
+    mgr = ExposeManager(hass, entry)
+    b_light, b_cover, b_temp, b_energy = mgr.bindings
+
+    # WHO=1 brightness: boolean or non-finite falls back safely without raising
+    hass.states.async_set("light.bad_b", "on", {"brightness": True})
+    frames, _ = mgr._build_frames(b_light, force=True, is_reply=False)
+    assert [str(f) for f in frames] == ["*1*1*96##", "*#1*96*1*200*0##"]
+
+    hass.states.async_set("light.bad_b", "on", {"brightness": float("inf")})
+    frames, _ = mgr._build_frames(b_light, force=True, is_reply=False)
+    assert [str(f) for f in frames] == ["*1*0*96##", "*#1*96*1*100*0##"]
+
+    # WHO=2 position: non-finite current_position omits shutter level frame cleanly
+    hass.states.async_set("cover.bad_p", "open", {"current_position": float("nan")})
+    frames, _ = mgr._build_frames(b_cover, force=True, is_reply=False)
+    assert [str(f) for f in frames] == ["*2*0*97##"]
+
+    # WHO=4 temperature: boolean, NaN, inf, and out-of-bounds temperatures produce no frames
+    b_temp.default = True
+    hass.states.async_set("sensor.bad_t", "unavailable")
+    assert mgr._build_frames(b_temp, force=True, is_reply=False) == ([], None)
+    b_temp.default = None
+    for bad_state in ("nan", "inf", "-inf", "100.0", "-100.0", "150.0"):
+        hass.states.async_set("sensor.bad_t", bad_state)
+        assert mgr._build_frames(b_temp, force=True, is_reply=False) == ([], None)
+
+    # WHO=18 energy: boolean, NaN, negative, and kW->W overflow produce no frames
+    b_energy.default = True
+    hass.states.async_set("sensor.bad_e", "unavailable")
+    assert mgr._build_frames(b_energy, force=True, is_reply=False) == ([], None)
+    b_energy.default = None
+    for bad_state in ("nan", "inf", "-1", "-0.1"):
+        hass.states.async_set("sensor.bad_e", bad_state)
+        assert mgr._build_frames(b_energy, force=True, is_reply=False) == ([], None)
+    hass.states.async_set("sensor.bad_e", "1e308", {"unit_of_measurement": "kW"})
+    assert mgr._build_frames(b_energy, force=True, is_reply=False) == ([], None)
+
+    # Bus message handler ignores out-of-range dim writes without crashing
+    gw.send.reset_mock()
+    await mgr.handle_bus_message(OWNMessage.parse("*#18*51*#1200#9*65##"))
+    await mgr.handle_bus_message(OWNMessage.parse("*#1*96*#1*999*0##"))
+    await mgr.handle_bus_message(OWNMessage.parse("*#2*97*#10*10*255*0*0##"))
+    assert gw.send.call_count == 0
+
+    # 4. Direct expose frame builders (both OWNd >= 2.0.0b12 and where_grammar shim)
+    from OWNd.message import (
+        OWNAutomationCommand,
+        OWNGatewayCommand,
+        OWNHeatingCommand,
+        OWNLightingCommand,
+    )
+
+    with pytest.raises((TypeError, ValueError)):
+        OWNLightingCommand.report_brightness("99", True)
+    with pytest.raises((TypeError, ValueError)):
+        OWNLightingCommand.report_brightness("99", 101)
+    with pytest.raises((TypeError, ValueError)):
+        OWNLightingCommand.report_brightness("", 50)
+
+    with pytest.raises((TypeError, ValueError)):
+        OWNAutomationCommand.report_shutter_level("97", False)
+    with pytest.raises((TypeError, ValueError)):
+        OWNAutomationCommand.report_shutter_level("97", 101)
+    with pytest.raises((TypeError, ValueError)):
+        OWNAutomationCommand.report_shutter_level("97", 50, state=99)
+
+    with pytest.raises((TypeError, ValueError)):
+        OWNHeatingCommand.encode_temperature(True)
+    with pytest.raises((TypeError, ValueError)):
+        OWNHeatingCommand.encode_temperature(float("nan"))
+    with pytest.raises((TypeError, ValueError)):
+        OWNHeatingCommand.report_temperature("000", 100.0)
+    with pytest.raises((TypeError, ValueError)):
+        OWNHeatingCommand.write_temperature("000", -100.0)
+
+    with pytest.raises((TypeError, ValueError)):
+        OWNEnergyCommand.report_active_power("51", True)
+    with pytest.raises((TypeError, ValueError)):
+        OWNEnergyCommand.report_active_power("51", -1)
+    with pytest.raises((TypeError, ValueError)):
+        OWNEnergyCommand.report_total_energy("51", float("inf"))
+    with pytest.raises((TypeError, ValueError)):
+        OWNEnergyCommand.report_streaming_state("51", duration=256)
+    with pytest.raises((TypeError, ValueError)):
+        OWNEnergyCommand.report_streaming_state("51", duration=60, energy_type=5)
+
+    with pytest.raises((TypeError, ValueError)):
+        OWNGatewayCommand.set_datetime("2026-07-15")  # type: ignore[arg-type]
+    with pytest.raises((TypeError, ValueError)):
+        OWNGatewayCommand.report_datetime("2026-07-15")  # type: ignore[arg-type]
+    with pytest.raises((TypeError, ValueError)):
+        OWNGatewayCommand.set_date("2026-07-15")  # type: ignore[arg-type]
+    with pytest.raises((TypeError, ValueError)):
+        OWNGatewayCommand.set_time("14:30:00")  # type: ignore[arg-type]
+
+

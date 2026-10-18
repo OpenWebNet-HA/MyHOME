@@ -283,7 +283,27 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
             ),
         )
 
+    def _req_where(where: Any) -> str:
+        w = str(where).strip()
+        if not w or "*" in w:
+            raise ValueError("where must be a non-empty address without '*'")
+        return w
+
     if not hasattr(OWNLightingCommand, "report_brightness"):
+        def _report_brightness(
+            cls: Any, where: str | int, level: int, transition: int = 0
+        ) -> Any:
+            target = _req_where(where)
+            if isinstance(level, bool) or isinstance(transition, bool):
+                raise ValueError("brightness level and transition must be integers")
+            lvl = int(level)
+            if not 0 <= lvl <= 100:
+                raise ValueError("brightness level must be between 0 and 100")
+            trans = int(transition)
+            if not 0 <= trans <= 255:
+                raise ValueError("transition must be between 0 and 255")
+            return cls.parse(f"*#1*{target}*1*{lvl + 100}*{trans}##")
+
         setattr(
             OWNLightingCommand,
             "is_status_query",
@@ -297,14 +317,33 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
         setattr(
             OWNLightingCommand,
             "report_brightness",
-            classmethod(
-                lambda cls, where, level, transition=0: cls.parse(
-                    f"*#1*{where}*1*{min(max(int(level) + 100, 100), 200)}*{max(int(transition), 0)}##"
-                )
-            ),
+            classmethod(_report_brightness),
         )
 
     if not hasattr(OWNAutomationCommand, "report_shutter_level"):
+        def _report_shutter_level(
+            cls: Any,
+            where: str | int,
+            level: int,
+            state: int = 10,
+            priority: int = 0,
+            info: int = 0,
+        ) -> Any:
+            target = _req_where(where)
+            if any(isinstance(x, bool) for x in (level, state, priority, info)):
+                raise ValueError("shutter level, state, priority, and info must be integers")
+            lvl = int(level)
+            if not (0 <= lvl <= 100 or lvl == 255):
+                raise ValueError("shutter level must be between 0 and 100 or 255")
+            st = int(state)
+            if not 10 <= st <= 15:
+                raise ValueError("shutter state must be between 10 and 15")
+            pr = int(priority)
+            inf = int(info)
+            if not (0 <= pr <= 255 and 0 <= inf <= 255):
+                raise ValueError("priority and info must be between 0 and 255")
+            return cls.parse(f"*#2*{target}*10*{st}*{lvl}*{pr}*{inf}##")
+
         setattr(
             OWNAutomationCommand,
             "is_status_query",
@@ -318,18 +357,23 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
         setattr(
             OWNAutomationCommand,
             "report_shutter_level",
-            classmethod(
-                lambda cls, where, level, state=10, priority=0, info=0: cls.parse(
-                    f"*#2*{where}*10*{int(state)}*{255 if int(level) == 255 else min(max(int(level), 0), 100)}*{int(priority)}*{int(info)}##"
-                )
-            ),
+            classmethod(_report_shutter_level),
         )
 
     if not hasattr(OWNHeatingCommand, "report_temperature") or not hasattr(
         OWNHeatingCommand, "write_temperature"
     ):
+        import math as _math
+
         def _encode_temp(temperature: float) -> str:
-            tenths = max(-999, min(999, round(float(temperature) * 10)))
+            if isinstance(temperature, bool):
+                raise ValueError("temperature must be finite")
+            temp_val = float(temperature)
+            if not _math.isfinite(temp_val):
+                raise ValueError("temperature must be finite")
+            if not -99.9 <= temp_val <= 99.9:
+                raise ValueError("temperature must be between -99.9 and 99.9")
+            tenths = int(round(temp_val * 10))
             sign = "1" if tenths < 0 else "0"
             return f"{sign}{abs(tenths):03d}"
 
@@ -353,7 +397,7 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
                 "report_temperature",
                 classmethod(
                     lambda cls, where, temperature: cls.parse(
-                        f"*#4*{where}*0*{_encode_temp(temperature)}##"
+                        f"*#4*{_req_where(where)}*0*{_encode_temp(temperature)}##"
                     )
                 ),
             )
@@ -363,12 +407,86 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
                 "write_temperature",
                 classmethod(
                     lambda cls, where, temperature: cls.parse(
-                        f"*#4*{where}*#0*{_encode_temp(temperature)}##"
+                        f"*#4*{_req_where(where)}*#0*{_encode_temp(temperature)}##"
                     )
                 ),
             )
 
     if not hasattr(OWNEnergyCommand, "report_active_power"):
+        import math as _math
+
+        def _norm_act_where(where: str | int) -> str:
+            target = _req_where(where)
+            if target.startswith("7") and not target.endswith("#0"):
+                return f"{target}#0"
+            return target
+
+        def _val_energy(value: int | float, name: str) -> int:
+            if isinstance(value, bool):
+                raise ValueError(f"{name} must be a finite non-negative number")
+            fval = float(value)
+            if not _math.isfinite(fval) or fval < 0:
+                raise ValueError(f"{name} must be a finite non-negative number")
+            return int(round(fval))
+
+        def _report_current_month_energy(
+            cls: Any,
+            where: str | int,
+            wh: int | float,
+            year: int | None = None,
+            month: int | None = None,
+        ) -> Any:
+            target = _norm_act_where(where)
+            val = _val_energy(wh, "wh")
+            if (year is None) != (month is None):
+                raise ValueError("year and month must both be provided or both omitted")
+            if year is not None and month is not None:
+                if isinstance(year, bool) or isinstance(month, bool):
+                    raise ValueError("year and month must be integers")
+                y, m = int(year), int(month)
+                if not 2000 <= y <= 2099:
+                    raise ValueError("year must be between 2000 and 2099")
+                if not 1 <= m <= 12:
+                    raise ValueError("month must be between 1 and 12")
+                return cls.parse(f"*#18*{target}*52#{y % 100:02d}#{m}*{val}##")
+            return cls.parse(f"*#18*{target}*52*{val}##")
+
+        def _report_partial_month_energy(
+            cls: Any, where: str | int, wh: int | float, month: int | None = None
+        ) -> Any:
+            target = _norm_act_where(where)
+            val = _val_energy(wh, "wh")
+            if month is not None:
+                if isinstance(month, bool) or not 1 <= int(month) <= 12:
+                    raise ValueError("month must be between 1 and 12")
+                return cls.parse(f"*#18*{target}*53#{int(month)}*{val}##")
+            return cls.parse(f"*#18*{target}*53*{val}##")
+
+        def _report_partial_day_energy(
+            cls: Any, where: str | int, wh: int | float, day: int | None = None
+        ) -> Any:
+            target = _norm_act_where(where)
+            val = _val_energy(wh, "wh")
+            if day is not None:
+                if isinstance(day, bool) or not 1 <= int(day) <= 31:
+                    raise ValueError("day must be between 1 and 31")
+                return cls.parse(f"*#18*{target}*54#{int(day)}*{val}##")
+            return cls.parse(f"*#18*{target}*54*{val}##")
+
+        def _report_streaming_state(
+            cls: Any, where: str | int, duration: int = 65, energy_type: int = 1
+        ) -> Any:
+            target = _norm_act_where(where)
+            if isinstance(duration, bool) or isinstance(energy_type, bool):
+                raise ValueError("duration and energy_type must be integers")
+            et = int(energy_type)
+            if not 1 <= et <= 4:
+                raise ValueError("energy_type must be between 1 and 4")
+            dur = int(duration)
+            if not 0 <= dur <= 255:
+                raise ValueError("duration must be between 0 and 255")
+            return cls.parse(f"*#18*{target}*1200#{et}*{dur}##")
+
         setattr(
             OWNEnergyCommand,
             "is_dimension_query",
@@ -396,57 +514,44 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
         setattr(
             OWNEnergyCommand,
             "report_active_power",
-            classmethod(lambda cls, where, watts: cls.parse(f"*#18*{where}*113*{max(round(float(watts)), 0)}##")),
+            classmethod(
+                lambda cls, where, watts: cls.parse(
+                    f"*#18*{_norm_act_where(where)}*113*{_val_energy(watts, 'watts')}##"
+                )
+            ),
         )
         setattr(
             OWNEnergyCommand,
             "report_total_energy",
-            classmethod(lambda cls, where, wh: cls.parse(f"*#18*{where}*51*{max(round(float(wh)), 0)}##")),
+            classmethod(
+                lambda cls, where, wh: cls.parse(
+                    f"*#18*{_norm_act_where(where)}*51*{_val_energy(wh, 'wh')}##"
+                )
+            ),
         )
         setattr(
             OWNEnergyCommand,
             "report_current_month_energy",
-            classmethod(
-                lambda cls, where, wh, year=None, month=None: cls.parse(
-                    f"*#18*{where}*52#{str(int(year))[-2:]}#{int(month)}*{max(round(float(wh)), 0)}##"
-                    if year is not None and month is not None
-                    else f"*#18*{where}*52*{max(round(float(wh)), 0)}##"
-                )
-            ),
+            classmethod(_report_current_month_energy),
         )
         setattr(
             OWNEnergyCommand,
             "report_partial_month_energy",
-            classmethod(
-                lambda cls, where, wh, month=None: cls.parse(
-                    f"*#18*{where}*53#{int(month)}*{max(round(float(wh)), 0)}##"
-                    if month is not None
-                    else f"*#18*{where}*53*{max(round(float(wh)), 0)}##"
-                )
-            ),
+            classmethod(_report_partial_month_energy),
         )
         setattr(
             OWNEnergyCommand,
             "report_partial_day_energy",
-            classmethod(
-                lambda cls, where, wh, day=None: cls.parse(
-                    f"*#18*{where}*54#{int(day)}*{max(round(float(wh)), 0)}##"
-                    if day is not None
-                    else f"*#18*{where}*54*{max(round(float(wh)), 0)}##"
-                )
-            ),
+            classmethod(_report_partial_day_energy),
         )
         setattr(
             OWNEnergyCommand,
             "report_streaming_state",
-            classmethod(
-                lambda cls, where, duration=65, energy_type=1: cls.parse(
-                    f"*#18*{where}*1200#{int(energy_type)}*{min(max(int(duration), 0), 255)}##"
-                )
-            ),
+            classmethod(_report_streaming_state),
         )
 
     if not hasattr(OWNGatewayCommand, "is_clock_query") or not hasattr(OWNGatewayCommand, "set_datetime"):
+        import datetime as _dt
         from zoneinfo import ZoneInfo
 
         def _tz_code(target: Any, time_zone: str | None = None) -> str:
@@ -454,12 +559,39 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
                 target = target.astimezone(ZoneInfo(time_zone))
             z = target.strftime("%z") if hasattr(target, "strftime") else ""
             if (not z or len(z) < 3) and time_zone:
-                import datetime as _dt
-
                 z = _dt.datetime.now(ZoneInfo(time_zone)).strftime("%z")
             if not z or len(z) < 3:
                 return "000"
             return f"0{z[1:3]}" if z[0] == "+" else f"1{z[1:3]}"
+
+        def _prep_dt(dt_val: Any, time_zone: str | None = None) -> _dt.datetime:
+            if not isinstance(dt_val, _dt.datetime):
+                raise ValueError("dt must be a datetime.datetime instance")
+            target = dt_val.astimezone(ZoneInfo(time_zone)) if time_zone is not None else dt_val
+            if not 2000 <= target.year <= 2099:
+                raise ValueError("year must be between 2000 and 2099")
+            return target
+
+        def _prep_date(d_val: Any, time_zone: str | None = None) -> _dt.date:
+            if not isinstance(d_val, _dt.date):
+                raise ValueError("d must be a datetime.date or datetime.datetime instance")
+            target = (
+                d_val.astimezone(ZoneInfo(time_zone))
+                if isinstance(d_val, _dt.datetime) and time_zone is not None
+                else d_val
+            )
+            if not 2000 <= target.year <= 2099:
+                raise ValueError("year must be between 2000 and 2099")
+            return target
+
+        def _prep_time(t_val: Any, time_zone: str | None = None) -> _dt.time | _dt.datetime:
+            if not isinstance(t_val, (_dt.time, _dt.datetime)):
+                raise ValueError("t must be a datetime.time or datetime.datetime instance")
+            return (
+                t_val.astimezone(ZoneInfo(time_zone))
+                if isinstance(t_val, _dt.datetime) and time_zone is not None
+                else t_val
+            )
 
         setattr(
             OWNGatewayCommand,
@@ -473,7 +605,7 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
                 lambda cls, dt, time_zone=None: cls.parse(
                     (
                         lambda t: f"*#13**#22*{t.strftime('%H*%M*%S')}*{_tz_code(t)}*0{t.strftime('%w*%d*%m*%Y')}##"
-                    )(dt.astimezone(ZoneInfo(time_zone)) if time_zone and hasattr(dt, "astimezone") else dt)
+                    )(_prep_dt(dt, time_zone))
                 )
             ),
         )
@@ -484,7 +616,7 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
                 lambda cls, d, time_zone=None: cls.parse(
                     (
                         lambda t: f"*#13**#1*0{t.strftime('%w*%d*%m*%Y')}##"
-                    )(d.astimezone(ZoneInfo(time_zone)) if time_zone and hasattr(d, "astimezone") else d)
+                    )(_prep_date(d, time_zone))
                 )
             ),
         )
@@ -495,7 +627,7 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
                 lambda cls, t, time_zone=None: cls.parse(
                     (
                         lambda tr: f"*#13**#0*{tr.strftime('%H*%M*%S')}*{_tz_code(tr, time_zone)}##"
-                    )(t.astimezone(ZoneInfo(time_zone)) if time_zone and hasattr(t, "astimezone") else t)
+                    )(_prep_time(t, time_zone))
                 )
             ),
         )
@@ -506,7 +638,7 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
                 lambda cls, dt, time_zone=None: cls.parse(
                     (
                         lambda t: f"*#13**22*{t.strftime('%H*%M*%S')}*{_tz_code(t)}*0{t.strftime('%w*%d*%m*%Y')}##"
-                    )(dt.astimezone(ZoneInfo(time_zone)) if time_zone and hasattr(dt, "astimezone") else dt)
+                    )(_prep_dt(dt, time_zone))
                 )
             ),
         )
@@ -517,7 +649,7 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
                 lambda cls, d, time_zone=None: cls.parse(
                     (
                         lambda t: f"*#13**1*0{t.strftime('%w*%d*%m*%Y')}##"
-                    )(d.astimezone(ZoneInfo(time_zone)) if time_zone and hasattr(d, "astimezone") else d)
+                    )(_prep_date(d, time_zone))
                 )
             ),
         )
@@ -528,7 +660,7 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
                 lambda cls, t, time_zone=None: cls.parse(
                     (
                         lambda tr: f"*#13**0*{tr.strftime('%H*%M*%S')}*{_tz_code(tr, time_zone)}##"
-                    )(t.astimezone(ZoneInfo(time_zone)) if time_zone and hasattr(t, "astimezone") else t)
+                    )(_prep_time(t, time_zone))
                 )
             ),
         )
