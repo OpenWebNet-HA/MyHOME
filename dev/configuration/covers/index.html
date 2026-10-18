@@ -930,6 +930,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#venetian-blinds-slat-tilt-positioning-timed-slat-inching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🪟 Venetian Blinds &amp; Slat Tilt Positioning (Timed Slat Inching)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🪟 Venetian Blinds &amp; Slat Tilt Positioning (Timed Slat Inching)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#physical-architecture-slat-travel-time" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Physical Architecture &amp; Slat Travel Time
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#protocol-note-dimension-11-is-shutter-level" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Protocol Note: Dimension 11 is Shutter Level
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#travel-time-calibration-slat-rotation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Travel Time Calibration &amp; Slat Rotation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#general-area-and-group-covers" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1027,6 +1088,17 @@
         
       </ul>
     </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#slat-tilt-on-scope-covers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🪟 Slat Tilt on Scope Covers
+      
+    </span>
+  </a>
   
 </li>
         
@@ -2228,6 +2300,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#venetian-blinds-slat-tilt-positioning-timed-slat-inching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🪟 Venetian Blinds &amp; Slat Tilt Positioning (Timed Slat Inching)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🪟 Venetian Blinds &amp; Slat Tilt Positioning (Timed Slat Inching)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#physical-architecture-slat-travel-time" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Physical Architecture &amp; Slat Travel Time
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#protocol-note-dimension-11-is-shutter-level" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Protocol Note: Dimension 11 is Shutter Level
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#travel-time-calibration-slat-rotation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Travel Time Calibration &amp; Slat Rotation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#general-area-and-group-covers" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2328,6 +2461,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#slat-tilt-on-scope-covers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🪟 Slat Tilt on Scope Covers
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2404,7 +2548,7 @@
 </table>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>Every discovered cover starts as a <strong>timed</strong> cover. Position-reporting hardware is not detected automatically: set <code>advanced_shutter: true</code> for that cover in <code>/config/myhome.yaml</code> (see <a href="../troubleshooting/#cover-position-is-wrong">Troubleshooting → Cover position is wrong</a>). Advanced covers refuse <code>myhome.calibrate_cover</code> and <code>myhome.set_cover_travel_time</code>, as they do not need a travel time.</p>
+<p>Every discovered cover starts as a <strong>timed</strong> cover. Position-reporting hardware is not detected automatically: set <code>advanced_shutter: true</code> for that cover in <code>/config/myhome.yaml</code> (see <a href="../troubleshooting/#cover-position-is-wrong">Troubleshooting → Cover position is wrong</a>). Advanced covers refuse <code>myhome.calibrate_cover</code> and travel times in <code>myhome.set_cover_travel_time</code>, as they do not need a travel time (a Venetian blind with <code>slat_tilt</code> still accepts <code>slat_time</code> there).</p>
 </div>
 <hr />
 <h2 id="timed-cover-position-engine">⏱️ Timed Cover Position Engine<a class="headerlink" href="#timed-cover-position-engine" title="Permanent link">&para;</a></h2>
@@ -2489,6 +2633,69 @@ Automated on-bus calibration relies entirely on the actuator emitting a stop fra
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.living_room_shutter</span>
 </span></code></pre></div></p>
 <hr />
+<h2 id="venetian-blinds-slat-tilt-positioning-timed-slat-inching">🪟 Venetian Blinds &amp; Slat Tilt Positioning (Timed Slat Inching)<a class="headerlink" href="#venetian-blinds-slat-tilt-positioning-timed-slat-inching" title="Permanent link">&para;</a></h2>
+<p>For Venetian blinds, motorized louvres, and external venetian blinds (EVBs/BSO) with adjustable slat tilt angles, the integration provides timed slat travel (inching):</p>
+<ul>
+<li><strong>Supported Features</strong>: <code>SET_TILT_POSITION</code>, <code>OPEN_TILT</code> (100%), <code>CLOSE_TILT</code> (0%), and <code>STOP_TILT</code>.</li>
+<li><strong>Device Class</strong>: Sets the entity device class to <code>blind</code> (<code>CoverDeviceClass.BLIND</code>).</li>
+<li><strong>Attributes</strong>: Exposes <code>current_cover_tilt_position</code> (0–100%), <code>slat_tilt: true</code>, and <code>slat_time: &lt;seconds&gt;</code>.</li>
+</ul>
+<h3 id="physical-architecture-slat-travel-time">Physical Architecture &amp; Slat Travel Time<a class="headerlink" href="#physical-architecture-slat-travel-time" title="Permanent link">&para;</a></h3>
+<p>Physical BTicino / Legrand MyHOME Venetian blind actuators (such as the F411U2 configured in Venetian mode) control slat tilt angle mechanically through brief motor pulses: when the motor runs, the slats first rotate through their full angular range (typically 1.5–2.5 seconds) before linear curtain lifting or lowering commences.</p>
+<p>The integration models this behavior with timed travel:
+* When a tilt command is issued, the shutter motor runs in the required direction for a calculated duration:
+  $$\text{duration} = \frac{|\text{target_tilt} - \text{current_tilt}|}{100} \times \text{slat_time}$$
+* The pulse is timed from the <strong>motor start</strong>, not from the frame write: from the direction status the gateway relays (<code>*2*1*&lt;WHERE&gt;##</code> / <code>*2*2*&lt;WHERE&gt;##</code>), or, when the gateway relays none, from the write plus the measured 0.55 s motor-start delay (see <a href="../runtime_behaviour/">Runtime behaviour → Timed covers</a>). Timed from the write, a pulse shorter than about half a second would end before the motor started. Nothing is counted while the frame still waits in the send queue.
+* When the target duration elapses, an automatic stop command (<code>*2*0*&lt;WHERE&gt;##</code>) halts the motor. The angle is settled when that stop is <strong>written</strong>, not when it was due: the send queue is first-in first-out, so behind other frames (several blinds tilted at once, a busy gateway) the stop leaves late and the slats turn on until then. The angle follows the real motor time at one full rotation per <code>slat_time</code>, also past the target, up to 0 % / 100 %. Motor time past a full rotation moves the curtain, and a timed cover's position estimate moves by that time over its curtain travel time (<code>travel_time - slat_time</code>; a position-reporting cover reports its own level).
+* A new tilt target while the previous pulse's stop still waits in the queue waits for that stop to be written, so it starts from the real angle; the new direction frame could not leave before that stop anyway. Tilt requests run one at a time, and a newer target replaces one still waiting, so a dragged slider sends only where it ended.
+* A new target in the <strong>same direction</strong> while the pulse still runs moves the pulse's stop and sends nothing; only a change of direction sends a new direction frame.
+* Like any command, a pulse opens an echo window: the stop status the gateway relays right after our direction frame is ignored, so it cannot cancel the pulse's stop and leave the motor running.
+* Steps shorter than the cover's <code>min_motor_pulse</code> (default <strong>0.4 s</strong>, or 20 % at <code>slat_time: 2.0</code>) are skipped: the motor would barely answer while the angle was recorded as changed. This floor has not been measured on a Venetian actuator yet.
+* A tilt command while the curtain itself is running is refused (<em>"… is moving; stop it before tilting the slats"</em>). The run turns the slats anyway, and a pulse would leave the curtain's travel estimate behind. Opening, closing or setting the position during a pulse ends the pulse at the angle it reached; the new command takes the motor over, and the pulse's own stop is dropped. Setting the position the blind is already at, while a pulse or a run is going, stops the motor there.
+* During a curtain run the slats turn first at one full rotation per <code>slat_time</code> (towards 100 % when opening, towards 0 % when closing), and only the remaining motor time moves the curtain estimate over <code>travel_time - slat_time</code>. A stop status with no run behind it (such as the relay of a pulse's own stop) leaves the angle alone, so slats tilted open on a lowered blind stay open.</p>
+<h3 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h3>
+<p>Slat tilt and travel duration can be declared in <code>/config/myhome.yaml</code>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">cover</span><span class="p">:</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">living_room_venetian</span><span class="p">:</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">'31'</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Living Room Venetian Blind</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="nt">slat_tilt</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">    </span><span class="nt">slat_time</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span>
+</span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Default</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>slat_tilt</code></td>
+<td style="text-align: left;">boolean</td>
+<td style="text-align: left;"><code>false</code></td>
+<td style="text-align: left;">Enables Venetian blind slat tilt controls and sets device class to <code>blind</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>slat_time</code></td>
+<td style="text-align: left;">float</td>
+<td style="text-align: left;"><code>2.0</code></td>
+<td style="text-align: left;">Full slat rotation travel time in seconds (allowed range: <code>0.5</code>–<code>10.0</code> s). A value set with <code>myhome.set_cover_travel_time</code> is stored and wins over this one after a restart, until <code>myhome.reset_cover_travel_time</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>Higher tilt is assumed to be <em>open</em> (an opening pulse raises the angle). This, and the slat time of real actuators, still awaits a keypad / app capture of a Venetian actuator (#492).</p>
+<h3 id="protocol-note-dimension-11-is-shutter-level">Protocol Note: Dimension 11 is Shutter Level<a class="headerlink" href="#protocol-note-dimension-11-is-shutter-level" title="Permanent link">&para;</a></h3>
+<p>In OpenWebNet WHO 2, <strong>Dimension 11</strong> (<code>*#2*&lt;WHERE&gt;*#11#PRIORITY*LEVEL##</code>) represents an absolute <strong>Go to level / Shutter position</strong> command, <strong>not</strong> slat tilt angle. Gateway firmwares (MH200N, MyHomeServer1) reject query frames (<code>*#2*&lt;WHERE&gt;*11##</code>) with a NACK because Dimension 11 is write-only.</p>
+<p>When an actuator or external controller broadcasts a Dimension 11 event (such as <code>*#2*31*#11#001#1*40##</code> indicating 40% level), the integration ignores it: the motor needs time to get there and a keypad can stop it midway, so the position only follows the actuator's own status reports (Dimension 10 / status frames).</p>
+<h3 id="travel-time-calibration-slat-rotation">Travel Time Calibration &amp; Slat Rotation<a class="headerlink" href="#travel-time-calibration-slat-rotation" title="Permanent link">&para;</a></h3>
+<p>End-to-end travel time (<code>travel_time_down</code> / <code>travel_time_up</code>) includes one full slat rotation (<code>slat_time</code>) at the start of the run:
+* On a slat blind, linear curtain travel is estimated over <code>travel_time_down - slat_time</code> and <code>travel_time_up - slat_time</code> after the slats finish rotating.
+* Mid-tilt stops do not corrupt or reset linear curtain position estimation.
+* Tilt commands are safely rejected if the cover is actively running automated travel-time calibration.</p>
+<hr />
 <h2 id="general-area-and-group-covers">🏠 General, Area and Group Covers<a class="headerlink" href="#general-area-and-group-covers" title="Permanent link">&para;</a></h2>
 <p>A cover declared in <code>/config/myhome.yaml</code> on a <strong>general</strong> (<code>where: '0'</code>), <strong>area</strong> (<code>where: '1'</code>, <code>'00'</code>, <code>'100'</code>) or <strong>group</strong> (<code>where: '#3'</code>) address is one button for many shutters: <em>open</em>, <em>close</em> and <em>stop</em> send a single frame to that address, like the general button on a keypad.</p>
 <p>Its state comes from the shutters it moves, not from the bus. At the end of a run every actuator reports its own stop (<code>*2*0*11##</code>, <code>*2*0*12##</code>, …) and none arrives for the general or area address (WHO_2 specification §3.0.1). So the cover shows <em>opening</em> / <em>closing</em> while any of its shutters is moving, <em>closed</em> when all are closed, and the average of their positions:</p>
@@ -2514,14 +2721,14 @@ Automated on-bus calibration relies entirely on the actuator emitting a stop fra
 </tr>
 </tbody>
 </table>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">cover</span><span class="p">:</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">all_shutters</span><span class="p">:</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">'1'</span><span class="w">          </span><span class="c1"># area 1: follows covers 11-19 on its own</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">All shutters</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">bedrooms</span><span class="p">:</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">'#3'</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Bedrooms</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">    </span><span class="nt">members</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">'11'</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">'13'</span><span class="p p-Indicator">]</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">cover</span><span class="p">:</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">all_shutters</span><span class="p">:</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">'1'</span><span class="w">          </span><span class="c1"># area 1: follows covers 11-19 on its own</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">All shutters</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">bedrooms</span><span class="p">:</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">'#3'</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Bedrooms</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="nt">members</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">'11'</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">'13'</span><span class="p p-Indicator">]</span>
 </span></code></pre></div>
 <p><strong>Behind an F422 interface</strong> (<code>bus_interface: '02'</code>, logical <code>#4#</code> addressing), physical actuators reside on an isolated secondary SCS bus segment (e.g. <code>11#4#02</code> … <code>22#4#02</code>).</p>
 <h3 id="the-bticino-way-real-world-plant-discovery">🏛️ The BTicino Way &amp; Real-World Plant Discovery<a class="headerlink" href="#the-bticino-way-real-world-plant-discovery" title="Permanent link">&para;</a></h3>
@@ -2563,30 +2770,32 @@ Automated on-bus calibration relies entirely on the actuator emitting a stop fra
 <p>To ensure maximum reliability and preserve bus health:</p>
 <h4 id="recommended-target-the-general-scope-cover">Recommended: Target the General Scope Cover<a class="headerlink" href="#recommended-target-the-general-scope-cover" title="Permanent link">&para;</a></h4>
 <p>Declare a General scope cover in <code>/config/myhome.yaml</code> for each bus interface, and target that single entity in your automations:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># /config/myhome.yaml</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">00:03:50:XX:XX:XX</span><span class="p">:</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">cover</span><span class="p">:</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="nt">all_shutters_oost</span><span class="p">:</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"0"</span>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">      </span><span class="nt">bus_interface</span><span class="p">:</span><span class="w"> </span><span class="s">"02"</span>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"All</span><span class="nv"> </span><span class="s">Shutters</span><span class="nv"> </span><span class="s">East"</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># /config/myhome.yaml</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nt">00:03:50:XX:XX:XX</span><span class="p">:</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nt">cover</span><span class="p">:</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="nt">all_shutters_oost</span><span class="p">:</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"0"</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">      </span><span class="nt">bus_interface</span><span class="p">:</span><span class="w"> </span><span class="s">"02"</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"All</span><span class="nv"> </span><span class="s">Shutters</span><span class="nv"> </span><span class="s">East"</span>
 </span></code></pre></div>
 <p>In your automation:
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">alias</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Close Windows at Sunset</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nt">triggers</span><span class="p">:</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">trigger</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sun</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="nt">event</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sunset</span>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span><span class="nt">offset</span><span class="p">:</span><span class="w"> </span><span class="s">"00:30:00"</span>
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="nt">actions</span><span class="p">:</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.close_cover</span>
-</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">    </span><span class="nt">target</span><span class="p">:</span>
-</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">      </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.all_shutters_oost</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">alias</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Close Windows at Sunset</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nt">triggers</span><span class="p">:</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">trigger</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sun</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="nt">event</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sunset</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span><span class="nt">offset</span><span class="p">:</span><span class="w"> </span><span class="s">"00:30:00"</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="nt">actions</span><span class="p">:</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.close_cover</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">    </span><span class="nt">target</span><span class="p">:</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">      </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.all_shutters_oost</span>
 </span></code></pre></div></p>
 <h4 id="retire-the-legacy-delay-45s-stop_cover-anti-pattern">Retire the Legacy <code>delay: 45s</code> + <code>stop_cover</code> Anti-Pattern<a class="headerlink" href="#retire-the-legacy-delay-45s-stop_cover-anti-pattern" title="Permanent link">&para;</a></h4>
 <p>In legacy configurations, users often placed a <code>delay: 45s</code> followed by <code>cover.stop_cover</code> to ensure motors stopped. <strong>This pattern is unnecessary and counterproductive</strong>:
 - BTicino actuators (F411, F401, LN4661M2) incorporate hardware limit switches and configurable travel timers (e.g. configurator <code>M</code> or MyHOME_Suite cutoff).
 - The MyHOME integration automatically calculates direction-aware travel times (<code>travel_time_down</code> / <code>travel_time_up</code>) and handles stop detection.
 - Sending a delayed <code>cover.stop_cover</code> floods the bus with redundant frames and can accidentally cement a stalled or out-of-sync shutter. Let the hardware and integration manage motion termination naturally.</p>
+<h3 id="slat-tilt-on-scope-covers">🪟 Slat Tilt on Scope Covers<a class="headerlink" href="#slat-tilt-on-scope-covers" title="Permanent link">&para;</a></h3>
+<p><strong>Slat tilt on a scope cover</strong> (with <code>slat_tilt: true</code>): on the main bus one scope pulse turns the slats of every member with <code>slat_tilt</code>. The members follow that pulse (its direction and stop frames turn their slats and do not count as a curtain run), and the scope cover times and settles it for all of them. A scope tilt is refused while one of its covers is running. Behind an F422 each blind gets its own pulse, <strong>one after the other</strong>: queued together, every stop would wait behind the other blinds' direction frames and the slats would turn on. The last blind therefore moves a few seconds after the first.</p>
 <hr />
 <h2 id="legacy-yaml-note">🔄 Legacy YAML Note<a class="headerlink" href="#legacy-yaml-note" title="Permanent link">&para;</a></h2>
 <div class="admonition note">

@@ -3425,6 +3425,13 @@
 <td style="text-align: left;"><code>26.0</code></td>
 </tr>
 <tr>
+<td style="text-align: left;"><code>slat_time</code></td>
+<td style="text-align: center;">float</td>
+<td style="text-align: center;">No*</td>
+<td style="text-align: left;">Seconds a Venetian blind (<code>slat_tilt: true</code>) needs for a full slat rotation, 0.5-10 s. Stored on its own it does not touch the stored travel times, and it also works on covers that report their position. It survives restarts, also for covers declared in <code>myhome.yaml</code> (where it wins over the yaml <code>slat_time</code>); <code>reset_cover_travel_time</code> returns it to the yaml value or the 2 s default.</td>
+<td style="text-align: left;"><code>2.0</code></td>
+</tr>
+<tr>
 <td style="text-align: left;"><code>copied_from</code></td>
 <td style="text-align: center;">entity id</td>
 <td style="text-align: center;">No</td>
@@ -3452,7 +3459,7 @@
 </span></code></pre></div>
 <hr />
 <h2 id="10-myhomereset_cover_travel_time">10. <code>myhome.reset_cover_travel_time</code><a class="headerlink" href="#10-myhomereset_cover_travel_time" title="Permanent link">&para;</a></h2>
-<p>Forgets the measured or manually set travel times of a timed cover. The cover returns to the <code>travel_time</code> from <code>myhome.yaml</code> when one is configured, otherwise to the 25 s default, and <code>calibration_source</code> reports <code>yaml</code> / <code>default</code> again.</p>
+<p>Forgets the measured or manually set travel times of a timed cover. The cover returns to the <code>travel_time</code> from <code>myhome.yaml</code> when one is configured, otherwise to the 25 s default, and <code>calibration_source</code> reports <code>yaml</code> / <code>default</code> again. A stored <code>slat_time</code> returns to the yaml value or the 2 s default as well. On a position-reporting Venetian blind (<code>advanced_shutter</code> and <code>slat_tilt</code>) the service only resets the <code>slat_time</code>; other position-reporting covers refuse it.</p>
 <h3 id="fields_9">Fields<a class="headerlink" href="#fields_9" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
