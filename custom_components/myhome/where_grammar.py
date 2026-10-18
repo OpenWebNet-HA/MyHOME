@@ -283,6 +283,8 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
             ),
         )
 
+    import math as _math
+
     def _req_where(where: Any) -> str:
         w = str(where).strip()
         if not w or "*" in w:
@@ -294,7 +296,10 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
             cls: Any, where: str | int, level: int, transition: int = 0
         ) -> Any:
             target = _req_where(where)
-            if isinstance(level, bool) or isinstance(transition, bool):
+            if any(
+                isinstance(x, bool) or (isinstance(x, float) and not _math.isfinite(x))
+                for x in (level, transition)
+            ):
                 raise ValueError("brightness level and transition must be integers")
             lvl = int(level)
             if not 0 <= lvl <= 100:
@@ -326,11 +331,14 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
             where: str | int,
             level: int,
             state: int = 10,
-            priority: int = 0,
+            priority: int | str = 0,
             info: int = 0,
         ) -> Any:
             target = _req_where(where)
-            if any(isinstance(x, bool) for x in (level, state, priority, info)):
+            if any(
+                isinstance(x, bool) or (isinstance(x, float) and not _math.isfinite(x))
+                for x in (level, state, priority, info)
+            ):
                 raise ValueError("shutter level, state, priority, and info must be integers")
             lvl = int(level)
             if not (0 <= lvl <= 100 or lvl == 255):
@@ -342,7 +350,14 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
             inf = int(info)
             if not (0 <= pr <= 255 and 0 <= inf <= 255):
                 raise ValueError("priority and info must be between 0 and 255")
-            return cls.parse(f"*#2*{target}*10*{st}*{lvl}*{pr}*{inf}##")
+            pr_str = (
+                priority.strip()
+                if isinstance(priority, str)
+                and priority.strip().isdigit()
+                and len(priority.strip()) <= 3
+                else str(pr)
+            )
+            return cls.parse(f"*#2*{target}*10*{st}*{lvl}*{pr_str}*{inf}##")
 
         setattr(
             OWNAutomationCommand,
@@ -363,8 +378,6 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
     if not hasattr(OWNHeatingCommand, "report_temperature") or not hasattr(
         OWNHeatingCommand, "write_temperature"
     ):
-        import math as _math
-
         def _encode_temp(temperature: float) -> str:
             if isinstance(temperature, bool):
                 raise ValueError("temperature must be finite")
@@ -413,8 +426,6 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
             )
 
     if not hasattr(OWNEnergyCommand, "report_active_power"):
-        import math as _math
-
         def _norm_act_where(where: str | int) -> str:
             target = _req_where(where)
             if target.startswith("7") and not target.endswith("#0"):
@@ -441,7 +452,10 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
             if (year is None) != (month is None):
                 raise ValueError("year and month must both be provided or both omitted")
             if year is not None and month is not None:
-                if isinstance(year, bool) or isinstance(month, bool):
+                if any(
+                    isinstance(x, bool) or (isinstance(x, float) and not _math.isfinite(x))
+                    for x in (year, month)
+                ):
                     raise ValueError("year and month must be integers")
                 y, m = int(year), int(month)
                 if not 2000 <= y <= 2099:
@@ -457,7 +471,11 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
             target = _norm_act_where(where)
             val = _val_energy(wh, "wh")
             if month is not None:
-                if isinstance(month, bool) or not 1 <= int(month) <= 12:
+                if (
+                    isinstance(month, bool)
+                    or (isinstance(month, float) and not _math.isfinite(month))
+                    or not 1 <= int(month) <= 12
+                ):
                     raise ValueError("month must be between 1 and 12")
                 return cls.parse(f"*#18*{target}*53#{int(month)}*{val}##")
             return cls.parse(f"*#18*{target}*53*{val}##")
@@ -468,7 +486,11 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
             target = _norm_act_where(where)
             val = _val_energy(wh, "wh")
             if day is not None:
-                if isinstance(day, bool) or not 1 <= int(day) <= 31:
+                if (
+                    isinstance(day, bool)
+                    or (isinstance(day, float) and not _math.isfinite(day))
+                    or not 1 <= int(day) <= 31
+                ):
                     raise ValueError("day must be between 1 and 31")
                 return cls.parse(f"*#18*{target}*54#{int(day)}*{val}##")
             return cls.parse(f"*#18*{target}*54*{val}##")
@@ -477,7 +499,10 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
             cls: Any, where: str | int, duration: int = 65, energy_type: int = 1
         ) -> Any:
             target = _norm_act_where(where)
-            if isinstance(duration, bool) or isinstance(energy_type, bool):
+            if any(
+                isinstance(x, bool) or (isinstance(x, float) and not _math.isfinite(x))
+                for x in (duration, energy_type)
+            ):
                 raise ValueError("duration and energy_type must be integers")
             et = int(energy_type)
             if not 1 <= et <= 4:
@@ -746,7 +771,7 @@ __all__ = [
 
 def zone_number(where: str) -> str:
     """The zone without a legacy ``4-`` prefix or ``#``: ``"#0"`` -> ``"0"``, ``"4-12"`` -> ``"12"``."""
-    return where.split("-")[-1].replace("#", "")
+    return where.removeprefix("4-").replace("#", "")
 
 
 def is_probe(where: str) -> bool:
@@ -756,7 +781,7 @@ def is_probe(where: str) -> bool:
     digit by digit (``121``) it would look like a probe. 3-digit ``000``..``099``
     addresses represent external/virtual probes ``P=0, ZZ=00..99``.
     """
-    bare = where.split("-")[-1].lstrip("#")
+    bare = where.removeprefix("4-").removeprefix("#")
     return bare.isdigit() and (int(bare) >= 100 or len(bare) == 3)
 
 
@@ -776,8 +801,8 @@ def normalize_expose_where(who: int, where: str | int | None) -> str:
     if who == 13 or not raw:
         return ""
     if who == 4:
-        clean = raw.split("-")[-1]
-        bare = clean.lstrip("#")
+        clean = raw.removeprefix("4-")
+        bare = clean.removeprefix("#")
         if bare == "0":
             return "000"
         if bare.isdigit() and (int(bare) >= 100 or len(bare) == 3):

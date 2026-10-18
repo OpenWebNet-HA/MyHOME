@@ -1465,6 +1465,25 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
         else:
             on_states_default = str(on_states_raw or "")
 
+        def _opt_float(key: str) -> float | None:
+            val = defaults.get(key)
+            if val is None:
+                return None
+            try:
+                return validate._finite_float(val)
+            except vol.Invalid:
+                return None
+
+        cooldown_default = _opt_float(CONF_COOLDOWN)
+        min_delta_default = _opt_float(CONF_MIN_DELTA)
+        periodic_default = _opt_float(CONF_PERIODIC_SEND)
+        try:
+            step_default = validate._non_bool_int(
+                defaults.get(CONF_BRIGHTNESS_STEP_PCT, 10)
+            )
+        except vol.Invalid:
+            step_default = 10
+
         schema_dict: dict[typing.Any, typing.Any] = {
             Required(CONF_WHO, default=who_default): selector.SelectSelector(
                 selector.SelectSelectorConfig(
@@ -1496,7 +1515,7 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
             ): selector.TextSelector(),
             vol.Optional(
                 CONF_COOLDOWN,
-                default=float(defaults.get(CONF_COOLDOWN, 1.0)),
+                default=cooldown_default if cooldown_default is not None else 1.0,
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=0.0, max=3600.0, step=0.5, unit_of_measurement="s",
@@ -1506,8 +1525,8 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
             vol.Optional(
                 CONF_MIN_DELTA,
                 description=(
-                    {"suggested_value": float(defaults[CONF_MIN_DELTA])}
-                    if defaults.get(CONF_MIN_DELTA) is not None
+                    {"suggested_value": min_delta_default}
+                    if min_delta_default is not None
                     else None
                 ),
             ): selector.NumberSelector(
@@ -1519,8 +1538,8 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
             vol.Optional(
                 CONF_PERIODIC_SEND,
                 description=(
-                    {"suggested_value": float(defaults[CONF_PERIODIC_SEND])}
-                    if defaults.get(CONF_PERIODIC_SEND) is not None
+                    {"suggested_value": periodic_default}
+                    if periodic_default is not None
                     else None
                 ),
             ): selector.NumberSelector(
@@ -1539,7 +1558,7 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
             ): selector.BooleanSelector(),
             vol.Optional(
                 CONF_BRIGHTNESS_STEP_PCT,
-                default=int(defaults.get(CONF_BRIGHTNESS_STEP_PCT, 10)),
+                default=step_default,
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=1, max=100, step=1, unit_of_measurement="%",
@@ -1566,14 +1585,30 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
         """Validate subentry user_input and return (cleaned_data, errors, title)."""
         errors: dict[str, str] = {}
         try:
-            who = int(user_input.get(CONF_WHO, 1))
-        except (TypeError, ValueError):
+            who = validate._non_bool_int(user_input.get(CONF_WHO, 1))
+        except vol.Invalid:
+            errors[CONF_WHO] = "invalid_who"
+            return {}, errors, ""
+        if who not in (1, 2, 4, 13, 18):
             errors[CONF_WHO] = "invalid_who"
             return {}, errors, ""
 
-        where = str(user_input.get(CONF_WHERE) or "").strip()
-        entity_id = str(user_input.get(CONF_ENTITY_ID) or "").strip()
+        raw_where = user_input.get(CONF_WHERE)
+        where = (
+            ""
+            if raw_where is None or isinstance(raw_where, bool)
+            else str(raw_where).strip()
+        )
+        raw_entity = user_input.get(CONF_ENTITY_ID)
+        entity_id = (
+            ""
+            if raw_entity is None or isinstance(raw_entity, bool)
+            else str(raw_entity).strip()
+        )
         dim_val = user_input.get(CONF_DIMENSION)
+        if isinstance(dim_val, bool):
+            errors[CONF_DIMENSION] = "invalid_dimension"
+            return {}, errors, ""
         raw_dim = str(dim_val if dim_val is not None else "").strip()
         dim: int | None = None
         if raw_dim:
@@ -1601,10 +1636,10 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
 
         cleaned: dict[str, typing.Any] = {
             CONF_WHO: who,
-            CONF_COOLDOWN: float(user_input.get(CONF_COOLDOWN, 1.0)),
+            CONF_COOLDOWN: user_input.get(CONF_COOLDOWN, 1.0),
             CONF_RESPOND_TO_READ: bool(user_input.get(CONF_RESPOND_TO_READ, True)),
             CONF_BIDIRECTIONAL: bool(user_input.get(CONF_BIDIRECTIONAL, who in (1, 2))),
-            CONF_BRIGHTNESS_STEP_PCT: int(user_input.get(CONF_BRIGHTNESS_STEP_PCT, 10)),
+            CONF_BRIGHTNESS_STEP_PCT: user_input.get(CONF_BRIGHTNESS_STEP_PCT, 10),
         }
         if where:
             cleaned[CONF_WHERE] = where
@@ -1616,9 +1651,9 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
         if dim is not None:
             cleaned[CONF_DIMENSION] = dim
         if user_input.get(CONF_MIN_DELTA) is not None and str(user_input.get(CONF_MIN_DELTA)).strip() != "":
-            cleaned[CONF_MIN_DELTA] = float(user_input[CONF_MIN_DELTA])
+            cleaned[CONF_MIN_DELTA] = user_input[CONF_MIN_DELTA]
         if user_input.get(CONF_PERIODIC_SEND) is not None and str(user_input.get(CONF_PERIODIC_SEND)).strip() != "":
-            cleaned[CONF_PERIODIC_SEND] = float(user_input[CONF_PERIODIC_SEND])
+            cleaned[CONF_PERIODIC_SEND] = user_input[CONF_PERIODIC_SEND]
         on_states = str(user_input.get(CONF_ON_STATES) or "").strip()
         if on_states:
             cleaned[CONF_ON_STATES] = [s.strip() for s in on_states.split(",") if s.strip()]

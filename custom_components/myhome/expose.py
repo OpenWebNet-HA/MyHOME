@@ -151,10 +151,27 @@ def _require_finite_float(val: Any, name: str) -> float:
     """Convert ``val`` to a finite float, rejecting booleans and NaN/inf."""
     if isinstance(val, bool):
         raise ValueError(f"{name} must be a finite number")
-    fval = float(val)
+    try:
+        fval = float(val)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{name} must be a finite number") from exc
     if not math.isfinite(fval):
         raise ValueError(f"{name} must be a finite number")
     return fval
+
+
+def _require_int(val: Any, name: str) -> int:
+    """Convert ``val`` to an integer, rejecting booleans, non-finite values, and fractional floats."""
+    if isinstance(val, bool):
+        raise ValueError(f"{name} must be an integer")
+    if isinstance(val, float):
+        if not math.isfinite(val) or not val.is_integer():
+            raise ValueError(f"{name} must be an integer")
+        return int(val)
+    try:
+        return int(val)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{name} must be an integer") from exc
 
 
 def _parse_position_pct(val: Any) -> int | None:
@@ -163,7 +180,7 @@ def _parse_position_pct(val: Any) -> int | None:
         return None
     try:
         fval = float(val)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     if not math.isfinite(fval):
         return None
@@ -253,15 +270,15 @@ class ExposeBinding:
         subentry_id: str | None = None,
     ) -> ExposeBinding:
         """Construct an :class:`ExposeBinding` from a validated config dictionary."""
-        if isinstance(cfg.get(CONF_WHO), bool):
-            raise ValueError("who must be an integer")
-        who = int(cfg[CONF_WHO])
+        who = _require_int(cfg.get(CONF_WHO), "who")
+        if who not in EXPOSE_SUPPORTED_WHOS:
+            raise ValueError(f"Unsupported expose WHO={who}")
         where = normalize_expose_where(who, cfg.get(CONF_WHERE))
+        if who != 13 and (not where or "*" in where):
+            raise ValueError(f"Invalid expose WHERE={where!r}")
         raw_dim = cfg.get(CONF_DIMENSION)
         if raw_dim is not None and str(raw_dim).strip() != "":
-            if isinstance(raw_dim, bool):
-                raise ValueError("dimension must be an integer")
-            dimension: int | None = int(raw_dim)
+            dimension: int | None = _require_int(raw_dim, "dimension")
         elif who == 4:
             dimension = 0
         elif who == 18:
@@ -304,11 +321,15 @@ class ExposeBinding:
         )
 
         raw_step = cfg.get(CONF_BRIGHTNESS_STEP_PCT)
-        if isinstance(raw_step, bool):
-            raise ValueError("brightness_step_pct must be an integer")
         brightness_step_pct = (
-            min(max(int(raw_step), 1), 100) if raw_step is not None else 10
+            min(max(_require_int(raw_step, "brightness_step_pct"), 1), 100)
+            if raw_step is not None
+            else 10
         )
+
+        default_val = cfg.get(CONF_DEFAULT)
+        if isinstance(default_val, float) and not math.isfinite(default_val):
+            raise ValueError("default must be finite")
 
         entity_id = str(cfg.get(CONF_ENTITY_ID) or "").strip() or None
         attribute = str(cfg.get(CONF_ATTRIBUTE) or "").strip() or None
@@ -326,7 +347,7 @@ class ExposeBinding:
             periodic_send=periodic_send,
             respond_to_read=bool(cfg.get(CONF_RESPOND_TO_READ, True)),
             bidirectional=bidirectional,
-            default=cfg.get(CONF_DEFAULT),
+            default=default_val,
             on_states=_coerce_on_states(cfg.get(CONF_ON_STATES), entity_id=entity_id),
             turn_on_action=_coerce_action_list(cfg.get(CONF_TURN_ON_ACTION)),
             turn_off_action=_coerce_action_list(cfg.get(CONF_TURN_OFF_ACTION)),
@@ -931,14 +952,18 @@ class ExposeManager:
                 try:
                     from_ha_brightness = (
                         state is not None
-                        and "brightness" in state.attributes
+                        and state.attributes.get("brightness") is not None
                         and (binding.attribute in (None, "brightness"))
                     )
-                    b_cand = (
-                        raw
-                        if binding.attribute == "brightness"
-                        else ((state.attributes.get("brightness") if state else 0) or 0)
-                    )
+                    if binding.attribute == "brightness":
+                        b_cand: Any = raw
+                    elif (
+                        state is not None
+                        and state.attributes.get("brightness") is not None
+                    ):
+                        b_cand = state.attributes.get("brightness")
+                    else:
+                        b_cand = 100 if is_on else 0
                     if isinstance(b_cand, bool):
                         raise ValueError("boolean brightness")
                     b_raw = float(b_cand)
@@ -949,7 +974,7 @@ class ExposeManager:
                     else:
                         brightness_pct = round(min(max(b_raw, 0.0), 100.0))
                     is_on = brightness_pct > 0
-                except (TypeError, ValueError):
+                except (TypeError, ValueError, OverflowError):
                     brightness_pct = 100 if is_on else 0
 
             who1_val_key: tuple[bool, int | None] = (is_on, brightness_pct)
@@ -1044,7 +1069,7 @@ class ExposeManager:
                 return [], None
             try:
                 fval = float(raw)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 return [], None
             if not math.isfinite(fval) or not -99.9 <= fval <= 99.9:
                 return [], None
@@ -1071,7 +1096,7 @@ class ExposeManager:
                 return [], None
             try:
                 val = float(raw)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 return [], None
             if not math.isfinite(val) or val < 0.0:
                 return [], None
@@ -1112,20 +1137,23 @@ class ExposeManager:
             now_dt = raw if isinstance(raw, dt.datetime) else dt_util.now()
             tz_name = str(self.hass.config.time_zone or "UTC")
             dim = query_dimension if query_dimension is not None else (binding.dimension if binding.dimension is not None else 22)
-            if is_reply:
-                if dim == 0:
-                    cmd = OWNGatewayCommand.report_time(now_dt, tz_name)
-                elif dim == 1:
-                    cmd = OWNGatewayCommand.report_date(now_dt, tz_name)
+            try:
+                if is_reply:
+                    if dim == 0:
+                        cmd = OWNGatewayCommand.report_time(now_dt, tz_name)
+                    elif dim == 1:
+                        cmd = OWNGatewayCommand.report_date(now_dt, tz_name)
+                    else:
+                        cmd = OWNGatewayCommand.report_datetime(now_dt, tz_name)
                 else:
-                    cmd = OWNGatewayCommand.report_datetime(now_dt, tz_name)
-            else:
-                if dim == 0:
-                    cmd = OWNGatewayCommand.set_time(now_dt, tz_name)
-                elif dim == 1:
-                    cmd = OWNGatewayCommand.set_date(now_dt, tz_name)
-                else:
-                    cmd = OWNGatewayCommand.set_datetime(now_dt, tz_name)
+                    if dim == 0:
+                        cmd = OWNGatewayCommand.set_time(now_dt, tz_name)
+                    elif dim == 1:
+                        cmd = OWNGatewayCommand.set_date(now_dt, tz_name)
+                    else:
+                        cmd = OWNGatewayCommand.set_datetime(now_dt, tz_name)
+            except ValueError:
+                return [], None
             return [cmd], now_dt.isoformat()
 
         return [], None

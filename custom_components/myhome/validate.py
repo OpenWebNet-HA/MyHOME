@@ -778,7 +778,7 @@ def _finite_float(v: typing.Any) -> float:
         raise Invalid("boolean is not a valid numeric value")
     try:
         fval = float(v)
-    except (TypeError, ValueError) as err:
+    except (TypeError, ValueError, OverflowError) as err:
         raise Invalid(f"expected a finite number, got {v!r}") from err
     if not math.isfinite(fval):
         raise Invalid("numeric value must be finite")
@@ -786,13 +786,24 @@ def _finite_float(v: typing.Any) -> float:
 
 
 def _non_bool_int(v: typing.Any) -> int:
-    """Coerce ``v`` to an int, rejecting booleans and non-finite floats."""
-    if isinstance(v, bool):
-        raise Invalid("boolean is not a valid integer")
+    """Coerce ``v`` to an int, rejecting booleans, non-finite floats, and fractional floats."""
+    if isinstance(v, bool) or (
+        isinstance(v, float) and (not math.isfinite(v) or not v.is_integer())
+    ):
+        raise Invalid(f"expected an integer, got {v!r}")
     try:
         return int(v)
     except (TypeError, ValueError, OverflowError) as err:
         raise Invalid(f"expected an integer, got {v!r}") from err
+
+
+def _non_bool_str(v: typing.Any) -> str:
+    """Coerce ``v`` to a string, rejecting booleans/non-finite floats and treating None as empty."""
+    if v is None:
+        return ""
+    if isinstance(v, bool) or (isinstance(v, float) and not math.isfinite(v)):
+        raise Invalid(f"expected a string, got {v!r}")
+    return str(v)
 
 
 _WHO4_EXPOSE_PROBE_RE = re.compile(r"(?:0\d\d|[1-9](?:0[1-9]|[1-9]\d))")
@@ -806,10 +817,15 @@ def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]
     from .where_grammar import is_apl_address, is_probe, normalize_expose_where
 
     who = int(item[CONF_WHO])
-    raw_where = str(item.get(CONF_WHERE) or "").strip()
+    raw_where_val = item.get(CONF_WHERE)
+    raw_where = str(raw_where_val if raw_where_val is not None else "").strip()
     dim = item.get(CONF_DIMENSION)
     default_val = item.get(CONF_DEFAULT)
-    if isinstance(default_val, float) and not math.isfinite(default_val):
+    if (isinstance(default_val, float) and not math.isfinite(default_val)) or (
+        isinstance(default_val, str)
+        and default_val.strip().lower()
+        in ("nan", "inf", "+inf", "-inf", "infinity", "+infinity", "-infinity")
+    ):
         raise Invalid("expose 'default' must be a finite value")
 
     if who == 13:
@@ -932,11 +948,11 @@ expose_entry_schema = All(
     Schema(
         {
             Required(CONF_WHO): All(_non_bool_int, In([1, 2, 4, 13, 18])),
-            Optional(CONF_WHERE): Coerce(str),
+            Optional(CONF_WHERE): _non_bool_str,
             Optional(CONF_ENTITY_ID): cv.entity_id,
-            Optional(CONF_ATTRIBUTE): Coerce(str),
+            Optional(CONF_ATTRIBUTE): _non_bool_str,
             Optional(CONF_DIMENSION): _non_bool_int,
-            Optional(CONF_VALUE_TEMPLATE): Coerce(str),
+            Optional(CONF_VALUE_TEMPLATE): _non_bool_str,
             Optional(CONF_COOLDOWN, default=1.0): All(
                 _finite_float, Range(min=0.0, max=3600.0)
             ),

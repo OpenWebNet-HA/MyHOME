@@ -2335,22 +2335,28 @@ async def test_expose_infeasible_inputs_hardening(hass: HomeAssistant):
         ExposeBinding,
         _parse_position_pct,
         _require_finite_float,
+        _require_int,
     )
+    from custom_components.myhome.where_grammar import is_probe, zone_number
 
-    # 1. Schema validation: booleans, NaN/inf, out-of-range numbers, and malformed WHEREs
+    # 1. Schema validation: booleans, NaN/inf, fractional ints, out-of-range numbers, and malformed WHEREs
     infeasible_schema_cases = [
         {"who": True, "where": "99", "entity_id": "light.a"},
+        {"who": 1.9, "where": "99", "entity_id": "light.a"},
         {"who": "not_int", "where": "99", "entity_id": "light.a"},
         {"who": float("nan"), "where": "99", "entity_id": "light.a"},
         {"who": float("inf"), "where": "99", "entity_id": "light.a"},
         {"who": 18, "where": "51", "dimension": False, "entity_id": "sensor.p"},
+        {"who": 18, "where": "51", "dimension": 113.5, "entity_id": "sensor.p"},
         {"who": 1, "where": "99", "entity_id": "light.a", "brightness_step_pct": True},
+        {"who": 1, "where": "99", "entity_id": "light.a", "brightness_step_pct": 10.5},
         {"who": 1, "where": "99", "entity_id": "light.a", "brightness_step_pct": 0},
         {"who": 1, "where": "99", "entity_id": "light.a", "brightness_step_pct": 101},
         {"who": 1, "where": "99", "entity_id": "light.a", "cooldown": True},
         {"who": 1, "where": "99", "entity_id": "light.a", "cooldown": "bad"},
         {"who": 1, "where": "99", "entity_id": "light.a", "cooldown": float("nan")},
         {"who": 1, "where": "99", "entity_id": "light.a", "cooldown": float("inf")},
+        {"who": 1, "where": "99", "entity_id": "light.a", "cooldown": 10**400},
         {"who": 1, "where": "99", "entity_id": "light.a", "cooldown": -1},
         {"who": 1, "where": "99", "entity_id": "light.a", "periodic_send": False},
         {"who": 1, "where": "99", "entity_id": "light.a", "periodic_send": float("nan")},
@@ -2358,6 +2364,12 @@ async def test_expose_infeasible_inputs_hardening(hass: HomeAssistant):
         {"who": 1, "where": "99", "entity_id": "light.a", "min_delta": float("-inf")},
         {"who": 1, "where": "99", "entity_id": "light.a", "default": float("nan")},
         {"who": 1, "where": "99", "entity_id": "light.a", "default": float("inf")},
+        {"who": 1, "where": "99", "entity_id": "light.a", "default": "nan"},
+        {"who": 1, "where": "99", "entity_id": "light.a", "default": "-inf"},
+        {"who": 1, "where": True, "entity_id": "light.a"},
+        {"who": 1, "where": float("nan"), "entity_id": "light.a"},
+        {"who": 1, "where": "99", "entity_id": "light.a", "attribute": True},
+        {"who": 1, "where": "99", "entity_id": "light.a", "value_template": False},
         {"who": 1, "where": "99*1", "entity_id": "light.a"},
         {"who": 1, "where": "99999", "entity_id": "light.a"},
         {"who": 1, "where": "20", "entity_id": "light.a"},
@@ -2368,6 +2380,9 @@ async def test_expose_infeasible_inputs_hardening(hass: HomeAssistant):
         {"who": 4, "where": "100", "entity_id": "sensor.t"},
         {"who": 4, "where": "200", "entity_id": "sensor.t"},
         {"who": 4, "where": "9999", "entity_id": "sensor.t"},
+        {"who": 4, "where": -105, "entity_id": "sensor.t"},
+        {"who": 4, "where": "-0", "entity_id": "sensor.t"},
+        {"who": 4, "where": "###105", "entity_id": "sensor.t"},
         {"who": 4, "where": "000", "entity_id": "sensor.t", "default": 150.0},
         {"who": 4, "where": "000", "entity_id": "sensor.t", "default": -100.0},
         {"who": 4, "where": "000", "entity_id": "sensor.t", "default": True},
@@ -2384,11 +2399,22 @@ async def test_expose_infeasible_inputs_hardening(hass: HomeAssistant):
         with pytest.raises(vol.Invalid):
             expose_entry_schema(dict(bad_cfg))
 
-    # Valid local-bus WHO=1 and valid WHO=4/18 defaults pass
+    assert zone_number("-5") == "-5"
+    assert zone_number("4-12") == "12"
+    assert is_probe("-105") is False
+    assert is_probe("###105") is False
+
+    # Valid local-bus WHO=1, WHO=4 probe 0, WHO=13 with where=None, and valid WHO=4/18 defaults pass
     valid_local = expose_entry_schema(
-        {"who": 1, "where": "99#4#01", "entity_id": "light.a"}
+        {"who": 1.0, "where": "99#4#01", "entity_id": "light.a"}
     )
     assert valid_local["where"] == "99#4#01"
+    valid_probe_zero = expose_entry_schema(
+        {"who": 4, "where": 0, "entity_id": "sensor.t"}
+    )
+    assert valid_probe_zero["where"] == "000"
+    valid_clock_none_where = expose_entry_schema({"who": 13, "where": None})
+    assert valid_clock_none_where["where"] == ""
     valid_t = expose_entry_schema(
         {"who": 4, "where": "101", "entity_id": "sensor.t", "default": -12.5}
     )
@@ -2405,22 +2431,37 @@ async def test_expose_infeasible_inputs_hardening(hass: HomeAssistant):
         _require_finite_float(float("nan"), "cooldown")
     with pytest.raises(ValueError, match="finite"):
         _require_finite_float(float("inf"), "cooldown")
+    with pytest.raises(ValueError, match="finite"):
+        _require_finite_float(10**400, "cooldown")
+
+    assert _require_int(1.0, "who") == 1
+    with pytest.raises(ValueError, match="integer"):
+        _require_int(1.5, "who")
+    with pytest.raises(ValueError, match="integer"):
+        _require_int(float("inf"), "who")
+    with pytest.raises(ValueError, match="integer"):
+        _require_int("not_int", "who")
 
     assert _parse_position_pct(None) is None
     assert _parse_position_pct(True) is None
     assert _parse_position_pct("bad") is None
     assert _parse_position_pct(float("nan")) is None
     assert _parse_position_pct(float("inf")) is None
+    assert _parse_position_pct(10**400) is None
     assert _parse_position_pct("120") == 100
     assert _parse_position_pct("-10") == 0
 
     for bad_dict in (
         {"who": True, "where": "99", "entity_id": "light.a"},
+        {"who": 99, "where": "99", "entity_id": "light.a"},
+        {"who": 1, "where": "", "entity_id": "light.a"},
+        {"who": 1, "where": "99*1", "entity_id": "light.a"},
         {"who": 18, "where": "51", "dimension": True, "entity_id": "sensor.p"},
         {"who": 1, "where": "99", "entity_id": "light.a", "brightness_step_pct": True},
         {"who": 1, "where": "99", "entity_id": "light.a", "cooldown": float("nan")},
         {"who": 1, "where": "99", "entity_id": "light.a", "periodic_send": float("inf")},
         {"who": 1, "where": "99", "entity_id": "light.a", "min_delta": True},
+        {"who": 1, "where": "99", "entity_id": "light.a", "default": float("nan")},
     ):
         with pytest.raises(ValueError):
             ExposeBinding.from_dict(bad_dict)
@@ -2432,13 +2473,32 @@ async def test_expose_infeasible_inputs_hardening(hass: HomeAssistant):
         gateway=gw,
         expose_list=[
             {"who": 1, "where": "96", "entity_id": "light.bad_b", "attribute": "brightness"},
+            {"who": 1, "where": "95", "entity_id": "switch.no_b"},
             {"who": 2, "where": "97", "entity_id": "cover.bad_p", "attribute": "current_position"},
             {"who": 4, "where": "000", "entity_id": "sensor.bad_t"},
             {"who": 18, "where": "51", "dimension": 113, "entity_id": "sensor.bad_e"},
+            {"who": 13},
         ],
     )
     mgr = ExposeManager(hass, entry)
-    b_light, b_cover, b_temp, b_energy = mgr.bindings
+    b_light, b_switch, b_cover, b_temp, b_energy, b_clock = mgr.bindings
+
+    # Subentry flow validation hardening against booleans and non-numeric strings
+    flow = ExposeSubentryFlowHandler()
+    flow.hass = hass
+    flow.handler = (entry.entry_id, SUBENTRY_TYPE_EXPOSE)
+    flow.context = {"source": "user"}
+    assert (await flow.async_step_user({CONF_WHO: True}))["errors"][CONF_WHO] == "invalid_who"
+    assert (await flow.async_step_user({CONF_WHO: 99}))["errors"][CONF_WHO] == "invalid_who"
+    assert (
+        await flow.async_step_user({CONF_WHO: 18, "where": "51", "entity_id": "sensor.p", CONF_DIMENSION: True})
+    )["errors"][CONF_DIMENSION] == "invalid_dimension"
+    assert (
+        await flow.async_step_user({CONF_WHO: 1, "where": "99", "entity_id": "light.a", CONF_COOLDOWN: True})
+    )["errors"]["base"] == "invalid_expose"
+    assert (
+        await flow.async_step_user({CONF_WHO: 1, "where": "99", "entity_id": "light.a", CONF_COOLDOWN: "bad", CONF_BRIGHTNESS_STEP_PCT: "bad"})
+    )["errors"]["base"] == "invalid_expose"
 
     # WHO=1 brightness: boolean or non-finite falls back safely without raising
     hass.states.async_set("light.bad_b", "on", {"brightness": True})
@@ -2449,23 +2509,36 @@ async def test_expose_infeasible_inputs_hardening(hass: HomeAssistant):
     frames, _ = mgr._build_frames(b_light, force=True, is_reply=False)
     assert [str(f) for f in frames] == ["*1*0*96##", "*#1*96*1*100*0##"]
 
+    # WHO=1 switch without brightness attribute (or brightness=None / False) queried on dimension=1
+    hass.states.async_set("switch.no_b", "on", {"brightness": None})
+    frames, _ = mgr._build_frames(b_switch, force=True, is_reply=True, query_dimension=1)
+    assert [str(f) for f in frames] == ["*#1*95*1*200*0##"]
+
+    hass.states.async_set("switch.no_b", "on", {"brightness": False})
+    frames, _ = mgr._build_frames(b_switch, force=True, is_reply=True, query_dimension=1)
+    assert [str(f) for f in frames] == ["*#1*95*1*200*0##"]
+
     # WHO=2 position: non-finite current_position omits shutter level frame cleanly
     hass.states.async_set("cover.bad_p", "open", {"current_position": float("nan")})
     frames, _ = mgr._build_frames(b_cover, force=True, is_reply=False)
     assert [str(f) for f in frames] == ["*2*0*97##"]
 
-    # WHO=4 temperature: boolean, NaN, inf, and out-of-bounds temperatures produce no frames
+    # WHO=4 temperature: boolean, NaN, inf, huge int, and out-of-bounds temperatures produce no frames
     b_temp.default = True
     hass.states.async_set("sensor.bad_t", "unavailable")
+    assert mgr._build_frames(b_temp, force=True, is_reply=False) == ([], None)
+    b_temp.default = 10**400
     assert mgr._build_frames(b_temp, force=True, is_reply=False) == ([], None)
     b_temp.default = None
     for bad_state in ("nan", "inf", "-inf", "100.0", "-100.0", "150.0"):
         hass.states.async_set("sensor.bad_t", bad_state)
         assert mgr._build_frames(b_temp, force=True, is_reply=False) == ([], None)
 
-    # WHO=18 energy: boolean, NaN, negative, and kW->W overflow produce no frames
+    # WHO=18 energy: boolean, NaN, huge int, negative, and kW->W overflow produce no frames
     b_energy.default = True
     hass.states.async_set("sensor.bad_e", "unavailable")
+    assert mgr._build_frames(b_energy, force=True, is_reply=False) == ([], None)
+    b_energy.default = 10**400
     assert mgr._build_frames(b_energy, force=True, is_reply=False) == ([], None)
     b_energy.default = None
     for bad_state in ("nan", "inf", "-1", "-0.1"):
@@ -2473,6 +2546,15 @@ async def test_expose_infeasible_inputs_hardening(hass: HomeAssistant):
         assert mgr._build_frames(b_energy, force=True, is_reply=False) == ([], None)
     hass.states.async_set("sensor.bad_e", "1e308", {"unit_of_measurement": "kW"})
     assert mgr._build_frames(b_energy, force=True, is_reply=False) == ([], None)
+
+    # WHO=13 clock: out-of-range pre-NTP year (1970) degrades gracefully without raising
+    import datetime as dt
+
+    with patch(
+        "custom_components.myhome.expose.dt_util.now",
+        return_value=dt.datetime(1970, 1, 1, 0, 0, 0, tzinfo=dt.timezone.utc),
+    ):
+        assert mgr._build_frames(b_clock, force=True, is_reply=False) == ([], None)
 
     # Bus message handler ignores out-of-range dim writes without crashing
     gw.send.reset_mock()
@@ -2492,12 +2574,24 @@ async def test_expose_infeasible_inputs_hardening(hass: HomeAssistant):
     with pytest.raises((TypeError, ValueError)):
         OWNLightingCommand.report_brightness("99", True)
     with pytest.raises((TypeError, ValueError)):
+        OWNLightingCommand.report_brightness("99", float("inf"))
+    with pytest.raises((TypeError, ValueError)):
         OWNLightingCommand.report_brightness("99", 101)
     with pytest.raises((TypeError, ValueError)):
         OWNLightingCommand.report_brightness("", 50)
 
+    assert (
+        str(OWNAutomationCommand.report_shutter_level("31", 40, state=10, priority="001"))
+        == "*#2*31*10*10*40*001*0##"
+    )
+    assert (
+        str(OWNAutomationCommand.report_shutter_level("31", 40, state=10, priority="00001"))
+        == "*#2*31*10*10*40*1*0##"
+    )
     with pytest.raises((TypeError, ValueError)):
         OWNAutomationCommand.report_shutter_level("97", False)
+    with pytest.raises((TypeError, ValueError)):
+        OWNAutomationCommand.report_shutter_level("97", float("inf"))
     with pytest.raises((TypeError, ValueError)):
         OWNAutomationCommand.report_shutter_level("97", 101)
     with pytest.raises((TypeError, ValueError)):
@@ -2519,6 +2613,14 @@ async def test_expose_infeasible_inputs_hardening(hass: HomeAssistant):
     with pytest.raises((TypeError, ValueError)):
         OWNEnergyCommand.report_total_energy("51", float("inf"))
     with pytest.raises((TypeError, ValueError)):
+        OWNEnergyCommand.report_current_month_energy("51", 100, year=float("inf"))
+    with pytest.raises((TypeError, ValueError)):
+        OWNEnergyCommand.report_partial_month_energy("51", 100, month=float("inf"))
+    with pytest.raises((TypeError, ValueError)):
+        OWNEnergyCommand.report_partial_day_energy("51", 100, day=float("inf"))
+    with pytest.raises((TypeError, ValueError)):
+        OWNEnergyCommand.report_streaming_state("51", duration=float("inf"))
+    with pytest.raises((TypeError, ValueError)):
         OWNEnergyCommand.report_streaming_state("51", duration=256)
     with pytest.raises((TypeError, ValueError)):
         OWNEnergyCommand.report_streaming_state("51", duration=60, energy_type=5)
@@ -2531,5 +2633,6 @@ async def test_expose_infeasible_inputs_hardening(hass: HomeAssistant):
         OWNGatewayCommand.set_date("2026-07-15")  # type: ignore[arg-type]
     with pytest.raises((TypeError, ValueError)):
         OWNGatewayCommand.set_time("14:30:00")  # type: ignore[arg-type]
+
 
 
