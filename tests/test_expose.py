@@ -504,11 +504,19 @@ async def test_who2_virtual_cover_actuator(hass: HomeAssistant):
     await mgr.handle_bus_message(OWNMessage.parse("*2*1000#1*97##"))
     assert calls[-1] == ("cover", "open_cover", {"entity_id": "cover.pergola_somfy"})
     assert str(gw.send.call_args_list[-1].args[0]) == "*2*1*97##"
+    # Gateway echoes pre-move STOP + UP confirmation on event session -> suppressed (H1)
+    await mgr.handle_bus_message(OWNMessage.parse("*2*1000#0*97##"))
+    await mgr.handle_bus_message(OWNMessage.parse("*2*1000#1*97##"))
+    assert len(calls) == 1
 
     # Physical button DOWN (*2*1000#2*97##)
     await mgr.handle_bus_message(OWNMessage.parse("*2*1000#2*97##"))
     assert calls[-1] == ("cover", "close_cover", {"entity_id": "cover.pergola_somfy"})
     assert str(gw.send.call_args_list[-1].args[0]) == "*2*2*97##"
+    # Gateway echoes pre-move STOP + DOWN confirmation on event session -> suppressed (H1)
+    await mgr.handle_bus_message(OWNMessage.parse("*2*1000#0*97##"))
+    await mgr.handle_bus_message(OWNMessage.parse("*2*1000#2*97##"))
+    assert len(calls) == 2
 
     # Physical button STOP (*2*1000#0*97##)
     await mgr.handle_bus_message(OWNMessage.parse("*2*1000#0*97##"))
@@ -1545,6 +1553,7 @@ async def test_expose_edge_cases_and_timers(hass: HomeAssistant):
         ExposeBinding,
         _coerce_action_list,
         _coerce_on_states,
+        _EchoGuardEntry,
         is_exposed_on_bus,
     )
 
@@ -1662,17 +1671,25 @@ async def test_expose_edge_cases_and_timers(hass: HomeAssistant):
     await mgr_t.async_stop()
 
     # 5. Echo guard expiration and WHO=2 direct move echo clearing pre-move STOP guard
-    mgr_t._tx_echo_guard["*1*1*99##"] = time.monotonic() - 5.0
-    mgr_t._pre_move_stop_guard[(2, "97")] = time.monotonic() - 5.0
+    mgr_t._tx_echo_guard["*1*1*99##"] = _EchoGuardEntry(
+        seq=1, target=(1, "99"), expiry=time.monotonic() - 5.0
+    )
+    mgr_t._pre_move_stop_guard[(2, "97")] = _EchoGuardEntry(
+        seq=2, target=(2, "97"), expiry=time.monotonic() - 5.0
+    )
     mgr_t._record_echo_guard("*1*0*99##")
     assert "*1*1*99##" not in mgr_t._tx_echo_guard
     assert (2, "97") not in mgr_t._pre_move_stop_guard
 
-    mgr_t._pre_move_stop_guard[(2, "97")] = time.monotonic() - 1.0
+    mgr_t._pre_move_stop_guard[(2, "97")] = _EchoGuardEntry(
+        seq=3, target=(2, "97"), expiry=time.monotonic() - 1.0
+    )
     assert mgr_t._is_echo_guarded(OWNMessage.parse("*2*0*97##")) is False
     assert (2, "97") not in mgr_t._pre_move_stop_guard
 
-    mgr_t._pre_move_stop_guard[(2, "97")] = time.monotonic() + 5.0
+    mgr_t._pre_move_stop_guard[(2, "97")] = _EchoGuardEntry(
+        seq=4, target=(2, "97"), expiry=time.monotonic() + 5.0
+    )
     mgr_t._is_echo_guarded(OWNMessage.parse("*2*1*97##"))
     assert (2, "97") not in mgr_t._pre_move_stop_guard
 
@@ -1753,12 +1770,27 @@ async def test_expose_edge_cases_and_timers(hass: HomeAssistant):
     assert [str(f) for f in frames_w2c] == ["*2*2*21##", "*#2*21*10*12*40*0*0##"]
 
     # WHO=4 & WHO=18 profile gate (supports_dimension_response_injection=False), non-numeric values, min_delta / equality dedup, unknown dim
-    gw_f455 = _make_gateway(profile=SimpleNamespace(supports_dimension_response_injection=False))
+    gw_f455 = _make_gateway(
+        profile=SimpleNamespace(
+            supports_dimension_response_injection=False,
+            supports_who4_command_injection=True,
+        )
+    )
     mgr_f455 = ExposeManager(hass, entry_empty, gateway=gw_f455)
+    gw_mh200n = _make_gateway(
+        profile=SimpleNamespace(
+            supports_dimension_response_injection=False,
+            supports_who4_command_injection=False,
+        )
+    )
+    mgr_mh200n = ExposeManager(hass, entry_empty, gateway=gw_mh200n)
     hass.states.async_set("sensor.temp_ok", "21.5")
     hass.states.async_set("sensor.temp_bad", "not_a_float")
     b_w4 = ExposeBinding(who=4, where="000", entity_id="sensor.temp_ok")
-    assert mgr_f455._build_frames(b_w4, force=True, is_reply=False) == ([], None)
+    f455_frames, f455_val = mgr_f455._build_frames(b_w4, force=True, is_reply=False)
+    assert [str(f) for f in f455_frames] == ["*#4*000*#0*0215##"]
+    assert f455_val == 21.5
+    assert mgr_mh200n._build_frames(b_w4, force=True, is_reply=False) == ([], None)
     assert mgr_t._build_frames(
         ExposeBinding(who=4, where="000", entity_id="sensor.temp_bad"),
         force=True,
@@ -1914,4 +1946,276 @@ async def test_expose_edge_cases_and_timers(hass: HomeAssistant):
     assert calls[-1] == ("switch", "turn_on", {"entity_id": "switch.shutter_up"})
     await mgr_t.handle_bus_message(OWNMessage.parse("*2*2*93##"))
     assert calls[-1] == ("switch", "turn_off", {"entity_id": "switch.shutter_down"})
+
+
+@pytest.mark.asyncio
+async def test_audit_regressions_echo_futures_brightness_off_scope_and_actions(hass: HomeAssistant):
+    """Test H1-H4, N1-N4, M1, M3, M4 regression fixes across expose.py, validate.py, config_flow.py, and gateway_sessions.py."""
+    import asyncio
+    import time
+
+    from homeassistant.helpers.dispatcher import async_dispatcher_send
+
+    from custom_components.myhome.expose import (
+        ExposeBinding,
+        _EchoGuardEntry,
+        _where_matches_binding,
+    )
+    from custom_components.myhome.gateway_sessions import (
+        CommandWorkerPool,
+        FrameScheduler,
+    )
+
+    # 1. H3: WHO=1 attribute="brightness" when light turns OFF (HA omits brightness attribute)
+    #    and WHO=2 attribute="current_position" when cover is closed/open without attribute
+    hass.states.async_set("light.dimmer_h3", "on", {"brightness": 128})
+    hass.states.async_set("cover.shutter_h3", "closed", {})
+    gw = _make_gateway()
+    entry = _make_entry(
+        hass,
+        gateway=gw,
+        expose_list=[
+            {
+                "who": 1,
+                "where": "91",
+                "entity_id": "light.dimmer_h3",
+                "attribute": "brightness",
+                "cooldown": 0,
+            },
+            {
+                "who": 2,
+                "where": "92",
+                "entity_id": "cover.shutter_h3",
+                "attribute": "current_position",
+                "cooldown": 0,
+            },
+        ],
+    )
+    mgr = ExposeManager(hass, entry)
+    entry.runtime_data.expose_manager = mgr
+    await mgr.async_start()
+    await mgr.async_sync_all()
+
+    sent = [str(c.args[0]) for c in gw.send_status_request.call_args_list]
+    assert "*1*1*91##" in sent
+    assert "*#1*91*1*150*0##" in sent
+    assert "*2*0*92##" in sent
+    assert "*#2*92*10*10*0*0*0##" in sent
+    gw.send_status_request.reset_mock()
+
+    # Light turns off in HA and removes brightness attribute -> must send *1*0*91## + *#1*91*1*100*0##
+    hass.states.async_set("light.dimmer_h3", "off", {})
+    await hass.async_block_till_done()
+    sent_off = [str(c.args[0]) for c in gw.send_status_request.call_args_list]
+    assert sent_off == ["*1*0*91##", "*#1*91*1*100*0##"]
+    gw.send_status_request.reset_mock()
+
+    # Cover opens without current_position attribute -> resolves to 100
+    hass.states.async_set("cover.shutter_h3", "open", {})
+    await hass.async_block_till_done()
+    sent_open = [str(c.args[0]) for c in gw.send_status_request.call_args_list]
+    assert sent_open == ["*2*0*92##", "*#2*92*10*10*100*0*0##"]
+
+    calls = []
+
+    async def _rec(call):
+        calls.append((call.domain, call.service, dict(call.data)))
+
+    for svc in ("turn_on", "turn_off"):
+        hass.services.async_register("light", svc, _rec)
+    for svc in ("open_cover", "close_cover", "stop_cover"):
+        hass.services.async_register("cover", svc, _rec)
+
+    # 2. N4: WHO=2 cover WITH dimension=10 tracks cur_pos in handle_bus_message,
+    #    while cover WITHOUT position reporting ignores intermediate position ticks while moving
+    hass.states.async_set("cover.shutter_h3", "opening", {"current_position": 35})
+    await mgr.handle_bus_message(OWNMessage.parse("*2*1*92##"))
+    assert mgr.bindings[1].last_sent_value == ("*2*1*92##", 35, "opening")
+
+    hass.states.async_set("cover.simple_shutter", "closed", {"current_position": 0})
+    b_simple = ExposeBinding(who=2, where="94", entity_id="cover.simple_shutter", cooldown=0)
+    mgr.bindings.append(b_simple)
+    await mgr.handle_bus_message(OWNMessage.parse("*2*1*94##"))
+    gw.send_status_request.reset_mock()
+    # Position ticks while still "opening" must be deduplicated when reports_pos is False
+    hass.states.async_set("cover.simple_shutter", "opening", {"current_position": 25})
+    await mgr._async_send_binding_state(b_simple, high_priority=False, force=False, is_reply=False)
+    assert gw.send_status_request.call_count == 0
+
+    # 3. M3: General and Area scope matching for WHO=1 and WHO=2 (including local bus #4#xx isolation)
+    assert _where_matches_binding(1, "12", "0", allow_scope=True) is True
+    assert _where_matches_binding(1, "12", "1", allow_scope=True) is True
+    assert _where_matches_binding(1, "12", "2", allow_scope=True) is False
+    assert _where_matches_binding(1, "12#4#01", "0#4#01", allow_scope=True) is True
+    assert _where_matches_binding(1, "12#4#01", "0#4#02", allow_scope=True) is False
+
+    # General OFF (*1*0*0##) turns off light.dimmer_h3 (WHERE=91)
+    await mgr.handle_bus_message(OWNMessage.parse("*1*0*0##"))
+    assert ("light", "turn_off", {"entity_id": "light.dimmer_h3"}) in calls
+    # Area 9 DOWN (*2*2*9##) closes covers in Area 9 (WHERE=92 and WHERE=94)
+    await mgr.handle_bus_message(OWNMessage.parse("*2*2*9##"))
+    assert ("cover", "close_cover", {"entity_id": "cover.shutter_h3"}) in calls
+    assert ("cover", "close_cover", {"entity_id": "cover.simple_shutter"}) in calls
+
+    # 4. N3: Custom action target dict keys (area_id, device_id) and validate.py service check
+    await mgr._async_run_actions(
+        [
+            {
+                "action": "light.turn_off",
+                "target": {"area_id": "living_room", "device_id": "dev_123"},
+                "floor_id": "ground_floor",
+            }
+        ]
+    )
+    assert calls[-1] == (
+        "light",
+        "turn_off",
+        {
+            "area_id": "living_room",
+            "device_id": "dev_123",
+            "floor_id": "ground_floor",
+        },
+    )
+    with pytest.raises(vol.Invalid, match="requires 'action' or 'service'"):
+        expose_schema(
+            [{"who": 1, "where": "99", "turn_on_action": [{"entity_id": "light.x"}]}]
+        )
+
+    # 5. Echo guard with attached write futures (pending, completed, cancelled) and expired/repeat checks
+    loop = asyncio.get_running_loop()
+    pending_fut = loop.create_future()
+    entries_p = mgr._record_echo_guard(OWNMessage.parse("*2*1*92##"))
+    mgr._attach_echo_guard_future(entries_p, pending_fut)
+    # Even if expiry is in the past, is_expired() is False while future is pending
+    for e in entries_p:
+        e.expiry = time.monotonic() - 10.0
+        assert e.is_expired(time.monotonic()) is False
+    # Cancelling the write future immediately removes the echo guard and pre-move stop guard
+    pending_fut.cancel()
+    await asyncio.sleep(0)
+    assert "*2*1*92##" not in mgr._tx_echo_guard
+    assert (2, "92") not in mgr._pre_move_stop_guard
+
+    # Already-done future refreshes expiry immediately
+    done_fut = loop.create_future()
+    done_fut.set_result(True)
+    entries_d = mgr._record_echo_guard(OWNMessage.parse("*1*1*91##"))
+    mgr._attach_echo_guard_future(entries_d, done_fut)
+    assert entries_d[0].is_expired(time.monotonic()) is False
+
+    # _async_dispatch_frames attaches future when gateway returns an asyncio.Future
+    fut_send = loop.create_future()
+    gw.send.return_value = fut_send
+    await mgr._async_dispatch_frames([OWNMessage.parse("*1*0*91##")], high_priority=True)
+    fut_send.set_result(True)
+    await asyncio.sleep(0)
+    gw.send.return_value = None
+
+    # Expired entry in _is_echo_guarded and already-seen source in _is_echo_guarded
+    mgr._tx_echo_guard["*1*1*88##"] = _EchoGuardEntry(
+        seq=99, target=(1, "88"), expiry=time.monotonic() - 5.0
+    )
+    assert mgr._is_echo_guarded(OWNMessage.parse("*1*1*88##")) is False
+    assert "*1*1*88##" not in mgr._tx_echo_guard
+
+    mgr._tx_echo_guard["*1*1*87##"] = _EchoGuardEntry(
+        seq=100,
+        target=(1, "87"),
+        expiry=time.monotonic() + 5.0,
+        seen_sources={gw.mac},
+    )
+    assert mgr._is_echo_guarded(OWNMessage.parse("*1*1*87##"), source_mac=gw.mac) is False
+
+    # 6. N2: Late-starting secondary gateway subscription, multi-gateway echo guard, and cross-gateway RX dedup
+    mgr_unstarted = ExposeManager(hass, entry, gateway=gw)
+    mgr_unstarted.subscribe_secondary_gateways()  # no-op when _started is False
+
+    gw_sec = _make_gateway(mac="00:03:50:99:99:99")
+    gw_sec.primary_gateway_mac = gw.mac
+    gw.delegated_away_whos = {1}
+    entry_sec = _make_entry(hass, gateway=gw_sec, expose_list=[])
+    mgr_sec = ExposeManager(hass, entry_sec, gateway=gw_sec)
+    # Starting secondary gateway automatically notifies primary's ExposeManager to subscribe
+    await mgr_sec.async_start()
+    assert gw_sec.mac in mgr._subscribed_secondary_macs
+
+    # External step-up command (*1*30*91##) arriving on primary then <0.5s later on secondary is deduplicated (N2)
+    calls.clear()
+    await mgr.handle_bus_message(OWNMessage.parse("*1*30*91##"), source_mac=gw.mac)
+    assert len(calls) == 1
+    async_dispatcher_send(
+        hass, f"myhome_message_{gw_sec.mac}", OWNMessage.parse("*1*30*91##")
+    )
+    await hass.async_block_till_done()
+    assert len(calls) == 1
+
+    # _last_rx_by_frame pruning when > 64 entries
+    now_m = time.monotonic()
+    for i in range(70):
+        mgr._last_rx_by_frame[f"*1*1*{i}##"] = ("old_src", now_m - 10.0)
+    await mgr.handle_bus_message(OWNMessage.parse("*1*31*91##"), source_mac=gw.mac)
+    assert len(mgr._last_rx_by_frame) < 10
+
+    await mgr.async_stop()
+
+    # 7. N1 & H4: FrameScheduler superseding status reports & CommandWorkerPool exposed NACK handling
+    sched = FrameScheduler()
+    w1 = loop.create_future()
+    w2 = loop.create_future()
+    msg_s1 = OWNMessage.parse("*#4*000*0*0210##")
+    msg_s2 = OWNMessage.parse("*#4*000*0*0215##")
+    sched.put_nowait(
+        {
+            "message": msg_s1,
+            "is_status_request": True,
+            "written": w1,
+        }
+    )
+    sched.put_nowait(
+        {
+            "message": msg_s2,
+            "is_status_request": True,
+            "written": w2,
+        }
+    )
+    assert w1.cancelled()
+    assert sched.status_qsize == 1
+
+    # CommandWorkerPool._is_exposed_target and NACK handling on exposed target
+    gw.profile = MH202Profile()
+    mock_gw_handler = MagicMock()
+    mock_gw_handler.hass = hass
+    mock_gw_handler.config_entry = entry
+    mock_gw_handler.gateway = gw
+    mock_gw_handler.log_id = "MH202"
+    mock_gw_handler.mac = gw.mac
+    mock_gw_handler.command_session_idle_timeout = 5.0
+    mock_gw_handler.bus_monitor = MagicMock()
+    mock_gw_handler._record_tx = MagicMock()
+    ready_ev = asyncio.Event()
+    ready_ev.set()
+    pool = CommandWorkerPool(mock_gw_handler, event_session_ready=ready_ev)
+    assert pool._is_exposed_target({"message": OWNMessage.parse("*1*1*91##")}) is True
+    assert pool._is_exposed_target({"message": OWNMessage.parse("*1*1*55##")}) is False
+    assert pool._is_exposed_target({"message": "not_a_frame"}) is False
+    assert pool._is_exposed_target({"message": OWNMessage.parse("*#13**22##")}) is False
+
+    mock_cmd_sess = MagicMock()
+    mock_cmd_sess._stream_reader = object()
+    mock_cmd_sess._stream_writer = object()
+    mock_cmd_sess.connect = AsyncMock(return_value={"Success": True})
+    # Simulate gateway returning NACK (None) while session stays open on an exposed command
+    mock_cmd_sess.send = AsyncMock(return_value=None)
+
+    with patch("custom_components.myhome.gateway.OWNCommandSession", return_value=mock_cmd_sess):
+        w_exp = await pool.send(OWNMessage.parse("*1*1*91##"))
+        await pool.send_buffer.put(None)
+        await pool.sending_loop(0)
+
+    mock_cmd_sess.send.assert_awaited_once()
+    assert mock_cmd_sess.send.call_args.kwargs["is_status_request"] is True
+    assert w_exp.done() and not w_exp.cancelled()
+
+
+
 

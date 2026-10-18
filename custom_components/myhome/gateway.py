@@ -1220,11 +1220,11 @@ class MyHOMEGatewayHandler:
             await self.send_paced(self._discovery_frames())
         finally:
             self._initial_discovery_done.set()
-            runtime = getattr(self.config_entry, "runtime_data", None)
-            expose_mgr = getattr(runtime, "expose_manager", None)
-            sync_fn = getattr(expose_mgr, "async_sync_all", None)
-            if inspect.iscoroutinefunction(sync_fn):
-                await sync_fn()
+        runtime = getattr(self.config_entry, "runtime_data", None)
+        expose_mgr = getattr(runtime, "expose_manager", None)
+        sync_fn = getattr(expose_mgr, "async_sync_all", None)
+        if inspect.iscoroutinefunction(sync_fn):
+            await sync_fn()
 
     async def wait_for_initial_discovery(self, timeout: float | None = None) -> None:
         """Wait until startup initial discovery finishes.

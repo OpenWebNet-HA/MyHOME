@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import datetime as dt
 import time
@@ -53,6 +54,7 @@ from .const import (
     CONF_WHO,
     LOGGER,
     SUBENTRY_TYPE_EXPOSE,
+    area_of_where,
 )
 from .where_grammar import expose_message_where, normalize_expose_where
 
@@ -71,6 +73,48 @@ DEFAULT_MEDIA_PLAYER_ON_STATES: tuple[str, ...] = (
     "buffering",
 )
 TX_ECHO_GUARD_WINDOW_S: float = 1.5
+
+
+@dataclass
+class _EchoGuardEntry:
+    """Active loopback/translation echo guard entry for an outgoing frame."""
+
+    seq: int
+    target: tuple[int, str] | None
+    expiry: float
+    future: asyncio.Future[Any] | None = None
+    seen_sources: set[str] = field(default_factory=set)
+
+    def is_expired(self, now: float) -> bool:
+        """Return True only when any attached write future is done and TTL has elapsed."""
+        if self.future is not None and not self.future.done():
+            return False
+        return self.expiry <= now
+
+
+def _where_matches_binding(
+    who: int,
+    binding_where: str,
+    msg_where: str,
+    *,
+    allow_scope: bool,
+) -> bool:
+    """Return True if ``msg_where`` targets ``binding_where`` (exact or general/area scope)."""
+    if binding_where == msg_where:
+        return True
+    if not allow_scope or who not in (1, 2) or not msg_where:
+        return False
+    b_base, b_iface = (
+        binding_where.split("#4#", 1) if "#4#" in binding_where else (binding_where, "")
+    )
+    m_base, m_iface = (
+        msg_where.split("#4#", 1) if "#4#" in msg_where else (msg_where, "")
+    )
+    if b_iface != m_iface:
+        return False
+    if m_base == "0":
+        return True
+    return bool(area_of_where(b_base) == m_base)
 
 
 def _coerce_action_list(raw: Any) -> list[dict[str, Any]] | None:
@@ -114,7 +158,7 @@ def is_exposed_on_bus(
         return False
     runtime = getattr(config_entry, "runtime_data", None)
     expose_mgr = getattr(runtime, "expose_manager", None)
-    if expose_mgr is not None and expose_mgr.is_exposed(who, where):
+    if isinstance(expose_mgr, ExposeManager) and expose_mgr.is_exposed(who, where):
         return True
     if hass is None:
         return False
@@ -131,7 +175,7 @@ def is_exposed_on_bus(
         other_gw = getattr(other_rt, "gateway", None)
         other_mgr = getattr(other_rt, "expose_manager", None)
         if (
-            other_mgr is not None
+            isinstance(other_mgr, ExposeManager)
             and getattr(other_gw, "bus_group", None) == my_bus_group
             and other_mgr.is_exposed(who, where)
         ):
@@ -325,11 +369,14 @@ class ExposeManager:
         self._unsub_state: list[CALLBACK_TYPE] = []
         self._unsub_dispatcher: CALLBACK_TYPE | None = None
         self._unsub_secondary_dispatchers: list[CALLBACK_TYPE] = []
+        self._subscribed_secondary_macs: set[str] = set()
         self._unsub_periodic: list[CALLBACK_TYPE] = []
         self._cooldown_timers: dict[tuple[int, str, int | None], CALLBACK_TYPE] = {}
         self._stream_timers: dict[tuple[int, str, int | None], CALLBACK_TYPE] = {}
-        self._tx_echo_guard: dict[str, float] = {}
-        self._pre_move_stop_guard: dict[tuple[int, str], float] = {}
+        self._echo_seq: int = 0
+        self._tx_echo_guard: dict[str, _EchoGuardEntry] = {}
+        self._pre_move_stop_guard: dict[tuple[int, str], _EchoGuardEntry] = {}
+        self._last_rx_by_frame: dict[str, tuple[str, float]] = {}
         self._started = False
 
         self._load_bindings(yaml_configs)
@@ -386,8 +433,61 @@ class ExposeManager:
             return False
         return (who_int, norm) in self.exposed_addresses
 
+    def subscribe_secondary_gateways(self) -> None:
+        """Subscribe to any shared-bus secondary gateways linked to this primary gateway."""
+        if not self._started:
+            return
+        from .const import DOMAIN
+
+        for other_entry in self.hass.config_entries.async_entries(DOMAIN):
+            if other_entry.entry_id == self.config_entry.entry_id:
+                continue
+            other_rt = getattr(other_entry, "runtime_data", None)
+            other_gw = getattr(other_rt, "gateway", None)
+            sec_mac = str(getattr(other_gw, "mac", "") or "")
+            if (
+                other_gw is not None
+                and getattr(other_gw, "primary_gateway_mac", None) == self.gateway.mac
+                and sec_mac
+                and sec_mac not in self._subscribed_secondary_macs
+            ):
+                self._subscribed_secondary_macs.add(sec_mac)
+                self._unsub_secondary_dispatchers.append(
+                    async_dispatcher_connect(
+                        self.hass,
+                        f"myhome_message_{sec_mac}",
+                        self._make_secondary_bus_listener(sec_mac),
+                    )
+                )
+
+    def _make_secondary_bus_listener(self, sec_mac: str) -> Any:
+        """Create a secondary-gateway bus listener bound to ``sec_mac``."""
+
+        async def _on_secondary_msg(message: OWNMessage) -> None:
+            await self._async_handle_secondary_bus_message(
+                message, source_mac=sec_mac
+            )
+
+        return _on_secondary_msg
+
     async def async_start(self) -> None:
         """Subscribe to Home Assistant state changes, bus frames, and periodic timers."""
+        pri_mac = getattr(self.gateway, "primary_gateway_mac", None)
+        if pri_mac:
+            from .const import DOMAIN
+
+            for other_entry in self.hass.config_entries.async_entries(DOMAIN):
+                if other_entry.entry_id == self.config_entry.entry_id:
+                    continue
+                other_rt = getattr(other_entry, "runtime_data", None)
+                other_gw = getattr(other_rt, "gateway", None)
+                other_mgr = getattr(other_rt, "expose_manager", None)
+                if (
+                    other_mgr is not None
+                    and getattr(other_gw, "mac", None) == pri_mac
+                ):
+                    other_mgr.subscribe_secondary_gateways()
+
         if self._started or not self.bindings:
             return
         self._started = True
@@ -398,25 +498,7 @@ class ExposeManager:
             f"myhome_message_{self.gateway.mac}",
             self._async_handle_bus_message,
         )
-        from .const import DOMAIN
-
-        for other_entry in self.hass.config_entries.async_entries(DOMAIN):
-            if other_entry.entry_id == self.config_entry.entry_id:
-                continue
-            other_rt = getattr(other_entry, "runtime_data", None)
-            other_gw = getattr(other_rt, "gateway", None)
-            if (
-                other_gw is not None
-                and getattr(other_gw, "primary_gateway_mac", None) == self.gateway.mac
-                and getattr(other_gw, "mac", None)
-            ):
-                self._unsub_secondary_dispatchers.append(
-                    async_dispatcher_connect(
-                        self.hass,
-                        f"myhome_message_{other_gw.mac}",
-                        self._async_handle_secondary_bus_message,
-                    )
-                )
+        self.subscribe_secondary_gateways()
 
         # 2. Group bindings by entity_id and subscribe to state changes
         by_entity: dict[str, list[ExposeBinding]] = {}
@@ -451,6 +533,7 @@ class ExposeManager:
         for unsub in self._unsub_secondary_dispatchers:
             unsub()
         self._unsub_secondary_dispatchers.clear()
+        self._subscribed_secondary_macs.clear()
         for unsub in self._unsub_state:
             unsub()
         self._unsub_state.clear()
@@ -465,6 +548,7 @@ class ExposeManager:
         self._stream_timers.clear()
         self._tx_echo_guard.clear()
         self._pre_move_stop_guard.clear()
+        self._last_rx_by_frame.clear()
 
     async def async_sync_all(self) -> None:
         """Send an initial state/clock sync for all configured bindings."""
@@ -545,64 +629,134 @@ class ExposeManager:
 
     def _record_echo_guard(
         self, frame: OWNMessage | str, *, is_confirmation: bool = False
-    ) -> None:
+    ) -> list[_EchoGuardEntry]:
         """Record an outgoing frame (and its Command Translation / pre-move equivalents) in the loopback guard."""
         now = time.monotonic()
         expiry = now + TX_ECHO_GUARD_WINDOW_S
-        expired = [k for k, exp in self._tx_echo_guard.items() if exp <= now]
-        for k in expired:
-            self._tx_echo_guard.pop(k, None)
-        expired_stop = [k for k, exp in self._pre_move_stop_guard.items() if exp <= now]
-        for stop_k in expired_stop:
+        expired_keys = [
+            frame_k
+            for frame_k, entry in self._tx_echo_guard.items()
+            if entry.is_expired(now)
+        ]
+        for frame_k in expired_keys:
+            self._tx_echo_guard.pop(frame_k, None)
+        expired_stop_keys = [
+            stop_k
+            for stop_k, entry in self._pre_move_stop_guard.items()
+            if entry.is_expired(now)
+        ]
+        for stop_k in expired_stop_keys:
             self._pre_move_stop_guard.pop(stop_k, None)
+
+        self._echo_seq += 1
+        seq = self._echo_seq
+        entries: list[_EchoGuardEntry] = []
+        target: tuple[int, str] | None = None
 
         if isinstance(frame, OWNMessage):
             who = getattr(frame, "who", None)
             what = getattr(frame, "_what", getattr(frame, "what", None))
             msg_where = expose_message_where(frame)
+            if isinstance(who, int) and msg_where:
+                target = (who, msg_where)
             if who in (1, 2) and isinstance(what, int) and what != 1000 and msg_where:
-                suffix = f"*{msg_where}##"
-                prefix = f"*{who}*"
-                superseded = [
-                    k
-                    for k in self._tx_echo_guard
-                    if k.startswith(prefix) and k.endswith(suffix)
-                ]
-                for k in superseded:
-                    self._tx_echo_guard.pop(k, None)
-                self._tx_echo_guard[f"*{who}*1000#{what}*{msg_where}##"] = expiry
-                if who == 2 and what in (1, 2) and not is_confirmation:
-                    # Gateways (F454, MH202, MyHomeServer1, F461) emit a one-shot
-                    # pre-move STOP before a WHO=2 UP/DOWN move frame.
-                    self._pre_move_stop_guard[(2, msg_where)] = expiry
+                if is_confirmation and target is not None:
+                    # An incoming external bus command superseded any earlier completed TX for this target
+                    done_keys = [
+                        frame_k
+                        for frame_k, entry in self._tx_echo_guard.items()
+                        if entry.target == target
+                        and (entry.future is None or entry.future.done())
+                    ]
+                    for frame_k in done_keys:
+                        self._tx_echo_guard.pop(frame_k, None)
+                trans_entry = _EchoGuardEntry(seq=seq, target=target, expiry=expiry)
+                self._tx_echo_guard[f"*{who}*1000#{what}*{msg_where}##"] = trans_entry
+                entries.append(trans_entry)
+                if who == 2 and what in (1, 2):
+                    # 10 gateways (F453, F453AV, F454, F459, F460, F461, H4684,
+                    # MH200, MH200N, MyHomeServer1; MH202 emits 1 frame) emit a
+                    # one-shot pre-move STOP (*2*1000#0*W##) before a WHO=2 UP/DOWN move frame.
+                    stop_entry = _EchoGuardEntry(seq=seq, target=target, expiry=expiry)
+                    self._pre_move_stop_guard[(2, msg_where)] = stop_entry
+                    entries.append(stop_entry)
 
-        frame_str = str(frame)
-        self._tx_echo_guard[frame_str] = expiry
+        raw_entry = _EchoGuardEntry(seq=seq, target=target, expiry=expiry)
+        self._tx_echo_guard[str(frame)] = raw_entry
+        entries.append(raw_entry)
+        return entries
 
-    def _is_echo_guarded(self, message: OWNMessage) -> bool:
+    def _attach_echo_guard_future(
+        self, entries: list[_EchoGuardEntry], fut: asyncio.Future[Any]
+    ) -> None:
+        """Bind a send-queue delivery future so echo guards stay alive while queued and expire when cancelled."""
+        for entry in entries:
+            entry.future = fut
+
+        def _on_written_done(done_fut: asyncio.Future[Any]) -> None:
+            if done_fut.cancelled():
+                for frame_k, entry in list(self._tx_echo_guard.items()):
+                    if entry in entries:
+                        self._tx_echo_guard.pop(frame_k, None)
+                for stop_k, entry in list(self._pre_move_stop_guard.items()):
+                    if entry in entries:
+                        self._pre_move_stop_guard.pop(stop_k, None)
+                return
+            refreshed = time.monotonic() + TX_ECHO_GUARD_WINDOW_S
+            for entry in entries:
+                entry.expiry = max(entry.expiry, refreshed)
+
+        if fut.done():
+            _on_written_done(fut)
+        else:
+            fut.add_done_callback(_on_written_done)
+
+    def _is_echo_guarded(
+        self, message: OWNMessage, *, source_mac: str | None = None
+    ) -> bool:
         """Return True if ``message`` is a loopback or translation echo of a frame sent by ExposeManager."""
         now = time.monotonic()
+        src = source_mac or str(getattr(self.gateway, "mac", "") or "primary")
         raw_frame = str(message)
         who = getattr(message, "who", None)
         eff_what = getattr(message, "effective_what", None)
         msg_where = expose_message_where(message)
 
         if who == 2 and msg_where:
-            stop_exp = self._pre_move_stop_guard.get((2, msg_where))
-            if stop_exp is not None:
-                if stop_exp <= now:
+            stop_entry = self._pre_move_stop_guard.get((2, msg_where))
+            if stop_entry is not None:
+                if stop_entry.is_expired(now):
                     self._pre_move_stop_guard.pop((2, msg_where), None)
-                elif eff_what == 0:
-                    # Consume the one-shot pre-move STOP echo
-                    self._pre_move_stop_guard.pop((2, msg_where), None)
+                elif eff_what == 0 and src not in stop_entry.seen_sources:
+                    # Consume the one-shot pre-move STOP echo for this gateway source
+                    stop_entry.seen_sources.add(src)
+                    if not self._subscribed_secondary_macs:
+                        self._pre_move_stop_guard.pop((2, msg_where), None)
                     return True
                 elif eff_what in (1, 2):
                     # Move echo arrived; pre-move STOP window is over
                     self._pre_move_stop_guard.pop((2, msg_where), None)
 
-        exp = self._tx_echo_guard.pop(raw_frame, None)
-        if exp is None or exp <= now:
+        entry = self._tx_echo_guard.get(raw_frame)
+        if entry is None:
             return False
+        if entry.is_expired(now):
+            self._tx_echo_guard.pop(raw_frame, None)
+            return False
+        if src in entry.seen_sources:
+            return False
+
+        # Mark this echo (and any older completed entries for the same target) consumed for src
+        for frame_k, candidate in list(self._tx_echo_guard.items()):
+            if candidate.seq == entry.seq or (
+                entry.target is not None
+                and candidate.target == entry.target
+                and candidate.seq < entry.seq
+                and (candidate.future is None or candidate.future.done())
+            ):
+                candidate.seen_sources.add(src)
+                if not self._subscribed_secondary_macs:
+                    self._tx_echo_guard.pop(frame_k, None)
         return True
 
     async def _async_dispatch_frames(
@@ -614,11 +768,13 @@ class ExposeManager:
     ) -> None:
         """Record frames in the echo guard and queue them on the gateway."""
         for frame in frames:
-            self._record_echo_guard(frame, is_confirmation=is_confirmation)
+            entries = self._record_echo_guard(frame, is_confirmation=is_confirmation)
             if high_priority:
-                await self.gateway.send(frame)
+                fut = await self.gateway.send(frame)
             else:
-                await self.gateway.send_status_request(frame)
+                fut = await self.gateway.send_status_request(frame)
+            if isinstance(fut, asyncio.Future):
+                self._attach_echo_guard_future(entries, fut)
 
     def _effective_profile(self, who: int) -> Any:
         """Return the active GatewayProfile for ``who``, accounting for shared-bus delegation."""
@@ -663,6 +819,18 @@ class ExposeManager:
             if raw is None:
                 if binding.default is not None:
                     raw = binding.default
+                elif (
+                    binding.who == 1
+                    and binding.attribute == "brightness"
+                    and state.state.strip().lower() not in binding.on_states
+                ):
+                    raw = 0
+                elif (
+                    binding.who == 2
+                    and binding.attribute == "current_position"
+                    and state.state.strip().lower() in ("closed", "open")
+                ):
+                    raw = 0 if state.state.strip().lower() == "closed" else 100
                 else:
                     return None, state
         else:
@@ -730,8 +898,8 @@ class ExposeManager:
                 except (TypeError, ValueError):
                     brightness_pct = 100 if is_on else 0
 
-            val_key: Any = (is_on, brightness_pct)
-            if not force and binding.last_sent_value == val_key:
+            who1_val_key: tuple[bool, int | None] = (is_on, brightness_pct)
+            if not force and binding.last_sent_value == who1_val_key:
                 return [], None
 
             if query_dimension == 1 and brightness_pct is not None:
@@ -752,7 +920,7 @@ class ExposeManager:
                             binding.where, brightness_pct
                         )
                     )
-            return frames, val_key
+            return frames, who1_val_key
 
         if binding.who == 2:
             raw_str = str(raw).strip().lower()
@@ -774,8 +942,17 @@ class ExposeManager:
                 shutter_cmd = OWNAutomationCommand.stop_shutter(binding.where)
                 state_code = 10
 
-            val_key = (str(shutter_cmd), pos_pct, raw_str)
-            if not force and binding.last_sent_value == val_key:
+            reports_pos = (
+                binding.attribute == "current_position"
+                or binding.dimension == 10
+                or query_dimension == 10
+            )
+            who2_val_key: tuple[str, int | None, str] = (
+                str(shutter_cmd),
+                pos_pct if reports_pos else None,
+                raw_str,
+            )
+            if not force and binding.last_sent_value == who2_val_key:
                 return [], None
 
             if query_dimension == 10 and pos_pct is not None:
@@ -783,7 +960,7 @@ class ExposeManager:
                     OWNAutomationCommand.report_shutter_level(
                         binding.where, pos_pct, state=state_code
                     )
-                ], val_key
+                ], who2_val_key
 
             frames = [shutter_cmd]
             if pos_pct is not None and (
@@ -794,13 +971,23 @@ class ExposeManager:
                         binding.where, pos_pct, state=state_code
                     )
                 )
-            return frames, val_key
+            return frames, who2_val_key
 
         if binding.who == 4:
             profile = self._effective_profile(4)
-            if profile is not None and not getattr(
-                profile, "supports_dimension_response_injection", True
-            ):
+            supports_dim_resp = (
+                True
+                if profile is None
+                else bool(
+                    getattr(profile, "supports_dimension_response_injection", True)
+                )
+            )
+            supports_cmd_inj = (
+                True
+                if profile is None
+                else bool(getattr(profile, "supports_who4_command_injection", True))
+            )
+            if not supports_dim_resp and not supports_cmd_inj:
                 return [], None
             try:
                 temp_c = round(float(raw), 1)
@@ -814,7 +1001,9 @@ class ExposeManager:
                 elif temp_c == binding.last_sent_value:
                     return [], None
 
-            return [OWNHeatingCommand.report_temperature(binding.where, temp_c)], temp_c
+            if supports_dim_resp:
+                return [OWNHeatingCommand.report_temperature(binding.where, temp_c)], temp_c
+            return [OWNHeatingCommand.write_temperature(binding.where, temp_c)], temp_c
 
         if binding.who == 18:
             profile = self._effective_profile(18)
@@ -915,10 +1104,13 @@ class ExposeManager:
             domain, service_name = service_str.split(".", 1)
             service_data = dict(item.get("data") or item.get("service_data") or {})
             target = item.get("target")
-            if isinstance(target, dict) and "entity_id" in target and "entity_id" not in service_data:
-                service_data["entity_id"] = target["entity_id"]
-            elif "entity_id" in item and "entity_id" not in service_data:
-                service_data["entity_id"] = item["entity_id"]
+            if isinstance(target, dict):
+                for t_key, t_val in target.items():
+                    if t_key not in service_data:
+                        service_data[t_key] = t_val
+            for top_key in ("entity_id", "device_id", "area_id", "floor_id", "label_id"):
+                if top_key in item and top_key not in service_data:
+                    service_data[top_key] = item[top_key]
             await self.hass.services.async_call(
                 domain, service_name, service_data, blocking=False
             )
@@ -1014,17 +1206,33 @@ class ExposeManager:
                 blocking=False,
             )
 
-    async def _async_handle_secondary_bus_message(self, message: OWNMessage) -> None:
+    async def _async_handle_secondary_bus_message(
+        self, message: OWNMessage, *, source_mac: str | None = None
+    ) -> None:
         """Handle bus frames from a shared-bus secondary gateway for delegated WHOs."""
         who = getattr(message, "who", None)
         delegated_away = getattr(self.gateway, "delegated_away_whos", None)
         if isinstance(delegated_away, (set, frozenset, list, tuple)) and who in delegated_away:
-            await self._async_handle_bus_message(message)
+            await self._async_handle_bus_message(message, source_mac=source_mac)
 
-    async def _async_handle_bus_message(self, message: OWNMessage) -> None:
+    async def _async_handle_bus_message(
+        self, message: OWNMessage, *, source_mac: str | None = None
+    ) -> None:
         """Handle incoming bus frames for query replies and bidirectional actuator control."""
-        if self._is_echo_guarded(message):
+        src = source_mac or str(getattr(self.gateway, "mac", None) or "primary")
+        if self._is_echo_guarded(message, source_mac=src):
             return
+
+        now = time.monotonic()
+        raw_frame = str(message)
+        prev_rx = self._last_rx_by_frame.get(raw_frame)
+        if prev_rx is not None and prev_rx[0] != src and (now - prev_rx[1]) < 0.5:
+            return
+        self._last_rx_by_frame[raw_frame] = (src, now)
+        if len(self._last_rx_by_frame) > 64:
+            self._last_rx_by_frame = {
+                k: v for k, v in self._last_rx_by_frame.items() if (now - v[1]) < 2.0
+            }
 
         who = getattr(message, "who", None)
         if who not in EXPOSE_SUPPORTED_WHOS:
@@ -1035,6 +1243,16 @@ class ExposeManager:
         is_dim_req = bool(getattr(message, "is_dimension_request", False))
         is_dim_write = bool(getattr(message, "is_dimension_writing", False))
         dim = getattr(message, "dimension", None)
+        eff_what = getattr(message, "effective_what", None)
+        allow_scope = (
+            not is_status_req
+            and not is_dim_req
+            and not is_dim_write
+            and (
+                (who == 1 and eff_what in (0, 1))
+                or (who == 2 and eff_what in (0, 1, 2))
+            )
+        )
 
         for binding in self.bindings:
             if binding.who != who:
@@ -1057,7 +1275,9 @@ class ExposeManager:
                     )
                 continue
 
-            if binding.where != msg_where:
+            if not _where_matches_binding(
+                who, binding.where, msg_where, allow_scope=allow_scope
+            ):
                 continue
 
             # ── 2. Status & Dimension Read Queries (*#WHO*WHERE...##) ─────────
@@ -1174,8 +1394,6 @@ class ExposeManager:
             if not binding.bidirectional:
                 continue
 
-            eff_what = getattr(message, "effective_what", None)
-
             if who == 1:
                 if is_dim_write and dim in (1, 4):
                     vals = getattr(message, "dimension_value", [])
@@ -1222,7 +1440,12 @@ class ExposeManager:
                 elif eff_what == 0:
                     self._cancel_cooldown_timer(binding.key)
                     confirm = OWNLightingCommand.switch_off(binding.where)
-                    binding.last_sent_value = (False, None)
+                    binding.last_sent_value = (
+                        False,
+                        0
+                        if (binding.attribute == "brightness" or binding.dimension == 1)
+                        else None,
+                    )
                     binding.last_sent_at = time.monotonic()
                     binding.sent_count += 1
                     await self._async_dispatch_frames(
@@ -1255,6 +1478,9 @@ class ExposeManager:
                         await self._async_execute_who1_on(binding)
 
             elif who == 2:
+                reports_pos = (
+                    binding.attribute == "current_position" or binding.dimension == 10
+                )
                 if is_dim_write and dim in (10, 11):
                     vals = getattr(message, "dimension_value", [])
                     raw_pct_val = vals[1] if len(vals) >= 2 else (vals[0] if vals else None)
@@ -1267,7 +1493,7 @@ class ExposeManager:
                         stop_cmd = OWNAutomationCommand.stop_shutter(binding.where)
                         binding.last_sent_value = (
                             str(stop_cmd),
-                            pct,
+                            pct if reports_pos else None,
                             "open" if pct > 0 else "closed",
                         )
                         binding.last_sent_at = time.monotonic()
@@ -1291,7 +1517,11 @@ class ExposeManager:
                     else None
                 )
                 cur_pos: int | None = None
-                if cur_state_obj is not None and "current_position" in cur_state_obj.attributes:
+                if (
+                    reports_pos
+                    and cur_state_obj is not None
+                    and "current_position" in cur_state_obj.attributes
+                ):
                     with contextlib.suppress(TypeError, ValueError):
                         cur_pos = min(
                             max(round(float(cur_state_obj.attributes["current_position"])), 0),
@@ -1366,3 +1596,4 @@ class ExposeManager:
     def as_diagnostics(self) -> list[dict[str, Any]]:
         """Return diagnostics list for all configured bindings."""
         return [b.as_diagnostics_dict(self.hass) for b in self.bindings]
+

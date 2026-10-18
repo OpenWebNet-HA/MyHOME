@@ -248,7 +248,6 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
         OWNEnergyCommand,
         OWNGatewayCommand,
         OWNHeatingCommand,
-        OWNHeatingEvent,
     )
 
     if not hasattr(OWNMessage, "effective_what"):
@@ -326,52 +325,48 @@ def _ensure_ownd_expose_helpers() -> None:  # pragma: no cover - PyPI OWNd < 2.0
             ),
         )
 
-    if OWNHeatingEvent("*#4*000*0*0215##").unique_id != "4-000":
-        _orig_heating_init = OWNHeatingEvent.__init__
-
-        def _patched_heating_init(self: Any, data: str) -> None:
-            _orig_heating_init(self, data)
-            where_str = str(getattr(self, "_where", "") or "")
-            clean_where = where_str[1:] if where_str.startswith("#") else where_str
-            if getattr(self, "_sensor", None) is None and len(clean_where) == 3 and clean_where.isdigit():
-                self._sensor = int(clean_where[0])
-                self._zone = int(clean_where[1:])
-
-        def _patched_heating_unique_id(self: Any) -> str:
-            if getattr(self, "_sensor", None) is not None:
-                return f"{self._who}-{self._where}"
-            if getattr(self, "_zone", None) == 0:
-                return f"{self._who}-#0"
-            return f"{self._who}-{self._zone}"
-
-        setattr(OWNHeatingEvent, "__init__", _patched_heating_init)
-        setattr(OWNHeatingEvent, "unique_id", property(_patched_heating_unique_id))
-
-    if not hasattr(OWNHeatingCommand, "report_temperature"):
+    if not hasattr(OWNHeatingCommand, "report_temperature") or not hasattr(
+        OWNHeatingCommand, "write_temperature"
+    ):
         def _encode_temp(temperature: float) -> str:
             tenths = max(-999, min(999, round(float(temperature) * 10)))
             sign = "1" if tenths < 0 else "0"
             return f"{sign}{abs(tenths):03d}"
 
-        setattr(
-            OWNHeatingCommand,
-            "is_temperature_query",
-            property(
-                lambda self: bool(
-                    self.is_status_request or (self.is_dimension_request and self.dimension == 0)
-                )
-            ),
-        )
-        setattr(OWNHeatingCommand, "encode_temperature", staticmethod(_encode_temp))
-        setattr(
-            OWNHeatingCommand,
-            "report_temperature",
-            classmethod(
-                lambda cls, where, temperature: cls.parse(
-                    f"*#4*{where}*0*{_encode_temp(temperature)}##"
-                )
-            ),
-        )
+        if not hasattr(OWNHeatingCommand, "is_temperature_query"):
+            setattr(
+                OWNHeatingCommand,
+                "is_temperature_query",
+                property(
+                    lambda self: bool(
+                        self.is_dimension_request
+                        and self.dimension == 0
+                        and getattr(self, "where", None)
+                    )
+                ),
+            )
+        if not hasattr(OWNHeatingCommand, "encode_temperature"):
+            setattr(OWNHeatingCommand, "encode_temperature", staticmethod(_encode_temp))
+        if not hasattr(OWNHeatingCommand, "report_temperature"):
+            setattr(
+                OWNHeatingCommand,
+                "report_temperature",
+                classmethod(
+                    lambda cls, where, temperature: cls.parse(
+                        f"*#4*{where}*0*{_encode_temp(temperature)}##"
+                    )
+                ),
+            )
+        if not hasattr(OWNHeatingCommand, "write_temperature"):
+            setattr(
+                OWNHeatingCommand,
+                "write_temperature",
+                classmethod(
+                    lambda cls, where, temperature: cls.parse(
+                        f"*#4*{where}*#0*{_encode_temp(temperature)}##"
+                    )
+                ),
+            )
 
     if not hasattr(OWNEnergyCommand, "report_active_power"):
         setattr(
@@ -570,7 +565,7 @@ def _ensure_ownd_profile_oracle_parity() -> None:  # pragma: no cover - PyPI OWN
             object.__setattr__(
                 prof,
                 "supports_who4_command_injection",
-                model not in ("F452", "F453", "F453AV", "MH200", "MH200N"),
+                model not in ("F453", "MH200N"),
             )
 
     for _prof in getattr(_ownd_profiles, "_PROFILES", {}).values():

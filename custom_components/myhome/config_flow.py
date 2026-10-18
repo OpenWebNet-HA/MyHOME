@@ -1518,7 +1518,11 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
             ),
             vol.Optional(
                 CONF_PERIODIC_SEND,
-                default=float(defaults.get(CONF_PERIODIC_SEND, 0.0)),
+                description=(
+                    {"suggested_value": float(defaults[CONF_PERIODIC_SEND])}
+                    if defaults.get(CONF_PERIODIC_SEND) is not None
+                    else None
+                ),
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=0.0, max=604800.0, step=1.0, unit_of_measurement="s",

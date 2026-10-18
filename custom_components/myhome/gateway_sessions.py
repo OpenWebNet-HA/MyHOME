@@ -21,7 +21,8 @@ from OWNd.connection import OWNCommandSession, OWNEventSession, OWNGateway
 from OWNd.message import OWNCommand, OWNMessage
 
 from .const import LOGGER, area_of_where
-from .where_grammar import normalize_where, where_param
+from .expose import is_exposed_on_bus
+from .where_grammar import expose_message_where, normalize_where, where_param
 
 if TYPE_CHECKING:
     from .bus_monitor import BusMonitor
@@ -502,6 +503,24 @@ def _is_cancel_item(item: Any) -> bool:
     return msg is not None and _is_cover_stop(msg)
 
 
+def _parsed_item_message(item: Any) -> OWNMessage | None:
+    """Return parsed OWNMessage for an envelope dict, or None."""
+    msg = item.get("message") if isinstance(item, dict) else None
+    if isinstance(msg, OWNMessage):
+        return msg
+    return OWNMessage.parse(str(msg)) if msg is not None else None
+
+
+def _is_status_report_item(item: Any) -> bool:
+    """Return True if envelope dict carries a state/dimension report rather than a read query."""
+    parsed = _parsed_item_message(item)
+    return bool(
+        parsed is not None
+        and not parsed.is_status_request
+        and not parsed.is_dimension_request
+    )
+
+
 class _PriorityQueueStorage:
     """Multi-tier FIFO storage backing FrameScheduler.
 
@@ -741,6 +760,32 @@ class _PriorityQueueStorage:
                 else:
                     kept_cmds.append(existing)
             self._commands = kept_cmds
+        if self._status and (
+            tier in (_TIER_COMMANDS, _TIER_FADE_STEPS)
+            or (tier == _TIER_STATUS and _is_status_report_item(new_item))
+        ):
+            new_parsed = _parsed_item_message(new_item)
+            new_dim = getattr(new_parsed, "dimension", None)
+            new_what = getattr(new_parsed, "_what", getattr(new_parsed, "what", None))
+            drop_all_reports = tier in (_TIER_COMMANDS, _TIER_FADE_STEPS) or new_what == 0
+            kept_status: collections.deque[Any] = collections.deque()
+            for existing in self._status:
+                existing_target = _extract_target_key(existing)
+                if (
+                    existing_target is not None
+                    and _same_target(existing_target, target)
+                    and isinstance(existing, dict)
+                    and _is_status_report_item(existing)
+                    and (
+                        drop_all_reports
+                        or getattr(_parsed_item_message(existing), "dimension", None)
+                        == new_dim
+                    )
+                ):
+                    dropped.append(existing)
+                else:
+                    kept_status.append(existing)
+            self._status = kept_status
         return dropped
 
     def pop(self) -> Any:
@@ -1174,6 +1219,18 @@ class CommandWorkerPool:
                 return True
         return False
 
+    def _is_exposed_target(self, task: dict[str, Any]) -> bool:
+        """Return True if task targets a configured expose binding on this bus."""
+        entry = getattr(self.handler, "config_entry", None)
+        parsed = _parsed_item_message(task)
+        if entry is None or parsed is None:
+            return False
+        who = getattr(parsed, "who", None)
+        where = expose_message_where(parsed)
+        if isinstance(who, int) and where:
+            return is_exposed_on_bus(self.hass, entry, who, where)
+        return False
+
     async def sending_loop(self, worker_id: int) -> None:
         """Run a single sending worker consuming from send_buffer."""
         from . import gateway as gw_module
@@ -1282,11 +1339,12 @@ class CommandWorkerPool:
                             _cancel_written(task)
                             continue
                     written_at = time.monotonic()
+                    is_exposed = self._is_exposed_target(task)
                     collected = await _command_session.send(
                         message=task["message"],
-                        is_status_request=task["is_status_request"],
+                        is_status_request=task["is_status_request"] or is_exposed,
                     )
-                    if collected is None:
+                    if collected is None and not (is_exposed and session_is_open(_command_session)):
                         _cancel_written(task)
                     else:
                         _resolve_written(task, written_at)

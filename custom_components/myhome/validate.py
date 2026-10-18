@@ -796,15 +796,25 @@ def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]
     item[CONF_WHERE] = where
 
     has_entity = bool(item.get(CONF_ENTITY_ID))
-    has_actions = any(
-        item.get(k)
-        for k in (
-            CONF_TURN_ON_ACTION,
-            CONF_TURN_OFF_ACTION,
-            CONF_STEP_UP_ACTION,
-            CONF_STEP_DOWN_ACTION,
-        )
+    action_keys = (
+        CONF_TURN_ON_ACTION,
+        CONF_TURN_OFF_ACTION,
+        CONF_STEP_UP_ACTION,
+        CONF_STEP_DOWN_ACTION,
     )
+    for action_key in action_keys:
+        raw_actions = item.get(action_key)
+        if raw_actions is None:
+            continue
+        act_list = [raw_actions] if isinstance(raw_actions, dict) else list(raw_actions)
+        for act in act_list:
+            svc_str = str(act.get("action") or act.get("service") or "").strip()
+            domain, sep, svc_name = svc_str.partition(".")
+            if not sep or not domain.strip() or not svc_name.strip():
+                raise Invalid(
+                    f"expose '{action_key}' entry requires 'action' or 'service' in 'domain.service' format"
+                )
+    has_actions = any(item.get(k) for k in action_keys)
     if who in (4, 18) and not has_entity:
         raise Invalid(f"expose entry for WHO={who} requires 'entity_id'")
     if who in (1, 2) and not (has_entity or has_actions):
