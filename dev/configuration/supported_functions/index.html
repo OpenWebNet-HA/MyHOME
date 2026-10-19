@@ -1546,10 +1546,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#cover-who-2" class="md-nav__link">
+  <a href="#cover-who-1-who-2" class="md-nav__link">
     <span class="md-ellipsis">
       
-        cover (WHO 2)
+        cover (WHO 1 / WHO 2)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lock-who-6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        lock (WHO 6)
       
     </span>
   </a>
@@ -2150,10 +2161,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#cover-who-2" class="md-nav__link">
+  <a href="#cover-who-1-who-2" class="md-nav__link">
     <span class="md-ellipsis">
       
-        cover (WHO 2)
+        cover (WHO 1 / WHO 2)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lock-who-6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        lock (WHO 6)
       
     </span>
   </a>
@@ -2335,6 +2357,13 @@
 <td style="text-align: left;">Central unit status (read-only); arm/disarm through installer-programmed AUX frames — see <a href="../alarm/#arming-and-disarming">alarm</a>.</td>
 </tr>
 <tr>
+<td style="text-align: center;">6</td>
+<td style="text-align: left;">Door entry</td>
+<td style="text-align: left;"><code>lock</code>, <code>event</code></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: left;">Door strikes, lock actuators, and doorbell events.</td>
+</tr>
+<tr>
 <td style="text-align: center;">9</td>
 <td style="text-align: left;">Auxiliary channels</td>
 <td style="text-align: left;"><code>binary_sensor</code></td>
@@ -2474,7 +2503,7 @@
 </tr>
 </tbody>
 </table>
-<h3 id="cover-who-2"><code>cover</code> (WHO 2)<a class="headerlink" href="#cover-who-2" title="Permanent link">&para;</a></h3>
+<h3 id="cover-who-1-who-2"><code>cover</code> (WHO 1 / WHO 2)<a class="headerlink" href="#cover-who-1-who-2" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
@@ -2487,7 +2516,12 @@
 <tr>
 <td style="text-align: left;">Open / close / stop</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;"></td>
+<td style="text-align: left;">Standard WHO 2 shutter actuators.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Impulse cover (WHO 1)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: left;">Pulse-driven gates and garage doors: direct pulses with deadband and sensor feedback by default, and an optional <code>access:</code> workflow with phone approval, pre-warning, and watchdog.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Position (position-reporting actuators)</td>
@@ -2508,6 +2542,28 @@
 <td style="text-align: left;">Echo suppression</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: left;">The gateway's relay of our own command is not mistaken for a keypad press.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="lock-who-6"><code>lock</code> (WHO 6)<a class="headerlink" href="#lock-who-6" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Function</th>
+<th style="text-align: center;">Status</th>
+<th style="text-align: left;">Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Door entry lock (WHO 6)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: left;">Door entry strikes from <code>myhome.yaml</code> with optional constant-time PIN authentication and auto-relock. Never created from bus traffic; <code>who: 1</code> relays are rejected (motorized gates and garage doors are impulse covers).</td>
+</tr>
+<tr>
+<td style="text-align: left;">Doorbell event (WHO 6 / WHO 8)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: left;"><code>myhome_doorbell_event</code> for an entrance panel ringing (WHO 8 call kinds 1-4, WHO 6 call), not for handset-to-handset calls or pager broadcasts. Fired by the gateway that owns the subsystem only. The WHO 6 chime (WHAT 20) is unverified: it is not in the published WHO 6 table and has no capture.</td>
 </tr>
 </tbody>
 </table>
