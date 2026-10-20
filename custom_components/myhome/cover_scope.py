@@ -357,10 +357,21 @@ class MyHOMEScopeCover(MyHOMECover):
         opening = self._attr_is_opening
         if direction != ("open" if opening else "close" if self._attr_is_closing else None):
             return  # stopped or reversed meanwhile
-        self._freeze_position(time.monotonic())
+        end = 100 if opening else 0
+        at = time.monotonic()
+        if self._run_started_at is not None:
+            at = max(at, self._run_started_at + self._travel_for(opening))
+        confirmed = (
+            not self._strategy.assumed_state
+            and self._run_started_at is not None
+            and self._travel_for(opening) > 0
+        )
+        self._freeze_position(at)
         # A full run by the model; the anchor may trail the timer by the queue delay.
-        self._attr_current_cover_position = self._start_position = 100 if opening else 0
+        self._attr_current_cover_position = self._start_position = end
+        if not confirmed:
+            self._strategy.on_position_confirmed(self, end, "end_stop")
         if self._slat_tilt:
-            self._attr_current_cover_tilt_position = 100 if opening else 0
+            self._attr_current_cover_tilt_position = end
         self._attr_is_closed = not opening
         self._publish_state()

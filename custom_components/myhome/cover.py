@@ -682,9 +682,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._run_started_at = None
             self._motion_started_at = None
             self._refresh_travel_attributes()
+        end_stop = (
+            not self._strategy.assumed_state
+            and run_started_at is not None
+            and (is_opening or is_closing)
+            and (travel := self._travel_for(is_opening)) > 0
+            and at - run_started_at >= travel
+        )
         curtain_at = max(self._move_start_time, at - lead) if self._move_start_time is not None else at
         if self._strategy.assumed_state:
             frozen: int | None = None
+        elif end_stop:
+            frozen = 100 if is_opening else 0
         elif self._move_start_time is not None and (is_opening or is_closing):
             frozen_pos = self._strategy.position_after(
                 self._start_position,
@@ -712,7 +721,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._move_start_time = None
         self._turn_slats_for_run(at, run_started_at, is_opening, is_closing)
         if run_started_at is not None and (is_opening or is_closing):
-            self._strategy.on_run_ended(self, "stop", frozen, at)
+            self._strategy.on_run_ended(self, "end_stop" if end_stop else "stop", frozen, at)
+            if end_stop and frozen is not None:
+                self._strategy.on_position_confirmed(self, frozen, "end_stop")
         self._attr_is_opening = False
         self._attr_is_closing = False
         self._run_start_position = None

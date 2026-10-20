@@ -161,9 +161,10 @@ class CoverKinematicsStrategy(Protocol):
         """Restore the state ``export_state`` returned before a restart."""
 
 
-#: Why a curtain run ended: a stop frame or stop status, the motor reaching its
-#: limit switch (settled on a timer), a new command taking the motor over, the
-#: opposite direction seen on the bus, or a command that never reached the bus.
+#: Why a curtain run ended: a stop before the end of travel, the motor reaching
+#: its limit switch (a full-travel run or end-of-run timer), a new command
+#: taking the motor over, the opposite direction seen on the bus, or a command
+#: that never reached the bus.
 RUN_END_REASONS = ("stop", "end_stop", "takeover", "reversal", "abort")
 
 

@@ -7,15 +7,18 @@ the stop echo, the 0/100 settle, run lifecycle hooks and a restart.
 """
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.components.cover import CoverEntityFeature
 from homeassistant.helpers.restore_state import RestoredExtraData
+from homeassistant.util import dt as dt_util
 from OWNd.message import OWNEvent
+from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
-from custom_components.myhome.cover import MyHOMECover
+from custom_components.myhome.cover import CoverScope, MyHOMECover, MyHOMEScopeCover
 from custom_components.myhome.cover_motion import END_SETTLE_MARGIN
 from custom_components.myhome.cover_strategies import (
     RUN_END_REASONS,
@@ -111,9 +114,11 @@ def _cover(hass, strategy: Any = None, **kwargs: Any) -> MyHOMECover:
         "travel_time": 13,
         **kwargs,
     }
+    cls = MyHOMEScopeCover if "scope" in args else MyHOMECover
     with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
-        cover = MyHOMECover(**args)
+        cover = cls(**args)
     cover.entity_id = "cover.cover_21"
+    cover.hass = hass
     cover.async_write_ha_state = MagicMock()
     cover.async_schedule_update_ha_state = MagicMock()
     if strategy is not None:
@@ -206,12 +211,15 @@ async def test_piecewise_strategy_drives_cover_without_cover_py_changes(hass) ->
     assert ended == [
         ("stop", 0),
         ("stop", 20),
-        ("stop", 0),
+        ("end_stop", 0),
         ("stop", 20),
         ("stop", 36),  # frozen at the stop write; the relayed echo then re-anchors to 41
         ("end_stop", 100),
     ]
-    assert strategy.events[-1] == ("confirmed", 100, "end_stop")
+    assert [e for e in strategy.events if e[0] == "confirmed"] == [
+        ("confirmed", 0, "end_stop"),
+        ("confirmed", 100, "end_stop"),
+    ]
 
 
 @pytest.mark.asyncio
@@ -257,7 +265,22 @@ async def test_position_unknown_until_a_full_run(hass) -> None:
         clock.now += 6.0
         _event(cover, "*2*0*21##")
         assert cover.current_cover_position is None
+        assert strategy.known is False
 
+        # A keypad run that runs for the full travel time hits the limit switch
+        # and confirms the end stop even though the bus only sends *2*0*WHERE##.
+        clock.now += 10.0
+        _event(cover, "*2*2*21##")
+        clock.now += 13.0
+        _event(cover, "*2*0*21##")
+        assert strategy.known is True
+        assert cover.current_cover_position == 0
+        assert ("ended", "end_stop", 0, clock.now) in strategy.events
+        assert ("confirmed", 0, "end_stop") in strategy.events
+
+        strategy.known = False
+        cover._attr_current_cover_position = None
+        clock.now += 10.0
         await cover.async_set_cover_position(position=100)
         _event(cover, "*2*1*21##")
         await cover._stop_task
@@ -265,6 +288,29 @@ async def test_position_unknown_until_a_full_run(hass) -> None:
     assert strategy.known is True
     assert cover.current_cover_position == 100
     assert ("confirmed", 100, "end_stop") in strategy.events
+
+    # A memberless scope cover's run timeout also confirms the end stop.
+    scope_strategy = PiecewiseGeometryStrategy(known=False)
+    scope_cover = _cover(hass, scope_strategy, device_id="#7", where="#7", scope=CoverScope.of("#7"))
+    scope_cover._attr_current_cover_position = None
+    _event(scope_cover, "*2*1*#7##")
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=14))
+    await hass.async_block_till_done()
+    assert scope_strategy.known is True
+    assert scope_cover.current_cover_position == 100
+    assert [e[:3] for e in scope_strategy.events if e[0] in ("ended", "confirmed")] == [
+        ("ended", "end_stop", 100),
+        ("confirmed", 100, "end_stop"),
+    ]
+
+    # And when the timeout fires before a write anchor is set.
+    scope_strategy.known = False
+    scope_cover._attr_is_closing = True
+    scope_cover._run_timeout_direction = "close"
+    scope_cover._end_run(None)
+    assert scope_strategy.known is True
+    assert scope_cover.current_cover_position == 0
+    assert scope_strategy.events[-1] == ("confirmed", 0, "end_stop")
 
 
 @pytest.mark.asyncio
