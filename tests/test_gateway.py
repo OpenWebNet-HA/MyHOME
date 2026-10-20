@@ -2048,6 +2048,51 @@ def test_gateway_ignored_addresses(mock_config_entry):
     assert (1, "75") not in ignored
 
 
+@pytest.mark.asyncio
+async def test_replay_f461_who14_live_2026_10_18_gateway_identity(gateway_handler):
+    """Replay live F461 WHO=13 Dims 15/16/23/24 from f461_who14_live_2026-10-18 and WHO=1013 Dim 1 (#732, #744)."""
+    import json
+    from pathlib import Path
+
+    trace_path = (
+        Path(__file__).parent
+        / "fixtures"
+        / "traces"
+        / "f461_who14_live_2026-10-18"
+        / "myhome_trace_F461_who14_live_2026-10-18.json"
+    )
+    trace = json.loads(trace_path.read_text(encoding="utf-8"))
+    who13_frames = [
+        f["raw"]
+        for f in trace["frames"]
+        if f.get("run") == "run1_gateway_and_sweeps" and f["raw"].startswith("*#13**")
+    ]
+    assert who13_frames == [
+        "*#13**15*200##",
+        "*#13**16*2*0*11##",
+        "*#13**23*5*10*35##",
+        "*#13**24*2*26*4##",
+    ]
+
+    gateway_handler.config_entry.data[CONF_NAME] = "Generic"
+    gateway_handler.config_entry.data[CONF_UDN] = ""
+    gateway_handler.gateway.model_name = "Generic"
+    for raw in [*who13_frames, "*#1013*200*1*134*15*5*0##"]:
+        msg = OWNMessage.parse(raw)
+        assert msg is not None
+        await gateway_handler._process_message(msg)
+
+    ident = gateway_handler.identification()
+    assert ident["model"] == "F461"
+    assert ident["who13_code"] == "200"
+    assert ident["who13_firmware"] == "2.0.11"
+    assert ident["who13_kernel"] == "5.10.35"
+    assert ident["who13_distribution"] == "2.26.4"
+    assert ident["who1013_code"] == "134"
+    assert ident["who1013_model"] == "F461"
+
+
+
 
 
 
