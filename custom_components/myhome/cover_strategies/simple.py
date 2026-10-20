@@ -5,7 +5,9 @@ from typing import Any
 
 from homeassistant.components.cover import CoverEntityFeature
 
-from .base import BaseCoverStrategy
+from .base import BaseCoverStrategy, CoverKinematicsStrategy
+from .timed import TimedCurtainStrategy
+from .venetian import VenetianTiltStrategy
 
 
 class SimpleUpDownStopStrategy(BaseCoverStrategy):
@@ -70,3 +72,8 @@ class SimpleUpDownStopStrategy(BaseCoverStrategy):
         """Simple covers do not fabricate a percentage position."""
         return None
 
+    def promoted(self, *, slat_tilt: bool) -> CoverKinematicsStrategy:
+        """Become timed (or Venetian) once travel times are calibrated; a subclass stays itself."""
+        if type(self) is not SimpleUpDownStopStrategy:
+            return self._kept()
+        return self._rebuilt_as(VenetianTiltStrategy if slat_tilt else TimedCurtainStrategy)

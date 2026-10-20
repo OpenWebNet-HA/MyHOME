@@ -8,7 +8,7 @@ from homeassistant.util import dt as dt_util
 
 from ..const import DEFAULT_MIN_MOTOR_PULSE, DEFAULT_TRAVEL_TIME, LOGGER
 from ..cover_motion import compute_run_duration
-from .base import BaseCoverStrategy
+from .base import BaseCoverStrategy, CoverKinematicsStrategy
 
 
 class TimedCurtainStrategy(BaseCoverStrategy):
@@ -168,9 +168,6 @@ class TimedCurtainStrategy(BaseCoverStrategy):
 
     def current_position(self, entity: Any, now: float) -> int | None:
         """Interpolate current position from start position, motor anchor, and strategy kinematics."""
-        if getattr(entity, "_advanced", False) is True:
-            pos_adv: int | None = getattr(entity, "_attr_current_cover_position", None)
-            return pos_adv
         is_opening = getattr(entity, "_attr_is_opening", False) is True
         is_closing = getattr(entity, "_attr_is_closing", False) is True
         move_start = getattr(entity, "_move_start_time", None)
@@ -181,12 +178,30 @@ class TimedCurtainStrategy(BaseCoverStrategy):
         ):
             direction = "open" if is_opening else "close"
             elapsed = max(0.0, now - float(move_start))
+            # The lead still ahead of this segment, as the entity anchored it.
+            move_lead = getattr(entity, "_move_lead", None)
             return self.position_after(
                 int(getattr(entity, "_start_position", 50)),
                 elapsed,
                 direction,
                 entity=entity,
+                lead=float(move_lead) if isinstance(move_lead, (int, float)) else None,
             )
         pos: int | None = getattr(entity, "_attr_current_cover_position", None)
         return pos
 
+    def with_slat_tilt(self) -> CoverKinematicsStrategy:
+        """The built-in timed strategy becomes Venetian; a subclass stays itself."""
+        if type(self) is not TimedCurtainStrategy:
+            return self._kept()
+        from .venetian import VenetianTiltStrategy  # pylint: disable=import-outside-toplevel
+
+        return self._rebuilt_as(VenetianTiltStrategy)
+
+    def demoted(self) -> CoverKinematicsStrategy:
+        """The built-in timed strategy becomes simple again; a subclass stays itself."""
+        if type(self) is not TimedCurtainStrategy:
+            return self._kept()
+        from .simple import SimpleUpDownStopStrategy  # pylint: disable=import-outside-toplevel
+
+        return self._rebuilt_as(SimpleUpDownStopStrategy)

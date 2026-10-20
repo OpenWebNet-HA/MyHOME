@@ -437,7 +437,6 @@ async def test_myhome_cover_simple_strategy_and_calibration_promotion(hass) -> N
             model="Shutter",
             gateway=gw,
             travel_time=0,
-            strategy_name="simple",
         )
         simple_cover.entity_id = "cover.simple"
         simple_cover.async_schedule_update_ha_state = MagicMock()
@@ -719,3 +718,168 @@ async def test_light_set_brightness_instant_routes_fade_steps(hass) -> None:
     await dimmer._set_brightness_instant(60)
     gw.send_fade_step.assert_awaited_once()
     gw.send.assert_not_awaited()
+
+
+def _make_cover(hass, **kwargs: Any) -> MyHOMECover:
+    gw = MagicMock()
+    gw.mac = "00:03:50:00:12:34"
+    gw.log_id = "[TestGW]"
+    gw.send = AsyncMock()
+    args: dict[str, Any] = {
+        "hass": hass,
+        "name": "Cover 21",
+        "entity_name": "Cover 21",
+        "device_id": "21",
+        "who": "2",
+        "where": "21",
+        "interface": None,
+        "advanced": False,
+        "manufacturer": "BTicino",
+        "model": "Shutter",
+        "gateway": gw,
+        "travel_time": 20,
+        **kwargs,
+    }
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        cover = MyHOMECover(**args)
+    cover.entity_id = "cover.cover_21"
+    cover.async_write_ha_state = MagicMock()
+    cover.async_schedule_update_ha_state = MagicMock()
+    return cover
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {CONF_STRATEGY: "timed", "advanced": True},
+        {CONF_STRATEGY: "simple", "advanced": True},
+        {CONF_STRATEGY: "venetian", "advanced": True},
+        {CONF_STRATEGY: "timed", "advanced_shutter": True},
+        {CONF_STRATEGY: "timed", CONF_SLAT_TILT: True},
+        {CONF_STRATEGY: "timed", CONF_TRAVEL_TIME: 0},
+    ],
+)
+def test_cover_schema_rejects_strategy_contradicting_flags(extra: dict[str, Any]) -> None:
+    """An explicit strategy cannot be combined with a flag that selects another one (#739)."""
+    with pytest.raises(Invalid):
+        cover_schema({"shutter_a": {"where": "21", "name": "A", **extra}})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("strategy_name", ["timed", "simple", "venetian"])
+async def test_entity_flags_follow_explicit_strategy(hass, strategy_name: str) -> None:
+    """A non-native strategy never runs the advanced code paths, whatever the flags say (#739)."""
+    cover = _make_cover(hass, advanced=True, strategy_name=strategy_name)
+    assert cover.strategy.name == strategy_name
+    assert cover._advanced is False
+    if strategy_name == "simple":
+        assert cover._slat_tilt is False
+
+
+@pytest.mark.asyncio
+async def test_native_strategy_keeps_slat_tilt(hass) -> None:
+    """An advanced blind with slats stays native and keeps its tilt features."""
+    cover = _make_cover(hass, advanced=True, slat_tilt=True)
+    assert cover.strategy.name == "native"
+    assert cover._advanced is True
+    assert cover._slat_tilt is True
+    assert cover.supported_features & CoverEntityFeature.SET_TILT_POSITION
+
+
+@pytest.mark.asyncio
+async def test_simple_cover_reports_closed_after_closing_run(hass) -> None:
+    """Without a position, a closing run leaves the cover closed and an opening run open (#739)."""
+    cover = _make_cover(hass, travel_time=0)
+    assert cover.strategy.name == "simple"
+
+    cover.handle_event(OWNEvent.parse("*2*2*21##"))
+    cover.handle_event(OWNEvent.parse("*2*0*21##"))
+    assert cover.is_closing is False
+    assert cover.is_closed is True
+    assert cover.current_cover_position is None
+
+    cover.handle_event(OWNEvent.parse("*2*1*21##"))
+    cover.handle_event(OWNEvent.parse("*2*0*21##"))
+    assert cover.is_opening is False
+    assert cover.is_closed is False
+
+    # A stop with no run behind it leaves the state alone.
+    cover.handle_event(OWNEvent.parse("*2*2*21##"))
+    cover.handle_event(OWNEvent.parse("*2*0*21##"))
+    cover.handle_event(OWNEvent.parse("*2*0*21##"))
+    assert cover.is_closed is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("device_config", "strategy_name"),
+    [({CONF_TRAVEL_TIME: 0}, None), ({CONF_TRAVEL_TIME: 25, CONF_STRATEGY: "simple"}, "simple")],
+)
+async def test_reset_travel_time_demotes_promoted_cover(
+    hass, device_config: dict[str, Any], strategy_name: str | None
+) -> None:
+    """Resetting the calibration of a promoted simple cover makes it simple again (#739)."""
+    cover = _make_cover(hass, travel_time=device_config[CONF_TRAVEL_TIME], strategy_name=strategy_name)
+    cover._device_config = MagicMock(return_value=device_config)
+    cover._fire_calibration_event = MagicMock()
+    # Promotion is what calibration does on a travel_time: 0 cover.
+    cover._strategy_name = None
+    cover._promote_to_timed_strategy()
+    cover._travel_time_down = cover._travel_time_up = 15.0
+    assert cover.strategy.name == "timed"
+
+    await cover.async_reset_travel_time()
+
+    assert cover.strategy.name == "simple"
+    assert cover.assumed_state is True
+    assert not cover.supported_features & CoverEntityFeature.SET_POSITION
+    assert cover.current_cover_position is None
+
+
+@pytest.mark.asyncio
+async def test_reset_travel_time_keeps_timed_cover_timed(hass) -> None:
+    """A cover with a positive yaml travel_time stays timed after a reset."""
+    cover = _make_cover(hass, travel_time=20)
+    cover._device_config = MagicMock(return_value={CONF_TRAVEL_TIME: 20})
+    cover._fire_calibration_event = MagicMock()
+    await cover.async_reset_travel_time()
+    assert cover.strategy.name == "timed"
+    assert cover._travel_time_down == 20.0
+
+
+@pytest.mark.asyncio
+async def test_explicit_simple_strategy_is_not_promoted(hass) -> None:
+    """strategy: simple stays simple when calibrated, as it does after a restart (#739)."""
+    cover = _make_cover(hass, travel_time=25, strategy_name="simple")
+    cover._promote_to_timed_strategy()
+    assert cover.strategy.name == "simple"
+    restarted = _make_cover(
+        hass, travel_time=25, strategy_name="simple", calibration={"down": 15.0, "up": 16.0}
+    )
+    assert restarted.strategy.name == "simple"
+
+
+@pytest.mark.asyncio
+async def test_simple_cover_publishes_no_travel_time(hass) -> None:
+    """A simple cover shows zero travel time, a calibrated one its measured times (#739)."""
+    cover = _make_cover(hass, travel_time=0)
+    attrs = cover._attr_extra_state_attributes
+    assert (attrs["travel_time"], attrs["travel_time_down"], attrs["travel_time_up"]) == (0, 0.0, 0.0)
+    cover._promote_to_timed_strategy()
+    cover._travel_time_down = 15.0
+    cover._travel_time_up = 16.5
+    cover._refresh_travel_attributes()
+    assert (attrs["travel_time"], attrs["travel_time_down"], attrs["travel_time_up"]) == (15, 15.0, 16.5)
+
+
+@pytest.mark.asyncio
+async def test_reset_travel_time_on_uncalibrated_simple_cover(hass) -> None:
+    """Resetting a simple cover that was never calibrated leaves it simple."""
+    cover = _make_cover(hass, travel_time=0)
+    cover._device_config = MagicMock(return_value={CONF_TRAVEL_TIME: 0})
+    cover._fire_calibration_event = MagicMock()
+    strategy = cover.strategy
+    await cover.async_reset_travel_time()
+    assert cover.strategy is strategy
+    assert cover.assumed_state is True
+    assert cover.current_cover_position is None

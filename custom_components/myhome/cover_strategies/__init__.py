@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from ..const import DEFAULT_MIN_MOTOR_PULSE, DEFAULT_TRAVEL_TIME
-from .base import BaseCoverStrategy, CoverKinematicsStrategy, clamp_slat_time
+from .base import RUN_END_REASONS, BaseCoverStrategy, CoverKinematicsStrategy, clamp_slat_time
 from .native import NativePositionStrategy
 from .simple import SimpleUpDownStopStrategy
 from .timed import TimedCurtainStrategy
@@ -13,6 +13,7 @@ __all__ = [
     "CoverKinematicsStrategy",
     "MIN_TILT_PULSE",
     "NativePositionStrategy",
+    "RUN_END_REASONS",
     "SimpleUpDownStopStrategy",
     "TimedCurtainStrategy",
     "VenetianTiltStrategy",

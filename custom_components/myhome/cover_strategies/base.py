@@ -1,7 +1,7 @@
 """Base protocol and shared timing state for pluggable MyHOME cover kinematics strategies."""
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, TypeVar, cast, runtime_checkable
 
 from homeassistant.components.cover import CoverEntityFeature
 
@@ -34,6 +34,13 @@ class CoverKinematicsStrategy(Protocol):
     stop-echo re-anchoring via ``reanchor_on_stop_echo``, allowing linear timed
     covers, Venetian slat+roll blinds, and non-linear calibrated geometry
     strategies (#374) to plug into ``MyHOMECover`` without modifying the entity class.
+
+    The entity asks the strategy for the lead of every curtain run (not only on
+    slat blinds), lets it pick its successor when slat tilt is enabled or the
+    calibration changes (``with_slat_tilt``, ``promoted``, ``demoted``: a custom
+    strategy keeps itself), reports each run's start and end and every confirmed
+    position, accepts ``None`` from ``position_after`` while the position is
+    unknown, and keeps ``export_state`` across restarts.
     """
 
     travel_time_down: float
@@ -129,6 +136,40 @@ class CoverKinematicsStrategy(Protocol):
     def current_position(self, entity: Any, now: float) -> int | None:
         """Return current cover position (0..100) or None if position is unknown."""
 
+    def with_slat_tilt(self) -> CoverKinematicsStrategy:
+        """Return the strategy to use once slat tilt is enabled (``self`` to keep this one)."""
+
+    def promoted(self, *, slat_tilt: bool) -> CoverKinematicsStrategy:
+        """Return the strategy to use once travel times are calibrated (``self`` to keep this one)."""
+
+    def demoted(self) -> CoverKinematicsStrategy:
+        """Return the strategy to use once the calibration is reset to no travel time."""
+
+    def on_run_started(self, entity: Any, direction: str, start_position: int | None, at: float) -> None:
+        """A curtain run started at monotonic ``at`` (called again if the run is re-anchored)."""
+
+    def on_run_ended(self, entity: Any, reason: str, position: int | None, at: float) -> None:
+        """A curtain run ended at monotonic ``at``; ``reason`` is one of ``RUN_END_REASONS``."""
+
+    def on_position_confirmed(self, entity: Any, position: int, source: str) -> None:
+        """The cover is known to be at ``position`` (``source``: ``end_stop``, ``calibration``)."""
+
+    def export_state(self) -> dict[str, Any] | None:
+        """Return JSON-serialisable model state to keep across restarts, or None."""
+
+    def restore_state(self, state: dict[str, Any]) -> None:
+        """Restore the state ``export_state`` returned before a restart."""
+
+
+#: Why a curtain run ended: a stop before the end of travel, the motor reaching
+#: its limit switch (a full-travel run or end-of-run timer), a new command
+#: taking the motor over, the opposite direction seen on the bus, or a command
+#: that never reached the bus.
+RUN_END_REASONS = ("stop", "end_stop", "takeover", "reversal", "abort")
+
+
+_StrategyT = TypeVar("_StrategyT", bound="BaseCoverStrategy")
+
 
 class BaseCoverStrategy:
     """Shared timing configuration and default slat helpers for WHO=2 cover strategies."""
@@ -220,3 +261,43 @@ class BaseCoverStrategy:
             return 0.0
         return run_duration
 
+    def _rebuilt_as(self, cls: type[_StrategyT]) -> _StrategyT:
+        """A ``cls`` instance carrying this strategy's timing parameters unchanged."""
+        other = cls()
+        other.travel_time_down = self.travel_time_down
+        other.travel_time_up = self.travel_time_up
+        other.min_motor_pulse = self.min_motor_pulse
+        other.slat_time = self.slat_time
+        return other
+
+    def _kept(self) -> CoverKinematicsStrategy:
+        """This strategy as its own successor (every concrete subclass is a full strategy)."""
+        return cast(CoverKinematicsStrategy, self)
+
+    def with_slat_tilt(self) -> CoverKinematicsStrategy:
+        """Keep this strategy when slat tilt is enabled (built-in timed covers override)."""
+        return self._kept()
+
+    def promoted(self, *, slat_tilt: bool) -> CoverKinematicsStrategy:  # pylint: disable=unused-argument
+        """Keep this strategy once calibrated (the built-in simple strategy overrides)."""
+        return self._kept()
+
+    def demoted(self) -> CoverKinematicsStrategy:
+        """Keep this strategy when its calibration is reset (built-in timed covers override)."""
+        return self._kept()
+
+    def on_run_started(self, entity: Any, direction: str, start_position: int | None, at: float) -> None:
+        """No run tracking by default."""
+
+    def on_run_ended(self, entity: Any, reason: str, position: int | None, at: float) -> None:
+        """No run tracking by default."""
+
+    def on_position_confirmed(self, entity: Any, position: int, source: str) -> None:
+        """No position tracking by default."""
+
+    def export_state(self) -> dict[str, Any] | None:
+        """Stateless by default: nothing to keep across restarts."""
+        return None
+
+    def restore_state(self, state: dict[str, Any]) -> None:
+        """Stateless by default: nothing to restore."""

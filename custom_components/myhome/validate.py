@@ -540,6 +540,13 @@ def _validate_cover_members(data: dict[str, typing.Any]) -> dict[str, typing.Any
             if not where or not str(where).startswith("#"):
                 raise Invalid("Members can only be defined on a group cover (where must start with #)")
         strategy = cfg.get(CONF_STRATEGY)
+        advanced = bool(cfg.get(CONF_ADVANCED_SHUTTER) or cfg.get("advanced_shutter"))
+        if strategy not in (None, "native") and advanced:
+            raise Invalid(f"strategy: {strategy} cannot be combined with advanced (use strategy: native)")
+        if strategy == "timed" and cfg.get(CONF_SLAT_TILT):
+            raise Invalid("strategy: timed cannot be combined with slat_tilt (use strategy: venetian)")
+        if strategy == "timed" and cfg.get(CONF_TRAVEL_TIME) == 0:
+            raise Invalid("strategy: timed requires a positive travel_time")
         if strategy == "venetian":
             cfg[CONF_SLAT_TILT] = True
         elif strategy == "native":

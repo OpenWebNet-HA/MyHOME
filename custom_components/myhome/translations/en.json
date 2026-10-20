@@ -490,7 +490,7 @@
       "message": "{name}: no stop status from the actuator within {timeout} s - it may not report status; set travel_time manually"
     },
     "cover_reports_position": {
-      "message": "{name} reports its position; travel-time calibration does not apply to it"
+      "message": "{name} reports its position (advanced: true in myhome.yaml); travel-time calibration does not apply to it. If this is a standard timed actuator (e.g. F411) that does not support Dimension 10, remove advanced: true from myhome.yaml."
     },
     "calibration_in_progress": {
       "message": "{name} is already being calibrated"

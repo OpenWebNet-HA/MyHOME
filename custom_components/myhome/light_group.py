@@ -24,7 +24,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
 from OWNd.message import OWNLightingCommand, OWNLightingEvent
 
-from .const import DOMAIN, eight_bits_to_min_percent, percent_to_eight_bits
+from .const import BUS_ROUTING, DOMAIN, eight_bits_to_min_percent, percent_to_eight_bits
 from .myhome_device import MyHOMEEntity
 from .where_grammar import is_valid_hs_tuple
 
@@ -114,7 +114,8 @@ class MyHOMELightGroup(MyHOMEEntity, LightEntity):
         self._attr_brightness = None
         self._attr_color_temp_kelvin = None
         self._attr_hs_color = None
-        self._full_where = f"#{group}"
+        _, _, iface = str(device_id).partition(BUS_ROUTING)
+        self._full_where = f"#{group}{BUS_ROUTING}{iface}" if iface else f"#{group}"
         # Last known brightness (0-100%), used as HSV "value" when only hue/saturation
         # are being set so a colour change never silently zeroes the group's level.
         # For groups with declared members the displayed brightness is derived from

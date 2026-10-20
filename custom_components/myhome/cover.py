@@ -37,6 +37,7 @@ from homeassistant.helpers import entity_platform
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
+from homeassistant.helpers.restore_state import ExtraStoredData, RestoredExtraData
 from homeassistant.util import dt as dt_util
 from OWNd.message import (
     OWNAutomationCommand,
@@ -127,7 +128,6 @@ from .cover_strategies import (
     CoverKinematicsStrategy,
     NativePositionStrategy,
     SimpleUpDownStopStrategy,
-    TimedCurtainStrategy,
     VenetianTiltStrategy,
     clamp_slat_time,
     resolve_cover_strategy,
@@ -153,6 +153,33 @@ OFF_RETRY_DELAY = 1.0
 OFF_SETTLE_DELAY = 0.2
 
 _clamp_slat_time = clamp_slat_time
+
+# Known standard timed relay actuators that do not implement OpenWebNet Dimension 10 position reporting
+# (Encyclopedia OWN-DEV-0022/0023/0098/0141/0153: F411 family and flush-mounted 4671/2 / AM5851/2 relays).
+_STANDARD_TIMED_SHUTTER_MODELS = (
+    "F411",
+    "BT-F411",
+    "003842",
+    "003843",
+    "003844",
+    "003848",
+    "H4671/2",
+    "L4671/2",
+    "N4671/2",
+    "NT4671/2",
+    "HC4671/2",
+    "HS4671/2",
+    "HD4671/2",
+    "AM5851/2",
+)
+
+
+def _is_standard_timed_shutter_model(model: str | None) -> bool:
+    """Return True if ``model`` identifies a standard timed relay actuator without Dimension 10."""
+    if not isinstance(model, str):
+        return False
+    normalized = model.strip().upper()
+    return bool(normalized) and normalized.startswith(_STANDARD_TIMED_SHUTTER_MODELS)
 
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
@@ -419,6 +446,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             if (calibration and calibration.get("down") and calibration.get("up"))
             else travel_time
         )
+        self._strategy_name = strategy_name
         self._strategy: CoverKinematicsStrategy = resolve_cover_strategy(
             strategy_name=strategy_name,
             advanced=self._advanced,
@@ -429,10 +457,26 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             slat_time=raw_slat_time,
             min_motor_pulse=raw_min_pulse,
         )
-        if isinstance(self._strategy, NativePositionStrategy):
-            self._advanced = True
+        # The resolved strategy decides; the entity's code paths follow it, so an
+        # explicit strategy next to a contradicting flag cannot mix the two.
+        self._advanced = isinstance(self._strategy, NativePositionStrategy)
+        self._dim10_seen: bool = False
+        self._warned_missing_dim10: bool = False
+        if self._advanced and _is_standard_timed_shutter_model(model):
+            self._warned_missing_dim10 = True
+            LOGGER.warning(
+                "%s Cover %s (%s) is configured with advanced: true / strategy: native, "
+                "but %s is a standard timed actuator that does not report position (Dimension 10); "
+                "remove advanced: true from myhome.yaml",
+                gateway.log_id,
+                self._full_where,
+                name,
+                model.strip(),
+            )
         if isinstance(self._strategy, VenetianTiltStrategy):
             self._slat_tilt = True
+        elif isinstance(self._strategy, SimpleUpDownStopStrategy):
+            self._slat_tilt = False
 
         self._attr_supported_features = self._strategy.supported_features
         self._attr_assumed_state = self._strategy.assumed_state
@@ -472,6 +516,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._run_start_position: int | None = None
         self._run_start_tilt: int | None = None
         self._run_lead: float = 0.0
+        # Lead still ahead of the segment timed from _move_start_time (0 once an
+        # auto-stop re-anchors the run on its target).
+        self._move_lead: float = 0.0
         self._pending_stop_context: dict[str, Any] | None = None
         self._auto_stop_duration: float | None = None
 
@@ -533,9 +580,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     def _refresh_travel_attributes(self) -> None:
         attrs = self._attr_extra_state_attributes
-        attrs["travel_time"] = int(round(self._travel_time_down))
-        attrs["travel_time_down"] = round(self._travel_time_down, 2)
-        attrs["travel_time_up"] = round(self._travel_time_up, 2)
+        # Through the strategy: a simple cover has no travel time to show.
+        down = self._strategy.travel_for_direction(False)
+        attrs["travel_time"] = int(round(down))
+        attrs["travel_time_down"] = round(down, 2)
+        attrs["travel_time_up"] = round(self._strategy.travel_for_direction(True), 2)
         attrs["min_motor_pulse"] = round(self._min_motor_pulse, 2)
         attrs["calibration_source"] = self._calibration_source
         attrs["calibrated_at"] = self._calibrated_at
@@ -624,22 +673,25 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._run_started_at = at
         if self._run_start_position is None:
             self._run_start_position = self._start_position
+        is_opening = bool(self._attr_is_opening)
+        is_closing = bool(self._attr_is_closing)
         if self._slat_tilt and self._run_start_tilt is None:
-            is_opening = bool(self._attr_is_opening)
-            is_closing = bool(self._attr_is_closing)
             self._run_start_tilt = (
                 self._attr_current_cover_tilt_position
                 if self._attr_current_cover_tilt_position is not None
                 else (0 if is_opening else 100)
             )
-            self._run_lead = self._slat_lead_time(is_opening, is_closing)
+        # The strategy owns the lead of every run, with or without slat tilt.
+        self._run_lead = self._move_lead = self._slat_lead_time(is_opening, is_closing)
+        if is_opening or is_closing:
+            self._strategy.on_run_started(self, "open" if is_opening else "close", self._run_start_position, at)
         started = dt_util.utcnow() - timedelta(seconds=max(0.0, time.monotonic() - at))
         self._motion_started_at = started.isoformat(timespec="milliseconds")
         self._refresh_travel_attributes()
 
     def _slat_lead_time(self, is_opening: bool, is_closing: bool) -> float:
         """Seconds a curtain run spends turning the slats before the curtain moves."""
-        if not self._slat_tilt or self._is_tilting or not (is_opening or is_closing):
+        if self._is_tilting or not (is_opening or is_closing):
             return 0.0
         return self._strategy.lead_time_for(is_opening, entity=self)
 
@@ -656,11 +708,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         )
 
     def _freeze_position(self, at: float) -> None:
-        """Turn the running estimate into a fixed position as of ``at``."""
+        """Turn the running estimate into a fixed position as of ``at`` (a stop ended the run)."""
         is_opening = bool(self._attr_is_opening)
         is_closing = bool(self._attr_is_closing)
         run_started_at = self._run_started_at
-        lead = self._slat_lead_time(is_opening, is_closing)
+        lead = self._move_lead if self._move_start_time is not None else 0.0
         if self._run_started_at is not None:
             self._last_run = {
                 "seconds": round(max(0.0, at - self._run_started_at), 2),
@@ -670,9 +722,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._run_started_at = None
             self._motion_started_at = None
             self._refresh_travel_attributes()
+        end_stop = (
+            not self._strategy.assumed_state
+            and run_started_at is not None
+            and (is_opening or is_closing)
+            and (travel := self._travel_for(is_opening)) > 0
+            and at - run_started_at >= travel
+        )
         curtain_at = max(self._move_start_time, at - lead) if self._move_start_time is not None else at
         if self._strategy.assumed_state:
             frozen: int | None = None
+        elif end_stop:
+            frozen = 100 if is_opening else 0
         elif self._move_start_time is not None and (is_opening or is_closing):
             frozen_pos = self._strategy.position_after(
                 self._start_position,
@@ -681,7 +742,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 entity=self,
                 lead=lead,
             )
-            frozen = frozen_pos if frozen_pos is not None else self._start_position
+            # None: the strategy does not know the position (yet).
+            frozen = frozen_pos
         else:
             frozen = compute_freeze_position(
                 self._start_position,
@@ -698,22 +760,32 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._start_position = frozen
             self._move_start_time = None
         self._turn_slats_for_run(at, run_started_at, is_opening, is_closing)
+        if run_started_at is not None and (is_opening or is_closing):
+            self._strategy.on_run_ended(self, "end_stop" if end_stop else "stop", frozen, at)
+            if end_stop and frozen is not None:
+                self._strategy.on_position_confirmed(self, frozen, "end_stop")
         self._attr_is_opening = False
         self._attr_is_closing = False
         self._run_start_position = None
         self._run_start_tilt = None
-        self._run_lead = 0.0
+        self._run_lead = self._move_lead = 0.0
         self._auto_stop_duration = None
         if self._attr_current_cover_position is not None:
             self._attr_is_closed = (self._attr_current_cover_position == 0)
+        elif self._strategy.assumed_state and (is_opening or is_closing):
+            # No position to derive it from: an assumed-state cover is closed after
+            # a closing run and open after an opening one, as HA's optimistic covers.
+            self._attr_is_closed = is_closing
 
     def _abort_motion(self) -> None:
         """Abort motion state when a command frame failed to reach the bus."""
         self._cancel_stop_task()
         self._end_echo_window()
+        if self._run_started_at is not None:
+            self._strategy.on_run_ended(self, "abort", self._attr_current_cover_position, time.monotonic())
         self._run_start_position = None
         self._run_start_tilt = None
-        self._run_lead = 0.0
+        self._run_lead = self._move_lead = 0.0
         self._pending_stop_context = None
         self._auto_stop_duration = None
         self._move_start_time = None
@@ -808,14 +880,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     def _enable_slat_tilt(self) -> None:
         """Enable Venetian blind slat / louvre tilt capabilities."""
         self._slat_tilt = True
-        if isinstance(self._strategy, TimedCurtainStrategy) and not isinstance(self._strategy, VenetianTiltStrategy):
-            self._strategy = VenetianTiltStrategy(
-                slat_time=self._strategy.slat_time,
-                travel_time=self._strategy.travel_time_down,
-                travel_time_up=self._strategy.travel_time_up,
-                travel_time_down=self._strategy.travel_time_down,
-                min_motor_pulse=self._strategy.min_motor_pulse,
-            )
+        # The strategy decides: built-in timed becomes Venetian, others stay.
+        self._strategy = self._strategy.with_slat_tilt()
         self._attr_device_class = CoverDeviceClass.BLIND
         current_features = self._attr_supported_features or CoverEntityFeature(0)
         self._attr_supported_features = (
@@ -897,6 +963,25 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._attr_current_cover_tilt_position = max(0, min(100, int(round(float(last_tilt)))))
                 except (ValueError, TypeError):
                     pass
+        await self._async_restore_strategy_state()
+
+    @property
+    def extra_restore_state_data(self) -> ExtraStoredData | None:
+        """The strategy's model state, kept across restarts when it has any."""
+        state = self._strategy.export_state()
+        if state is None:
+            return None
+        return RestoredExtraData({"strategy": self._strategy.name, "state": state})
+
+    async def _async_restore_strategy_state(self) -> None:
+        """Hand the strategy the state it exported before the restart (same strategy only)."""
+        try:
+            extra = await self.async_get_last_extra_data()
+        except Exception:  # pylint: disable=broad-except  # not registered with the restore cache
+            return
+        data = extra.as_dict() if extra is not None else {}
+        if data.get("strategy") == self._strategy.name and isinstance(data.get("state"), dict):
+            self._strategy.restore_state(data["state"])
 
     async def async_will_remove_from_hass(self) -> None:
         """Run when entity will be removed from hass."""
@@ -991,7 +1076,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """
         if self._advanced:
             raise HomeAssistantError(
-                f"{self._display_name} reports its position; calibration is not needed",
+                f"{self._display_name} reports its position (advanced: true in myhome.yaml); travel-time calibration does not apply to it — if this is a standard timed actuator (e.g. F411) that does not support Dimension 10, remove advanced: true from myhome.yaml",
                 translation_domain=DOMAIN,
                 translation_key="cover_reports_position",
                 translation_placeholders={"name": self._display_name},
@@ -1059,6 +1144,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         # The sequence ends with the cover fully open.
         self._attr_current_cover_position = 100
         self._start_position = 100
+        self._strategy.on_position_confirmed(self, 100, "calibration")
         if self._slat_tilt:
             self._attr_current_cover_tilt_position = 100
         self._attr_is_closed = False
@@ -1082,31 +1168,45 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         return result
 
     def _promote_to_timed_strategy(self) -> None:
-        """Promote a SimpleUpDownStopStrategy cover to Timed/Venetian once calibrated."""
-        if isinstance(self._strategy, SimpleUpDownStopStrategy):
-            if self._slat_tilt:
-                self._strategy = VenetianTiltStrategy(
-                    slat_time=self._strategy.slat_time,
-                    travel_time=self._strategy.travel_time_down,
-                    travel_time_up=self._strategy.travel_time_up,
-                    travel_time_down=self._strategy.travel_time_down,
-                    min_motor_pulse=self._strategy.min_motor_pulse,
-                )
-            else:
-                self._strategy = TimedCurtainStrategy(
-                    travel_time=self._strategy.travel_time_down,
-                    travel_time_up=self._strategy.travel_time_up,
-                    travel_time_down=self._strategy.travel_time_down,
-                    min_motor_pulse=self._strategy.min_motor_pulse,
-                    slat_time=self._strategy.slat_time,
-                )
-            self._attr_assumed_state = False
-            self._attr_supported_features = (
-                (self._attr_supported_features or CoverEntityFeature(0))
-                | CoverEntityFeature.SET_POSITION
-            )
-            if self._attr_current_cover_position is None:
-                self._attr_current_cover_position = self._start_position
+        """Let the strategy pick its successor once travel times are calibrated.
+
+        The built-in simple strategy becomes timed (or Venetian); any other
+        strategy, a custom one included, keeps itself and its parameters. An
+        explicit ``strategy: simple`` stays simple, as it does after a restart.
+        """
+        if self._strategy_name == "simple":
+            return
+        promoted = self._strategy.promoted(slat_tilt=self._slat_tilt)
+        if promoted is self._strategy:
+            return
+        self._strategy = promoted
+        self._attr_assumed_state = False
+        self._attr_supported_features = (
+            (self._attr_supported_features or CoverEntityFeature(0))
+            | CoverEntityFeature.SET_POSITION
+        )
+        if self._attr_current_cover_position is None:
+            self._attr_current_cover_position = self._start_position
+
+    def _demote_to_simple_strategy(self) -> None:
+        """Let the strategy pick its successor when the calibration is reset to no travel time.
+
+        The built-in timed strategy becomes simple again; any other strategy keeps itself.
+        """
+        demoted = self._strategy.demoted()
+        if demoted is self._strategy:
+            return
+        self._strategy = demoted
+        self._attr_assumed_state = True
+        self._attr_supported_features = (
+            self._attr_supported_features or CoverEntityFeature(0)
+        ) & ~CoverEntityFeature.SET_POSITION
+        self._attr_current_cover_position = None
+
+    def _end_run_on_reversal(self, now: float) -> None:
+        """Tell the strategy the opposite direction on the bus ended the running run."""
+        if not self._advanced and self._run_started_at is not None:
+            self._strategy.on_run_ended(self, "reversal", self._start_position, now)
 
     async def async_stop_calibration(self) -> None:
         """Stop calibration on this cover's gateway."""
@@ -1137,7 +1237,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             )
         if self._advanced and (has_travel or min_motor_pulse is not None or slat_time is None):
             raise HomeAssistantError(
-                f"{self._display_name} reports its position; travel time cannot be set",
+                f"{self._display_name} reports its position (advanced: true in myhome.yaml); travel time cannot be set — if this is a standard timed actuator (e.g. F411) that does not support Dimension 10, remove advanced: true from myhome.yaml",
                 translation_domain=DOMAIN,
                 translation_key="cover_reports_position",
                 translation_placeholders={"name": self._display_name},
@@ -1252,7 +1352,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Reset travel times back to default or YAML configuration."""
         if self._advanced and not self._slat_tilt:
             raise HomeAssistantError(
-                f"{self._display_name} reports its position; calibration is not applicable",
+                f"{self._display_name} reports its position (advanced: true in myhome.yaml); calibration is not applicable — if this is a standard timed actuator (e.g. F411) that does not support Dimension 10, remove advanced: true from myhome.yaml",
                 translation_domain=DOMAIN,
                 translation_key="cover_reports_position",
                 translation_placeholders={"name": self._display_name},
@@ -1286,6 +1386,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         else:
             base_travel = float(DEFAULT_TRAVEL_TIME)
             source = "default"
+        if base_travel <= 0 or cfg.get(CONF_STRATEGY) == "simple":
+            # Back to the uncalibrated relay the yaml describes.
+            self._demote_to_simple_strategy()
 
         self._min_motor_pulse = float(cfg.get(CONF_MIN_MOTOR_PULSE, DEFAULT_MIN_MOTOR_PULSE))
         self._travel_time_down = base_travel
@@ -1379,7 +1482,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._start_position = self.current_cover_position if self.current_cover_position is not None else (0 if direction == "open" else 100)
             self._run_start_position = self._start_position
             self._run_start_tilt = None
-            self._run_lead = 0.0
+            self._run_lead = self._move_lead = 0.0
             self._pending_stop_context = None
             self._auto_stop_duration = None
             # The clock starts when the frame is written (see _track_write),
@@ -1444,6 +1547,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._start_position = self._attr_current_cover_position
                 if self._slat_tilt:
                     self._attr_current_cover_tilt_position = 100 if opening else 0
+                self._strategy.on_run_ended(self, "end_stop", self._start_position, time.monotonic())
+                self._strategy.on_position_confirmed(self, self._start_position, "end_stop")
                 self._move_start_time = None
                 self._run_started_at = None
                 self._motion_started_at = None
@@ -1452,7 +1557,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._attr_is_closed = not opening
                 self._run_start_position = None
                 self._run_start_tilt = None
-                self._run_lead = 0.0
+                self._run_lead = self._move_lead = 0.0
                 self._pending_stop_context = None
                 self._auto_stop_duration = None
                 self._refresh_travel_attributes()
@@ -1593,6 +1698,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 if self._slat_tilt:
                     self._attr_current_cover_tilt_position = 100 if opening else 0
                 self._move_start_time = time.monotonic()
+                self._move_lead = 0.0  # the lead was spent before the target
                 await self.async_stop_cover()
                 if self.hass is not None:
                     self.async_write_ha_state()
@@ -1620,7 +1726,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 "is_opening": is_opening,
                 "is_closing": is_closing,
                 "auto_stop_duration": self._auto_stop_duration,
-                "lead": self._run_lead if self._run_start_tilt is not None else self._slat_lead_time(is_opening, is_closing),
+                "lead": self._run_lead if self._run_started_at is not None else self._slat_lead_time(is_opening, is_closing),
                 "run_start_tilt": self._run_start_tilt if self._run_start_tilt is not None else self._attr_current_cover_tilt_position,
             }
             self._begin_command("stop")
@@ -1812,6 +1918,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._start_position = self.current_cover_position if self.current_cover_position is not None else self._start_position
             self._attr_current_cover_position = self._start_position
             self._turn_slats_for_run(now, self._run_started_at, bool(self._attr_is_opening), bool(self._attr_is_closing))
+            self._strategy.on_run_ended(self, "takeover", self._start_position, now)
             self._move_start_time = None
             self._run_started_at = None
 
@@ -2102,6 +2209,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 entity_id=self.entity_id,
             )
 
+        if position is not None or position_unknown:
+            self._dim10_seen = True
+
         LOGGER.debug(
             "%s %s",
             self._gateway_handler.log_id,
@@ -2161,6 +2271,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._start_position = self.current_cover_position if self.current_cover_position is not None else 0
                 if was_closing:
                     self._turn_slats_for_run(now, self._run_started_at, False, True)
+                    self._end_run_on_reversal(now)
                 was_already_opening = bool(self._attr_is_opening)
                 self._attr_is_opening = True
                 self._attr_is_closing = False
@@ -2190,6 +2301,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._start_position = self.current_cover_position if self.current_cover_position is not None else 100
                 if was_opening:
                     self._turn_slats_for_run(now, self._run_started_at, True, False)
+                    self._end_run_on_reversal(now)
                 was_already_closing = bool(self._attr_is_closing)
                 self._attr_is_opening = False
                 self._attr_is_closing = True
@@ -2215,6 +2327,17 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._freeze_position(now)
             else:
                 self._turn_slats_for_run(now, self._run_started_at, was_opening, was_closing)
+                if (was_opening or was_closing) and not self._dim10_seen and not self._warned_missing_dim10:
+                    self._warned_missing_dim10 = True
+                    LOGGER.warning(
+                        "%s Cover %s (%s) stopped with a plain status frame (*2*0*%s##) and has never reported "
+                        "a Dimension 10 position; if this is a standard timed actuator (e.g. F411) that does "
+                        "not support Dimension 10, remove advanced: true from myhome.yaml",
+                        self._gateway_handler.log_id,
+                        self._full_where,
+                        self._display_name,
+                        self._full_where,
+                    )
             self._attr_is_opening = False
             self._attr_is_closing = False
             if getattr(message, "is_closed", None) is not None:
