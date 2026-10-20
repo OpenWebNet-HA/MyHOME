@@ -866,6 +866,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="🎛️ Cover Types: Standard vs. Advanced">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#choosing-the-cover-model-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choosing the cover model (strategy)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2336,6 +2353,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="🎛️ Cover Types: Standard vs. Advanced">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#choosing-the-cover-model-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choosing the cover model (strategy)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2750,6 +2784,40 @@
 <p class="admonition-title">Note</p>
 <p>Every discovered cover starts as a <strong>timed</strong> cover. Position-reporting hardware is not detected automatically: set <code>advanced_shutter: true</code> for that cover in <code>/config/myhome.yaml</code> (see <a href="../troubleshooting/#cover-position-is-wrong">Troubleshooting → Cover position is wrong</a>). Advanced covers refuse <code>myhome.calibrate_cover</code> and travel times in <code>myhome.set_cover_travel_time</code>, as they do not need a travel time (a Venetian blind with <code>slat_tilt</code> still accepts <code>slat_time</code> there).</p>
 </div>
+<h3 id="choosing-the-cover-model-strategy">Choosing the cover model (<code>strategy</code>)<a class="headerlink" href="#choosing-the-cover-model-strategy" title="Permanent link">&para;</a></h3>
+<p>Each WHO=2 cover runs one of four position models. Without <code>strategy</code>, the flags pick it: <code>advanced_shutter: true</code> gives <code>native</code>, <code>slat_tilt: true</code> gives <code>venetian</code>, <code>travel_time: 0</code> gives <code>simple</code>, and anything else gives <code>timed</code>. Set <code>strategy</code> in <code>/config/myhome.yaml</code> to name it explicitly:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;"><code>strategy</code></th>
+<th style="text-align: left;">Position</th>
+<th style="text-align: left;">Use for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>timed</code></td>
+<td style="text-align: left;">Estimated from the travel time</td>
+<td style="text-align: left;">Standard relay actuators (the default). Needs a positive <code>travel_time</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>venetian</code></td>
+<td style="text-align: left;">Estimated, plus slat tilt</td>
+<td style="text-align: left;">Venetian blinds; implies <code>slat_tilt: true</code> and needs a positive <code>travel_time</code> (or <code>advanced_shutter</code>).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>native</code></td>
+<td style="text-align: left;">Reported by the actuator (<code>Dimension = 10</code>)</td>
+<td style="text-align: left;">Advanced actuators; implies <code>advanced_shutter: true</code>. Can be combined with <code>slat_tilt</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>simple</code></td>
+<td style="text-align: left;">None (open / close / stop only)</td>
+<td style="text-align: left;">Relays with no measured travel time. The entity has no position slider and an assumed state: closed after a closing run, open after an opening one.</td>
+</tr>
+</tbody>
+</table>
+<p>An explicit <code>strategy</code> cannot be combined with a flag that selects another model (<code>advanced_shutter</code> with anything but <code>native</code>, <code>slat_tilt</code> with <code>timed</code> or <code>simple</code>, <code>travel_time: 0</code> with <code>timed</code>): the configuration is rejected. A cover set up with <code>travel_time: 0</code> becomes <code>timed</code> once it is calibrated (<code>myhome.calibrate_cover</code> or <code>myhome.set_cover_travel_time</code>), and <code>simple</code> again after <code>myhome.reset_cover_travel_time</code>. An explicit <code>strategy: simple</code> stays simple even when travel times are stored.</p>
 <hr />
 <h2 id="timed-cover-position-engine">⏱️ Timed Cover Position Engine<a class="headerlink" href="#timed-cover-position-engine" title="Permanent link">&para;</a></h2>
 <p>For standard covers without hardware position feedback, the integration provides a software estimator enabling full <code>open_cover</code>, <code>close_cover</code>, <code>stop_cover</code>, and slider-based <code>set_cover_position</code> support:</p>
