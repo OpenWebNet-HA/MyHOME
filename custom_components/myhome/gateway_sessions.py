@@ -1268,6 +1268,15 @@ class CommandWorkerPool:
                             else None
                         ),
                     )
+                    # Reopening a closed session (e.g. after COMMAND_SESSION_IDLE_TIMEOUT
+                    # or a prior failed send) calls `connect()` directly, preserving
+                    # OWNd's full MAX_CONNECT_ATTEMPTS=5 (~13.3 s) retry loop when
+                    # single-slot gateways like MH201 momentarily close TCP during
+                    # negotiation (OpenWebNet-HA/OWNd#132). Only a mid-flight socket
+                    # drop inside `send()` uses OWNd's single-attempt fast reconnect;
+                    # if `send()` returns None, `_cancel_written(task)` aborts without
+                    # re-queuing so non-idempotent commands whose ACK was lost are
+                    # never replayed.
                     if not session_is_open(_command_session):
                         res = await _command_session.connect()
                         if self._connect_refused(res, worker_id):
