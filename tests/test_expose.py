@@ -1585,10 +1585,17 @@ async def test_expose_edge_cases_and_timers(hass: HomeAssistant):
     )
 
     # 1. Coercion helpers & is_exposed_on_bus edge cases
-    assert _coerce_action_list([{"service": "light.turn_on"}, "not_a_dict"]) == [
-        {"service": "light.turn_on"}
+    assert _coerce_action_list([{"service": "light.turn_on"}]) == [
+        {"action": "light.turn_on"}
     ]
-    assert _coerce_action_list("invalid") is None
+    assert _coerce_action_list(None) is None
+    assert _coerce_action_list([]) is None
+    with pytest.raises(ValueError, match="Invalid expose action config"):
+        _coerce_action_list([{"service": "light.turn_on"}, "not_a_dict"])
+    with pytest.raises(ValueError, match="Invalid expose action config"):
+        _coerce_action_list("invalid")
+    with pytest.raises(ValueError, match="action must be a valid script action"):
+        _coerce_action_list(True)
     assert _coerce_on_states("on, playing") == ("on", "playing")
     assert _coerce_on_states(123) == ("on", "playing", "open", "unlocked")
 
@@ -1915,13 +1922,14 @@ async def test_expose_edge_cases_and_timers(hass: HomeAssistant):
 
     hass.services.async_register("switch", "turn_on", _rec)
     hass.services.async_register("switch", "turn_off", _rec)
+    await mgr_t._async_run_actions([])
+    await mgr_t._async_run_actions([{"service": "invalid_no_dot"}])
     await mgr_t._async_run_actions(
         [
-            {"service": "invalid_no_dot"},
             {"service": "switch.turn_on", "entity_id": "switch.direct_ent"},
         ]
     )
-    assert calls[-1] == ("switch", "turn_on", {"entity_id": "switch.direct_ent"})
+    assert calls[-1] == ("switch", "turn_on", {"entity_id": ["switch.direct_ent"]})
 
     b_no_ent = ExposeBinding(who=1, where="99", entity_id=None)
     await mgr_t._async_execute_who1_on(b_no_ent)
@@ -2015,9 +2023,9 @@ async def test_expose_edge_cases_and_timers(hass: HomeAssistant):
 
     # WHO=2 UP/DOWN on shutter with custom turn_on_action / turn_off_action
     await mgr_t.handle_bus_message(OWNMessage.parse("*2*1*93##"))
-    assert calls[-1] == ("switch", "turn_on", {"entity_id": "switch.shutter_up"})
+    assert calls[-1] == ("switch", "turn_on", {"entity_id": ["switch.shutter_up"]})
     await mgr_t.handle_bus_message(OWNMessage.parse("*2*2*93##"))
-    assert calls[-1] == ("switch", "turn_off", {"entity_id": "switch.shutter_down"})
+    assert calls[-1] == ("switch", "turn_off", {"entity_id": ["switch.shutter_down"]})
 
 
 @pytest.mark.asyncio
@@ -2133,13 +2141,16 @@ async def test_audit_regressions_echo_futures_brightness_off_scope_and_actions(h
     assert ("cover", "close_cover", {"entity_id": "cover.shutter_h3"}) in calls
     assert ("cover", "close_cover", {"entity_id": "cover.simple_shutter"}) in calls
 
-    # 4. N3: Custom action target dict keys (area_id, device_id) and validate.py service check
+    # 4. N3: Custom action target dict keys (area_id, device_id, floor_id) and validate.py service check
     await mgr._async_run_actions(
         [
             {
                 "action": "light.turn_off",
-                "target": {"area_id": "living_room", "device_id": "dev_123"},
-                "floor_id": "ground_floor",
+                "target": {
+                    "area_id": "living_room",
+                    "device_id": "dev_123",
+                    "floor_id": "ground_floor",
+                },
             }
         ]
     )
@@ -2147,12 +2158,12 @@ async def test_audit_regressions_echo_futures_brightness_off_scope_and_actions(h
         "light",
         "turn_off",
         {
-            "area_id": "living_room",
-            "device_id": "dev_123",
-            "floor_id": "ground_floor",
+            "area_id": ["living_room"],
+            "device_id": ["dev_123"],
+            "floor_id": ["ground_floor"],
         },
     )
-    with pytest.raises(vol.Invalid, match="requires 'action' or 'service'"):
+    with pytest.raises(vol.Invalid, match="Unable to determine action"):
         expose_schema(
             [{"who": 1, "where": "99", "turn_on_action": [{"entity_id": "light.x"}]}]
         )
@@ -2699,6 +2710,229 @@ async def test_expose_infeasible_inputs_hardening(hass: HomeAssistant):
         OWNGatewayCommand.set_date("2026-07-15")  # type: ignore[arg-type]
     with pytest.raises((TypeError, ValueError)):
         OWNGatewayCommand.set_time("14:30:00")  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_expose_script_helper_templates_conditions_startup_validation_and_error_containment(
+    hass: HomeAssistant,
+    caplog: pytest.LogCaptureFixture,
+):
+    """Test HA Script execution (templates, conditions, choose/if/repeat/parallel/sequence), startup service checks, and error containment."""
+    from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+    from homeassistant.core import CoreState
+    from homeassistant.helpers.template import Template as HATemplate
+
+    from custom_components.myhome.expose import (
+        ExposeBinding,
+        _iter_static_service_calls,
+        _stringify_templates,
+    )
+    from custom_components.myhome.validate import _validate_expose_action
+
+    # 1. Schema validation edge cases for _validate_expose_action and _iter_static_service_calls
+    with pytest.raises(vol.Invalid, match="action must be a valid script action"):
+        _validate_expose_action(True)
+    with pytest.raises(vol.Invalid, match="expose action sequence cannot be empty"):
+        _validate_expose_action([])
+    with pytest.raises(vol.Invalid, match="expose action sequence cannot be empty"):
+        _validate_expose_action({})
+
+    nested_actions = [
+        "not_a_dict",
+        {"action": "{{ dynamic_service }}"},
+        {"action": "invalid_no_dot"},
+        {
+            "choose": [
+                "bad_choice",
+                {"conditions": [], "sequence": [{"action": "domain_a.svc_1"}]},
+            ],
+            "default": [{"action": "domain_b.svc_2"}],
+        },
+        {
+            "if": [],
+            "then": [{"repeat": {"count": 1, "sequence": [{"action": "domain_c.svc_3"}]}}],
+            "else": [
+                {
+                    "parallel": [
+                        {"action": "domain_d.svc_4"},
+                        {"sequence": [{"action": "domain_e.svc_5"}]},
+                    ]
+                }
+            ],
+        },
+    ]
+    assert list(_iter_static_service_calls(nested_actions)) == [
+        ("domain_a", "svc_1"),
+        ("domain_b", "svc_2"),
+        ("domain_c", "svc_3"),
+        ("domain_d", "svc_4"),
+        ("domain_e", "svc_5"),
+    ]
+
+    # 2. Templates ({{ this.state }}, {{ entity_id }}, {{ who }}, {{ where }}) and conditions in Script
+    hass.states.async_set("media_player.living_tv", "paused", {"source": "HDMI1"})
+    recorded: list[tuple[str, str, dict]] = []
+
+    async def _rec(call):
+        recorded.append((call.domain, call.service, dict(call.data)))
+
+    hass.services.async_register("notify", "send", _rec)
+    hass.services.async_register("light", "turn_on", _rec)
+
+    raw_cfg = expose_schema(
+        [
+            {
+                "who": 1,
+                "where": "95",
+                "entity_id": "media_player.living_tv",
+                "turn_on_action": [
+                    {
+                        "condition": "template",
+                        "value_template": "{{ this.state == 'paused' }}",
+                    },
+                    {
+                        "action": "notify.send",
+                        "data": {
+                            "msg": "{{ entity_id }} state={{ this.state }} who={{ who }} where={{ where }}",
+                        },
+                    },
+                ],
+                "turn_off_action": [
+                    {
+                        "if": [
+                            {
+                                "condition": "template",
+                                "value_template": "{{ this.state == 'playing' }}",
+                            }
+                        ],
+                        "then": [{"action": "notify.send", "data": {"msg": "was_playing"}}],
+                        "else": [{"action": "notify.send", "data": {"msg": "was_not_playing"}}],
+                    }
+                ],
+            }
+        ]
+    )
+    gw = _make_gateway()
+    entry = _make_entry(hass, gateway=gw, expose_list=raw_cfg)
+    mgr = ExposeManager(hass, entry, gateway=gw)
+    await mgr.async_start()
+
+    await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*95##"))
+    assert recorded[-1] == (
+        "notify",
+        "send",
+        {"msg": "media_player.living_tv state=paused who=1 where=95"},
+    )
+
+    await mgr.handle_bus_message(OWNMessage.parse("*1*1000#0*95##"))
+    assert recorded[-1] == ("notify", "send", {"msg": "was_not_playing"})
+    await mgr.async_stop()
+
+    # 3. Startup warning for unknown service (both when hass.is_running is True and via EVENT_HOMEASSISTANT_STARTED)
+    caplog.clear()
+    entry_unk = _make_entry(
+        hass,
+        gateway=gw,
+        expose_list=[
+            {
+                "who": 1,
+                "where": "96",
+                "entity_id": "media_player.living_tv",
+                "turn_on_action": [{"action": "nonexistent_domain.typo_service"}],
+            }
+        ],
+    )
+    mgr_unk = ExposeManager(hass, entry_unk, gateway=gw)
+    await mgr_unk.async_start()
+    assert "references unknown service nonexistent_domain.typo_service" in caplog.text
+    await mgr_unk.async_stop()
+
+    # Deferred check when hass is not yet running -> fires on EVENT_HOMEASSISTANT_STARTED
+    caplog.clear()
+    hass.set_state(CoreState.starting)
+    try:
+        mgr_defer = ExposeManager(hass, entry_unk, gateway=gw)
+        # Also test invalid mutated action handling in _async_prepare_action_scripts
+        mgr_defer.bindings.append(
+            ExposeBinding(
+                who=1,
+                where="97",
+                entity_id="media_player.living_tv",
+                turn_on_action=[{"invalid_key": "bad"}],
+            )
+        )
+        await mgr_defer.async_start()
+        assert "Invalid expose turn_on_action for WHO=1 WHERE=97" in caplog.text
+        assert mgr_defer.bindings[-1].turn_on_action == []
+        assert "references unknown service nonexistent_domain.typo_service" not in caplog.text
+
+        hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+        await hass.async_block_till_done()
+        assert "references unknown service nonexistent_domain.typo_service" in caplog.text
+        await mgr_defer.async_stop()
+
+        # Also verify stopping before EVENT_HOMEASSISTANT_STARTED unsubscribes the listener cleanly
+        mgr_stop_early = ExposeManager(hass, entry_unk, gateway=gw)
+        await mgr_stop_early.async_start()
+        assert mgr_stop_early._unsub_ha_started is not None
+        await mgr_stop_early.async_stop()
+        assert mgr_stop_early._unsub_ha_started is None
+    finally:
+        hass.set_state(CoreState.running)
+
+    # 4. Runtime error containment per binding: a failing action or service call on binding 1
+    #    must not prevent binding 2 from running on a General ON (*1*1*0##) or General OFF (*1*0*0##) frame.
+    hass.states.async_set("light.good_lamp", "off")
+    entry_multi = _make_entry(
+        hass,
+        gateway=gw,
+        expose_list=[
+            {
+                "who": 1,
+                "where": "11",
+                "entity_id": "media_player.living_tv",
+                "turn_on_action": [{"action": "missing_dom.missing_svc"}],
+                "turn_off_action": [],
+            },
+            {
+                "who": 1,
+                "where": "12",
+                "entity_id": "light.good_lamp",
+            },
+        ],
+    )
+    mgr_multi = ExposeManager(hass, entry_multi, gateway=gw)
+    await mgr_multi.async_start()
+
+    recorded.clear()
+    caplog.clear()
+    # General ON (*1*1*0##): binding 1's Script raises ServiceNotFound (caught & logged),
+    # binding 2 still calls light.turn_on!
+    await mgr_multi.handle_bus_message(OWNMessage.parse("*1*1*0##"))
+    assert "Expose turn_on_action failed for WHO=1 WHERE=11" in caplog.text
+    assert ("light", "turn_on", {"entity_id": "light.good_lamp"}) in recorded
+
+    # General OFF (*1*0*0##): binding 1 calls missing homeassistant.turn_off (caught & logged by _async_call_service),
+    # binding 2 calls missing light.turn_off (caught & logged) without killing the bus listener!
+    caplog.clear()
+    await mgr_multi.handle_bus_message(OWNMessage.parse("*1*0*0##"))
+    assert "Expose service call homeassistant.turn_off failed for WHO=1 WHERE=11" in caplog.text
+    assert "Expose service call homeassistant.turn_off failed for WHO=1 WHERE=12" in caplog.text
+
+    # Dynamically added binding after async_start() compiles and caches Script on first run
+    assert _stringify_templates(HATemplate("{{ 1 }}", hass)) == "{{ 1 }}"
+    dyn_binding = ExposeBinding(
+        who=1,
+        where="13",
+        entity_id="light.good_lamp",
+        turn_on_action=[{"action": "notify.send", "data": {"msg": "dyn_13"}}],
+    )
+    mgr_multi.bindings.append(dyn_binding)
+    await mgr_multi.handle_bus_message(OWNMessage.parse("*1*1*13##"))
+    assert ("notify", "send", {"msg": "dyn_13"}) in recorded
+    assert (dyn_binding.key, "turn_on_action") in mgr_multi._action_scripts
+    await mgr_multi.async_stop()
+
 
 
 

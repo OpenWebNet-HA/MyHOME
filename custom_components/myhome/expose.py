@@ -19,9 +19,10 @@ Hardware Verification & Caveats (BTicino F461 `2.0.11` live captures `2026-10-18
 
 Security Model for Custom Actions:
 - Bidirectional `turn_on_action`, `turn_off_action`, `step_up_action`, and `step_down_action`
-  entries invoke Home Assistant services in response to OpenWebNet bus frames, evaluating
-  payload templates through Home Assistant's sandboxed `Template` engine. Because any device
-  or client on the SCS bus / OpenWebNet TCP port can emit trigger frames, custom actions
+  entries are validated with Home Assistant's `cv.SCRIPT_SCHEMA` / `async_validate_actions_config`
+  and executed via Home Assistant's `Script` helper, supporting service calls, conditions, and
+  Jinja2 templates evaluated through Home Assistant's sandboxed `Template` engine. Because any
+  device or client on the SCS bus / OpenWebNet TCP port can emit trigger frames, custom actions
   should only be configured on trusted physical and network installations.
 """
 
@@ -31,24 +32,38 @@ import asyncio
 import datetime as dt
 import math
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONF_ATTRIBUTE,
     CONF_ENTITY_ID,
+    EVENT_HOMEASSISTANT_STARTED,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
-from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, State, callback
+from homeassistant.core import (
+    CALLBACK_TYPE,
+    Context,
+    CoreState,
+    Event,
+    HomeAssistant,
+    State,
+    callback,
+)
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.event import (
     async_call_later,
     async_track_state_change_event,
     async_track_time_interval,
 )
-from homeassistant.helpers.template import Template
+from homeassistant.helpers.script import Script, async_validate_actions_config
+from homeassistant.helpers.template import Template, TemplateStateFromEntityId
 from homeassistant.util import dt as dt_util
 from OWNd.message import (
     OWNAutomationCommand,
@@ -77,6 +92,7 @@ from .const import (
     CONF_VALUE_TEMPLATE,
     CONF_WHERE,
     CONF_WHO,
+    DOMAIN,
     LOGGER,
     SUBENTRY_TYPE_EXPOSE,
     area_of_where,
@@ -142,16 +158,51 @@ def _where_matches_binding(
     return bool(area_of_where(b_base) == m_base)
 
 
+def _stringify_templates(val: Any) -> Any:
+    """Convert any pre-compiled HA Template objects back to raw template strings."""
+    if isinstance(val, Template):
+        return val.template
+    if isinstance(val, dict):
+        return {
+            _stringify_templates(k): _stringify_templates(v) for k, v in val.items()
+        }
+    if isinstance(val, list):
+        return [_stringify_templates(x) for x in val]
+    return val
+
+
 def _coerce_action_list(raw: Any) -> list[dict[str, Any]] | None:
-    """Normalize an optional action or list of actions into a list of dicts."""
-    if not raw:
+    """Validate and normalize an optional action sequence via Home Assistant's SCRIPT_SCHEMA."""
+    if raw is None or raw == [] or raw == {}:
         return None
-    if isinstance(raw, dict):
-        return [dict(raw)]
-    if isinstance(raw, (list, tuple)):
-        out = [dict(item) for item in raw if isinstance(item, dict)]
-        return out or None
-    return None
+    if isinstance(raw, bool):
+        raise ValueError("action must be a valid script action or sequence")
+    try:
+        validated = cv.SCRIPT_SCHEMA(_stringify_templates(raw))
+    except vol.Invalid as err:
+        raise ValueError(f"Invalid expose action config: {err}") from err
+    return list(validated) if validated else None
+
+
+def _iter_static_service_calls(
+    actions: list[dict[str, Any]],
+) -> Iterator[tuple[str, str]]:
+    """Yield static (domain, service) pairs from a validated script action sequence."""
+    for item in actions:
+        if not isinstance(item, dict):
+            continue
+        act = item.get("action")
+        if isinstance(act, str) and "." in act:
+            domain, _, svc = act.partition(".")
+            if domain and svc:
+                yield (domain, svc)
+        for seq_key in ("sequence", "then", "else", "choose", "default", "parallel"):
+            sub = item.get(seq_key)
+            if isinstance(sub, list):
+                yield from _iter_static_service_calls(sub)
+        rep = item.get("repeat")
+        if isinstance(rep, dict) and isinstance(rep.get("sequence"), list):
+            yield from _iter_static_service_calls(rep["sequence"])
 
 
 def _coerce_on_states(raw: Any, *, entity_id: str | None = None) -> tuple[str, ...]:
@@ -458,6 +509,10 @@ class ExposeManager:
         self._tx_echo_guard: dict[str, _EchoGuardEntry] = {}
         self._pre_move_stop_guard: dict[tuple[int, str], _EchoGuardEntry] = {}
         self._last_rx_by_frame: dict[str, tuple[str, float]] = {}
+        self._action_scripts: dict[
+            tuple[tuple[int, str, int | None], str], Script
+        ] = {}
+        self._unsub_ha_started: CALLBACK_TYPE | None = None
         self._started = False
 
         self._load_bindings(yaml_configs)
@@ -605,9 +660,92 @@ class ExposeManager:
                 )
                 self._unsub_periodic.append(unsub_timer)
 
+        # 4. Validate and pre-compile custom action Script runners
+        await self._async_prepare_action_scripts()
+
+    async def _async_prepare_action_scripts(self) -> None:
+        """Validate custom action configs and create Home Assistant Script helpers."""
+        for binding in self.bindings:
+            for slot_name in (
+                "turn_on_action",
+                "turn_off_action",
+                "step_up_action",
+                "step_down_action",
+            ):
+                raw_actions = getattr(binding, slot_name, None)
+                if not raw_actions:
+                    continue
+                try:
+                    schema_validated = cv.SCRIPT_SCHEMA(
+                        _stringify_templates(raw_actions)
+                    )
+                    validated = await async_validate_actions_config(
+                        self.hass, schema_validated
+                    )
+                    self._action_scripts[(binding.key, slot_name)] = Script(
+                        self.hass,
+                        validated,
+                        f"MyHOME Expose WHO={binding.who} WHERE={binding.where} {slot_name}",
+                        DOMAIN,
+                        running_description=f"MyHOME expose {slot_name} action",
+                        logger=LOGGER,
+                    )
+                except (vol.Invalid, HomeAssistantError, ValueError) as err:
+                    LOGGER.error(
+                        "Invalid expose %s for WHO=%s WHERE=%s: %s",
+                        slot_name,
+                        binding.who,
+                        binding.where,
+                        err,
+                    )
+                    setattr(binding, slot_name, [])
+
+        if self.hass.state is CoreState.running:
+            self._warn_unknown_action_services()
+        elif self._unsub_ha_started is None:
+
+            @callback
+            def _on_ha_started(_event: Event) -> None:
+                self._unsub_ha_started = None
+                self._warn_unknown_action_services()
+
+            self._unsub_ha_started = self.hass.bus.async_listen_once(
+                EVENT_HOMEASSISTANT_STARTED, _on_ha_started
+            )
+
+    @callback
+    def _warn_unknown_action_services(self) -> None:
+        """Warn if any configured expose custom action references an unknown service."""
+        for binding in self.bindings:
+            for slot_name in (
+                "turn_on_action",
+                "turn_off_action",
+                "step_up_action",
+                "step_down_action",
+            ):
+                actions = getattr(binding, slot_name, None)
+                if not actions:
+                    continue
+                for domain, service_name in _iter_static_service_calls(actions):
+                    if not self.hass.services.has_service(domain, service_name):
+                        LOGGER.warning(
+                            "Expose %s for WHO=%s WHERE=%s references unknown service %s.%s",
+                            slot_name,
+                            binding.who,
+                            binding.where,
+                            domain,
+                            service_name,
+                        )
+
     async def async_stop(self) -> None:
         """Cancel all listeners and pending cooldown/streaming timers."""
         self._started = False
+        if self._unsub_ha_started is not None:
+            self._unsub_ha_started()
+            self._unsub_ha_started = None
+        for script in list(self._action_scripts.values()):
+            await script.async_unload()
+        self._action_scripts.clear()
         if self._unsub_dispatcher is not None:
             self._unsub_dispatcher()
             self._unsub_dispatcher = None
@@ -1275,42 +1413,121 @@ class ExposeManager:
             frames, high_priority=high_priority, is_confirmation=is_reply
         )
 
-    async def _async_run_actions(self, actions: list[dict[str, Any]]) -> None:
-        """Execute a list of Home Assistant service action dicts."""
-        for item in actions:
-            service_str = str(item.get("action") or item.get("service") or "").strip()
-            if not service_str or "." not in service_str:
-                continue
-            domain, service_name = service_str.split(".", 1)
-            service_data = dict(item.get("data") or item.get("service_data") or {})
-            target = item.get("target")
-            if isinstance(target, dict):
-                for t_key, t_val in target.items():
-                    if t_key not in service_data:
-                        service_data[t_key] = t_val
-            for top_key in ("entity_id", "device_id", "area_id", "floor_id", "label_id"):
-                if top_key in item and top_key not in service_data:
-                    service_data[top_key] = item[top_key]
+    async def _async_call_service(
+        self,
+        domain: str,
+        service: str,
+        service_data: dict[str, Any],
+        *,
+        binding: ExposeBinding | None = None,
+    ) -> None:
+        """Invoke a Home Assistant service, containing runtime errors per binding."""
+        try:
             await self.hass.services.async_call(
-                domain, service_name, service_data, blocking=False
+                domain, service, service_data, blocking=False
             )
+        except (HomeAssistantError, vol.Invalid) as err:
+            LOGGER.error(
+                "Expose service call %s.%s failed for WHO=%s WHERE=%s: %s",
+                domain,
+                service,
+                getattr(binding, "who", "?"),
+                getattr(binding, "where", "?"),
+                err,
+            )
+
+    async def _async_run_actions(
+        self,
+        actions: list[dict[str, Any]],
+        *,
+        binding: ExposeBinding | None = None,
+        slot: str = "custom_action",
+    ) -> None:
+        """Execute a Home Assistant action sequence via Home Assistant's Script helper."""
+        if not actions:
+            return
+
+        script: Script | None = None
+        ephemeral = False
+        if binding is not None:
+            script = self._action_scripts.get((binding.key, slot))
+
+        if script is None:
+            try:
+                schema_validated = cv.SCRIPT_SCHEMA(
+                    _stringify_templates(actions)
+                )
+                validated = await async_validate_actions_config(
+                    self.hass, schema_validated
+                )
+                script = Script(
+                    self.hass,
+                    validated,
+                    (
+                        f"MyHOME Expose WHO={binding.who} WHERE={binding.where} {slot}"
+                        if binding is not None
+                        else f"MyHOME Expose {slot}"
+                    ),
+                    DOMAIN,
+                    running_description=f"MyHOME expose {slot} action",
+                    logger=LOGGER,
+                )
+                if binding is not None and self._started:
+                    self._action_scripts[(binding.key, slot)] = script
+                else:
+                    ephemeral = True
+            except (vol.Invalid, HomeAssistantError, ValueError) as err:
+                LOGGER.error(
+                    "Invalid expose %s for WHO=%s WHERE=%s: %s",
+                    slot,
+                    getattr(binding, "who", "?"),
+                    getattr(binding, "where", "?"),
+                    err,
+                )
+                return
+
+        run_vars: dict[str, Any] = {}
+        if binding is not None:
+            run_vars["who"] = binding.who
+            run_vars["where"] = binding.where
+            if binding.entity_id:
+                run_vars["entity_id"] = binding.entity_id
+                run_vars["this"] = TemplateStateFromEntityId(
+                    self.hass, binding.entity_id
+                )
+
+        try:
+            await script.async_run(run_variables=run_vars, context=Context())
+        except (HomeAssistantError, vol.Invalid) as err:
+            LOGGER.error(
+                "Expose %s failed for WHO=%s WHERE=%s: %s",
+                slot,
+                getattr(binding, "who", "?"),
+                getattr(binding, "where", "?"),
+                err,
+            )
+        finally:
+            if ephemeral:
+                await script.async_unload()
 
     async def _async_execute_who1_on(self, binding: ExposeBinding) -> None:
         """Execute HA turn-on or custom action for a WHO=1 virtual actuator."""
         binding.rx_action_count += 1
         if binding.turn_on_action:
-            await self._async_run_actions(binding.turn_on_action)
+            await self._async_run_actions(
+                binding.turn_on_action, binding=binding, slot="turn_on_action"
+            )
             return
         if not binding.entity_id:
             return
         domain = binding.entity_id.split(".", 1)[0]
         state = self.hass.states.get(binding.entity_id)
         if domain == "media_player" and state is not None and state.state == "paused":
-            await self.hass.services.async_call(
+            await self._async_call_service(
                 "media_player",
                 "media_play",
                 {"entity_id": binding.entity_id},
-                blocking=False,
+                binding=binding,
             )
             return
         target_domain = (
@@ -1318,18 +1535,20 @@ class ExposeManager:
             if self.hass.services.has_service(domain, "turn_on")
             else "homeassistant"
         )
-        await self.hass.services.async_call(
+        await self._async_call_service(
             target_domain,
             "turn_on",
             {"entity_id": binding.entity_id},
-            blocking=False,
+            binding=binding,
         )
 
     async def _async_execute_who1_off(self, binding: ExposeBinding) -> None:
         """Execute HA turn-off or custom action for a WHO=1 virtual actuator."""
         binding.rx_action_count += 1
         if binding.turn_off_action:
-            await self._async_run_actions(binding.turn_off_action)
+            await self._async_run_actions(
+                binding.turn_off_action, binding=binding, slot="turn_off_action"
+            )
             return
         if not binding.entity_id:
             return
@@ -1339,11 +1558,11 @@ class ExposeManager:
             if self.hass.services.has_service(domain, "turn_off")
             else "homeassistant"
         )
-        await self.hass.services.async_call(
+        await self._async_call_service(
             target_domain,
             "turn_off",
             {"entity_id": binding.entity_id},
-            blocking=False,
+            binding=binding,
         )
 
     async def _async_execute_who1_step(
@@ -1353,7 +1572,8 @@ class ExposeManager:
         binding.rx_action_count += 1
         custom = binding.step_up_action if up else binding.step_down_action
         if custom:
-            await self._async_run_actions(custom)
+            slot = "step_up_action" if up else "step_down_action"
+            await self._async_run_actions(custom, binding=binding, slot=slot)
             return
         if not binding.entity_id:
             return
@@ -1362,28 +1582,28 @@ class ExposeManager:
             delta = (
                 binding.brightness_step_pct if up else -binding.brightness_step_pct
             )
-            await self.hass.services.async_call(
+            await self._async_call_service(
                 "light",
                 "turn_on",
                 {
                     "entity_id": binding.entity_id,
                     "brightness_step_pct": delta,
                 },
-                blocking=False,
+                binding=binding,
             )
         elif domain == "media_player":
-            await self.hass.services.async_call(
+            await self._async_call_service(
                 "media_player",
                 "volume_up" if up else "volume_down",
                 {"entity_id": binding.entity_id},
-                blocking=False,
+                binding=binding,
             )
         elif domain == "cover":
-            await self.hass.services.async_call(
+            await self._async_call_service(
                 "cover",
                 "open_cover" if up else "close_cover",
                 {"entity_id": binding.entity_id},
-                blocking=False,
+                binding=binding,
             )
 
     async def _async_handle_secondary_bus_message(
@@ -1618,7 +1838,7 @@ class ExposeManager:
                         )
                         if binding.entity_id and binding.entity_id.startswith("light."):
                             binding.rx_action_count += 1
-                            await self.hass.services.async_call(
+                            await self._async_call_service(
                                 "light",
                                 "turn_on" if pct > 0 else "turn_off",
                                 (
@@ -1626,7 +1846,7 @@ class ExposeManager:
                                     if pct > 0
                                     else {"entity_id": binding.entity_id}
                                 ),
-                                blocking=False,
+                                binding=binding,
                             )
                     continue
 
@@ -1671,11 +1891,11 @@ class ExposeManager:
                     )
                     if binding.entity_id and binding.entity_id.startswith("light."):
                         binding.rx_action_count += 1
-                        await self.hass.services.async_call(
+                        await self._async_call_service(
                             "light",
                             "turn_on",
                             {"entity_id": binding.entity_id, "brightness_pct": pct},
-                            blocking=False,
+                            binding=binding,
                         )
                     else:
                         await self._async_execute_who1_on(binding)
@@ -1724,11 +1944,11 @@ class ExposeManager:
                         )
                         if binding.entity_id and binding.entity_id.startswith("cover."):
                             binding.rx_action_count += 1
-                            await self.hass.services.async_call(
+                            await self._async_call_service(
                                 "cover",
                                 "set_cover_position",
                                 {"entity_id": binding.entity_id, "position": pct},
-                                blocking=False,
+                                binding=binding,
                             )
                     continue
 
@@ -1754,14 +1974,18 @@ class ExposeManager:
                     )
                     binding.rx_action_count += 1
                     if binding.turn_on_action:
-                        await self._async_run_actions(binding.turn_on_action)
+                        await self._async_run_actions(
+                            binding.turn_on_action,
+                            binding=binding,
+                            slot="turn_on_action",
+                        )
                     elif binding.entity_id:
                         domain = binding.entity_id.split(".", 1)[0]
-                        await self.hass.services.async_call(
+                        await self._async_call_service(
                             "cover" if domain == "cover" else "homeassistant",
                             "open_cover" if domain == "cover" else "turn_on",
                             {"entity_id": binding.entity_id},
-                            blocking=False,
+                            binding=binding,
                         )
                 elif eff_what == 2:
                     self._cancel_cooldown_timer(binding.key)
@@ -1774,14 +1998,18 @@ class ExposeManager:
                     )
                     binding.rx_action_count += 1
                     if binding.turn_off_action:
-                        await self._async_run_actions(binding.turn_off_action)
+                        await self._async_run_actions(
+                            binding.turn_off_action,
+                            binding=binding,
+                            slot="turn_off_action",
+                        )
                     elif binding.entity_id:
                         domain = binding.entity_id.split(".", 1)[0]
-                        await self.hass.services.async_call(
+                        await self._async_call_service(
                             "cover" if domain == "cover" else "homeassistant",
                             "close_cover" if domain == "cover" else "turn_off",
                             {"entity_id": binding.entity_id},
-                            blocking=False,
+                            binding=binding,
                         )
                 elif eff_what == 0:
                     self._cancel_cooldown_timer(binding.key)
@@ -1794,11 +2022,11 @@ class ExposeManager:
                     )
                     if binding.entity_id and binding.entity_id.startswith("cover."):
                         binding.rx_action_count += 1
-                        await self.hass.services.async_call(
+                        await self._async_call_service(
                             "cover",
                             "stop_cover",
                             {"entity_id": binding.entity_id},
-                            blocking=False,
+                            binding=binding,
                         )
 
     handle_bus_message = _async_handle_bus_message

@@ -43,6 +43,7 @@ from homeassistant.const import (
 )
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.device_registry import format_mac as ha_format_mac
+from homeassistant.helpers.template import Template
 from voluptuous import (
     All,
     Any,
@@ -806,6 +807,31 @@ def _non_bool_str(v: typing.Any) -> str:
     return str(v)
 
 
+def _stringify_templates(val: typing.Any) -> typing.Any:
+    """Convert any pre-compiled HA Template objects back to raw template strings."""
+    if isinstance(val, Template):
+        return val.template
+    if isinstance(val, dict):
+        return {
+            _stringify_templates(k): _stringify_templates(v) for k, v in val.items()
+        }
+    if isinstance(val, list):
+        return [_stringify_templates(x) for x in val]
+    return val
+
+
+def _validate_expose_action(val: typing.Any) -> list[dict[str, typing.Any]]:
+    """Validate an expose action sequence using Home Assistant's SCRIPT_SCHEMA."""
+    if isinstance(val, bool) or val is None:
+        raise Invalid("expose action must be a valid script action or sequence")
+    if isinstance(val, (list, dict)) and not val:
+        raise Invalid("expose action sequence cannot be empty")
+    return typing.cast(
+        list[dict[str, typing.Any]],
+        _stringify_templates(cv.SCRIPT_SCHEMA(_stringify_templates(val))),
+    )
+
+
 _WHO4_EXPOSE_PROBE_RE = re.compile(r"(?:0\d\d|[1-9](?:0[1-9]|[1-9]\d))")
 _WHO18_EXPOSE_WHERE_RE = re.compile(
     r"(?:5(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])(?:#\d)?|7(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])#0)"
@@ -853,18 +879,6 @@ def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]
         CONF_STEP_UP_ACTION,
         CONF_STEP_DOWN_ACTION,
     )
-    for action_key in action_keys:
-        raw_actions = item.get(action_key)
-        if raw_actions is None:
-            continue
-        act_list = [raw_actions] if isinstance(raw_actions, dict) else list(raw_actions)
-        for act in act_list:
-            svc_str = str(act.get("action") or act.get("service") or "").strip()
-            domain, sep, svc_name = svc_str.partition(".")
-            if not sep or not domain.strip() or not svc_name.strip():
-                raise Invalid(
-                    f"expose '{action_key}' entry requires 'action' or 'service' in 'domain.service' format"
-                )
     has_actions = any(item.get(k) for k in action_keys)
     if who in (4, 18) and not has_entity:
         raise Invalid(f"expose entry for WHO={who} requires 'entity_id'")
@@ -964,10 +978,10 @@ expose_entry_schema = All(
             Optional(CONF_BIDIRECTIONAL): Boolean(),
             Optional(CONF_DEFAULT): Any(str, int, float, bool),
             Optional(CONF_ON_STATES): Any([Coerce(str)], Coerce(str)),
-            Optional(CONF_TURN_ON_ACTION): Any([dict], dict),
-            Optional(CONF_TURN_OFF_ACTION): Any([dict], dict),
-            Optional(CONF_STEP_UP_ACTION): Any([dict], dict),
-            Optional(CONF_STEP_DOWN_ACTION): Any([dict], dict),
+            Optional(CONF_TURN_ON_ACTION): _validate_expose_action,
+            Optional(CONF_TURN_OFF_ACTION): _validate_expose_action,
+            Optional(CONF_STEP_UP_ACTION): _validate_expose_action,
+            Optional(CONF_STEP_DOWN_ACTION): _validate_expose_action,
             Optional(CONF_BRIGHTNESS_STEP_PCT, default=10): All(
                 _non_bool_int, Range(min=1, max=100)
             ),
