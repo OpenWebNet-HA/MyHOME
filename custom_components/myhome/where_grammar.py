@@ -717,22 +717,37 @@ def _ensure_ownd_profile_oracle_parity() -> None:  # pragma: no cover - PyPI OWN
         elif model == "MH200N":
             object.__setattr__(prof, "supported_who", _mh200n_who)
         if not hasattr(prof, "supports_dimension_response_injection"):
-            object.__setattr__(prof, "supports_dimension_response_injection", True)
+            object.__setattr__(prof, "supports_dimension_response_injection", False)
         if not hasattr(prof, "supports_who4_command_injection"):
             object.__setattr__(
                 prof,
                 "supports_who4_command_injection",
                 model not in ("F453", "MH200N"),
             )
+        if not hasattr(prof, "supports_who18_response_injection"):
+            object.__setattr__(
+                prof,
+                "supports_who18_response_injection",
+                model not in ("MH200", "MH200N"),
+            )
 
     for _prof in getattr(_ownd_profiles, "_PROFILES", {}).values():
         _patch_profile_instance(_prof)
 
     for _cls_name in (
+        "GatewayProfile",
+        "GenericGatewayProfile",
+        "MH202Profile",
+        "F452Profile",
+        "F452VProfile",
         "F453Profile",
         "F453AVProfile",
         "F454Profile",
+        "F455Profile",
+        "F459Profile",
+        "F460Profile",
         "F461Profile",
+        "H4684Profile",
         "MyHomeServer1Profile",
         "MH200Profile",
         "MH200NProfile",

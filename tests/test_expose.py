@@ -457,11 +457,11 @@ async def test_who1_light_brightness_levels_and_default_stepping(hass: HomeAssis
         {"entity_id": "light.hue_lamp", "brightness_step_pct": -15},
     )
 
-    # Brightness dimension query *#1*96*1## -> replies *#1*96*1*150*0## (50% -> 100+50=150)
+    # Brightness dimension query *#1*96*1## -> replies *#1*96*#1*150*0## (50% -> 100+50=150)
     gw.send.reset_mock()
     await mgr.handle_bus_message(OWNMessage.parse("*#1*96*1##"))
     sent_frames = [str(c.args[0]) for c in gw.send.call_args_list]
-    assert sent_frames == ["*#1*96*1*150*0##"]
+    assert sent_frames == ["*#1*96*#1*150*0##"]
 
     await mgr.async_stop()
 
@@ -530,11 +530,16 @@ async def test_who2_virtual_cover_actuator(hass: HomeAssistant):
         "set_cover_position",
         {"entity_id": "cover.pergola_somfy", "position": 40},
     )
+    assert str(gw.send.call_args_list[-1].args[0]) == "*#2*97*#11#001*40##"
+    # Gateway translates *#2*97*#11#001*40## into *#2*97*#11#001#1*40## on the event session -> suppressed!
+    count_before_echo = len(calls)
+    await mgr.handle_bus_message(OWNMessage.parse("*#2*97*#11#001#1*40##"))
+    assert len(calls) == count_before_echo
 
-    # Dimension 10 query (*#2*97*10##) -> replies with current_position=75
+    # Dimension 10 query (*#2*97*10##) -> replies with current_position=75 via #11#001 write
     gw.send.reset_mock()
     await mgr.handle_bus_message(OWNMessage.parse("*#2*97*10##"))
-    assert [str(c.args[0]) for c in gw.send.call_args_list] == ["*#2*97*10*10*75*0*0##"]
+    assert [str(c.args[0]) for c in gw.send.call_args_list] == ["*#2*97*#11#001*75##"]
 
     # Standard status query (*#2*97##) -> replies *2*0*97## (stopped)
     gw.send.reset_mock()
@@ -568,9 +573,9 @@ async def test_who4_virtual_temperature_probe_and_deadband(hass: HomeAssistant):
     await mgr.async_start()
     await mgr.async_sync_all()
 
-    # Initial sync sends *#4*000*0*0215## via low-priority queue
+    # Initial sync sends *#4*000*#0*0215## via low-priority queue
     assert [str(c.args[0]) for c in gw.send_status_request.call_args_list] == [
-        "*#4*000*0*0215##"
+        "*#4*000*#0*0215##"
     ]
     gw.send_status_request.reset_mock()
 
@@ -583,13 +588,13 @@ async def test_who4_virtual_temperature_probe_and_deadband(hass: HomeAssistant):
     hass.states.async_set("sensor.outdoor_temp", "-3.2")
     await hass.async_block_till_done()
     assert [str(c.args[0]) for c in gw.send_status_request.call_args_list] == [
-        "*#4*000*0*1032##"
+        "*#4*000*#0*1032##"
     ]
 
     # Bus query *#4*000*0## replies on high-priority queue with current value (-3.2°C -> 1032)
     gw.send.reset_mock()
     await mgr.handle_bus_message(OWNMessage.parse("*#4*000*0##"))
-    assert [str(c.args[0]) for c in gw.send.call_args_list] == ["*#4*000*0*1032##"]
+    assert [str(c.args[0]) for c in gw.send.call_args_list] == ["*#4*000*#0*1032##"]
 
     await mgr.async_stop()
 
@@ -688,6 +693,12 @@ async def test_who13_bus_clock_sync(hass: HomeAssistant):
             assert [str(c.args[0]) for c in gw.send.call_args_list] == [
                 "*#13**1*03*15*07*2026##"
             ]
+
+            # When periodic_send=0 (NTP-synced gateway read-only mode), async_sync_all() skips proactive write
+            mgr.bindings[0].periodic_send = 0.0
+            gw.send_status_request.reset_mock()
+            await mgr.async_sync_all()
+            assert gw.send_status_request.call_count == 0
     finally:
         await mgr.async_stop()
 
@@ -1166,8 +1177,8 @@ async def test_expose_templates_attributes_defaults_and_unit_scaling(hass: HomeA
     assert "*#18*51*52*120500##" in sent
     assert "*#18*51*53*4500##" in sent
     assert "*#18*51*54*890##" in sent
-    assert "*#4*001*0*0195##" in sent
-    assert "*#4*002*0*0220##" in sent
+    assert "*#4*001*#0*0195##" in sent
+    assert "*#4*002*#0*0220##" in sent
 
     await mgr.async_stop()
 
@@ -1207,6 +1218,16 @@ async def test_who1_dim_write_and_default_media_cover_stepping(hass: HomeAssista
     # Dimension 1 write on bus (*#1*96*#1*180*0## -> 80%)
     await mgr.handle_bus_message(OWNMessage.parse("*#1*96*#1*180*0##"))
     assert calls[-1] == ("light", "turn_on", {"entity_id": "light.hue_lamp", "brightness_pct": 80})
+    assert [str(c.args[0]) for c in gw.send.call_args_list] == [
+        "*1*1*96##",
+        "*#1*96*#1*180*0##",
+    ]
+    gw.send.reset_mock()
+
+    # Dimension 1 write on bus for 0% (*#1*96*#1*100*0## -> 0%) sends only *1*0*96##
+    await mgr.handle_bus_message(OWNMessage.parse("*#1*96*#1*100*0##"))
+    assert calls[-1] == ("light", "turn_off", {"entity_id": "light.hue_lamp"})
+    assert [str(c.args[0]) for c in gw.send.call_args_list] == ["*1*0*96##"]
 
     # Default WHO=1 ON on a paused media_player calls media_player.media_play
     await mgr.handle_bus_message(OWNMessage.parse("*1*1*95##"))
@@ -1754,26 +1775,71 @@ async def test_expose_edge_cases_and_timers(hass: HomeAssistant):
         value_template="{{ 75 }}",
     )
     frames_tb, _ = mgr_t._build_frames(b_tpl_b, force=True, is_reply=False)
-    assert [str(f) for f in frames_tb] == ["*1*1*11##", "*#1*11*1*175*0##"]
+    assert [str(f) for f in frames_tb] == ["*1*1*11##", "*#1*11*#1*175*0##"]
 
     b_bad_b = ExposeBinding(
         who=1, where="11", entity_id="light.bad_b_val", attribute="brightness", dimension=1
     )
     frames_bb, _ = mgr_t._build_frames(b_bad_b, force=True, is_reply=False)
-    assert [str(f) for f in frames_bb] == ["*1*0*11##", "*#1*11*1*100*0##"]
+    assert [str(f) for f in frames_bb] == ["*1*0*11##"]
 
     # WHO=2 numeric state without current_position attribute, "closing" state, dedup, and dimension=10
     hass.states.async_set("sensor.shutter_pct", "55")
     b_w2_num = ExposeBinding(who=2, where="21", entity_id="sensor.shutter_pct", dimension=10)
     frames_w2n, val_w2n = mgr_t._build_frames(b_w2_num, force=True, is_reply=False)
-    assert [str(f) for f in frames_w2n] == ["*2*0*21##", "*#2*21*10*10*55*0*0##"]
+    assert [str(f) for f in frames_w2n] == ["*2*0*21##", "*#2*21*#11#001*55##"]
     b_w2_num.last_sent_value = val_w2n
     assert mgr_t._build_frames(b_w2_num, force=False, is_reply=False) == ([], None)
 
     hass.states.async_set("cover.closing_cov", "closing", {"current_position": 40})
     b_w2_cl = ExposeBinding(who=2, where="21", entity_id="cover.closing_cov", dimension=10)
     frames_w2c, _ = mgr_t._build_frames(b_w2_cl, force=True, is_reply=False)
-    assert [str(f) for f in frames_w2c] == ["*2*2*21##", "*#2*21*10*12*40*0*0##"]
+    assert [str(f) for f in frames_w2c] == ["*2*2*21##", "*#2*21*#11#001*40##"]
+
+    # Profile with supports_dimension_response_injection=True emits un-hashed report_* frames
+    gw_resp_inj = _make_gateway(
+        profile=SimpleNamespace(
+            supports_dimension_response_injection=True,
+            supports_who4_command_injection=True,
+            supports_who18_response_injection=True,
+        )
+    )
+    mgr_resp = ExposeManager(hass, entry_empty, gateway=gw_resp_inj)
+    frames_r1_q, _ = mgr_resp._build_frames(
+        b_tpl_b, force=True, is_reply=True, query_dimension=1
+    )
+    assert [str(f) for f in frames_r1_q] == ["*#1*11*1*175*0##"]
+    frames_r1_s, _ = mgr_resp._build_frames(b_tpl_b, force=True, is_reply=False)
+    assert [str(f) for f in frames_r1_s] == ["*1*1*11##", "*#1*11*1*175*0##"]
+    frames_r2_q, _ = mgr_resp._build_frames(
+        b_w2_cl, force=True, is_reply=True, query_dimension=10
+    )
+    assert [str(f) for f in frames_r2_q] == ["*#2*21*10*12*40*0*0##"]
+    frames_r2_s, _ = mgr_resp._build_frames(b_w2_cl, force=True, is_reply=False)
+    assert [str(f) for f in frames_r2_s] == ["*2*2*21##", "*#2*21*10*12*40*0*0##"]
+    hass.states.async_set("sensor.temp_ok", "21.5")
+    frames_r4, _ = mgr_resp._build_frames(
+        ExposeBinding(who=4, where="000", entity_id="sensor.temp_ok"),
+        force=True,
+        is_reply=False,
+    )
+    assert [str(f) for f in frames_r4] == ["*#4*000*0*0215##"]
+    hass.services.async_register("light", "turn_on", AsyncMock())
+    hass.services.async_register("cover", "set_cover_position", AsyncMock())
+    mgr_resp.bindings = [
+        ExposeBinding(who=1, where="11", entity_id="light.tpl_b_val", attribute="brightness", bidirectional=True),
+        ExposeBinding(who=2, where="21", entity_id="cover.closing_cov", dimension=10, bidirectional=True),
+    ]
+    await mgr_resp.handle_bus_message(OWNMessage.parse("*#1*11*#1*160*0##"))
+    assert [str(c.args[0]) for c in gw_resp_inj.send.call_args_list] == [
+        "*1*1*11##",
+        "*#1*11*1*160*0##",
+    ]
+    gw_resp_inj.send.reset_mock()
+    await mgr_resp.handle_bus_message(OWNMessage.parse("*#2*21*#10*11*50*0*0##"))
+    assert [str(c.args[0]) for c in gw_resp_inj.send.call_args_list] == [
+        "*#2*21*10*10*50*0*0##"
+    ]
 
     # WHO=4 & WHO=18 profile gate (supports_dimension_response_injection=False), non-numeric values, min_delta / equality dedup, unknown dim
     gw_f455 = _make_gateway(
@@ -2004,23 +2070,23 @@ async def test_audit_regressions_echo_futures_brightness_off_scope_and_actions(h
 
     sent = [str(c.args[0]) for c in gw.send_status_request.call_args_list]
     assert "*1*1*91##" in sent
-    assert "*#1*91*1*150*0##" in sent
+    assert "*#1*91*#1*150*0##" in sent
     assert "*2*0*92##" in sent
-    assert "*#2*92*10*10*0*0*0##" in sent
+    assert "*#2*92*#11#001*0##" in sent
     gw.send_status_request.reset_mock()
 
-    # Light turns off in HA and removes brightness attribute -> must send *1*0*91## + *#1*91*1*100*0##
+    # Light turns off in HA and removes brightness attribute -> must send *1*0*91##
     hass.states.async_set("light.dimmer_h3", "off", {})
     await hass.async_block_till_done()
     sent_off = [str(c.args[0]) for c in gw.send_status_request.call_args_list]
-    assert sent_off == ["*1*0*91##", "*#1*91*1*100*0##"]
+    assert sent_off == ["*1*0*91##"]
     gw.send_status_request.reset_mock()
 
     # Cover opens without current_position attribute -> resolves to 100
     hass.states.async_set("cover.shutter_h3", "open", {})
     await hass.async_block_till_done()
     sent_open = [str(c.args[0]) for c in gw.send_status_request.call_args_list]
-    assert sent_open == ["*2*0*92##", "*#2*92*10*10*100*0*0##"]
+    assert sent_open == ["*2*0*92##", "*#2*92*#11#001*100##"]
 
     calls = []
 
@@ -2503,20 +2569,20 @@ async def test_expose_infeasible_inputs_hardening(hass: HomeAssistant):
     # WHO=1 brightness: boolean or non-finite falls back safely without raising
     hass.states.async_set("light.bad_b", "on", {"brightness": True})
     frames, _ = mgr._build_frames(b_light, force=True, is_reply=False)
-    assert [str(f) for f in frames] == ["*1*1*96##", "*#1*96*1*200*0##"]
+    assert [str(f) for f in frames] == ["*1*1*96##", "*#1*96*#1*200*0##"]
 
     hass.states.async_set("light.bad_b", "on", {"brightness": float("inf")})
     frames, _ = mgr._build_frames(b_light, force=True, is_reply=False)
-    assert [str(f) for f in frames] == ["*1*0*96##", "*#1*96*1*100*0##"]
+    assert [str(f) for f in frames] == ["*1*0*96##"]
 
     # WHO=1 switch without brightness attribute (or brightness=None / False) queried on dimension=1
     hass.states.async_set("switch.no_b", "on", {"brightness": None})
     frames, _ = mgr._build_frames(b_switch, force=True, is_reply=True, query_dimension=1)
-    assert [str(f) for f in frames] == ["*#1*95*1*200*0##"]
+    assert [str(f) for f in frames] == ["*#1*95*#1*200*0##"]
 
     hass.states.async_set("switch.no_b", "on", {"brightness": False})
     frames, _ = mgr._build_frames(b_switch, force=True, is_reply=True, query_dimension=1)
-    assert [str(f) for f in frames] == ["*#1*95*1*200*0##"]
+    assert [str(f) for f in frames] == ["*#1*95*#1*200*0##"]
 
     # WHO=2 position: non-finite current_position omits shutter level frame cleanly
     hass.states.async_set("cover.bad_p", "open", {"current_position": float("nan")})

@@ -1,20 +1,21 @@
 """Expose Home Assistant entities and system clock to the OpenWebNet SCS bus.
 
-Hardware Verification & Caveats (BTicino F461 `2.0.11` live capture `2026-10-18`):
+Hardware Verification & Caveats (BTicino F461 `2.0.11` live captures `2026-10-18` & `2026-10-20`):
+- **Report Form vs. `#DIM` Write Form on `WHO=1`, `WHO=2`, `WHO=4`, `WHO=18`**:
+  - On real BTicino gateways (`bt_luci` and `bt_termo`), incoming un-hashed dimension response
+    frames (`*#1*WHERE*1*level*speed##`, `*#2*WHERE*10*state*pos*001*0##`, `*#4*WHERE*0*TTTT##`)
+    on the TCP command session are NACKed or parsed as dimension reads, whereas `#DIM` write
+    frames (`*#1*WHERE*#1*level*speed##`, `*#2*WHERE*#11#001*pos##`, `*#4*WHERE*#0*TTTT##`)
+    are ACKed in ~83–126 ms and forwarded to the SCS bus.
+  - Conversely, `WHO=18` (`bt_energy` / `bt_supervisione`) **does** accept un-hashed dimension
+    response frames (`*#18*WHERE*113*W##`, `51..54`, `1200#1`), which are ACKed on F461.
 - **WHO=2 virtual covers**: Physical F461 gateways immediately broadcast command-translation
-  bursts (`*2*1000#0*WHERE##` followed by `*2*1000#1/2*WHERE##`) on the event monitor
-  session even when no physical shutter actuator is populated at `WHERE`, before returning
-  `NACK` (~0.55 s) on the TCP command session. `_pre_move_stop_guard` and `_tx_echo_guard`
-  absorb both frames without self-oscillation.
-- **WHO=1 virtual lights**: Unpopulated point addresses transmit on the 2-wire SCS bus and
-  return `NACK` after ~2.06 s on the TCP command session (`is_exposed` suppresses retries
-  in `CommandWorkerPool`), whereas Dimension `#1` writes (`*#1*WHERE*#1*level*speed##`) are
-  ACKed in ~126 ms. Physical wall-control LED illumination without a backing actuator and
-  answering `respond_to_read` status queries from a TCP monitor session remain best-effort
-  subject to gateway/control firmware.
-- **WHO=4, WHO=13 & WHO=18**: Dimension writes (`*#4*WHERE*#0*TTTT##` on 2-digit probe
-  addresses, `*#13**#0*...##`, `*#13**#1*...##`, and `*#18*WHERE*113/51/54/#1200#1*...##`)
-  are ACKed in ~125-200 ms on physical F461 hardware.
+  bursts (`*2*1000#0*WHERE##` followed by `*2*1000#1/2*WHERE##`, and for `#11#001` level
+  writes `*#2*WHERE*#11#001#1*pos##`) on the event monitor session before returning `ACK` or
+  `NACK` on the TCP command session. `_pre_move_stop_guard` and `_tx_echo_guard` absorb all
+  translation frames without self-oscillation.
+- **WHO=13 clock**: Setting `periodic_send: 0` suppresses proactive `*#13**#22*...##` writes
+  during `async_sync_all()` so NTP-synced gateways can use `WHO=13` in read-only query-reply mode.
 
 Security Model for Custom Actions:
 - Bidirectional `turn_on_action`, `turn_off_action`, `step_up_action`, and `step_down_action`
@@ -633,6 +634,8 @@ class ExposeManager:
     async def async_sync_all(self) -> None:
         """Send an initial state/clock sync for all configured bindings."""
         for binding in self.bindings:
+            if binding.who == 13 and binding.periodic_send <= 0:
+                continue
             await self._async_send_binding_state(
                 binding, high_priority=False, force=True, is_reply=False
             )
@@ -739,17 +742,17 @@ class ExposeManager:
             msg_where = expose_message_where(frame)
             if isinstance(who, int) and msg_where:
                 target = (who, msg_where)
+            if is_confirmation and target is not None:
+                # An incoming external bus command superseded any earlier completed TX for this target
+                done_keys = [
+                    frame_k
+                    for frame_k, entry in self._tx_echo_guard.items()
+                    if entry.target == target
+                    and (entry.future is None or entry.future.done())
+                ]
+                for frame_k in done_keys:
+                    self._tx_echo_guard.pop(frame_k, None)
             if who in (1, 2) and isinstance(what, int) and what != 1000 and msg_where:
-                if is_confirmation and target is not None:
-                    # An incoming external bus command superseded any earlier completed TX for this target
-                    done_keys = [
-                        frame_k
-                        for frame_k, entry in self._tx_echo_guard.items()
-                        if entry.target == target
-                        and (entry.future is None or entry.future.done())
-                    ]
-                    for frame_k in done_keys:
-                        self._tx_echo_guard.pop(frame_k, None)
                 trans_entry = _EchoGuardEntry(seq=seq, target=target, expiry=expiry)
                 self._tx_echo_guard[f"*{who}*1000#{what}*{msg_where}##"] = trans_entry
                 entries.append(trans_entry)
@@ -760,6 +763,21 @@ class ExposeManager:
                     stop_entry = _EchoGuardEntry(seq=seq, target=target, expiry=expiry)
                     self._pre_move_stop_guard[(2, msg_where)] = stop_entry
                     entries.append(stop_entry)
+            if (
+                who == 2
+                and bool(getattr(frame, "is_dimension_writing", False))
+                and getattr(frame, "dimension", None) == 11
+                and msg_where
+            ):
+                vals = getattr(frame, "dimension_value", None) or []
+                if vals:
+                    # 6 gateways (F454, F459, F460, F461, MH202, MyHomeServer1)
+                    # translate *#2*W*#11#001*LEVEL## into *#2*W*#11#001#1*LEVEL## on the monitor session.
+                    lvl_entry = _EchoGuardEntry(seq=seq, target=target, expiry=expiry)
+                    self._tx_echo_guard[f"*#2*{msg_where}*#11#001#1*{vals[0]}##"] = (
+                        lvl_entry
+                    )
+                    entries.append(lvl_entry)
 
         raw_entry = _EchoGuardEntry(seq=seq, target=target, expiry=expiry)
         self._tx_echo_guard[str(frame)] = raw_entry
@@ -831,7 +849,12 @@ class ExposeManager:
         if entry.future is not None and not entry.future.done():
             return True
 
-        is_translation = bool(getattr(message, "is_translation", False))
+        is_translation = bool(getattr(message, "is_translation", False)) or (
+            who == 2
+            and bool(getattr(message, "is_dimension_writing", False))
+            and getattr(message, "dimension", None) == 11
+            and (getattr(message, "_dimension_param", None) or []) == ["001", "1"]
+        )
         # Mark this echo (and any older completed entries for the same target) consumed for src.
         # A translation echo (*WHO*1000#WHAT*W##) may precede a raw loopback echo (*WHO*WHAT*W##),
         # so keep the sibling raw entry alive until the raw echo arrives or is superseded.
@@ -883,8 +906,15 @@ class ExposeManager:
             getattr(getattr(target_gw, "_gateway", None), "profile", None),
             getattr(getattr(target_gw, "gateway", None), "profile", None),
         ):
-            if candidate is not None and isinstance(
-                getattr(candidate, "supports_dimension_response_injection", None), bool
+            if candidate is not None and (
+                isinstance(
+                    getattr(candidate, "supports_dimension_response_injection", None),
+                    bool,
+                )
+                or isinstance(
+                    getattr(candidate, "supports_who4_command_injection", None),
+                    bool,
+                )
             ):
                 return candidate
         return getattr(target_gw, "profile", None)
@@ -1005,9 +1035,17 @@ class ExposeManager:
             if not force and binding.last_sent_value == who1_val_key:
                 return [], None
 
+            profile = self._effective_profile(1)
+            supports_dim_resp = bool(
+                getattr(profile, "supports_dimension_response_injection", False)
+            )
             if query_dimension == 1 and brightness_pct is not None:
                 frames.append(
                     OWNLightingCommand.report_brightness(binding.where, brightness_pct)
+                    if supports_dim_resp
+                    else OWNLightingCommand.set_brightness(
+                        binding.where, brightness_pct
+                    )
                 )
             else:
                 frames.append(
@@ -1018,11 +1056,18 @@ class ExposeManager:
                 if brightness_pct is not None and (
                     binding.attribute == "brightness" or binding.dimension == 1
                 ):
-                    frames.append(
-                        OWNLightingCommand.report_brightness(
-                            binding.where, brightness_pct
+                    if supports_dim_resp:
+                        frames.append(
+                            OWNLightingCommand.report_brightness(
+                                binding.where, brightness_pct
+                            )
                         )
-                    )
+                    elif brightness_pct > 0:
+                        frames.append(
+                            OWNLightingCommand.set_brightness(
+                                binding.where, brightness_pct
+                            )
+                        )
             return frames, who1_val_key
 
         if binding.who == 2:
@@ -1045,8 +1090,8 @@ class ExposeManager:
 
             reports_pos = (
                 binding.attribute == "current_position"
-                or binding.dimension == 10
-                or query_dimension == 10
+                or binding.dimension in (10, 11)
+                or query_dimension in (10, 11)
             )
             who2_val_key: tuple[str, int | None] = (
                 str(shutter_cmd),
@@ -1055,31 +1100,39 @@ class ExposeManager:
             if not force and binding.last_sent_value == who2_val_key:
                 return [], None
 
-            if query_dimension == 10 and pos_pct is not None:
+            profile = self._effective_profile(2)
+            supports_dim_resp = bool(
+                getattr(profile, "supports_dimension_response_injection", False)
+            )
+            if query_dimension in (10, 11) and pos_pct is not None:
                 return [
                     OWNAutomationCommand.report_shutter_level(
                         binding.where, pos_pct, state=state_code
                     )
+                    if supports_dim_resp
+                    else OWNAutomationCommand.set_shutter_level(binding.where, pos_pct)
                 ], who2_val_key
 
             frames = [shutter_cmd]
             if pos_pct is not None and (
-                binding.attribute == "current_position" or binding.dimension == 10
+                binding.attribute == "current_position" or binding.dimension in (10, 11)
             ):
                 frames.append(
                     OWNAutomationCommand.report_shutter_level(
                         binding.where, pos_pct, state=state_code
                     )
+                    if supports_dim_resp
+                    else OWNAutomationCommand.set_shutter_level(binding.where, pos_pct)
                 )
             return frames, who2_val_key
 
         if binding.who == 4:
             profile = self._effective_profile(4)
             supports_dim_resp = (
-                True
+                False
                 if profile is None
                 else bool(
-                    getattr(profile, "supports_dimension_response_injection", True)
+                    getattr(profile, "supports_dimension_response_injection", False)
                 )
             )
             supports_cmd_inj = (
@@ -1112,10 +1165,23 @@ class ExposeManager:
 
         if binding.who == 18:
             profile = self._effective_profile(18)
-            if profile is not None and not getattr(
-                profile, "supports_dimension_response_injection", True
-            ):
-                return [], None
+            if profile is not None:
+                who18_inj = getattr(
+                    profile, "supports_who18_response_injection", None
+                )
+                supports_who18 = (
+                    bool(who18_inj)
+                    if isinstance(who18_inj, bool)
+                    else bool(
+                        getattr(
+                            profile,
+                            "supports_dimension_response_injection",
+                            True,
+                        )
+                    )
+                )
+                if not supports_who18:
+                    return [], None
             if isinstance(raw, bool):
                 return [], None
             try:
@@ -1406,7 +1472,7 @@ class ExposeManager:
                         is_reply=True,
                         query_dimension=dim,
                     )
-                elif who == 2 and (is_status_req or dim == 10):
+                elif who == 2 and (is_status_req or dim in (10, 11)):
                     await self._async_send_binding_state(
                         binding,
                         high_priority=True,
@@ -1518,12 +1584,32 @@ class ExposeManager:
                         self._cancel_cooldown_timer(binding.key)
                         raw_lvl = int(vals[0])
                         pct = raw_lvl - 100 if raw_lvl >= 100 else raw_lvl
-                        confirm_frames: list[OWNMessage] = [
-                            OWNLightingCommand.switch_on(binding.where)
-                            if pct > 0
-                            else OWNLightingCommand.switch_off(binding.where),
-                            OWNLightingCommand.report_brightness(binding.where, pct),
-                        ]
+                        profile = self._effective_profile(1)
+                        supports_dim_resp = bool(
+                            getattr(
+                                profile,
+                                "supports_dimension_response_injection",
+                                False,
+                            )
+                        )
+                        if supports_dim_resp:
+                            confirm_frames: list[OWNMessage] = [
+                                OWNLightingCommand.switch_on(binding.where)
+                                if pct > 0
+                                else OWNLightingCommand.switch_off(binding.where),
+                                OWNLightingCommand.report_brightness(
+                                    binding.where, pct
+                                ),
+                            ]
+                        elif pct > 0:
+                            confirm_frames = [
+                                OWNLightingCommand.switch_on(binding.where),
+                                OWNLightingCommand.set_brightness(binding.where, pct),
+                            ]
+                        else:
+                            confirm_frames = [
+                                OWNLightingCommand.switch_off(binding.where),
+                            ]
                         binding.last_sent_value = (pct > 0, pct)
                         binding.last_sent_at = time.monotonic()
                         binding.sent_count += len(confirm_frames)
@@ -1596,7 +1682,8 @@ class ExposeManager:
 
             elif who == 2:
                 reports_pos = (
-                    binding.attribute == "current_position" or binding.dimension == 10
+                    binding.attribute == "current_position"
+                    or binding.dimension in (10, 11)
                 )
                 if is_dim_write and dim in (10, 11):
                     vals = getattr(message, "dimension_value", [])
@@ -1608,8 +1695,22 @@ class ExposeManager:
                     ):
                         self._cancel_cooldown_timer(binding.key)
                         pct = int(raw_pct_val)
-                        confirm = OWNAutomationCommand.report_shutter_level(
-                            binding.where, pct, state=10
+                        profile = self._effective_profile(2)
+                        supports_dim_resp = bool(
+                            getattr(
+                                profile,
+                                "supports_dimension_response_injection",
+                                False,
+                            )
+                        )
+                        confirm = (
+                            OWNAutomationCommand.report_shutter_level(
+                                binding.where, pct, state=10
+                            )
+                            if supports_dim_resp
+                            else OWNAutomationCommand.set_shutter_level(
+                                binding.where, pct
+                            )
                         )
                         stop_cmd = OWNAutomationCommand.stop_shutter(binding.where)
                         binding.last_sent_value = (

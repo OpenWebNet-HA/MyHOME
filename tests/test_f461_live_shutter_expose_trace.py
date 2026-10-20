@@ -564,4 +564,46 @@ async def test_run4_expose_live_f461_protocol_and_echo_guard_replay(
     await hass.async_block_till_done()
     assert [c[0] for c in cover_calls] == ["stop_cover", "open_cover"]
 
+    # 7. Verify 2026-10-20 F461 follow-up findings:
+    #    a) Double virtual-cover translation burst (['*2*1000#0*25##', '*2*1000#1*25##'] x 2)
+    #       arriving while the command-session write future is still pending (before 0.55 s NACK)
+    cover_calls.clear()
+    hass.services.async_register("cover", "set_cover_position", _record_cover_service)
+    pending_fut: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+
+    async def _send_pending(cmd, *a, **k):
+        gw.sent.append(str(cmd))
+        return pending_fut
+
+    gw.send_status_request.side_effect = _send_pending
+    mgr.bindings[1].last_sent_value = None
+    hass.states.async_set("cover.virtual_25", "closed")
+    await hass.async_block_till_done()
+    hass.states.async_set("cover.virtual_25", "opening")
+    await hass.async_block_till_done()
+    assert gw.sent[-1] == "*2*1*25##"
+    for raw in [
+        "*2*1000#0*25##",
+        "*2*1000#1*25##",
+        "*2*1000#0*25##",
+        "*2*1000#1*25##",
+    ]:
+        msg = OWNMessage.parse(raw)
+        assert msg is not None
+        await mgr.handle_bus_message(msg)
+    pending_fut.set_result(False)
+    await asyncio.sleep(0)
+    assert cover_calls == []
+
+    #    b) WHO=2 #11#001 level write (*#2*25*#11#001*50##) translates to *#2*25*#11#001#1*50##
+    #       on the F461 monitor session and is absorbed by _tx_echo_guard without looping back
+    gw.send_status_request.side_effect = gw.send.side_effect
+    mgr.bindings[1].attribute = "current_position"
+    hass.states.async_set("cover.virtual_25", "open", {"current_position": 50})
+    await hass.async_block_till_done()
+    assert "*#2*25*#11#001*50##" in gw.sent
+    await mgr.handle_bus_message(OWNMessage.parse("*#2*25*#11#001#1*50##"))
+    await hass.async_block_till_done()
+    assert cover_calls == []
+
     await mgr.async_stop()
