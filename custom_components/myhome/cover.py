@@ -154,6 +154,33 @@ OFF_SETTLE_DELAY = 0.2
 
 _clamp_slat_time = clamp_slat_time
 
+# Known standard timed relay actuators that do not implement OpenWebNet Dimension 10 position reporting
+# (Encyclopedia OWN-DEV-0022/0023/0098/0141/0153: F411 family and flush-mounted 4671/2 / AM5851/2 relays).
+_STANDARD_TIMED_SHUTTER_MODELS = (
+    "F411",
+    "BT-F411",
+    "003842",
+    "003843",
+    "003844",
+    "003848",
+    "H4671/2",
+    "L4671/2",
+    "N4671/2",
+    "NT4671/2",
+    "HC4671/2",
+    "HS4671/2",
+    "HD4671/2",
+    "AM5851/2",
+)
+
+
+def _is_standard_timed_shutter_model(model: str | None) -> bool:
+    """Return True if ``model`` identifies a standard timed relay actuator without Dimension 10."""
+    if not isinstance(model, str):
+        return False
+    normalized = model.strip().upper()
+    return bool(normalized) and normalized.startswith(_STANDARD_TIMED_SHUTTER_MODELS)
+
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     """Set up the covers of a gateway: WHO=2 shutters and WHO=1 impulse covers."""
@@ -433,6 +460,19 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         # The resolved strategy decides; the entity's code paths follow it, so an
         # explicit strategy next to a contradicting flag cannot mix the two.
         self._advanced = isinstance(self._strategy, NativePositionStrategy)
+        self._dim10_seen: bool = False
+        self._warned_missing_dim10: bool = False
+        if self._advanced and _is_standard_timed_shutter_model(model):
+            self._warned_missing_dim10 = True
+            LOGGER.warning(
+                "%s Cover %s (%s) is configured with advanced: true / strategy: native, "
+                "but %s is a standard timed actuator that does not report position (Dimension 10); "
+                "remove advanced: true from myhome.yaml",
+                gateway.log_id,
+                self._full_where,
+                name,
+                model.strip(),
+            )
         if isinstance(self._strategy, VenetianTiltStrategy):
             self._slat_tilt = True
         elif isinstance(self._strategy, SimpleUpDownStopStrategy):
@@ -1036,7 +1076,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """
         if self._advanced:
             raise HomeAssistantError(
-                f"{self._display_name} reports its position; calibration is not needed",
+                f"{self._display_name} reports its position (advanced: true in myhome.yaml); travel-time calibration does not apply to it — if this is a standard timed actuator (e.g. F411) that does not support Dimension 10, remove advanced: true from myhome.yaml",
                 translation_domain=DOMAIN,
                 translation_key="cover_reports_position",
                 translation_placeholders={"name": self._display_name},
@@ -1197,7 +1237,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             )
         if self._advanced and (has_travel or min_motor_pulse is not None or slat_time is None):
             raise HomeAssistantError(
-                f"{self._display_name} reports its position; travel time cannot be set",
+                f"{self._display_name} reports its position (advanced: true in myhome.yaml); travel time cannot be set — if this is a standard timed actuator (e.g. F411) that does not support Dimension 10, remove advanced: true from myhome.yaml",
                 translation_domain=DOMAIN,
                 translation_key="cover_reports_position",
                 translation_placeholders={"name": self._display_name},
@@ -1312,7 +1352,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Reset travel times back to default or YAML configuration."""
         if self._advanced and not self._slat_tilt:
             raise HomeAssistantError(
-                f"{self._display_name} reports its position; calibration is not applicable",
+                f"{self._display_name} reports its position (advanced: true in myhome.yaml); calibration is not applicable — if this is a standard timed actuator (e.g. F411) that does not support Dimension 10, remove advanced: true from myhome.yaml",
                 translation_domain=DOMAIN,
                 translation_key="cover_reports_position",
                 translation_placeholders={"name": self._display_name},
@@ -2169,6 +2209,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 entity_id=self.entity_id,
             )
 
+        if position is not None or position_unknown:
+            self._dim10_seen = True
+
         LOGGER.debug(
             "%s %s",
             self._gateway_handler.log_id,
@@ -2284,6 +2327,17 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._freeze_position(now)
             else:
                 self._turn_slats_for_run(now, self._run_started_at, was_opening, was_closing)
+                if (was_opening or was_closing) and not self._dim10_seen and not self._warned_missing_dim10:
+                    self._warned_missing_dim10 = True
+                    LOGGER.warning(
+                        "%s Cover %s (%s) stopped with a plain status frame (*2*0*%s##) and has never reported "
+                        "a Dimension 10 position; if this is a standard timed actuator (e.g. F411) that does "
+                        "not support Dimension 10, remove advanced: true from myhome.yaml",
+                        self._gateway_handler.log_id,
+                        self._full_where,
+                        self._display_name,
+                        self._full_where,
+                    )
             self._attr_is_opening = False
             self._attr_is_closing = False
             if getattr(message, "is_closed", None) is not None:
