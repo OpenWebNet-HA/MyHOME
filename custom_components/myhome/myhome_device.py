@@ -267,7 +267,10 @@ class MyHOMEEntity(RestoreEntity):
         if self._poll_on_add:
             if (
                 hasattr(self._gateway_handler, "wait_for_initial_discovery")
-                and getattr(self._gateway_handler, "initial_discovery_pending", False) is True
+                and (
+                    getattr(self._gateway_handler, "sweep_active", False) is True
+                    or getattr(self._gateway_handler, "initial_discovery_pending", False) is True
+                )
             ):
                 target_hass = self.hass or self._hass
                 if target_hass is not None:

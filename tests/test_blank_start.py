@@ -116,8 +116,9 @@ async def test_old_path_queues_p2p_and_loses_five_addresses(hass: HomeAssistant)
 
         handler = hass.data[DOMAIN][mac][CONF_ENTITY]
         handler._on_event_connection_state_change(True)
-        # Mark initial discovery done so any poll-on-add requests are queued immediately
-        handler._initial_discovery_done.set()
+        # Let the startup sweep finish so any poll-on-add requests are queued immediately
+        await handler.wait_for_initial_discovery(timeout=10.0)
+        assert not handler.initial_discovery_pending and not handler.sweep_active
 
         # Simulate OLD behaviour where message_has_state was not present and _poll_on_add stayed True
         with patch("custom_components.myhome.discovery.message_has_state", return_value=False):
