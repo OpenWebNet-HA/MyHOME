@@ -446,7 +446,7 @@
     },
     "legacy_yaml_imported": {
       "title": "Legacy myhome.yaml imported for {gateway}",
-      "description": "Device configurations from `myhome.yaml` for {gateway} have been imported and persisted into Home Assistant's config entry options. Your entities will continue to work even if `myhome.yaml` is removed from disk."
+      "description": "The device configuration in `myhome.yaml` for {gateway} has been copied into Home Assistant's config entry options. While `myhome.yaml` exists it stays in charge and the copy follows its changes. If the file is removed or becomes unreadable, the devices keep the configuration of the last copy."
     },
     "incompatible_decoder_platform": {
       "title": "Decoder {decoder} uses unsupported integration ({platform})",

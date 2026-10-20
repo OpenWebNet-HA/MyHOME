@@ -400,7 +400,7 @@
     },
     "legacy_yaml_imported": {
       "title": "Verouderde myhome.yaml geïmporteerd voor {gateway}",
-      "description": "Apparaatconfiguraties uit `myhome.yaml` voor {gateway} zijn geïmporteerd en opgeslagen in de configuratie-opties van Home Assistant."
+      "description": "De apparaatconfiguratie in `myhome.yaml` voor {gateway} is gekopieerd naar de configuratie-opties van Home Assistant. Zolang `myhome.yaml` bestaat, blijft dat bestand leidend en volgt de kopie de wijzigingen. Wordt het bestand verwijderd of onleesbaar, dan houden de apparaten de configuratie van de laatste kopie."
     }
   },
   "exceptions": {

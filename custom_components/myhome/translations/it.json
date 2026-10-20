@@ -400,7 +400,7 @@
     },
     "legacy_yaml_imported": {
       "title": "Configurazione myhome.yaml importata per {gateway}",
-      "description": "Le configurazioni dei dispositivi da `myhome.yaml` per {gateway} sono state importate e salvate nelle opzioni della voce di configurazione di Home Assistant."
+      "description": "La configurazione dei dispositivi in `myhome.yaml` per {gateway} è stata copiata nelle opzioni della voce di configurazione di Home Assistant. Finché `myhome.yaml` esiste resta il riferimento e la copia ne segue le modifiche. Se il file viene rimosso o diventa illeggibile, i dispositivi mantengono la configurazione dell'ultima copia."
     }
   },
   "exceptions": {

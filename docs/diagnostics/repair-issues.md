@@ -340,8 +340,11 @@ Automatically, when only one gateway has sound zones.
 **Fixable via UI**: No
 
 ### What it means
-When the integration validates a legacy `myhome.yaml` file for a gateway for the first time, it automatically imports and persists the validated platform device definitions into `ConfigEntry.options["migrated_yaml_platforms"]`. This ensures your configured devices, custom travel times, and feature flags continue to load cleanly even after `myhome.yaml` is removed from disk.
+The first time the integration reads a valid `myhome.yaml` section for a gateway, it copies the validated device definitions into the gateway's config entry options (`migrated_yaml_platforms`) and raises this notice once.
+
+- While `myhome.yaml` exists, the file stays in charge. On every start the copy is refreshed if the file changed; an empty section for the gateway (`<mac>: {}`) empties it.
+- If the file is removed, cannot be parsed, fails validation, or no longer has a section for this gateway, the gateway's devices load from the last copy instead, including their travel times and feature flags.
 
 ### How to resolve
-This notice is informational. Once you have verified your entities in Home Assistant, you can safely archive or remove `myhome.yaml` and dismiss the repair notice.
+This notice is informational. Once you have verified your entities in Home Assistant, you can archive or remove `myhome.yaml` and dismiss the notice.
 

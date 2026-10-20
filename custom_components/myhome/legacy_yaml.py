@@ -4,12 +4,14 @@ from __future__ import annotations
 import copy
 import os
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_MAC, Platform
+from homeassistant.const import CONF_MAC, CONF_NAME, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.json import json_bytes
+from homeassistant.util.json import json_loads
 from homeassistant.util.yaml import loader as yaml_loader
 
 from . import validate
@@ -23,6 +25,7 @@ from .const import (
     LOGGER,
     PLATFORMS,
 )
+from .repairs import async_create_legacy_yaml_imported_issue
 
 
 def _read_legacy_yaml(
@@ -40,6 +43,8 @@ def _read_legacy_yaml(
         return target_path, None, err
 
 
+# The validated myhome.yaml platforms of a gateway, kept in its entry options so its
+# devices keep their configuration once myhome.yaml is gone or unreadable (#733).
 CONF_MIGRATED_YAML_PLATFORMS = "migrated_yaml_platforms"
 
 
@@ -48,10 +53,13 @@ def _apply_yaml_platforms(
     configured_platforms: dict[str, dict[str, dict[str, Any]]],
 ) -> None:
     """Populate configured_platforms from validated YAML platform mappings."""
+    # One memo for the whole copy: a device the validator files under several keys
+    # (climate zone aliases, the button platform) stays one object.
+    memo: dict[int, Any] = {}
     for plat, devices in yaml_platforms.items():
         if plat in configured_platforms and isinstance(devices, dict):
             for d_id, d_cfg in devices.items():
-                runtime_cfg = copy.deepcopy(d_cfg) if isinstance(d_cfg, dict) else d_cfg
+                runtime_cfg = copy.deepcopy(d_cfg, memo)
                 configured_platforms[plat][d_id] = runtime_cfg
                 if isinstance(runtime_cfg, dict):
                     who, dash, clean_id = d_id.partition("-")
@@ -71,35 +79,78 @@ def _apply_yaml_platforms(
                             configured_platforms[plat][f"zone_{clean_z}"] = runtime_cfg
 
 
+def _snapshot(
+    yaml_platforms: dict[str, dict[str, dict[str, Any]]],
+) -> dict[str, dict[str, Any]]:
+    """The validated platforms as plain JSON, the way entry options store them."""
+    return cast(
+        "dict[str, dict[str, Any]]",
+        json_loads(json_bytes({p: d for p, d in yaml_platforms.items() if isinstance(d, dict)})),
+    )
+
+
+def _restore_shared_devices(
+    snapshot: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Make equal device dicts of a stored snapshot one object again.
+
+    JSON storage turns the aliases of a device into separate copies; the live
+    myhome.yaml path hands out one object per device.
+    """
+    seen: dict[bytes, Any] = {}
+    restored: dict[str, dict[str, Any]] = {}
+    for plat, devices in snapshot.items():
+        restored[plat] = {
+            d_id: seen.setdefault(json_bytes(d_cfg), d_cfg) if isinstance(d_cfg, dict) else d_cfg
+            for d_id, d_cfg in devices.items()
+        }
+    return restored
+
+
 def migrate_legacy_yaml_to_entry_options(
     hass: HomeAssistant,
     entry: ConfigEntry,
     yaml_platforms: dict[str, dict[str, dict[str, Any]]],
 ) -> bool:
-    """Persist validated legacy YAML platforms into ConfigEntry.options once."""
-    if not yaml_platforms or CONF_MIGRATED_YAML_PLATFORMS in entry.options:
-        return False
-    if hass.config_entries.async_get_entry(entry.entry_id) is None:
-        return False
-    clean_platforms = {
-        plat: {
-            d_id: copy.deepcopy(d_cfg) if isinstance(d_cfg, dict) else d_cfg
-            for d_id, d_cfg in devices.items()
-        }
-        for plat, devices in yaml_platforms.items()
-        if isinstance(devices, dict)
-    }
-    new_options = {
-        **dict(entry.options),
-        CONF_MIGRATED_YAML_PLATFORMS: clean_platforms,
-    }
-    hass.config_entries.async_update_entry(entry, options=new_options)
-    if hasattr(hass, "data"):
-        from .repairs import async_create_legacy_yaml_imported_issue
+    """Keep a copy of the validated myhome.yaml platforms in the entry options.
 
-        gw_name = str(entry.data.get("name") or entry.data.get(CONF_MAC) or entry.entry_id)
+    The first copy raises the ``legacy_yaml_imported`` notice. Every later boot that
+    reads myhome.yaml refreshes the copy when the file changed, so removing the file
+    keeps its latest content rather than the one of the upgrade. Returns whether the
+    options changed.
+    """
+    snapshot = _snapshot(yaml_platforms)
+    previous = entry.options.get(CONF_MIGRATED_YAML_PLATFORMS)
+    if snapshot == previous or (previous is None and not any(snapshot.values())):
+        return False
+    hass.config_entries.async_update_entry(
+        entry, options={**entry.options, CONF_MIGRATED_YAML_PLATFORMS: snapshot}
+    )
+    if previous is None:
+        gw_name = str(entry.data.get(CONF_NAME) or entry.data.get(CONF_MAC) or entry.entry_id)
         async_create_legacy_yaml_imported_issue(hass, entry.entry_id, gw_name)
+    else:
+        LOGGER.info(
+            "myhome.yaml changed for gateway %s; updated the imported copy",
+            entry.data.get(CONF_MAC),
+        )
     return True
+
+
+def _apply_imported_copy(
+    entry: ConfigEntry,
+    configured_platforms: dict[str, dict[str, dict[str, Any]]],
+) -> None:
+    """Fall back to the copy of myhome.yaml imported into the entry options."""
+    imported = entry.options.get(CONF_MIGRATED_YAML_PLATFORMS)
+    if not isinstance(imported, dict) or not any(imported.values()):
+        return
+    _apply_yaml_platforms(_restore_shared_devices(imported), configured_platforms)
+    LOGGER.info(
+        "Using the imported copy of myhome.yaml for gateway %s: the file is missing, "
+        "unreadable or has no section for this gateway",
+        entry.data.get(CONF_MAC),
+    )
 
 
 async def load_legacy_myhome_yaml(
@@ -108,7 +159,23 @@ async def load_legacy_myhome_yaml(
     configured_platforms: dict[str, dict[str, dict[str, Any]]],
     platforms: Sequence[Platform | str] = PLATFORMS,
 ) -> None:
-    """Load legacy myhome.yaml if present for seamless backward-compatibility."""
+    """Load legacy myhome.yaml if present for seamless backward-compatibility.
+
+    When the file yields no section for this gateway (missing, empty, unparsable,
+    invalid, or without this gateway's MAC), the copy imported into the entry
+    options takes its place.
+    """
+    if not await _load_live_yaml(hass, entry, configured_platforms, platforms):
+        _apply_imported_copy(entry, configured_platforms)
+
+
+async def _load_live_yaml(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    configured_platforms: dict[str, dict[str, dict[str, Any]]],
+    platforms: Sequence[Platform | str],
+) -> bool:
+    """Apply this gateway's section of myhome.yaml; whether the file had one."""
     _opt_path = entry.options.get(CONF_FILE_PATH) or entry.options.get("file_path")
     primary_path = str(_opt_path) if _opt_path else hass.config.path("myhome.yaml")
     fallback_path = "/config/myhome.yaml" if primary_path != "/config/myhome.yaml" else None
@@ -121,79 +188,77 @@ async def load_legacy_myhome_yaml(
         LOGGER.error(
             "Failed to parse myhome.yaml from %s: %s", primary_path, e
         )
-        return
+        return False
 
     if parse_err is not None:
         LOGGER.error(
             "Failed to parse myhome.yaml from %s: %s", resolved_path, parse_err
         )
-        return
+        return False
 
     if resolved_path is None or not raw_yaml or not isinstance(raw_yaml, dict):
-        migrated = entry.options.get(CONF_MIGRATED_YAML_PLATFORMS)
-        if isinstance(migrated, dict) and migrated:
-            _apply_yaml_platforms(migrated, configured_platforms)
-        return
+        return False
 
     try:
-        if raw_yaml and isinstance(raw_yaml, dict):
-            # Support single-gateway config without MAC address header at root level
-            if any(plat in raw_yaml for plat in platforms):
-                configured_gateways = [
-                    e
-                    for e in hass.config_entries.async_entries(DOMAIN)
-                    if not getattr(e, "disabled_by", None)
-                ]
-                if len(configured_gateways) <= 1:
-                    raw_yaml = {entry.data[CONF_MAC]: raw_yaml}
-                else:
-                    LOGGER.error(
-                        "myhome.yaml contains top-level platform configurations without a gateway MAC, "
-                        "but %d gateways are configured. Please specify the gateway MAC address header in myhome.yaml.",
-                        len(configured_gateways),
-                    )
-                    raw_yaml = {}
-
-            # Ensure every gateway has mac and every device has where set if omitted
-            for gw_key, gw_val in raw_yaml.items():
-                if isinstance(gw_val, dict):
-                    if CONF_MAC not in gw_val:
-                        gw_val[CONF_MAC] = str(gw_key)
-                    for plat, devs in gw_val.items():
-                        # climate devices are addressed by `zone` (default "#0"); the schema
-                        # has no `where` for them and rejects the whole file on it.
-                        if plat == "climate" or not isinstance(devs, dict):
-                            continue
-                        for d_key, d_val in devs.items():
-                            if isinstance(d_val, dict) and "where" not in d_val and "zone" not in d_val:
-                                d_val["where"] = str(d_key)
-
-            _validated = validate.config_schema(raw_yaml)
-            formatted_entry_mac = dr.format_mac(entry.data[CONF_MAC])
-            mac_key = None
-            if formatted_entry_mac in _validated:
-                mac_key = formatted_entry_mac
-            elif entry.data[CONF_MAC] in _validated:
-                mac_key = entry.data[CONF_MAC]
+        # Support single-gateway config without MAC address header at root level
+        if any(plat in raw_yaml for plat in platforms):
+            configured_gateways = [
+                e
+                for e in hass.config_entries.async_entries(DOMAIN)
+                if not getattr(e, "disabled_by", None)
+            ]
+            if len(configured_gateways) <= 1:
+                raw_yaml = {entry.data[CONF_MAC]: raw_yaml}
             else:
-                for k in _validated:
-                    try:
-                        if dr.format_mac(k) == formatted_entry_mac:
-                            mac_key = k
-                            break
-                    except Exception:
-                        continue
-            if mac_key and mac_key in _validated:
-                yaml_platforms = _validated[mac_key].get(CONF_PLATFORMS, {})
-                _apply_yaml_platforms(yaml_platforms, configured_platforms)
-                migrate_legacy_yaml_to_entry_options(hass, entry, yaml_platforms)
-                LOGGER.info(
-                    "Loaded legacy myhome.yaml configuration for gateway %s (%s platforms)",
-                    entry.data[CONF_MAC],
-                    len(yaml_platforms),
+                LOGGER.error(
+                    "myhome.yaml contains top-level platform configurations without a gateway MAC, "
+                    "but %d gateways are configured. Please specify the gateway MAC address header in myhome.yaml.",
+                    len(configured_gateways),
                 )
+                return False
+
+        # Ensure every gateway has mac and every device has where set if omitted
+        for gw_key, gw_val in raw_yaml.items():
+            if isinstance(gw_val, dict):
+                if CONF_MAC not in gw_val:
+                    gw_val[CONF_MAC] = str(gw_key)
+                for plat, devs in gw_val.items():
+                    # climate devices are addressed by `zone` (default "#0"); the schema
+                    # has no `where` for them and rejects the whole file on it.
+                    if plat == "climate" or not isinstance(devs, dict):
+                        continue
+                    for d_key, d_val in devs.items():
+                        if isinstance(d_val, dict) and "where" not in d_val and "zone" not in d_val:
+                            d_val["where"] = str(d_key)
+
+        _validated = validate.config_schema(raw_yaml)
+        formatted_entry_mac = dr.format_mac(entry.data[CONF_MAC])
+        mac_key = None
+        if formatted_entry_mac in _validated:
+            mac_key = formatted_entry_mac
+        elif entry.data[CONF_MAC] in _validated:
+            mac_key = entry.data[CONF_MAC]
+        else:
+            for k in _validated:
+                try:
+                    if dr.format_mac(k) == formatted_entry_mac:
+                        mac_key = k
+                        break
+                except Exception:
+                    continue
+        if mac_key is None:
+            return False
+        yaml_platforms = _validated[mac_key].get(CONF_PLATFORMS, {})
+        _apply_yaml_platforms(yaml_platforms, configured_platforms)
+        migrate_legacy_yaml_to_entry_options(hass, entry, yaml_platforms)
+        LOGGER.info(
+            "Loaded legacy myhome.yaml configuration for gateway %s (%s platforms)",
+            entry.data[CONF_MAC],
+            len(yaml_platforms),
+        )
+        return True
     except Exception as e:
         LOGGER.error(
             "Failed to parse myhome.yaml from %s: %s", resolved_path, e
         )
-
+        return False
