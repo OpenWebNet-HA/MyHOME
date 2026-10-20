@@ -2513,6 +2513,7 @@
 <ul>
 <li><strong>You do NOT need to delete <code>myhome.yaml</code> immediately</strong>: The v2 runtime reads existing <code>myhome.yaml</code> files on startup to preserve custom entity names and map physical SCS lighting groups (<code>WHERE = #G</code>).</li>
 <li><strong>Transitioning to UI</strong>: You can gradually move custom friendly names and Area assignments directly into the Home Assistant UI (<strong>Settings → Devices &amp; Services → Entities</strong>). Once your entities are organized in the UI, <code>myhome.yaml</code> can be removed.</li>
+<li><strong>A copy is kept in the gateway's options</strong>: the first start that reads a valid <code>myhome.yaml</code> section copies it into the gateway's config entry and raises the <a href="../../diagnostics/repair-issues/#legacy-yaml-configuration-imported">Legacy YAML Configuration Imported</a> notice. The copy follows later edits of the file and takes its place once the file is removed or unreadable, so devices keep settings such as travel times and feature flags.</li>
 </ul>
 <hr />
 <h2 id="rollback-procedure">⏪ Rollback Procedure<a class="headerlink" href="#rollback-procedure" title="Permanent link">&para;</a></h2>

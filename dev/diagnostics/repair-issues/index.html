@@ -1882,6 +1882,45 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#legacy-yaml-configuration-imported" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Legacy YAML Configuration Imported
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Legacy YAML Configuration Imported">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-it-means_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it means
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-to-resolve_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to resolve
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3334,6 +3373,45 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#legacy-yaml-configuration-imported" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Legacy YAML Configuration Imported
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Legacy YAML Configuration Imported">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-it-means_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it means
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-to-resolve_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to resolve
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3634,6 +3712,20 @@ $$\Delta = S_{\text{sec}} \setminus S_{\text{pri}}$$
 <p>Keep the audio matrix on one gateway until #426 is fixed, and remove the sound zones of the other gateway.</p>
 <h3 id="how-it-clears_5">How it clears<a class="headerlink" href="#how-it-clears_5" title="Permanent link">&para;</a></h3>
 <p>Automatically, when only one gateway has sound zones.</p>
+<hr />
+<h2 id="legacy-yaml-configuration-imported">Legacy YAML Configuration Imported<a class="headerlink" href="#legacy-yaml-configuration-imported" title="Permanent link">&para;</a></h2>
+<p><strong>Repair Key</strong>: <code>legacy_yaml_imported</code><br />
+<strong>Severity</strong>: <code>WARNING</code><br />
+<strong>Auto-Resolving</strong>: Informational<br />
+<strong>Fixable via UI</strong>: No</p>
+<h3 id="what-it-means_15">What it means<a class="headerlink" href="#what-it-means_15" title="Permanent link">&para;</a></h3>
+<p>The first time the integration reads a valid <code>myhome.yaml</code> section for a gateway, it copies the validated device definitions into the gateway's config entry options (<code>migrated_yaml_platforms</code>) and raises this notice once.</p>
+<ul>
+<li>While <code>myhome.yaml</code> exists, the file stays in charge. On every start the copy is refreshed if the file changed; an empty section for the gateway (<code>&lt;mac&gt;: {}</code>) empties it.</li>
+<li>If the file is removed, cannot be parsed, fails validation, or no longer has a section for this gateway, the gateway's devices load from the last copy instead, including their travel times and feature flags.</li>
+</ul>
+<h3 id="how-to-resolve_15">How to resolve<a class="headerlink" href="#how-to-resolve_15" title="Permanent link">&para;</a></h3>
+<p>This notice is informational. Once you have verified your entities in Home Assistant, you can archive or remove <code>myhome.yaml</code> and dismiss the notice.</p>
 
 
 
