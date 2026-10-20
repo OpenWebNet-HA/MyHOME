@@ -422,7 +422,7 @@
       "message": "{name}: nessuno stato di arresto dall'attuatore entro {timeout} s - potrebbe non segnalare lo stato; imposta travel_time manualmente"
     },
     "cover_reports_position": {
-      "message": "{name} segnala la propria posizione; la calibrazione del tempo di corsa non si applica"
+      "message": "{name} segnala la propria posizione (advanced: true in myhome.yaml); la calibrazione del tempo di corsa non si applica. Rimuovere advanced: true da myhome.yaml per gli attuatori temporizzati standard (es. F411)."
     },
     "calibration_in_progress": {
       "message": "{name} è già in fase di calibrazione"

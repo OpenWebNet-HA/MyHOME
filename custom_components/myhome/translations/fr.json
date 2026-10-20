@@ -422,7 +422,7 @@
       "message": "{name} : aucun état d'arrêt de l'actionneur dans les {timeout} s - il ne signale peut-être pas son état ; définissez travel_time manuellement"
     },
     "cover_reports_position": {
-      "message": "{name} signale sa position ; la calibration du temps de course ne s'y applique pas"
+      "message": "{name} signale sa position (advanced: true dans myhome.yaml) ; la calibration du temps de course ne s'y applique pas. Retirez advanced: true de myhome.yaml pour un actionneur temporisé standard (ex. F411)."
     },
     "calibration_in_progress": {
       "message": "{name} est déjà en cours de calibration"

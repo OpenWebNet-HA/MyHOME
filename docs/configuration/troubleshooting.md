@@ -82,7 +82,9 @@ Log: `Could not send message *#4*<ZPP>*15##`. Probe addresses (`WHERE ≥ 100`) 
 
 ### Cover position is wrong
 
-Timed covers estimate position from the travel time. Calibrate it (`myhome.calibrate_cover` or the device's **Calibrate travel time** button) or measure it with a stopwatch and save it with `myhome.set_cover_travel_time`. A full open or close resynchronises the estimate. Position-reporting actuators (dimension 10) are exact; if yours reports position but the entity does not follow, set `advanced_shutter: true` in `myhome.yaml`.
+- **Timed covers (`F411/2`, `F411/4`, `F411U2`, standard `F401`)**: Timed covers estimate position from the travel time. Calibrate it (`myhome.calibrate_cover` or the device's **Calibrate travel time** button) or measure it with a stopwatch and save it with `myhome.set_cover_travel_time`. A full open or close resynchronises the estimate.
+- **Cover stuck at `50%`, no `travel_time_down` / `travel_time_up` attributes, and calibration fails with `"{name} reports its position"`**: The cover has `advanced: true` (or `advanced_shutter: true` / `strategy: native`) set in `/config/myhome.yaml` on a standard actuator (such as an `F411/2` or `F411/4`) that does not support OpenWebNet Dimension 10 position reporting (`*#2*<WHERE>*10##` times out at startup). Remove `advanced: true` / `advanced_shutter: true` from `/config/myhome.yaml` and reload the MyHOME integration so the cover uses the timed position engine and accepts travel-time calibration ([#761](https://github.com/OpenWebNet-HA/MyHOME/issues/761)).
+- **Position-reporting actuators (Dimension 10)**: Actuators that natively report position (`67557`, `H4661M2`, `LN4661M2`, `F401` in advanced mode) are exact; if yours reports position on the bus (`*#2*<WHERE>*10*...##`) but the entity does not follow, set `advanced_shutter: true` in `myhome.yaml`.
 
 ### Calibration fails with "no stop status from the actuator"
 

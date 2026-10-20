@@ -433,6 +433,16 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         # The resolved strategy decides; the entity's code paths follow it, so an
         # explicit strategy next to a contradicting flag cannot mix the two.
         self._advanced = isinstance(self._strategy, NativePositionStrategy)
+        if self._advanced and isinstance(model, str) and model.strip().upper().startswith(("F411", "BT-F411")):
+            LOGGER.warning(
+                "%s Cover %s (%s) is configured with advanced: true / strategy: native, "
+                "but %s is a standard timed actuator that does not report position (Dimension 10); "
+                "remove advanced: true from myhome.yaml",
+                gateway.log_id,
+                self._full_where,
+                name,
+                model.strip(),
+            )
         if isinstance(self._strategy, VenetianTiltStrategy):
             self._slat_tilt = True
         elif isinstance(self._strategy, SimpleUpDownStopStrategy):
@@ -1036,7 +1046,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """
         if self._advanced:
             raise HomeAssistantError(
-                f"{self._display_name} reports its position; calibration is not needed",
+                f"{self._display_name} reports its position (advanced: true in myhome.yaml); calibration is not needed — remove advanced: true for standard actuators such as F411",
                 translation_domain=DOMAIN,
                 translation_key="cover_reports_position",
                 translation_placeholders={"name": self._display_name},
@@ -1197,7 +1207,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             )
         if self._advanced and (has_travel or min_motor_pulse is not None or slat_time is None):
             raise HomeAssistantError(
-                f"{self._display_name} reports its position; travel time cannot be set",
+                f"{self._display_name} reports its position (advanced: true in myhome.yaml); travel time cannot be set — remove advanced: true for standard actuators such as F411",
                 translation_domain=DOMAIN,
                 translation_key="cover_reports_position",
                 translation_placeholders={"name": self._display_name},
@@ -1312,7 +1322,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Reset travel times back to default or YAML configuration."""
         if self._advanced and not self._slat_tilt:
             raise HomeAssistantError(
-                f"{self._display_name} reports its position; calibration is not applicable",
+                f"{self._display_name} reports its position (advanced: true in myhome.yaml); calibration is not applicable — remove advanced: true for standard actuators such as F411",
                 translation_domain=DOMAIN,
                 translation_key="cover_reports_position",
                 translation_placeholders={"name": self._display_name},

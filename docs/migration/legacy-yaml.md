@@ -83,15 +83,13 @@ cover:
       living_shutter:
         where: '11'
         name: Living room shutter
-        advanced: True
-        manufacturer: Legrand
-        model: 67557
+        manufacturer: BTicino
+        model: F411/2
       kitchen_shutter:
         where: '12'
         name: Kitchen shutter
-        advanced: True
-        manufacturer: Legrand
-        model: 67557
+        manufacturer: BTicino
+        model: F411/4
       dining_room_shutter:
         where: '13'
         name: Dining room shutter
@@ -100,7 +98,7 @@ cover:
         model: 67557
 ```
 The configuration remains similar to lights and switches.  
-The specificity is the optional `advanced` boolean (defaulting to `False`), you need to set it to `True` if you have 'advanced' cover modules that keep track of and return position values. (Only "Céliane 67557", "Axolute H4661M2", "Livinglight LN4661M2" and the "F401" DIN module are capable of this)
+The specificity is the optional `advanced` boolean (defaulting to `False`): **leave it omitted (or `False`) for standard timed relay actuators such as `F411/2`, `F411/4`, and `F411U2`**. Only set `advanced: True` if you have hardware position-reporting cover modules that answer OpenWebNet Dimension 10 queries ("Céliane 67557", "Axolute H4661M2", "Livinglight LN4661M2", and the "F401" DIN module in advanced mode). Setting `advanced: True` on a standard `F411` actuator disables travel-time position estimation, hides `travel_time_down` / `travel_time_up`, leaves the cover stuck at `50%`, and refuses travel-time calibration.
 
 ### Binary sensors
 Dry contacts and IR sensors are part of WHO 25

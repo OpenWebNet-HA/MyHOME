@@ -219,11 +219,18 @@ def test_yaml_travel_time_is_reported_as_yaml_source(hass, gateway):
 # ── refusals and failures ────────────────────────────────────────────────
 
 
-async def test_advanced_cover_refuses_calibration(hass, gateway):
+async def test_advanced_cover_refuses_calibration(hass, gateway, caplog):
     cover = MyHOMECover(hass=hass, name="Pos", entity_name=None, device_id="31", who="2", where="31", interface=None,
                         advanced=True, manufacturer="BTicino", model="F401", gateway=gateway)
-    with pytest.raises(HomeAssistantError, match="reports its position"):
+    with pytest.raises(HomeAssistantError, match=r"reports its position.*advanced: true.*F411"):
         await cover.async_calibrate()
+
+    # Issue #761: configuring a standard timed F411 actuator with advanced=True logs a startup warning.
+    caplog.clear()
+    MyHOMECover(hass=hass, name="Volet Salon", entity_name=None, device_id="51", who="2", where="51", interface=None,
+                advanced=True, manufacturer="BTicino", model="F411/2", gateway=gateway)
+    assert "F411/2 is a standard timed actuator that does not report position" in caplog.text
+    assert "remove advanced: true from myhome.yaml" in caplog.text
 
 
 async def test_set_position_refused_while_calibrating(hass, gateway, clock, fake_time, sleeps):
