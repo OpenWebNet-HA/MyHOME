@@ -18,7 +18,7 @@ from OWNd.message import (
     OWNLightingEvent,
     OWNMessage,
 )
-from OWNd.profiles import MH202Profile
+from OWNd.profiles import F461Profile, MH202Profile
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome.button import async_setup_entry as button_setup_entry
@@ -58,7 +58,9 @@ def _make_gateway(profile=None, mac: str = "00:03:50:aa:bb:cc"):
     gw.delegated_away_whos = set()
     gw.send = AsyncMock(return_value=True)
     gw.send_status_request = AsyncMock(return_value=True)
-    gw._gateway = SimpleNamespace(profile=profile or MH202Profile())
+    # F461 is the only OWNd profile whose expose injection flags are verified.
+    gw.profile = profile or F461Profile()
+    gw._gateway = SimpleNamespace(profile=gw.profile)
     return gw
 
 
@@ -1450,15 +1452,15 @@ async def test_who18_dim1200_read_query_and_active_streaming_expiry(hass: HomeAs
 async def test_shared_bus_secondary_gateway_delegation_and_phantom_suppression(hass: HomeAssistant):
     """Verify WHO=18 delegated to a secondary gateway uses secondary profile and suppresses phantoms."""
     from homeassistant.helpers.dispatcher import async_dispatcher_send
-    from OWNd.profiles import F454Profile
 
     hass.states.async_set("sensor.p1_power", "1800")
 
-    # Primary gateway has supports_dimension_response_injection=False overridden
+    # The primary gateway rejects WHO=18 reports; only the delegated secondary takes them
     gw_primary = _make_gateway(
         profile=SimpleNamespace(
             model_name="F455",
             supports_dimension_response_injection=False,
+            supports_who18_response_injection=False,
         ),
         mac="00:03:50:11:11:11",
     )
@@ -1471,8 +1473,8 @@ async def test_shared_bus_secondary_gateway_delegation_and_phantom_suppression(h
         ],
     )
 
-    # Secondary gateway is an F454 on the same bus with WHO=18 delegated to it
-    gw_secondary = _make_gateway(profile=F454Profile(), mac="00:03:50:22:22:22")
+    # Secondary gateway is an F461 on the same bus with WHO=18 delegated to it
+    gw_secondary = _make_gateway(profile=F461Profile(), mac="00:03:50:22:22:22")
     gw_secondary.bus_group = "00:03:50:11:11:11"
     gw_secondary.primary_gateway_mac = "00:03:50:11:11:11"
     gw_secondary.delegated_whos = {18}
@@ -1487,8 +1489,7 @@ async def test_shared_bus_secondary_gateway_delegation_and_phantom_suppression(h
     await mgr.async_start()
     await mgr.async_sync_all()
 
-    # Because WHO=18 is delegated to the F454 secondary (which supports dimension response injection),
-    # _effective_profile(18) allows the frame to be built and sent!
+    # WHO=18 is delegated to the F461 secondary, whose profile accepts WHO=18 reports
     assert [str(c.args[0]) for c in gw_primary.send_status_request.call_args_list] == [
         "*#18*51*113*1800##"
     ]
@@ -2932,6 +2933,69 @@ async def test_expose_script_helper_templates_conditions_startup_validation_and_
     assert ("notify", "send", {"msg": "dyn_13"}) in recorded
     assert (dyn_binding.key, "turn_on_action") in mgr_multi._action_scripts
     await mgr_multi.async_stop()
+
+
+@pytest.mark.asyncio
+async def test_unverified_gateway_disables_who4_who18_with_one_warning(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+):
+    """An unset OWNd injection flag disables WHO=4/18 bindings and is logged once per binding."""
+    hass.states.async_set("sensor.temp", "21.5")
+    hass.states.async_set("sensor.power", "450")
+    hass.states.async_set("light.lamp", "on")
+    expose_list = [
+        {"who": 4, "where": "050", "entity_id": "sensor.temp"},
+        {"who": 18, "where": "51", "dimension": 113, "entity_id": "sensor.power"},
+        {"who": 1, "where": "25", "entity_id": "light.lamp"},
+    ]
+    gw = _make_gateway(profile=MH202Profile())
+    entry = _make_entry(hass, gateway=gw, expose_list=expose_list)
+    mgr = ExposeManager(hass, entry)
+    await mgr.async_start()
+
+    caplog.clear()
+    await mgr.async_sync_all()
+    await mgr.async_sync_all()
+    sent = [str(c.args[0]) for c in gw.send_status_request.call_args_list]
+    assert sent == ["*1*1*25##", "*1*1*25##"]
+    warnings = [r.getMessage() for r in caplog.records if "is disabled" in r.getMessage()]
+    assert warnings == [
+        "Expose WHO=4 WHERE=050 dimension=0 (sensor.temp) is disabled: gateway MH202 is unverified for "
+        "WHO 4 #0 temperature writes (supports_who4_command_injection is unset in OWNd). "
+        "Nothing is sent for this binding.",
+        "Expose WHO=18 WHERE=51 dimension=113 (sensor.power) is disabled: gateway MH202 is unverified for "
+        "WHO 18 dimension reports (supports_who18_response_injection is unset in OWNd). "
+        "Nothing is sent for this binding.",
+    ]
+
+    # A gateway that rejects the frames, or no profile yet, gives its own reason
+    gw.profile = SimpleNamespace(
+        model_name="MH200N",
+        supports_dimension_response_injection=False,
+        supports_who4_command_injection=False,
+        supports_who18_response_injection=False,
+    )
+    assert mgr._injection_block_reason(4) == (
+        "gateway MH200N does not accept WHO 4 #0 temperature writes (supports_who4_command_injection=False)"
+    )
+    gw.profile = None
+    assert mgr._injection_block_reason(18) == (
+        "the gateway profile is not known yet, so WHO 18 dimension reports are unverified"
+    )
+    assert mgr._injection_block_reason(1) is None
+
+    # Once the model resolves to a verified profile, the bindings send and nothing more is logged
+    gw.profile = F461Profile()
+    gw.send_status_request.reset_mock()
+    caplog.clear()
+    await mgr.async_sync_all()
+    assert [str(c.args[0]) for c in gw.send_status_request.call_args_list] == [
+        "*#4*050*#0*0215##",
+        "*#18*51*113*450##",
+        "*1*1*25##",
+    ]
+    assert "is disabled" not in caplog.text
+    await mgr.async_stop()
 
 
 

@@ -114,6 +114,12 @@ DEFAULT_MEDIA_PLAYER_ON_STATES: tuple[str, ...] = (
     "buffering",
 )
 TX_ECHO_GUARD_WINDOW_S: float = 1.5
+# OWNd profile flag gating each injected WHO, and the frames it covers. OWNd leaves a
+# flag unset (None) when no capture or oracle verdict exists for that gateway family.
+_INJECTION_FLAGS: dict[int, tuple[str, str]] = {
+    4: ("supports_who4_command_injection", "WHO 4 #0 temperature writes"),
+    18: ("supports_who18_response_injection", "WHO 18 dimension reports"),
+}
 
 
 @dataclass
@@ -185,7 +191,7 @@ def _coerce_action_list(raw: Any) -> list[dict[str, Any]] | None:
 
 
 def _iter_static_service_calls(
-    actions: list[dict[str, Any]],
+    actions: list[Any],
 ) -> Iterator[tuple[str, str]]:
     """Yield static (domain, service) pairs from a validated script action sequence."""
     for item in actions:
@@ -513,6 +519,7 @@ class ExposeManager:
             tuple[tuple[int, str, int | None], str], Script
         ] = {}
         self._unsub_ha_started: CALLBACK_TYPE | None = None
+        self._warned_blocked: set[tuple[tuple[int, str, int | None], str]] = set()
         self._started = False
 
         self._load_bindings(yaml_configs)
@@ -768,9 +775,11 @@ class ExposeManager:
         self._tx_echo_guard.clear()
         self._pre_move_stop_guard.clear()
         self._last_rx_by_frame.clear()
+        self._warned_blocked.clear()
 
     async def async_sync_all(self) -> None:
         """Send an initial state/clock sync for all configured bindings."""
+        self._warn_blocked_bindings()
         for binding in self.bindings:
             if binding.who == 13 and binding.periodic_send <= 0:
                 continue
@@ -1038,24 +1047,47 @@ class ExposeManager:
             sec = get_sec(who) if callable(get_sec) else None
             if sec is not None and getattr(sec, "is_connected", False) is True:
                 target_gw = sec
-
-        for candidate in (
-            getattr(target_gw, "profile", None),
-            getattr(getattr(target_gw, "_gateway", None), "profile", None),
-            getattr(getattr(target_gw, "gateway", None), "profile", None),
-        ):
-            if candidate is not None and (
-                isinstance(
-                    getattr(candidate, "supports_dimension_response_injection", None),
-                    bool,
-                )
-                or isinstance(
-                    getattr(candidate, "supports_who4_command_injection", None),
-                    bool,
-                )
-            ):
-                return candidate
         return getattr(target_gw, "profile", None)
+
+    def _injection_block_reason(self, who: int) -> str | None:
+        """Return why the gateway carrying ``who`` cannot take expose frames, or None when it can.
+
+        Only WHO 4 and WHO 18 are gated. An unset (None) OWNd flag means the gateway
+        family is unverified, and is treated as unsupported.
+        """
+        gate = _INJECTION_FLAGS.get(who)
+        if gate is None:
+            return None
+        flag_name, frames = gate
+        profile = self._effective_profile(who)
+        if profile is None:
+            return f"the gateway profile is not known yet, so {frames} are unverified"
+        if who == 4 and getattr(profile, "supports_dimension_response_injection", None) is True:
+            return None
+        flag = getattr(profile, flag_name, None)
+        if flag is True:
+            return None
+        model = getattr(profile, "model_name", None) or type(profile).__name__
+        if flag is False:
+            return f"gateway {model} does not accept {frames} ({flag_name}=False)"
+        return f"gateway {model} is unverified for {frames} ({flag_name} is unset in OWNd)"
+
+    @callback
+    def _warn_blocked_bindings(self) -> None:
+        """Warn once per binding and reason when its gateway cannot take its frames."""
+        for binding in self.bindings:
+            reason = self._injection_block_reason(binding.who)
+            if reason is None or (binding.key, reason) in self._warned_blocked:
+                continue
+            self._warned_blocked.add((binding.key, reason))
+            LOGGER.warning(
+                "Expose WHO=%s WHERE=%s dimension=%s (%s) is disabled: %s. Nothing is sent for this binding.",
+                binding.who,
+                binding.where,
+                binding.dimension,
+                binding.entity_id,
+                reason,
+            )
 
     def _resolve_raw_value(
         self, binding: ExposeBinding
@@ -1265,21 +1297,16 @@ class ExposeManager:
             return frames, who2_val_key
 
         if binding.who == 4:
-            profile = self._effective_profile(4)
-            supports_dim_resp = (
-                False
-                if profile is None
-                else bool(
-                    getattr(profile, "supports_dimension_response_injection", False)
-                )
-            )
-            supports_cmd_inj = (
-                True
-                if profile is None
-                else bool(getattr(profile, "supports_who4_command_injection", True))
-            )
-            if not supports_dim_resp and not supports_cmd_inj:
+            if self._injection_block_reason(4) is not None:
                 return [], None
+            supports_dim_resp = (
+                getattr(
+                    self._effective_profile(4),
+                    "supports_dimension_response_injection",
+                    None,
+                )
+                is True
+            )
             if isinstance(raw, bool):
                 return [], None
             try:
@@ -1302,24 +1329,8 @@ class ExposeManager:
             return [OWNHeatingCommand.write_temperature(binding.where, temp_c)], temp_c
 
         if binding.who == 18:
-            profile = self._effective_profile(18)
-            if profile is not None:
-                who18_inj = getattr(
-                    profile, "supports_who18_response_injection", None
-                )
-                supports_who18 = (
-                    bool(who18_inj)
-                    if isinstance(who18_inj, bool)
-                    else bool(
-                        getattr(
-                            profile,
-                            "supports_dimension_response_injection",
-                            True,
-                        )
-                    )
-                )
-                if not supports_who18:
-                    return [], None
+            if self._injection_block_reason(18) is not None:
+                return [], None
             if isinstance(raw, bool):
                 return [], None
             try:
@@ -1431,8 +1442,8 @@ class ExposeManager:
                 "Expose service call %s.%s failed for WHO=%s WHERE=%s: %s",
                 domain,
                 service,
-                getattr(binding, "who", "?"),
-                getattr(binding, "where", "?"),
+                binding.who if binding is not None else "?",
+                binding.where if binding is not None else "?",
                 err,
             )
 
@@ -1480,8 +1491,8 @@ class ExposeManager:
                 LOGGER.error(
                     "Invalid expose %s for WHO=%s WHERE=%s: %s",
                     slot,
-                    getattr(binding, "who", "?"),
-                    getattr(binding, "where", "?"),
+                    binding.who if binding is not None else "?",
+                    binding.where if binding is not None else "?",
                     err,
                 )
                 return
@@ -1502,8 +1513,8 @@ class ExposeManager:
             LOGGER.error(
                 "Expose %s failed for WHO=%s WHERE=%s: %s",
                 slot,
-                getattr(binding, "who", "?"),
-                getattr(binding, "where", "?"),
+                binding.who if binding is not None else "?",
+                binding.where if binding is not None else "?",
                 err,
             )
         finally:
