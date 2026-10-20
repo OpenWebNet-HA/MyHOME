@@ -354,17 +354,18 @@ class MyHOMEScopeCover(MyHOMECover):
         direction = self._run_timeout_direction
         self._run_timeout = None
         self._run_timeout_direction = None
-        opening = self._attr_is_opening
+        opening = bool(self._attr_is_opening)
         if direction != ("open" if opening else "close" if self._attr_is_closing else None):
             return  # stopped or reversed meanwhile
         end = 100 if opening else 0
+        travel = self._travel_for(opening)
         at = time.monotonic()
         if self._run_started_at is not None:
-            at = max(at, self._run_started_at + self._travel_for(opening))
+            at = max(at, self._run_started_at + travel)
         confirmed = (
             not self._strategy.assumed_state
             and self._run_started_at is not None
-            and self._travel_for(opening) > 0
+            and travel > 0
         )
         self._freeze_position(at)
         # A full run by the model; the anchor may trail the timer by the queue delay.
