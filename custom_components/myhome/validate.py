@@ -117,6 +117,7 @@ from .const import (
     CONF_STATE_SENSOR,
     CONF_STEP_DOWN_ACTION,
     CONF_STEP_UP_ACTION,
+    CONF_STRATEGY,
     CONF_TRAVEL_TIME,
     CONF_TURN_OFF_ACTION,
     CONF_TURN_ON_ACTION,
@@ -126,6 +127,7 @@ from .const import (
     CONF_WHERE,
     CONF_WHO,
     CONF_ZONE,
+    COVER_STRATEGIES,
     DEFAULT_MIN_MOTOR_PULSE,
     DEFAULT_SLAT_TIME,
     MAX_SLAT_TIME,
@@ -534,13 +536,14 @@ cover_schema = MyHomeDeviceSchema(
             Optional(CONF_ACCESS): access_schema,
             Optional(CONF_ADVANCED_SHUTTER, default=False): Boolean(),
             Optional("advanced_shutter", default=False): Boolean(),
+            Optional(CONF_STRATEGY): In(list(COVER_STRATEGIES)),
             Optional(CONF_SLAT_TILT, default=False): Boolean(),
             Optional(CONF_SLAT_TIME): All(
                 Coerce(float), Range(min=MIN_SLAT_TIME, max=MAX_SLAT_TIME)
             ),
             Optional(CONF_TRAVEL_TIME, default=25): All(
                 Coerce(int),
-                Range(min=int(CALIBRATION_MIN_RUN), max=int(CALIBRATION_MAX_RUN)),
+                Any(0, Range(min=int(CALIBRATION_MIN_RUN), max=int(CALIBRATION_MAX_RUN))),
             ),
             Optional(CONF_MIN_MOTOR_PULSE, default=DEFAULT_MIN_MOTOR_PULSE): All(
                 Coerce(float), Range(min=CALIBRATION_MIN_MOTOR_PULSE, max=CALIBRATION_MAX_MOTOR_PULSE)
@@ -561,6 +564,22 @@ def _validate_cover_members(data: dict[str, typing.Any]) -> dict[str, typing.Any
             where = cfg.get(CONF_WHERE)
             if not where or not str(where).startswith("#"):
                 raise Invalid("Members can only be defined on a group cover (where must start with #)")
+        strategy = cfg.get(CONF_STRATEGY)
+        advanced = bool(cfg.get(CONF_ADVANCED_SHUTTER) or cfg.get("advanced_shutter"))
+        if strategy not in (None, "native") and advanced:
+            raise Invalid(f"strategy: {strategy} cannot be combined with advanced (use strategy: native)")
+        if strategy == "timed" and cfg.get(CONF_SLAT_TILT):
+            raise Invalid("strategy: timed cannot be combined with slat_tilt (use strategy: venetian)")
+        if strategy == "timed" and cfg.get(CONF_TRAVEL_TIME) == 0:
+            raise Invalid("strategy: timed requires a positive travel_time")
+        if strategy == "venetian":
+            cfg[CONF_SLAT_TILT] = True
+        elif strategy == "native":
+            cfg[CONF_ADVANCED_SHUTTER] = True
+        elif strategy == "simple" and cfg.get(CONF_SLAT_TILT):
+            raise Invalid("strategy: simple cannot be combined with slat_tilt")
+        if cfg.get(CONF_SLAT_TILT) and cfg.get(CONF_TRAVEL_TIME) == 0 and not cfg.get(CONF_ADVANCED_SHUTTER):
+            raise Invalid("slat_tilt requires a positive travel_time or advanced_shutter")
         if CONF_SLAT_TIME in cfg and not cfg.get(CONF_SLAT_TILT):
             raise Invalid("slat_time can only be defined on a cover with slat_tilt enabled")
         cfg.setdefault(CONF_SLAT_TIME, DEFAULT_SLAT_TIME)

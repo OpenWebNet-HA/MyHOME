@@ -29,7 +29,7 @@ RUNTIME_DATA_READERS = [
     "light.py", "switch.py", "cover.py", "climate.py", "binary_sensor.py", "sensor.py",
     "media_player.py", "button.py", "alarm_control_panel.py", "lock.py",
     "services.py", "websocket.py", "diagnostics.py", "myhome_device.py", "decoder_pool.py",
-    "cover_calibration.py",
+    "decoder_allocation.py", "cover_calibration.py",
 ]
 TRANSLATIONS_DIR = CUSTOM_COMPONENTS_DIR / "translations"
 
@@ -96,65 +96,66 @@ def check_discovery_flows(checker: StandardsChecker):
         checker.log_error("RULE_DISCOVERY", config_flow_file, 1, "config_flow.py not found")
         return
 
-    with open(config_flow_file, "r", encoding="utf-8") as f:
-        content = f.read()
+    for flow_file in sorted(CUSTOM_COMPONENTS_DIR.glob("config_flow*.py")):
+        with open(flow_file, "r", encoding="utf-8") as f:
+            content = f.read()
 
-    tree = ast.parse(content, filename=str(config_flow_file))
+        tree = ast.parse(content, filename=str(flow_file))
 
-    for node in ast.walk(tree):
-        if isinstance(node, ast.AsyncFunctionDef) and node.name in DISCOVERY_STEPS:
-            step_name = node.name
+        for node in ast.walk(tree):
+            if isinstance(node, ast.AsyncFunctionDef) and node.name in DISCOVERY_STEPS:
+                step_name = node.name
 
-            # Check 1: Must not call async_create_entry directly
-            has_create_entry = False
-            has_abort_unique_id = False
-            delegates_to_confirm_or_form = False
+                # Check 1: Must not call async_create_entry directly
+                has_create_entry = False
+                has_abort_unique_id = False
+                delegates_to_confirm_or_form = False
 
-            for child in ast.walk(node):
-                if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute):
-                    attr = child.func.attr
-                    if attr == "async_create_entry":
-                        has_create_entry = True
-                    elif attr in ("_abort_if_unique_id_configured", "async_set_unique_id"):
-                        has_abort_unique_id = True
-                    elif attr in ("async_step_discovery_confirm", "async_show_form"):
-                        delegates_to_confirm_or_form = True
+                for child in ast.walk(node):
+                    if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute):
+                        attr = child.func.attr
+                        if attr == "async_create_entry":
+                            has_create_entry = True
+                        elif attr in ("_abort_if_unique_id_configured", "async_set_unique_id"):
+                            has_abort_unique_id = True
+                        elif attr in ("async_step_discovery_confirm", "async_show_form"):
+                            delegates_to_confirm_or_form = True
 
-                # Check if it calls test_connection directly without user confirmation
-                if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute):
-                    if child.func.attr == "async_step_test_connection":
-                        checker.log_error(
-                            "RULE_DISCOVERY_NO_AUTO_CREATE",
-                            config_flow_file,
-                            child.lineno,
-                            f"{step_name} must NOT directly call async_step_test_connection. "
-                            f"It must route to async_step_discovery_confirm to allow user [Configure]/[Ignore].",
-                        )
+                    # Check if it calls test_connection directly without user confirmation
+                    if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute):
+                        if child.func.attr == "async_step_test_connection":
+                            checker.log_error(
+                                "RULE_DISCOVERY_NO_AUTO_CREATE",
+                                flow_file,
+                                child.lineno,
+                                f"{step_name} must NOT directly call async_step_test_connection. "
+                                f"It must route to async_step_discovery_confirm to allow user [Configure]/[Ignore].",
+                            )
 
-            if has_create_entry:
-                checker.log_error(
-                    "RULE_DISCOVERY_NO_AUTO_CREATE",
-                    config_flow_file,
-                    node.lineno,
-                    f"{step_name} directly invokes async_create_entry! "
-                    f"Home Assistant architectural rules require discovery flows to show confirmation.",
-                )
+                if has_create_entry:
+                    checker.log_error(
+                        "RULE_DISCOVERY_NO_AUTO_CREATE",
+                        flow_file,
+                        node.lineno,
+                        f"{step_name} directly invokes async_create_entry! "
+                        f"Home Assistant architectural rules require discovery flows to show confirmation.",
+                    )
 
-            if not has_abort_unique_id:
-                checker.log_error(
-                    "RULE_DISCOVERY_UNIQUE_ID",
-                    config_flow_file,
-                    node.lineno,
-                    f"{step_name} does not verify unique ID or call _abort_if_unique_id_configured.",
-                )
+                if not has_abort_unique_id:
+                    checker.log_error(
+                        "RULE_DISCOVERY_UNIQUE_ID",
+                        flow_file,
+                        node.lineno,
+                        f"{step_name} does not verify unique ID or call _abort_if_unique_id_configured.",
+                    )
 
-            if not delegates_to_confirm_or_form:
-                checker.log_error(
-                    "RULE_DISCOVERY_CONFIRMATION",
-                    config_flow_file,
-                    node.lineno,
-                    f"{step_name} does not delegate to async_step_discovery_confirm or async_show_form.",
-                )
+                if not delegates_to_confirm_or_form:
+                    checker.log_error(
+                        "RULE_DISCOVERY_CONFIRMATION",
+                        flow_file,
+                        node.lineno,
+                        f"{step_name} does not delegate to async_step_discovery_confirm or async_show_form.",
+                    )
 
     checker.log_ok("Discovery flows require user confirmation and unique ID verification.")
 
@@ -167,9 +168,6 @@ def check_translation_coverage(checker: StandardsChecker):
     if not config_flow_file.exists() or not en_json_file.exists():
         return
 
-    with open(config_flow_file, "r", encoding="utf-8") as f:
-        tree = ast.parse(f.read())
-
     with open(en_json_file, "r", encoding="utf-8") as f:
         en_data = json.load(f)
 
@@ -177,19 +175,23 @@ def check_translation_coverage(checker: StandardsChecker):
     options_translated = set(en_data.get("options", {}).get("step", {}).keys())
     all_translated = config_translated | options_translated
 
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-            if node.func.attr == "async_show_form":
-                for kw in node.keywords:
-                    if kw.arg == "step_id" and isinstance(kw.value, ast.Constant):
-                        step_id = kw.value.value
-                        if step_id not in all_translated:
-                            checker.log_error(
-                                "RULE_TRANSLATION_STEP_MISSING",
-                                config_flow_file,
-                                node.lineno,
-                                f"async_show_form(step_id='{step_id}') has no translation in translations/en.json.",
-                            )
+    for flow_file in sorted(CUSTOM_COMPONENTS_DIR.glob("config_flow*.py")):
+        with open(flow_file, "r", encoding="utf-8") as f:
+            tree = ast.parse(f.read(), filename=str(flow_file))
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                if node.func.attr == "async_show_form":
+                    for kw in node.keywords:
+                        if kw.arg == "step_id" and isinstance(kw.value, ast.Constant):
+                            step_id = kw.value.value
+                            if step_id not in all_translated:
+                                checker.log_error(
+                                    "RULE_TRANSLATION_STEP_MISSING",
+                                    flow_file,
+                                    node.lineno,
+                                    f"async_show_form(step_id='{step_id}') has no translation in translations/en.json.",
+                                )
 
     checker.log_ok("Config flow step translations are complete in en.json.")
 
@@ -302,7 +304,7 @@ def check_no_update_listener_reload_conflict(checker: StandardsChecker, target_d
             tree = ast.parse(py_path.read_text(encoding="utf-8"), filename=str(py_path))
         except SyntaxError:
             continue
-        is_flow = py_path.name == "config_flow.py"
+        is_flow = py_path.name.startswith("config_flow") and py_path.name.endswith(".py")
         for node in ast.walk(tree):
             if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
                 continue
@@ -548,8 +550,11 @@ def check_quality_scale_rules(checker: StandardsChecker):
     # 4. [GOLD] Reconfiguration Flow
     config_flow_file = CUSTOM_COMPONENTS_DIR / "config_flow.py"
     if config_flow_file.exists():
-        content = config_flow_file.read_text(encoding="utf-8")
-        if "async_step_reconfigure" not in content:
+        has_reconfigure = any(
+            "async_step_reconfigure" in flow_file.read_text(encoding="utf-8")
+            for flow_file in sorted(CUSTOM_COMPONENTS_DIR.glob("config_flow*.py"))
+        )
+        if not has_reconfigure:
             checker.log_error(
                 "RULE_IQS_GOLD",
                 config_flow_file,

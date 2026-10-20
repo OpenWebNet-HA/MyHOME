@@ -625,3 +625,299 @@ async def test_opposite_polarity_leading_echo_does_not_skip_area_sweep(
     await _advance(hass)
     frames = [str(call[0][0]) for call in handler.send_status_request.call_args_list]
     assert frames == ["*#1*00##"]
+
+
+@pytest.mark.asyncio
+async def test_group_resync_ignores_cross_room_and_opposite_polarity_echoes(
+    hass: HomeAssistant, handler: MyHOMEGatewayHandler
+) -> None:
+    """Echoes from another room or opposite polarity must never suppress a group's sweep (#734)."""
+    mgr = handler._resync_manager
+    mgr.register_group_members("#6", ["11", "12"])
+    assert mgr.group_members["#6"] == {"11", "12"}
+
+    # Leading echoes for #6's members with opposite polarity (OFF before ON) do NOT skip #6
+    await handler._process_message(OWNMessage.parse("*1*0*11##"))
+    await handler._process_message(OWNMessage.parse("*1*0*12##"))
+    # Unrelated Room 2 leading ON echoes do NOT skip #6 either
+    await handler._process_message(OWNMessage.parse("*1*1*21##"))
+    await handler._process_message(OWNMessage.parse("*1*1*22##"))
+
+    # Group #6 turned ON
+    await handler._process_message(OWNMessage.parse("*1*1*#6##"))
+    assert "#6" in handler._resync_timers
+
+    # Unrelated Room 2 echoes arrive -> must NOT cancel #6
+    await handler._process_message(OWNMessage.parse("*1*1*21##"))
+    await handler._process_message(OWNMessage.parse("*1*1*22##"))
+    assert "#6" in handler._resync_timers
+
+    # Member 11 echoes ON, then flips OFF before member 12 echoes ON -> must NOT cancel #6
+    await handler._process_message(OWNMessage.parse("*1*1*11##"))
+    await handler._process_message(OWNMessage.parse("*1*0*11##"))
+    await handler._process_message(OWNMessage.parse("*1*1*12##"))
+    assert "#6" in handler._resync_timers
+
+    # Opposite polarity frames for #6's members arrive -> must NOT cancel #6
+    await handler._process_message(OWNMessage.parse("*1*0*11##"))
+    await handler._process_message(OWNMessage.parse("*1*0*12##"))
+    assert "#6" in handler._resync_timers
+
+    await _advance(hass)
+    handler.send_status_request.assert_called_once()
+    assert str(handler.send_status_request.call_args[0][0]) == "*#1*#6##"
+
+    # Clearing group members removes the entry
+    mgr.register_group_members("6", [])
+    assert "#6" not in mgr.group_members
+
+
+@pytest.mark.asyncio
+async def test_opposite_polarity_trailing_echo_does_not_cancel_area_sweep(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """Trailing opposite-polarity echoes must not cancel an area or general sweep (#740)."""
+    handler = _handler(hass, entry)
+    registry = er.async_get(hass)
+    registry.async_get_or_create("light", DOMAIN, f"{MAC}-1-11", config_entry=entry)
+
+    # Area 1 ON followed by the only known entity echoing OFF must NOT cancel the sweep
+    await handler._process_message(OWNMessage.parse("*1*1*1##"))
+    assert "1" in handler._resync_timers
+    await handler._process_message(OWNMessage.parse("*1*0*11##"))
+    assert "1" in handler._resync_timers
+
+    await _advance(hass)
+    handler.send_status_request.assert_called_once()
+    assert str(handler.send_status_request.call_args[0][0]) == "*#1*1##"
+
+    # Multi-entity area: 11 echoes ON before Area 1 ON (seeded), then 11 turns OFF
+    # during the debounce window before 12 echoes ON -> sweep must NOT be cancelled
+    handler.send_status_request.reset_mock()
+    registry.async_get_or_create("light", DOMAIN, f"{MAC}-1-12", config_entry=entry)
+    await handler._process_message(OWNMessage.parse("*1*1*11##"))
+    await handler._process_message(OWNMessage.parse("*1*1*1##"))
+    assert "1" in handler._resync_timers
+    await handler._process_message(OWNMessage.parse("*1*0*11##"))
+    await handler._process_message(OWNMessage.parse("*1*1*12##"))
+    assert "1" in handler._resync_timers
+
+    # Once 11 echoes ON again inside the window, both 11 and 12 are ON -> cancelled
+    await handler._process_message(OWNMessage.parse("*1*1*11##"))
+    assert "1" not in handler._resync_timers
+    await _advance(hass)
+    handler.send_status_request.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_group_resync_preserves_bus_interface_on_members_and_group_key(
+    hass: HomeAssistant, handler: MyHOMEGatewayHandler
+) -> None:
+    """Group keys and member addresses preserve F422 #4#<interface> routing suffixes (#740)."""
+    from types import SimpleNamespace
+
+    from custom_components.myhome.light_group import MyHOMELightGroup
+
+    mgr = handler._resync_manager
+    mgr.register_group_members("#6", ["11#4#1"])
+    assert mgr.group_members["#6"] == {"11#4#01"}
+
+    # Local-bus leading echo 11 must not skip #6 when member is on private bus 11#4#01
+    await handler._process_message(OWNMessage.parse("*1*1*11##"))
+    await handler._process_message(OWNMessage.parse("*1*1*#6##"))
+    assert "#6" in handler._resync_timers
+
+    # Local-bus trailing echo 11 must not cancel #6
+    await handler._process_message(OWNMessage.parse("*1*1*11##"))
+    assert "#6" in handler._resync_timers
+
+    # Private-bus trailing echo 11#4#01 cancels #6
+    await handler._process_message(OWNMessage.parse("*1*1*11#4#01##"))
+    assert "#6" not in handler._resync_timers
+
+    # Unscoped routed group #6#4#01 ignores local-bus leading and trailing echoes
+    mgr.register_group_members("#6", [])
+    await handler._process_message(OWNMessage.parse("*1*1*11##"))
+    await handler._process_message(OWNMessage.parse("*1*1*12##"))
+    await handler._process_message(OWNMessage.parse("*1*1*#6#4#01##"))
+    assert "#6#4#01" in handler._resync_timers
+    await handler._process_message(OWNMessage.parse("*1*1*11##"))
+    await handler._process_message(OWNMessage.parse("*1*1*12##"))
+    assert "#6#4#01" in handler._resync_timers
+
+    await _advance(hass)
+    handler.send_status_request.assert_called_once()
+    assert str(handler.send_status_request.call_args[0][0]) == "*#1*#6#4#01##"
+
+    # Unscoped routed group #6#4#01 is skipped by 2 leading echoes on the same bus 01
+    handler.send_status_request.reset_mock()
+    await handler._process_message(OWNMessage.parse("*1*1*11#4#01##"))
+    await handler._process_message(OWNMessage.parse("*1*1*12#4#01##"))
+    await handler._process_message(OWNMessage.parse("*1*1*#6#4#01##"))
+    assert "#6#4#01" not in handler._resync_timers
+
+    # _message_interface also supports messages exposing where_param without .interface
+    synthetic_msg = SimpleNamespace(where="11", where_param=["4", "02"])
+    assert mgr._message_interface(synthetic_msg) == "02"
+
+    # MyHOMELightGroup preserves #4#<interface> on _full_where and group_members registration
+    grp_entity = MyHOMELightGroup(
+        hass=hass,
+        name="Riser 01 Group 6",
+        device_id="1-#6#4#01",
+        group=6,
+        gateway=handler,
+        members=["11#4#01", "12#4#01"],
+        dimmable=False,
+        color_temp=False,
+        rgb=False,
+        hs=False,
+    )
+    assert grp_entity._full_where == "#6#4#01"
+
+
+@pytest.mark.asyncio
+async def test_multi_entity_area_sweep_waits_for_all_known_entities(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """An area sweep only skips/cancels once all known entities in that area have echoed (#734)."""
+    handler = _handler(hass, entry)
+    registry = er.async_get(hass)
+    for where in ("11", "12", "13"):
+        registry.async_get_or_create(
+            "light", DOMAIN, f"{MAC}-1-{where}", config_entry=entry
+        )
+    # Invalid unique_id is ignored by known_area_entities
+    registry.async_get_or_create("light", DOMAIN, f"{MAC}-", config_entry=entry)
+
+    # Area 1 OFF broadcast followed by only 1 of 3 known entities echoing
+    await handler._process_message(OWNMessage.parse("*1*0*1##"))
+    await handler._process_message(OWNMessage.parse("*1*0*11##"))
+    assert "1" in handler._resync_timers
+
+    await _advance(hass)
+    handler.send_status_request.assert_called_once()
+    assert str(handler.send_status_request.call_args[0][0]) == "*#1*1##"
+
+    # Now when all 3 known entities echo, the sweep IS cancelled
+    handler.send_status_request.reset_mock()
+    await handler._process_message(OWNMessage.parse("*1*0*1##"))
+    await handler._process_message(OWNMessage.parse("*1*0*11##"))
+    await handler._process_message(OWNMessage.parse("*1*0*12##"))
+    await handler._process_message(OWNMessage.parse("*1*0*13##"))
+    assert "1" not in handler._resync_timers
+    await _advance(hass)
+    handler.send_status_request.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_replay_f461_live_2026_10_18_run1_lights_group_and_general(
+    hass: HomeAssistant, handler: MyHOMEGatewayHandler
+) -> None:
+    """Replay the live F461 run1_lights_group_and_general trace on its own timeline (#734, #740).
+
+    The frames are fed at their captured timestamps on a virtual clock, with a
+    virtual ``async_call_later``, so the 1.5 s leading window and the 0.5 s
+    debounce see the real bus spacing. Fed back to back, the whole trace falls
+    inside one leading window and the replay passes on the pre-#740 logic too.
+    """
+    import itertools
+    import json
+    from pathlib import Path
+    from types import SimpleNamespace
+    from typing import Any
+
+    trace_path = (
+        Path(__file__).parent
+        / "fixtures"
+        / "traces"
+        / "f461_live_2026-10-18"
+        / "myhome_trace_F461_live_2026-10-18.json"
+    )
+    trace = json.loads(trace_path.read_text(encoding="utf-8"))
+    run1_frames = [
+        f
+        for f in trace["frames"]
+        if f.get("run") == "run1_lights_group_and_general"
+        and f.get("direction") == "rx"
+        and f["raw"].startswith(("*1*", "*#1*"))
+    ]
+    assert len(run1_frames) == 28
+
+    reg = er.async_get(hass)
+    mac = handler.mac
+    for where in ("06", "07"):
+        reg.async_get_or_create(
+            "light",
+            DOMAIN,
+            f"{mac}-1-{where}",
+            config_entry=handler.config_entry,
+        )
+
+    async def _run_timed_replay(members: list[str]) -> tuple[dict[str, bool], list[tuple[float, str]]]:
+        handler._resync_manager.cancel_all()
+        handler._resync_manager.register_group_members("#1", members)
+        clock = SimpleNamespace(now=0.0)
+        pending: dict[int, tuple[float, Any]] = {}
+        keys = itertools.count()
+        sent: list[tuple[float, str]] = []
+
+        def _call_later(_hass: HomeAssistant, delay: float, cb: Any) -> Any:
+            key = next(keys)
+            pending[key] = (clock.now + delay, cb)
+            return lambda: pending.pop(key, None)
+
+        async def _run_due(until: float) -> None:
+            for key, (due, cb) in sorted(pending.items(), key=lambda kv: kv[1][0]):
+                if due <= until and key in pending:
+                    del pending[key]
+                    clock.now = due
+                    cb(None)
+                    await hass.async_block_till_done()
+
+        async def _send(cmd: Any) -> None:
+            sent.append((round(clock.now, 3), str(cmd)))
+
+        handler.send_status_request.side_effect = _send
+        armed_after: dict[str, bool] = {}
+        with (
+            patch("custom_components.myhome.gateway.time", SimpleNamespace(monotonic=lambda: clock.now)),
+            patch("custom_components.myhome.gateway.async_call_later", _call_later),
+        ):
+            for frame in run1_frames:
+                await _run_due(frame["timestamp"])
+                clock.now = frame["timestamp"]
+                msg = OWNMessage.parse(frame["raw"])
+                assert msg is not None
+                await handler._process_message(msg)
+                if frame["raw"] in ("*1*1*#1##", "*1*0*#1##"):
+                    armed_after[frame["raw"]] = "#1" in handler._resync_timers
+            await _run_due(clock.now + 5.0)
+        return armed_after, sent
+
+    # 1. With the plant's two group #1 members (06, 07) registered:
+    # *1*0*#1## (9.447) follows the ON echoes of 06 (8.786) and 07 (8.898) inside the
+    # 1.5 s leading window: those are the wrong polarity, so the OFF sweep is armed
+    # rather than skipped, and the OFF echoes at 9.505 / 9.555 then cancel it.
+    armed_after, sent = await _run_timed_replay(["06", "07"])
+    assert armed_after == {"*1*1*#1##": True, "*1*0*#1##": True}
+    assert not handler._resync_timers
+    # The group #1 sweeps are cancelled by the member echoes, ~50 ms apart. After
+    # the general *1*1*0## (10.183) and *1*0*0## (12.461) the F461 echoes 06 and
+    # 07 0.7 s and 1.5 s later, past the 0.5 s debounce, so both area 00 sweeps go out.
+    assert sent == [
+        (round(10.183 + RESYNC_DEBOUNCE_S, 3), "*#1*00##"),
+        (round(12.461 + RESYNC_DEBOUNCE_S, 3), "*#1*00##"),
+    ]
+
+    # 2. When a third member (08) is also declared in group #1 but never echoes in
+    # the trace, the 06 and 07 echoes alone must NOT cancel the #1 sweeps.
+    armed_missing, sent_missing = await _run_timed_replay(["06", "07", "08"])
+    assert armed_missing == {"*1*1*#1##": True, "*1*0*#1##": True}
+    assert sent_missing == [
+        (round(8.738 + RESYNC_DEBOUNCE_S, 3), "*#1*#1##"),
+        (round(9.447 + RESYNC_DEBOUNCE_S, 3), "*#1*#1##"),
+        (round(10.183 + RESYNC_DEBOUNCE_S, 3), "*#1*00##"),
+        (round(12.461 + RESYNC_DEBOUNCE_S, 3), "*#1*00##"),
+    ]
+

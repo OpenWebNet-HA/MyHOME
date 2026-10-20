@@ -397,6 +397,10 @@
     "primary_gateway_missing": {
       "title": "Passerelle principale de {gateway} manquante",
       "description": "{gateway} est configurée comme passerelle secondaire ou de secours pour {primary}, mais cette passerelle n'est plus configurée comme passerelle principale partagée. {gateway} suspend la découverte jusqu'à sa reconfiguration."
+    },
+    "legacy_yaml_imported": {
+      "title": "Configuration myhome.yaml importée pour {gateway}",
+      "description": "La configuration des appareils de `myhome.yaml` pour {gateway} a été copiée dans les options de l'entrée de configuration Home Assistant. Tant que `myhome.yaml` existe, il reste la référence et la copie suit ses modifications. Si le fichier est supprimé ou devient illisible, les appareils conservent la configuration de la dernière copie."
     }
   },
   "exceptions": {
@@ -422,7 +426,7 @@
       "message": "{name} : aucun état d'arrêt de l'actionneur dans les {timeout} s - il ne signale peut-être pas son état ; définissez travel_time manuellement"
     },
     "cover_reports_position": {
-      "message": "{name} signale sa position ; la calibration du temps de course ne s'y applique pas"
+      "message": "{name} signale sa position (advanced: true dans myhome.yaml) ; la calibration du temps de course ne s'y applique pas. S'il s'agit d'un actionneur temporisé standard (ex. F411) qui ne prend pas en charge la dimension 10, retirez advanced: true de myhome.yaml."
     },
     "calibration_in_progress": {
       "message": "{name} est déjà en cours de calibration"

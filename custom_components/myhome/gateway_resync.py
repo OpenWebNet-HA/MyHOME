@@ -15,6 +15,7 @@ from homeassistant.helpers.event import async_call_later
 from OWNd.message import OWNLightingCommand, OWNLightingEvent
 
 from .const import (
+    BUS_ROUTING,
     LOGGER,
     RESYNC_DEBOUNCE_S,
     RESYNC_LEADING_WINDOW_S,
@@ -51,6 +52,9 @@ class LightingResyncManager:
         )
         self._ptp_polarities: dict[tuple[float, str], bool | None] = {}
         self._resync_area_echoes: dict[str, set[str]] = {}
+        self._group_members: dict[str, set[str]] = {}
+        self._resync_expected_on: dict[str, bool] = {}
+        self._resync_echoed_members: dict[str, set[str]] = {}
 
     @property
     def hass(self) -> HomeAssistant:
@@ -66,6 +70,56 @@ class LightingResyncManager:
     def resync_group_echoes(self) -> dict[str, int]:
         """Return group echoes counter dictionary."""
         return self._resync_group_echoes
+
+    @property
+    def group_members(self) -> dict[str, set[str]]:
+        """Return registered group members mapping (#G -> set of point WHEREs)."""
+        return self._group_members
+
+    @staticmethod
+    def _message_interface(message: Any) -> str | None:
+        """Extract the F422 bus interface string (e.g. ``"01"``) from a message, if any."""
+        iface = getattr(message, "interface", None)
+        if isinstance(iface, str) and iface:
+            return iface
+        params = getattr(message, "where_param", getattr(message, "_where_param", None))
+        if isinstance(params, (list, tuple)) and len(params) > 1 and str(params[0]) == "4":
+            return str(params[1])
+        return None
+
+    @staticmethod
+    def _normalize_group_key(group_where: str | int, interface: str | None = None) -> str:
+        """Normalize a group address to ``#G`` or ``#G#4#<interface>``."""
+        raw = str(group_where).strip()
+        body = raw[1:] if raw.startswith("#") else raw
+        grp_part, sep, iface_part = body.partition(BUS_ROUTING)
+        grp_norm = str(int(grp_part)) if grp_part.isdigit() else grp_part
+        iface = iface_part if (sep and iface_part) else (str(interface).strip() if interface else "")
+        if iface:
+            iface_norm = iface.zfill(2) if iface.isdigit() else iface
+            return f"#{grp_norm}{BUS_ROUTING}{iface_norm}"
+        return f"#{grp_norm}"
+
+    @staticmethod
+    def _normalize_ptp_where(raw_where: str | int, interface: str | None = None) -> str:
+        """Normalize a point-to-point WHERE while preserving any ``#4#<interface>`` suffix."""
+        where_str = str(raw_where).strip()
+        base_part, sep, iface_part = where_str.partition(BUS_ROUTING)
+        clean_base = str(normalize_where(base_part.split("#", 1)[0]))
+        iface = iface_part if (sep and iface_part) else (str(interface).strip() if interface else "")
+        if iface:
+            iface_norm = iface.zfill(2) if iface.isdigit() else iface
+            return f"{clean_base}{BUS_ROUTING}{iface_norm}"
+        return clean_base
+
+    def register_group_members(self, group_where: str, members: list[str] | set[str]) -> None:
+        """Register the point-to-point member WHERE addresses belonging to a group."""
+        key = self._normalize_group_key(group_where)
+        cleaned = {self._normalize_ptp_where(m) for m in members if str(m).strip()}
+        if cleaned:
+            self._group_members[key] = cleaned
+        else:
+            self._group_members.pop(key, None)
 
     @property
     def _time(self) -> Any:
@@ -88,24 +142,55 @@ class LightingResyncManager:
         """Handle point-to-point lighting message echo cancellation."""
         now = float(self._time.monotonic())
         self._prune_recent_ptp(now)
+        ptp_where = self._normalize_ptp_where(message.where, self._message_interface(message))
         clean_where = normalize_where(str(message.where).split("#", 1)[0])
         area = area_of_where(clean_where)
-        self._recent_ptp.append((now, clean_where, area))
-        self._ptp_polarities[(now, clean_where)] = getattr(message, "is_on", None)
+        msg_on = getattr(message, "is_on", None)
+        self._recent_ptp.append((now, ptp_where, area))
+        self._ptp_polarities[(now, ptp_where)] = msg_on
 
         if area and area in self._resync_timers:
-            echoed = self._resync_area_echoes.setdefault(area, set())
-            echoed.add(clean_where)
-            if self._area_fully_echoed(area, echoed):
-                LOGGER.debug("%s area %s echoed point status, cancelling sweep", self.handler.log_id, area)
-                self._resync_timers.pop(area)()
-                self._resync_area_echoes.pop(area, None)
+            expected_area_on = self._resync_expected_on.get(area)
+            has_known = bool(self.known_area_entities(area))
+            if (
+                has_known
+                and expected_area_on is not None
+                and isinstance(msg_on, bool)
+                and msg_on != expected_area_on
+            ):
+                if area in self._resync_area_echoes:
+                    self._resync_area_echoes[area].discard(clean_where)
+            else:
+                echoed = self._resync_area_echoes.setdefault(area, set())
+                echoed.add(clean_where)
+                if self._area_fully_echoed(area, echoed):
+                    LOGGER.debug("%s area %s echoed point status, cancelling sweep", self.handler.log_id, area)
+                    self._resync_timers.pop(area)()
+                    self._resync_area_echoes.pop(area, None)
+                    self._resync_expected_on.pop(area, None)
         for g in [k for k in self._resync_timers if k.startswith("#")]:
-            self._resync_group_echoes[g] = self._resync_group_echoes.get(g, 0) + 1
-            if self._resync_group_echoes[g] >= 2:
+            expected_on = self._resync_expected_on.get(g)
+            if expected_on is not None and isinstance(msg_on, bool) and msg_on != expected_on:
+                if g in self._resync_echoed_members:
+                    self._resync_echoed_members[g].discard(ptp_where)
+                    self._resync_group_echoes[g] = len(self._resync_echoed_members[g])
+                continue
+            members = self._group_members.get(g)
+            if members is not None:
+                if ptp_where not in members:
+                    continue
+            elif g.partition(BUS_ROUTING)[2] != ptp_where.partition(BUS_ROUTING)[2]:
+                continue
+            echoed_grp = self._resync_echoed_members.setdefault(g, set())
+            echoed_grp.add(ptp_where)
+            self._resync_group_echoes[g] = len(echoed_grp)
+            required = len(members) if members else 2
+            if self._resync_group_echoes[g] >= required:
                 LOGGER.debug("%s group %s saw member echoes, cancelling sweep", self.handler.log_id, g)
                 self._resync_timers.pop(g)()
                 self._resync_group_echoes.pop(g, None)
+                self._resync_echoed_members.pop(g, None)
+                self._resync_expected_on.pop(g, None)
 
     def _known_area_map(self) -> dict[str, set[str]]:
         """Return mapping of area code to registered light/switch WHERE addresses."""
@@ -186,16 +271,32 @@ class LightingResyncManager:
         targets: list[str] = []
         area_seed_echoes: dict[str, set[str]] = {}
         if getattr(message, "is_group", False):
-            recent_count = sum(1 for t, _, _ in self._recent_ptp if t >= now - RESYNC_LEADING_WINDOW_S)
-            if recent_count >= 2:
+            group_key = self._normalize_group_key(message.group, self._message_interface(message))
+            members = self._group_members.get(group_key)
+            latest_grp_pol: dict[str, bool | None] = {}
+            for t, w, _ in self._recent_ptp:
+                ptp_w = self._normalize_ptp_where(w)
+                if members is not None:
+                    if ptp_w not in members:
+                        continue
+                elif group_key.partition(BUS_ROUTING)[2] != ptp_w.partition(BUS_ROUTING)[2]:
+                    continue
+                latest_grp_pol[ptp_w] = self._ptp_polarities.get((t, str(w)))
+            matching_wheres = {
+                ptp_w
+                for ptp_w, entry_pol in latest_grp_pol.items()
+                if not isinstance(msg_is_on, bool) or entry_pol is None or entry_pol == msg_is_on
+            }
+            required = len(members) if members else 2
+            if len(matching_wheres) >= required:
                 LOGGER.debug(
-                    "%s group #%s had %d leading member echoes, skipping sweep",
+                    "%s group %s had %d leading member echoes, skipping sweep",
                     self.handler.log_id,
-                    message.group,
-                    recent_count,
+                    group_key,
+                    len(matching_wheres),
                 )
                 return
-            targets.append(f"#{message.group}")
+            targets.append(group_key)
         elif getattr(message, "is_area", False):
             raw_where = str(message.where)
             leading_echoes = _leading_echoes_for_area(raw_where)
@@ -225,8 +326,10 @@ class LightingResyncManager:
         for where in targets:
             if where in self._resync_timers:
                 self._resync_timers.pop(where)()
+            self._resync_expected_on[where] = bool(msg_is_on)
             if where.startswith("#"):
                 self._resync_group_echoes[where] = 0
+                self._resync_echoed_members[where] = set()
             else:
                 self._resync_area_echoes[where] = set(area_seed_echoes.get(where, set()))
 
@@ -243,6 +346,8 @@ class LightingResyncManager:
         self._resync_timers.pop(where, None)
         self._resync_group_echoes.pop(where, None)
         self._resync_area_echoes.pop(where, None)
+        self._resync_echoed_members.pop(where, None)
+        self._resync_expected_on.pop(where, None)
         if getattr(self.handler, "_terminate_listener", False):
             return
 
@@ -258,5 +363,7 @@ class LightingResyncManager:
         self._resync_timers.clear()
         self._resync_group_echoes.clear()
         self._resync_area_echoes.clear()
+        self._resync_echoed_members.clear()
+        self._resync_expected_on.clear()
         self._recent_ptp.clear()
         self._ptp_polarities.clear()

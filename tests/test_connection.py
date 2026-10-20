@@ -540,14 +540,14 @@ class TestOWNGatewayDiscoveryAndClassmethods:
 
     @pytest.mark.asyncio
     async def test_get_first_available_gateway(self):
-        with patch("OWNd.connection.find_gateways", return_value=[{"address": "192.168.1.50"}]):
+        with patch(f"{OWNGateway.__module__}.find_gateways", return_value=[{"address": "192.168.1.50"}]):
             gw = await OWNGateway.get_first_available_gateway(password="secret")
             assert gw.host == "192.168.1.50"
             assert gw.password == "secret"
 
     @pytest.mark.asyncio
     async def test_find_from_address_present(self):
-        with patch("OWNd.connection.get_gateway", return_value={"address": "192.168.1.55"}):
+        with patch(f"{OWNGateway.__module__}.get_gateway", return_value={"address": "192.168.1.55"}):
             gw = await OWNGateway.find_from_address("192.168.1.55")
             assert gw.host == "192.168.1.55"
 
@@ -574,7 +574,7 @@ class TestOWNGatewayDiscoveryAndClassmethods:
             "ssdp_location": "http://192.168.1.100:8080/desc.xml",
             "port": None,
         }
-        with patch("OWNd.connection.get_port", return_value=20000):
+        with patch(f"{OWNGateway.__module__}.get_port", return_value=20000):
             gw = await OWNGateway.build_from_discovery_info(info)
             assert gw.port == 20000
 

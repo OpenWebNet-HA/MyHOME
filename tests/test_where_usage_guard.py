@@ -41,7 +41,7 @@ REVIEWED: dict[str, str] = {
     "cover.py::MyHOMECover._handle_echo": "WHO 2 stop echo: general frame test (WHERE 0)",
     "gateway_resync.py::LightingResyncManager.handle_ptp_echo": "WHO 1 point-to-point echo: WHERE is the APL address",
     "gateway_resync.py::LightingResyncManager.schedule_resync": "WHO 1 point-to-point echo: WHERE is the APL address",
-    "gateway.py::MyHOMEGatewayHandler._correlate_shared_bus_traffic": "general-frame test for shared-bus correlation",
+    "topology.py::GatewayTopologyMixin._correlate_shared_bus_traffic": "general-frame test for shared-bus correlation",
     "device_health.py::message_where": "WHO 1 / 1001 point frames: WHERE (+ F422 interface) is the actuator address",
     "gateway_sessions.py::_extract_target_key": "FrameScheduler target key: (WHO, WHERE) serialization key across all subsystems",
     # Diagnostics only: the WHERE is shown or filtered on, never routed.

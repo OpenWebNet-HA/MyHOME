@@ -28,6 +28,19 @@ The integration distinguishes between two types of MyHOME covers:
 > [!NOTE]
 > Every discovered cover starts as a **timed** cover. Position-reporting hardware is not detected automatically: set `advanced_shutter: true` for that cover in `/config/myhome.yaml` (see [Troubleshooting → Cover position is wrong](troubleshooting.md#cover-position-is-wrong)). Advanced covers refuse `myhome.calibrate_cover` and travel times in `myhome.set_cover_travel_time`, as they do not need a travel time (a Venetian blind with `slat_tilt` still accepts `slat_time` there).
 
+### Choosing the cover model (`strategy`)
+
+Each WHO=2 cover runs one of four position models. Without `strategy`, the flags pick it: `advanced_shutter: true` gives `native`, `slat_tilt: true` gives `venetian`, `travel_time: 0` gives `simple`, and anything else gives `timed`. Set `strategy` in `/config/myhome.yaml` to name it explicitly:
+
+| `strategy` | Position | Use for |
+| :--- | :--- | :--- |
+| `timed` | Estimated from the travel time | Standard relay actuators (the default). Needs a positive `travel_time`. |
+| `venetian` | Estimated, plus slat tilt | Venetian blinds; implies `slat_tilt: true` and needs a positive `travel_time` (or `advanced_shutter`). |
+| `native` | Reported by the actuator (`Dimension = 10`) | Advanced actuators; implies `advanced_shutter: true`. Can be combined with `slat_tilt`. |
+| `simple` | None (open / close / stop only) | Relays with no measured travel time. The entity has no position slider and an assumed state: closed after a closing run, open after an opening one. |
+
+An explicit `strategy` cannot be combined with a flag that selects another model (`advanced_shutter` with anything but `native`, `slat_tilt` with `timed` or `simple`, `travel_time: 0` with `timed`): the configuration is rejected. A cover set up with `travel_time: 0` becomes `timed` once it is calibrated (`myhome.calibrate_cover` or `myhome.set_cover_travel_time`), and `simple` again after `myhome.reset_cover_travel_time`. An explicit `strategy: simple` stays simple even when travel times are stored.
+
 ---
 
 ## ⏱️ Timed Cover Position Engine

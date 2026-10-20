@@ -219,11 +219,55 @@ def test_yaml_travel_time_is_reported_as_yaml_source(hass, gateway):
 # ── refusals and failures ────────────────────────────────────────────────
 
 
-async def test_advanced_cover_refuses_calibration(hass, gateway):
+async def test_advanced_cover_refuses_calibration(hass, gateway, caplog):
+    from OWNd.message import OWNEvent
+
+    from custom_components.myhome.cover import _is_standard_timed_shutter_model
+
+    assert _is_standard_timed_shutter_model(None) is False
+    assert _is_standard_timed_shutter_model("") is False
+    for non_warn_model in ("F401", "67557", "H4661M2", "LN4661M2", "Shutter / Cover"):
+        assert _is_standard_timed_shutter_model(non_warn_model) is False
+
+    caplog.clear()
     cover = MyHOMECover(hass=hass, name="Pos", entity_name=None, device_id="31", who="2", where="31", interface=None,
                         advanced=True, manufacturer="BTicino", model="F401", gateway=gateway)
-    with pytest.raises(HomeAssistantError, match="reports its position"):
+    assert "standard timed actuator" not in caplog.text
+    with pytest.raises(HomeAssistantError, match=r"reports its position.*if this is a standard timed actuator.*F411"):
         await cover.async_calibrate()
+
+    # Issue #761: configuring a standard timed actuator (F411/2, BT-F411/4, F411U2, H4671/2)
+    # with advanced=True logs a startup warning, while genuine Dimension 10 models do not.
+    for std_model in ("F411/2", "BT-F411/4", "F411U2", "H4671/2"):
+        caplog.clear()
+        MyHOMECover(hass=hass, name="Volet Salon", entity_name=None, device_id="51", who="2", where="51", interface=None,
+                    advanced=True, manufacturer="BTicino", model=std_model, gateway=gateway)
+        assert f"{std_model} is a standard timed actuator that does not report position" in caplog.text
+        assert "remove advanced: true from myhome.yaml" in caplog.text
+
+    # Model-independent runtime warning: when an advanced=True cover with a generic/non-F411 model
+    # moves (*2*1*52##) and stops (*2*0*52##) without ever reporting a Dimension 10 frame, warn once.
+    caplog.clear()
+    generic_adv = MyHOMECover(hass=hass, name="Volet Cuisine", entity_name=None, device_id="52", who="2", where="52",
+                              interface=None, advanced=True, manufacturer="Legrand", model="67557", gateway=gateway)
+    assert caplog.text == ""
+    generic_adv.handle_event(OWNEvent.parse("*2*1*52##"))
+    generic_adv.handle_event(OWNEvent.parse("*2*0*52##"))
+    assert "stopped with a plain status frame (*2*0*52##) and has never reported a Dimension 10 position" in caplog.text
+    # Only warns once per cover
+    caplog.clear()
+    generic_adv.handle_event(OWNEvent.parse("*2*2*52##"))
+    generic_adv.handle_event(OWNEvent.parse("*2*0*52##"))
+    assert "never reported a Dimension 10 position" not in caplog.text
+
+    # Once a Dimension 10 frame has been seen, plain *2*1/0* frames do not trigger the warning.
+    caplog.clear()
+    real_dim10 = MyHOMECover(hass=hass, name="Volet Bureau", entity_name=None, device_id="53", who="2", where="53",
+                             interface=None, advanced=True, manufacturer="BTicino", model="F401", gateway=gateway)
+    real_dim10.handle_event(OWNEvent.parse("*#2*53*10*10*40*001*0##"))
+    real_dim10.handle_event(OWNEvent.parse("*2*1*53##"))
+    real_dim10.handle_event(OWNEvent.parse("*2*0*53##"))
+    assert "never reported a Dimension 10 position" not in caplog.text
 
 
 async def test_set_position_refused_while_calibrating(hass, gateway, clock, fake_time, sleeps):
