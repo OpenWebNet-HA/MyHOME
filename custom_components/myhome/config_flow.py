@@ -207,7 +207,14 @@ class MyhomeFlowHandler(
                             user_input["address"],
                             session=async_get_clientsession(self.hass),
                         )
-                except (asyncio.TimeoutError, Exception):  # pylint: disable=broad-except
+                except Exception as err:  # pylint: disable=broad-except
+                    # UPnP lookup is optional: any failure (timeout, HTTP,
+                    # malformed XML) falls back to manual MAC entry.
+                    LOGGER.debug(
+                        "UPnP lookup of %s failed, asking for the MAC: %r",
+                        user_input["address"],
+                        err,
+                    )
                     discovered = None
 
                 if discovered is not None:

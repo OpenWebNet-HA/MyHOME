@@ -594,9 +594,14 @@ async def test_user_step_discovery_timeout(hass: HomeAssistant) -> None:
         assert result["reason"] == "discovery_timeout"
 
 
-async def test_custom_step_validation_and_timeout(hass: HomeAssistant) -> None:
+async def test_custom_step_validation_and_timeout(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
     """Test custom step error on invalid IP and timeout fallback to custom_manual."""
     import asyncio
+    import logging
+
+    caplog.set_level(logging.DEBUG, logger="custom_components.myhome")
 
     with patch("custom_components.myhome.config_flow.find_gateways", return_value=[]):
         result = await hass.config_entries.flow.async_init(
@@ -626,6 +631,7 @@ async def test_custom_step_validation_and_timeout(hass: HomeAssistant) -> None:
             )
             assert result_manual["type"] == FlowResultType.FORM
             assert result_manual["step_id"] == "custom_manual"
+        assert "UPnP lookup of 192.168.1.50 failed, asking for the MAC: TimeoutError()" in caplog.text
 
 
 async def test_custom_manual_step_invalid_inputs(hass: HomeAssistant) -> None:
@@ -2662,9 +2668,13 @@ async def test_config_flow_injects_ha_websession_into_discovery(hass: HomeAssist
 
     expected_session = async_get_clientsession(hass)
     with patch(
-        "custom_components.myhome.config_flow.find_gateways", return_value=[]
+        "custom_components.myhome.config_flow.find_gateways",
+        new_callable=AsyncMock,
+        return_value=[],
     ) as mock_find, patch(
-        "custom_components.myhome.config_flow.get_gateway", return_value=None
+        "custom_components.myhome.config_flow.get_gateway",
+        new_callable=AsyncMock,
+        return_value=None,
     ) as mock_get:
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
