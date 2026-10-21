@@ -1210,7 +1210,7 @@ class TestEntityRegistryMigrationSafety:
 
         with patch.object(
             er.async_get(hass),
-            "async_update_entity",
+            "_async_update_entity",
             return_value=updated_entry,
         ) as mock_update:
             res = preserve_legacy_compat_name(

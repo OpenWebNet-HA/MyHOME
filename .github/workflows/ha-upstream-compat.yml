@@ -65,15 +65,16 @@ jobs:
               echo "installed=false" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            # The git tree has no translations/en.json (generated at release time);
-            # without it, entities named after their device class have no name.
-            python scripts/seed_core_translations.py
           else
             pip install "${ha_pkg[@]}"
           fi
           pip install pytest pytest-asyncio pytest-cov pytest-socket execnet syrupy time-machine python-dateutil pytz freezegun requests-mock respx paho-mqtt tqdm jsonschema pyyaml
           if [ "$HA_CHANNEL" != "stable" ]; then
             pip install pytest-homeassistant-custom-component --no-deps
+            # Seed translations/en.json for git installs (no-op for wheels) and
+            # bridge symbol moves between HA beta/dev and the latest PyPI
+            # pytest-homeassistant-custom-component wheel.
+            python scripts/seed_core_translations.py
           fi
           python -c "import homeassistant.const as c; print('Home Assistant', c.__version__)"
           echo "installed=true" >> "$GITHUB_OUTPUT"
