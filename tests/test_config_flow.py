@@ -2654,3 +2654,33 @@ async def test_options_flow_ignored_addresses(hass: HomeAssistant) -> None:
     assert result_comma["type"] == FlowResultType.CREATE_ENTRY
     assert entry.options[CONF_IGNORED_ADDRESSES] == []
 
+
+@pytest.mark.asyncio
+async def test_config_flow_injects_ha_websession_into_discovery(hass: HomeAssistant):
+    """Verify async_get_clientsession(hass) is passed to find_gateways and get_gateway."""
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+    expected_session = async_get_clientsession(hass)
+    with patch(
+        "custom_components.myhome.config_flow.find_gateways", return_value=[]
+    ) as mock_find, patch(
+        "custom_components.myhome.config_flow.get_gateway", return_value=None
+    ) as mock_get:
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        assert result["type"] == FlowResultType.FORM
+        mock_find.assert_awaited_once_with(session=expected_session)
+
+        result2 = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={"serial": "00:00:00:00:00:00"}
+        )
+        assert result2["step_id"] == "custom"
+
+        result3 = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={"address": "192.168.1.99", "port": 20000},
+        )
+        assert result3["step_id"] == "custom_manual"
+        mock_get.assert_awaited_once_with("192.168.1.99", session=expected_session)
+

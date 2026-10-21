@@ -20,6 +20,7 @@ from homeassistant.const import (
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from OWNd.connection import OWNGateway, OWNSession
 from OWNd.discovery import find_gateways, get_gateway
 from voluptuous import In, Required
@@ -93,7 +94,9 @@ class MyhomeFlowHandler(
 
         try:
             async with asyncio.timeout(5):
-                local_gateways = await find_gateways()
+                local_gateways = await find_gateways(
+                    session=async_get_clientsession(self.hass)
+                )
         except asyncio.TimeoutError:
             return self.async_abort(reason="discovery_timeout")
 
@@ -200,7 +203,10 @@ class MyhomeFlowHandler(
             if not errors:
                 try:
                     async with asyncio.timeout(5):
-                        discovered = await get_gateway(user_input["address"])
+                        discovered = await get_gateway(
+                            user_input["address"],
+                            session=async_get_clientsession(self.hass),
+                        )
                 except (asyncio.TimeoutError, Exception):  # pylint: disable=broad-except
                     discovered = None
 
