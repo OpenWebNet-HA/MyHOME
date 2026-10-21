@@ -10,6 +10,10 @@ This writes the English translations from ``strings.json`` for every component
 that lacks them, resolving ``[%key:component::<domain>::<path>%]`` references
 the way the core script does. Components that already ship ``en.json`` are left
 alone; running it against a release install is a no-op.
+
+It also bridges symbol moves between ``homeassistant`` (beta/dev) and the
+latest ``pytest-homeassistant-custom-component`` wheel on PyPI, which only
+tracks stable Home Assistant releases.
 """
 from __future__ import annotations
 
@@ -48,6 +52,43 @@ def _resolved_tree(node: Any, flat: dict[str, str]) -> Any:
     return node
 
 
+def _patch_pytest_ha_custom_component() -> None:
+    """Bridge symbol moves between HA beta/dev and pytest-homeassistant-custom-component.
+
+    ``pytest-homeassistant-custom-component`` on PyPI tracks stable Home Assistant
+    releases. In HA 2026.11+ (core#187220), ``homeassistant.components.logger``
+    restricted ``__all__`` and stopped re-exporting ``_clear_logger_overwrites``
+    from the package root (moving the test import to
+    ``homeassistant.components.logger.helpers``). Until a 2026.11-compatible
+    ``pytest-homeassistant-custom-component`` release is published, rewrite its
+    ``common.py`` import so the pytest11 entrypoint loads cleanly on beta/dev.
+    """
+    try:
+        import pytest_homeassistant_custom_component as phcc
+    except ImportError:
+        return
+
+    common_py = Path(phcc.__file__).parent / "common.py"
+    if not common_py.exists():
+        return
+
+    old_block = (
+        "from homeassistant.components.logger import (\n"
+        "    DOMAIN as LOGGER_DOMAIN,\n"
+        "    SERVICE_SET_LEVEL,\n"
+        "    _clear_logger_overwrites,\n"
+        ")"
+    )
+    new_block = (
+        "from homeassistant.components.logger import DOMAIN as LOGGER_DOMAIN, SERVICE_SET_LEVEL\n"
+        "from homeassistant.components.logger.helpers import _clear_logger_overwrites"
+    )
+    content = common_py.read_text(encoding="utf-8")
+    if old_block in content:
+        common_py.write_text(content.replace(old_block, new_block, 1), encoding="utf-8")
+        print("patched pytest_homeassistant_custom_component/common.py for HA 2026.11+ logger export")
+
+
 def main() -> int:
     import homeassistant
 
@@ -69,6 +110,7 @@ def main() -> int:
         target.write_text(json.dumps(_resolved_tree(tree, flat), indent=2) + "\n", encoding="utf-8")
         written += 1
     print(f"seeded translations/en.json for {written} core component(s) (of {len(strings)} with strings.json)")
+    _patch_pytest_ha_custom_component()
     return 0
 
 
