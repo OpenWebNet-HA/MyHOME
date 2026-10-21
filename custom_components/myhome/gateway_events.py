@@ -16,6 +16,7 @@ from OWNd.message import (
     OWNAuxEvent,
     OWNCENEvent,
     OWNCENPlusEvent,
+    OWNDoorEntryEvent,
     OWNDryContactEvent,
     OWNEnergyCommand,
     OWNEnergyEvent,
@@ -25,21 +26,9 @@ from OWNd.message import (
     OWNHeatingEvent,
     OWNLightingEvent,
     OWNMessage,
+    OWNScenarioPlusEvent,
     OWNSceneEvent,
 )
-
-try:  # OWNd > 2.0.0b10 (OpenWebNet-HA/OWNd#91)
-    from OWNd.message import OWNScenarioPlusEvent
-except ImportError:  # pragma: no cover - pinned OWNd 2.0.0b10 fallback
-    class OWNScenarioPlusEvent(OWNMessage):  # type: ignore[misc,no-redef]
-        pass
-
-try:
-    from OWNd.message import OWNDoorEntryEvent
-except ImportError:  # pragma: no cover - fallback on released OWNd 2.0.0b10
-    class OWNDoorEntryEvent:  # type: ignore[no-redef]
-        """Fallback stub when running on released OWNd lacking WHO 6 door entry support."""
-        pass
 
 from .const import (
     CONF_LONG_PRESS,
@@ -446,7 +435,7 @@ class GatewayEventDispatcher:
             except (ValueError, TypeError):  # pragma: no cover - defensive
                 obj_val = raw_obj
             try:
-                pb_val = int(message.push_button)
+                pb_val: int | None = int(message.push_button)
             except (ValueError, TypeError):  # pragma: no cover - defensive
                 pb_val = message.push_button
 
@@ -705,11 +694,12 @@ class GatewayEventDispatcher:
                     target_mac = None
 
             if target_mac is not None and self._is_active_for_who(17):
-                scene_val: int | str = message.scenario
-                try:
-                    scene_val = int(message.scenario)
-                except (ValueError, TypeError):
-                    scene_val = message.scenario
+                scene_val: int | str | None = message.scenario
+                if message.scenario is not None:
+                    try:
+                        scene_val = int(message.scenario)
+                    except ValueError:
+                        pass
 
                 scene_payload: dict[str, Any] = {
                     "scenario": scene_val,

@@ -299,40 +299,25 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 translation_placeholders={"action": action},
             )
 
-        try:
-            from OWNd.message import OWNScenarioPlusCommand
-        except ImportError:  # pragma: no cover - fallback when OWNd unreleased
-            OWNScenarioPlusCommand = None
+        from OWNd.message import OWNScenarioPlusCommand
 
         cmd: Any = None
-        if OWNScenarioPlusCommand is not None:
-            try:
-                if action == "on":
-                    cmd = OWNScenarioPlusCommand.turn_on(where)
-                elif action == "off":
-                    cmd = OWNScenarioPlusCommand.turn_off(where)
-                elif action == "increase":
-                    cmd = OWNScenarioPlusCommand.increase(where)
-                elif action == "decrease":
-                    cmd = OWNScenarioPlusCommand.decrease(where)
-                elif action == "stop":
-                    cmd = OWNScenarioPlusCommand.stop(where)
-            except ValueError:
-                cmd = None
-        else:
-            action_frames = {
-                "on": f"*25*11#0*{where}##",
-                "off": f"*25*12*{where}##",
-                "increase": f"*25*13#0#5*{where}##",
-                "decrease": f"*25*14#0#5*{where}##",
-                "stop": f"*25*15*{where}##",
-            }
-            from OWNd.message import OWNCommand
+        try:
+            if action == "on":
+                cmd = OWNScenarioPlusCommand.turn_on(where)
+            elif action == "off":
+                cmd = OWNScenarioPlusCommand.turn_off(where)
+            elif action == "increase":
+                cmd = OWNScenarioPlusCommand.increase(where)
+            elif action == "decrease":
+                cmd = OWNScenarioPlusCommand.decrease(where)
+            elif action == "stop":
+                cmd = OWNScenarioPlusCommand.stop(where)
+        except ValueError:
+            cmd = None
 
-            cmd = OWNCommand.parse(action_frames[action])
-
-        # Fallback OWNCommand or legacy OWNd command objects may not define
-        # `is_valid`; default to True only when the attribute is absent.
+        # Command objects mocked in tests may not define `is_valid`; default to
+        # True only when the attribute is absent.
         if cmd is None or not getattr(cmd, "is_valid", True):
             raise ServiceValidationError(
                 f"Could not build scenario plus command for where '{where}' and action '{action}'",

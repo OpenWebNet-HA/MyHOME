@@ -101,7 +101,7 @@ class LightingResyncManager:
         return f"#{grp_norm}"
 
     @staticmethod
-    def _normalize_ptp_where(raw_where: str | int, interface: str | None = None) -> str:
+    def _normalize_ptp_where(raw_where: str | int | None, interface: str | None = None) -> str:
         """Normalize a point-to-point WHERE while preserving any ``#4#<interface>`` suffix."""
         where_str = str(raw_where).strip()
         base_part, sep, iface_part = where_str.partition(BUS_ROUTING)
