@@ -34,7 +34,7 @@ test = [
     "check-wheel-contents>=0.6.0",
     "validate-pyproject[all]>=0.16",
     "ruff>=0.4.0",
-    "OWNd>=2.0.0b10",
+    "OWNd>=2.0.0b11",
 ]
 
 [project.urls]
@@ -90,8 +90,9 @@ show_error_codes = true
 files = ["custom_components/myhome"]
 
 [[tool.mypy.overrides]]
-# OWNd does not ship py.typed yet; Platinum needs an OWNd release that does.
-module = ["OWNd.*", "serial_asyncio", "serial_asyncio.*"]
+# OWNd ships py.typed, so it is checked like any other typed dependency: a
+# missing OWNd is an error rather than a silent `Any`.
+module = ["serial_asyncio", "serial_asyncio.*"]
 ignore_missing_imports = true
 
 [tool.ruff]

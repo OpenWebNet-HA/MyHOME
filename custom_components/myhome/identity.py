@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
+from OWNd.connection import OWNGateway
 
 from .const import (
     CONF_FIRMWARE,
@@ -292,7 +293,7 @@ class GatewayIdentityMixin:
 
     hass: HomeAssistant
     config_entry: Any
-    gateway: Any
+    gateway: OWNGateway
     device_registry_id: str | None
     _who13: dict[str, Any]
     _who1013: dict[str, Any]

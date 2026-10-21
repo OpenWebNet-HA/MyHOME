@@ -562,9 +562,8 @@ async def test_send_scenario_plus_command_service(hass: HomeAssistant, attach_ga
         )
     assert exc_blank.value.translation_key == "scenario_plus_missing_where"
 
-    # Command parse failure in fallback branch
-    with patch("OWNd.message.OWNScenarioPlusCommand", None, create=True), \
-         patch("OWNd.message.OWNCommand.parse", return_value=None):
+    # Builder returns a command that fails its own validation
+    with patch("OWNd.message.OWNScenarioPlusCommand.turn_on", return_value=MagicMock(is_valid=False)):
         with pytest.raises(ServiceValidationError) as exc_parse:
             await hass.services.async_call(
                 DOMAIN,
