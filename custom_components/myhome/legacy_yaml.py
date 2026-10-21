@@ -18,6 +18,7 @@ from . import validate
 from .const import (
     BUS_ROUTING,
     CONF_BUS_INTERFACE,
+    CONF_EXPOSE,
     CONF_FILE_PATH,
     CONF_PLATFORMS,
     CONF_ZONE,
@@ -158,6 +159,7 @@ async def load_legacy_myhome_yaml(
     entry: ConfigEntry,
     configured_platforms: dict[str, dict[str, dict[str, Any]]],
     platforms: Sequence[Platform | str] = PLATFORMS,
+    configured_expose: list[dict[str, Any]] | None = None,
 ) -> None:
     """Load legacy myhome.yaml if present for seamless backward-compatibility.
 
@@ -165,7 +167,9 @@ async def load_legacy_myhome_yaml(
     invalid, or without this gateway's MAC), the copy imported into the entry
     options takes its place.
     """
-    if not await _load_live_yaml(hass, entry, configured_platforms, platforms):
+    if not await _load_live_yaml(
+        hass, entry, configured_platforms, platforms, configured_expose
+    ):
         _apply_imported_copy(entry, configured_platforms)
 
 
@@ -174,6 +178,7 @@ async def _load_live_yaml(
     entry: ConfigEntry,
     configured_platforms: dict[str, dict[str, dict[str, Any]]],
     platforms: Sequence[Platform | str],
+    configured_expose: list[dict[str, Any]] | None = None,
 ) -> bool:
     """Apply this gateway's section of myhome.yaml; whether the file had one."""
     _opt_path = entry.options.get(CONF_FILE_PATH) or entry.options.get("file_path")
@@ -201,7 +206,7 @@ async def _load_live_yaml(
 
     try:
         # Support single-gateway config without MAC address header at root level
-        if any(plat in raw_yaml for plat in platforms):
+        if any(plat in raw_yaml for plat in platforms) or CONF_EXPOSE in raw_yaml:
             configured_gateways = [
                 e
                 for e in hass.config_entries.async_entries(DOMAIN)
@@ -223,9 +228,9 @@ async def _load_live_yaml(
                 if CONF_MAC not in gw_val:
                     gw_val[CONF_MAC] = str(gw_key)
                 for plat, devs in gw_val.items():
-                    # climate devices are addressed by `zone` (default "#0"); the schema
-                    # has no `where` for them and rejects the whole file on it.
-                    if plat == "climate" or not isinstance(devs, dict):
+                    # climate devices are addressed by `zone` (default "#0") and expose
+                    # entries use named slugs (or WHO=13 with no `where`).
+                    if plat in ("climate", CONF_EXPOSE) or not isinstance(devs, dict):
                         continue
                     for d_key, d_val in devs.items():
                         if isinstance(d_val, dict) and "where" not in d_val and "zone" not in d_val:
@@ -248,6 +253,10 @@ async def _load_live_yaml(
                     continue
         if mac_key is None:
             return False
+        if configured_expose is not None:
+            yaml_expose = _validated[mac_key].get(CONF_EXPOSE, [])
+            if isinstance(yaml_expose, list):
+                configured_expose.extend(yaml_expose)
         yaml_platforms = _validated[mac_key].get(CONF_PLATFORMS, {})
         _apply_yaml_platforms(yaml_platforms, configured_platforms)
         migrate_legacy_yaml_to_entry_options(hass, entry, yaml_platforms)

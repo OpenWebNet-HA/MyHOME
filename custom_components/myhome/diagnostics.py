@@ -153,6 +153,11 @@ async def async_get_config_entry_diagnostics(
         "profile": profile_info,
         "queue": queue_info,
         "platforms": platforms_info,
+        "expose": (
+            runtime.expose_manager.as_diagnostics()
+            if runtime is not None and runtime.expose_manager is not None
+            else []
+        ),
         "audio": _build_audio_diagnostics(hass, entry, runtime),
         "bus_monitor": bus_monitor_info,
         "topology_inference": topology_inference,

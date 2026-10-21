@@ -8,7 +8,7 @@ import typing
 from typing import Dict, Optional
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntry, ConfigFlow
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigSubentryFlow
 from homeassistant.const import (
     CONF_FRIENDLY_NAME,
     CONF_HOST,
@@ -32,6 +32,7 @@ from .config_flow_discovery import (
     MACAddress,
     _get_serial_ports,
 )
+from .config_flow_expose import ExposeSubentryFlowHandler
 from .config_flow_options import MyhomeOptionsFlowHandler
 from .config_flow_topology import ConfigFlowTopologyMixin
 from .const import (
@@ -39,6 +40,7 @@ from .const import (
     CONF_MANUFACTURER,
     DOMAIN,
     LOGGER,
+    SUBENTRY_TYPE_EXPOSE,
     SUPPORTED_GATEWAY_MODELS,
 )
 from .gateway import MyHOMEGatewayHandler, command_session_default
@@ -57,6 +59,14 @@ class MyhomeFlowHandler(
     def async_get_options_flow(config_entry):  # type: ignore
         """Get the options flow for this handler."""
         return MyhomeOptionsFlowHandler(config_entry)
+
+    @classmethod
+    @callback
+    def async_get_supported_subentry_types(
+        cls, config_entry: ConfigEntry
+    ) -> dict[str, type[ConfigSubentryFlow]]:
+        """Return subentries supported by this integration."""
+        return {SUBENTRY_TYPE_EXPOSE: ExposeSubentryFlowHandler}
 
     def __init__(self):  # type: ignore
         """Initialize the MyHome flow."""

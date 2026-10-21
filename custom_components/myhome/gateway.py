@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import inspect
 import time
 from collections.abc import Iterable
 from typing import Any
@@ -364,6 +365,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     @callback
     def _on_event_connection_state_change(self, connected: bool) -> None:
         """Gate commands and publish sustained event-session availability."""
+        was_connected = self.is_connected
         self.is_connected = connected
         self._event_runner.is_connected = connected
         self._update_event_watchdog(progress=False)
@@ -383,6 +385,12 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 self._available = True
                 LOGGER.info("%s Gateway available again.", self.log_id)
                 self._notify_availability()
+            if not was_connected and self._initial_discovery_done.is_set():
+                runtime = getattr(self.config_entry, "runtime_data", None)
+                expose_mgr = getattr(runtime, "expose_manager", None)
+                sync_fn = getattr(expose_mgr, "async_sync_all", None)
+                if inspect.iscoroutinefunction(sync_fn):
+                    self.hass.async_create_task(sync_fn())
             return
 
         self._event_session_ready.clear()
@@ -554,6 +562,11 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             await self.send_paced(self._discovery_frames())
         finally:
             self._initial_discovery_done.set()
+        runtime = getattr(self.config_entry, "runtime_data", None)
+        expose_mgr = getattr(runtime, "expose_manager", None)
+        sync_fn = getattr(expose_mgr, "async_sync_all", None)
+        if inspect.iscoroutinefunction(sync_fn):
+            await sync_fn()
 
     async def wait_for_initial_discovery(self, timeout: float | None = None) -> None:
         """Wait until startup initial discovery and any active paced sweep finish."""

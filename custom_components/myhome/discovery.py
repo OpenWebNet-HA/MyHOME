@@ -44,6 +44,7 @@ from homeassistant.helpers.entity import Entity
 
 from .const import BUS_ROUTING, CONF_BUS_INTERFACE, CONF_WHERE, CONF_WHO, CONF_ZONE, DOMAIN, LOGGER
 from .data import MyHOMEConfigEntry, MyHOMERuntimeData
+from .expose import is_exposed_on_bus
 from .ignored import IgnoredAddresses
 from .myhome_device import MyHOMEEntity
 from .topology import peer_unique_id
@@ -434,12 +435,22 @@ class PlatformDiscovery:
         self.ignored_addresses = IgnoredAddresses.from_config_entry(config_entry)
 
     def _is_ignored(self, address: Address) -> bool:
-        """Whether this address is configured to be ignored on this gateway."""
+        """Whether this address is configured to be ignored or exposed as a virtual device on this gateway."""
         try:
             who_int = int(self.who)
         except (ValueError, TypeError):
             return False
-        return self.ignored_addresses.is_ignored(who_int, address.where, address.interface)
+        if self.ignored_addresses.is_ignored(who_int, address.where, address.interface):
+            return True
+        if self.platform != "climate":
+            full_where = (
+                f"{address.where}#4#{address.interface}"
+                if address.interface
+                else address.where
+            )
+            if is_exposed_on_bus(self.hass, self.config_entry, who_int, full_where):
+                return True
+        return False
 
     # ── registry ────────────────────────────────────────────────────────
 

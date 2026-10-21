@@ -244,11 +244,13 @@ _ensure_ownd_profile_oracle_parity()
 
 __all__ = [
     "area_of_where",
+    "expose_message_where",
     "is_apl_address",
     "is_probe",
     "is_pump",
     "is_valid_hs_tuple",
     "is_valid_rgb_tuple",
+    "normalize_expose_where",
     "normalize_where",
     "where_param",
     "zone_number",
@@ -257,16 +259,17 @@ __all__ = [
 
 def zone_number(where: str) -> str:
     """The zone without a legacy ``4-`` prefix or ``#``: ``"#0"`` -> ``"0"``, ``"4-12"`` -> ``"12"``."""
-    return where.split("-")[-1].replace("#", "")
+    return where.removeprefix("4-").replace("#", "")
 
 
 def is_probe(where: str) -> bool:
     """A WHERE of ``PZZ``: probe ``P`` of zone ``ZZ`` (``105``, ``0105``, ``#105``, ``4-105``).
 
     Only a bare number counts. ``12#1`` is actuator 1 of zone 12, and read
-    digit by digit (``121``) it would look like a probe.
+    digit by digit (``121``) it would look like a probe. ``001``..``099`` is
+    not a probe but the group of all probes in zone ``ZZ``.
     """
-    bare = where.split("-")[-1].lstrip("#")
+    bare = where.removeprefix("4-").removeprefix("#")
     return bare.isdigit() and int(bare) >= 100
 
 
@@ -278,3 +281,32 @@ def where_param(message: Any) -> list[str]:
 def is_pump(message: Any) -> bool:
     """WHERE ``0#N``: OWNd reports WHERE ``0`` with the pump number as a parameter."""
     return str(getattr(message, "where", None)) == "0" and bool(where_param(message))
+
+
+def normalize_expose_where(who: int, where: str | int | None) -> str:
+    """Return canonical WHERE string for an expose binding on ``who``."""
+    raw = str(where if where is not None else "").strip()
+    if who == 13 or not raw:
+        return ""
+    if who == 4:
+        clean = raw.removeprefix("4-")
+        bare = clean.removeprefix("#")
+        if is_probe(bare):
+            return bare
+        return clean
+    if who in (1, 2):
+        return normalize_where(raw) or raw
+    return raw
+
+
+def expose_message_where(message: Any) -> str:
+    """Extract canonical WHERE string from a received OpenWebNet message for expose matching."""
+    who = getattr(message, "who", None)
+    raw_where = getattr(message, "where", None)
+    if who == 13 or raw_where is None:
+        return ""
+    raw_str = str(raw_where).strip()
+    tail = where_param(message)
+    full_str = f"{raw_str}#{'#'.join(str(p) for p in tail)}" if tail else raw_str
+    return normalize_expose_where(who, full_str) if isinstance(who, int) else full_str
+

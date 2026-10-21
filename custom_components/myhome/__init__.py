@@ -16,6 +16,7 @@ from .const import (
     CONF_BROADCAST_RESYNC,
     CONF_ENTITIES,
     CONF_ENTITY,
+    CONF_EXPOSE,
     CONF_GENERATE_EVENTS,
     CONF_PLATFORMS,
     CONF_WORKER_COUNT,
@@ -29,6 +30,7 @@ from .const import (
 from .data import MyHOMEConfigEntry, MyHOMERuntimeData
 from .decoder_pool import decoder_pool_store
 from .device_health import DeviceHealth
+from .expose import ExposeManager
 from .gateway import MyHOMEGatewayHandler, command_session_limit
 from .legacy_yaml import load_legacy_myhome_yaml
 from .migrate import migrate_entry_and_registries, prune_stale_devices
@@ -201,12 +203,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bo
     _seeded = _seeded if isinstance(_seeded, dict) else {}
     configured_platforms: dict[str, dict[str, dict[str, Any]]] = _seeded.setdefault(CONF_PLATFORMS, {})
     configured_entities: dict[str, dict[str, Any]] = _seeded.setdefault(CONF_ENTITIES, {})
+    configured_expose: list[dict[str, Any]] = list(_seeded.get(CONF_EXPOSE) or [])
     for _platform in PLATFORMS:
         configured_platforms.setdefault(_platform, {})
         configured_entities.setdefault(_platform, {})
 
     # Load legacy myhome.yaml if present for seamless backward-compatibility
-    await load_legacy_myhome_yaml(hass, entry, configured_platforms)
+    await load_legacy_myhome_yaml(
+        hass, entry, configured_platforms, configured_expose=configured_expose
+    )
 
     _generate_events = (
         entry.options.get(CONF_GENERATE_EVENTS, False)
@@ -223,8 +228,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bo
         broadcast_resync=_broadcast_resync,
     )
     runtime = MyHOMERuntimeData(
-        gateway=gateway, platforms=configured_platforms, entities=configured_entities
+        gateway=gateway,
+        platforms=configured_platforms,
+        entities=configured_entities,
+        expose=configured_expose,
     )
+    runtime.expose_manager = ExposeManager(hass, entry, gateway, configured_expose)
 
     try:
         tests_results = await gateway.test()
@@ -319,6 +328,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bo
             )
         )
 
+    await runtime.expose_manager.async_start()
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Every platform is now subscribed to gateway messages, so discovery replies
@@ -372,9 +383,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> b
     LOGGER.info("Unloading MyHome entry.")
 
     runtime = getattr(entry, "runtime_data", None)
-    if isinstance(runtime, MyHOMERuntimeData) and runtime.decoder_pool:
-        # A reload leaves the amplifiers playing: keep the groups for the next setup.
-        await runtime.decoder_pool.async_save()
+    if isinstance(runtime, MyHOMERuntimeData):
+        if runtime.expose_manager is not None:
+            await runtime.expose_manager.async_stop()
+        if runtime.decoder_pool:
+            # A reload leaves the amplifiers playing: keep the groups for the next setup.
+            await runtime.decoder_pool.async_save()
 
     if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         return False

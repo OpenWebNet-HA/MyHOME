@@ -1,4 +1,5 @@
 """Validator for the MyHome configuration file."""
+import math
 import re
 import typing
 
@@ -33,9 +34,16 @@ from homeassistant.components.switch import (  # type: ignore
 from homeassistant.components.switch import (  # type: ignore[attr-defined, unused-ignore]
     SwitchDeviceClass,
 )
-from homeassistant.const import CONF_CODE, CONF_MAC, CONF_NAME
+from homeassistant.const import (
+    CONF_ATTRIBUTE,
+    CONF_CODE,
+    CONF_ENTITY_ID,
+    CONF_MAC,
+    CONF_NAME,
+)
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.device_registry import format_mac as ha_format_mac
+from homeassistant.helpers.template import Template
 from voluptuous import (
     All,
     Any,
@@ -61,17 +69,23 @@ from .const import (
     CONF_ALLOWED_USERS,
     CONF_APPROVAL_TIMEOUT,
     CONF_APPROVERS,
+    CONF_BIDIRECTIONAL,
+    CONF_BRIGHTNESS_STEP_PCT,
     CONF_BUS_INTERFACE,
     CONF_CAMERA,
     CONF_CENTRAL,
     CONF_CLOSE_BLOCK_ENTITY,
     CONF_COLOR_TEMP,
+    CONF_COOLDOWN,
     CONF_COOLING_SUPPORT,
+    CONF_DEFAULT,
     CONF_DEVICE_CLASS,
     CONF_DEVICE_MODEL,
+    CONF_DIMENSION,
     CONF_DIMMABLE,
     CONF_ENTITIES,
     CONF_ENTITY_NAME,
+    CONF_EXPOSE,
     CONF_FAN_SUPPORT,
     CONF_HEATING_SUPPORT,
     CONF_HS,
@@ -83,13 +97,17 @@ from .const import (
     CONF_MANUFACTURER,
     CONF_MEMBERS,
     CONF_MIN_CYCLE_TIME,
+    CONF_MIN_DELTA,
     CONF_MIN_MOTOR_PULSE,
+    CONF_ON_STATES,
+    CONF_PERIODIC_SEND,
     CONF_PIN_CODE,
     CONF_PLATFORMS,
     CONF_PREWARN_LIGHT,
     CONF_PREWARN_SECONDS,
     CONF_PULSE_DURATION,
     CONF_REMOTE_CLOSE,
+    CONF_RESPOND_TO_READ,
     CONF_RGB,
     CONF_SAFETY_CHECK_DAYS,
     CONF_SAFETY_DEVICES_VERIFIED,
@@ -97,9 +115,14 @@ from .const import (
     CONF_SLAT_TIME,
     CONF_STANDALONE,
     CONF_STATE_SENSOR,
+    CONF_STEP_DOWN_ACTION,
+    CONF_STEP_UP_ACTION,
     CONF_STRATEGY,
     CONF_TRAVEL_TIME,
+    CONF_TURN_OFF_ACTION,
+    CONF_TURN_ON_ACTION,
     CONF_TYPE,
+    CONF_VALUE_TEMPLATE,
     CONF_WATCHDOG_MARGIN,
     CONF_WHERE,
     CONF_WHO,
@@ -250,7 +273,9 @@ class MyHomeConfigSchema(Schema):
             _rekeyed_data[gateway_mac] = {}
             _rekeyed_data[gateway_mac][CONF_PLATFORMS] = {}
             for platform in data[gateway]:
-                if platform != CONF_MAC:
+                if platform == CONF_EXPOSE:
+                    _rekeyed_data[gateway_mac][CONF_EXPOSE] = data[gateway][CONF_EXPOSE]
+                elif platform != CONF_MAC:
                     _rekeyed_data[gateway_mac][CONF_PLATFORMS][platform] = data[gateway][platform]
 
             if (
@@ -766,6 +791,246 @@ def _validate_locks(data: dict[str, typing.Any]) -> dict[str, typing.Any]:
 
 lock_schema = All(lock_schema, _validate_locks)  # type: ignore[assignment]
 
+
+def _finite_float(v: typing.Any) -> float:
+    """Coerce ``v`` to a finite float, rejecting booleans and NaN/inf."""
+    if isinstance(v, bool):
+        raise Invalid("boolean is not a valid numeric value")
+    try:
+        fval = float(v)
+    except (TypeError, ValueError, OverflowError) as err:
+        raise Invalid(f"expected a finite number, got {v!r}") from err
+    if not math.isfinite(fval):
+        raise Invalid("numeric value must be finite")
+    return fval
+
+
+def _non_bool_int(v: typing.Any) -> int:
+    """Coerce ``v`` to an int, rejecting booleans, non-finite floats, and fractional floats."""
+    if isinstance(v, bool) or (
+        isinstance(v, float) and (not math.isfinite(v) or not v.is_integer())
+    ):
+        raise Invalid(f"expected an integer, got {v!r}")
+    try:
+        return int(v)
+    except (TypeError, ValueError, OverflowError) as err:
+        raise Invalid(f"expected an integer, got {v!r}") from err
+
+
+def _non_bool_str(v: typing.Any) -> str:
+    """Coerce ``v`` to a string, rejecting booleans/non-finite floats and treating None as empty."""
+    if v is None:
+        return ""
+    if isinstance(v, bool) or (isinstance(v, float) and not math.isfinite(v)):
+        raise Invalid(f"expected a string, got {v!r}")
+    return str(v)
+
+
+def _stringify_templates(val: typing.Any) -> typing.Any:
+    """Convert any pre-compiled HA Template objects back to raw template strings."""
+    if isinstance(val, Template):
+        return val.template
+    if isinstance(val, dict):
+        return {
+            _stringify_templates(k): _stringify_templates(v) for k, v in val.items()
+        }
+    if isinstance(val, list):
+        return [_stringify_templates(x) for x in val]
+    return val
+
+
+def _validate_expose_action(val: typing.Any) -> list[dict[str, typing.Any]]:
+    """Validate an expose action sequence using Home Assistant's SCRIPT_SCHEMA."""
+    if isinstance(val, bool) or val is None:
+        raise Invalid("expose action must be a valid script action or sequence")
+    if isinstance(val, (list, dict)) and not val:
+        raise Invalid("expose action sequence cannot be empty")
+    return typing.cast(
+        list[dict[str, typing.Any]],
+        _stringify_templates(cv.SCRIPT_SCHEMA(_stringify_templates(val))),
+    )
+
+
+# External probe N00 (N = 1..9) or individual probe PZZ (P = 1..8, ZZ = 01..99).
+# 0, 1..99 and 001..099 address all probes, a zone's master probe and all probes
+# of a zone, so a virtual probe must not answer on them.
+_WHO4_EXPOSE_PROBE_RE = re.compile(r"(?:[1-9]00|[1-8](?:0[1-9]|[1-9]\d))")
+_WHO18_EXPOSE_WHERE_RE = re.compile(
+    r"(?:5(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])(?:#\d)?|7(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])#0)"
+)
+
+
+def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    """Validate cross-field constraints on a single expose entry."""
+    from .where_grammar import is_apl_address, is_probe, normalize_expose_where
+
+    who = int(item[CONF_WHO])
+    raw_where_val = item.get(CONF_WHERE)
+    raw_where = str(raw_where_val if raw_where_val is not None else "").strip()
+    dim = item.get(CONF_DIMENSION)
+    default_val = item.get(CONF_DEFAULT)
+    if (isinstance(default_val, float) and not math.isfinite(default_val)) or (
+        isinstance(default_val, str)
+        and default_val.strip().lower()
+        in ("nan", "inf", "+inf", "-inf", "infinity", "+infinity", "-infinity")
+    ):
+        raise Invalid("expose 'default' must be a finite value")
+
+    if who == 13:
+        if raw_where:
+            raise Invalid(f"WHO=13 does not take a 'where' address (got {raw_where!r})")
+        if dim is not None and int(dim) not in (0, 1, 22):
+            raise Invalid(
+                f"WHO=13 expose dimension must be one of 0, 1, 22 (got {dim})"
+            )
+        item[CONF_WHERE] = ""
+        return item
+
+    if not raw_where or "*" in raw_where:
+        raise Invalid(
+            f"expose entry for WHO={who} requires a non-empty 'where' address without '*'"
+        )
+
+    where = normalize_expose_where(who, raw_where)
+    item[CONF_WHERE] = where
+
+    has_entity = bool(item.get(CONF_ENTITY_ID))
+    action_keys = (
+        CONF_TURN_ON_ACTION,
+        CONF_TURN_OFF_ACTION,
+        CONF_STEP_UP_ACTION,
+        CONF_STEP_DOWN_ACTION,
+    )
+    has_actions = any(item.get(k) for k in action_keys)
+    if who in (4, 18) and not has_entity:
+        raise Invalid(f"expose entry for WHO={who} requires 'entity_id'")
+    if who in (1, 2) and not (has_entity or has_actions):
+        raise Invalid(
+            f"expose entry for WHO={who} requires 'entity_id' or custom action(s)"
+        )
+
+    if who in (1, 2):
+        if dim is not None:
+            raise Invalid(f"WHO={who} expose does not support 'dimension' (got {dim})")
+        base_where, sep, suffix = where.partition("#")
+        if (
+            where.startswith("#")
+            or not is_apl_address(base_where)
+            or (sep and not re.fullmatch(r"4#(0\d|1[0-5])", suffix))
+        ):
+            raise Invalid(
+                f"WHO={who} expose 'where' must be a point-to-point actuator address (got {raw_where!r})"
+            )
+    elif who == 4:
+        if not (is_probe(where) and _WHO4_EXPOSE_PROBE_RE.fullmatch(where)):
+            raise Invalid(
+                f"WHO=4 expose 'where' must be a probe address (external probe '100'..'900' or probe PZZ '101'..'899', got {raw_where!r})"
+            )
+        if dim is not None and int(dim) != 0:
+            raise Invalid(
+                f"WHO=4 temperature probe expose supports only dimension 0 (got {dim})"
+            )
+        if default_val is not None:
+            def_temp = _finite_float(default_val)
+            if not -99.9 <= def_temp <= 99.9:
+                raise Invalid(
+                    "WHO=4 expose 'default' must be between -99.9 and 99.9"
+                )
+    elif who == 18:
+        if dim is None:
+            raise Invalid(
+                "WHO=18 energy expose requires 'dimension' (one of 51, 52, 53, 54, 113)"
+            )
+        if int(dim) not in (51, 52, 53, 54, 113):
+            raise Invalid(
+                f"WHO=18 energy expose dimension must be one of 51, 52, 53, 54, 113 (got {dim})"
+            )
+        if not _WHO18_EXPOSE_WHERE_RE.fullmatch(where):
+            raise Invalid(
+                f"WHO=18 expose 'where' must be '5N' (e.g. '51'..'5255') or '7N#0' (got {raw_where!r})"
+            )
+        if default_val is not None:
+            def_en = _finite_float(default_val)
+            if def_en < 0.0:
+                raise Invalid("WHO=18 expose 'default' must be non-negative")
+    return item
+
+
+def _validate_expose_list(entries: list[dict[str, typing.Any]]) -> list[dict[str, typing.Any]]:
+    """Reject duplicate (who, where, dimension) bindings within an expose list."""
+    seen: set[tuple[int, str, int | None]] = set()
+    for item in entries:
+        who = int(item[CONF_WHO])
+        where = str(item.get(CONF_WHERE) or "")
+        raw_dim = item.get(CONF_DIMENSION)
+        if raw_dim is not None:
+            dim: int | None = int(raw_dim)
+        elif who == 4:
+            dim = 0
+        elif who == 13:
+            dim = 22
+        else:
+            dim = None
+        key = (who, where, dim)
+        if key in seen:
+            raise Invalid(
+                f"Duplicate expose binding for WHO={who} WHERE={where!r} dimension={dim}"
+            )
+        seen.add(key)
+    return entries
+
+
+expose_entry_schema = All(
+    Schema(
+        {
+            Required(CONF_WHO): All(_non_bool_int, In([1, 2, 4, 13, 18])),
+            Optional(CONF_WHERE): _non_bool_str,
+            Optional(CONF_ENTITY_ID): cv.entity_id,
+            Optional(CONF_ATTRIBUTE): _non_bool_str,
+            Optional(CONF_DIMENSION): _non_bool_int,
+            Optional(CONF_VALUE_TEMPLATE): _non_bool_str,
+            Optional(CONF_COOLDOWN, default=1.0): All(
+                _finite_float, Range(min=0.0, max=3600.0)
+            ),
+            Optional(CONF_MIN_DELTA): All(_finite_float, Range(min=0.0)),
+            Optional(CONF_PERIODIC_SEND): All(
+                _finite_float, Range(min=0.0, max=604800.0)
+            ),
+            Optional(CONF_RESPOND_TO_READ, default=True): Boolean(),
+            Optional(CONF_BIDIRECTIONAL): Boolean(),
+            Optional(CONF_DEFAULT): Any(str, int, float, bool),
+            Optional(CONF_ON_STATES): Any([Coerce(str)], Coerce(str)),
+            Optional(CONF_TURN_ON_ACTION): _validate_expose_action,
+            Optional(CONF_TURN_OFF_ACTION): _validate_expose_action,
+            Optional(CONF_STEP_UP_ACTION): _validate_expose_action,
+            Optional(CONF_STEP_DOWN_ACTION): _validate_expose_action,
+            Optional(CONF_BRIGHTNESS_STEP_PCT, default=10): All(
+                _non_bool_int, Range(min=1, max=100)
+            ),
+        }
+    ),
+    _validate_expose_entry,
+)
+
+
+def _coerce_expose_collection(value: typing.Any) -> list[dict[str, typing.Any]]:
+    """Accept either a list of expose dicts or a named slug->dict mapping in YAML."""
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        if not value:
+            return []
+        if all(isinstance(v, dict) for v in value.values()):
+            return [dict(v) for v in value.values()]
+    raise Invalid(
+        "expose configuration must be a list of bindings or a mapping of named bindings"
+    )
+
+
+expose_schema = All(
+    _coerce_expose_collection, Schema([expose_entry_schema]), _validate_expose_list
+)
+
 # The device schemas are Schema subclasses whose overridden __call__ performs
 # post-processing (rekeying to "who-where" and injecting default keys). Nested
 # schema instances are not guaranteed to be invoked through __call__ by the
@@ -783,6 +1048,7 @@ gateway_schema = Schema(
         Optional(CLIMATE): lambda v: climate_schema(v),
         Optional(ALARM_CONTROL_PANEL): lambda v: alarm_control_panel_schema(v),
         Optional(LOCK): lambda v: lock_schema(v),
+        Optional(CONF_EXPOSE): lambda v: expose_schema(v),
     }
 )
 
