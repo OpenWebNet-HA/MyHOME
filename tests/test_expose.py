@@ -93,9 +93,11 @@ def _make_entry(hass: HomeAssistant, gateway=None, expose_list=None, subentries=
 
 def test_where_grammar_probe_and_expose_helpers():
     """Verify 3-digit probe recognition and expose WHERE normalization."""
-    assert is_probe("000") is True
-    assert is_probe("001") is True
-    assert is_probe("099") is True
+    # 0ZZ is the group of all probes in zone ZZ, not a probe
+    assert is_probe("000") is False
+    assert is_probe("001") is False
+    assert is_probe("099") is False
+    assert is_probe("100") is True
     assert is_probe("101") is True
     assert is_probe("501") is True
     assert is_probe("1") is False
@@ -104,8 +106,9 @@ def test_where_grammar_probe_and_expose_helpers():
 
     assert normalize_expose_where(1, "99") == "99"
     assert normalize_expose_where(1, "   ") == ""
-    assert normalize_expose_where(4, "0") == "000"
-    assert normalize_expose_where(4, "000") == "000"
+    assert normalize_expose_where(4, "0") == "0"
+    assert normalize_expose_where(4, "050") == "050"
+    assert normalize_expose_where(4, "#100") == "100"
     assert normalize_expose_where(4, "102") == "102"
     assert normalize_expose_where(18, "51") == "51"
     assert normalize_expose_where(18, "511") == "511"
@@ -144,7 +147,7 @@ def test_expose_schema_validation():
         },
         {
             "who": 4,
-            "where": "000",
+            "where": "100",
             "entity_id": "sensor.weather_station_outdoor_temperature",
             "cooldown": 30,
             "min_delta": 0.1,
@@ -166,7 +169,7 @@ def test_expose_schema_validation():
     ]
     validated = expose_schema(valid_entries)
     assert len(validated) == 6
-    assert validated[3]["where"] == "000"
+    assert validated[3]["where"] == "100"
     assert validated[5]["who"] == 13
     assert expose_schema({}) == []
 
@@ -188,7 +191,7 @@ def test_expose_schema_validation():
 
     # WHO=4 missing entity_id
     with pytest.raises(vol.Invalid, match="requires 'entity_id'"):
-        expose_entry_schema({"who": 4, "where": "000"})
+        expose_entry_schema({"who": 4, "where": "100"})
 
     # WHO=1 missing entity_id
     with pytest.raises(vol.Invalid, match="requires 'entity_id'"):
@@ -209,7 +212,7 @@ def test_expose_schema_validation():
     # WHO=4 invalid dimension
     with pytest.raises(vol.Invalid, match="supports only dimension 0"):
         expose_entry_schema(
-            {"who": 4, "where": "000", "dimension": 14, "entity_id": "sensor.temp"}
+            {"who": 4, "where": "100", "dimension": 14, "entity_id": "sensor.temp"}
         )
 
     # WHO=18 missing dimension
@@ -562,7 +565,7 @@ async def test_who4_virtual_temperature_probe_and_deadband(hass: HomeAssistant):
         expose_list=[
             {
                 "who": 4,
-                "where": "000",
+                "where": "100",
                 "dimension": 0,
                 "entity_id": "sensor.outdoor_temp",
                 "cooldown": 0,
@@ -575,9 +578,9 @@ async def test_who4_virtual_temperature_probe_and_deadband(hass: HomeAssistant):
     await mgr.async_start()
     await mgr.async_sync_all()
 
-    # Initial sync sends *#4*000*#0*0215## via low-priority queue
+    # Initial sync sends *#4*100*#0*0215## via low-priority queue
     assert [str(c.args[0]) for c in gw.send_status_request.call_args_list] == [
-        "*#4*000*#0*0215##"
+        "*#4*100*#0*0215##"
     ]
     gw.send_status_request.reset_mock()
 
@@ -590,13 +593,13 @@ async def test_who4_virtual_temperature_probe_and_deadband(hass: HomeAssistant):
     hass.states.async_set("sensor.outdoor_temp", "-3.2")
     await hass.async_block_till_done()
     assert [str(c.args[0]) for c in gw.send_status_request.call_args_list] == [
-        "*#4*000*#0*1032##"
+        "*#4*100*#0*1032##"
     ]
 
-    # Bus query *#4*000*0## replies on high-priority queue with current value (-3.2°C -> 1032)
+    # Bus query *#4*100*0## replies on high-priority queue with current value (-3.2°C -> 1032)
     gw.send.reset_mock()
-    await mgr.handle_bus_message(OWNMessage.parse("*#4*000*0##"))
-    assert [str(c.args[0]) for c in gw.send.call_args_list] == ["*#4*000*#0*1032##"]
+    await mgr.handle_bus_message(OWNMessage.parse("*#4*100*0##"))
+    assert [str(c.args[0]) for c in gw.send.call_args_list] == ["*#4*100*#0*1032##"]
 
     await mgr.async_stop()
 
@@ -766,7 +769,7 @@ def test_discovery_suppresses_phantom_entities_for_exposed_addresses(hass: HomeA
         expose_list=[
             {"who": 1, "where": "99", "entity_id": "media_player.living_room_tv"},
             {"who": 2, "where": "97", "entity_id": "cover.pergola_somfy"},
-            {"who": 4, "where": "000", "dimension": 0, "entity_id": "sensor.outdoor_temp"},
+            {"who": 4, "where": "100", "dimension": 0, "entity_id": "sensor.outdoor_temp"},
             {"who": 18, "where": "51", "dimension": 113, "entity_id": "sensor.p1_power"},
         ],
     )
@@ -827,7 +830,7 @@ def test_discovery_suppresses_phantom_entities_for_exposed_addresses(hass: HomeA
         event_type=OWNHeatingEvent,
         build=_build_dummy,
     )
-    sensor_disc_4.handle_message(OWNMessage.parse("*#4*000*0*0215##"))
+    sensor_disc_4.handle_message(OWNMessage.parse("*#4*100*0*0215##"))
     assert len(added_sensors) == 0
 
     # Exposed WHO=18 WHERE=51 must NOT create a phantom energy sensor
@@ -906,7 +909,7 @@ expose:
     where: '99'
     entity_id: media_player.living_room_tv
   - who: 4
-    where: '000'
+    where: '100'
     dimension: 0
     entity_id: sensor.outdoor_temp
 """,
@@ -932,7 +935,7 @@ expose:
     assert "11" in platforms["light"]
     assert len(expose_list) == 2
     assert expose_list[0]["where"] == "99"
-    assert expose_list[1]["where"] == "000"
+    assert expose_list[1]["where"] == "100"
 
 
 @pytest.mark.asyncio
@@ -1053,7 +1056,7 @@ async def test_expose_subentry_flow_and_diagnostics(hass: HomeAssistant):
         ok_res = await flow.async_step_user(
             {
                 CONF_WHO: "4",
-                "where": "000",
+                "where": "100",
                 CONF_DIMENSION: 0,
                 "entity_id": "sensor.outdoor_temp",
                 CONF_COOLDOWN: 30,
@@ -1066,7 +1069,7 @@ async def test_expose_subentry_flow_and_diagnostics(hass: HomeAssistant):
         assert mock_reload.called
     assert ok_res["type"] == FlowResultType.CREATE_ENTRY
     assert ok_res["data"]["who"] == 4
-    assert ok_res["data"]["where"] == "000"
+    assert ok_res["data"]["where"] == "100"
     assert ok_res["data"]["dimension"] == 0
 
     # Reconfigure step on existing subentry "sub_1"
@@ -1154,14 +1157,14 @@ async def test_expose_templates_attributes_defaults_and_unit_scaling(hass: HomeA
             },
             {
                 "who": 4,
-                "where": "001",
+                "where": "101",
                 "entity_id": "sensor.unavailable_temp",
                 "default": 19.5,
                 "cooldown": 0,
             },
             {
                 "who": 4,
-                "where": "002",
+                "where": "102",
                 "entity_id": "climate.nest",
                 "attribute": "current_temperature",
                 "value_template": "{{ (value | float) - 0.4 }}",
@@ -1179,8 +1182,8 @@ async def test_expose_templates_attributes_defaults_and_unit_scaling(hass: HomeA
     assert "*#18*51*52*120500##" in sent
     assert "*#18*51*53*4500##" in sent
     assert "*#18*51*54*890##" in sent
-    assert "*#4*001*#0*0195##" in sent
-    assert "*#4*002*#0*0220##" in sent
+    assert "*#4*101*#0*0195##" in sent
+    assert "*#4*102*#0*0220##" in sent
 
     await mgr.async_stop()
 
@@ -1614,7 +1617,7 @@ async def test_expose_edge_cases_and_timers(hass: HomeAssistant):
     b4 = ExposeBinding.from_dict(
         {
             "who": 4,
-            "where": "000",
+            "where": "100",
             "entity_id": "sensor.t",
             "periodic_send": 60,
             "bidirectional": False,
@@ -1827,11 +1830,11 @@ async def test_expose_edge_cases_and_timers(hass: HomeAssistant):
     assert [str(f) for f in frames_r2_s] == ["*2*2*21##", "*#2*21*10*12*40*0*0##"]
     hass.states.async_set("sensor.temp_ok", "21.5")
     frames_r4, _ = mgr_resp._build_frames(
-        ExposeBinding(who=4, where="000", entity_id="sensor.temp_ok"),
+        ExposeBinding(who=4, where="100", entity_id="sensor.temp_ok"),
         force=True,
         is_reply=False,
     )
-    assert [str(f) for f in frames_r4] == ["*#4*000*0*0215##"]
+    assert [str(f) for f in frames_r4] == ["*#4*100*0*0215##"]
     hass.services.async_register("light", "turn_on", AsyncMock())
     hass.services.async_register("cover", "set_cover_position", AsyncMock())
     mgr_resp.bindings = [
@@ -1866,13 +1869,13 @@ async def test_expose_edge_cases_and_timers(hass: HomeAssistant):
     mgr_mh200n = ExposeManager(hass, entry_empty, gateway=gw_mh200n)
     hass.states.async_set("sensor.temp_ok", "21.5")
     hass.states.async_set("sensor.temp_bad", "not_a_float")
-    b_w4 = ExposeBinding(who=4, where="000", entity_id="sensor.temp_ok")
+    b_w4 = ExposeBinding(who=4, where="100", entity_id="sensor.temp_ok")
     f455_frames, f455_val = mgr_f455._build_frames(b_w4, force=True, is_reply=False)
-    assert [str(f) for f in f455_frames] == ["*#4*000*#0*0215##"]
+    assert [str(f) for f in f455_frames] == ["*#4*100*#0*0215##"]
     assert f455_val == 21.5
     assert mgr_mh200n._build_frames(b_w4, force=True, is_reply=False) == ([], None)
     assert mgr_t._build_frames(
-        ExposeBinding(who=4, where="000", entity_id="sensor.temp_bad"),
+        ExposeBinding(who=4, where="100", entity_id="sensor.temp_bad"),
         force=True,
         is_reply=False,
     ) == ([], None)
@@ -2267,8 +2270,8 @@ async def test_audit_regressions_echo_futures_brightness_off_scope_and_actions(h
     sched = FrameScheduler()
     w1 = loop.create_future()
     w2 = loop.create_future()
-    msg_s1 = OWNMessage.parse("*#4*000*0*0210##")
-    msg_s2 = OWNMessage.parse("*#4*000*0*0215##")
+    msg_s1 = OWNMessage.parse("*#4*100*0*0210##")
+    msg_s2 = OWNMessage.parse("*#4*100*0*0215##")
     sched.put_nowait(
         {
             "message": msg_s1,
@@ -2455,16 +2458,16 @@ async def test_expose_infeasible_inputs_hardening(hass: HomeAssistant):
         {"who": 1, "where": "#1", "entity_id": "light.a"},
         {"who": 1, "where": "99#99#99", "entity_id": "light.a"},
         {"who": 2, "where": "99#4#99", "entity_id": "cover.a"},
-        {"who": 4, "where": "100", "entity_id": "sensor.t"},
-        {"who": 4, "where": "200", "entity_id": "sensor.t"},
+        {"who": 4, "where": "1000", "entity_id": "sensor.t"},
+        {"who": 4, "where": "200#1", "entity_id": "sensor.t"},
         {"who": 4, "where": "9999", "entity_id": "sensor.t"},
         {"who": 4, "where": -105, "entity_id": "sensor.t"},
         {"who": 4, "where": "-0", "entity_id": "sensor.t"},
         {"who": 4, "where": "###105", "entity_id": "sensor.t"},
-        {"who": 4, "where": "000", "entity_id": "sensor.t", "default": 150.0},
-        {"who": 4, "where": "000", "entity_id": "sensor.t", "default": -100.0},
-        {"who": 4, "where": "000", "entity_id": "sensor.t", "default": True},
-        {"who": 4, "where": "000", "entity_id": "sensor.t", "default": "bad"},
+        {"who": 4, "where": "100", "entity_id": "sensor.t", "default": 150.0},
+        {"who": 4, "where": "100", "entity_id": "sensor.t", "default": -100.0},
+        {"who": 4, "where": "100", "entity_id": "sensor.t", "default": True},
+        {"who": 4, "where": "100", "entity_id": "sensor.t", "default": "bad"},
         {"who": 18, "where": "50", "dimension": 113, "entity_id": "sensor.p"},
         {"who": 18, "where": "5256", "dimension": 113, "entity_id": "sensor.p"},
         {"who": 18, "where": "70#0", "dimension": 113, "entity_id": "sensor.p"},
@@ -2482,15 +2485,22 @@ async def test_expose_infeasible_inputs_hardening(hass: HomeAssistant):
     assert is_probe("-105") is False
     assert is_probe("###105") is False
 
-    # Valid local-bus WHO=1, WHO=4 probe 0, WHO=13 with where=None, and valid WHO=4/18 defaults pass
+    # WHO=4 group and zone addresses are not probes: all probes (0), a zone's master
+    # probe (1..99), all probes of a zone (001..099), probe P=9 (only 1..8 exist)
+    for group_where in (0, "0", "000", "050", "099", "50", "#50", "901", "999"):
+        with pytest.raises(vol.Invalid, match="must be a probe address"):
+            expose_entry_schema({"who": 4, "where": group_where, "entity_id": "sensor.t"})
+
+    # Valid local-bus WHO=1, WHO=4 external probes, WHO=13 with where=None, and valid WHO=4/18 defaults pass
     valid_local = expose_entry_schema(
         {"who": 1.0, "where": "99#4#01", "entity_id": "light.a"}
     )
     assert valid_local["where"] == "99#4#01"
-    valid_probe_zero = expose_entry_schema(
-        {"who": 4, "where": 0, "entity_id": "sensor.t"}
-    )
-    assert valid_probe_zero["where"] == "000"
+    for probe_where, expected in ((100, "100"), ("#900", "900"), ("899", "899")):
+        valid_probe = expose_entry_schema(
+            {"who": 4, "where": probe_where, "entity_id": "sensor.t"}
+        )
+        assert valid_probe["where"] == expected
     valid_clock_none_where = expose_entry_schema({"who": 13, "where": None})
     assert valid_clock_none_where["where"] == ""
     valid_t = expose_entry_schema(
@@ -2553,7 +2563,7 @@ async def test_expose_infeasible_inputs_hardening(hass: HomeAssistant):
             {"who": 1, "where": "96", "entity_id": "light.bad_b", "attribute": "brightness"},
             {"who": 1, "where": "95", "entity_id": "switch.no_b"},
             {"who": 2, "where": "97", "entity_id": "cover.bad_p", "attribute": "current_position"},
-            {"who": 4, "where": "000", "entity_id": "sensor.bad_t"},
+            {"who": 4, "where": "100", "entity_id": "sensor.bad_t"},
             {"who": 18, "where": "51", "dimension": 113, "entity_id": "sensor.bad_e"},
             {"who": 13},
         ],
@@ -2680,9 +2690,9 @@ async def test_expose_infeasible_inputs_hardening(hass: HomeAssistant):
     with pytest.raises((TypeError, ValueError)):
         OWNHeatingCommand.encode_temperature(float("nan"))
     with pytest.raises((TypeError, ValueError)):
-        OWNHeatingCommand.report_temperature("000", 100.0)
+        OWNHeatingCommand.report_temperature("100", 100.0)
     with pytest.raises((TypeError, ValueError)):
-        OWNHeatingCommand.write_temperature("000", -100.0)
+        OWNHeatingCommand.write_temperature("100", -100.0)
 
     with pytest.raises((TypeError, ValueError)):
         OWNEnergyCommand.report_active_power("51", True)
@@ -2944,7 +2954,7 @@ async def test_unverified_gateway_disables_who4_who18_with_one_warning(
     hass.states.async_set("sensor.power", "450")
     hass.states.async_set("light.lamp", "on")
     expose_list = [
-        {"who": 4, "where": "050", "entity_id": "sensor.temp"},
+        {"who": 4, "where": "150", "entity_id": "sensor.temp"},
         {"who": 18, "where": "51", "dimension": 113, "entity_id": "sensor.power"},
         {"who": 1, "where": "25", "entity_id": "light.lamp"},
     ]
@@ -2960,7 +2970,7 @@ async def test_unverified_gateway_disables_who4_who18_with_one_warning(
     assert sent == ["*1*1*25##", "*1*1*25##"]
     warnings = [r.getMessage() for r in caplog.records if "is disabled" in r.getMessage()]
     assert warnings == [
-        "Expose WHO=4 WHERE=050 dimension=0 (sensor.temp) is disabled: gateway MH202 is unverified for "
+        "Expose WHO=4 WHERE=150 dimension=0 (sensor.temp) is disabled: gateway MH202 is unverified for "
         "WHO 4 #0 temperature writes (supports_who4_command_injection is unset in OWNd). "
         "Nothing is sent for this binding.",
         "Expose WHO=18 WHERE=51 dimension=113 (sensor.power) is disabled: gateway MH202 is unverified for "
@@ -2990,7 +3000,7 @@ async def test_unverified_gateway_disables_who4_who18_with_one_warning(
     caplog.clear()
     await mgr.async_sync_all()
     assert [str(c.args[0]) for c in gw.send_status_request.call_args_list] == [
-        "*#4*050*#0*0215##",
+        "*#4*150*#0*0215##",
         "*#18*51*113*450##",
         "*1*1*25##",
     ]

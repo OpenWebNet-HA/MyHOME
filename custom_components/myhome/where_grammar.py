@@ -263,14 +263,14 @@ def zone_number(where: str) -> str:
 
 
 def is_probe(where: str) -> bool:
-    """A WHERE of ``PZZ``: probe ``P`` of zone ``ZZ`` (``000``, ``105``, ``0105``, ``#105``, ``4-105``).
+    """A WHERE of ``PZZ``: probe ``P`` of zone ``ZZ`` (``105``, ``0105``, ``#105``, ``4-105``).
 
     Only a bare number counts. ``12#1`` is actuator 1 of zone 12, and read
-    digit by digit (``121``) it would look like a probe. 3-digit ``000``..``099``
-    addresses represent external/virtual probes ``P=0, ZZ=00..99``.
+    digit by digit (``121``) it would look like a probe. ``001``..``099`` is
+    not a probe but the group of all probes in zone ``ZZ``.
     """
     bare = where.removeprefix("4-").removeprefix("#")
-    return bare.isdigit() and (int(bare) >= 100 or len(bare) == 3)
+    return bare.isdigit() and int(bare) >= 100
 
 
 def where_param(message: Any) -> list[str]:
@@ -291,9 +291,7 @@ def normalize_expose_where(who: int, where: str | int | None) -> str:
     if who == 4:
         clean = raw.removeprefix("4-")
         bare = clean.removeprefix("#")
-        if bare == "0":
-            return "000"
-        if bare.isdigit() and (int(bare) >= 100 or len(bare) == 3):
+        if is_probe(bare):
             return bare
         return clean
     if who in (1, 2):
