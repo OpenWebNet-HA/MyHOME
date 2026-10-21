@@ -26,7 +26,7 @@ MANIFEST_JSON = CUSTOM_COMPONENTS_SRC / "manifest.json"
 
 def run_cmd(cmd: list[str], check: bool = True, capture_output: bool = False) -> subprocess.CompletedProcess:
     """Execute a command with formatted output."""
-    print(f"\n[EXEC] {' '.join(cmd)}")
+    print(f"\n[EXEC] {' '.join(cmd)}", flush=True)
     return subprocess.run(cmd, check=check, capture_output=capture_output, text=True)
 
 
@@ -73,7 +73,7 @@ def test_ha_container(
     base_image = f"{registry}/home-assistant:{channel}"
     print(f"\n{'='*70}")
     print(f"Starting Home Assistant Container Smoke Test: {base_image}")
-    print(f"{'='*70}")
+    print(f"{'='*70}", flush=True)
 
     pinned_ownd = get_pinned_version()
     use_dev_ownd = False
@@ -82,11 +82,11 @@ def test_ha_container(
     elif ownd_target == "auto" and pinned_ownd:
         if not is_pypi_released("OWNd", pinned_ownd):
             print(f"\n[NOTICE] Pinned OWNd=={pinned_ownd} is not yet published to PyPI.")
-            print("Building ephemeral test container image with upstream development OWNd...")
+            print("Building ephemeral test container image with upstream development OWNd...", flush=True)
             use_dev_ownd = True
 
     # 1. Pull container image
-    print(f"\nPulling container {base_image}...")
+    print(f"\nPulling container {base_image}...", flush=True)
     run_cmd(["docker", "pull", base_image])
 
     test_image = base_image
@@ -99,7 +99,7 @@ def test_ha_container(
             f"RUN (python3 -m pip install --no-cache-dir https://github.com/OpenWebNet-HA/OWNd/archive/refs/heads/{ref}.tar.gz 2>/dev/null || \\\n"
             "     python3 -m pip install --no-cache-dir https://github.com/OpenWebNet-HA/OWNd/archive/refs/heads/master.tar.gz)\n"
         )
-        print(f"\nBuilding ephemeral container {test_image} with OWNd@{ref}...")
+        print(f"\nBuilding ephemeral container {test_image} with OWNd@{ref}...", flush=True)
         build_proc = subprocess.run(
             ["docker", "build", "-t", test_image, "-"],
             input=dockerfile,
@@ -127,10 +127,10 @@ def test_ha_container(
         )
         if ver_proc.returncode == 0:
             installed_dev_ver = ver_proc.stdout.strip()
-            print(f"✓ Ephemeral container ready with installed OWNd {installed_dev_ver}")
+            print(f"✓ Ephemeral container ready with installed OWNd {installed_dev_ver}", flush=True)
         else:
             installed_dev_ver = pinned_ownd or "2.0.0"
-            print(f"[WARN] Could not retrieve installed OWNd version, defaulting to {installed_dev_ver}")
+            print(f"[WARN] Could not retrieve installed OWNd version, defaulting to {installed_dev_ver}", flush=True)
 
     # 2. Prepare temporary test configuration directory
     temp_dir = Path(tempfile.mkdtemp(prefix="ha_smoke_"))
@@ -160,17 +160,17 @@ def test_ha_container(
         config_mount = f"{temp_dir}:/config"
 
         # 3. Step 1: Configuration check
-        print(f"\nRunning check_config in {test_image}...")
+        print(f"\nRunning check_config in {test_image}...", flush=True)
         res = run_cmd(
             ["docker", "run", "--rm", "-v", config_mount, test_image, "hass", "-c", "/config", "--script", "check_config"],
             check=False,
         )
         if res.returncode != 0:
-            print(f"ERROR: check_config failed for {test_image}")
+            print(f"ERROR: check_config failed for {test_image}", flush=True)
             return False
 
         # 4. Step 2: Test clean module imports and zero HA deprecations
-        print(f"\nTesting platform imports in {test_image}...")
+        print(f"\nTesting platform imports in {test_image}...", flush=True)
         import_test_script = (
             "import sys, json, logging, subprocess, re\n"
             "import importlib.metadata\n"
@@ -226,22 +226,27 @@ def test_ha_container(
             "    sys.exit(1)\n"
         )
 
-        res = run_cmd(
-            ["docker", "run", "--rm", "-v", config_mount, test_image, "python3", "-c", import_test_script],
-            check=False,
-        )
+        import_script_path = temp_dir / "_smoke_import_check.py"
+        import_script_path.write_text(import_test_script, encoding="utf-8")
+        try:
+            res = run_cmd(
+                ["docker", "run", "--rm", "-v", config_mount, test_image, "python3", "/config/_smoke_import_check.py"],
+                check=False,
+            )
+        finally:
+            import_script_path.unlink(missing_ok=True)
         if res.returncode != 0:
-            print(f"ERROR: Platform imports failed in {test_image}")
+            print(f"ERROR: Platform imports failed in {test_image}", flush=True)
             return False
 
         # 5. Step 3: Boot Home Assistant and inspect logs
-        print(f"\nBooting {test_image} in daemon mode to monitor initialization and event loop...")
+        print(f"\nBooting {test_image} in daemon mode to monitor initialization and event loop...", flush=True)
         run_res = run_cmd(
             ["docker", "run", "-d", "-v", config_mount, "-e", "TZ=UTC", test_image, "hass", "-c", "/config"],
             capture_output=True,
         )
         container_id = run_res.stdout.strip()
-        print(f"Container ID: {container_id}")
+        print(f"Container ID: {container_id}", flush=True)
 
         try:
             initialized = False
@@ -249,13 +254,13 @@ def test_ha_container(
                 logs_proc = run_cmd(["docker", "logs", container_id], capture_output=True, check=False)
                 combined_logs = logs_proc.stdout + logs_proc.stderr
                 if "Home Assistant initialized" in combined_logs:
-                    print(f"✓ Home Assistant initialized in {i} seconds!")
+                    print(f"✓ Home Assistant initialized in {i} seconds!", flush=True)
                     initialized = True
                     break
                 time.sleep(1)
 
             if not initialized:
-                print(f"WARNING: Home Assistant did not log 'Home Assistant initialized' within 40 seconds on {test_image}.")
+                print(f"WARNING: Home Assistant did not log 'Home Assistant initialized' within 40 seconds on {test_image}.", flush=True)
 
             logs_proc = run_cmd(["docker", "logs", container_id], capture_output=True, check=False)
             logs = logs_proc.stdout + logs_proc.stderr
@@ -263,7 +268,7 @@ def test_ha_container(
             for line in logs.splitlines():
                 if "myhome" in line.lower() or "error" in line.lower() or "warning" in line.lower():
                     print(line)
-            print("----------------------------------\n")
+            print("----------------------------------\n", flush=True)
 
             errors = [
                 line for line in logs.splitlines()
@@ -297,34 +302,36 @@ def test_ha_container(
             ]
 
             if errors:
-                print(f"ERROR: Fatal errors detected in {test_image}:\n" + "\n".join(errors))
+                print(f"ERROR: Fatal errors detected in {test_image}:\n" + "\n".join(errors), flush=True)
                 return False
 
             if blocking:
-                print(f"ERROR: Event loop blocking detected in {test_image}:\n" + "\n".join(blocking))
+                print(f"ERROR: Event loop blocking detected in {test_image}:\n" + "\n".join(blocking), flush=True)
                 return False
 
             if deprecations:
-                print(f"ERROR: Home Assistant deprecations detected in {test_image}:\n" + "\n".join(deprecations))
+                print(f"ERROR: Home Assistant deprecations detected in {test_image}:\n" + "\n".join(deprecations), flush=True)
                 return False
 
-            print(f"✓ Container test passed for {test_image} with zero errors, zero deprecations, and zero loop blocking warnings!")
+            print(f"✓ Container test passed for {test_image} with zero errors, zero deprecations, and zero loop blocking warnings!", flush=True)
             return True
 
         finally:
             if container_id:
-                print(f"Stopping and removing container {container_id}...")
+                print(f"Stopping and removing container {container_id}...", flush=True)
                 run_cmd(["docker", "stop", container_id], check=False, capture_output=True)
                 run_cmd(["docker", "rm", container_id], check=False, capture_output=True)
 
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
         if use_dev_ownd and test_image != base_image:
-            print(f"Removing ephemeral container image {test_image}...")
+            print(f"Removing ephemeral container image {test_image}...", flush=True)
             run_cmd(["docker", "rmi", "-f", test_image], check=False, capture_output=True)
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(line_buffering=True)
     parser = argparse.ArgumentParser(description="Run containerized Home Assistant smoke test.")
     parser.add_argument(
         "--channel",

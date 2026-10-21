@@ -47,7 +47,7 @@ def preserve_legacy_compat_name(
         or getattr(registry_entry, "compat_name", False) is not None
     ):
         return registry_entry
-    return er.async_get(hass).async_update_entity(
+    return er.async_get(hass)._async_update_entity(
         entity_id,
         compat_name=legacy_name,  # type: ignore[call-arg, unused-ignore]
     )
