@@ -10,7 +10,7 @@ from homeassistant.components.cover import ATTR_TILT_POSITION
 from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
-from OWNd.message import OWNAutomationEvent
+from OWNd.message import OWNMessage
 
 from .const import BUS_ROUTING, DOMAIN, PACED_FANOUT_DELAY, area_of_where
 
@@ -316,7 +316,7 @@ class MyHOMEScopeCover(MyHOMECover):
         return round(sum(tilts) / len(tilts)) if tilts else None
 
     @callback
-    def handle_event(self, message: OWNAutomationEvent) -> None:
+    def handle_event(self, message: OWNMessage) -> None:
         super().handle_event(message)
         if not self._is_tilting:
             self._watch_run()

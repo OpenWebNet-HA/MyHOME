@@ -2247,8 +2247,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 # A repeated report of the same level says nothing about the slats:
                 # they may have been tilted open on a lowered blind.
                 self._attr_current_cover_tilt_position = position
-            if getattr(message, "is_closed", None) is not None:
-                self._attr_is_closed = message.is_closed
+            if (is_closed := getattr(message, "is_closed", None)) is not None:
+                self._attr_is_closed = bool(is_closed)
             else:
                 self._attr_is_closed = (self._attr_current_cover_position == 0)
         elif is_opening:
@@ -2340,8 +2340,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     )
             self._attr_is_opening = False
             self._attr_is_closing = False
-            if getattr(message, "is_closed", None) is not None:
-                self._attr_is_closed = message.is_closed
+            if (is_closed := getattr(message, "is_closed", None)) is not None:
+                self._attr_is_closed = bool(is_closed)
             elif self._attr_current_cover_position is not None:
                 self._attr_is_closed = (self._attr_current_cover_position == 0)
 

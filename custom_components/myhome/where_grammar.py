@@ -30,61 +30,10 @@ from OWNd.message import (
     OWNLightingEvent,
     OWNMessage,
     OWNSoundEvent,
+    area_of_where,
+    is_apl_address,
+    normalize_where,
 )
-
-try:
-    from OWNd.message import area_of_where, is_apl_address, normalize_where
-except ImportError:  # pragma: no cover - PyPI OWNd < 2.0.0b11 compatibility
-    def is_apl_address(where: str | int | None) -> bool:
-        """Return True if where is a valid WHO=1 Point-to-Point (APL) address."""
-        if where is None:
-            return False
-        base = str(where).strip().split("#", 1)[0]
-        if base.startswith("#") or not base.isdigit():
-            return False
-        if len(base) == 2:
-            a, pl = int(base[0]), int(base[1])
-            return (1 <= pl <= 9) if a == 0 else (1 <= a <= 9 and 1 <= pl <= 9)
-        if len(base) == 4:
-            a, pl = int(base[:2]), int(base[2:])
-            if a in (0, 10):
-                return 1 <= pl <= 15
-            if 1 <= a <= 9:
-                return 10 <= pl <= 15
-        return False
-
-    def area_of_where(where: str | int | None) -> str | None:
-        """Return the area status WHERE for a given Point-to-Point (APL) WHERE."""
-        if where is None:
-            return None
-        base = str(where).strip().split("#", 1)[0]
-        if not is_apl_address(base):
-            return None
-        if len(base) == 2:
-            return "00" if base[0] == "0" else base[0]
-        a = base[:2]
-        return "00" if a == "00" else ("100" if a == "10" else str(int(a)))
-
-    def normalize_where(where: str | int | None) -> str:
-        """Normalize OpenWebNet address while preserving Point-to-Point (APL) addressing."""
-        if where is None:
-            return ""
-        where_str = str(where).strip()
-        if not where_str:
-            return ""
-        parts = where_str.split("#", 1)
-        base = parts[0]
-        if is_apl_address(base) or base in ("00", "100", "0"):
-            norm_base = base
-        elif base.isdigit() and base.startswith("00") and int(base) > 15:
-            norm_base = str(int(base))
-        else:
-            norm_base = base
-        return f"{norm_base}#{parts[1]}" if len(parts) > 1 else norm_base
-
-    setattr(_ownd_msg, "is_apl_address", is_apl_address)
-    setattr(_ownd_msg, "area_of_where", area_of_where)
-    setattr(_ownd_msg, "normalize_where", normalize_where)
 
 for _const_name, _const_val in (
     ("MESSAGE_TYPE_SEASON", "hvac_season"),

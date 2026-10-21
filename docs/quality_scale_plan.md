@@ -50,7 +50,7 @@ Add a parametrised test that asserts the table so it cannot regress.
 ## Phase 5 — 🏆 Platinum: `strict-typing`
 
 - ✅ Ratchet in place: `[tool.mypy]` (strict) in `pyproject.toml`, `mypy_baseline.json` with a per-module ceiling, `scripts/typing_ratchet.py` (fails on any regression, `--update` only lowers), workflow `strict-typing.yml`. 15 of 28 modules are clean (`const`, `data`, `gateway`, `myhome_device`, `services`, `device_trigger`, `decoder_pool`, transports, diagnostics, repairs, bus monitor); **504 errors remain in 13 modules** — biggest first: `config_flow` 105, `cover` 64, `validate` 57, `binary_sensor` 43, `light` 37, `sensor` 32, `websocket` 30, `__init__` 27, `button` 27, `climate` 25, `media_player` 25, `alarm_control_panel` 18, `switch` 14 (`discovery` and `router` are clean). Each PR that touches a module should leave it lower and run `--update`.
-- OWNd does **not** ship `py.typed`; the rule needs an OWNd release that is PEP 561 typed before it can be marked done.
+- ✅ OWNd ships `py.typed` (PEP 561). The `OWNd.*` `ignore_missing_imports` override is gone and `strict-typing.yml` installs the `manifest.json` `OWNd==` pin, so the ratchet checks the integration against the OWNd types users install.
 - `inject-websession` is correctly `exempt` (raw TCP, no HTTP); `async-dependency` is done.
 
 ## Maintainability (not a scale rule, keeps the rules honest)
