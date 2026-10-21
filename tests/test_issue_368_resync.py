@@ -671,6 +671,28 @@ async def test_group_resync_ignores_cross_room_and_opposite_polarity_echoes(
     mgr.register_group_members("6", [])
     assert "#6" not in mgr.group_members
 
+    # Split leading + trailing echoes for #6 = {11, 12}:
+    # 11 echoes ON before *1*1*#6## (seeded), duplicate 11 ON after *1*1*#6## stays 1,
+    # 11 flipping OFF discards the seed so 12 ON alone does not cancel, and 11 ON
+    # again completes {11, 12} and cancels #6.
+    handler.send_status_request.reset_mock()
+    mgr.register_group_members("#6", ["11", "12"])
+    await handler._process_message(OWNMessage.parse("*1*1*11##"))
+    await handler._process_message(OWNMessage.parse("*1*1*#6##"))
+    assert "#6" in handler._resync_timers
+    assert mgr.resync_group_echoes["#6"] == 1
+    await handler._process_message(OWNMessage.parse("*1*1*11##"))
+    assert "#6" in handler._resync_timers
+    assert mgr.resync_group_echoes["#6"] == 1
+    await handler._process_message(OWNMessage.parse("*1*0*11##"))
+    assert mgr.resync_group_echoes["#6"] == 0
+    await handler._process_message(OWNMessage.parse("*1*1*12##"))
+    assert "#6" in handler._resync_timers
+    await handler._process_message(OWNMessage.parse("*1*1*11##"))
+    assert "#6" not in handler._resync_timers
+    await _advance(hass)
+    handler.send_status_request.assert_not_called()
+
 
 @pytest.mark.asyncio
 async def test_opposite_polarity_trailing_echo_does_not_cancel_area_sweep(
@@ -760,20 +782,55 @@ async def test_group_resync_preserves_bus_interface_on_members_and_group_key(
     synthetic_msg = SimpleNamespace(where="11", where_param=["4", "02"])
     assert mgr._message_interface(synthetic_msg) == "02"
 
-    # MyHOMELightGroup preserves #4#<interface> on _full_where and group_members registration
+    # A routed group (#6#4#01) with bare PointToPoint members (["11", "12"] from myhome.yaml)
+    # inherits the group's bus interface for both resync registration and entity resolution.
+    reg = er.async_get(hass)
+    m1 = reg.async_get_or_create(
+        "light", DOMAIN, f"{handler.mac}-1-11#4#01", config_entry=handler.config_entry
+    )
+    m2 = reg.async_get_or_create(
+        "light", DOMAIN, f"{handler.mac}-1-12#4#01", config_entry=handler.config_entry
+    )
     grp_entity = MyHOMELightGroup(
         hass=hass,
         name="Riser 01 Group 6",
-        device_id="1-#6#4#01",
+        device_id="1-#6#4#1",
         group=6,
         gateway=handler,
-        members=["11#4#01", "12#4#01"],
+        members=["11", "12"],
         dimmable=False,
         color_temp=False,
         rgb=False,
         hs=False,
     )
+    grp_entity.hass = hass
+    grp_entity.entity_id = "light.riser_01_group_6"
+    grp_entity.async_write_ha_state = MagicMock()
     assert grp_entity._full_where == "#6#4#01"
+    await grp_entity.async_added_to_hass()
+    assert mgr.group_members["#6#4#01"] == {"11#4#01", "12#4#01"}
+    assert grp_entity._member_entity_ids == [m1.entity_id, m2.entity_id]
+
+    # Assumed-state routed group ignores group frames from the local bus
+    assumed_routed = MyHOMELightGroup(
+        hass=hass,
+        name="Assumed Riser 01 Group 7",
+        device_id="1-#7#4#01",
+        group=7,
+        gateway=handler,
+        members=[],
+        dimmable=False,
+        color_temp=False,
+        rgb=False,
+        hs=False,
+    )
+    assumed_routed.hass = hass
+    assumed_routed.entity_id = "light.assumed_riser_01_group_7"
+    assumed_routed.async_write_ha_state = MagicMock()
+    assumed_routed.handle_event(OWNMessage.parse("*1*1*#7##"))
+    assert assumed_routed.is_on is None
+    assumed_routed.handle_event(OWNMessage.parse("*1*1*#7#4#01##"))
+    assert assumed_routed.is_on is True
 
 
 @pytest.mark.asyncio
@@ -895,20 +952,22 @@ async def test_replay_f461_live_2026_10_18_run1_lights_group_and_general(
             await _run_due(clock.now + 5.0)
         return armed_after, sent
 
-    # 1. With the plant's two group #1 members (06, 07) registered:
+    # 1. With the plant's two group #1 members (06, 07) registered (and with no
+    # members registered, exercising the 2-distinct-address same-polarity fallback):
     # *1*0*#1## (9.447) follows the ON echoes of 06 (8.786) and 07 (8.898) inside the
     # 1.5 s leading window: those are the wrong polarity, so the OFF sweep is armed
     # rather than skipped, and the OFF echoes at 9.505 / 9.555 then cancel it.
-    armed_after, sent = await _run_timed_replay(["06", "07"])
-    assert armed_after == {"*1*1*#1##": True, "*1*0*#1##": True}
-    assert not handler._resync_timers
-    # The group #1 sweeps are cancelled by the member echoes, ~50 ms apart. After
-    # the general *1*1*0## (10.183) and *1*0*0## (12.461) the F461 echoes 06 and
-    # 07 0.7 s and 1.5 s later, past the 0.5 s debounce, so both area 00 sweeps go out.
-    assert sent == [
-        (round(10.183 + RESYNC_DEBOUNCE_S, 3), "*#1*00##"),
-        (round(12.461 + RESYNC_DEBOUNCE_S, 3), "*#1*00##"),
-    ]
+    for declared in (["06", "07"], []):
+        armed_after, sent = await _run_timed_replay(declared)
+        assert armed_after == {"*1*1*#1##": True, "*1*0*#1##": True}
+        assert not handler._resync_timers
+        # The group #1 sweeps are cancelled by the member echoes, ~50 ms apart. After
+        # the general *1*1*0## (10.183) and *1*0*0## (12.461) the F461 echoes 06 and
+        # 07 0.7 s and 1.5 s later, past the 0.5 s debounce, so both area 00 sweeps go out.
+        assert sent == [
+            (round(10.183 + RESYNC_DEBOUNCE_S, 3), "*#1*00##"),
+            (round(12.461 + RESYNC_DEBOUNCE_S, 3), "*#1*00##"),
+        ]
 
     # 2. When a third member (08) is also declared in group #1 but never echoes in
     # the trace, the 06 and 07 echoes alone must NOT cancel the #1 sweeps.

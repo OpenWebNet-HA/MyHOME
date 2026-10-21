@@ -114,8 +114,11 @@ class MyHOMELightGroup(MyHOMEEntity, LightEntity):
         self._attr_brightness = None
         self._attr_color_temp_kelvin = None
         self._attr_hs_color = None
-        _, _, iface = str(device_id).partition(BUS_ROUTING)
-        self._full_where = f"#{group}{BUS_ROUTING}{iface}" if iface else f"#{group}"
+        _, _, raw_iface = str(device_id).partition(BUS_ROUTING)
+        self._interface: str | None = (
+            raw_iface.zfill(2) if raw_iface.isdigit() else (raw_iface or None)
+        )
+        self._full_where = f"#{group}{BUS_ROUTING}{self._interface}" if self._interface else f"#{group}"
         # Last known brightness (0-100%), used as HSV "value" when only hue/saturation
         # are being set so a colour change never silently zeroes the group's level.
         # For groups with declared members the displayed brightness is derived from
@@ -136,8 +139,13 @@ class MyHOMELightGroup(MyHOMEEntity, LightEntity):
                 self.async_on_remove(lambda: register_fn(self._full_where, []))
             registry = er.async_get(self.hass)
             for w in self._declared_members:
-                # The entity unique_id is `{mac}-1-{w}`
-                unique_id = f"{self._gateway_handler.mac}-1-{w}"
+                member_key = (
+                    f"{w}{BUS_ROUTING}{self._interface}"
+                    if self._interface and BUS_ROUTING not in str(w)
+                    else str(w)
+                )
+                # The entity unique_id is `{mac}-1-{w}` (or `{mac}-1-{w}#4#{iface}`)
+                unique_id = f"{self._gateway_handler.mac}-1-{member_key}"
                 entity_id = registry.async_get_entity_id("light", DOMAIN, unique_id)
                 if entity_id:
                     self._member_entity_ids.append(entity_id)
@@ -172,6 +180,15 @@ class MyHOMELightGroup(MyHOMEEntity, LightEntity):
             return
 
         if not getattr(msg, "is_group", False) or str(getattr(msg, "group", "")) != str(self._group):
+            return
+
+        msg_raw_iface = getattr(msg, "interface", None)
+        msg_iface = (
+            msg_raw_iface.zfill(2)
+            if isinstance(msg_raw_iface, str) and msg_raw_iface.isdigit()
+            else (msg_raw_iface if isinstance(msg_raw_iface, str) and msg_raw_iface else None)
+        )
+        if msg_iface != self._interface:
             return
 
         # Parse status from the frame (assumed mode only updates attributes)

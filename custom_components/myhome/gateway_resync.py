@@ -115,7 +115,8 @@ class LightingResyncManager:
     def register_group_members(self, group_where: str, members: list[str] | set[str]) -> None:
         """Register the point-to-point member WHERE addresses belonging to a group."""
         key = self._normalize_group_key(group_where)
-        cleaned = {self._normalize_ptp_where(m) for m in members if str(m).strip()}
+        grp_iface = key.partition(BUS_ROUTING)[2] or None
+        cleaned = {self._normalize_ptp_where(m, grp_iface) for m in members if str(m).strip()}
         if cleaned:
             self._group_members[key] = cleaned
         else:
@@ -270,6 +271,7 @@ class LightingResyncManager:
 
         targets: list[str] = []
         area_seed_echoes: dict[str, set[str]] = {}
+        group_seed_echoes: dict[str, set[str]] = {}
         if getattr(message, "is_group", False):
             group_key = self._normalize_group_key(message.group, self._message_interface(message))
             members = self._group_members.get(group_key)
@@ -296,6 +298,7 @@ class LightingResyncManager:
                     len(matching_wheres),
                 )
                 return
+            group_seed_echoes[group_key] = matching_wheres
             targets.append(group_key)
         elif getattr(message, "is_area", False):
             raw_where = str(message.where)
@@ -328,8 +331,9 @@ class LightingResyncManager:
                 self._resync_timers.pop(where)()
             self._resync_expected_on[where] = bool(msg_is_on)
             if where.startswith("#"):
-                self._resync_group_echoes[where] = 0
-                self._resync_echoed_members[where] = set()
+                seeded = set(group_seed_echoes.get(where, set()))
+                self._resync_echoed_members[where] = seeded
+                self._resync_group_echoes[where] = len(seeded)
             else:
                 self._resync_area_echoes[where] = set(area_seed_echoes.get(where, set()))
 
