@@ -1221,6 +1221,45 @@ class TestEntityRegistryMigrationSafety:
                 "light.keuken_lamp", compat_name="Keuken Plafond"
             )
 
+        # Subclasses that override async_added_to_hass() without super() (such as
+        # MyHOMEMediaPlayer) still restore _legacy_compat_name via _register_availability_listener().
+        from custom_components.myhome.media_player import MyHOMEMediaPlayer
+
+        fake_gw = SimpleNamespace(
+            mac="00:03:50:00:12:34",
+            device_registry_id=None,
+            availability_signal="myhome_avail_test",
+            profile_supports_who=lambda _who: True,
+        )
+        mp = MyHOMEMediaPlayer(
+            hass=hass,
+            name="Audio Zone 1",
+            entity_name=None,
+            device_id="1#16",
+            who="16",
+            where="1",
+            manufacturer="BTicino",
+            model="Audio System",
+            gateway=fake_gw,
+        )
+        mp.hass = hass
+        mp.entity_id = "media_player.zone_living"
+        mp.registry_entry = SimpleNamespace(entity_id="media_player.zone_living", compat_name=None)
+        mp._legacy_compat_name = "Woonkamer Audio"
+        updated_mp_entry = SimpleNamespace(
+            entity_id="media_player.zone_living", compat_name="Woonkamer Audio"
+        )
+        with patch.object(
+            er.async_get(hass),
+            "_async_update_entity",
+            return_value=updated_mp_entry,
+        ) as mock_mp_update:
+            await mp.async_added_to_hass()
+            assert mp.registry_entry is updated_mp_entry
+            mock_mp_update.assert_called_once_with(
+                "media_player.zone_living", compat_name="Woonkamer Audio"
+            )
+
 class TestPhase1GoldenPlantSampleIssue247:
     """End-to-end golden plant conformance tests using real production data from Issue #247.
 

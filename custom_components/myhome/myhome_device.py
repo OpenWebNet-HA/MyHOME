@@ -227,6 +227,19 @@ class MyHOMEEntity(RestoreEntity):
         target_hass = self.hass or self._hass
         if target_hass is None:
             return
+        # Must run after EntityPlatform._async_add_entity_impl has attached device_id
+        # and set has_entity_name=True (which clears compat_name on HA 2026.11+),
+        # and before add_to_platform_finish() writes the initial state. Placing this
+        # here covers subclasses (media_player, advanced covers, alarm, sound_source)
+        # that override async_added_to_hass() without calling super().
+        if self._legacy_compat_name and self.entity_id:
+            self.registry_entry = preserve_legacy_compat_name(
+                target_hass,
+                self.entity_id,
+                self.registry_entry,
+                self._legacy_compat_name,
+            )
+            self._cached_friendly_name = None
         self.async_on_remove(
             async_dispatcher_connect(
                 target_hass,
@@ -243,21 +256,6 @@ class MyHOMEEntity(RestoreEntity):
         if health is not None and address is not None:
             health.name_address(*address, self._device_name, owner=self._health_owner)
         await super().async_added_to_hass()
-        # Must run after EntityPlatform._async_add_entity_impl has attached device_id
-        # and set has_entity_name=True (which clears compat_name on HA 2026.11+),
-        # and before add_to_platform_finish() writes the initial state.
-        if (
-            self._legacy_compat_name
-            and (target_hass := self.hass or self._hass) is not None
-            and self.entity_id
-        ):
-            self.registry_entry = preserve_legacy_compat_name(
-                target_hass,
-                self.entity_id,
-                self.registry_entry,
-                self._legacy_compat_name,
-            )
-            self._cached_friendly_name = None
         try:
             last_state = await self.async_get_last_state()
         except Exception:
