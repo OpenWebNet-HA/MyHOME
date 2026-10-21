@@ -6,9 +6,9 @@ Our overarching mission is to provide the most reliable, complete, and high-perf
 
 ---
 
-## 🗺️ Current Delivery Status (Unified Beta v2.0.0b14 & Platinum IQS)
+## 🗺️ Current Delivery Status (Unified Beta v2.0.0b16 & Platinum IQS)
 
-Through intense community collaboration and engineering, the major architectural milestones originally planned across Phases 1, 2, 3, and 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** in the **v2.0.0b14 Unified Beta**. Furthermore, **Phase 5 (Home Assistant Integration Quality Scale)** has been achieved ahead of schedule, with the integration officially qualifying for the **🏆 Platinum Quality Scale** and strict typing enforced with zero errors across all modules.
+Through intense community collaboration and engineering, the major architectural milestones originally planned across Phases 1, 2, 3, and 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** in the **v2.0.0b16 Unified Beta**. Furthermore, **Phase 5 (Home Assistant Integration Quality Scale)** has been achieved ahead of schedule, with the integration officially qualifying for the **🏆 Platinum Quality Scale** and strict typing enforced with zero errors across all modules.
 
 ```mermaid
 gantt
@@ -28,6 +28,13 @@ gantt
     Physical MH201 Plant Trace Replay Fixture (#390)                :done, 2026-09-16, 2026-09-17
     Repairs Framework Expansion (Timezone 999 & Unknown Model #387/#388) :done, 2026-09-16, 2026-09-17
     Versioned Documentation Platform (MkDocs & Mike #399)           :done, 2026-09-17, 2026-09-17
+    section Delivered in v2.0.0b14 – b16
+    Multi-Gateway Plant Isolation (#453) & Climate Zone State (#457) :done, 2026-09-19, 2026-09-30
+    Device Fault Repairs (#593) & Ignored Addresses (#621)          :done, 2026-10-01, 2026-10-07
+    Cover Start-Up Floor & Full Runs (#702, #707, #708)             :done, 2026-10-08, 2026-10-17
+    Venetian Blind Slat Tilt (#508) & Impulse Gate Covers (#667)    :done, 2026-10-08, 2026-10-19
+    WHO 22 Tuner RDS (#695) & WHO 25 Scenario Plus (#671)           :done, 2026-10-08, 2026-10-16
+    Expose HA Entities to the Bus (#750)                            :done, 2026-10-14, 2026-10-21
     section Active Community Collaboration
     RFC - Dedicated Admin Panel & Cover Travel Profiles (#374)      :active, 2026-09-16, 2026-10-15
     RFC - Scope Resolution for WHO 14, WHO 24, WHO 22               :active, 2026-09-11, 2026-10-15
@@ -37,13 +44,15 @@ gantt
 
 ---
 
-## 📦 What is Shipped & Operational in v2.0.0b14
+## 📦 What is Shipped & Operational in v2.0.0b16
 
 The following table summarizes the completed architectural features and protocol subsystems verified in the current release:
 
 | Priority / Feature | Subsystem | Implementation Status | Highlights |
 |---|---|---|---|
-| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd 2.0.0b9`) | Extracted into an independent, strongly typed Python library on PyPI; PEP 561 `py.typed` compliance, optimized HMAC-SHA256 handshake ($O(N)$ string generation), shared with CLI tools and MCP servers. |
+| **Expose HA Entities to the Bus** | Core / WHO=1, 2, 4, 13, 18 | ✅ **Shipped** (#750) | Declarative `expose` engine: virtual WHO 1 / WHO 2 actuators a wall control can drive (HA state mirrored back to its LEDs), WHO 4 virtual temperature probes, WHO 18 virtual energy meters and the WHO 13 bus clock; custom actions run as Home Assistant scripts. |
+| **Venetian Blinds, Impulse Gates & Cover Start-Up Floor** | WHO=2 / WHO=1 | ✅ **Shipped** (#508, #667, #702, #707, #708) | Slat tilt as timed slat pulses (`slat_tilt`, `slat_time`); impulse garage / gate covers on WHO 1 relays with optional safety approval; per-cover `min_motor_pulse`, full runs at 0 % / 100 %, and timed runs ended at the actuator's stop status. |
+| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd 2.0.0b11`) | Extracted into an independent, strongly typed Python library on PyPI; PEP 561 `py.typed` compliance, optimized HMAC-SHA256 handshake ($O(N)$ string generation), shared with CLI tools and MCP servers. |
 | **Lighting Groups & General Debounced Resync (P7)** | WHO=1 | ✅ **Shipped** (#367, #376, #377, #391) | Declared groups in `myhome.yaml` (`where: '#G'`, optional `members:`) with aggregate status or `assumed_state`; 250 ms debounced sweep with bidirectional echo window and per-address cancellation; truthful event emission and centralized `FrameRouter` integration. |
 | **Strict Typing & Platinum Quality Seal** | Core / IQS | ✅ **Shipped** (`quality_scale.yaml`) | 100% compliance across all Bronze, Silver, Gold, and Platinum rules; strict `mypy` typing with 0 errors across all 30 integration modules. |
 | **CEN / CEN+ UI Device Triggers (P2)** | WHO=15 / 25 | ✅ **Shipped** | First-class Home Assistant UI device triggers with string-preserved addressing (`"0001"`), gateway MAC isolation, and all 8 press/held/release actions. |
@@ -195,7 +204,7 @@ graph LR
 
 #### 5. 🌐 Release Status: Stable v2.0.0
 * **Branding Assets (`brands`)**: Already in place. The MyHOME icon and logo were merged into `home-assistant/brands` in [`#2052`](https://github.com/home-assistant/brands/pull/2052) (2020-11-30, for the original integration); nothing is pending.
-* **PR #232 (`v2-phase1-architecture` → `master`)**: The pull request that brings v2 to `master` inside this repository, so that HACS users receive it as a stable release; it is not a Home Assistant core submission. It is mergeable and awaiting review. Every release so far (latest `v2.0.0b14`) is a pre-release, and the integration requires Home Assistant 2026.3 or newer (Python 3.14).
+* **PR #232 (`v2-phase1-architecture` → `master`)**: The pull request that brings v2 to `master` inside this repository, so that HACS users receive it as a stable release; it is not a Home Assistant core submission. It is mergeable and awaiting review. Every release so far (latest `v2.0.0b16`) is a pre-release, and the integration requires Home Assistant 2026.3 or newer (Python 3.14).
 
 ---
 
