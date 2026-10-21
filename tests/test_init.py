@@ -1,5 +1,6 @@
 """Tests for the MyHOME custom component initialization."""
 import os
+import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -306,6 +307,17 @@ async def test_services(hass: HomeAssistant, fast_bus_pacing):
             assert exc_info.value.translation_key == "sync_time_unsupported_offset"
             assert exc_info.value.translation_placeholders["timezone"] == "Asia/Kolkata"
         gateway.send.assert_not_called()
+
+        # A whole-hour zone still sends both frames with a sign + hour T field
+        # (CET/CEST: 001 or 002)
+        await hass.config.async_update(time_zone="Europe/Brussels")
+        await hass.services.async_call(
+            DOMAIN, "sync_time", {ATTR_GATEWAY: "00:03:50:00:12:34"}, blocking=True
+        )
+        calls = [str(c.args[0]) for c in gateway.send.call_args_list]
+        assert len(calls) == 2
+        assert re.fullmatch(r"\*#13\*\*#22\*(\d{2}\*){3}00[12]\*\d{2}\*\d{2}\*\d{2}\*\d{4}##", calls[0])
+        assert re.fullmatch(r"\*#13\*\*#0\*(\d{2}\*){3}00[12]##", calls[1])
 
 
 async def test_options_update_rebuilds_decoder_pool(hass: HomeAssistant):

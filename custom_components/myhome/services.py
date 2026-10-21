@@ -97,7 +97,8 @@ def _build_time_sync_commands(timezone: str) -> tuple[Any, Any]:
         )
     except ValueError as err:
         raise ServiceValidationError(
-            f"Cannot synchronise the gateway clock for time zone '{timezone}': {err}",
+            f'Cannot synchronise the gateway clock for time zone "{timezone}": {err}. '
+            "OpenWebNet only carries whole-hour UTC offsets.",
             translation_domain=DOMAIN,
             translation_key="sync_time_unsupported_offset",
             translation_placeholders={"timezone": timezone, "error": str(err)},
