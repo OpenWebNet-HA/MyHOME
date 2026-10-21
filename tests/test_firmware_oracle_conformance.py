@@ -98,30 +98,36 @@ def test_emitted_own_frames_parseable_by_ownd():
     assert mh200_fw.firmware_version == "2.1.2"
 
 
+# On these firmwares scsserver reports a bus write as delivered only when a device
+# acknowledges it (PIC answer $00800 on the F460/F461 3-digit protocol, $08 in the
+# MyHomeServer1 2.82.06 "v8" PIC mode); otherwise it retries three times and the
+# command session replies NACK. The oracle's full suites run on an empty bus, so
+# their reply is NACK for almost every frame these gateways forward. The verdict
+# (out vs silent) is the evidence there: live F461 2.0.11 traces ACK every frame the
+# oracle saw go out (see test_f461_live_trace_agrees_with_oracle). Documented in
+# own-firmware-oracle README.md and findings/pic-inbound-protocol.md.
+EMPTY_BUS_NACK_GATEWAYS = frozenset({"F460", "F461", "MyHomeServer1"})
+
+
+def _refused(entry: dict[str, Any]) -> bool:
+    """Return True when the oracle shows the gateway refusing the frame."""
+    if entry["product"] in EMPTY_BUS_NACK_GATEWAYS:
+        return entry["verdict"] != "out"
+    return entry["reply"] == "nack"
+
+
 # Known protocol discrepancies between spec-derived/openwebnet4j corpus fixtures
 # and actual gateway firmware behavior (audited in own-firmware-oracle):
 KNOWN_GATEWAY_DISCREPANCIES: dict[tuple[str, str], set[str]] = {
     ("aux.cmd.activate.1", "F450"): {"nack"},
     ("aux.cmd.activate.1", "F453AV"): {"nack"},
-    ("aux.cmd.activate.1", "F460"): {"nack"},
-    ("aux.cmd.activate.1", "F461"): {"nack"},
     ("aux.cmd.activate.1", "H4684"): {"nack"},
-    ("aux.cmd.activate.1", "MyHomeServer1"): {"nack"},
     ("aux.cmd.deactivate.1", "F450"): {"nack"},
     ("aux.cmd.deactivate.1", "F453AV"): {"nack"},
-    ("aux.cmd.deactivate.1", "F460"): {"nack"},
-    ("aux.cmd.deactivate.1", "F461"): {"nack"},
     ("aux.cmd.deactivate.1", "H4684"): {"nack"},
-    ("aux.cmd.deactivate.1", "MyHomeServer1"): {"nack"},
     ("light.cmd.off.bus.25", "F450"): {"nack"},
-    ("light.cmd.off.bus.25", "F460"): {"nack"},
-    ("light.cmd.off.bus.25", "F461"): {"nack"},
     ("light.cmd.off.bus.25", "MH202"): {"nack"},
-    ("light.cmd.off.bus.25", "MyHomeServer1"): {"nack"},
     ("light.cmd.on.gen.0", "F450"): {"nack"},
-    ("light.cmd.on.gen.0", "F460"): {"nack"},
-    ("light.cmd.on.gen.0", "F461"): {"nack"},
-    ("light.cmd.on.gen.0", "MyHomeServer1"): {"nack"},
     ("sound.cmd.source.on.1", "F450"): {"nack"},
     ("sound.cmd.source.on.1", "F459"): {"nack"},
     ("sound.cmd.source.on.1", "F460"): {"nack"},
@@ -134,20 +140,25 @@ KNOWN_GATEWAY_DISCREPANCIES: dict[tuple[str, str], set[str]] = {
     ("sound.cmd.source.on.2", "F461"): {"nack"},
     ("sound.cmd.source.on.2", "MH202"): {"nack"},
     ("sound.cmd.source.on.2", "MyHomeServer1"): {"nack"},
-    ("thermo.cmd.central.mode.cool.cu99", "F460"): {"nack"},
-    ("thermo.cmd.central.mode.cool.cu99", "F461"): {"nack"},
     ("thermo.cmd.central.mode.cool.cu99", "H4684"): {"nack"},
     ("thermo.cmd.central.mode.cool.cu99", "MH200"): {"nack"},
-    ("thermo.cmd.central.mode.cool.cu99", "MyHomeServer1"): {"nack"},
-    ("thermo.cmd.central.mode.heat.cu99", "F460"): {"nack"},
-    ("thermo.cmd.central.mode.heat.cu99", "F461"): {"nack"},
     ("thermo.cmd.central.mode.heat.cu99", "H4684"): {"nack"},
     ("thermo.cmd.central.mode.heat.cu99", "MH200"): {"nack"},
-    ("thermo.cmd.central.mode.heat.cu99", "MyHomeServer1"): {"nack"},
-    ("thermo.cmd.central.mode.off.cu99", "F460"): {"nack"},
-    ("thermo.cmd.central.mode.off.cu99", "F461"): {"nack"},
-    ("thermo.cmd.central.mode.off.cu99", "MyHomeServer1"): {"nack"},
 }
+
+
+def test_empty_bus_gateways_still_nack_forwarded_frames():
+    """Keep EMPTY_BUS_NACK_GATEWAYS only while the oracle still records empty-bus NACKs.
+
+    Once own-firmware-oracle re-runs these suites with devices that acknowledge, a
+    forwarded frame stops replying NACK, and the special case in _refused() can go.
+    """
+    for product in sorted(EMPTY_BUS_NACK_GATEWAYS):
+        rows = [e for entries in ALL_VERDICTS.values() for e in entries if e["product"] == product]
+        forwarded = [e for e in rows if e["verdict"] == "out"]
+        assert forwarded, f"{product} has no forwarded frames in the oracle"
+        nacked = [e for e in forwarded if e["reply"] == "nack"]
+        assert nacked, f"{product} no longer NACKs forwarded frames; drop it from EMPTY_BUS_NACK_GATEWAYS"
 
 
 def test_golden_corpus_against_firmware_oracle():
@@ -186,14 +197,14 @@ def test_golden_corpus_against_firmware_oracle():
                     continue
 
                 if fixture.get("valid", True) and not fixture.get("expected_rejection", False):
-                    if reply == "nack":
+                    if _refused(entry):
                         failures.append(
-                            f"Corpus command {fixture_id} ({frame}) received unexpected NACK on "
-                            f"{product} {entry['version']} (suite: {entry['suite']})"
+                            f"Corpus command {fixture_id} ({frame}) refused on {product} "
+                            f"{entry['version']}: {reply}/{entry['verdict']} (suite: {entry['suite']})"
                         )
 
     assert checked_count > 0, "No corpus commands intersected with firmware oracle verdicts"
-    assert not failures, "Encountered unexpected firmware NACKs for golden corpus commands:\n" + "\n".join(failures)
+    assert not failures, "Firmware refused golden corpus commands:\n" + "\n".join(failures)
 
 
 @pytest.mark.parametrize(
@@ -268,10 +279,12 @@ def test_all_gateway_responses_conform_to_openwebnet_protocol():
 
 
 def test_dimmer_level_cross_gateway_behavior():
-    """Verify cross-gateway divergence on dimmer level write *1*0#1*31##.
+    """Verify MH200N and MyHomeServer1 forward the dimmer level write *1*0#1*31## identically.
 
-    Both MH200N and MyHomeServer1 forward the identical SCS bus frame,
-    but MH200N replies with ACK while MyHomeServer1 replies with NACK.
+    Both put the same SCS bus frame on the bus. MyHomeServer1's NACK is not a
+    refusal: in its v8 PIC mode it ACKs only once a device acknowledges the frame,
+    and the oracle runs on an empty bus (see EMPTY_BUS_NACK_GATEWAYS). The MH200N
+    ACKs on transmission.
     """
     frame = "*1*0#1*31##"
     assert frame in ALL_VERDICTS
@@ -288,7 +301,10 @@ def test_dimmer_level_cross_gateway_behavior():
     assert mh200n["bus_frames"] == expected_bus
     assert mhs1["bus_frames"] == expected_bus
 
-    # But their command session replies diverge:
+    # Neither refuses it; only the empty-bus reply differs:
+    assert mh200n["verdict"] == mhs1["verdict"] == "out"
+    assert not _refused(mh200n)
+    assert not _refused(mhs1)
     assert mh200n["reply"] == "ack"
     assert mhs1["reply"] == "nack"
 
