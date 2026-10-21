@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -295,6 +296,16 @@ async def test_services(hass: HomeAssistant, fast_bus_pacing):
             config_entry.runtime_data = saved_runtime
         gateway.send.assert_not_called()
         gateway.send_status_request.assert_not_called()
+
+        # WHO 13 carries whole-hour offsets only: a half-hour zone is a
+        # validation error, and no half-sent datetime/time pair reaches the bus
+        await hass.config.async_update(time_zone="Asia/Kolkata")
+        for data in ({ATTR_GATEWAY: "00:03:50:00:12:34"}, {}):
+            with pytest.raises(ServiceValidationError) as exc_info:
+                await hass.services.async_call(DOMAIN, "sync_time", data, blocking=True)
+            assert exc_info.value.translation_key == "sync_time_unsupported_offset"
+            assert exc_info.value.translation_placeholders["timezone"] == "Asia/Kolkata"
+        gateway.send.assert_not_called()
 
 
 async def test_options_update_rebuilds_decoder_pool(hass: HomeAssistant):

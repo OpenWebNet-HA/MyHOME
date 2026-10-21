@@ -578,6 +578,9 @@
     },
     "scenario_plus_command_invalid": {
       "message": "Could not build scenario plus command for where \"{where}\" and action \"{action}\""
+    },
+    "sync_time_unsupported_offset": {
+      "message": "Cannot synchronise the gateway clock for time zone \"{timezone}\": {error}. OpenWebNet only carries whole-hour UTC offsets."
     }
   },
   "entity": {

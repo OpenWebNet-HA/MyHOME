@@ -81,6 +81,29 @@ def _handler_supports_who(handler: MyHOMEGatewayHandler, who: int) -> bool:
     return True
 
 
+def _build_time_sync_commands(timezone: str) -> tuple[Any, Any]:
+    """Build the WHO 13 datetime and time frames for ``timezone``.
+
+    The WHO 13 offset field (``0HH`` / ``1HH``) only carries whole hours, so
+    OWNd >= 2.0.0b11 raises ``ValueError`` for zones such as Asia/Kolkata
+    (+05:30) instead of sending a truncated offset.
+    """
+    from OWNd.message import OWNGatewayCommand
+
+    try:
+        return (
+            OWNGatewayCommand.set_datetime_to_now(timezone),
+            OWNGatewayCommand.set_time_to_now(timezone),
+        )
+    except ValueError as err:
+        raise ServiceValidationError(
+            f"Cannot synchronise the gateway clock for time zone '{timezone}': {err}",
+            translation_domain=DOMAIN,
+            translation_key="sync_time_unsupported_offset",
+            translation_placeholders={"timezone": timezone, "error": str(err)},
+        ) from err
+
+
 async def async_setup_services(hass: HomeAssistant) -> None:
     """Register MyHOME domain services."""
     if hass.services.has_service(DOMAIN, SERVICE_SYNC_TIME):
@@ -95,9 +118,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 _LOGGER.error("No MyHOME gateways found, cannot sync time.")
                 return
             timezone = hass.config.as_dict().get("time_zone", "UTC")
-            from OWNd.message import OWNGatewayCommand
-            cmd_datetime = OWNGatewayCommand.set_datetime_to_now(timezone)
-            cmd_time = OWNGatewayCommand.set_time_to_now(timezone)
+            cmd_datetime, cmd_time = _build_time_sync_commands(timezone)
             # Once per bus: a secondary/standby shares its primary's bus
             for gw_handler in gateways.values():
                 if getattr(gw_handler, "is_follower", False) is not True:
@@ -109,9 +130,9 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         timezone = hass.config.as_dict().get("time_zone", "UTC")
         handler = _get_gateway_handler(hass, gateway)
         if handler is not None:
-            from OWNd.message import OWNGatewayCommand
-            await handler.send(OWNGatewayCommand.set_datetime_to_now(timezone))
-            await handler.send(OWNGatewayCommand.set_time_to_now(timezone))
+            cmd_datetime, cmd_time = _build_time_sync_commands(timezone)
+            await handler.send(cmd_datetime)
+            await handler.send(cmd_time)
             return
 
         _LOGGER.error(
