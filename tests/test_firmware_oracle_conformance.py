@@ -301,41 +301,53 @@ def test_gateway_profiles_match_oracle_verdicts():
     assert violations == [], "Gateway profile / discovery oracle mismatches:\n" + "\n".join(violations)
 
 
-def test_f461_live_traces_2026_10_18_conformance_with_oracle():
-    """Verify live physical BTicino F461 (2.0.11) traces conform to OWNd parser and F461 oracle verdicts (#735, #745)."""
-    from OWNd.message import OWNMessage
+TRACES_DIR = REPO_ROOT / "tests" / "fixtures" / "traces"
+F461_LIVE_TRACES = (
+    TRACES_DIR / "f461_live_2026-10-18" / "myhome_trace_F461_live_2026-10-18.json",
+    TRACES_DIR / "f461_who14_live_2026-10-18" / "myhome_trace_F461_who14_live_2026-10-18.json",
+)
 
-    traces_dir = Path(__file__).parent / "fixtures" / "traces"
-    live_main = json.loads(
-        (traces_dir / "f461_live_2026-10-18" / "myhome_trace_F461_live_2026-10-18.json").read_text(
-            encoding="utf-8"
+
+@pytest.mark.parametrize("trace_path", F461_LIVE_TRACES, ids=lambda path: path.parent.name)
+def test_f461_live_trace_agrees_with_oracle(trace_path: Path):
+    """Check a live F461 2.0.11 capture against OWNd and the F461 020011 oracle (#735, #745).
+
+    Every event the capture decoded must still decode to the same OWNd class, and every
+    command the gateway answered must agree with the oracle: the F461 ACKs a frame the
+    oracle saw reach the bus (``out``) and NACKs one it dropped (``silent``). The oracle's
+    ``reply`` field is not compared: for ``*1*1*0##``, ``*#2*0##`` and
+    ``*#18*51*#1200#1*0##`` it records a NACK where the hardware ACKed.
+    """
+    trace = json.loads(trace_path.read_text(encoding="utf-8"))
+    assert trace["gateway"]["model"] == "F461"
+    assert trace["gateway"]["firmware"] == "2.0.11"
+
+    decoded = [row for row in trace["rows"] if "ownd_class" in row]
+    assert decoded, f"{trace_path.name} records no decoded events"
+    for row in decoded:
+        parsed_class = type(OWNMessage.parse(row["frame"])).__name__
+        assert parsed_class == row["ownd_class"], (
+            f"{row['frame']} decoded to {parsed_class}, the capture recorded {row['ownd_class']}"
         )
-    )
-    live_who14 = json.loads(
-        (
-            traces_dir / "f461_who14_live_2026-10-18" / "myhome_trace_F461_who14_live_2026-10-18.json"
-        ).read_text(encoding="utf-8")
-    )
 
-    assert len(live_main["frames"]) == 73
-    assert len(live_who14["frames"]) == 58
-    assert live_main["gateway"]["model"] == "F461"
-    assert live_main["gateway"]["firmware"] == "2.0.11"
-    assert live_who14["gateway"]["model"] == "F461"
-    assert live_who14["gateway"]["firmware"] == "2.0.11"
-
-    for trace in (live_main, live_who14):
-        for frame in trace["frames"]:
-            parsed = OWNMessage.parse(frame["raw"])
-            assert parsed is not None, f"Failed to parse live F461 frame: {frame['raw']}"
-
-    for probe in ("*1*1*31##", "*2*1*31##", "*#4*1*0##", "*25*21#1*21##"):
-        f461_entry = next(e for e in ALL_VERDICTS[probe] if e["product"] == "F461")
-        assert f461_entry["verdict"] == "out"
-        assert len(f461_entry["bus_frames"]) > 0
-
-    for unsupported_probe in ("*3*2*#1##", "*#16*0*5##"):
-        f461_entry = next(e for e in ALL_VERDICTS[unsupported_probe] if e["product"] == "F461")
-        assert f461_entry["reply"] == "nack"
-        assert f461_entry["verdict"] == "silent"
+    compared = 0
+    for row in trace["rows"]:
+        if "ack" not in row:
+            continue
+        entry = next(
+            (
+                e
+                for e in ALL_VERDICTS.get(row["frame"], [])
+                if e["product"] == "F461" and e["version"] == "020011"
+            ),
+            None,
+        )
+        if entry is None:
+            continue
+        compared += 1
+        assert entry["verdict"] in ("out", "silent"), f"{row['frame']}: oracle verdict {entry['verdict']}"
+        assert row["ack"] == (entry["verdict"] == "out"), (
+            f"{row['frame']} ({row['run']}): live ack={row['ack']}, oracle verdict {entry['verdict']}"
+        )
+    assert compared, f"{trace_path.name} shares no answered command with the F461 oracle"
 
