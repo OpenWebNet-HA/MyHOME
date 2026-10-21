@@ -28,7 +28,7 @@ rules:
     comment: ConfigFlow with SSDP discovery, manual entry, serial transport, reauth and reconfigure.
   dependency-transparency:
     status: done
-    comment: OWNd is published on PyPI from the public OpenWebNet-HA/OWNd repository with CI; MIT/GPL licensed.
+    comment: OWNd is published on PyPI from the public OpenWebNet-HA/OWNd repository with CI; Apache-2.0 licensed.
   docs-actions:
     status: done
     comment: docs/configuration/services.md documents all eleven services and their fields (services.yaml, strings.json and icons.json list the same eleven).
@@ -171,8 +171,8 @@ rules:
     status: done
     comment: OWNd client library is 100% native non-blocking asyncio protocols and streams.
   inject-websession:
-    status: exempt
-    comment: No HTTP is used; communication is via raw TCP OpenWebNet sockets.
+    status: done
+    comment: async_get_clientsession(self.hass) is passed to OWNd.discovery.find_gateways and get_gateway for UPnP/SOAP HTTP calls; OpenWebNet bus communication uses raw TCP sockets.
   strict-typing:
     status: done
     comment: mypy --strict is ratcheted per module by scripts/typing_ratchet.py against mypy_baseline.json; 0 errors remain in all modules. OWNd ships py.typed (PEP 561) as of 2.0.0b7.
