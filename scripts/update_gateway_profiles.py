@@ -20,59 +20,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-# Parity patch for OWNd < 2.0.0b12 profile metadata against firmware oracle.
-# Intentionally self-contained here to avoid importing custom_components in minimal CI environments.
-def _ensure_ownd_profile_oracle_parity() -> None:
-    """Bridge OWNd < 2.0.0b12 profile metadata to match firmware oracle verdicts."""
-    try:
-        import OWNd.profiles as _ownd_profiles
-    except ImportError:  # pragma: no cover
-        return
-
-    _no_who3 = tuple(w for w in _ownd_profiles.DEFAULT_SUPPORTED_WHO if w != 3)
-    _mh200_who = (1, 2, 3, 4, 6, 8, 15, 16, 17)
-    _mh200n_who = (1, 2, 3, 4, 6, 8, 15, 17, 25, 16, 22)
-
-    def _patch_profile_instance(prof: object) -> None:
-        model = getattr(prof, "model_name", "")
-        if model in ("F453", "F453AV", "F454"):
-            object.__setattr__(prof, "auth_measured", True)
-            object.__setattr__(prof, "audio_measured", True)
-        elif model in ("F461", "MyHomeServer1"):
-            object.__setattr__(prof, "supported_who", _no_who3)
-        elif model == "MH200":
-            object.__setattr__(prof, "supported_who", _mh200_who)
-        elif model == "MH200N":
-            object.__setattr__(prof, "supported_who", _mh200n_who)
-
-    for _prof in getattr(_ownd_profiles, "_PROFILES", {}).values():
-        _patch_profile_instance(_prof)
-
-    for _cls_name in (
-        "F453Profile",
-        "F453AVProfile",
-        "F454Profile",
-        "F461Profile",
-        "MyHomeServer1Profile",
-        "MH200Profile",
-        "MH200NProfile",
-    ):
-        _cls = getattr(_ownd_profiles, _cls_name, None)
-        if _cls is not None and not getattr(_cls, "_oracle_patched", False):
-            _orig_init = _cls.__init__
-
-            def _make_init(orig: object) -> object:
-                def _wrapped_init(self: object, *args: object, **kwargs: object) -> None:
-                    orig(self, *args, **kwargs)  # type: ignore[operator]
-                    _patch_profile_instance(self)
-
-                return _wrapped_init
-
-            _cls.__init__ = _make_init(_orig_init)
-            _cls._oracle_patched = True
-
-
-_ensure_ownd_profile_oracle_parity()
 README_MD = REPO_ROOT / "README.md"
 CONST_PY = REPO_ROOT / "custom_components" / "myhome" / "const.py"
 MANIFEST_JSON = REPO_ROOT / "custom_components" / "myhome" / "manifest.json"
@@ -508,46 +455,20 @@ def _format_oracle_version(version_code: str) -> str:
     return version_code
 
 
-def _ensure_oracle_verified_profiles() -> None:
-    """Align OWNd.profiles with firmware oracle verdicts when running against pre-2.0.0b11 / pre-OWNd#126."""
-    try:
-        import OWNd.profiles as _ownd_profiles
-    except ImportError:
-        return
+def _patched_ownd_profiles() -> list[str]:
+    """Name the OWNd profiles that were changed after OWNd built them.
 
-    profiles_map = getattr(_ownd_profiles, "_PROFILES", {})
-    for key in ("f453", "f453av", "f454"):
-        prof = profiles_map.get(key)
-        if prof is not None:
-            if not getattr(prof, "auth_measured", True):
-                object.__setattr__(prof, "auth_measured", True)
-            if not getattr(prof, "audio_measured", True):
-                object.__setattr__(prof, "audio_measured", True)
+    The oracle check is only meaningful against OWNd's own profile data: a shim that
+    copies oracle verdicts into OWNd would make it compare the oracle with itself.
+    """
+    from OWNd import profiles as ownd_profiles
 
-    for key in ("f461", "myhomeserver1"):
-        prof = profiles_map.get(key)
-        if prof is not None and 3 in getattr(prof, "supported_who", ()):
-            object.__setattr__(
-                prof,
-                "supported_who",
-                tuple(w for w in prof.supported_who if w != 3),
-            )
-
-    for key in ("mh200", "mh200n"):
-        prof = profiles_map.get(key)
-        if prof is not None and 3 not in getattr(prof, "supported_who", ()):
-            object.__setattr__(prof, "supported_who", (*prof.supported_who, 3))
-
-    f453av_cls = getattr(_ownd_profiles, "F453AVProfile", None)
-    if f453av_cls is not None and not getattr(f453av_cls(), "auth_measured", True):
-        orig_init = f453av_cls.__init__
-
-        def _patched_f453av_init(self: object, firmware_version: str | None = None) -> None:
-            orig_init(self, firmware_version=firmware_version)
-            object.__setattr__(self, "auth_measured", True)
-            object.__setattr__(self, "audio_measured", True)
-
-        f453av_cls.__init__ = _patched_f453av_init
+    patched: list[str] = []
+    for profile in ownd_profiles.canonical_profiles():
+        cls = type(profile)
+        if cls.__init__.__module__ != ownd_profiles.__name__ or profile != cls():
+            patched.append(profile.model_name)
+    return patched
 
 
 def verify_profiles_against_oracle(oracle_path: Path = ORACLE_JSON) -> list[str]:
@@ -556,8 +477,6 @@ def verify_profiles_against_oracle(oracle_path: Path = ORACLE_JSON) -> list[str]
         from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
     except ImportError:
         return []
-
-    _ensure_oracle_verified_profiles()
 
     if not oracle_path.is_file():
         return [f"Firmware oracle fixture not found: {oracle_path}"]
@@ -572,7 +491,10 @@ def verify_profiles_against_oracle(oracle_path: Path = ORACLE_JSON) -> list[str]
                 return (str(row.get("reply")), str(row.get("verdict")))
         return None
 
-    violations: list[str] = []
+    violations: list[str] = [
+        f"OWNd {model} profile was patched after import; the oracle check would verify the patch, not OWNd."
+        for model in _patched_ownd_profiles()
+    ]
     probe_checks: tuple[tuple[int, str, str], ...] = (
         (1, "*1*1*31##", "WHO 1 Lighting"),
         (2, "*2*1*31##", "WHO 2 Automation"),

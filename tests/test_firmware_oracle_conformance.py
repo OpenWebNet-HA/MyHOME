@@ -301,4 +301,53 @@ def test_gateway_profiles_match_oracle_verdicts():
     assert violations == [], "Gateway profile / discovery oracle mismatches:\n" + "\n".join(violations)
 
 
+TRACES_DIR = REPO_ROOT / "tests" / "fixtures" / "traces"
+F461_LIVE_TRACES = (
+    TRACES_DIR / "f461_live_2026-10-18" / "myhome_trace_F461_live_2026-10-18.json",
+    TRACES_DIR / "f461_who14_live_2026-10-18" / "myhome_trace_F461_who14_live_2026-10-18.json",
+)
+
+
+@pytest.mark.parametrize("trace_path", F461_LIVE_TRACES, ids=lambda path: path.parent.name)
+def test_f461_live_trace_agrees_with_oracle(trace_path: Path):
+    """Check a live F461 2.0.11 capture against OWNd and the F461 020011 oracle (#735, #745).
+
+    Every event the capture decoded must still decode to the same OWNd class, and every
+    command the gateway answered must agree with the oracle: the F461 ACKs a frame the
+    oracle saw reach the bus (``out``) and NACKs one it dropped (``silent``). The oracle's
+    ``reply`` field is not compared: for ``*1*1*0##``, ``*#2*0##`` and
+    ``*#18*51*#1200#1*0##`` it records a NACK where the hardware ACKed.
+    """
+    trace = json.loads(trace_path.read_text(encoding="utf-8"))
+    assert trace["gateway"]["model"] == "F461"
+    assert trace["gateway"]["firmware"] == "2.0.11"
+
+    decoded = [row for row in trace["rows"] if "ownd_class" in row]
+    assert decoded, f"{trace_path.name} records no decoded events"
+    for row in decoded:
+        parsed_class = type(OWNMessage.parse(row["frame"])).__name__
+        assert parsed_class == row["ownd_class"], (
+            f"{row['frame']} decoded to {parsed_class}, the capture recorded {row['ownd_class']}"
+        )
+
+    compared = 0
+    for row in trace["rows"]:
+        if "ack" not in row:
+            continue
+        entry = next(
+            (
+                e
+                for e in ALL_VERDICTS.get(row["frame"], [])
+                if e["product"] == "F461" and e["version"] == "020011"
+            ),
+            None,
+        )
+        if entry is None:
+            continue
+        compared += 1
+        assert entry["verdict"] in ("out", "silent"), f"{row['frame']}: oracle verdict {entry['verdict']}"
+        assert row["ack"] == (entry["verdict"] == "out"), (
+            f"{row['frame']} ({row['run']}): live ack={row['ack']}, oracle verdict {entry['verdict']}"
+        )
+    assert compared, f"{trace_path.name} shares no answered command with the F461 oracle"
 

@@ -174,6 +174,36 @@ def test_generate_gateway_discovery_table_and_verify_oracle():
     assert ugp.verify_profiles_against_oracle() == []
 
 
+def test_oracle_check_rejects_patched_profile_instance():
+    """A profile instance rewritten after import fails the check instead of verifying the rewrite."""
+    from OWNd.profiles import get_gateway_profile
+
+    mh200n = get_gateway_profile("MH200N")
+    original = mh200n.supported_who
+    object.__setattr__(mh200n, "supported_who", (*original, 3, 18))
+    try:
+        violations = ugp.verify_profiles_against_oracle()
+    finally:
+        object.__setattr__(mh200n, "supported_who", original)
+
+    assert "OWNd MH200N profile was patched after import" in "\n".join(violations)
+    assert ugp.verify_profiles_against_oracle() == []
+
+
+def test_oracle_check_rejects_patched_profile_class(monkeypatch: pytest.MonkeyPatch):
+    """A profile class whose __init__ was wrapped after import fails the check."""
+    from OWNd.profiles import F461Profile
+
+    original_init = F461Profile.__init__
+
+    def _wrapped_init(self: F461Profile) -> None:
+        original_init(self)
+
+    monkeypatch.setattr(F461Profile, "__init__", _wrapped_init)
+
+    assert ugp._patched_ownd_profiles() == ["F461"]
+
+
 def test_missing_files_and_markers_graceful_degradation(tmp_path: Path):
     """Verify graceful degradation when files or markers are missing."""
     nonexistent = tmp_path / "nonexistent.md"
