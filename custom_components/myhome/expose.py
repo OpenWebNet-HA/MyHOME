@@ -67,6 +67,7 @@ from homeassistant.helpers.template import Template, TemplateStateFromEntityId
 from homeassistant.util import dt as dt_util
 from OWNd.message import (
     OWNAutomationCommand,
+    OWNCommand,
     OWNEnergyCommand,
     OWNGatewayCommand,
     OWNHeatingCommand,
@@ -1023,7 +1024,7 @@ class ExposeManager:
 
     async def _async_dispatch_frames(
         self,
-        frames: list[OWNMessage],
+        frames: list[OWNCommand],
         *,
         high_priority: bool,
         is_confirmation: bool = False,
@@ -1156,7 +1157,7 @@ class ExposeManager:
         force: bool,
         is_reply: bool,
         query_dimension: int | None = None,
-    ) -> tuple[list[OWNMessage], Any]:
+    ) -> tuple[list[OWNCommand], Any]:
         """Build OpenWebNet frame(s) and normalized value for ``binding``."""
         raw, state = self._resolve_raw_value(binding)
         if raw is None:
@@ -1169,7 +1170,7 @@ class ExposeManager:
                 raw_str = str(raw).strip().lower()
                 is_on = raw_str in binding.on_states or raw_str in ("true", "1")
 
-            frames: list[OWNMessage] = []
+            frames: list[OWNCommand] = []
             # Check if brightness reporting is requested or queried
             brightness_pct: int | None = None
             if binding.attribute == "brightness" or binding.dimension == 1 or query_dimension == 1:
@@ -1358,6 +1359,7 @@ class ExposeManager:
                 elif rounded == round(float(binding.last_sent_value)):
                     return [], None
 
+            cmd: OWNCommand
             if dim == 113:
                 cmd = OWNEnergyCommand.report_active_power(binding.where, rounded)
             elif dim == 51:
@@ -1762,7 +1764,7 @@ class ExposeManager:
                     )
                     if not 1 <= energy_type <= 4:
                         continue
-                    confirm = OWNEnergyCommand.report_streaming_state(
+                    confirm: OWNCommand = OWNEnergyCommand.report_streaming_state(
                         binding.where, duration=duration, energy_type=energy_type
                     )
                     await self._async_dispatch_frames(
@@ -1824,7 +1826,7 @@ class ExposeManager:
                             )
                         )
                         if supports_dim_resp:
-                            confirm_frames: list[OWNMessage] = [
+                            confirm_frames: list[OWNCommand] = [
                                 OWNLightingCommand.switch_on(binding.where)
                                 if pct > 0
                                 else OWNLightingCommand.switch_off(binding.where),
