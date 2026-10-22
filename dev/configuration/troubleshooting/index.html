@@ -1417,6 +1417,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#toggling-a-single-light-or-pressing-a-button-unexpectedly-triggers-an-entire-scenario-other-lights" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Toggling a single light (or pressing a button) unexpectedly triggers an entire scenario / other lights
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#a-light-or-cover-shows-up-twice-or-as-the-wrong-platform" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2427,6 +2438,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#toggling-a-single-light-or-pressing-a-button-unexpectedly-triggers-an-entire-scenario-other-lights" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Toggling a single light (or pressing a button) unexpectedly triggers an entire scenario / other lights
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#a-light-or-cover-shows-up-twice-or-as-the-wrong-platform" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2730,6 +2752,19 @@
 <p>Log: <code>Event connection lost, reconnecting...</code> (OWNd) followed by a reconnect. This is normal on gateways that close idle event sockets (MH200 / MH201); the 60 s grace period keeps entities available across short drops. If it happens every few minutes, check the network path (Wi-Fi bridge, DHCP lease renewals, a second client stealing the session).</p>
 <h3 id="a-wall-switch-turned-a-light-on-but-home-assistant-still-shows-it-off">A wall switch turned a light on, but Home Assistant still shows it off<a class="headerlink" href="#a-wall-switch-turned-a-light-on-but-home-assistant-still-shows-it-off" title="Permanent link">&para;</a></h3>
 <p>Watch the card: if the actuator's own status frame (<code>*1*1*&lt;where&gt;##</code>) is missing after the press, the command was a group / area / general command that this actuator does not echo. See <a href="../known_limitations/#lighting-who-1">Known Limitations</a> for the workaround.</p>
+<h3 id="toggling-a-single-light-or-pressing-a-button-unexpectedly-triggers-an-entire-scenario-other-lights">Toggling a single light (or pressing a button) unexpectedly triggers an entire scenario / other lights<a class="headerlink" href="#toggling-a-single-light-or-pressing-a-button-unexpectedly-triggers-an-entire-scenario-other-lights" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Log / Bus trace</strong>:
+  <code>Message *1*1*61## was successfully sent.</code> followed within ~20–65 ms by <code>Message received: *15*03*61##</code> → <code>Message received: *17*1*1##</code> (<code>Scene 1 is started</code>) → multiple other lights switching on.</li>
+<li><strong>Root causes</strong>:</li>
+<li><strong>A Basic CEN (<code>WHO = 15</code>) control shares an <code>A</code>/<code>PL</code> address with a physical light or shutter actuator (<a href="https://github.com/OpenWebNet-HA/MyHOME/issues/612">#612</a>, <a href="https://github.com/OpenWebNet-HA/MyHOME/issues/773">#773</a>)</strong>:<br />
+     A control device configured in Basic CEN mode (<code>M = CEN</code>) has been given the same <code>A</code>/<code>PL</code> address (e.g. <code>61</code>) as a physical light actuator (<code>WHO = 1</code>). When Home Assistant sends a command (<code>*1*1*61##</code>) or status request (<code>*#1*61##</code>) to address <code>61</code>, the CEN control at <code>61</code> reacts on the SCS bus by emitting <code>*15*&lt;BUTTON&gt;*61##</code>, which triggers the scenario programmed on your <code>MH200N</code> / <code>MH201</code> / <code>MH202</code> / <code>F420</code> (<code>*17*1*&lt;SCENE&gt;##</code>). Per BTicino's scenario-programmer manuals, <code>CEN</code> controls must use dedicated <code>A</code>/<code>PL</code> addresses that never duplicate any actuator address.</li>
+<li><strong>A <code>CEN</code> / <code>CEN+</code> button is bound in both the MyHome app/programmer and Home Assistant (<a href="https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19121695">Discussion #770</a>)</strong>:<br />
+     Home Assistant passively observes <code>WHO = 15</code> / <code>WHO = 25</code> button frames on the bus and cannot suppress native scenario execution. If a physical button is already configured in <strong>MyHome_Up</strong> (<code>MyHomeServer1</code>) or <strong>MyHOME_Suite / TiMH200N</strong> to run a bus scenario, attaching a Home Assistant automation to the same button will run both simultaneously.</li>
+<li><strong>Resolution</strong>:</li>
+<li>Reassign the <code>M = CEN</code> control (or the actuator) to a free <code>A</code>/<code>PL</code> address not used by any actuator, or remove/update the scenario trigger in <strong>TiMH200N / MyHOME_Suite / MyHome_Up</strong>. See <a href="../cen_cenplus/#native-home-assistant-device-triggers">Scenario Controls &amp; Pushbuttons</a>.</li>
+<li>As a temporary software-only workaround until the plant configuration is updated, add the colliding address (e.g. <code>1:61</code>) to <strong>Settings → Devices &amp; Services → MyHOME → Configure → Ignored addresses</strong> so Home Assistant does not address it.</li>
+</ul>
 <h3 id="a-light-or-cover-shows-up-twice-or-as-the-wrong-platform">A light or cover shows up twice, or as the wrong platform<a class="headerlink" href="#a-light-or-cover-shows-up-twice-or-as-the-wrong-platform" title="Permanent link">&para;</a></h3>
 <p>Discovery creates a <code>light</code> for every WHO 1 actuator unless the address is configured as a <code>switch</code>, <code>binary_sensor</code> or <code>sensor</code> in <code>myhome.yaml</code>, and a <code>cover</code> for every WHO 2 address. If you have a relay driving a socket, declare it under <code>switch:</code> so no light is created; the stale light entity can then be removed from its device page.</p>
 <h3 id="a-device-i-deleted-came-back">A device I deleted came back<a class="headerlink" href="#a-device-i-deleted-came-back" title="Permanent link">&para;</a></h3>

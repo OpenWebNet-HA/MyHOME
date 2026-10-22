@@ -2306,6 +2306,19 @@
 <hr />
 <h2 id="native-home-assistant-device-triggers">🪄 Native Home Assistant Device Triggers<a class="headerlink" href="#native-home-assistant-device-triggers" title="Permanent link">&para;</a></h2>
 <p>In MyHOME v2.0, physical pushbuttons are automatically discovered and registered as <strong>Home Assistant Devices</strong>. You do <strong>not</strong> need to write complex template sensors or manual event listeners to automate them!</p>
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p><strong>Coexistence with Native MyHome Scenarios &amp; Actuator Addresses (<code>MyHome_Up</code> / <code>MyHOME_Suite</code> / <code>TiMH200N</code>)</strong><br />
+Home Assistant passively observes <code>WHO = 15</code> / <code>WHO = 25</code> frames on the SCS bus; it does <strong>not</strong> intercept or suppress them. Keep two plant-level rules in mind:</p>
+<ol>
+<li><strong>Do not bind the same button to both a native MyHome scenario and a Home Assistant automation (unless intended)</strong>:<br />
+   If a pushbutton is already configured in the <strong>MyHome_Up</strong> app (<code>MyHomeServer1</code>) or <strong>MyHOME_Suite / TiMH200N</strong> (<code>MH200N</code>, <code>MH201</code>, <code>MH202</code>, <code>F420</code>) to trigger a native bus scenario or automation, pressing that button will execute the native MyHome scenario <strong>and</strong> any Home Assistant automation attached to it at the same time (<a href="https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19121695">Discussion #770</a>).</li>
+<li>Only bind a button in both places when you intentionally want Home Assistant to <strong>extend</strong> a native bus scenario (for example, switching non-SCS Zigbee/Matter devices alongside an existing SCS scene).</li>
+<li>For a <strong>Home Assistant–only button</strong>, keep the CEN/CEN+ virtual object configured on the physical control so it emits frames on the bus, but remove or leave empty any scenario action bound to that button in <strong>MyHome_Up</strong> / <strong>MyHOME_Suite</strong>.</li>
+<li><strong>Never share a Basic CEN (<code>WHO = 15</code>) <code>A</code>/<code>PL</code> address with a physical actuator (<code>WHO = 1</code> / <code>WHO = 2</code>)</strong>:<br />
+   Per BTicino's scenario-programmer specifications, a control configured in Basic CEN mode (<code>M = CEN</code>) must use a dedicated <code>A</code>/<code>PL</code> address that <strong>does not duplicate any light or shutter actuator address</strong>. If a CEN control shares an address with a light actuator (e.g. <code>WHERE = 61</code>), toggling or polling that light from Home Assistant (<code>*1*1*61##</code> or <code>*#1*61##</code>) causes the CEN control at <code>61</code> to emit <code>*15*&lt;BUTTON&gt;*61##</code> on the bus and fire whatever scenario is bound to it in the scenario programmer (<a href="https://github.com/OpenWebNet-HA/MyHOME/issues/612">#612</a>, <a href="https://github.com/OpenWebNet-HA/MyHOME/issues/773">#773</a>).</li>
+</ol>
+</div>
 <h3 id="supported-trigger-types">Supported Trigger Types<a class="headerlink" href="#supported-trigger-types" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>pushbutton_short_press</code>: Fired immediately upon a quick tap.</li>
