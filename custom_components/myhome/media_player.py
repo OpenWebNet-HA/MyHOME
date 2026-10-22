@@ -119,6 +119,7 @@ from .const import (
 from .data import MyHOMEConfigEntry
 from .decoder_pool import EnvironmentBusyError
 from .discovery import Address, DeviceContext, PlatformDiscovery
+from .media_player_decoder import DEFAULT_DECODER_FEED_LEVEL, decoder_feed_volume
 from .media_player_group import ZoneGroupLayer
 from .media_player_pool import (
     STREAM_INCOMPATIBLE_PLATFORMS,
@@ -142,26 +143,12 @@ PARALLEL_UPDATES = 0
 _WAKE_ECHO_WINDOW = WAKE_ECHO_WINDOW  # seconds (centralised in media_player_power)
 _RESTORE_CONFIRM_WINDOW = 120.0  # seconds a restored zone has to show up on the bus
 
-# Baseline line-level feed volume (75%) applied to backend streaming decoders
-# before adding the configured pre-gain offset (0 = Pre-Amp OFF / untouched).
-DEFAULT_DECODER_FEED_LEVEL = 0.75
-
-
-def decoder_feed_volume(pre_gain_pct: Any) -> float | None:
-    """Return the fixed line-level decoder volume for ``pre_gain_pct``, or ``None``.
-
-    When ``pre_gain_pct <= 0`` (``0 = Pre-Amp OFF``), the integration leaves the
-    backend decoder's volume untouched (returns ``None``).  For ``pre_gain_pct > 0``,
-    the decoder is driven at a fixed high line-level feed above the 75% baseline:
-    ``min(1.0, 0.75 + pre_gain_pct / 100.0)``.  This keeps the analog signal on the
-    2-wire SCS bus strong regardless of any individual room's listening volume, so
-    room amplifiers operate at lower gain without amplifying bus hiss.
-    """
-    if isinstance(pre_gain_pct, bool) or not isinstance(pre_gain_pct, (int, float)):
-        return None
-    if not math.isfinite(pre_gain_pct) or pre_gain_pct <= 0:
-        return None
-    return min(1.0, round(DEFAULT_DECODER_FEED_LEVEL + float(pre_gain_pct) / 100.0, 4))
+__all__ = [
+    "DEFAULT_DECODER_FEED_LEVEL",
+    "MyHOMEMediaPlayer",
+    "async_setup_entry",
+    "decoder_feed_volume",
+]
 
 
 async def async_setup_entry(
@@ -792,62 +779,6 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
     async def async_volume_down(self) -> None:
         """Decrease zone volume one step."""
         await self._gateway_handler.send(OWNSoundCommand.volume_down(self._where))
-
-    async def _async_apply_decoder_feed_volume(
-        self,
-        decoder_id: str | None = None,
-        *,
-        suppress_errors: bool = False,
-    ) -> None:
-        """Drive the backend decoder at its configured fixed line-level feed volume."""
-        dec_id = decoder_id or self._active_decoder
-        if not dec_id:
-            return
-        pool = self._get_pool()
-        if not pool:
-            return
-        feed_volume = decoder_feed_volume(pool.get_pre_gain(dec_id))
-        if feed_volume is None:
-            return
-        target_dec = self._streaming_target(dec_id) or dec_id
-        self._syncing_volume = True
-        try:
-            if suppress_errors:
-                try:
-                    await self.hass.services.async_call(
-                        "media_player",
-                        "volume_set",
-                        {"entity_id": target_dec, "volume_level": feed_volume},
-                    )
-                except Exception as err:
-                    LOGGER.debug(
-                        "%s: failed to set feed volume on %s: %s",
-                        self.entity_id,
-                        target_dec,
-                        err,
-                    )
-            else:
-                await self.hass.services.async_call(
-                    "media_player",
-                    "volume_set",
-                    {"entity_id": target_dec, "volume_level": feed_volume},
-                )
-            if target_dec != dec_id:
-                try:
-                    await self.hass.services.async_call(
-                        "media_player",
-                        "volume_set",
-                        {"entity_id": dec_id, "volume_level": feed_volume},
-                    )
-                except Exception as err:
-                    LOGGER.debug(
-                        "%s: failed to set feed volume on hardware decoder %s: %s",
-                        self.entity_id,
-                        dec_id,
-                        err,
-                    )
-        finally:
-            self._syncing_volume = False
 
     async def async_set_volume_level(self, volume: float) -> None:
         """Set zone volume and ensure fixed line-level gain staging on the active decoder.

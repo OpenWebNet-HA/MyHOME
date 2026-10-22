@@ -202,6 +202,11 @@ class ZoneGroupLayer(ZoneDecoderLayer):
         if source_num is None:
             source_num = self._default_source()
 
+        if self._active_decoder:
+            await self._async_apply_decoder_feed_volume(
+                self._active_decoder, suppress_errors=True
+            )
+
         # Routing follows the opt-in of _routing_configured(): until the matrix
         # is described in the options, the wall-panel routing is trusted.
         route = self._routing_configured()
@@ -253,6 +258,9 @@ class ZoneGroupLayer(ZoneDecoderLayer):
                 return
             if new_leader_ent:
                 new_leader_ent._active_decoder = result[0]
+                await new_leader_ent._async_apply_decoder_feed_volume(
+                    result[0], suppress_errors=True
+                )
 
             self._cancel_pending_off()
             self._cancel_auto_off()
@@ -428,6 +436,8 @@ class ZoneGroupLayer(ZoneDecoderLayer):
         await self._async_wake_zone()
         if route and source_num is not None:
             await self._route_to(source_num, sent)
+        if decoder_id:
+            await self._async_apply_decoder_feed_volume(decoder_id, suppress_errors=True)
         self.async_write_ha_state()
         members = self._group_entities(pool)[1:]
         if not members:
@@ -703,6 +713,9 @@ class ZoneGroupLayer(ZoneDecoderLayer):
             if self._attr_source is None:
                 self._attr_source = self._source_label(source_num)
 
+            await leader_ent._async_apply_decoder_feed_volume(
+                decoder_id, suppress_errors=True
+            )
             self.async_write_ha_state()
             leader_ent.async_write_ha_state()
             LOGGER.info(

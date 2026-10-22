@@ -330,8 +330,9 @@ The MyHOME integration features **fixed line-level hardware gain staging**:
 $$\text{Decoder Volume} = \min(1.0,\; 0.75 + \text{Pre-Gain Offset})$$
 
 - When `pre_gain` is `0` (*Pre-Amp OFF*), the backend decoder's volume is left untouched.
-- Setting `pre_gain > 0` (e.g., `+20%` → `95%` feed volume, or `+25%`–`+100%` → `100%` full line-level feed) drives the network streamer at a fixed high line-level feed as soon as playback starts or resumes, independent of any individual room's volume slider.
-- Room volume changes (`0`–`31` on the BTicino amplifier) control only the room's own speaker loudness and never throttle the shared streamer feed in multi-room groups.
+- Setting `pre_gain > 0` (e.g., `+20%` → `95%` feed volume, or `+25%`–`+100%` → `100%` full line-level feed) drives the network streamer at a fixed high line-level feed as soon as playback starts, resumes, or a multi-room group is joined / handed over / unparked, independent of any individual room's volume slider.
+- Once the backend decoder reports that target `volume_level` in Home Assistant, subsequent room volume adjustments skip redundant `media_player.volume_set` calls on the streamer unless its feed volume drifted.
+- Room volume changes (`0`–`31` on the BTicino amplifier) control only the room's own speaker loudness and never throttle the shared streamer feed in multi-room groups. Conversely, changing the streamer's volume in a vendor app (e.g. Cambridge StreamMagic) does not move the Home Assistant room volume slider, which always reflects the BTicino amplifier on the SCS bus.
 - Because the analog feed into the F441M matrix stays near full line level, each room amplifier operates at much lower gain (typically 20%–40% instead of 75%), pushing the 2-wire SCS bus noise floor well below audibility.
 
 ### A volume of 0 is not a mute

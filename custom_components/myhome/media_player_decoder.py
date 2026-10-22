@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from homeassistant.components.media_player.const import MediaPlayerState
@@ -24,9 +25,101 @@ _AUTO_OFF_IDLE_DELAY = AUTO_OFF_IDLE_DELAY
 _AUTO_OFF_PAUSED_DELAY = AUTO_OFF_PAUSED_DELAY
 _DECODER_PLAYING_STATES = DECODER_PLAYING_STATES
 
+# Baseline line-level feed volume (75%) applied to backend streaming decoders
+# before adding the configured pre-gain offset (0 = Pre-Amp OFF / untouched).
+DEFAULT_DECODER_FEED_LEVEL = 0.75
+
+
+def decoder_feed_volume(pre_gain_pct: Any) -> float | None:
+    """Return the fixed line-level decoder volume for ``pre_gain_pct``, or ``None``.
+
+    When ``pre_gain_pct <= 0`` (``0 = Pre-Amp OFF``), the integration leaves the
+    backend decoder's volume untouched (returns ``None``).  For ``pre_gain_pct > 0``,
+    the decoder is driven at a fixed high line-level feed above the 75% baseline:
+    ``min(1.0, 0.75 + pre_gain_pct / 100.0)``.  This keeps the analog signal on the
+    2-wire SCS bus strong regardless of any individual room's listening volume, so
+    room amplifiers operate at lower gain without amplifying bus hiss.
+    """
+    if isinstance(pre_gain_pct, bool) or not isinstance(pre_gain_pct, (int, float)):
+        return None
+    if not math.isfinite(pre_gain_pct) or pre_gain_pct <= 0:
+        return None
+    return min(1.0, round(DEFAULT_DECODER_FEED_LEVEL + float(pre_gain_pct) / 100.0, 4))
+
 
 class ZoneDecoderLayer(ZoneSourceLayer):
     """Playback state, metadata and volume of the decoder a zone hears."""
+
+    def _needs_feed_volume_sync(self, entity_id: str, feed_volume: float) -> bool:
+        """Return ``True`` when ``entity_id`` does not yet report ``feed_volume``."""
+        state = self.hass.states.get(entity_id) if self.hass else None
+        if state is None:
+            return True
+        cur_vol = state.attributes.get("volume_level")
+        if isinstance(cur_vol, bool) or not isinstance(cur_vol, (int, float)):
+            return True
+        return not math.isfinite(cur_vol) or abs(float(cur_vol) - feed_volume) >= 1e-3
+
+    async def _async_apply_decoder_feed_volume(
+        self,
+        decoder_id: str | None = None,
+        *,
+        suppress_errors: bool = False,
+    ) -> None:
+        """Drive the backend decoder at its configured fixed line-level feed volume."""
+        dec_id = decoder_id or self._active_decoder
+        if not dec_id:
+            return
+        pool = self._get_pool()
+        if not pool:
+            return
+        feed_volume = decoder_feed_volume(pool.get_pre_gain(dec_id))
+        if feed_volume is None:
+            return
+        target_dec = self._streaming_target(dec_id) or dec_id
+        need_target = self._needs_feed_volume_sync(target_dec, feed_volume)
+        need_hw = target_dec != dec_id and self._needs_feed_volume_sync(dec_id, feed_volume)
+        if not need_target and not need_hw:
+            return
+        self._syncing_volume = True
+        try:
+            if need_target:
+                if suppress_errors:
+                    try:
+                        await self.hass.services.async_call(
+                            "media_player",
+                            "volume_set",
+                            {"entity_id": target_dec, "volume_level": feed_volume},
+                        )
+                    except Exception as err:
+                        LOGGER.debug(
+                            "%s: failed to set feed volume on %s: %s",
+                            self.entity_id,
+                            target_dec,
+                            err,
+                        )
+                else:
+                    await self.hass.services.async_call(
+                        "media_player",
+                        "volume_set",
+                        {"entity_id": target_dec, "volume_level": feed_volume},
+                    )
+            if need_hw:
+                try:
+                    await self.hass.services.async_call(
+                        "media_player",
+                        "volume_set",
+                        {"entity_id": dec_id, "volume_level": feed_volume},
+                    )
+                except Exception as err:
+                    LOGGER.debug(
+                        "%s: failed to set feed volume on hardware decoder %s: %s",
+                        self.entity_id,
+                        dec_id,
+                        err,
+                    )
+        finally:
+            self._syncing_volume = False
 
     @property
     def _effective_decoder(self) -> str | None:

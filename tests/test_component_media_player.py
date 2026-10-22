@@ -454,6 +454,33 @@ async def test_volume_controls_and_gain_staging(hass, player, mock_gateway):
             {"entity_id": "media_player.squeezelite_1", "volume_level": 1.0},
         )
 
+        # Once the decoder state already reports volume_level == 1.0, room volume changes
+        # skip redundant volume_set calls on the streamer (non-chatty deduplication)
+        hass.states.async_set(
+            "media_player.squeezelite_1",
+            MediaPlayerState.PLAYING,
+            {"volume_level": 1.0},
+        )
+        mock_gateway.send.reset_mock()
+        mock_call.reset_mock()
+        await player.async_set_volume_level(0.35)
+        assert str(mock_gateway.send.call_args.args[0]) == "*#16*1*#1*11##"
+        mock_call.assert_not_called()
+
+        # If external app lowered decoder volume (e.g. to 0.50), feed volume is restored
+        hass.states.async_set(
+            "media_player.squeezelite_1",
+            MediaPlayerState.PLAYING,
+            {"volume_level": 0.50},
+        )
+        mock_call.reset_mock()
+        await player.async_set_volume_level(0.35)
+        mock_call.assert_called_once_with(
+            "media_player",
+            "volume_set",
+            {"entity_id": "media_player.squeezelite_1", "volume_level": 1.0},
+        )
+
         # Negative / zero room volume clamps hardware to 0 and leaves decoder feed untouched
         mock_gateway.send.reset_mock()
         mock_call.reset_mock()
@@ -480,6 +507,11 @@ async def test_volume_controls_and_gain_staging(hass, player, mock_gateway):
 
     _set_pool(player, mock_pool)
     mock_pool.get_pre_gain.return_value = 25
+    hass.states.async_set(
+        "media_player.squeezelite_1",
+        MediaPlayerState.PLAYING,
+        {"volume_level": float("nan")},
+    )
     player._companion_cache = {"media_player.squeezelite_1": "media_player.squeezelite_1_dlna"}
     with patch(
         "homeassistant.core.ServiceRegistry.async_call",
