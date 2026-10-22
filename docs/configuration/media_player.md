@@ -324,13 +324,15 @@ matrix routing to the wall panels.
 
 ## 🎛️ Gain Staging & Bus Noise Elimination
 
-Analog SCS audio matrices can suffer from faint ground-loop hum or bus hiss if the input signal level is too low.
+Analog SCS audio matrices can suffer from faint ground-loop hum or bus hiss if the input signal level is too low and the room amplifiers have to be turned up to ~75% to reach normal listening volume.
 
-The MyHOME integration features **hardware gain staging**:
-$$\text{Decoder Volume} = \text{Zone Volume} + \text{Pre-Gain Offset}$$
+The MyHOME integration features **fixed line-level hardware gain staging**:
+$$\text{Decoder Volume} = \min(1.0,\; 0.75 + \text{Pre-Gain Offset})$$
 
-- Setting `pre_gain` (e.g., `+10%` to `+20%`) drives the network streamer at maximum undistorted line level.
-- The room amplifier then operates at lower amplification, pushing the analog noise floor below audibility.
+- When `pre_gain` is `0` (*Pre-Amp OFF*), the backend decoder's volume is left untouched.
+- Setting `pre_gain > 0` (e.g., `+20%` → `95%` feed volume, or `+25%`–`+100%` → `100%` full line-level feed) drives the network streamer at a fixed high line-level feed as soon as playback starts or resumes, independent of any individual room's volume slider.
+- Room volume changes (`0`–`31` on the BTicino amplifier) control only the room's own speaker loudness and never throttle the shared streamer feed in multi-room groups.
+- Because the analog feed into the F441M matrix stays near full line level, each room amplifier operates at much lower gain (typically 20%–40% instead of 75%), pushing the 2-wire SCS bus noise floor well below audibility.
 
 ### A volume of 0 is not a mute
 
@@ -355,7 +357,7 @@ Sources, defaults and the Dynamic Proxy are all configured in the integration's 
 5. **Decoder mapping**, one row per streaming decoder (up to 4):
    - **Media player entity**: your backend player (e.g. `media_player.squeezelite_salon`).
    - **Source input**: the F441M input it is wired to, chosen from a list that shows your source names (e.g. `S1 — Streamer`).
-   - **Pre-gain offset**: percentage added to the decoder volume (0–100 %, e.g. `15`). See [Gain Staging](#gain-staging-bus-noise-elimination).
+   - **Pre-gain offset**: percentage added to the 75% baseline decoder feed volume (0–100 %, e.g. `20` for 95% feed or `25`–`100` for 100% line-level feed; `0` = Pre-Amp OFF). See [Gain Staging](#gain-staging-bus-noise-elimination).
    - A decoder that is paused from outside (for example a Spotify Connect session started on the device) and not held by one of your zones is left alone by `play_media` for **5 minutes**; after that it counts as free. This applies to the streaming companion of a two-entity decoder as well.
 6. Click **Submit**.
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
 from homeassistant.components.media_player.const import MediaPlayerState
@@ -253,21 +252,16 @@ class ZoneDecoderLayer(ZoneSourceLayer):
 
     @callback
     def _async_decoder_state_changed(self, event: Event[EventStateChangedData]) -> None:
-        """Update UI when the active decoder changes playback state or volume.
+        """Update UI when the active decoder changes playback state or metadata.
 
         This fires whenever *any* configured decoder changes state (all are
         tracked).  The handler ignores events from decoders that are not
         currently assigned to this zone.
 
-        Volume reverse-sync
-        -------------------
-        If the user changes the decoder volume externally (e.g. in the
-        Cambridge StreamMagic app), the zone UI is updated to reflect the
-        approximate zone volume (decoder_volume − pre_gain_offset).
-
-        The ``_syncing_volume`` flag suppresses this path when the change was
-        triggered by our own ``async_set_volume_level`` to avoid a feedback
-        loop.
+        Room volume is owned exclusively by the BTicino zone amplifier on the
+        SCS bus (``*#16*<WHERE>*1*<0..31>##``); the backend decoder outputs a
+        fixed line-level feed into the F441M matrix and never overwrites the
+        zone's ``_attr_volume_level``.
         """
         watched = self._active_decoder or self._stray_decoder()
         eff_dec = self._effective_decoder or watched
@@ -277,22 +271,6 @@ class ZoneDecoderLayer(ZoneSourceLayer):
         event_entity = event.data.get("entity_id")
         if event_entity != eff_dec and event_entity != companion:
             return
-
-        if self._active_decoder and not self._syncing_volume:
-            new_state = event.data.get("new_state")
-            if new_state:
-                ext_vol = new_state.attributes.get("volume_level")
-                if (
-                    isinstance(ext_vol, (int, float))
-                    and math.isfinite(ext_vol)
-                    and self._attr_volume_level != ext_vol
-                ):
-                    pool = self._get_pool()
-                    if pool and event_entity == eff_dec:
-                        pre_gain_pct = pool.get_pre_gain(eff_dec)
-                        # Reverse the pre_gain offset to get approximate zone volume
-                        zone_vol = max(0.0, min(1.0, float(ext_vol) - pre_gain_pct / 100.0))
-                        self._attr_volume_level = zone_vol
 
         # Auto power-off when decoder stops playing (anti-hiss). Applies to the
         # zone that owns the decoder and to any other room that is on and
