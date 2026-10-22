@@ -22,10 +22,12 @@ and other sources to the matrix by implementing a *Dynamic Proxy* pattern:
       decoder's input.  Without that the routing set at the wall panels is
       trusted, as in earlier releases.
    d. Forwards the stream URL to the backend decoder via the HA service bus.
-5. State, metadata (title, artist, album art), and volume are mirrored from
+5. State and metadata (title, artist, album art) are mirrored from
    the backend decoder back to the BTicino zone entity.
-6. Volume changes on the zone apply **gain staging** (decoder volume =
-   zone_volume + pre_gain) to keep the analog signal level high and reduce bus noise.
+6. Gain staging keeps the backend decoder at a fixed high line-level feed
+   (``min(1.0, 0.75 + pre_gain / 100)`` when ``pre_gain > 0``) while room
+   volume controls only the BTicino zone amplifier, maximising signal-to-noise
+   ratio and eliminating analog bus hiss.
 7. When the zone is turned off, the decoder is released back to the pool.
 
 Source selection
@@ -117,6 +119,7 @@ from .const import (
 from .data import MyHOMEConfigEntry
 from .decoder_pool import EnvironmentBusyError
 from .discovery import Address, DeviceContext, PlatformDiscovery
+from .media_player_decoder import DEFAULT_DECODER_FEED_LEVEL, decoder_feed_volume
 from .media_player_group import ZoneGroupLayer
 from .media_player_pool import (
     STREAM_INCOMPATIBLE_PLATFORMS,
@@ -139,6 +142,13 @@ PARALLEL_UPDATES = 0
 # arrives this soon after a wake is our own and must not tear the zone down.
 _WAKE_ECHO_WINDOW = WAKE_ECHO_WINDOW  # seconds (centralised in media_player_power)
 _RESTORE_CONFIRM_WINDOW = 120.0  # seconds a restored zone has to show up on the bus
+
+__all__ = [
+    "DEFAULT_DECODER_FEED_LEVEL",
+    "MyHOMEMediaPlayer",
+    "async_setup_entry",
+    "decoder_feed_volume",
+]
 
 
 async def async_setup_entry(
@@ -577,6 +587,7 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
                 },
             ) from err
 
+        await self._async_apply_decoder_feed_volume(decoder_id, suppress_errors=True)
         if members_task is not None:
             await members_task
         self.async_schedule_update_ha_state()
@@ -594,6 +605,7 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
         elif self._attr_state == MediaPlayerState.OFF:
             await self._async_wake_zone()
         await self._async_finish_group_wake(members_task, self._forward_to_decoder("media_play"))
+        await self._async_apply_decoder_feed_volume(self._effective_decoder, suppress_errors=True)
 
     async def async_media_stop(self) -> None:
         """Stop playback on the active decoder, or leave group if caller is a member."""
@@ -769,19 +781,17 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
         await self._gateway_handler.send(OWNSoundCommand.volume_down(self._where))
 
     async def async_set_volume_level(self, volume: float) -> None:
-        """Set zone volume and apply gain staging to the active decoder.
+        """Set zone volume and ensure fixed line-level gain staging on the active decoder.
 
         Gain staging strategy
         ---------------------
-        Keep the decoder volume proportionally higher than the BTicino zone
-        volume to maximise signal level in the analog chain and minimise
-        amplification of the bus noise floor.
-
-        Decoder volume = ``min(1.0, zone_volume + pre_gain / 100)``.
-
-        The ``_syncing_volume`` flag prevents a feedback loop:
-        ``zone.set_volume → decoder.volume_set → state_changed event
-        → zone._async_decoder_state_changed → zone.set_volume → …``
+        Drive the backend decoder at a fixed high line-level feed
+        (``min(1.0, 0.75 + pre_gain / 100)`` when ``pre_gain > 0``) independent
+        of the BTicino room amplifier's variable listening volume.  This keeps
+        the signal-to-noise ratio on the 2-wire SCS analog bus as high as
+        possible so room amplifiers do not need to be turned up to 75%+ where
+        analog hiss becomes audible, and prevents a quiet room in a multi-room
+        group from throttling the shared streamer feed.
 
         Args:
             volume: Target volume in the range 0.0–1.0.
@@ -808,34 +818,18 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
         hw_volume = max(0, min(31, int(round(volume * 31.0))))
         await self._gateway_handler.send(OWNSoundCommand.set_volume(self._where, hw_volume))
 
-        # Gain staging: keep decoder louder than the BTicino analog stage
-        if self._active_decoder:
-            pool = self._get_pool()
-            if pool:
-                pre_gain_pct = pool.get_pre_gain(self._active_decoder)
-                decoder_volume = max(0.0, min(1.0, volume + pre_gain_pct / 100.0))
-                self._syncing_volume = True
-                try:
-                    target_dec = (
-                        self._streaming_target(self._active_decoder) or self._active_decoder
-                    )
-                    await self.hass.services.async_call(
-                        "media_player",
-                        "volume_set",
-                        {
-                            "entity_id": target_dec,
-                            "volume_level": decoder_volume,
-                        },
-                    )
-                finally:
-                    self._syncing_volume = False
+        # Gain staging: maintain fixed high line-level feed on the backend decoder
+        # when the room is audible (never pull the shared feed down to 0).
+        if volume > 0 and self._active_decoder:
+            await self._async_apply_decoder_feed_volume(self._active_decoder)
 
     async def async_mute_volume(self, mute: bool) -> None:
-        """Mute or unmute the zone and propagate to the active decoder.
+        """Mute or unmute the zone and propagate to the active decoder when solo.
 
         Muting is emulated by driving the BTicino zone volume to 0 (or
-        restoring it).  If the active decoder supports hardware mute, that is
-        also applied for immediate effect.
+        restoring it).  If the active decoder supports hardware mute and this
+        zone is not leading a multi-room group, mute is also applied to the
+        decoder for immediate effect.
 
         Args:
             mute: ``True`` to mute, ``False`` to unmute.
@@ -853,19 +847,22 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
 
         self._attr_is_volume_muted = mute
 
-        # Propagate mute to decoder if it supports the attribute
+        # Propagate mute to decoder only when this zone is not leading a group
         if self._active_decoder:
-            target_dec = self._streaming_target(self._active_decoder) or self._active_decoder
-            dec_state = self.hass.states.get(target_dec)
-            if dec_state and dec_state.attributes.get("is_volume_muted") is not None:
-                try:
-                    await self.hass.services.async_call(
-                        "media_player",
-                        "volume_mute",
-                        {"entity_id": target_dec, "is_volume_muted": mute},
-                    )
-                except Exception:  # pylint: disable=broad-except
-                    pass  # Not all decoders support mute; volume=0 covers the rest
+            pool = self._get_pool()
+            members = pool.get_members(self.entity_id) if pool else []
+            if not (isinstance(members, list) and members):
+                target_dec = self._streaming_target(self._active_decoder) or self._active_decoder
+                dec_state = self.hass.states.get(target_dec)
+                if dec_state and dec_state.attributes.get("is_volume_muted") is not None:
+                    try:
+                        await self.hass.services.async_call(
+                            "media_player",
+                            "volume_mute",
+                            {"entity_id": target_dec, "is_volume_muted": mute},
+                        )
+                    except Exception:  # pylint: disable=broad-except
+                        pass  # Not all decoders support mute; volume=0 covers the rest
 
         self.async_schedule_update_ha_state()
 

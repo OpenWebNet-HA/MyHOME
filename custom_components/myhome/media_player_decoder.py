@@ -25,9 +25,101 @@ _AUTO_OFF_IDLE_DELAY = AUTO_OFF_IDLE_DELAY
 _AUTO_OFF_PAUSED_DELAY = AUTO_OFF_PAUSED_DELAY
 _DECODER_PLAYING_STATES = DECODER_PLAYING_STATES
 
+# Baseline line-level feed volume (75%) applied to backend streaming decoders
+# before adding the configured pre-gain offset (0 = Pre-Amp OFF / untouched).
+DEFAULT_DECODER_FEED_LEVEL = 0.75
+
+
+def decoder_feed_volume(pre_gain_pct: Any) -> float | None:
+    """Return the fixed line-level decoder volume for ``pre_gain_pct``, or ``None``.
+
+    When ``pre_gain_pct <= 0`` (``0 = Pre-Amp OFF``), the integration leaves the
+    backend decoder's volume untouched (returns ``None``).  For ``pre_gain_pct > 0``,
+    the decoder is driven at a fixed high line-level feed above the 75% baseline:
+    ``min(1.0, 0.75 + pre_gain_pct / 100.0)``.  This keeps the analog signal on the
+    2-wire SCS bus strong regardless of any individual room's listening volume, so
+    room amplifiers operate at lower gain without amplifying bus hiss.
+    """
+    if isinstance(pre_gain_pct, bool) or not isinstance(pre_gain_pct, (int, float)):
+        return None
+    if not math.isfinite(pre_gain_pct) or pre_gain_pct <= 0:
+        return None
+    return min(1.0, round(DEFAULT_DECODER_FEED_LEVEL + float(pre_gain_pct) / 100.0, 4))
+
 
 class ZoneDecoderLayer(ZoneSourceLayer):
     """Playback state, metadata and volume of the decoder a zone hears."""
+
+    def _needs_feed_volume_sync(self, entity_id: str, feed_volume: float) -> bool:
+        """Return ``True`` when ``entity_id`` does not yet report ``feed_volume``."""
+        state = self.hass.states.get(entity_id) if self.hass else None
+        if state is None:
+            return True
+        cur_vol = state.attributes.get("volume_level")
+        if isinstance(cur_vol, bool) or not isinstance(cur_vol, (int, float)):
+            return True
+        return not math.isfinite(cur_vol) or abs(float(cur_vol) - feed_volume) >= 1e-3
+
+    async def _async_apply_decoder_feed_volume(
+        self,
+        decoder_id: str | None = None,
+        *,
+        suppress_errors: bool = False,
+    ) -> None:
+        """Drive the backend decoder at its configured fixed line-level feed volume."""
+        dec_id = decoder_id or self._active_decoder
+        if not dec_id:
+            return
+        pool = self._get_pool()
+        if not pool:
+            return
+        feed_volume = decoder_feed_volume(pool.get_pre_gain(dec_id))
+        if feed_volume is None:
+            return
+        target_dec = self._streaming_target(dec_id) or dec_id
+        need_target = self._needs_feed_volume_sync(target_dec, feed_volume)
+        need_hw = target_dec != dec_id and self._needs_feed_volume_sync(dec_id, feed_volume)
+        if not need_target and not need_hw:
+            return
+        self._syncing_volume = True
+        try:
+            if need_target:
+                if suppress_errors:
+                    try:
+                        await self.hass.services.async_call(
+                            "media_player",
+                            "volume_set",
+                            {"entity_id": target_dec, "volume_level": feed_volume},
+                        )
+                    except Exception as err:
+                        LOGGER.debug(
+                            "%s: failed to set feed volume on %s: %s",
+                            self.entity_id,
+                            target_dec,
+                            err,
+                        )
+                else:
+                    await self.hass.services.async_call(
+                        "media_player",
+                        "volume_set",
+                        {"entity_id": target_dec, "volume_level": feed_volume},
+                    )
+            if need_hw:
+                try:
+                    await self.hass.services.async_call(
+                        "media_player",
+                        "volume_set",
+                        {"entity_id": dec_id, "volume_level": feed_volume},
+                    )
+                except Exception as err:
+                    LOGGER.debug(
+                        "%s: failed to set feed volume on hardware decoder %s: %s",
+                        self.entity_id,
+                        dec_id,
+                        err,
+                    )
+        finally:
+            self._syncing_volume = False
 
     @property
     def _effective_decoder(self) -> str | None:
@@ -253,21 +345,16 @@ class ZoneDecoderLayer(ZoneSourceLayer):
 
     @callback
     def _async_decoder_state_changed(self, event: Event[EventStateChangedData]) -> None:
-        """Update UI when the active decoder changes playback state or volume.
+        """Update UI when the active decoder changes playback state or metadata.
 
         This fires whenever *any* configured decoder changes state (all are
         tracked).  The handler ignores events from decoders that are not
         currently assigned to this zone.
 
-        Volume reverse-sync
-        -------------------
-        If the user changes the decoder volume externally (e.g. in the
-        Cambridge StreamMagic app), the zone UI is updated to reflect the
-        approximate zone volume (decoder_volume − pre_gain_offset).
-
-        The ``_syncing_volume`` flag suppresses this path when the change was
-        triggered by our own ``async_set_volume_level`` to avoid a feedback
-        loop.
+        Room volume is owned exclusively by the BTicino zone amplifier on the
+        SCS bus (``*#16*<WHERE>*1*<0..31>##``); the backend decoder outputs a
+        fixed line-level feed into the F441M matrix and never overwrites the
+        zone's ``_attr_volume_level``.
         """
         watched = self._active_decoder or self._stray_decoder()
         eff_dec = self._effective_decoder or watched
@@ -277,22 +364,6 @@ class ZoneDecoderLayer(ZoneSourceLayer):
         event_entity = event.data.get("entity_id")
         if event_entity != eff_dec and event_entity != companion:
             return
-
-        if self._active_decoder and not self._syncing_volume:
-            new_state = event.data.get("new_state")
-            if new_state:
-                ext_vol = new_state.attributes.get("volume_level")
-                if (
-                    isinstance(ext_vol, (int, float))
-                    and math.isfinite(ext_vol)
-                    and self._attr_volume_level != ext_vol
-                ):
-                    pool = self._get_pool()
-                    if pool and event_entity == eff_dec:
-                        pre_gain_pct = pool.get_pre_gain(eff_dec)
-                        # Reverse the pre_gain offset to get approximate zone volume
-                        zone_vol = max(0.0, min(1.0, float(ext_vol) - pre_gain_pct / 100.0))
-                        self._attr_volume_level = zone_vol
 
         # Auto power-off when decoder stops playing (anti-hiss). Applies to the
         # zone that owns the decoder and to any other room that is on and

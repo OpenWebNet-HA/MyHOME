@@ -371,7 +371,19 @@ async def test_turn_on_and_turn_off_with_active_decoder(hass, player, mock_gatew
 
 @pytest.mark.asyncio
 async def test_volume_controls_and_gain_staging(hass, player, mock_gateway):
-    """Test volume up/down, volume set with gain staging, and mute propagation."""
+    """Test volume up/down, fixed-level decoder feed gain staging, and mute propagation."""
+    from custom_components.myhome.media_player import decoder_feed_volume
+
+    # Verify decoder_feed_volume helper across edge cases
+    assert decoder_feed_volume(None) is None
+    assert decoder_feed_volume(True) is None
+    assert decoder_feed_volume(0) is None
+    assert decoder_feed_volume(-10) is None
+    assert decoder_feed_volume(float("nan")) is None
+    assert decoder_feed_volume(20) == 0.95
+    assert decoder_feed_volume(25) == 1.0
+    assert decoder_feed_volume(100) == 1.0
+
     player.async_schedule_update_ha_state = MagicMock()
 
     # Step volume
@@ -379,41 +391,59 @@ async def test_volume_controls_and_gain_staging(hass, player, mock_gateway):
     await player.async_volume_down()
     assert mock_gateway.send.call_count == 2
 
-    # Set volume with active decoder and pre-gain staging
+    # Set volume with active decoder and pre-gain staging (+20% -> 0.75 + 0.20 = 0.95 fixed feed)
     mock_pool = MagicMock(spec=DecoderPool)
-    mock_pool.get_pre_gain.return_value = 20  # +20% pre-gain
+    mock_pool.get_pre_gain.return_value = 20  # +20% pre-gain -> 0.95 fixed line-level feed
     _set_pool(player, mock_pool)
 
     player._active_decoder = "media_player.squeezelite_1"
     player._attr_is_volume_muted = True
 
     with patch("homeassistant.core.ServiceRegistry.async_call", new_callable=AsyncMock) as mock_call:
-        await player.async_set_volume_level(0.5)
+        await player.async_set_volume_level(0.2)
         assert player._attr_is_volume_muted is False
 
-        # Check gain staging service call: 0.5 + 20/100 = 0.70
+        # Fixed line-level feed is independent of room volume (0.75 + 0.20 = 0.95)
         mock_call.assert_called_once_with(
             "media_player",
             "volume_set",
-            {"entity_id": "media_player.squeezelite_1", "volume_level": 0.70},
+            {"entity_id": "media_player.squeezelite_1", "volume_level": 0.95},
         )
 
-        # Mute volume
+        # Mute volume: sets room hardware volume to 0 without pulling down decoder volume_level,
+        # and propagates volume_mute when solo.
         mock_call.reset_mock()
         hass.states.async_set("media_player.squeezelite_1", MediaPlayerState.PLAYING, {"is_volume_muted": False})
 
         await player.async_mute_volume(True)
         assert player._attr_is_volume_muted is True
-        mock_call.assert_any_call(
+        mock_call.assert_called_once_with(
             "media_player", "volume_mute", {"entity_id": "media_player.squeezelite_1", "is_volume_muted": True}
         )
 
-        # Unmute volume
+        # Unmute volume: restores room volume and re-applies fixed feed volume + unmute
         mock_call.reset_mock()
         await player.async_mute_volume(False)
         assert player._attr_is_volume_muted is False
+        mock_call.assert_any_call(
+            "media_player",
+            "volume_set",
+            {"entity_id": "media_player.squeezelite_1", "volume_level": 0.95},
+        )
+        mock_call.assert_any_call(
+            "media_player", "volume_mute", {"entity_id": "media_player.squeezelite_1", "is_volume_muted": False}
+        )
 
-        # Out-of-range volume inputs are clamped to hardware 0..31 and decoder 0.0..1.0
+        # When leading a multi-room group, muting the leader room does NOT mute the shared decoder
+        mock_call.reset_mock()
+        mock_pool.get_members.return_value = ["media_player.zone_2"]
+        await player.async_mute_volume(True)
+        mock_call.assert_not_called()
+        mock_pool.get_members.return_value = []
+
+        # Out-of-range volume inputs are clamped to hardware 0..31;
+        # pre_gain = 25% clamps decoder feed volume to 1.0
+        mock_pool.get_pre_gain.return_value = 25
         mock_gateway.send.reset_mock()
         mock_call.reset_mock()
         await player.async_set_volume_level(1.5)
@@ -424,15 +454,39 @@ async def test_volume_controls_and_gain_staging(hass, player, mock_gateway):
             {"entity_id": "media_player.squeezelite_1", "volume_level": 1.0},
         )
 
+        # Once the decoder state already reports volume_level == 1.0, room volume changes
+        # skip redundant volume_set calls on the streamer (non-chatty deduplication)
+        hass.states.async_set(
+            "media_player.squeezelite_1",
+            MediaPlayerState.PLAYING,
+            {"volume_level": 1.0},
+        )
+        mock_gateway.send.reset_mock()
+        mock_call.reset_mock()
+        await player.async_set_volume_level(0.35)
+        assert str(mock_gateway.send.call_args.args[0]) == "*#16*1*#1*11##"
+        mock_call.assert_not_called()
+
+        # If external app lowered decoder volume (e.g. to 0.50), feed volume is restored
+        hass.states.async_set(
+            "media_player.squeezelite_1",
+            MediaPlayerState.PLAYING,
+            {"volume_level": 0.50},
+        )
+        mock_call.reset_mock()
+        await player.async_set_volume_level(0.35)
+        mock_call.assert_called_once_with(
+            "media_player",
+            "volume_set",
+            {"entity_id": "media_player.squeezelite_1", "volume_level": 1.0},
+        )
+
+        # Negative / zero room volume clamps hardware to 0 and leaves decoder feed untouched
         mock_gateway.send.reset_mock()
         mock_call.reset_mock()
         await player.async_set_volume_level(-0.5)
         assert str(mock_gateway.send.call_args.args[0]) == "*#16*1*#1*0##"
-        mock_call.assert_called_once_with(
-            "media_player",
-            "volume_set",
-            {"entity_id": "media_player.squeezelite_1", "volume_level": 0.0},
-        )
+        mock_call.assert_not_called()
 
         # Non-finite volume inputs (NaN, ±inf) raise HomeAssistantError without sending frames
         mock_gateway.send.reset_mock()
@@ -443,6 +497,32 @@ async def test_volume_controls_and_gain_staging(hass, player, mock_gateway):
             assert exc_vol.value.translation_key == "volume_not_finite"
         mock_gateway.send.assert_not_called()
         mock_call.assert_not_called()
+
+    # Verify _async_apply_decoder_feed_volume guards, companion forwarding, and error suppression
+    player._active_decoder = None
+    await player._async_apply_decoder_feed_volume(None)
+    player._active_decoder = "media_player.squeezelite_1"
+    _set_pool(player, None)
+    await player._async_apply_decoder_feed_volume("media_player.squeezelite_1")
+
+    _set_pool(player, mock_pool)
+    mock_pool.get_pre_gain.return_value = 25
+    hass.states.async_set(
+        "media_player.squeezelite_1",
+        MediaPlayerState.PLAYING,
+        {"volume_level": float("nan")},
+    )
+    player._companion_cache = {"media_player.squeezelite_1": "media_player.squeezelite_1_dlna"}
+    with patch(
+        "homeassistant.core.ServiceRegistry.async_call",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("volume_set not supported"),
+    ) as mock_err_call:
+        await player._async_apply_decoder_feed_volume(
+            "media_player.squeezelite_1", suppress_errors=True
+        )
+        assert mock_err_call.await_count == 2
+    player._companion_cache = {}
 
 
 def test_diagnostics_state_reports_the_zone_without_an_entity_id(player):
@@ -611,8 +691,8 @@ def test_metadata_and_state_mirroring(hass, player, mock_gateway):
 
 
 def test_decoder_state_changed_reverse_sync(hass, player, mock_gateway):
-    """Test volume reverse-sync when user changes decoder volume externally."""
-    # Return early if no active decoder (line 736)
+    """Test decoder state changes update zone UI without corrupting BTicino room volume."""
+    # Return early if no active decoder
     player._active_decoder = None
     player._async_decoder_state_changed(MagicMock())
 
@@ -621,53 +701,27 @@ def test_decoder_state_changed_reverse_sync(hass, player, mock_gateway):
     player.async_schedule_update_ha_state = MagicMock()
 
     mock_pool = MagicMock(spec=DecoderPool)
-    mock_pool.get_pre_gain.return_value = 10  # 10%
+    mock_pool.get_pre_gain.return_value = 25
     _set_pool(player, mock_pool)
 
-    # Ignore if not active decoder (line 738)
+    # Ignore if not active decoder
     event_other = MagicMock()
     event_other.data = {"entity_id": "media_player.other", "new_state": None}
     player._async_decoder_state_changed(event_other)
+    player.async_schedule_update_ha_state.assert_not_called()
 
-    # Ignore if syncing volume
-    player._syncing_volume = True
-    new_state = State("media_player.squeezelite_1", MediaPlayerState.PLAYING, {"volume_level": 0.60})
-    event = MagicMock()
-    event.data = {"entity_id": "media_player.squeezelite_1", "new_state": new_state}
-    player._async_decoder_state_changed(event)
-    assert player._attr_volume_level == 0.3
-
-    # Reverse sync when not syncing volume
-    player._syncing_volume = False
-    player._async_decoder_state_changed(event)
-    assert pytest.approx(player._attr_volume_level, 0.01) == 0.50
-
-    # Clamp reverse-synced volume to [0.0, 1.0]
-    event_high = MagicMock()
-    event_high.data = {
-        "entity_id": "media_player.squeezelite_1",
-        "new_state": State("media_player.squeezelite_1", MediaPlayerState.PLAYING, {"volume_level": 1.50}),
-    }
-    player._async_decoder_state_changed(event_high)
-    assert player._attr_volume_level == 1.0
-
-    event_low = MagicMock()
-    event_low.data = {
-        "entity_id": "media_player.squeezelite_1",
-        "new_state": State("media_player.squeezelite_1", MediaPlayerState.PLAYING, {"volume_level": 0.05}),
-    }
-    player._async_decoder_state_changed(event_low)
-    assert player._attr_volume_level == 0.0
-
-    # Non-finite external decoder volume_level (NaN, ±inf) is ignored
-    for bad_ext_vol in (float("nan"), float("inf"), float("-inf")):
-        event_nan = MagicMock()
-        event_nan.data = {
-            "entity_id": "media_player.squeezelite_1",
-            "new_state": State("media_player.squeezelite_1", MediaPlayerState.PLAYING, {"volume_level": bad_ext_vol}),
-        }
-        player._async_decoder_state_changed(event_nan)
-        assert player._attr_volume_level == 0.0
+    # Decoder state changes schedule HA state update while preserving room's _attr_volume_level
+    for ext_vol in (0.60, 1.0, 0.05, float("nan")):
+        new_state = State(
+            "media_player.squeezelite_1",
+            MediaPlayerState.PLAYING,
+            {"volume_level": ext_vol},
+        )
+        event = MagicMock()
+        event.data = {"entity_id": "media_player.squeezelite_1", "new_state": new_state}
+        player._async_decoder_state_changed(event)
+        assert player._attr_volume_level == 0.3
+    assert player.async_schedule_update_ha_state.call_count == 4
 
 
 @pytest.mark.asyncio
