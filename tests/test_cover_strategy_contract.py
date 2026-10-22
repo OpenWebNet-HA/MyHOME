@@ -312,6 +312,18 @@ async def test_position_unknown_until_a_full_run(hass) -> None:
     assert scope_cover.current_cover_position == 0
     assert scope_strategy.events[-1] == ("confirmed", 0, "end_stop")
 
+    # Even when IEEE-754 float subtraction (run_started_at + travel) - run_started_at < travel.
+    t_ulp = 250.654176420371
+    assert (t_ulp + 13.0) - t_ulp < 13.0
+    scope_strategy.known = False
+    scope_cover._attr_is_opening = True
+    scope_cover._run_started_at = t_ulp
+    scope_cover._run_timeout_direction = "open"
+    with patch("custom_components.myhome.cover_scope.time.monotonic", return_value=t_ulp + 0.001):
+        scope_cover._end_run(None)
+    assert scope_strategy.known is True
+    assert scope_cover.current_cover_position == 100
+
 
 @pytest.mark.asyncio
 async def test_strategy_state_survives_a_restart(hass) -> None:

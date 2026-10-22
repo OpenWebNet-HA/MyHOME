@@ -727,7 +727,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             and run_started_at is not None
             and (is_opening or is_closing)
             and (travel := self._travel_for(is_opening)) > 0
-            and at - run_started_at >= travel
+            and at >= run_started_at + travel
         )
         curtain_at = max(self._move_start_time, at - lead) if self._move_start_time is not None else at
         if self._strategy.assumed_state:
