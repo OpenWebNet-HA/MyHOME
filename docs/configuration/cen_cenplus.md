@@ -26,6 +26,17 @@ BTicino / Legrand pushbuttons operate in either **CEN** (`WHO = 15`) or **CEN+**
 
 In MyHOME v2.0, physical pushbuttons are automatically discovered and registered as **Home Assistant Devices**. You do **not** need to write complex template sensors or manual event listeners to automate them!
 
+> [!IMPORTANT]
+> **Coexistence with Native MyHome Scenarios & Actuator Addresses (`MyHome_Up` / `MyHOME_Suite` / `TiMH200N`)**  
+> Home Assistant passively observes `WHO = 15` / `WHO = 25` frames on the SCS bus; it does **not** intercept or suppress them. Keep two plant-level rules in mind:
+>
+> 1. **Do not bind the same button to both a native MyHome scenario and a Home Assistant automation (unless intended)**:  
+>    If a pushbutton is already configured in the **MyHome_Up** app (`MyHomeServer1`) or **MyHOME_Suite / TiMH200N** (`MH200N`, `MH201`, `MH202`, `F420`) to trigger a native bus scenario or automation, pressing that button will execute the native MyHome scenario **and** any Home Assistant automation attached to it at the same time ([Discussion #770](https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19121695)).
+>    - Only bind a button in both places when you intentionally want Home Assistant to **extend** a native bus scenario (for example, switching non-SCS Zigbee/Matter devices alongside an existing SCS scene).
+>    - For a **Home Assistant–only button**, keep the CEN/CEN+ virtual object configured on the physical control so it emits frames on the bus, but remove or leave empty any scenario action bound to that button in **MyHome_Up** / **MyHOME_Suite**.
+> 2. **Never share a Basic CEN (`WHO = 15`) `A`/`PL` address with a physical actuator (`WHO = 1` / `WHO = 2`)**:  
+>    Per BTicino's scenario-programmer specifications, a control configured in Basic CEN mode (`M = CEN`) must use a dedicated `A`/`PL` address that **does not duplicate any light or shutter actuator address**. If a CEN control shares an address with a light actuator (e.g. `WHERE = 61`), toggling or polling that light from Home Assistant (`*1*1*61##` or `*#1*61##`) causes the CEN control at `61` to emit `*15*<BUTTON>*61##` on the bus and fire whatever scenario is bound to it in the scenario programmer ([#612](https://github.com/OpenWebNet-HA/MyHOME/issues/612), [#773](https://github.com/OpenWebNet-HA/MyHOME/issues/773)).
+
 ### Supported Trigger Types
 - `pushbutton_short_press`: Fired immediately upon a quick tap.
 - `pushbutton_short_release`: Fired when a short tap is released.
