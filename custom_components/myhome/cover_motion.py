@@ -35,12 +35,15 @@ WRITE_TIMEOUT: float = 30.0
 # shortest run known to move it. Other motors may differ.
 MIN_MOTOR_PULSE: float = 0.4
 
-# Smallest level change sent to an advanced actuator (#466). The actuator turns
-# a level change into a timed run of its own, so a 1% change is the same
-# too-short run as above. 2% was enough on the 20.4 s motor in that trace; we
-# do not know the actuator's travel time, so a faster motor may need more. The
-# trace used the step frames (*2*12#1#001*WHERE##), not the level frames
-# (*#2*WHERE*#11#001*LEVEL##) we send: their behaviour is inferred, not captured.
+# Smallest level change sent to an advanced actuator (#466, discussion #770).
+# The actuator turns a level change into a timed run of its own, so on a fast
+# motor a 1% change is the same too-short run as above (2% was enough on the
+# 20.4 s motor in #466, inferred from *2*12#1#001*WHERE## step frames). On a
+# slow 3.75 m F401 shutter behind an F454 (91.3 s up / 87.8 s down, #770),
+# captured *#2*21*#11#001*LEVEL## 2% steps ran 1.67-1.75 s each — already past
+# the ~1.4 s mechanical slat pivot (three H4660M2 keypad pulses at 2%) — so
+# per-cover min_position_delta: 1 (~0.9 s per 1%) is used there for fine slat
+# angles.
 MIN_POSITION_DELTA: int = 2
 
 # Slack after the stored travel time before a timed full run (0% / 100%) is

@@ -613,11 +613,22 @@ class TestMyHOMECoverEntity:
         assert fine.extra_state_attributes["min_position_delta"] == 1
 
         # At 0% (closed) a 1% change goes out as asked, not widened to 2%.
-        fine.handle_event(OWNEvent.parse("*#2*23#4#02*10*10*0*001*0##"))
+        fine.handle_event(OWNEvent.parse("*#2*23#4#02*10*10*0*001*15##"))
         mock_gateway.send.reset_mock()
         await fine.async_set_cover_position(**{ATTR_POSITION: 1})
         mock_gateway.send.assert_awaited_once()
         assert str(mock_gateway.send.call_args[0][0]) == "*#2*23#4#02*#11#001*1##"
+
+        # F454 + F401 sequence (#770): start report keeps initial level (0%) while opening,
+        # stop report settles at the reached 1% level.
+        fine.handle_event(OWNEvent.parse("*#2*23#4#02*10*11*0*001*15##"))
+        fine.handle_event(OWNEvent.parse("*2*1*23#4#02##"))
+        assert fine.is_opening is True
+        assert fine.current_cover_position == 0
+        fine.handle_event(OWNEvent.parse("*#2*23#4#02*10*10*1*001*15##"))
+        fine.handle_event(OWNEvent.parse("*2*0*23#4#02##"))
+        assert fine.is_opening is False
+        assert fine.current_cover_position == 1
 
         # The default cover still widens the same request.
         advanced_cover.handle_event(OWNEvent.parse("*#2*22#4#02*10*10*0*001*0##"))
