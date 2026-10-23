@@ -301,8 +301,6 @@ class _ForeignAddresses:
         self.lights: set[str] = set()
 
         for dev_id, cfg in runtime.platforms.get("light", {}).items():
-            if not isinstance(cfg, dict):
-                continue
             address = Address.from_config(dev_id, cfg)
             if address.where.startswith("#"):
                 continue
@@ -397,9 +395,6 @@ class _ForeignAddresses:
     def is_configured_light(self, address: Address) -> bool:
         """Whether myhome.yaml declares a light at this address (and bus interface)."""
         return bool(self._spellings(address) & self.lights)
-
-    def owns(self, address: Address, key: str) -> bool:
-        return self.is_switch(address, key) or self.is_cover(address, key) or self.is_sensor(address, key)
 
     def blocks_light(self, address: Address, key: str) -> bool:
         """Whether no light may exist at this address.
