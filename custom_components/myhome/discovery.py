@@ -117,6 +117,17 @@ def is_broadcast_where(where: str | None) -> bool:
     return not clean.startswith("#") and clean.split("#")[0] in ("0", "00")
 
 
+def is_motion_end(message: Any) -> bool:
+    """``*1*39*WHERE##``: a WHO 1 detector reports the end of movement (WHAT 39).
+
+    The gateway translator decodes the SCS presence status frame (class 0x1D) value 00
+    as WHAT 34 and value 01 as WHAT 39; an F454 + Legrand 067226 sends WHAT 39 about
+    45 s after the last WHAT 34 (#777). OWNd releases without WHAT 39 report it as
+    ``unknown_state`` 39, later ones as ``motion_end``.
+    """
+    return getattr(message, "motion_end", False) is True or getattr(message, "unknown_state", None) == 39
+
+
 def parse_unique_id(unique_id: str, mac: str, entry_mac: str | None = None) -> tuple[str | None, str]:
     """Split ``"{mac}-{who}-{device_id}"`` into ``(who, device_id)``.
 

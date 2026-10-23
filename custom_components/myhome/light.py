@@ -44,6 +44,7 @@ from OWNd.message import (
 )
 
 from .const import (
+    BUS_ROUTING,
     CONF_COLOR_TEMP,
     CONF_DEVICE_MODEL,
     CONF_DIMMABLE,
@@ -71,7 +72,14 @@ from .const import (
     percent_to_eight_bits,
 )
 from .data import MyHOMEConfigEntry
-from .discovery import Address, DeviceContext, KnownDevices, PlatformDiscovery, parse_unique_id
+from .discovery import (
+    Address,
+    DeviceContext,
+    KnownDevices,
+    PlatformDiscovery,
+    is_motion_end,
+    parse_unique_id,
+)
 from .gateway import MyHOMEGatewayHandler
 from .light_dali import DaliFeatureLock
 from .light_fade import SoftwareFadeEngine
@@ -187,10 +195,22 @@ async def async_setup_entry(
         # A light created in an earlier session for an address that is really a switch or
         # sensor. A light declared in myhome.yaml is never a ghost: a WHO 1 motion sensor
         # can share its address with the actuator it drives (#777).
-        return foreign.blocks_light(ctx.address, ctx.key)
+        if not foreign.blocks_light(ctx.address, ctx.key):
+            return False
+        if foreign.is_sensor_only(ctx.address, ctx.key):
+            LOGGER.warning(
+                "Removing %s: WHO 1 address %s also reports motion or illuminance, so its light was"
+                " taken for sensor telemetry. If a light actuator shares this address (a detector"
+                " driving its own load), declare it under light: in myhome.yaml",
+                entry.entity_id,
+                ctx.address.key,
+            )
+        return True
 
     def accept(ctx: DeviceContext) -> bool:
         return not foreign.blocks_light(ctx.address, ctx.key)
+
+    hinted: set[str] = set()
 
     @callback
     def route_foreign(message: Any, address: Address, known: KnownDevices) -> bool:
@@ -202,9 +222,19 @@ async def async_setup_entry(
         """
         if foreign.is_sensor_frame(message):
             foreign.mark_sensor(address)
-            if not foreign.is_configured_light(address, address.key):
+            if not foreign.is_configured_light(address):
                 known.discard(address.key)
             return True
+        if foreign.is_sensor_only(address, address.key) and address.key not in hinted and getattr(message, "is_on", None) is not None:
+            # A sensor that switches no load of its own (Legrand 048834 in scenario mode,
+            # #244) and a detector driving the actuator at its own address (067226 + F411,
+            # #777) look the same here; only the user knows which it is.
+            hinted.add(address.key)
+            LOGGER.info(
+                "WHO 1 address %s reports motion or illuminance, so its on/off frames do not create a"
+                " light. If a light actuator shares this address, declare it under light: in myhome.yaml",
+                address.key,
+            )
         if foreign.blocks_light(address, address.key):
             keys: tuple[str, ...] = (
                 (address.key, address.clean_key)
@@ -276,7 +306,7 @@ class _ForeignAddresses:
             address = Address.from_config(dev_id, cfg)
             if address.where.startswith("#"):
                 continue
-            self.lights.update(self._spellings(address, str(dev_id)))
+            self.lights.update(self._spellings(address))
 
         for dev_id, cfg in runtime.platforms.get("switch", {}).items():
             address = Address.from_config(dev_id, cfg)
@@ -336,16 +366,12 @@ class _ForeignAddresses:
         self._add_sensor(address.where, address.key, address.clean_where)
 
     @staticmethod
-    def _spellings(address: Address, key: str) -> set[str]:
-        return {
-            key,
-            address.key,
-            address.clean_key,
-            address.where,
-            address.clean_where,
-            normalize_where(address.where),
-            normalize_where(address.clean_where),
-        }
+    def _spellings(address: Address) -> set[str]:
+        """Every spelling of the address, bus interface included: a light at 52 behind
+        interface 01 does not vouch for a sensor at 52 on another bus."""
+        routing = f"{BUS_ROUTING}{address.interface}" if address.interface else ""
+        wheres = {address.where, address.clean_where, normalize_where(address.where), normalize_where(address.clean_where)}
+        return {f"{where}{routing}" for where in wheres if where}
 
     def is_switch(self, address: Address, key: str) -> bool:
         return bool({key, address.where, address.clean_where} & self.switches)
@@ -368,9 +394,9 @@ class _ForeignAddresses:
         }
         return bool(candidates & self.sensors)
 
-    def is_configured_light(self, address: Address, key: str) -> bool:
-        """Whether myhome.yaml declares a light at this address."""
-        return bool(self._spellings(address, key) & self.lights)
+    def is_configured_light(self, address: Address) -> bool:
+        """Whether myhome.yaml declares a light at this address (and bus interface)."""
+        return bool(self._spellings(address) & self.lights)
 
     def owns(self, address: Address, key: str) -> bool:
         return self.is_switch(address, key) or self.is_cover(address, key) or self.is_sensor(address, key)
@@ -385,7 +411,16 @@ class _ForeignAddresses:
         """
         if self.is_switch(address, key) or self.is_cover(address, key):
             return True
-        return self.is_sensor(address, key) and not self.is_configured_light(address, key)
+        return self.is_sensor(address, key) and not self.is_configured_light(address)
+
+    def is_sensor_only(self, address: Address, key: str) -> bool:
+        """A sensor address with no configured light: the one case a user can fix in myhome.yaml."""
+        return (
+            not self.is_switch(address, key)
+            and not self.is_cover(address, key)
+            and self.is_sensor(address, key)
+            and not self.is_configured_light(address)
+        )
 
     @classmethod
     def is_sensor_frame(cls, message: Any) -> bool:
@@ -396,8 +431,8 @@ class _ForeignAddresses:
             or isinstance(getattr(message, "illuminance", None), int)
             or getattr(message, "message_type", None) in cls.SENSOR_MESSAGE_TYPES
             or getattr(message, "dimension", None) in (5, 6, 7)
-            or getattr(message, "_state", None) in (34, 39)
-            or getattr(message, "unknown_state", None) == 39
+            or getattr(message, "_state", None) == 34
+            or is_motion_end(message)
         )
 
 

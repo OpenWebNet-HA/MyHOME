@@ -44,7 +44,7 @@ from .const import (
     LOGGER,
     normalize_where,
 )
-from .discovery import Address, DeviceContext, PlatformDiscovery
+from .discovery import Address, DeviceContext, PlatformDiscovery, is_motion_end
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 
@@ -352,16 +352,6 @@ def _aux_address(message) -> Address | None:  # type: ignore
     return Address(str(message.channel))
 
 
-def _is_motion_end(message) -> bool:  # type: ignore
-    """``*1*39*WHERE##``: end of movement (WHAT 39), with or without OWNd knowing it."""
-    if getattr(message, "_state", None) == 39 or getattr(message, "unknown_state", None) == 39:
-        return True
-    return (
-        getattr(message, "message_type", None) == MESSAGE_TYPE_MOTION
-        and getattr(message, "motion", None) is False
-    )
-
-
 def _motion_address(message) -> Address | None:  # type: ignore
     """Motion / PIR frames of a WHO=1 sensor; ``None`` for anything else on WHO=1."""
     is_motion = (
@@ -369,8 +359,8 @@ def _motion_address(message) -> Address | None:  # type: ignore
         or getattr(message, "motion", False) is True
         or getattr(message, "message_type", None) in (MESSAGE_TYPE_MOTION, MESSAGE_TYPE_MOTION_TIMEOUT, MESSAGE_TYPE_PIR_SENSITIVITY)
         or getattr(message, "dimension", None) in (5, 7)
-        or getattr(message, "_state", None) in (34, 39)
-        or getattr(message, "unknown_state", None) == 39
+        or getattr(message, "_state", None) == 34
+        or is_motion_end(message)
     )
     if not is_motion or getattr(message, "where", None) is None:
         return None
@@ -618,15 +608,14 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
     @callback
     def handle_event(self, message: OWNLightingEvent) -> None:
         """Handle an event message."""
-        if _is_motion_end(message):
-            # WHAT 39 (*1*39*WHERE##): end of movement, the detector's occupancy
-            # timer ran out. Gateway firmware decodes SCS presence status 00 as
-            # WHAT 34 and 01 as WHAT 39 (#777).
+        if is_motion_end(message):
+            # WHAT 39: the detector's occupancy timer ran out (#777).
             LOGGER.debug("%s %s", self._gateway_handler.log_id, message.human_readable_log)
             self._attr_is_on = self._inverted
             self._last_updated = datetime.now(timezone.utc)  # type: ignore
             self._attr_force_update = True
             self.async_write_ha_state()
+            self._attr_force_update = False
             return
         if message.message_type not in [
             MESSAGE_TYPE_MOTION,

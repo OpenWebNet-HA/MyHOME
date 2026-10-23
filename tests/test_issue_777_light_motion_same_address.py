@@ -189,3 +189,95 @@ async def test_reporter_trace_f454_067226_with_f411_at_52(hass):
         assert len(added) == 1
         for call in mock_er.async_remove.call_args_list:
             assert "light" not in call.args[0]
+
+
+@pytest.mark.asyncio
+async def test_configured_light_behind_an_interface_does_not_vouch_for_another_bus(hass):
+    """A yaml light at 52 behind interface 01 leaves the ghost light at plain 52 a ghost."""
+    lights = {"spots_wc": {CONF_WHERE: "52", "interface": "01", CONF_NAME: "Spots WC"}}
+    entries = _registry(("light", f"{MAC}-1-52"), ("binary_sensor", f"{MAC}-52-motion"))
+    config_entry, mock_er, patches = _setup(hass, lights, entries)
+    added: list = []
+    with patches[0], patches[1], patches[2], patches[3]:
+        attach_runtime(hass, config_entry)
+        await async_setup_entry(hass, config_entry, added.extend)
+        await hass.async_block_till_done()
+        mock_er.async_remove.assert_any_call(entries[0].entity_id)
+        assert [e._device_id for e in added] == ["52#4#01"]
+
+
+@pytest.mark.asyncio
+async def test_removing_a_light_at_a_sensor_address_warns_how_to_keep_it(hass, caplog):
+    """The reporter saw only an INFO line; a light pruned for sharing a sensor address warns."""
+    entries = _registry(("light", f"{MAC}-1-23"), ("binary_sensor", f"{MAC}-1-23-motion"))
+    config_entry, mock_er, patches = _setup(hass, {}, entries)
+    added: list = []
+    with patches[0], patches[1], patches[2], patches[3]:
+        attach_runtime(hass, config_entry)
+        await async_setup_entry(hass, config_entry, added.extend)
+        await hass.async_block_till_done()
+        mock_er.async_remove.assert_any_call(entries[0].entity_id)
+    warnings = [r for r in caplog.records if r.levelname == "WARNING" and entries[0].entity_id in r.getMessage()]
+    assert len(warnings) == 1
+    assert "myhome.yaml" in warnings[0].getMessage()
+
+
+@pytest.mark.asyncio
+async def test_on_off_at_an_unconfigured_sensor_address_hints_once(hass, caplog):
+    entries = _registry(("binary_sensor", f"{MAC}-1-23-motion"))
+    config_entry, _mock_er, patches = _setup(hass, {}, entries)
+    added: list = []
+    with patches[0], patches[1], patches[2], patches[3]:
+        attach_runtime(hass, config_entry)
+        await async_setup_entry(hass, config_entry, added.extend)
+        await hass.async_block_till_done()
+        for frame in ("*1*1*23##", "*1*0*23##", "*1*1*23##"):
+            async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse(frame))
+            await hass.async_block_till_done()
+    assert added == []
+    hints = [r for r in caplog.records if "do not create a light" in r.getMessage()]
+    assert len(hints) == 1
+
+
+def test_motion_end_detection_is_what_39_only():
+    from custom_components.myhome.discovery import is_motion_end
+
+    assert is_motion_end(OWNEvent.parse("*1*39*52##")) is True
+    for frame in ("*1*34*52##", "*1*0*52##", "*1*1*52##", "*1*19*52##", "*#1*52*7*0*0*45##"):
+        assert is_motion_end(OWNEvent.parse(frame)) is False, frame
+
+    # An OWNd that knows WHAT 39 flags it as motion_end (no unknown_state).
+    newer = MagicMock(spec=[])
+    newer.motion_end = True
+    assert is_motion_end(newer) is True
+    # A motion message with motion False is not an end of movement by itself.
+    other = MagicMock(spec=[])
+    other.message_type = "motion_detected"
+    other.motion = False
+    assert is_motion_end(other) is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("inverted", [False, True])
+async def test_motion_sensor_clears_on_what_39(hass, inverted):
+    from unittest.mock import AsyncMock
+
+    from homeassistant.components.binary_sensor import BinarySensorDeviceClass
+
+    from custom_components.myhome.binary_sensor import MyHOMEMotionSensor
+
+    gateway = MagicMock()
+    gateway.mac = MAC
+    gateway.send_status_request = AsyncMock()
+    sensor = MyHOMEMotionSensor(
+        hass=hass, name="WC", entity_name="Mouvement", device_id="52",
+        who="1", where="52", inverted=inverted, device_class=BinarySensorDeviceClass.MOTION,
+        manufacturer="Legrand", model="067226", gateway=gateway,
+    )
+    sensor.async_write_ha_state = MagicMock()
+
+    sensor.handle_event(OWNEvent.parse("*1*34*52##"))
+    assert sensor.is_on is (not inverted)
+    sensor.handle_event(OWNEvent.parse("*1*39*52##"))
+    assert sensor.is_on is inverted
+    assert sensor._attr_force_update is False
