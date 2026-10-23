@@ -281,3 +281,38 @@ async def test_motion_sensor_clears_on_what_39(hass, inverted):
     sensor.handle_event(OWNEvent.parse("*1*39*52##"))
     assert sensor.is_on is inverted
     assert sensor._attr_force_update is False
+
+
+@pytest.mark.asyncio
+async def test_sensor_frames_routed_to_the_shared_key_never_reach_the_light(hass, caplog):
+    """Reporter retest on b16: the light still logged 'unknown lighting WHAT 39' once per cycle.
+
+    The binary_sensor's motion discovery publishes WHAT 34 / 39 to WHO 1 key 52, the key
+    the light at 52 listens on, so route_foreign never sees them; the light drops them.
+    """
+    lights = {"spots_wc": {CONF_WHERE: "52", CONF_NAME: "Spots WC"}}
+    entries = _registry(("light", f"{MAC}-1-52"), ("binary_sensor", f"{MAC}-52-motion"))
+    config_entry, _mock_er, patches = _setup(hass, lights, entries)
+    added: list = []
+    with patches[0], patches[1], patches[2], patches[3]:
+        attach_runtime(hass, config_entry)
+        await async_setup_entry(hass, config_entry, added.extend)
+        await hass.async_block_till_done()
+        light = added[0]
+        light.hass = hass
+        light.async_write_ha_state = MagicMock()
+        router = config_entry.runtime_data.router
+
+        for cycle in range(2):
+            for frame in ("*1*34*52##", "*1*1000#1*52##", "*1*1*52##"):
+                router.publish("1", ("52",), OWNEvent.parse(frame))
+            assert light._attr_is_on is True
+            for frame in ("*1*39*52##", "*#1*0*7*0*0*45##", "*#1*52*6*0##"):
+                router.publish("1", ("52",), OWNEvent.parse(frame))
+            assert light._attr_is_on is True, cycle
+            for frame in ("*1*1000#0*52##", "*1*0*52##"):
+                router.publish("1", ("52",), OWNEvent.parse(frame))
+            assert light._attr_is_on is False
+
+    assert "unknown lighting WHAT" not in caplog.text
+    assert "unknown_state" not in light._attr_extra_state_attributes

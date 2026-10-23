@@ -1108,6 +1108,11 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         """
         if getattr(message, "is_translation", None) is True:
             return
+        if _ForeignAddresses.is_sensor_frame(message):
+            # A detector sharing this address (Legrand 067226 + F411, #777) reports motion,
+            # end of movement and dimensions 5-7 here; the binary_sensor and sensor platforms
+            # route them to this light's address key too. None of them is the light's state.
+            return
 
         LOGGER.debug(
             "%s %s",
