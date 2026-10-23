@@ -150,3 +150,42 @@ def test_sensor_frame_detection_covers_what_39():
     legacy = MagicMock(spec=[])
     legacy.unknown_state = 39
     assert _ForeignAddresses.is_sensor_frame(legacy) is True
+
+
+@pytest.mark.asyncio
+async def test_reporter_trace_f454_067226_with_f411_at_52(hass):
+    """Replay the F454 capture of the report: a 067226 and an F411 channel share 52.
+
+    The detector's cycle is ``*1*34*52##`` (movement), ``*1*1000#1*52##`` + ``*1*1*52##``
+    (F411 on); after ~45 s ``*1*39*52##`` (end of movement), ``*1*1000#0*52##``,
+    ``*1*0*52##``. Dimension replies come back with WHERE 0 (``*#1*0*6*0##``), never with
+    52, and must neither create a light nor change the configured one.
+    """
+    lights = {"spots_wc": {CONF_WHERE: "52", CONF_NAME: "Spots WC"}}
+    entries = _registry(("light", f"{MAC}-1-52"), ("binary_sensor", f"{MAC}-52-motion"))
+    config_entry, mock_er, patches = _setup(hass, lights, entries)
+    added: list = []
+    with patches[0], patches[1], patches[2], patches[3]:
+        attach_runtime(hass, config_entry)
+        await async_setup_entry(hass, config_entry, added.extend)
+        await hass.async_block_till_done()
+        light = added[0]
+
+        async def feed(frame: str) -> None:
+            async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse(frame))
+            await hass.async_block_till_done()
+
+        await feed("*1*0*52##")  # status reply, light off
+        assert light._attr_is_on is False
+        for frame in ("*1*34*52##", "*1*1000#1*52##", "*1*1*52##"):
+            await feed(frame)
+        assert light._attr_is_on is True
+        for frame in ("*#1*0*5*2##", "*#1*0*7*0*0*45##", "*#1*0*6*0##"):
+            await feed(frame)
+        assert light._attr_is_on is True
+        for frame in ("*1*39*52##", "*1*1000#0*52##", "*1*0*52##"):
+            await feed(frame)
+        assert light._attr_is_on is False
+        assert len(added) == 1
+        for call in mock_er.async_remove.call_args_list:
+            assert "light" not in call.args[0]
