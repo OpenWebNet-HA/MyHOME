@@ -13,7 +13,8 @@ own the address, ``ghost()`` removed ``light.myhome_spots_wc`` from the registry
 the next reload and ``accept()`` skipped the ``myhome.yaml`` entry, so the light was
 gone for good.
 
-Firmware evidence (OpenWebNet-HA/own-firmware-oracle#56, suite ``who1-motion-detector``,
+Firmware evidence (OpenWebNet-HA/own-firmware-oracle#56, merged; suite ``who1-motion-detector``,
+findings/who1-motion-detector.md,
 12 emulated gateways; F454 2.0.51, F459, F460, F461, MH200N, MH202 and MyHomeServer1
 agree on every row below):
 
