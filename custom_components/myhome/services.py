@@ -174,7 +174,13 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                         handler.log_id,
                         own_message,
                     )
-                    await handler.send(own_message)
+                    if own_message.is_status_request or own_message.is_dimension_request:
+                        # A status or dimension request goes out as one: a NACK then means
+                        # "no such device" (DEBUG, not retried) instead of a failed command
+                        # logged as ERROR and sent twice (#777: *#1*52*5## on an F454).
+                        await handler.send_status_request(own_message)
+                    else:
+                        await handler.send(own_message)
                     return
                 _LOGGER.error(
                     "Could not parse message `%s`, not sending it.", message
