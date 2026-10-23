@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PASSWORD, CONF_PORT
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from OWNd.message import OWNCommand, OWNMessage
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -122,9 +122,19 @@ async def test_issue_746_switch_04_wall_and_ha_toggling_and_scenario_6_events(
     cen_events: list = []
     scene_events: list = []
     general_light_events: list = []
-    hass.bus.async_listen("myhome_cen_event", cen_events.append)
-    hass.bus.async_listen("myhome_scene_event", scene_events.append)
-    hass.bus.async_listen("myhome_general_light_event", general_light_events.append)
+    # ``@callback`` keeps the listeners on the event loop: a plain ``list.append`` runs in
+    # the executor, where two events fired back to back can be appended out of order
+    # (press / release arrived swapped on HA beta).
+    def _collect(events: list):
+        @callback
+        def _append(event) -> None:
+            events.append(event)
+
+        return _append
+
+    hass.bus.async_listen("myhome_cen_event", _collect(cen_events))
+    hass.bus.async_listen("myhome_scene_event", _collect(scene_events))
+    hass.bus.async_listen("myhome_general_light_event", _collect(general_light_events))
 
     def _deliver_rx(raw_frame: str) -> OWNMessage:
         msg = OWNMessage.parse(raw_frame)
