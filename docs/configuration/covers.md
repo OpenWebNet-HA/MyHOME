@@ -65,6 +65,17 @@ For standard covers without hardware position feedback, the integration provides
 
 **Advanced covers** track their own level, but the actuator turns a level change into a timed run the same way, so a 1 % change is just as likely to click without moving. The integration widens a change of less than 2 % to 2 % (50 % → 51 % is sent as 52 %), except while the cover is moving (it then reports the level it started from, so the request goes out as asked), and sends 0 % and 100 % as plain close / open full runs. The 2 % comes from the 20.4 s motor above; a faster motor may need more, and the behaviour of the level command for small changes is inferred from the step commands in that trace, not captured.
 
+The smallest change is set per cover with `min_position_delta` in `/config/myhome.yaml` (whole percent, `1`–`10`, default `2`; a timed cover with it is rejected, it uses `min_motor_pulse` instead). A long travel time makes each percent a longer run: on 3.75 m F401 shutters behind an F454, 1 % steps (~0.5 s) moved the motor reliably and set the slat angle more finely ([discussion #770](https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19139979)). `1` sends every change as asked; a faster motor may need more than `2`. The active value is shown as the `min_position_delta` attribute.
+
+```yaml
+# /config/myhome.yaml
+cover:
+  living_room_shutter:
+    where: '31'
+    advanced_shutter: true
+    min_position_delta: 1
+```
+
 ---
 
 ## 📐 Calibrating Travel Time (Zero YAML)

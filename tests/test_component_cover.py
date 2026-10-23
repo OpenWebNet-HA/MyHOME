@@ -596,6 +596,49 @@ class TestMyHOMECoverEntity:
         task.cancel()
         await task
 
+    async def test_min_position_delta_per_cover(self, hass, mock_gateway, basic_cover, advanced_cover):
+        """min_position_delta replaces the 2% floor of one advanced cover (discussion #770)."""
+        assert advanced_cover.extra_state_attributes["min_position_delta"] == 2
+        assert "min_position_delta" not in basic_cover.extra_state_attributes
+
+        with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+            fine = MyHOMECover(
+                hass=hass, name="Tall Shutter", entity_name="Tall Shutter", device_id="23#4#02",
+                who="2", where="23", interface="02", advanced=True, manufacturer="BTicino",
+                model="F401", gateway=mock_gateway, min_position_delta=1,
+            )
+        fine.hass = hass
+        fine.entity_id = "cover.tall_shutter"
+        fine.async_schedule_update_ha_state = MagicMock()
+        assert fine.extra_state_attributes["min_position_delta"] == 1
+
+        # At 0% (closed) a 1% change goes out as asked, not widened to 2%.
+        fine.handle_event(OWNEvent.parse("*#2*23#4#02*10*10*0*001*0##"))
+        mock_gateway.send.reset_mock()
+        await fine.async_set_cover_position(**{ATTR_POSITION: 1})
+        mock_gateway.send.assert_awaited_once()
+        assert str(mock_gateway.send.call_args[0][0]) == "*#2*23#4#02*#11#001*1##"
+
+        # The default cover still widens the same request.
+        advanced_cover.handle_event(OWNEvent.parse("*#2*22#4#02*10*10*0*001*0##"))
+        advanced_cover._gateway_handler.send.reset_mock()
+        await advanced_cover.async_set_cover_position(**{ATTR_POSITION: 1})
+        assert str(advanced_cover._gateway_handler.send.call_args[0][0]) == "*#2*22#4#02*#11#001*2##"
+
+    def test_resolve_strategy_min_position_delta(self):
+        """The factory hands min_position_delta to the native strategy on both routes."""
+        from custom_components.myhome.cover_strategies import (
+            NativePositionStrategy,
+            resolve_cover_strategy,
+        )
+
+        for kwargs in ({"advanced": True}, {"strategy_name": "native"}):
+            strategy = resolve_cover_strategy(min_position_delta=1, **kwargs)
+            assert isinstance(strategy, NativePositionStrategy)
+            assert strategy.min_position_delta == 1
+            assert strategy.quantize_target(0, 1) == 1
+        assert resolve_cover_strategy(advanced=True).min_position_delta == 2
+
     def test_quantize_position_delta(self):
         """Verify quantize_position_delta logic and edge cases."""
         from custom_components.myhome.cover_motion import (

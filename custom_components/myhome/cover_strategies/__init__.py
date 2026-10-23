@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from ..const import DEFAULT_MIN_MOTOR_PULSE, DEFAULT_TRAVEL_TIME
+from ..cover_motion import MIN_POSITION_DELTA
 from .base import RUN_END_REASONS, BaseCoverStrategy, CoverKinematicsStrategy, clamp_slat_time
 from .native import NativePositionStrategy
 from .simple import SimpleUpDownStopStrategy
@@ -32,6 +33,7 @@ def resolve_cover_strategy(
     travel_time_up: float | None = None,
     travel_time_down: float | None = None,
     min_motor_pulse: float = DEFAULT_MIN_MOTOR_PULSE,
+    min_position_delta: int = MIN_POSITION_DELTA,
 ) -> CoverKinematicsStrategy:
     """Resolve the appropriate ``CoverKinematicsStrategy`` for a cover entity.
 
@@ -61,6 +63,7 @@ def resolve_cover_strategy(
         normalized = strategy_name.strip().lower()
         if normalized == "native":
             return NativePositionStrategy(
+                min_position_delta=min_position_delta,
                 travel_time=effective_travel,
                 travel_time_up=travel_time_up,
                 travel_time_down=travel_time_down,
@@ -94,6 +97,7 @@ def resolve_cover_strategy(
 
     if advanced:
         return NativePositionStrategy(
+            min_position_delta=min_position_delta,
             travel_time=effective_travel,
             travel_time_up=travel_time_up,
             travel_time_down=travel_time_down,
