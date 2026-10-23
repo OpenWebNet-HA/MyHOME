@@ -361,15 +361,15 @@ class TestDeviceSchemas:
             cover_schema({"c": {CONF_WHERE: "31", CONF_NAME: "Blind", CONF_SLAT_TILT: False, CONF_SLAT_TIME: 2.0}})
 
     def test_cover_schema_min_position_delta(self):
-        """min_position_delta is a whole percent in 1..10, only on an advanced cover (discussion #770)."""
+        """min_position_delta is a whole percent in 1..5, only on an advanced cover (discussion #770)."""
         res = cover_schema({"c": {CONF_WHERE: "31", CONF_NAME: "Shutter", CONF_ADVANCED_SHUTTER: True, CONF_MIN_POSITION_DELTA: "1"}})
         assert res["2-31"][CONF_MIN_POSITION_DELTA] == 1
-        res = cover_schema({"c": {CONF_WHERE: "31", CONF_NAME: "Shutter", "strategy": "native", CONF_MIN_POSITION_DELTA: 10}})
-        assert res["2-31"][CONF_MIN_POSITION_DELTA] == 10
+        res = cover_schema({"c": {CONF_WHERE: "31", CONF_NAME: "Shutter", "strategy": "native", CONF_MIN_POSITION_DELTA: 5}})
+        assert res["2-31"][CONF_MIN_POSITION_DELTA] == 5
         # Not set: no key, the cover falls back to MIN_POSITION_DELTA.
         assert CONF_MIN_POSITION_DELTA not in cover_schema({"c": {CONF_WHERE: "31", CONF_NAME: "Shutter", CONF_ADVANCED_SHUTTER: True}})["2-31"]
 
-        for bad in (0, 11):
+        for bad in (0, 6):
             with pytest.raises(Invalid):
                 cover_schema({"c": {CONF_WHERE: "31", CONF_NAME: "Shutter", CONF_ADVANCED_SHUTTER: True, CONF_MIN_POSITION_DELTA: bad}})
         with pytest.raises(Invalid, match="min_position_delta only applies to an advanced cover"):
