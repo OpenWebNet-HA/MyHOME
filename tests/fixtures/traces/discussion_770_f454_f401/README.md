@@ -2,12 +2,13 @@
 
 Verbatim bus traces captured on a physical **BTicino F454** gateway (`00:03:50`, firmware `2.0.51`, Home Assistant `2026.10.2`, integration `2.0.0b16`, `OWNd 2.0.0b11`) driving a **BTicino F401** advanced shutter actuator (`WHERE="21"`, `advanced: true`) on a ~3.75 m roller shutter with mechanically tilting slats and a **BTicino H4660M2** 3-button (`up`, `down`, `stop`) wall keypad.
 
-Contributed by **@eC0y0te** on [Discussion #770](https://github.com/orgs/OpenWebNet-HA/discussions/770) ([comment 19144038](https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19144038) and [comment 19144521](https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19144521)). Thank you!
+Contributed by **@eC0y0te** on [Discussion #770](https://github.com/orgs/OpenWebNet-HA/discussions/770) ([comment 19144038](https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19144038), [comment 19144521](https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19144521), and [comment 19146518](https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19146518)). Thank you!
 
 | File | Content |
 |---|---|
 | `myhome_trace_F454_2026-10-23_anon.json` | 220 frames across `WHO=1` and `WHO=2` (`186 rx`, `34 tx`): H4660M2 keypad short pulses, HA `set_cover_position` 5% and 2% step progressions, full 91.3 s open run, 45.8 s mid-run stop at 47%, and 41.9 s close to 0% |
 | `myhome_trace_F454_all_2026-10-23T11-11-26.json` | 125 frames across `WHO=2`, `WHO=4`, and `WHO=13` (`103 rx`, `22 tx`): `slat_tilt: true` (`slat_time: 1.4`, `min_motor_pulse: 0.2`) timed tilt pulses (`15%`, `20%`, `25%`, `50%`, `100%`, `0%`) followed by `set_cover_position: 2` |
+| `myhome_trace_F454_all_2026-10-23T13-13-34.json` | 69 frames across `WHO=2` (`58 rx`, `11 tx`): `feat/cover-min-position-delta` branch verification with `min_position_delta: 1`, stepping up from fully closed (`0%`) in consecutive 1% increments (`1%`..`10%`) via `tx *#2*21*#11#001*<LEVEL>##` |
 
 ## Hardware Profile
 
@@ -66,3 +67,32 @@ Configured with `slat_tilt: true`, `slat_time: 1.4`, and `min_motor_pulse: 0.2` 
 | 9 | `11:06:17.124` | `0%` → `100%` (`1.40 s`) | `tx *2*1*21##` → `tx *2*0*21##` (`+1.390 s` after `*2*1*21##`) | `1.509 s` | `0%` → `1%` | **Fully open**, curtain just starting to lift |
 | 10 | `11:07:11.369` | `100%` → `0%` (`1.40 s`) | `tx *2*2*21##` → `tx *2*0*21##` (`+1.361 s` after `*2*2*21##`) | `1.515 s` | `1%` → `0%` | Closed |
 | 11 | `11:07:47.599` | `set_cover_position: 2` | `tx *#2*21*#11#001*2##` | `1.768 s` | `0%` → `2%` | Slats fully open + slight curtain lift (`2%`) |
+
+---
+
+## Trace 3: `myhome_trace_F454_all_2026-10-23T13-13-34.json` (69 frames)
+
+Physical verification of PR #778 (`feat/cover-min-position-delta`) with `min_position_delta: 1` on cover `21` (`advanced: true`, F401) stepping up from fully closed (`0%`) in consecutive 1% increments (`1%`..`10%`):
+
+| Step | Time (UTC) | Command | TX Frame | F401 Start (`10*11`) | F401 Stop (`10*10`) | Motor Duration | Reported Position | Physical Slat & Curtain State |
+|---|---|---|---|---|---|---|---|---|
+| Baseline | `13:08:15.779` | Close sync | `tx *2*2*21##` | — | `*#2*21*10*10*0*001*15##` | `1.815 s` | `0%` | Fully closed (slats closed) |
+| 1 | `13:08:24.557` | `set_cover_position: 1` | `tx *#2*21*#11#001*1##` | `*#2*21*10*11*0*001*15##` (`.701`) | `*#2*21*10*10*1*001*15##` (`.555`) | `0.854 s` | `1%` | **Slats horizontal** (intermediate slat angle) |
+| 2 | `13:09:11.355` | `set_cover_position: 2` | `tx *#2*21*#11#001*2##` | `*#2*21*10*11*1*001*15##` (`.551`) | `*#2*21*10*10*2*001*15##` (`.363`) | `0.812 s` | `2%` | **Slats fully open**, curtain still down |
+| 3 | `13:10:05.516` | `set_cover_position: 3` | `tx *#2*21*#11#001*3##` | `*#2*21*10*11*2*001*15##` (`.666`) | `*#2*21*10*10*3*001*15##` (`.531`) | `0.865 s` | `3%` | **Curtain starts lifting**, slats relax slightly |
+| 4 | `13:10:54.770` | `set_cover_position: 4` | `tx *#2*21*#11#001*4##` | `*#2*21*10*11*3*001*15##` (`.916`) | `*#2*21*10*10*4*001*15##` (`.781`) | `0.865 s` | `4%` | Curtain rising |
+| 5 | `13:11:23.378` | `set_cover_position: 5` | `tx *#2*21*#11#001*5##` | `*#2*21*10*11*4*001*15##` (`.524`) | `*#2*21*10*10*5*001*15##` (`.389`) | `0.865 s` | `5%` | Curtain rising |
+| 6 | `13:12:19.529` | `set_cover_position: 6` | `tx *#2*21*#11#001*6##` | `*#2*21*10*11*5*001*15##` (`.703`) | `*#2*21*10*10*6*001*15##` (`.537`) | `0.834 s` | `6%` | Curtain rising |
+| 7 | `13:12:27.394` | `set_cover_position: 7` | `tx *#2*21*#11#001*7##` | `*#2*21*10*11*6*001*15##` (`.555`) | `*#2*21*10*10*7*001*15##` (`.397`) | `0.842 s` | `7%` | Curtain rising |
+| 8 | `13:12:34.784` | `set_cover_position: 8` | `tx *#2*21*#11#001*8##` | `*#2*21*10*11*7*001*15##` (`.923`) | `*#2*21*10*10*8*001*15##` (`.787`) | `0.864 s` | `8%` | Curtain rising |
+| 9 | `13:12:42.642` | `set_cover_position: 9` | `tx *#2*21*#11#001*9##` | `*#2*21*10*11*8*001*15##` (`.783`) | `*#2*21*10*10*9*001*15##` (`.664`) | `0.881 s` | `9%` | Curtain rising |
+| 10 | `13:12:50.660` | `set_cover_position: 10` | `tx *#2*21*#11#001*10##` | `*#2*21*10*11*9*001*15##` (`.802`) | `*#2*21*10*10*10*001*15##` (`.658`) | `0.856 s` | `10%` | Curtain rising |
+
+### Key Findings:
+1. **Actuator Execution**: The BTicino F401 actuator faithfully executes every single 1% step command via `Dimension 11` (`*#2*21*#11#001*<LEVEL>##`), running the motor for ~`0.81`–`0.88 s` per step and acknowledging the exact reached position in `Dimension 10` (`*#2*21*10*10*<LEVEL>*001*15##`).
+2. **Slat Mechanical Progression**:
+   - `0%`: Slats closed, curtain down.
+   - `1%`: Slats rotated to horizontal (intermediate angle).
+   - `2%`: Slats fully open, curtain still at bottom.
+   - `3%+`: Curtain starts lifting off the window sill.
+3. **`min_position_delta: 1` Validation**: With `min_position_delta: 1`, users with tall shutters can control slat angles via the native F401 position feedback directly without synthetic deadband widening.
