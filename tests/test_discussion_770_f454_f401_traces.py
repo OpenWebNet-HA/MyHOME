@@ -34,6 +34,7 @@ FIXTURE_DIR = (
 )
 TRACE1_PATH = FIXTURE_DIR / "myhome_trace_F454_2026-10-23_anon.json"
 TRACE2_PATH = FIXTURE_DIR / "myhome_trace_F454_all_2026-10-23T11-11-26.json"
+TRACE3_PATH = FIXTURE_DIR / "myhome_trace_F454_all_2026-10-23T13-13-34.json"
 MAC = "00:03:50:aa:bb:21"
 
 
@@ -389,3 +390,159 @@ async def test_discussion_770_trace2_slat_tilt_schema_and_replay(
                     router.publish("2", (str(where),), msg)
 
     assert cover.current_cover_position == 2
+
+
+def test_discussion_770_trace3_schema_and_frame_parsing() -> None:
+    """Verify Trace 3 (min_position_delta=1, 1% step progression 1%..10%) schema and parsing."""
+    assert TRACE3_PATH.is_file()
+    data = _load_json(TRACE3_PATH)
+
+    assert data["gateway"]["model"] == "F454"
+    assert data["gateway"]["firmware"] in ("2.0", "2.0.51")
+    assert data["capture"]["window"]["frames"] == 69
+
+    frames = data["frames"]
+    assert len(frames) == 69
+    assert sum(1 for f in frames if f["direction"] == "rx") == 58
+    assert sum(1 for f in frames if f["direction"] == "tx") == 11
+
+    tx_frames: list[str] = []
+    dim10_stopped_levels: list[int] = []
+
+    for entry in frames:
+        raw = entry["raw"]
+        direction = entry["direction"]
+        parsed = OWNCommand.parse(raw) if direction == "tx" else OWNMessage.parse(raw)
+        assert parsed is not None, f"Failed to parse {direction} frame: {raw}"
+        if direction == "tx":
+            tx_frames.append(raw)
+        elif (
+            entry["who"] == "2"
+            and getattr(parsed, "dimension", None) == 10
+            and getattr(parsed, "state", None) == 10
+        ):
+            dim10_stopped_levels.append(int(parsed.current_position))
+
+    # Initial close sync (*2*2*21##) + 10 consecutive 1% steps (*#2*21*#11#001*<LEVEL>##)
+    assert tx_frames == [
+        "*2*2*21##",
+        "*#2*21*#11#001*1##",
+        "*#2*21*#11#001*2##",
+        "*#2*21*#11#001*3##",
+        "*#2*21*#11#001*4##",
+        "*#2*21*#11#001*5##",
+        "*#2*21*#11#001*6##",
+        "*#2*21*#11#001*7##",
+        "*#2*21*#11#001*8##",
+        "*#2*21*#11#001*9##",
+        "*#2*21*#11#001*10##",
+    ]
+    # Stopped levels report [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    # Initial position before close was 2%, then closes to 0%, followed by 1%..10% steps
+    assert dim10_stopped_levels == [2] + list(range(11))
+
+
+@pytest.mark.asyncio
+async def test_discussion_770_trace3_cover_21_replay(hass: HomeAssistant) -> None:
+    """Replay Trace 3 step-by-step with min_position_delta=1 through MyHOMECover."""
+    trace = _load_json(TRACE3_PATH)
+    frames = trace["frames"]
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_HOST: "192.168.1.40",
+            CONF_PORT: 20000,
+            CONF_PASSWORD: "12345",
+            CONF_MAC: MAC,
+            CONF_NAME: "F454",
+        },
+        options={CONF_BROADCAST_RESYNC: False},
+    )
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.myhome.gateway.OWNGateway"):
+        handler = MyHOMEGatewayHandler(
+            hass, entry, generate_events=False, broadcast_resync=False
+        )
+        handler.gateway.serial = MAC
+        handler.send = AsyncMock()
+        handler.send_status_request = AsyncMock()
+
+    router = FrameRouter()
+    entry.runtime_data = MyHOMERuntimeData(
+        gateway=handler,
+        router=router,
+        platforms={
+            "cover": {
+                "vr_bureau_terrasse": {
+                    "where": "21",
+                    "name": "Shutter 21",
+                    "advanced_shutter": True,
+                    "min_position_delta": 1,
+                }
+            }
+        },
+    )
+
+    added_covers: list[MyHOMECover] = []
+    await async_setup_cover(
+        hass, entry, lambda entities, update=False: added_covers.extend(entities)
+    )
+    assert len(added_covers) == 1
+    cover = added_covers[0]
+    cover.hass = hass
+    cover.async_write_ha_state = lambda: None
+    cover.async_schedule_update_ha_state = lambda force_refresh=False: None
+    if hasattr(cover, "_strategy") and hasattr(cover._strategy, "min_position_delta"):
+        cover._strategy.min_position_delta = 1
+    await cover.async_added_to_hass()
+
+    def _deliver_rx(raw_frame: str) -> None:
+        msg = OWNMessage.parse(raw_frame)
+        assert msg is not None
+        if msg.who == 2 and not getattr(msg, "is_translation", False):
+            where = getattr(msg, "where", None)
+            if where:
+                router.publish("2", (str(where),), msg)
+
+    # Deliver initial close frames (0..9)
+    for idx in range(10):
+        if frames[idx]["direction"] == "rx":
+            _deliver_rx(frames[idx]["raw"])
+    assert cover.current_cover_position == 0
+    assert cover.is_closed is True
+
+    # Step through 1% to 10%
+    tx_indices = [idx for idx, f in enumerate(frames) if f["direction"] == "tx"]
+    # tx_indices[0] is initial close at frame 0
+    step_tx_indices = tx_indices[1:]
+    assert len(step_tx_indices) == 10
+
+    cursor = 10
+    for step_num, tx_i in enumerate(step_tx_indices, start=1):
+        while cursor < tx_i:
+            if frames[cursor]["direction"] == "rx":
+                _deliver_rx(frames[cursor]["raw"])
+            cursor += 1
+
+        prev_pos = cover.current_cover_position
+        await cover.async_set_cover_position(**{ATTR_POSITION: step_num})
+        emitted = str(handler.send.call_args[0][0])
+        assert emitted == frames[tx_i]["raw"]
+        cursor = tx_i + 1
+
+        # Check immediate F454 echo
+        if frames[cursor]["raw"].startswith("*#2*21*#11#001#1*"):
+            _deliver_rx(frames[cursor]["raw"])
+            assert cover.current_cover_position == prev_pos
+            cursor += 1
+
+        # Deliver remaining RX frames up to next step or end
+        next_boundary = step_tx_indices[step_num] if step_num < len(step_tx_indices) else len(frames)
+        while cursor < next_boundary:
+            if frames[cursor]["direction"] == "rx":
+                _deliver_rx(frames[cursor]["raw"])
+            cursor += 1
+
+        assert cover.current_cover_position == step_num
