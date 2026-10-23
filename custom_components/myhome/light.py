@@ -184,11 +184,13 @@ async def async_setup_entry(
         )
 
     def ghost(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
-        # A light created in an earlier session for an address that is really a switch or sensor
-        return foreign.owns(ctx.address, ctx.key)
+        # A light created in an earlier session for an address that is really a switch or
+        # sensor. A light declared in myhome.yaml is never a ghost: a WHO 1 motion sensor
+        # can share its address with the actuator it drives (#777).
+        return foreign.blocks_light(ctx.address, ctx.key)
 
     def accept(ctx: DeviceContext) -> bool:
-        return not foreign.owns(ctx.address, ctx.key)
+        return not foreign.blocks_light(ctx.address, ctx.key)
 
     @callback
     def route_foreign(message: Any, address: Address, known: KnownDevices) -> bool:
@@ -200,9 +202,10 @@ async def async_setup_entry(
         """
         if foreign.is_sensor_frame(message):
             foreign.mark_sensor(address)
-            known.discard(address.key)
+            if not foreign.is_configured_light(address, address.key):
+                known.discard(address.key)
             return True
-        if foreign.owns(address, address.key):
+        if foreign.blocks_light(address, address.key):
             keys: tuple[str, ...] = (
                 (address.key, address.clean_key)
                 if address.interface and not foreign.is_switch(address, address.key)
@@ -263,6 +266,17 @@ class _ForeignAddresses:
         self.switches: set[str] = set()
         self.covers: set[str] = set()
         self.sensors: set[str] = set()
+        #: Lights declared in myhome.yaml: they keep their address even when a
+        #: WHO 1 sensor reports on it (#777).
+        self.lights: set[str] = set()
+
+        for dev_id, cfg in runtime.platforms.get("light", {}).items():
+            if not isinstance(cfg, dict):
+                continue
+            address = Address.from_config(dev_id, cfg)
+            if address.where.startswith("#"):
+                continue
+            self.lights.update(self._spellings(address, str(dev_id)))
 
         for dev_id, cfg in runtime.platforms.get("switch", {}).items():
             address = Address.from_config(dev_id, cfg)
@@ -321,19 +335,30 @@ class _ForeignAddresses:
     def mark_sensor(self, address: Address) -> None:
         self._add_sensor(address.where, address.key, address.clean_where)
 
+    @staticmethod
+    def _spellings(address: Address, key: str) -> set[str]:
+        return {
+            key,
+            address.key,
+            address.clean_key,
+            address.where,
+            address.clean_where,
+            normalize_where(address.where),
+            normalize_where(address.clean_where),
+        }
+
     def is_switch(self, address: Address, key: str) -> bool:
         return bool({key, address.where, address.clean_where} & self.switches)
 
-    def owns(self, address: Address, key: str) -> bool:
-        if self.is_switch(address, key):
-            return True
+    def is_cover(self, address: Address, key: str) -> bool:
         cover_candidates = (
             {key, address.key, address.clean_key}
             if address.interface
             else {key, address.key, address.clean_key, address.where, address.clean_where}
         )
-        if cover_candidates & self.covers:
-            return True
+        return bool(cover_candidates & self.covers)
+
+    def is_sensor(self, address: Address, key: str) -> bool:
         candidates = {
             key,
             address.where,
@@ -342,6 +367,25 @@ class _ForeignAddresses:
             normalize_where(address.clean_where),
         }
         return bool(candidates & self.sensors)
+
+    def is_configured_light(self, address: Address, key: str) -> bool:
+        """Whether myhome.yaml declares a light at this address."""
+        return bool(self._spellings(address, key) & self.lights)
+
+    def owns(self, address: Address, key: str) -> bool:
+        return self.is_switch(address, key) or self.is_cover(address, key) or self.is_sensor(address, key)
+
+    def blocks_light(self, address: Address, key: str) -> bool:
+        """Whether no light may exist at this address.
+
+        Switch and cover addresses always block. A sensor address blocks only
+        lights that nobody declared: a motion detector such as the Legrand 067226
+        drives an F411 channel at its own A/PL and reports WHAT 34 / 39 and
+        dimensions 5-7 there, so a configured light and the sensor coexist (#777).
+        """
+        if self.is_switch(address, key) or self.is_cover(address, key):
+            return True
+        return self.is_sensor(address, key) and not self.is_configured_light(address, key)
 
     @classmethod
     def is_sensor_frame(cls, message: Any) -> bool:
@@ -352,7 +396,8 @@ class _ForeignAddresses:
             or isinstance(getattr(message, "illuminance", None), int)
             or getattr(message, "message_type", None) in cls.SENSOR_MESSAGE_TYPES
             or getattr(message, "dimension", None) in (5, 6, 7)
-            or getattr(message, "_state", None) == 34
+            or getattr(message, "_state", None) in (34, 39)
+            or getattr(message, "unknown_state", None) == 39
         )
 
 
