@@ -13,9 +13,17 @@ own the address, ``ghost()`` removed ``light.myhome_spots_wc`` from the registry
 the next reload and ``accept()`` skipped the ``myhome.yaml`` entry, so the light was
 gone for good.
 
-Firmware evidence for WHAT 34 / 39: the F461 ``bt_luci`` translator decodes the SCS
-presence-status frame (class 0x1D) value 00 as ``*1*34*WHERE##`` and value 01 as
-``*1*39*WHERE##`` (``oracle2/hex2own_corpus.tsv`` rows ``B8311D00`` / ``B8311D01``).
+Firmware evidence (OpenWebNet-HA/own-firmware-oracle#56, suite ``who1-motion-detector``,
+12 emulated gateways; F454 2.0.51, F459, F460, F461, MH200N, MH202 and MyHomeServer1
+agree on every row below):
+
+- the SCS presence status frame ``B8 52 1D 00`` / ``B8 52 1D 01`` comes out as
+  ``*1*34*52##`` / ``*1*39*52##`` (F453 / F453AV: WHAT 34 only);
+- the reporter's dimension replies ``*#1*0*6*0##``, ``*#1*0*5*2##`` and
+  ``*#1*0*7*0*0*45##`` come out byte-exact from ``D5 00 21 44 {10,15,16} ..``
+  frames, whose address byte is 00. The same replies addressed to 52
+  (``D1 52 01 44 ..``) come out as ``*#1*52*..##``: the gateway does not drop the
+  address, the WHERE 0 is on the bus.
 """
 
 from unittest.mock import MagicMock, patch

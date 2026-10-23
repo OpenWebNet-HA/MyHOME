@@ -121,7 +121,8 @@ def is_motion_end(message: Any) -> bool:
     """``*1*39*WHERE##``: a WHO 1 detector reports the end of movement (WHAT 39).
 
     The gateway translator decodes the SCS presence status frame (class 0x1D) value 00
-    as WHAT 34 and value 01 as WHAT 39; an F454 + Legrand 067226 sends WHAT 39 about
+    as WHAT 34 and value 01 as WHAT 39 (own-firmware-oracle#56: F454, F459, F460,
+    F461, MH200N, MH202, MyHomeServer1); an F454 + Legrand 067226 sends WHAT 39 about
     45 s after the last WHAT 34 (#777). OWNd releases without WHAT 39 report it as
     ``unknown_state`` 39, later ones as ``motion_end``.
     """
