@@ -350,3 +350,49 @@ async def test_legacy_yaml_mac_key_fallback_branches(mock_hass, base_entry, tmp_
         await load_legacy_myhome_yaml(mock_hass, base_entry, configured_platforms)
         assert "15" in configured_platforms["light"]
 
+
+
+# ── 5. MAC mismatch is logged (#106) ────────────────────────────────────────
+
+
+async def test_legacy_yaml_mac_mismatch_warns_with_entry_mac_and_keys(
+    mock_hass, base_entry, tmp_path, caplog
+):
+    """A section under a MAC no gateway has is reported, naming the entry MAC and the keys found."""
+    yaml_file = tmp_path / "myhome.yaml"
+    yaml_file.write_text(
+        "'00:03:50:00:00:00':\n  light:\n    hallway:\n      where: '21'\n      name: 'Hallway'\n",
+        encoding="utf-8",
+    )
+    mock_hass.config_entries.async_entries.return_value = [base_entry]
+    configured_platforms = _make_configured_platforms()
+
+    with caplog.at_level("WARNING", logger="custom_components.myhome"):
+        await load_legacy_myhome_yaml(mock_hass, base_entry, configured_platforms)
+
+    assert "21" not in configured_platforms["light"]
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert any("00:03:50:81:22:33" in m and "00:03:50:00:00:00" in m for m in warnings), warnings
+
+
+async def test_legacy_yaml_section_of_another_gateway_does_not_warn(
+    mock_hass, base_entry, tmp_path, caplog
+):
+    """With two gateways, a file that only has the other gateway's section is not a mismatch."""
+    yaml_file = tmp_path / "myhome.yaml"
+    yaml_file.write_text(
+        "'00:03:50:99:99:99':\n  light:\n    hallway:\n      where: '21'\n      name: 'Hallway'\n",
+        encoding="utf-8",
+    )
+    other = MagicMock(spec=ConfigEntry)
+    other.entry_id = "other"
+    other.data = {CONF_MAC: "00:03:50:99:99:99"}
+    other.disabled_by = None
+    base_entry.disabled_by = None
+    mock_hass.config_entries.async_entries.return_value = [base_entry, other]
+    configured_platforms = _make_configured_platforms()
+
+    with caplog.at_level("WARNING", logger="custom_components.myhome"):
+        await load_legacy_myhome_yaml(mock_hass, base_entry, configured_platforms)
+
+    assert not [r for r in caplog.records if r.levelname == "WARNING" and "myhome.yaml" in r.getMessage()]
