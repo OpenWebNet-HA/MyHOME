@@ -190,6 +190,18 @@ cover:
 
 Higher tilt is assumed to be *open* (an opening pulse raises the angle, verified on an F401 roller shutter with tilting slats in [discussion #770](https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19144521) with `slat_time: 1.4`). Dedicated Venetian actuators (such as the F411U2 in Venetian mode) still await a keypad / app capture (#492).
 
+### Device class (`class`)
+
+A WHO 2 cover is a `shutter` unless `/config/myhome.yaml` says otherwise. `class:` (or `device_class:`) accepts the Home Assistant cover classes `awning`, `blind`, `curtain`, `damper`, `door`, `garage`, `gate`, `shade`, `shutter` and `window`, and picks the entity's icon and the wording of its states. A configured class also wins over the `blind` that `slat_tilt: true` would otherwise set.
+
+```yaml
+cover:
+  living_room_curtain:
+    where: '32'
+    name: Living Room Curtain
+    class: curtain
+```
+
 ### Protocol Note: Dimension 11 is Shutter Level
 
 In OpenWebNet WHO 2, **Dimension 11** (`*#2*<WHERE>*#11#PRIORITY*LEVEL##`) represents an absolute **Go to level / Shutter position** command, **not** slat tilt angle. Gateway firmwares (MH200N, MyHomeServer1) reject query frames (`*#2*<WHERE>*11##`) with a NACK because Dimension 11 is write-only.
