@@ -28,6 +28,7 @@ from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
 
 from .bus_monitor import BusMonitor
 from .const import (
+    BUS_ROUTING,
     CONF_DEVICE_TYPE,
     CONF_FIRMWARE,
     CONF_MANUFACTURER,
@@ -142,6 +143,10 @@ AVAILABILITY_GRACE = 60
 BUS_QUIET_PERIOD = 0.75
 BUS_QUIET_CAP = 15.0
 PACED_WRITE_TIMEOUT = 60.0
+# How long a zone request waits for others once the startup sweep is over: zones discovered
+# from incoming frames arrive over 1-2 s, and each would otherwise start its own all-zone
+# sweep (*#4*#0*20##) on an F461.
+ZONE_REQUEST_COALESCE = 0.1
 DISCOVERY_REQUESTS: tuple[tuple[int, str], ...] = (
     (1, "*#1*0##"),
     (2, "*#2*0##"),
@@ -465,8 +470,11 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
     async def _send_zone_requests(self) -> None:
         """Send the waiting zone requests through the paced sender, until none is left."""
+        discovered = self._initial_discovery_done.is_set()
         await self.wait_for_initial_discovery()
-        await asyncio.sleep(0)  # zones added in the same pass join this run
+        # Zones added in the same pass join this run; after the sweep, zones discovered from
+        # the bus over the next tenth of a second do too instead of each sweeping on its own.
+        await asyncio.sleep(ZONE_REQUEST_COALESCE if discovered else 0)
         while self._zone_requests:
             pending, self._zone_requests = self._zone_requests, set()
             frames: list[str] = []
@@ -479,9 +487,9 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                     )
                     continue
                 all_zones = target.all_zone_request(dimension)
-                if all_zones is not None and any("#4#" not in where for where in wheres):
+                if all_zones is not None and any(BUS_ROUTING not in where for where in wheres):
                     frames.append(all_zones)
-                    wheres = [where for where in wheres if "#4#" in where]  # behind an interface
+                    wheres = [where for where in wheres if BUS_ROUTING in where]  # behind an interface
                 for where in wheres:
                     # One zone the builder rejects must not drop the others of the batch.
                     try:

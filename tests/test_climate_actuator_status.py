@@ -11,6 +11,7 @@ Gateways that drop ``*#4*Z*20##`` (own-firmware-oracle ``thermo-actuator`` rows 
 """
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -541,3 +542,30 @@ async def test_myhomeserver1_asks_every_zone_s_actuators_with_one_frame(hass, fa
     handler.watch_zone_actuators("36")
     await _settle(hass)
     assert _drain(handler) == ["*#4*#0*20##"]
+
+
+# ------------------------------------------------------------------ gateway: coalescing after the sweep (review 5639409551, 6)
+
+async def test_zones_discovered_after_the_sweep_share_one_all_zone_request(hass, fast_bus_pacing, monkeypatch):
+    """Dynamically discovered zones arrive a few tens of ms apart: one *#4*#0*20##, not one each."""
+    monkeypatch.setattr("custom_components.myhome.gateway.ZONE_REQUEST_COALESCE", 0.2)
+    handler = _handler(hass, "F461")
+    handler._initial_discovery_done.set()
+    handler.watch_zone_actuators("2")
+    await asyncio.sleep(0.05)
+    handler.watch_zone_actuators("5")
+    await asyncio.sleep(0.05)
+    handler.watch_zone_actuators("7#4#01")
+    await _settle(hass)
+    assert _drain(handler) == ["*#4*#0*20##", "*#4*7#4#01*20##"]
+
+
+async def test_the_startup_run_does_not_wait_the_coalesce_window(hass, fast_bus_pacing, monkeypatch):
+    """Requests queued before the sweep ended already waited for it: no extra delay."""
+    monkeypatch.setattr("custom_components.myhome.gateway.ZONE_REQUEST_COALESCE", 5.0)
+    handler = _handler(hass, "F461")
+    handler.watch_zone_actuators("2")
+    await hass.async_block_till_done()
+    await handler.initial_discovery()
+    await _settle(hass)
+    assert _drain(handler)[-1] == "*#4*#0*20##"
