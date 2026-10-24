@@ -357,7 +357,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._attr_fan_mode: str | None = None
         self._attr_fan_modes: list[str] | None = None
         self._running_fan_speed: str | None = None
+        # Per-actuator state from dimension 20 (*#4*Z#N*20*V##), exposed as ``actuators``.
         self._actuator_states: dict[str, bool] = {}
+        # Zone-level fallback from dimension 19 (*#4*Z*19*C*H##): whether any valve or fan
+        # coil of the zone is active; None until seen. Whichever of the two arrived last
+        # drives hvac_action, so a stale one cannot keep the zone "heating".
+        self._zone_active: bool | None = None
+        self._active_source: str | None = None  # "actuators" (dimension 20) or "zone" (19)
         # Which side of the zone drives a fan coil, from dimension 19
         # (*#4*Z*19*COOLING*HEATING##: a value of 5..8 on a side is a fan coil, 0..4 a valve).
         # Empty until a dimension 19 frame has been seen.
@@ -618,6 +624,18 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._fan_coil_sides_asked = True
         request(self._full_where, 19)
 
+    def _any_actuator_active(self) -> bool:
+        """Whether the most recent actuator report (dimension 20 or 19) shows activity."""
+        if self._active_source == "zone":
+            return bool(self._zone_active)
+        return any(self._actuator_states.values())
+
+    def _mark_actuators_off(self) -> None:
+        """The zone was switched OFF: every known actuator is off, the attribute stays."""
+        self._actuator_states = dict.fromkeys(self._actuator_states, False)
+        if self._zone_active is not None:
+            self._zone_active = False
+
     @property
     def _standalone(self) -> bool:
         """Whether setpoints and modes are addressed as ``Z`` (thermostat alone) or ``#Z``.
@@ -678,7 +696,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if master_mode == HVACMode.OFF:
             self._attr_hvac_mode = HVACMode.OFF
             self._attr_hvac_action = HVACAction.OFF
-            self._actuator_states.clear()
+            self._mark_actuators_off()
         elif master_mode in (HVACMode.HEAT, HVACMode.COOL):
             if self._attr_hvac_mode != HVACMode.OFF:
                 self._attr_hvac_mode = master_mode
@@ -909,7 +927,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._restore_nominal_before_protection()
             self._attr_hvac_mode = HVACMode.OFF
             self._attr_hvac_action = HVACAction.OFF
-            self._actuator_states.clear()
+            self._mark_actuators_off()
             self._holiday_days = None
             self._program = None
             self._scenario = None
@@ -1095,7 +1113,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._restore_nominal_before_protection()
                 self._attr_hvac_mode = HVACMode.OFF
                 self._attr_hvac_action = HVACAction.OFF
-                self._actuator_states.clear()
+                self._mark_actuators_off()
             if (
                 prev_mode == HVACMode.OFF
                 and self._attr_hvac_mode != HVACMode.OFF
@@ -1149,7 +1167,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._restore_nominal_before_protection()
                 self._attr_hvac_mode = HVACMode.OFF
                 self._attr_hvac_action = HVACAction.OFF
-                self._actuator_states.clear()
+                self._mark_actuators_off()
             if message.set_temperature is not None and message.set_temperature >= 0:
                 self._target_temperature = message.set_temperature
                 self._show_nominal()
@@ -1201,28 +1219,34 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 else:
                     self._running_fan_speed = None
 
-            actuator_id = str(
-                getattr(message, "actuator", None)
-                or getattr(message, "_actuator", None)
-                or (
-                    message._where_param[0]
-                    if getattr(message, "_where_param", None)
-                    else "valve"
-                )
-            )
             is_active = bool(message.is_active())
-            if getattr(message, "dimension", None) == 19:
-                # OWNd <= 2.0.0b11 clears _is_active when a fan-coil side is off (value 5),
-                # even if the other side's valve is open (*#4*2*19*5*1##, OWNd#116).
-                is_active = bool(
-                    is_active
-                    or message.is_heating()
-                    or message.is_cooling()
-                    or getattr(message, "cooling_fan_on", None)
-                    or getattr(message, "fan_on", None)
+            dimension = getattr(message, "dimension", None)
+            if dimension == 20:
+                actuator_id = str(
+                    getattr(message, "actuator", None)
+                    or getattr(message, "_actuator", None)
+                    or (message._where_param[0] if getattr(message, "_where_param", None) else "1")
                 )
-            self._actuator_states[actuator_id] = is_active
-            any_active = any(self._actuator_states.values())
+                self._actuator_states[actuator_id] = is_active
+                self._active_source = "actuators"
+            else:
+                # Dimension 19 (valves status) is the zone as a whole. OWNd <= 2.0.0b11 clears
+                # _is_active when a fan-coil side is off (value 5), even if the other side's
+                # valve is open (*#4*2*19*5*1##, OWNd#116).
+                if dimension == 19:
+                    is_active = bool(
+                        is_active
+                        or message.is_heating()
+                        or message.is_cooling()
+                        or getattr(message, "cooling_fan_on", None)
+                        or getattr(message, "fan_on", None)
+                    )
+                self._zone_active = is_active
+                self._active_source = "zone"
+                if not self._zone_active:
+                    # Neither side is active: every actuator of the zone is off.
+                    self._actuator_states = dict.fromkeys(self._actuator_states, False)
+            any_active = self._any_actuator_active()
 
             if any_active:
                 if self._heating and self._cooling:

@@ -15,7 +15,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from homeassistant.components.climate import HVACAction
+from homeassistant.components.climate import HVACAction, HVACMode
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PASSWORD, CONF_PORT
 from OWNd.message import OWNHeatingEvent
 from OWNd.profiles import get_gateway_profile
@@ -339,3 +339,58 @@ async def test_a_gateway_without_zone_requests_keeps_polling_the_fan_speed(hass)
     assert zone._fan_coil_sides_asked is False
     await zone.async_update()
     assert _status_frames(zone)[-1] == "*#4*2*11##"
+
+
+# ------------------------------------------------------------------ entity: dimension 20 and 19 kept apart (review 5639409551, 2)
+
+async def test_zone_level_report_then_actuator_off_does_not_stick_heating(hass):
+    """``*#4*2*19*0*1##`` (heating valve open) must not pin ``heating`` once ``*#4*2#1*20*0##`` says off."""
+    zone = _zone(hass)
+    _feed(zone, *F461_POLL_REPLY, "*#4*2*19*0*1##")
+    assert zone.hvac_action == HVACAction.HEATING
+    assert "actuators" not in zone.extra_state_attributes  # dimension 19 is the zone, not an actuator
+    _feed(zone, "*#4*2#1*20*0##")
+    assert zone.hvac_action == HVACAction.IDLE
+    assert zone.extra_state_attributes["actuators"] == {"1": "off"}
+
+
+async def test_actuator_on_then_zone_level_all_off_goes_idle(hass):
+    zone = _zone(hass)
+    _feed(zone, *F461_POLL_REPLY, "*#4*2#1*20*1##")
+    assert zone.hvac_action == HVACAction.HEATING
+    _feed(zone, "*#4*2*19*0*0##")
+    assert zone.hvac_action == HVACAction.IDLE
+    assert zone.extra_state_attributes["actuators"] == {"1": "off"}
+    _feed(zone, "*#4*2*19*0*1##")
+    assert zone.hvac_action == HVACAction.HEATING
+    assert zone.extra_state_attributes["actuators"] == {"1": "off"}  # which actuator is unknown
+
+
+async def test_valve_never_appears_among_the_actuators(hass):
+    zone = _zone(hass)
+    _feed(zone, *F461_POLL_REPLY, "*#4*2*19*5*1##", "*#4*2#1*20*1##", "*#4*2#2*20*5##")
+    assert zone.extra_state_attributes["actuators"] == {"1": "on", "2": "off"}
+    assert zone._zone_active is True
+
+
+async def test_actuators_attribute_survives_off_and_heat(hass):
+    zone = _zone(hass)
+    _feed(zone, *F461_POLL_REPLY, "*#4*2#1*20*1##", "*#4*2#2*20*5##")
+    assert zone.hvac_action == HVACAction.HEATING
+    _feed(zone, "*4*303*2##")
+    assert zone.hvac_action == HVACAction.OFF
+    assert zone.extra_state_attributes["actuators"] == {"1": "off", "2": "off"}
+    _feed(zone, "*4*1*2##")
+    assert zone.hvac_action == HVACAction.IDLE
+    assert zone.extra_state_attributes["actuators"] == {"1": "off", "2": "off"}
+    _feed(zone, "*#4*2#1*20*1##")
+    assert zone.hvac_action == HVACAction.HEATING
+
+
+async def test_central_off_keeps_the_actuators_attribute(hass):
+    zone = _zone(hass)
+    _feed(zone, *F461_POLL_REPLY, "*#4*2#1*20*1##", "*#4*2*19*0*1##")
+    zone._handle_central_mode_update(HVACMode.OFF)
+    assert zone.hvac_action == HVACAction.OFF
+    assert zone.extra_state_attributes["actuators"] == {"1": "off"}
+    assert zone._zone_active is False
