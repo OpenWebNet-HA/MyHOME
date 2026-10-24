@@ -162,19 +162,39 @@ def test_calibrate_metadata_with_ownd():
     assert f453av["upnp"] == "✅ Port 49153"
 
 
+def _sound_row_cells(profile_name: str) -> str:
+    """The advertised and sent cells of the F461 / MyHomeServer1 row for the installed OWNd profile.
+
+    Both firmwares drop ``*#4*0##`` and refuse every WHO 16 frame; whether WHO 16 is still
+    *advertised* (and ``*#16*0*5##`` therefore an omission of the sweep) depends on the
+    installed OWNd profile.
+    """
+    from OWNd.profiles import get_gateway_profile
+
+    if get_gateway_profile(profile_name).supports_who(16):
+        return "WHO 1, 2, 4, 16, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`, `*#16*0*5##`)"
+    return "WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`)"
+
+
 def test_generate_gateway_discovery_table_and_verify_oracle():
-    """Verify startup discovery table generation and oracle verification."""
+    """The discovery table follows the installed OWNd profiles and the oracle check passes."""
     block = ugp.build_discovery_block()
     assert ugp.DISCOVERY_START_MARKER in block
     assert ugp.DISCOVERY_END_MARKER in block
+    # Rows whose profile has not changed between OWNd releases: the literal cells.
     assert "| **F454** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`) |" in block
     assert "| **F452 / F453 / F453AV** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 4, 16, 18 |" in block
-    assert "| **F461** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`, `*#16*0*5##`) |" in block
     assert "| **F455** | WHO 1, 2, 4, 18 | WHO 1, 2, 4, 18 |" in block
     assert "| **MH200** *(Legacy)* | WHO 1, 2, 4, 16 | WHO 1, 2, 16 (firmware drops `*#4*0##`) |" in block
     assert "| **MH200N** | WHO 1, 2, 4, 16 | WHO 1, 2, 4, 16 |" in block
     assert "| **MH201** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`) |" in block
     assert "| **H4684 / H/L4684** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`) |" in block
+    # Rows that follow the OWNd profile (WHO 16 on the F461 / MyHomeServer1 is being dropped
+    # in OWNd): derived from the installed profile, so the test is right before and after.
+    assert f"| **F461** | {_sound_row_cells('F461')} |" in block
+    assert f"| **MyHomeServer1** | {_sound_row_cells('MyHomeServer1')} |" in block
+    # No row hard-codes its WHOs; the generator gets them from the profile.
+    assert all("queried_whos" not in row for row in ugp.GATEWAY_DISCOVERY_METADATA)
 
     assert ugp.verify_profiles_against_oracle() == []
 
@@ -190,6 +210,67 @@ def test_oracle_check_rejects_a_sweep_omission_the_profile_does_not_advertise(mo
     violations = "\n".join(ugp.verify_profiles_against_oracle())
     assert "**F455** sweep_omits='*#16*0*5##'" in violations
     assert "**MH202** sweep_omits='*#5*0##'" in violations
+
+
+def test_discovery_whos_follow_the_runtime_gate():
+    """``discovery_whos_for`` mirrors ``MyHOMEGatewayHandler._profile_supports_who`` over the discovery WHOs."""
+    from OWNd.profiles import get_gateway_profile
+
+    for name in ("F454", "F455", "F461", "MH200N", "MH202", "MyHomeServer1"):
+        prof = get_gateway_profile(name)
+        assert ugp.discovery_whos_for(prof) == [w for w in ugp.STARTUP_DISCOVERY_WHOS if prof.supports_who(w)]
+    assert ugp.discovery_whos_for(None) == []
+    assert ugp.discovery_whos_for(object()) == []
+
+
+class _ProfileWithoutWho16:
+    """An OWNd profile double for the F461 / MyHomeServer1 once OWNd drops WHO 16 from them."""
+
+    def supports_who(self, who: int) -> bool:
+        return who in (1, 2, 4, 18, 22)
+
+
+def test_discovery_row_drops_who16_when_the_profile_does(monkeypatch: pytest.MonkeyPatch):
+    """With a profile that no longer lists WHO 16 the F461 row, its sweep omissions and its sound wording follow.
+
+    ``*#16*0*5##`` is no longer an omission of the sweep (nothing is sent for WHO 16 at all),
+    so the generated row stops naming it; ``*#4*0##`` is still left out by the firmware.
+    """
+    import OWNd.profiles as ownd_profiles
+
+    real = ownd_profiles.get_gateway_profile
+
+    def _patched(name: str, *args, **kwargs):
+        if name in ("F461", "MyHomeServer1"):
+            return _ProfileWithoutWho16()
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(ownd_profiles, "get_gateway_profile", _patched)
+    rows = {row["model"]: row for row in ugp.calibrate_discovery_with_ownd()}
+    for model in ("**F461**", "**MyHomeServer1**"):
+        assert rows[model]["queried_whos"] == [1, 2, 4, 18]
+        assert rows[model]["sweep_omits"] == ["*#4*0##"]
+        assert ugp.sweep_whos(rows[model]) == [1, 2, 18]
+        assert "WHO 22 only" in str(rows[model]["notes"])
+        assert "notes_without_who16" not in rows[model]
+    assert rows["**F454**"]["queried_whos"] == [1, 2, 4, 16, 18]
+    assert rows["**F454**"]["sweep_omits"] == ["*#4*0##"]
+    assert "bt_difson" in str(rows["**F454**"]["notes"])
+    assert rows["**MH202**"]["sweep_omits"] == ["*#4*0##", "*#16*0*5##"]
+    block = ugp.build_discovery_block()
+    assert (
+        "| **F461** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`) | "
+        "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only"
+    ) in block
+    assert "| **MyHomeServer1** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`) | " in block
+
+
+def test_discovery_table_without_ownd_does_not_guess(monkeypatch: pytest.MonkeyPatch):
+    """Without an importable OWNd the rows carry no WHOs instead of a stale hard-coded list."""
+    monkeypatch.setitem(sys.modules, "OWNd.profiles", None)
+    rows = ugp.calibrate_discovery_with_ownd()
+    assert all(row["queried_whos"] == [] for row in rows)
+    assert "unknown (OWNd profile not available)" in ugp.generate_gateway_discovery_table()
 
 
 def test_oracle_check_rejects_patched_profile_instance():
