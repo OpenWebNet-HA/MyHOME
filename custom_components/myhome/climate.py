@@ -679,9 +679,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     )
                 )
         await super().async_added_to_hass()
-        if not self._central:
+        if not self._central and not is_probe(self._where):
             # hvac_action needs the actuators (dimension 20); without asking, it stays unknown
-            # until one of them switches. The gateway asks again after a reconnect.
+            # until one of them switches. The gateway asks again after a reconnect. A secondary
+            # probe (WHERE >= 100) is push-only: *#4*105*...## NACKs in 2.1 s on the F461.
             watch = getattr(self._gateway_handler, "watch_zone_actuators", None)
             if callable(watch):
                 self.async_on_remove(watch(self._full_where))

@@ -18,7 +18,7 @@ import pytest
 from homeassistant.components.climate import HVACAction, HVACMode
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PASSWORD, CONF_PORT
 from OWNd.message import OWNHeatingEvent
-from OWNd.profiles import get_gateway_profile
+from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
 
 from custom_components.myhome.climate import MyHOMEClimate
 from custom_components.myhome.const import CONF_FIRMWARE
@@ -460,5 +460,84 @@ async def test_a_gateway_identified_late_as_supported_is_asked(hass, fast_bus_pa
     handler.is_connected = True
     handler._on_event_connection_state_change(False)
     handler._on_event_connection_state_change(True)
+    await _settle(hass)
+    assert _drain(handler) == ["*#4*#0*20##"]
+
+
+# ------------------------------------------------------------------ gateway: profile, topology and probes (review 5639409551, 5)
+
+def test_a_generic_profile_with_a_vendor_prefixed_name_still_finds_its_tables(hass):
+    """``get_gateway_profile("BTicino F461")`` is a GenericGatewayProfile named "BTicino F461"."""
+    handler = _handler(hass, "BTicino F461")
+    assert isinstance(handler.gateway.profile, GenericGatewayProfile)
+    assert handler._model_key == "F461"
+    assert handler.all_zone_request(20) == "*#4*#0*20##"
+    assert handler.actuator_request_refused is False
+
+
+@pytest.mark.parametrize(
+    ("model", "key", "refused"),
+    [("Legrand MH200N", "MH200N", True), ("MH200", "MH200", True), ("BTicino F453AV", "F453AV", True), ("Unknown", "UNKNOWN", False)],
+)
+def test_model_key_reads_the_longest_known_model(hass, model, key, refused):
+    handler = _handler(hass, model)
+    handler.gateway.profile = GenericGatewayProfile(model_name=model)
+    assert handler._model_key == key
+    assert handler.actuator_request_refused is refused
+
+
+async def test_who4_delegated_to_a_secondary_uses_the_secondary_s_tables(hass, fast_bus_pacing):
+    """A primary MH202 (refuses) delegating WHO 4 to a secondary F454: the F454 is asked, per zone."""
+    primary = _handler(hass, "MH202")
+    secondary = _handler(hass, "F454")
+    primary._delegated_target = MagicMock(return_value=secondary)
+    primary._initial_discovery_done.set()
+    primary.watch_zone_actuators("2")
+    await _settle(hass)
+    assert _drain(primary) == []
+    assert _drain(secondary) == ["*#4*2*20##"]
+
+
+async def test_failover_to_a_standby_that_refuses_sends_nothing(hass, fast_bus_pacing):
+    """A primary F461 failed over to a standby MH202: *#4*#0*20## would be dropped by the MH202."""
+    primary = _handler(hass, "F461")
+    standby = _handler(hass, "MH202")
+    primary._failover_target = MagicMock(return_value=standby)
+    primary._initial_discovery_done.set()
+    primary.watch_zone_actuators("2")
+    await _settle(hass)
+    assert _drain(primary) == []
+    assert _drain(standby) == []
+
+
+async def test_failover_to_a_forwarding_standby_asks_per_zone(hass, fast_bus_pacing):
+    """A primary F461 failed over to a standby F454: the F454 form, not the F461's all-zone one."""
+    primary = _handler(hass, "F461")
+    standby = _handler(hass, "F454")
+    primary._failover_target = MagicMock(return_value=standby)
+    primary._initial_discovery_done.set()
+    primary.watch_zone_actuators("2")
+    primary.watch_zone_actuators("5")
+    await _settle(hass)
+    assert _drain(primary) == []
+    assert _drain(standby) == ["*#4*2*20##", "*#4*5*20##"]
+
+
+async def test_a_secondary_probe_is_never_asked_for_actuators(hass):
+    """WHERE >= 100 is a push-only secondary probe (*#4*105*...## NACKs in 2.1 s on the F461)."""
+    probe = _zone(hass, where="105")
+    probe._gateway_handler.initial_discovery_pending = False
+    probe._gateway_handler.sweep_active = False
+    probe._gateway_handler.supports_zone_status = True
+    await probe.async_added_to_hass()
+    probe._gateway_handler.watch_zone_actuators.assert_not_called()
+
+
+async def test_myhomeserver1_asks_every_zone_s_actuators_with_one_frame(hass, fast_bus_pacing):
+    """MyHomeServer1 3.87.13 answered *#4*#0*20## in 0.39 s with 43 actuator frames (34 zones)."""
+    handler = _handler(hass, "MyHomeServer1")
+    handler._initial_discovery_done.set()
+    handler.watch_zone_actuators("35")
+    handler.watch_zone_actuators("36")
     await _settle(hass)
     assert _drain(handler) == ["*#4*#0*20##"]

@@ -159,7 +159,15 @@ DISCOVERY_REQUESTS: tuple[tuple[int, str], ...] = (
 ACTUATOR_REQUEST_REFUSED = frozenset({"F453", "F453AV", "H4684", "MH200", "MH200N", "MH202"})
 # One request for every zone, by dimension. The live F461 2.0.11 answered ``*#4*#0*20##`` with
 # the actuators of each zone (``*#4*2#1*20*0##``, ``*#4*2#2*20*5##`` after 2.1 s).
-ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {"F461": {20: "*#4*#0*20##"}}
+# The MyHomeServer1 3.87.13 (myhomeserver1_live_2026-10-24, run2_reads_thermo_sound_alarm_lights)
+# answered it in 0.39 s with 43 actuator frames for its 34 zones, where asking each zone
+# through the paced sender takes about 32 s; the emulated 028206 forwards it ("out").
+ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {
+    "F461": {20: "*#4*#0*20##"},
+    "MYHOMESERVER1": {20: "*#4*#0*20##"},
+}
+# The models the two tables know, longest first so ``MH200N`` is not read as ``MH200``.
+_ZONE_REQUEST_MODELS = sorted(ACTUATOR_REQUEST_REFUSED | set(ALL_ZONE_REQUESTS), key=len, reverse=True)
 
 
 def _validate_zone_where(where: str) -> None:
@@ -377,10 +385,30 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
     @property
     def _model_key(self) -> str:
-        """The gateway model the request tables are keyed on (``F461``, ``MYHOMESERVER1``)."""
-        profile_model = getattr(getattr(self.gateway, "profile", None), "model_name", None)
-        name = profile_model if isinstance(profile_model, str) and profile_model != "Generic" else self.model
-        return "".join(character for character in str(name).upper() if character.isalnum())
+        """The gateway model the request tables are keyed on (``F461``, ``MYHOMESERVER1``).
+
+        A known OWNd profile names the model; a ``GenericGatewayProfile`` (also what
+        ``get_gateway_profile("BTicino F461")`` returns) falls back to the configured name,
+        in which a known model is looked up as a substring (``supports_zone_status`` style).
+        """
+        profile = getattr(self.gateway, "profile", None)
+        if profile is not None and not isinstance(profile, GenericGatewayProfile):
+            name = getattr(profile, "model_name", None) or self.model
+        else:
+            name = self.model
+        normalized = "".join(character for character in str(name).upper() if character.isalnum())
+        return next((model for model in _ZONE_REQUEST_MODELS if model in normalized), normalized)
+
+    def _who4_target(self) -> MyHOMEGatewayHandler:
+        """The gateway a WHO 4 status request goes through, the way ``send_status_request`` routes it.
+
+        On a shared bus WHO 4 may be delegated to a secondary gateway, or served by the warm
+        standby while this primary is down: that gateway's refusal and all-zone tables apply.
+        """
+        probe = OWNCommand.parse("*#4*#0*20##")
+        if probe is None:  # pragma: no cover - a fixed, well-formed frame
+            return self
+        return self._delegated_target(probe) or self._failover_target(probe) or self
 
     @property
     def actuator_request_refused(self) -> bool:
@@ -442,14 +470,15 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         while self._zone_requests:
             pending, self._zone_requests = self._zone_requests, set()
             frames: list[str] = []
+            target = self._who4_target()
             for dimension in sorted({dim for _where, dim in pending}):
                 wheres = sorted(where for where, dim in pending if dim == dimension)
-                if dimension == 20 and self.actuator_request_refused:
+                if dimension == 20 and target.actuator_request_refused:
                     LOGGER.debug(
-                        "%s Zones %s: %s refuses the actuator request; not asking", self.log_id, wheres, self.model
+                        "%s Zones %s: %s refuses the actuator request; not asking", self.log_id, wheres, target.model
                     )
                     continue
-                all_zones = self.all_zone_request(dimension)
+                all_zones = target.all_zone_request(dimension)
                 if all_zones is not None and any("#4#" not in where for where in wheres):
                     frames.append(all_zones)
                     wheres = [where for where in wheres if "#4#" in where]  # behind an interface
