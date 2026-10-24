@@ -1,10 +1,12 @@
 """The 4-digit spelling of an area-0 point (``0004``) resolves to the 2-digit form the gateways use (#147, #135)."""
 from __future__ import annotations
 
+import json
 import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
+from homeassistant.components.light import ColorMode
 from homeassistant.const import CONF_MAC, CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
@@ -14,7 +16,13 @@ from OWNd.message import OWNEvent
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome import validate
-from custom_components.myhome.const import CONF_PLATFORMS, CONF_WHERE, DOMAIN
+from custom_components.myhome.const import CONF_PLATFORMS, CONF_WHERE, DOMAIN, PLATFORMS
+from custom_components.myhome.legacy_yaml import (
+    CONF_MIGRATED_YAML_PLATFORMS,
+    canonicalise_imported_platforms,
+    load_legacy_myhome_yaml,
+    migrate_legacy_yaml_to_entry_options,
+)
 from custom_components.myhome.light import async_setup_entry as light_setup_entry
 from custom_components.myhome.migrate import migrate_entry_and_registries
 from custom_components.myhome.validate import PointToPoint, cover_schema, light_schema
@@ -279,3 +287,130 @@ def test_a_canonical_id_held_by_another_config_entry_is_a_collision(hass: HomeAs
         f"Not migrating {mine.entity_id} to unique_id {MAC}-1-04: {theirs.entity_id} of another config entry" in r.getMessage()
         for r in caplog.records if r.levelno == logging.WARNING
     )
+
+
+# ── The imported copy of myhome.yaml (entry options, #733) ─────────────────────────
+
+LIGHT_0004 = {
+    "who": "1", "where": "0004", "name": "Kitchen", "dimmable": True, "manufacturer": "BTicino S.p.A.",
+    "model": None, "icon": None, "icon_on": None, "entity_name": None, "device_class": "switch", "entities": {},
+}
+
+
+def _old_beta_snapshot() -> dict:
+    """What a 2.0 beta before this change stored for ``where: "0004"`` (light and its button alias)."""
+    return {"light": {"1-0004": dict(LIGHT_0004)}, "button": {"1-0004": dict(LIGHT_0004)}, "climate": {}}
+
+
+def test_imported_copy_is_rewritten_to_the_canonical_spelling(caplog) -> None:
+    snapshot = _old_beta_snapshot()
+    snapshot["cover"] = {
+        "2-0005#4#01": {"who": "2", "where": "0005", "interface": "01", "name": "Blind", "entities": {}},
+        "2-0009": {"who": "2", "where": "0009", "members": ["0001", "0015", "11"], "name": "All", "entities": {}},
+        "2-0015": {"who": "2", "where": "0015", "name": "Fifteen", "entities": {}},
+    }
+    snapshot["binary_sensor"] = {"25-0004": {"who": "25", "where": "0004", "name": "CEN", "entities": {}}}
+    snapshot["alarm_control_panel"] = {"5-0004": {"who": "5", "where": "0004", "name": "Zone 4", "entities": {}}}
+    before = json.dumps(snapshot, sort_keys=True)
+    with caplog.at_level(logging.WARNING):
+        result, rewritten = canonicalise_imported_platforms(snapshot)
+    assert json.dumps(snapshot, sort_keys=True) == before  # the stored copy is not mutated
+    assert result["light"] == {"1-04": {**LIGHT_0004, "where": "04"}}
+    assert result["button"] == {"1-04": {**LIGHT_0004, "where": "04"}}
+    assert set(result["cover"]) == {"2-05#4#01", "2-09", "2-0015"}
+    assert result["cover"]["2-05#4#01"]["where"] == "05"
+    assert result["cover"]["2-09"]["members"] == ["01", "0015", "11"]
+    assert result["cover"]["2-0015"] is snapshot["cover"]["2-0015"]
+    # Only WHO 1 / WHO 2 points: a CEN button at 0004 and WHO 5 zone 0004 are other grammars.
+    assert result["binary_sensor"] == snapshot["binary_sensor"]
+    assert result["alarm_control_panel"] == snapshot["alarm_control_panel"]
+    assert result["climate"] == {}
+    assert rewritten == ["light: 1-0004 -> 1-04", "button: 1-0004 -> 1-04", "cover: 2-0005#4#01 -> 2-05#4#01", "cover: 2-0009 -> 2-09"]
+    assert not [r for r in caplog.records if r.levelno == logging.WARNING]
+    # Idempotent: the canonical copy is returned unchanged.
+    again, rewritten_again = canonicalise_imported_platforms(result)
+    assert again == result and rewritten_again == []
+
+
+def test_imported_copy_keeps_the_canonical_device_on_a_collision(caplog) -> None:
+    """A copy holding both `1-0004` and `1-04` keeps `1-04`; the twin is dropped, not overwritten."""
+    snapshot = {"light": {
+        "1-0004": dict(LIGHT_0004),
+        "1-04": {**LIGHT_0004, "where": "04", "name": "Kitchen (bus)", "dimmable": False},
+    }}
+    with caplog.at_level(logging.WARNING):
+        result, rewritten = canonicalise_imported_platforms(snapshot)
+    assert result["light"] == {"1-04": snapshot["light"]["1-04"]}
+    assert rewritten == []
+    assert any(
+        "dropping '1-0004' (where '0004'), the copy already has '1-04'" in r.getMessage()
+        for r in caplog.records if r.levelno == logging.WARNING
+    )
+
+
+def test_new_snapshots_are_stored_canonically(hass: HomeAssistant, config_entry) -> None:
+    """The guard on the write path: a platform mapping with `0004` is stored as `04`."""
+    assert migrate_legacy_yaml_to_entry_options(hass, config_entry, _old_beta_snapshot()) is True
+    assert list(config_entry.options[CONF_MIGRATED_YAML_PLATFORMS]["light"]) == ["1-04"]
+
+
+async def test_imported_copy_with_0004_boots_twice_without_churn(hass: HomeAssistant, caplog) -> None:
+    """Snapshot with `0004`, no myhome.yaml: two boots give one `…-1-04` light that keeps `dimmable`.
+
+    Before the fix, boot 1 renamed the registry entry to `…-1-04`, restored it with an empty
+    config (`config_for` missed `04` in the imported copy) and created `light.kitchen_2` for
+    `0004`; boot 2 deleted `…-1-04` as a duplicate and renamed `…-1-04` again, and so on.
+    The add is simulated by registering the created entities' unique ids as HA would.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN, title="GW", data={CONF_MAC: MAC}, unique_id=MAC, entry_id="e_imported",
+        options={CONF_MIGRATED_YAML_PLATFORMS: _old_beta_snapshot()},
+    )
+    entry.add_to_hass(hass)
+    ent_reg = er.async_get(hass)
+    dev_reg = dr.async_get(hass)
+    device = dev_reg.async_get_or_create(config_entry_id=entry.entry_id, identifiers={(DOMAIN, f"{MAC}-1-0004")})
+    ent_reg.async_get_or_create(
+        "light", DOMAIN, f"{MAC}-1-0004", config_entry=entry, device_id=device.id, suggested_object_id="kitchen"
+    )
+    gateway = MagicMock()
+    gateway.mac = MAC
+    gateway.log_id = "[test]"
+
+    async def boot() -> list:
+        configured: dict = {platform: {} for platform in PLATFORMS}
+        await load_legacy_myhome_yaml(hass, entry, configured)  # no myhome.yaml: the imported copy
+        migrate_entry_and_registries(hass, entry, configured)
+        hass.data.setdefault(DOMAIN, {})[MAC] = {"entity": gateway, CONF_PLATFORMS: configured}
+        attach_runtime(hass, entry)
+        added: list = []
+        await light_setup_entry(hass, entry, added.extend)
+        for light in added:  # what EntityPlatform does on add
+            ent_reg.async_get_or_create("light", DOMAIN, light.unique_id, config_entry=entry, device_id=device.id)
+        return added
+
+    def lights_in_registry() -> dict[str, str]:
+        return {
+            e.entity_id: e.unique_id
+            for e in er.async_entries_for_config_entry(ent_reg, entry.entry_id) if e.domain == "light"
+        }
+
+    with caplog.at_level(logging.INFO):
+        first = await boot()
+    assert [light.unique_id for light in first] == [f"{MAC}-1-04"]
+    assert ColorMode.BRIGHTNESS in first[0].supported_color_modes  # `dimmable: true` kept
+    assert lights_in_registry() == {"light.kitchen": f"{MAC}-1-04"}
+    assert list(entry.options[CONF_MIGRATED_YAML_PLATFORMS]["light"]) == ["1-04"]
+    assert entry.options[CONF_MIGRATED_YAML_PLATFORMS]["light"]["1-04"]["where"] == "04"
+    assert any("2 point address(es) moved to the canonical spelling (light: 1-0004 -> 1-04; button: 1-0004 -> 1-04)" in r.getMessage() for r in caplog.records)
+    assert dev_reg.async_get(device.id).identifiers == {(DOMAIN, f"{MAC}-1-04")}
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        second = await boot()
+    assert [light.unique_id for light in second] == [f"{MAC}-1-04"]
+    assert ColorMode.BRIGHTNESS in second[0].supported_color_modes
+    assert lights_in_registry() == {"light.kitchen": f"{MAC}-1-04"}
+    assert ent_reg.async_get("light.kitchen").device_id == device.id
+    assert not [r for r in caplog.records if r.name == "custom_components.myhome" and "igrat" in r.getMessage()]
+    assert not [r for r in caplog.records if "canonical spelling" in r.getMessage()]
