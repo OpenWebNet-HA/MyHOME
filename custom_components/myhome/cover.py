@@ -226,6 +226,14 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             # yaml covers keep their configured travel time, but a slat time set
             # with myhome.set_cover_travel_time wins until it is reset.
             kwargs["calibration"] = {CONF_SLAT_TIME: stored[CONF_SLAT_TIME]}
+        # cover_schema folds a yaml `device_class:` into CONF_DEVICE_CLASS; the raw
+        # key is kept as a fallback for callers that bypass the schema, as build_impulse does.
+        raw_dev_class = cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class")
+        try:
+            # The device schema defaults an absent class to "switch": not a cover class, so unset.
+            device_class = CoverDeviceClass(str(raw_dev_class)) if raw_dev_class else None
+        except ValueError:
+            device_class = None
         cls: type[MyHOMECover] = MyHOMECover
         if (scope := CoverScope.of(ctx.address.where, ctx.address.interface, cfg.get(CONF_MEMBERS) or ())) is not None:
             cls = MyHOMEScopeCover
@@ -248,6 +256,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             travel_time=int(cfg.get(CONF_TRAVEL_TIME, DEFAULT_TRAVEL_TIME)),
             min_motor_pulse=float(cfg.get(CONF_MIN_MOTOR_PULSE, DEFAULT_MIN_MOTOR_PULSE)),
             min_position_delta=int(cfg.get(CONF_MIN_POSITION_DELTA, MIN_POSITION_DELTA)),
+            device_class=device_class,
             **kwargs,
         )
         family.add(cover)
@@ -377,6 +386,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         slat_tilt: bool = False,
         slat_time: float = DEFAULT_SLAT_TIME,
         strategy_name: str | None = None,
+        device_class: CoverDeviceClass | None = None,
     ):
         super().__init__(
             hass=hass,
@@ -393,6 +403,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         self._interface = interface
         self._full_where = f"{self._where}#4#{self._interface}" if self._interface is not None else self._where
+        # A configured class (myhome.yaml `class:`) wins; slat tilt only picks BLIND without one (#39).
+        self._configured_device_class = device_class
+        if device_class is not None:
+            self._attr_device_class = device_class
         #: Set on a MyHOMEScopeCover; ``None`` for a point-to-point cover.
         self.scope: CoverScope | None = None
         self._family: CoverFamily | None = None
@@ -888,7 +902,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._slat_tilt = True
         # The strategy decides: built-in timed becomes Venetian, others stay.
         self._strategy = self._strategy.with_slat_tilt()
-        self._attr_device_class = CoverDeviceClass.BLIND
+        if getattr(self, "_configured_device_class", None) is None:
+            self._attr_device_class = CoverDeviceClass.BLIND
         current_features = self._attr_supported_features or CoverEntityFeature(0)
         self._attr_supported_features = (
             current_features
