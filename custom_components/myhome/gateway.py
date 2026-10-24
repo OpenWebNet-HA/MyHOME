@@ -151,6 +151,15 @@ DISCOVERY_REQUESTS: tuple[tuple[int, str], ...] = (
     (18, "*#18*51*51##"),
     (18, "*#18*51*113##"),
 )
+# Gateways whose firmware drops the per-zone actuator request (``*#4*Z*20##``) instead of
+# forwarding it to the bus: own-firmware-oracle ``results/<P>/<V>/oracle/full/thermo-actuator.tsv``
+# (``*#4*1*20##`` "silent" on these six, "out" on F450, F454, F459, F460, F461, MyHomeServer1).
+# Read from the OWNd profile first (``supports_heating_actuator_status``); this table is the
+# fallback until the flag exists there.
+ACTUATOR_REQUEST_REFUSED = frozenset({"F453", "F453AV", "H4684", "MH200", "MH200N", "MH202"})
+# One request for every zone, by dimension. The live F461 2.0.11 answered ``*#4*#0*20##`` with
+# the actuators of each zone (``*#4*2#1*20*0##``, ``*#4*2#2*20*5##`` after 2.1 s).
+ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {"F461": {20: "*#4*#0*20##"}}
 
 
 class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
@@ -229,6 +238,11 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self._sweep_idle: asyncio.Event = asyncio.Event()
         self._sweep_idle.set()
         self._last_event_frame_at: float = 0.0
+        # Heating zones whose actuators are asked after the startup sweep and every reconnect,
+        # and the (zone, dimension) requests waiting for the next paced run.
+        self._actuator_zones: dict[str, int] = {}
+        self._zone_requests: set[tuple[str, int]] = set()
+        self._zone_request_task: asyncio.Task[None] | None = None
 
     @property
     def send_buffer(self) -> FrameScheduler | asyncio.Queue[Any]:
@@ -345,6 +359,85 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         )
 
     @property
+    def _model_key(self) -> str:
+        """The gateway model the request tables are keyed on (``F461``, ``MYHOMESERVER1``)."""
+        profile_model = getattr(getattr(self.gateway, "profile", None), "model_name", None)
+        name = profile_model if isinstance(profile_model, str) and profile_model != "Generic" else self.model
+        return "".join(character for character in str(name).upper() if character.isalnum())
+
+    @property
+    def actuator_request_refused(self) -> bool:
+        """Whether this gateway drops the zone actuator request (``*#4*Z*20##``).
+
+        The OWNd profile flag wins when it exists; otherwise the oracle-derived table.
+        """
+        supported = getattr(getattr(self.gateway, "profile", None), "supports_heating_actuator_status", None)
+        if isinstance(supported, bool):
+            return not supported
+        return self._model_key in ACTUATOR_REQUEST_REFUSED
+
+    def all_zone_request(self, dimension: int) -> str | None:
+        """The single request this gateway answers with every zone's ``dimension``, if any."""
+        return ALL_ZONE_REQUESTS.get(self._model_key, {}).get(dimension)
+
+    @callback
+    def watch_zone_actuators(self, where: str) -> CALLBACK_TYPE:
+        """Ask for a heating zone's actuators (dimension 20) now and after every reconnect.
+
+        Returns the callback that stops it. Gateways that refuse the request are not asked.
+        """
+        if self.actuator_request_refused:
+            LOGGER.debug("%s Zone %s: %s refuses the actuator request; not asking", self.log_id, where, self.model)
+            return lambda: None
+        self._actuator_zones[where] = self._actuator_zones.get(where, 0) + 1
+        self.request_zone_dimension(where, 20)
+
+        @callback
+        def _unwatch() -> None:
+            count = self._actuator_zones.get(where, 0) - 1
+            if count > 0:
+                self._actuator_zones[where] = count
+            else:
+                self._actuator_zones.pop(where, None)
+
+        return _unwatch
+
+    @callback
+    def request_zone_dimension(self, where: str, dimension: int) -> None:
+        """Ask a heating zone for one dimension once the startup sweep is over.
+
+        Zones asking together share one paced run; where the gateway answers one request
+        for every zone (``all_zone_request``), that frame replaces the local zones' own.
+        """
+        if dimension == 22:
+            # *#4*Z*22## kills the F461 thermostat handler and reboots the gateway.
+            raise ValueError("WHO 4 dimension 22 is never requested")
+        self._zone_requests.add((where, dimension))
+        if self._zone_request_task is None or self._zone_request_task.done():
+            self._zone_request_task = self.hass.async_create_background_task(
+                self._send_zone_requests(), name=f"myhome_{self.mac}_zone_requests"
+            )
+
+    async def _send_zone_requests(self) -> None:
+        """Send the waiting zone requests through the paced sender, until none is left."""
+        await self.wait_for_initial_discovery()
+        await asyncio.sleep(0)  # zones added in the same pass join this run
+        while self._zone_requests:
+            pending, self._zone_requests = self._zone_requests, set()
+            frames: list[str] = []
+            for dimension in sorted({dim for _where, dim in pending}):
+                wheres = sorted(where for where, dim in pending if dim == dimension)
+                all_zones = self.all_zone_request(dimension)
+                if all_zones is not None and any("#4#" not in where for where in wheres):
+                    frames.append(all_zones)
+                    wheres = [where for where in wheres if "#4#" in where]  # behind an interface
+                frames.extend(f"*#4*{where}*{dimension}##" for where in wheres)
+            try:
+                await self.send_paced(frames)
+            except Exception:  # a transport error must not end the task silently (#593)
+                LOGGER.exception("%s Zone requests %s could not be sent", self.log_id, frames)
+
+    @property
     def profile(self) -> Any:
         """Return gateway profile."""
         return self.gateway.profile
@@ -391,6 +484,9 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 sync_fn = getattr(expose_mgr, "async_sync_all", None)
                 if inspect.iscoroutinefunction(sync_fn):
                     self.hass.async_create_task(sync_fn())
+                # Actuators that switched while the session was down sent their frame to nobody.
+                for where in list(self._actuator_zones):
+                    self.request_zone_dimension(where, 20)
             return
 
         self._event_session_ready.clear()
@@ -589,6 +685,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         if self._unavailable_timer is not None:
             self._unavailable_timer()
         self._resync_manager.cancel_all()
+        if self._zone_request_task is not None:
+            self._zone_request_task.cancel()
+            self._zone_request_task = None
+        self._zone_requests.clear()
         self._unavailable_timer = None
         self.is_connected = False
         self._available = False

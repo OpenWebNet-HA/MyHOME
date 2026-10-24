@@ -445,6 +445,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             attrs["fan_mode"] = self._attr_fan_mode
             if self._running_fan_speed is not None:
                 attrs["running_fan_speed"] = self._running_fan_speed
+        if self._actuator_states:
+            attrs["actuators"] = {
+                actuator: "on" if active else "off" for actuator, active in sorted(self._actuator_states.items())
+            }
         if self._fan_coil_sides:
             attrs["fan_coil_heating"] = self._fan_coil_sides.get("heating", False)
             attrs["fan_coil_cooling"] = self._fan_coil_sides.get("cooling", False)
@@ -633,6 +637,12 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     )
                 )
         await super().async_added_to_hass()
+        if not self._central:
+            # hvac_action needs the actuators (dimension 20); without asking, it stays unknown
+            # until one of them switches. The gateway asks again after a reconnect.
+            watch = getattr(self._gateway_handler, "watch_zone_actuators", None)
+            if callable(watch):
+                self.async_on_remove(watch(self._full_where))
 
     @callback
     def _handle_central_mode_update(self, master_mode: HVACMode) -> None:
