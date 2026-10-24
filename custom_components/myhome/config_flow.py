@@ -31,6 +31,7 @@ from .config_flow_discovery import (
     ConfigFlowDiscoveryMixin,
     MACAddress,
     _get_serial_ports,
+    identify_gateway,
 )
 from .config_flow_expose import ExposeSubentryFlowHandler
 from .config_flow_options import MyhomeOptionsFlowHandler
@@ -73,6 +74,8 @@ class MyhomeFlowHandler(
         self.gateway_handler: Optional[OWNGateway] = None
         self.discovered_gateways: Optional[Dict[str, dict[str, typing.Any]]] = None
         self._existing_entry: ConfigEntry | None = None
+        # Set by the manual step: the MAC and model were typed, not discovered.
+        self._identify_after_auth = False
         # (title, data, options) of an entry held back by the bus topology step
         self._pending_entry: (
             tuple[str, dict[str, typing.Any], dict[str, typing.Any]] | None
@@ -304,6 +307,8 @@ class MyhomeFlowHandler(
                 self.gateway_handler = OWNGateway(user_input)
                 await self.async_set_unique_id(user_input["serialNumber"], raise_on_progress=False)
                 self._abort_if_unique_id_configured()
+                # Typed by hand: once authenticated, ask the gateway for its MAC and model.
+                self._identify_after_auth = True
                 return await self.async_step_test_connection()
 
         address_val = getattr(self, "_custom_address", "192.168.1.100")
@@ -353,4 +358,5 @@ __all__ = [
     "command_session_default",
     "find_gateways",
     "get_gateway",
+    "identify_gateway",
 ]
