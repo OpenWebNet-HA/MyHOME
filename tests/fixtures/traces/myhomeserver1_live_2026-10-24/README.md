@@ -4,7 +4,7 @@ Status reads only (no command was sent) against a physical MyHomeServer1 in a la
 2026-10-24 13:19 to 13:22 UTC, recorded with OWNd master (`OWNCommandSession` + `OWNEventSession`,
 `tools/probe.py` as for the F461 captures). The purpose: the facts established on the F461 2.0.11
 plant on 2026-10-23 (`tests/fixtures/traces/f461_live_2026-10-23/`) checked on a second gateway
-family for OWnd #137, #139, #140, #141, #142 and MyHOME #791-#794, #798.
+family for OWNd #137, #139, #140, #141, #142 and MyHOME #791-#794, #798, #803, #804, #806.
 
 Two caveats that apply to every row: the firmware oracle (`own-firmware-oracle`) emulates
 MyHomeServer1 **2.82.06**, this unit runs **3.87.13**; and `*#13**12##` returns a real MAC address
@@ -76,7 +76,8 @@ replies over as a batch with the ACK / NACK), and `t` is one monotonic axis over
 | MyHOME #791 (setpoint in force = dimension 12) | `*#4*35##` reply order (run 2) |
 | MyHOME #792 (request dimension 20 on add and after reconnect) | the actuator status is answered on a MyHomeServer1, per zone and for all zones (run 2) |
 | MyHOME #793 (humidity poll gate) | per-zone humidity answered only where a probe exists, the general sweep answered (run 2, run 3) |
-| alarm gate (misc PR) | `*#5*0##` refused in 5 ms (run 2) |
-| event-session liveness probe (misc PR) | `*#13**0##` echoed on the event session (run 1, run 3) |
+| MyHOME #803 (alarm: skip `*#5*0##` where the firmware refuses it) | `*#5*0##` refused in 5 ms (run 2) |
+| MyHOME #804 (identify a manually added gateway after authentication) | `*#13**15##` -> `200`, `*#1013**1##` -> `67.15.5.0`, `*#13**12##` -> the MAC, `*#13**27##` -> "MyHomeServer1" (run 1) |
+| MyHOME #806 (event-session liveness probe) | `*#13**0##` echoed on the event session (run 1, run 3) |
 
 Tests: `tests/test_myhomeserver1_live_2026_10_24_trace.py`.
