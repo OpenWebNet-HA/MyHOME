@@ -168,8 +168,9 @@ def test_registry_moves_0004_to_04_and_merges_the_bus_duplicate(hass: HomeAssist
     dev_reg = dr.async_get(hass)
     yaml_dev = dev_reg.async_get_or_create(config_entry_id=config_entry.entry_id, identifiers={(DOMAIN, f"{MAC}-1-0004")})
     bus_dev = dev_reg.async_get_or_create(config_entry_id=config_entry.entry_id, identifiers={(DOMAIN, f"{MAC}-1-04")})
-    # The user had placed and named the bus-created device: both survive on the configured one.
-    dev_reg.async_update_device(bus_dev.id, area_id="kitchen", name_by_user="Kitchen ceiling")
+    # The user had placed, named and labelled the bus-created device: all survive on the configured one.
+    dev_reg.async_update_device(bus_dev.id, area_id="kitchen", name_by_user="Kitchen ceiling", labels={"ceiling"})
+    dev_reg.async_update_device(yaml_dev.id, labels={"yaml"})
     yaml_light = ent_reg.async_get_or_create(
         "light", DOMAIN, f"{MAC}-1-0004", config_entry=config_entry, device_id=yaml_dev.id, suggested_object_id="kitchen"
     )
@@ -179,6 +180,8 @@ def test_registry_moves_0004_to_04_and_merges_the_bus_duplicate(hass: HomeAssist
     bus_light = ent_reg.async_get_or_create(
         "light", DOMAIN, f"{MAC}-1-04", config_entry=config_entry, device_id=bus_dev.id, suggested_object_id="light_04"
     )
+    # The user had customised the working bus entity; the yaml one (which never worked) has nothing set.
+    ent_reg.async_update_entity(bus_light.entity_id, area_id="kitchen", icon="mdi:ceiling-light", name="Ceiling", labels={"lamps"})
     # A sensor bus discovery hung on its device: no point address of its own, so it is handed over.
     bus_sensor = ent_reg.async_get_or_create(
         "sensor", DOMAIN, f"{MAC}-1-04-illuminance", config_entry=config_entry, device_id=bus_dev.id
@@ -192,12 +195,14 @@ def test_registry_moves_0004_to_04_and_merges_the_bus_duplicate(hass: HomeAssist
     moved = ent_reg.async_get(yaml_light.entity_id)
     assert moved is not None and moved.unique_id == f"{MAC}-1-04"
     assert moved.entity_id == "light.kitchen"
+    assert (moved.area_id, moved.icon, moved.name, moved.labels) == ("kitchen", "mdi:ceiling-light", "Ceiling", {"lamps"})
     assert ent_reg.async_get(yaml_button.entity_id).unique_id == f"{MAC}-1-04-disable"
     assert ent_reg.async_get(keep.entity_id).unique_id == f"{MAC}-1-0015"
     assert dev_reg.async_get(bus_dev.id) is None
     device = dev_reg.async_get(yaml_dev.id)
     assert device.identifiers == {(DOMAIN, f"{MAC}-1-04")}
     assert device.area_id == "kitchen" and device.name_by_user == "Kitchen ceiling"
+    assert device.labels == {"yaml", "ceiling"}
     assert moved.device_id == yaml_dev.id
 
     # A second run finds nothing to migrate and changes nothing.
@@ -639,3 +644,82 @@ def test_stored_calibration_falls_back_to_the_4_digit_key() -> None:
     assert _stored_calibration(entry, "09#4#01") == {"slat_time": 1.5}
     assert _stored_calibration(entry, "15") is None  # 0015 is area 00 PL 15, not 15
     assert _stored_calibration(entry, "00") is None
+
+
+# ── cross-domain twin: a WHO 1 impulse cover (or switch) whose bus twin is a light ──
+
+
+def test_impulse_cover_migration_removes_the_ghost_light_and_its_buttons(hass: HomeAssistant, config_entry, caplog) -> None:
+    """`cover:` with `who: "1"`, `where: "0004"`: bus traffic on `04` had created a light and its buttons.
+
+    The twin is in another domain, so the same-domain duplicate lookup does not see it. Without
+    this handling the device merge hands `light.light_04` and `…-1-04-disable` / `-enable` to the
+    cover's device; light.py then removes the light (a cover address never holds a light) with
+    `registry.async_remove`, which leaves the two buttons orphaned on the impulse cover's device.
+    """
+    ent_reg = er.async_get(hass)
+    dev_reg = dr.async_get(hass)
+    yaml_dev = dev_reg.async_get_or_create(config_entry_id=config_entry.entry_id, identifiers={(DOMAIN, f"{MAC}-1-0004")})
+    bus_dev = dev_reg.async_get_or_create(config_entry_id=config_entry.entry_id, identifiers={(DOMAIN, f"{MAC}-1-04")})
+    gate = ent_reg.async_get_or_create(
+        "cover", DOMAIN, f"{MAC}-1-0004", config_entry=config_entry, device_id=yaml_dev.id, suggested_object_id="gate"
+    )
+    ghost = ent_reg.async_get_or_create(
+        "light", DOMAIN, f"{MAC}-1-04", config_entry=config_entry, device_id=bus_dev.id, suggested_object_id="light_04"
+    )
+    buttons = [
+        ent_reg.async_get_or_create("button", DOMAIN, f"{MAC}-1-04{suffix}", config_entry=config_entry, device_id=bus_dev.id)
+        for suffix in ("-disable", "-enable")
+    ]
+    # A light of another config entry under the canonical id is not this entry's ghost.
+    other_entry = MockConfigEntry(domain=DOMAIN, title="GW2", data={CONF_MAC: MAC}, unique_id="other", entry_id="e2")
+    other_entry.add_to_hass(hass)
+    theirs = ent_reg.async_get_or_create("light", DOMAIN, f"{MAC}-1-0005", config_entry=other_entry)
+    mine_switch = ent_reg.async_get_or_create("switch", DOMAIN, f"{MAC}-1-0005", config_entry=config_entry)
+    theirs_canonical = ent_reg.async_get_or_create("light", DOMAIN, f"{MAC}-1-05", config_entry=other_entry)
+
+    with caplog.at_level(logging.INFO):
+        migrate_entry_and_registries(hass, config_entry, {})
+
+    assert ent_reg.async_get(gate.entity_id).unique_id == f"{MAC}-1-04"
+    assert ent_reg.async_get(gate.entity_id).device_id == yaml_dev.id
+    assert ent_reg.async_get(ghost.entity_id) is None
+    assert all(ent_reg.async_get(button.entity_id) is None for button in buttons)
+    assert dev_reg.async_get(bus_dev.id) is None
+    assert dev_reg.async_get(yaml_dev.id).identifiers == {(DOMAIN, f"{MAC}-1-04")}
+    assert {e.entity_id for e in er.async_entries_for_device(ent_reg, yaml_dev.id, include_disabled_entities=True)} == {"cover.gate"}
+    assert any(
+        f"Removed {ghost.entity_id} and 2 button(s): a light bus discovery created at the address of cover.gate" in r.getMessage()
+        for r in caplog.records
+    )
+    assert ent_reg.async_get(mine_switch.entity_id).unique_id == f"{MAC}-1-05"
+    assert ent_reg.async_get(theirs.entity_id).unique_id == f"{MAC}-1-0005"
+    assert ent_reg.async_get(theirs_canonical.entity_id).unique_id == f"{MAC}-1-05"
+
+    # An owner already spelled canonically (an earlier run renamed it) still gets the cleanup.
+    late_ghost = ent_reg.async_get_or_create("light", DOMAIN, f"{MAC}-1-04", config_entry=config_entry)
+    late_button = ent_reg.async_get_or_create("button", DOMAIN, f"{MAC}-1-04-enable", config_entry=config_entry)
+    switch_06 = ent_reg.async_get_or_create("switch", DOMAIN, f"{MAC}-1-06", config_entry=config_entry)
+    light_06 = ent_reg.async_get_or_create("light", DOMAIN, f"{MAC}-1-06", config_entry=config_entry)
+    light_15 = ent_reg.async_get_or_create("light", DOMAIN, f"{MAC}-1-15", config_entry=config_entry)
+    ent_reg.async_get_or_create("switch", DOMAIN, f"{MAC}-1-15", config_entry=config_entry)
+    migrate_entry_and_registries(hass, config_entry, {})
+    assert ent_reg.async_get(late_ghost.entity_id) is None and ent_reg.async_get(late_button.entity_id) is None
+    assert ent_reg.async_get(light_06.entity_id) is None  # a switch address never holds a light (light.py rule)
+    assert ent_reg.async_get(switch_06.entity_id) is not None
+    assert ent_reg.async_get(light_15.entity_id) is not None  # not an area-0 point: not this migration's business
+
+
+def test_the_surviving_entity_keeps_its_own_customisations(hass: HomeAssistant, config_entry) -> None:
+    """Carry-over is one way: what the yaml entity already has is not overwritten by the twin's."""
+    ent_reg = er.async_get(hass)
+    mine = ent_reg.async_get_or_create("light", DOMAIN, f"{MAC}-1-0004", config_entry=config_entry)
+    ent_reg.async_update_entity(mine.entity_id, area_id="hall", icon="mdi:lamp", name="Mine", labels={"a"})
+    twin = ent_reg.async_get_or_create("light", DOMAIN, f"{MAC}-1-04", config_entry=config_entry)
+    ent_reg.async_update_entity(twin.entity_id, area_id="kitchen", icon="mdi:bulb", name="Twin", labels={"b"})
+    with patch.object(er.EntityRegistry, "async_update_entity", wraps=ent_reg.async_update_entity) as update:
+        migrate_entry_and_registries(hass, config_entry, {})
+    moved = ent_reg.async_get(mine.entity_id)
+    assert moved.unique_id == f"{MAC}-1-04"
+    assert (moved.area_id, moved.icon, moved.name, moved.labels) == ("hall", "mdi:lamp", "Mine", {"a"})
+    assert all("area_id" not in call.kwargs for call in update.call_args_list)

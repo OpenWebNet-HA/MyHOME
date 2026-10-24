@@ -316,6 +316,8 @@ def migrate_entry_and_registries(
 # ({mac}-25-0004) or a WHO 4 probe ({mac}-4-0004-temperature) is not and does not match.
 _POINT_ADDRESS_DOMAINS = ("light", "switch", "cover", "button", "binary_sensor", "sensor")
 _POINT_ADDRESS_ID = re.compile(r"^(?P<who>[12])-(?P<where>\d{4})(?P<tail>(?:[#-].*)?)$")
+# A WHO 1 area-0 point already in its canonical spelling (1-04, 1-09#4#01).
+_CANONICAL_AREA0_ID = re.compile(r"^1-0[1-9](?:#.*)?$")
 
 
 def _canonical_point_id(after_mac: str) -> str | None:
@@ -350,6 +352,9 @@ def migrate_canonical_point_addresses(hass: HomeAssistant, entry: ConfigEntry) -
         if reg_entry.domain not in _POINT_ADDRESS_DOMAINS or not reg_entry.unique_id.startswith(prefix):
             continue
         if (new_tail := _canonical_point_id(reg_entry.unique_id[len(prefix):])) is None:
+            if reg_entry.domain in ("switch", "cover") and _CANONICAL_AREA0_ID.match(reg_entry.unique_id[len(prefix):]):
+                # Already canonical (an earlier run renamed it): the cleanup below still applies.
+                _remove_ghost_light(entity_registry, entry, reg_entry.entity_id, reg_entry.unique_id)
             continue
         new_unique_id = f"{prefix}{new_tail}"
         duplicate_id = entity_registry.async_get_entity_id(reg_entry.domain, DOMAIN, new_unique_id)
@@ -381,7 +386,21 @@ def migrate_canonical_point_addresses(hass: HomeAssistant, entry: ConfigEntry) -
             continue
         LOGGER.info("Migrated %s to unique_id %s", reg_entry.entity_id, new_unique_id)
         if duplicate is not None:
+            # The user's customisations of the working bus entity survive where the yaml one has none.
+            carried_entity: dict[str, Any] = {}
+            if reg_entry.area_id is None and duplicate.area_id is not None:
+                carried_entity["area_id"] = duplicate.area_id
+            if reg_entry.icon is None and duplicate.icon is not None:
+                carried_entity["icon"] = duplicate.icon
+            if reg_entry.name is None and duplicate.name is not None:
+                carried_entity["name"] = duplicate.name
+            if not reg_entry.labels and duplicate.labels:
+                carried_entity["labels"] = set(duplicate.labels)
+            if carried_entity:
+                entity_registry.async_update_entity(reg_entry.entity_id, **carried_entity)
             LOGGER.info("Removed %s, a duplicate of %s under the canonical address", duplicate.entity_id, reg_entry.entity_id)
+        if new_tail.startswith("1-") and reg_entry.domain in ("switch", "cover"):
+            _remove_ghost_light(entity_registry, entry, reg_entry.entity_id, new_unique_id)
 
     _migrate_expose_subentries(hass, entry)
     _migrate_cover_travel_times(hass, entry)
@@ -429,15 +448,47 @@ def migrate_canonical_point_addresses(hass: HomeAssistant, entry: ConfigEntry) -
                     entity_registry.async_update_entity(entity_id, device_id=restored.id)
             continue
         for other in twins:
-            # The twin's area and user-given name survive on the configured device.
+            # The twin's area, labels and user-given name survive on the configured device.
             carried: dict[str, Any] = {}
             if device.area_id is None and other.area_id is not None:
                 carried["area_id"] = other.area_id
             if device.name_by_user is None and other.name_by_user is not None:
                 carried["name_by_user"] = other.name_by_user
+            if set(other.labels) - set(device.labels):
+                carried["labels"] = set(device.labels) | set(other.labels)
             if carried:
                 device_registry.async_update_device(device.id, **carried)
             LOGGER.info("Removed device %s, a duplicate of %s under the canonical address", other.id, device.id)
+
+
+def _remove_ghost_light(
+    entity_registry: er.EntityRegistry, entry: ConfigEntry, owner_entity_id: str, unique_id: str
+) -> None:
+    """Remove this entry's light at the canonical address of a migrated WHO 1 switch or cover.
+
+    The yaml device only knew `0004`, so frames on `04` discovered a light there, with
+    its lock / unlock buttons. A switch or cover address never holds a light (light.py
+    removes it at setup, but with `registry.async_remove`, which would leave the
+    buttons orphaned on the merged device); the same-domain duplicate lookup above
+    does not see it because unique ids are scoped per domain.
+    """
+    ghost_id = entity_registry.async_get_entity_id("light", DOMAIN, unique_id)
+    ghost = entity_registry.async_get(ghost_id) if ghost_id else None
+    if ghost is None or ghost.config_entry_id != entry.entry_id:
+        return
+    from .discovery import COMPANION_SUFFIXES  # noqa: PLC0415  # discovery imports myhome_device, which imports this module
+
+    entity_registry.async_remove(ghost.entity_id)
+    removed = 0
+    for suffix in COMPANION_SUFFIXES:
+        button_id = entity_registry.async_get_entity_id("button", DOMAIN, f"{unique_id}{suffix}")
+        if button_id is not None:
+            entity_registry.async_remove(button_id)
+            removed += 1
+    LOGGER.info(
+        "Removed %s and %d button(s): a light bus discovery created at the address of %s",
+        ghost.entity_id, removed, owner_entity_id,
+    )
 
 
 def _migrate_expose_subentries(hass: HomeAssistant, entry: ConfigEntry) -> None:
