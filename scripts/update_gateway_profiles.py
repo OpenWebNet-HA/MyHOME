@@ -177,60 +177,58 @@ GATEWAY_METADATA: list[dict[str, object]] = [
     },
 ]
 
-# Authoritative startup discovery capabilities calibrated against OWNd.profiles and firmware_oracle.json
+# Startup discovery rows. The WHOs queried are not listed here: they are derived from the
+# installed OWNd profile (``profile.supports_who``) over STARTUP_DISCOVERY_WHOS, exactly as
+# the runtime gate in gateway.py decides what to send, so the table follows an OWNd profile
+# change at the pin bump without an edit here. ``notes`` describes the row; where a profile
+# may list or drop WHO 16 between OWNd releases, ``notes_without_who16`` is used instead when
+# the installed profile does not advertise WHO 16.
 GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
     {
         "model": "**MH202**",
         "profile_name": "MH202",
-        "queried_whos": [1, 2, 4, 5, 16, 18],
         "notes": "Full support including Burglar Alarm (`*#5*0##`), Sound (`*#16*0*5##`), and Energy (`*#18*51*...`).",
     },
     {
         "model": "**H4890 / AM4890**",
         "profile_name": "H4890",
-        "queried_whos": [1, 2, 4, 5, 16, 18],
         "notes": "Supports Burglar Alarm, Sound (`*#16*0*5##`), and Energy meter 51 queries.",
     },
     {
         "model": "**F454**",
         "profile_name": "F454",
-        "queried_whos": [1, 2, 4, 16, 18],
         "notes": "Full lighting, cover, climate, sound (`bt_difson` firmware-verified), and energy meter 51 queries. Alarm query omitted.",
     },
     {
         "model": "**F452 / F453 / F453AV**",
         "profile_name": "F453AV",
-        "queried_whos": [1, 2, 4, 16, 18],
         "notes": "Lighting, cover, climate, sound (`bt_difson` firmware-verified on F453/F453AV), and energy meter 51 queries. Alarm query omitted.",
     },
     {
         "model": "**F461**",
         "profile_name": "F461",
-        "queried_whos": [1, 2, 4, 16, 18],
         "notes": "Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted.",
+        "notes_without_who16": "Lighting, cover, climate, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused), alarm query omitted.",
     },
     {
         "model": "**F455**",
         "profile_name": "F455",
-        "queried_whos": [1, 2, 4, 18],
         "notes": "Entry-level gateway: lighting, cover, climate, and energy meter 51 queries. Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual.",
     },
     {
         "model": "**MyHomeServer1**",
         "profile_name": "MyHomeServer1",
-        "queried_whos": [1, 2, 4, 16, 18],
         "notes": "Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted.",
+        "notes_without_who16": "Lighting, cover, climate, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused), alarm query omitted.",
     },
     {
         "model": "**MH201**",
         "profile_name": "MH201",
-        "queried_whos": [1, 2, 4, 16, 18],
         "notes": "Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted.",
     },
     {
         "model": "**MH200 / MH200N**",
         "profile_name": "MH200N",
-        "queried_whos": [1, 2, 4, 16],
         "notes": "Lighting, cover, climate, and sound queries (`bt_difson` hardware and firmware-verified on both). Alarm and energy queries omitted.",
     },
 ]
@@ -402,10 +400,26 @@ def build_options_block() -> str:
     return f"{OPTIONS_START_MARKER}\n{table}\n{OPTIONS_END_MARKER}"
 
 
+def discovery_whos_for(profile: object) -> list[int]:
+    """The startup discovery WHOs the runtime sends to a gateway with ``profile``.
+
+    Mirrors ``MyHOMEGatewayHandler._profile_supports_who``: a WHO is queried only when
+    the OWNd profile advertises it.
+    """
+    supports = getattr(profile, "supports_who", None)
+    if not callable(supports):
+        return []
+    return [w for w in STARTUP_DISCOVERY_WHOS if bool(supports(w))]
+
+
 def calibrate_discovery_with_ownd(
     discovery_metadata: list[dict[str, object]] | None = None,
 ) -> list[dict[str, object]]:
-    """Dynamically calibrate startup discovery WHOs against OWNd.profiles."""
+    """Derive the startup discovery rows (``queried_whos`` and the sound wording) from OWNd.profiles.
+
+    Without an importable OWNd the rows carry no ``queried_whos`` (the table cannot be
+    generated from guesses); with it, every row follows the installed profile.
+    """
     try:
         from OWNd.profiles import get_gateway_profile
     except ImportError:
@@ -414,15 +428,13 @@ def calibrate_discovery_with_ownd(
     calibrated = copy.deepcopy(
         GATEWAY_DISCOVERY_METADATA if discovery_metadata is None else discovery_metadata
     )
-    if get_gateway_profile is not None:
-        for row in calibrated:
-            prof_name = row.get("profile_name")
-            if prof_name:
-                prof = get_gateway_profile(str(prof_name))
-                if prof is not None:
-                    row["queried_whos"] = [
-                        w for w in STARTUP_DISCOVERY_WHOS if prof.supports_who(w)
-                    ]
+    for row in calibrated:
+        prof_name = row.get("profile_name")
+        prof = get_gateway_profile(str(prof_name)) if prof_name and get_gateway_profile is not None else None
+        row["queried_whos"] = discovery_whos_for(prof) if prof is not None else []
+        without_who16 = row.pop("notes_without_who16", None)
+        if prof is not None and without_who16 and 16 not in row["queried_whos"]:
+            row["notes"] = without_who16
     return calibrated
 
 
@@ -436,7 +448,7 @@ def generate_gateway_discovery_table() -> str:
     for row in rows:
         model = row["model"]
         whos = row["queried_whos"]
-        who_str = "WHO " + ", ".join(str(w) for w in whos) if isinstance(whos, list) else str(whos)
+        who_str = "WHO " + ", ".join(str(w) for w in whos) if whos else "unknown (OWNd profile not available)"
         notes = row["notes"]
         lines.append(f"| {model} | {who_str} | {notes} |")
     return "\n".join(lines)
@@ -536,13 +548,8 @@ def verify_profiles_against_oracle(oracle_path: Path = ORACLE_JSON) -> list[str]
 
     for row in GATEWAY_DISCOVERY_METADATA:
         prof_name = str(row.get("profile_name", ""))
-        prof = get_gateway_profile(prof_name)
-        expected_whos = [w for w in STARTUP_DISCOVERY_WHOS if prof.supports_who(w)]
-        if row.get("queried_whos") != expected_whos:
-            violations.append(
-                f"Discovery row {row.get('model')} queried_whos={row.get('queried_whos')} "
-                f"disagrees with {prof_name} profile {expected_whos}."
-            )
+        if get_gateway_profile(prof_name) is None:
+            violations.append(f"Discovery row {row.get('model')} names an OWNd profile that does not exist: {prof_name}.")
 
     return violations
 
