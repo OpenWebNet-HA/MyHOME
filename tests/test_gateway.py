@@ -528,6 +528,8 @@ async def test_scope_events_fire_only_for_state_frames(gateway_handler):
         "*#2*#5*11*50##",  # WHO 2 dimension 11 to group 5
         "*#2*3*12*1##",  # WHO 2 dimension 12 to area 3
         "*#2*0*13*1##",  # WHO 2 dimension 13, general
+        "*#2*#5*10*10*50*0*0##",  # WHO 2 DIMENSION 10 status, group 5 stationary at 50 %: not a stop
+        "*#2*0*10*10*50*0*0##",  # WHO 2 DIMENSION 10 status, general, stationary: not a stop
         "*1*1*#6##",  # group 6 on: a real state, still fired
         "*1*0*#6##",  # group 6 off
         "*2*0*#5##",  # group 5 stop: a real state

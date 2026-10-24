@@ -346,8 +346,16 @@ class GatewayEventDispatcher:
                 elif (
                     isinstance(message, OWNAutomationEvent)
                     and self._is_active_for_who(2)
-                    # Only a frame that states the motion is an open/close/stop event: a
-                    # dimension frame with no known state is none of them (#367).
+                    # Only a command frame that states the motion is an open/close/stop
+                    # event (#367). As for WHO 1, a dimension frame is never one: a
+                    # DIMENSION 10 status readback on a scope address
+                    # (`*#2*#5*10*10*50*0*0##`) is stationary, not a stop, and must not
+                    # fire the gateway's `centralized_shutter_stop` trigger. A WHAT outside
+                    # the table leaves `is_opening` / `is_closing` None and states nothing.
+                    and not (
+                        isinstance(getattr(message, "dimension", None), int)
+                        and not isinstance(getattr(message, "dimension", None), bool)
+                    )
                     and (message.is_opening is not None or message.is_closing is not None)
                 ):
                     if message.is_opening and not message.is_closing:
