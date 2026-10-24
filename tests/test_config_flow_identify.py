@@ -25,6 +25,7 @@ async def _manual_flow(
     identify: AsyncMock,
     mac: str = "00:03:50:00:00:00",
     model: str = "MyHomeServer1",
+    password: str = "12345",
 ):
     with (
         patch("custom_components.myhome.config_flow.find_gateways", return_value=[]),
@@ -45,7 +46,7 @@ async def _manual_flow(
         )
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "password"
-        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"password": "12345"})
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"password": password})
         if result["type"] == FlowResultType.FORM and result["step_id"] == "bus_topology":
             # Another IP gateway exists: the topology question comes before the entry (#524)
             result = await hass.config_entries.flow.async_configure(
@@ -412,8 +413,9 @@ async def test_identify_gateway_reports_a_password_protected_command_session(cap
     session.send.assert_not_awaited()
     probe_records = [r for r in caplog.records if "password" in r.getMessage()]
     assert len(probe_records) == 2
-    assert all(r.levelno == logging.DEBUG for r in probe_records)
+    assert all(r.levelno == logging.DEBUG and r.levelname == "DEBUG" for r in probe_records)
     assert all(r.name == "custom_components.myhome.identify" for r in probe_records)
+    assert logging.getLogger("custom_components.myhome.identify") is cfd.PROBE_LOGGER
 
 
 async def test_manual_flow_asks_the_password_a_split_auth_gateway_needs_for_commands(
@@ -443,6 +445,22 @@ async def test_manual_flow_asks_the_password_a_split_auth_gateway_needs_for_comm
     assert not [
         r for r in caplog.records if r.levelno >= logging.WARNING and "password" in r.getMessage().lower()
     ]
+
+
+async def test_manual_flow_asks_the_command_password_only_once(hass: HomeAssistant) -> None:
+    """The password form accepts an empty string: a blank answer must not bring the form back forever."""
+    from custom_components.myhome.config_flow_discovery import GatewayIdentity
+
+    test_connection = AsyncMock(return_value={"Success": True})
+    identify = AsyncMock(return_value=GatewayIdentity(None, None, None, password_required=True))
+
+    result = await _manual_flow(hass, test_connection, identify, password="")
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert not result["data"]["password"]  # the blank answer is stored as no password
+    assert result["data"]["mac"] == "00:03:50:00:00:00"
+    assert identify.await_count == 2
+    assert test_connection.await_count == 2
 
 
 async def test_manual_flow_does_not_loop_when_the_command_session_still_wants_a_password(

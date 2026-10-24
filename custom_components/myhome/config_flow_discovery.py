@@ -74,21 +74,24 @@ UNUSABLE_MACS: frozenset[str] = frozenset({"00:00:00:00:00:00", "ff:ff:ff:ff:ff:
 
 
 
-class _DebugOnlyLogger(logging.Logger):
-    """A logger that records everything at DEBUG.
+class _RecordAtDebug(logging.Filter):
+    """Lower every record of the identification probe to DEBUG.
 
-    The identification probe is best effort and its refusals are expected: a gateway
-    with an open monitor session (`*99*1##`) and a password-protected command session
-    (`*99*0##`) answers the probe with `password_required`, which OWNd would otherwise
-    log at WARNING and ERROR in the middle of a successful setup.
+    The probe is best effort and its refusals are expected: a gateway with an open
+    monitor session (`*99*1##`) and a password-protected command session (`*99*0##`)
+    answers it with `password_required`, which OWNd would otherwise log at WARNING and
+    ERROR in the middle of a successful setup.
     """
 
-    def _log(self, level: int, msg: object, args: typing.Any, *extra: typing.Any, **kwargs: typing.Any) -> None:
-        super()._log(logging.DEBUG, msg, args, *extra, **kwargs)
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.levelno = logging.DEBUG
+        record.levelname = logging.getLevelName(logging.DEBUG)
+        return True
 
 
-PROBE_LOGGER: logging.Logger = _DebugOnlyLogger(f"{LOGGER.name}.identify")
-PROBE_LOGGER.parent = LOGGER
+# A registered child logger, so logging.getLogger(PROBE_LOGGER.name) is this object.
+PROBE_LOGGER: logging.Logger = LOGGER.getChild("identify")
+PROBE_LOGGER.addFilter(_RecordAtDebug())
 
 
 class GatewayIdentity(typing.NamedTuple):
@@ -507,9 +510,11 @@ class ConfigFlowDiscoveryMixin:
             model_source: str | None = None
             if getattr(self, "_identify_after_auth", False):
                 model_source = await self._async_apply_gateway_identity(gateway)
-                if model_source is None:
+                if model_source is None and not getattr(self, "_command_password_asked", False):
                     # Split authentication: the monitor session is open, the command
-                    # session is password-protected. Ask once; the command workers need it.
+                    # session is password-protected. Ask once (the command workers need
+                    # it); a second refusal, e.g. after a blank password, is not asked again.
+                    self._command_password_asked = True
                     LOGGER.debug(
                         "Gateway %s (%s:%s) accepts the monitor session without a password "
                         "but protects the command session; asking for it",
@@ -614,6 +619,7 @@ class ConfigFlowDiscoveryMixin:
         mac, code13, code, password_required = GatewayIdentity(*await _cf.identify_gateway(gateway))
         if password_required and not gateway.password:
             return None
+        # A refusal after a password was given is a refusal, not a question: nothing reported
         reported_mac = validated_reported_mac(mac)
         if mac and not reported_mac:
             LOGGER.debug(
