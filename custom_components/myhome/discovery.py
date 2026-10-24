@@ -301,7 +301,10 @@ def message_has_state(entity: MyHOMEEntity, message: Any) -> bool:
     # temperature-only frame must not cancel the poll for the rest on gateways that support it.
     if isinstance(entity, ClimateEntity):
         if not getattr(entity, "_gateway_supports_zone_status", True):
-            return True
+            # SCS-only gateway: only a zone that asks for its temperature (#185) still needs to.
+            return getattr(entity, "_polls_temperature", False) is not True or (
+                getattr(message, "main_temperature", None) is not None
+            )
         return False
 
     # Switch / binary device

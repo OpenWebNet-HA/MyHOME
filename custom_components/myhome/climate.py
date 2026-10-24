@@ -380,6 +380,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._local_offset: float = 0
         self._knob_pos: str = "UNKNOWN"
         self._local_target_temperature: float | None = None
+        self._current_temperature_restored = False
         self._nominal_before_dim12: tuple[float | None, float] | None = None
         self._poll_health = PollHealth()
 
@@ -389,6 +390,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if (
             not self._central
             and not self._gateway_supports_zone_status
+            and not self._polls_temperature
             and not self._fan
             and not self._humidity
         ):
@@ -401,6 +403,12 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         """Whether the gateway supports point-to-point zone status queries (*#4*Z##)."""
         gateway = getattr(self, "_gateway_handler", None)
         return bool(getattr(gateway, "supports_zone_status", True))
+
+    @property
+    def _polls_temperature(self) -> bool:
+        """Whether this zone asks for its temperature (*#4*Z*0##) on an SCS-only gateway (#185)."""
+        gateway = getattr(self, "_gateway_handler", None)
+        return not self._central and getattr(gateway, "zone_temperature_poll_needed", False) is True
 
     def _enable_fan_mode(self) -> None:
         """Dynamically enable fan mode support if not already enabled."""
@@ -442,6 +450,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             attrs["fan_mode"] = self._attr_fan_mode
             if self._running_fan_speed is not None:
                 attrs["running_fan_speed"] = self._running_fan_speed
+        if self._current_temperature_restored:
+            attrs["current_temperature_restored"] = True
         if self._fan_coil_sides:
             attrs["fan_coil_heating"] = self._fan_coil_sides.get("heating", False)
             attrs["fan_coil_cooling"] = self._fan_coil_sides.get("cooling", False)
@@ -488,6 +498,15 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._scenario = int(last_state.attributes["scenario"])
                 except (ValueError, TypeError):
                     pass
+            restored_current = last_state.attributes.get("current_temperature")
+            if restored_current is not None and self._attr_native_current_temperature is None:
+                # Shown until the zone reports again, flagged so it is not taken for a reading:
+                # SCS-only gateways may not hear from a standalone thermostat for a long time (#185).
+                try:
+                    self._attr_native_current_temperature = float(restored_current)
+                    self._current_temperature_restored = True
+                except (ValueError, TypeError):
+                    pass
             restored_season = last_state.attributes.get("season")
             if restored_season in (SEASON_HEATING, "cooling"):
                 self._season = str(restored_season)
@@ -526,6 +545,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if (
             not self._central
             and not self._gateway_supports_zone_status
+            and not self._polls_temperature
             and not self._fan
             and not self._humidity
         ):
@@ -535,7 +555,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # resulting in a 10-second command session timeout per zone (#674).
             # MyHomeServer1 intercepts *#4*Z## in software and replies from its cache (#649),
             # and F461 expands it into the four dimension requests (#714).
-            # Other physical plants receive standard zone telemetry spontaneously via the startup sweep (*#4*0##).
+            # Other physical plants receive standard zone telemetry spontaneously via the startup sweep (*#4*0##);
+            # where the gateway refuses that sweep the zone asks for its temperature below.
             return
         if self._poll_health.should_skip(time.time()):
             LOGGER.debug("%s %s did not answer its last polls; not asking again yet", self._gateway_handler.log_id, self._display_name)
@@ -551,6 +572,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             written = await self._gateway_handler.send_status_request(request)
             if isinstance(written, asyncio.Future) and not self._central:
                 written.add_done_callback(lambda future: self._poll_answered(future, frames_before))
+        elif self._polls_temperature:
+            # The dimension 0 request goes out on every gateway of the firmware oracle; the
+            # dimensionless *#4*Z## times out on these (#674) and *#4*0## is refused.
+            await self._gateway_handler.send_status_request(OWNHeatingCommand.get_temperature(self._full_where))
         if self._fan and self._season_has_fan_coil():
             await self._gateway_handler.send_status_request(
                 cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*11##"))
@@ -887,6 +912,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 message.human_readable_log,
             )
             self._attr_native_current_temperature = message.main_temperature
+            self._current_temperature_restored = False
         elif message.message_type == MESSAGE_TYPE_MAIN_HUMIDITY:
             LOGGER.debug(
                 "%s %s",
