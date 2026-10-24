@@ -513,16 +513,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         elif isinstance(self._strategy, NativePositionStrategy):
             self._attr_extra_state_attributes["min_position_delta"] = self._strategy.min_position_delta
 
-        self._attr_current_cover_position = None if self._strategy.assumed_state else 50
+        # Unknown until a restored state, an actuator report or a full run to an end
+        # stop says otherwise: a timed actuator (F411/2) cannot report its position.
+        self._attr_current_cover_position = None
         self._attr_is_opening = False
         self._attr_is_closing = False
-        self._attr_is_closed = False
+        self._attr_is_closed = None
 
         self._move_start_time: float | None = None
         # Anchor of the current run (motor start), untouched by the set_position
         # re-anchor: the last completed run is measured from it (stopwatch).
         self._run_started_at: float | None = None
-        self._start_position = 50
+        self._start_position: int | None = None
         self._stop_task: asyncio.Task[None] | None = None
 
         # Echo model state (see ECHO_WINDOW): which command of ours is in
@@ -750,23 +752,30 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             and at >= run_started_at + travel
         )
         curtain_at = max(self._move_start_time, at - lead) if self._move_start_time is not None else at
+        # None: the run started at an unknown position, which only an end stop resolves.
+        start_position = self._start_position
         if self._strategy.assumed_state:
             frozen: int | None = None
         elif end_stop:
             frozen = 100 if is_opening else 0
         elif self._move_start_time is not None and (is_opening or is_closing):
-            frozen_pos = self._strategy.position_after(
-                self._start_position,
-                max(0.0, at - self._move_start_time),
-                "open" if is_opening else "close",
-                entity=self,
-                lead=lead,
-            )
-            # None: the strategy does not know the position (yet).
-            frozen = frozen_pos
+            if start_position is None:
+                # A run from an unknown position that did not reach an end stop.
+                frozen = None
+            else:
+                # None: the strategy does not know the position (yet).
+                frozen = self._strategy.position_after(
+                    start_position,
+                    max(0.0, at - self._move_start_time),
+                    "open" if is_opening else "close",
+                    entity=self,
+                    lead=lead,
+                )
+        elif start_position is None:
+            frozen = self._attr_current_cover_position
         else:
             frozen = compute_freeze_position(
-                self._start_position,
+                start_position,
                 self._move_start_time,
                 curtain_at,
                 self._curtain_travel_for(is_opening),
@@ -796,6 +805,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             # No position to derive it from: an assumed-state cover is closed after
             # a closing run and open after an opening one, as HA's optimistic covers.
             self._attr_is_closed = is_closing
+        elif not self._advanced and (is_opening or is_closing):
+            # A positioned cover whose position is still unknown: so is its state.
+            self._attr_is_closed = None
 
     def _abort_motion(self) -> None:
         """Abort motion state when a command frame failed to reach the bus."""
@@ -1500,7 +1512,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._attr_is_closing = direction == "close"
         elif not self._advanced:
             self._end_curtain_for_takeover(time.monotonic())
-            self._start_position = self.current_cover_position if self.current_cover_position is not None else (0 if direction == "open" else 100)
+            # None while the position is unknown: only an end stop anchors that run.
+            self._start_position = self.current_cover_position
             self._run_start_position = self._start_position
             self._run_start_tilt = None
             self._run_lead = self._move_lead = 0.0
@@ -1649,7 +1662,22 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 translation_placeholders={"entity_id": str(self.entity_id)},
             )
 
-        curr_pos = self.current_cover_position if self.current_cover_position is not None else 50
+        curr_pos = self.current_cover_position
+        if curr_pos is None:
+            # Nothing to time a partial run from: 0% and 100% are full runs that
+            # anchor the position on the end stop, anything else waits for one.
+            if target_position >= 100:
+                await self._async_run_to_end(True)
+                return
+            if target_position <= 0:
+                await self._async_run_to_end(False)
+                return
+            raise ServiceValidationError(
+                f"{self._display_name}: the position is unknown until the cover has run fully open or closed once",
+                translation_domain=DOMAIN,
+                translation_key="cover_position_unknown",
+                translation_placeholders={"name": self._display_name},
+            )
         diff = target_position - curr_pos
         if diff == 0 and self._is_tilting:
             # Already at this level while a slat pulse runs: stop the pulse here.
@@ -2159,7 +2187,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._auto_stop_duration = None
             self._last_stop_at = now
             self._stopped_event.set()
-            if ctx and ctx.get("run_started_at") is not None and ctx.get("run_start_position") is not None:
+            if ctx and ctx.get("run_started_at") is not None:
+                # run_start_position is None for a run from an unknown position.
                 self._strategy.reanchor_on_stop_echo(self, ctx, now)
             return True
         # Opposite or external command during stop echo window: end window and handle externally.
@@ -2289,7 +2318,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._cancel_stop_task()
                     self._run_generation += 1
                 if not self._advanced and not self._attr_is_opening:
-                    self._start_position = self.current_cover_position if self.current_cover_position is not None else 0
+                    self._start_position = self.current_cover_position
                 if was_closing:
                     self._turn_slats_for_run(now, self._run_started_at, False, True)
                     self._end_run_on_reversal(now)
@@ -2319,7 +2348,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._cancel_stop_task()
                     self._run_generation += 1
                 if not self._advanced and not self._attr_is_closing:
-                    self._start_position = self.current_cover_position if self.current_cover_position is not None else 100
+                    self._start_position = self.current_cover_position
                 if was_opening:
                     self._turn_slats_for_run(now, self._run_started_at, True, False)
                     self._end_run_on_reversal(now)

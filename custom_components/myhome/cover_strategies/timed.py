@@ -127,11 +127,12 @@ class TimedCurtainStrategy(BaseCoverStrategy):
         now: float,
     ) -> int | None:
         """Re-anchor cover position and travel telemetry on a relayed stop status echo (#705, #707)."""
-        if not ctx or ctx.get("run_started_at") is None or ctx.get("run_start_position") is None:
+        if not ctx or ctx.get("run_started_at") is None:
             pos: int | None = getattr(entity, "_attr_current_cover_position", None)
             return pos
         start_anchor = float(ctx["run_started_at"])
-        run_start_pos = int(ctx["run_start_position"])
+        # None: the run started at an unknown position; only the run is measured.
+        run_start_pos = int(ctx["run_start_position"]) if ctx.get("run_start_position") is not None else None
         is_opening = bool(ctx.get("is_opening"))
         is_closing = bool(ctx.get("is_closing"))
         auto_dur = ctx.get("auto_stop_duration")
@@ -141,7 +142,7 @@ class TimedCurtainStrategy(BaseCoverStrategy):
         direction = "open" if is_opening else "close" if is_closing else ""
         travel_time = self.curtain_travel_for(is_opening)
         reanchored: int | None = getattr(entity, "_attr_current_cover_position", None)
-        if travel_time > 0 and (is_opening or is_closing):
+        if travel_time > 0 and (is_opening or is_closing) and run_start_pos is not None:
             reanchored = self.position_after(
                 run_start_pos, elapsed, direction, entity=entity, lead=lead
             )
@@ -176,12 +177,15 @@ class TimedCurtainStrategy(BaseCoverStrategy):
             and (is_opening or is_closing)
             and self.curtain_travel_for(is_opening) > 0
         ):
+            start = getattr(entity, "_start_position", None)
+            if start is None:
+                return None  # a run from an unknown position: known again at the end stop
             direction = "open" if is_opening else "close"
             elapsed = max(0.0, now - float(move_start))
             # The lead still ahead of this segment, as the entity anchored it.
             move_lead = getattr(entity, "_move_lead", None)
             return self.position_after(
-                int(getattr(entity, "_start_position", 50)),
+                int(start),
                 elapsed,
                 direction,
                 entity=entity,
