@@ -569,6 +569,9 @@
     "cover_busy_calibrating": {
       "message": "{entity_id} is being calibrated; try again when it has finished"
     },
+    "cover_position_unknown": {
+      "message": "{name}: the position is unknown until the cover has run fully open or closed once"
+    },
     "cover_busy_moving": {
       "message": "{name} is moving; stop it before tilting the slats"
     },
