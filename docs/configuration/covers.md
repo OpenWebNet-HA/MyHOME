@@ -43,6 +43,23 @@ An explicit `strategy` cannot be combined with a flag that selects another model
 
 ---
 
+## 🏷️ Device class (`class`)
+
+A WHO 2 cover is a `shutter` unless `/config/myhome.yaml` says otherwise. `class:` (or `device_class:`) accepts the Home Assistant cover classes `awning`, `blind`, `curtain`, `damper`, `door`, `garage`, `gate`, `shade`, `shutter` and `window`, and picks the entity's icon and the wording of its states. It applies to every WHO 2 cover, point-to-point as well as [general, area and group covers](#general-area-and-group-covers). A configured class also wins over the `blind` that `slat_tilt: true` (or `strategy: venetian`) would otherwise set.
+
+```yaml
+# /config/myhome.yaml
+cover:
+  living_room_curtain:
+    where: '32'
+    name: Living Room Curtain
+    class: curtain
+```
+
+Covers set up in the UI (without `myhome.yaml`) change their device class in Home Assistant with the **"Show As"** feature, like [switches](switches.md) and [binary sensors](binary-sensors.md): **Settings → Devices & Services → Entities**, select the cover entity, click the **Settings (gear)** icon and pick the class under **Show As**.
+
+---
+
 ## ⏱️ Timed Cover Position Engine
 
 For standard covers without hardware position feedback, the integration provides a software estimator enabling full `open_cover`, `close_cover`, `stop_cover`, and slider-based `set_cover_position` support:
@@ -151,7 +168,7 @@ target:
 For Venetian blinds, motorized louvres, and external venetian blinds (EVBs/BSO) with adjustable slat tilt angles, the integration provides timed slat travel (inching):
 
 * **Supported Features**: `SET_TILT_POSITION`, `OPEN_TILT` (100%), `CLOSE_TILT` (0%), and `STOP_TILT`.
-* **Device Class**: Sets the entity device class to `blind` (`CoverDeviceClass.BLIND`).
+* **Device Class**: Sets the entity device class to `blind` (`CoverDeviceClass.BLIND`) unless [`class`](#device-class-class) is set.
 * **Attributes**: Exposes `current_cover_tilt_position` (0–100%), `slat_tilt: true`, and `slat_time: <seconds>`.
 
 ### Physical Architecture & Slat Travel Time
@@ -185,22 +202,10 @@ cover:
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `slat_tilt` | boolean | `false` | Enables Venetian blind slat tilt controls and sets device class to `blind`. |
+| `slat_tilt` | boolean | `false` | Enables Venetian blind slat tilt controls and sets device class to `blind` unless `class` is set. |
 | `slat_time` | float | `2.0` | Full slat rotation travel time in seconds (allowed range: `0.5`–`10.0` s). A value set with `myhome.set_cover_travel_time` is stored and wins over this one after a restart, until `myhome.reset_cover_travel_time`. |
 
 Higher tilt is assumed to be *open* (an opening pulse raises the angle, verified on an F401 roller shutter with tilting slats in [discussion #770](https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19144521) with `slat_time: 1.4`). Dedicated Venetian actuators (such as the F411U2 in Venetian mode) still await a keypad / app capture (#492).
-
-### Device class (`class`)
-
-A WHO 2 cover is a `shutter` unless `/config/myhome.yaml` says otherwise. `class:` (or `device_class:`) accepts the Home Assistant cover classes `awning`, `blind`, `curtain`, `damper`, `door`, `garage`, `gate`, `shade`, `shutter` and `window`, and picks the entity's icon and the wording of its states. A configured class also wins over the `blind` that `slat_tilt: true` would otherwise set.
-
-```yaml
-cover:
-  living_room_curtain:
-    where: '32'
-    name: Living Room Curtain
-    class: curtain
-```
 
 ### Protocol Note: Dimension 11 is Shutter Level
 

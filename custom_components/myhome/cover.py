@@ -226,8 +226,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             # yaml covers keep their configured travel time, but a slat time set
             # with myhome.set_cover_travel_time wins until it is reset.
             kwargs["calibration"] = {CONF_SLAT_TIME: stored[CONF_SLAT_TIME]}
-        # cover_schema already folds a yaml `device_class:` into CONF_DEVICE_CLASS.
-        raw_dev_class = cfg.get(CONF_DEVICE_CLASS)
+        # cover_schema folds a yaml `device_class:` into CONF_DEVICE_CLASS; the raw
+        # key is kept as a fallback for callers that bypass the schema, as build_impulse does.
+        raw_dev_class = cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class")
         try:
             # The device schema defaults an absent class to "switch": not a cover class, so unset.
             device_class = CoverDeviceClass(str(raw_dev_class)) if raw_dev_class else None

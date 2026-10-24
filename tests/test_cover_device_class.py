@@ -12,10 +12,12 @@ from custom_components.myhome.const import (
     CONF_DEVICE_CLASS,
     CONF_PLATFORMS,
     CONF_SLAT_TILT,
+    CONF_STRATEGY,
     CONF_WHERE,
     DOMAIN,
 )
 from custom_components.myhome.cover import PLATFORM, async_setup_entry
+from custom_components.myhome.cover_scope import MyHOMEScopeCover
 from custom_components.myhome.validate import cover_schema
 from tests.conftest import attach_runtime
 
@@ -55,12 +57,20 @@ async def _setup_from_yaml(hass: HomeAssistant, mock_gateway, yaml_covers: dict)
         ({CONF_DEVICE_CLASS: "garage"}, CoverDeviceClass.GARAGE),
         ({CONF_SLAT_TILT: True}, CoverDeviceClass.BLIND),
         ({CONF_SLAT_TILT: True, CONF_DEVICE_CLASS: "shade"}, CoverDeviceClass.SHADE),
+        ({CONF_STRATEGY: "venetian"}, CoverDeviceClass.BLIND),
+        ({CONF_STRATEGY: "venetian", CONF_DEVICE_CLASS: "shade"}, CoverDeviceClass.SHADE),
+        ({CONF_WHERE: "1", CONF_DEVICE_CLASS: "curtain"}, CoverDeviceClass.CURTAIN),
+        ({CONF_WHERE: "0"}, CoverDeviceClass.SHUTTER),
     ],
 )
 async def test_who2_cover_uses_the_configured_class(hass: HomeAssistant, mock_gateway, cfg, expected) -> None:
-    """`class: curtain` reaches the entity; slat tilt picks BLIND only when no class is configured (#39)."""
+    """`class: curtain` reaches the entity; slat tilt picks BLIND only when no class is configured (#39).
+
+    Also covers `strategy: venetian` (implies slat tilt) and an area / general `MyHOMEScopeCover`.
+    """
     added = await _setup_from_yaml(
         hass, mock_gateway, {"c": {CONF_WHERE: "41", CONF_NAME: "Cover 41", **cfg}}
     )
     assert len(added) == 1
     assert added[0].device_class == expected
+    assert isinstance(added[0], MyHOMEScopeCover) is (cfg.get(CONF_WHERE) in ("0", "1"))
