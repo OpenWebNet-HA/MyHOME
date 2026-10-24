@@ -64,8 +64,13 @@ template:
   - alarm_control_panel:
       - name: Home alarm
         unique_id: home_alarm
-        # Unavailable until the MyHOME panel has reported. Falling back to
-        # "disarmed" instead would show an armed alarm as disarmed after a restart.
+        # Unavailable while the MyHOME panel is unknown (blank first start, or a
+        # restart with no state to restore). After a restart the MyHOME panel is
+        # available at once on its restored state (attribute restored: true) until
+        # the central unit confirms it. Falling back to "disarmed" instead would
+        # show an armed alarm as disarmed. To keep this panel unavailable until
+        # the bus has confirmed the state, append:
+        #   and not state_attr('alarm_control_panel.alarm_0', 'restored')
         availability: "{{ states('alarm_control_panel.alarm_0') in ['disarmed', 'armed_away', 'triggered'] }}"
         state: "{{ states('alarm_control_panel.alarm_0') }}"
         code_format: number
