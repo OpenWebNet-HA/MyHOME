@@ -382,6 +382,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._local_target_temperature: float | None = None
         # True while _local_target_temperature is the zone's own dimension 12 report (the
         # setpoint in force, offset included): dimension 14 and 13 frames then leave it alone.
+        # Only on a gateway that answers *#4*Z##, where the poll refreshes dimension 12: a
+        # central-unit plant (MH200N, F453AV) updates a zone with dimension 14 alone.
         self._local_target_reported = False
         self._nominal_before_dim12: tuple[float | None, float] | None = None
         self._poll_health = PollHealth()
@@ -962,7 +964,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 message.human_readable_log,
             )
             self._local_target_temperature = message.local_set_temperature
-            self._local_target_reported = self._local_target_temperature is not None
+            # Hold the display on this report only where *#4*Z## can refresh it. A central-unit
+            # plant reports dimension 12 once and then dimension 14 (and 13) alone (MH200N zone 2:
+            # 12 = 10.5, then 14 = 10.0 twice; F453AV Daily Holiday: 23 dimension 14 frames, no 12);
+            # with no poll to clear it the zone would stay on the stale value.
+            self._local_target_reported = (
+                self._local_target_temperature is not None and self._gateway_supports_zone_status
+            )
             is_protection_or_off = self._dimension_3_is_protection(message)
             if not is_protection_or_off:
                 self._remember_nominal()
