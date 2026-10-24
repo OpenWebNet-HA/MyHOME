@@ -7,8 +7,10 @@ import pytest
 from homeassistant.components.alarm_control_panel import AlarmControlPanelState
 from homeassistant.core import HomeAssistant, State
 from OWNd.message import OWNEvent
+from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
 
 from custom_components.myhome.alarm_control_panel import MyHOMEAlarmControlPanel
+from custom_components.myhome.gateway import MyHOMEGatewayHandler
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 # Emulated `nack` / `silent` rows for `*#5*0##` in own-firmware-oracle trace-corpus.tsv
@@ -18,7 +20,7 @@ ORACLE_NACK_MODELS = ["F450", "F453AV", "F454", "F459", "F460", "F461", "MyHomeS
 
 
 def _gateway(model: str) -> MagicMock:
-    gw = MagicMock()
+    gw = MagicMock(spec=MyHOMEGatewayHandler)
     gw.mac = "00:03:50:00:55:55"
     gw.unique_id = gw.mac
     gw.log_id = "[Test Alarm Gateway]"
@@ -29,6 +31,18 @@ def _gateway(model: str) -> MagicMock:
     gw.initial_discovery_pending = False
     gw.send = AsyncMock()
     gw.send_status_request = AsyncMock()
+    # A single gateway: nothing is delegated or failed over
+    gw._delegated_target = MagicMock(return_value=None)
+    gw._failover_target = MagicMock(return_value=None)
+    return gw
+
+
+def _refusing(model: str) -> MagicMock:
+    """A gateway whose OWNd profile states that it refuses the WHO 5 status request."""
+    gw = _gateway(model)
+    gw.profile = MagicMock()
+    gw.profile.model_name = model
+    gw.profile.supports_alarm_status_request = False
     return gw
 
 
@@ -216,3 +230,103 @@ async def test_live_nack_leaves_the_restored_state_alone(hass: HomeAssistant, fi
     assert panel.alarm_state == AlarmControlPanelState.ARMED_AWAY
     assert panel.extra_state_attributes["restored"] is True
     assert panel.extra_state_attributes["raw_state"] == "engage"
+
+
+@pytest.mark.parametrize(
+    ("primary", "secondary", "polled"),
+    [
+        # MyHomeServer1 primary whose profile refuses, MH202 secondary carrying WHO 5: the secondary is asked
+        (_refusing("MyHomeServer1"), _gateway("MH202"), True),
+        # MH202 primary, a secondary carrying WHO 5 whose profile refuses: nothing is sent
+        (_gateway("MH202"), _refusing("F461"), False),
+    ],
+)
+async def test_shared_bus_delegation_decides_on_the_secondary(hass: HomeAssistant, primary, secondary, polled) -> None:
+    """The gateway send_status_request would route to decides, not the one the entity was registered on."""
+    primary._delegated_target = MagicMock(return_value=secondary)
+    panel = _panel(hass, primary)
+    panel.async_get_last_state = AsyncMock(return_value=None)
+
+    await panel.async_added_to_hass()
+
+    assert str(primary._delegated_target.call_args.args[0]) == "*#5*0##"
+    # The route is resolved once and the request goes through the secondary
+    primary.send_status_request.assert_not_awaited()
+    assert secondary.send_status_request.await_count == (1 if polled else 0)
+
+
+@pytest.mark.parametrize(
+    ("primary", "standby", "polled"),
+    [(_refusing("F461"), _gateway("MH202"), True), (_gateway("MH202"), _refusing("F461"), False)],
+)
+async def test_failover_target_decides_while_the_primary_is_down(hass: HomeAssistant, primary, standby, polled) -> None:
+    """The warm standby that would carry the request decides, not the disconnected primary."""
+    primary._failover_target = MagicMock(return_value=standby)
+    panel = _panel(hass, primary)
+    panel.async_get_last_state = AsyncMock(return_value=None)
+
+    await panel.async_added_to_hass()
+
+    primary.send_status_request.assert_not_awaited()
+    assert standby.send_status_request.await_count == (1 if polled else 0)
+    # The primary's own routing (and its failover bookkeeping) ran exactly once
+    primary._failover_target.assert_called_once()
+
+
+async def test_a_mock_or_foreign_route_result_falls_back_to_the_gateway(hass: HomeAssistant) -> None:
+    """Only a real gateway handler is accepted as the route target; anything else means `no route`."""
+    gateway = _gateway("MH202")
+    gateway._delegated_target = MagicMock(return_value=object())
+    panel = _panel(hass, gateway)
+    panel.async_get_last_state = AsyncMock(return_value=None)
+
+    await panel.async_added_to_hass()
+
+    gateway.send_status_request.assert_awaited_once()
+
+
+@pytest.mark.parametrize("configured_name", ["MHS1", "573992", " my-home-server-1 ", "f461"])
+async def test_explicit_true_polls_whatever_the_configured_name(hass: HomeAssistant, configured_name: str) -> None:
+    """An explicit True on the profile polls; the configured alias, SKU, case or spacing plays no part."""
+    gateway = _gateway(configured_name)
+    gateway.profile = MagicMock()
+    gateway.profile.supports_alarm_status_request = True
+    panel = _panel(hass, gateway)
+    panel.async_get_last_state = AsyncMock(return_value=None)
+
+    await panel.async_added_to_hass()
+
+    gateway.send_status_request.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("configured_name", "label"),
+    [
+        ("MHS1", "MyHomeServer1"),  # short alias: the OWNd profile's canonical model_name
+        ("573992", "F453AV"),  # SKU alias: the OWNd profile's canonical model_name
+        (" Unknown-GW ", "Unknown-GW"),  # Generic profile: the configured name, trimmed
+    ],
+)
+async def test_refusal_log_names_the_canonical_model_and_the_frame(
+    hass: HomeAssistant, caplog, configured_name: str, label: str
+) -> None:
+    """The DEBUG line carries the frame actually skipped and the canonical name of the gateway carrying it."""
+    resolved = get_gateway_profile(configured_name)
+    assert isinstance(resolved, GenericGatewayProfile) == (label == "Unknown-GW")
+    primary = _gateway("MH202")
+    standby = _gateway(configured_name)
+    # The frozen OWNd profiles carry no flag yet: a profile of the resolved class that states one
+    standby.profile = MagicMock(spec=type(resolved))
+    standby.profile.model_name = resolved.model_name
+    standby.profile.supports_alarm_status_request = False
+    primary._failover_target = MagicMock(return_value=standby)
+    panel = _panel(hass, primary)
+    panel._where = "#1"
+    panel.async_get_last_state = AsyncMock(return_value=None)
+
+    with caplog.at_level("DEBUG", logger="custom_components.myhome"):
+        await panel.async_added_to_hass()
+
+    primary.send_status_request.assert_not_awaited()
+    assert f"{label} refuses *#5*#1##" in caplog.text
+    assert "*#5*0##" not in caplog.text

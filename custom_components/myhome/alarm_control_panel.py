@@ -19,7 +19,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from OWNd.message import (
     OWNAlarmCommand,
     OWNAlarmEvent,
+    OWNCommand,
 )
+from OWNd.profiles import GenericGatewayProfile
 
 from .const import (
     CONF_DEVICE_MODEL,
@@ -184,9 +186,25 @@ class MyHOMEAlarmControlPanel(MyHOMEEntity, AlarmControlPanelEntity):
         if "state_code" in last_state.attributes:
             attrs["state_code"] = last_state.attributes["state_code"]
 
-    @property
-    def _status_request_refused(self) -> bool:
-        """Whether the OWNd profile says the gateway refuses the WHO 5 status request.
+    def _status_request_target(self, cmd: OWNCommand) -> MyHOMEGatewayHandler:
+        """The gateway that ``send_status_request(cmd)`` would carry ``cmd`` through.
+
+        Mirrors ``MyHOMEGatewayHandler.send_status_request``: the connected secondary
+        that owns the delegated WHO, else the warm standby while the primary is
+        down, else the entity's own gateway. The request is then sent through that
+        gateway directly, so the route is resolved once.
+        """
+        gateway = self._gateway_handler
+        for finder in ("_delegated_target", "_failover_target"):
+            resolve = getattr(gateway, finder, None)
+            target = resolve(cmd) if callable(resolve) else None
+            if isinstance(target, MyHOMEGatewayHandler):
+                return target
+        return gateway
+
+    @staticmethod
+    def _status_request_refused(target: Any) -> bool:
+        """Whether the OWNd profile of ``target`` says it refuses the WHO 5 status request.
 
         Only an explicit ``supports_alarm_status_request = False`` on the profile skips
         the poll. ``None`` (unverified) and a missing flag poll: the own-firmware-oracle
@@ -197,20 +215,33 @@ class MyHOMEAlarmControlPanel(MyHOMEEntity, AlarmControlPanelEntity):
         plant with a central unit does, so a model is never treated as refusing. The
         flag belongs in OWNd (#381 pattern).
         """
-        profile = getattr(self._gateway_handler, "profile", None)
+        profile = getattr(target, "profile", None)
         return getattr(profile, "supports_alarm_status_request", None) is False
 
+    @staticmethod
+    def _gateway_label(target: Any) -> str:
+        """The canonical model name of ``target`` for logs: the OWNd profile's, else the configured one."""
+        profile = getattr(target, "profile", None)
+        if profile is not None and not isinstance(profile, GenericGatewayProfile):
+            model_name = getattr(profile, "model_name", None)
+            if isinstance(model_name, str) and model_name:
+                return model_name
+        return str(getattr(target, "model", "")).strip()
+
     async def async_update(self) -> None:
-        """Request status from the gateway, unless its OWNd profile says it refuses the request."""
-        if self._status_request_refused:
+        """Request status, unless the OWNd profile of the gateway carrying the request says it refuses it."""
+        cmd = OWNAlarmCommand.status(self._where)
+        target = self._status_request_target(cmd)
+        if self._status_request_refused(target):
             LOGGER.debug(
-                "%s %s: %s refuses *#5*0##; waiting for alarm frames on the bus",
+                "%s %s: %s refuses %s; waiting for alarm frames on the bus",
                 self._gateway_handler.log_id,
                 self._display_name,
-                self._gateway_handler.model,
+                self._gateway_label(target),
+                cmd,
             )
             return
-        await self._gateway_handler.send_status_request(OWNAlarmCommand.status(self._where))
+        await target.send_status_request(cmd)
 
     async def async_alarm_disarm(self, code: str | None = None) -> None:  # pylint: disable=unused-argument
         """Disarm has no feature flag in core, so refuse it here instead of sending a frame the panel rejects."""
