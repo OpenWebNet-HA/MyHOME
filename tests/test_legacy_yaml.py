@@ -7,11 +7,16 @@ import pytest
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_MAC
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 
 from custom_components.myhome.const import (
     CONF_FILE_PATH,
 )
-from custom_components.myhome.legacy_yaml import _read_legacy_yaml, load_legacy_myhome_yaml
+from custom_components.myhome.legacy_yaml import (
+    _read_legacy_yaml,
+    _same_mac,
+    load_legacy_myhome_yaml,
+)
 
 
 @pytest.fixture
@@ -396,3 +401,137 @@ async def test_legacy_yaml_section_of_another_gateway_does_not_warn(
         await load_legacy_myhome_yaml(mock_hass, base_entry, configured_platforms)
 
     assert not [r for r in caplog.records if r.levelname == "WARNING" and "myhome.yaml" in r.getMessage()]
+
+
+def _other_entry(mac: str | None) -> ConfigEntry:
+    other = MagicMock(spec=ConfigEntry)
+    other.entry_id = "other"
+    other.data = {CONF_MAC: mac} if mac is not None else {}
+    other.disabled_by = None
+    return other
+
+
+def _myhome_warnings(caplog) -> list[str]:
+    return [
+        r.getMessage()
+        for r in caplog.records
+        if r.levelname == "WARNING" and "myhome.yaml" in r.getMessage()
+    ]
+
+
+async def test_legacy_yaml_mixed_sections_warn_only_for_orphan_keys(
+    mock_hass, base_entry, tmp_path, caplog
+):
+    """One section of another gateway plus one orphan: the warning names the orphan only."""
+    yaml_file = tmp_path / "myhome.yaml"
+    yaml_file.write_text(
+        "'00:03:50:99:99:99':\n  light:\n    hallway:\n      where: '21'\n      name: 'Hallway'\n"
+        "'00:03:50:00:00:00':\n  light:\n    kitchen:\n      where: '22'\n      name: 'Kitchen'\n",
+        encoding="utf-8",
+    )
+    mock_hass.config_entries.async_entries.return_value = [
+        base_entry,
+        _other_entry("00:03:50:99:99:99"),
+    ]
+    configured_platforms = _make_configured_platforms()
+
+    with caplog.at_level("WARNING", logger="custom_components.myhome"):
+        await load_legacy_myhome_yaml(mock_hass, base_entry, configured_platforms)
+
+    assert configured_platforms["light"] == {}
+    warnings = _myhome_warnings(caplog)
+    assert len(warnings) == 1, warnings
+    assert "00:03:50:81:22:33" in warnings[0]
+    assert "00:03:50:00:00:00" in warnings[0]
+    assert "00:03:50:99:99:99" not in warnings[0]
+
+
+async def test_legacy_yaml_other_gateway_section_spelled_differently_does_not_warn(
+    mock_hass, base_entry, tmp_path, caplog
+):
+    """A hyphen-spelled section of the other gateway is recognised as its section, not an orphan."""
+    yaml_file = tmp_path / "myhome.yaml"
+    yaml_file.write_text(
+        "'00-03-50-99-99-99':\n  light:\n    hallway:\n      where: '21'\n      name: 'Hallway'\n",
+        encoding="utf-8",
+    )
+    mock_hass.config_entries.async_entries.return_value = [
+        base_entry,
+        _other_entry("00:03:50:99:99:99"),
+    ]
+    configured_platforms = _make_configured_platforms()
+
+    with caplog.at_level("WARNING", logger="custom_components.myhome"):
+        await load_legacy_myhome_yaml(mock_hass, base_entry, configured_platforms)
+
+    assert configured_platforms["light"] == {}
+    assert _myhome_warnings(caplog) == []
+
+
+async def test_legacy_yaml_mac_mismatch_keeps_warning_when_format_mac_raises(
+    mock_hass, base_entry, tmp_path, caplog
+):
+    """A key dr.format_mac rejects is still reported at WARNING, not as a parse ERROR."""
+    yaml_file = tmp_path / "myhome.yaml"
+    yaml_file.write_text(
+        "'00:03:50:00:00:00':\n  light:\n    hallway:\n      where: '21'\n      name: 'Hallway'\n",
+        encoding="utf-8",
+    )
+    mock_hass.config_entries.async_entries.return_value = [
+        base_entry,
+        _other_entry("00:03:50:99:99:99"),
+    ]
+    configured_platforms = _make_configured_platforms()
+    real_format_mac = dr.format_mac
+
+    def _raising_format_mac(value: str) -> str:
+        if value != base_entry.data[CONF_MAC]:
+            raise ValueError(f"malformed MAC {value!r}")
+        return real_format_mac(value)
+
+    with (
+        caplog.at_level("WARNING", logger="custom_components.myhome"),
+        patch("custom_components.myhome.legacy_yaml.dr.format_mac", _raising_format_mac),
+    ):
+        await load_legacy_myhome_yaml(mock_hass, base_entry, configured_platforms)
+
+    assert configured_platforms["light"] == {}
+    assert not [r for r in caplog.records if r.levelname == "ERROR"]
+    warnings = _myhome_warnings(caplog)
+    assert len(warnings) == 1, warnings
+    assert "00:03:50:81:22:33" in warnings[0]
+    assert "00:03:50:00:00:00" in warnings[0]
+
+
+def test_same_mac_falls_back_to_string_comparison_when_format_mac_raises():
+    """The helper compares raw strings when dr.format_mac raises, and never raises itself."""
+
+    def _raising_format_mac(value: str) -> str:
+        raise ValueError(f"malformed MAC {value!r}")
+
+    with patch("custom_components.myhome.legacy_yaml.dr.format_mac", _raising_format_mac):
+        assert _same_mac("not-a-mac", "not-a-mac") is True
+        assert _same_mac("not-a-mac", "00:03:50:99:99:99") is False
+
+
+async def test_legacy_yaml_mac_mismatch_skips_other_entry_without_mac(
+    mock_hass, base_entry, tmp_path, caplog
+):
+    """Another entry with no MAC is skipped: the key stays an orphan and "None" is never printed."""
+    yaml_file = tmp_path / "myhome.yaml"
+    yaml_file.write_text(
+        "'00:03:50:00:00:00':\n  light:\n    hallway:\n      where: '21'\n      name: 'Hallway'\n",
+        encoding="utf-8",
+    )
+    mock_hass.config_entries.async_entries.return_value = [base_entry, _other_entry(None)]
+    configured_platforms = _make_configured_platforms()
+
+    with caplog.at_level("WARNING", logger="custom_components.myhome"):
+        await load_legacy_myhome_yaml(mock_hass, base_entry, configured_platforms)
+
+    assert configured_platforms["light"] == {}
+    warnings = _myhome_warnings(caplog)
+    assert len(warnings) == 1, warnings
+    assert "00:03:50:81:22:33" in warnings[0]
+    assert "00:03:50:00:00:00" in warnings[0]
+    assert "None" not in warnings[0]
