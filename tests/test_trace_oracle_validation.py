@@ -47,6 +47,124 @@ CLOCK_DEPENDENT_TX_FRAMES: frozenset[str] = frozenset({
 })
 
 
+# Requests sent to a physical gateway in a MyHOME capture for which the firmware oracle
+# (results/mcp_index.json at 53f9514, mirrored in tests/golden/firmware_oracle.json) has no
+# stimulus at all - not even a canonical form of it - so tier 1 cannot ask for a verdict.
+# Each entry names the capture and what the live gateway answered, so the list documents
+# the gap instead of hiding it. An entry must be present in the corpus and absent from the
+# oracle; once the oracle grows a verdict for a frame, the entry must go (test below).
+PHYSICAL_ONLY_TX_FRAMES: dict[str, str] = {
+    # --- F461 2.0.11, f461_live_2026-10-15 (lights 01 / 04, zone 2)
+    "*#0*0##": "F461 2026-10-15: NACK (no scenario module)",
+    "*#1*01*#2*0*0*5##": "F461 2026-10-15: ACK (dimension 2 write on a relay, ignored)",
+    "*#1*01*2##": "F461 2026-10-15: ACK *#1*01*2*0*0*0##",
+    "*#1*04*#2*0*0*5##": "F461 2026-10-15: ACK (dimension 2 write on a relay, ignored)",
+    "*#1*04*2##": "F461 2026-10-15: ACK *#1*04*2*0*0*0##",
+    "*#1001*0##": "F461 2026-10-15: NACK",
+    "*#1004*2##": "F461 2026-10-15: NACK",
+    "*#13**13##": "F461 2026-10-15: NACK",
+    "*#13**17##": "F461 2026-10-15: ACK *#13**17*4*2*0##",
+    "*#13*0*0##": "F461 2026-10-15: NACK (WHERE 0 is not a gateway address)",
+    "*#15*0##": "F461 2026-10-15: NACK (no CEN handler)",
+    "*#18*0##": "F461 2026-10-15: NACK",
+    "*#22*0##": "F461 2026-10-15: NACK",
+    "*#4*#0*22##": "F461 2026-10-15: NACK, then the gateway rebooted (dimension 22 crash)",
+    "*#4*2*#30*25*12*2026##": "F461 2026-10-15: ACK (holiday end date write, no effect)",
+    "*#4*2*#31*10*30##": "F461 2026-10-15: ACK (holiday end time write, no effect)",
+    "*#4*2*#32*02*00##": "F461 2026-10-15: ACK (timed manual write, no effect)",
+    "*#4*2*1##": "F461 2026-10-15: NACK",
+    "*#4*2*13#1##": "F461 2026-10-15: NACK in run1, ACK *#4*2*13*00## in run3",
+    "*#4*2*15##": "F461 2026-10-15: NACK (no external probe)",
+    "*#4*2*15#1##": "F461 2026-10-15: NACK (no external probe)",
+    "*#4*2*17##": "F461 2026-10-15: NACK",
+    "*#4*2*2##": "F461 2026-10-15: NACK in run1, ACK *#4*2*2*0350## in run3",
+    "*#4*2*21##": "F461 2026-10-15: NACK",
+    "*#4*2*22##": "F461 2026-10-15: NACK in 12 ms, then the gateway rebooted (dimension 22 crash)",
+    "*#4*2*29##": "F461 2026-10-15: NACK",
+    "*#4*2*3##": "F461 2026-10-15: NACK in run1, ACK *#4*2*3*0070## in run3",
+    "*#4*2*30##": "F461 2026-10-15: NACK",
+    "*#4*2*31##": "F461 2026-10-15: NACK",
+    "*#4*2*32##": "F461 2026-10-15: NACK",
+    "*#4*2*4##": "F461 2026-10-15: NACK in run1, ACK *#4*2*4*0## in run3",
+    "*#4*2*6##": "F461 2026-10-15: NACK in run1, ACK *#4*2*6*0## in run3",
+    "*#4*2*8##": "F461 2026-10-15: NACK",
+    "*#6*0##": "F461 2026-10-15: NACK (no video door entry)",
+    "*1*11*01##": "F461 2026-10-15: ACK (timer 1 min on relay 01)",
+    "*1*11*04##": "F461 2026-10-15: ACK (timer 1 min on relay 04)",
+    "*1*20*01##": "F461 2026-10-15: ACK (blinking 0.5 s on relay 01)",
+    "*1*20*04##": "F461 2026-10-15: ACK (blinking 0.5 s on relay 04)",
+    "*1*30*01##": "F461 2026-10-15: ACK (step up on relay 01)",
+    "*1*30*04##": "F461 2026-10-15: ACK (step up on relay 04)",
+    "*1*31*01##": "F461 2026-10-15: ACK (step down on relay 01)",
+    "*1*31*04##": "F461 2026-10-15: ACK (step down on relay 04)",
+    "*1*5*01##": "F461 2026-10-15: ACK (dimmer 50 % on a relay, ignored)",
+    "*1*5*04##": "F461 2026-10-15: ACK (dimmer 50 % on a relay, ignored)",
+    "*4*302*#0##": "F461 2026-10-15: ACK (central-unit form, no central unit, no effect)",
+    "*4*302*#2##": "F461 2026-10-15: ACK (central-unit form, no effect on the standalone zone)",
+    "*4*312#0210#1*#2##": "F461 2026-10-15: ACK (central-unit form, no effect)",
+    # --- F461 2.0.11, f461_live_2026-10-15 and f461_live_2026-10-18 and f461_live_2026-10-23
+    "*#1*#1##": "F461 2026-10-15 / 10-18 / 10-23: ACK, members *1*0*06## *1*0*07## (10-18), no data (10-23)",
+    "*#13**10##": "F461 2026-10-15 / 10-23: ACK *#13**10*192*0*2*92## (documentation IP)",
+    "*#13**11##": "F461 2026-10-15 / 10-23: ACK *#13**11*255*255*255*0##",
+    "*#13**12##": "F461 2026-10-15 / 10-23, MyHomeServer1 3.87.13 2026-10-24: ACK with the MAC (synthetic in the fixtures)",
+    "*#13**19##": "F461 2026-10-15 / 10-23: ACK *#13**19*0*0*38*54## (uptime)",
+    "*#4*2*60##": "F461 2026-10-15: NACK in run1, ACK *#4*2*60*34## later; 2026-10-23: ACK *#4*2*60*39## in 143 ms",
+    "*1*0*#1##": "F461 2026-10-15 / 10-18: ACK (group 1 off)",
+    "*1*0*0##": "F461 2026-10-15 / 10-18: ACK (general off)",
+    "*1*1*#1##": "F461 2026-10-15 / 10-18: ACK (group 1 on)",
+    # --- F461 2.0.11, f461_live_2026-10-18 (PR #750 expose verification)
+    "*#1*08*1*150*0##": "F461 2026-10-18: NACK in 55 ms (dimension 1 without # is a read on an empty point)",
+    "*#13**#0*22*51*00*999##": "F461 2026-10-18: ACK (clock set, broadcast on evt)",
+    "*#13**0*22*51*00*999##": "F461 2026-10-18: ACK *#13**0*22*51*02*999## (parsed as a time read)",
+    "*#18*51*113*450##": "F461 2026-10-18: ACK in 1.27 s (report form accepted)",
+    "*#18*51*51*12345##": "F461 2026-10-18: ACK in 1.40 s (report form accepted)",
+    "*#18*51*54*320##": "F461 2026-10-18: ACK in 1.40 s (report form accepted)",
+    "*#2*25*10*10*50*0*0##": "F461 2026-10-18: NACK in 55 ms",
+    "*#4*000*0*0215##": "F461 2026-10-18: NACK after 2.07 s (parsed as a dimension 0 read, no probe)",
+    "*#4*102*0*0215##": "F461 2026-10-18: NACK after 2.12 s (parsed as a dimension 0 read, no probe)",
+    "*#4*2*0*0999##": "F461 2026-10-18: ACK *#4*2*0*0249## (parsed as a dimension 0 read)",
+    "*#4*50*#0*0215##": "F461 2026-10-18: ACK in 155 ms (temperature write to a virtual probe)",
+    "*#4*50*0*0215##": "F461 2026-10-18: NACK after 2.13 s (parsed as a dimension 0 read, no probe)",
+    "*1*5*08##": "F461 2026-10-18: NACK after 2.06 s (no actuator at 08)",
+    # --- F461 2.0.11, f461_who14_live_2026-10-18
+    "*#14*0##": "F461 2026-10-18: NACK in 52 ms (WHO 14 has no status request)",
+    "*#14*05##": "F461 2026-10-18: NACK in 50 ms (WHO 14 has no status request)",
+    "*#14*06##": "F461 2026-10-18 / 10-23: NACK in 5-51 ms (WHO 14 has no status request)",
+    "*#14*07##": "F461 2026-10-18: NACK in 51 ms (WHO 14 has no status request)",
+    "*14*2*07##": "F461 2026-10-18: NACK in 53 ms",
+    # --- F461 2.0.11, issue_667 (myhome_trace_F461_impulse_intercom_2026-10-19)
+    "*1*18*06##": "F461 2026-10-19: ACK (impulse on relay 06)",
+    "*1*18*07##": "F461 2026-10-19: ACK (impulse on relay 07)",
+    "*6*0*4000##": "F461 2026-10-19: NACK in 54 ms (no video door entry)",
+    "*6*10*1##": "F461 2026-10-19: NACK in 52 ms (no video door entry)",
+    "*6*10*4000##": "F461 2026-10-19: NACK in 59 ms (no video door entry)",
+    "*6*10*4001#2##": "F461 2026-10-19: NACK in 54 ms (no video door entry)",
+    "*6*22*1##": "F461 2026-10-19: NACK in 52 ms (no video door entry)",
+    "*6*6*1##": "F461 2026-10-19: NACK in 56 ms (no video door entry)",
+    "*6*6*4100##": "F461 2026-10-19: NACK in 60 ms (no video door entry)",
+    "*6*9##": "F461 2026-10-19: NACK in 55 ms (no video door entry)",
+    "*6*9**##": "F461 2026-10-19: NACK in 59 ms (no video door entry)",
+    "*8*1#1#4#20*11##": "F461 2026-10-19: NACK in 51 ms (no door entry system)",
+    "*8*1#1#4*74##": "F461 2026-10-19: NACK in 49 ms (no door entry system)",
+    "*8*9#1#4*73##": "F461 2026-10-19: NACK in 59 ms (no door entry system)",
+    # --- F461 2.0.11, f461_live_2026-10-23 (behind OWNd #136-#142 / MyHOME #791-#798)
+    "*#1*#1*15##": "F461 2026-10-23: ACK in 89 ms, *#1*#1*15## echoed on evt (group aggregate dimension)",
+    "*#1*06*15##": "F461 2026-10-23: NACK in 5 ms (dimension 15 is group-only)",
+    "*#13**2##": "F461 2026-10-23: NACK in 6 ms",
+    "*#13**25##": "F461 2026-10-23: NACK in 5 ms",
+    "*#13**26##": "F461 2026-10-23: NACK in 6 ms",
+    "*#13**27##": "F461 2026-10-23: ACK *#13**27*70#52#54#49## (F461); MyHomeServer1 2026-10-24: ACK (MyHomeServer1)",
+    "*#13**3##": "F461 2026-10-23: NACK in 6 ms",
+    "*#18*51*113*100##": "F461 2026-10-23: ACK in 1.41 s (report form accepted, not echoed)",
+    "*#2*05*11##": "F461 2026-10-23: NACK in 6 ms (no position reporting on an F411/2)",
+    "*#4*#0*0*0215##": "F461 2026-10-23: NACK after 4.13 s (central-unit report form, no central unit)",
+    "*#4*0*60##": "F461 2026-10-23: ACK *#4*2*60*39## after 2.13 s; MyHomeServer1 2026-10-24: ACK, 17 zones in 0.5 s",
+    # --- MyHomeServer1 3.87.13, myhomeserver1_live_2026-10-24 (the oracle emulates 2.82.06)
+    "*#4*35*60##": "MyHomeServer1 2026-10-24: NACK after 2.13 s (no humidity probe in zone 35)",
+    "*#4*39*60##": "MyHomeServer1 2026-10-24: ACK *#4*39*60*51## in 204 ms",
+}
+
+
 def _load_oracle() -> dict[str, Any]:
     if not ORACLE_JSON_PATH.is_file():
         pytest.skip("tests/golden/firmware_oracle.json fixture not found")
@@ -283,6 +401,18 @@ def _iter_all_trace_records() -> list[tuple[str, str | None, str, str]]:
                 if raw and direction in ("tx", "rx"):
                     records.append((json_path.stem, gw_model, str(direction), str(raw)))
 
+        # derived_trace_archive files keep the event-session frames in `frames` and the
+        # whole session log (tx on the command session, rx on both sessions) in `rows`
+        archive_rows = payload.get("rows")
+        if isinstance(archive_rows, list):
+            for row in archive_rows:
+                if not isinstance(row, dict):
+                    continue
+                direction = row.get("dir")
+                raw = row.get("frame")
+                if raw and direction in ("tx", "rx"):
+                    records.append((json_path.stem, gw_model, str(direction), str(raw)))
+
     if ENCYCLOPEDIA_EVIDENCE_DIR.is_dir():
         for sub in sorted(ENCYCLOPEDIA_EVIDENCE_DIR.iterdir()):
             manifest_path = sub / "manifest.json"
@@ -321,13 +451,27 @@ def test_tier1_trace_tx_canonical_oracle_coverage():
 
     for frame in sorted(deterministic_tx):
         canonical = canonicalize_trace_tx_frame(frame)
-        if canonical not in ALL_VERDICTS:
+        if canonical not in ALL_VERDICTS and frame not in PHYSICAL_ONLY_TX_FRAMES:
             unmapped.append((frame, canonical))
 
     assert not unmapped, (
         f"{len(unmapped)} trace tx frames did not map to any oracle verdict:\n"
         + "\n".join(f"  {raw} -> {can}" for raw, can in unmapped)
     )
+
+
+def test_tier1_physical_only_frames_are_in_the_corpus_and_not_in_the_oracle():
+    """PHYSICAL_ONLY_TX_FRAMES documents a real gap: every entry was sent to a physical gateway
+    in a capture and has no oracle stimulus; an entry the oracle now covers must be removed."""
+    tx_frames = {raw for _src, _gw, direction, raw in ALL_TRACE_RECORDS if direction == "tx"}
+    stale = sorted(f for f in PHYSICAL_ONLY_TX_FRAMES if f not in tx_frames)
+    assert not stale, f"not in any capture any more: {stale}"
+    covered = sorted(
+        f for f in PHYSICAL_ONLY_TX_FRAMES
+        if f in ALL_VERDICTS or canonicalize_trace_tx_frame(f) in ALL_VERDICTS
+    )
+    assert not covered, f"the oracle now has a verdict, remove from PHYSICAL_ONLY_TX_FRAMES: {covered}"
+    assert all(note.strip() for note in PHYSICAL_ONLY_TX_FRAMES.values())
 
 
 @pytest.mark.parametrize(
@@ -515,6 +659,17 @@ def test_tier4_all_trace_rx_frames_parse_cleanly_in_ownd():
     # Known malformed synthetic frame in f500_tuner fixture (missing leading '#' on WHO 22 dim 6);
     # OWNMessage.parse must return None cleanly without raising.
     known_unparseable_rx = {"*22*2#1*6*2##"}
+    # Authentic frames whose decoder is not in the pinned OWNd yet: they must not raise and
+    # they parse to None; once the pin carries the decoder the assertion below fails so the
+    # entry is removed and the frame is checked like any other.
+    # - *#13**27*70#52#54#49##: WHO 13 dimension 27 model name ("F461" as ASCII codes) answered
+    #   by a live F461 2.0.11 (tests/fixtures/traces/f461_live_2026-10-23); decoder in OWNd#139.
+    # - *#13**27*77#121#...#49##: the same dimension, "MyHomeServer1", from a live MyHomeServer1
+    #   3.87.13 (tests/fixtures/traces/myhomeserver1_live_2026-10-24).
+    pending_decoder_rx = {
+        "*#13**27*70#52#54#49##",
+        "*#13**27*77#121#72#111#109#101#83#101#114#118#101#114#49##",
+    }
 
     failures: list[str] = []
     for frame in sorted(rx_frames):
@@ -523,6 +678,10 @@ def test_tier4_all_trace_rx_frames_parse_cleanly_in_ownd():
             if frame in known_unparseable_rx:
                 if parsed is not None:
                     failures.append(f"Expected None for malformed frame {frame}, got {parsed!r}")
+            elif frame in pending_decoder_rx:
+                assert parsed is None, (
+                    f"remove {frame} from pending_decoder_rx: the OWNd pin now decodes it ({parsed!r})"
+                )
             elif parsed is None:
                 failures.append(f"OWNMessage.parse returned None for trace rx frame: {frame}")
         except Exception as exc:  # noqa: BLE001
