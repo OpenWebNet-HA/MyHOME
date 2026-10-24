@@ -87,6 +87,10 @@ _ZONE_CONTEXT_MODES = {"heating": HVACMode.HEAT, "cooling": HVACMode.COOL, "auto
 _ZONE_STATES_ON = ("setpoint", "comfort", "eco")
 _ZONE_STATES_OFF = ("protection", "off")
 
+# How long the fan speed poll waits for the one-shot dimension 19 answer (*#4*Z*19##,
+# 0.11 s on the live F461) before asking as it did before.
+FAN_COIL_SIDES_WAIT = 30.0
+
 # Mode digit of a setpoint write (*#4*W*#14*TTTT*M##). Legrand WHO 4 p. 8 and
 # p. 23 define M = 1 heating, 2 conditioning, 3 generic; BTicino's own client
 # always writes 3 (libqtdevices probe_device.cpp:122, thermal_device.cpp:134)
@@ -368,9 +372,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # (*#4*Z*19*COOLING*HEATING##: a value of 5..8 on a side is a fan coil, 0..4 a valve).
         # Empty until a dimension 19 frame has been seen.
         self._fan_coil_sides: dict[str, bool] = {}
-        # The one-shot *#4*Z*19## asked when a fan coil shows up before dimension 19 did:
-        # True while it is waiting for its answer, so the fan speed is not polled blindly.
-        self._fan_coil_sides_asked: bool = False
+        # When the one-shot *#4*Z*19## was asked (a fan coil showed up before dimension 19
+        # did): while its answer is pending the fan speed is not polled blindly.
+        self._fan_coil_sides_asked_at: float | None = None
         if fan and not self._central:
             self._enable_fan_mode()
 
@@ -602,7 +606,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # Dimension 19 is on its way (asked once a fan coil showed up in dimension 20):
             # on the live F461 it answers in 0.11 s, while *#4*Z*11## in the valve's season
             # is NACKed after 2.1 s. Do not ask blindly while the answer is pending.
-            return not self._fan_coil_sides_asked
+            return not self._fan_coil_sides_pending()
         if self._season is None:
             return True
         side = "heating" if self._season == SEASON_HEATING else "cooling"
@@ -616,13 +620,23 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         valve's season too and NACKed after 2.1 s on the F461. Every gateway firmware of the
         oracle forwards ``*#4*Z*19##`` (own-firmware-oracle thermo-zone-requests).
         """
-        if self._fan_coil_sides or self._fan_coil_sides_asked:
+        if self._fan_coil_sides or self._fan_coil_sides_pending():
             return
         request = getattr(self._gateway_handler, "request_zone_dimension", None)
         if not callable(request):
             return
-        self._fan_coil_sides_asked = True
+        self._fan_coil_sides_asked_at = time.monotonic()
         request(self._full_where, 19)
+
+    def _fan_coil_sides_pending(self) -> bool:
+        """Whether the one-shot dimension 19 request is still waiting for its answer.
+
+        An answer that never comes (request refused, session lost before it was sent) must
+        not disable the fan speed poll for good: after ``FAN_COIL_SIDES_WAIT`` the zone is
+        back to asking as before, and a later fan coil report may ask dimension 19 again.
+        """
+        asked_at = self._fan_coil_sides_asked_at
+        return asked_at is not None and time.monotonic() - asked_at < FAN_COIL_SIDES_WAIT
 
     def _any_actuator_active(self) -> bool:
         """Whether the most recent actuator report (dimension 20 or 19) shows activity."""
@@ -1198,7 +1212,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     "cooling": isinstance(getattr(message, "cooling_fan_on", None), bool),
                     "heating": isinstance(getattr(message, "fan_on", None), bool),
                 }
-                self._fan_coil_sides_asked = False
+                self._fan_coil_sides_asked_at = None
             # Actuator status (Dimension 20) with values >= 5 reports fancoil fan status in OWNd.
             is_fan = isinstance(getattr(message, "fan_speed", None), int) or isinstance(
                 getattr(message, "fan_on", None), bool
