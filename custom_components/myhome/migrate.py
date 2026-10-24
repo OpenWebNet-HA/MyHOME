@@ -14,7 +14,14 @@ from homeassistant.helpers import (
     entity_registry as er,
 )
 
-from .const import CONF_WHERE, CONF_WHO, DOMAIN, LOGGER, SUBENTRY_TYPE_EXPOSE
+from .const import (
+    CONF_COVER_TRAVEL_TIMES,
+    CONF_WHERE,
+    CONF_WHO,
+    DOMAIN,
+    LOGGER,
+    SUBENTRY_TYPE_EXPOSE,
+)
 from .where_grammar import canonical_point_address, canonical_point_spelling
 
 
@@ -377,6 +384,7 @@ def migrate_canonical_point_addresses(hass: HomeAssistant, entry: ConfigEntry) -
             LOGGER.info("Removed %s, a duplicate of %s under the canonical address", duplicate.entity_id, reg_entry.entity_id)
 
     _migrate_expose_subentries(hass, entry)
+    _migrate_cover_travel_times(hass, entry)
 
     for device in dr.async_entries_for_config_entry(device_registry, entry.entry_id):
         identifiers = set(device.identifiers)
@@ -466,6 +474,36 @@ def _migrate_expose_subentries(hass: HomeAssistant, entry: ConfigEntry) -> None:
             entry, subentry, data={**data, CONF_WHERE: canonical}, title=title
         )
         LOGGER.info("Migrated expose subentry %s from WHERE %s to %s", subentry.subentry_id, data[CONF_WHERE], canonical)
+
+
+def _migrate_cover_travel_times(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Re-key persisted cover calibrations from ``0004`` / ``0004#4#01`` to ``04`` / ``04#4#01`` (#147).
+
+    `entry.options["cover_travel_times"]` is keyed by the cover's device id; once the
+    cover is addressed canonically its measured travel times and `slat_time` would be
+    orphaned. A record already stored under the canonical key belongs to the cover
+    that worked on the bus and wins; the 4-digit one is then dropped.
+    """
+    stored = entry.options.get(CONF_COVER_TRAVEL_TIMES)
+    if not isinstance(stored, dict):
+        return
+    rekeyed = {key: record for key, record in stored.items() if canonical_point_address(str(key)) == str(key)}
+    changed = False
+    for key, record in stored.items():
+        canonical = canonical_point_address(str(key))
+        if canonical == str(key):
+            continue
+        changed = True
+        if canonical in rekeyed:
+            LOGGER.info(
+                "Dropping the cover calibration stored under %s: %s already has one under the canonical address",
+                key, canonical,
+            )
+            continue
+        rekeyed[canonical] = record
+        LOGGER.info("Migrated the cover calibration of %s to the canonical address %s", key, canonical)
+    if changed:
+        hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_COVER_TRAVEL_TIMES: rekeyed})
 
 
 def prune_stale_devices(

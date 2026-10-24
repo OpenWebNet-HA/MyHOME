@@ -17,12 +17,14 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome import validate
 from custom_components.myhome.const import (
+    CONF_COVER_TRAVEL_TIMES,
     CONF_PLATFORMS,
     CONF_WHERE,
     DOMAIN,
     PLATFORMS,
     SUBENTRY_TYPE_EXPOSE,
 )
+from custom_components.myhome.cover_calibration import _stored_calibration
 from custom_components.myhome.expose import ExposeBinding
 from custom_components.myhome.legacy_yaml import (
     CONF_MIGRATED_YAML_PLATFORMS,
@@ -595,3 +597,45 @@ def test_registry_moves_who1_sensors_and_leaves_other_who_alone(hass: HomeAssist
     assert dev_reg.async_get(yaml_dev.id).identifiers == {(DOMAIN, f"{MAC}-1-04")}
     for untouched in (cen, probe, meter, legacy):
         assert ent_reg.async_get(untouched.entity_id).unique_id == untouched.unique_id
+
+
+# ── persisted cover calibration (`cover_travel_times`) ───────────────────────────
+
+
+def test_cover_travel_times_are_rekeyed_to_the_canonical_address(hass: HomeAssistant, caplog) -> None:
+    measured = {"down": 18.4, "up": 20.1, "measured_at": "x"}
+    routed = {"slat_time": 1.2}
+    bus_measured = {"down": 17.0, "up": 19.0, "measured_at": "y"}
+    entry = MockConfigEntry(
+        domain=DOMAIN, title="GW", data={CONF_MAC: MAC}, unique_id=MAC, entry_id="e_calib",
+        options={CONF_COVER_TRAVEL_TIMES: {
+            "0004": measured, "0009#4#01": routed, "0015": {"down": 1.0}, "21": {"down": 2.0},
+            "0005": {"down": 9.9}, "05": bus_measured,
+        }},
+    )
+    entry.add_to_hass(hass)
+    with caplog.at_level(logging.INFO):
+        migrate_entry_and_registries(hass, entry, {})
+    assert entry.options[CONF_COVER_TRAVEL_TIMES] == {
+        "04": measured, "09#4#01": routed, "0015": {"down": 1.0}, "21": {"down": 2.0}, "05": bus_measured,
+    }
+    assert _stored_calibration(entry, "04") == measured
+    assert _stored_calibration(entry, "09#4#01") == routed
+    assert _stored_calibration(entry, "0004") is None
+    assert any("Migrated the cover calibration of 0004 to the canonical address 04" in r.getMessage() for r in caplog.records)
+    assert any("Dropping the cover calibration stored under 0005: 05 already has one" in r.getMessage() for r in caplog.records)
+
+    # Idempotent: the second run writes nothing.
+    with patch.object(hass.config_entries, "async_update_entry") as update:
+        migrate_entry_and_registries(hass, entry, {})
+    update.assert_not_called()
+
+
+def test_stored_calibration_falls_back_to_the_4_digit_key() -> None:
+    """A record a migration could not move is still found under its old spelling."""
+    entry = MagicMock()
+    entry.options = {CONF_COVER_TRAVEL_TIMES: {"0004": {"down": 1.0}, "0009#4#01": {"slat_time": 1.5}, "0015": {"down": 2.0}}}
+    assert _stored_calibration(entry, "04") == {"down": 1.0}
+    assert _stored_calibration(entry, "09#4#01") == {"slat_time": 1.5}
+    assert _stored_calibration(entry, "15") is None  # 0015 is area 00 PL 15, not 15
+    assert _stored_calibration(entry, "00") is None
