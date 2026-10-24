@@ -54,6 +54,9 @@ from .const import (
     gateway_model_family,
 )
 
+# Labels that name no model: an entry carrying one is labelled from the in-band evidence.
+UNTRUSTED_MODEL_LABELS: frozenset[str] = frozenset({"", "generic", "gateway", "unknown"})
+
 
 def _normalized(model: str | None) -> str:
     """Compare model names without case, spaces, dashes or underscores."""
@@ -327,7 +330,7 @@ class GatewayIdentityMixin:
         if model_source == IDENTIFICATION_MANUAL:
             return IDENTIFICATION_MANUAL
         model = data.get(CONF_NAME)
-        if model and str(model).strip().lower() not in ("", "generic", "gateway", "unknown"):
+        if model and str(model).strip().lower() not in UNTRUSTED_MODEL_LABELS:
             return IDENTIFICATION_MANUAL
         return IDENTIFICATION_UNKNOWN
 

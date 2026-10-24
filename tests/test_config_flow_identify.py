@@ -14,7 +14,18 @@ F461_MAC_REPLY = "*#13**12*0*3*80*0*7*119##"
 F461_MODEL_REPLY = "*#1013**1*134*15*5*0##"
 
 
-async def _manual_flow(hass: HomeAssistant, test_connection: AsyncMock, identify: AsyncMock):
+def _password_then_ok() -> AsyncMock:
+    """A password-protected gateway: the first probe asks for the password, the second accepts it."""
+    return AsyncMock(side_effect=[{"Success": False, "Message": "password_required"}, {"Success": True}])
+
+
+async def _manual_flow(
+    hass: HomeAssistant,
+    test_connection: AsyncMock,
+    identify: AsyncMock,
+    mac: str = "00:03:50:00:00:00",
+    model: str = "MyHomeServer1",
+):
     with (
         patch("custom_components.myhome.config_flow.find_gateways", return_value=[]),
         patch("custom_components.myhome.config_flow.get_gateway", return_value=None),
@@ -28,9 +39,9 @@ async def _manual_flow(hass: HomeAssistant, test_connection: AsyncMock, identify
             result["flow_id"], {"address": "192.0.2.92", "port": 20000}
         )
         assert result["step_id"] == "custom_manual"
-        # The defaults the form offers when the user does not know better
+        # By default the values the form offers when the user does not know better
         result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {"serialNumber": "00:03:50:00:00:00", "modelName": "MyHomeServer1"}
+            result["flow_id"], {"serialNumber": mac, "modelName": model}
         )
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "password"
@@ -53,6 +64,7 @@ async def test_manual_flow_corrects_mac_and_model_from_the_gateway(hass: HomeAss
     assert result["data"]["name"] == "F461"
     assert result["title"] == "F461 Gateway"
     assert result["result"].unique_id == "00:03:50:00:07:77"
+    assert result["data"]["model_source"] == "who13"
     identify.assert_awaited_once()
     # The password probe is the normal path, not a failure worth a WARNING
     assert not [
@@ -71,6 +83,76 @@ async def test_manual_flow_keeps_the_answers_when_the_gateway_says_nothing(hass:
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["data"]["mac"] == "00:03:50:00:00:00"
     assert result["data"]["name"] == "MyHomeServer1"
+    assert result["data"]["model_source"] == "manual"
+
+
+@pytest.mark.parametrize("model", ["H4890", "LN4890"])
+async def test_manual_flow_keeps_a_compatible_brand_variant(hass: HomeAssistant, model: str) -> None:
+    """WHO=1013 code 30 names the AM4890 and its brand variants: the chosen variant stays (#466)."""
+    identify = AsyncMock(return_value=(None, "200", "30"))
+
+    result = await _manual_flow(hass, _password_then_ok(), identify, model=model)
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"]["name"] == model
+    assert result["title"] == f"{model} Gateway"
+    assert result["data"]["model_source"] == "manual"
+
+
+async def test_manual_flow_keeps_a_legrand_name_of_the_reported_model(hass: HomeAssistant) -> None:
+    """003598 is the Legrand name of the F454 (WHO=1013 code 51): not a correction."""
+    identify = AsyncMock(return_value=(None, "200", "51"))
+
+    result = await _manual_flow(hass, _password_then_ok(), identify, model="003598")
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"]["name"] == "003598"
+    assert result["data"]["model_source"] == "manual"
+
+
+@pytest.mark.parametrize(
+    ("model", "codes", "expected_name", "expected_source"),
+    [
+        ("Generic", ("44", None), "MH200N", "who13"),
+        ("MH202", ("44", None), "MH202", "manual"),
+        ("Generic", ("200", "134"), "F461", "who13"),
+    ],
+)
+async def test_manual_flow_uncertain_who13_code_labels_generic_but_never_overrides_a_choice(
+    hass: HomeAssistant, model: str, codes: tuple[str | None, str | None], expected_name: str, expected_source: str
+) -> None:
+    """Code 44 is known from Nmap only (certain=False): it may label a Generic entry, not contradict a chosen model;
+    a Generic entry is labelled from WHO=1013 as well."""
+    identify = AsyncMock(return_value=(None, *codes))
+
+    result = await _manual_flow(hass, _password_then_ok(), identify, model=model)
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"]["name"] == expected_name
+    assert result["title"] == f"{expected_name} Gateway"
+    assert result["data"]["model_source"] == expected_source
+
+
+async def test_apply_gateway_identity_refreshes_the_profile_and_log_id(hass: HomeAssistant) -> None:
+    """The corrected model drives the OWNd profile and the log prefix, as the runtime's _apply_model does."""
+    from OWNd.connection import OWNGateway
+
+    from custom_components.myhome.config_flow import MyhomeFlowHandler
+
+    flow = MyhomeFlowHandler()
+    flow.hass = hass
+    gateway = OWNGateway(
+        {"address": "192.0.2.92", "port": 20000, "serialNumber": "00:03:50:00:00:00", "modelName": "MyHomeServer1"}
+    )
+    with patch(
+        "custom_components.myhome.config_flow.identify_gateway", AsyncMock(return_value=(None, "200", "134"))
+    ):
+        source = await flow._async_apply_gateway_identity(gateway)
+
+    assert source == "who13"
+    assert gateway.model_name == "F461"
+    assert type(gateway.profile).__name__ == "F461Profile"
+    assert gateway.log_id == "[F461 gateway - 192.0.2.92]"
 
 
 async def test_manual_flow_aborts_when_the_real_mac_is_already_configured(hass: HomeAssistant) -> None:

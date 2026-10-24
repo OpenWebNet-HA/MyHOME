@@ -38,7 +38,14 @@ from .const import (
     LOGGER,
 )
 from .gateway import command_session_default
-from .identity import read_who13, read_who1013
+from .identity import (
+    UNTRUSTED_MODEL_LABELS,
+    CodeReading,
+    GatewayIdentityEvidence,
+    read_who13,
+    read_who1013,
+    resolve_gateway_identity,
+)
 from .typing_compat import flow_schema
 
 TEST_CONNECTION_ABORT_REASONS = frozenset(
@@ -81,6 +88,13 @@ def mac_request_is_safe(who13_code: str | None, who1013_code: str | None = None)
         return False
     normalised = {m.strip().upper().replace(" ", "").replace("-", "").replace("_", "") for m in models}
     return bool(normalised) and normalised <= MAC_REQUEST_SAFE_MODELS
+
+
+def _inband_reading(who13_code: str | None, who1013_code: str | None) -> CodeReading:
+    """The code reading the resolver labelled the gateway from: WHO=1013 when known, else WHO=13."""
+    if who1013_code and read_who1013(who1013_code).known:
+        return read_who1013(who1013_code)
+    return read_who13(who13_code or "")
 
 
 async def identify_gateway(gateway: typing.Any) -> tuple[str | None, str | None, str | None]:
@@ -453,9 +467,10 @@ class ConfigFlowDiscoveryMixin:
                     reason="reauth_successful",
                 )
 
+            model_source: str | None = None
             if getattr(self, "_identify_after_auth", False):
                 self._identify_after_auth = False
-                await self._async_apply_gateway_identity(gateway)
+                model_source = await self._async_apply_gateway_identity(gateway)
 
             _new_entry_data = {
                 CONF_ID: dr.format_mac(gateway.serial),
@@ -473,6 +488,8 @@ class ConfigFlowDiscoveryMixin:
                 CONF_MAC: dr.format_mac(gateway.serial),
                 CONF_UDN: gateway.udn,
             }
+            if model_source:
+                _new_entry_data["model_source"] = model_source
             _new_entry_options = {
                 CONF_WORKER_COUNT: command_session_default(gateway.model_name),
             }
@@ -513,8 +530,14 @@ class ConfigFlowDiscoveryMixin:
                 )
                 return self.async_abort(reason=abort_reason)  # type: ignore[attr-defined]
 
-    async def _async_apply_gateway_identity(self, gateway: typing.Any) -> None:
-        """Correct the MAC and model typed in the manual step from what the gateway reports."""
+    async def _async_apply_gateway_identity(self, gateway: typing.Any) -> str:
+        """Correct the MAC and model typed in the manual step from what the gateway reports.
+
+        The model follows ``resolve_gateway_identity``, the same verdict the runtime
+        reaches: a brand variant of the reported model is kept, an uncertain WHO=13 code
+        may label a ``Generic`` entry but never overrides a chosen model, a certain code
+        corrects it. Returns the source the model rests on, for the entry's ``model_source``.
+        """
         from . import config_flow as _cf
 
         mac, code13, code = await _cf.identify_gateway(gateway)
@@ -529,16 +552,27 @@ class ConfigFlowDiscoveryMixin:
             gateway.serial = reported_mac
             await self.async_set_unique_id(reported_mac, raise_on_progress=False)  # type: ignore[attr-defined]
             self._abort_if_unique_id_configured()  # type: ignore[attr-defined]
-        reading = read_who1013(code) if code else (read_who13(code13) if code13 and code13 != WHO13_SHARED_CODE else None)
-        if reading is not None and reading.known and reading.canonical != gateway.model_name:
+        configured = str(gateway.model_name or "").strip()
+        resolution = resolve_gateway_identity(
+            GatewayIdentityEvidence(
+                manual=None if configured.lower() in UNTRUSTED_MODEL_LABELS else configured,
+                who13_code=code13,
+                who1013_code=code,
+            )
+        )
+        model = resolution.model
+        if model and model != configured:
+            reading = resolution.corrected_reading or _inband_reading(code13, code)
             LOGGER.info(
                 "Gateway at %s reports %s; using it instead of the selected model %s",
                 gateway.address,
                 reading.describe(),
-                gateway.model_name,
+                configured,
             )
-            gateway.model_name = gateway.model = reading.canonical
-            gateway.profile = get_gateway_profile(gateway.model_name, gateway.model_number)
+            gateway.model_name = gateway.model = model
+            gateway.profile = get_gateway_profile(model, gateway.model_number)
+            gateway._log_id = f"[{model} gateway - {gateway.host}]"  # pylint: disable=protected-access
+        return resolution.source
 
     async def async_step_port(self, user_input=None, errors=None):  # type: ignore
         """Port information for the gateway is missing."""
