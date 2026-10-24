@@ -1,0 +1,506 @@
+{
+  "capture": {
+    "kind": "hand-transcribed excerpt",
+    "title": "BTicino F454 (2.0.51) with Legrand 067226 motion/luminosity detector and BTicino F411 actuator sharing WHERE 52",
+    "reporter": "eC0y0te",
+    "sources": [
+      "https://github.com/OpenWebNet-HA/MyHOME/issues/777#issuecomment-6364859778",
+      "https://github.com/OpenWebNet-HA/MyHOME/issues/777#issuecomment-6375223714"
+    ],
+    "captured_at": "2026-10-23",
+    "abbreviated": true,
+    "abbreviation_note": "Two captures from the reporter's physical BTicino F454 (2.0.51): (1) a 20-minute session covering point-to-point status queries, dimension 5/6/7 queries, full occupancy cycles (WHAT 34 -> WHAT 39), and manual front-plate button toggles; and (2) a config-entry reload trace verified with tcpdump showing exact millisecond ordering of worker unqueue, event-session WHERE=0 replies (+138/+139 ms), and command-session *#*0## NACKs (+2.11/+2.02 s)."
+  },
+  "gateway": {
+    "model": "F454",
+    "firmware": "2.0.51",
+    "connection_type": "tcp",
+    "command_worker_count": 1
+  },
+  "environment": {
+    "ha_version": "2026.10.2",
+    "integration_version": "2.0.0b16",
+    "ownd_version": "2.0.0b11"
+  },
+  "plant": {
+    "shared_where": "52",
+    "light_actuator": {
+      "manufacturer": "BTicino",
+      "model": "F411",
+      "where": "52",
+      "name": "Spots WC",
+      "dimmable": false
+    },
+    "motion_detector": {
+      "manufacturer": "Legrand",
+      "model": "067226",
+      "description": "Celiane BUS motion/luminosity detector with push button (no internal relay, configured at A=5 PL=2)",
+      "where": "52",
+      "reported_pir_sensitivity": 2,
+      "reported_motion_timeout_s": 45
+    },
+    "control_where": "53"
+  },
+  "frames": [
+    {
+      "session": "session_1_bus_capture",
+      "section": "1_status_and_dimension_queries_light_off",
+      "time": "13:54:54.780",
+      "t": 0.0,
+      "direction": "tx",
+      "raw": "*#1*52##",
+      "who": 1,
+      "note": "Point-to-point status request on shared WHERE 52 while light is OFF and room is empty"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "1_status_and_dimension_queries_light_off",
+      "time": "13:54:54.877",
+      "t": 0.097,
+      "direction": "rx",
+      "raw": "*1*0*52##",
+      "who": 1,
+      "note": "Single reply from F411 channel 52 (OFF), ACK on command session; 067226 does not answer *#1*52##"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "1_status_and_dimension_queries_light_off",
+      "time": "13:55:17.855",
+      "t": 23.075,
+      "direction": "tx",
+      "raw": "*#1*52*5##",
+      "who": 1,
+      "note": "Point-to-point PIR sensitivity (DIMENSION 5) request to 52"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "1_status_and_dimension_queries_light_off",
+      "time": "13:55:18.000",
+      "t": 23.22,
+      "direction": "rx",
+      "raw": "*#1*0*5*2##",
+      "who": 1,
+      "note": "067226 answers on event session 145 ms later with WHERE=0 (SCS address byte 00), sensitivity=2 (high)"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "1_status_and_dimension_queries_light_off",
+      "time": "13:55:29.744",
+      "t": 34.964,
+      "direction": "tx",
+      "raw": "*#1*52*7##",
+      "who": 1,
+      "note": "Point-to-point motion timeout (DIMENSION 7) request to 52"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "1_status_and_dimension_queries_light_off",
+      "time": "13:55:29.880",
+      "t": 35.1,
+      "direction": "rx",
+      "raw": "*#1*0*7*0*0*45##",
+      "who": 1,
+      "note": "067226 answers on event session 136 ms later with WHERE=0, timeout=0h 0m 45s"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "1_status_and_dimension_queries_light_off",
+      "time": "13:55:46.717",
+      "t": 51.937,
+      "direction": "tx",
+      "raw": "*#1*52*6##",
+      "who": 1,
+      "note": "Point-to-point illuminance (DIMENSION 6) request to 52"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "1_status_and_dimension_queries_light_off",
+      "time": "13:55:46.838",
+      "t": 52.058,
+      "direction": "rx",
+      "raw": "*#1*0*6*0##",
+      "who": 1,
+      "note": "067226 answers on event session 121 ms later with WHERE=0, lux=0"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "2_entering_leaving_occupancy_timeout",
+      "time": "13:57:35.864",
+      "t": 161.084,
+      "direction": "rx",
+      "raw": "*1*34*52##",
+      "who": 1,
+      "note": "067226 detects movement on entering the room (WHAT 34)"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "2_entering_leaving_occupancy_timeout",
+      "time": "13:57:35.904",
+      "t": 161.124,
+      "direction": "rx",
+      "raw": "*1*1000#1*52##",
+      "who": 1,
+      "note": "067226 emits ON command translation frame to F411 at 52 (+40 ms)"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "2_entering_leaving_occupancy_timeout",
+      "time": "13:57:35.937",
+      "t": 161.157,
+      "direction": "rx",
+      "raw": "*1*1*52##",
+      "who": 1,
+      "note": "F411 channel 52 switches ON (+33 ms)"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "2_entering_leaving_occupancy_timeout",
+      "time": "13:57:56.599",
+      "t": 181.819,
+      "direction": "rx",
+      "raw": "*1*34*52##",
+      "who": 1,
+      "note": "Last movement report while occupied"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "2_entering_leaving_occupancy_timeout",
+      "time": "13:58:42.547",
+      "t": 227.767,
+      "direction": "rx",
+      "raw": "*1*39*52##",
+      "who": 1,
+      "note": "067226 reports end of movement (WHAT 39) 45.948 s after last WHAT 34 (matches DIM 7 = 45 s)"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "2_entering_leaving_occupancy_timeout",
+      "time": "13:58:42.618",
+      "t": 227.838,
+      "direction": "rx",
+      "raw": "*1*1000#0*52##",
+      "who": 1,
+      "note": "067226 emits OFF command translation frame to F411 at 52 (+71 ms)"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "2_entering_leaving_occupancy_timeout",
+      "time": "13:58:42.638",
+      "t": 227.858,
+      "direction": "rx",
+      "raw": "*1*0*52##",
+      "who": 1,
+      "note": "F411 channel 52 switches OFF (+20 ms; 91 ms after WHAT 39)"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "3_status_query_while_occupied_light_on",
+      "time": "13:58:52.147",
+      "t": 237.367,
+      "direction": "rx",
+      "raw": "*1*34*52##",
+      "who": 1,
+      "note": "Room re-entered: movement detected"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "3_status_query_while_occupied_light_on",
+      "time": "13:58:52.187",
+      "t": 237.407,
+      "direction": "rx",
+      "raw": "*1*1000#1*52##",
+      "who": 1,
+      "note": "067226 ON command translation"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "3_status_query_while_occupied_light_on",
+      "time": "13:58:52.220",
+      "t": 237.44,
+      "direction": "rx",
+      "raw": "*1*1*52##",
+      "who": 1,
+      "note": "F411 channel 52 reports ON"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "3_status_query_while_occupied_light_on",
+      "time": "13:58:58.519",
+      "t": 243.739,
+      "direction": "tx",
+      "raw": "*#1*52##",
+      "who": 1,
+      "note": "Point-to-point status request on 52 while occupied and light is ON"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "3_status_query_while_occupied_light_on",
+      "time": "13:58:58.623",
+      "t": 243.843,
+      "direction": "rx",
+      "raw": "*1*1*52##",
+      "who": 1,
+      "note": "Single reply from F411 channel 52 (ON, +104 ms)"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "4_front_plate_pushbutton_and_occupancy_timeout",
+      "time": "14:02:44.832",
+      "t": 470.052,
+      "direction": "rx",
+      "raw": "*1*1000#0*52##",
+      "who": 1,
+      "note": "Front-plate push button press 1 (OFF translation, no motion frame)"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "4_front_plate_pushbutton_and_occupancy_timeout",
+      "time": "14:02:44.884",
+      "t": 470.104,
+      "direction": "rx",
+      "raw": "*1*0*52##",
+      "who": 1,
+      "note": "F411 channel 52 switches OFF"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "4_front_plate_pushbutton_and_occupancy_timeout",
+      "time": "14:02:45.752",
+      "t": 470.972,
+      "direction": "rx",
+      "raw": "*1*1000#1*52##",
+      "who": 1,
+      "note": "Front-plate push button press 2 (ON translation)"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "4_front_plate_pushbutton_and_occupancy_timeout",
+      "time": "14:02:45.783",
+      "t": 471.003,
+      "direction": "rx",
+      "raw": "*1*1*52##",
+      "who": 1,
+      "note": "F411 channel 52 switches ON"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "4_front_plate_pushbutton_and_occupancy_timeout",
+      "time": "14:02:49.431",
+      "t": 474.651,
+      "direction": "rx",
+      "raw": "*1*1000#1*52##",
+      "who": 1,
+      "note": "Front-plate push button press 6 (final ON translation)"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "4_front_plate_pushbutton_and_occupancy_timeout",
+      "time": "14:02:49.445",
+      "t": 474.665,
+      "direction": "rx",
+      "raw": "*1*1*52##",
+      "who": 1,
+      "note": "F411 channel 52 switches ON"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "4_front_plate_pushbutton_and_occupancy_timeout",
+      "time": "14:02:55.459",
+      "t": 480.679,
+      "direction": "rx",
+      "raw": "*1*34*52##",
+      "who": 1,
+      "note": "Last movement report before leaving room"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "4_front_plate_pushbutton_and_occupancy_timeout",
+      "time": "14:03:42.028",
+      "t": 527.248,
+      "direction": "rx",
+      "raw": "*1*39*52##",
+      "who": 1,
+      "note": "End of movement (WHAT 39) 46.569 s after last WHAT 34"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "4_front_plate_pushbutton_and_occupancy_timeout",
+      "time": "14:03:42.078",
+      "t": 527.298,
+      "direction": "rx",
+      "raw": "*1*1000#0*52##",
+      "who": 1,
+      "note": "067226 OFF command translation (+50 ms)"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "4_front_plate_pushbutton_and_occupancy_timeout",
+      "time": "14:03:42.110",
+      "t": 527.33,
+      "direction": "rx",
+      "raw": "*1*0*52##",
+      "who": 1,
+      "note": "F411 channel 52 switches OFF (+32 ms)"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "5_dimension_queries_with_spots_on_and_control_where53",
+      "time": "14:14:19.257",
+      "t": 1164.477,
+      "direction": "rx",
+      "raw": "*1*34*52##",
+      "who": 1,
+      "note": "Movement detected (spots switch ON)"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "5_dimension_queries_with_spots_on_and_control_where53",
+      "time": "14:14:32.101",
+      "t": 1177.321,
+      "direction": "rx",
+      "raw": "*#1*0*6*0##",
+      "who": 1,
+      "note": "WHERE=0 reply to *#1*52*6## while spots are ON (still reports 0 lux)"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "5_dimension_queries_with_spots_on_and_control_where53",
+      "time": "14:14:41.153",
+      "t": 1186.373,
+      "direction": "rx",
+      "raw": "*#1*0*7*0*0*45##",
+      "who": 1,
+      "note": "WHERE=0 reply to *#1*52*7## while spots are ON (45 s)"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "5_dimension_queries_with_spots_on_and_control_where53",
+      "time": "14:14:57.956",
+      "t": 1203.176,
+      "direction": "tx",
+      "raw": "*#1*53*7##",
+      "who": 1,
+      "note": "Control query on F411 channel 53 (same module, no 067226 detector): no reply at all on bus"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "5_dimension_queries_with_spots_on_and_control_where53",
+      "time": "14:15:15.849",
+      "t": 1221.069,
+      "direction": "rx",
+      "raw": "*#1*0*6*0##",
+      "who": 1,
+      "note": "WHERE=0 reply to *#1*52*6## after spots ON for ~1 min (still 0 lux)"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "5_dimension_queries_with_spots_on_and_control_where53",
+      "time": "14:16:52.782",
+      "t": 1318.002,
+      "direction": "rx",
+      "raw": "*1*34*52##",
+      "who": 1,
+      "note": "Last movement report"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "5_dimension_queries_with_spots_on_and_control_where53",
+      "time": "14:17:38.588",
+      "t": 1363.808,
+      "direction": "rx",
+      "raw": "*1*39*52##",
+      "who": 1,
+      "note": "End of movement (WHAT 39) 45.806 s after last WHAT 34"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "5_dimension_queries_with_spots_on_and_control_where53",
+      "time": "14:17:38.656",
+      "t": 1363.876,
+      "direction": "rx",
+      "raw": "*1*1000#0*52##",
+      "who": 1,
+      "note": "067226 OFF command translation (+68 ms)"
+    },
+    {
+      "session": "session_1_bus_capture",
+      "section": "5_dimension_queries_with_spots_on_and_control_where53",
+      "time": "14:17:38.670",
+      "t": 1363.89,
+      "direction": "rx",
+      "raw": "*1*0*52##",
+      "who": 1,
+      "note": "F411 channel 52 switches OFF (+14 ms)"
+    }
+  ],
+  "reload_dimension_timing": [
+    {
+      "time": "23:11:59.564",
+      "t": 0.0,
+      "session_type": "command",
+      "event": "worker_unqueued",
+      "worker_id": 0,
+      "raw": "*#1*52*5##",
+      "who": 1,
+      "dimension": 5,
+      "where": "52",
+      "note": "Message `*#1*52*5##` was successfully unqueued by worker 0."
+    },
+    {
+      "time": "23:11:59.702",
+      "t": 0.138,
+      "session_type": "event",
+      "event": "event_reply_received",
+      "raw": "*#1*0*5*2##",
+      "who": 1,
+      "dimension": 5,
+      "where": "0",
+      "delta_from_request_s": 0.138,
+      "note": "Message received: `*#1*0*5*2##` on event connection 138 ms after request, while command session is still waiting"
+    },
+    {
+      "time": "23:12:01.673",
+      "t": 2.109,
+      "session_type": "command",
+      "event": "command_nack_received",
+      "request_raw": "*#1*52*5##",
+      "raw": "*#*0##",
+      "delta_from_request_s": 2.109,
+      "note": "Gateway rejected status request *#1*52*5## (NACK, 0 response(s)). Confirmed as *#*0## on command connection by tcpdump."
+    },
+    {
+      "time": "23:12:01.724",
+      "t": 2.16,
+      "session_type": "command",
+      "event": "worker_unqueued",
+      "worker_id": 0,
+      "raw": "*#1*52*7##",
+      "who": 1,
+      "dimension": 7,
+      "where": "52",
+      "note": "Message `*#1*52*7##` was successfully unqueued by worker 0."
+    },
+    {
+      "time": "23:12:01.863",
+      "t": 2.299,
+      "session_type": "event",
+      "event": "event_reply_received",
+      "raw": "*#1*0*7*0*0*45##",
+      "who": 1,
+      "dimension": 7,
+      "where": "0",
+      "delta_from_request_s": 0.139,
+      "note": "Message received: `*#1*0*7*0*0*45##` on event connection 139 ms after request, while command session is still waiting"
+    },
+    {
+      "time": "23:12:03.742",
+      "t": 4.178,
+      "session_type": "command",
+      "event": "command_nack_received",
+      "request_raw": "*#1*52*7##",
+      "raw": "*#*0##",
+      "delta_from_request_s": 2.018,
+      "note": "Gateway rejected status request *#1*52*7## (NACK, 0 response(s)). Confirmed as *#*0## on command connection by tcpdump."
+    }
+  ]
+}

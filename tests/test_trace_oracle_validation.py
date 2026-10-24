@@ -120,6 +120,8 @@ def canonicalize_trace_tx_frame(frame: str) -> str:
                 return "*#1*31*1##"
             if rest == "4":
                 return "*#1*31*4##"
+            if rest in ("5", "6", "7"):
+                return "*#1*31*1##"
             if rest.startswith("#1*"):
                 return "*#1*31*#1*100*0##"
             if rest.startswith("#4*"):
