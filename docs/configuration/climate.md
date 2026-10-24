@@ -56,6 +56,7 @@ MyHOME climate entities support standard Home Assistant climate controls:
 * **Target Temperature**: Adjustable setpoint slider in 0.5 °C increments.
 * **Current Temperature**: Real-time ambient reading reported by the probe.
 * **Current Humidity**: Ambient relative humidity percentage for zones equipped with humidity sensors (e.g. Living Now thermostats or humidity probes).
+* **HVAC Action and `actuators`**: a zone asks for the state of its actuators (`*#4*<WHERE>*20##`, one `*#4*#0*20##` for every local zone on an F461) once the startup sweep is over and again after the event session reconnects, so `hvac_action` (`heating` / `cooling` / `idle`) is known right after start instead of after the first actuator switch. The attribute `actuators` lists each actuator as `on` or `off` (`{"1": "off", "2": "off"}`). F453, F453AV, H4684, MH200, MH200N and MH202 drop the request (firmware oracle), so their zones are not asked and wait for the actuators' own frames.
 
 ### 💧 Humidity Support & Startup Behavior
 
