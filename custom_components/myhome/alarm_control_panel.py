@@ -12,7 +12,7 @@ from homeassistant.const import (
     CONF_NAME,
     Platform,
 )
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -41,6 +41,12 @@ STATE_ARMED_AWAY = AlarmControlPanelState.ARMED_AWAY
 STATE_TRIGGERED = AlarmControlPanelState.TRIGGERED
 
 CENTRAL_UNIT_KEY = "0"
+# Gateways that NACK the WHO 5 status request ``*#5*0##`` (own-firmware-oracle
+# ``results/<model>/<fw>/oracle/full/trace-corpus.tsv``: F450 020010, F453AV 030014,
+# F454 020051, F459 020105, F460 020012, F461 020011, MyHomeServer1 028206 answer
+# ``nack`` / ``silent``). Fallback for OWNd profiles that carry no
+# ``supports_alarm_status_request`` flag yet; the flag belongs in OWNd (#381 pattern).
+ALARM_STATUS_REFUSED_MODELS = frozenset({"F450", "F453AV", "F454", "F459", "F460", "F461", "MYHOMESERVER1"})
 
 
 async def async_setup_entry(
@@ -159,10 +165,11 @@ class MyHOMEAlarmControlPanel(MyHOMEEntity, AlarmControlPanelEntity):
         self._attr_supported_features = AlarmControlPanelEntityFeature(0)
         # The central unit takes no code over the bus.
         self._attr_code_arm_required = False
-        self._attr_alarm_state = STATE_DISARMED
+        # Unknown until a bus frame or the restored state says otherwise (#177).
+        self._attr_alarm_state: AlarmControlPanelState | None = None
         self._attr_extra_state_attributes = {
             "where": self._where,
-            "raw_state": "disarmed",
+            "raw_state": None,
         }
 
     @property
@@ -170,13 +177,43 @@ class MyHOMEAlarmControlPanel(MyHOMEEntity, AlarmControlPanelEntity):
         """Return the state of the device."""
         return self._attr_alarm_state
 
-    async def async_added_to_hass(self) -> None:
-        """Register dispatcher listener when added to hass."""
-        self._register_availability_listener()
-        await self.async_update()
+    async def async_restore_last_state(self, last_state: State) -> None:
+        """Restore the last known state, flagged as restored until a bus frame confirms it."""
+        try:
+            state = AlarmControlPanelState(last_state.state)
+        except ValueError:
+            return
+        self._attr_alarm_state = state
+        attrs = self._attr_extra_state_attributes
+        attrs["restored"] = True
+        attrs["raw_state"] = last_state.attributes.get("raw_state")
+        if "state_code" in last_state.attributes:
+            attrs["state_code"] = last_state.attributes["state_code"]
+
+    @property
+    def _status_request_refused(self) -> bool:
+        """Whether this gateway NACKs ``*#5*0##``: the OWNd profile flag first, then the model table.
+
+        ``None`` on the profile means unverified and falls through to the table; a gateway
+        in neither is polled as before.
+        """
+        profile = getattr(self._gateway_handler, "profile", None)
+        flag = getattr(profile, "supports_alarm_status_request", None)
+        if isinstance(flag, bool):
+            return not flag
+        model = getattr(self._gateway_handler, "model", None)
+        return isinstance(model, str) and model.strip().upper().replace(" ", "") in ALARM_STATUS_REFUSED_MODELS
 
     async def async_update(self) -> None:
-        """Request status from the gateway."""
+        """Request status from the gateway, unless the gateway refuses the request."""
+        if self._status_request_refused:
+            LOGGER.debug(
+                "%s %s: %s refuses *#5*0##; waiting for alarm frames on the bus",
+                self._gateway_handler.log_id,
+                self._display_name,
+                self._gateway_handler.model,
+            )
+            return
         await self._gateway_handler.send_status_request(OWNAlarmCommand.status(self._where))
 
     async def async_alarm_disarm(self, code: str | None = None) -> None:  # pylint: disable=unused-argument
@@ -196,12 +233,17 @@ class MyHOMEAlarmControlPanel(MyHOMEEntity, AlarmControlPanelEntity):
             self._gateway_handler.log_id,
             message.human_readable_log,
         )
+        live_state: AlarmControlPanelState | None = None
         if message.is_alarm:
-            self._attr_alarm_state = STATE_TRIGGERED
+            live_state = STATE_TRIGGERED
         elif message.is_armed_away:
-            self._attr_alarm_state = STATE_ARMED_AWAY
+            live_state = STATE_ARMED_AWAY
         elif message.is_disarmed:
-            self._attr_alarm_state = STATE_DISARMED
+            live_state = STATE_DISARMED
+        if live_state is not None:
+            self._attr_alarm_state = live_state
+            # Only a frame that sets the state confirms it; activation or zone frames do not.
+            self._attr_extra_state_attributes.pop("restored", None)
 
         self._attr_extra_state_attributes["raw_state"] = message.state_name
         self._attr_extra_state_attributes["state_code"] = message.state_code

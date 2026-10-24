@@ -43,6 +43,8 @@ The panel follows what the central unit reports on the bus:
 * `*5*1*<where>##` (*activation*) is **not** an armed state. The central unit sends it while disarming (`*5*2*0##` → `*5*1*0##` → `*5*9*0##`) and in the status of a disarmed system, as well as while arming (`*5*1*0##` → `*5*8*0##`).
 * **`armed_home`** is never reported: home and away arming look the same on the bus.
 * Zones (`*5*11*#n##` active, `*5*18*#n##` not active) never change the panel's state.
+* A new panel is **unknown** until the central unit reports a state. After a restart it shows its last known state with the attribute `restored: true` until the next frame confirms it.
+* F450, F453AV, F454, F459, F460, F461 and MyHomeServer1 refuse the status request `*#5*0##`, so the panel is not polled there and waits for the central unit's own frames.
 
 ---
 

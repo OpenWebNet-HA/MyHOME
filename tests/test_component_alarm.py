@@ -119,7 +119,8 @@ async def test_alarm_setup_restores_and_discovers(hass: HomeAssistant, mock_gate
         assert isinstance(msg_empty_activation, OWNAlarmEvent)
         async_dispatcher_send(hass, f"myhome_message_{mac}", msg_empty_activation)
         assert len(added_entities) == 3
-        assert central_alarm.alarm_state == (STATE_ARMED_AWAY if msg_empty_activation.is_armed_away else STATE_DISARMED)
+        # Activation is neither armed nor disarmed: a fresh panel stays unknown (#177)
+        assert central_alarm.alarm_state == (STATE_ARMED_AWAY if msg_empty_activation.is_armed_away else None)
         assert central_alarm.extra_state_attributes["raw_state"] == "activation"
         assert central_alarm.extra_state_attributes["state_code"] == 1
         assert zone1_alarm.extra_state_attributes["raw_state"] == "activation"
@@ -416,10 +417,11 @@ class TestMyHOMEAlarmEntity:
     def test_alarm_attributes(self, alarm_central, alarm_zone1):
         # Read-only: the central unit rejects SCS arm/disarm (#564)
         assert alarm_central.supported_features == AlarmControlPanelEntityFeature(0)
-        assert alarm_central.alarm_state == STATE_DISARMED
-        assert alarm_central.state == STATE_DISARMED
+        # Unknown until the bus or the restored state says otherwise (#177)
+        assert alarm_central.alarm_state is None
+        assert alarm_central.state is None
         assert alarm_central.extra_state_attributes["where"] == "0"
-        assert alarm_central.extra_state_attributes["raw_state"] == "disarmed"
+        assert alarm_central.extra_state_attributes["raw_state"] is None
         assert alarm_zone1._display_name == "Zone 1 Burglar Alarm"
 
     async def test_async_lifecycle_and_update(self, alarm_central, alarm_zone1):
