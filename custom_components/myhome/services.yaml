@@ -6,6 +6,8 @@ sync_time:
       name: Gateway
       description: The gateway's MAC address, as present in the config.
       example: 00:03:50:00:00:00
+      selector:
+        text:
 
 send_message:
   name: Send message
@@ -15,10 +17,15 @@ send_message:
       name: Gateway
       description: The gateway's MAC address, as present in the config.
       example: 00:03:50:00:00:00
+      selector:
+        text:
     message:
       name: Message
       description: Valid OpenWebNet message.
+      required: true
       example: "*1*0*0##"
+      selector:
+        text:
 
 start_sending_instant_power:
   name: Start sending instant power

@@ -105,13 +105,16 @@ async def test_services_edge_cases(hass: HomeAssistant, attach_gateway) -> None:
     gw_mac = "00:03:50:aa:bb:cc"
     entry = attach_gateway(gw_mac, mock_handler)
 
-    # Test send_message with message=None
-    await hass.services.async_call(
-        DOMAIN,
-        SERVICE_SEND_MESSAGE,
-        {ATTR_GATEWAY: gw_mac, ATTR_MESSAGE: None},
-        blocking=True,
-    )
+    # send_message with message=None is refused by the service schema (#189)
+    import voluptuous as vol
+
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SEND_MESSAGE,
+            {ATTR_GATEWAY: gw_mac, ATTR_MESSAGE: None},
+            blocking=True,
+        )
 
     # Test sweep_bus when no gateway is set up
     entry.runtime_data = None
@@ -601,3 +604,46 @@ async def test_send_scenario_plus_command_no_gateways(hass: HomeAssistant) -> No
     assert exc_no_gw.value.translation_key == "scenario_plus_no_gateway"
 
 
+
+
+@pytest.mark.parametrize(
+    ("service", "data"),
+    [
+        (SERVICE_SEND_MESSAGE, {"gw_mac": "00:03:50:aa:bb:cc", ATTR_MESSAGE: "*1*1*12##"}),
+        (SERVICE_SEND_MESSAGE, {ATTR_GATEWAY: "00:03:50:aa:bb:cc"}),
+        (SERVICE_SYNC_TIME, {"gw_mac": "00:03:50:aa:bb:cc"}),
+    ],
+)
+async def test_send_message_and_sync_time_reject_unknown_or_missing_keys(
+    hass: HomeAssistant, attach_gateway, service, data
+) -> None:
+    """A misspelt key (#189: `gw_mac`) or a missing message raises instead of reaching the default gateway."""
+    from unittest.mock import AsyncMock
+
+    import voluptuous as vol
+
+    await async_setup_services(hass)
+    mock_handler = MagicMock()
+    mock_handler.send = AsyncMock()
+    mock_handler.send_status_request = AsyncMock()
+    attach_gateway("00:03:50:aa:bb:cc", mock_handler)
+
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(DOMAIN, service, data, blocking=True)
+    mock_handler.send.assert_not_called()
+    mock_handler.send_status_request.assert_not_called()
+
+
+def test_send_message_and_sync_time_have_selectors() -> None:
+    """Both services are usable in the visual editor: every field has a selector (#189)."""
+    from pathlib import Path
+
+    import yaml
+
+    services = yaml.safe_load(
+        (Path(__file__).resolve().parent.parent / "custom_components" / "myhome" / "services.yaml").read_text()
+    )
+    for service in (SERVICE_SEND_MESSAGE, SERVICE_SYNC_TIME):
+        for name, field in services[service]["fields"].items():
+            assert "selector" in field, f"{service}.{name}"
+    assert services[SERVICE_SEND_MESSAGE]["fields"][ATTR_MESSAGE]["required"] is True
