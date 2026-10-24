@@ -164,7 +164,7 @@ class MyHOMEAlarmControlPanel(MyHOMEEntity, AlarmControlPanelEntity):
         self._attr_supported_features = AlarmControlPanelEntityFeature(0)
         # The central unit takes no code over the bus.
         self._attr_code_arm_required = False
-        # Unknown until a bus frame or the restored state says otherwise (#177).
+        # Unknown until a bus frame or the restored state says otherwise.
         self._attr_alarm_state: AlarmControlPanelState | None = None
         self._attr_extra_state_attributes = {
             "where": self._where,
