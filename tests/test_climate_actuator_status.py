@@ -326,7 +326,7 @@ async def test_known_sides_without_a_season_still_poll_the_fan_speed(hass):
 async def test_fan_coil_side_is_asked_again_only_if_the_first_answer_never_came(hass):
     zone = _zone(hass)
     _feed(zone, *F461_POLL_REPLY, "*#4*2#2*20*5##", "*#4*2*19*5*0##")
-    assert zone._fan_coil_sides_asked is False
+    assert zone._fan_coil_sides_asked_at is None
     _feed(zone, "*#4*2#2*20*5##")  # the side is known: nothing more to ask
     zone._gateway_handler.request_zone_dimension.assert_called_once_with("2", 19)
 
@@ -346,7 +346,7 @@ async def test_a_gateway_without_zone_requests_keeps_polling_the_fan_speed(hass)
     zone = _zone(hass)
     del zone._gateway_handler.request_zone_dimension
     _feed(zone, *F461_POLL_REPLY, "*#4*2#2*20*5##")
-    assert zone._fan_coil_sides_asked is False
+    assert zone._fan_coil_sides_asked_at is None
     await zone.async_update()
     assert _status_frames(zone)[-1] == "*#4*2*11##"
 
@@ -408,7 +408,7 @@ async def test_central_off_keeps_the_actuators_attribute(hass):
 
 # ------------------------------------------------------------------ gateway: invalid zone addresses (review 5639409551, 3)
 
-@pytest.mark.parametrize("where", ["", "2*22", "2 ", "a", "*#0", "2#1*20"])
+@pytest.mark.parametrize("where", ["", "2*22", "2 ", "a", "*#0", "2#1*20", "#", "2##", "##2", "2#", "2#4#", "2#1#2#3"])
 def test_an_invalid_zone_address_is_refused_at_once(hass, where):
     """``2*22`` would make ``*#4*2*22*20##``, a dimension 22 write that reboots the F461."""
     handler = _handler(hass, "F454")
@@ -418,7 +418,7 @@ def test_an_invalid_zone_address_is_refused_at_once(hass, where):
     assert handler._zone_request_task is None
 
 
-@pytest.mark.parametrize("where", ["2", "#2", "01", "3#4#01", "#3#4#01", "2#1#4#01", "2#1"])
+@pytest.mark.parametrize("where", ["2", "#2", "01", "3#4#01", "#3#4#01", "2#1#4#01", "2#1", "0#0", "3#4#1"])
 def test_a_plain_or_routed_zone_address_is_accepted(hass, where):
     handler = _handler(hass, "F454")
     handler.request_zone_dimension(where, 20)
@@ -578,3 +578,45 @@ async def test_the_startup_run_does_not_wait_the_coalesce_window(hass, fast_bus_
     await handler.initial_discovery()
     await _settle(hass)
     assert _drain(handler)[-1] == "*#4*#0*20##"
+
+
+# ------------------------------------------------------------------ cross-check follow-ups
+
+async def test_an_unanswered_dimension_19_does_not_disable_the_fan_speed_poll_for_good(hass, monkeypatch):
+    """The one-shot request may be refused or lost with the session: after the wait, ask as before."""
+    monkeypatch.setattr("custom_components.myhome.climate.FAN_COIL_SIDES_WAIT", 0.5)
+    zone = _zone(hass)
+    _feed(zone, *F461_POLL_REPLY, "*#4*2#2*20*5##")
+    await zone.async_update()
+    assert "*#4*2*11##" not in _status_frames(zone)  # pending
+    zone._fan_coil_sides_asked_at -= 1.0  # the wait is over, no answer came
+    await zone.async_update()
+    assert _status_frames(zone)[-1] == "*#4*2*11##"
+    _feed(zone, "*#4*2#2*20*5##")  # the next fan coil report may ask again
+    assert zone._gateway_handler.request_zone_dimension.call_count == 2
+
+
+def test_an_invalid_zone_is_not_watched_either(hass):
+    handler = _handler(hass, "F454")
+    with pytest.raises(ValueError, match="Invalid zone address"):
+        handler.watch_zone_actuators("2*22")
+    assert handler._actuator_zones == {}
+
+
+async def test_zones_arriving_during_a_batch_are_coalesced_into_the_next_one(hass, fast_bus_pacing, monkeypatch):
+    """A zone registered while a batch is on the bus, and one 50 ms later, share the next batch."""
+    monkeypatch.setattr("custom_components.myhome.gateway.ZONE_REQUEST_COALESCE", 0.2)
+    handler = _handler(hass, "F454")
+    handler._initial_discovery_done.set()
+    sent: list[list[str]] = []
+
+    async def _send(frames):
+        sent.append(list(frames))
+        if len(sent) == 1:
+            handler.watch_zone_actuators("5")
+            hass.loop.call_later(0.05, handler.watch_zone_actuators, "7")
+
+    handler.send_paced = _send
+    handler.watch_zone_actuators("2")
+    await _settle(hass)
+    assert sent == [["*#4*2*20##"], ["*#4*5*20##", "*#4*7*20##"]]

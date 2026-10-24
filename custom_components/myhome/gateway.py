@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import inspect
+import re
 import time
 from collections.abc import Iterable
 from typing import Any
@@ -175,14 +176,19 @@ ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {
 _ZONE_REQUEST_MODELS = sorted(ACTUATOR_REQUEST_REFUSED | set(ALL_ZONE_REQUESTS), key=len, reverse=True)
 
 
+# A WHO 4 zone address: ``Z``, ``#Z``, ``Z#N`` (actuator), each optionally behind an
+# interface (``Z#4#if``); the grammar OWNd#140's builder is being extended to.
+_ZONE_WHERE = re.compile(rf"^#?[0-9]+(?:#[0-9]+)?(?:{re.escape(BUS_ROUTING)}[0-9]{{1,2}})?$")
+
+
 def _validate_zone_where(where: str) -> None:
     """Reject a WHO 4 zone address that cannot go into ``*#4*WHERE*DIM##`` as it is.
 
-    Anything but digits and ``#`` would change the frame's grammar: ``2*22`` would turn a
-    dimension 20 request into ``*#4*2*22*20##``, a dimension 22 write. The builder of
-    OWNd#140 (``OWNHeatingCommand.actuators_status``) rejects the same addresses.
+    Anything else would change the frame's grammar: ``2*22`` would turn a dimension 20
+    request into ``*#4*2*22*20##``, a dimension 22 write; ``2##`` ends the frame early.
+    The builder of OWNd#140 (``OWNHeatingCommand.actuators_status``) rejects the same.
     """
-    if not where or not all(character.isdigit() or character == "#" for character in where):
+    if not _ZONE_WHERE.match(where or ""):
         raise ValueError(f"Invalid zone address: {where!r}")
 
 
@@ -438,6 +444,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         refuses the request is decided when it is sent, once the in-band identity (WHO 13 /
         WHO 1013) has settled, so a model corrected after the entities were added is honoured.
         """
+        _validate_zone_where(where)  # before the zone is counted: no phantom watch
         self._actuator_zones[where] = self._actuator_zones.get(where, 0) + 1
         self.request_zone_dimension(where, 20)
 
@@ -470,12 +477,14 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
     async def _send_zone_requests(self) -> None:
         """Send the waiting zone requests through the paced sender, until none is left."""
-        discovered = self._initial_discovery_done.is_set()
+        coalesce = self._initial_discovery_done.is_set()
         await self.wait_for_initial_discovery()
-        # Zones added in the same pass join this run; after the sweep, zones discovered from
-        # the bus over the next tenth of a second do too instead of each sweeping on its own.
-        await asyncio.sleep(ZONE_REQUEST_COALESCE if discovered else 0)
         while self._zone_requests:
+            # Zones added in the same pass join this run; after the sweep, zones discovered
+            # from the bus over the next tenth of a second do too instead of each sweeping on
+            # its own, and so do zones that arrived while the previous batch was being sent.
+            await asyncio.sleep(ZONE_REQUEST_COALESCE if coalesce else 0)
+            coalesce = True
             pending, self._zone_requests = self._zone_requests, set()
             frames: list[str] = []
             target = self._who4_target()
