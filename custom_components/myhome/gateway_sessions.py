@@ -20,7 +20,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.connection import OWNCommandSession, OWNEventSession, OWNGateway
 from OWNd.message import OWNCommand, OWNMessage
 
-from .const import LOGGER, area_of_where
+from .const import LOGGER, area_of_where, is_apl_address
 from .expose import is_exposed_on_bus
 from .where_grammar import expose_message_where, normalize_where, where_param
 
@@ -1159,8 +1159,8 @@ class CommandWorkerPool:
             raw_where = f"{where}#{'#'.join(str(p) for p in wp)}" if wp else str(where)
             norm = _normalize_target_where(who, raw_where)
             base, _ = _split_where(norm)
-            if not norm or base in ("0", "00") or base.startswith("#"):
-                continue
+            if not norm or base in ("0", "00") or base.startswith("#") or (who in (1, 2) and not is_apl_address(base)):
+                return None
             matched.append((msg, norm))
         wheres = {w for _, w in matched}
         if len(wheres) != 1:

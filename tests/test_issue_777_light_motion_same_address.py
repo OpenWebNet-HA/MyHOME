@@ -293,6 +293,44 @@ async def test_motion_sensor_clears_on_what_39(hass, inverted):
 
 
 @pytest.mark.asyncio
+async def test_what_39_as_first_discovering_frame_does_not_raise_or_stick_force_update(hass, caplog):
+    """When HA starts while a room is occupied, WHAT 39 can be the first frame that discovers the sensor.
+
+    PlatformDiscovery routes the discovering frame synchronously before async_add_entities attaches
+    entity_id; handle_event must not raise NoEntitySpecifiedError or leave _attr_force_update True.
+    """
+    from custom_components.myhome.binary_sensor import async_setup_entry as setup_binary_sensor
+
+    mock_gateway = MagicMock()
+    mock_gateway.mac = MAC
+    hass.data.setdefault(DOMAIN, {})[MAC] = {
+        "entity": mock_gateway,
+        CONF_PLATFORMS: {"binary_sensor": {}},
+    }
+    config_entry = MagicMock()
+    config_entry.data = {"mac": MAC}
+    config_entry.entry_id = "entry_777_what39_discover"
+    mock_er = MagicMock()
+
+    added_sensors: list = []
+    with (
+        patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]),
+        patch("custom_components.myhome.discovery.er.async_get", return_value=mock_er),
+    ):
+        attach_runtime(hass, config_entry)
+        await setup_binary_sensor(hass, config_entry, added_sensors.extend)
+        async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*1*39*52##"))
+        await hass.async_block_till_done()
+
+    assert len(added_sensors) == 1
+    sensor = added_sensors[0]
+    assert sensor._where == "52"
+    assert sensor.is_on is False
+    assert sensor._attr_force_update is False
+    assert "Error handling frame" not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_sensor_frames_routed_to_the_shared_key_never_reach_the_light(hass, caplog):
     """Reporter retest on b16: the light still logged 'unknown lighting WHAT 39' once per cycle.
 
@@ -551,16 +589,18 @@ async def test_anonymous_where_0_replies_dropped_when_unclaimed_duplicate_or_amb
         assert by_where["52"]._attr_extra_state_attributes["Sensitivity"] == "medium"
         assert by_where["52"]._attr_extra_state_attributes["Timeout"] == 315.0
 
-        # 2. Broadcast or group dimension requests in flight are never claimed as point-to-point targets.
-        pool._in_flight_messages.extend([
-            OWNCommand.parse("*#1*0*5##"),
-            OWNCommand.parse("*#1*#1*5##"),
-            "*1*1*52##",  # non-dimension command
-        ])
-        async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#1*0*5*2##"))
-        await hass.async_block_till_done()
-        assert by_where["52"]._attr_extra_state_attributes["Sensitivity"] == "medium"
-        pool._in_flight_messages.clear()
+        # 2. Broadcast, group, or area dimension requests in flight are never claimed as
+        # point-to-point targets, even when a point-to-point request is in flight alongside them.
+        for non_point in ("*#1*0*5##", "*#1*#1*5##", "*#1*5*5##"):
+            pool._in_flight_messages.extend([
+                "*1*1*52##",  # non-dimension command
+                OWNCommand.parse("*#1*52*5##"),
+                OWNCommand.parse(non_point),
+            ])
+            async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#1*0*5*2##"))
+            await hass.async_block_till_done()
+            assert by_where["52"]._attr_extra_state_attributes["Sensitivity"] == "medium"
+            pool._in_flight_messages.clear()
 
         # 3. Two workers simultaneously in flight for the same (WHO=1, dim=5) on 52 and 61:
         # BOTH replies arriving while both requests remain in flight must be dropped.

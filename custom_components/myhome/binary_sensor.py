@@ -620,16 +620,8 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
     @callback
     def handle_event(self, message: OWNLightingEvent) -> None:
         """Handle an event message."""
-        if is_motion_end(message):
-            # WHAT 39: the detector's occupancy timer ran out (#777).
-            LOGGER.debug("%s %s", self._gateway_handler.log_id, message.human_readable_log)
-            self._attr_is_on = self._inverted
-            self._last_updated = datetime.now(timezone.utc)  # type: ignore
-            self._attr_force_update = True
-            self.async_write_ha_state()
-            self._attr_force_update = False
-            return
-        if message.message_type not in [
+        motion_end = is_motion_end(message)
+        if not motion_end and message.message_type not in [
             MESSAGE_TYPE_MOTION,
             MESSAGE_TYPE_MOTION_TIMEOUT,
             MESSAGE_TYPE_PIR_SENSITIVITY,
@@ -641,7 +633,10 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
             self._gateway_handler.log_id,
             message.human_readable_log,
         )
-        if message.message_type == MESSAGE_TYPE_MOTION and message.motion:
+        if motion_end:
+            # WHAT 39: the detector's occupancy timer ran out (#777).
+            self._attr_is_on = self._inverted
+        elif message.message_type == MESSAGE_TYPE_MOTION and message.motion:
             self._attr_is_on = message.motion != self._inverted
         elif message.message_type == MESSAGE_TYPE_MOTION_TIMEOUT:
             if message.motion_timeout is not None:
