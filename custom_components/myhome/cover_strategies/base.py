@@ -131,7 +131,10 @@ class CoverKinematicsStrategy(Protocol):
         ctx: dict[str, Any],
         now: float,
     ) -> int | None:
-        """Re-anchor position (and slat tilt if applicable) on a relayed stop status echo (#705)."""
+        """Re-anchor position (and slat tilt if applicable) on a relayed stop status echo (#705).
+
+        ``ctx["run_start_position"]`` is ``None`` for a run that started at an unknown position.
+        """
 
     def current_position(self, entity: Any, now: float) -> int | None:
         """Return current cover position (0..100) or None if position is unknown."""

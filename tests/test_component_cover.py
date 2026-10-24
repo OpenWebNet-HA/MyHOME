@@ -761,6 +761,8 @@ class TestMyHOMECoverEntity:
         assert compute_run_duration(1, 20.0, min_pulse=0.5) == 0.5
 
     def test_handle_event(self, basic_cover):
+        # A known start: a timed cover with no history has no position (F411/2).
+        basic_cover._attr_current_cover_position = 50
         # Opening event
         msg_opening = OWNEvent.parse("*2*1*21##")
         basic_cover.handle_event(msg_opening)
