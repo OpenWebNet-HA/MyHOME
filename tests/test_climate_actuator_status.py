@@ -314,6 +314,15 @@ async def test_no_fan_speed_poll_in_the_valve_s_season(hass):
     assert _status_frames(zone)[-1] == "*#4*2*11##"
 
 
+async def test_known_sides_without_a_season_still_poll_the_fan_speed(hass):
+    """The side is known but the season is not yet: ask, as before."""
+    zone = _zone(hass)
+    _feed(zone, "*#4*2#2*20*5##", "*#4*2*19*5*0##")
+    assert zone._season is None
+    await zone.async_update()
+    assert _status_frames(zone)[-1] == "*#4*2*11##"
+
+
 async def test_fan_coil_side_is_asked_again_only_if_the_first_answer_never_came(hass):
     zone = _zone(hass)
     _feed(zone, *F461_POLL_REPLY, "*#4*2#2*20*5##", "*#4*2*19*5*0##")
