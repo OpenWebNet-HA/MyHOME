@@ -162,6 +162,23 @@ ACTUATOR_REQUEST_REFUSED = frozenset({"F453", "F453AV", "H4684", "MH200", "MH200
 ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {"F461": {20: "*#4*#0*20##"}}
 
 
+def _validate_zone_where(where: str) -> None:
+    """Reject a WHO 4 zone address that cannot go into ``*#4*WHERE*DIM##`` as it is.
+
+    Anything but digits and ``#`` would change the frame's grammar: ``2*22`` would turn a
+    dimension 20 request into ``*#4*2*22*20##``, a dimension 22 write. The builder of
+    OWNd#140 (``OWNHeatingCommand.actuators_status``) rejects the same addresses.
+    """
+    if not where or not all(character.isdigit() or character == "#" for character in where):
+        raise ValueError(f"Invalid zone address: {where!r}")
+
+
+def _zone_request_frame(where: str, dimension: int) -> str:
+    """The dimension request of one zone (``*#4*WHERE*DIM##``), validated like a builder."""
+    _validate_zone_where(where)
+    return f"*#4*{where}*{dimension}##"
+
+
 class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     """Manages a single MyHOME Gateway."""
 
@@ -412,6 +429,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         if dimension == 22:
             # *#4*Z*22## kills the F461 thermostat handler and reboots the gateway.
             raise ValueError("WHO 4 dimension 22 is never requested")
+        _validate_zone_where(where)
         self._zone_requests.add((where, dimension))
         if self._zone_request_task is None or self._zone_request_task.done():
             self._zone_request_task = self.hass.async_create_background_task(
@@ -431,7 +449,12 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 if all_zones is not None and any("#4#" not in where for where in wheres):
                     frames.append(all_zones)
                     wheres = [where for where in wheres if "#4#" in where]  # behind an interface
-                frames.extend(f"*#4*{where}*{dimension}##" for where in wheres)
+                for where in wheres:
+                    # One zone the builder rejects must not drop the others of the batch.
+                    try:
+                        frames.append(_zone_request_frame(where, dimension))
+                    except ValueError as err:
+                        LOGGER.warning("%s Zone %s: dimension %s not requested: %s", self.log_id, where, dimension, err)
             try:
                 await self.send_paced(frames)
             except Exception:  # a transport error must not end the task silently (#593)

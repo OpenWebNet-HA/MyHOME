@@ -394,3 +394,34 @@ async def test_central_off_keeps_the_actuators_attribute(hass):
     assert zone.hvac_action == HVACAction.OFF
     assert zone.extra_state_attributes["actuators"] == {"1": "off"}
     assert zone._zone_active is False
+
+
+# ------------------------------------------------------------------ gateway: invalid zone addresses (review 5639409551, 3)
+
+@pytest.mark.parametrize("where", ["", "2*22", "2 ", "a", "*#0", "2#1*20"])
+def test_an_invalid_zone_address_is_refused_at_once(hass, where):
+    """``2*22`` would make ``*#4*2*22*20##``, a dimension 22 write that reboots the F461."""
+    handler = _handler(hass, "F454")
+    with pytest.raises(ValueError, match="Invalid zone address"):
+        handler.request_zone_dimension(where, 20)
+    assert handler._zone_requests == set()
+    assert handler._zone_request_task is None
+
+
+@pytest.mark.parametrize("where", ["2", "#2", "01", "3#4#01", "#3#4#01", "2#1#4#01", "2#1"])
+def test_a_plain_or_routed_zone_address_is_accepted(hass, where):
+    handler = _handler(hass, "F454")
+    handler.request_zone_dimension(where, 20)
+    assert handler._zone_requests == {(where, 20)}
+
+
+async def test_one_rejected_zone_does_not_drop_the_batch(hass, fast_bus_pacing, caplog):
+    """A zone the frame builder rejects is logged and the other zones are still asked."""
+    handler = _handler(hass, "F454")
+    handler._initial_discovery_done.set()
+    handler.watch_zone_actuators("1")
+    handler._zone_requests.add(("2*22", 20))  # what a builder would raise on
+    handler.watch_zone_actuators("3")
+    await _settle(hass)
+    assert _drain(handler) == ["*#4*1*20##", "*#4*3*20##"]
+    assert "Zone 2*22: dimension 20 not requested: Invalid zone address: '2*22'" in caplog.text
