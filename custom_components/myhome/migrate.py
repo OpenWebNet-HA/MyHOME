@@ -1,6 +1,7 @@
 """Config entry, entity registry, and device registry migration and cleanup helpers."""
 from __future__ import annotations
 
+import re
 from typing import Any, Protocol
 
 from homeassistant.config_entries import ConfigEntry
@@ -14,6 +15,7 @@ from homeassistant.helpers import (
 )
 
 from .const import DOMAIN, LOGGER
+from .validate import canonical_point_where
 
 
 class GatewayProtocol(Protocol):
@@ -294,6 +296,133 @@ def migrate_entry_and_registries(
                         reg_entry = reloaded_entry
                 except ValueError:
                     pass
+
+    try:
+        migrate_canonical_point_addresses(hass, entry)
+    except Exception as err:  # pylint: disable=broad-except  # a registry problem must not block the setup
+        LOGGER.warning("Could not migrate 4-digit point addresses to their canonical spelling: %s", err)
+
+
+# Platforms whose unique ids carry a WHO 1 / WHO 2 point address: {mac}-{who}-{where}[#4#{iface}][-{suffix}].
+_POINT_ADDRESS_DOMAINS = ("light", "switch", "cover", "button")
+_POINT_ADDRESS_ID = re.compile(r"^(?P<who>[12])-(?P<where>\d{4})(?P<tail>(?:[#-].*)?)$")
+
+
+def _canonical_point_id(after_mac: str) -> str | None:
+    """``1-0004`` -> ``1-04`` (also ``2-0009#4#01``, ``1-0004-disable``); None when nothing is rewritten."""
+    if (match := _POINT_ADDRESS_ID.match(after_mac)) is None:
+        return None
+    canonical = canonical_point_where(match["where"])
+    if canonical == match["where"]:
+        return None
+    return f"{match['who']}-{canonical}{match['tail']}"
+
+
+def migrate_canonical_point_addresses(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Move entities and devices of 4-digit point spellings (``0004``) to the canonical one (``04``).
+
+    myhome.yaml now resolves ``0004`` to ``04`` (#147, #135). The entity created under the old
+    spelling keeps its entity_id, name and area under the new unique id; a duplicate that bus
+    discovery created under the canonical spelling in this config entry is removed in its favour,
+    and only once the rename has succeeded (the registry refuses a rename to a unique id in use,
+    so the duplicate is taken out first and put back if the rename fails). A duplicate held by
+    another config entry is a collision: nothing is touched and a WARNING says so. Running the
+    migration again finds nothing to do.
+    """
+    entity_registry = er.async_get(hass)
+    device_registry = dr.async_get(hass)
+    mac = dr.format_mac(entry.data[CONF_MAC])
+    prefix = f"{mac}-"
+
+    for reg_entry in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
+        if reg_entry.domain not in _POINT_ADDRESS_DOMAINS or not reg_entry.unique_id.startswith(prefix):
+            continue
+        if (new_tail := _canonical_point_id(reg_entry.unique_id[len(prefix):])) is None:
+            continue
+        new_unique_id = f"{prefix}{new_tail}"
+        duplicate_id = entity_registry.async_get_entity_id(reg_entry.domain, DOMAIN, new_unique_id)
+        duplicate = entity_registry.async_get(duplicate_id) if duplicate_id else None
+        if duplicate is not None and duplicate.config_entry_id != entry.entry_id:
+            LOGGER.warning(
+                "Not migrating %s to unique_id %s: %s of another config entry already holds it",
+                reg_entry.entity_id, new_unique_id, duplicate.entity_id,
+            )
+            continue
+        if duplicate is not None:
+            # The bus-created twin of this config entry: out of the way for the rename.
+            entity_registry.async_remove(duplicate.entity_id)
+        try:
+            entity_registry.async_update_entity(reg_entry.entity_id, new_unique_id=new_unique_id)
+        except ValueError as err:
+            LOGGER.warning("Could not migrate %s to unique_id %s: %s", reg_entry.entity_id, new_unique_id, err)
+            if duplicate is not None:
+                # Put the twin back as it was (the registry restores a removed entity's
+                # entity_id, name, icon, area and labels on re-creation).
+                entity_registry.async_get_or_create(
+                    duplicate.domain,
+                    duplicate.platform,
+                    duplicate.unique_id,
+                    config_entry=entry,
+                    device_id=duplicate.device_id,
+                    original_name=duplicate.original_name,
+                )
+            continue
+        LOGGER.info("Migrated %s to unique_id %s", reg_entry.entity_id, new_unique_id)
+        if duplicate is not None:
+            LOGGER.info("Removed %s, a duplicate of %s under the canonical address", duplicate.entity_id, reg_entry.entity_id)
+
+    for device in dr.async_entries_for_config_entry(device_registry, entry.entry_id):
+        identifiers = set(device.identifiers)
+        renamed = {
+            ident: (DOMAIN, f"{prefix}{new_tail}")
+            for ident in identifiers
+            if ident[0] == DOMAIN
+            and str(ident[1]).startswith(prefix)
+            and (new_tail := _canonical_point_id(str(ident[1])[len(prefix):])) is not None
+        }
+        if not renamed:
+            continue
+        twins = [
+            other
+            for new_ident in renamed.values()
+            if (other := _device_for_identifier(device_registry, entry, new_ident)) is not None
+            and other.id != device.id
+        ]
+        # The registry refuses an identifier another device holds, so the bus-created twin
+        # goes first: its entities move to the surviving device and it is removed, to come
+        # back as it was (same id, area, labels, user-given name) if the rename is refused.
+        handed_over: dict[str, list[str]] = {}
+        for other in twins:
+            handed_over[other.id] = [
+                other_entity.entity_id
+                for other_entity in er.async_entries_for_device(entity_registry, other.id, include_disabled_entities=True)
+            ]
+            for entity_id in handed_over[other.id]:
+                entity_registry.async_update_entity(entity_id, device_id=device.id)
+            device_registry.async_remove_device(other.id)
+        try:
+            device_registry.async_update_device(
+                device.id, new_identifiers=(identifiers - set(renamed)) | set(renamed.values())
+            )
+        except Exception as err:  # pylint: disable=broad-except
+            LOGGER.warning("Could not migrate device %s to the canonical address: %s", device.id, err)
+            for other in twins:
+                restored = device_registry.async_get_or_create(
+                    config_entry_id=entry.entry_id, identifiers=set(other.identifiers)
+                )
+                for entity_id in handed_over[other.id]:
+                    entity_registry.async_update_entity(entity_id, device_id=restored.id)
+            continue
+        for other in twins:
+            # The twin's area and user-given name survive on the configured device.
+            carried: dict[str, Any] = {}
+            if device.area_id is None and other.area_id is not None:
+                carried["area_id"] = other.area_id
+            if device.name_by_user is None and other.name_by_user is not None:
+                carried["name_by_user"] = other.name_by_user
+            if carried:
+                device_registry.async_update_device(device.id, **carried)
+            LOGGER.info("Removed device %s, a duplicate of %s under the canonical address", other.id, device.id)
 
 
 def prune_stale_devices(
