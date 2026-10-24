@@ -401,11 +401,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     def watch_zone_actuators(self, where: str) -> CALLBACK_TYPE:
         """Ask for a heating zone's actuators (dimension 20) now and after every reconnect.
 
-        Returns the callback that stops it. Gateways that refuse the request are not asked.
+        Returns the callback that stops it. The zone is always recorded: whether the gateway
+        refuses the request is decided when it is sent, once the in-band identity (WHO 13 /
+        WHO 1013) has settled, so a model corrected after the entities were added is honoured.
         """
-        if self.actuator_request_refused:
-            LOGGER.debug("%s Zone %s: %s refuses the actuator request; not asking", self.log_id, where, self.model)
-            return lambda: None
         self._actuator_zones[where] = self._actuator_zones.get(where, 0) + 1
         self.request_zone_dimension(where, 20)
 
@@ -445,6 +444,11 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             frames: list[str] = []
             for dimension in sorted({dim for _where, dim in pending}):
                 wheres = sorted(where for where, dim in pending if dim == dimension)
+                if dimension == 20 and self.actuator_request_refused:
+                    LOGGER.debug(
+                        "%s Zones %s: %s refuses the actuator request; not asking", self.log_id, wheres, self.model
+                    )
+                    continue
                 all_zones = self.all_zone_request(dimension)
                 if all_zones is not None and any("#4#" not in where for where in wheres):
                     frames.append(all_zones)

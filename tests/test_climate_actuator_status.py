@@ -179,7 +179,7 @@ async def test_gateway_that_refuses_the_request_is_not_asked(hass, fast_bus_paci
     handler.watch_zone_actuators("2")
     await _settle(hass)
     assert _drain(handler) == []
-    assert handler._actuator_zones == {}
+    assert handler._actuator_zones == {"2": 1}  # kept: the model may still be corrected in band
 
 
 @pytest.mark.parametrize(
@@ -425,3 +425,40 @@ async def test_one_rejected_zone_does_not_drop_the_batch(hass, fast_bus_pacing, 
     await _settle(hass)
     assert _drain(handler) == ["*#4*1*20##", "*#4*3*20##"]
     assert "Zone 2*22: dimension 20 not requested: Invalid zone address: '2*22'" in caplog.text
+
+
+# ------------------------------------------------------------------ gateway: identity settles after the entities were added (review 5639409551, 4)
+
+async def test_a_gateway_identified_late_as_refusing_is_not_asked(hass, fast_bus_pacing):
+    """Entities are added as ``Generic``; WHO 13 / WHO 1013 then says MH202 before the sweep ends."""
+    handler = _handler(hass, "Generic")
+    handler.watch_zone_actuators("2")
+    await hass.async_block_till_done()
+    handler.gateway.profile = get_gateway_profile("MH202")  # what _apply_model does
+    await handler.initial_discovery()
+    await _settle(hass)
+    assert "*#4*2*20##" not in _drain(handler)
+    assert handler._actuator_zones == {"2": 1}
+
+    handler.is_connected = True
+    handler._on_event_connection_state_change(False)
+    handler._on_event_connection_state_change(True)  # reconnect: still refused
+    await _settle(hass)
+    assert _drain(handler) == []
+
+
+async def test_a_gateway_identified_late_as_supported_is_asked(hass, fast_bus_pacing):
+    """Entities are added as a misconfigured MH200N; WHO 13 then corrects it to F461."""
+    handler = _handler(hass, "MH200N")
+    handler.watch_zone_actuators("2")
+    await hass.async_block_till_done()
+    handler.gateway.profile = get_gateway_profile("F461")
+    await handler.initial_discovery()
+    await _settle(hass)
+    assert _drain(handler)[-1] == "*#4*#0*20##"
+
+    handler.is_connected = True
+    handler._on_event_connection_state_change(False)
+    handler._on_event_connection_state_change(True)
+    await _settle(hass)
+    assert _drain(handler) == ["*#4*#0*20##"]
