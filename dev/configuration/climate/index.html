@@ -2232,7 +2232,8 @@
 <li><code>cool</code>: System active in cooling / air-conditioning mode.</li>
 <li><code>auto</code>: Following scheduled setpoint or central program.</li>
 <li><code>off</code>: System frost-protection or thermal shutdown.</li>
-<li><strong>Target Temperature</strong>: Adjustable setpoint slider in 0.5 °C increments.</li>
+<li><strong>Target Temperature</strong>: Adjustable setpoint slider in 0.5 °C increments.
+  The slider shows the setpoint the thermostat regulates to (dimension 12, knob offset included) whenever the zone has reported it; the commanded setpoint (dimension 14) is only shown until then. On an F461 the two can differ (21.0 commanded, 23.5 in force on a live capture), and the attribute <code>local_target_temperature</code> carries the same value. When the zone leaves <code>off</code>, the value reported while it was off is taken as the protection setpoint (#383), so the commanded setpoint is shown until the zone reports dimension 12 again; after a <code>set_temperature</code> call the next report, dimension 12 or 14, is shown.</li>
 <li><strong>Current Temperature</strong>: Real-time ambient reading reported by the probe.</li>
 <li><strong>Current Humidity</strong>: Ambient relative humidity percentage for zones equipped with humidity sensors (e.g. Living Now thermostats or humidity probes).</li>
 </ul>

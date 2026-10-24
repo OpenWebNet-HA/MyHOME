@@ -2284,6 +2284,11 @@
 <td style="text-align: left;">Please attach a trace to RFC #248 if you own one.</td>
 </tr>
 <tr>
+<td style="text-align: left;"><strong>A commanded setpoint (dimension 14) that arrives without a following dimension 12 does not update the slider once the zone has reported a setpoint in force.</strong></td>
+<td style="text-align: left;">The slider follows dimension 12 (the setpoint the thermostat regulates to, knob offset included) as soon as the zone has reported it; a dimension 14 that is not the echo of a write from Home Assistant is kept as the commanded value only. Both captured plants (F461 2.0.11 with a KW4691, MyHomeServer1 3.87.13 with 36 zones) emit dimension 12 after every write and after every local change, so the slider stays current there; a gateway that echoed only dimension 14 for an external change would leave the slider on the previous value until the next dimension 12 report or poll.</td>
+<td style="text-align: left;">Reload the entity (<code>homeassistant.update_entity</code>) to poll <code>*#4*Z##</code>; please attach a trace if you see this.</td>
+</tr>
+<tr>
 <td style="text-align: left;"><strong>Probes (<code>WHERE ≥ 100</code>) are read-only and push-driven.</strong></td>
 <td style="text-align: left;">They NACK the explicit poll (<code>*#4*ZPP*15##</code>) and push readings on their own schedule.</td>
 <td style="text-align: left;">Nothing needed; a probe that goes silent is polled again after 5 min.</td>
