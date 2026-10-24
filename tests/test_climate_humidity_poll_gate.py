@@ -14,11 +14,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PASSWORD, CONF_PORT
-from OWNd.profiles import get_gateway_profile
+from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
 
 from custom_components.myhome.climate import MyHOMEClimate
 from custom_components.myhome.const import CONF_FIRMWARE
-from custom_components.myhome.gateway import MyHOMEGatewayHandler
+from custom_components.myhome.gateway import HUMIDITY_REQUEST_REFUSED, MyHOMEGatewayHandler
 
 MAC = "00:03:50:00:02:57"
 
@@ -129,3 +129,41 @@ async def test_unverified_flag_on_an_unlisted_model_still_polls(hass):
     handler.gateway.profile = SimpleNamespace(model_name="F455", supports_heating_humidity_request=None)
     await _humidity_zone(hass, handler).async_update()
     assert "*#4*2*60##" in _sent(handler)
+
+
+# ------------------------------------------------------------------ gateway: profile class and model lookup (#792 review, 5)
+
+def test_a_generic_profile_with_a_vendor_prefixed_name_still_finds_its_table(hass):
+    """``get_gateway_profile("BTicino F461")`` is a GenericGatewayProfile named "BTicino F461"."""
+    handler = _handler(hass, "BTicino F461")
+    assert isinstance(handler.gateway.profile, GenericGatewayProfile)
+    # HUMIDITY_REQUEST_REFUSED names no forwarding model, so the configured name is kept (#792's
+    # all-zone table adds F461 to the lookup); either way the key is not a refusing model.
+    assert "F461" in handler._model_key
+    assert handler._model_key not in HUMIDITY_REQUEST_REFUSED
+    assert handler.humidity_request_refused is False
+
+
+@pytest.mark.parametrize(
+    ("model", "key", "refused"),
+    [("Legrand MH200N", "MH200N", True), ("MH200", "MH200", True), ("BTicino F453AV", "F453AV", True), ("Unknown", "UNKNOWN", False)],
+)
+def test_model_key_reads_the_longest_known_model(hass, model, key, refused):
+    handler = _handler(hass, model)
+    handler.gateway.profile = GenericGatewayProfile(model_name=model)
+    assert handler._model_key == key
+    assert handler.humidity_request_refused is refused
+
+
+def test_a_generic_profile_reads_the_configured_model_not_its_own_name(hass):
+    """``get_gateway_profile("Generic")`` names nothing: the configured model decides, and an unknown one is polled."""
+    handler = _handler(hass, "Generic")
+    assert isinstance(handler.gateway.profile, GenericGatewayProfile)
+    assert handler._model_key == "GENERIC"
+    assert handler.humidity_request_refused is False
+
+
+async def test_vendor_prefixed_refusing_gateway_zone_does_not_ask(hass):
+    handler = _handler(hass, "Legrand MH200N")
+    await _humidity_zone(hass, handler).async_update()
+    assert _sent(handler) == []
