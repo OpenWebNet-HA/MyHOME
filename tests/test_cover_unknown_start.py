@@ -233,3 +233,25 @@ async def test_delivery_failure_from_a_restored_closed_state_restores_it(hass, g
     await _yield()
     assert cover.is_opening is False
     assert cover.is_closed is True
+
+
+async def test_promotion_from_simple_forgets_the_optimistic_state(hass, gateway, clock, fake_time) -> None:
+    """travel_time 0 pulsed closed, then given a travel time: timed and unknown, not closed with no position."""
+    cover = _make_cover(hass, gateway, travel_time=0)
+    assert cover.strategy.name == "simple"
+    cover.handle_event(OWNEvent.parse("*2*2*05##"))  # a brief keypad pulse down
+    clock.now += 0.5
+    cover.handle_event(OWNEvent.parse("*2*0*05##"))
+    assert cover.is_closed is True  # the optimistic state of an assumed-state cover
+    assert cover.current_cover_position is None
+    cover._persist_calibration = MagicMock()
+    await cover.async_set_travel_time(6.0, 6.0)
+    assert cover.strategy.name == "timed"
+    assert cover.assumed_state is False
+    assert cover.current_cover_position is None
+    assert cover.is_closed is None  # nothing says where the 0.5 s pulse left it
+    assert cover.state is None
+    with pytest.raises(ServiceValidationError) as err:
+        await cover.async_set_cover_position(position=40)
+    assert err.value.translation_key == "cover_position_unknown"
+    assert gateway.deliveries == []

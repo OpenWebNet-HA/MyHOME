@@ -1228,6 +1228,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         )
         if self._attr_current_cover_position is None:
             self._attr_current_cover_position = self._start_position
+            if self._attr_current_cover_position is None:
+                # The simple strategy's open / closed was optimistic (the last
+                # direction); a timed cover without a position is unknown.
+                self._attr_is_closed = None
 
     def _demote_to_simple_strategy(self) -> None:
         """Let the strategy pick its successor when the calibration is reset to no travel time.
