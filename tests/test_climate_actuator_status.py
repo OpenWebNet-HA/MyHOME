@@ -573,6 +573,19 @@ async def test_one_rejected_zone_does_not_drop_the_batch(hass, fast_bus_pacing, 
     assert "Zone 2*22: dimension 20 not requested: Invalid zone address: '2*22'" in caplog.text
 
 
+async def test_a_refusing_gateway_does_not_run_an_empty_sweep(hass, fast_bus_pacing, monkeypatch):
+    """Every item skipped: no ``send_paced([])``, so the sweep flags are not toggled for nothing."""
+    handler = _handler(hass, "MH202")
+    handler._initial_discovery_done.set()
+    send_paced = AsyncMock(wraps=handler.send_paced)
+    monkeypatch.setattr(handler, "send_paced", send_paced)
+    handler.watch_zone_actuators("2")
+    await _settle(hass)
+    send_paced.assert_not_awaited()
+    assert handler._sweep_idle.is_set()
+    assert _drain(handler) == []
+
+
 # ------------------------------------------------------------------ gateway: identity settles after the entities were added (review 5639409551, 4)
 
 async def test_a_gateway_identified_late_as_refusing_is_not_asked(hass, fast_bus_pacing, monkeypatch):

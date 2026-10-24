@@ -510,6 +510,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                         frames.append(_zone_request_frame(where, dimension))
                     except ValueError as err:
                         LOGGER.warning("%s Zone %s: dimension %s not requested: %s", self.log_id, where, dimension, err)
+            if not frames:
+                continue  # every item skipped (refusing gateway): no empty sweep
             try:
                 await self.send_paced(frames)
             except Exception:  # a transport error must not end the task silently (#593)
