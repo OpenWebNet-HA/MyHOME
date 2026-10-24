@@ -154,6 +154,36 @@ def _apply_imported_copy(
     )
 
 
+def _same_mac(first: Any, second: Any) -> bool:
+    """Whether two MAC spellings (colons, hyphens, dots, raw hex) name the same gateway."""
+    return dr.format_mac(str(first)) == dr.format_mac(str(second))
+
+
+def _log_mac_mismatch(hass: HomeAssistant, entry: ConfigEntry, keys: list[Any]) -> None:
+    """Warn when myhome.yaml has gateway sections but none under this gateway's MAC (#106).
+
+    Sections that belong to another configured gateway are not a mismatch.
+    """
+    other_macs = [
+        e.data.get(CONF_MAC)
+        for e in hass.config_entries.async_entries(DOMAIN)
+        if e is not entry and isinstance(getattr(e, "data", None), dict)
+    ]
+    orphans = [k for k in keys if not any(_same_mac(k, mac) for mac in other_macs)]
+    if not orphans:
+        LOGGER.debug(
+            "myhome.yaml has no section for gateway %s; its sections belong to other gateways",
+            entry.data.get(CONF_MAC),
+        )
+        return
+    LOGGER.warning(
+        "myhome.yaml has no section for gateway %s; sections found under %s match no configured "
+        "gateway. Rename the section to this gateway's MAC to load it",
+        entry.data.get(CONF_MAC),
+        ", ".join(str(k) for k in orphans),
+    )
+
+
 async def load_legacy_myhome_yaml(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -252,6 +282,7 @@ async def _load_live_yaml(
                 except Exception:
                     continue
         if mac_key is None:
+            _log_mac_mismatch(hass, entry, list(_validated))
             return False
         if configured_expose is not None:
             yaml_expose = _validated[mac_key].get(CONF_EXPOSE, [])
