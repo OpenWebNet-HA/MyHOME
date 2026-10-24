@@ -63,7 +63,7 @@ Climate zones equipped with integrated humidity sensors (such as BTicino Living 
 
 * **Dynamic Auto-Detection**: When a climate zone emits a humidity reading on the SCS bus, the integration dynamically enables humidity tracking on that entity.
 * **State Restoration Across Restarts**: The zone remembers that it supports humidity across Home Assistant restarts and restores its last known humidity value immediately.
-* **Targeted Startup Query**: After startup (once the initial discovery sweep finishes), only climate zones that support humidity are queried with `*#4*<WHERE>*60##` to refresh the current reading. This avoids unnecessary bus traffic on zones without humidity sensors, and works across both software gateways (MyHomeServer1) and physical SCS gateways (such as F461, F454, F455, MH200N).
+* **Targeted Startup Query**: After startup (once the initial discovery sweep finishes), only climate zones that support humidity are queried with `*#4*<WHERE>*60##` to refresh the current reading. This avoids unnecessary bus traffic on zones without humidity sensors. A live F461 and a live MyHomeServer1 answer the request (F459 and F460 forward it in the firmware emulation); on F450, F453, F453AV, F454, H4684, MH200, MH200N and MH202 the emulated firmware did not forward it (own-firmware-oracle PR #60, not yet published), so until the OWNd gateway profile states `supports_heating_humidity_request` their zones are not queried and show the humidity their probe pushes.
 * **Optional YAML Configuration**: In advanced setups using legacy `/config/myhome.yaml`, humidity polling can be explicitly pre-enabled on a zone by setting `humidity: true` under the zone configuration.
 
 ---

@@ -151,6 +151,13 @@ DISCOVERY_REQUESTS: tuple[tuple[int, str], ...] = (
     (18, "*#18*51*51##"),
     (18, "*#18*51*113##"),
 )
+# Gateways whose emulated firmware did not forward the zone humidity request (``*#4*Z*60##``:
+# nack and nothing on the bus) in the own-firmware-oracle thermo-zone-requests run of the open
+# PR OpenWebNet-HA/own-firmware-oracle#60 (unpublished verdict, not a published row); F459,
+# F460, F461 and MyHomeServer1 forwarded it, and the live F461 / MyHomeServer1 answer it.
+# Read from the OWNd profile first (``supports_heating_humidity_request``: ``True`` / ``False``
+# wins, ``None`` = unverified); this table is the fallback until the flag exists there.
+HUMIDITY_REQUEST_REFUSED = frozenset({"F450", "F453", "F453AV", "F454", "H4684", "MH200", "MH200N", "MH202"})
 
 
 class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
@@ -343,6 +350,24 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 "H4684",
             )
         )
+
+    @property
+    def _model_key(self) -> str:
+        """The gateway model the request tables are keyed on (``F461``, ``MYHOMESERVER1``)."""
+        profile_model = getattr(getattr(self.gateway, "profile", None), "model_name", None)
+        name = profile_model if isinstance(profile_model, str) and profile_model != "Generic" else self.model
+        return "".join(character for character in str(name).upper() if character.isalnum())
+
+    @property
+    def humidity_request_refused(self) -> bool:
+        """Whether this gateway drops humidity requests (``*#4*Z*60##``) instead of forwarding them.
+
+        The OWNd profile flag wins when it exists; otherwise the oracle-derived table.
+        """
+        supported = getattr(getattr(self.gateway, "profile", None), "supports_heating_humidity_request", None)
+        if isinstance(supported, bool):
+            return not supported
+        return self._model_key in HUMIDITY_REQUEST_REFUSED
 
     @property
     def profile(self) -> Any:
