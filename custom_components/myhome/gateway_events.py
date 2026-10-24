@@ -407,7 +407,13 @@ class GatewayEventDispatcher:
             )
             from OWNd.message import OWNHeatingCommand as OWNHCmd
 
-            await self.handler.send_status_request(OWNHCmd.status(where))
+            # Never block the event read loop on a full send queue: skip the poll instead.
+            if self.handler.send_status_request_nowait(OWNHCmd.status(where)) is None:
+                self._logger.debug(
+                    "%s Send queue full; zone %s status poll skipped",
+                    self.handler.log_id,
+                    where,
+                )
         elif isinstance(message, OWNCENPlusEvent):
             event = None
             if message.is_short_pressed:
