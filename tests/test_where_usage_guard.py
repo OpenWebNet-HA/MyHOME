@@ -44,6 +44,7 @@ REVIEWED: dict[str, str] = {
     "topology.py::GatewayTopologyMixin._correlate_shared_bus_traffic": "general-frame test for shared-bus correlation",
     "device_health.py::message_where": "WHO 1 / 1001 point frames: WHERE (+ F422 interface) is the actuator address",
     "gateway_sessions.py::_extract_target_key": "FrameScheduler target key: (WHO, WHERE) serialization key across all subsystems",
+    "gateway_sessions.py::CommandWorkerPool.claim_in_flight_dimension_where": "WHO-filtered in-flight dimension request WHERE for anonymous WHERE 0 reply correlation",
     # Diagnostics only: the WHERE is shown or filtered on, never routed.
     "bus_monitor.py::BusFrame.__init__": "diagnostics record",
     "websocket.py::_matches_filter": "diagnostics filter",
