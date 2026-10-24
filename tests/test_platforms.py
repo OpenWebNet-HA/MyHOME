@@ -465,6 +465,14 @@ class TestPlatformImportCleanliness:
                     breaks_in_ha_version="2027.3.0",
                     core_behavior=ha_frame.ReportBehavior.LOG,
                 )
+            # Core-only checks with custom_integration_behavior=IGNORE must be skipped
+            ha_frame.report_usage(
+                "returns a boolean from async_setup_entry, which should return None",
+                core_behavior=ha_frame.ReportBehavior.LOG,
+                core_integration_behavior=ha_frame.ReportBehavior.ERROR,
+                custom_integration_behavior=ha_frame.ReportBehavior.IGNORE,
+                integration_domain="myhome",
+            )
         assert len(captured) == 2
         assert "[frame.report_usage] myhome: calls deprecated_api (breaks in HA 2027.1.0)" in captured[0]
         assert (

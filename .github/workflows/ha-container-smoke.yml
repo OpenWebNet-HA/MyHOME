@@ -37,7 +37,7 @@ jobs:
           - ha-channel: beta
             allow-failure: false
           - ha-channel: dev
-            allow-failure: true
+            allow-failure: false
 
     continue-on-error: ${{ matrix.allow-failure }}
 
