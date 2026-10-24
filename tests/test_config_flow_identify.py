@@ -270,10 +270,11 @@ async def test_identify_gateway_reads_the_f461_replies() -> None:
     session.send = AsyncMock(side_effect=lambda message, is_status_request=False: replies[str(message)])
     session.close = AsyncMock()
 
-    with patch.object(cfd, "OWNCommandSession", return_value=session):
-        mac, code13, code = await cfd.identify_gateway(MagicMock())
+    with patch.object(cfd, "OWNCommandSession", return_value=session) as session_class:
+        identity = await cfd.identify_gateway(MagicMock())
 
-    assert (mac, code13, code) == ("00:03:50:00:07:77", "200", "134")
+    assert identity == cfd.GatewayIdentity("00:03:50:00:07:77", "200", "134")
+    assert session_class.call_args.kwargs["logger"] is cfd.PROBE_LOGGER
     assert [str(c.args[0]) for c in session.send.await_args_list] == ["*#13**15##", "*#1013**1##", "*#13**12##"]
     session.close.assert_awaited()
 
@@ -293,9 +294,9 @@ async def test_identify_gateway_never_asks_the_mac_from_a_gateway_that_crashes_o
     session.close = AsyncMock()
 
     with patch.object(cfd, "OWNCommandSession", return_value=session):
-        mac, code13, code = await cfd.identify_gateway(MagicMock())
+        identity = await cfd.identify_gateway(MagicMock())
 
-    assert (mac, code13, code) == (None, who13, None)
+    assert identity == cfd.GatewayIdentity(None, who13, None)
     assert [str(c.args[0]) for c in session.send.await_args_list] == ["*#13**15##"]
 
 
@@ -319,7 +320,7 @@ async def test_identify_gateway_survives_a_refused_session() -> None:
     session.connect = AsyncMock(side_effect=OSError("refused"))
     session.close = AsyncMock()
     with patch.object(cfd, "OWNCommandSession", return_value=session):
-        assert await cfd.identify_gateway(MagicMock()) == (None, None, None)
+        assert await cfd.identify_gateway(MagicMock()) == cfd.GatewayIdentity(None, None, None)
 
 
 async def test_identify_gateway_gives_up_when_the_session_is_not_accepted() -> None:
@@ -331,6 +332,81 @@ async def test_identify_gateway_gives_up_when_the_session_is_not_accepted() -> N
     session.send = AsyncMock()
     session.close = AsyncMock()
     with patch.object(cfd, "OWNCommandSession", return_value=session):
-        assert await cfd.identify_gateway(MagicMock()) == (None, None, None)
+        assert await cfd.identify_gateway(MagicMock()) == cfd.GatewayIdentity(None, None, None)
     session.send.assert_not_awaited()
     session.close.assert_awaited()
+
+
+async def test_identify_gateway_reports_a_password_protected_command_session(caplog) -> None:
+    """Open monitor session, protected command session: the probe says so and asks nothing, at DEBUG only."""
+    from custom_components.myhome import config_flow_discovery as cfd
+
+    session = MagicMock()
+
+    async def _refuse():
+        # What OWNd logs on the logger it was given, at WARNING and ERROR
+        cfd.PROBE_LOGGER.warning("Connection requires a password but none was provided.")
+        cfd.PROBE_LOGGER.error("Command session negotiation failed (password_required); giving up.")
+        return {"Success": False, "Message": "password_required"}
+
+    session.connect = AsyncMock(side_effect=_refuse)
+    session.send = AsyncMock()
+    session.close = AsyncMock()
+    with (
+        caplog.at_level(logging.DEBUG, logger="custom_components.myhome"),
+        patch.object(cfd, "OWNCommandSession", return_value=session),
+    ):
+        identity = await cfd.identify_gateway(MagicMock())
+
+    assert identity == cfd.GatewayIdentity(None, None, None, password_required=True)
+    assert identity.password_required is True
+    session.send.assert_not_awaited()
+    probe_records = [r for r in caplog.records if "password" in r.getMessage()]
+    assert len(probe_records) == 2
+    assert all(r.levelno == logging.DEBUG for r in probe_records)
+    assert all(r.name == "custom_components.myhome.identify" for r in probe_records)
+
+
+async def test_manual_flow_asks_the_password_a_split_auth_gateway_needs_for_commands(
+    hass: HomeAssistant, caplog
+) -> None:
+    """Monitor session open without a password, command session protected: the flow asks for it once,
+    then identifies the gateway with it (the runtime command workers need that password anyway)."""
+    from custom_components.myhome.config_flow_discovery import GatewayIdentity
+
+    test_connection = AsyncMock(return_value={"Success": True})
+    identify = AsyncMock(
+        side_effect=[
+            GatewayIdentity(None, None, None, password_required=True),
+            GatewayIdentity("00:03:50:00:07:77", "200", "134"),
+        ]
+    )
+
+    with caplog.at_level(logging.DEBUG, logger="custom_components.myhome"):
+        result = await _manual_flow(hass, test_connection, identify)
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"]["password"] == "12345"
+    assert result["data"]["mac"] == "00:03:50:00:07:77"
+    assert result["data"]["name"] == "F461"
+    assert identify.await_count == 2
+    assert test_connection.await_count == 2
+    assert not [
+        r for r in caplog.records if r.levelno >= logging.WARNING and "password" in r.getMessage().lower()
+    ]
+
+
+async def test_manual_flow_does_not_loop_when_the_command_session_still_wants_a_password(
+    hass: HomeAssistant,
+) -> None:
+    """With a password already given, a second password_required is treated as no answer: the entry is created."""
+    from custom_components.myhome.config_flow_discovery import GatewayIdentity
+
+    identify = AsyncMock(return_value=GatewayIdentity(None, None, None, password_required=True))
+
+    result = await _manual_flow(hass, _password_then_ok(), identify)
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"]["mac"] == "00:03:50:00:00:00"
+    assert result["data"]["name"] == "MyHomeServer1"
+    identify.assert_awaited_once()

@@ -29,6 +29,7 @@ from .config_flow_discovery import (
     TEST_CONNECTION_ABORT_REASONS,
     TEST_CONNECTION_RETRY_DELAY,
     ConfigFlowDiscoveryMixin,
+    GatewayIdentity,
     MACAddress,
     _get_serial_ports,
     identify_gateway,
@@ -359,5 +360,6 @@ __all__ = [
     "command_session_default",
     "find_gateways",
     "get_gateway",
+    "GatewayIdentity",
     "identify_gateway",
 ]

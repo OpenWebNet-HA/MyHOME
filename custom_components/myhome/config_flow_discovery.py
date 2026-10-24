@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import ipaddress
+import logging
 import re
 import typing
 
@@ -77,6 +78,32 @@ UNUSABLE_MACS: frozenset[str] = frozenset({"00:00:00:00:00:00", "ff:ff:ff:ff:ff:
 WHO13_SHARED_CODE = "200"
 
 
+class _DebugOnlyLogger(logging.Logger):
+    """A logger that records everything at DEBUG.
+
+    The identification probe is best effort and its refusals are expected: a gateway
+    with an open monitor session (`*99*1##`) and a password-protected command session
+    (`*99*0##`) answers the probe with `password_required`, which OWNd would otherwise
+    log at WARNING and ERROR in the middle of a successful setup.
+    """
+
+    def _log(self, level: int, msg: object, args: typing.Any, *extra: typing.Any, **kwargs: typing.Any) -> None:
+        super()._log(logging.DEBUG, msg, args, *extra, **kwargs)
+
+
+PROBE_LOGGER: logging.Logger = _DebugOnlyLogger(f"{LOGGER.name}.identify")
+PROBE_LOGGER.parent = LOGGER
+
+
+class GatewayIdentity(typing.NamedTuple):
+    """What ``identify_gateway`` learned: the three answers, and whether the command session wants a password."""
+
+    mac: str | None
+    who13_code: str | None
+    who1013_code: str | None
+    password_required: bool = False
+
+
 def mac_request_is_safe(who13_code: str | None, who1013_code: str | None = None) -> bool:
     """Whether every model the reported codes can name is known to answer *#13**12##.
 
@@ -116,8 +143,12 @@ def _inband_reading(who13_code: str | None, who1013_code: str | None) -> CodeRea
     return read_who13(who13_code or "")
 
 
-async def identify_gateway(gateway: typing.Any) -> tuple[str | None, str | None, str | None]:
+async def identify_gateway(gateway: typing.Any) -> GatewayIdentity:
     """Ask an authenticated gateway who it is: ``(mac, who13_code, who1013_code)``.
+
+    A command session refused with ``password_required`` yields ``password_required=True``
+    and nothing else: the gateway protects ``*99*0##`` although its monitor session was
+    open, and the runtime command workers will need that password anyway.
 
     The order follows the runtime identification (#420): ``*#13**15##`` first, which
     every gateway answers; ``*#1013**1##`` only when that answer is the shared code
@@ -129,7 +160,7 @@ async def identify_gateway(gateway: typing.Any) -> tuple[str | None, str | None,
     mac: str | None = None
     code13: str | None = None
     code1013: str | None = None
-    session = OWNCommandSession(gateway=gateway, logger=LOGGER)
+    session = OWNCommandSession(gateway=gateway, logger=PROBE_LOGGER)
 
     async def _ask(request: typing.Any) -> list[typing.Any]:
         replies = await session.send(request, is_status_request=True)
@@ -139,7 +170,8 @@ async def identify_gateway(gateway: typing.Any) -> tuple[str | None, str | None,
         async with asyncio.timeout(IDENTIFY_TIMEOUT):
             res = await session.connect()
             if not (isinstance(res, dict) and res.get("Success")):
-                return None, None, None
+                refused = isinstance(res, dict) and res.get("Message") == "password_required"
+                return GatewayIdentity(None, None, None, password_required=bool(refused))
             for reply in await _ask(OWNGatewayCommand.request_device_type()):
                 value = getattr(reply, "device_type_code", None)
                 if getattr(reply, "who", None) == 13 and value:
@@ -165,7 +197,7 @@ async def identify_gateway(gateway: typing.Any) -> tuple[str | None, str | None,
     finally:
         with contextlib.suppress(Exception):
             await session.close()
-    return mac, code13, code1013
+    return GatewayIdentity(mac, code13, code1013)
 
 
 class MACAddress:
@@ -488,8 +520,19 @@ class ConfigFlowDiscoveryMixin:
 
             model_source: str | None = None
             if getattr(self, "_identify_after_auth", False):
-                self._identify_after_auth = False
                 model_source = await self._async_apply_gateway_identity(gateway)
+                if model_source is None:
+                    # Split authentication: the monitor session is open, the command
+                    # session is password-protected. Ask once; the command workers need it.
+                    LOGGER.debug(
+                        "Gateway %s (%s:%s) accepts the monitor session without a password "
+                        "but protects the command session; asking for it",
+                        gateway.model_name,
+                        gateway.address,
+                        gateway.port,
+                    )
+                    return await self.async_step_password()  # type: ignore
+                self._identify_after_auth = False
                 # The manual step left the unique_id to this point: the MAC the gateway
                 # reports, or the typed one, decides whether this gateway already exists.
                 await self.async_set_unique_id(dr.format_mac(gateway.serial), raise_on_progress=False)  # type: ignore[attr-defined]
@@ -553,17 +596,21 @@ class ConfigFlowDiscoveryMixin:
                 )
                 return self.async_abort(reason=abort_reason)  # type: ignore[attr-defined]
 
-    async def _async_apply_gateway_identity(self, gateway: typing.Any) -> str:
+    async def _async_apply_gateway_identity(self, gateway: typing.Any) -> str | None:
         """Correct the MAC and model typed in the manual step from what the gateway reports.
 
-        The caller sets the unique_id from the final MAC afterwards. The model follows ``resolve_gateway_identity``, the same verdict the runtime
-        reaches: a brand variant of the reported model is kept, an uncertain WHO=13 code
-        may label a ``Generic`` entry but never overrides a chosen model, a certain code
-        corrects it. Returns the source the model rests on, for the entry's ``model_source``.
+        The caller sets the unique_id from the final MAC afterwards. The model follows
+        ``resolve_gateway_identity``, the same verdict the runtime reaches: a brand
+        variant of the reported model is kept, an uncertain WHO=13 code may label a
+        ``Generic`` entry but never overrides a chosen model, a certain code corrects
+        it. Returns the source the model rests on, for the entry's ``model_source``, or
+        ``None`` when the command session wants a password the monitor session did not.
         """
         from . import config_flow as _cf
 
-        mac, code13, code = await _cf.identify_gateway(gateway)
+        mac, code13, code, password_required = GatewayIdentity(*await _cf.identify_gateway(gateway))
+        if password_required and not gateway.password:
+            return None
         reported_mac = validated_reported_mac(mac)
         if mac and not reported_mac:
             LOGGER.debug(
