@@ -15,7 +15,7 @@ from homeassistant.helpers import (
 )
 
 from .const import DOMAIN, LOGGER
-from .validate import canonical_point_where
+from .where_grammar import canonical_point_spelling
 
 
 class GatewayProtocol(Protocol):
@@ -312,7 +312,9 @@ def _canonical_point_id(after_mac: str) -> str | None:
     """``1-0004`` -> ``1-04`` (also ``2-0009#4#01``, ``1-0004-disable``); None when nothing is rewritten."""
     if (match := _POINT_ADDRESS_ID.match(after_mac)) is None:
         return None
-    canonical = canonical_point_where(match["where"])
+    # Silent: the registry spelling is not something the user can fix in myhome.yaml;
+    # validate.py warns once about the yaml spelling itself.
+    canonical = canonical_point_spelling(match["where"])
     if canonical == match["where"]:
         return None
     return f"{match['who']}-{canonical}{match['tail']}"

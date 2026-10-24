@@ -137,6 +137,7 @@ from .const import (
     MIN_SLAT_TIME,
     TYPE_IMPULSE_RELAY,
 )
+from .where_grammar import canonical_point_spelling
 
 
 def format_mac(address: object) -> str:
@@ -224,19 +225,18 @@ def canonical_point_where(where: str) -> str:
     else) and every gateway reports it in two digits, so a light configured as ``0004``
     never sees its own status. Any other 4-digit input (``0015``, ``0109``, ``0209``,
     ``1015``) is left as typed, as OWNd does (OWNd#123), and so is anything that is not
-    a 4-digit point.
+    a 4-digit point. A rewrite is logged once per address: this is the myhome.yaml path,
+    and the user can fix the spelling there.
     """
-    if len(where) == 4 and where.isdigit() and where[:3] == "000" and where[3] != "0":
-        canonical = f"{where[1]}{where[3]}"
-        if where not in _warned_point_rewrites:
-            _warned_point_rewrites.add(where)
-            LOGGER.warning(
-                "WHERE '%s' is the 4-digit spelling of the point A=%s PL=%s; using '%s', the form the "
-                "gateways accept and report. Write '%s' in myhome.yaml to silence this warning.",
-                where, where[1], where[3], canonical, canonical,
-            )
-        return canonical
-    return where
+    canonical = canonical_point_spelling(where)
+    if canonical != where and where not in _warned_point_rewrites:
+        _warned_point_rewrites.add(where)
+        LOGGER.warning(
+            "WHERE '%s' is the 4-digit spelling of the point A=%s PL=%s; using '%s', the form the "
+            "gateways accept and report. Write '%s' in myhome.yaml to silence this warning.",
+            where, where[1], where[3], canonical, canonical,
+        )
+    return canonical
 
 
 class PointToPoint:

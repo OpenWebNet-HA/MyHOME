@@ -18,6 +18,9 @@ WHERE                  meaning
 
 ``*4*4001#Z*0#N##`` (zone Z calls pump N) carries the zone in WHAT.
 The optional ``4-`` prefix (legacy ids) and ``#`` prefix are tolerated.
+
+The pure WHO 1 / WHO 2 point-spelling helpers (``0004`` -> ``04``, #147) live
+here too, so every module that stores or compares an address spells it alike.
 """
 
 from __future__ import annotations
@@ -228,6 +231,23 @@ def where_param(message: Any) -> list[str]:
 def is_pump(message: Any) -> bool:
     """WHERE ``0#N``: OWNd reports WHERE ``0`` with the pump number as a parameter."""
     return str(getattr(message, "where", None)) == "0" and bool(where_param(message))
+
+
+def canonical_point_spelling(where: str) -> str:
+    """``0004`` -> ``04``, silently; anything else as typed.
+
+    The pure rewrite behind :func:`canonical_point_where`, for stored spellings
+    (registry ids, entry options) that nobody typed in myhome.yaml.
+    """
+    if len(where) == 4 and where.isdigit() and where[:3] == "000" and where[3] != "0":
+        return f"{where[1]}{where[3]}"
+    return where
+
+
+def canonical_point_address(address: str) -> str:
+    """:func:`canonical_point_spelling` of the WHERE before an optional ``#4#II`` suffix."""
+    base, sep, rest = address.partition("#")
+    return f"{canonical_point_spelling(base)}{sep}{rest}"
 
 
 def normalize_expose_where(who: int, where: str | int | None) -> str:

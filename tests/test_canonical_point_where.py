@@ -18,6 +18,7 @@ from custom_components.myhome.const import CONF_PLATFORMS, CONF_WHERE, DOMAIN
 from custom_components.myhome.light import async_setup_entry as light_setup_entry
 from custom_components.myhome.migrate import migrate_entry_and_registries
 from custom_components.myhome.validate import PointToPoint, cover_schema, light_schema
+from custom_components.myhome.where_grammar import canonical_point_address, canonical_point_spelling
 from tests.conftest import attach_runtime
 
 MAC = "00:03:50:00:01:47"
@@ -51,6 +52,31 @@ def _fresh_warnings():
 )
 def test_point_to_point_canonical_spelling(where: str, expected: str) -> None:
     assert PointToPoint()(where) == expected
+
+
+@pytest.mark.parametrize(
+    ("address", "expected"),
+    [
+        ("0004", "04"),
+        ("0009#4#01", "09#4#01"),
+        ("0001#4#15", "01#4#15"),
+        ("0000", "0000"),
+        ("0010", "0010"),
+        ("0015", "0015"),
+        ("0015#4#01", "0015#4#01"),
+        ("04", "04"),
+        ("04#4#01", "04#4#01"),
+        ("1015", "1015"),
+        ("#4", "#4"),
+        ("", ""),
+    ],
+)
+def test_silent_helpers_rewrite_only_area0_points(address: str, expected: str, caplog) -> None:
+    """The stored-spelling helpers rewrite ``000N`` (keeping ``#4#II``) and log nothing."""
+    with caplog.at_level(logging.WARNING):
+        assert canonical_point_address(address) == expected
+        assert canonical_point_spelling(address.partition("#")[0]) == expected.partition("#")[0]
+    assert not [r for r in caplog.records if r.levelno == logging.WARNING]
 
 
 def test_one_warning_per_rewritten_address(caplog: pytest.LogCaptureFixture) -> None:
@@ -172,7 +198,10 @@ def test_registry_without_duplicate_is_renamed(hass: HomeAssistant, config_entry
         migrate_entry_and_registries(hass, config_entry, {})
     assert ent_reg.async_get(cover.entity_id).unique_id == f"{MAC}-2-09#4#01"
     assert dev_reg.async_get(device.id).identifiers == {(DOMAIN, f"{MAC}-2-09#4#01")}
-    assert sum("'0009'" in r.getMessage() for r in caplog.records if r.levelno == logging.WARNING) == 1
+    # The registry spelling is rewritten silently: the "Write '09' in myhome.yaml" warning
+    # belongs to the yaml validator, and the file may already say '09' or not exist.
+    assert not [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert "0009" not in validate._warned_point_rewrites
 
 
 def test_registry_errors_are_logged_and_do_not_block_the_setup(hass: HomeAssistant, config_entry, caplog) -> None:
