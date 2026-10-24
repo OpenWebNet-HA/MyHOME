@@ -521,24 +521,36 @@ async def test_listening_loop_lighting_unknown_is_on_skips_event(gateway_handler
 
 @pytest.mark.asyncio
 async def test_scope_events_fire_only_for_state_frames(gateway_handler):
-    """#367: a dim step is not "on" and a WHO 2 dimension frame without a state is not "stop"."""
+    """#367: a dim step is not "on" and a WHO 2 dimension or unknown frame is not "stop".
+
+    Real frames only: WHO 1 relative dim steps (plain, parameterised and general),
+    WHO 2 DIMENSION 10 status readbacks (the only readable WHO 2 dimension), one
+    frame OWNd cannot parse (handed through as the raw string), and the advanced
+    scope commands captured in `tests/fixtures/traces/issue_445/` (WHAT 10/11/12 on
+    WHERE 0) and `issue_645/` (`*2*0*100##`).
+    """
     frames = [
-        "*1*30*#5##",  # group 5 dim up one step
-        "*1*31*3##",  # area 3 dim down one step
-        "*#2*#5*11*50##",  # WHO 2 dimension 11 to group 5
-        "*#2*3*12*1##",  # WHO 2 dimension 12 to area 3
-        "*#2*0*13*1##",  # WHO 2 dimension 13, general
-        "*#2*#5*10*10*50*0*0##",  # WHO 2 DIMENSION 10 status, group 5 stationary at 50 %: not a stop
-        "*#2*0*10*10*50*0*0##",  # WHO 2 DIMENSION 10 status, general, stationary: not a stop
-        "*1*1*#6##",  # group 6 on: a real state, still fired
-        "*1*0*#6##",  # group 6 off
-        "*2*0*#5##",  # group 5 stop: a real state
-        "*2*1*3##",  # area 3 open
+        OWNMessage.parse("*1*30*#5##"),  # group 5 dim up one step
+        OWNMessage.parse("*1*31*3##"),  # area 3 dim down one step
+        OWNMessage.parse("*1*30#2#100*#5##"),  # group 5 dim up, 2 levels at speed 100
+        OWNMessage.parse("*1*30*0##"),  # general dim up
+        OWNMessage.parse("*#2*#5*10*10*50*0*0##"),  # DIMENSION 10 status, group 5 stationary at 50 %
+        OWNMessage.parse("*#2*0*10*10*50*0*0##"),  # DIMENSION 10 status, general, stationary
+        "*#2*0*10*xx*50*0*0##",  # malformed DIMENSION 10 status: not an OWNMessage at all
+        OWNMessage.parse("*2*10#001#1*0##"),  # advanced general stop (issue_445)
+        OWNMessage.parse("*2*11#100#001#1*0##"),  # advanced general up (issue_445)
+        OWNMessage.parse("*2*12#100#001#1*0##"),  # advanced general down (issue_445)
+        OWNMessage.parse("*2*0*100##"),  # area 10 stop (issue_645)
+        OWNMessage.parse("*1*1*#6##"),  # group 6 on: a real state, still fired
+        OWNMessage.parse("*1*0*#6##"),  # group 6 off
+        OWNMessage.parse("*2*0*#5##"),  # group 5 stop: a real state
+        OWNMessage.parse("*2*1*3##"),  # area 3 open
     ]
+    assert OWNMessage.parse(frames[6]) is None
     with patch("custom_components.myhome.gateway.OWNEventSession") as mock_session_class:
         mock_session = MagicMock()
         mock_session.connect = AsyncMock(return_value={"Success": True})
-        mock_session.get_next = AsyncMock(side_effect=[OWNMessage.parse(f) for f in frames] + [asyncio.CancelledError()])
+        mock_session.get_next = AsyncMock(side_effect=[*frames, asyncio.CancelledError()])
         mock_session_class.return_value = mock_session
         gateway_handler.send_status_request = AsyncMock()
         try:
@@ -552,13 +564,18 @@ async def test_scope_events_fire_only_for_state_frames(gateway_handler):
         if call.args[0].endswith(("_light_event", "_automation_event"))
     ]
     assert fired == [
+        ("myhome_general_automation_event", "*2*10#001#1*0##", "stop"),
+        ("myhome_general_automation_event", "*2*11#100#001#1*0##", "open"),
+        ("myhome_general_automation_event", "*2*12#100#001#1*0##", "close"),
+        ("myhome_area_automation_event", "*2*0*100##", "stop"),
         ("myhome_group_light_event", "*1*1*#6##", "on"),
         ("myhome_group_light_event", "*1*0*#6##", "off"),
         ("myhome_group_automation_event", "*2*0*#5##", "stop"),
         ("myhome_area_automation_event", "*2*1*3##", "open"),
     ]
     # The dim steps still schedule the member re-sync of group 5 and area 3, with no
-    # expected polarity: a step says nothing about where the members end up.
+    # expected polarity: a step says nothing about where the members end up. The
+    # general step sweeps the known light areas, none in this bare handler.
     assert sorted(gateway_handler._resync_timers) == ["#5", "#6", "3"]
     assert gateway_handler._resync_manager._resync_expected_on == {"#5": None, "3": None, "#6": False}
 
