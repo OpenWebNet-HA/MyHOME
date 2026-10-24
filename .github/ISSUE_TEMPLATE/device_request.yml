@@ -11,7 +11,7 @@ body:
         Thank you for requesting support for a BTicino / Legrand device or plant configuration!
         The **v2 Phase 1 rewrite** is built on **real OpenWebNet bus traces** from physical hardware so every supported device works reliably without guesswork.
 
-        > 🔒 **Privacy note:** Both the **MyHOME Bus Monitor** trace export (`💾 Export Trace` / `📋 Copy Trace`) and the **Download diagnostics** JSON produce **anonymous traces** that automatically strip all private/household fields (passwords, PINs, tokens, IP addresses, full MAC addresses, SSDP UDNs, and local file paths) — only your gateway model, firmware version, and raw OpenWebNet bus frames are included.
+        > 🔒 **Privacy note:** **Bus Monitor** exports (`💾 Export Trace` / `📋 Copy Trace`) omit passwords, LAN IPs/ports, serial paths, and full MAC addresses (keeping the 3-byte OUI prefix) while including environment/gateway metadata, telemetry, and raw frames. **Download diagnostics** JSON redacts config-entry secrets and network/hardware identifiers (`password`, `pin`, `token`, `secret`, `host`, full `mac`/`id`, `UDN`, `ssdp_location`, `friendly_name`, `file_path`, and peer MACs) and aliases audio zones/decoders, but retains metadata/telemetry and—for configured `expose` bindings—`entity_id` (which may contain personal or room names) and `current_ha_state`. **Ordinary debug logs do not carry the same redaction guarantees.** Please review all attachments and snippets before posting.
 
   - type: input
     id: device_model
@@ -26,8 +26,8 @@ body:
     id: gateway_and_versions
     attributes:
       label: Gateway Model, Firmware & MyHOME Integration Version
-      description: Which gateway model, firmware version, and MyHOME integration version (e.g. 2.0.0b16) are you running?
-      placeholder: "e.g. MyHomeServer1 (FW 3.1.8), MyHOME 2.0.0b16, HA 2026.10.1"
+      description: Which gateway model, firmware version (or "unknown / unavailable"), and MyHOME integration version (e.g. 2.0.0b16) are you running?
+      placeholder: "e.g. MyHomeServer1 (FW 3.1.8, or 'unknown / unavailable'), MyHOME 2.0.0b16, HA 2026.10.1"
     validations:
       required: true
 
@@ -62,14 +62,14 @@ body:
   - type: textarea
     id: sample_bus_frames
     attributes:
-      label: Sample OpenWebNet Bus Trace / Anonymous Export
+      label: Sample OpenWebNet Bus Trace / Diagnostic Evidence
       description: |
-        **Drag & drop** your **MyHOME Bus Monitor** export (`💾 Export Trace`) or **Diagnostics JSON**, or paste the frames captured via **📋 Copy Trace** / debug logs when operating the device from a physical switch, BTicino Home Touch, or MyHOME_Up app.
+        **Drag & drop** your **MyHOME Bus Monitor** export (`💾 Export Trace`), **Diagnostics JSON**, or debug log/screenshots, or paste the frames captured via **📋 Copy Trace** when operating the device from a physical switch, BTicino Home Touch, or MyHOME_Up app. If a bus trace cannot be collected, please explain why and provide relevant logs or protocol documentation.
 
-        > 🔒 **Privacy note:** Both the **MyHOME Bus Monitor** trace export (`💾 Export Trace` / `📋 Copy Trace`) and the **Download diagnostics** JSON produce **anonymous traces** that automatically strip all private/household fields (passwords, PINs, tokens, IP addresses, full MAC addresses, SSDP UDNs, and local file paths) — only your gateway model, firmware version, and raw OpenWebNet bus frames are included.
+        > 🔒 **Privacy note:** **Bus Monitor** exports omit passwords, LAN IPs/ports, serial paths, and full MAC addresses (keeping the 3-byte OUI prefix) while including environment/gateway metadata, telemetry, and raw frames. **Diagnostics JSON** redacts config-entry secrets and network/hardware identifiers (`password`, `pin`, `token`, `secret`, `host`, full `mac`/`id`, `UDN`, `ssdp_location`, `friendly_name`, `file_path`, and peer MACs) and aliases audio zones/decoders, but retains metadata/telemetry and—for configured `expose` bindings—`entity_id` (which may contain personal or room names) and `current_ha_state`. **Ordinary debug logs do not carry the same redaction guarantees.** Please review before posting.
       render: markdown
       placeholder: |
-        Drag & drop myhome_trace_*.json here, or paste frames:
+        Drag & drop myhome_trace_*.json here, paste captured frames, or explain why a bus trace is unavailable:
         ```
         *1*1*23##
         *#1*23*1*0##
@@ -104,7 +104,7 @@ body:
       options:
         - label: "I have written this request in English."
           required: true
-        - label: "I have specified my Gateway model, Gateway firmware version, and MyHOME integration version (e.g. 2.0.0b16)."
+        - label: "I have specified my Gateway model, Gateway firmware version (or 'unknown / unavailable'), and MyHOME integration version (e.g. 2.0.0b16)."
           required: true
-        - label: "I have included a real OpenWebNet bus trace (via the anonymous MyHOME Bus Monitor export/copy or debug log) showing how the device behaves on the bus."
+        - label: "I have included an OpenWebNet bus trace, Diagnostics JSON, or relevant log/protocol documentation (or explained why a bus trace cannot be collected)."
           required: true
