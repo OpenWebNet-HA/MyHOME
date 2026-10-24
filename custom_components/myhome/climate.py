@@ -375,6 +375,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # When the one-shot *#4*Z*19## was asked (a fan coil showed up before dimension 19
         # did): while its answer is pending the fan speed is not polled blindly.
         self._fan_coil_sides_asked_at: float | None = None
+        # The dimension 19 request was queued while a sweep held the zone requests back.
+        self._fan_coil_sides_held = False
         if fan and not self._central:
             self._enable_fan_mode()
 
@@ -535,6 +537,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._attr_current_humidity = float(last_state.attributes["current_humidity"])
                 except (ValueError, TypeError):
                     pass
+            if self._fan and not self._central and not is_probe(self._where):
+                # A restored fan mode without the fan coil's side: ask for it now, before
+                # ``async_added_to_hass`` polls the zone, or the poll asks ``*#4*Z*11##`` blindly.
+                self._ask_fan_coil_sides()
 
     async def async_update(self) -> None:
         """Request status update from gateway, unless the zone has stopped answering."""
@@ -622,11 +628,17 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         """
         if self._fan_coil_sides or self._fan_coil_sides_pending():
             return
+        if self._request_zone_dimension(19):
+            self._fan_coil_sides_asked_at = time.monotonic()
+            self._fan_coil_sides_held = self._zone_requests_held()
+
+    def _request_zone_dimension(self, dimension: int) -> bool:
+        """Queue ``*#4*Z*DIM##`` through the gateway's paced sender; False on an older handler."""
         request = getattr(self._gateway_handler, "request_zone_dimension", None)
         if not callable(request):
-            return
-        self._fan_coil_sides_asked_at = time.monotonic()
-        request(self._full_where, 19)
+            return False
+        request(self._full_where, dimension)
+        return True
 
     def _fan_coil_sides_pending(self) -> bool:
         """Whether the one-shot dimension 19 request is still waiting for its answer.
@@ -634,9 +646,28 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         An answer that never comes (request refused, session lost before it was sent) must
         not disable the fan speed poll for good: after ``FAN_COIL_SIDES_WAIT`` the zone is
         back to asking as before, and a later fan coil report may ask dimension 19 again.
+        The wait starts once the request can leave the gateway: while the startup sweep (or
+        another paced sweep) holds the zone requests back, nothing has been asked yet, and a
+        request queued during the hold starts its wait at the first check after it.
         """
         asked_at = self._fan_coil_sides_asked_at
-        return asked_at is not None and time.monotonic() - asked_at < FAN_COIL_SIDES_WAIT
+        if asked_at is None:
+            return False
+        if self._fan_coil_sides_held:
+            if self._zone_requests_held():
+                return True
+            self._fan_coil_sides_held = False
+            self._fan_coil_sides_asked_at = time.monotonic()
+            return True
+        return time.monotonic() - asked_at < FAN_COIL_SIDES_WAIT
+
+    def _zone_requests_held(self) -> bool:
+        """Whether the gateway is still holding the zone requests back (startup or paced sweep)."""
+        handler = self._gateway_handler
+        return (
+            getattr(handler, "initial_discovery_pending", False) is True
+            or getattr(handler, "sweep_active", False) is True
+        )
 
     def _any_actuator_active(self) -> bool:
         """Whether the most recent actuator report (dimension 20 or 19) shows activity."""
@@ -692,18 +723,20 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                         self._handle_central_mode_update,
                     )
                 )
+        zone_requests = not self._central and not is_probe(self._where)
+        if zone_requests and self._fan:
+            # A configured fan coil without its side: ask for it before the poll on add
+            # (inside ``super().async_added_to_hass()``), which must not ask ``*#4*Z*11##``
+            # blindly. A restored fan mode asks at the end of ``async_restore_last_state``.
+            self._ask_fan_coil_sides()
         await super().async_added_to_hass()
-        if not self._central and not is_probe(self._where):
+        if zone_requests:
             # hvac_action needs the actuators (dimension 20); without asking, it stays unknown
             # until one of them switches. The gateway asks again after a reconnect. A secondary
             # probe (WHERE >= 100) is push-only: *#4*105*...## NACKs in 2.1 s on the F461.
             watch = getattr(self._gateway_handler, "watch_zone_actuators", None)
             if callable(watch):
                 self.async_on_remove(watch(self._full_where))
-            if self._fan:
-                # Restored (or configured) fan mode without the fan coil's side: ask for it
-                # before the first fan speed poll.
-                self._ask_fan_coil_sides()
 
     @callback
     def _handle_central_mode_update(self, master_mode: HVACMode) -> None:
@@ -1207,16 +1240,20 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             )
             # Valves status (dimension 19): OWNd sets cooling_fan_on / fan_on only for a
             # fan-coil value (5..8) on that side, so their presence tells which side is a fan coil.
+            sides_resolved = False
             if getattr(message, "dimension", None) == 19:
+                sides_resolved = not self._fan_coil_sides
                 self._fan_coil_sides = {
                     "cooling": isinstance(getattr(message, "cooling_fan_on", None), bool),
                     "heating": isinstance(getattr(message, "fan_on", None), bool),
                 }
                 self._fan_coil_sides_asked_at = None
+                self._fan_coil_sides_held = False
             # Actuator status (Dimension 20) with values >= 5 reports fancoil fan status in OWNd.
             is_fan = isinstance(getattr(message, "fan_speed", None), int) or isinstance(
                 getattr(message, "fan_on", None), bool
             )
+            fan_enabled_now = is_fan and not self._fan
             if is_fan:
                 self._enable_fan_mode()
                 if getattr(message, "dimension", None) == 20:
@@ -1233,6 +1270,17 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._running_fan_speed = "off"
                 else:
                     self._running_fan_speed = None
+            if (
+                (sides_resolved or (fan_enabled_now and self._fan_coil_sides))
+                and self._fan
+                and self._season_has_fan_coil()
+            ):
+                # The entity is not polled after add (``should_poll`` is False) and the poll on
+                # add skipped ``*#4*Z*11##`` while the side was unknown or pending, or the fan
+                # coil showed up (dimension 20) once the side was already known: ask for the
+                # configured speed now, or ``fan_mode`` keeps the synthetic ``auto`` (dimension 20
+                # value 5, fan off, carries no speed).
+                self._request_zone_dimension(11)
 
             is_active = bool(message.is_active())
             dimension = getattr(message, "dimension", None)

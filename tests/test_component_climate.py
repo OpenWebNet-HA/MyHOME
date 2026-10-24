@@ -673,13 +673,13 @@ async def test_climate_fan_mode_and_attributes(hass):
     climate_fancoil.handle_event(event)
     assert climate_fancoil.fan_mode == "auto"
 
-    # Test async_added_to_hass immediately sends status requests (general + Dimension 11 fan status)
+    # async_added_to_hass sends the general status request at once; the fan speed (dimension 11)
+    # waits for dimension 19 (which side is the fan coil), asked through the gateway's paced sender
     climate_fancoil.async_on_remove = MagicMock()
     await climate_fancoil.async_added_to_hass()
-    assert gateway.send_status_request.await_count == 2
-    sent_requests = [str(call[0][0]) for call in gateway.send_status_request.call_args_list]
-    assert "*#4*5##" in sent_requests
-    assert "*#4*5*11##" in sent_requests
+    assert gateway.send_status_request.await_count == 1
+    assert [str(call[0][0]) for call in gateway.send_status_request.call_args_list] == ["*#4*5##"]
+    gateway.request_zone_dimension.assert_any_call("5", 19)
 
 
 async def test_climate_central_fan_mode_guard(hass):

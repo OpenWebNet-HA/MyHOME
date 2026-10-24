@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 from homeassistant.components.climate import HVACAction, HVACMode
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PASSWORD, CONF_PORT
+from homeassistant.core import State
 from OWNd.message import OWNHeatingEvent
 from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
 
@@ -36,7 +37,7 @@ F461_POLL_REPLY = (
 )
 
 
-def _zone(hass, where="2", gateway=None, **kwargs):
+def _zone(hass, where="2", gateway=None, fan=False, **kwargs):
     if gateway is None:
         gateway = MagicMock()
         gateway.mac = MAC
@@ -45,7 +46,7 @@ def _zone(hass, where="2", gateway=None, **kwargs):
         gateway.has_central_unit = False
     zone = MyHOMEClimate(
         hass=hass, name=f"Zone {where}", device_id=f"4-{where}", who="4", where=where,
-        heating=True, cooling=True, fan=False, standalone=True, central=False,
+        heating=True, cooling=True, fan=fan, standalone=True, central=False,
         manufacturer="BTicino", model="Heating Zone", gateway=gateway, **kwargs,
     )
     zone.hass = hass
@@ -331,14 +332,127 @@ async def test_fan_coil_side_is_asked_again_only_if_the_first_answer_never_came(
     zone._gateway_handler.request_zone_dimension.assert_called_once_with("2", 19)
 
 
-async def test_restored_fan_mode_without_the_side_asks_for_it_on_add(hass):
-    zone = _zone(hass)
+def _added_at_once(zone) -> None:
+    """A zone added once the sweep is over polls right away (``async_update`` on add)."""
     zone._gateway_handler.initial_discovery_pending = False
     zone._gateway_handler.sweep_active = False
     zone._gateway_handler.supports_zone_status = True
+
+
+async def test_restored_fan_mode_without_the_side_asks_for_it_on_add(hass):
+    """Dimension 19 is queued before the poll on add, so the poll does not ask ``*#4*2*11##`` blindly."""
+    zone = _zone(hass)
+    _added_at_once(zone)
     zone._enable_fan_mode()  # what a restored ``fan_mode`` attribute does
     await zone.async_added_to_hass()
     zone._gateway_handler.request_zone_dimension.assert_called_once_with("2", 19)
+    assert _status_frames(zone) == ["*#4*2##"]
+    assert "*#4*2*11##" not in _status_frames(zone)
+
+
+async def test_restoring_the_fan_mode_asks_the_side_before_the_first_poll(hass):
+    """``async_restore_last_state`` runs inside ``async_added_to_hass``, right before the poll."""
+    zone = _zone(hass)
+    _added_at_once(zone)
+    zone.async_get_last_state = AsyncMock(return_value=State("climate.zone_2", "heat", {"fan_mode": "low"}))
+    await zone.async_added_to_hass()
+    assert zone.fan_mode == "low"
+    zone._gateway_handler.request_zone_dimension.assert_called_once_with("2", 19)
+    assert "*#4*2*11##" not in _status_frames(zone)
+
+
+async def test_restored_sides_are_not_asked_again(hass):
+    zone = _zone(hass)
+    _added_at_once(zone)
+    zone.async_get_last_state = AsyncMock(
+        return_value=State("climate.zone_2", "cool", {"fan_mode": "auto", "fan_coil_cooling": True, "fan_coil_heating": False, "season": "cooling"})
+    )
+    await zone.async_added_to_hass()
+    zone._gateway_handler.request_zone_dimension.assert_not_called()
+    assert _status_frames(zone)[-1] == "*#4*2*11##"  # the side is known and it is the fan coil's season
+
+
+async def test_a_configured_fan_coil_asks_the_side_before_the_first_poll(hass):
+    """``fan: true`` in the configuration: the side is asked before ``super().async_added_to_hass()`` polls."""
+    zone = _zone(hass, fan=True)
+    _added_at_once(zone)
+    await zone.async_added_to_hass()
+    zone._gateway_handler.request_zone_dimension.assert_called_once_with("2", 19)
+    assert "*#4*2*11##" not in _status_frames(zone)
+
+
+async def test_dimension_19_in_the_fan_coil_s_season_asks_the_fan_speed_once(hass):
+    """The entity is not polled after add: the speed must be asked when the side becomes known.
+
+    Dimension 20 value 5 (fan off) carries no speed, so ``fan_mode`` would stay on the
+    synthetic ``auto`` until the next poll, which never comes (``should_poll`` is False).
+    """
+    zone = _zone(hass)
+    _feed(zone, *F461_POLL_REPLY, "*4*0*2##", "*#4*2#2*20*5##")  # cooling season, fan coil revealed
+    assert zone.fan_mode == "auto"
+    zone._gateway_handler.request_zone_dimension.assert_called_once_with("2", 19)
+    _feed(zone, "*#4*2*19*5*0##", "*#4*2*19*5*0##")  # cooling: fan coil (the season's side)
+    assert zone._gateway_handler.request_zone_dimension.call_args_list[1:] == [call("2", 11)]
+    _feed(zone, "*#4*2*11*2##")
+    assert zone.fan_mode == "medium"
+
+
+async def test_dimension_19_in_the_valve_s_season_does_not_ask_the_fan_speed(hass):
+    zone = _zone(hass)
+    _feed(zone, *F461_POLL_REPLY, "*#4*2#2*20*5##", "*#4*2*19*5*0##")  # heating season, cooling fan coil
+    assert [c.args for c in zone._gateway_handler.request_zone_dimension.call_args_list] == [("2", 19)]
+
+
+async def test_dimension_19_revealing_the_fan_coil_itself_asks_the_fan_speed(hass):
+    """A zone-level report (``*#4*2*19*0*5##``) is the first sign of a fan coil: side and speed in one go."""
+    zone = _zone(hass)
+    _feed(zone, *F461_POLL_REPLY, "*#4*2*19*0*5##")  # heating season, heating fan coil
+    assert zone._fan is True
+    assert [c.args for c in zone._gateway_handler.request_zone_dimension.call_args_list] == [("2", 11)]
+
+
+async def test_a_fan_coil_revealed_after_its_side_asks_the_fan_speed(hass):
+    """Dimension 19 before dimension 20: the side is known when the fan coil shows up; ask the speed then."""
+    zone = _zone(hass)
+    _feed(zone, *F461_POLL_REPLY, "*4*0*2##", "*#4*2*19*5*0##")  # cooling season; the valve side's report
+    assert zone._fan is False
+    zone._gateway_handler.request_zone_dimension.assert_not_called()
+    _feed(zone, "*#4*2#2*20*5##", "*#4*2#2*20*5##")
+    assert [c.args for c in zone._gateway_handler.request_zone_dimension.call_args_list] == [("2", 11)]
+
+
+async def test_a_request_held_by_the_sweep_starts_its_wait_at_the_first_check_after_it(hass, monkeypatch):
+    """Nothing checks the entity during the hold: the stale stamp must not count as the wait."""
+    monkeypatch.setattr("custom_components.myhome.climate.FAN_COIL_SIDES_WAIT", 0.5)
+    zone = _zone(hass)
+    zone._gateway_handler.initial_discovery_pending = True
+    zone._gateway_handler.sweep_active = False
+    _feed(zone, *F461_POLL_REPLY, "*#4*2#2*20*5##")
+    zone._fan_coil_sides_asked_at -= 1.0  # a sweep longer than the wait, no poll meanwhile
+    zone._gateway_handler.initial_discovery_pending = False
+    await zone.async_update()
+    assert "*#4*2*11##" not in _status_frames(zone)  # the wait starts at this check
+    zone._fan_coil_sides_asked_at -= 1.0
+    await zone.async_update()
+    assert _status_frames(zone)[-1] == "*#4*2*11##"
+
+
+async def test_a_long_startup_sweep_does_not_expire_the_fan_coil_side_wait(hass, monkeypatch):
+    """The request waits for the startup sweep; the wait for its answer starts once the sweep is over."""
+    monkeypatch.setattr("custom_components.myhome.climate.FAN_COIL_SIDES_WAIT", 0.5)
+    zone = _zone(hass)
+    zone._gateway_handler.initial_discovery_pending = True
+    zone._gateway_handler.sweep_active = False
+    _feed(zone, *F461_POLL_REPLY, "*#4*2#2*20*5##")
+    zone._fan_coil_sides_asked_at -= 1.0  # a sweep longer than the wait
+    await zone.async_update()
+    assert "*#4*2*11##" not in _status_frames(zone)  # still pending: nothing has left the gateway
+    zone._gateway_handler.initial_discovery_pending = False
+    await zone.async_update()
+    assert "*#4*2*11##" not in _status_frames(zone)  # the wait starts now
+    zone._fan_coil_sides_asked_at -= 1.0
+    await zone.async_update()
+    assert _status_frames(zone)[-1] == "*#4*2*11##"
 
 
 async def test_a_gateway_without_zone_requests_keeps_polling_the_fan_speed(hass):
