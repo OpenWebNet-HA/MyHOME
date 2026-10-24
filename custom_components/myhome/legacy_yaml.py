@@ -154,6 +154,51 @@ def _apply_imported_copy(
     )
 
 
+def _same_mac(first: Any, second: Any) -> bool:
+    """Whether two MAC spellings (colons, hyphens, dots, raw hex) name the same gateway.
+
+    Diagnostic path only: when ``dr.format_mac`` rejects a value the two are compared
+    as plain strings, so a malformed section key keeps the orphan WARNING instead of
+    raising into the generic "Failed to parse" error of ``_load_live_yaml``.
+    """
+    first_text, second_text = str(first), str(second)
+    try:
+        return dr.format_mac(first_text) == dr.format_mac(second_text)
+    except Exception:
+        return first_text == second_text
+
+
+def _log_mac_mismatch(hass: HomeAssistant, entry: ConfigEntry, keys: list[Any]) -> None:
+    """Warn when myhome.yaml has gateway sections but none under this gateway's MAC (#106).
+
+    Sections that belong to another configured gateway are not a mismatch.
+    """
+    # Disabled entries count as well: the entry still exists and owns its section, so a
+    # file keyed only by a disabled gateway stays at DEBUG. This differs from the
+    # top-level-platforms path of _load_live_yaml, which counts enabled gateways only.
+    # Entries without a MAC are skipped rather than compared against "None".
+    other_macs: list[str] = []
+    for other in hass.config_entries.async_entries(DOMAIN):
+        if other is entry or not isinstance(getattr(other, "data", None), dict):
+            continue
+        other_mac = other.data.get(CONF_MAC)
+        if other_mac is not None:
+            other_macs.append(str(other_mac))
+    orphans = [k for k in keys if not any(_same_mac(k, mac) for mac in other_macs)]
+    if not orphans:
+        LOGGER.debug(
+            "myhome.yaml has no section for gateway %s; its sections belong to other gateways",
+            entry.data.get(CONF_MAC),
+        )
+        return
+    LOGGER.warning(
+        "myhome.yaml has no section for gateway %s; sections found under %s match no configured "
+        "gateway. Rename the section to this gateway's MAC to load it",
+        entry.data.get(CONF_MAC),
+        ", ".join(str(k) for k in orphans),
+    )
+
+
 async def load_legacy_myhome_yaml(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -252,6 +297,7 @@ async def _load_live_yaml(
                 except Exception:
                     continue
         if mac_key is None:
+            _log_mac_mismatch(hass, entry, list(_validated))
             return False
         if configured_expose is not None:
             yaml_expose = _validated[mac_key].get(CONF_EXPOSE, [])
