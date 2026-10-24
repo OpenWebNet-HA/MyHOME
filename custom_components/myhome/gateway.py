@@ -172,8 +172,17 @@ ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {
     "F461": {20: "*#4*#0*20##"},
     "MYHOMESERVER1": {20: "*#4*#0*20##"},
 }
-# The models the two tables know, longest first so ``MH200N`` is not read as ``MH200``.
-_ZONE_REQUEST_MODELS = sorted(ACTUATOR_REQUEST_REFUSED | set(ALL_ZONE_REQUESTS), key=len, reverse=True)
+# Gateways whose emulated firmware did not forward the zone humidity request (``*#4*Z*60##``:
+# nack and nothing on the bus) in the own-firmware-oracle thermo-zone-requests run of the open
+# PR OpenWebNet-HA/own-firmware-oracle#60 (unpublished verdict, not a published row); F459,
+# F460, F461 and MyHomeServer1 forwarded it, and the live F461 / MyHomeServer1 answer it.
+# Read from the OWNd profile first (``supports_heating_humidity_request``: ``True`` / ``False``
+# wins, ``None`` = unverified); this table is the fallback until the flag exists there.
+HUMIDITY_REQUEST_REFUSED = frozenset({"F450", "F453", "F453AV", "F454", "H4684", "MH200", "MH200N", "MH202"})
+# The models the tables know, longest first so ``MH200N`` is not read as ``MH200``.
+_ZONE_REQUEST_MODELS = sorted(
+    ACTUATOR_REQUEST_REFUSED | HUMIDITY_REQUEST_REFUSED | set(ALL_ZONE_REQUESTS), key=len, reverse=True
+)
 
 
 # A WHO 4 zone address: ``Z``, ``#Z``, ``Z#N`` (actuator), each optionally behind an
@@ -516,6 +525,17 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 await self.send_paced(frames)
             except Exception:  # a transport error must not end the task silently (#593)
                 LOGGER.exception("%s Zone requests %s could not be sent", self.log_id, frames)
+
+    @property
+    def humidity_request_refused(self) -> bool:
+        """Whether this gateway drops humidity requests (``*#4*Z*60##``) instead of forwarding them.
+
+        The OWNd profile flag wins when it exists; otherwise the oracle-derived table.
+        """
+        supported = getattr(getattr(self.gateway, "profile", None), "supports_heating_humidity_request", None)
+        if isinstance(supported, bool):
+            return not supported
+        return self._model_key in HUMIDITY_REQUEST_REFUSED
 
     @property
     def profile(self) -> Any:
