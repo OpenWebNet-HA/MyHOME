@@ -155,6 +155,44 @@ async def test_apply_gateway_identity_refreshes_the_profile_and_log_id(hass: Hom
     assert gateway.log_id == "[F461 gateway - 192.0.2.92]"
 
 
+@pytest.mark.parametrize(
+    "frame",
+    [
+        "*#13**12*0*0*0*0*0*0##",  # six zeros: the factory value, and the UI sentinel of the first form
+        "*#13**12*255*255*255*255*255*255##",  # broadcast
+        "*#13**12*256*3*80*0*7*119##",  # an octet outside 0..255 (OWNd formats it as "100")
+    ],
+)
+async def test_manual_flow_keeps_the_typed_mac_when_the_reported_one_names_no_interface(
+    hass: HomeAssistant, frame: str
+) -> None:
+    reported = OWNMessage.parse(frame).mac_address
+    assert reported  # OWNd decodes all three; the flow is what must refuse them
+    identify = AsyncMock(return_value=(reported, "200", "134"))
+
+    result = await _manual_flow(hass, _password_then_ok(), identify, mac="00:03:50:00:12:34")
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"]["mac"] == "00:03:50:00:12:34"
+    assert result["result"].unique_id == "00:03:50:00:12:34"
+    assert result["data"]["name"] == "F461"
+
+
+def test_validated_reported_mac() -> None:
+    from custom_components.myhome.config_flow_discovery import validated_reported_mac
+
+    assert validated_reported_mac("00:03:50:00:07:77") == "00:03:50:00:07:77"
+    assert validated_reported_mac("00:03:50:00:07:77".upper()) == "00:03:50:00:07:77"
+    assert validated_reported_mac("00:00:00:00:00:00") is None
+    assert validated_reported_mac("ff:ff:ff:ff:ff:ff") is None
+    assert validated_reported_mac("FF:FF:FF:FF:FF:FF") is None
+    assert validated_reported_mac("100:00:00:00:00:00") is None
+    assert validated_reported_mac("00:03:50:00:07") is None
+    assert validated_reported_mac("not a mac") is None
+    assert validated_reported_mac(None) is None
+    assert validated_reported_mac("") is None
+
+
 async def test_manual_flow_aborts_when_the_real_mac_is_already_configured(hass: HomeAssistant) -> None:
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 

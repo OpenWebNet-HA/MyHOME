@@ -67,6 +67,9 @@ IDENTIFY_TIMEOUT: float = 15.0
 # daemons crash on the request, and the absence of a crash on an emulated daemon
 # is no proof of safety, so an unknown or unlisted model is never asked.
 MAC_REQUEST_SAFE_MODELS: frozenset[str] = frozenset({"F461", "MYHOMESERVER1"})
+# A reported MAC that names no interface: the all-zero factory value (also the
+# "Custom (IP Gateway)" sentinel of the first form) and the broadcast address.
+UNUSABLE_MACS: frozenset[str] = frozenset({"00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff"})
 
 
 # WHO=13 dimension 15 answer shared by the F454 / F461 / MyHomeServer1 class, the
@@ -88,6 +91,22 @@ def mac_request_is_safe(who13_code: str | None, who1013_code: str | None = None)
         return False
     normalised = {m.strip().upper().replace(" ", "").replace("-", "").replace("_", "") for m in models}
     return bool(normalised) and normalised <= MAC_REQUEST_SAFE_MODELS
+
+
+def validated_reported_mac(mac: typing.Any) -> str | None:
+    """The MAC a gateway reported, normalised, or ``None`` when it cannot name the gateway.
+
+    OWNd formats any six integers of ``*#13**12*a*b*c*d*e*f##`` without range checks,
+    so an octet above 255 yields a 13-digit string, and a factory configuration answers
+    six zeros; neither may replace the MAC the user typed.
+    """
+    if not mac:
+        return None
+    try:
+        formatted = dr.format_mac(str(MACAddress(str(mac))))
+    except ValueError:
+        return None
+    return None if formatted in UNUSABLE_MACS else formatted
 
 
 def _inband_reading(who13_code: str | None, who1013_code: str | None) -> CodeReading:
@@ -541,7 +560,14 @@ class ConfigFlowDiscoveryMixin:
         from . import config_flow as _cf
 
         mac, code13, code = await _cf.identify_gateway(gateway)
-        reported_mac = dr.format_mac(mac) if mac else None
+        reported_mac = validated_reported_mac(mac)
+        if mac and not reported_mac:
+            LOGGER.debug(
+                "Gateway at %s reports the MAC %r, which names no interface; keeping the entered %s",
+                gateway.address,
+                mac,
+                gateway.serial,
+            )
         if reported_mac and reported_mac != dr.format_mac(str(gateway.serial)):
             LOGGER.info(
                 "Gateway at %s reports MAC %s; using it instead of the entered %s",
