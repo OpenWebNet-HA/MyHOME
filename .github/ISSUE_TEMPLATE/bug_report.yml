@@ -10,18 +10,21 @@ body:
 
         Before submitting, please keep these three rules in mind:
         1. **🇬🇧 English Only**: Please write your issue in **English** so everyone in the community can follow along.
-        2. **🔬 Trace-Driven v2 Phase 1 Rewrite**: The v2 Phase 1 rewrite is built on **real OpenWebNet bus traces** from actual hardware rather than guessing protocol behavior. To diagnose an issue, we need your exact MyHOME beta version, gateway model & firmware, and a trace showing what happens on the bus (especially if a command works from a physical switch / BTicino Home Touch / MyHOME_Up app).
-        3. **🔒 Privacy note**: Both the **MyHOME Bus Monitor** trace export (`💾 Export Trace` / `📋 Copy Trace`) and the **Download diagnostics** JSON produce **anonymous traces** that automatically strip all private/household fields (passwords, PINs, tokens, IP addresses, full MAC addresses, SSDP UDNs, and local file paths) — only your gateway model, firmware version, and raw OpenWebNet bus frames are included.
+        2. **🔬 Trace & Diagnostic Evidence**: The v2 Phase 1 rewrite is built on **real OpenWebNet bus traces** from actual hardware rather than guessing protocol behavior. For bus or device issues, please provide your MyHOME version, gateway model & firmware (or `"unknown / unavailable"`), and a Bus Monitor trace, Diagnostics JSON, or debug log. For setup failures, startup exceptions, or frontend/UI issues where bus frames are unavailable or irrelevant, please attach the relevant logs, Python tracebacks, or screenshots (or explain why a trace cannot be collected).
+        3. **🔒 Privacy & Redaction Note**:
+           - **MyHOME Bus Monitor** trace exports (`💾 Export Trace` / `📋 Copy Trace`) omit passwords, PINs, tokens, LAN IP addresses/ports, serial device paths, and full MAC addresses (keeping only the 3-byte OUI prefix), while including environment versions, capture/filter metadata, gateway model/firmware/identification, buffer/queue telemetry, and raw OpenWebNet bus frames.
+           - **Download diagnostics** JSON redacts config-entry secrets and network/hardware identifiers (`password`, `pin`, `token`, `secret`, `host`, full `mac`/`id`, `UDN`, `ssdp_location`, `friendly_name`, `file_path`, and peer gateway MACs) and aliases audio zones/decoders (`zone_<WHERE>`, `decoder_<slot>`). It also includes gateway/profile/queue/topology metadata, platform device counts, recent bus frames, and—if `expose` bindings are configured—the exposed `entity_id` (which may contain user-defined room or personal names) and its `current_ha_state`.
+           - **Ordinary Home Assistant debug logs (`.log` / `.zip`)** do **not** carry the same redaction guarantees and may contain IP addresses, entity IDs, or other household details. Always review your attachments and pasted snippets before posting publicly.
 
         ---
 
-        ### ⚡ How to capture an anonymous bus trace & diagnostics:
-        1. **MyHOME Bus Monitor Trace** *(Fastest & Anonymous)*:
+        ### ⚡ How to capture bus traces, diagnostics, or logs:
+        1. **MyHOME Bus Monitor Trace** *(Recommended for bus/device issues)*:
            Open the **MyHOME Bus Monitor** card/panel (`<myhome-bus-card>`), click **Start Trace** (or **Clear**), reproduce the action (both from the physical BTicino control/Home Touch and from Home Assistant), then click **"💾 Export Trace"** (to download a `.json` file) or **"📋 Copy Trace"** (to copy to clipboard).
-        2. **Home Assistant Diagnostics JSON** *(Anonymous)*:
+        2. **Home Assistant Diagnostics JSON** *(Redacted config & runtime snapshot)*:
            Go to **Settings ➔ Devices & Services ➔ MyHOME ➔ ⋮ (3 dots) ➔ Download diagnostics** and drag & drop the JSON file into the attachment box below.
-        3. **Home Assistant Debug Log**:
-           Go to **Settings ➔ Devices & Services ➔ MyHOME ➔ Enable debug logging**, reproduce the issue, click **Disable debug logging**, and drag & drop the downloaded `.log` file below.
+        3. **Home Assistant Debug Log / Tracebacks / Screenshots** *(For setup failures, startup crashes, or UI issues)*:
+           Go to **Settings ➔ Devices & Services ➔ MyHOME ➔ Enable debug logging** (or **Settings ➔ System ➔ Logs**), reproduce the issue, and drag & drop the `.log` file, traceback, or screenshot below. *(Note: ordinary debug logs are not automatically redacted.)*
 
         ---
 
@@ -61,8 +64,8 @@ body:
     id: gateway_firmware
     attributes:
       label: Gateway Firmware Version
-      description: The firmware version of your OpenWebNet gateway (shown on the gateway device page in HA or in your Diagnostics / Bus Monitor export).
-      placeholder: "e.g. 2.0.51, 3.1.8, 1.0.24 (or 'See attached Diagnostics/Trace')"
+      description: The firmware version of your OpenWebNet gateway (shown on the gateway device page in HA or in your Diagnostics / Bus Monitor export). Enter "unknown" or "unavailable" if setup fails before identification or you cannot access it.
+      placeholder: "e.g. 2.0.51, 3.1.8, 1.0.24, or 'unknown / unavailable'"
     validations:
       required: true
 
@@ -102,7 +105,7 @@ body:
     id: reproduction_steps
     attributes:
       label: Steps to Reproduce
-      description: Step-by-step instructions to reproduce the issue (and what actions you performed during your bus trace capture).
+      description: Step-by-step instructions to reproduce the issue (and what actions you performed during your bus trace capture, if applicable).
       placeholder: |
         1. Start trace in MyHOME Bus Monitor (or enable debug logging)
         2. Toggle the device from the physical wall switch / BTicino Home Touch -> works
@@ -113,15 +116,15 @@ body:
   - type: textarea
     id: diagnostic_attachment
     attributes:
-      label: "📎 Anonymous Bus Trace / Diagnostics JSON / Debug Log Attachment"
+      label: "📎 Bus Trace / Diagnostics JSON / Debug Log / Screenshot Attachment"
       description: |
-        **Drag & drop files directly into this box** (GitHub supports `.json`, `.log`, `.txt`, `.zip`, `.tar.gz`):
+        **Drag & drop files directly into this box** (GitHub supports `.json`, `.log`, `.txt`, `.zip`, `.tar.gz`, `.png`, `.jpg`):
         - 📡 **MyHOME Bus Monitor Trace JSON**: Click **💾 Export Trace** in `<myhome-bus-card>`
         - 📦 **MyHOME Diagnostics JSON**: *Settings ➔ Devices & Services ➔ MyHOME ➔ ⋮ (3 dots) ➔ Download diagnostics*
-        - 📋 **Debug Log File**: *Settings ➔ Devices & Services ➔ MyHOME ➔ Enable/Disable debug logging*
+        - 📋 **Debug Log / Screenshot**: *Settings ➔ Devices & Services ➔ MyHOME ➔ Enable/Disable debug logging* (or *Settings ➔ System ➔ Logs*)
 
-        > 🔒 **Privacy note:** Both the **MyHOME Bus Monitor** trace export (`💾 Export Trace` / `📋 Copy Trace`) and the **Download diagnostics** JSON produce **anonymous traces** that automatically strip all private/household fields (passwords, PINs, tokens, IP addresses, full MAC addresses, SSDP UDNs, and local file paths) — only your gateway model, firmware version, and raw OpenWebNet bus frames are included.
-      placeholder: "Drag and drop your myhome_trace_*.json, myhome_diagnostics.json, or home-assistant.log file here..."
+        > 🔒 **Privacy note:** **Bus Monitor** exports omit passwords, LAN IPs/ports, serial paths, and full MAC addresses (keeping the 3-byte OUI prefix) while including environment/gateway metadata, telemetry, and raw frames. **Diagnostics JSON** redacts config-entry secrets and network/hardware identifiers (`password`, `pin`, `token`, `secret`, `host`, full `mac`/`id`, `UDN`, `ssdp_location`, `friendly_name`, `file_path`, and peer MACs) and aliases audio zones/decoders, but retains metadata/telemetry and—for configured `expose` bindings—`entity_id` (which may contain personal or room names) and `current_ha_state`. **Ordinary debug logs do not carry the same redaction guarantees.** Please review attachments before posting.
+      placeholder: "Drag and drop your myhome_trace_*.json, myhome_diagnostics.json, home-assistant.log, or screenshot here..."
     validations:
       required: false
 
@@ -132,7 +135,7 @@ body:
       description: |
         Or paste the clipboard bundle generated by clicking **"📋 Copy Trace"** in `<myhome-bus-card>` here.
 
-        > 🔒 **Privacy note:** Both the **MyHOME Bus Monitor** trace export (`💾 Export Trace` / `📋 Copy Trace`) and the **Download diagnostics** JSON produce **anonymous traces** that automatically strip all private/household fields (passwords, PINs, tokens, IP addresses, full MAC addresses, SSDP UDNs, and local file paths) — only your gateway model, firmware version, and raw OpenWebNet bus frames are included.
+        > 🔒 **Privacy note:** The Bus Monitor bundle omits passwords, LAN IPs/ports, serial device paths, and full MAC addresses (retaining only the 3-byte OUI prefix), and includes environment/gateway metadata, queue/buffer telemetry, and raw OpenWebNet frames. Please review the pasted text before posting.
       render: markdown
       placeholder: "Paste clipboard contents here (starts with ### MyHOME Diagnostic Bundle)..."
     validations:
@@ -141,10 +144,10 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: Log Snippets / Python Tracebacks
-      description: Relevant log entries or traceback snippets from Settings -> System -> Logs.
+      label: Log Snippets / Python Tracebacks / Why a Trace Is Unavailable
+      description: Relevant log entries, startup tracebacks (from Settings -> System -> Logs), or an explanation if a bus trace cannot be collected (e.g. setup failure, startup exception, or frontend issue). Note that ordinary debug logs are not automatically redacted — please review before posting.
       render: text
-      placeholder: "Paste relevant traceback or custom_components.myhome / OWNd debug log lines here..."
+      placeholder: "Paste relevant traceback or custom_components.myhome / OWNd debug log lines here (or explain why a bus trace is unavailable / not applicable)..."
     validations:
       required: false
 
@@ -152,11 +155,11 @@ body:
     id: diagnostics_checklist
     attributes:
       label: "🛑 Before Submitting — Did You Check?"
-      description: All items below are required so we have the real bus evidence needed to reproduce and fix your issue reliably.
+      description: Please confirm all items below so we have the context and evidence needed to investigate and fix your issue.
       options:
         - label: "I have written this issue in English."
           required: true
-        - label: "I have specified my exact MyHOME version (e.g. 2.0.0b16), Home Assistant version, Gateway model, and Gateway firmware version."
+        - label: "I have specified my MyHOME version (e.g. 2.0.0b16), Home Assistant version, Gateway model, and Gateway firmware version (or 'unknown / unavailable')."
           required: true
-        - label: "I have attached or pasted an anonymous MyHOME Bus Monitor trace (Export/Copy Trace), MyHOME Diagnostics JSON, or Debug Log showing the OpenWebNet frames on the bus."
+        - label: "I have attached or pasted a MyHOME Bus Monitor trace, Diagnostics JSON, or relevant debug log / Python traceback / screenshot (or explained why a bus trace cannot be collected)."
           required: true

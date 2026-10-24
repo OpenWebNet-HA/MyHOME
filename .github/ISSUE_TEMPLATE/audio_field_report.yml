@@ -10,14 +10,14 @@ body:
 
         Grouping is where Music Assistant and the analog matrix meet, and each plant behaves a little differently.
         The four checks below are the ones we replay as tests. Please write in **English** and attach the **diagnostics file**
-        (*Settings → Devices & services → MyHOME → ⋮ → Download diagnostics*) or an **anonymous MyHOME Bus Monitor trace** (`💾 Export Trace` / `📋 Copy Trace`).
+        (*Settings → Devices & services → MyHOME → ⋮ → Download diagnostics*), a **MyHOME Bus Monitor trace** (`💾 Export Trace` / `📋 Copy Trace`), or relevant logs/screenshots (or explain if a trace cannot be collected).
 
   - type: input
     id: plant
     attributes:
       label: Plant (Gateway model, Firmware, Matrix & Decoders)
-      description: Gateway model & firmware, matrix (F441 / F441M), number of zones, decoder(s).
-      placeholder: "MH200 (FW 2.1.2) + F441M, 6 zones, Squeezelite + Cambridge CXN"
+      description: Gateway model & firmware (or "unknown / unavailable"), matrix (F441 / F441M), number of zones, decoder(s).
+      placeholder: "MH200 (FW 2.1.2, or 'unknown / unavailable') + F441M, 6 zones, Squeezelite + Cambridge CXN"
     validations:
       required: true
 
@@ -44,12 +44,12 @@ body:
   - type: textarea
     id: what_happened
     attributes:
-      label: What you did, and when (plus attached Diagnostics / Anonymous Bus Trace)
+      label: What you did, and when (plus attached Diagnostics / Bus Trace / Logs)
       description: |
-        Describe what happened and drag & drop your **Diagnostics JSON** or **MyHOME Bus Monitor** trace export here.
+        Describe what happened and drag & drop your **Diagnostics JSON**, **MyHOME Bus Monitor** trace export, or relevant logs/screenshots here (or explain why a trace cannot be collected).
 
-        > 🔒 **Privacy note:** Both the **MyHOME Bus Monitor** trace export (`💾 Export Trace` / `📋 Copy Trace`) and the **Download diagnostics** JSON produce **anonymous traces** that automatically strip all private/household fields (passwords, PINs, tokens, IP addresses, full MAC addresses, SSDP UDNs, and local file paths) — only your gateway model, firmware version, and raw OpenWebNet bus frames are included.
-      placeholder: "For example: 21:48, pressed play on the Huis group, Bureau's slider would not move. (Drag & drop myhome_diagnostics.json or myhome_trace_*.json here)"
+        > 🔒 **Privacy note:** **Bus Monitor** exports (`💾 Export Trace` / `📋 Copy Trace`) omit passwords, LAN IPs/ports, serial paths, and full MAC addresses (keeping the 3-byte OUI prefix) while including environment/gateway metadata, telemetry, and raw frames. **Download diagnostics** JSON redacts config-entry secrets and network/hardware identifiers (`password`, `pin`, `token`, `secret`, `host`, full `mac`/`id`, `UDN`, `ssdp_location`, `friendly_name`, `file_path`, and peer MACs) and aliases audio zones/decoders (`zone_<WHERE>`, `decoder_<slot>`), but retains metadata/telemetry and—for configured `expose` bindings—`entity_id` (which may contain personal or room names) and `current_ha_state`. **Ordinary Home Assistant or Music Assistant debug logs do not carry the same redaction guarantees.** Please review attachments before posting.
+      placeholder: "For example: 21:48, pressed play on the Huis group, Bureau's slider would not move. (Drag & drop myhome_diagnostics.json, myhome_trace_*.json, or logs here)"
     validations:
       required: true
 
@@ -58,5 +58,5 @@ body:
     attributes:
       label: "🛑 Before Submitting — Did You Check?"
       options:
-        - label: "I have written this report in English and attached the anonymous MyHOME Diagnostics JSON or Bus Monitor trace."
+        - label: "I have written this report in English and attached a MyHOME Diagnostics JSON, Bus Monitor trace, or relevant log/screenshot (or explained why a trace cannot be collected)."
           required: true

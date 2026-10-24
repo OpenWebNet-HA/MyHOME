@@ -10,7 +10,7 @@ Fixes #<!-- issue number, if applicable -->
 
 ## Protocol & Bus Trace Evidence (if applicable)
 
-<!-- If this PR touches OpenWebNet frame parsing, device discovery, or entity state handling, list the gateway model/firmware, WHO/WHAT/Dimension frames, or anonymous bus trace / fixture used to verify the behavior. -->
+<!-- If this PR touches OpenWebNet frame parsing, device discovery, or entity state handling, list the gateway model/firmware, WHO/WHAT/Dimension frames, or bus trace / fixture used to verify the behavior. -->
 
 - **Gateway / Firmware:** 
 - **Frames / Fixtures verified:** 
