@@ -405,6 +405,7 @@ class MyHomeSensorSchema(Schema):
                     elif data[device][CONF_WHO] != "1":
                         raise Invalid("invalid sensor class for selected who")
             if CONF_WHERE in data[device]:
+                _canonical_who1_point(data[device])  # the WHO default above is in by now
                 interface = data[device].get(CONF_BUS_INTERFACE)
                 routing = f"{BUS_ROUTING}{interface}" if interface is not None else ""
                 _rekeyed_data[f"{data[device][CONF_WHO]}-{data[device][CONF_WHERE]}{routing}"] = data[device]
@@ -648,9 +649,20 @@ def _validate_impulse_covers(data: dict[str, typing.Any]) -> dict[str, typing.An
 
 cover_schema = All(cover_schema, _validate_cover_members, _validate_impulse_covers)  # type: ignore[assignment]
 
+def _canonical_who1_point(device: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    """A WHO 1 sensor WHERE is a WHO 1 point: ``0004`` is ``04`` (#147).
+
+    `SpecialWhere()` sees one field and cannot know the WHO; this runs on the
+    whole mapping once the WHO default is in. Other WHO keep their grammar.
+    """
+    if str(device.get(CONF_WHO)) == "1" and isinstance(device.get(CONF_WHERE), str):
+        device[CONF_WHERE] = canonical_point_where(device[CONF_WHERE])
+    return device
+
+
 binary_sensor_schema = MyHomeDeviceSchema(
     {
-        Required(str): {
+        Required(str): All({
             Optional(CONF_WHO, default="25"): In(["1", "9", "25"]),
             Required(CONF_WHERE): All(Coerce(str), SpecialWhere()),  # type: ignore
             Required(CONF_NAME): str,
@@ -714,7 +726,7 @@ binary_sensor_schema = MyHomeDeviceSchema(
             ),
             Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
             Optional(CONF_DEVICE_MODEL): Coerce(str),
-        }
+        }, _canonical_who1_point)
     }
 )
 

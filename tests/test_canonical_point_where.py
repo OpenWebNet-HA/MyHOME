@@ -34,9 +34,11 @@ from custom_components.myhome.light import async_setup_entry as light_setup_entr
 from custom_components.myhome.migrate import migrate_entry_and_registries
 from custom_components.myhome.validate import (
     PointToPoint,
+    binary_sensor_schema,
     cover_schema,
     expose_entry_schema,
     light_schema,
+    sensor_schema,
 )
 from custom_components.myhome.where_grammar import (
     canonical_point_address,
@@ -529,3 +531,67 @@ def test_expose_subentries_at_0004_are_migrated(hass: HomeAssistant, caplog) -> 
     with caplog.at_level(logging.INFO):
         migrate_entry_and_registries(hass, entry, {})
     assert not [r for r in caplog.records if "expose subentry" in r.getMessage()]
+
+
+# ── WHO 1 binary_sensor (motion) and sensor (illuminance) ─────────────────────────
+
+
+def test_who1_sensor_schemas_use_the_canonical_spelling(caplog) -> None:
+    with caplog.at_level(logging.WARNING):
+        motion = binary_sensor_schema({"pir": {"who": "1", "where": "0004", "name": "PIR", "class": "motion"}})
+        lux = sensor_schema({"lux": {"where": "0004", "name": "Lux", "class": "illuminance"}})
+        explicit = sensor_schema({"lux2": {"who": "1", "where": "0005", "name": "Lux 2", "class": "illuminance"}})
+    assert list(motion) == ["1-04"] and motion["1-04"]["where"] == "04"
+    assert list(lux) == ["1-04"] and lux["1-04"]["where"] == "04" and lux["1-04"]["who"] == "1"
+    assert list(explicit) == ["1-05"] and explicit["1-05"]["where"] == "05"
+    # One yaml warning per address, as for lights.
+    assert [r.getMessage()[:14] for r in caplog.records if r.levelno == logging.WARNING] == ["WHERE '0004' i", "WHERE '0005' i"]
+
+
+def test_other_who_sensor_schemas_keep_the_address() -> None:
+    """A CEN button, a WHO 9 input, a WHO 4 probe and a WHO 18 meter at 0004 are other grammars."""
+    cen = binary_sensor_schema({"cen": {"where": "0004", "name": "CEN"}})
+    assert list(cen) == ["25-0004"] and cen["25-0004"]["where"] == "0004"
+    aux = binary_sensor_schema({"aux": {"who": "9", "where": "0004", "name": "Aux"}})
+    assert list(aux) == ["9-0004"]
+    probe = sensor_schema({"t": {"where": "0004", "name": "T", "class": "temperature"}})
+    assert list(probe) == ["4-0004"]
+    meter = sensor_schema({"m": {"where": "0004", "name": "M", "class": "power"}})
+    assert list(meter) == ["18-0004"]
+    kept = sensor_schema({"lux": {"where": "0015", "name": "Lux", "class": "illuminance"}})
+    assert list(kept) == ["1-0015"]
+
+
+def test_registry_moves_who1_sensors_and_leaves_other_who_alone(hass: HomeAssistant, config_entry) -> None:
+    ent_reg = er.async_get(hass)
+    dev_reg = dr.async_get(hass)
+    yaml_dev = dev_reg.async_get_or_create(config_entry_id=config_entry.entry_id, identifiers={(DOMAIN, f"{MAC}-1-0004")})
+    bus_dev = dev_reg.async_get_or_create(config_entry_id=config_entry.entry_id, identifiers={(DOMAIN, f"{MAC}-1-04")})
+    motion = ent_reg.async_get_or_create(
+        "binary_sensor", DOMAIN, f"{MAC}-1-0004-motion", config_entry=config_entry, device_id=yaml_dev.id,
+        suggested_object_id="hall_motion",
+    )
+    lux = ent_reg.async_get_or_create(
+        "sensor", DOMAIN, f"{MAC}-1-0004-illuminance", config_entry=config_entry, device_id=yaml_dev.id
+    )
+    bus_motion = ent_reg.async_get_or_create(
+        "binary_sensor", DOMAIN, f"{MAC}-1-04-motion", config_entry=config_entry, device_id=bus_dev.id
+    )
+    bus_lux = ent_reg.async_get_or_create(
+        "sensor", DOMAIN, f"{MAC}-1-04-illuminance", config_entry=config_entry, device_id=bus_dev.id
+    )
+    cen = ent_reg.async_get_or_create("binary_sensor", DOMAIN, f"{MAC}-25-0004", config_entry=config_entry)
+    probe = ent_reg.async_get_or_create("sensor", DOMAIN, f"{MAC}-4-0004-temperature", config_entry=config_entry)
+    meter = ent_reg.async_get_or_create("sensor", DOMAIN, f"{MAC}-18-0004-power", config_entry=config_entry)
+    legacy = ent_reg.async_get_or_create("sensor", DOMAIN, f"{MAC}-0004-illuminance", config_entry=config_entry)
+
+    migrate_entry_and_registries(hass, config_entry, {})
+
+    assert ent_reg.async_get(motion.entity_id).unique_id == f"{MAC}-1-04-motion"
+    assert ent_reg.async_get(motion.entity_id).entity_id == "binary_sensor.hall_motion"
+    assert ent_reg.async_get(lux.entity_id).unique_id == f"{MAC}-1-04-illuminance"
+    assert ent_reg.async_get(bus_motion.entity_id) is None and ent_reg.async_get(bus_lux.entity_id) is None
+    assert dev_reg.async_get(bus_dev.id) is None
+    assert dev_reg.async_get(yaml_dev.id).identifiers == {(DOMAIN, f"{MAC}-1-04")}
+    for untouched in (cen, probe, meter, legacy):
+        assert ent_reg.async_get(untouched.entity_id).unique_id == untouched.unique_id

@@ -16,6 +16,7 @@ In v2, setup and management are **100% UI-first**: binary sensors are automatica
 ### 2. Motion / PIR Sensors (WHO = 1)
 * **Hardware**: Legrand `048822`, BTicino `BMSE1001` or standard SCS ceiling/wall motion sensors configured in scenario mode.
 * **Operation**: When movement is detected, the sensor broadcasts an event frame on WHO 1 that sets the binary sensor to `on` (Detected), returning to `off` (Clear) when timeout expires.
+* **Address**: a WHO 1 point address; an area-0 point with PL 1..9 is spelled in two digits (`04`), so `where: "0004"` in `myhome.yaml` is resolved to `04` and a `…-1-0004-motion` entity is moved to `…-1-04-motion` at startup (#147).
 
 ### 3. Auxiliary Alarm Sensors (WHO = 9)
 * **Hardware**: Auxiliary sensors, technical transmitters (water leak, methane gas), or peripheral contacts connected to the burglar alarm central unit.

@@ -303,8 +303,11 @@ def migrate_entry_and_registries(
         LOGGER.warning("Could not migrate 4-digit point addresses to their canonical spelling: %s", err)
 
 
-# Platforms whose unique ids carry a WHO 1 / WHO 2 point address: {mac}-{who}-{where}[#4#{iface}][-{suffix}].
-_POINT_ADDRESS_DOMAINS = ("light", "switch", "cover", "button")
+# Platforms whose unique ids may carry a WHO 1 / WHO 2 point address:
+# {mac}-{who}-{where}[#4#{iface}][-{suffix}]. The WHO in the id is the predicate: a WHO 1
+# motion / illuminance sensor ({mac}-1-0004-motion) is a point, a WHO 25 CEN button
+# ({mac}-25-0004) or a WHO 4 probe ({mac}-4-0004-temperature) is not and does not match.
+_POINT_ADDRESS_DOMAINS = ("light", "switch", "cover", "button", "binary_sensor", "sensor")
 _POINT_ADDRESS_ID = re.compile(r"^(?P<who>[12])-(?P<where>\d{4})(?P<tail>(?:[#-].*)?)$")
 
 
