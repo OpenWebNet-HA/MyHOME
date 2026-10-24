@@ -1,0 +1,1399 @@
+{
+  "capture": {
+    "kind": "derived_trace_archive",
+    "started_at": "2026-10-24T20:08:49+00:00",
+    "notes": "Live BTicino F461 (firmware 2.0.11 / WHO 13 device type 200 / WHO 1013 134.15.5.0) WHO 4 capture of 2026-10-24, 20:08-20:12 UTC, on the physical test plant's Living Now KW4691 standalone thermostat at Zone 2 (BT-F430/2 heating valve as actuator 1, BT-F430/4 fan coil as actuator 2, heating season, no central unit), recorded with OWNd master. Purpose: the follow-up asked for in the review of MyHOME pull request 810 (the dimension 7 presets of f461_live_2026-10-24 run 4 were sent from a 21.0 baseline that already matched the comfort preset, and *#4*2*#7*2*3## was cooling comfort, not heating eco): from a 23.5 baseline, *#4*2*#7*1*3## (heating comfort) and *#4*2*#7*1*4## (heating eco), each followed at once by reads of dimension 12 (the setpoint in force) and dimension 14 (the last commanded value), then a *#4*2## poll and reads 48 s into eco, and a climate.set_temperature write from a local Home Assistant running the integration while the two dimensions differed. Sessions: one event-only listener (eco_evt.jsonl, 20:08:44 UTC, 1800 s) and two probe invocations with their own command session (eco_cmd.jsonl); each run takes its event-session frames from the listener (one source, no duplicate frames) and the probe's rows are aligned to the listener clock through the frames both sessions received (capture.runs[].probe_segments[].listener_offset_s; the same bus frame reached both sessions within 60 ms). Home Assistant's only request in the window, the *#4*2*#14*0235*3## write at 20:11:20 UTC, was sent on its session and is not a row; capture.home_assistant_requests lists it from its debug log, its echo is in the event-session frames (Home Assistant sent no poll between the listener start and the write). Timing: t is one monotonic axis over both runs (capture.runs[].t_offset is each run's start; t - t_offset is the time since that run's first frame); command-session rx rows carry t_estimated = true because the session hands the replies over as a batch with the ACK / NACK, so they are placed at their request's t; result.events_after holds only the event-session frames that arrived while the request was pending (tx.t <= t <= result.t). The listener's frames after 20:12:04 UTC (clock, humidity, temperature) are not included.",
+    "window": {
+      "first": "2026-10-24T20:08:49+00:00",
+      "last": "2026-10-24T20:12:04+00:00",
+      "frames": 47,
+      "rows": 122
+    },
+    "runs": [
+      {
+        "run": "run1_heating_comfort_then_heating_eco",
+        "listener": "eco_evt.jsonl",
+        "utc": "20:08:49-20:10:22",
+        "t_offset": 0.0,
+        "rows": 103,
+        "frames": 36,
+        "probe_segments": [
+          {"file": "eco_cmd.jsonl", "step": "baseline_poll/heating_comfort/heating_eco", "utc": "20:08:49-20:09:57", "probe_wait_s": 1.0, "listener_offset_s": -1.053}
+        ],
+        "purpose": "from the 23.5 baseline (12 = 14 = 23.5, heating): *#4*2*#7*1*3## (heating comfort) with reads of dimension 12 and 14 at +1 s and +13 s, then *#4*2*#7*1*4## (heating eco) with reads at +1 s and +13 s, *#4*2## at +16 s and reads at +48 s; dimension 12 follows the preset (21.0, then 18.0) while dimension 14 keeps 23.5 throughout; then the gateway clock and a humidity push with no request pending"
+      },
+      {
+        "run": "run2_home_assistant_write_realigns",
+        "listener": "eco_evt.jsonl",
+        "utc": "20:11:20-20:12:04",
+        "t_offset": 94.772,
+        "rows": 19,
+        "frames": 11,
+        "probe_segments": [
+          {"file": "eco_cmd.jsonl", "step": "poll_after_ha_write", "utc": "20:11:28-20:11:31", "probe_wait_s": 1.5, "listener_offset_s": 101.128}
+        ],
+        "purpose": "Home Assistant's climate.set_temperature 23.5 (*#4*2*#14*0235*3##, 20:11:20 UTC) while 12 = 18.0 != 14 = 23.5: the echo *4*1*2##, *#4*2*12*0235*3##, *4*1*2##, *#4*2*0*0238## is the run's first frames; the probe's *#4*2## 7.4 s later (result at 8.8 s) reads 12 = 14 = 23.5 in the heating season; the valve's dimension 20 echo (actuator 1 off) 43 s after the write closes the run; the listener kept running until 20:38 UTC, those frames are not included"
+      }
+    ],
+    "home_assistant_requests": [
+      {"utc": "20:11:20", "frame": "*#4*2*#14*0235*3##", "run": "run2_home_assistant_write_realigns", "what": "climate.set_temperature 23.5 while dimension 12 = 18.0 (heating eco) and dimension 14 = 23.5"}
+    ]
+  },
+  "gateway": {
+    "model": "F461",
+    "manufacturer": "BTicino",
+    "firmware": "2.0.11",
+    "kernel": "5.10.35",
+    "distribution": "2.26.4",
+    "ip": "192.0.2.92",
+    "mac": "00:03:50:00:10:23",
+    "identification": {
+      "model": "F461",
+      "who13_code": "200",
+      "who13_model_name": "F461",
+      "who1013_code": "134"
+    }
+  },
+  "frames": [
+    {"timestamp": 0.564, "direction": "rx", "raw": "*#4*2*0*0238##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 0.884, "direction": "rx", "raw": "*#4*2*12*0235*3##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 0.89, "direction": "rx", "raw": "*4*1*2##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 1.204, "direction": "rx", "raw": "*#4*2*14*0235*3##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 1.354, "direction": "rx", "raw": "*#4*2*13*00##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 2.49, "direction": "rx", "raw": "*#4*2*7*1*3##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 2.593, "direction": "rx", "raw": "*#4*2*12*0210*3##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 2.595, "direction": "rx", "raw": "*4*108*2##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 2.659, "direction": "rx", "raw": "*#4*2*0*0238##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 3.545, "direction": "rx", "raw": "*#4*2*12*0210*3##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 3.549, "direction": "rx", "raw": "*4*108*2##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 4.673, "direction": "rx", "raw": "*#4*2*14*0235*3##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 15.808, "direction": "rx", "raw": "*#4*2*12*0210*3##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 15.812, "direction": "rx", "raw": "*4*108*2##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 16.911, "direction": "rx", "raw": "*#4*2*14*0235*3##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 18.054, "direction": "rx", "raw": "*#4*2*7*1*4##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 18.158, "direction": "rx", "raw": "*#4*2*12*0180*3##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 18.16, "direction": "rx", "raw": "*4*107*2##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 18.208, "direction": "rx", "raw": "*#4*2*0*0238##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 19.119, "direction": "rx", "raw": "*#4*2*12*0180*3##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 19.121, "direction": "rx", "raw": "*4*107*2##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 20.215, "direction": "rx", "raw": "*#4*2*14*0235*3##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 31.334, "direction": "rx", "raw": "*#4*2*12*0180*3##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 31.337, "direction": "rx", "raw": "*4*107*2##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 32.437, "direction": "rx", "raw": "*#4*2*14*0235*3##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 34.018, "direction": "rx", "raw": "*#4*2*0*0238##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 34.322, "direction": "rx", "raw": "*#4*2*12*0180*3##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 34.327, "direction": "rx", "raw": "*4*107*2##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 34.625, "direction": "rx", "raw": "*#4*2*14*0235*3##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 34.744, "direction": "rx", "raw": "*#4*2*13*00##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 65.893, "direction": "rx", "raw": "*#4*2*12*0180*3##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 65.896, "direction": "rx", "raw": "*4*107*2##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 67.03, "direction": "rx", "raw": "*#4*2*14*0235*3##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 71.268, "direction": "rx", "raw": "*#13**#1*06*24*10*2026##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 71.27, "direction": "rx", "raw": "*#13**#0*23*10*00*##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 93.772, "direction": "rx", "raw": "*#4*2*60*40##", "run": "run1_heating_comfort_then_heating_eco", "session": "evt"},
+    {"timestamp": 94.772, "direction": "rx", "raw": "*4*1*2##", "run": "run2_home_assistant_write_realigns", "session": "evt"},
+    {"timestamp": 94.837, "direction": "rx", "raw": "*#4*2*12*0235*3##", "run": "run2_home_assistant_write_realigns", "session": "evt"},
+    {"timestamp": 94.838, "direction": "rx", "raw": "*4*1*2##", "run": "run2_home_assistant_write_realigns", "session": "evt"},
+    {"timestamp": 94.901, "direction": "rx", "raw": "*#4*2*0*0238##", "run": "run2_home_assistant_write_realigns", "session": "evt"},
+    {"timestamp": 102.881, "direction": "rx", "raw": "*#4*2*0*0238##", "run": "run2_home_assistant_write_realigns", "session": "evt"},
+    {"timestamp": 103.201, "direction": "rx", "raw": "*#4*2*12*0235*3##", "run": "run2_home_assistant_write_realigns", "session": "evt"},
+    {"timestamp": 103.205, "direction": "rx", "raw": "*4*1*2##", "run": "run2_home_assistant_write_realigns", "session": "evt"},
+    {"timestamp": 103.522, "direction": "rx", "raw": "*#4*2*14*0235*3##", "run": "run2_home_assistant_write_realigns", "session": "evt"},
+    {"timestamp": 103.606, "direction": "rx", "raw": "*#4*2*13*00##", "run": "run2_home_assistant_write_realigns", "session": "evt"},
+    {"timestamp": 138.093, "direction": "rx", "raw": "*#4*2#1*#20*0##", "run": "run2_home_assistant_write_realigns", "session": "evt"},
+    {"timestamp": 138.123, "direction": "rx", "raw": "*#4*2#1*20*0##", "run": "run2_home_assistant_write_realigns", "session": "evt"}
+  ],
+  "rows": [
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 0.0,
+      "step": "baseline_poll",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 0.0,
+      "t_estimated": true,
+      "step": "baseline_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*0*0238##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 0.0,
+      "t_estimated": true,
+      "step": "baseline_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*12*0235*3##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 0.0,
+      "t_estimated": true,
+      "step": "baseline_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*4*1*2##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 0.0,
+      "t_estimated": true,
+      "step": "baseline_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*14*0235*3##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 0.0,
+      "t_estimated": true,
+      "step": "baseline_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*13*00##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 0.0,
+      "t_estimated": true,
+      "step": "baseline_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 0.564,
+      "step": "baseline_poll",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*0*0238##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's main sensor is reporting a temperature of 23.8°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 0.884,
+      "step": "baseline_poll",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*12*0235*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local target temperature is set to 23.5°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 0.89,
+      "step": "baseline_poll",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*4*1*2##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's season is heating."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 1.204,
+      "step": "baseline_poll",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*14*0235*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's target temperature is set to 23.5°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 1.354,
+      "step": "baseline_poll",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*13*00##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local offset is set to 0°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 1.371,
+      "utc": "20:08:51",
+      "step": "baseline_poll",
+      "dir": "result",
+      "frame": "*#4*2##",
+      "ack": true,
+      "reply_time_s": 1.371,
+      "replies": [
+        "*#4*2*0*0238##",
+        "*#4*2*12*0235*3##",
+        "*4*1*2##",
+        "*#4*2*14*0235*3##",
+        "*#4*2*13*00##"
+      ],
+      "events_after": [
+        "*#4*2*0*0238##",
+        "*#4*2*12*0235*3##",
+        "*4*1*2##",
+        "*#4*2*14*0235*3##",
+        "*#4*2*13*00##"
+      ],
+      "note": "baseline_12_14_0235_heating"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 2.387,
+      "step": "heating_comfort",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2*#7*1*3##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 2.387,
+      "t_estimated": true,
+      "step": "heating_comfort",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 2.455,
+      "utc": "20:08:52",
+      "step": "heating_comfort",
+      "dir": "result",
+      "frame": "*#4*2*#7*1*3##",
+      "ack": true,
+      "reply_time_s": 0.068,
+      "replies": [],
+      "events_after": [],
+      "note": "dim7_template_1_3_heating_comfort_mode_108_from_23_5"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 2.49,
+      "step": "heating_comfort",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*7*1*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2 is in heating comfort."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 2.593,
+      "step": "heating_comfort",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*12*0210*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local target temperature is set to 21.0°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 2.595,
+      "step": "heating_comfort",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*4*108*2##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's mode is unknown."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 2.659,
+      "step": "heating_comfort",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*0*0238##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's main sensor is reporting a temperature of 23.8°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 3.456,
+      "step": "heating_comfort",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2*12##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 3.456,
+      "t_estimated": true,
+      "step": "heating_comfort",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*12*0210*3##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 3.456,
+      "t_estimated": true,
+      "step": "heating_comfort",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*4*108*2##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 3.456,
+      "t_estimated": true,
+      "step": "heating_comfort",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 3.545,
+      "step": "heating_comfort",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*12*0210*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local target temperature is set to 21.0°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 3.549,
+      "step": "heating_comfort",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*4*108*2##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's mode is unknown."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 3.551,
+      "utc": "20:08:53",
+      "step": "heating_comfort",
+      "dir": "result",
+      "frame": "*#4*2*12##",
+      "ack": true,
+      "reply_time_s": 0.095,
+      "replies": [
+        "*#4*2*12*0210*3##",
+        "*4*108*2##"
+      ],
+      "events_after": [
+        "*#4*2*12*0210*3##",
+        "*4*108*2##"
+      ],
+      "note": "dim12_21_0_one_second_after_the_template"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 4.552,
+      "step": "heating_comfort",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2*14##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 4.552,
+      "t_estimated": true,
+      "step": "heating_comfort",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*14*0235*3##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 4.552,
+      "t_estimated": true,
+      "step": "heating_comfort",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 4.673,
+      "step": "heating_comfort",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*14*0235*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's target temperature is set to 23.5°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 4.678,
+      "utc": "20:08:54",
+      "step": "heating_comfort",
+      "dir": "result",
+      "frame": "*#4*2*14##",
+      "ack": true,
+      "reply_time_s": 0.126,
+      "replies": [
+        "*#4*2*14*0235*3##"
+      ],
+      "events_after": [
+        "*#4*2*14*0235*3##"
+      ],
+      "note": "dim14_keeps_23_5_in_heating_comfort"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 15.678,
+      "step": "heating_comfort",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2*12##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 15.678,
+      "t_estimated": true,
+      "step": "heating_comfort",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*12*0210*3##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 15.678,
+      "t_estimated": true,
+      "step": "heating_comfort",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*4*108*2##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 15.678,
+      "t_estimated": true,
+      "step": "heating_comfort",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 15.808,
+      "step": "heating_comfort",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*12*0210*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local target temperature is set to 21.0°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 15.812,
+      "step": "heating_comfort",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*4*108*2##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's mode is unknown."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 15.813,
+      "utc": "20:09:06",
+      "step": "heating_comfort",
+      "dir": "result",
+      "frame": "*#4*2*12##",
+      "ack": true,
+      "reply_time_s": 0.135,
+      "replies": [
+        "*#4*2*12*0210*3##",
+        "*4*108*2##"
+      ],
+      "events_after": [
+        "*#4*2*12*0210*3##",
+        "*4*108*2##"
+      ],
+      "note": "dim12_still_21_0_at_13_s"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 16.814,
+      "step": "heating_comfort",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2*14##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 16.814,
+      "t_estimated": true,
+      "step": "heating_comfort",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*14*0235*3##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 16.814,
+      "t_estimated": true,
+      "step": "heating_comfort",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 16.911,
+      "step": "heating_comfort",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*14*0235*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's target temperature is set to 23.5°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 16.915,
+      "utc": "20:09:07",
+      "step": "heating_comfort",
+      "dir": "result",
+      "frame": "*#4*2*14##",
+      "ack": true,
+      "reply_time_s": 0.101,
+      "replies": [
+        "*#4*2*14*0235*3##"
+      ],
+      "events_after": [
+        "*#4*2*14*0235*3##"
+      ],
+      "note": "dim14_still_23_5_at_13_s"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 17.915,
+      "step": "heating_eco",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2*#7*1*4##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 17.915,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 18.004,
+      "utc": "20:09:08",
+      "step": "heating_eco",
+      "dir": "result",
+      "frame": "*#4*2*#7*1*4##",
+      "ack": true,
+      "reply_time_s": 0.089,
+      "replies": [],
+      "events_after": [],
+      "note": "dim7_template_1_4_heating_eco_mode_107"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 18.054,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*7*1*4##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2 is in heating eco."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 18.158,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*12*0180*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local target temperature is set to 18.0°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 18.16,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*4*107*2##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's mode is unknown."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 18.208,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*0*0238##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's main sensor is reporting a temperature of 23.8°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 19.005,
+      "step": "heating_eco",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2*12##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 19.005,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*12*0180*3##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 19.005,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*4*107*2##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 19.005,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 19.119,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*12*0180*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local target temperature is set to 18.0°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 19.121,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*4*107*2##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's mode is unknown."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 19.122,
+      "utc": "20:09:09",
+      "step": "heating_eco",
+      "dir": "result",
+      "frame": "*#4*2*12##",
+      "ack": true,
+      "reply_time_s": 0.117,
+      "replies": [
+        "*#4*2*12*0180*3##",
+        "*4*107*2##"
+      ],
+      "events_after": [
+        "*#4*2*12*0180*3##",
+        "*4*107*2##"
+      ],
+      "note": "dim12_18_0_one_second_after_the_template"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 20.122,
+      "step": "heating_eco",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2*14##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 20.122,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*14*0235*3##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 20.122,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 20.215,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*14*0235*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's target temperature is set to 23.5°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 20.218,
+      "utc": "20:09:10",
+      "step": "heating_eco",
+      "dir": "result",
+      "frame": "*#4*2*14##",
+      "ack": true,
+      "reply_time_s": 0.096,
+      "replies": [
+        "*#4*2*14*0235*3##"
+      ],
+      "events_after": [
+        "*#4*2*14*0235*3##"
+      ],
+      "note": "dim14_keeps_23_5_in_heating_eco"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 31.221,
+      "step": "heating_eco",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2*12##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 31.221,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*12*0180*3##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 31.221,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*4*107*2##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 31.221,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 31.334,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*12*0180*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local target temperature is set to 18.0°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 31.337,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*4*107*2##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's mode is unknown."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 31.339,
+      "utc": "20:09:21",
+      "step": "heating_eco",
+      "dir": "result",
+      "frame": "*#4*2*12##",
+      "ack": true,
+      "reply_time_s": 0.118,
+      "replies": [
+        "*#4*2*12*0180*3##",
+        "*4*107*2##"
+      ],
+      "events_after": [
+        "*#4*2*12*0180*3##",
+        "*4*107*2##"
+      ],
+      "note": "dim12_still_18_0_at_13_s"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 32.339,
+      "step": "heating_eco",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2*14##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 32.339,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*14*0235*3##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 32.339,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 32.437,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*14*0235*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's target temperature is set to 23.5°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 32.446,
+      "utc": "20:09:22",
+      "step": "heating_eco",
+      "dir": "result",
+      "frame": "*#4*2*14##",
+      "ack": true,
+      "reply_time_s": 0.107,
+      "replies": [
+        "*#4*2*14*0235*3##"
+      ],
+      "events_after": [
+        "*#4*2*14*0235*3##"
+      ],
+      "note": "dim14_still_23_5_at_13_s"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 33.447,
+      "step": "heating_eco",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 33.447,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*0*0238##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 33.447,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*12*0180*3##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 33.447,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*4*107*2##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 33.447,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*14*0235*3##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 33.447,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*13*00##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 33.447,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 34.018,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*0*0238##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's main sensor is reporting a temperature of 23.8°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 34.322,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*12*0180*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local target temperature is set to 18.0°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 34.327,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*4*107*2##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's mode is unknown."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 34.625,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*14*0235*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's target temperature is set to 23.5°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 34.744,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*13*00##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local offset is set to 0°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 34.748,
+      "utc": "20:09:24",
+      "step": "heating_eco",
+      "dir": "result",
+      "frame": "*#4*2##",
+      "ack": true,
+      "reply_time_s": 1.301,
+      "replies": [
+        "*#4*2*0*0238##",
+        "*#4*2*12*0180*3##",
+        "*4*107*2##",
+        "*#4*2*14*0235*3##",
+        "*#4*2*13*00##"
+      ],
+      "events_after": [
+        "*#4*2*0*0238##",
+        "*#4*2*12*0180*3##",
+        "*4*107*2##",
+        "*#4*2*14*0235*3##",
+        "*#4*2*13*00##"
+      ],
+      "note": "zone_status_split_12_0180_14_0235_mode_107_in_place_of_the_season"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 65.75,
+      "step": "heating_eco",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2*12##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 65.75,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*12*0180*3##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 65.75,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*4*107*2##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 65.75,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 65.893,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*12*0180*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local target temperature is set to 18.0°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 65.896,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*4*107*2##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's mode is unknown."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 65.899,
+      "utc": "20:09:56",
+      "step": "heating_eco",
+      "dir": "result",
+      "frame": "*#4*2*12##",
+      "ack": true,
+      "reply_time_s": 0.149,
+      "replies": [
+        "*#4*2*12*0180*3##",
+        "*4*107*2##"
+      ],
+      "events_after": [
+        "*#4*2*12*0180*3##",
+        "*4*107*2##"
+      ],
+      "note": "dim12_still_18_0_at_48_s"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 66.9,
+      "step": "heating_eco",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2*14##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 66.9,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*14*0235*3##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 66.9,
+      "t_estimated": true,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 67.03,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*14*0235*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's target temperature is set to 23.5°C."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 67.037,
+      "utc": "20:09:57",
+      "step": "heating_eco",
+      "dir": "result",
+      "frame": "*#4*2*14##",
+      "ack": true,
+      "reply_time_s": 0.137,
+      "replies": [
+        "*#4*2*14*0235*3##"
+      ],
+      "events_after": [
+        "*#4*2*14*0235*3##"
+      ],
+      "note": "dim14_still_23_5_at_48_s"
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 71.268,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**#1*06*24*10*2026##",
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "Gateway broadcasting internal date: 2026-10-24."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 71.27,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**#0*23*10*00*##",
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "Gateway broadcasting internal time: 23:10:00."
+    },
+    {
+      "run": "run1_heating_comfort_then_heating_eco",
+      "t": 93.772,
+      "step": "heating_eco",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*60*40##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's main sensor is reporting a humidity of 40.0%."
+    },
+    {
+      "run": "run2_home_assistant_write_realigns",
+      "t": 94.772,
+      "step": "listen",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*4*1*2##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's season is heating."
+    },
+    {
+      "run": "run2_home_assistant_write_realigns",
+      "t": 94.837,
+      "step": "listen",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*12*0235*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local target temperature is set to 23.5°C."
+    },
+    {
+      "run": "run2_home_assistant_write_realigns",
+      "t": 94.838,
+      "step": "listen",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*4*1*2##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's season is heating."
+    },
+    {
+      "run": "run2_home_assistant_write_realigns",
+      "t": 94.901,
+      "step": "listen",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*0*0238##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's main sensor is reporting a temperature of 23.8°C."
+    },
+    {
+      "run": "run2_home_assistant_write_realigns",
+      "t": 102.168,
+      "step": "poll_after_ha_write",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2##",
+      "is_status_request": true
+    },
+    {
+      "run": "run2_home_assistant_write_realigns",
+      "t": 102.168,
+      "t_estimated": true,
+      "step": "poll_after_ha_write",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*0*0238##"
+    },
+    {
+      "run": "run2_home_assistant_write_realigns",
+      "t": 102.168,
+      "t_estimated": true,
+      "step": "poll_after_ha_write",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*12*0235*3##"
+    },
+    {
+      "run": "run2_home_assistant_write_realigns",
+      "t": 102.168,
+      "t_estimated": true,
+      "step": "poll_after_ha_write",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*4*1*2##"
+    },
+    {
+      "run": "run2_home_assistant_write_realigns",
+      "t": 102.168,
+      "t_estimated": true,
+      "step": "poll_after_ha_write",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*14*0235*3##"
+    },
+    {
+      "run": "run2_home_assistant_write_realigns",
+      "t": 102.168,
+      "t_estimated": true,
+      "step": "poll_after_ha_write",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*13*00##"
+    },
+    {
+      "run": "run2_home_assistant_write_realigns",
+      "t": 102.168,
+      "t_estimated": true,
+      "step": "poll_after_ha_write",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_home_assistant_write_realigns",
+      "t": 102.881,
+      "step": "poll_after_ha_write",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*0*0238##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's main sensor is reporting a temperature of 23.8°C."
+    },
+    {
+      "run": "run2_home_assistant_write_realigns",
+      "t": 103.201,
+      "step": "poll_after_ha_write",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*12*0235*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local target temperature is set to 23.5°C."
+    },
+    {
+      "run": "run2_home_assistant_write_realigns",
+      "t": 103.205,
+      "step": "poll_after_ha_write",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*4*1*2##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's season is heating."
+    },
+    {
+      "run": "run2_home_assistant_write_realigns",
+      "t": 103.522,
+      "step": "poll_after_ha_write",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*14*0235*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's target temperature is set to 23.5°C."
+    },
+    {
+      "run": "run2_home_assistant_write_realigns",
+      "t": 103.606,
+      "step": "poll_after_ha_write",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*13*00##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local offset is set to 0°C."
+    },
+    {
+      "run": "run2_home_assistant_write_realigns",
+      "t": 103.609,
+      "utc": "20:11:31",
+      "step": "poll_after_ha_write",
+      "dir": "result",
+      "frame": "*#4*2##",
+      "ack": true,
+      "reply_time_s": 1.441,
+      "replies": [
+        "*#4*2*0*0238##",
+        "*#4*2*12*0235*3##",
+        "*4*1*2##",
+        "*#4*2*14*0235*3##",
+        "*#4*2*13*00##"
+      ],
+      "events_after": [
+        "*#4*2*0*0238##",
+        "*#4*2*12*0235*3##",
+        "*4*1*2##",
+        "*#4*2*14*0235*3##",
+        "*#4*2*13*00##"
+      ],
+      "note": "zone_status_realigned_12_14_0235_after_ha_write"
+    },
+    {
+      "run": "run2_home_assistant_write_realigns",
+      "t": 138.093,
+      "step": "poll_after_ha_write",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2#1*#20*0##",
+      "ownd_class": "OWNHeatingCommand",
+      "ownd_log": "*#4*2#1*#20*0##"
+    },
+    {
+      "run": "run2_home_assistant_write_realigns",
+      "t": 138.123,
+      "step": "poll_after_ha_write",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2#1*20*0##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's actuator 1 is off."
+    }
+  ]
+}
