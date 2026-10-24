@@ -362,6 +362,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # (*#4*Z*19*COOLING*HEATING##: a value of 5..8 on a side is a fan coil, 0..4 a valve).
         # Empty until a dimension 19 frame has been seen.
         self._fan_coil_sides: dict[str, bool] = {}
+        # The one-shot *#4*Z*19## asked when a fan coil shows up before dimension 19 did:
+        # True while it is waiting for its answer, so the fan speed is not polled blindly.
+        self._fan_coil_sides_asked: bool = False
         if fan and not self._central:
             self._enable_fan_mode()
 
@@ -589,10 +592,31 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         other one. Until dimension 19 has told which side is which, or while the season is
         unknown, ask anyway.
         """
-        if not self._fan_coil_sides or self._season is None:
+        if not self._fan_coil_sides:
+            # Dimension 19 is on its way (asked once a fan coil showed up in dimension 20):
+            # on the live F461 it answers in 0.11 s, while *#4*Z*11## in the valve's season
+            # is NACKed after 2.1 s. Do not ask blindly while the answer is pending.
+            return not self._fan_coil_sides_asked
+        if self._season is None:
             return True
         side = "heating" if self._season == SEASON_HEATING else "cooling"
         return self._fan_coil_sides.get(side, False)
+
+    def _ask_fan_coil_sides(self) -> None:
+        """Ask once which side of the zone is the fan coil (``*#4*Z*19##``).
+
+        A fan coil revealed by an actuator report (dimension 20, value 5..8) does not tell its
+        side; without dimension 19 the fan speed poll (``*#4*Z*11##``) would be sent in the
+        valve's season too and NACKed after 2.1 s on the F461. Every gateway firmware of the
+        oracle forwards ``*#4*Z*19##`` (own-firmware-oracle thermo-zone-requests).
+        """
+        if self._fan_coil_sides or self._fan_coil_sides_asked:
+            return
+        request = getattr(self._gateway_handler, "request_zone_dimension", None)
+        if not callable(request):
+            return
+        self._fan_coil_sides_asked = True
+        request(self._full_where, 19)
 
     @property
     def _standalone(self) -> bool:
@@ -643,6 +667,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             watch = getattr(self._gateway_handler, "watch_zone_actuators", None)
             if callable(watch):
                 self.async_on_remove(watch(self._full_where))
+            if self._fan:
+                # Restored (or configured) fan mode without the fan coil's side: ask for it
+                # before the first fan speed poll.
+                self._ask_fan_coil_sides()
 
     @callback
     def _handle_central_mode_update(self, master_mode: HVACMode) -> None:
@@ -1151,12 +1179,16 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     "cooling": isinstance(getattr(message, "cooling_fan_on", None), bool),
                     "heating": isinstance(getattr(message, "fan_on", None), bool),
                 }
+                self._fan_coil_sides_asked = False
             # Actuator status (Dimension 20) with values >= 5 reports fancoil fan status in OWNd.
             is_fan = isinstance(getattr(message, "fan_speed", None), int) or isinstance(
                 getattr(message, "fan_on", None), bool
             )
             if is_fan:
                 self._enable_fan_mode()
+                if getattr(message, "dimension", None) == 20:
+                    # The actuator report revealed a fan coil; ask which side it is on.
+                    self._ask_fan_coil_sides()
                 speed = getattr(message, "fan_speed", None)
                 if speed == 1:
                     self._running_fan_speed = "low"

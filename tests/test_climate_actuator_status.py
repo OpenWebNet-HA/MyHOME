@@ -280,3 +280,62 @@ async def test_a_transport_error_is_logged_and_the_next_request_still_goes_out(h
     handler.request_zone_dimension("2", 20)
     await _settle(hass)
     handler.send_paced.assert_awaited_once_with(["*#4*2*20##"])
+
+
+# ------------------------------------------------------------------ entity: dimension 19 before the fan speed poll (review 5639409551, 1)
+
+def _status_frames(zone) -> list[str]:
+    return [str(call.args[0]) for call in zone._gateway_handler.send_status_request.await_args_list]
+
+
+async def test_fan_coil_revealed_by_dimension_20_asks_its_side_once(hass):
+    """``*#4*2#2*20*5##`` reveals a fan coil: one ``*#4*2*19##`` is queued, not a second one."""
+    zone = _zone(hass)
+    _feed(zone, *F461_POLL_REPLY, "*#4*2#1*20*0##")
+    zone._gateway_handler.request_zone_dimension.assert_not_called()
+    _feed(zone, "*#4*2#2*20*5##", "*#4*2#2*20*5##")
+    zone._gateway_handler.request_zone_dimension.assert_called_once_with("2", 19)
+
+
+async def test_no_fan_speed_poll_in_the_valve_s_season(hass):
+    """F461 zone 2 in heating season (heating valve, cooling fan coil): ``*#4*2*11##`` NACKs in 2.1 s."""
+    zone = _zone(hass)
+    _feed(zone, *F461_POLL_REPLY, "*#4*2#1*20*0##", "*#4*2#2*20*5##")
+    await zone.async_update()  # dimension 19 still on its way
+    assert "*#4*2*11##" not in _status_frames(zone)
+    _feed(zone, "*#4*2*19*5*0##")  # cooling: fan coil, heating: valve
+    assert zone.extra_state_attributes["fan_coil_cooling"] is True
+    assert zone.extra_state_attributes["fan_coil_heating"] is False
+    await zone.async_update()
+    assert "*#4*2*11##" not in _status_frames(zone)
+    _feed(zone, "*4*0*2##")  # cooling season: the fan coil's side
+    await zone.async_update()
+    assert _status_frames(zone)[-1] == "*#4*2*11##"
+
+
+async def test_fan_coil_side_is_asked_again_only_if_the_first_answer_never_came(hass):
+    zone = _zone(hass)
+    _feed(zone, *F461_POLL_REPLY, "*#4*2#2*20*5##", "*#4*2*19*5*0##")
+    assert zone._fan_coil_sides_asked is False
+    _feed(zone, "*#4*2#2*20*5##")  # the side is known: nothing more to ask
+    zone._gateway_handler.request_zone_dimension.assert_called_once_with("2", 19)
+
+
+async def test_restored_fan_mode_without_the_side_asks_for_it_on_add(hass):
+    zone = _zone(hass)
+    zone._gateway_handler.initial_discovery_pending = False
+    zone._gateway_handler.sweep_active = False
+    zone._gateway_handler.supports_zone_status = True
+    zone._enable_fan_mode()  # what a restored ``fan_mode`` attribute does
+    await zone.async_added_to_hass()
+    zone._gateway_handler.request_zone_dimension.assert_called_once_with("2", 19)
+
+
+async def test_a_gateway_without_zone_requests_keeps_polling_the_fan_speed(hass):
+    """An older gateway handler (no ``request_zone_dimension``) behaves as before."""
+    zone = _zone(hass)
+    del zone._gateway_handler.request_zone_dimension
+    _feed(zone, *F461_POLL_REPLY, "*#4*2#2*20*5##")
+    assert zone._fan_coil_sides_asked is False
+    await zone.async_update()
+    assert _status_frames(zone)[-1] == "*#4*2*11##"

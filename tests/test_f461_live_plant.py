@@ -311,11 +311,25 @@ async def test_legacy_ownd_mode_event_extracts_season_fallback(hass) -> None:
     assert zone._season == "cooling"
 
 
-async def test_fan_speed_is_polled_while_the_sides_are_unknown(hass) -> None:
+async def test_fan_speed_is_not_polled_until_the_sides_are_known(hass) -> None:
+    """A fan coil revealed by dimension 20 is asked its side (*#4*2*19##) first.
+
+    In the capture (``probe_fancoil``) *#4*2*11## NACKs in heating season on this zone
+    (heating valve, cooling fan coil), so the poll waits for the dimension 19 answer.
+    """
     gw = _gateway()
     zone = (await _plant(hass, gw))["2"]
     zone.handle_event(OWNEvent.parse("*#4*2#2*20*5##"))
     zone.handle_event(OWNEvent.parse("*4*1*2##"))
+    gw.request_zone_dimension.assert_called_once_with("2", 19)
+    gw.sent.clear()
+    await zone.async_update()
+    assert gw.sent == ["*#4*2##"]
+    zone.handle_event(OWNEvent.parse("*#4*2*19*5*0##"))
+    gw.sent.clear()
+    await zone.async_update()
+    assert gw.sent == ["*#4*2##"]
+    zone.handle_event(OWNEvent.parse("*4*0*2##"))
     gw.sent.clear()
     await zone.async_update()
     assert gw.sent == ["*#4*2##", "*#4*2*11##"]
