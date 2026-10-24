@@ -303,9 +303,14 @@ class GatewayEventDispatcher:
                     dim = getattr(message, "dimension", None)
                     is_not_dimension = not (isinstance(dim, int) and not isinstance(dim, bool))
 
+                    # A dim step (WHAT 30/31) says the light changed, not that it is on (#367).
+                    is_dim_step = getattr(message, "what", None) in (30, 31)
+
                     if message.is_on is not None and is_not_dimension:
                         event = "on" if message.is_on else "off"
-                        if message.is_general:
+                        if is_dim_step:
+                            pass  # no on/off event; the members are still resynced below
+                        elif message.is_general:
                             self.hass.bus.async_fire(
                                 "myhome_general_light_event",
                                 {"message": str(message), "event": event},
@@ -334,7 +339,13 @@ class GatewayEventDispatcher:
                             or getattr(message, "is_group", False)
                         ):
                             self.handler._schedule_resync(message)
-                elif isinstance(message, OWNAutomationEvent) and self._is_active_for_who(2):
+                elif (
+                    isinstance(message, OWNAutomationEvent)
+                    and self._is_active_for_who(2)
+                    # Only a frame that states the motion is an open/close/stop event: a
+                    # dimension frame with no known state is none of them (#367).
+                    and (message.is_opening is not None or message.is_closing is not None)
+                ):
                     if message.is_opening and not message.is_closing:
                         event = "open"
                     elif message.is_closing and not message.is_opening:
