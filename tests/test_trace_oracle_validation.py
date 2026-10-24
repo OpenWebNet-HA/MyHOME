@@ -515,6 +515,11 @@ def test_tier4_all_trace_rx_frames_parse_cleanly_in_ownd():
     # Known malformed synthetic frame in f500_tuner fixture (missing leading '#' on WHO 22 dim 6);
     # OWNMessage.parse must return None cleanly without raising.
     known_unparseable_rx = {"*22*2#1*6*2##"}
+    # Authentic frames whose decoder is not in the pinned OWNd yet: they must not raise, and
+    # they may parse to None until the decoder lands (then they parse like any other frame).
+    # - *#13**27*70#52#54#49##: WHO 13 dimension 27 model name ("F461" as ASCII codes) answered
+    #   by a live F461 2.0.11 (tests/fixtures/traces/f461_live_2026-10-23); decoder in OWNd#139.
+    pending_decoder_rx = {"*#13**27*70#52#54#49##"}
 
     failures: list[str] = []
     for frame in sorted(rx_frames):
@@ -523,6 +528,8 @@ def test_tier4_all_trace_rx_frames_parse_cleanly_in_ownd():
             if frame in known_unparseable_rx:
                 if parsed is not None:
                     failures.append(f"Expected None for malformed frame {frame}, got {parsed!r}")
+            elif frame in pending_decoder_rx:
+                continue
             elif parsed is None:
                 failures.append(f"OWNMessage.parse returned None for trace rx frame: {frame}")
         except Exception as exc:  # noqa: BLE001
