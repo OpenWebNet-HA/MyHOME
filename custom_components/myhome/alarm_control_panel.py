@@ -41,12 +41,6 @@ STATE_ARMED_AWAY = AlarmControlPanelState.ARMED_AWAY
 STATE_TRIGGERED = AlarmControlPanelState.TRIGGERED
 
 CENTRAL_UNIT_KEY = "0"
-# Gateways that NACK the WHO 5 status request ``*#5*0##`` (own-firmware-oracle
-# ``results/<model>/<fw>/oracle/full/trace-corpus.tsv``: F450 020010, F453AV 030014,
-# F454 020051, F459 020105, F460 020012, F461 020011, MyHomeServer1 028206 answer
-# ``nack`` / ``silent``). Fallback for OWNd profiles that carry no
-# ``supports_alarm_status_request`` flag yet; the flag belongs in OWNd (#381 pattern).
-ALARM_STATUS_REFUSED_MODELS = frozenset({"F450", "F453AV", "F454", "F459", "F460", "F461", "MYHOMESERVER1"})
 
 
 async def async_setup_entry(
@@ -192,20 +186,22 @@ class MyHOMEAlarmControlPanel(MyHOMEEntity, AlarmControlPanelEntity):
 
     @property
     def _status_request_refused(self) -> bool:
-        """Whether this gateway NACKs ``*#5*0##``: the OWNd profile flag first, then the model table.
+        """Whether the OWNd profile says the gateway refuses the WHO 5 status request.
 
-        ``None`` on the profile means unverified and falls through to the table; a gateway
-        in neither is polled as before.
+        Only an explicit ``supports_alarm_status_request = False`` on the profile skips
+        the poll. ``None`` (unverified) and a missing flag poll: the own-firmware-oracle
+        ``nack`` / ``silent`` rows for ``*#5*0##`` (F450, F453AV, F454, F459, F460, F461,
+        MyHomeServer1) come from factory-blank emulations and the live F461 / MyHomeServer1
+        NACKs came from plants without a central unit, while the physical F454 (#311,
+        #629) and F453AV (#619) traces show the request answered. Neither says what a
+        plant with a central unit does, so a model is never treated as refusing. The
+        flag belongs in OWNd (#381 pattern).
         """
         profile = getattr(self._gateway_handler, "profile", None)
-        flag = getattr(profile, "supports_alarm_status_request", None)
-        if isinstance(flag, bool):
-            return not flag
-        model = getattr(self._gateway_handler, "model", None)
-        return isinstance(model, str) and model.strip().upper().replace(" ", "") in ALARM_STATUS_REFUSED_MODELS
+        return getattr(profile, "supports_alarm_status_request", None) is False
 
     async def async_update(self) -> None:
-        """Request status from the gateway, unless the gateway refuses the request."""
+        """Request status from the gateway, unless its OWNd profile says it refuses the request."""
         if self._status_request_refused:
             LOGGER.debug(
                 "%s %s: %s refuses *#5*0##; waiting for alarm frames on the bus",

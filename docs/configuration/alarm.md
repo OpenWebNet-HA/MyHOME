@@ -44,7 +44,7 @@ The panel follows what the central unit reports on the bus:
 * **`armed_home`** is never reported: home and away arming look the same on the bus.
 * Zones (`*5*11*#n##` active, `*5*18*#n##` not active) never change the panel's state.
 * A new panel is **unknown** until the central unit reports a state. After a restart it shows its last known state with the attribute `restored: true` until the next frame confirms it.
-* F450, F453AV, F454, F459, F460, F461 and MyHomeServer1 refuse the status request `*#5*0##`, so the panel is not polled there and waits for the central unit's own frames.
+* The panel polls `*#5*0##` once after it is added, on every gateway, unless the OWNd gateway profile states that the gateway refuses the request. Whether the request is answered cannot be inferred from the gateway model alone: a physical F454 ([#311](https://github.com/OpenWebNet-HA/MyHOME/issues/311), [#629](https://github.com/OpenWebNet-HA/MyHOME/issues/629)) and F453AV ([#619](https://github.com/OpenWebNet-HA/MyHOME/issues/619)) answer it with the system-level frames of point 1 above, although the factory-blank emulations of both in own-firmware-oracle answer NACK, and a live F461 2.0.11 and MyHomeServer1 3.87.13 without a central unit answer NACK too ([#799](https://github.com/OpenWebNet-HA/MyHOME/pull/799)). A refused request costs one request / NACK exchange on the command session and leaves the panel's state as it was.
 
 ---
 
