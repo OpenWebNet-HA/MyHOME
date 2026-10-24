@@ -6,9 +6,11 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any, cast
 
+import voluptuous as vol
 from homeassistant.const import CONF_MAC
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 
 from .const import (
@@ -21,6 +23,7 @@ from .const import (
     SERVICE_STOP_COVER_CALIBRATION,
 )
 from .data import get_runtime_data
+from .typing_compat import as_any
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -32,6 +35,16 @@ SERVICE_SEND_MESSAGE = "send_message"
 # *#4*<where>*22## and *#4*<where>*#22*...## (split control): never forwarded, see handle_send_message.
 _WHO4_DIMENSION_22 = re.compile(r"^\*#4\*[^*]*\*#?22(\*[^#]*)?##$")
 SERVICE_SWEEP_BUS = "sweep_bus"
+
+# Closed schemas: a misspelt key such as `gw_mac` (#189) raises instead of being
+# dropped and the frame going to the default gateway.
+SYNC_TIME_SCHEMA = vol.Schema({vol.Optional(ATTR_GATEWAY): cv.string})
+SEND_MESSAGE_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_GATEWAY): cv.string,
+        vol.Required(ATTR_MESSAGE): cv.string,
+    }
+)
 
 
 def _loaded_gateways(hass: HomeAssistant) -> dict[str, MyHOMEGatewayHandler]:
@@ -145,7 +158,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
     async def handle_send_message(call: ServiceCall) -> None:
         """Handle sending an arbitrary OpenWebNet message."""
         gateway = call.data.get(ATTR_GATEWAY, None)
-        message = call.data.get(ATTR_MESSAGE, None)
+        message: str = call.data[ATTR_MESSAGE]  # required by SEND_MESSAGE_SCHEMA
         if gateway is None:
             if not _loaded_gateways(hass):
                 _LOGGER.error("No MyHOME gateways found, cannot send message `%s`.", message)
@@ -156,37 +169,34 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         _LOGGER.debug("Handling message `%s` to be sent to `%s`", message, gateway)
         handler = _get_gateway_handler(hass, gateway)
         if handler is not None:
-            if message is not None:
-                from OWNd.message import OWNCommand
-                if _WHO4_DIMENSION_22.match(str(message).strip()):
-                    _LOGGER.error(
-                        "%s Refusing to send `%s`: a WHO 4 dimension 22 request kills the thermostat "
-                        "handler of F461 / F454 / MH200N-class gateways and reboots the gateway "
-                        "about three minutes later (tests/fixtures/traces/f461_live_2026-10-15).",
-                        handler.log_id,
-                        message,
-                    )
-                    return
-                own_message = OWNCommand.parse(message)
-                if own_message is not None and own_message.is_valid:
-                    _LOGGER.debug(
-                        "%s Sending valid OpenWebNet Message: `%s`",
-                        handler.log_id,
-                        own_message,
-                    )
-                    if own_message.is_status_request or own_message.is_dimension_request:
-                        # A status or dimension request goes out as one: a NACK then means
-                        # "no such device" (DEBUG, not retried) instead of a failed command
-                        # logged as ERROR and sent twice (#777: *#1*52*5## on an F454).
-                        await handler.send_status_request(own_message)
-                    else:
-                        await handler.send(own_message)
-                    return
+            from OWNd.message import OWNCommand
+            if _WHO4_DIMENSION_22.match(str(message).strip()):
                 _LOGGER.error(
-                    "Could not parse message `%s`, not sending it.", message
+                    "%s Refusing to send `%s`: a WHO 4 dimension 22 request kills the thermostat "
+                    "handler of F461 / F454 / MH200N-class gateways and reboots the gateway "
+                    "about three minutes later (tests/fixtures/traces/f461_live_2026-10-15).",
+                    handler.log_id,
+                    message,
                 )
                 return
-            _LOGGER.error("No message specified to send.")
+            own_message = OWNCommand.parse(message)
+            if own_message is not None and own_message.is_valid:
+                _LOGGER.debug(
+                    "%s Sending valid OpenWebNet Message: `%s`",
+                    handler.log_id,
+                    own_message,
+                )
+                if own_message.is_status_request or own_message.is_dimension_request:
+                    # A status or dimension request goes out as one: a NACK then means
+                    # "no such device" (DEBUG, not retried) instead of a failed command
+                    # logged as ERROR and sent twice (#777: *#1*52*5## on an F454).
+                    await handler.send_status_request(own_message)
+                else:
+                    await handler.send(own_message)
+                return
+            _LOGGER.error(
+                "Could not parse message `%s`, not sending it.", message
+            )
             return
 
         _LOGGER.error(
@@ -356,8 +366,8 @@ async def async_setup_services(hass: HomeAssistant) -> None:
 
         await handler.send(cmd)
 
-    hass.services.async_register(DOMAIN, SERVICE_SYNC_TIME, handle_sync_time)
-    hass.services.async_register(DOMAIN, SERVICE_SEND_MESSAGE, handle_send_message)
+    hass.services.async_register(DOMAIN, SERVICE_SYNC_TIME, handle_sync_time, schema=as_any(SYNC_TIME_SCHEMA))
+    hass.services.async_register(DOMAIN, SERVICE_SEND_MESSAGE, handle_send_message, schema=as_any(SEND_MESSAGE_SCHEMA))
     hass.services.async_register(DOMAIN, SERVICE_SWEEP_BUS, handle_sweep_bus)
     hass.services.async_register(DOMAIN, SERVICE_STOP_COVER_CALIBRATION, handle_stop_cover_calibration)
     hass.services.async_register(DOMAIN, SERVICE_SEND_SCENARIO_PLUS_COMMAND, handle_send_scenario_plus_command)

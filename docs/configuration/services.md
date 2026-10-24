@@ -33,7 +33,7 @@ Sends an arbitrary, valid OpenWebNet message through the gateway command session
 ### Fields
 | Parameter | Type | Required | Description | Example |
 | :--- | :---: | :---: | :--- | :--- |
-| `gateway` | string | **Yes** | The MAC address of the target gateway. | `"00:03:50:20:00:01"` |
+| `gateway` | string | No | The MAC address of the target gateway (defaults to the first configured gateway). Unknown keys such as `gw_mac` are rejected. | `"00:03:50:20:00:01"` |
 | `message` | string | **Yes** | Valid OpenWebNet frame ending with `##`. | `"*1*0*0##"` |
 
 ### Example YAML Call
