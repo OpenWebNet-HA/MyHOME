@@ -256,6 +256,55 @@ async def test_manual_flow_still_refuses_a_duplicate_placeholder_the_gateway_can
     identify.assert_awaited_once()
 
 
+async def test_test_connection_refreshes_the_flow_context_after_identification(hass: HomeAssistant) -> None:
+    """With another IP gateway configured the flow goes on to the topology question: the context and the
+    title placeholders it shows must carry the corrected MAC and model, not the typed ones."""
+    from OWNd.connection import OWNGateway
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.config_flow import MyhomeFlowHandler
+
+    MockConfigEntry(
+        domain=DOMAIN, data={"host": "192.0.2.54", "mac": "00:03:50:00:00:54"}, unique_id="00:03:50:00:00:54"
+    ).add_to_hass(hass)
+    flow = MyhomeFlowHandler()
+    flow.hass = hass
+    flow.context = {"source": config_entries.SOURCE_USER}
+    flow.gateway_handler = OWNGateway(
+        {"address": "192.0.2.92", "port": 20000, "serialNumber": "00:03:50:00:00:00", "modelName": "MyHomeServer1"}
+    )
+    flow._identify_after_auth = True
+    with (
+        patch("custom_components.myhome.config_flow.OWNSession.test_connection", AsyncMock(return_value={"Success": True})),
+        patch("custom_components.myhome.config_flow.identify_gateway", AsyncMock(return_value=("00:03:50:00:07:77", "200", "134"))),
+    ):
+        result = await flow.async_step_test_connection()
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "bus_topology"
+    assert flow.context["name"] == "F461"
+    assert flow.context["mac"] == "00:03:50:00:07:77"
+    assert flow.context["title_placeholders"] == {"host": "192.0.2.92", "name": "F461", "mac": "00:03:50:00:07:77"}
+    assert flow._pending_entry is not None
+    assert flow._pending_entry[0] == "F461 Gateway"
+
+
+@pytest.mark.parametrize(("who13", "model"), [("4", "MH200"), ("13", "H4684")])
+async def test_manual_flow_worker_count_follows_the_corrected_model(hass: HomeAssistant, who13: str, model: str) -> None:
+    """A MyHomeServer1 (two command sessions by default) corrected to a one-session gateway starts one worker."""
+    from custom_components.myhome.gateway import command_session_default
+
+    assert command_session_default("MyHomeServer1") == 2
+    identify = AsyncMock(return_value=(None, who13, None))
+
+    result = await _manual_flow(hass, _password_then_ok(), identify)
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"]["name"] == model
+    assert result["data"]["model_source"] == "who13"
+    assert result["options"]["command_worker_count"] == 1
+
+
 async def test_identify_gateway_reads_the_f461_replies() -> None:
     """identify_gateway asks the model first, then the MAC (an F461 answers both), and decodes the live replies."""
     from custom_components.myhome import config_flow_discovery as cfd

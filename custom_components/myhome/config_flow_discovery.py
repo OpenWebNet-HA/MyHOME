@@ -73,10 +73,6 @@ MAC_REQUEST_SAFE_MODELS: frozenset[str] = frozenset({"F461", "MYHOMESERVER1"})
 UNUSABLE_MACS: frozenset[str] = frozenset({"00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff"})
 
 
-# WHO=13 dimension 15 answer shared by the F454 / F461 / MyHomeServer1 class, the
-# only case in which the runtime asks WHO=1013 as well (#420).
-WHO13_SHARED_CODE = "200"
-
 
 class _DebugOnlyLogger(logging.Logger):
     """A logger that records everything at DEBUG.
@@ -112,7 +108,7 @@ def mac_request_is_safe(who13_code: str | None, who1013_code: str | None = None)
     """
     if who1013_code:
         models = read_who1013(who1013_code).models
-    elif who13_code and who13_code != WHO13_SHARED_CODE:
+    elif who13_code and not read_who13(who13_code).shared:
         models = read_who13(who13_code).models
     else:
         return False
@@ -176,7 +172,8 @@ async def identify_gateway(gateway: typing.Any) -> GatewayIdentity:
                 value = getattr(reply, "device_type_code", None)
                 if getattr(reply, "who", None) == 13 and value:
                     code13 = code13 or str(value)
-            if code13 == WHO13_SHARED_CODE:
+            # A shared code (WHO13_SHARED_DEVICE_TYPES) names no model: ask WHO=1013 (#420)
+            if code13 and read_who13(code13).shared:
                 for reply in await _ask(OWNGatewayDiagnosticCommand.request_diagnostic_object_model()):
                     if getattr(reply, "who", None) == 1013 and getattr(reply, "object_model", None):
                         code1013 = code1013 or str(reply.object_model)
@@ -453,18 +450,7 @@ class ConfigFlowDiscoveryMixin:
         gateway = self.gateway_handler
         assert gateway is not None
 
-        self.context.update(  # type: ignore[attr-defined]
-            {
-                CONF_HOST: gateway.host,
-                CONF_NAME: gateway.model_name,
-                CONF_MAC: gateway.serial,
-                "title_placeholders": {
-                    CONF_HOST: str(gateway.host or ""),
-                    CONF_NAME: str(gateway.model_name or ""),
-                    CONF_MAC: str(gateway.serial or ""),
-                },
-            }
-        )
+        self._update_flow_context(gateway)
 
         async def _run_test_connection() -> dict[str, typing.Any]:
             try:
@@ -533,6 +519,8 @@ class ConfigFlowDiscoveryMixin:
                     )
                     return await self.async_step_password()  # type: ignore
                 self._identify_after_auth = False
+                # The MAC and model may have changed: the flow title must say so
+                self._update_flow_context(gateway)
                 # The manual step left the unique_id to this point: the MAC the gateway
                 # reports, or the typed one, decides whether this gateway already exists.
                 await self.async_set_unique_id(dr.format_mac(gateway.serial), raise_on_progress=False)  # type: ignore[attr-defined]
@@ -595,6 +583,21 @@ class ConfigFlowDiscoveryMixin:
                     else "cannot_connect"
                 )
                 return self.async_abort(reason=abort_reason)  # type: ignore[attr-defined]
+
+    def _update_flow_context(self, gateway: typing.Any) -> None:
+        """Keep the flow context and its title placeholders in step with the gateway's MAC and model."""
+        self.context.update(  # type: ignore[attr-defined]
+            {
+                CONF_HOST: gateway.host,
+                CONF_NAME: gateway.model_name,
+                CONF_MAC: gateway.serial,
+                "title_placeholders": {
+                    CONF_HOST: str(gateway.host or ""),
+                    CONF_NAME: str(gateway.model_name or ""),
+                    CONF_MAC: str(gateway.serial or ""),
+                },
+            }
+        )
 
     async def _async_apply_gateway_identity(self, gateway: typing.Any) -> str | None:
         """Correct the MAC and model typed in the manual step from what the gateway reports.
