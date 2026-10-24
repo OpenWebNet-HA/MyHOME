@@ -193,8 +193,10 @@ def test_generate_gateway_discovery_table_and_verify_oracle():
     # in OWNd): derived from the installed profile, so the test is right before and after.
     assert f"| **F461** | {_sound_row_cells('F461')} |" in block
     assert f"| **MyHomeServer1** | {_sound_row_cells('MyHomeServer1')} |" in block
-    # No row hard-codes its WHOs; the generator gets them from the profile.
+    # No row hard-codes its WHOs; the generator gets them from the profile (``pinned_whos``
+    # is the no-OWNd fallback only, and every row carries one).
     assert all("queried_whos" not in row for row in ugp.GATEWAY_DISCOVERY_METADATA)
+    assert all(isinstance(row.get("pinned_whos"), list) for row in ugp.GATEWAY_DISCOVERY_METADATA)
 
     assert ugp.verify_profiles_against_oracle() == []
 
@@ -265,12 +267,91 @@ def test_discovery_row_drops_who16_when_the_profile_does(monkeypatch: pytest.Mon
     assert "| **MyHomeServer1** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`) | " in block
 
 
-def test_discovery_table_without_ownd_does_not_guess(monkeypatch: pytest.MonkeyPatch):
-    """Without an importable OWNd the rows carry no WHOs instead of a stale hard-coded list."""
+def test_discovery_table_without_ownd_uses_the_pinned_rows(monkeypatch: pytest.MonkeyPatch):
+    """Without an importable OWNd every row carries ``pinned_whos`` (the pinned OWNd rows), nothing else."""
     monkeypatch.setitem(sys.modules, "OWNd.profiles", None)
-    rows = ugp.calibrate_discovery_with_ownd()
-    assert all(row["queried_whos"] == [] for row in rows)
-    assert "unknown (OWNd profile not available)" in ugp.generate_gateway_discovery_table()
+    rows = {row["model"]: row for row in ugp.calibrate_discovery_with_ownd()}
+    pinned = {row["model"]: row["pinned_whos"] for row in ugp.GATEWAY_DISCOVERY_METADATA}
+    assert rows.keys() == pinned.keys()
+    for model, row in rows.items():
+        assert row["queried_whos"] == pinned[model]
+        assert "pinned_whos" not in row
+        assert "notes_without_who16" not in row
+    # The pinned OWNd 2.0.0b11 still lists WHO 16 on the F461 / MyHomeServer1 (OWNd #142 pending).
+    assert rows["**F461**"]["queried_whos"] == [1, 2, 4, 16, 18]
+    assert rows["**MyHomeServer1**"]["queried_whos"] == [1, 2, 4, 16, 18]
+    assert "none" not in ugp.generate_gateway_discovery_table()
+
+
+def test_discovery_table_without_ownd_matches_the_committed_docs(monkeypatch: pytest.MonkeyPatch):
+    """The no-OWNd fallback regenerates the committed table byte for byte.
+
+    The quality-scale, test-coverage and docs CI jobs run ``sync_documentation.py --check``
+    without OWNd installed, so the fallback and the committed table must agree; at a pin bump
+    that changes a profile, ``pinned_whos`` is updated together with ``--update``.
+    """
+    monkeypatch.setitem(sys.modules, "OWNd.profiles", None)
+    doc = (ugp.REPO_ROOT / "docs" / "getting-started" / "hardware-compatibility.md").read_text(
+        encoding="utf-8"
+    )
+    start = doc.index(ugp.DISCOVERY_START_MARKER)
+    end = doc.index(ugp.DISCOVERY_END_MARKER) + len(ugp.DISCOVERY_END_MARKER)
+    assert ugp.build_discovery_block() == doc[start:end]
+
+
+def test_discovery_table_with_ownd_matches_the_committed_docs():
+    """With the installed OWNd the derived table equals the committed one, row for row.
+
+    Together with the no-OWNd test above this pins ``installed profile == committed table ==
+    pinned_whos`` for the pinned OWNd. Against an OWNd whose profiles differ from the pin
+    (OWNd #142 drops WHO 16 from the F461 / MyHomeServer1; until the pin bump) only the rows
+    whose profile disagrees with ``pinned_whos`` may differ (they are what
+    ``sync_documentation.py --update`` regenerates at the pin bump, which ``--check`` reports
+    until then); every other row stays byte-identical, so the derivation cannot move a row
+    whose profile did not change.
+    """
+    from OWNd.profiles import get_gateway_profile
+
+    doc = (ugp.REPO_ROOT / "docs" / "getting-started" / "hardware-compatibility.md").read_text(
+        encoding="utf-8"
+    )
+    start = doc.index(ugp.DISCOVERY_START_MARKER)
+    end = doc.index(ugp.DISCOVERY_END_MARKER) + len(ugp.DISCOVERY_END_MARKER)
+    committed = doc[start:end].splitlines()
+    generated = ugp.build_discovery_block().splitlines()
+    rows_off_the_pin = {
+        str(row["model"])
+        for row in ugp.GATEWAY_DISCOVERY_METADATA
+        if ugp.discovery_whos_for(get_gateway_profile(str(row["profile_name"]))) != row["pinned_whos"]
+    }
+    assert len(generated) == len(committed)
+    for got, want in zip(generated, committed, strict=True):
+        model = got.split(" | ")[0].lstrip("| ")
+        if model in rows_off_the_pin:
+            assert got != want, model
+        else:
+            assert got == want
+    if not rows_off_the_pin:
+        assert ugp.build_discovery_block() == doc[start:end]
+
+
+def test_pinned_rows_are_ignored_when_ownd_is_importable(monkeypatch: pytest.MonkeyPatch):
+    """With OWNd importable the installed profile wins over ``pinned_whos``."""
+    metadata = [
+        {
+            "model": "**F461**",
+            "profile_name": "F461",
+            "pinned_whos": [1],
+            "notes": "sound",
+            "notes_without_who16": "no sound",
+        }
+    ]
+    from OWNd.profiles import get_gateway_profile
+
+    (row,) = ugp.calibrate_discovery_with_ownd(metadata)
+    assert row["queried_whos"] == ugp.discovery_whos_for(get_gateway_profile("F461"))
+    assert row["queried_whos"] != [1]
+    assert row["notes"] == ("sound" if 16 in row["queried_whos"] else "no sound")
 
 
 def test_oracle_check_rejects_patched_profile_instance():

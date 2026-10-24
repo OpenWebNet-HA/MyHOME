@@ -177,47 +177,57 @@ GATEWAY_METADATA: list[dict[str, object]] = [
     },
 ]
 
-# Startup discovery rows. The WHOs a row advertises are not listed here: they are derived from
-# the installed OWNd profile (``profile.supports_who``) over STARTUP_DISCOVERY_WHOS, exactly as
-# the runtime gate in gateway.py decides what to send, so the table follows an OWNd profile
-# change at the pin bump without an edit here. ``sweep_omits`` lists the general requests of
-# those WHOs the startup sweep leaves out anyway because the gateway firmware drops them before
-# the bus (GENERAL_ZONE_REQUEST_REFUSED / SOUND_STATUS_REQUEST_REFUSED in
-# custom_components/myhome/gateway.py; tests/test_startup_requests_per_firmware.py checks these
-# lists against the sweep itself); a request of a WHO the installed profile does not advertise
-# is not an omission (nothing is sent for that WHO at all) and is left out of the generated row.
-# ``notes`` describes the row; where a profile may list or drop WHO 16 between OWNd releases,
-# ``notes_without_who16`` is used instead when the installed profile does not advertise WHO 16.
+# Startup discovery rows. With an importable OWNd the WHOs a row advertises are derived from
+# the installed profile (``profile.supports_who``) over STARTUP_DISCOVERY_WHOS, exactly as the
+# runtime gate in gateway.py decides what to send, so the table follows an OWNd profile change
+# at the pin bump. ``pinned_whos`` is the row the pinned OWNd (the ``OWNd==`` pin in
+# manifest.json) yields: it is used only when OWNd is not importable (the quality-scale,
+# test-coverage and docs CI jobs run the docs check without it), so the generated table is the
+# same with and without OWNd. At a pin bump that changes a profile, update ``pinned_whos``
+# together with ``sync_documentation.py --update``; ``tests/test_gateway_profiles.py`` pins the
+# fallback to the committed table. ``sweep_omits`` lists the general requests of those WHOs the
+# startup sweep leaves out anyway because the gateway firmware drops them before the bus
+# (GENERAL_ZONE_REQUEST_REFUSED / SOUND_STATUS_REQUEST_REFUSED in custom_components/myhome/gateway.py;
+# tests/test_startup_requests_per_firmware.py checks these lists against the sweep itself, and
+# verify_profiles_against_oracle checks them against ``pinned_whos``); a request of a WHO the row
+# does not advertise is not an omission (nothing is sent for that WHO at all) and is left out of
+# the generated row. ``notes`` describes the row; where a profile may list or drop WHO 16 between
+# OWNd releases, ``notes_without_who16`` is used instead when the row does not carry WHO 16.
 GENERAL_ZONE_STATUS = "*#4*0##"
 SOUND_STATUS = "*#16*0*5##"
 GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
     {
         "model": "**MH202**",
         "profile_name": "MH202",
+        "pinned_whos": [1, 2, 4, 5, 16, 18],
         "sweep_omits": [GENERAL_ZONE_STATUS, SOUND_STATUS],
         "notes": "Burglar Alarm (`*#5*0##`) and Energy (`*#18*51*...`) queries. WHO 4 and WHO 16 are advertised, but the `010024` firmware drops `*#4*0##` and `*#16*0*5##` (own-firmware-oracle), so the sweep leaves both out and each climate zone asks `*#4*<WHERE>*0##` itself.",
     },
     {
         "model": "**H4890 / AM4890**",
         "profile_name": "H4890",
+        "pinned_whos": [1, 2, 4, 5, 16, 18],
         "sweep_omits": [],
         "notes": "Supports Burglar Alarm, Sound (`*#16*0*5##`), and Energy meter 51 queries.",
     },
     {
         "model": "**F454**",
         "profile_name": "F454",
+        "pinned_whos": [1, 2, 4, 16, 18],
         "sweep_omits": [GENERAL_ZONE_STATUS],
         "notes": "Full lighting, cover, sound (`bt_difson` firmware-verified), and energy meter 51 queries. The `020051` firmware drops `*#4*0##` (own-firmware-oracle), so each climate zone asks `*#4*<WHERE>*0##` itself. Alarm query omitted.",
     },
     {
         "model": "**F452 / F453 / F453AV**",
         "profile_name": "F453AV",
+        "pinned_whos": [1, 2, 4, 16, 18],
         "sweep_omits": [],
         "notes": "Lighting, cover, climate, sound (`bt_difson` firmware-verified on F453/F453AV), and energy meter 51 queries. Alarm query omitted.",
     },
     {
         "model": "**F461**",
         "profile_name": "F461",
+        "pinned_whos": [1, 2, 4, 16, 18],
         "sweep_omits": [GENERAL_ZONE_STATUS, SOUND_STATUS],
         "notes": "Lighting, cover, and energy meter 51 queries. The `020011` firmware drops `*#4*0##` and `*#16*0*5##` (own-firmware-oracle, confirmed live on 2.0.11), so the sweep leaves both out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
         "notes_without_who16": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `020011`, confirmed live on 2.0.11). The firmware also drops `*#4*0##`, so the sweep leaves it out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
@@ -225,12 +235,14 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
     {
         "model": "**F455**",
         "profile_name": "F455",
+        "pinned_whos": [1, 2, 4, 18],
         "sweep_omits": [],
         "notes": "Entry-level gateway: lighting, cover, climate, and energy meter 51 queries. Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual.",
     },
     {
         "model": "**MyHomeServer1**",
         "profile_name": "MyHomeServer1",
+        "pinned_whos": [1, 2, 4, 16, 18],
         "sweep_omits": [GENERAL_ZONE_STATUS, SOUND_STATUS],
         "notes": "Lighting, cover, and energy meter 51 queries. The firmware drops `*#4*0##` and `*#16*0*5##` (own-firmware-oracle `028206`, confirmed live on 3.87.13), so the sweep leaves both out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
         "notes_without_who16": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `028206`, confirmed live on 3.87.13). The firmware also drops `*#4*0##`, so the sweep leaves it out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
@@ -238,24 +250,28 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
     {
         "model": "**MH201**",
         "profile_name": "MH201",
+        "pinned_whos": [1, 2, 4, 16, 18],
         "sweep_omits": [GENERAL_ZONE_STATUS],
         "notes": "Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Not in own-firmware-oracle; a physical MH201 3.3.6 returned no zone frame to `*#4*0##` although its zones report (`tests/fixtures/traces/issue_466`), so the sweep leaves it out and each climate zone asks `*#4*<WHERE>*0##` itself. Alarm query omitted.",
     },
     {
         "model": "**MH200** *(Legacy)*",
         "profile_name": "MH200",
+        "pinned_whos": [1, 2, 4, 16],
         "sweep_omits": [GENERAL_ZONE_STATUS],
         "notes": "Lighting, cover, climate, and sound queries (`bt_difson` hardware and firmware-verified). The `020102` firmware drops `*#4*0##` (own-firmware-oracle), so its climate zones ask `*#4*<WHERE>*0##` themselves. Alarm and energy queries omitted.",
     },
     {
         "model": "**MH200N**",
         "profile_name": "MH200N",
+        "pinned_whos": [1, 2, 4, 16],
         "sweep_omits": [],
         "notes": "Lighting, cover, climate, and sound queries (`bt_difson` hardware and firmware-verified). The `010108` firmware forwards `*#4*0##` (own-firmware-oracle), unlike the MH200. Alarm and energy queries omitted.",
     },
     {
         "model": "**H4684 / H/L4684**",
         "profile_name": "H4684",
+        "pinned_whos": [1, 2, 4, 16, 18],
         "sweep_omits": [GENERAL_ZONE_STATUS],
         "notes": "Lighting, cover, climate, sound, and energy meter 51 queries (`bt_multi` WHO 22 also enabled on firmware >= `6.0.0`). Both `020054` (own-firmware-oracle) and live `6.0.11` (`tests/fixtures/traces/issue_466`) drop `*#4*0##`, so each climate zone asks `*#4*<WHERE>*0##` itself; the SSDP spellings `H/L4684` and `HL4684` resolve to `H4684Profile`. Alarm query omitted.",
     },
@@ -462,8 +478,9 @@ def calibrate_discovery_with_ownd(
     """Derive the startup discovery rows from OWNd.profiles.
 
     ``queried_whos`` (the advertised column), the ``sweep_omits`` that still apply and the
-    sound wording follow the installed profile. Without an importable OWNd the rows carry no
-    ``queried_whos`` (the table cannot be generated from guesses).
+    sound wording follow the installed profile. Without an importable OWNd the rows carry
+    ``pinned_whos`` (what the pinned OWNd yields), so the generated table is the same either
+    way as long as the pin and the fallback agree; nothing else is guessed.
     """
     try:
         from OWNd.profiles import get_gateway_profile
@@ -474,17 +491,21 @@ def calibrate_discovery_with_ownd(
         GATEWAY_DISCOVERY_METADATA if discovery_metadata is None else discovery_metadata
     )
     for row in calibrated:
-        prof_name = row.get("profile_name")
-        prof = get_gateway_profile(str(prof_name)) if prof_name and get_gateway_profile is not None else None
-        queried = discovery_whos_for(prof) if prof is not None else []
+        pinned = row.pop("pinned_whos", [])
+        without_who16 = row.pop("notes_without_who16", None)
+        if get_gateway_profile is None:
+            queried = [int(w) for w in pinned] if isinstance(pinned, list) else []
+        else:
+            prof_name = row.get("profile_name")
+            prof = get_gateway_profile(str(prof_name)) if prof_name else None
+            queried = discovery_whos_for(prof) if prof is not None else []
         row["queried_whos"] = queried
-        # A general request of a WHO the profile does not advertise is not an omission of the
+        # A general request of a WHO the row does not advertise is not an omission of the
         # sweep (nothing is sent for that WHO at all), so it leaves the generated row.
         row["sweep_omits"] = [
             frame for frame in cast_list(row.get("sweep_omits")) if _frame_who(str(frame)) in queried
         ]
-        without_who16 = row.pop("notes_without_who16", None)
-        if prof is not None and without_who16 and 16 not in queried:
+        if without_who16 and 16 not in queried:
             row["notes"] = without_who16
     return calibrated
 
@@ -499,7 +520,7 @@ def generate_gateway_discovery_table() -> str:
     for row in rows:
         model = row["model"]
         whos = row["queried_whos"]
-        who_str = "WHO " + ", ".join(str(w) for w in whos) if whos else "unknown (OWNd profile not available)"
+        who_str = "WHO " + ", ".join(str(w) for w in whos) if whos else "none"
         sent = "WHO " + ", ".join(str(w) for w in sweep_whos(row))
         omitted = cast_list(row.get("sweep_omits"))
         if omitted:
@@ -603,16 +624,21 @@ def verify_profiles_against_oracle(oracle_path: Path = ORACLE_JSON) -> list[str]
 
     for row in GATEWAY_DISCOVERY_METADATA:
         prof_name = str(row.get("profile_name", ""))
-        prof = get_gateway_profile(prof_name)
-        if prof is None:
-            violations.append(f"Discovery row {row.get('model')} names an OWNd profile that does not exist: {prof_name}.")
-            continue
-        expected_whos = discovery_whos_for(prof)
+        if isinstance(get_gateway_profile(prof_name), GenericGatewayProfile):
+            violations.append(
+                f"Discovery row {row.get('model')} names an OWNd profile that does not exist: "
+                f"{prof_name} (resolves to the generic profile)."
+            )
+        pinned = [int(w) for w in cast_list(row.get("pinned_whos"))]
+        if [w for w in pinned if w not in STARTUP_DISCOVERY_WHOS]:
+            violations.append(
+                f"Discovery row {row.get('model')} pinned_whos={pinned} names a WHO the startup sweep never asks for."
+            )
         for frame in cast_list(row.get("sweep_omits")):
-            if str(frame) not in (GENERAL_ZONE_STATUS, SOUND_STATUS) or _frame_who(str(frame)) not in expected_whos:
+            if str(frame) not in (GENERAL_ZONE_STATUS, SOUND_STATUS) or _frame_who(str(frame)) not in pinned:
                 violations.append(
                     f"Discovery row {row.get('model')} sweep_omits={frame!r} is not a general request "
-                    f"of an advertised WHO of the {prof_name} profile."
+                    f"of a WHO the row advertises (pinned_whos={pinned})."
                 )
 
     return violations
