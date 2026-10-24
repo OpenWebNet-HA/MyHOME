@@ -95,7 +95,7 @@ groups:
 ---
 
 ### Synchronizing Physical Wall Switches (SCS Group Buttons)
-If you have physical BTicino wall switches configured to trigger an SCS group (e.g. `WHERE = #1`), the integration automatically dispatches a bus event named `myhome_group_light_event` whenever group frames are intercepted on the SCS bus. You can keep your Home Assistant Light Group perfectly synchronized with a simple automation:
+If you have physical BTicino wall switches configured to trigger an SCS group (e.g. `WHERE = #1`), the integration automatically dispatches a bus event named `myhome_group_light_event` whenever a group frame with a state (`on` / `off`) is intercepted on the SCS bus. A dim step to the group (`*1*30*#1##` / `*1*31*#1##`) fires no event, as it does not say whether the group is on; the same holds for the area and general events and for the WHO 2 automation events (`myhome_group_automation_event`, `myhome_area_automation_event`, `myhome_general_automation_event`), which fire for `open` / `close` / `stop` frames only. You can keep your Home Assistant Light Group perfectly synchronized with a simple automation:
 
 ```yaml
 alias: "Sync MyHOME Group 1 Wall Switch"
