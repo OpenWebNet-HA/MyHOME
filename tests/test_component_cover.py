@@ -1180,6 +1180,7 @@ class TestMyHOMECoverEntity:
         fut = asyncio.Future()
         fut.set_exception(Exception("Bus write error"))
         mock_gateway.send.return_value = fut
+        tilt_cover._attr_current_cover_tilt_position = 0  # known: a partial target can be timed
 
         with pytest.raises(HomeAssistantError, match="direction command delivery failed"):
             await tilt_cover.async_set_cover_tilt_position(tilt_position=30)

@@ -738,3 +738,22 @@ async def test_scope_position_behind_an_interface_is_refused_before_any_member_m
     with patch.object(MyHOMECover, "async_set_cover_position", AsyncMock()) as timed:
         await area.async_set_cover_position(position=0)
     assert timed.await_count == 2
+
+
+async def test_scope_tilt_follows_its_members_and_is_unknown_until_they_are(gateway) -> None:
+    """The scope's slat angle is its members' mean, None while no member knows its angle."""
+    family = CoverFamily()
+    p1 = _cover(gateway, "11", slat_tilt=True)
+    p2 = _cover(gateway, "12", slat_tilt=True)
+    area = _cover(gateway, "1", scope=CoverScope.of("1"), slat_tilt=True)
+    for c in (p1, p2, area):
+        family.add(c)
+    assert area.current_cover_tilt_position is None
+    with pytest.raises(ServiceValidationError) as err:
+        await area.async_set_cover_tilt_position(tilt_position=50)
+    assert err.value.translation_key == "cover_tilt_position_unknown"
+    assert _sent(gateway) == []
+    p1._attr_current_cover_tilt_position = 0
+    assert area.current_cover_tilt_position == 0  # the one known member
+    p2._attr_current_cover_tilt_position = 100
+    assert area.current_cover_tilt_position == 50

@@ -415,7 +415,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         raw_slat_time = _clamp_slat_time(slat_time)
         self._is_tilting: bool = False
         self._tilt_start_time: float | None = None
-        self._tilt_initial_position: int = 0
+        # None: the running pulse started from an unknown angle, known again at a slat stop.
+        self._tilt_initial_position: int | None = 0
         self._tilt_target_position: int = 0
         self._tilt_duration: float = 0.0
         self._tilt_direction: str | None = None
@@ -1864,11 +1865,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if self._tilt_start_time is None or self._slat_time <= 0:
             return self.current_cover_tilt_position
         direction = "open" if self._tilt_step() > 0 else "close"
-        return self._strategy.turn_slats_after(
-            self._tilt_initial_position,
-            max(0.0, at - self._tilt_start_time),
-            direction,
-        )
+        elapsed = max(0.0, at - self._tilt_start_time)
+        if self._tilt_initial_position is None and elapsed < self._slat_time:
+            # A pulse from an unknown angle: nothing to count it from until the
+            # slats reach their stop (a full rotation); then the strategy
+            # computes it from the far end, which is where a full rotation ends.
+            return None
+        return self._strategy.turn_slats_after(self._tilt_initial_position, elapsed, direction)
 
     def _tilt_step(self) -> int:
         """+1 while the running pulse opens the slats, -1 while it closes them."""
@@ -1884,9 +1887,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             return
         direction = "open" if self._tilt_step() > 0 else "close"
         elapsed = max(0.0, at - self._tilt_start_time)
+        # A pulse from an unknown angle ran a full rotation from the far end.
+        start_tilt = self._tilt_initial_position
+        if start_tilt is None:
+            start_tilt = 0 if direction == "open" else 100
         position = self._strategy.carry_overshoot_into_curtain(
             self._attr_current_cover_position,
-            self._tilt_initial_position,
+            start_tilt,
             elapsed,
             direction,
         )
@@ -1939,8 +1946,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """
         self._cancel_stop_task()
         self._end_pulse_for_takeover()
-        current = self.current_cover_tilt_position
-        self._tilt_initial_position = current if current is not None else (0 if self.is_closed else 50)
+        # None: this blind's angle is unknown; the leader's pulse anchors it only at a slat stop.
+        self._tilt_initial_position = self.current_cover_tilt_position
         self._tilt_target_position = 100 if direction == "open" else 0
         self._tilt_direction = direction
         self._tilt_start_time = None
@@ -2030,8 +2037,20 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 translation_placeholders={"name": self._display_name},
             )
         curr_tilt = self._interpolated_tilt(time.monotonic()) if was_tilting else self.current_cover_tilt_position
+        # None: the angle is unknown (a fresh blind, or a pulse from an unknown
+        # angle still running). As with the curtain position, 0 % and 100 % run
+        # a full rotation against the slat stop and anchor the angle there;
+        # anything else has no angle to be timed from.
+        start_tilt = curr_tilt
         if curr_tilt is None:
-            curr_tilt = 0 if self.is_closed else 50
+            if 0 < target_tilt < 100:
+                raise ServiceValidationError(
+                    f"{self._display_name}: the slat angle is unknown until the slats have been tilted fully open or closed once",
+                    translation_domain=DOMAIN,
+                    translation_key="cover_tilt_position_unknown",
+                    translation_placeholders={"name": self._display_name},
+                )
+            curr_tilt = 100 - target_tilt  # the far end: a full rotation to the stop
         diff = target_tilt - curr_tilt
         run_duration = self._strategy.tilt_pulse_duration_for(curr_tilt, target_tilt)
         if run_duration <= 0:
@@ -2057,14 +2076,16 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._cancel_stop_task()
             self._tilt_target_position = target_tilt
             self._tilt_duration = self._strategy.tilt_pulse_duration_for(
-                self._tilt_initial_position, target_tilt, enforce_min_pulse=False
+                self._tilt_initial_position if self._tilt_initial_position is not None else 100 - target_tilt,
+                target_tilt,
+                enforce_min_pulse=False,
             )
             self._start_pulse_auto_stop(self._pulse_written, self._run_generation, self._motor_started)
             if self.hass is not None:
                 self.async_write_ha_state()
             return
 
-        self._tilt_initial_position = curr_tilt
+        self._tilt_initial_position = start_tilt  # None: known again at the slat stop
         self._tilt_target_position = target_tilt
         self._tilt_duration = run_duration
         self._tilt_direction = direction

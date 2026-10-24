@@ -292,3 +292,71 @@ async def test_stop_echo_of_a_partial_run_from_unknown_logs_no_position(hass, ga
     assert cover.current_cover_position is None
     assert "position still unknown" in caplog.text
     assert "None%" not in caplog.text
+
+
+def _make_blind(hass, gateway):
+    """The same actuator as a Venetian blind: slat_tilt with the default 2.0 s slat time."""
+    return _make_cover(hass, gateway, name="Blind 05", slat_tilt=True, slat_time=2.0)
+
+
+async def test_fresh_blind_refuses_a_partial_tilt_and_runs_an_end_to_the_slat_stop(hass, gateway, clock, fake_time) -> None:
+    """No slat angle to time a pulse from: 50 % / 20 % are refused with no frame, 100 % runs the full slat_time."""
+    cover = _make_blind(hass, gateway)
+    assert cover.current_cover_tilt_position is None
+    for target in (50, 20):
+        with pytest.raises(ServiceValidationError) as err:
+            await cover.async_set_cover_tilt_position(tilt_position=target)
+        assert err.value.translation_key == "cover_tilt_position_unknown"
+    assert gateway.deliveries == []  # 50 % was not a silent 0-frame no-op either: it was refused
+    assert cover.current_cover_tilt_position is None
+
+    with patch("asyncio.sleep", new=AsyncMock()):
+        await cover.async_set_cover_tilt_position(tilt_position=100)
+        raw, written = gateway.deliveries[-1]
+        assert raw == "*2*1*05##"
+        assert cover._tilt_duration == pytest.approx(2.0)  # a full rotation to the slat stop
+        assert cover.current_cover_tilt_position is None  # unknown until the stop
+        written.set_result(clock.now)
+        await _yield()
+        cover.handle_event(OWNEvent.parse("*2*1*05##"))  # motor start echo
+        await cover._stop_task
+    raw, stop_written = gateway.deliveries[-1]
+    assert raw == "*2*0*05##"
+    clock.now += 2.0
+    stop_written.set_result(clock.now)
+    await _yield()
+    assert cover.current_cover_tilt_position == 100
+    assert cover.current_cover_position is None  # the slat pulse says nothing about the curtain
+
+
+async def test_fresh_blind_pulse_stopped_before_the_slat_stop_stays_unknown(hass, gateway, clock, fake_time) -> None:
+    """A full pulse towards 0 % stopped halfway anchors nothing; the next full pulse does."""
+    cover = _make_blind(hass, gateway)
+    await cover.async_set_cover_tilt_position(tilt_position=0)
+    raw, written = gateway.deliveries[-1]
+    assert raw == "*2*2*05##"
+    written.set_result(clock.now)
+    await _yield()
+    cover.handle_event(OWNEvent.parse("*2*2*05##"))
+    clock.now += 1.0
+    await cover.async_stop_cover_tilt()
+    raw, stop_written = gateway.deliveries[-1]
+    assert raw == "*2*0*05##"
+    stop_written.set_result(clock.now)
+    await _yield()
+    assert cover._is_tilting is False
+    assert cover.current_cover_tilt_position is None  # 1.0 s of a 2.0 s rotation from nowhere
+    with pytest.raises(ServiceValidationError):
+        await cover.async_set_cover_tilt_position(tilt_position=50)
+
+    await cover.async_set_cover_tilt_position(tilt_position=0)
+    raw, written = gateway.deliveries[-1]
+    assert raw == "*2*2*05##"
+    written.set_result(clock.now)
+    await _yield()
+    cover.handle_event(OWNEvent.parse("*2*2*05##"))
+    clock.now += 2.0
+    await cover.async_stop_cover_tilt()
+    gateway.deliveries[-1][1].set_result(clock.now)
+    await _yield()
+    assert cover.current_cover_tilt_position == 0
