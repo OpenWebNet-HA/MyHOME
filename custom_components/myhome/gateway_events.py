@@ -294,10 +294,12 @@ class GatewayEventDispatcher:
                         and not getattr(message, "is_general", False)
                         and message.is_on is not None
                         and message.dimension is None
+                        and getattr(message, "what", None) not in (30, 31)
                     ):
                         # Only an actuator's own on/off status is a member echo: motion
-                        # frames and illuminance / PIR dimension pushes must not cancel
-                        # or count towards a resync sweep.
+                        # frames, illuminance / PIR dimension pushes and WHAT 30/31 dim
+                        # steps (relative commands, "on" only to OWNd 2.0.0b11) must not
+                        # cancel or count towards a resync sweep (#367).
                         self.handler._resync_manager.handle_ptp_echo(message)
 
                     dim = getattr(message, "dimension", None)

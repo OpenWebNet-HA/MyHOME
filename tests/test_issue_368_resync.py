@@ -1065,3 +1065,26 @@ async def test_dim_step_resync_does_not_depend_on_is_on(
     handler._resync_manager.schedule_resync(msg)
     assert "#5" in handler._resync_timers
     handler._resync_manager.cancel_all()
+
+
+@pytest.mark.asyncio
+async def test_point_to_point_dim_steps_are_not_member_echoes(
+    hass: HomeAssistant, handler: MyHOMEGatewayHandler
+) -> None:
+    """`*1*30*<ptp>##` / `*1*31*<ptp>##` are commands, not an actuator's status: they neither seed nor cancel a sweep (#367)."""
+    # Leading dim steps to the members do not skip the group sweep.
+    await handler._process_message(OWNMessage.parse("*1*31*11##"))
+    await handler._process_message(OWNMessage.parse("*1*31*12##"))
+    await handler._process_message(OWNMessage.parse("*1*1*#6##"))
+    assert "#6" in handler._resync_timers
+    assert handler._resync_manager.resync_group_echoes["#6"] == 0
+
+    # Trailing dim steps do not cancel it either; the members' own on/off echoes do.
+    await handler._process_message(OWNMessage.parse("*1*30*11##"))
+    await handler._process_message(OWNMessage.parse("*1*30*12##"))
+    assert "#6" in handler._resync_timers
+    await handler._process_message(OWNMessage.parse("*1*1*11##"))
+    await handler._process_message(OWNMessage.parse("*1*1*12##"))
+    assert "#6" not in handler._resync_timers
+    await _advance(hass)
+    handler.send_status_request.assert_not_called()
