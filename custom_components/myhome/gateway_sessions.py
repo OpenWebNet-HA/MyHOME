@@ -20,7 +20,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.connection import OWNCommandSession, OWNEventSession, OWNGateway
 from OWNd.message import OWNCommand, OWNMessage
 
-from .const import LOGGER, area_of_where
+from .const import LOGGER, area_of_where, is_apl_address
 from .expose import is_exposed_on_bus
 from .where_grammar import expose_message_where, normalize_where, where_param
 
@@ -1115,6 +1115,7 @@ class CommandWorkerPool:
         self._terminate_sender: bool = False
         self._sender_stop = asyncio.Event()
         self.sending_workers: list[asyncio.Task[None]] = []
+        self._in_flight_messages: list[Any] = []
 
         queue_max_size = (
             self.gateway.profile.max_queue_size
@@ -1131,6 +1132,43 @@ class CommandWorkerPool:
         if isinstance(self.send_buffer, FrameScheduler):
             return [where for who, where in self.send_buffer.in_flight_targets if who == 2]
         return []
+
+    def claim_in_flight_dimension_where(self, who: int, dimension: int) -> str | None:
+        """Claim the sole point-to-point WHERE with an in-flight dimension request (#777).
+
+        Some devices (such as the Legrand 067226 motion detector on F454) answer
+        point-to-point dimension queries (``*#1*<WHERE>*5##``, ``*#1*<WHERE>*7##``)
+        with an anonymous ``WHERE=0`` frame on the event session ~140 ms after the
+        request is sent, while the command session waits ~2 s before returning NACK.
+        When exactly one target ``WHERE`` has an in-flight request for ``(who, dimension)``,
+        consume it so the reply can be routed once and any second/ambiguous frame is dropped.
+        """
+        matched: list[tuple[Any, str]] = []
+        for msg in list(self._in_flight_messages):
+            parsed = msg if isinstance(msg, OWNMessage) else OWNMessage.parse(str(msg))
+            if (
+                parsed is None
+                or not getattr(parsed, "is_dimension_request", False)
+                or getattr(parsed, "who", None) != who
+                or getattr(parsed, "dimension", None) != dimension
+                or not getattr(parsed, "where", None)
+            ):
+                continue
+            where = parsed.where
+            wp = where_param(parsed)
+            raw_where = f"{where}#{'#'.join(str(p) for p in wp)}" if wp else str(where)
+            norm = _normalize_target_where(who, raw_where)
+            base, _ = _split_where(norm)
+            if not norm or base in ("0", "00") or base.startswith("#") or (who in (1, 2) and not is_apl_address(base)):
+                return None
+            matched.append((msg, norm))
+        wheres = {w for _, w in matched}
+        if len(wheres) != 1:
+            return None
+        for msg, _ in matched:
+            with contextlib.suppress(ValueError):
+                self._in_flight_messages.remove(msg)
+        return next(iter(wheres))
 
     @property
     def gateway(self) -> OWNGateway:
@@ -1349,10 +1387,15 @@ class CommandWorkerPool:
                             continue
                     written_at = time.monotonic()
                     is_exposed = self._is_exposed_target(task)
-                    collected = await _command_session.send(
-                        message=task["message"],
-                        is_status_request=task["is_status_request"] or is_exposed,
-                    )
+                    self._in_flight_messages.append(task["message"])
+                    try:
+                        collected = await _command_session.send(
+                            message=task["message"],
+                            is_status_request=task["is_status_request"] or is_exposed,
+                        )
+                    finally:
+                        with contextlib.suppress(ValueError):
+                            self._in_flight_messages.remove(task["message"])
                     if collected is None and not (is_exposed and session_is_open(_command_session)):
                         _cancel_written(task)
                     else:
@@ -1420,6 +1463,7 @@ class CommandWorkerPool:
 
         if isinstance(self.send_buffer, FrameScheduler):
             self.send_buffer._in_flight_targets.clear()
+        self._in_flight_messages.clear()
 
         for _ in range(max(1, len(self.sending_workers))):
             try:
