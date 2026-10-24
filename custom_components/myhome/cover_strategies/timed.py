@@ -148,11 +148,13 @@ class TimedCurtainStrategy(BaseCoverStrategy):
                 reanchored = self.position_after(
                     run_start_pos, elapsed, direction, entity=entity, lead=lead
                 )
-            elif elapsed >= self.travel_for_direction(is_opening):
+            elif raw_elapsed >= self.travel_for_direction(is_opening):
                 # A run from an unknown position that lasted the full travel
                 # reached its end stop, as _freeze_position anchors it: the
                 # stop was written just before the travel time and the relayed
-                # status came just after.
+                # status came just after. Measured on the real motor time, not
+                # the scheduled auto-stop duration: only the run itself is
+                # evidence that the end stop was reached.
                 reanchored = 100 if is_opening else 0
                 end_stop_from_unknown = True
             if run_start_pos is not None or end_stop_from_unknown:

@@ -360,3 +360,48 @@ async def test_fresh_blind_pulse_stopped_before_the_slat_stop_stays_unknown(hass
     gateway.deliveries[-1][1].set_result(clock.now)
     await _yield()
     assert cover.current_cover_tilt_position == 0
+
+
+def test_stop_echo_end_stop_from_unknown_is_measured_on_the_real_run() -> None:
+    """A scheduled auto-stop duration is no evidence that the motor ran that long: no end stop is fabricated."""
+    from custom_components.myhome.cover_strategies.timed import TimedCurtainStrategy
+
+    strategy = TimedCurtainStrategy(travel_time=6.0, travel_time_up=6.0, travel_time_down=6.0)
+    entity = MagicMock()
+    entity._attr_current_cover_position = None
+    entity._gateway_handler.log_id = "[test]"
+    ctx = {
+        "run_started_at": 100.0,
+        "run_start_position": None,
+        "is_opening": False,
+        "is_closing": True,
+        "auto_stop_duration": 6.0,  # the stop that was scheduled
+        "lead": 0.0,
+    }
+    # Stopped from the bus 2 s in: the status echo arrives at 102.05 s.
+    assert strategy.reanchor_on_stop_echo(entity, dict(ctx), 102.05) is None
+    assert entity._attr_current_cover_position is None
+    assert entity._last_run["seconds"] == pytest.approx(6.0)  # the booked run, as before
+    # The motor really ran the travel time: the end stop anchors 0.
+    assert strategy.reanchor_on_stop_echo(entity, dict(ctx), 106.05) == 0
+    assert entity._attr_current_cover_position == 0
+    assert entity._attr_is_closed is True
+
+
+async def test_full_tilt_from_unknown_that_runs_long_moves_a_known_curtain(hass, gateway, clock, fake_time) -> None:
+    """A blind whose position is known but whose angle is not: a late stop past the rotation lifts the curtain."""
+    cover = _make_blind(hass, gateway)
+    cover._attr_current_cover_position = cover._start_position = 50  # restored position, no restored angle
+    assert cover.current_cover_tilt_position is None
+    await cover.async_set_cover_tilt_position(tilt_position=100)
+    raw, written = gateway.deliveries[-1]
+    assert raw == "*2*1*05##"
+    written.set_result(clock.now)
+    await _yield()
+    cover.handle_event(OWNEvent.parse("*2*1*05##"))
+    clock.now += 3.0  # the 2.0 s rotation, then 1.0 s of the 4.0 s curtain travel (travel_time 6 - slat_time 2)
+    await cover.async_stop_cover_tilt()
+    gateway.deliveries[-1][1].set_result(clock.now)
+    await _yield()
+    assert cover.current_cover_tilt_position == 100
+    assert cover.current_cover_position == 75
