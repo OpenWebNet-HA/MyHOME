@@ -177,25 +177,31 @@ _ZONE_REQUEST_MODELS = sorted(ACTUATOR_REQUEST_REFUSED | set(ALL_ZONE_REQUESTS),
 
 
 # A WHO 4 zone address: ``Z``, ``#Z``, ``Z#N`` (actuator), each optionally behind an
-# interface (``Z#4#if``); the grammar OWNd#140's builder is being extended to.
-_ZONE_WHERE = re.compile(rf"^#?[0-9]+(?:#[0-9]+)?(?:{re.escape(BUS_ROUTING)}[0-9]{{1,2}})?$")
+# interface of exactly two digits (``Z#4#01``): the grammar of OWNd#140's builder
+# (``OWNHeatingCommand.actuators_status``).
+_ZONE_WHERE = re.compile(rf"^#?[0-9]+(?:#[0-9]+)?(?:{re.escape(BUS_ROUTING)}[0-9]{{2}})?$")
 
 
-def _validate_zone_where(where: str) -> None:
-    """Reject a WHO 4 zone address that cannot go into ``*#4*WHERE*DIM##`` as it is.
+def _validate_zone_where(where: str) -> str:
+    """The WHO 4 zone address as it goes into ``*#4*WHERE*DIM##``, or ``ValueError``.
 
-    Anything else would change the frame's grammar: ``2*22`` would turn a dimension 20
-    request into ``*#4*2*22*20##``, a dimension 22 write; ``2##`` ends the frame early.
-    The builder of OWNd#140 (``OWNHeatingCommand.actuators_status``) rejects the same.
+    A one-digit interface is written with two (``3#4#1`` -> ``3#4#01``), as the frames on
+    the wire and the configuration validator spell it. Anything else would change the
+    frame's grammar: ``2*22`` would turn a dimension 20 request into ``*#4*2*22*20##``, a
+    dimension 22 write; ``2##`` ends the frame early. The builder of OWNd#140
+    (``OWNHeatingCommand.actuators_status``) accepts and rejects the same addresses.
     """
+    zone, routing, interface = (where or "").partition(BUS_ROUTING)
+    if routing and len(interface) == 1 and interface.isdigit():
+        where = f"{zone}{routing}{interface.zfill(2)}"
     if not _ZONE_WHERE.match(where or ""):
         raise ValueError(f"Invalid zone address: {where!r}")
+    return where
 
 
 def _zone_request_frame(where: str, dimension: int) -> str:
     """The dimension request of one zone (``*#4*WHERE*DIM##``), validated like a builder."""
-    _validate_zone_where(where)
-    return f"*#4*{where}*{dimension}##"
+    return f"*#4*{_validate_zone_where(where)}*{dimension}##"
 
 
 class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
@@ -444,7 +450,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         refuses the request is decided when it is sent, once the in-band identity (WHO 13 /
         WHO 1013) has settled, so a model corrected after the entities were added is honoured.
         """
-        _validate_zone_where(where)  # before the zone is counted: no phantom watch
+        where = _validate_zone_where(where)  # before the zone is counted: no phantom watch
         self._actuator_zones[where] = self._actuator_zones.get(where, 0) + 1
         self.request_zone_dimension(where, 20)
 
@@ -468,8 +474,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         if dimension == 22:
             # *#4*Z*22## kills the F461 thermostat handler and reboots the gateway.
             raise ValueError("WHO 4 dimension 22 is never requested")
-        _validate_zone_where(where)
-        self._zone_requests.add((where, dimension))
+        self._zone_requests.add((_validate_zone_where(where), dimension))
         if self._zone_request_task is None or self._zone_request_task.done():
             self._zone_request_task = self.hass.async_create_background_task(
                 self._send_zone_requests(), name=f"myhome_{self.mac}_zone_requests"

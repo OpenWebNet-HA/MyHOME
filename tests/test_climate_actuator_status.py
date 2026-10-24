@@ -22,8 +22,9 @@ from homeassistant.core import State
 from OWNd.message import OWNHeatingEvent
 from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
 
-from custom_components.myhome.climate import MyHOMEClimate
+from custom_components.myhome.climate import MyHOMEClimate, _zone_address
 from custom_components.myhome.const import CONF_FIRMWARE
+from custom_components.myhome.discovery import Address
 from custom_components.myhome.gateway import MyHOMEGatewayHandler
 
 MAC = "00:03:50:00:00:44"
@@ -522,7 +523,7 @@ async def test_central_off_keeps_the_actuators_attribute(hass):
 
 # ------------------------------------------------------------------ gateway: invalid zone addresses (review 5639409551, 3)
 
-@pytest.mark.parametrize("where", ["", "2*22", "2 ", "a", "*#0", "2#1*20", "#", "2##", "##2", "2#", "2#4#", "2#1#2#3"])
+@pytest.mark.parametrize("where", ["", "2*22", "2 ", "a", "*#0", "2#1*20", "#", "2##", "##2", "2#", "2#4#", "2#1#2#3", "3#4#001"])
 def test_an_invalid_zone_address_is_refused_at_once(hass, where):
     """``2*22`` would make ``*#4*2*22*20##``, a dimension 22 write that reboots the F461."""
     handler = _handler(hass, "F454")
@@ -532,11 +533,32 @@ def test_an_invalid_zone_address_is_refused_at_once(hass, where):
     assert handler._zone_request_task is None
 
 
-@pytest.mark.parametrize("where", ["2", "#2", "01", "3#4#01", "#3#4#01", "2#1#4#01", "2#1", "0#0", "3#4#1"])
+@pytest.mark.parametrize("where", ["2", "#2", "01", "3#4#01", "#3#4#01", "2#1#4#01", "2#1", "0#0"])
 def test_a_plain_or_routed_zone_address_is_accepted(hass, where):
     handler = _handler(hass, "F454")
     handler.request_zone_dimension(where, 20)
     assert handler._zone_requests == {(where, 20)}
+
+
+async def test_a_one_digit_interface_is_asked_with_two_digits(hass, fast_bus_pacing):
+    """``3#4#1`` is zone 3 behind interface 01: the frame says ``#4#01``, as OWNd#140's builder requires."""
+    handler = _handler(hass, "F454")
+    handler._initial_discovery_done.set()
+    unwatch = handler.watch_zone_actuators("3#4#1")
+    assert handler._actuator_zones == {"3#4#01": 1}
+    assert handler._zone_requests == {("3#4#01", 20)}
+    await _settle(hass)
+    assert _drain(handler) == ["*#4*3#4#01*20##"]
+    unwatch()
+    assert handler._actuator_zones == {}
+
+
+def test_a_routed_frame_names_its_interface_with_two_digits(hass):
+    """A one-digit interface in a WHO 4 frame and in the configuration both make ``Z#4#0N``."""
+    assert _zone_address(OWNHeatingEvent("*#4*3#4#1*14*0215##")) == Address("3", "01")
+    assert _zone_address(OWNHeatingEvent("*#4*3#4#01*14*0215##")) == Address("3", "01")
+    assert _zone(hass, where="3", interface="1")._full_where == "3#4#01"
+    assert _zone(hass, where="3", interface="01")._full_where == "3#4#01"
 
 
 async def test_one_rejected_zone_does_not_drop_the_batch(hass, fast_bus_pacing, caplog):

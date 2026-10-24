@@ -225,6 +225,14 @@ def _bus_zone(message: Any) -> int | None:
     return zone
 
 
+def _two_digit_interface(interface: str | None) -> str | None:
+    """The F422 interface as the bus and the configuration validator spell it (``01``)."""
+    if interface is None:
+        return None
+    interface = str(interface)
+    return interface.zfill(2) if interface.isdigit() else interface
+
+
 def _calling_zones(message: Any) -> tuple[list[str], str | None]:
     """Zones a heating frame concerns, and the F422 interface it came through."""
     raw_where = getattr(message, "where", None)
@@ -236,6 +244,7 @@ def _calling_zones(message: Any) -> tuple[list[str], str | None]:
     tail = where_param(message)
     if not interface and len(tail) > 1 and tail[0] == "4":
         interface = str(tail[1])
+    interface = _two_digit_interface(interface)
 
     zones: list[str] = []
     # WHERE ``<zone>#<n>`` names actuator <n> of the zone (``*#4*2#1*20*1##``
@@ -325,9 +334,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if hass is not None:
             self.hass = hass
 
-        self._interface = interface
+        self._interface = _two_digit_interface(interface)
         self._full_where = (
-            f"{self._where}#4#{self._interface}" if self._interface is not None else self._where
+            f"{self._where}{BUS_ROUTING}{self._interface}" if self._interface is not None else self._where
         )
 
         self._central = True if self._where in ("#0", "#0#1") else central
