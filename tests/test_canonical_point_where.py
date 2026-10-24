@@ -16,7 +16,14 @@ from OWNd.message import OWNEvent
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome import validate
-from custom_components.myhome.const import CONF_PLATFORMS, CONF_WHERE, DOMAIN, PLATFORMS
+from custom_components.myhome.const import (
+    CONF_PLATFORMS,
+    CONF_WHERE,
+    DOMAIN,
+    PLATFORMS,
+    SUBENTRY_TYPE_EXPOSE,
+)
+from custom_components.myhome.expose import ExposeBinding
 from custom_components.myhome.legacy_yaml import (
     CONF_MIGRATED_YAML_PLATFORMS,
     canonicalise_imported_platforms,
@@ -25,8 +32,17 @@ from custom_components.myhome.legacy_yaml import (
 )
 from custom_components.myhome.light import async_setup_entry as light_setup_entry
 from custom_components.myhome.migrate import migrate_entry_and_registries
-from custom_components.myhome.validate import PointToPoint, cover_schema, light_schema
-from custom_components.myhome.where_grammar import canonical_point_address, canonical_point_spelling
+from custom_components.myhome.validate import (
+    PointToPoint,
+    cover_schema,
+    expose_entry_schema,
+    light_schema,
+)
+from custom_components.myhome.where_grammar import (
+    canonical_point_address,
+    canonical_point_spelling,
+    normalize_expose_where,
+)
 from tests.conftest import attach_runtime
 
 MAC = "00:03:50:00:01:47"
@@ -414,3 +430,102 @@ async def test_imported_copy_with_0004_boots_twice_without_churn(hass: HomeAssis
     assert ent_reg.async_get("light.kitchen").device_id == device.id
     assert not [r for r in caplog.records if r.name == "custom_components.myhome" and "igrat" in r.getMessage()]
     assert not [r for r in caplog.records if "canonical spelling" in r.getMessage()]
+
+
+# ── expose (myhome.yaml `expose:` and the UI subentries) ─────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("who", "where", "expected"),
+    [
+        (1, "0004", "04"),
+        (2, "0009#4#01", "09#4#01"),
+        (1, "04", "04"),
+        (1, "0015", "0015"),
+        (2, "0010", "0010"),
+        (1, "0000", "0000"),
+        (1, "1015", "1015"),
+        (4, "0004", "0004"),  # a WHO 4 probe keeps the WHO 4 grammar
+        (18, "0004", "0004"),
+    ],
+)
+def test_expose_where_is_canonical_for_who_1_and_2(who: int, where: str, expected: str, caplog) -> None:
+    with caplog.at_level(logging.WARNING):
+        assert normalize_expose_where(who, where) == expected
+    assert not [r for r in caplog.records if r.levelno == logging.WARNING]
+
+
+def test_expose_entry_with_0004_is_the_virtual_actuator_04() -> None:
+    """The yaml `expose:` entry and the UI flow share `expose_entry_schema`: both store `04`."""
+    item = expose_entry_schema({"who": 1, "where": "0004", "entity_id": "light.kitchen"})
+    assert item["where"] == "04"
+    routed = expose_entry_schema({"who": 2, "where": "0009#4#01", "entity_id": "cover.blind"})
+    assert routed["where"] == "09#4#01"
+    binding = ExposeBinding.from_dict(item, source="yaml")
+    assert binding.key == (1, "04", None)
+
+
+def test_expose_subentries_at_0004_are_migrated(hass: HomeAssistant, caplog) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN, title="GW", data={CONF_MAC: MAC}, unique_id=MAC, entry_id="e_expose",
+        subentries_data=[
+            {
+                "subentry_type": SUBENTRY_TYPE_EXPOSE, "subentry_id": "sub_0004", "unique_id": None,
+                "title": "WHO 1 / WHERE 0004 (light.kitchen)",
+                "data": {"who": 1, "where": "0004", "entity_id": "light.kitchen"},
+            },
+            {
+                "subentry_type": SUBENTRY_TYPE_EXPOSE, "subentry_id": "sub_routed", "unique_id": None,
+                "title": "WHO 2 / WHERE 0009#4#01 (cover.blind)",
+                "data": {"who": 2, "where": "0009#4#01", "entity_id": "cover.blind"},
+            },
+            {
+                "subentry_type": SUBENTRY_TYPE_EXPOSE, "subentry_id": "sub_keep", "unique_id": None,
+                "title": "WHO 1 / WHERE 0015 (light.hall)",
+                "data": {"who": 1, "where": "0015", "entity_id": "light.hall"},
+            },
+            {
+                "subentry_type": SUBENTRY_TYPE_EXPOSE, "subentry_id": "sub_probe", "unique_id": None,
+                "title": "WHO 4 / WHERE 0004 (sensor.t)",
+                "data": {"who": 4, "where": "0004", "entity_id": "sensor.t"},
+            },
+            {
+                "subentry_type": SUBENTRY_TYPE_EXPOSE, "subentry_id": "sub_clock", "unique_id": None,
+                "title": "Bus Clock Sync (WHO 13, dim 22)", "data": {"who": 13},
+            },
+            {
+                "subentry_type": "other", "subentry_id": "sub_other", "unique_id": None,
+                "title": "Not an expose subentry", "data": {"who": 1, "where": "0004"},
+            },
+            # Both spellings of one address: the canonical binding is the one that worked on the bus.
+            {
+                "subentry_type": SUBENTRY_TYPE_EXPOSE, "subentry_id": "sub_twin_old", "unique_id": None,
+                "title": "WHO 2 / WHERE 0007 (cover.old)", "data": {"who": 2, "where": "0007", "entity_id": "cover.old"},
+            },
+            {
+                "subentry_type": SUBENTRY_TYPE_EXPOSE, "subentry_id": "sub_twin", "unique_id": None,
+                "title": "WHO 2 / WHERE 07 (cover.new)", "data": {"who": 2, "where": "07", "entity_id": "cover.new"},
+            },
+        ],
+    )
+    entry.add_to_hass(hass)
+    with caplog.at_level(logging.INFO):
+        migrate_entry_and_registries(hass, entry, {})
+    subs = entry.subentries
+    assert subs["sub_other"].data == {"who": 1, "where": "0004"}
+    assert "sub_twin_old" not in subs and subs["sub_twin"].data["where"] == "07"
+    assert any(
+        "Removing expose subentry sub_twin_old (WHO 2 / WHERE 0007 (cover.old)): sub_twin (WHO 2 / WHERE 07 (cover.new)) already exposes WHO 2 WHERE 07" in r.getMessage()
+        for r in caplog.records if r.levelno == logging.WARNING
+    )
+    assert subs["sub_0004"].data["where"] == "04" and subs["sub_0004"].title == "WHO 1 / WHERE 04 (light.kitchen)"
+    assert subs["sub_routed"].data["where"] == "09#4#01" and subs["sub_routed"].title == "WHO 2 / WHERE 09#4#01 (cover.blind)"
+    assert subs["sub_keep"].data["where"] == "0015" and subs["sub_keep"].title == "WHO 1 / WHERE 0015 (light.hall)"
+    assert subs["sub_probe"].data["where"] == "0004"
+    assert subs["sub_clock"].data == {"who": 13}
+    assert sum("Migrated expose subentry" in r.getMessage() for r in caplog.records) == 2
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        migrate_entry_and_registries(hass, entry, {})
+    assert not [r for r in caplog.records if "expose subentry" in r.getMessage()]

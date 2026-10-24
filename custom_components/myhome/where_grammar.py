@@ -262,7 +262,10 @@ def normalize_expose_where(who: int, where: str | int | None) -> str:
             return bare
         return clean
     if who in (1, 2):
-        return normalize_where(raw) or raw
+        # OWNd keeps `0004` as typed (OWNd#123); the gateways only accept and
+        # report an area-0 point in two digits, so the MyHOME boundary spells
+        # it `04` (#147). Silent: the yaml / UI value is validated elsewhere.
+        return canonical_point_address(normalize_where(raw) or raw)
     return raw
 
 

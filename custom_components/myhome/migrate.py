@@ -14,8 +14,8 @@ from homeassistant.helpers import (
     entity_registry as er,
 )
 
-from .const import DOMAIN, LOGGER
-from .where_grammar import canonical_point_spelling
+from .const import CONF_WHERE, CONF_WHO, DOMAIN, LOGGER, SUBENTRY_TYPE_EXPOSE
+from .where_grammar import canonical_point_address, canonical_point_spelling
 
 
 class GatewayProtocol(Protocol):
@@ -373,6 +373,8 @@ def migrate_canonical_point_addresses(hass: HomeAssistant, entry: ConfigEntry) -
         if duplicate is not None:
             LOGGER.info("Removed %s, a duplicate of %s under the canonical address", duplicate.entity_id, reg_entry.entity_id)
 
+    _migrate_expose_subentries(hass, entry)
+
     for device in dr.async_entries_for_config_entry(device_registry, entry.entry_id):
         identifiers = set(device.identifiers)
         renamed = {
@@ -425,6 +427,42 @@ def migrate_canonical_point_addresses(hass: HomeAssistant, entry: ConfigEntry) -
             if carried:
                 device_registry.async_update_device(device.id, **carried)
             LOGGER.info("Removed device %s, a duplicate of %s under the canonical address", other.id, device.id)
+
+
+def _migrate_expose_subentries(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Move WHO 1 / WHO 2 ``expose`` subentries at ``0001``..``0009`` to ``01``..``09`` (#147).
+
+    `normalize_expose_where()` spells them canonically at load time as well; the
+    stored data and the title follow so the UI shows the address the bus uses.
+    """
+    expose_subentries = [
+        subentry for subentry in getattr(entry, "subentries", {}).values() if subentry.subentry_type == SUBENTRY_TYPE_EXPOSE
+    ]
+    taken = {
+        (str(sub.data.get(CONF_WHO)), str(sub.data.get(CONF_WHERE))): sub
+        for sub in expose_subentries
+        if str(sub.data.get(CONF_WHO)) in ("1", "2")
+    }
+    for subentry in expose_subentries:
+        data = dict(subentry.data)
+        if str(data.get(CONF_WHO)) not in ("1", "2") or not isinstance(data.get(CONF_WHERE), str):
+            continue
+        canonical = canonical_point_address(data[CONF_WHERE])
+        if canonical == data[CONF_WHERE]:
+            continue
+        if (holder := taken.get((str(data[CONF_WHO]), canonical))) is not None:
+            # Two bindings for one bus address: the canonical one is the one that worked.
+            LOGGER.warning(
+                "Removing expose subentry %s (%s): %s (%s) already exposes WHO %s WHERE %s",
+                subentry.subentry_id, subentry.title, holder.subentry_id, holder.title, data[CONF_WHO], canonical,
+            )
+            hass.config_entries.async_remove_subentry(entry, subentry.subentry_id)
+            continue
+        title = subentry.title.replace(f"WHERE {data[CONF_WHERE]} ", f"WHERE {canonical} ")
+        hass.config_entries.async_update_subentry(
+            entry, subentry, data={**data, CONF_WHERE: canonical}, title=title
+        )
+        LOGGER.info("Migrated expose subentry %s from WHERE %s to %s", subentry.subentry_id, data[CONF_WHERE], canonical)
 
 
 def prune_stale_devices(
