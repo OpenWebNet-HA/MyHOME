@@ -952,11 +952,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         return self._attr_is_closing  # type: ignore
 
     @property
-    def is_closed(self) -> bool:
-        """Return if the cover is closed."""
+    def is_closed(self) -> bool | None:
+        """Return if the cover is closed (None while that is unknown)."""
         if self.current_cover_position is not None:
             return self.current_cover_position == 0
-        return self._attr_is_closed  # type: ignore
+        return self._attr_is_closed
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
@@ -1612,6 +1612,28 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         self._stop_task = asyncio.create_task(_settle())
 
+    def _check_position_target(self, target_position: float) -> None:
+        """Refuse a partial target while a timed cover's position is unknown.
+
+        0 % and 100 % are full runs to an end stop and always go through; any
+        other target has no position to be timed from. A scope cover checks
+        every member with this before it dispatches, so that a fan-out does
+        not start some members and then refuse another.
+        """
+        if (
+            self._advanced
+            or self._strategy.assumed_state
+            or self.current_cover_position is not None
+            or not 0 < target_position < 100
+        ):
+            return
+        raise ServiceValidationError(
+            f"{self._display_name}: the position is unknown until the cover has run fully open or closed once",
+            translation_domain=DOMAIN,
+            translation_key="cover_position_unknown",
+            translation_placeholders={"name": self._display_name},
+        )
+
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         """Move the cover to a specific position."""
         if ATTR_POSITION not in kwargs:
@@ -1675,18 +1697,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if curr_pos is None:
             # Nothing to time a partial run from: 0% and 100% are full runs that
             # anchor the position on the end stop, anything else waits for one.
-            if target_position >= 100:
-                await self._async_run_to_end(True)
-                return
-            if target_position <= 0:
-                await self._async_run_to_end(False)
-                return
-            raise ServiceValidationError(
-                f"{self._display_name}: the position is unknown until the cover has run fully open or closed once",
-                translation_domain=DOMAIN,
-                translation_key="cover_position_unknown",
-                translation_placeholders={"name": self._display_name},
-            )
+            self._check_position_target(target_position)
+            await self._async_run_to_end(target_position >= 100)
+            return
         diff = target_position - curr_pos
         if diff == 0 and self._is_tilting:
             # Already at this level while a slat pulse runs: stop the pulse here.

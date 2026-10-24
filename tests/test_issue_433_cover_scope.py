@@ -35,7 +35,7 @@ from homeassistant.const import (
     CONF_PORT,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
 from OWNd.message import OWNEvent, OWNMessage
@@ -396,6 +396,7 @@ async def test_scope_cover_behind_an_interface_positions_each_member(gateway) ->
     area = _cover(gateway, "1", "02", scope=CoverScope.of("1", "02"))
     for c in (*points, area):
         family.add(c)
+        c._attr_current_cover_position = 50  # known: a partial target can be timed
     with patch.object(MyHOMECover, "async_set_cover_position", AsyncMock()) as timed:
         await area.async_set_cover_position(position=40)
     assert timed.await_count == 2  # one timed run per member, none for the scope
@@ -456,6 +457,7 @@ async def test_general_scope_cover_behind_an_interface_paces_member_positioning(
     general = _cover(gateway, "0", "02", scope=CoverScope.of("0", "02"))
     for c in (*points, general):
         family.add(c)
+        c._attr_current_cover_position = 50  # known: a partial target can be timed
 
     with (
         patch.object(MyHOMECover, "async_set_cover_position", AsyncMock()) as member_pos,
@@ -692,3 +694,47 @@ async def test_member_command_during_a_scope_pulse_takes_its_motor_over(gateway)
         assert p2._tilt_follows is area  # the other blind still follows
         await area._stop_task
     assert p2.current_cover_tilt_position == 100
+
+
+def test_scope_cover_state_follows_its_members_like_a_cover_group(gateway) -> None:
+    """Fresh timed members are unknown, so is the area; one known member decides (review 5639677952 on #795)."""
+    family = CoverFamily()
+    points = [_cover(gateway, "11"), _cover(gateway, "12")]
+    area = _cover(gateway, "1", scope=CoverScope.of("1", None))
+    for c in (*points, area):
+        family.add(c)
+    assert all(m.is_closed is None for m in points)
+    assert area.is_closed is None
+    assert area.state is None  # rendered "unknown", not "open"
+    assert area.current_cover_position is None
+
+    points[0]._attr_current_cover_position = 50  # one member known and open
+    assert area.is_closed is False
+    assert area.state == "open"
+
+    points[0]._attr_current_cover_position = 0  # the known member is closed, the other still unknown
+    assert area.is_closed is True  # as HA Core's CoverGroup: unknown members do not count
+    assert area.state == "closed"
+
+    points[1]._attr_current_cover_position = 100
+    assert area.is_closed is False
+
+
+async def test_scope_position_behind_an_interface_is_refused_before_any_member_moves(gateway) -> None:
+    """A mixed known / unknown fan-out raises before a frame, not after the first member started."""
+    family = CoverFamily()
+    points = [_cover(gateway, "11", "02"), _cover(gateway, "12", "02")]
+    area = _cover(gateway, "1", "02", scope=CoverScope.of("1", "02"))
+    for c in (*points, area):
+        family.add(c)
+    points[0]._attr_current_cover_position = 50  # known
+    assert points[1].current_cover_position is None  # unknown
+    with pytest.raises(ServiceValidationError) as err:
+        await area.async_set_cover_position(position=40)
+    assert err.value.translation_key == "cover_position_unknown"
+    assert _sent(gateway) == []  # member 11 was not started
+    assert points[0].is_opening is False and points[0].is_closing is False
+    # The end positions are full runs for every member and go through.
+    with patch.object(MyHOMECover, "async_set_cover_position", AsyncMock()) as timed:
+        await area.async_set_cover_position(position=0)
+    assert timed.await_count == 2
