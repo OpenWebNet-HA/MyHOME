@@ -184,3 +184,52 @@ async def test_partial_run_from_a_known_position_keeps_a_known_position(hass, ga
     assert cover.current_cover_position is not None
     assert 50 < cover.current_cover_position < 100
     assert cover.is_closed is False
+
+
+async def test_delivery_failure_from_unknown_keeps_the_state_unknown(hass, gateway) -> None:
+    """A close whose frame never reached the bus leaves the cover unknown, not open (review 5639677952)."""
+    cover = _make_cover(hass, gateway)
+    await cover.async_close_cover()
+    raw, written = gateway.deliveries[-1]
+    assert raw == "*2*2*05##"
+    assert cover.is_closing is True
+    written.set_exception(ConnectionError("gateway connection lost"))
+    await _yield()
+    assert cover.is_closing is False
+    assert cover.is_closed is None
+    assert cover.current_cover_position is None
+    assert cover.state is None  # rendered "unknown"
+    assert len(gateway.deliveries) == 1  # nothing else was sent
+
+
+async def test_delivery_timeout_from_unknown_keeps_the_state_unknown(hass, gateway) -> None:
+    """set_cover_position 0 whose frame is never written: the settle task aborts to unknown."""
+    cover = _make_cover(hass, gateway)
+    with patch("custom_components.myhome.cover.WRITE_TIMEOUT", 0.01):
+        await cover.async_set_cover_position(position=0)
+        raw, written = gateway.deliveries[-1]
+        assert raw == "*2*2*05##"
+        assert cover.is_closing is True
+        await asyncio.wait_for(cover._stop_task, 1.0)  # the never-written frame times out
+    assert cover.is_closing is False
+    assert cover.is_closed is None
+    assert cover.current_cover_position is None
+    assert cover.state is None
+    assert len(gateway.deliveries) == 1
+    written.cancel()
+
+
+async def test_delivery_failure_from_a_restored_closed_state_restores_it(hass, gateway) -> None:
+    """A simple cover restored as closed goes back to closed when its open frame is lost."""
+    cover = _make_cover(hass, gateway, travel_time=0)
+    cover.async_get_last_state = AsyncMock(return_value=State("cover.x", "closed", {}))
+    await cover.async_added_to_hass()
+    assert cover.is_closed is True
+    await cover.async_open_cover()
+    raw, written = gateway.deliveries[-1]
+    assert raw == "*2*1*05##"
+    assert cover.is_closed is False  # optimistic while the frame is queued
+    written.set_exception(ConnectionError("gateway connection lost"))
+    await _yield()
+    assert cover.is_opening is False
+    assert cover.is_closed is True

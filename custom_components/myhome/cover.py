@@ -525,6 +525,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         # re-anchor: the last completed run is measured from it (stopwatch).
         self._run_started_at: float | None = None
         self._start_position: int | None = None
+        # is_closed before the last direction command: restored when its frame
+        # never reaches the bus and there is no position to derive it from.
+        self._is_closed_before_move: bool | None = None
         self._stop_task: asyncio.Task[None] | None = None
 
         # Echo model state (see ECHO_WINDOW): which command of ours is in
@@ -829,6 +832,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if self._attr_current_cover_position is not None:
             self._start_position = self._attr_current_cover_position
             self._attr_is_closed = (self._attr_current_cover_position == 0)
+        else:
+            # No position to derive the state from (unknown, or an assumed-state
+            # cover): nothing moved, so the state is what it was before the command.
+            self._start_position = None
+            self._attr_is_closed = self._is_closed_before_move
         self._refresh_travel_attributes()
         self._publish_state()
 
@@ -1527,6 +1535,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._refresh_travel_attributes()
             self._attr_is_opening = direction == "open"
             self._attr_is_closing = direction == "close"
+            self._is_closed_before_move = self._attr_is_closed
             self._attr_is_closed = False
             self._begin_command(direction)
         written = await self._gateway_handler.send(command)
