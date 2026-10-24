@@ -513,6 +513,10 @@ async def test_password_required_and_error(hass: HomeAssistant) -> None:
             ],
         ),
         patch(
+            "custom_components.myhome.config_flow.identify_gateway",
+            AsyncMock(return_value=(None, None, None)),
+        ),
+        patch(
             "custom_components.myhome.async_setup_entry",
             return_value=True,
         ),
@@ -905,6 +909,10 @@ async def test_custom_manual_entry_manufacturer_type(hass: HomeAssistant) -> Non
         patch(
             "custom_components.myhome.config_flow.OWNSession.test_connection",
             return_value={"Success": True},
+        ),
+        patch(
+            "custom_components.myhome.config_flow.identify_gateway",
+            AsyncMock(return_value=(None, None, None)),
         ),
         patch(
             "custom_components.myhome.async_setup_entry",
