@@ -9,16 +9,15 @@ body:
         ## Audio field report
 
         Grouping is where Music Assistant and the analog matrix meet, and each plant behaves a little differently.
-        The four checks below are the ones we replay as tests. Please attach the **diagnostics file**
-        (*Settings → Devices & services → MyHOME → ⋮ → Download diagnostics*) and, for Music Assistant problems,
-        its log from around the time it happened.
+        The four checks below are the ones we replay as tests. Please write in **English** and attach the **diagnostics file**
+        (*Settings → Devices & services → MyHOME → ⋮ → Download diagnostics*) or an **anonymous MyHOME Bus Monitor trace** (`💾 Export Trace` / `📋 Copy Trace`).
 
   - type: input
     id: plant
     attributes:
-      label: Plant
-      description: Gateway model, matrix (F441 / F441M), number of zones, decoder(s).
-      placeholder: "MH200 + F441M, 6 zones, Squeezelite + Cambridge CXN"
+      label: Plant (Gateway model, Firmware, Matrix & Decoders)
+      description: Gateway model & firmware, matrix (F441 / F441M), number of zones, decoder(s).
+      placeholder: "MH200 (FW 2.1.2) + F441M, 6 zones, Squeezelite + Cambridge CXN"
     validations:
       required: true
 
@@ -26,8 +25,8 @@ body:
     id: versions
     attributes:
       label: Versions
-      description: MyHOME, Home Assistant and Music Assistant versions.
-      placeholder: "MyHOME 2.0.0b14, HA 2026.9.2, Music Assistant 2.x"
+      description: MyHOME (e.g. 2.0.0b16), Home Assistant, and Music Assistant versions.
+      placeholder: "MyHOME 2.0.0b16, HA 2026.10.1, Music Assistant 2.x"
     validations:
       required: true
 
@@ -45,7 +44,19 @@ body:
   - type: textarea
     id: what_happened
     attributes:
-      label: What you did, and when
-      description: "For example: 21:48, pressed play on the Huis group, Bureau's slider would not move."
+      label: What you did, and when (plus attached Diagnostics / Anonymous Bus Trace)
+      description: |
+        Describe what happened and drag & drop your **Diagnostics JSON** or **MyHOME Bus Monitor** trace export here.
+
+        > 🔒 **Privacy note:** Both the **MyHOME Bus Monitor** trace export (`💾 Export Trace` / `📋 Copy Trace`) and the **Download diagnostics** JSON produce **anonymous traces** that automatically strip all private/household fields (passwords, PINs, tokens, IP addresses, full MAC addresses, SSDP UDNs, and local file paths) — only your gateway model, firmware version, and raw OpenWebNet bus frames are included.
+      placeholder: "For example: 21:48, pressed play on the Huis group, Bureau's slider would not move. (Drag & drop myhome_diagnostics.json or myhome_trace_*.json here)"
     validations:
       required: true
+
+  - type: checkboxes
+    id: preflight_checklist
+    attributes:
+      label: "🛑 Before Submitting — Did You Check?"
+      options:
+        - label: "I have written this report in English and attached the anonymous MyHOME Diagnostics JSON or Bus Monitor trace."
+          required: true

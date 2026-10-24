@@ -8,26 +8,29 @@ body:
       value: |
         ## Thank you for helping improve MyHOME!
 
-        To help us diagnose and fix issues quickly, please provide diagnostics and logs using any of the following methods:
+        Before submitting, please keep these three rules in mind:
+        1. **🇬🇧 English Only**: Please write your issue in **English** so everyone in the community can follow along.
+        2. **🔬 Trace-Driven v2 Phase 1 Rewrite**: The v2 Phase 1 rewrite is built on **real OpenWebNet bus traces** from actual hardware rather than guessing protocol behavior. To diagnose an issue, we need your exact MyHOME beta version, gateway model & firmware, and a trace showing what happens on the bus (especially if a command works from a physical switch / BTicino Home Touch / MyHOME_Up app).
+        3. **🔒 Privacy note**: Both the **MyHOME Bus Monitor** trace export (`💾 Export Trace` / `📋 Copy Trace`) and the **Download diagnostics** JSON produce **anonymous traces** that automatically strip all private/household fields (passwords, PINs, tokens, IP addresses, full MAC addresses, SSDP UDNs, and local file paths) — only your gateway model, firmware version, and raw OpenWebNet bus frames are included.
 
         ---
 
-        ### ⚡ How to provide diagnostic logs & bundles:
-        1. **One-Click Bus Trace Bundle** *(Fastest)*:
-           If you use the Lovelace **MyHOME Bus Monitor Card** (`<myhome-bus-card>`), click **"📋 Report Issue / Copy Trace"**. It copies your gateway model, firmware, queue telemetry, and recent bus frames to your clipboard to paste below.
-        2. **Home Assistant Diagnostics File**:
-           Go to **Settings ➔ Devices & Services ➔ MyHOME ➔ ⋮ (3 dots) ➔ Download diagnostics**. You can drag & drop the downloaded JSON file directly into the attachment box below!
-        3. **Home Assistant Full Log or Zip**:
-           Go to **Settings ➔ System ➔ Logs ➔ Download full log**. You can drag & drop your `.log` or `.zip` file directly into the attachment box below.
+        ### ⚡ How to capture an anonymous bus trace & diagnostics:
+        1. **MyHOME Bus Monitor Trace** *(Fastest & Anonymous)*:
+           Open the **MyHOME Bus Monitor** card/panel (`<myhome-bus-card>`), click **Start Trace** (or **Clear**), reproduce the action (both from the physical BTicino control/Home Touch and from Home Assistant), then click **"💾 Export Trace"** (to download a `.json` file) or **"📋 Copy Trace"** (to copy to clipboard).
+        2. **Home Assistant Diagnostics JSON** *(Anonymous)*:
+           Go to **Settings ➔ Devices & Services ➔ MyHOME ➔ ⋮ (3 dots) ➔ Download diagnostics** and drag & drop the JSON file into the attachment box below.
+        3. **Home Assistant Debug Log**:
+           Go to **Settings ➔ Devices & Services ➔ MyHOME ➔ Enable debug logging**, reproduce the issue, click **Disable debug logging**, and drag & drop the downloaded `.log` file below.
 
         ---
 
   - type: textarea
     id: description
     attributes:
-      label: Bug Description
-      description: A clear and concise description of what the bug is.
-      placeholder: What went wrong? What did you observe versus what did you expect?
+      label: Bug Description (in English)
+      description: A clear and concise description of what went wrong, what you observed, and what you expected.
+      placeholder: What went wrong? Does the device work from a physical wall switch or BTicino Home Touch, and what happens in Home Assistant?
     validations:
       required: true
 
@@ -37,16 +40,29 @@ body:
       label: Gateway Model
       description: Select your BTicino / Legrand OpenWebNet gateway hardware model.
       options:
-        - "F454 (Audio/Video Gateway)"
+        - "MyHomeServer1 (MHS1)"
+        - "F454 (Audio/Video Web Server)"
         - "F455 (Basic Gateway)"
-        - "MH200 (Scenario Programmer)"
+        - "F460 (MyHOME Server)"
+        - "F461 (Third-Party Integration Server)"
         - "MH200N (Scenario Programmer)"
         - "MH202 (Scenario Programmer)"
-        - "AM4890 (Basic Gateway)"
-        - "MyHomeServer1 (MHS1)"
+        - "MH200 (Scenario Programmer)"
+        - "MH201 (IP Gateway)"
+        - "H4684 / AM4890 / LN4890 (Touch Screen Gateway)"
+        - "F452 / F453 / F453AV (Web Server)"
+        - "F459 (Integration Gateway)"
         - "Legrand 3578 USB/Serial (Serial Interface)"
-        - "F452 / F453AV"
         - "Other / Custom OpenWebNet Server"
+    validations:
+      required: true
+
+  - type: input
+    id: gateway_firmware
+    attributes:
+      label: Gateway Firmware Version
+      description: The firmware version of your OpenWebNet gateway (shown on the gateway device page in HA or in your Diagnostics / Bus Monitor export).
+      placeholder: "e.g. 2.0.51, 3.1.8, 1.0.24 (or 'See attached Diagnostics/Trace')"
     validations:
       required: true
 
@@ -56,8 +72,8 @@ body:
       label: Connection Type
       description: How is Home Assistant communicating with your OpenWebNet gateway?
       options:
-        - "Ethernet / IP (TCP port 20000, unencrypted OpenWebNet)"
-        - "Ethernet / IP (TCP port 20000, HMAC-SHA2 / SHA1 authenticated)"
+        - "Ethernet / IP (TCP port 20000, HMAC-SHA2 / SHA1 / OPEN password)"
+        - "Ethernet / IP (TCP port 20000, unencrypted / IP range whitelist)"
         - "USB / Serial (RS-232 / USB-to-serial adapter, e.g. Legrand 3578)"
         - "Virtual / TCP Tunnel"
         - "Other"
@@ -68,17 +84,17 @@ body:
     id: ha_version
     attributes:
       label: Home Assistant Version
-      description: Find this under Settings -> About (e.g. 2024.9.0).
-      placeholder: "e.g. 2024.9.0"
+      description: Find this under Settings -> About (e.g. 2026.10.1).
+      placeholder: "e.g. 2026.10.1"
     validations:
       required: true
 
   - type: input
     id: integration_version
     attributes:
-      label: Integration Version
-      description: The version or commit of the MyHOME integration.
-      placeholder: "e.g. 1.0.0-beta (v2-phase1-architecture)"
+      label: MyHOME Integration Version
+      description: Exact version of the MyHOME integration (please verify on the latest v2 Phase 1 beta release, e.g. 2.0.0b16).
+      placeholder: "e.g. 2.0.0b16"
     validations:
       required: true
 
@@ -86,23 +102,26 @@ body:
     id: reproduction_steps
     attributes:
       label: Steps to Reproduce
-      description: Step-by-step instructions to reproduce the issue.
+      description: Step-by-step instructions to reproduce the issue (and what actions you performed during your bus trace capture).
       placeholder: |
-        1. Open Home Assistant dashboard
-        2. Toggle switch 'switch.living_room'
-        3. Observe that light physically switches on, but state flips back to off after 3 seconds...
+        1. Start trace in MyHOME Bus Monitor (or enable debug logging)
+        2. Toggle the device from the physical wall switch / BTicino Home Touch -> works
+        3. Toggle the entity 'climate.climate_zone_7' in Home Assistant -> nothing happens on the bus...
     validations:
       required: true
 
   - type: textarea
     id: diagnostic_attachment
     attributes:
-      label: "📎 Diagnostics File / Log File / Zip Attachment"
+      label: "📎 Anonymous Bus Trace / Diagnostics JSON / Debug Log Attachment"
       description: |
-        **Drag & drop files directly into this box** (GitHub supports `.log`, `.txt`, `.json`, `.zip`, `.tar.gz`):
-        - 📦 **Diagnostics JSON**: *Settings ➔ Devices & Services ➔ MyHOME ➔ ⋮ (3 dots) ➔ Download diagnostics*
-        - 📋 **Full Log File**: *Settings ➔ System ➔ Logs ➔ Download full log* (or zip of `/config/home-assistant.log`)
-      placeholder: "Drag and drop your home-assistant.log, .zip, or myhome_diagnostics.json file here..."
+        **Drag & drop files directly into this box** (GitHub supports `.json`, `.log`, `.txt`, `.zip`, `.tar.gz`):
+        - 📡 **MyHOME Bus Monitor Trace JSON**: Click **💾 Export Trace** in `<myhome-bus-card>`
+        - 📦 **MyHOME Diagnostics JSON**: *Settings ➔ Devices & Services ➔ MyHOME ➔ ⋮ (3 dots) ➔ Download diagnostics*
+        - 📋 **Debug Log File**: *Settings ➔ Devices & Services ➔ MyHOME ➔ Enable/Disable debug logging*
+
+        > 🔒 **Privacy note:** Both the **MyHOME Bus Monitor** trace export (`💾 Export Trace` / `📋 Copy Trace`) and the **Download diagnostics** JSON produce **anonymous traces** that automatically strip all private/household fields (passwords, PINs, tokens, IP addresses, full MAC addresses, SSDP UDNs, and local file paths) — only your gateway model, firmware version, and raw OpenWebNet bus frames are included.
+      placeholder: "Drag and drop your myhome_trace_*.json, myhome_diagnostics.json, or home-assistant.log file here..."
     validations:
       required: false
 
@@ -111,8 +130,9 @@ body:
     attributes:
       label: Bus Monitor Diagnostic Payload / Bus Trace
       description: |
-        Paste the clipboard content generated by clicking **"📋 Report Issue / Copy Trace"** in `<myhome-bus-card>` here.
-        Contains gateway parameters, buffer telemetry, and recent OpenWebNet frames.
+        Or paste the clipboard bundle generated by clicking **"📋 Copy Trace"** in `<myhome-bus-card>` here.
+
+        > 🔒 **Privacy note:** Both the **MyHOME Bus Monitor** trace export (`💾 Export Trace` / `📋 Copy Trace`) and the **Download diagnostics** JSON produce **anonymous traces** that automatically strip all private/household fields (passwords, PINs, tokens, IP addresses, full MAC addresses, SSDP UDNs, and local file paths) — only your gateway model, firmware version, and raw OpenWebNet bus frames are included.
       render: markdown
       placeholder: "Paste clipboard contents here (starts with ### MyHOME Diagnostic Bundle)..."
     validations:
@@ -124,16 +144,19 @@ body:
       label: Log Snippets / Python Tracebacks
       description: Relevant log entries or traceback snippets from Settings -> System -> Logs.
       render: text
-      placeholder: "Paste relevant traceback or error messages from custom_components.myhome here..."
+      placeholder: "Paste relevant traceback or custom_components.myhome / OWNd debug log lines here..."
     validations:
       required: false
 
   - type: checkboxes
     id: diagnostics_checklist
     attributes:
-      label: Diagnostics Checklist
-      description: Attaching diagnostic bundles or logs significantly speeds up root-cause analysis and resolution.
+      label: "🛑 Before Submitting — Did You Check?"
+      description: All items below are required so we have the real bus evidence needed to reproduce and fix your issue reliably.
       options:
-        - label: "I have attached or pasted the MyHOME Bus Monitor diagnostic bundle or OpenWebNet frame trace."
-        - label: "I have attached the Home Assistant full log file (.log or .zip) or pasted the crash traceback."
-        - label: "I have attached the MyHOME integration diagnostics JSON (from Settings -> Devices & Services -> MyHOME)."
+        - label: "I have written this issue in English."
+          required: true
+        - label: "I have specified my exact MyHOME version (e.g. 2.0.0b16), Home Assistant version, Gateway model, and Gateway firmware version."
+          required: true
+        - label: "I have attached or pasted an anonymous MyHOME Bus Monitor trace (Export/Copy Trace), MyHOME Diagnostics JSON, or Debug Log showing the OpenWebNet frames on the bus."
+          required: true
