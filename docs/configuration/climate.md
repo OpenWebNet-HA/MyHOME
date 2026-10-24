@@ -55,6 +55,7 @@ MyHOME climate entities support standard Home Assistant climate controls:
   - `off`: System frost-protection or thermal shutdown.
 * **Target Temperature**: Adjustable setpoint slider in 0.5 °C increments.
 * **Current Temperature**: Real-time ambient reading reported by the probe.
+  On SCS-only gateways whose firmware drops the general request `*#4*0##` (F450, F454, F459, F460, H4684, MH200, MH202) and on the MH201, each zone asks for its own temperature with `*#4*<WHERE>*0##` after the startup sweep, so a standalone thermostat is not `unknown` until it next reports (#185). After a restart the last reading is shown with the attribute `current_temperature_restored: true` until the zone reports again.
 * **Current Humidity**: Ambient relative humidity percentage for zones equipped with humidity sensors (e.g. Living Now thermostats or humidity probes).
 
 ### 💧 Humidity Support & Startup Behavior

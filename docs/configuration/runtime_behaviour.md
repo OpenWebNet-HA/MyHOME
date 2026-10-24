@@ -12,9 +12,9 @@ After the event session is up, the integration sends a small set of general stat
 | :--- | :--- | :--- |
 | `*#1*0##` | Lighting | All gateways |
 | `*#2*0##` | Automation / covers | All gateways |
-| `*#4*0##` | Thermoregulation | All gateways |
+| `*#4*0##` | Thermoregulation | All gateways except F450, F454, F459, F460, F461, H4684, MH200, MH202 and MyHomeServer1, whose firmware drops it (firmware oracle); their SCS-only zones ask `*#4*<WHERE>*0##` instead |
 | `*#5*0##` | Burglar alarm | MH202, H4890 |
-| `*#16*0*5##` | Sound system (dimension 5; lists every amplifier) | F454, H4890, MH200, MH201, MH202, MyHomeServer1 |
+| `*#16*0*5##` | Sound system (dimension 5; lists every amplifier) | Gateways whose profile advertises WHO 16, except F450, F459, F460, F461, MH202 and MyHomeServer1, whose firmware drops it (firmware oracle) |
 | `*#18*51*51##` | Energy management (meter 51 total energy) | F454, F455, MH201, MH202, MyHomeServer1, H4890 |
 | `*#18*51*113##` | Energy management (meter 51 active power) | F454, F455, MH201, MH202, MyHomeServer1, H4890 |
 
