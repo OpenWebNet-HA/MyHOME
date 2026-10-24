@@ -43,6 +43,9 @@ STATE_ARMED_AWAY = AlarmControlPanelState.ARMED_AWAY
 STATE_TRIGGERED = AlarmControlPanelState.TRIGGERED
 
 CENTRAL_UNIT_KEY = "0"
+# The only states this panel emits; anything else in .storage/core.restore_state is stale
+# (`armed_home` was removed in #609) or transient and is not restored.
+RESTORABLE_STATES = frozenset({STATE_DISARMED, STATE_ARMED_AWAY, STATE_TRIGGERED})
 
 
 async def async_setup_entry(
@@ -174,10 +177,16 @@ class MyHOMEAlarmControlPanel(MyHOMEEntity, AlarmControlPanelEntity):
         return self._attr_alarm_state
 
     async def async_restore_last_state(self, last_state: State) -> None:
-        """Restore the last known state, flagged as restored until a bus frame confirms it."""
+        """Restore the last known state, flagged as restored until a bus frame confirms it.
+
+        Only ``disarmed``, ``armed_away`` and ``triggered`` are restored: a stale
+        ``armed_home`` would leave the documented template panel unavailable.
+        """
         try:
             state = AlarmControlPanelState(last_state.state)
         except ValueError:
+            return
+        if state not in RESTORABLE_STATES:
             return
         self._attr_alarm_state = state
         attrs = self._attr_extra_state_attributes
@@ -267,13 +276,16 @@ class MyHOMEAlarmControlPanel(MyHOMEEntity, AlarmControlPanelEntity):
             live_state = STATE_ARMED_AWAY
         elif message.is_disarmed:
             live_state = STATE_DISARMED
+        attrs = self._attr_extra_state_attributes
         if live_state is not None:
             self._attr_alarm_state = live_state
             # Only a frame that sets the state confirms it; activation or zone frames do not.
-            self._attr_extra_state_attributes.pop("restored", None)
-
-        self._attr_extra_state_attributes["raw_state"] = message.state_name
-        self._attr_extra_state_attributes["state_code"] = message.state_code
+            attrs.pop("restored", None)
+        if live_state is not None or "restored" not in attrs:
+            # While the state is only restored, telemetry that names no state (activation,
+            # zones, battery, mains) must not replace the restored raw_state / state_code.
+            attrs["raw_state"] = message.state_name
+            attrs["state_code"] = message.state_code
 
         if self.hass is not None:
             self.async_schedule_update_ha_state()

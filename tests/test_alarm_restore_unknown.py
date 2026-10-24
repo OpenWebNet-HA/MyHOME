@@ -330,3 +330,71 @@ async def test_refusal_log_names_the_canonical_model_and_the_frame(
     primary.send_status_request.assert_not_awaited()
     assert f"{label} refuses *#5*#1##" in caplog.text
     assert "*#5*0##" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "state", [AlarmControlPanelState.DISARMED, AlarmControlPanelState.ARMED_AWAY, AlarmControlPanelState.TRIGGERED]
+)
+async def test_each_state_the_panel_emits_is_restored(hass: HomeAssistant, state: AlarmControlPanelState) -> None:
+    panel = _panel(hass, _gateway("MH202"))
+    panel.async_get_last_state = AsyncMock(return_value=State("alarm_control_panel.alarm_0", state, {"raw_state": "x"}))
+
+    await panel.async_added_to_hass()
+
+    assert panel.alarm_state == state
+    assert panel.extra_state_attributes["restored"] is True
+
+
+@pytest.mark.parametrize("stale", ["armed_home", "arming", "pending", "armed_night", "unknown", "unavailable"])
+async def test_states_the_panel_never_emits_are_not_restored(hass: HomeAssistant, stale: str) -> None:
+    """A stale `armed_home` (removed in #609) or a transient state must not wedge the template alarm recipe."""
+    panel = _panel(hass, _gateway("MH202"))
+    panel.async_get_last_state = AsyncMock(
+        return_value=State("alarm_control_panel.alarm_0", stale, {"raw_state": "engage", "state_code": 8})
+    )
+
+    await panel.async_added_to_hass()
+
+    assert panel.alarm_state is None
+    assert "restored" not in panel.extra_state_attributes
+    assert panel.extra_state_attributes["raw_state"] is None
+    assert "state_code" not in panel.extra_state_attributes
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        "*5*1*0##",  # activation
+        "*5*11*#1##",  # active zone (routed to the central unit on an F454, #311)
+        "*5*18*#2##",  # not-active zone
+        "*5*5*##",  # battery OK, empty WHERE
+        "*5*7*##",  # mains, empty WHERE
+    ],
+)
+async def test_non_verdict_frames_keep_the_restored_raw_state(hass: HomeAssistant, frame: str) -> None:
+    """While `restored` is set, telemetry that names no state leaves raw_state / state_code as restored."""
+    panel = _panel(hass, _gateway("MH202"))
+    panel.async_get_last_state = AsyncMock(
+        return_value=State(
+            "alarm_control_panel.alarm_0", AlarmControlPanelState.ARMED_AWAY, {"raw_state": "engage", "state_code": 8}
+        )
+    )
+    await panel.async_added_to_hass()
+
+    panel.handle_event(OWNEvent.parse(frame))
+
+    assert panel.alarm_state == AlarmControlPanelState.ARMED_AWAY
+    assert panel.extra_state_attributes["restored"] is True
+    assert panel.extra_state_attributes["raw_state"] == "engage"
+    assert panel.extra_state_attributes["state_code"] == 8
+
+    # A verdict overwrites both and clears the flag
+    panel.handle_event(OWNEvent.parse("*5*9*0##"))
+    assert panel.alarm_state == AlarmControlPanelState.DISARMED
+    assert "restored" not in panel.extra_state_attributes
+    assert panel.extra_state_attributes["raw_state"] == "disengage"
+    assert panel.extra_state_attributes["state_code"] == 9
+
+    # Live again: telemetry updates the raw attributes as before
+    panel.handle_event(OWNEvent.parse(frame))
+    assert panel.extra_state_attributes["raw_state"] == OWNEvent.parse(frame).state_name
