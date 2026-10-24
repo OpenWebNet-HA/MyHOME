@@ -150,6 +150,10 @@ async def test_form_already_configured(hass: HomeAssistant) -> None:
             "custom_components.myhome.config_flow.OWNSession.test_connection",
             return_value={"Success": True},
         ),
+        patch(
+            "custom_components.myhome.config_flow.identify_gateway",
+            AsyncMock(return_value=(None, None, None)),
+        ) as identify,
     ):
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
@@ -179,8 +183,10 @@ async def test_form_already_configured(hass: HomeAssistant) -> None:
             },
         )
 
+    # The duplicate is refused once the gateway has had the chance to report its MAC
     assert result4["type"] == FlowResultType.ABORT
     assert result4["reason"] == "already_configured"
+    identify.assert_awaited_once()
 
 
 async def test_form_discovery(hass: HomeAssistant) -> None:

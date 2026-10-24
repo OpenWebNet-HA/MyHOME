@@ -490,6 +490,10 @@ class ConfigFlowDiscoveryMixin:
             if getattr(self, "_identify_after_auth", False):
                 self._identify_after_auth = False
                 model_source = await self._async_apply_gateway_identity(gateway)
+                # The manual step left the unique_id to this point: the MAC the gateway
+                # reports, or the typed one, decides whether this gateway already exists.
+                await self.async_set_unique_id(dr.format_mac(gateway.serial), raise_on_progress=False)  # type: ignore[attr-defined]
+                self._abort_if_unique_id_configured()  # type: ignore[attr-defined]
 
             _new_entry_data = {
                 CONF_ID: dr.format_mac(gateway.serial),
@@ -552,7 +556,7 @@ class ConfigFlowDiscoveryMixin:
     async def _async_apply_gateway_identity(self, gateway: typing.Any) -> str:
         """Correct the MAC and model typed in the manual step from what the gateway reports.
 
-        The model follows ``resolve_gateway_identity``, the same verdict the runtime
+        The caller sets the unique_id from the final MAC afterwards. The model follows ``resolve_gateway_identity``, the same verdict the runtime
         reaches: a brand variant of the reported model is kept, an uncertain WHO=13 code
         may label a ``Generic`` entry but never overrides a chosen model, a certain code
         corrects it. Returns the source the model rests on, for the entry's ``model_source``.
@@ -576,8 +580,6 @@ class ConfigFlowDiscoveryMixin:
                 gateway.serial,
             )
             gateway.serial = reported_mac
-            await self.async_set_unique_id(reported_mac, raise_on_progress=False)  # type: ignore[attr-defined]
-            self._abort_if_unique_id_configured()  # type: ignore[attr-defined]
         configured = str(gateway.model_name or "").strip()
         resolution = resolve_gateway_identity(
             GatewayIdentityEvidence(

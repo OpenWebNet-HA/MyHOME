@@ -46,6 +46,11 @@ async def _manual_flow(
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "password"
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {"password": "12345"})
+        if result["type"] == FlowResultType.FORM and result["step_id"] == "bus_topology":
+            # Another IP gateway exists: the topology question comes before the entry (#524)
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], {"bus_topology": "standalone"}
+            )
         await hass.async_block_till_done()
     return result
 
@@ -208,6 +213,47 @@ async def test_manual_flow_aborts_when_the_real_mac_is_already_configured(hass: 
 
     assert result["type"] == FlowResultType.ABORT
     assert result["reason"] == "already_configured"
+
+
+async def test_manual_flow_adds_a_second_gateway_typed_with_the_placeholder_mac(hass: HomeAssistant) -> None:
+    """An F454 kept the placeholder as unique_id (its MAC is never asked); an F461 typed with the same
+    placeholder is not refused before it can report its real MAC."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    MockConfigEntry(
+        domain=DOMAIN,
+        data={"host": "192.0.2.54", "mac": "00:03:50:00:00:00", "name": "F454"},
+        unique_id="00:03:50:00:00:00",
+    ).add_to_hass(hass)
+    identify = AsyncMock(return_value=("00:03:50:00:07:77", "200", "134"))
+
+    result = await _manual_flow(hass, _password_then_ok(), identify, model="F461")
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"]["mac"] == "00:03:50:00:07:77"
+    assert result["result"].unique_id == "00:03:50:00:07:77"
+    assert result["data"]["name"] == "F461"
+    assert len(hass.config_entries.async_entries(DOMAIN)) == 2
+
+
+async def test_manual_flow_still_refuses_a_duplicate_placeholder_the_gateway_cannot_resolve(
+    hass: HomeAssistant,
+) -> None:
+    """Two gateways whose MAC is never learned cannot share the placeholder: the second aborts after auth."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    MockConfigEntry(
+        domain=DOMAIN,
+        data={"host": "192.0.2.54", "mac": "00:03:50:00:00:00", "name": "F454"},
+        unique_id="00:03:50:00:00:00",
+    ).add_to_hass(hass)
+    identify = AsyncMock(return_value=(None, "200", "5"))  # an MH202: not in MAC_REQUEST_SAFE_MODELS
+
+    result = await _manual_flow(hass, _password_then_ok(), identify, model="MH202")
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    identify.assert_awaited_once()
 
 
 async def test_identify_gateway_reads_the_f461_replies() -> None:

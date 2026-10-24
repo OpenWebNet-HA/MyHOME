@@ -305,9 +305,10 @@ class MyhomeFlowHandler(
                 user_input["modelNumber"] = None
                 user_input["UDN"] = None
                 self.gateway_handler = OWNGateway(user_input)
-                await self.async_set_unique_id(user_input["serialNumber"], raise_on_progress=False)
-                self._abort_if_unique_id_configured()
                 # Typed by hand: once authenticated, ask the gateway for its MAC and model.
+                # The unique_id is set from the MAC the gateway then reports (or the typed
+                # one), so a second gateway entered with the form's placeholder MAC is not
+                # refused before it could say who it is.
                 self._identify_after_auth = True
                 return await self.async_step_test_connection()
 
