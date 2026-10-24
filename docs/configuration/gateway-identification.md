@@ -81,7 +81,7 @@ If your gateway reports a code that is in none of these tables, the integration 
 A shared code such as `200` cannot label an unconfigured gateway, and it cannot check an SSDP or manual label either. So whenever `WHO=13` answers a shared code — **whatever the source of the configured model** — the integration sends one status request on the command session:
 
 ```text
-*#1013*0*1##            → *#1013**1*<OBJECT_MODEL>##
+*#1013**1##             → *#1013**1*<OBJECT_MODEL>##
 ```
 
 `WHO=1013` is the *Gateway Diagnostic* family (Nmap's table of WHO values calls it *Device Diagnostic*); dimension 1 is the model code, and its catalogue has one code per model (`4` MH200, `5` MH202, `19` H4684, `26` LGRH4684, `44` MH200N, `51` F454, `67` MyHOMEServer1, `134` F461, … — the full list is `WHO1013_OBJECT_MODELS` in `const.py`, taken from the OpenWebNet device database as listed in #370, with H4684 and LGRH4684 confirmed via firmware reverse-engineering). A real reply is four values, not one — `OBJECT_MODEL`, `N_CONF`, `BRAND`, `LINE` (per the OpenWebNet Encyclopedia's work on `MHCatalogue.db`, via @anotherjulien in [#420](https://github.com/OpenWebNet-HA/MyHOME/pull/420)):
@@ -124,6 +124,30 @@ Each source is recorded separately — what you picked, what the gateway announc
 > **The two families are separate number spaces.** They are not two spellings of the same identifier, and the same model carries different numbers in each: an F453 is `42` for `WHO=1013` but `16` for Nmap's `WHO=13` table, and an H4684 is `19` (or `26` for Legrand LGRH4684) against `13` (2006) or `23` (Nmap). Several values *do* coincide — `4`, `12`, `44`, `51` — which is precisely why the tables are kept apart instead of merged on the ones that agree; a test pins both the overlaps and the clashes.
 
 > **Status of the evidence.** Five gateways are verified on real hardware, each with a fixture the test suite replays: the **MH200** answers `4` and is never asked (`mh200_physical_plant`), and the **F454**, **MH202**, **MyHomeServer1**, and **F461** answer the shared `200` and then `51`, `5`, `67`, and `134` (`pr_420_f454`, `pr_420_mh202`, `pr_420_myhomeserver1` in #420, and `issue_466_f461`). Still untraced: the claim that a 1.x **F454** answers `51` on `WHO=13`, and every other code in the catalogue. If you own one of those, the `who1013_code` field in your diagnostics download (below) is the evidence we are missing — please attach it to an issue.
+
+---
+
+## Setup time: a manually added gateway is asked who it is
+
+The manual form (`Custom (IP Gateway)` → address → MAC and model) offers defaults that are easy to leave in place: MAC `00:03:50:00:00:00` and model `MyHomeServer1`. The runtime resolver above corrects the **model** later, but the **MAC** is the entry's `unique_id` and is fixed when the entry is created. So, once the gateway has accepted the password, the config flow opens one command session and asks, in the order the runtime uses:
+
+| step | request | asked when | what it settles |
+| :--- | :--- | :--- | :--- |
+| 1 | `*#13**15##` | always | the WHO=13 device type; every known gateway answers it |
+| 2 | `*#1013**1##` | only when step 1 returned a **shared** code (`200`) | the OBJECT_MODEL, one code per model |
+| 3 | `*#13**12##` (MAC) | only when **every** model the codes can name is in `MAC_REQUEST_SAFE_MODELS` | the gateway's real MAC |
+
+The whole probe is best effort with a 15 s cap: a gateway that refuses the session, answers nothing or times out leaves the typed values in place.
+
+**The MAC request is gated, and the gate fails closed.** A real H4684 (`020054`) and a real MH200 (`020102`) daemon crash on `*#13**12##` (own-firmware-oracle, real-binary runs); the F459 / F460 / F461 / MyHomeServer1 factory images answer `*#13**12*0*0*0*0##`, and the F450 / F454 / MH202 images answer with the interface's bytes. Only a model a **physical unit** answered with its real MAC is in `MAC_REQUEST_SAFE_MODELS` (`config_flow_discovery.py`): the F461 (firmware 2.0.11) and the MyHomeServer1 (3.87.13), both captured in the `tests/fixtures/traces` live runs. An unknown, unlisted or merely emulated-without-crash model is never asked, and when the gate stays closed the typed MAC stands. The list is meant to move into an OWNd profile flag once the oracle rows are published.
+
+What the answers do:
+
+- **MAC** — the reply must pass the same validation as the form (six octets, `0..255`) and must not be the all-zero factory value `00:00:00:00:00:00` (also the first form's *Custom* sentinel) or the broadcast address; otherwise the typed MAC is kept and the reply is logged at DEBUG. A usable MAC that differs from the typed one replaces it and becomes the `unique_id`. The `unique_id` is set only at this point, so a second gateway typed with the placeholder MAC is not refused before it could report its real one; a true duplicate still aborts with `already_configured`.
+- **Model** — the codes go through the same `resolve_gateway_identity` as at runtime: a certain code (2006 table or `WHO=1013`) corrects the chosen model, a brand variant of the reported model (`H4890` for OBJECT_MODEL `30`, `003598` for `51`) is kept, an uncertain code may label a `Generic` entry but never overrides a chosen model. A corrected model also changes the OWNd profile, the entry title and the default number of command workers, and the entry records `model_source: who13` so the diagnostics block below reports it.
+- **Split authentication** — a gateway whose monitor session (`*99*1##`) is open but whose command session (`*99*0##`) wants a password answers the probe with `password_required`; the flow then asks for the password (the runtime command workers need it anyway) and probes again with it. The probe's own OWNd log lines are recorded at DEBUG.
+
+A gateway discovered over SSDP or added through the serial transport is not probed: its identity is authoritative.
 
 ---
 
