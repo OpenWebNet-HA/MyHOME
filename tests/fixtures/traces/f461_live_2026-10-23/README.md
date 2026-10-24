@@ -10,8 +10,9 @@ one request at a time with a 1.2-1.5 s pause.
 
 The earlier capture of the same plant is `tests/fixtures/traces/f461_live_2026-10-15/` (lights still
 at `01` / `04`). It already holds the WHO 4 central-mode pair cited by OWNd #137 (`*4*311*2##` NACK,
-`*4*311*#2##` ACK and ignored, `run3_climate` t=252 and `probe_followup` t=7) and the dimension 22
-crash behind OWNd #136 (`probe_dim22_confirm`); those frames are not duplicated here.
+`*4*311*#2##` ACK and ignored, `run3_climate` t=252 and `probe_followup` t=7), the dimension 22
+reboot behind OWNd #136 (`probe_dim22_confirm`) and the `0001` / `01` / `02` / `1` address forms behind
+OWNd #141 / MyHOME #798 (`probe_area0`); those frames are not duplicated here.
 
 ## Plant
 
@@ -41,6 +42,9 @@ Standard `MyHOME` derived trace archive:
 | `rx` | frame read; `session: "cmd"` for the replies and the closing `*#*1##` / `*#*0##`, `session: "evt"` for the event monitor | `frame`; event rows also carry `ownd_class` and `ownd_log`, what OWNd master made of the frame at capture time. Command-session rows carry `t_estimated: true`: the session hands the replies over as a batch with the ACK / NACK, so their arrival time is unknown and they sit right after their request with `t` = the request's `t` |
 | `result` | what the command session returned for the `tx` | `ack`, `reply_time_s`, `replies` (frames collected on the command session; empty on a NACK and on an ACK that carried no data), `events_after` (only the event-session frames that arrived while the request was pending, `tx.t <= t <= result.t`; what arrived during the pause before the next request is in the chronological rows only), `utc`, `note` on the frames the pull requests cite |
 
+`reply_time_s` is measured (the time the command session waited for the ACK / NACK); `tx.t` is reconstructed from
+the probe log (the probe records a request after its pause, so `tx.t` = record time - pause - `reply_time_s`) and
+`result.t` = `tx.t` + `reply_time_s`; event-session `t` is the arrival time as logged.
 `t` is one monotonic axis over the whole archive: each run starts 1 s after the previous one ended, and
 `capture.runs[].t_offset` gives each run's start (`t - t_offset` is the time since that run's first frame), so
 corpus replayers that drive a clock from `frames[].timestamp` never go backwards. `step` is the phase
@@ -113,6 +117,13 @@ corpus replayers that drive a clock from `frames[].timestamp` never go backwards
 | MyHOME #795 (timed cover starts unknown) | the shutter runs and their hardware stops 5.1-5.9 s later (run 6, run 7) |
 | MyHOME #796 (yaml `class:` for WHO 2) | nothing on the bus; configuration only |
 | MyHOME #797 (scope events only for frames that carry a state) | one `*2*0*0##` (run 6); light toggles without group / area frames (run 7) |
-| MyHOME #798 (canonicalise four-digit area-0 addresses) | `*#1*0007##` NACK, `*#1*07##` ACK (run 2) |
+| MyHOME #798 (canonicalise four-digit area-0 addresses) | `*#1*0007##` NACK, `*#1*07##` ACK (run 2); `probe_area0` in `f461_live_2026-10-15` |
+| MyHOME #800 (diagnostics profile fields) | no frame in this capture backs it; diagnostics only |
+| MyHOME #801 (legacy yaml MAC mismatch warning) | no frame in this capture backs it; configuration only |
+| MyHOME #802 (warn once per frame shape for unparsed frames) | `*#13**27*70#52#54#49##` (run 1), the wire form of a frame the pinned OWNd does not decode |
+| MyHOME #803 (alarm: skip `*#5*0##` where the firmware refuses it) | `*#5*0##` NACK in 3 ms (run 1) |
+| MyHOME #804 (identify a manually added gateway after authentication) | `*#13**15##` -> `200`, `*#1013*0*1##` -> `134.15.5.0`, `*#13**12##` -> the MAC (run 1) |
+| MyHOME #805 (closed service schemas) | no frame in this capture backs it; configuration only |
+| MyHOME #806 (event-session liveness probe) | `*#13**0##` echoed on the event session (run 1, run 2) |
 
 Tests: `tests/test_f461_live_2026_10_23_trace.py`.
