@@ -5,6 +5,7 @@ and registers CEN/CEN+ scenario pushbuttons in the device registry.
 """
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any, cast
 
 from homeassistant.core import HomeAssistant
@@ -49,6 +50,14 @@ if TYPE_CHECKING:
 
 # WHO 8 call kinds of the entrance panels PE1..PE4 (6: handset to handset, 14: pager).
 ENTRANCE_PANEL_KINDS = frozenset({1, 2, 3, 4})
+# Frames OWNd cannot parse warn once per shape (digits collapsed), then log at DEBUG (#139).
+_DIGITS = re.compile(r"\d+")
+UNPARSED_SHAPES_MAX = 64
+
+
+def frame_shape(raw: object) -> str:
+    """``*#4*#1*14*#0230*1##`` -> ``*#N*#N*N*#N*N##``: frames that differ only in values."""
+    return _DIGITS.sub("N", str(raw))
 
 
 class GatewayEventDispatcher:
@@ -64,6 +73,7 @@ class GatewayEventDispatcher:
         self._cen_devices: set[tuple[int, Any]] = (
             cen_devices if cen_devices is not None else set()
         )
+        self._unparsed_shapes: set[str] = set()
 
     @property
     def _logger(self) -> Any:
@@ -272,10 +282,15 @@ class GatewayEventDispatcher:
                 self._observe_health(message, who_int)
 
         if not isinstance(message, OWNMessage):
-            self._logger.warning(
-                "%s Data received is not a message: `%s`",
+            shape = frame_shape(message)
+            first = shape not in self._unparsed_shapes and len(self._unparsed_shapes) < UNPARSED_SHAPES_MAX
+            if first:
+                self._unparsed_shapes.add(shape)
+            (self._logger.warning if first else self._logger.debug)(
+                "%s Data received is not a message: `%s`%s",
                 self.handler.log_id,
                 message,
+                " (further frames of this shape are logged at DEBUG)" if first else "",
             )
         elif (
             isinstance(message, OWNLightingEvent)
