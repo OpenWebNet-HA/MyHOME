@@ -325,3 +325,295 @@ async def test_sensor_frames_routed_to_the_shared_key_never_reach_the_light(hass
 
     assert "unknown lighting WHAT" not in caplog.text
     assert "unknown_state" not in light._attr_extra_state_attributes
+
+
+def _make_pool_gateway(hass):
+    """Build a gateway mock wired to a real CommandWorkerPool."""
+    import asyncio
+
+    from custom_components.myhome.bus_monitor import BusMonitor
+    from custom_components.myhome.gateway_sessions import CommandWorkerPool
+
+    gw = MagicMock()
+    gw.hass = hass
+    gw.mac = MAC
+    gw.log_id = "[F454]"
+    gw.bus_monitor = BusMonitor()
+    gw.command_session_idle_timeout = 5.0
+    gw.gateway = MagicMock()
+    gw.gateway.profile.max_queue_size = 250
+    gw.gateway.profile.command_queue_delay = 0
+    gw.config_entry = None
+    event_ready = asyncio.Event()
+    event_ready.set()
+    pool = CommandWorkerPool(gw, event_session_ready=event_ready)
+    gw._command_pool = pool
+    gw.send_status_request = pool.send_status_request
+    gw.claim_in_flight_dimension_where = pool.claim_in_flight_dimension_where
+    return gw, pool
+
+
+@pytest.mark.asyncio
+async def test_anonymous_where_0_dimension_replies_correlated_with_in_flight_request_before_nack(hass):
+    """Replay @eC0y0te's #777 trace (#issuecomment-6375223714): WHERE=0 reply arrives ~140 ms before ~2 s NACK.
+
+    Trace from F454 2.0.51 + Legrand 067226 at WHERE=52:
+      23:11:59.564  Worker 0 unqueues `*#1*52*5##`
+      23:11:59.702  Event session receives `*#1*0*5*2##` (+138 ms, while send() is still awaiting NACK)
+      23:12:01.673  Command session receives `*#*0##` NACK (+2.11 s, send() returns None)
+      23:12:01.724  Worker 0 unqueues `*#1*52*7##`
+      23:12:01.863  Event session receives `*#1*0*7*0*0*45##` (+139 ms, while send() is still awaiting NACK)
+      23:12:03.742  Command session receives `*#*0##` NACK (+2.02 s, send() returns None)
+    """
+    import asyncio
+    from datetime import timedelta
+    from unittest.mock import AsyncMock
+
+    from custom_components.myhome.binary_sensor import async_setup_entry as setup_binary_sensor
+
+    gw, pool = _make_pool_gateway(hass)
+    lights = {"spots_wc": {CONF_WHERE: "52", CONF_NAME: "Spots WC"}}
+    entries = _registry(("light", f"{MAC}-1-52"), ("binary_sensor", f"{MAC}-52-motion"))
+    hass.data.setdefault(DOMAIN, {})[MAC] = {
+        "entity": gw,
+        CONF_PLATFORMS: {"light": lights, "binary_sensor": {}},
+    }
+    config_entry = MagicMock()
+    config_entry.data = {"mac": MAC}
+    config_entry.entry_id = "entry_777"
+    mock_er = MagicMock()
+
+    replies_for_request = {
+        "*#1*52*5##": "*#1*0*5*2##",
+        "*#1*52*7##": "*#1*0*7*0*0*45##",
+    }
+
+    async def fake_command_send(message, is_status_request=False):
+        raw = str(message)
+        reply = replies_for_request.get(raw)
+        if reply is not None:
+            # Event session receives the WHERE=0 reply ~140 ms after request is sent,
+            # while the command session is still waiting for the ~2 s NACK.
+            await asyncio.sleep(0)
+            async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse(reply))
+            await asyncio.sleep(0)
+        # Command session times out with NACK (*#*0##) -> OWNCommandSession.send returns None.
+        return None
+
+    fake_session = MagicMock()
+    fake_session.connect = AsyncMock(return_value={"Success": True})
+    fake_session.close = AsyncMock()
+    fake_session.send = AsyncMock(side_effect=fake_command_send)
+
+    added_lights: list = []
+    added_sensors: list = []
+    with (
+        patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=entries),
+        patch("custom_components.myhome.discovery.er.async_get", return_value=mock_er),
+        patch("custom_components.myhome.light.er.async_entries_for_config_entry", return_value=entries),
+        patch("custom_components.myhome.light.er.async_get", return_value=mock_er),
+        patch("custom_components.myhome.gateway.OWNCommandSession", return_value=fake_session),
+        patch("custom_components.myhome.gateway._session_is_open", return_value=True),
+    ):
+        attach_runtime(hass, config_entry)
+        await async_setup_entry(hass, config_entry, added_lights.extend)
+        await setup_binary_sensor(hass, config_entry, added_sensors.extend)
+        assert len(added_lights) == 1
+        assert len(added_sensors) == 1
+        motion = added_sensors[0]
+        motion.hass = hass
+        motion.async_write_ha_state = MagicMock()
+
+        worker = asyncio.create_task(pool.sending_loop(0))
+        try:
+            await motion.async_added_to_hass()
+            await pool.send_buffer.join()
+        finally:
+            pool.close()
+            await asyncio.wait_for(worker, timeout=2.0)
+
+    assert [str(c.kwargs["message"]) for c in fake_session.send.call_args_list] == [
+        "*#1*52*5##",
+        "*#1*52*7##",
+    ]
+    assert motion._attr_extra_state_attributes["Sensitivity"] == "high"
+    assert motion._attr_extra_state_attributes["Timeout"] == 60.0
+    assert motion._timeout == timedelta(seconds=60)
+    # No WHERE=0 entity was discovered on either platform.
+    assert [e._device_id for e in added_sensors] == ["52"]
+    assert [e._device_id for e in added_lights] == ["52"]
+    assert "unknown_state" not in added_lights[0]._attr_extra_state_attributes
+
+
+@pytest.mark.asyncio
+async def test_anonymous_where_0_replies_sequential_across_two_motion_sensors(hass):
+    """With 1 command worker, two motion sensors (52 and 61) each receive their own WHERE=0 replies."""
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from custom_components.myhome.binary_sensor import async_setup_entry as setup_binary_sensor
+
+    gw, pool = _make_pool_gateway(hass)
+    entries = _registry(("binary_sensor", f"{MAC}-52-motion"), ("binary_sensor", f"{MAC}-61-motion"))
+    hass.data.setdefault(DOMAIN, {})[MAC] = {
+        "entity": gw,
+        CONF_PLATFORMS: {"binary_sensor": {}},
+    }
+    config_entry = MagicMock()
+    config_entry.data = {"mac": MAC}
+    config_entry.entry_id = "entry_777_two"
+    mock_er = MagicMock()
+
+    replies_for_request = {
+        "*#1*52*5##": "*#1*0*5*2##",       # high
+        "*#1*52*7##": "*#1*0*7*0*0*45##",  # 45s + 15s = 60s
+        "*#1*61*5##": "*#1*0*5*3##",       # very high
+        "*#1*61*7##": "*#1*0*7*0*2*0##",   # 120s + 15s = 135s
+    }
+
+    async def fake_command_send(message, is_status_request=False):
+        reply = replies_for_request.get(str(message))
+        if reply is not None:
+            await asyncio.sleep(0)
+            async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse(reply))
+            await asyncio.sleep(0)
+        return None
+
+    fake_session = MagicMock()
+    fake_session.connect = AsyncMock(return_value={"Success": True})
+    fake_session.close = AsyncMock()
+    fake_session.send = AsyncMock(side_effect=fake_command_send)
+
+    added_sensors: list = []
+    with (
+        patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=entries),
+        patch("custom_components.myhome.discovery.er.async_get", return_value=mock_er),
+        patch("custom_components.myhome.gateway.OWNCommandSession", return_value=fake_session),
+        patch("custom_components.myhome.gateway._session_is_open", return_value=True),
+    ):
+        attach_runtime(hass, config_entry)
+        await setup_binary_sensor(hass, config_entry, added_sensors.extend)
+        by_where = {s._where: s for s in added_sensors}
+        assert set(by_where) == {"52", "61"}
+        for s in added_sensors:
+            s.hass = hass
+            s.async_write_ha_state = MagicMock()
+
+        worker = asyncio.create_task(pool.sending_loop(0))
+        try:
+            for s in added_sensors:
+                await s.async_added_to_hass()
+            await pool.send_buffer.join()
+        finally:
+            pool.close()
+            await asyncio.wait_for(worker, timeout=2.0)
+
+    assert by_where["52"]._attr_extra_state_attributes["Sensitivity"] == "high"
+    assert by_where["52"]._attr_extra_state_attributes["Timeout"] == 60.0
+    assert by_where["61"]._attr_extra_state_attributes["Sensitivity"] == "very high"
+    assert by_where["61"]._attr_extra_state_attributes["Timeout"] == 135.0
+
+
+@pytest.mark.asyncio
+async def test_anonymous_where_0_replies_dropped_when_unclaimed_duplicate_or_ambiguous(hass):
+    """Stray, duplicate, broadcast, or multi-worker-ambiguous WHERE=0 replies are dropped."""
+    from OWNd.message import OWNCommand
+
+    from custom_components.myhome.binary_sensor import async_setup_entry as setup_binary_sensor
+
+    gw, pool = _make_pool_gateway(hass)
+    entries = _registry(("binary_sensor", f"{MAC}-52-motion"), ("binary_sensor", f"{MAC}-61-motion"))
+    hass.data.setdefault(DOMAIN, {})[MAC] = {
+        "entity": gw,
+        CONF_PLATFORMS: {"binary_sensor": {}},
+    }
+    config_entry = MagicMock()
+    config_entry.data = {"mac": MAC}
+    config_entry.entry_id = "entry_777_ambig"
+    mock_er = MagicMock()
+
+    added_sensors: list = []
+    with (
+        patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=entries),
+        patch("custom_components.myhome.discovery.er.async_get", return_value=mock_er),
+    ):
+        attach_runtime(hass, config_entry)
+        await setup_binary_sensor(hass, config_entry, added_sensors.extend)
+        by_where = {s._where: s for s in added_sensors}
+        for s in added_sensors:
+            s.hass = hass
+            s.async_write_ha_state = MagicMock()
+
+        # 1. No request in flight -> WHERE=0 replies and non-5/7 general frames are ignored.
+        for frame in ("*#1*0*5*2##", "*#1*0*7*0*0*45##", "*#1*0*6*500##"):
+            async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse(frame))
+        await hass.async_block_till_done()
+        assert by_where["52"]._attr_extra_state_attributes["Sensitivity"] == "medium"
+        assert by_where["52"]._attr_extra_state_attributes["Timeout"] == 315.0
+
+        # 2. Broadcast or group dimension requests in flight are never claimed as point-to-point targets.
+        pool._in_flight_messages.extend([
+            OWNCommand.parse("*#1*0*5##"),
+            OWNCommand.parse("*#1*#1*5##"),
+            "*1*1*52##",  # non-dimension command
+        ])
+        async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#1*0*5*2##"))
+        await hass.async_block_till_done()
+        assert by_where["52"]._attr_extra_state_attributes["Sensitivity"] == "medium"
+        pool._in_flight_messages.clear()
+
+        # 3. Two workers simultaneously in flight for the same (WHO=1, dim=5) on 52 and 61:
+        # BOTH replies arriving while both requests remain in flight must be dropped.
+        pool._in_flight_messages.extend([
+            OWNCommand.parse("*#1*52*5##"),
+            OWNCommand.parse("*#1*61*5##"),
+        ])
+        async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#1*0*5*2##"))
+        async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#1*0*5*3##"))
+        await hass.async_block_till_done()
+        assert by_where["52"]._attr_extra_state_attributes["Sensitivity"] == "medium"
+        assert by_where["61"]._attr_extra_state_attributes["Sensitivity"] == "medium"
+        pool._in_flight_messages.clear()
+
+        # 4. Single in-flight request is consumed by the first reply (+140 ms), so a second
+        # stray reply arriving before the ~2 s NACK completes is dropped.
+        pool._in_flight_messages.append(OWNCommand.parse("*#1*52*5##"))
+        async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#1*0*5*2##"))
+        async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#1*0*5*0##"))
+        await hass.async_block_till_done()
+        assert by_where["52"]._attr_extra_state_attributes["Sensitivity"] == "high"
+        assert pool._in_flight_messages == []
+        assert len(added_sensors) == 2
+
+
+def test_claim_in_flight_dimension_where_delegation_and_failover():
+    """MyHOMEGatewayHandler routes claim_in_flight_dimension_where through secondary or standby."""
+    from custom_components.myhome.gateway import MyHOMEGatewayHandler
+
+    handler = MagicMock(spec=MyHOMEGatewayHandler)
+    handler._command_pool = MagicMock()
+    handler._command_pool.claim_in_flight_dimension_where.return_value = "52"
+    handler.delegated_away_whos = set()
+    handler.is_connected = True
+
+    # Direct to primary command pool.
+    assert MyHOMEGatewayHandler.claim_in_flight_dimension_where(handler, 1, 5) == "52"
+
+    # Delegated WHO routes to connected secondary's command pool.
+    sec = MagicMock()
+    sec.is_connected = True
+    sec._command_pool.claim_in_flight_dimension_where.return_value = "52#4#01"
+    handler.delegated_away_whos = {1}
+    handler._get_secondary_for_who.return_value = sec
+    assert MyHOMEGatewayHandler.claim_in_flight_dimension_where(handler, 1, 5) == "52#4#01"
+
+    # Disconnected primary routes to connected warm standby supporting the WHO.
+    handler.delegated_away_whos = set()
+    handler.is_connected = False
+    standby = MagicMock()
+    standby.is_connected = True
+    standby._profile_supports_who.return_value = True
+    standby._command_pool.claim_in_flight_dimension_where.return_value = "61"
+    handler._get_standby_gateway.return_value = standby
+    assert MyHOMEGatewayHandler.claim_in_flight_dimension_where(handler, 1, 7) == "61"
+

@@ -250,6 +250,17 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     def route_keys(message, address: Address | None) -> list[str]:  # type: ignore
         return _spellings(address.where) if address is not None else []
 
+    @callback
+    def anonymous_sensor_reply(message: typing.Any) -> None:
+        """Route a WHERE=0 PIR dimension reply to the sensor whose request is in flight (#777)."""
+        dimension = getattr(message, "dimension", None)
+        if dimension not in (5, 7):
+            return
+        claim = getattr(gateway, "claim_in_flight_dimension_where", None)
+        where = claim(1, dimension) if callable(claim) else None
+        if isinstance(where, str) and where and any(k in ctx_discovery["1"].known for k in _spellings(where)):
+            ctx_discovery["1"].route(message, Address(where))
+
     common = dict(hass=hass, config_entry=config_entry, async_add_entities=async_add_entities, platform=PLATFORM)
     ctx_discovery["25"] = PlatformDiscovery(
         who="25", event_type=OWNDryContactEvent, build=build_dry_contact,
@@ -265,7 +276,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
         who="1", event_type=OWNLightingEvent, build=build_motion,
         registry_address=registry_address("1"), reject_registry_entry=duplicate,
         accept=yaml_who(1, BinarySensorDeviceClass.MOTION),
-        known_keys=known_keys, route_keys=route_keys, address=_motion_address, **common,  # type: ignore
+        known_keys=known_keys, route_keys=route_keys, address=_motion_address,
+        on_general=anonymous_sensor_reply, **common,  # type: ignore
     )
 
     entities: list[Entity] = []
@@ -636,7 +648,7 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
                 self._timeout = message.motion_timeout + timedelta(seconds=15)
                 self._attr_extra_state_attributes["Timeout"] = self._timeout.total_seconds()
         elif message.message_type == MESSAGE_TYPE_PIR_SENSITIVITY:
-            if message.pir_sensitivity is not None:
+            if message.pir_sensitivity is not None and 0 <= message.pir_sensitivity < len(PIR_SENSITIVITY):
                 self._attr_extra_state_attributes["Sensitivity"] = PIR_SENSITIVITY[message.pir_sensitivity]
         self._last_updated = datetime.now(timezone.utc)  # type: ignore
         self._attr_force_update = True

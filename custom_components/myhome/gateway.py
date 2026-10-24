@@ -643,6 +643,18 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             return await standby.send_status_request(message)
         return await self._command_pool.send_status_request(message)
 
+    def claim_in_flight_dimension_where(self, who: int, dimension: int) -> str | None:
+        """Claim the sole point-to-point WHERE with an in-flight dimension request (#777)."""
+        if who not in (13, 1013) and who in self.delegated_away_whos:
+            sec = self._get_secondary_for_who(who)
+            if sec is not None and sec.is_connected:
+                return sec._command_pool.claim_in_flight_dimension_where(who, dimension)
+        if who not in (13, 1013) and not self.is_connected:
+            standby = self._get_standby_gateway()
+            if standby is not None and standby.is_connected and standby._profile_supports_who(int(who)):
+                return standby._command_pool.claim_in_flight_dimension_where(who, dimension)
+        return self._command_pool.claim_in_flight_dimension_where(who, dimension)
+
     def _known_light_areas(self) -> list[str]:
         """Return list of known light areas."""
         return self._resync_manager.known_light_areas()
