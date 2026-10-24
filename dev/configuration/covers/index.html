@@ -886,6 +886,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#device-class-class" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🏷️ Device class (class)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#timed-cover-position-engine" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2373,6 +2384,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#device-class-class" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🏷️ Device class (class)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#timed-cover-position-engine" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2819,6 +2841,17 @@
 </table>
 <p>An explicit <code>strategy</code> cannot be combined with a flag that selects another model (<code>advanced_shutter</code> with anything but <code>native</code>, <code>slat_tilt</code> with <code>timed</code> or <code>simple</code>, <code>travel_time: 0</code> with <code>timed</code>): the configuration is rejected. A cover set up with <code>travel_time: 0</code> becomes <code>timed</code> once it is calibrated (<code>myhome.calibrate_cover</code> or <code>myhome.set_cover_travel_time</code>), and <code>simple</code> again after <code>myhome.reset_cover_travel_time</code>. An explicit <code>strategy: simple</code> stays simple even when travel times are stored.</p>
 <hr />
+<h2 id="device-class-class">🏷️ Device class (<code>class</code>)<a class="headerlink" href="#device-class-class" title="Permanent link">&para;</a></h2>
+<p>A WHO 2 cover is a <code>shutter</code> unless <code>/config/myhome.yaml</code> says otherwise. <code>class:</code> (or <code>device_class:</code>) accepts the Home Assistant cover classes <code>awning</code>, <code>blind</code>, <code>curtain</code>, <code>damper</code>, <code>door</code>, <code>garage</code>, <code>gate</code>, <code>shade</code>, <code>shutter</code> and <code>window</code>, and picks the entity's icon and the wording of its states. It applies to every WHO 2 cover, point-to-point as well as <a href="#general-area-and-group-covers">general, area and group covers</a>. A configured class also wins over the <code>blind</code> that <code>slat_tilt: true</code> (or <code>strategy: venetian</code>) would otherwise set.</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># /config/myhome.yaml</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">cover</span><span class="p">:</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">living_room_curtain</span><span class="p">:</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">'32'</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Living Room Curtain</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="nt">class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">curtain</span>
+</span></code></pre></div>
+<p>Covers set up in the UI (without <code>myhome.yaml</code>) change their device class in Home Assistant with the <strong>"Show As"</strong> feature, like <a href="../switches/">switches</a> and <a href="../binary-sensors/">binary sensors</a>: <strong>Settings → Devices &amp; Services → Entities</strong>, select the cover entity, click the <strong>Settings (gear)</strong> icon and pick the class under <strong>Show As</strong>.</p>
+<hr />
 <h2 id="timed-cover-position-engine">⏱️ Timed Cover Position Engine<a class="headerlink" href="#timed-cover-position-engine" title="Permanent link">&para;</a></h2>
 <p>For standard covers without hardware position feedback, the integration provides a software estimator enabling full <code>open_cover</code>, <code>close_cover</code>, <code>stop_cover</code>, and slider-based <code>set_cover_position</code> support:</p>
 <ul>
@@ -2841,12 +2874,12 @@
 </div>
 <p><strong>Advanced covers</strong> track their own level (<code>Dimension = 10</code> at motor start and motor stop; no intermediate frames are emitted while the motor runs), and the actuator turns a <code>Dimension = 11</code> level write (<code>*#2*&lt;WHERE&gt;*#11#001*&lt;LEVEL&gt;##</code>) into a timed run proportional to its learned travel time. On a short-travel shutter (~20 s, ~0.2 s per percent) a 1 % change is too brief to move the curtain (<a href="https://github.com/OpenWebNet-HA/MyHOME/issues/466">#466</a>), so by default the integration widens any change smaller than 2 % to 2 % (50 % → 51 % is sent as 52 %), except while the cover is moving (it then reports the level it started from, so the request goes out as asked). Target levels <code>0 %</code> and <code>100 %</code> — including a move near an end whose widened target clamps to <code>0 %</code> or <code>100 %</code> (e.g. <code>98 %</code> → <code>99 %</code> widened to <code>100 %</code> at <code>min_position_delta: 2</code>) — are sent as plain close / open full runs so the motor stops on its limit switch.</p>
 <p>The smallest change is set per cover with <code>min_position_delta</code> in <code>/config/myhome.yaml</code> (whole percent, <code>1</code>–<code>5</code>, default <code>2</code>; a timed cover with it is rejected, it uses <code>min_motor_pulse</code> instead). On a long-travel shutter each percent is a longer run: on a 3.75 m F401 shutter behind an F454 (<code>91.3 s</code> up / <code>87.8 s</code> down, ~0.9 s per percent; <a href="https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19144038">discussion #770</a>), captured <code>*#2*21*#11#001*&lt;LEVEL&gt;##</code> 2 % steps ran 1.7–1.8 s each — already past the ~1.4 s mechanical slat pivot (<code>3</code> short <code>H4660M2</code> keypad pulses all reported <code>2 %</code>) — so <code>min_position_delta: 1</code> (~0.9 s per 1 % step) is needed to reach intermediate slat angles before the curtain lifts. <code>1</code> sends every change as asked; a very fast motor may need <code>3</code>–<code>5</code>. The active value is shown as the <code>min_position_delta</code> attribute.</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># /config/myhome.yaml</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">cover</span><span class="p">:</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">living_room_shutter</span><span class="p">:</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">'31'</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">    </span><span class="nt">advanced_shutter</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="nt">min_position_delta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># /config/myhome.yaml</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">cover</span><span class="p">:</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">living_room_shutter</span><span class="p">:</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">'31'</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nt">advanced_shutter</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="nt">min_position_delta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
 </span></code></pre></div>
 <hr />
 <h2 id="calibrating-travel-time-zero-yaml">📐 Calibrating Travel Time (Zero YAML)<a class="headerlink" href="#calibrating-travel-time-zero-yaml" title="Permanent link">&para;</a></h2>
@@ -2894,26 +2927,26 @@ Automated on-bus calibration relies entirely on the actuator emitting a stop fra
 <li>Go to <strong>Developer Tools → States</strong>, filter on the cover entity: <code>last_run_seconds</code> is the motor-start-to-stop time of the run you just made and <code>last_run_direction</code> says <code>close</code>. The same attributes are listed under <strong>Attributes</strong> in the cover's more-info dialog.</li>
 <li>Repeat with <strong>Open</strong> for the up time, then pass both numbers to the action (or put the attributes and a <strong>Save</strong> button on your dashboard with <a href="../lovelace_recipes/#recipe-6-shutter-travel-time-workbench-stock-cards-only">Lovelace Recipe 6</a>):</li>
 </ol>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.set_cover_travel_time</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">target</span><span class="p">:</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.living_room_shutter</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nt">data</span><span class="p">:</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">travel_time_down</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">22.5</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span><span class="nt">travel_time_up</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">24.0</span>
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nt">min_motor_pulse</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.4</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.set_cover_travel_time</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">target</span><span class="p">:</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.living_room_shutter</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="nt">data</span><span class="p">:</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">travel_time_down</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">22.5</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span><span class="nt">travel_time_up</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">24.0</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">min_motor_pulse</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.4</span>
 </span></code></pre></div>
 <p>When setting travel times, the result is stored like a measured calibration, with <code>calibration_source: manual</code>, and overwrites whatever a previous calibration attempt may have saved (also visible under <code>cover_travel_times</code> in the integration's diagnostics download). When only <code>min_motor_pulse</code> is set, existing travel times, source, and calibration timestamps remain untouched. When the numbers you pass were measured on an identical shutter, add <code>copied_from: cover.&lt;other_shutter&gt;</code> to record where they came from; <code>calibration_source</code> then reads <code>copied</code> and the entity is exposed as a <code>copied_from</code> attribute.</p>
 <p>To forget the measured or manual times and return to the <code>travel_time</code> from <code>myhome.yaml</code> (or the 25 s default when none is configured):
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.reset_cover_travel_time</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">target</span><span class="p">:</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.living_room_shutter</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.reset_cover_travel_time</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">target</span><span class="p">:</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.living_room_shutter</span>
 </span></code></pre></div></p>
 <hr />
 <h2 id="venetian-blinds-slat-tilt-positioning-timed-slat-inching">🪟 Venetian Blinds &amp; Slat Tilt Positioning (Timed Slat Inching)<a class="headerlink" href="#venetian-blinds-slat-tilt-positioning-timed-slat-inching" title="Permanent link">&para;</a></h2>
 <p>For Venetian blinds, motorized louvres, and external venetian blinds (EVBs/BSO) with adjustable slat tilt angles, the integration provides timed slat travel (inching):</p>
 <ul>
 <li><strong>Supported Features</strong>: <code>SET_TILT_POSITION</code>, <code>OPEN_TILT</code> (100%), <code>CLOSE_TILT</code> (0%), and <code>STOP_TILT</code>.</li>
-<li><strong>Device Class</strong>: Sets the entity device class to <code>blind</code> (<code>CoverDeviceClass.BLIND</code>).</li>
+<li><strong>Device Class</strong>: Sets the entity device class to <code>blind</code> (<code>CoverDeviceClass.BLIND</code>) unless <a href="#device-class-class"><code>class</code></a> is set.</li>
 <li><strong>Attributes</strong>: Exposes <code>current_cover_tilt_position</code> (0–100%), <code>slat_tilt: true</code>, and <code>slat_time: &lt;seconds&gt;</code>.</li>
 </ul>
 <h3 id="physical-architecture-slat-travel-time">Physical Architecture &amp; Slat Travel Time<a class="headerlink" href="#physical-architecture-slat-travel-time" title="Permanent link">&para;</a></h3>
@@ -2931,12 +2964,12 @@ Automated on-bus calibration relies entirely on the actuator emitting a stop fra
 * During a curtain run the slats turn first at one full rotation per <code>slat_time</code> (towards 100 % when opening, towards 0 % when closing), and only the remaining motor time moves the curtain estimate over <code>travel_time - slat_time</code>. A stop status with no run behind it (such as the relay of a pulse's own stop) leaves the angle alone, so slats tilted open on a lowered blind stay open.</p>
 <h3 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h3>
 <p>Slat tilt and travel duration can be declared in <code>/config/myhome.yaml</code>:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">cover</span><span class="p">:</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">living_room_venetian</span><span class="p">:</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">'31'</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Living Room Venetian Blind</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">    </span><span class="nt">slat_tilt</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">    </span><span class="nt">slat_time</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">cover</span><span class="p">:</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">living_room_venetian</span><span class="p">:</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">'31'</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Living Room Venetian Blind</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span><span class="nt">slat_tilt</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">    </span><span class="nt">slat_time</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span>
 </span></code></pre></div>
 <table>
 <thead>
@@ -2952,7 +2985,7 @@ Automated on-bus calibration relies entirely on the actuator emitting a stop fra
 <td style="text-align: left;"><code>slat_tilt</code></td>
 <td style="text-align: left;">boolean</td>
 <td style="text-align: left;"><code>false</code></td>
-<td style="text-align: left;">Enables Venetian blind slat tilt controls and sets device class to <code>blind</code>.</td>
+<td style="text-align: left;">Enables Venetian blind slat tilt controls and sets device class to <code>blind</code> unless <code>class</code> is set.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>slat_time</code></td>
@@ -2997,14 +3030,14 @@ Automated on-bus calibration relies entirely on the actuator emitting a stop fra
 </tr>
 </tbody>
 </table>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">cover</span><span class="p">:</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">all_shutters</span><span class="p">:</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">'1'</span><span class="w">          </span><span class="c1"># area 1: follows covers 11-19 on its own</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">All shutters</span>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="nt">bedrooms</span><span class="p">:</span>
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">'#3'</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Bedrooms</span>
-</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">    </span><span class="nt">members</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">'11'</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">'13'</span><span class="p p-Indicator">]</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">cover</span><span class="p">:</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">all_shutters</span><span class="p">:</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">'1'</span><span class="w">          </span><span class="c1"># area 1: follows covers 11-19 on its own</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">All shutters</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="nt">bedrooms</span><span class="p">:</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">'#3'</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Bedrooms</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">    </span><span class="nt">members</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">'11'</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">'13'</span><span class="p p-Indicator">]</span>
 </span></code></pre></div>
 <p><strong>Behind an F422 interface</strong> (<code>bus_interface: '02'</code>, logical <code>#4#</code> addressing), physical actuators reside on an isolated secondary SCS bus segment (e.g. <code>11#4#02</code> … <code>22#4#02</code>).</p>
 <h3 id="the-bticino-way-real-world-plant-discovery">🏛️ The BTicino Way &amp; Real-World Plant Discovery<a class="headerlink" href="#the-bticino-way-real-world-plant-discovery" title="Permanent link">&para;</a></h3>
@@ -3046,24 +3079,24 @@ Automated on-bus calibration relies entirely on the actuator emitting a stop fra
 <p>To ensure maximum reliability and preserve bus health:</p>
 <h4 id="recommended-target-the-general-scope-cover">Recommended: Target the General Scope Cover<a class="headerlink" href="#recommended-target-the-general-scope-cover" title="Permanent link">&para;</a></h4>
 <p>Declare a General scope cover in <code>/config/myhome.yaml</code> for each bus interface, and target that single entity in your automations:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># /config/myhome.yaml</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nt">00:03:50:XX:XX:XX</span><span class="p">:</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">cover</span><span class="p">:</span>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="nt">all_shutters_oost</span><span class="p">:</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"0"</span>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">      </span><span class="nt">bus_interface</span><span class="p">:</span><span class="w"> </span><span class="s">"02"</span>
-</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"All</span><span class="nv"> </span><span class="s">Shutters</span><span class="nv"> </span><span class="s">East"</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># /config/myhome.yaml</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nt">00:03:50:XX:XX:XX</span><span class="p">:</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nt">cover</span><span class="p">:</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="nt">all_shutters_oost</span><span class="p">:</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"0"</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">      </span><span class="nt">bus_interface</span><span class="p">:</span><span class="w"> </span><span class="s">"02"</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"All</span><span class="nv"> </span><span class="s">Shutters</span><span class="nv"> </span><span class="s">East"</span>
 </span></code></pre></div>
 <p>In your automation:
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">alias</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Close Windows at Sunset</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nt">triggers</span><span class="p">:</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">trigger</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sun</span>
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="nt">event</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sunset</span>
-</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">    </span><span class="nt">offset</span><span class="p">:</span><span class="w"> </span><span class="s">"00:30:00"</span>
-</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="nt">actions</span><span class="p">:</span>
-</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.close_cover</span>
-</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">    </span><span class="nt">target</span><span class="p">:</span>
-</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">      </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.all_shutters_oost</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">alias</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Close Windows at Sunset</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nt">triggers</span><span class="p">:</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">trigger</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sun</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">    </span><span class="nt">event</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sunset</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">    </span><span class="nt">offset</span><span class="p">:</span><span class="w"> </span><span class="s">"00:30:00"</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="nt">actions</span><span class="p">:</span>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.close_cover</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">    </span><span class="nt">target</span><span class="p">:</span>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">      </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.all_shutters_oost</span>
 </span></code></pre></div></p>
 <h4 id="retire-the-legacy-delay-45s-stop_cover-anti-pattern">Retire the Legacy <code>delay: 45s</code> + <code>stop_cover</code> Anti-Pattern<a class="headerlink" href="#retire-the-legacy-delay-45s-stop_cover-anti-pattern" title="Permanent link">&para;</a></h4>
 <p>In legacy configurations, users often placed a <code>delay: 45s</code> followed by <code>cover.stop_cover</code> to ensure motors stopped. <strong>This pattern is unnecessary and counterproductive</strong>:
@@ -3093,88 +3126,88 @@ The optional <code>AccessController</code> is designed exclusively to prevent Ho
 </div>
 <h4 id="optional-human-in-the-loop-access-policy-access">📊 Optional Human-in-the-Loop Access Policy (<code>access:</code>)<a class="headerlink" href="#optional-human-in-the-loop-access-policy-access" title="Permanent link">&para;</a></h4>
 <p>Everything in this part applies <strong>only to a cover that has an <code>access:</code> block</strong>. Without it the cover pulses directly, as described above.</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>  [ User / Dashboard / Widget / Siri / Alexa ]
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>                       │
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>                       │ 1. cover.open_cover / close_cover
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>                       ▼
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>  ┌─────────────────────────────────────────────────────────────────┐
-</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>  │                    MyHOME AccessController                     │
-</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>  │                                                                 │
-</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>  │  [ Check User &amp; Lockout ] ──( unauthorized )──&gt; ❌ AccessDenied │
-</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>  │             │ (authorized)                                      │
-</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>  │             ▼                                                   │
-</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a>  │  [ Classify State Sensor ]                                      │
-</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a>  │       ├─ Sensor = Closed ─────────&gt; Effect: OPEN                │
-</span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a>  │       └─ Sensor = Open / Unknown ──&gt; Effect: MAY_CLOSE          │
-</span><span id="__span-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a>  │                                           │                     │
-</span><span id="__span-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a>  │                                  [ Safety Verification ]        │
-</span><span id="__span-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a>  │                                  - Photocells valid (&lt;31d)?     │
-</span><span id="__span-7-17"><a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a>  │                                  - User at home / Camera ok?    │
-</span><span id="__span-7-18"><a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a>  │                                  - Close-block switch off?      │
-</span><span id="__span-7-19"><a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a>  │                                           │ (all pass)          │
-</span><span id="__span-7-20"><a id="__codelineno-7-20" name="__codelineno-7-20" href="#__codelineno-7-20"></a>  │             ┌─────────────────────────────┘                     │
-</span><span id="__span-7-21"><a id="__codelineno-7-21" name="__codelineno-7-21" href="#__codelineno-7-21"></a>  │             ▼                                                   │
-</span><span id="__span-7-22"><a id="__codelineno-7-22" name="__codelineno-7-22" href="#__codelineno-7-22"></a>  │  [ Generate 128-bit CSPRNG Nonce ]                              │
-</span><span id="__span-7-23"><a id="__codelineno-7-23" name="__codelineno-7-23" href="#__codelineno-7-23"></a>  │  - Single-use token: secrets.token_urlsafe(16)                  │
-</span><span id="__span-7-24"><a id="__codelineno-7-24" name="__codelineno-7-24" href="#__codelineno-7-24"></a>  │  - Bound to: user_id + entity_id + effect + 60s timeout         │
-</span><span id="__span-7-25"><a id="__codelineno-7-25" name="__codelineno-7-25" href="#__codelineno-7-25"></a>  └─────────────────────────────┬───────────────────────────────────┘
-</span><span id="__span-7-26"><a id="__codelineno-7-26" name="__codelineno-7-26" href="#__codelineno-7-26"></a>                                │ 2. Push Notification
-</span><span id="__span-7-27"><a id="__codelineno-7-27" name="__codelineno-7-27" href="#__codelineno-7-27"></a>                                ▼
-</span><span id="__span-7-28"><a id="__codelineno-7-28" name="__codelineno-7-28" href="#__codelineno-7-28"></a>  ┌─────────────────────────────────────────────────────────────────┐
-</span><span id="__span-7-29"><a id="__codelineno-7-29" name="__codelineno-7-29" href="#__codelineno-7-29"></a>  │                 Companion App (iOS / Android)                   │
-</span><span id="__span-7-30"><a id="__codelineno-7-30" name="__codelineno-7-30" href="#__codelineno-7-30"></a>  │                                                                 │
-</span><span id="__span-7-31"><a id="__codelineno-7-31" name="__codelineno-7-31" href="#__codelineno-7-31"></a>  │   🔔 "Security Request: Approve garage_door_1 close?"           │
-</span><span id="__span-7-32"><a id="__codelineno-7-32" name="__codelineno-7-32" href="#__codelineno-7-32"></a>  │   [ ✅ Area Clear - Close ] (authenticationRequired: true)       │
-</span><span id="__span-7-33"><a id="__codelineno-7-33" name="__codelineno-7-33" href="#__codelineno-7-33"></a>  │                                                                 │
-</span><span id="__span-7-34"><a id="__codelineno-7-34" name="__codelineno-7-34" href="#__codelineno-7-34"></a>  │   👉 User unlocks phone via FaceID / Fingerprint / Biometrics   │
-</span><span id="__span-7-35"><a id="__codelineno-7-35" name="__codelineno-7-35" href="#__codelineno-7-35"></a>  └─────────────────────────────┬───────────────────────────────────┘
-</span><span id="__span-7-36"><a id="__codelineno-7-36" name="__codelineno-7-36" href="#__codelineno-7-36"></a>                                │ 3. mobile_app_notification_action
-</span><span id="__span-7-37"><a id="__codelineno-7-37" name="__codelineno-7-37" href="#__codelineno-7-37"></a>                                ▼
-</span><span id="__span-7-38"><a id="__codelineno-7-38" name="__codelineno-7-38" href="#__codelineno-7-38"></a>  ┌─────────────────────────────────────────────────────────────────┐
-</span><span id="__span-7-39"><a id="__codelineno-7-39" name="__codelineno-7-39" href="#__codelineno-7-39"></a>  │                    MyHOME AccessController                     │
-</span><span id="__span-7-40"><a id="__codelineno-7-40" name="__codelineno-7-40" href="#__codelineno-7-40"></a>  │                                                                 │
-</span><span id="__span-7-41"><a id="__codelineno-7-41" name="__codelineno-7-41" href="#__codelineno-7-41"></a>  │  [ Validate Nonce &amp; User Context (constant-time HMAC) ]         │
-</span><span id="__span-7-42"><a id="__codelineno-7-42" name="__codelineno-7-42" href="#__codelineno-7-42"></a>  │             │ (valid)                                           │
-</span><span id="__span-7-43"><a id="__codelineno-7-43" name="__codelineno-7-43" href="#__codelineno-7-43"></a>  │             ▼                                                   │
-</span><span id="__span-7-44"><a id="__codelineno-7-44" name="__codelineno-7-44" href="#__codelineno-7-44"></a>  │  [ Pre-Warning Phase (optional 5s flasher) ]                    │
-</span><span id="__span-7-45"><a id="__codelineno-7-45" name="__codelineno-7-45" href="#__codelineno-7-45"></a>  │       └─( wall switch pressed? )──&gt; ❌ Cancel movement          │
-</span><span id="__span-7-46"><a id="__codelineno-7-46" name="__codelineno-7-46" href="#__codelineno-7-46"></a>  │             │ (clear)                                           │
-</span><span id="__span-7-47"><a id="__codelineno-7-47" name="__codelineno-7-47" href="#__codelineno-7-47"></a>  │             ▼                                                   │
-</span><span id="__span-7-48"><a id="__codelineno-7-48" name="__codelineno-7-48" href="#__codelineno-7-48"></a>  │  [ Bus Impulse ] ──&gt; *1*1*WHERE## (WHO 1 Relay Monostable Pulse)│
-</span><span id="__span-7-49"><a id="__codelineno-7-49" name="__codelineno-7-49" href="#__codelineno-7-49"></a>  │             │                                                   │
-</span><span id="__span-7-50"><a id="__codelineno-7-50" name="__codelineno-7-50" href="#__codelineno-7-50"></a>  │             ▼                                                   │
-</span><span id="__span-7-51"><a id="__codelineno-7-51" name="__codelineno-7-51" href="#__codelineno-7-51"></a>  │  [ Watchdog Timer (travel_time + margin) ]                      │
-</span><span id="__span-7-52"><a id="__codelineno-7-52" name="__codelineno-7-52" href="#__codelineno-7-52"></a>  │       ├─ Sensor confirms target state ──&gt; ✅ IDLE (Success)     │
-</span><span id="__span-7-53"><a id="__codelineno-7-53" name="__codelineno-7-53" href="#__codelineno-7-53"></a>  │       └─ Sensor fails to reach state  ──&gt; ⚠️ FAULT (Latched)    │
-</span><span id="__span-7-54"><a id="__codelineno-7-54" name="__codelineno-7-54" href="#__codelineno-7-54"></a>  │                                           (Zero auto-retry)     │
-</span><span id="__span-7-55"><a id="__codelineno-7-55" name="__codelineno-7-55" href="#__codelineno-7-55"></a>  └─────────────────────────────────────────────────────────────────┘
+<div class="language-text highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>  [ User / Dashboard / Widget / Siri / Alexa ]
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>                       │
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>                       │ 1. cover.open_cover / close_cover
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>                       ▼
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>  ┌─────────────────────────────────────────────────────────────────┐
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>  │                    MyHOME AccessController                     │
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>  │                                                                 │
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>  │  [ Check User &amp; Lockout ] ──( unauthorized )──&gt; ❌ AccessDenied │
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>  │             │ (authorized)                                      │
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>  │             ▼                                                   │
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>  │  [ Classify State Sensor ]                                      │
+</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>  │       ├─ Sensor = Closed ─────────&gt; Effect: OPEN                │
+</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>  │       └─ Sensor = Open / Unknown ──&gt; Effect: MAY_CLOSE          │
+</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>  │                                           │                     │
+</span><span id="__span-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a>  │                                  [ Safety Verification ]        │
+</span><span id="__span-8-16"><a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a>  │                                  - Photocells valid (&lt;31d)?     │
+</span><span id="__span-8-17"><a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a>  │                                  - User at home / Camera ok?    │
+</span><span id="__span-8-18"><a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a>  │                                  - Close-block switch off?      │
+</span><span id="__span-8-19"><a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a>  │                                           │ (all pass)          │
+</span><span id="__span-8-20"><a id="__codelineno-8-20" name="__codelineno-8-20" href="#__codelineno-8-20"></a>  │             ┌─────────────────────────────┘                     │
+</span><span id="__span-8-21"><a id="__codelineno-8-21" name="__codelineno-8-21" href="#__codelineno-8-21"></a>  │             ▼                                                   │
+</span><span id="__span-8-22"><a id="__codelineno-8-22" name="__codelineno-8-22" href="#__codelineno-8-22"></a>  │  [ Generate 128-bit CSPRNG Nonce ]                              │
+</span><span id="__span-8-23"><a id="__codelineno-8-23" name="__codelineno-8-23" href="#__codelineno-8-23"></a>  │  - Single-use token: secrets.token_urlsafe(16)                  │
+</span><span id="__span-8-24"><a id="__codelineno-8-24" name="__codelineno-8-24" href="#__codelineno-8-24"></a>  │  - Bound to: user_id + entity_id + effect + 60s timeout         │
+</span><span id="__span-8-25"><a id="__codelineno-8-25" name="__codelineno-8-25" href="#__codelineno-8-25"></a>  └─────────────────────────────┬───────────────────────────────────┘
+</span><span id="__span-8-26"><a id="__codelineno-8-26" name="__codelineno-8-26" href="#__codelineno-8-26"></a>                                │ 2. Push Notification
+</span><span id="__span-8-27"><a id="__codelineno-8-27" name="__codelineno-8-27" href="#__codelineno-8-27"></a>                                ▼
+</span><span id="__span-8-28"><a id="__codelineno-8-28" name="__codelineno-8-28" href="#__codelineno-8-28"></a>  ┌─────────────────────────────────────────────────────────────────┐
+</span><span id="__span-8-29"><a id="__codelineno-8-29" name="__codelineno-8-29" href="#__codelineno-8-29"></a>  │                 Companion App (iOS / Android)                   │
+</span><span id="__span-8-30"><a id="__codelineno-8-30" name="__codelineno-8-30" href="#__codelineno-8-30"></a>  │                                                                 │
+</span><span id="__span-8-31"><a id="__codelineno-8-31" name="__codelineno-8-31" href="#__codelineno-8-31"></a>  │   🔔 "Security Request: Approve garage_door_1 close?"           │
+</span><span id="__span-8-32"><a id="__codelineno-8-32" name="__codelineno-8-32" href="#__codelineno-8-32"></a>  │   [ ✅ Area Clear - Close ] (authenticationRequired: true)       │
+</span><span id="__span-8-33"><a id="__codelineno-8-33" name="__codelineno-8-33" href="#__codelineno-8-33"></a>  │                                                                 │
+</span><span id="__span-8-34"><a id="__codelineno-8-34" name="__codelineno-8-34" href="#__codelineno-8-34"></a>  │   👉 User unlocks phone via FaceID / Fingerprint / Biometrics   │
+</span><span id="__span-8-35"><a id="__codelineno-8-35" name="__codelineno-8-35" href="#__codelineno-8-35"></a>  └─────────────────────────────┬───────────────────────────────────┘
+</span><span id="__span-8-36"><a id="__codelineno-8-36" name="__codelineno-8-36" href="#__codelineno-8-36"></a>                                │ 3. mobile_app_notification_action
+</span><span id="__span-8-37"><a id="__codelineno-8-37" name="__codelineno-8-37" href="#__codelineno-8-37"></a>                                ▼
+</span><span id="__span-8-38"><a id="__codelineno-8-38" name="__codelineno-8-38" href="#__codelineno-8-38"></a>  ┌─────────────────────────────────────────────────────────────────┐
+</span><span id="__span-8-39"><a id="__codelineno-8-39" name="__codelineno-8-39" href="#__codelineno-8-39"></a>  │                    MyHOME AccessController                     │
+</span><span id="__span-8-40"><a id="__codelineno-8-40" name="__codelineno-8-40" href="#__codelineno-8-40"></a>  │                                                                 │
+</span><span id="__span-8-41"><a id="__codelineno-8-41" name="__codelineno-8-41" href="#__codelineno-8-41"></a>  │  [ Validate Nonce &amp; User Context (constant-time HMAC) ]         │
+</span><span id="__span-8-42"><a id="__codelineno-8-42" name="__codelineno-8-42" href="#__codelineno-8-42"></a>  │             │ (valid)                                           │
+</span><span id="__span-8-43"><a id="__codelineno-8-43" name="__codelineno-8-43" href="#__codelineno-8-43"></a>  │             ▼                                                   │
+</span><span id="__span-8-44"><a id="__codelineno-8-44" name="__codelineno-8-44" href="#__codelineno-8-44"></a>  │  [ Pre-Warning Phase (optional 5s flasher) ]                    │
+</span><span id="__span-8-45"><a id="__codelineno-8-45" name="__codelineno-8-45" href="#__codelineno-8-45"></a>  │       └─( wall switch pressed? )──&gt; ❌ Cancel movement          │
+</span><span id="__span-8-46"><a id="__codelineno-8-46" name="__codelineno-8-46" href="#__codelineno-8-46"></a>  │             │ (clear)                                           │
+</span><span id="__span-8-47"><a id="__codelineno-8-47" name="__codelineno-8-47" href="#__codelineno-8-47"></a>  │             ▼                                                   │
+</span><span id="__span-8-48"><a id="__codelineno-8-48" name="__codelineno-8-48" href="#__codelineno-8-48"></a>  │  [ Bus Impulse ] ──&gt; *1*1*WHERE## (WHO 1 Relay Monostable Pulse)│
+</span><span id="__span-8-49"><a id="__codelineno-8-49" name="__codelineno-8-49" href="#__codelineno-8-49"></a>  │             │                                                   │
+</span><span id="__span-8-50"><a id="__codelineno-8-50" name="__codelineno-8-50" href="#__codelineno-8-50"></a>  │             ▼                                                   │
+</span><span id="__span-8-51"><a id="__codelineno-8-51" name="__codelineno-8-51" href="#__codelineno-8-51"></a>  │  [ Watchdog Timer (travel_time + margin) ]                      │
+</span><span id="__span-8-52"><a id="__codelineno-8-52" name="__codelineno-8-52" href="#__codelineno-8-52"></a>  │       ├─ Sensor confirms target state ──&gt; ✅ IDLE (Success)     │
+</span><span id="__span-8-53"><a id="__codelineno-8-53" name="__codelineno-8-53" href="#__codelineno-8-53"></a>  │       └─ Sensor fails to reach state  ──&gt; ⚠️ FAULT (Latched)    │
+</span><span id="__span-8-54"><a id="__codelineno-8-54" name="__codelineno-8-54" href="#__codelineno-8-54"></a>  │                                           (Zero auto-retry)     │
+</span><span id="__span-8-55"><a id="__codelineno-8-55" name="__codelineno-8-55" href="#__codelineno-8-55"></a>  └─────────────────────────────────────────────────────────────────┘
 </span></code></pre></div>
 <h4 id="authentic-bticino-hardware-sequence-mh200-trace-capture">📊 Authentic BTicino Hardware Sequence (MH200 Trace Capture)<a class="headerlink" href="#authentic-bticino-hardware-sequence-mh200-trace-capture" title="Permanent link">&para;</a></h4>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>  Entrance Panel (PE1)          MH200 Gateway            Handset (74)         Gate/Garage Relay (71/72)
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>          │                           │                       │                           │
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>          │ 1. Bell Pressed           │                       │                           │
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>          │──────────────────────────&gt;│                       │                           │
-</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>          │   *#16*81*1*1##..88##     │                       │                           │
-</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>          │   (Audio matrix routing)  │                       │                           │
-</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>          │                           │                       │                           │
-</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>          │   *8*1#1#4*74##           │                       │                           │
-</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>          │   (WHO 8 Video Call)      │                       │                           │
-</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>          │                           │─────── Ring ─────────&gt;│                           │
-</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>          │                           │                       │                           │
-</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>          │                           │&lt;─── Pick Up / Talk ───│                           │
-</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>          │                           │   *8*9#1#4*73##       │                           │
-</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>          │                           │   (Caller address)    │                           │
-</span><span id="__span-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a>          │                           │                       │                           │
-</span><span id="__span-8-16"><a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a>          │                           │&lt;── Hang Up / End ─────│                           │
-</span><span id="__span-8-17"><a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a>          │                           │   *6*9##              │                           │
-</span><span id="__span-8-18"><a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a>          │                           │   (Camera OFF)        │                           │
-</span><span id="__span-8-19"><a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a>          │                           │                       │                           │
-</span><span id="__span-8-20"><a id="__codelineno-8-20" name="__codelineno-8-20" href="#__codelineno-8-20"></a>          │                           │                       │ 2. Gate Button Pressed    │
-</span><span id="__span-8-21"><a id="__codelineno-8-21" name="__codelineno-8-21" href="#__codelineno-8-21"></a>          │                           │&lt;──────────────────────│                           │
-</span><span id="__span-8-22"><a id="__codelineno-8-22" name="__codelineno-8-22" href="#__codelineno-8-22"></a>          │                           │   *1*1*72##           │                           │
-</span><span id="__span-8-23"><a id="__codelineno-8-23" name="__codelineno-8-23" href="#__codelineno-8-23"></a>          │                           │   (WHO 1 Pulse)       │                           │
-</span><span id="__span-8-24"><a id="__codelineno-8-24" name="__codelineno-8-24" href="#__codelineno-8-24"></a>          │                           │──────────────────────────────────────────────────&gt;│
-</span><span id="__span-8-25"><a id="__codelineno-8-25" name="__codelineno-8-25" href="#__codelineno-8-25"></a>          │                           │                       │                   [ Gate Moves ]
+<div class="language-text highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>  Entrance Panel (PE1)          MH200 Gateway            Handset (74)         Gate/Garage Relay (71/72)
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>          │                           │                       │                           │
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>          │ 1. Bell Pressed           │                       │                           │
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>          │──────────────────────────&gt;│                       │                           │
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>          │   *#16*81*1*1##..88##     │                       │                           │
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>          │   (Audio matrix routing)  │                       │                           │
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>          │                           │                       │                           │
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>          │   *8*1#1#4*74##           │                       │                           │
+</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>          │   (WHO 8 Video Call)      │                       │                           │
+</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>          │                           │─────── Ring ─────────&gt;│                           │
+</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>          │                           │                       │                           │
+</span><span id="__span-9-12"><a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a>          │                           │&lt;─── Pick Up / Talk ───│                           │
+</span><span id="__span-9-13"><a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a>          │                           │   *8*9#1#4*73##       │                           │
+</span><span id="__span-9-14"><a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a>          │                           │   (Caller address)    │                           │
+</span><span id="__span-9-15"><a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a>          │                           │                       │                           │
+</span><span id="__span-9-16"><a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a>          │                           │&lt;── Hang Up / End ─────│                           │
+</span><span id="__span-9-17"><a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a>          │                           │   *6*9##              │                           │
+</span><span id="__span-9-18"><a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a>          │                           │   (Camera OFF)        │                           │
+</span><span id="__span-9-19"><a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a>          │                           │                       │                           │
+</span><span id="__span-9-20"><a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a>          │                           │                       │ 2. Gate Button Pressed    │
+</span><span id="__span-9-21"><a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a>          │                           │&lt;──────────────────────│                           │
+</span><span id="__span-9-22"><a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a>          │                           │   *1*1*72##           │                           │
+</span><span id="__span-9-23"><a id="__codelineno-9-23" name="__codelineno-9-23" href="#__codelineno-9-23"></a>          │                           │   (WHO 1 Pulse)       │                           │
+</span><span id="__span-9-24"><a id="__codelineno-9-24" name="__codelineno-9-24" href="#__codelineno-9-24"></a>          │                           │──────────────────────────────────────────────────&gt;│
+</span><span id="__span-9-25"><a id="__codelineno-9-25" name="__codelineno-9-25" href="#__codelineno-9-25"></a>          │                           │                       │                   [ Gate Moves ]
 </span></code></pre></div>
 <h4 id="key-principles-of-the-optional-human-in-the-loop-policy-with-access">Key Principles of the Optional Human-in-the-Loop Policy (with <code>access:</code>):<a class="headerlink" href="#key-principles-of-the-optional-human-in-the-loop-policy-with-access" title="Permanent link">&para;</a></h4>
 <ol>
@@ -3197,45 +3230,45 @@ The optional <code>AccessController</code> is designed exclusively to prevent Ho
 </ol>
 <h3 id="configuring-an-impulse-cover">⚙️ Configuring an Impulse Cover<a class="headerlink" href="#configuring-an-impulse-cover" title="Permanent link">&para;</a></h3>
 <p>An impulse cover needs <code>who: 1</code> and a single point-to-point <code>where</code>. The minimal configuration is a hardware interface with no approval step:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># /config/myhome.yaml</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nt">00:03:50:XX:XX:XX</span><span class="p">:</span>
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span><span class="nt">cover</span><span class="p">:</span>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">    </span><span class="nt">garage_door</span><span class="p">:</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">      </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"71"</span>
-</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Garage door</span>
-</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">      </span><span class="nt">device_class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">garage</span>
-</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">      </span><span class="nt">state_sensor</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">binary_sensor.garage_door_closed</span><span class="w">   </span><span class="c1"># optional: off = closed, on = not closed</span>
-</span></code></pre></div>
-<p>Add an <code>access:</code> block to opt in to the supervised workflow (phone approval, PIN, presence, camera, pre-warning, safety audit). <strong>With <code>access:</code> an empty <code>allowed_users</code> refuses every open and close request</strong> with <code>AccessDenied</code>: that policy is fail-closed. The full example:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># /config/myhome.yaml</span>
 </span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nt">00:03:50:XX:XX:XX</span><span class="p">:</span>
 </span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">  </span><span class="nt">cover</span><span class="p">:</span>
 </span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">    </span><span class="nt">garage_door</span><span class="p">:</span>
 </span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">      </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">impulse_relay</span><span class="w">            </span><span class="c1"># optional; only valid together with who: 1</span>
-</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"71"</span><span class="w">                    </span><span class="c1"># one relay, never a general, area or group address</span>
-</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Garage door</span>
-</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">      </span><span class="nt">device_class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">garage</span><span class="w">           </span><span class="c1"># garage or gate (default gate)</span>
-</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="w">      </span><span class="nt">state_sensor</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">binary_sensor.garage_door_closed</span><span class="w">   </span><span class="c1"># off = closed, on = not closed</span>
-</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="w">      </span><span class="nt">travel_time</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">25</span><span class="w">                </span><span class="c1"># seconds, for the dashboard estimate and the watchdog</span>
-</span><span id="__span-10-12"><a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="w">      </span><span class="nt">pulse_duration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span><span class="w">            </span><span class="c1"># seconds the relay is closed (0.2 - 2.0)</span>
-</span><span id="__span-10-13"><a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="w">      </span><span class="nt">min_cycle_time</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span><span class="w">              </span><span class="c1"># seconds between two pulses (1 - 120)</span>
-</span><span id="__span-10-14"><a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="w">      </span><span class="nt">pin_code</span><span class="p">:</span><span class="w"> </span><span class="s">"1234"</span><span class="w">               </span><span class="c1"># optional second factor, asked on the phone; needs access:</span>
-</span><span id="__span-10-15"><a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="w">      </span><span class="nt">access</span><span class="p">:</span>
-</span><span id="__span-10-16"><a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="w">        </span><span class="nt">allowed_users</span><span class="p">:</span><span class="w">               </span><span class="c1"># Home Assistant user ids</span>
-</span><span id="__span-10-17"><a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1a2b3c4d5e6f47a8b9c0d1e2f3a4b5c6</span>
-</span><span id="__span-10-18"><a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a><span class="w">        </span><span class="nt">approvers</span><span class="p">:</span><span class="w">                   </span><span class="c1"># one notify service per allowed user</span>
-</span><span id="__span-10-19"><a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a><span class="w">          </span><span class="nt">1a2b3c4d5e6f47a8b9c0d1e2f3a4b5c6</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">notify.mobile_app_phone</span>
-</span><span id="__span-10-20"><a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a><span class="w">        </span><span class="nt">remote_close</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">at_home</span><span class="w">        </span><span class="c1"># never (default), at_home or with_camera</span>
-</span><span id="__span-10-21"><a id="__codelineno-10-21" name="__codelineno-10-21" href="#__codelineno-10-21"></a><span class="w">        </span><span class="nt">camera</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">camera.driveway</span><span class="w">      </span><span class="c1"># needed for remote_close: with_camera</span>
-</span><span id="__span-10-22"><a id="__codelineno-10-22" name="__codelineno-10-22" href="#__codelineno-10-22"></a><span class="w">        </span><span class="nt">safety_devices_verified</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2026-09-01</span><span class="w">   </span><span class="c1"># date you last tested photocells and force limiter</span>
-</span><span id="__span-10-23"><a id="__codelineno-10-23" name="__codelineno-10-23" href="#__codelineno-10-23"></a><span class="w">        </span><span class="nt">safety_check_days</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">31</span>
-</span><span id="__span-10-24"><a id="__codelineno-10-24" name="__codelineno-10-24" href="#__codelineno-10-24"></a><span class="w">        </span><span class="nt">prewarn_light</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">light.driveway_flasher</span>
-</span><span id="__span-10-25"><a id="__codelineno-10-25" name="__codelineno-10-25" href="#__codelineno-10-25"></a><span class="w">        </span><span class="nt">prewarn_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
-</span><span id="__span-10-26"><a id="__codelineno-10-26" name="__codelineno-10-26" href="#__codelineno-10-26"></a><span class="w">        </span><span class="nt">close_block_entity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">input_boolean.gate_close_block</span>
-</span><span id="__span-10-27"><a id="__codelineno-10-27" name="__codelineno-10-27" href="#__codelineno-10-27"></a><span class="w">        </span><span class="nt">watchdog_margin</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span><span class="w">          </span><span class="c1"># seconds added to travel_time before a fault is latched</span>
-</span><span id="__span-10-28"><a id="__codelineno-10-28" name="__codelineno-10-28" href="#__codelineno-10-28"></a><span class="w">        </span><span class="nt">approval_timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"71"</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Garage door</span>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">      </span><span class="nt">device_class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">garage</span>
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">      </span><span class="nt">state_sensor</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">binary_sensor.garage_door_closed</span><span class="w">   </span><span class="c1"># optional: off = closed, on = not closed</span>
+</span></code></pre></div>
+<p>Add an <code>access:</code> block to opt in to the supervised workflow (phone approval, PIN, presence, camera, pre-warning, safety audit). <strong>With <code>access:</code> an empty <code>allowed_users</code> refuses every open and close request</strong> with <code>AccessDenied</code>: that policy is fail-closed. The full example:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># /config/myhome.yaml</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="nt">00:03:50:XX:XX:XX</span><span class="p">:</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">cover</span><span class="p">:</span>
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">    </span><span class="nt">garage_door</span><span class="p">:</span>
+</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">      </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">impulse_relay</span><span class="w">            </span><span class="c1"># optional; only valid together with who: 1</span>
+</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"71"</span><span class="w">                    </span><span class="c1"># one relay, never a general, area or group address</span>
+</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Garage door</span>
+</span><span id="__span-11-9"><a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="w">      </span><span class="nt">device_class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">garage</span><span class="w">           </span><span class="c1"># garage or gate (default gate)</span>
+</span><span id="__span-11-10"><a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="w">      </span><span class="nt">state_sensor</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">binary_sensor.garage_door_closed</span><span class="w">   </span><span class="c1"># off = closed, on = not closed</span>
+</span><span id="__span-11-11"><a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="w">      </span><span class="nt">travel_time</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">25</span><span class="w">                </span><span class="c1"># seconds, for the dashboard estimate and the watchdog</span>
+</span><span id="__span-11-12"><a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a><span class="w">      </span><span class="nt">pulse_duration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span><span class="w">            </span><span class="c1"># seconds the relay is closed (0.2 - 2.0)</span>
+</span><span id="__span-11-13"><a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a><span class="w">      </span><span class="nt">min_cycle_time</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span><span class="w">              </span><span class="c1"># seconds between two pulses (1 - 120)</span>
+</span><span id="__span-11-14"><a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a><span class="w">      </span><span class="nt">pin_code</span><span class="p">:</span><span class="w"> </span><span class="s">"1234"</span><span class="w">               </span><span class="c1"># optional second factor, asked on the phone; needs access:</span>
+</span><span id="__span-11-15"><a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a><span class="w">      </span><span class="nt">access</span><span class="p">:</span>
+</span><span id="__span-11-16"><a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a><span class="w">        </span><span class="nt">allowed_users</span><span class="p">:</span><span class="w">               </span><span class="c1"># Home Assistant user ids</span>
+</span><span id="__span-11-17"><a id="__codelineno-11-17" name="__codelineno-11-17" href="#__codelineno-11-17"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1a2b3c4d5e6f47a8b9c0d1e2f3a4b5c6</span>
+</span><span id="__span-11-18"><a id="__codelineno-11-18" name="__codelineno-11-18" href="#__codelineno-11-18"></a><span class="w">        </span><span class="nt">approvers</span><span class="p">:</span><span class="w">                   </span><span class="c1"># one notify service per allowed user</span>
+</span><span id="__span-11-19"><a id="__codelineno-11-19" name="__codelineno-11-19" href="#__codelineno-11-19"></a><span class="w">          </span><span class="nt">1a2b3c4d5e6f47a8b9c0d1e2f3a4b5c6</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">notify.mobile_app_phone</span>
+</span><span id="__span-11-20"><a id="__codelineno-11-20" name="__codelineno-11-20" href="#__codelineno-11-20"></a><span class="w">        </span><span class="nt">remote_close</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">at_home</span><span class="w">        </span><span class="c1"># never (default), at_home or with_camera</span>
+</span><span id="__span-11-21"><a id="__codelineno-11-21" name="__codelineno-11-21" href="#__codelineno-11-21"></a><span class="w">        </span><span class="nt">camera</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">camera.driveway</span><span class="w">      </span><span class="c1"># needed for remote_close: with_camera</span>
+</span><span id="__span-11-22"><a id="__codelineno-11-22" name="__codelineno-11-22" href="#__codelineno-11-22"></a><span class="w">        </span><span class="nt">safety_devices_verified</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2026-09-01</span><span class="w">   </span><span class="c1"># date you last tested photocells and force limiter</span>
+</span><span id="__span-11-23"><a id="__codelineno-11-23" name="__codelineno-11-23" href="#__codelineno-11-23"></a><span class="w">        </span><span class="nt">safety_check_days</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">31</span>
+</span><span id="__span-11-24"><a id="__codelineno-11-24" name="__codelineno-11-24" href="#__codelineno-11-24"></a><span class="w">        </span><span class="nt">prewarn_light</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">light.driveway_flasher</span>
+</span><span id="__span-11-25"><a id="__codelineno-11-25" name="__codelineno-11-25" href="#__codelineno-11-25"></a><span class="w">        </span><span class="nt">prewarn_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+</span><span id="__span-11-26"><a id="__codelineno-11-26" name="__codelineno-11-26" href="#__codelineno-11-26"></a><span class="w">        </span><span class="nt">close_block_entity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">input_boolean.gate_close_block</span>
+</span><span id="__span-11-27"><a id="__codelineno-11-27" name="__codelineno-11-27" href="#__codelineno-11-27"></a><span class="w">        </span><span class="nt">watchdog_margin</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span><span class="w">          </span><span class="c1"># seconds added to travel_time before a fault is latched</span>
+</span><span id="__span-11-28"><a id="__codelineno-11-28" name="__codelineno-11-28" href="#__codelineno-11-28"></a><span class="w">        </span><span class="nt">approval_timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span>
 </span></code></pre></div>
 <table>
 <thead>
@@ -3272,34 +3305,34 @@ The optional <code>AccessController</code> is designed exclusively to prevent Ho
 <p><code>type: impulse_relay</code> together with <code>who: 2</code> (and <code>type: shutter</code> or <code>standard</code> together with <code>who: 1</code>) is rejected when the configuration is validated; it used to fall back to an ordinary shutter silently.</p>
 </div>
 <h3 id="configuring-a-door-strike-lock">🔒 Configuring a Door Strike Lock<a class="headerlink" href="#configuring-a-door-strike-lock" title="Permanent link">&para;</a></h3>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">00:03:50:XX:XX:XX</span><span class="p">:</span>
-</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">lock</span><span class="p">:</span>
-</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">    </span><span class="nt">front_door</span><span class="p">:</span>
-</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">      </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">6</span><span class="w">                         </span><span class="c1"># the only value; WHO 1 relays are covers</span>
-</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"4001"</span><span class="w">                  </span><span class="c1"># 1-99 or 4000-4099 endpoints; append #2 on a riser installation: "4001#2"</span>
-</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Front door</span>
-</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">      </span><span class="nt">code</span><span class="p">:</span><span class="w"> </span><span class="s">"1234"</span><span class="w">                   </span><span class="c1"># optional digit-only PIN; asked on every unlock</span>
-</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">      </span><span class="nt">pulse_duration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5.0</span><span class="w">            </span><span class="c1"># seconds until the lock shows locked again (default 5.0 s)</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nt">00:03:50:XX:XX:XX</span><span class="p">:</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">  </span><span class="nt">lock</span><span class="p">:</span>
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">    </span><span class="nt">front_door</span><span class="p">:</span>
+</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">      </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">6</span><span class="w">                         </span><span class="c1"># the only value; WHO 1 relays are covers</span>
+</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"4001"</span><span class="w">                  </span><span class="c1"># 1-99 or 4000-4099 endpoints; append #2 on a riser installation: "4001#2"</span>
+</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Front door</span>
+</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="w">      </span><span class="nt">code</span><span class="p">:</span><span class="w"> </span><span class="s">"1234"</span><span class="w">                   </span><span class="c1"># optional digit-only PIN; asked on every unlock</span>
+</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="w">      </span><span class="nt">pulse_duration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5.0</span><span class="w">            </span><span class="c1"># seconds until the lock shows locked again (default 5.0 s)</span>
 </span></code></pre></div>
 <p>Locks exist only when they are configured here (and are restored from the registry on restart with their YAML configuration intact). Neither a lock release seen on the bus nor a stale registry entry removed from <code>myhome.yaml</code> creates a lock entity, because such an entity would carry no code.</p>
 <h3 id="strict-distinction-covers-vs-locks">⚠️ Strict Distinction: Covers vs. Locks<a class="headerlink" href="#strict-distinction-covers-vs-locks" title="Permanent link">&para;</a></h3>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>  ┌───────────────────────────────────────┐   ┌───────────────────────────────────────┐
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>  │    HEAVY MACHINERY (KINETIC RISK)     │   │      PEDESTRIAN ACCESS (LOW MASS)     │
-</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>  │                                       │   │                                       │
-</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>  │   - Motorized Sliding / Swing Gates   │   │   - Front Door Latch / Strike         │
-</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>  │   - Sectional / Roller Garage Doors   │   │   - Pedestrian Wicket Gate Buzzer     │
-</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>  │                                       │   │   - Elettroserratura (12V AC/DC)      │
-</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>  │                   │                   │   │                   │                   │
-</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>  │                   ▼                   │   │                   ▼                   │
-</span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a>  │       PLATFORM: cover (impulse)       │   │            PLATFORM: lock             │
-</span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>  │                   │                   │   │                   │                   │
-</span><span id="__span-12-11"><a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>  │  - Optional AccessController          │   │  - Direct momentary pulse (1-3s)      │
-</span><span id="__span-12-12"><a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a>  │  - Dual binary sensor feedback        │   │  - Optional PIN authentication        │
-</span><span id="__span-12-13"><a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a>  │  - Biometric challenge-response nonce │   │  - Automatic re-lock state machine    │
-</span><span id="__span-12-14"><a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a>  │  - 5s pre-warning flasher             │   │  - Doorbell one-tap unlock safe       │
-</span><span id="__span-12-15"><a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a>  │  - Anti-stuck watchdog (latched fault)│   │                                       │
-</span><span id="__span-12-16"><a id="__codelineno-12-16" name="__codelineno-12-16" href="#__codelineno-12-16"></a>  │  - Certified EN 12453 safety check    │   │                                       │
-</span><span id="__span-12-17"><a id="__codelineno-12-17" name="__codelineno-12-17" href="#__codelineno-12-17"></a>  └───────────────────────────────────────┘   └───────────────────────────────────────┘
+<div class="language-text highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>  ┌───────────────────────────────────────┐   ┌───────────────────────────────────────┐
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>  │    HEAVY MACHINERY (KINETIC RISK)     │   │      PEDESTRIAN ACCESS (LOW MASS)     │
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>  │                                       │   │                                       │
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>  │   - Motorized Sliding / Swing Gates   │   │   - Front Door Latch / Strike         │
+</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>  │   - Sectional / Roller Garage Doors   │   │   - Pedestrian Wicket Gate Buzzer     │
+</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>  │                                       │   │   - Elettroserratura (12V AC/DC)      │
+</span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a>  │                   │                   │   │                   │                   │
+</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>  │                   ▼                   │   │                   ▼                   │
+</span><span id="__span-13-9"><a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>  │       PLATFORM: cover (impulse)       │   │            PLATFORM: lock             │
+</span><span id="__span-13-10"><a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a>  │                   │                   │   │                   │                   │
+</span><span id="__span-13-11"><a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>  │  - Optional AccessController          │   │  - Direct momentary pulse (1-3s)      │
+</span><span id="__span-13-12"><a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a>  │  - Dual binary sensor feedback        │   │  - Optional PIN authentication        │
+</span><span id="__span-13-13"><a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a>  │  - Biometric challenge-response nonce │   │  - Automatic re-lock state machine    │
+</span><span id="__span-13-14"><a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a>  │  - 5s pre-warning flasher             │   │  - Doorbell one-tap unlock safe       │
+</span><span id="__span-13-15"><a id="__codelineno-13-15" name="__codelineno-13-15" href="#__codelineno-13-15"></a>  │  - Anti-stuck watchdog (latched fault)│   │                                       │
+</span><span id="__span-13-16"><a id="__codelineno-13-16" name="__codelineno-13-16" href="#__codelineno-13-16"></a>  │  - Certified EN 12453 safety check    │   │                                       │
+</span><span id="__span-13-17"><a id="__codelineno-13-17" name="__codelineno-13-17" href="#__codelineno-13-17"></a>  └───────────────────────────────────────┘   └───────────────────────────────────────┘
 </span></code></pre></div>
 <table>
 <thead>
