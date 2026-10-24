@@ -104,11 +104,14 @@ async def async_get_config_entry_diagnostics(
                 gw_info["identification"] = async_redact_data(identification(), TO_REDACT)
             if hasattr(gw, "profile") and gw.profile:
                 profile = gw.profile
+                # OWNd GatewayProfile fields; keepalive None means OS TCP keepalive only.
                 profile_info = {
-                    "name": getattr(profile, "name", "Generic"),
+                    "name": getattr(profile, "model_name", "Generic"),
+                    "display_name": getattr(profile, "display_name", None),
                     "command_queue_delay": getattr(profile, "command_queue_delay", 0.0),
                     "max_queue_size": getattr(profile, "max_queue_size", 250),
-                    "keepalive_interval": getattr(profile, "keepalive_interval", 90.0),
+                    "keepalive_interval": getattr(profile, "event_keepalive_interval", None),
+                    "keepalive_summary": getattr(profile, "keepalive_summary", None),
                 }
 
         send_buffer = getattr(gateway_handler, "send_buffer", None)
