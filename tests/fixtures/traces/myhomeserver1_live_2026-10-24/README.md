@@ -26,7 +26,10 @@ Standard `MyHOME` derived trace archive, the same layout as `f461_live_2026-10-2
 field table): `capture` (with `runs`), `gateway` (synthetic MAC `00:03:50:00:20:24`, also as the WHO 13 dimension 12
 reply `*#13**12*0*3*80*0*32*36##`; documentation IP `192.0.2.9`; an `oracle_note`), `frames` (376 event-session
 `rx` frames) and `rows` (613 `tx` / `rx` / `result` entries; `result.replies` are the frames collected on the
-command session, `result.events_after` the event-session frames seen before the next request).
+command session, `result.events_after` only the event-session frames that arrived while the request was pending).
+As there, command-session `rx` rows carry `t_estimated: true` and sit at their request's `t` (the session hands the
+replies over as a batch with the ACK / NACK), and `t` is one monotonic axis over the three runs
+(`capture.runs[].t_offset` gives each run's start).
 
 ## The runs
 

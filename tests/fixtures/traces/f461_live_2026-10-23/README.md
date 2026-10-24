@@ -38,11 +38,13 @@ Standard `MyHOME` derived trace archive:
 | `dir` | Meaning | Fields |
 |---|---|---|
 | `tx` | frame written on the command session | `frame`, `is_status_request` (how OWNd sent it) |
-| `rx` | frame read; `session: "cmd"` for the replies and the closing `*#*1##` / `*#*0##`, `session: "evt"` for the event monitor | `frame`; event rows also carry `ownd_class` and `ownd_log`, what OWNd master made of the frame at capture time |
-| `result` | what the command session returned for the `tx` | `ack`, `reply_time_s`, `replies` (frames collected on the command session; empty on a NACK and on an ACK that carried no data), `events_after` (event-session frames seen before the next request), `utc`, `note` on the frames the pull requests cite |
+| `rx` | frame read; `session: "cmd"` for the replies and the closing `*#*1##` / `*#*0##`, `session: "evt"` for the event monitor | `frame`; event rows also carry `ownd_class` and `ownd_log`, what OWNd master made of the frame at capture time. Command-session rows carry `t_estimated: true`: the session hands the replies over as a batch with the ACK / NACK, so their arrival time is unknown and they sit right after their request with `t` = the request's `t` |
+| `result` | what the command session returned for the `tx` | `ack`, `reply_time_s`, `replies` (frames collected on the command session; empty on a NACK and on an ACK that carried no data), `events_after` (only the event-session frames that arrived while the request was pending, `tx.t <= t <= result.t`; what arrived during the pause before the next request is in the chronological rows only), `utc`, `note` on the frames the pull requests cite |
 
-`t` is seconds since the start of that run; `step` is the phase (`oracle_who<N>` / `plant_reads` in run 1,
-the run name elsewhere, `listen` for the event-only runs).
+`t` is one monotonic axis over the whole archive: each run starts 1 s after the previous one ended, and
+`capture.runs[].t_offset` gives each run's start (`t - t_offset` is the time since that run's first frame), so
+corpus replayers that drive a clock from `frames[].timestamp` never go backwards. `step` is the phase
+(`oracle_who<N>` / `plant_reads` in run 1, the run name elsewhere, `listen` for the event-only runs).
 
 ## The runs
 
@@ -65,13 +67,16 @@ the run name elsewhere, `listen` for the event-only runs).
   dimension 14 (21.0, the last value written from Home Assistant). `*#4*2*#14*0235*3##` (mode 3) is ACKed in
   78 ms, dimension 12 follows at once, dimension 14 catches up 0.3 s later, the season frame stays `*4*1*2##`.
 * `*#4*2*20##` is ACKed in 111 ms with `*#4*2#1*20*0##` on the command session, followed by `*#4*2#2*20*5##` on the
-  event session; `*#4*#0*20##` returns both on the command session after 2.1 s. While the integration polled the
-  zone (run 6), the two actuator frames followed every `*#4*2##` burst within 3 s.
+  event session; `*#4*#0*20##` returns both on the command session after 2.1 s. In run 6 the two actuator frames
+  followed every `*#4*2##` burst within 3 s because the patched integration under test (#792) sent `*#4*#0*20##`
+  after each zone poll; the F461 does not emit dimension 20 in reply to `*#4*2##` (run 1: `*#4*2##` answers
+  dimensions 0, 12, 14, 13 and the season only).
 * `*#4*0*60##` is answered by zone 2 (`*#4*2*60*39##`) after 2.1 s, `*#4*2*60##` in 0.14 s; the thermostat pushed
   `*#4*2*60*38##` three times in 30 minutes on its own.
-* `*#4*0##`, `*#5*0##`, `*#5*#1##`, `*#9*0##`, `*#17*0##`, `*#14*06##`, `*#25*21##`, `*#3*…##`, `*#8*…##` and all
-  18 WHO 16 forms are refused by the gateway itself in under 10 ms. `*#4*#2##`, `*#4*#2*14##`, `*#4*#0##`,
-  `*#4*#0*14##` and the 13 WHO 22 reads are forwarded to the bus and NACKed after the TX-ACK wait (1.8-2.9 s).
+* `*#4*0##`, `*#5*0##`, `*#9*0##`, `*#17*0##`, `*#14*06##`, `*#3*…##`, `*#8*…##` and all 18 WHO 16 forms are refused
+  by the gateway itself in under 10 ms (`*#5*#1##` in 13 ms). `*#25*21##` NACKed after 950 ms in run 1 and in 5-6 ms
+  when re-sent in runs 8 / 8b. `*#4*#2##`, `*#4*#2*14##`, `*#4*#0##`, `*#4*#0*14##` and the 13 WHO 22 reads are
+  forwarded to the bus and NACKed after the TX-ACK wait (1.8-2.9 s).
 * `*#1*0007##`, `*#1*0001##`, `*#1*0002##` are refused in 5-7 ms; `*#1*07##` answers `*1*0*07##` in 88 ms;
   `*#1*7##` is area 7 (ACK, no data, 1.0 s). `*#1*0##` and `*#1*00##` list `06`, `07` and `09`; `*#1*09##` times
   out on the bus. Dimension 15 is group-only (`*#1*06*15##` NACK, `*#1*#1*15##` ACK and echoed).

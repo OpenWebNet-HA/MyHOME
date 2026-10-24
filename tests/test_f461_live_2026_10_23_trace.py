@@ -106,6 +106,19 @@ def _evt(rows: list[dict], run: str) -> list[dict]:
     return [r for r in rows if r["run"] == run and r["dir"] == "rx" and r["session"] == "evt"]
 
 
+def _evt_between(rows: list[dict], run: str, frame: str) -> list[str]:
+    """Event-session frames from the request ``frame`` of ``run`` until the next request of that run."""
+    run_rows = [r for r in rows if r["run"] == run]
+    start = next(i for i, r in enumerate(run_rows) if r["dir"] == "tx" and r["frame"] == frame)
+    out: list[str] = []
+    for r in run_rows[start + 1 :]:
+        if r["dir"] == "tx":
+            break
+        if r["dir"] == "rx" and r["session"] == "evt":
+            out.append(r["frame"])
+    return out
+
+
 def _gateway() -> MagicMock:
     gw = MagicMock()
     gw.mac = MAC
@@ -219,6 +232,10 @@ def test_schema_runs_and_synthetic_identity(trace_payload: dict, rows: list[dict
     }
     assert trace_payload["capture"]["kind"] == "derived_trace_archive"
     assert [r["run"] for r in trace_payload["capture"]["runs"]] == list(ALL_RUNS)
+    assert [r["t_offset"] for r in trace_payload["capture"]["runs"]][0] == 0.0
+    ts = [f["timestamp"] for f in frames]
+    assert ts == sorted(ts), "one monotonic time axis across the runs"
+    assert all(a["t"] <= b["t"] for a, b in zip(rows, rows[1:], strict=False))
     assert trace_payload["capture"]["window"] == {
         "first": "2026-10-23T20:38:04+00:00",
         "last": "2026-10-23T23:03:07+00:00",
@@ -262,12 +279,19 @@ def test_result_rows_are_consistent_with_their_tx_and_cmd_rx_rows(rows: list[dic
         for i, r in enumerate(run_rows):
             if r["dir"] != "result":
                 continue
-            tx = next(x for x in reversed(run_rows[:i]) if x["dir"] == "tx")
+            tx_i = next(j for j in range(i - 1, -1, -1) if run_rows[j]["dir"] == "tx")
+            tx = run_rows[tx_i]
             assert tx["frame"] == r["frame"]
             assert tx["t"] <= r["t"]
             assert abs((r["t"] - tx["t"]) - r["reply_time_s"]) < 0.002
-            cmd_rx = [x["frame"] for x in run_rows[:i] if x["dir"] == "rx" and x["session"] == "cmd" and x["t"] == r["t"]]
-            assert cmd_rx == [*r["replies"], "*#*1##" if r["ack"] else "*#*0##"]
+            # the command-session replies sit right after their request, at its t, flagged as estimated
+            cmd_rx = [x for x in run_rows[tx_i + 1 : i] if x["dir"] == "rx" and x["session"] == "cmd"]
+            assert [x["frame"] for x in cmd_rx] == [*r["replies"], "*#*1##" if r["ack"] else "*#*0##"]
+            assert all(x["t"] == tx["t"] and x["t_estimated"] is True for x in cmd_rx)
+            assert run_rows[tx_i + 1 : tx_i + 1 + len(cmd_rx)] == cmd_rx
+            # events_after holds exactly the event-session frames that arrived while the request was pending
+            pending = [x["frame"] for x in run_rows[tx_i + 1 : i] if x["dir"] == "rx" and x["session"] == "evt" and x["t"] <= r["t"]]
+            assert r["events_after"] == pending
     assert all(r["ack"] is False and r["replies"] == [] for r in _results(rows) if not r["ack"])
 
 
@@ -310,7 +334,7 @@ def test_who13_time_request_is_echoed_on_the_event_session(rows: list[dict]) -> 
         assert res["events_after"] == res["replies"]
         echo = [r for r in _evt(rows, run) if r["frame"] == res["replies"][0]]
         assert len(echo) == 1 and echo[0]["ownd_class"] == "OWNGatewayEvent"
-    # the spontaneous MAC and object-model frames open the event session (run6, t = 26 s)
+    # the spontaneous MAC and object-model frames open the event session (first two event rows of run6)
     first_two = [r["frame"] for r in _evt(rows, RUN6)[:2]]
     assert first_two == [MAC_FRAME, "*#1013**1*134*15*5*0##"]
     # every WHO 13 clock echo on the event session carries an empty time-zone field on this F461
@@ -389,7 +413,8 @@ def test_setpoint_write_mode_3_restores_the_setpoint_in_force(rows: list[dict]) 
     """*#4*2*#14*0235*3## is ACKed, dimension 12 follows at once, dimension 14 catches up, the season stays."""
     write = _result(rows, RUN3, "*#4*2*#14*0235*3##")
     assert write["ack"] is True and write["reply_time_s"] < 0.2
-    assert write["events_after"] == ["*#4*2*12*0235*3##", "*4*1*2##", "*#4*2*0*0239##"]
+    assert write["events_after"] == [], "the ACK comes before the thermostat reports"
+    assert _evt_between(rows, RUN3, "*#4*2*#14*0235*3##") == ["*#4*2*12*0235*3##", "*4*1*2##", "*#4*2*0*0239##"]
     evt = [r["frame"] for r in _evt(rows, RUN3)]
     assert evt.index("*#4*2*12*0235*3##") < evt.index("*#4*2*14*0235*3##")
     after = _result(rows, RUN3, "*#4*2##")
@@ -410,7 +435,8 @@ def test_actuator_status_dimension_20_per_zone_and_all_zones(rows: list[dict]) -
     zone = _result(rows, RUN1, "*#4*2*20##")
     assert zone["ack"] is True and zone["reply_time_s"] < 0.2
     assert zone["replies"] == ["*#4*2#1*20*0##"]
-    assert zone["events_after"] == ["*#4*2#1*20*0##", "*#4*2#2*20*5##"]
+    assert zone["events_after"] == ["*#4*2#1*20*0##"], "actuator 1 arrives before the ACK"
+    assert _evt_between(rows, RUN1, "*#4*2*20##") == ["*#4*2#1*20*0##", "*#4*2#2*20*5##"], "actuator 2 right after it"
     all_zones = _result(rows, RUN1, "*#4*#0*20##")
     assert all_zones["ack"] is True and 2.0 < all_zones["reply_time_s"] < 2.3
     assert all_zones["replies"] == ["*#4*2#1*20*0##", "*#4*2#2*20*5##"]
@@ -432,10 +458,10 @@ def test_actuator_frames_follow_every_zone_poll_while_the_fixed_integration_ran(
     for t in polls:
         following = [r["frame"] for r in evt if t < r["t"] <= t + 3.5]
         assert {"*#4*2#1*20*0##", "*#4*2#2*20*5##"} <= set(following), t
-    # the manual *#4*2*20## of the local Home Assistant session (run7, t = 371 s)
+    # the manual *#4*2*20## of the local Home Assistant session (run7)
     manual = [r["frame"] for r in _evt(rows, RUN7) if r["frame"].startswith("*#4*2#")]
     assert manual == ["*#4*2#1*20*0##", "*#4*2#2*20*5##", "*#4*2#2*20*5##"]
-    # a '#'-prefixed dimension 20 write echo was seen once (t = 1153 s) and parses as a command
+    # a '#'-prefixed dimension 20 write echo was seen once in run6 and parses as a command
     hashed = [r["frame"] for r in evt if r["frame"] == "*#4*2#1*#20*0##"]
     assert len(hashed) == 1 and OWNMessage.parse(hashed[0]) is not None
 
@@ -546,8 +572,8 @@ def test_cover_05_dimension_reads(rows: list[dict]) -> None:
 def test_light_pulse_during_run1_was_not_reproduced(rows: list[dict]) -> None:
     """A 100 ms pulse of 07 and 06 arrived during a locally refused read; re-sending the same reads showed nothing."""
     pulse = _result(rows, RUN1, "*#3*#1##")
-    assert pulse["ack"] is False and pulse["reply_time_s"] < 0.01
-    assert pulse["events_after"] == ["*1*1*07##", "*1*0*07##", "*1*1*06##"]
+    assert pulse["ack"] is False and pulse["reply_time_s"] < 0.01 and pulse["events_after"] == []
+    assert _evt_between(rows, RUN1, "*#3*#1##") == ["*1*1*07##", "*1*0*07##", "*1*1*06##"]
     for run in (RUN8, RUN8B):
         for res in _results(rows, run):
             assert res["ack"] is False and res["events_after"] == [], res

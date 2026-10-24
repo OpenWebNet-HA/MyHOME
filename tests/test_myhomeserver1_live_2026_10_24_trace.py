@@ -62,6 +62,19 @@ def _evt(rows: list[dict], run: str) -> list[dict]:
     return [r for r in rows if r["run"] == run and r["dir"] == "rx" and r["session"] == "evt"]
 
 
+def _evt_between(rows: list[dict], run: str, frame: str) -> list[str]:
+    """Event-session frames from the request ``frame`` of ``run`` until the next request of that run."""
+    run_rows = [r for r in rows if r["run"] == run]
+    start = next(i for i, r in enumerate(run_rows) if r["dir"] == "tx" and r["frame"] == frame)
+    out: list[str] = []
+    for r in run_rows[start + 1 :]:
+        if r["dir"] == "tx":
+            break
+        if r["dir"] == "rx" and r["session"] == "evt":
+            out.append(r["frame"])
+    return out
+
+
 # --------------------------------------------------------------- schema, privacy, parsing
 
 
@@ -80,6 +93,8 @@ def test_schema_runs_and_synthetic_identity(trace_payload: dict, rows: list[dict
     assert "2.82.06" in gw["oracle_note"]
     assert trace_payload["capture"]["kind"] == "derived_trace_archive"
     assert [r["run"] for r in trace_payload["capture"]["runs"]] == [RUN1, RUN2, RUN3]
+    ts = [f["timestamp"] for f in frames]
+    assert ts == sorted(ts) and all(a["t"] <= b["t"] for a, b in zip(rows, rows[1:], strict=False))
     assert trace_payload["capture"]["window"]["frames"] == len(frames) == 376
     assert trace_payload["capture"]["window"]["rows"] == len(rows) == 613
     assert all(f["direction"] == "rx" and f["session"] == "evt" for f in frames)
@@ -114,11 +129,19 @@ def test_result_rows_are_consistent_with_their_tx_and_cmd_rx_rows(rows: list[dic
         for i, r in enumerate(run_rows):
             if r["dir"] != "result":
                 continue
-            tx = next(x for x in reversed(run_rows[:i]) if x["dir"] == "tx")
-            assert tx["frame"] == r["frame"] and tx["t"] <= r["t"]
+            tx_i = next(j for j in range(i - 1, -1, -1) if run_rows[j]["dir"] == "tx")
+            tx = run_rows[tx_i]
+            assert tx["frame"] == r["frame"]
+            assert tx["t"] <= r["t"]
             assert abs((r["t"] - tx["t"]) - r["reply_time_s"]) < 0.002
-            cmd_rx = [x["frame"] for x in run_rows[:i] if x["dir"] == "rx" and x["session"] == "cmd" and x["t"] == r["t"]]
-            assert cmd_rx == [*r["replies"], "*#*1##" if r["ack"] else "*#*0##"]
+            # the command-session replies sit right after their request, at its t, flagged as estimated
+            cmd_rx = [x for x in run_rows[tx_i + 1 : i] if x["dir"] == "rx" and x["session"] == "cmd"]
+            assert [x["frame"] for x in cmd_rx] == [*r["replies"], "*#*1##" if r["ack"] else "*#*0##"]
+            assert all(x["t"] == tx["t"] and x["t_estimated"] is True for x in cmd_rx)
+            assert run_rows[tx_i + 1 : tx_i + 1 + len(cmd_rx)] == cmd_rx
+            # events_after holds exactly the event-session frames that arrived while the request was pending
+            pending = [x["frame"] for x in run_rows[tx_i + 1 : i] if x["dir"] == "rx" and x["session"] == "evt" and x["t"] <= r["t"]]
+            assert r["events_after"] == pending
 
 
 # --------------------------------------------------------------- WHO 13 / 1013 identification
@@ -197,8 +220,9 @@ def test_actuator_status_per_zone_and_all_zones(rows: list[dict]) -> None:
     assert zone["replies"] == ["*#4*35#1*20*0##"] and zone["events_after"] == ["*#4*35#1*20*0##"]
     all_zones = _result(rows, RUN2, "*#4*#0*20##")
     assert all_zones["ack"] is True and all_zones["reply_time_s"] < 0.5
-    assert len(all_zones["replies"]) == 8 and set(all_zones["replies"]) <= set(all_zones["events_after"])
-    actuators = all_zones["events_after"]
+    actuators = _evt_between(rows, RUN2, "*#4*#0*20##")
+    assert len(all_zones["replies"]) == 8 and set(all_zones["replies"]) <= set(actuators)
+    assert all_zones["events_after"] and all_zones["events_after"] == actuators[: len(all_zones["events_after"])]
     assert len(actuators) == 43 and len(set(actuators)) == 43
     assert all(re.fullmatch(r"\*#4\*\d+#[1-4]\*20\*[05]##", f) for f in actuators)
     assert {f for f in actuators if f.startswith("*#4*0#")} == {
@@ -221,7 +245,8 @@ def test_humidity_per_zone_only_where_a_probe_exists_and_general_sweep(rows: lis
     assert none["ack"] is False and 2.0 < none["reply_time_s"] < 2.3 and none["events_after"] == []
     sweep = _result(rows, RUN2, "*#4*0*60##")
     assert sweep["ack"] is True and sweep["reply_time_s"] < 0.6
-    humid = sweep["events_after"]
+    humid = _evt_between(rows, RUN2, "*#4*0*60##")
+    assert sweep["events_after"] == humid[: len(sweep["events_after"])]
     assert len(humid) == 17 and len(set(humid)) == 17
     assert all(re.fullmatch(r"\*#4\*\d+\*60\*\d+##", f) for f in humid)
     assert sorted(int(f.split("*")[2]) for f in humid) == [39, 40, 41, 42, 43, 47, 48, 53, 55, 57, 58, 59, 60, 61, 68, 69, 70]
