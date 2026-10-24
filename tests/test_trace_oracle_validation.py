@@ -112,6 +112,9 @@ PHYSICAL_ONLY_TX_FRAMES: dict[str, str] = {
     "*1*0*#1##": "F461 2026-10-15 / 10-18: ACK (group 1 off)",
     "*1*0*0##": "F461 2026-10-15 / 10-18: ACK (general off)",
     "*1*1*#1##": "F461 2026-10-15 / 10-18: ACK (group 1 on)",
+    # --- F461 2.0.11, f461_live_2026-10-24 (climate setpoint capture behind #791)
+    "*#4*2*#7*1*3##": "F461 2026-10-24: ACK in 78 ms, echoed *#4*2*7*1*3## (heating comfort), *4*108*2##, dimension 12 unchanged",
+    "*#4*2*#7*2*3##": "F461 2026-10-24: ACK in 93 ms, echoed *#4*2*7*2*3## (cooling comfort), *4*208*2##, dimension 12 = 25.0",
     # --- F461 2.0.11, f461_live_2026-10-18 (PR #750 expose verification)
     "*#1*08*1*150*0##": "F461 2026-10-18: NACK in 55 ms (dimension 1 without # is a read on an empty point)",
     "*#13**#0*22*51*00*999##": "F461 2026-10-18: ACK (clock set, broadcast on evt)",
