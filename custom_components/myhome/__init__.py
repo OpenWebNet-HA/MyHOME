@@ -393,12 +393,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> b
     if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         return False
 
-    gateway_handler = entry.runtime_data.gateway
+    hass.data.get(DOMAIN, {}).pop(entry.data.get(CONF_MAC), None)
+    setattr(entry, "runtime_data", None)
+
+    if not isinstance(runtime, MyHOMERuntimeData):
+        return True
+
+    gateway_handler = runtime.gateway
     # Device faults are re-raised by the next setup if still there (device_health.py).
     health = getattr(gateway_handler, "device_health", None)
     if isinstance(health, DeviceHealth):
         health.clear_all()
-    hass.data[DOMAIN].pop(entry.data[CONF_MAC], None)
-    setattr(entry, "runtime_data", None)
 
     return await gateway_handler.close_listener()

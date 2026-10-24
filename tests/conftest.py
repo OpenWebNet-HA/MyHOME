@@ -197,6 +197,14 @@ class _HADeprecationGuard(logging.Handler):
             self.all_import_time_records.append(entry)
 
     def _on_report_usage(self, *args, **kwargs):
+        ignore_behavior = getattr(
+            getattr(ha_frame, "ReportBehavior", None), "IGNORE", None
+        )
+        if (
+            ignore_behavior is not None
+            and kwargs.get("custom_integration_behavior") == ignore_behavior
+        ):
+            return self._orig_report_usage(*args, **kwargs)
         what = args[1] if len(args) > 1 else kwargs.get("what", "<unknown>")
         breaks_in_ha_version = kwargs.get("breaks_in_ha_version")
         integration_domain = kwargs.get("integration_domain")
@@ -294,18 +302,8 @@ def capture_ha_deprecations():
 get_ha_deprecation_guard()
 
 
-# This fixture allows us to load custom components in tests
-@pytest.fixture(autouse=True)
-def auto_enable_custom_integrations(enable_custom_integrations):
-    """Enable custom integrations for all tests."""
-    try:
-        from pytest_socket import enable_socket
-        enable_socket()
-    except ImportError:
-        pass
-    yield
-
-
+# Defined before auto_enable_custom_integrations so pytest sets this fixture up
+# before `hass` and tears it down *after* `hass` finishes unloading config entries.
 @pytest.fixture(autouse=True)
 def fail_on_ha_deprecations():
     """Fail any test that triggers a Home Assistant deprecation in myhome."""
@@ -325,6 +323,18 @@ def fail_on_ha_deprecations():
             "Home Assistant deprecation(s) detected in custom_components/myhome:\n  - "
             + "\n  - ".join(records)
         )
+
+
+# This fixture allows us to load custom components in tests
+@pytest.fixture(autouse=True)
+def auto_enable_custom_integrations(enable_custom_integrations):
+    """Enable custom integrations for all tests."""
+    try:
+        from pytest_socket import enable_socket
+        enable_socket()
+    except ImportError:
+        pass
+    yield
 
 
 @pytest.fixture(autouse=True)

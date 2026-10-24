@@ -143,6 +143,12 @@ async def test_unload_entry_keeps_state_when_platform_unload_fails(hass: HomeAss
     assert entry.runtime_data is None
     gateway.close_listener.assert_awaited_once()
 
+    # Unloading an entry whose setup was mocked (no runtime_data attribute) succeeds cleanly
+    uninitialized_entry = MockConfigEntry(domain=DOMAIN, data={"mac": mac, "host": "1.2.3.4", "port": 20000})
+    uninitialized_entry.add_to_hass(hass)
+    with patch.object(hass.config_entries, "async_unload_platforms", AsyncMock(return_value=True)):
+        assert await async_unload_entry(hass, uninitialized_entry) is True
+
 
 async def test_setup_yaml(hass: HomeAssistant):
     """A `myhome:` key is ignored; it must not keep the config entries from loading (#566)."""
