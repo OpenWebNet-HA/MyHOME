@@ -65,7 +65,7 @@
       {
         "run": "run5_bezel_in_manual_and_in_antifreeze_then_ha_write",
         "listener": "transition_evt.jsonl",
-        "utc": "19:10:42-19:12:35",
+        "utc": "19:10:42-19:12:37",
         "t_offset": 3618.019,
         "rows": 93,
         "frames": 46,

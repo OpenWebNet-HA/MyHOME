@@ -19,7 +19,7 @@ that #791 started from, and the plant table in full).
 |---|---|
 | Gateway | F461, firmware 2.0.11 (`*#13**16*2*0*11##`), kernel 5.10.35, distribution 2.26.4, WHO 13 device type `200`, WHO 1013 object model `134.15.5.0`, HMAC SHA-256 on both sessions (identified in `f461_live_2026-10-23`) |
 | Climate | Living Now KW4691 standalone thermostat at zone 2 with a BT-F430/2 heating valve (actuator 1) and a BT-F430/4 fan coil (actuator 2); heating season; no central unit; zone 2 is the only WHO 4 device |
-| Home Assistant | a local instance running the integration at #791's head (`abf6330f`) with the PyPI OWNd pin, `climate.thermo_ofice` = zone 2; its own requests are listed in `capture.home_assistant_requests` (from its debug log, which is not included) |
+| Home Assistant | a local instance running the integration at #791's head (`abf6330f`) with the PyPI OWNd pin, `climate.climate_zone_2` = zone 2; its own requests are listed in `capture.home_assistant_requests` (from its debug log, which is not included) |
 | Not involved | lights 06 / 07 / 09 and the shutter 05 of the plant (no WHO 1 / 2 frame in this capture) |
 
 ## File format: `myhome_trace_F461_live_2026-10-24.json`
@@ -63,7 +63,7 @@ request in flight (`listen` before the first request of a run).
 | `run2_fast_poll_dim12_dim14` | 18:09:45-18:57:35 | 480 alternating `*#4*2*12##` / `*#4*2*14##` reads 0.6 s apart for 5 min 45 s while Home Assistant wrote 21.0 (18:11:46) and 23.5 (18:13:39); then 42 min of idle listening |
 | `run3_antifreeze_split_and_restore` | 18:58:04-19:01:32 | `*4*102*2##`, reads of 12 / 14 / `*#4*2##` in antifreeze, Home Assistant's poll, `*#4*2*#14*0235*3##`, the same reads after it; the listener ends on the valve's dimension 20 echo |
 | `run4_preset_templates` | 19:02:04-19:10:00 | Home Assistant's 21.0 write (the listener's first frames are its echo), the probe's `*#4*2##`, `*#4*2*#7*1*3##`, `*#4*2*#7*2*3##` 54 s later, the season flips 47 s after that, reads of 12 / 14 / `*#4*2##`, `*#4*2*#14*0235*3##` and `*#4*2##`, Home Assistant's poll |
-| `run5_bezel_in_manual_and_in_antifreeze_then_ha_write` | 19:10:42-19:12:35 | bezel +0.5 in Manual, `*4*102*2##` and `*#4*2##`, bezel +0.5 in antifreeze, reads of 12 / 14 / `*#4*2##`, `*4*102*2##` and `*#4*2##` again, Home Assistant's `climate.set_temperature` 23.5 while 12 != 14, `*#4*2##` |
+| `run5_bezel_in_manual_and_in_antifreeze_then_ha_write` | 19:10:42-19:12:37 | bezel +0.5 in Manual, `*4*102*2##` and `*#4*2##`, bezel +0.5 in antifreeze, reads of 12 / 14 / `*#4*2##`, `*4*102*2##` and `*#4*2##` again, Home Assistant's `climate.set_temperature` 23.5 while 12 != 14, `*#4*2##` |
 
 ## What the plant established (each row has its frames in the archive)
 
@@ -71,15 +71,20 @@ request in flight (`listen` before the first request of a run).
   `*#4*2*12*0180*3##`, `*4*1*2##`, `*#4*2*0*0239##` 2.25 s later when the dial settled on 18.0; no dimension 14
   and no dimension 13 frame. The first `*#4*2*14##` read, 49 s later, already answered 18.0 (so the thermostat
   had moved dimension 14 by then, silently). In run 5 the same: `*#4*2*12*0240*3##`, `*4*1*2##`,
-  `*#4*2*0*0239##` and the valve opening (`*#4*2#1*#20*1##`, `*#4*2#1*20*1##`) 3 s later; the `*#4*2##` 15 s
-  later (already in antifreeze) read dimension 14 = 24.0.
+  `*#4*2*0*0239##` and the valve opening (`*#4*2#1*#20*1##`, `*#4*2#1*20*1##`) 3 s later; the `*#4*2##` sent
+  10.8 s later (result at 12.2 s, already in antifreeze) read dimension 14 = 24.0.
 * **A dimension 14 write echoes dimension 12, never dimension 14.** Every `*#4*2*#14*T*3##` (four from Home
-  Assistant, two from the probe) is ACKed in 63-78 ms and echoed as `*#4*2*12*T*3##`, `*4*1*2##`,
-  `*#4*2*0*…##` (the season frame comes first, twice, when the zone was in antifreeze). During the 0.6 s poll the
+  Assistant, two from the probe) is echoed as `*#4*2*12*T*3##`, `*4*1*2##`, `*#4*2*0*…##` (the season frame
+  comes first, twice, when the zone was in antifreeze). Only the two probe writes have measured `reply_time_s`
+  rows in the archive (ACK in 63 ms and 77 ms); Home Assistant's four writes went through its own command
+  session and have no `tx` / `result` rows here (their timings come from its debug log, not included). During the 0.6 s poll the
   next dimension 14 read already carried T: 0.7 s after the dimension 12 read for 21.0, and for 23.5 the echo
   arrived while a dimension 14 read was pending, whose reply (0.1 s later) was already 23.5. The 480 reads were
   all ACKed in 90-330 ms; the 240 dimension 14 frames of run 2 are all read replies.
-* **`*4*102*2##` (antifreeze) is the only operation that split 12 from 14.** ACK in 65-80 ms, then
+* **`*4*102*2##` (antifreeze) is, among the operations exercised in this capture, the only one that split 12
+  from 14.** (Not a hardware invariant: on this plant `f461_live_2026-10-23` run 1 recorded 12 = 23.5 != 14 = 21.0
+  in active heating, `*4*1*2##`, after days without a write; that transition was not reproduced here.) ACK in
+  65-80 ms, then
   `*4*102*2##`, `*#4*2*12*0070*3##`, `*4*102*2##`, `*#4*2*0*…##`: dimension 12 reports the protection setpoint
   7.0 together with the mode frame while dimension 14 keeps the last commanded value (23.5 in run 3, 24.0 and
   7.5 in run 5); `*#4*2##` answers `0`, `12`, `*4*102*2##`, `14`, `13` in that order (the mode frame takes the
@@ -91,7 +96,8 @@ request in flight (`listen` before the first request of a run).
   season again, 7.5 in force); 27 s later dimension 12 and 14 both read 7.5. A second `*4*102*2##` then split them
   again (12 = 7.0, 14 = 7.5).
 * **A Home Assistant write while 12 != 14 realigns both.** `climate.set_temperature` 23.5 in antifreeze
-  (19:12:26): `*4*1*2##`, `*#4*2*12*0235*3##`, `*4*1*2##`, `*#4*2*0*0238##`; `*#4*2##` 10 s later: 12 = 14 = 23.5,
+  (19:12:26): `*4*1*2##`, `*#4*2*12*0235*3##`, `*4*1*2##`, `*#4*2*0*0238##`; the `*#4*2##` sent 7.5 s after the
+  echo (result at 8.9 s): 12 = 14 = 23.5,
   heating season. The probe's `*#4*2*#14*0235*3##` in run 3 did the same from antifreeze.
 * **The dimension 7 templates.** `*#4*2*#7*1*3##` is ACKed in 78 ms and echoed as `*#4*2*7*1*3##` (heating
   comfort), `*#4*2*12*0210*3##` (unchanged), `*4*108*2##`, `*#4*2*0*0239##`; `*#4*2*#7*2*3##` 54 s later as

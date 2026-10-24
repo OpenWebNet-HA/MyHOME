@@ -16,9 +16,12 @@ What the plant said (zone 2, heating season, no central unit):
   ``*#4*2*14##`` read, 49 s later, already answered 18.0.
 - A ``*#4*2*#14*T*3##`` write echoes dimension 12, the season frame and dimension 0 (never
   dimension 14); a dimension 14 read 0.1-0.7 s later already carries T.
-- ``*4*102*2##`` (antifreeze) is the only operation that splits the two: dimension 12 reports
-  7.0 with the mode frame ``*4*102*2##`` while dimension 14 keeps the last commanded value
-  (23.5, 24.0, 7.5). A write of dimension 14 brings the zone back to heating.
+- ``*4*102*2##`` (antifreeze) is, among the operations exercised in this capture, the only
+  one that splits the two: dimension 12 reports 7.0 with the mode frame ``*4*102*2##`` while
+  dimension 14 keeps the last commanded value (23.5, 24.0, 7.5). A write of dimension 14
+  brings the zone back to heating. (On this plant ``f461_live_2026-10-23`` run 1 had recorded
+  12 = 23.5 != 14 = 21.0 in active heating, ``*4*1*2##``, after days without a write; that
+  transition was not reproduced here.)
 - The dimension 7 templates ``*#4*2*#7*1*3##`` / ``*#4*2*#7*2*3##`` are echoed as
   ``*#4*2*7*1*3##`` (heating comfort, 21.0, ``*4*108*2##``) and ``*#4*2*7*2*3##`` (cooling
   comfort, 25.0, ``*4*208*2##``); 47 s later the season flipped to conditioning and back to
@@ -449,12 +452,15 @@ def test_dimension_7_templates_and_the_season_flips(rows: list[dict]) -> None:
     comfort = _result(rows, RUN4, "*#4*2*#7*1*3##")
     assert comfort["reply_time_s"] < 0.1 and comfort["events_after"] == []
     assert _evt_between(rows, RUN4, "*#4*2*#7*1*3##") == ["*#4*2*7*1*3##", dim(12, "0210"), "*4*108*2##", "*#4*2*0*0239##"]
-    eco = _result(rows, RUN4, "*#4*2*#7*2*3##")
-    assert eco["reply_time_s"] < 0.1 and eco["events_after"] == []
-    after_eco = _evt_between(rows, RUN4, "*#4*2*#7*2*3##")
-    assert after_eco[:4] == ["*#4*2*7*2*3##", dim(12, "0250"), "*4*208*2##", "*#4*2*0*0239##"]
+    # *#4*2*#7*2*3## is context 2 (cooling), state 3 (comfort): Cooling Comfort, not Heating Eco (*#4*2*#7*1*4##).
+    # The archive keeps the probe step name "eco_template_and_reads" because the request was sent under that
+    # mistaken label during the capture; the fixture was not regenerated for it.
+    cooling_comfort = _result(rows, RUN4, "*#4*2*#7*2*3##")
+    assert cooling_comfort["reply_time_s"] < 0.1 and cooling_comfort["events_after"] == []
+    after_cooling_comfort = _evt_between(rows, RUN4, "*#4*2*#7*2*3##")
+    assert after_cooling_comfort[:4] == ["*#4*2*7*2*3##", dim(12, "0250"), "*4*208*2##", "*#4*2*0*0239##"]
     # 47 s later the zone flipped to conditioning, 3 s later back to heating, 2 s later the setpoint became 22.5
-    assert after_eco[4:] == [
+    assert after_cooling_comfort[4:] == [
         "*4*0*2##",
         dim(12, "0250"),
         "*4*0*2##",
@@ -468,11 +474,11 @@ def test_dimension_7_templates_and_the_season_flips(rows: list[dict]) -> None:
         "*#4*2*0*0238##",
     ]
     evt = _evt(rows, RUN4)
-    t_eco = next(r["t"] for r in evt if r["frame"] == "*#4*2*7*2*3##")
+    t_cooling_comfort = next(r["t"] for r in evt if r["frame"] == "*#4*2*7*2*3##")
     t_cool = next(r["t"] for r in evt if r["frame"] == "*4*0*2##")
     t_heat = next(r["t"] for r in evt if r["frame"] == SEASON and r["t"] > t_cool)
     t_225 = next(r["t"] for r in evt if r["frame"] == dim(12, "0225"))
-    assert t_cool - t_eco == pytest.approx(47.57, abs=0.01)
+    assert t_cool - t_cooling_comfort == pytest.approx(47.57, abs=0.01)
     assert t_heat - t_cool == pytest.approx(3.16, abs=0.01)
     assert t_225 - t_heat == pytest.approx(1.99, abs=0.01)
     # both dimensions read 22.5 without any dimension 14 write
@@ -539,7 +545,7 @@ def test_bezel_in_manual_then_antifreeze_then_bezel_in_antifreeze_then_home_assi
 
 
 def test_antifreeze_is_the_only_operation_that_left_12_and_14_apart(rows: list[dict]) -> None:
-    """Every *#4*2## reply with 12 != 14 carries the antifreeze mode frame; every heating-season reply has 12 == 14."""
+    """In this capture every *#4*2## reply with 12 != 14 carries the antifreeze mode frame; every heating-season reply has 12 == 14."""
     polls = _results(rows, frame=ZONE_STATUS)
     assert len(polls) == 10
     for r in polls:
