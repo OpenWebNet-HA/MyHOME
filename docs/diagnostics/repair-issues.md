@@ -41,6 +41,24 @@ Once the gateway broadcasts an updated WHO=13 frame with a valid timezone offset
 
 ---
 
+## Event Session Silent
+
+**Repair Key**: `event_session_silent`  
+**Severity**: `WARNING`  
+**Auto-Resolving**: Yes
+
+### What it means
+When no bus frame arrived on the event session for 10 minutes, MyHOME sends the gateway time request `*#13**0##` on the command session. Gateways such as the F461 also deliver the reply on the event session, which proves the event path end to end. When that echo is missing, the event session is recreated; when it is still missing after three attempts in a row, this issue is raised. A gateway is only recycled once it has echoed the probe at least once (or is an F461), so gateways that keep the reply on the command session are never affected.
+
+### How to resolve
+1. Check that no other client (another Home Assistant, a supervisor app, MyHOME_Suite) holds all of the gateway's sessions.
+2. Restart the gateway.
+
+### How it clears
+The issue is withdrawn as soon as a probe is echoed again.
+
+---
+
 ## Unknown Gateway Model
 
 **Repair Key**: `unknown_gateway_model`  

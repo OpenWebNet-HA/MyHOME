@@ -42,6 +42,7 @@ ISSUE_BUS_COLLISION = "bus_collision_storm"
 ISSUE_GATEWAY_IDENTITY = "gateway_identity_mismatch"
 ISSUE_UNKNOWN_GATEWAY_MODEL = "unknown_gateway_model"
 ISSUE_UNCONFIGURED_TIMEZONE = "unconfigured_timezone"
+ISSUE_EVENT_SESSION_SILENT = "event_session_silent"
 
 ISSUE_GATEWAY_IDENTITY_CORRECTED = "gateway_identity_corrected"
 ISSUE_INCOMPATIBLE_DECODER = "incompatible_decoder_platform"
@@ -102,6 +103,26 @@ def async_create_unconfigured_timezone_issue(hass: HomeAssistant, entry_id: str,
 def async_delete_unconfigured_timezone_issue(hass: HomeAssistant, entry_id: str) -> None:
     """Delete the unconfigured timezone issue once the gateway returns a valid timezone."""
     async_delete_issue(hass, DOMAIN, f"{ISSUE_UNCONFIGURED_TIMEZONE}_{entry_id}")
+
+
+def async_create_event_session_silent_issue(
+    hass: HomeAssistant, entry_id: str, gateway_name: str, misses: int
+) -> None:
+    """Raise a repair when the event session repeatedly fails the end-to-end liveness probe."""
+    async_create_issue(
+        hass,
+        DOMAIN,
+        f"{ISSUE_EVENT_SESSION_SILENT}_{entry_id}",
+        is_fixable=False,
+        severity=IssueSeverity.WARNING,
+        translation_key=ISSUE_EVENT_SESSION_SILENT,
+        translation_placeholders={"gateway": gateway_name, "misses": str(misses)},
+    )
+
+
+def async_delete_event_session_silent_issue(hass: HomeAssistant, entry_id: str) -> None:
+    """Delete the silent event session issue once a probe is echoed again."""
+    async_delete_issue(hass, DOMAIN, f"{ISSUE_EVENT_SESSION_SILENT}_{entry_id}")
 
 
 def async_create_identity_issue(

@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.connection import OWNCommandSession, OWNEventSession, OWNGateway
-from OWNd.message import OWNCommand, OWNMessage
+from OWNd.message import OWNCommand, OWNGatewayCommand, OWNGatewayEvent, OWNMessage, OWNSignaling
 
 from .const import LOGGER, area_of_where, is_apl_address
 from .expose import is_exposed_on_bus
@@ -40,6 +40,31 @@ EVENT_RESTART_BACKOFF_MAX: float = 60.0
 # leaving sessions open indefinitely. Installations desiring a generous hard ceiling
 # for "TCP up, bus dead" conditions can override this constant (e.g. 43200.0 / 12h).
 EVENT_INACTIVITY_TIMEOUT: float | None = None
+# End-to-end liveness probe (#123, #135, #158, #164): after EVENT_PROBE_IDLE seconds
+# without a bus frame (keepalive ACKs do not count), `*#13**0##` goes out on the
+# command session and its reply must also arrive on the event session within
+# EVENT_PROBE_TIMEOUT (live F461 2.0.11). A miss recycles the event session; after
+# EVENT_PROBE_REPAIR_AFTER consecutive misses a repair issue is raised. A gateway is
+# only recycled once it has echoed a probe, or when its model is known to echo,
+# so a gateway that keeps the reply on the command session is never cycled.
+EVENT_PROBE_IDLE: float = 600.0
+EVENT_PROBE_TIMEOUT: float = 30.0
+EVENT_PROBE_REPAIR_AFTER: int = 3
+# Models seen to deliver the ``*#13**0##`` reply on the event session (physical F461
+# 2.0.11). Fallback for OWNd profiles without an ``echoes_event_session_probe`` flag;
+# the flag belongs in OWNd (#381 pattern).
+EVENT_PROBE_ECHO_MODELS = frozenset({"F461"})
+
+
+def _is_time_echo(message: object) -> bool:
+    """Whether ``message`` is the gateway's ``*#13**0*…##`` time reply, the probe's echo.
+
+    OWNd parses it as an ``OWNGatewayEvent`` with dimension 0; the raw-string prefix is
+    the fallback for a reply the pinned OWNd hands back unparsed.
+    """
+    if isinstance(message, OWNGatewayEvent):
+        return message.dimension == 0
+    return str(message).startswith("*#13**0*")
 
 
 def _resolve_written(task: dict[str, Any], when: float) -> None:
@@ -82,6 +107,13 @@ class EventSessionRunner:
         self._event_session_ready: asyncio.Event = asyncio.Event()
         self._event_watchdog: asyncio.Timeout | None = None
         self.is_connected: bool = False
+        self._last_rx_at: float = time.monotonic()
+        self._last_echo_at: float = 0.0
+        self._last_probe_at: float = 0.0
+        self._rx_event: asyncio.Event = asyncio.Event()
+        self._probe_echo_seen: bool = False
+        self._probe_misses: int = 0
+        self._probe_recycle: bool = False
 
     @property
     def gateway(self) -> OWNGateway:
@@ -110,7 +142,8 @@ class EventSessionRunner:
         a bare state change only arms it when it is not already running.
         """
         watchdog = self._event_watchdog
-        if watchdog is None or watchdog.expired():
+        if watchdog is None or watchdog.expired() or self._probe_recycle:
+            # A recycle requested by the liveness probe must not be disarmed by a late frame.
             return
         if self.is_connected:
             watchdog.reschedule(None)
@@ -192,7 +225,9 @@ class EventSessionRunner:
                 await self._read_event_session(_event_session)
             return False
         except Exception as err:
-            if isinstance(err, TimeoutError) and watchdog.expired():
+            if isinstance(err, TimeoutError) and watchdog.expired() and self._probe_recycle:
+                LOGGER.debug("%s Event session closed by the liveness probe.", self.log_id)
+            elif isinstance(err, TimeoutError) and watchdog.expired():
                 LOGGER.warning(
                     "%s Event session stalled: disconnected with no reconnect "
                     "progress for %ss.",
@@ -203,6 +238,7 @@ class EventSessionRunner:
                 LOGGER.exception("%s Event listener failed.", self.log_id)
         finally:
             self._event_watchdog = None
+            self._probe_recycle = False
             with contextlib.suppress(Exception):
                 await asyncio.shield(_event_session.close())
         return not self._terminate_listener
@@ -245,11 +281,28 @@ class EventSessionRunner:
                 self.log_id,
             )
         self._update_event_watchdog(progress=True)
+        self._last_rx_at = time.monotonic()
+        probe = asyncio.get_running_loop().create_task(
+            self._liveness_probe(), name=f"myhome_{self.handler.mac}_event_probe"
+        )
+        try:
+            await self._dispatch_event_frames(_event_session, session_is_open)
+        finally:
+            probe.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await probe
 
+    async def _dispatch_event_frames(self, _event_session: OWNEventSession, session_is_open: Any) -> None:
+        """Read ``_event_session`` until the listener terminates or the read raises."""
         was_reachable = True
         while not self._terminate_listener:
             message = await _event_session.get_next()
             self._update_event_watchdog(progress=True)
+            if message is not None and not isinstance(message, OWNSignaling):
+                self._last_rx_at = time.monotonic()
+                if _is_time_echo(message):
+                    self._last_echo_at = self._last_rx_at
+                self._rx_event.set()
             if message is None:
                 reachable = session_is_open(_event_session)
                 if reachable != was_reachable:
@@ -276,6 +329,106 @@ class EventSessionRunner:
                 await self.handler._process_message(message)
             except Exception:
                 LOGGER.exception("%s Failed to process `%s`.", self.log_id, message)
+
+    async def _liveness_probe(self) -> None:
+        """Probe a silent event session end to end, for as long as it is open."""
+        while not self._terminate_listener:
+            idle = float(EVENT_PROBE_IDLE)
+            delay = max(self._last_rx_at, self._last_probe_at) + idle - time.monotonic()
+            if delay > 0:
+                await asyncio.sleep(delay)
+                continue
+            if not self.is_connected:
+                # A lost socket is OWNd's and the stall watchdog's business.
+                self._last_probe_at = time.monotonic()
+                continue
+            try:
+                if not await self._probe_once():
+                    return
+            except Exception:
+                LOGGER.exception("%s Event session liveness probe failed.", self.log_id)
+
+    def _probe_echo_expected(self) -> bool:
+        """Whether a missing echo means a dead event session on this gateway.
+
+        A seen echo is the strongest evidence; then the OWNd profile flag
+        ``echoes_event_session_probe`` (``None`` = unverified); then the model table.
+        """
+        profile = getattr(self.handler, "profile", None)
+        flag = getattr(profile, "echoes_event_session_probe", None)
+        model = str(getattr(self.handler, "model", "") or "").strip().upper()
+        if self._probe_echo_seen:
+            return True
+        if isinstance(flag, bool):
+            return flag
+        return model in EVENT_PROBE_ECHO_MODELS
+
+    async def _probe_once(self) -> bool:
+        """Send one probe; False when it was not echoed and the session is being recycled."""
+        self._last_probe_at = time.monotonic()
+        silent_for = self._last_probe_at - self._last_rx_at
+        # Never wait for room in a full queue: the probe is retried after the next idle period.
+        written = self.handler._command_pool.send_status_request_nowait(OWNGatewayCommand.request_time())
+        if written is not None:
+            await asyncio.wait({written}, timeout=float(EVENT_PROBE_TIMEOUT))
+        if written is None or not written.done() or written.cancelled() or written.exception() is not None:
+            LOGGER.debug("%s Liveness probe not sent: command queue full or session unavailable.", self.log_id)
+            return True
+        written_at = written.result()
+        deadline = written_at + float(EVENT_PROBE_TIMEOUT)
+        while self._last_rx_at <= written_at and (remaining := deadline - time.monotonic()) > 0:
+            self._rx_event.clear()
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._rx_event.wait(), timeout=remaining)
+        if self._last_rx_at > written_at:
+            # Any frame proves the event path; only the time reply proves this gateway echoes.
+            if self._last_echo_at > written_at:
+                self._probe_echo_seen = True
+            if self._probe_misses:
+                LOGGER.info("%s Event session answers the liveness probe again.", self.log_id)
+                self._delete_probe_issue()
+            self._probe_misses = 0
+            return True
+        if not self._probe_echo_expected():
+            LOGGER.debug(
+                "%s `*#13**0##` was not echoed on the event session; this gateway has never "
+                "echoed it, so the session is kept.",
+                self.log_id,
+            )
+            return True
+        self._probe_misses += 1
+        LOGGER.warning(
+            "%s Event session silent for %.0fs and `*#13**0##` was not echoed within %.0fs "
+            "(miss %d); recreating the event session.",
+            self.log_id,
+            silent_for,
+            float(EVENT_PROBE_TIMEOUT),
+            self._probe_misses,
+        )
+        if self._probe_misses >= int(EVENT_PROBE_REPAIR_AFTER):
+            self._create_probe_issue()
+        self._probe_recycle = True
+        watchdog = self._event_watchdog
+        if watchdog is not None and not watchdog.expired():
+            watchdog.reschedule(asyncio.get_running_loop().time())
+        return False
+
+    def _create_probe_issue(self) -> None:
+        from .repairs import async_create_event_session_silent_issue
+
+        entry = getattr(self.handler, "config_entry", None)
+        entry_id = getattr(entry, "entry_id", None)
+        if isinstance(entry_id, str):
+            async_create_event_session_silent_issue(
+                self.handler.hass, entry_id, str(getattr(entry, "title", "") or self.handler.mac), self._probe_misses
+            )
+
+    def _delete_probe_issue(self) -> None:
+        from .repairs import async_delete_event_session_silent_issue
+
+        entry_id = getattr(getattr(self.handler, "config_entry", None), "entry_id", None)
+        if isinstance(entry_id, str):
+            async_delete_event_session_silent_issue(self.handler.hass, entry_id)
 
     def close(self) -> None:
         """Signal listener termination and unblock waiting workers."""
@@ -1217,15 +1370,28 @@ class CommandWorkerPool:
         """Queue a status request; the returned future resolves to the monotonic write time."""
         return await self._enqueue(message, is_status_request=True)
 
-    async def _enqueue(
-        self,
+    def send_status_request_nowait(self, message: OWNCommand) -> asyncio.Future[float] | None:
+        """Queue a status request without waiting for room; None when the queue is full or closed.
+
+        For callers on the event read loop, which must never block on a full queue.
+        """
+        envelope = self._envelope(message, is_status_request=True)
+        try:
+            self.send_buffer.put_nowait(envelope)
+        except (asyncio.QueueFull, getattr(asyncio, "QueueShutDown", asyncio.QueueFull)):
+            envelope["written"].cancel()
+            return None
+        return envelope["written"]  # type: ignore[no-any-return]
+
+    @staticmethod
+    def _envelope(
         message: OWNCommand,
         *,
         is_status_request: bool,
         is_fade_step: bool = False,
         is_cancel: bool = False,
-    ) -> asyncio.Future[float]:
-        """Put a frame on the send queue and hand back its delivery future."""
+    ) -> dict[str, Any]:
+        """The queue item for ``message``, with a fresh delivery future."""
         written: asyncio.Future[float] = asyncio.get_running_loop().create_future()
         envelope: dict[str, Any] = {
             "message": message,
@@ -1235,6 +1401,21 @@ class CommandWorkerPool:
         }
         if is_fade_step:
             envelope["is_fade_step"] = True
+        return envelope
+
+    async def _enqueue(
+        self,
+        message: OWNCommand,
+        *,
+        is_status_request: bool,
+        is_fade_step: bool = False,
+        is_cancel: bool = False,
+    ) -> asyncio.Future[float]:
+        """Put a frame on the send queue and hand back its delivery future."""
+        envelope = self._envelope(
+            message, is_status_request=is_status_request, is_fade_step=is_fade_step, is_cancel=is_cancel
+        )
+        written: asyncio.Future[float] = envelope["written"]
         await self.send_buffer.put(envelope)
         LOGGER.debug(
             "%s Message `%s` was successfully queued.",

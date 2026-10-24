@@ -273,5 +273,6 @@ async def test_gateway_events_skips_zone_status_query_on_physical_gateways(hass:
     dispatcher_mhs1._is_active_for_who = lambda who: True  # type: ignore[method-assign]
 
     await dispatcher_mhs1.process_message(msg)
-    handler_mhs1.send_status_request.assert_called_once()
+    # Queued without blocking the event read loop
+    handler_mhs1.send_status_request_nowait.assert_called_once()
 

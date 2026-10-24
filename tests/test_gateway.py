@@ -738,6 +738,8 @@ async def test_listening_loop_other_events(gateway_handler):
         mock_session_class.return_value = mock_session
 
         gateway_handler.send_status_request = AsyncMock()
+        # Event-triggered zone polls are queued without blocking the read loop
+        gateway_handler.send_status_request_nowait = MagicMock()
 
         try:
             await gateway_handler.listening_loop()
@@ -774,7 +776,8 @@ async def test_listening_loop_other_events(gateway_handler):
                 "message": str(msg_alarm),
             },
         )
-        assert gateway_handler.send_status_request.call_count >= 2
+        assert gateway_handler.send_status_request_nowait.call_count >= 2
+        gateway_handler.send_status_request.assert_not_called()
 
 
 

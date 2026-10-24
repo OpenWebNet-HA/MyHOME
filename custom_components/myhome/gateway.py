@@ -655,6 +655,16 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 return standby._command_pool.claim_in_flight_dimension_where(who, dimension)
         return self._command_pool.claim_in_flight_dimension_where(who, dimension)
 
+    def send_status_request_nowait(self, message: OWNCommand) -> asyncio.Future[float] | None:
+        """Queue a status request without blocking; None when the send queue is full."""
+        delegated = self._delegated_target(message)
+        if delegated is not None:
+            return delegated.send_status_request_nowait(message)
+        standby = self._failover_target(message)
+        if standby is not None:
+            return standby.send_status_request_nowait(message)
+        return self._command_pool.send_status_request_nowait(message)
+
     def _known_light_areas(self) -> list[str]:
         """Return list of known light areas."""
         return self._resync_manager.known_light_areas()
