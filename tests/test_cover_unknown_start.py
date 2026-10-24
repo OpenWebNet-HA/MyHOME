@@ -255,3 +255,40 @@ async def test_promotion_from_simple_forgets_the_optimistic_state(hass, gateway,
         await cover.async_set_cover_position(position=40)
     assert err.value.translation_key == "cover_position_unknown"
     assert gateway.deliveries == []
+
+
+async def test_stop_echo_after_the_travel_time_anchors_the_end_stop(hass, gateway, clock, fake_time, caplog) -> None:
+    """stop_cover written just before the travel time, its status relayed just after: the end stop anchors 0."""
+    caplog.set_level("DEBUG", logger="custom_components.myhome")
+    cover = _make_cover(hass, gateway)
+    await _close_from_unknown(cover, gateway, clock)
+    clock.now += 5.85  # 5.85 s into a 6.0 s travel: the provisional freeze knows no position
+    await cover.async_stop_cover()
+    raw, stop_written = gateway.deliveries[-1]
+    assert raw == "*2*0*05##"
+    stop_written.set_result(clock.now)
+    await _yield()
+    assert cover.current_cover_position is None
+    clock.now += 0.2  # the relayed stop status lands at 6.05 s, past the travel time
+    cover.handle_event(OWNEvent.parse("*2*0*05##"))
+    assert cover.current_cover_position == 0
+    assert cover.is_closed is True
+    assert cover.extra_state_attributes["last_run_seconds"] == pytest.approx(6.05)
+    assert "re-anchored to 0%" in caplog.text
+    assert "None%" not in caplog.text
+
+
+async def test_stop_echo_of_a_partial_run_from_unknown_logs_no_position(hass, gateway, clock, fake_time, caplog) -> None:
+    """The debug line of a stop echo that anchors nothing says so instead of printing None%."""
+    caplog.set_level("DEBUG", logger="custom_components.myhome")
+    cover = _make_cover(hass, gateway)
+    await _close_from_unknown(cover, gateway, clock)
+    clock.now += 2.0
+    await cover.async_stop_cover()
+    gateway.deliveries[-1][1].set_result(clock.now)
+    await _yield()
+    clock.now += 0.05
+    cover.handle_event(OWNEvent.parse("*2*0*05##"))
+    assert cover.current_cover_position is None
+    assert "position still unknown" in caplog.text
+    assert "None%" not in caplog.text

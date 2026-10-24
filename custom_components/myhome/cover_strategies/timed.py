@@ -142,13 +142,25 @@ class TimedCurtainStrategy(BaseCoverStrategy):
         direction = "open" if is_opening else "close" if is_closing else ""
         travel_time = self.curtain_travel_for(is_opening)
         reanchored: int | None = getattr(entity, "_attr_current_cover_position", None)
-        if travel_time > 0 and (is_opening or is_closing) and run_start_pos is not None:
-            reanchored = self.position_after(
-                run_start_pos, elapsed, direction, entity=entity, lead=lead
-            )
-            entity._attr_current_cover_position = reanchored
-            entity._start_position = reanchored
-            entity._attr_is_closed = reanchored == 0
+        end_stop_from_unknown = False
+        if travel_time > 0 and (is_opening or is_closing):
+            if run_start_pos is not None:
+                reanchored = self.position_after(
+                    run_start_pos, elapsed, direction, entity=entity, lead=lead
+                )
+            elif elapsed >= self.travel_for_direction(is_opening):
+                # A run from an unknown position that lasted the full travel
+                # reached its end stop, as _freeze_position anchors it: the
+                # stop was written just before the travel time and the relayed
+                # status came just after.
+                reanchored = 100 if is_opening else 0
+                end_stop_from_unknown = True
+            if run_start_pos is not None or end_stop_from_unknown:
+                entity._attr_current_cover_position = reanchored
+                entity._start_position = reanchored
+                entity._attr_is_closed = reanchored == 0
+        if end_stop_from_unknown and reanchored is not None:
+            self.on_position_confirmed(entity, reanchored, "end_stop")
         self._reanchor_slats_on_stop_echo(entity, ctx, elapsed, is_opening, is_closing)
         entity._last_run = {
             "seconds": round(elapsed, 2),
@@ -158,11 +170,12 @@ class TimedCurtainStrategy(BaseCoverStrategy):
         if hasattr(entity, "_refresh_travel_attributes"):
             entity._refresh_travel_attributes()
         log_id = getattr(getattr(entity, "_gateway_handler", None), "log_id", "")
+        position = entity._attr_current_cover_position
         LOGGER.debug(
-            "%s Stop status echo for %s; re-anchored to %s%% (elapsed %.2f s).",
+            "%s Stop status echo for %s; %s (elapsed %.2f s).",
             log_id,
             getattr(entity, "_full_where", ""),
-            entity._attr_current_cover_position,
+            f"re-anchored to {position}%" if position is not None else "position still unknown",
             elapsed,
         )
         return reanchored
