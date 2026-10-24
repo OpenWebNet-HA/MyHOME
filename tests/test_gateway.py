@@ -555,6 +555,10 @@ async def test_scope_events_fire_only_for_state_frames(gateway_handler):
         ("myhome_group_automation_event", "*2*0*#5##", "stop"),
         ("myhome_area_automation_event", "*2*1*3##", "open"),
     ]
+    # The dim steps still schedule the member re-sync of group 5 and area 3, with no
+    # expected polarity: a step says nothing about where the members end up.
+    assert sorted(gateway_handler._resync_timers) == ["#5", "#6", "3"]
+    assert gateway_handler._resync_manager._resync_expected_on == {"#5": None, "3": None, "#6": False}
 
 
 @pytest.mark.asyncio

@@ -304,9 +304,11 @@ class GatewayEventDispatcher:
                     is_not_dimension = not (isinstance(dim, int) and not isinstance(dim, bool))
 
                     # A dim step (WHAT 30/31) says the light changed, not that it is on (#367).
+                    # It fires no on/off event but still resyncs its members, whether OWNd
+                    # reports its `is_on` as True (2.0.0b11) or None.
                     is_dim_step = getattr(message, "what", None) in (30, 31)
 
-                    if message.is_on is not None and is_not_dimension:
+                    if (message.is_on is not None or is_dim_step) and is_not_dimension:
                         event = "on" if message.is_on else "off"
                         if is_dim_step:
                             pass  # no on/off event; the members are still resynced below
