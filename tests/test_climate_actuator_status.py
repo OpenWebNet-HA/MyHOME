@@ -553,8 +553,9 @@ async def test_one_rejected_zone_does_not_drop_the_batch(hass, fast_bus_pacing, 
 
 # ------------------------------------------------------------------ gateway: identity settles after the entities were added (review 5639409551, 4)
 
-async def test_a_gateway_identified_late_as_refusing_is_not_asked(hass, fast_bus_pacing):
+async def test_a_gateway_identified_late_as_refusing_is_not_asked(hass, fast_bus_pacing, monkeypatch):
     """Entities are added as ``Generic``; WHO 13 / WHO 1013 then says MH202 before the sweep ends."""
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 5.0)  # the wait for the sweep must not time out
     handler = _handler(hass, "Generic")
     handler.watch_zone_actuators("2")
     await hass.async_block_till_done()
@@ -571,8 +572,9 @@ async def test_a_gateway_identified_late_as_refusing_is_not_asked(hass, fast_bus
     assert _drain(handler) == []
 
 
-async def test_a_gateway_identified_late_as_supported_is_asked(hass, fast_bus_pacing):
+async def test_a_gateway_identified_late_as_supported_is_asked(hass, fast_bus_pacing, monkeypatch):
     """Entities are added as a misconfigured MH200N; WHO 13 then corrects it to F461."""
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 5.0)  # the wait for the sweep must not time out
     handler = _handler(hass, "MH200N")
     handler.watch_zone_actuators("2")
     await hass.async_block_till_done()
@@ -685,6 +687,7 @@ async def test_zones_discovered_after_the_sweep_share_one_all_zone_request(hass,
 
 async def test_the_startup_run_does_not_wait_the_coalesce_window(hass, fast_bus_pacing, monkeypatch):
     """Requests queued before the sweep ended already waited for it: no extra delay."""
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 5.0)  # the wait for the sweep must not time out
     monkeypatch.setattr("custom_components.myhome.gateway.ZONE_REQUEST_COALESCE", 5.0)
     handler = _handler(hass, "F461")
     handler.watch_zone_actuators("2")
