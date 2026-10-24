@@ -519,7 +519,12 @@ def test_tier4_all_trace_rx_frames_parse_cleanly_in_ownd():
     # they may parse to None until the decoder lands (then they parse like any other frame).
     # - *#13**27*70#52#54#49##: WHO 13 dimension 27 model name ("F461" as ASCII codes) answered
     #   by a live F461 2.0.11 (tests/fixtures/traces/f461_live_2026-10-23); decoder in OWNd#139.
-    pending_decoder_rx = {"*#13**27*70#52#54#49##"}
+    # - *#13**27*77#121#...#49##: the same dimension, "MyHomeServer1", from a live MyHomeServer1
+    #   3.87.13 (tests/fixtures/traces/myhomeserver1_live_2026-10-24).
+    pending_decoder_rx = {
+        "*#13**27*70#52#54#49##",
+        "*#13**27*77#121#72#111#109#101#83#101#114#118#101#114#49##",
+    }
 
     failures: list[str] = []
     for frame in sorted(rx_frames):
