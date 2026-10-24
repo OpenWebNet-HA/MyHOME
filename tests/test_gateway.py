@@ -520,6 +520,44 @@ async def test_listening_loop_lighting_unknown_is_on_skips_event(gateway_handler
 
 
 @pytest.mark.asyncio
+async def test_scope_events_fire_only_for_state_frames(gateway_handler):
+    """#367: a dim step is not "on" and a WHO 2 dimension frame without a state is not "stop"."""
+    frames = [
+        "*1*30*#5##",  # group 5 dim up one step
+        "*1*31*3##",  # area 3 dim down one step
+        "*#2*#5*11*50##",  # WHO 2 dimension 11 to group 5
+        "*#2*3*12*1##",  # WHO 2 dimension 12 to area 3
+        "*#2*0*13*1##",  # WHO 2 dimension 13, general
+        "*1*1*#6##",  # group 6 on: a real state, still fired
+        "*1*0*#6##",  # group 6 off
+        "*2*0*#5##",  # group 5 stop: a real state
+        "*2*1*3##",  # area 3 open
+    ]
+    with patch("custom_components.myhome.gateway.OWNEventSession") as mock_session_class:
+        mock_session = MagicMock()
+        mock_session.connect = AsyncMock(return_value={"Success": True})
+        mock_session.get_next = AsyncMock(side_effect=[OWNMessage.parse(f) for f in frames] + [asyncio.CancelledError()])
+        mock_session_class.return_value = mock_session
+        gateway_handler.send_status_request = AsyncMock()
+        try:
+            await gateway_handler.listening_loop()
+        except asyncio.CancelledError:
+            pass
+
+    fired = [
+        (call.args[0], call.args[1].get("message"), call.args[1].get("event"))
+        for call in gateway_handler.hass.bus.async_fire.call_args_list
+        if call.args[0].endswith(("_light_event", "_automation_event"))
+    ]
+    assert fired == [
+        ("myhome_group_light_event", "*1*1*#6##", "on"),
+        ("myhome_group_light_event", "*1*0*#6##", "off"),
+        ("myhome_group_automation_event", "*2*0*#5##", "stop"),
+        ("myhome_area_automation_event", "*2*1*3##", "open"),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_listening_loop_automation(gateway_handler):
     with patch("custom_components.myhome.gateway.OWNEventSession") as mock_session_class:
         mock_session = MagicMock()
