@@ -35,12 +35,15 @@ WRITE_TIMEOUT: float = 30.0
 # shortest run known to move it. Other motors may differ.
 MIN_MOTOR_PULSE: float = 0.4
 
-# Smallest level change sent to an advanced actuator (#466). The actuator turns
-# a level change into a timed run of its own, so a 1% change is the same
-# too-short run as above. 2% was enough on the 20.4 s motor in that trace; we
-# do not know the actuator's travel time, so a faster motor may need more. The
-# trace used the step frames (*2*12#1#001*WHERE##), not the level frames
-# (*#2*WHERE*#11#001*LEVEL##) we send: their behaviour is inferred, not captured.
+# Smallest level change sent to an advanced actuator (discussion #770, #466).
+# The actuator turns a Dimension 11 level write (*#2*WHERE*#11#001*LEVEL##) into
+# a timed run of its own: on a 3.75 m F401 shutter behind an F454 (91.3 s up /
+# 87.8 s down, #770), captured 2% level steps ran 1.67-1.75 s each — already
+# past the ~1.4 s mechanical slat pivot (three H4660M2 keypad pulses at 2%) —
+# so per-cover min_position_delta: 1 (~0.9 s per 1%) is used there for fine slat
+# angles. On a short-travel shutter (20.4 s Somfy Ilmo 50 WT in #466, where 1%
+# is ~0.2 s), a 1% move clicks the relay without moving the curtain, so the
+# default stays 2% (configurable in 1..5%).
 MIN_POSITION_DELTA: int = 2
 
 # Slack after the stored travel time before a timed full run (0% / 100%) is

@@ -99,6 +99,7 @@ from .const import (
     CONF_MIN_CYCLE_TIME,
     CONF_MIN_DELTA,
     CONF_MIN_MOTOR_PULSE,
+    CONF_MIN_POSITION_DELTA,
     CONF_ON_STATES,
     CONF_PERIODIC_SEND,
     CONF_PIN_CODE,
@@ -130,6 +131,7 @@ from .const import (
     COVER_STRATEGIES,
     DEFAULT_MIN_MOTOR_PULSE,
     DEFAULT_SLAT_TIME,
+    MAX_MIN_POSITION_DELTA,
     MAX_SLAT_TIME,
     MIN_SLAT_TIME,
     TYPE_IMPULSE_RELAY,
@@ -548,6 +550,7 @@ cover_schema = MyHomeDeviceSchema(
             Optional(CONF_MIN_MOTOR_PULSE, default=DEFAULT_MIN_MOTOR_PULSE): All(
                 Coerce(float), Range(min=CALIBRATION_MIN_MOTOR_PULSE, max=CALIBRATION_MAX_MOTOR_PULSE)
             ),
+            Optional(CONF_MIN_POSITION_DELTA): All(Coerce(int), Range(min=1, max=MAX_MIN_POSITION_DELTA)),
             Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
             Optional(CONF_DEVICE_MODEL): Coerce(str),
             Optional(CONF_MEMBERS): [All(Coerce(str), PointToPoint())],
@@ -582,6 +585,8 @@ def _validate_cover_members(data: dict[str, typing.Any]) -> dict[str, typing.Any
             raise Invalid("slat_tilt requires a positive travel_time or advanced_shutter")
         if CONF_SLAT_TIME in cfg and not cfg.get(CONF_SLAT_TILT):
             raise Invalid("slat_time can only be defined on a cover with slat_tilt enabled")
+        if CONF_MIN_POSITION_DELTA in cfg and not cfg.get(CONF_ADVANCED_SHUTTER) and not advanced:
+            raise Invalid("min_position_delta only applies to an advanced cover (use min_motor_pulse on a timed cover)")
         cfg.setdefault(CONF_SLAT_TIME, DEFAULT_SLAT_TIME)
     return data
 

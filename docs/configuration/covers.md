@@ -63,7 +63,18 @@ For standard covers without hardware position feedback, the integration provides
 > [!WARNING]
 > **Half the time is not half the height.** The estimate is linear: 50 % means the motor ran for half of the stored travel time. A roller shutter does not move at constant speed — coming down from the top the curtain runs fast on a full roll and is well past the middle at half time; going up from the bottom the first seconds go into gathering the slats and the curtain barely moves. Measured on a 107 cm shutter with exact travel times: `set_cover_position: 50` stopped at 27 cm from the sill coming down and at 37 cm going up, against a true midpoint of about 53 cm, while Home Assistant reported 50 % both times. The end positions (0 % / 100 %) are exact; intermediate positions are approximate and differ by direction. Treat the slider as "roughly there", not as a measurement — this applies to calibrated and manually set times alike.
 
-**Advanced covers** track their own level, but the actuator turns a level change into a timed run the same way, so a 1 % change is just as likely to click without moving. The integration widens a change of less than 2 % to 2 % (50 % → 51 % is sent as 52 %), except while the cover is moving (it then reports the level it started from, so the request goes out as asked), and sends 0 % and 100 % as plain close / open full runs. The 2 % comes from the 20.4 s motor above; a faster motor may need more, and the behaviour of the level command for small changes is inferred from the step commands in that trace, not captured.
+**Advanced covers** track their own level (`Dimension = 10` at motor start and motor stop; no intermediate frames are emitted while the motor runs), and the actuator turns a `Dimension = 11` level write (`*#2*<WHERE>*#11#001*<LEVEL>##`) into a timed run proportional to its learned travel time. On a short-travel shutter (~20 s, ~0.2 s per percent) a 1 % change is too brief to move the curtain ([#466](https://github.com/OpenWebNet-HA/MyHOME/issues/466)), so by default the integration widens any change smaller than 2 % to 2 % (50 % → 51 % is sent as 52 %), except while the cover is moving (it then reports the level it started from, so the request goes out as asked). Target levels `0 %` and `100 %` — including a move near an end whose widened target clamps to `0 %` or `100 %` (e.g. `98 %` → `99 %` widened to `100 %` at `min_position_delta: 2`) — are sent as plain close / open full runs so the motor stops on its limit switch.
+
+The smallest change is set per cover with `min_position_delta` in `/config/myhome.yaml` (whole percent, `1`–`5`, default `2`; a timed cover with it is rejected, it uses `min_motor_pulse` instead). On a long-travel shutter each percent is a longer run: on a 3.75 m F401 shutter behind an F454 (`91.3 s` up / `87.8 s` down, ~0.9 s per percent; [discussion #770](https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19144038)), captured `*#2*21*#11#001*<LEVEL>##` 2 % steps ran 1.7–1.8 s each — already past the ~1.4 s mechanical slat pivot (`3` short `H4660M2` keypad pulses all reported `2 %`) — so `min_position_delta: 1` (~0.9 s per 1 % step) is needed to reach intermediate slat angles before the curtain lifts. `1` sends every change as asked; a very fast motor may need `3`–`5`. The active value is shown as the `min_position_delta` attribute.
+
+```yaml
+# /config/myhome.yaml
+cover:
+  living_room_shutter:
+    where: '31'
+    advanced_shutter: true
+    min_position_delta: 1
+```
 
 ---
 
@@ -155,7 +166,7 @@ The integration models this behavior with timed travel:
 * A new tilt target while the previous pulse's stop still waits in the queue waits for that stop to be written, so it starts from the real angle; the new direction frame could not leave before that stop anyway. Tilt requests run one at a time, and a newer target replaces one still waiting, so a dragged slider sends only where it ended.
 * A new target in the **same direction** while the pulse still runs moves the pulse's stop and sends nothing; only a change of direction sends a new direction frame.
 * Like any command, a pulse opens an echo window: the stop status the gateway relays right after our direction frame is ignored, so it cannot cancel the pulse's stop and leave the motor running.
-* Steps shorter than the cover's `min_motor_pulse` (default **0.4 s**, or 20 % at `slat_time: 2.0`) are skipped: the motor would barely answer while the angle was recorded as changed. This floor has not been measured on a Venetian actuator yet.
+* Steps shorter than the cover's `min_motor_pulse` (default **0.4 s**, or 20 % at `slat_time: 2.0`) are skipped: the motor would barely answer while the angle was recorded as changed. On the 3.75 m F401 shutter with tilting slats ([discussion #770](https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19144521), `slat_time: 1.4`, `min_motor_pulse: 0.2`), pulses of 0.26–0.39 s (`15 %`–`25 %`) all produced the same visual slat opening while 0.74 s (`50 %`) reached horizontal and 1.44 s (`100 %`) fully opened the slats before the curtain started to lift — matching the default **0.4 s** floor (`Dimension 10` stayed at `0 %`–`1 %` throughout).
 * A tilt command while the curtain itself is running is refused (*"… is moving; stop it before tilting the slats"*). The run turns the slats anyway, and a pulse would leave the curtain's travel estimate behind. Opening, closing or setting the position during a pulse ends the pulse at the angle it reached; the new command takes the motor over, and the pulse's own stop is dropped. Setting the position the blind is already at, while a pulse or a run is going, stops the motor there.
 * During a curtain run the slats turn first at one full rotation per `slat_time` (towards 100 % when opening, towards 0 % when closing), and only the remaining motor time moves the curtain estimate over `travel_time - slat_time`. A stop status with no run behind it (such as the relay of a pulse's own stop) leaves the angle alone, so slats tilted open on a lowered blind stay open.
 
@@ -177,7 +188,7 @@ cover:
 | `slat_tilt` | boolean | `false` | Enables Venetian blind slat tilt controls and sets device class to `blind`. |
 | `slat_time` | float | `2.0` | Full slat rotation travel time in seconds (allowed range: `0.5`–`10.0` s). A value set with `myhome.set_cover_travel_time` is stored and wins over this one after a restart, until `myhome.reset_cover_travel_time`. |
 
-Higher tilt is assumed to be *open* (an opening pulse raises the angle). This, and the slat time of real actuators, still awaits a keypad / app capture of a Venetian actuator (#492).
+Higher tilt is assumed to be *open* (an opening pulse raises the angle, verified on an F401 roller shutter with tilting slats in [discussion #770](https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19144521) with `slat_time: 1.4`). Dedicated Venetian actuators (such as the F411U2 in Venetian mode) still await a keypad / app capture (#492).
 
 ### Protocol Note: Dimension 11 is Shutter Level
 

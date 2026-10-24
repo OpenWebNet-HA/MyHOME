@@ -72,6 +72,7 @@ from .const import (
     CONF_MEMBERS,
     CONF_MIN_CYCLE_TIME,
     CONF_MIN_MOTOR_PULSE,
+    CONF_MIN_POSITION_DELTA,
     CONF_PIN_CODE,
     CONF_PULSE_DURATION,
     CONF_SLAT_TILT,
@@ -246,6 +247,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             gateway=runtime.gateway,
             travel_time=int(cfg.get(CONF_TRAVEL_TIME, DEFAULT_TRAVEL_TIME)),
             min_motor_pulse=float(cfg.get(CONF_MIN_MOTOR_PULSE, DEFAULT_MIN_MOTOR_PULSE)),
+            min_position_delta=int(cfg.get(CONF_MIN_POSITION_DELTA, MIN_POSITION_DELTA)),
             **kwargs,
         )
         family.add(cover)
@@ -371,6 +373,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         travel_time_source: str = "default",
         calibration: dict | None = None,  # type: ignore
         min_motor_pulse: float = DEFAULT_MIN_MOTOR_PULSE,
+        min_position_delta: int = MIN_POSITION_DELTA,
         slat_tilt: bool = False,
         slat_time: float = DEFAULT_SLAT_TIME,
         strategy_name: str | None = None,
@@ -456,6 +459,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             slat_tilt=self._slat_tilt,
             slat_time=raw_slat_time,
             min_motor_pulse=raw_min_pulse,
+            min_position_delta=min_position_delta,
         )
         # The resolved strategy decides; the entity's code paths follow it, so an
         # explicit strategy next to a contradicting flag cannot mix the two.
@@ -492,6 +496,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._enable_slat_tilt()
         if not self._advanced:
             self._refresh_travel_attributes()
+        elif isinstance(self._strategy, NativePositionStrategy):
+            self._attr_extra_state_attributes["min_position_delta"] = self._strategy.min_position_delta
 
         self._attr_current_cover_position = None if self._strategy.assumed_state else 50
         self._attr_is_opening = False
