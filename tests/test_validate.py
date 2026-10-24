@@ -173,7 +173,7 @@ class TestWhereValidators:
         assert validator("11") == "11"
         assert validator("00") == "00"
         assert validator("99") == "99"
-        assert validator("0101") == "0101"
+        assert validator("0101") == "0101"  # left as typed; only area 0 is rewritten (#147, OWNd#123)
         assert validator("1015") == "1015"
         assert validator("0000") == "0000"
         assert repr(validator) == "Where(String, msg='custom p2p msg')"
