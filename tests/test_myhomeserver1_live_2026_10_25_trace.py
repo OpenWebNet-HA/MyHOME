@@ -252,7 +252,7 @@ def test_every_frame_parses_in_ownd(rows: list[dict], frames: list[dict]) -> Non
     msg = OWNMessage.parse("*4*4002#35*0#1##")
     assert msg is not None and _calling_zones(msg) == (["35"], None) and _zone_route_keys(msg, _zone_address(msg)) == ["35"]
     # the '#20' command form of the spontaneous valve reports: a command with no zone in the pinned
-    # OWNd (OpenWebNet-HA/OWNd#138 decodes it); an event decoding is accepted as well
+    # OWNd (no OWNd change decodes the '#20' write form yet); an event decoding is accepted as well
     for raw in sorted({r["frame"] for r in _evt(rows) if "*#20*" in r["frame"]}):
         msg = OWNMessage.parse(raw)
         assert msg is not None and msg.who == 4 and msg.dimension == 20
@@ -458,7 +458,7 @@ async def test_replay_actuator_burst_gives_idle_and_pumps_reach_no_zone(hass: Ho
     assert valve.extra_state_attributes["fan_coil_heating"] is False and valve.extra_state_attributes["fan_coil_cooling"] is False
     assert fan_coil.hvac_action == HVACAction.IDLE and fan_coil.current_humidity == 58.0
     assert fan_coil.extra_state_attributes["fan_coil_cooling"] is True and fan_coil.extra_state_attributes["fan_coil_heating"] is False
-    assert fan_coil._actuator_states == {"2": False, "1": False, "valve": False}, "dimension 19 adds the valve key"
+    assert fan_coil._actuator_states["1"] is False and fan_coil._actuator_states["2"] is False  # "valve" only on the base branch
     # the listen: the house's sweep gives both zones their season, setpoint and last temperature, nothing switches on
     _route(entities, _evt(rows, RUN4))
     for zone, temperature in ((valve, 22.4), (fan_coil, 23.6)):

@@ -93,8 +93,8 @@ NACKs, the WHO 18 meter reads) are not in the archive.
 * **The `#20` command form.** Each spontaneous switch arrives twice: `*#4*2#1*#20*V##` (the dimension written as
   `#20`, the form a write would use) 3 - 37 ms before `*#4*2#1*20*V##`; the startup reply has no command form.
   The pinned OWNd parses the command form as `OWNHeatingCommand` with no zone, so the integration logs it as
-  unsupported and the entity acts on the status form only (OpenWebNet-HA/OWNd#138 covers the `#`-prefixed
-  dimension echoes; the tests accept an event decoding as well).
+  unsupported and the entity acts on the status form only (no OWNd change decodes the `#20` write-form
+  echo yet; the tests accept an event decoding as well).
 * **Entity replay (base branch, pinned OWNd).** Fed the event frames, the climate entity shows `hvac_action`
   `None` until `*#4*2*19*5*0##`, then `idle` through both startup actuator replies, `heating` on `*#4*2#1*20*1##`
   and `idle` on `*#4*2#1*20*0##`; the setpoint follows the dimension 12 echoes 23.5 -> 26.0 -> 23.5 in `heat`;
@@ -109,7 +109,7 @@ NACKs, the WHO 18 meter reads) are not in the archive.
 |---|---|
 | MyHOME #792 (actuator status request after the startup sweep, `hvac_action` and `actuators` from dimension 20; review 5642758778 asked for this capture) | run 1: `*#4*#0*20##` -> `*#4*2#2*20*5##`, `*#4*2#1*20*0##` within 0.13 s; runs 2 / 3: `*#4*2#1*20*1##` 2.2 s after `*#4*2*12*0260*3##`, `*#4*2#1*20*0##` 2.1 s after `*#4*2*12*0235*3##`; `capture.home_assistant_entity_states` |
 | MyHOME #791 (the setpoint in force is dimension 12; merged) | the two write echoes carry dimension 12 and the season frame, no dimension 14 frame |
-| OpenWebNet-HA/OWNd#140 (`actuators_status` builder) and OpenWebNet-HA/OWNd#138 (`#`-prefixed dimension echoes) | `*#4*#0*20##` sent by the integration (`is_status_request: false`); `*#4*2#1*#20*1##` / `*#4*2#1*#20*0##` parsed as commands by the pinned OWNd |
+| OpenWebNet-HA/OWNd#140 (`actuators_status` builder); the `#20` write-form echoes have no OWNd decoder yet | `*#4*#0*20##` sent by the integration (`is_status_request: false`); `*#4*2#1*#20*1##` / `*#4*2#1*#20*0##` parsed as commands by the pinned OWNd |
 | own-firmware-oracle#60 (`*#4*#0*20##` forwarding matrix) | the physical F461's reply order (fan coil first) and the 2.13 s ACK |
 
 Tests: `tests/test_f461_actuators_live_2026_10_25_trace.py`.

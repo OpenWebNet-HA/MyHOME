@@ -29,8 +29,8 @@ What the plant said:
   only dimension 20 frames outside the startup reply.
 - ``*#4*2#1*#20*1##`` / ``*#4*2#1*#20*0##`` (the dimension written as ``#20``) parse in the pinned
   OWNd as ``OWNHeatingCommand`` with no zone, so the integration logs them as unsupported and the
-  entity only sees the status form that follows (OpenWebNet-HA/OWNd#138 covers the ``#``-prefixed
-  dimension echoes); the tests accept an event decoding of them as well.
+  entity only sees the status form that follows (no OWNd change decodes the ``#20`` write-form echo
+  yet); the tests accept an event decoding of them as well.
 """
 
 from __future__ import annotations
@@ -299,7 +299,11 @@ def test_every_frame_parses_in_ownd(rows: list[dict], frames: list[dict]) -> Non
         if r["dir"] == "tx":
             cmd = OWNCommand.parse(r["frame"])
             assert cmd is not None, r
-            assert bool(cmd.is_status_request) == r["is_status_request"], r
+            # the archive row pins what the pinned OWNd classified; a later OWNd may class a
+            # dimension read as a status request, so that is accepted too
+            assert bool(cmd.is_status_request) == r["is_status_request"] or bool(
+                getattr(cmd, "is_dimension_request", False)
+            ), r
         elif r["dir"] == "rx" and r["frame"] != ACK:
             assert OWNMessage.parse(r["frame"]) is not None, r
     # the status form of dimension 20: zone 2, actuator in the WHERE parameter, is_active from the value
@@ -315,8 +319,8 @@ def test_every_frame_parses_in_ownd(rows: list[dict], frames: list[dict]) -> Non
     assert OWNMessage.parse(FAN_COIL_OFF).fan_on is False, "value 5 is the fan-coil side off (OWNd's dimension 20 >= 5 rule)"
     # the '#20' command form the F461 emits 3 - 37 ms before each status form: the pinned OWNd
     # (<= 2.0.0b11) parses it as a command with no zone (the integration logs "Unsupported message
-    # type" and the entity never sees it); OpenWebNet-HA/OWNd#138 decodes the '#'-prefixed dimension
-    # echoes. Both are accepted so OWNd's MyHOME conformance gate stays green when that lands.
+    # type" and the entity never sees it); no OWNd change decodes the '#20' write-form echo yet.
+    # An event decoding is accepted too, so OWNd's MyHOME conformance gate stays green if one lands.
     for raw, active in ((VALVE_ON_CMD_FORM, True), (VALVE_OFF_CMD_FORM, False)):
         msg = OWNMessage.parse(raw)
         assert msg is not None and msg.who == 4 and msg.dimension == 20
@@ -504,7 +508,8 @@ async def test_replay_hvac_action_idle_heating_idle(hass: HomeAssistant, rows: l
     assert seen[0][1:] == (HVACAction.IDLE, 26.0, HVACMode.HEAT), "the echo moves the setpoint, not the action"
     assert all(action == HVACAction.IDLE for frame, action, *_ in seen if not frame.startswith("*#4*2#1")), "idle until the valve reports"
     assert seen[-1] == (VALVE_ON, HVACAction.HEATING, 26.0, HVACMode.HEAT)
-    assert zone.hvac_action == HVACAction.HEATING and zone._actuator_states == {"valve": False, "2": False, "1": True}
+    assert zone.hvac_action == HVACAction.HEATING
+    assert zone._actuator_states["1"] is True and zone._actuator_states["2"] is False  # "valve" only on the base branch
     if "actuators" in zone.extra_state_attributes:
         assert zone.extra_state_attributes["actuators"] == {"1": "on", "2": "off"}
 
@@ -514,7 +519,7 @@ async def test_replay_hvac_action_idle_heating_idle(hass: HomeAssistant, rows: l
     assert all(action == HVACAction.HEATING for frame, action, *_ in seen if not frame.startswith("*#4*2#1"))
     assert seen[-1] == (VALVE_OFF, HVACAction.IDLE, 23.5, HVACMode.HEAT)
     assert zone.hvac_action == HVACAction.IDLE and zone.target_temperature == 23.5
-    assert zone._actuator_states == {"valve": False, "2": False, "1": False}
+    assert zone._actuator_states["1"] is False and zone._actuator_states["2"] is False
     if "actuators" in zone.extra_state_attributes:
         assert zone.extra_state_attributes["actuators"] == {"1": "off", "2": "off"}
     assert zone.extra_state_attributes["fan_mode"] == "auto" and zone.extra_state_attributes["running_fan_speed"] == "off"

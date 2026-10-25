@@ -67,7 +67,7 @@ row; `t = 0` is the `*#13**16##` request). `step` is the request in flight (`zon
   the ACK) with the same values six minutes later, zones 39, 42 and 61 one point apart. The listen's
   humidity pushes come from the same 17 zones.
 * **The house's own traffic.** Nine spontaneous valve off reports, each `*#4*Z#1*#20*0##` (the dimension
-  written as `#20`, parsed as `OWNHeatingCommand` with no zone by the pinned OWNd; OpenWebNet-HA/OWNd#138)
+  written as `#20`, parsed as `OWNHeatingCommand` with no zone by the pinned OWNd; no OWNd decoder yet)
   followed within 50 ms by `*#4*Z#1*20*0##`, each about 2 s after the zone's pump call (`*4*4002#Z*0#N##` then
   `*4*4002*Z##`: zone 35 calls pump 1, 46 and 43 pump 2, 53, 55, 70 and 51 pump 3, 64 and 68 pump 4). The
   listen holds the periodic sweep (`*4*1*Z##` and dimensions 12 / 14 / 13 for each of the 34 zones, 47
@@ -88,7 +88,7 @@ row; `t = 0` is the `*#13**16##` request). `step` is the request in flight (`zon
 |---|---|
 | MyHOME #792 (actuator status request after the startup sweep, `hvac_action` and `actuators` from dimension 20; dimension 19 / 11 fan-coil side) | run 1: `*#4*#0*20##` -> 43 distinct actuator frames, all off, pumps included; run 2: `*#4*Z*19##` / `*#4*Z*20##` on 34 zones, `*#4*Z*11##` refused on all 36 |
 | MyHOME #793 (humidity poll gate) | run 2 / 3: `*#4*Z*60##` ACK on 17 zones, NACK on 19; `*#4*0*60##` answers the same 17 |
-| OpenWebNet-HA/OWNd#140 (`actuators_status` builder) and OpenWebNet-HA/OWNd#138 (`#`-prefixed dimension echoes) | `*#4*#0*20##` sent as a status request; the nine `*#4*Z#1*#20*0##` command forms |
+| OpenWebNet-HA/OWNd#140 (`actuators_status` builder); the `#20` write-form echoes have no OWNd decoder yet | `*#4*#0*20##` sent as a status request; the nine `*#4*Z#1*#20*0##` command forms |
 | own-firmware-oracle#60 (`*#4*#0*20##` forwarding matrix) | the physical MyHomeServer1's 0.50 s ACK ahead of a 1.9 s burst |
 
 Tests: `tests/test_myhomeserver1_live_2026_10_25_trace.py`.
