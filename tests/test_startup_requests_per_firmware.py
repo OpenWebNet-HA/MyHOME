@@ -10,9 +10,21 @@
   (``results/<P>/<V>/oracle/full/sound-who16-source.tsv``).
 - A restored ``current_temperature`` is flagged ``current_temperature_restored`` until the
   zone reports again.
+
+The "captured frames" section replays rows of three committed traces (the loaders the other
+trace tests use): ``f461_live_2026-10-23`` (zone 2 answers ``*#4*2*0##`` in 119 ms, the
+unpopulated zone 1 NACKs after 2.07 s), ``myhomeserver1_live_2026-10-24`` (zones 35..70
+report dimension 0, ``*#4*0##`` refused in 51 ms) and the ``issue_466`` MH201 sweep (frame 11
+``*#4*0##`` with no zone reply, while the sibling trace shows zones 2, 3 and 4). The earlier
+cases keep a synthetic zone 3 on purpose: they pin the request a zone sends, not a plant.
 """
 from __future__ import annotations
 
+import asyncio
+import json
+import re
+import time
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -28,6 +40,12 @@ from custom_components.myhome.discovery import message_has_state
 from custom_components.myhome.gateway import MyHOMEGatewayHandler
 
 MAC = "00:03:50:00:01:85"
+TRACES = Path(__file__).resolve().parent / "fixtures" / "traces"
+F461_LIVE = TRACES / "f461_live_2026-10-23" / "myhome_trace_F461_live_2026-10-23.json"
+MHS1_LIVE = TRACES / "myhomeserver1_live_2026-10-24" / "myhome_trace_MyHomeServer1_live_2026-10-24.json"
+MH201_SWEEP = TRACES / "issue_466" / "myhome_sweep_MH201_all_2026-09-25T19-11-35.json"
+MH201_TRACE = TRACES / "issue_466" / "myhome_trace_MH201_all_2026-09-25T19-05-42.json"
+ZONE_TEMPERATURE = re.compile(r"^\*#4\*(\d{1,2})\*0\*(\d{4})##$")  # *#4*Z*0*TTTT## of a plain zone 1..99
 
 
 def _entry(model: str) -> MagicMock:
@@ -331,3 +349,164 @@ def test_profile_flag_wins_over_the_zone_temperature_poll_table(hass, model, fla
         supports_who=lambda who: True,
     )
     assert handler.zone_temperature_poll_needed is expected
+
+
+# ------------------------------------------------------------------ captured frames (fixtures)
+
+@pytest.fixture(scope="module")
+def f461_rows() -> list[dict]:
+    assert F461_LIVE.is_file(), F461_LIVE
+    return json.loads(F461_LIVE.read_text(encoding="utf-8"))["rows"]
+
+
+@pytest.fixture(scope="module")
+def mhs1_rows() -> list[dict]:
+    assert MHS1_LIVE.is_file(), MHS1_LIVE
+    return json.loads(MHS1_LIVE.read_text(encoding="utf-8"))["rows"]
+
+
+@pytest.fixture(scope="module")
+def mh201_sweep() -> dict:
+    assert MH201_SWEEP.is_file(), MH201_SWEEP
+    return json.loads(MH201_SWEEP.read_text(encoding="utf-8"))
+
+
+@pytest.fixture(scope="module")
+def mh201_trace() -> dict:
+    assert MH201_TRACE.is_file(), MH201_TRACE
+    return json.loads(MH201_TRACE.read_text(encoding="utf-8"))
+
+
+def _result(rows: list[dict], run: str, frame: str) -> dict:
+    found = [r for r in rows if r["dir"] == "result" and r["run"] == run and r["frame"] == frame]
+    assert len(found) == 1, (run, frame, len(found))
+    return found[0]
+
+
+def _tx(rows: list[dict], run: str, frame: str) -> dict:
+    found = [r for r in rows if r["dir"] == "tx" and r["run"] == run and r["frame"] == frame]
+    assert len(found) == 1, (run, frame, len(found))
+    return found[0]
+
+
+def test_f461_capture_answers_the_populated_zone_and_nacks_the_unpopulated_one(f461_rows):
+    """f461_live_2026-10-23, run1: *#4*2*0## is answered in 119 ms; *#4*1*0## (no thermostat) NACKs after 2.07 s."""
+    run = "run1_oracle_replay_readonly"
+    assert _tx(f461_rows, run, "*#4*2*0##")["session"] == "cmd"
+    zone_2 = _result(f461_rows, run, "*#4*2*0##")
+    assert zone_2["ack"] is True
+    assert zone_2["replies"] == ["*#4*2*0*0239##"]
+    assert zone_2["reply_time_s"] == 0.119
+    zone_1 = _result(f461_rows, run, "*#4*1*0##")  # the bus TX timeout the oracle images show on every zone
+    assert zone_1["ack"] is False
+    assert zone_1["replies"] == []
+    assert zone_1["reply_time_s"] == 2.071
+    general = _result(f461_rows, run, "*#4*0##")
+    assert general["ack"] is False and general["replies"] == [] and general["reply_time_s"] < 0.01
+    assert general["note"] == "general_zone_status_refused_locally"
+
+
+async def test_captured_f461_dimension_0_reply_clears_a_restored_temperature(hass, f461_rows):
+    """The request an SCS-only zone 2 sends is the captured *#4*2*0##; the captured reply replaces the restored value."""
+    run = "run1_oracle_replay_readonly"
+    handler = _handler(hass, "MH202")
+    handler.send_status_request = AsyncMock()
+    zone = _zone(hass, handler, where="2")
+    await zone.async_restore_last_state(State("climate.zone_2", "heat", {"current_temperature": 21.0}))
+    assert zone.extra_state_attributes["current_temperature_restored"] is True
+    await zone.async_update()
+    assert [str(call.args[0]) for call in handler.send_status_request.await_args_list] == [
+        _tx(f461_rows, run, "*#4*2*0##")["frame"]
+    ]
+    (reply,) = _result(f461_rows, run, "*#4*2*0##")["replies"]
+    event = OWNHeatingEvent(reply)
+    assert message_has_state(zone, event) is True
+    zone.handle_event(event)
+    assert zone.current_temperature == 23.9
+    assert "current_temperature_restored" not in zone.extra_state_attributes
+
+
+async def test_dimension_0_poll_result_is_not_counted_against_the_zone(hass):
+    """No _poll_answered on *#4*Z*0##: a NACK (cancelled write) must not mark a healthy SCS zone unresponsive."""
+    handler = _handler(hass, "F454")
+    written: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+    written.cancel()
+    handler.send_status_request = AsyncMock(return_value=written)
+    handler.is_connected = True
+    zone = _zone(hass, handler)
+    zone._poll_answered = MagicMock()
+    await zone.async_update()
+    await zone.async_update()
+    handler.send_status_request.assert_awaited()
+    zone._poll_answered.assert_not_called()
+    assert zone._poll_health.should_skip(time.time()) is False
+
+
+def test_myhomeserver1_capture_refuses_the_general_request_and_answers_zone_status(mhs1_rows):
+    """myhomeserver1_live_2026-10-24: *#4*0## refused in 51 ms (run 3), *#4*35## answered with five frames (run 2)."""
+    general = _result(mhs1_rows, "run3_reads_lights_addresses_humidity", "*#4*0##")
+    assert general["ack"] is False and general["replies"] == [] and general["reply_time_s"] == 0.051
+    assert general["note"] == "general_zone_status_refused_locally"
+    zone_35 = _result(mhs1_rows, "run2_reads_thermo_sound_alarm_lights", "*#4*35##")
+    assert zone_35["ack"] is True
+    assert zone_35["replies"] == [
+        "*#4*35*0*0231##", "*#4*35*12*0200*3##", "*4*1*35##", "*#4*35*14*0200*3##", "*#4*35*13*00##",
+    ]
+
+
+async def test_captured_myhomeserver1_zones_report_without_a_temperature_poll(hass, mhs1_rows):
+    """Zones 35..70 of the capture report *#4*Z*0*TTTT##; the MyHomeServer1 keeps *#4*Z## and needs no *#4*Z*0##."""
+    handler = _handler(hass, "MyHomeServer1")
+    handler.send_status_request = AsyncMock()
+    assert handler.general_zone_request_refused is True
+    assert handler.supports_zone_status is True
+    assert handler.zone_temperature_poll_needed is False
+    reports = {}
+    for row in mhs1_rows:
+        match = ZONE_TEMPERATURE.match(row["frame"]) if row["run"] == "run1_identify" and row["dir"] == "rx" else None
+        if match is not None:
+            reports.setdefault(match.group(1), row["frame"])
+    assert len(reports) == 33
+    assert min(map(int, reports)) == 35 and max(map(int, reports)) == 70
+    for where, frame in reports.items():
+        zone = _zone(hass, handler, where=where)
+        assert zone._polls_temperature is False
+        zone.handle_event(OWNHeatingEvent(frame))
+        assert zone.current_temperature == int(ZONE_TEMPERATURE.match(frame).group(2)) / 10
+        assert "current_temperature_restored" not in zone.extra_state_attributes
+    zone_35 = _zone(hass, handler, where="35")
+    await zone_35.async_update()
+    sent = [str(call.args[0]) for call in handler.send_status_request.await_args_list]
+    assert sent[0] == _tx(mhs1_rows, "run2_reads_thermo_sound_alarm_lights", "*#4*35##")["frame"]
+    assert "*#4*35*0##" not in sent
+
+
+def test_mh201_sweep_capture_gets_no_zone_reply_to_the_general_request(mh201_sweep, mh201_trace):
+    """issue_466: a physical MH201 3.3.6 sent *#4*0## (frame 11) and no zone frame followed; its zones do report."""
+    gateway = mh201_sweep["gateway"]
+    assert gateway["model"] == "MH201" and gateway["firmware"] == "3.3.6"
+    assert gateway["identification"]["who13_code"] == "200"
+    frames = mh201_sweep["frames"]
+    assert frames[11]["direction"] == "tx" and frames[11]["raw"] == "*#4*0##"
+    after = [f["raw"] for f in frames[12:] if f["who"] == "4"]
+    assert not [raw for raw in after if ZONE_TEMPERATURE.match(raw)]
+    # the only WHO 4 traffic afterwards: a dimension 17 broadcast of WHERE 0#0 and zone 105's dimension 15
+    assert set(after) == {"*#4*0#0*17##", "*#4*105*15*0*0000*0000##"}
+    sibling = [f["raw"] for f in mh201_trace["frames"] if f["who"] == "4"]
+    assert {"*#4*4*0*0241##", "*#4*2*14*0100*3##", "*#4*3*12*0090*3##", "*#4*2*13*00##"} <= set(sibling)
+    assert {raw.split("*")[2] for raw in sibling if raw.startswith("*#4*")} >= {"2", "3", "4"}
+
+
+async def test_mh201_leaves_the_general_request_out_and_polls_the_captured_zone(hass, mh201_trace):
+    handler = _handler(hass, "MH201")
+    handler.send_status_request = AsyncMock()
+    assert "*#4*0##" not in handler._discovery_frames()
+    assert handler.zone_temperature_poll_needed is True
+    zone = _zone(hass, handler, where="4")
+    await zone.async_restore_last_state(State("climate.zone_4", "heat", {"current_temperature": 20.0}))
+    await zone.async_update()
+    assert [str(call.args[0]) for call in handler.send_status_request.await_args_list] == ["*#4*4*0##"]
+    (captured,) = [f["raw"] for f in mh201_trace["frames"] if f["raw"] == "*#4*4*0*0241##"]
+    zone.handle_event(OWNHeatingEvent(captured))
+    assert zone.current_temperature == 24.1
+    assert "current_temperature_restored" not in zone.extra_state_attributes
