@@ -354,11 +354,13 @@ class TestCoverEntity:
     async def test_async_open_cover(self, cover):
         await cover.async_open_cover()
         cover._gateway_handler.send.assert_called_once()
+        cover._cancel_stop_task()  # a run from unknown settles on the travel timer
 
     @pytest.mark.asyncio
     async def test_async_close_cover(self, cover):
         await cover.async_close_cover()
         cover._gateway_handler.send.assert_called_once()
+        cover._cancel_stop_task()  # a run from unknown settles on the travel timer
 
     @pytest.mark.asyncio
     async def test_async_stop_cover(self, cover):

@@ -127,11 +127,12 @@ class TimedCurtainStrategy(BaseCoverStrategy):
         now: float,
     ) -> int | None:
         """Re-anchor cover position and travel telemetry on a relayed stop status echo (#705, #707)."""
-        if not ctx or ctx.get("run_started_at") is None or ctx.get("run_start_position") is None:
+        if not ctx or ctx.get("run_started_at") is None:
             pos: int | None = getattr(entity, "_attr_current_cover_position", None)
             return pos
         start_anchor = float(ctx["run_started_at"])
-        run_start_pos = int(ctx["run_start_position"])
+        # None: the run started at an unknown position; only the run is measured.
+        run_start_pos = int(ctx["run_start_position"]) if ctx.get("run_start_position") is not None else None
         is_opening = bool(ctx.get("is_opening"))
         is_closing = bool(ctx.get("is_closing"))
         auto_dur = ctx.get("auto_stop_duration")
@@ -141,13 +142,27 @@ class TimedCurtainStrategy(BaseCoverStrategy):
         direction = "open" if is_opening else "close" if is_closing else ""
         travel_time = self.curtain_travel_for(is_opening)
         reanchored: int | None = getattr(entity, "_attr_current_cover_position", None)
+        end_stop_from_unknown = False
         if travel_time > 0 and (is_opening or is_closing):
-            reanchored = self.position_after(
-                run_start_pos, elapsed, direction, entity=entity, lead=lead
-            )
-            entity._attr_current_cover_position = reanchored
-            entity._start_position = reanchored
-            entity._attr_is_closed = reanchored == 0
+            if run_start_pos is not None:
+                reanchored = self.position_after(
+                    run_start_pos, elapsed, direction, entity=entity, lead=lead
+                )
+            elif raw_elapsed >= self.travel_for_direction(is_opening):
+                # A run from an unknown position that lasted the full travel
+                # reached its end stop, as _freeze_position anchors it: the
+                # stop was written just before the travel time and the relayed
+                # status came just after. Measured on the real motor time, not
+                # the scheduled auto-stop duration: only the run itself is
+                # evidence that the end stop was reached.
+                reanchored = 100 if is_opening else 0
+                end_stop_from_unknown = True
+            if run_start_pos is not None or end_stop_from_unknown:
+                entity._attr_current_cover_position = reanchored
+                entity._start_position = reanchored
+                entity._attr_is_closed = reanchored == 0
+        if end_stop_from_unknown and reanchored is not None:
+            self.on_position_confirmed(entity, reanchored, "end_stop")
         self._reanchor_slats_on_stop_echo(entity, ctx, elapsed, is_opening, is_closing)
         entity._last_run = {
             "seconds": round(elapsed, 2),
@@ -157,11 +172,12 @@ class TimedCurtainStrategy(BaseCoverStrategy):
         if hasattr(entity, "_refresh_travel_attributes"):
             entity._refresh_travel_attributes()
         log_id = getattr(getattr(entity, "_gateway_handler", None), "log_id", "")
+        position = entity._attr_current_cover_position
         LOGGER.debug(
-            "%s Stop status echo for %s; re-anchored to %s%% (elapsed %.2f s).",
+            "%s Stop status echo for %s; %s (elapsed %.2f s).",
             log_id,
             getattr(entity, "_full_where", ""),
-            entity._attr_current_cover_position,
+            f"re-anchored to {position}%" if position is not None else "position still unknown",
             elapsed,
         )
         return reanchored
@@ -176,12 +192,15 @@ class TimedCurtainStrategy(BaseCoverStrategy):
             and (is_opening or is_closing)
             and self.curtain_travel_for(is_opening) > 0
         ):
+            start = getattr(entity, "_start_position", None)
+            if start is None:
+                return None  # a run from an unknown position: known again at the end stop
             direction = "open" if is_opening else "close"
             elapsed = max(0.0, now - float(move_start))
             # The lead still ahead of this segment, as the entity anchored it.
             move_lead = getattr(entity, "_move_lead", None)
             return self.position_after(
-                int(getattr(entity, "_start_position", 50)),
+                int(start),
                 elapsed,
                 direction,
                 entity=entity,

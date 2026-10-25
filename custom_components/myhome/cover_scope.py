@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterable
 
-from homeassistant.components.cover import ATTR_TILT_POSITION
+from homeassistant.components.cover import ATTR_POSITION, ATTR_TILT_POSITION
 from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
@@ -112,6 +112,8 @@ class MyHOMEScopeCover(MyHOMECover):
     A scope with no known members ends a run after its travel time.
     """
 
+    _settles_open_close_from_unknown = False  # the members settle their own runs
+
     def __init__(self, *args: Any, scope: CoverScope, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.scope = scope
@@ -166,10 +168,19 @@ class MyHOMEScopeCover(MyHOMECover):
         return any(m.is_closing for m in members)
 
     @property
-    def is_closed(self) -> bool:
+    def is_closed(self) -> bool | None:
+        """Closed when every member with a known state is; unknown when none has one.
+
+        As HA Core's CoverGroup: a member whose state is unknown (a timed cover
+        before its first full run) does not count, so the scope is not reported
+        ``open`` on the strength of members that have no state at all.
+        """
         if not (members := self._members()):
             return super().is_closed
-        return all(m.is_closed for m in members)
+        known = [closed for m in members if (closed := m.is_closed) is not None]
+        if not known:
+            return None
+        return all(known)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -221,6 +232,11 @@ class MyHOMEScopeCover(MyHOMECover):
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         if members := self._fan_out_position_members():
+            if ATTR_POSITION in kwargs:
+                # Refuse before the first member moves: a member with an unknown
+                # position cannot be timed to a partial target.
+                for member in members:
+                    member._check_position_target(kwargs[ATTR_POSITION])
             for i, member in enumerate(members):
                 if i > 0 and PACED_FANOUT_DELAY > 0:
                     await asyncio.sleep(PACED_FANOUT_DELAY)

@@ -761,6 +761,8 @@ class TestMyHOMECoverEntity:
         assert compute_run_duration(1, 20.0, min_pulse=0.5) == 0.5
 
     def test_handle_event(self, basic_cover):
+        # A known start: a timed cover with no history has no position (F411/2).
+        basic_cover._attr_current_cover_position = 50
         # Opening event
         msg_opening = OWNEvent.parse("*2*1*21##")
         basic_cover.handle_event(msg_opening)
@@ -979,14 +981,14 @@ class TestMyHOMECoverEntity:
         assert basic_cover._start_position == 43
         assert basic_cover.is_closed is False
 
-        # 5. Invalid position attribute with state 'open' -> falls back to 100%
+        # 5. Invalid position attribute with state 'open' -> open, position unknown
         basic_cover._attr_current_cover_position = 50
         basic_cover.async_get_last_state = AsyncMock(
             return_value=State("cover.basic_shutter", "open", {ATTR_CURRENT_POSITION: "invalid"})
         )
         await basic_cover.async_added_to_hass()
-        assert basic_cover.current_cover_position == 100
-        assert basic_cover._start_position == 100
+        assert basic_cover.current_cover_position is None
+        assert basic_cover._start_position is None
         assert basic_cover.is_closed is False
 
         # 6. Invalid position attribute with state 'closed' -> falls back to 0%
@@ -1020,13 +1022,13 @@ class TestMyHOMECoverEntity:
         assert basic_cover._start_position == 0
         assert basic_cover.is_closed is True
 
-        # 2. State 'open' -> position 100%, is_closed False
+        # 2. State 'open' without a position -> open, position unknown (no height is implied)
         basic_cover.async_get_last_state = AsyncMock(
             return_value=State("cover.basic_shutter", "open", {})
         )
         await basic_cover.async_added_to_hass()
-        assert basic_cover.current_cover_position == 100
-        assert basic_cover._start_position == 100
+        assert basic_cover.current_cover_position is None
+        assert basic_cover._start_position is None
         assert basic_cover.is_closed is False
 
         # 3. State 'unknown' -> position remains unchanged (default 50)
@@ -1178,6 +1180,7 @@ class TestMyHOMECoverEntity:
         fut = asyncio.Future()
         fut.set_exception(Exception("Bus write error"))
         mock_gateway.send.return_value = fut
+        tilt_cover._attr_current_cover_tilt_position = 0  # known: a partial target can be timed
 
         with pytest.raises(HomeAssistantError, match="direction command delivery failed"):
             await tilt_cover.async_set_cover_tilt_position(tilt_position=30)
