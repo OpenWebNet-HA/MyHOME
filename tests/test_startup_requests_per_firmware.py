@@ -238,8 +238,9 @@ async def test_interface_zone_is_not_polled_where_the_firmware_drops_the_request
 
 
 async def test_withheld_interface_poll_is_logged_even_when_humidity_keeps_the_update_going(hass, caplog):
-    """A humidity zone behind an F422 on an F454 still sends its *60## request; the withheld *0## is logged once."""
-    handler = _handler(hass, "F454")
+    """A humidity zone behind an F422 on an F459 (forwards *60##, drops Z#4#II requests) still sends its
+    *60## request; the withheld *0## is logged once."""
+    handler = _handler(hass, "F459")
     handler.send_status_request = AsyncMock()
     zone = _zone(hass, handler, interface="01", humidity=True)
     assert zone._polls_temperature is False and zone._interface_poll_refused is True
