@@ -113,8 +113,10 @@ PHYSICAL_ONLY_TX_FRAMES: dict[str, str] = {
     "*1*0*0##": "F461 2026-10-15 / 10-18: ACK (general off)",
     "*1*1*#1##": "F461 2026-10-15 / 10-18: ACK (group 1 on)",
     # --- F461 2.0.11, f461_live_2026-10-24 (climate setpoint capture behind #791)
-    "*#4*2*#7*1*3##": "F461 2026-10-24: ACK in 78 ms, echoed *#4*2*7*1*3## (heating comfort), *4*108*2##, dimension 12 unchanged",
+    "*#4*2*#7*1*3##": "F461 2026-10-24: ACK in 78 ms, echoed *#4*2*7*1*3## (heating comfort), *4*108*2##, dimension 12 unchanged (21.0 baseline); presets capture: ACK in 68 ms, dimension 12 = 21.0 from 23.5 while 14 kept 23.5",
     "*#4*2*#7*2*3##": "F461 2026-10-24: ACK in 93 ms, echoed *#4*2*7*2*3## (cooling comfort), *4*208*2##, dimension 12 = 25.0",
+    # --- F461 2.0.11, f461_presets_live_2026-10-24 (heating comfort / eco from a 23.5 baseline, follow-up of #810)
+    "*#4*2*#7*1*4##": "F461 2026-10-24 (presets): ACK in 89 ms, echoed *#4*2*7*1*4## (heating eco), *4*107*2##, dimension 12 = 18.0 while 14 kept 23.5",
     # --- F461 2.0.11, f461_live_2026-10-18 (PR #750 expose verification)
     "*#1*08*1*150*0##": "F461 2026-10-18: NACK in 55 ms (dimension 1 without # is a read on an empty point)",
     "*#13**#0*22*51*00*999##": "F461 2026-10-18: ACK (clock set, broadcast on evt)",
