@@ -608,14 +608,19 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             and not self._fan
             and not wants_humidity
         ):
-            # Physical SCS gateways (F455, F454, MH200N, MH202, etc.) do not support
-            # dimension-less status requests (*#4*Z##) for regular zones (1-99). The request
-            # is forwarded to the SCS bus where physical thermostats have no handler for it,
-            # resulting in a 10-second command session timeout per zone (#674).
-            # MyHomeServer1 intercepts *#4*Z## in software and replies from its cache (#649),
-            # and F461 expands it into the four dimension requests (#714).
-            # Other physical plants receive standard zone telemetry spontaneously via the startup sweep (*#4*0##);
-            # where the gateway refuses that sweep the zone asks for its temperature below.
+            # SCS-only gateways (F450, F453, F453AV, F454, F459, H4684, MH200, MH200N, MH202 in the
+            # firmware oracle; F455 and MH201 by field reports) expand the dimensionless zone status
+            # request *#4*Z## into four bus queries, dimension 0, 12, 14 and 13 ($0499ZZ3000 / 12 /
+            # 0E / 0D in trace-corpus.tsv). Against a 99-zone central unit every query is answered
+            # (F454 + #0, issue_629 log: *#4*1##..*#4*15## complete in ~1.3 s each with all five
+            # frames); a standalone thermostat answers only some of them, and the command session
+            # then ends with a NACK after 1.5-2 s (MH202 ACKs). The 10 s socket hang of #674 was an
+            # F455, not in the oracle, on actuator-only channels (*#4*Z*19*0*0##) where nothing
+            # answered. MyHomeServer1 replies to *#4*Z## from its cache (#649); F460 and F461 expand
+            # it into one request ($00499013000) and answer it (#714): those three keep the poll.
+            # Where the SCS-only gateway also drops the general request *#4*0##, the zone asks for
+            # its temperature below (_polls_temperature); everywhere else it waits for the sweep
+            # replies or for the thermostat's own reports.
             return
         if self._poll_health.should_skip(time.time()):
             LOGGER.debug("%s %s did not answer its last polls; not asking again yet", self._gateway_handler.log_id, self._display_name)
@@ -632,14 +637,19 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if isinstance(written, asyncio.Future) and not self._central:
                 written.add_done_callback(lambda future: self._poll_answered(future, frames_before))
         elif self._polls_temperature:
-            # The plain-zone dimension 0 request goes out on every gateway of the firmware oracle
-            # (thermo-ts10.tsv); the dimensionless *#4*Z## times out on these (#674) and *#4*0## is
-            # refused. A zone behind an F422 is only polled where the firmware forwards Z#4#II
-            # requests (_polls_temperature).
-            # No _poll_answered callback on purpose: *#4*Z*0## ends with a NACK on the command
-            # session on 11 of the 12 oracle gateways even when it was forwarded to the bus
-            # (thermo-ts10.tsv: nack/out everywhere but the MH202), which cancels `written`, so the
-            # callback would count a healthy SCS zone as unresponsive.
+            # One bus query instead of the four that *#4*Z## expands into: *#4*Z*0## is forwarded on
+            # all twelve oracle gateways (thermo-ts10.tsv) and a populated zone answers it in ~120 ms
+            # (F461 2.0.11, f461_live_2026-10-23 rows 521-525: *#4*2*0## -> *#4*2*0*0239## + ACK in
+            # 0.119 s), which keeps a single-worker MH200 / MH201 queue short. *#4*0## is refused on
+            # these gateways, so this is the zone's only way to a temperature after a restart. A
+            # zone behind an F422 is only polled where the firmware forwards Z#4#II requests
+            # (_polls_temperature).
+            # No _poll_answered callback on purpose: the oracle's *#4*1*0## NACK on 11 of 12 images
+            # is the bus TX timeout of an unpopulated zone (the QEMU images have no thermostat
+            # wired; the live F461 NACKs the unpopulated zone 1 the same way after 2.07 s, rows
+            # 374-376), not a verdict on a populated one. Until a command-session capture of
+            # *#4*Z*0## on an SCS-only gateway (F454 / MH200) exists, the result is left uncounted
+            # rather than risk marking a healthy zone unresponsive on a NACK.
             await self._gateway_handler.send_status_request(OWNHeatingCommand.get_temperature(self._full_where))
         if self._fan and self._season_has_fan_coil():
             await self._gateway_handler.send_status_request(
