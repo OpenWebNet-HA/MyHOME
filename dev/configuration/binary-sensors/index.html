@@ -2123,6 +2123,7 @@
 <ul>
 <li><strong>Hardware</strong>: Legrand <code>048822</code>, BTicino <code>BMSE1001</code> or standard SCS ceiling/wall motion sensors configured in scenario mode.</li>
 <li><strong>Operation</strong>: When movement is detected, the sensor broadcasts an event frame on WHO 1 that sets the binary sensor to <code>on</code> (Detected), returning to <code>off</code> (Clear) when timeout expires.</li>
+<li><strong>Address</strong>: a WHO 1 point address; an area-0 point with PL 1..9 is spelled in two digits (<code>04</code>), so <code>where: "0004"</code> in <code>myhome.yaml</code> is resolved to <code>04</code> and a <code>…-1-0004-motion</code> entity is moved to <code>…-1-04-motion</code> at startup (#147).</li>
 </ul>
 <h3 id="3-auxiliary-alarm-sensors-who-9">3. Auxiliary Alarm Sensors (WHO = 9)<a class="headerlink" href="#3-auxiliary-alarm-sensors-who-9" title="Permanent link">&para;</a></h3>
 <ul>

@@ -2267,7 +2267,7 @@
 <tr>
 <td style="text-align: left;"><code>*#4*0##</code></td>
 <td style="text-align: left;">Thermoregulation</td>
-<td style="text-align: left;">All gateways</td>
+<td style="text-align: left;">All gateways except F450, F454, F459, F460, F461, H4684, MH200, MH201, MH202 and MyHomeServer1, whose firmware drops it (firmware oracle; the MH201 from a physical sweep trace, <code>tests/fixtures/traces/issue_466</code>); F460, F461 and MyHomeServer1 poll <code>*#4*&lt;WHERE&gt;##</code> per zone instead, and the zones of the SCS-only models (F450, F454, F459, H4684, MH200, MH201, MH202) ask <code>*#4*&lt;WHERE&gt;*0##</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>*#5*0##</code></td>
@@ -2277,7 +2277,7 @@
 <tr>
 <td style="text-align: left;"><code>*#16*0*5##</code></td>
 <td style="text-align: left;">Sound system (dimension 5; lists every amplifier)</td>
-<td style="text-align: left;">F454, H4890, MH200, MH201, MH202, MyHomeServer1</td>
+<td style="text-align: left;">Gateways whose profile advertises WHO 16, except F450, F459, F460, F461, MH202 and MyHomeServer1, whose firmware drops it (firmware oracle)</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>*#18*51*51##</code></td>
@@ -2292,7 +2292,7 @@
 </tbody>
 </table>
 <p>Each request is only sent when the gateway's OWNd <strong>profile</strong> advertises that WHO (<code>GatewayProfile.supported_who</code>). Unknown gateways keep the full set.</p>
-<p>The requests go out one at a time. The gateway ACKs a general request at once, but the replies (one frame per device, on the event session) keep coming for seconds on a large plant, and a second request sent in that window cuts the first reply short (<a href="https://github.com/OpenWebNet-HA/MyHOME/issues/578">#578</a>). So after each request is written, the next one waits until the event session has been quiet for 0.75 s, at most 15 s. A request that is NACKed or never written still gets that wait. <code>myhome.sweep_bus</code> paces its general requests the same way, so a sweep on a large plant takes a few seconds per subsystem. Entities restored at startup poll their own state only after the whole sweep has finished.</p>
+<p>The requests go out one at a time. The gateway ACKs a general request at once, but the replies (one frame per device, on the event session) keep coming for seconds on a large plant, and a second request sent in that window cuts the first reply short (<a href="https://github.com/OpenWebNet-HA/MyHOME/issues/578">#578</a>). So after each request is written, the next one waits until the event session has been quiet for 0.75 s, at most 15 s. A request that is NACKed or never written still gets that wait. <code>myhome.sweep_bus</code> paces its general requests the same way and, unless called with <code>force: true</code>, leaves out the ones the firmware drops just like the startup sweep, so a sweep on a large plant takes a few seconds per subsystem. Entities restored at startup poll their own state only after the whole sweep has finished.</p>
 <blockquote>
 <p>OWNd 2.0.0b8 and earlier give an <strong>MH200</strong> the MH200N profile, which does not advertise WHO 16, so amplifiers behind an MH200 only appear once they send bus traffic. A live MH200 answers <code>*#16*0*5##</code> with every amplifier and source; <a href="https://github.com/OpenWebNet-HA/OWNd/issues/53">OWNd#53</a> gives it its own profile.</p>
 <p>The WHO 16 status request is <code>*#16*WHERE*5##</code> (spec section 1.5.2). Gateways NACK the bare <code>*#16*0##</code> for every address, whether or not the plant has audio, so an old NACK on that frame never meant "no audio".</p>
@@ -2323,9 +2323,9 @@
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Thermoregulation (WHO 4)</strong></td>
-<td style="text-align: center;">✅ Yes (<code>*#4*0##</code>)</td>
+<td style="text-align: center;">✅ Yes (<code>*#4*0##</code>), per gateway</td>
 <td style="text-align: center;">Optional (<code>cooling</code>, <code>fan</code>)</td>
-<td style="text-align: left;">Standard zones (<code>1</code>–<code>99</code>) and central units (<code>#0</code>, <code>#0#1</code>). Area broadcasts (<code>00</code>) and probe broadcasts do not create climate entities.</td>
+<td style="text-align: left;">Standard zones (<code>1</code>–<code>99</code>) and central units (<code>#0</code>, <code>#0#1</code>). Area broadcasts (<code>00</code>) and probe broadcasts do not create climate entities. On F450, F454, F459, F460, F461, H4684, MH200, MH201, MH202 and MyHomeServer1 the firmware drops <code>*#4*0##</code> (see the table above), so with no registry entry and no <code>myhome.yaml</code> a zone is discovered from its first bus frame rather than by the startup sweep.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Burglar Alarm (WHO 5)</strong></td>
@@ -2335,9 +2335,9 @@
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Sound System (WHO 16)</strong></td>
-<td style="text-align: center;">✅ Yes (<code>*#16*0*5##</code>)</td>
+<td style="text-align: center;">✅ Yes (<code>*#16*0*5##</code>), per gateway</td>
 <td style="text-align: center;">Optional (streamer mapping)</td>
-<td style="text-align: left;">Discovers all amplifier zones and sources via dimension 5 query.</td>
+<td style="text-align: left;">Discovers all amplifier zones and sources via dimension 5 query where the profile advertises WHO 16. On F450, F459, F460, F461, MH202 and MyHomeServer1 the firmware drops <code>*#16*0*5##</code>, so amplifiers there are discovered from their first bus frame.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Energy Management (WHO 18)</strong></td>
@@ -2435,7 +2435,7 @@ Options Flow if your gateway lags on repeated status requests.</p>
 </tr>
 </tbody>
 </table>
-<p>Addresses follow the OpenWebNet <code>WHERE</code> conventions - point-to-point <code>APL</code> (<code>12</code>), area <code>A</code> (<code>1</code>), group <code>#G</code> (<code>#5</code>), general <code>0</code> - plus the F422 bus-routing form <code>APL#4#&lt;bus&gt;</code> (<code>0311#4#01</code>). Area, group and general frames never create an entity: they are broadcasts, not devices (the alarm central unit is the one subsystem where <code>WHERE = 0</code> is a real device). Translation frames (<code>*1*1000#1*14##</code>) are ignored as well.</p>
+<p>Addresses follow the OpenWebNet <code>WHERE</code> conventions - point-to-point <code>APL</code> (<code>12</code>), area <code>A</code> (<code>1</code>), group <code>#G</code> (<code>#5</code>), general <code>0</code> - plus the F422 bus-routing form <code>APL#4#&lt;bus&gt;</code> (<code>0311#4#01</code>). An area-0 point with PL 1..9 is spelled in two digits everywhere (<code>04</code>, not <code>0004</code>): <code>myhome.yaml</code> devices, <code>expose:</code> entries and the UI expose flow resolve <code>0004</code> to <code>04</code>, the form the gateways accept and report (#147). Area, group and general frames never create an entity: they are broadcasts, not devices (the alarm central unit is the one subsystem where <code>WHERE = 0</code> is a real device). Translation frames (<code>*1*1000#1*14##</code>) are ignored as well.</p>
 <p>Platforms only add what differs: which <code>WHO</code> they serve, how a device is built, and a few hooks - the light platform hands WHO 1 frames for configured switches and motion / illuminance sensors to those platforms instead of creating a light, the cover platform relays a general <code>*2*x*0##</code> to every cover, the media player maps stereo-module pseudo zones (<code>10x</code>-<code>14x</code>) to amplifier <code>x</code>, the climate platform reads the zone a heating frame concerns from its parameters (<code>*4*4001#5*0##</code> is about zone 5), and the sensor and binary-sensor platforms run one such cycle per subsystem they serve (energy meters, illuminance and temperature probes; dry contacts, auxiliary channels and motion sensors). A meter address owns one entity per measurement it reports. Contacts and probes remember every spelling of their address (<code>0021</code> and <code>21</code>) so a renamed entity is never duplicated after a restart.</p>
 <p>Buttons have no bus address: lock / unlock and calibrate buttons are created for the actuators the other platforms announce.</p>
 <hr />

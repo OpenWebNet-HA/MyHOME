@@ -3454,6 +3454,10 @@
 <hr />
 <h2 id="6-myhomesweep_bus">6. <code>myhome.sweep_bus</code><a class="headerlink" href="#6-myhomesweep_bus" title="Permanent link">&para;</a></h2>
 <p>Actively queries status across all configured subsystems (lighting, automation, thermoregulation, and gateway diagnostics). It is used to refresh entity states and populate the in-band <strong>Bus Monitor</strong> with fresh data for troubleshooting.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>With the default <code>force: false</code> the service sends the same general requests as the startup sweep, so on the gateways whose firmware drops <code>*#4*0##</code> before the bus (F450, F454, F459, F460, F461, H4684, MH200, MH201, MH202 and MyHomeServer1) it sends <strong>no WHO 4 frame at all</strong>: the general request is left out and the service triggers no per-zone <code>*#4*&lt;WHERE&gt;##</code> or <code>*#4*&lt;WHERE&gt;*0##</code> poll (those belong to the climate entities' own polling, see <a href="../climate/">climate</a>). <code>*#16*0*5##</code> is left out the same way on F450, F459, F460, F461, MH202 and MyHomeServer1. With <code>force: true</code> the requests are sent, and the firmware still drops them before they reach the bus (a NACK on the command session, nothing on the event session).</p>
+</div>
 <h3 id="fields_5">Fields<a class="headerlink" href="#fields_5" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -3477,7 +3481,7 @@
 <td style="text-align: left;"><code>force</code></td>
 <td style="text-align: center;">boolean</td>
 <td style="text-align: center;">No</td>
-<td style="text-align: left;">Force probe across all subsystems regardless of gateway profile restrictions (defaults to <code>false</code>).</td>
+<td style="text-align: left;">Force probe across all subsystems regardless of gateway profile restrictions, including the general requests the gateway firmware drops (<code>*#4*0##</code>, <code>*#16*0*5##</code> on most models; see <a href="../runtime_behaviour/">runtime behaviour</a>). Defaults to <code>false</code>, which sends the same general requests as the startup sweep.</td>
 <td style="text-align: left;"><code>true</code></td>
 </tr>
 </tbody>

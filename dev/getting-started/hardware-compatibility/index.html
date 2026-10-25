@@ -2225,13 +2225,14 @@
 </div>
 <hr />
 <h2 id="gateway-startup-discovery-capabilities">Gateway Startup Discovery Capabilities<a class="headerlink" href="#gateway-startup-discovery-capabilities" title="Permanent link">&para;</a></h2>
-<p>During startup initial discovery, status queries are gated strictly by gateway profile capabilities to avoid transmitting unsupported commands:</p>
+<p>During startup initial discovery, status queries are gated by the gateway profile (the WHOs it advertises) and then by what the gateway firmware actually forwards: a general request the firmware drops before the bus (<code>*#4*0##</code>, <code>*#16*0*5##</code> on the models noted below) is left out even though the profile advertises its WHO, and the climate zones of the SCS-only models among them ask <code>*#4*&lt;WHERE&gt;*0##</code> themselves. The second column is the profile, the third what the sweep sends:</p>
 <!-- GATEWAY_DISCOVERY_START -->
 <table>
 <thead>
 <tr>
 <th style="text-align: left;">Gateway Model</th>
-<th style="text-align: left;">Initial Discovery Subsystems Queried</th>
+<th style="text-align: left;">Profile Subsystems (advertised)</th>
+<th style="text-align: left;">Startup Sweep Requests (sent)</th>
 <th style="text-align: left;">Profile Support Notes</th>
 </tr>
 </thead>
@@ -2239,47 +2240,68 @@
 <tr>
 <td style="text-align: left;"><strong>MH202</strong></td>
 <td style="text-align: left;">WHO 1, 2, 4, 5, 16, 18</td>
-<td style="text-align: left;">Full support including Burglar Alarm (<code>*#5*0##</code>), Sound (<code>*#16*0*5##</code>), and Energy (<code>*#18*51*...</code>).</td>
+<td style="text-align: left;">WHO 1, 2, 5, 18 (firmware drops <code>*#4*0##</code>, <code>*#16*0*5##</code>)</td>
+<td style="text-align: left;">Burglar Alarm (<code>*#5*0##</code>) and Energy (<code>*#18*51*...</code>) queries. WHO 4 and WHO 16 are advertised, but the <code>010024</code> firmware drops <code>*#4*0##</code> and <code>*#16*0*5##</code> (own-firmware-oracle), so the sweep leaves both out and each climate zone asks <code>*#4*&lt;WHERE&gt;*0##</code> itself.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>H4890 / AM4890</strong></td>
+<td style="text-align: left;">WHO 1, 2, 4, 5, 16, 18</td>
 <td style="text-align: left;">WHO 1, 2, 4, 5, 16, 18</td>
 <td style="text-align: left;">Supports Burglar Alarm, Sound (<code>*#16*0*5##</code>), and Energy meter 51 queries.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>F454</strong></td>
 <td style="text-align: left;">WHO 1, 2, 4, 16, 18</td>
-<td style="text-align: left;">Full lighting, cover, climate, sound (<code>bt_difson</code> firmware-verified), and energy meter 51 queries. Alarm query omitted.</td>
+<td style="text-align: left;">WHO 1, 2, 16, 18 (firmware drops <code>*#4*0##</code>)</td>
+<td style="text-align: left;">Full lighting, cover, sound (<code>bt_difson</code> firmware-verified), and energy meter 51 queries. The <code>020051</code> firmware drops <code>*#4*0##</code> (own-firmware-oracle), so each climate zone asks <code>*#4*&lt;WHERE&gt;*0##</code> itself. Alarm query omitted.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>F452 / F453 / F453AV</strong></td>
+<td style="text-align: left;">WHO 1, 2, 4, 16, 18</td>
 <td style="text-align: left;">WHO 1, 2, 4, 16, 18</td>
 <td style="text-align: left;">Lighting, cover, climate, sound (<code>bt_difson</code> firmware-verified on F453/F453AV), and energy meter 51 queries. Alarm query omitted.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>F461</strong></td>
 <td style="text-align: left;">WHO 1, 2, 4, 16, 18</td>
-<td style="text-align: left;">Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted.</td>
+<td style="text-align: left;">WHO 1, 2, 18 (firmware drops <code>*#4*0##</code>, <code>*#16*0*5##</code>)</td>
+<td style="text-align: left;">Lighting, cover, and energy meter 51 queries. The <code>020011</code> firmware drops <code>*#4*0##</code> and <code>*#16*0*5##</code> (own-firmware-oracle, confirmed live on 2.0.11), so the sweep leaves both out; zones are polled with <code>*#4*&lt;WHERE&gt;##</code>. Alarm query omitted.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>F455</strong></td>
+<td style="text-align: left;">WHO 1, 2, 4, 18</td>
 <td style="text-align: left;">WHO 1, 2, 4, 18</td>
 <td style="text-align: left;">Entry-level gateway: lighting, cover, climate, and energy meter 51 queries. Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>MyHomeServer1</strong></td>
 <td style="text-align: left;">WHO 1, 2, 4, 16, 18</td>
-<td style="text-align: left;">Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted.</td>
+<td style="text-align: left;">WHO 1, 2, 18 (firmware drops <code>*#4*0##</code>, <code>*#16*0*5##</code>)</td>
+<td style="text-align: left;">Lighting, cover, and energy meter 51 queries. The firmware drops <code>*#4*0##</code> and <code>*#16*0*5##</code> (own-firmware-oracle <code>028206</code>, confirmed live on 3.87.13), so the sweep leaves both out; zones are polled with <code>*#4*&lt;WHERE&gt;##</code>. Alarm query omitted.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>MH201</strong></td>
 <td style="text-align: left;">WHO 1, 2, 4, 16, 18</td>
-<td style="text-align: left;">Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted.</td>
+<td style="text-align: left;">WHO 1, 2, 16, 18 (firmware drops <code>*#4*0##</code>)</td>
+<td style="text-align: left;">Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Not in own-firmware-oracle; a physical MH201 3.3.6 returned no zone frame to <code>*#4*0##</code> although its zones report (<code>tests/fixtures/traces/issue_466</code>), so the sweep leaves it out and each climate zone asks <code>*#4*&lt;WHERE&gt;*0##</code> itself. Alarm query omitted.</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>MH200 / MH200N</strong></td>
+<td style="text-align: left;"><strong>MH200</strong> <em>(Legacy)</em></td>
 <td style="text-align: left;">WHO 1, 2, 4, 16</td>
-<td style="text-align: left;">Lighting, cover, climate, and sound queries (<code>bt_difson</code> hardware and firmware-verified on both). Alarm and energy queries omitted.</td>
+<td style="text-align: left;">WHO 1, 2, 16 (firmware drops <code>*#4*0##</code>)</td>
+<td style="text-align: left;">Lighting, cover, climate, and sound queries (<code>bt_difson</code> hardware and firmware-verified). The <code>020102</code> firmware drops <code>*#4*0##</code> (own-firmware-oracle), so its climate zones ask <code>*#4*&lt;WHERE&gt;*0##</code> themselves. Alarm and energy queries omitted.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>MH200N</strong></td>
+<td style="text-align: left;">WHO 1, 2, 4, 16</td>
+<td style="text-align: left;">WHO 1, 2, 4, 16</td>
+<td style="text-align: left;">Lighting, cover, climate, and sound queries (<code>bt_difson</code> hardware and firmware-verified). The <code>010108</code> firmware forwards <code>*#4*0##</code> (own-firmware-oracle), unlike the MH200. Alarm and energy queries omitted.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>H4684 / HL4684</strong></td>
+<td style="text-align: left;">WHO 1, 2, 4, 16, 18</td>
+<td style="text-align: left;">WHO 1, 2, 16, 18 (firmware drops <code>*#4*0##</code>)</td>
+<td style="text-align: left;">Lighting, cover, climate, sound, and energy meter 51 queries. The <code>020054</code> firmware drops <code>*#4*0##</code> (own-firmware-oracle), so each climate zone asks <code>*#4*&lt;WHERE&gt;*0##</code> itself; the SSDP spelling <code>HL4684</code> is keyed on the same tables. Alarm query omitted.</td>
 </tr>
 </tbody>
 </table>

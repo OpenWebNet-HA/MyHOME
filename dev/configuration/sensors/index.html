@@ -2175,6 +2175,7 @@
 <li><strong>Entity</strong>: <code>sensor.&lt;name&gt;_illuminance</code></li>
 <li><strong>Device Class</strong>: <code>illuminance</code> (unit: <code>lx</code>)</li>
 <li><strong>Use Case</strong>: Drive automated curtain/blind closing when solar glare exceeds threshold, or trigger dusk lighting.</li>
+<li><strong>Address</strong>: a WHO 1 point address; an area-0 point with PL 1..9 is spelled in two digits (<code>04</code>), so <code>where: "0004"</code> in <code>myhome.yaml</code> is resolved to <code>04</code> and a <code>…-1-0004-illuminance</code> entity is moved to <code>…-1-04-illuminance</code> at startup (#147).</li>
 </ul>
 <hr />
 <h2 id="legacy-yaml-note">🔄 Legacy YAML Note<a class="headerlink" href="#legacy-yaml-note" title="Permanent link">&para;</a></h2>

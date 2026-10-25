@@ -2282,7 +2282,7 @@
 <p>When your gateway connects to Home Assistant:</p>
 <ol>
 <li><strong>Dynamic Bus Discovery</strong>: The integration listens to OpenWebNet <code>WHO = 1</code> frames and scans active addresses.</li>
-<li><strong>Device &amp; Entity Creation</strong>: Each physical lighting actuator (<code>WHERE = 1..99</code> or area/point addresses <code>WHERE = 01..9999</code>) is registered as a Home Assistant <code>light</code> entity linked to the gateway device.</li>
+<li><strong>Device &amp; Entity Creation</strong>: Each physical lighting actuator (<code>WHERE = 1..99</code> or area/point addresses <code>WHERE = 01..9999</code>) is registered as a Home Assistant <code>light</code> entity linked to the gateway device. An area-0 point with PL 1..9 is addressed in two digits (<code>04</code> for A=0 PL=4): the gateways refuse the 4-digit spelling <code>0004</code> and report the point as <code>04</code>, so <code>where: "0004"</code> in <code>myhome.yaml</code> is resolved to <code>04</code> with a one-time warning, and an entity created under <code>0004</code> is moved to <code>04</code> at startup (#147). Other 4-digit addresses (<code>0015</code>, <code>0209</code>, <code>1015</code>) are used as typed.</li>
 <li><strong>UI Customization</strong>: Rename lights, assign them to Areas (e.g. <em>Kitchen</em>, <em>Living Room</em>), or customize icons directly in the Home Assistant UI (<strong>Settings → Devices &amp; Services → Entities</strong>).</li>
 </ol>
 <hr />
