@@ -12,20 +12,30 @@ Gateways that drop ``*#4*Z*20##`` (own-firmware-oracle ``thermo-actuator`` rows 
 from __future__ import annotations
 
 import asyncio
+import json
+from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 from homeassistant.components.climate import HVACAction, HVACMode
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PASSWORD, CONF_PORT
 from homeassistant.core import State
-from OWNd.message import OWNHeatingEvent
+from homeassistant.helpers.dispatcher import async_dispatcher_send
+from OWNd.message import OWNHeatingEvent, OWNMessage
 from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
 
 from custom_components.myhome.climate import MyHOMEClimate, _zone_address
-from custom_components.myhome.const import CONF_FIRMWARE
+from custom_components.myhome.const import (
+    CONF_ENTITY,
+    CONF_FIRMWARE,
+    CONF_PLATFORMS,
+    CONF_WHERE,
+    DOMAIN,
+)
 from custom_components.myhome.discovery import Address
 from custom_components.myhome.gateway import MyHOMEGatewayHandler
+from tests.conftest import attach_platform, attach_runtime
 
 MAC = "00:03:50:00:00:44"
 
@@ -875,3 +885,200 @@ async def test_a_season_decoded_as_a_mode_by_an_older_ownd_asks_the_fan_speed_to
     assert _dimension_requests(zone) == [("2", 19), ("2", 11)]
     zone.handle_event(legacy)
     assert _dimension_requests(zone) == [("2", 19), ("2", 11)]
+
+
+# ------------------------------------------------------------------ live trace replays through MyHOMEClimate (review 5642758778, 2)
+
+TRACES = Path(__file__).resolve().parent / "fixtures" / "traces"
+F461_TRACE = TRACES / "f461_live_2026-10-23" / "myhome_trace_F461_live_2026-10-23.json"
+F461_RUN6 = "run6_event_session_ha_fixed_integration"
+MHS1_TRACE = TRACES / "myhomeserver1_live_2026-10-24" / "myhome_trace_MyHomeServer1_live_2026-10-24.json"
+MHS1_RUN2 = "run2_reads_thermo_sound_alarm_lights"
+
+
+@pytest.fixture(scope="module")
+def f461_rows() -> list[dict]:
+    """The chronological rows of the 2026-10-23 F461 2.0.11 live capture (#799)."""
+    assert F461_TRACE.is_file(), F461_TRACE
+    return json.loads(F461_TRACE.read_text(encoding="utf-8"))["rows"]
+
+
+@pytest.fixture(scope="module")
+def mhs1_rows() -> list[dict]:
+    """The chronological rows of the 2026-10-24 MyHomeServer1 3.87.13 live capture (#799)."""
+    assert MHS1_TRACE.is_file(), MHS1_TRACE
+    return json.loads(MHS1_TRACE.read_text(encoding="utf-8"))["rows"]
+
+
+def _evt(rows: list[dict], run: str) -> list[str]:
+    return [r["frame"] for r in rows if r["run"] == run and r["dir"] == "rx" and r["session"] == "evt"]
+
+
+def _evt_between(rows: list[dict], run: str, frame: str) -> list[str]:
+    """Event-session frames from the request ``frame`` of ``run`` until the next request of that run."""
+    run_rows = [r for r in rows if r["run"] == run]
+    start = next(i for i, r in enumerate(run_rows) if r["dir"] == "tx" and r["frame"] == frame)
+    out: list[str] = []
+    for r in run_rows[start + 1 :]:
+        if r["dir"] == "tx":
+            break
+        if r["dir"] == "rx" and r["session"] == "evt":
+            out.append(r["frame"])
+    return out
+
+
+def _trace_gateway(model: str, mac: str) -> MagicMock:
+    gw = MagicMock()
+    gw.mac = mac
+    gw.unique_id = mac
+    gw.bus_group = mac
+    gw.primary_gateway_mac = None
+    gw.delegated_whos = set()
+    gw.delegated_away_whos = set()
+    gw.log_id = f"[{model} live]"
+    gw.model = model
+    gw.has_central_unit = False
+    gw.supports_zone_status = True
+    gw.initial_discovery_pending = False
+    gw.sweep_active = False
+    gw.is_connected = True
+    gw.profile = get_gateway_profile(model)
+    gw._gateway = SimpleNamespace(profile=gw.profile)
+    gw.send = AsyncMock()
+    gw.send_status_request = AsyncMock()
+    gw.watch_zone_actuators = MagicMock(return_value=MagicMock())
+    gw.request_zone_dimension = MagicMock()
+    return gw
+
+
+async def _trace_plant(hass, gw: MagicMock, zones: list[str]) -> tuple[dict[str, MyHOMEClimate], list]:
+    """The climate platform of ``gw`` with ``zones`` configured, bus discovery on; the added entities too."""
+    from custom_components.myhome.climate import async_setup_entry as climate_setup
+
+    platforms_cfg = {
+        "climate": {
+            f"climate_zone_{z}": {
+                CONF_WHERE: z, "who": "4", "zone": z, "name": f"Climate Zone {z}", "heat": True, "cool": True,
+                "standalone": True, "central": False, "manufacturer": "BTicino", "model": gw.model,
+            }
+            for z in zones
+        },
+    }
+    hass.data = {DOMAIN: {gw.mac: {CONF_ENTITY: gw, CONF_PLATFORMS: platforms_cfg}}}
+    entry = MagicMock()
+    entry.data = {"mac": gw.mac}
+    entry.entry_id = f"trace_{gw.model}"
+    entry.options = {}
+    attach_runtime(hass, entry, gw.mac, gw)
+    added: list = []
+    with (
+        patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]),
+        patch("custom_components.myhome.discovery.er.async_get", return_value=MagicMock()),
+    ):
+        await climate_setup(hass, entry, added.extend)
+    entities = {}
+    for ent in added:
+        ent.hass = hass
+        ent.entity_id = f"climate.{ent._device_id}"
+        ent.async_write_ha_state = MagicMock()
+        ent.async_schedule_update_ha_state = MagicMock()
+        attach_platform(ent, entry)
+        await ent.async_added_to_hass()
+        entities[ent._where] = ent
+    assert sorted(entities) == sorted(zones)
+    return entities, added
+
+
+def _replay(hass, mac: str, frames: list[str]) -> list[OWNMessage]:
+    """Deliver the frames the way the gateway handler does (``myhome_message_<mac>``)."""
+    delivered = []
+    for raw in frames:
+        msg = OWNMessage.parse(raw)
+        assert msg is not None, raw
+        async_dispatcher_send(hass, f"myhome_message_{mac}", msg)
+        delivered.append(msg)
+    return delivered
+
+
+async def test_replay_f461_run6_through_the_climate_entity(hass, f461_rows):
+    """1770 s of event session while the fixed integration ran: idle after each poll's actuator pair.
+
+    Every ``*#4*2##`` reply (dimensions 0, 12, season, 14, 13) is followed about 2.2 s later
+    by ``*#4*2#1*20*0##`` + ``*#4*2#2*20*5##``, the answer to the integration's
+    ``*#4*#0*20##``. Before the first pair ``hvac_action`` is unknown; from it on the zone is
+    ``idle`` with ``actuators`` ``{"1": "off", "2": "off"}``, through six more polls.
+    """
+    gw = _trace_gateway("F461", "00:03:50:00:10:23")
+    entities, added = await _trace_plant(hass, gw, ["2"])
+    zone2 = entities["2"]
+    assert zone2.hvac_action is None and "actuators" not in zone2.extra_state_attributes
+    gw.watch_zone_actuators.assert_called_once_with("2")
+    frames = _evt(f461_rows, F461_RUN6)
+    assert len(frames) == 171
+    seen: list[tuple[str, HVACAction | None, dict | None]] = []
+    for raw in frames:
+        _replay(hass, gw.mac, [raw])
+        if raw.startswith(("*#4*2*", "*#4*2#", "*4*1*2##", "*4*0*2##")):  # zone 2 only: run6 has no other zone
+            seen.append((raw, zone2.hvac_action, dict(zone2.extra_state_attributes.get("actuators") or {}) or None))
+    await hass.async_block_till_done()
+    assert len(added) == 1  # nothing was discovered besides the configured zone
+    assert seen[:7] == [
+        ("*#4*2*0*0241##", None, None),
+        ("*#4*2*12*0235*3##", None, None),
+        ("*4*1*2##", None, None),
+        ("*#4*2*14*0235*3##", None, None),
+        ("*#4*2*13*00##", None, None),
+        ("*#4*2#1*20*0##", HVACAction.IDLE, {"1": "off"}),
+        ("*#4*2#2*20*5##", HVACAction.IDLE, {"1": "off", "2": "off"}),
+    ]
+    polls = [f for f, _, _ in seen if f == "*#4*2*13*00##"]
+    assert len(polls) == 7  # the first start and six reconnect sweeps
+    fan_frames = [f for f, _, _ in seen if f == "*#4*2#2*20*5##"]
+    assert len(fan_frames) == 8  # one per poll, repeated once (891.963 s and 892.007 s), reversed once (2043 s)
+    assert all(action == HVACAction.IDLE and acts == {"1": "off", "2": "off"} for _, action, acts in seen[7:])
+    # the hashed write echo parses as a command, not an event: the platform drops it, the state stays
+    assert seen.count(("*#4*2#1*#20*0##", HVACAction.IDLE, {"1": "off", "2": "off"})) == 1
+    assert zone2.hvac_action == HVACAction.IDLE
+    assert zone2.extra_state_attributes["actuators"] == {"1": "off", "2": "off"}
+    assert zone2.current_temperature == 24.1
+    assert zone2.target_temperature == 23.5
+    assert zone2.hvac_mode == HVACMode.HEAT
+    assert zone2.extra_state_attributes["season"] == "heating"
+    assert zone2.current_humidity == 38
+    # the fan coil revealed by *#4*2#2*20*5## asked its side once; heating season: no *#4*2*11##
+    assert zone2.fan_mode == "auto"
+    assert [c.args for c in gw.request_zone_dimension.call_args_list] == [("2", 19)]
+    assert [str(c.args[0]) for c in gw.send_status_request.await_args_list] == ["*#4*2##"]
+
+
+async def test_replay_myhomeserver1_all_zone_actuator_burst_through_the_climate_entities(hass, mhs1_rows):
+    """``*#4*#0*20##`` on a 34-zone plant: 43 actuator frames in 0.39 s, the zone-0 pumps among them.
+
+    Every configured zone ends with its ``actuators`` filled from the ``Z#1`` / ``Z#2`` frames
+    and ``hvac_action: idle``; the five fan coils ask their side once each; the ``0#1``..``0#4``
+    pump frames discover no zone, are watched by no entity and asked for nothing.
+    """
+    burst = _evt_between(mhs1_rows, MHS1_RUN2, "*#4*#0*20##")
+    assert len(burst) == 43
+    zones = sorted({f.split("*")[2].split("#")[0] for f in burst if not f.startswith("*#4*0#")}, key=int)
+    assert len(zones) == 34 and zones[0] == "35" and zones[-1] == "70"
+    gw = _trace_gateway("MyHomeServer1", "00:03:50:00:20:24")
+    entities, added = await _trace_plant(hass, gw, zones)
+    assert sorted(c.args[0] for c in gw.watch_zone_actuators.call_args_list) == zones
+    assert all(e.hvac_action is None for e in entities.values())
+    _replay(hass, gw.mac, burst)
+    await hass.async_block_till_done()
+    assert len(added) == 34  # the pump frames 0#1..0#4 discovered no phantom zone
+    assert "0" not in entities and "#0" not in entities
+    fan_coils = {"47", "48", "57", "60", "70"}
+    for z, ent in entities.items():
+        expected = {"1": "off", "2": "off"} if z in fan_coils else {"1": "off"}
+        assert ent.extra_state_attributes["actuators"] == expected, z
+        assert ent.hvac_action == HVACAction.IDLE, z
+        assert (ent.fan_mode == "auto") is (z in fan_coils), z
+    # the fan coils ask dimension 19 once each, in the order the plant answered
+    assert [c.args for c in gw.request_zone_dimension.call_args_list] == [
+        ("48", 19), ("47", 19), ("60", 19), ("70", 19), ("57", 19),
+    ]
+    assert gw.watch_zone_actuators.call_count == 34
+    assert [str(c.args[0]) for c in gw.send_status_request.await_args_list] == [f"*#4*{z}##" for z in zones]
