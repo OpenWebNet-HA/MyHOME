@@ -9,10 +9,13 @@ request only costs a command-session round trip; whether they put the probe's hu
 event session is not traced, and any ``*#4*<WHERE>*60*<HH>##`` delivered there still updates
 ``current_humidity`` without a poll.
 
-The "captured frames" section replays rows of two committed traces (the loaders the other
-trace tests use): ``f461_live_2026-10-23`` (``*#4*2*60##`` answered ``*#4*2*60*39##`` on the
-command session, echoed on the event session, and three spontaneous ``*#4*2*60*38##`` pushes)
-and ``myhomeserver1_live_2026-10-24`` (``*#4*39*60##`` answered ``*#4*39*60*51##``).
+The "live trace replays" section replays three committed captures, each on the gateway model
+it was recorded on, through ``climate.async_setup_entry`` and ``myhome_message_<mac>`` the way
+``tests/test_climate_actuator_status.py`` does: ``f461_live_2026-10-23`` (run6: three
+spontaneous ``*#4*2*60*38##`` pushes; run2: ``*#4*2*60##`` answered ``*#4*2*60*39##``),
+``myhomeserver1_live_2026-10-24`` (run2: ``*#4*35*60##`` NACKed, ``*#4*0*60##`` answered by 17
+zones; run3: ``*#4*39*60##`` answered ``*#4*39*60*51##``) and ``issue_674`` (an F455, not in the
+table, pushing ``*#4*42*60*52##`` on its own). No capture of the eight refusing models exists.
 """
 from __future__ import annotations
 
@@ -39,13 +42,16 @@ from custom_components.myhome.gateway import (
     KNOWN_GATEWAY_MODELS,
     MyHOMEGatewayHandler,
 )
+from tests.test_climate_actuator_status import _evt_between, _replay, _trace_gateway, _trace_plant
 
 MAC = "00:03:50:00:02:57"
 TRACES = Path(__file__).resolve().parent / "fixtures" / "traces"
 F461_LIVE = TRACES / "f461_live_2026-10-23" / "myhome_trace_F461_live_2026-10-23.json"
 MHS1_LIVE = TRACES / "myhomeserver1_live_2026-10-24" / "myhome_trace_MyHomeServer1_live_2026-10-24.json"
+F455_LIVE = TRACES / "issue_674" / "myhome_trace_f455_climate_timeouts_2026-10-09.json"
 F461_RUN2 = "run2_reviewer_reads"
 F461_RUN6 = "run6_event_session_ha_fixed_integration"
+MHS1_RUN2 = "run2_reads_thermo_sound_alarm_lights"
 MHS1_RUN3 = "run3_reads_lights_addresses_humidity"
 
 
@@ -409,6 +415,28 @@ async def test_a_skipping_zone_on_a_refusing_gateway_is_still_held_back(hass):
     zone._raise_unresponsive_issue.assert_called_once()
 
 
+async def test_a_humidity_event_delivered_on_a_refusing_gateway_enables_humidity_but_not_the_poll(hass):
+    """Integration side only: a ``*#4*Z*60*HH##`` event that reaches the entity (shared-bus delivery,
+    or a zone pre-enabled with ``humidity: true``) is taken as on any gateway, and the MH202 zone
+    still does not ask ``*#4*2*60##``. No trace claims an MH202 emits such a frame.
+    """
+    handler = _handler(hass, "MH202")
+    zone = MyHOMEClimate(
+        hass=hass, name="Zone 2", device_id="4-2", who="4", where="2",
+        heating=True, cooling=True, fan=False, humidity=False, standalone=True, central=False,
+        manufacturer="BTicino", model="Heating Zone", gateway=handler,
+    )
+    zone.hass = hass
+    zone.entity_id = "climate.zone_2"
+    zone.async_write_ha_state = MagicMock()
+    assert zone._humidity is False and zone.current_humidity is None
+    zone.handle_event(OWNHeatingEvent("*#4*2*60*45##"))
+    assert zone._humidity is True
+    assert zone.current_humidity == 45.0
+    await zone.async_update()
+    assert _sent(handler) == []  # humidity known, dimension 60 still not asked on the MH202
+
+
 def test_humidity_enabled_later_still_polls_on_add_on_a_refusing_gateway(hass):
     """``_poll_on_add`` is untouched: the first update runs so the identity can settle before the gate decides."""
     handler = _handler(hass, "MH202")
@@ -422,18 +450,31 @@ def test_humidity_enabled_later_still_polls_on_add_on_a_refusing_gateway(hass):
     assert zone._poll_on_add is True
 
 
-# ------------------------------------------------------------------ captured frames (review 5644219403, 4.2)
+# ------------------------------------------------------------------ live trace replays through the climate platform (review 5644470090, 2)
 
 @pytest.fixture(scope="module")
 def f461_rows() -> list[dict]:
+    """The chronological rows of the 2026-10-23 F461 2.0.11 live capture (#799)."""
     assert F461_LIVE.is_file(), F461_LIVE
     return json.loads(F461_LIVE.read_text(encoding="utf-8"))["rows"]
 
 
 @pytest.fixture(scope="module")
 def mhs1_rows() -> list[dict]:
+    """The chronological rows of the 2026-10-24 MyHomeServer1 3.87.13 live capture (#799)."""
     assert MHS1_LIVE.is_file(), MHS1_LIVE
     return json.loads(MHS1_LIVE.read_text(encoding="utf-8"))["rows"]
+
+
+@pytest.fixture(scope="module")
+def f455_frames() -> list[str]:
+    """The 67 event-session frames of the F455 capture of #674 (2026-10-09), in order."""
+    assert F455_LIVE.is_file(), F455_LIVE
+    archive = json.loads(F455_LIVE.read_text(encoding="utf-8"))
+    assert archive["gateway"]["model"] == "F455"
+    frames = [row["raw"] for row in archive["frames"] if row["direction"] == "rx"]
+    assert len(frames) == archive["total_rx_frames"] == 67
+    return frames
 
 
 def _result(rows: list[dict], run: str, frame: str) -> dict:
@@ -442,75 +483,147 @@ def _result(rows: list[dict], run: str, frame: str) -> dict:
     return found[0]
 
 
-def _evt(rows: list[dict], run: str, frame: str) -> list[dict]:
-    return [r for r in rows if r["run"] == run and r["dir"] == "rx" and r["session"] == "evt" and r["frame"] == frame]
+def _live_gateway(hass, model: str, mac: str) -> MagicMock:
+    """``_trace_gateway`` with the two verdicts a real handler of ``model`` gives the climate platform."""
+    gw = _trace_gateway(model, mac)
+    handler = _handler(hass, model)
+    gw.supports_zone_status = handler.supports_zone_status
+    gw.humidity_request_refused = handler.humidity_request_refused
+    return gw
 
 
-def test_f461_capture_answers_the_humidity_request(f461_rows):
-    """F461 2.0.11, zone 2: ``*#4*2*60##`` is ACKed with ``*#4*2*60*39##`` in 0.14 s, echoed on the event session."""
+def _status_requests(gw: MagicMock) -> list[str]:
+    return [str(call.args[0]) for call in gw.send_status_request.await_args_list]
+
+
+async def test_replay_f461_run6_pushes_enable_humidity_and_the_zone_is_then_asked(hass, f461_rows):
+    """F461 2.0.11, run6 (1770 s of event session while the fixed integration ran): the thermostat
+    pushed ``*#4*2*60*38##`` three times on its own. Zone 2 is configured without humidity; the
+    first push enables it at 38.0 %, and the next poll asks ``*#4*2*60##`` because the F461
+    forwards the request (it is not in the table).
+    """
+    gw = _live_gateway(hass, "F461", "00:03:50:00:10:23")
+    assert gw.humidity_request_refused is False and gw.supports_zone_status is True
+    entities, added = await _trace_plant(hass, gw, ["2"])
+    zone2 = entities["2"]
+    assert zone2._humidity is False and zone2.current_humidity is None
+    assert _status_requests(gw) == ["*#4*2##"]  # the poll on add: no dimension 60 yet
+    frames = [r["frame"] for r in f461_rows if r["run"] == F461_RUN6 and r["dir"] == "rx" and r["session"] == "evt"]
+    assert len(frames) == 171
+    seen: list[tuple[bool, float | None]] = []
+    for raw in frames:
+        _replay(hass, gw.mac, [raw])
+        if raw == "*#4*2*60*38##":
+            seen.append((zone2._humidity, zone2.current_humidity))
+    await hass.async_block_till_done()
+    assert len(added) == 1  # nothing was discovered besides the configured zone
+    assert seen == [(True, 38.0)] * 3
+    await zone2.async_update()
+    assert _status_requests(gw) == ["*#4*2##", "*#4*2##", "*#4*2*60##"]
+
+
+async def test_replay_f461_run2_request_is_answered_and_updates_the_zone(hass, f461_rows):
+    """F461 2.0.11, run2: ``*#4*2*60##`` ACKed with ``*#4*2*60*39##`` in 0.14 s, echoed once on the
+    event session; the general ``*#4*0*60##`` was answered by zone 2 alone, in 2.1 s.
+    """
     result = _result(f461_rows, F461_RUN2, "*#4*2*60##")
     assert result["ack"] is True
     assert result["replies"] == ["*#4*2*60*39##"]
-    sent = next(r for r in f461_rows if r["run"] == F461_RUN2 and r["dir"] == "tx" and r["frame"] == "*#4*2*60##")
-    assert 0 < result["t"] - sent["t"] < 0.5
-    assert len(_evt(f461_rows, F461_RUN2, "*#4*2*60*39##")) == 2  # one echo per request of the run
-    assert len(_evt(f461_rows, F461_RUN6, "*#4*2*60*38##")) == 3  # spontaneous pushes, 30 minutes of HA
+    assert result["reply_time_s"] == 0.143
+    general = _result(f461_rows, F461_RUN2, "*#4*0*60##")
+    assert general["ack"] is True and general["replies"] == ["*#4*2*60*39##"]
+    assert general["reply_time_s"] == 2.128
+    echoes = _evt_between(f461_rows, F461_RUN2, "*#4*2*60##")
+    assert echoes == ["*#4*2*60*39##"]
+    gw = _live_gateway(hass, "F461", "00:03:50:00:10:23")
+    entities, added = await _trace_plant(hass, gw, ["2"])
+    zone2 = entities["2"]
+    _replay(hass, gw.mac, echoes)
+    await hass.async_block_till_done()
+    assert len(added) == 1
+    assert zone2._humidity is True
+    assert zone2.current_humidity == 39.0
+    await zone2.async_update()
+    assert _status_requests(gw) == ["*#4*2##", "*#4*2##", "*#4*2*60##"]  # the request the capture answered
 
 
-async def test_captured_f461_reply_and_pushes_update_the_zone(hass, f461_rows):
-    """The captured reply and the three spontaneous pushes replayed through the entity."""
-    handler = _handler(hass, "F461")
-    zone = _humidity_zone(hass, handler)
-    await zone.async_update()
-    assert _sent(handler) == ["*#4*2##", "*#4*2*60##"]
-    for frame in _result(f461_rows, F461_RUN2, "*#4*2*60##")["replies"]:
-        zone.handle_event(OWNHeatingEvent(frame))
-    assert zone.current_humidity == 39.0
-    for row in _evt(f461_rows, F461_RUN6, "*#4*2*60*38##"):
-        zone.handle_event(OWNHeatingEvent(row["frame"]))
-    assert zone.current_humidity == 38.0
+async def test_replay_myhomeserver1_run2_general_humidity_and_the_unprobed_zone(hass, mhs1_rows):
+    """MyHomeServer1 3.87.13, run2: ``*#4*35*60##`` NACKed after 2.1 s with nothing on the event
+    session; ``*#4*0*60##`` ACKed in 0.5 s and answered by 17 zones. Replayed on an 18-zone plant
+    (the 17 and zone 35): the 17 take their value, zone 35 never gets humidity and is therefore
+    never asked ``*#4*35*60##`` by the integration (the capture's NACK was a manual read).
+    """
+    nack = _result(mhs1_rows, MHS1_RUN2, "*#4*35*60##")
+    assert nack["ack"] is False and nack["replies"] == []
+    assert nack["reply_time_s"] == 2.128
+    assert _evt_between(mhs1_rows, MHS1_RUN2, "*#4*35*60##") == []
+    general = _result(mhs1_rows, MHS1_RUN2, "*#4*0*60##")
+    assert general["ack"] is True and general["reply_time_s"] == 0.499
+    burst = _evt_between(mhs1_rows, MHS1_RUN2, "*#4*0*60##")
+    assert len(burst) == 17
+    assert burst[:8] == general["replies"]  # the eight the command session handed over with the ACK
+    humidity = {f.split("*")[2]: float(f.split("*")[4].rstrip("#")) for f in burst}
+    assert len(humidity) == 17 and "35" not in humidity
+    assert humidity["39"] == 51.0 and humidity["70"] == 69.0
+    zones = sorted([*humidity, "35"], key=int)
+    gw = _live_gateway(hass, "MyHomeServer1", "00:03:50:00:20:24")
+    assert gw.humidity_request_refused is False and gw.supports_zone_status is True
+    entities, added = await _trace_plant(hass, gw, zones)
+    assert all(e._humidity is False for e in entities.values())
+    _replay(hass, gw.mac, burst)
+    await hass.async_block_till_done()
+    assert len(added) == 18  # no zone discovered beyond the configured ones
+    for z, value in humidity.items():
+        assert entities[z]._humidity is True and entities[z].current_humidity == value, z
+    zone35 = entities["35"]
+    assert zone35._humidity is False and zone35.current_humidity is None
+    gw.send_status_request.reset_mock()
+    await zone35.async_update()
+    assert _status_requests(gw) == ["*#4*35##"]  # no dimension 60 for a zone that never reported it
 
 
-async def test_captured_pushes_keep_a_refusing_gateway_s_zone_fresh_without_a_poll(hass, f461_rows):
-    """What the gate relies on: the probe's own ``*#4*Z*60*HH##`` pushes, here the F461's, enable and refresh humidity."""
-    handler = _handler(hass, "MH202")
-    zone = MyHOMEClimate(
-        hass=hass, name="Zone 2", device_id="4-2", who="4", where="2",
-        heating=True, cooling=True, fan=False, humidity=False, standalone=True, central=False,
-        manufacturer="BTicino", model="Heating Zone", gateway=handler,
-    )
-    zone.hass = hass
-    zone.entity_id = "climate.zone_2"
-    zone.async_write_ha_state = MagicMock()
-    assert zone.current_humidity is None
-    for row in _evt(f461_rows, F461_RUN6, "*#4*2*60*38##"):
-        zone.handle_event(OWNHeatingEvent(row["frame"]))
-    assert zone._humidity is True
-    assert zone.current_humidity == 38.0
-    await zone.async_update()
-    assert _sent(handler) == []  # humidity enabled by the push, still not polled on the MH202
-
-
-def test_myhomeserver1_capture_answers_the_humidity_request(mhs1_rows):
-    """MyHomeServer1 3.87.13, zone 39: ``*#4*39*60##`` is ACKed with ``*#4*39*60*51##`` in 0.2 s."""
+async def test_replay_myhomeserver1_run3_zone_39_request_is_answered(hass, mhs1_rows):
+    """MyHomeServer1 3.87.13, run3: ``*#4*39*60##`` ACKed with ``*#4*39*60*51##`` in 0.2 s."""
     result = _result(mhs1_rows, MHS1_RUN3, "*#4*39*60##")
-    assert result["ack"] is True
-    assert result["replies"] == ["*#4*39*60*51##"]
-    assert len(_evt(mhs1_rows, MHS1_RUN3, "*#4*39*60*51##")) == 1
+    assert result["ack"] is True and result["replies"] == ["*#4*39*60*51##"]
+    assert result["reply_time_s"] == 0.204
+    echoes = _evt_between(mhs1_rows, MHS1_RUN3, "*#4*39*60##")
+    assert echoes == ["*#4*39*60*51##"]
+    gw = _live_gateway(hass, "MyHomeServer1", "00:03:50:00:20:24")
+    entities, added = await _trace_plant(hass, gw, ["39"])
+    zone39 = entities["39"]
+    assert _status_requests(gw) == ["*#4*39##"]
+    _replay(hass, gw.mac, echoes)
+    await hass.async_block_till_done()
+    assert len(added) == 1
+    assert zone39._humidity is True and zone39.current_humidity == 51.0
+    await zone39.async_update()
+    assert _status_requests(gw) == ["*#4*39##", "*#4*39##", "*#4*39*60##"]  # the request the capture answered
 
 
-async def test_captured_myhomeserver1_reply_updates_zone_39(hass, mhs1_rows):
-    handler = _handler(hass, "MyHomeServer1")
-    zone = MyHOMEClimate(
-        hass=hass, name="Zone 39", device_id="4-39", who="4", where="39",
-        heating=True, cooling=True, fan=False, humidity=True, standalone=True, central=False,
-        manufacturer="BTicino", model="Heating Zone", gateway=handler,
-    )
-    zone.hass = hass
-    zone.entity_id = "climate.zone_39"
-    zone.async_write_ha_state = MagicMock()
-    await zone.async_update()
-    assert _sent(handler) == ["*#4*39##", "*#4*39*60##"]
-    for frame in _result(mhs1_rows, MHS1_RUN3, "*#4*39*60##")["replies"]:
-        zone.handle_event(OWNHeatingEvent(frame))
-    assert zone.current_humidity == 51.0
+async def test_replay_f455_spontaneous_push_on_an_unlisted_gateway(hass, f455_frames):
+    """F455 (#674, 2026-10-09): 67 event-session frames of a plant whose ``*#4*Z##`` polls time out;
+    zone 42 pushes ``*#4*42*60*52##`` on its own. The F455 is not in the table: the push enables
+    humidity on zone 42 alone, and the next poll asks ``*#4*42*60##`` (and no ``*#4*42##``, which
+    the F455 does not answer).
+    """
+    assert f455_frames.count("*#4*42*60*52##") == 1
+    assert not any("*60*" in f and not f.startswith("*#4*42*") for f in f455_frames)
+    zones = [
+        "6", "7", "8", "9", "14", "15", "16", "17", "21", "26", "27", "28", "29", "34", "35", "36", "37",  # heating
+        "42", "43", "45", "46",  # peripheral zones of the README
+        "64", "65",  # actuator zones
+    ]
+    gw = _live_gateway(hass, "F455", "00:03:50:00:06:74")
+    assert gw.humidity_request_refused is False and gw.supports_zone_status is False
+    entities, added = await _trace_plant(hass, gw, zones)
+    assert _status_requests(gw) == []  # no zone status, no fan, no humidity: nothing to poll on add
+    _replay(hass, gw.mac, f455_frames)
+    await hass.async_block_till_done()
+    assert len(added) == len(zones)  # every frame belongs to a configured zone
+    zone42 = entities["42"]
+    assert zone42._humidity is True and zone42.current_humidity == 52.0
+    assert all(e._humidity is False and e.current_humidity is None for z, e in entities.items() if z != "42")
+    assert entities["35"].current_temperature == 19.6
+    await zone42.async_update()
+    assert _status_requests(gw) == ["*#4*42*60##"]
