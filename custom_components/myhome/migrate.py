@@ -318,6 +318,10 @@ _POINT_ADDRESS_DOMAINS = ("light", "switch", "cover", "button", "binary_sensor",
 _POINT_ADDRESS_ID = re.compile(r"^(?P<who>[12])-(?P<where>\d{4})(?P<tail>(?:[#-].*)?)$")
 # A WHO 1 area-0 point already in its canonical spelling (1-04, 1-09#4#01).
 _CANONICAL_AREA0_ID = re.compile(r"^1-0[1-9](?:#.*)?$")
+# A WHO 1 motion / illuminance entity at an area-0 point, after the rename or already canonical
+# (1-04-motion, 1-04#4#01-illuminance). Bus discovery spells the same sensor without the WHO:
+# {mac}-04-motion / {mac}-04-illuminance (only its device identifier carries {mac}-1-04).
+_WHO1_SENSOR_ID = re.compile(r"^1-(?P<where>0[1-9](?:#[^-]*)?)(?P<suffix>-.+)$")
 
 
 def _canonical_point_id(after_mac: str) -> str | None:
@@ -352,9 +356,12 @@ def migrate_canonical_point_addresses(hass: HomeAssistant, entry: ConfigEntry) -
         if reg_entry.domain not in _POINT_ADDRESS_DOMAINS or not reg_entry.unique_id.startswith(prefix):
             continue
         if (new_tail := _canonical_point_id(reg_entry.unique_id[len(prefix):])) is None:
+            # Already canonical (an earlier run renamed it, or the yaml said 04 from the start):
+            # the twin cleanups below still apply.
             if reg_entry.domain in ("switch", "cover") and _CANONICAL_AREA0_ID.match(reg_entry.unique_id[len(prefix):]):
-                # Already canonical (an earlier run renamed it): the cleanup below still applies.
                 _remove_ghost_light(entity_registry, entry, reg_entry.entity_id, reg_entry.unique_id)
+            elif reg_entry.domain in ("binary_sensor", "sensor"):
+                _merge_bus_sensor_twin(entity_registry, entry, reg_entry.domain, reg_entry.entity_id, prefix, reg_entry.unique_id)
             continue
         new_unique_id = f"{prefix}{new_tail}"
         duplicate_id = entity_registry.async_get_entity_id(reg_entry.domain, DOMAIN, new_unique_id)
@@ -386,21 +393,12 @@ def migrate_canonical_point_addresses(hass: HomeAssistant, entry: ConfigEntry) -
             continue
         LOGGER.info("Migrated %s to unique_id %s", reg_entry.entity_id, new_unique_id)
         if duplicate is not None:
-            # The user's customisations of the working bus entity survive where the yaml one has none.
-            carried_entity: dict[str, Any] = {}
-            if reg_entry.area_id is None and duplicate.area_id is not None:
-                carried_entity["area_id"] = duplicate.area_id
-            if reg_entry.icon is None and duplicate.icon is not None:
-                carried_entity["icon"] = duplicate.icon
-            if reg_entry.name is None and duplicate.name is not None:
-                carried_entity["name"] = duplicate.name
-            if not reg_entry.labels and duplicate.labels:
-                carried_entity["labels"] = set(duplicate.labels)
-            if carried_entity:
-                entity_registry.async_update_entity(reg_entry.entity_id, **carried_entity)
+            _carry_entity_customisations(entity_registry, reg_entry.entity_id, duplicate)
             LOGGER.info("Removed %s, a duplicate of %s under the canonical address", duplicate.entity_id, reg_entry.entity_id)
         if new_tail.startswith("1-") and reg_entry.domain in ("switch", "cover"):
             _remove_ghost_light(entity_registry, entry, reg_entry.entity_id, new_unique_id)
+        elif reg_entry.domain in ("binary_sensor", "sensor"):
+            _merge_bus_sensor_twin(entity_registry, entry, reg_entry.domain, reg_entry.entity_id, prefix, new_unique_id)
 
     _migrate_expose_subentries(hass, entry)
     _migrate_cover_travel_times(hass, entry)
@@ -459,6 +457,50 @@ def migrate_canonical_point_addresses(hass: HomeAssistant, entry: ConfigEntry) -
             if carried:
                 device_registry.async_update_device(device.id, **carried)
             LOGGER.info("Removed device %s, a duplicate of %s under the canonical address", other.id, device.id)
+
+
+def _carry_entity_customisations(
+    entity_registry: er.EntityRegistry, survivor_entity_id: str, removed: er.RegistryEntry
+) -> None:
+    """The user's customisations of the working bus entity survive where the surviving one has none."""
+    survivor = entity_registry.async_get(survivor_entity_id)
+    if survivor is None:
+        return
+    carried: dict[str, Any] = {}
+    if survivor.area_id is None and removed.area_id is not None:
+        carried["area_id"] = removed.area_id
+    if survivor.icon is None and removed.icon is not None:
+        carried["icon"] = removed.icon
+    if survivor.name is None and removed.name is not None:
+        carried["name"] = removed.name
+    if not survivor.labels and removed.labels:
+        carried["labels"] = set(removed.labels)
+    if carried:
+        entity_registry.async_update_entity(survivor_entity_id, **carried)
+
+
+def _merge_bus_sensor_twin(
+    entity_registry: er.EntityRegistry, entry: ConfigEntry, domain: str, owner_entity_id: str, prefix: str, unique_id: str
+) -> None:
+    """Remove this entry's bus-discovered twin of a WHO 1 motion / illuminance entity at an area-0 point.
+
+    The yaml entity is `{mac}-1-04-motion` (the device key); the one bus discovery created for
+    the frames on `04` is `{mac}-04-motion` (binary_sensor.py `build_motion`, sensor.py
+    `build_illuminance`: the WHO only sits in its device identifier). Both answer to the
+    address `04`, so the platform's restore keeps whichever the registry lists first and
+    removes the other as a duplicate, which could be the user's configured entity. The yaml
+    entity is the one to keep; the twin's unset customisations are carried over first.
+    """
+    if (match := _WHO1_SENSOR_ID.match(unique_id[len(prefix):])) is None:
+        return
+    twin_unique_id = f"{prefix}{match['where']}{match['suffix']}"
+    twin_id = entity_registry.async_get_entity_id(domain, DOMAIN, twin_unique_id)
+    twin = entity_registry.async_get(twin_id) if twin_id else None
+    if twin is None or twin.config_entry_id != entry.entry_id:
+        return
+    _carry_entity_customisations(entity_registry, owner_entity_id, twin)
+    entity_registry.async_remove(twin.entity_id)
+    LOGGER.info("Removed %s, the bus-discovered twin of %s (unique_id %s)", twin.entity_id, owner_entity_id, twin_unique_id)
 
 
 def _remove_ghost_light(

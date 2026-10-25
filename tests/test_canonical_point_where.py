@@ -16,6 +16,8 @@ from OWNd.message import OWNEvent
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome import validate
+from custom_components.myhome.binary_sensor import MyHOMEMotionSensor
+from custom_components.myhome.binary_sensor import async_setup_entry as binary_sensor_setup_entry
 from custom_components.myhome.const import (
     CONF_COVER_TRAVEL_TIMES,
     CONF_PLATFORMS,
@@ -33,7 +35,12 @@ from custom_components.myhome.legacy_yaml import (
     migrate_legacy_yaml_to_entry_options,
 )
 from custom_components.myhome.light import async_setup_entry as light_setup_entry
-from custom_components.myhome.migrate import migrate_entry_and_registries
+from custom_components.myhome.migrate import (
+    _carry_entity_customisations,
+    migrate_entry_and_registries,
+)
+from custom_components.myhome.sensor import MyHOMEIlluminanceSensor
+from custom_components.myhome.sensor import async_setup_entry as sensor_setup_entry
 from custom_components.myhome.validate import (
     PointToPoint,
     binary_sensor_schema,
@@ -182,9 +189,10 @@ def test_registry_moves_0004_to_04_and_merges_the_bus_duplicate(hass: HomeAssist
     )
     # The user had customised the working bus entity; the yaml one (which never worked) has nothing set.
     ent_reg.async_update_entity(bus_light.entity_id, area_id="kitchen", icon="mdi:ceiling-light", name="Ceiling", labels={"lamps"})
-    # A sensor bus discovery hung on its device: no point address of its own, so it is handed over.
+    # An illuminance sensor bus discovery hung on its device (its real unique id, without the WHO):
+    # nothing in the yaml claims it, so it is handed over to the surviving device.
     bus_sensor = ent_reg.async_get_or_create(
-        "sensor", DOMAIN, f"{MAC}-1-04-illuminance", config_entry=config_entry, device_id=bus_dev.id
+        "sensor", DOMAIN, f"{MAC}-04-illuminance", config_entry=config_entry, device_id=bus_dev.id
     )
     keep = ent_reg.async_get_or_create("light", DOMAIN, f"{MAC}-1-0015", config_entry=config_entry)
 
@@ -268,7 +276,7 @@ def test_a_refused_rename_puts_the_bus_duplicate_back(hass: HomeAssistant, confi
     )
     ent_reg.async_update_entity(bus_light.entity_id, name="Bus light", area_id="hall")
     bus_sensor = ent_reg.async_get_or_create(
-        "sensor", DOMAIN, f"{MAC}-1-04-illuminance", config_entry=config_entry, device_id=bus_dev.id
+        "sensor", DOMAIN, f"{MAC}-04-illuminance", config_entry=config_entry, device_id=bus_dev.id
     )
     real_update_entity = er.EntityRegistry.async_update_entity
 
@@ -569,7 +577,13 @@ def test_other_who_sensor_schemas_keep_the_address() -> None:
     assert list(kept) == ["1-0015"]
 
 
-def test_registry_moves_who1_sensors_and_leaves_other_who_alone(hass: HomeAssistant, config_entry) -> None:
+def test_registry_moves_who1_sensors_and_merges_their_bus_twins(hass: HomeAssistant, config_entry, caplog) -> None:
+    """The yaml motion / illuminance entity is `{mac}-1-0004-<class>`; its bus twin is `{mac}-04-<class>`.
+
+    Bus discovery never spells the WHO into a motion / illuminance unique id (`build_motion`,
+    `build_illuminance`), only into the device identifier `{mac}-1-04`. The twin is removed,
+    its customisations carried where the yaml entity has none, and other WHOs are untouched.
+    """
     ent_reg = er.async_get(hass)
     dev_reg = dr.async_get(hass)
     yaml_dev = dev_reg.async_get_or_create(config_entry_id=config_entry.entry_id, identifiers={(DOMAIN, f"{MAC}-1-0004")})
@@ -581,27 +595,257 @@ def test_registry_moves_who1_sensors_and_leaves_other_who_alone(hass: HomeAssist
     lux = ent_reg.async_get_or_create(
         "sensor", DOMAIN, f"{MAC}-1-0004-illuminance", config_entry=config_entry, device_id=yaml_dev.id
     )
+    ent_reg.async_update_entity(lux.entity_id, icon="mdi:sun-wireless", labels={"mine"})
     bus_motion = ent_reg.async_get_or_create(
-        "binary_sensor", DOMAIN, f"{MAC}-1-04-motion", config_entry=config_entry, device_id=bus_dev.id
+        "binary_sensor", DOMAIN, f"{MAC}-04-motion", config_entry=config_entry, device_id=bus_dev.id,
+        suggested_object_id="motion_sensor_04",
     )
+    ent_reg.async_update_entity(bus_motion.entity_id, area_id="hall", icon="mdi:motion-sensor", name="Hall PIR", labels={"pir"})
     bus_lux = ent_reg.async_get_or_create(
-        "sensor", DOMAIN, f"{MAC}-1-04-illuminance", config_entry=config_entry, device_id=bus_dev.id
+        "sensor", DOMAIN, f"{MAC}-04-illuminance", config_entry=config_entry, device_id=bus_dev.id
     )
+    ent_reg.async_update_entity(bus_lux.entity_id, area_id="hall", icon="mdi:brightness-5", name="Hall lux", labels={"lux"})
     cen = ent_reg.async_get_or_create("binary_sensor", DOMAIN, f"{MAC}-25-0004", config_entry=config_entry)
     probe = ent_reg.async_get_or_create("sensor", DOMAIN, f"{MAC}-4-0004-temperature", config_entry=config_entry)
     meter = ent_reg.async_get_or_create("sensor", DOMAIN, f"{MAC}-18-0004-power", config_entry=config_entry)
     legacy = ent_reg.async_get_or_create("sensor", DOMAIN, f"{MAC}-0004-illuminance", config_entry=config_entry)
+    # The same twin held by another config entry is not this entry's to remove.
+    other_entry = MockConfigEntry(domain=DOMAIN, title="GW2", data={CONF_MAC: MAC}, unique_id="other", entry_id="e2")
+    other_entry.add_to_hass(hass)
+    ent_reg.async_get_or_create("binary_sensor", DOMAIN, f"{MAC}-1-0005-motion", config_entry=config_entry)
+    theirs = ent_reg.async_get_or_create("binary_sensor", DOMAIN, f"{MAC}-05-motion", config_entry=other_entry)
 
-    migrate_entry_and_registries(hass, config_entry, {})
+    with caplog.at_level(logging.INFO):
+        migrate_entry_and_registries(hass, config_entry, {})
 
-    assert ent_reg.async_get(motion.entity_id).unique_id == f"{MAC}-1-04-motion"
-    assert ent_reg.async_get(motion.entity_id).entity_id == "binary_sensor.hall_motion"
-    assert ent_reg.async_get(lux.entity_id).unique_id == f"{MAC}-1-04-illuminance"
+    moved_motion = ent_reg.async_get(motion.entity_id)
+    assert moved_motion.unique_id == f"{MAC}-1-04-motion" and moved_motion.entity_id == "binary_sensor.hall_motion"
+    assert (moved_motion.area_id, moved_motion.icon, moved_motion.name, moved_motion.labels) == (
+        "hall", "mdi:motion-sensor", "Hall PIR", {"pir"},
+    )
+    moved_lux = ent_reg.async_get(lux.entity_id)
+    assert moved_lux.unique_id == f"{MAC}-1-04-illuminance"
+    # One way: what the yaml entity already had wins, the rest is carried.
+    assert (moved_lux.area_id, moved_lux.icon, moved_lux.name, moved_lux.labels) == ("hall", "mdi:sun-wireless", "Hall lux", {"mine"})
     assert ent_reg.async_get(bus_motion.entity_id) is None and ent_reg.async_get(bus_lux.entity_id) is None
+    assert ent_reg.async_get_entity_id("binary_sensor", DOMAIN, f"{MAC}-04-motion") is None
+    assert ent_reg.async_get_entity_id("sensor", DOMAIN, f"{MAC}-04-illuminance") is None
+    assert ent_reg.async_get(theirs.entity_id).unique_id == f"{MAC}-05-motion"
     assert dev_reg.async_get(bus_dev.id) is None
     assert dev_reg.async_get(yaml_dev.id).identifiers == {(DOMAIN, f"{MAC}-1-04")}
+    assert moved_motion.device_id == yaml_dev.id and moved_lux.device_id == yaml_dev.id
     for untouched in (cen, probe, meter, legacy):
         assert ent_reg.async_get(untouched.entity_id).unique_id == untouched.unique_id
+    assert sorted(r.getMessage() for r in caplog.records if "bus-discovered twin" in r.getMessage()) == [
+        f"Removed {bus_motion.entity_id}, the bus-discovered twin of binary_sensor.hall_motion (unique_id {MAC}-04-motion)",
+        f"Removed {bus_lux.entity_id}, the bus-discovered twin of {lux.entity_id} (unique_id {MAC}-04-illuminance)",
+    ]
+
+    # A second run finds nothing to do: no log line and no registry write.
+    caplog.clear()
+    with caplog.at_level(logging.INFO), \
+         patch.object(er.EntityRegistry, "async_update_entity", side_effect=AssertionError("write")), \
+         patch.object(er.EntityRegistry, "async_remove", side_effect=AssertionError("write")), \
+         patch.object(er.EntityRegistry, "async_get_or_create", side_effect=AssertionError("write")), \
+         patch.object(dr.DeviceRegistry, "async_update_device", side_effect=AssertionError("write")), \
+         patch.object(dr.DeviceRegistry, "async_remove_device", side_effect=AssertionError("write")):
+        migrate_entry_and_registries(hass, config_entry, {})
+    assert not [r for r in caplog.records if r.name == "custom_components.myhome" and "igrat" in r.getMessage()]
+    assert not [r for r in caplog.records if "twin" in r.getMessage()]
+
+
+def test_an_already_canonical_who1_sensor_still_loses_its_bus_twin(hass: HomeAssistant, config_entry, caplog) -> None:
+    """Later boot (or a yaml that said `04` from the start): `{mac}-1-04-motion` next to `{mac}-04-motion`."""
+    ent_reg = er.async_get(hass)
+    mine = ent_reg.async_get_or_create(
+        "binary_sensor", DOMAIN, f"{MAC}-1-04-motion", config_entry=config_entry, suggested_object_id="hall_motion"
+    )
+    twin = ent_reg.async_get_or_create("binary_sensor", DOMAIN, f"{MAC}-04-motion", config_entry=config_entry)
+    ent_reg.async_update_entity(twin.entity_id, area_id="hall", labels={"pir"})
+    routed = ent_reg.async_get_or_create("sensor", DOMAIN, f"{MAC}-1-09#4#01-illuminance", config_entry=config_entry)
+    routed_twin = ent_reg.async_get_or_create("sensor", DOMAIN, f"{MAC}-09#4#01-illuminance", config_entry=config_entry)
+    # Not area-0 points, or not WHO 1: no twin lookup.
+    kept = [
+        ent_reg.async_get_or_create("binary_sensor", DOMAIN, f"{MAC}-1-15-motion", config_entry=config_entry),
+        ent_reg.async_get_or_create("binary_sensor", DOMAIN, f"{MAC}-15-motion", config_entry=config_entry),
+        ent_reg.async_get_or_create("sensor", DOMAIN, f"{MAC}-1-0015-illuminance", config_entry=config_entry),
+        ent_reg.async_get_or_create("sensor", DOMAIN, f"{MAC}-0015-illuminance", config_entry=config_entry),
+        ent_reg.async_get_or_create("sensor", DOMAIN, f"{MAC}-4-04-temperature", config_entry=config_entry),
+        ent_reg.async_get_or_create("sensor", DOMAIN, f"{MAC}-04-temperature", config_entry=config_entry),
+    ]
+    with caplog.at_level(logging.INFO):
+        migrate_entry_and_registries(hass, config_entry, {})
+    assert ent_reg.async_get(twin.entity_id) is None and ent_reg.async_get(routed_twin.entity_id) is None
+    survivor = ent_reg.async_get(mine.entity_id)
+    assert survivor.unique_id == f"{MAC}-1-04-motion" and survivor.entity_id == "binary_sensor.hall_motion"
+    assert (survivor.area_id, survivor.labels) == ("hall", {"pir"})
+    assert ent_reg.async_get(routed.entity_id).unique_id == f"{MAC}-1-09#4#01-illuminance"
+    for entry in kept:
+        assert ent_reg.async_get(entry.entity_id).unique_id == entry.unique_id
+    assert not [r for r in caplog.records if "Migrated" in r.getMessage()]
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO), \
+         patch.object(er.EntityRegistry, "async_update_entity", side_effect=AssertionError("write")), \
+         patch.object(er.EntityRegistry, "async_remove", side_effect=AssertionError("write")):
+        migrate_entry_and_registries(hass, config_entry, {})
+    assert not [r for r in caplog.records if r.name == "custom_components.myhome" and ("twin" in r.getMessage() or "igrat" in r.getMessage())]
+
+
+def test_carry_over_onto_a_vanished_survivor_is_a_no_op(hass: HomeAssistant, config_entry) -> None:
+    """Defensive: the survivor was renamed a moment ago, but a missing entry must not raise."""
+    ent_reg = er.async_get(hass)
+    twin = ent_reg.async_get_or_create("binary_sensor", DOMAIN, f"{MAC}-04-motion", config_entry=config_entry)
+    ent_reg.async_update_entity(twin.entity_id, area_id="hall")
+    with patch.object(er.EntityRegistry, "async_update_entity", side_effect=AssertionError("write")):
+        _carry_entity_customisations(ent_reg, "binary_sensor.gone", ent_reg.async_get(twin.entity_id))
+
+
+def _seed_who1_sensor_twins(hass: HomeAssistant, config_entry, domain: str, device_class: str) -> tuple[str, str]:
+    """A bus twin `{mac}-04-<class>` listed BEFORE the yaml entity `{mac}-1-0004-<class>` in the registry.
+
+    Returns ``(bus entity_id, yaml entity_id)``; the bus one carries the user's customisations.
+    """
+    ent_reg = er.async_get(hass)
+    dev_reg = dr.async_get(hass)
+    bus_dev = dev_reg.async_get_or_create(config_entry_id=config_entry.entry_id, identifiers={(DOMAIN, f"{MAC}-1-04")})
+    bus = ent_reg.async_get_or_create(
+        domain, DOMAIN, f"{MAC}-04-{device_class}", config_entry=config_entry, device_id=bus_dev.id,
+        suggested_object_id=f"{device_class}_04", original_device_class=device_class,
+    )
+    ent_reg.async_update_entity(bus.entity_id, area_id="hall", icon="mdi:eye", name="Hall", labels={"hall"})
+    yaml_dev = dev_reg.async_get_or_create(config_entry_id=config_entry.entry_id, identifiers={(DOMAIN, f"{MAC}-1-0004")})
+    mine = ent_reg.async_get_or_create(
+        domain, DOMAIN, f"{MAC}-1-0004-{device_class}", config_entry=config_entry, device_id=yaml_dev.id,
+        suggested_object_id=f"hall_{device_class}", original_device_class=device_class,
+    )
+    entries = [e.unique_id for e in er.async_entries_for_config_entry(ent_reg, config_entry.entry_id) if e.domain == domain]
+    assert entries == [f"{MAC}-04-{device_class}", f"{MAC}-1-0004-{device_class}"]
+    return bus.entity_id, mine.entity_id
+
+
+async def test_motion_sensor_setup_keeps_the_yaml_entity_when_its_bus_twin_is_listed_first(hass: HomeAssistant, config_entry, caplog) -> None:
+    """End to end through `binary_sensor.async_setup_entry`: the registry lists `{mac}-04-motion` first.
+
+    Before the fix the migration renamed the yaml entity to `{mac}-1-04-motion` and left the twin
+    to the platform's restore, which keeps the first entry it meets for an address and removes the
+    other: here the device hand-over happened to re-list the twin last, so the twin went, with the
+    user's area, icon, name and labels on it; see the next test for the order that removed the
+    configured entity instead.
+    """
+    ent_reg = er.async_get(hass)
+    bus_id, mine_id = _seed_who1_sensor_twins(hass, config_entry, "binary_sensor", "motion")
+    gateway = MagicMock()
+    gateway.mac = MAC
+    gateway.log_id = "[test]"
+    configured = {"binary_sensor": binary_sensor_schema(
+        {"hall_motion": {"who": "1", CONF_WHERE: "0004", CONF_NAME: "Hall motion", "class": "motion"}}
+    )}
+    assert list(configured["binary_sensor"]) == ["1-04"]
+    hass.data.setdefault(DOMAIN, {})[MAC] = {"entity": gateway, CONF_PLATFORMS: configured}
+    added: list = []
+    with caplog.at_level(logging.INFO):
+        migrate_entry_and_registries(hass, config_entry, configured)
+        attach_runtime(hass, config_entry)
+        await binary_sensor_setup_entry(hass, config_entry, added.extend)
+
+    assert [type(e) for e in added] == [MyHOMEMotionSensor]
+    assert added[0].unique_id == f"{MAC}-1-04-motion"
+    assert ent_reg.async_get(bus_id) is None
+    survivor = ent_reg.async_get(mine_id)
+    assert survivor is not None and survivor.unique_id == f"{MAC}-1-04-motion"
+    assert survivor.entity_id == "binary_sensor.hall_motion"
+    assert (survivor.area_id, survivor.icon, survivor.name, survivor.labels) == ("hall", "mdi:eye", "Hall", {"hall"})
+    assert [e.unique_id for e in er.async_entries_for_config_entry(ent_reg, config_entry.entry_id) if e.domain == "binary_sensor"] == [
+        f"{MAC}-1-04-motion"
+    ]
+    assert not [r for r in caplog.records if "removed stale registry entry" in r.getMessage()]
+
+    # The configured entity follows the bus frames for 04 without a second entity being discovered.
+    motion = added[0]
+    motion.async_write_ha_state = MagicMock()
+    motion.async_schedule_update_ha_state = MagicMock()
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*1*34*04##"))
+    await hass.async_block_till_done()
+    assert len(added) == 1
+    assert motion.is_on is True
+
+
+async def test_motion_sensor_setup_keeps_an_already_canonical_yaml_entity_listed_after_its_twin(hass: HomeAssistant, config_entry, caplog) -> None:
+    """No rename and no device hand-over to reorder the registry: the twin stays listed first.
+
+    `{mac}-04-motion` and the yaml `{mac}-1-04-motion` share the device `{mac}-1-04` (the yaml
+    said `04`, or an earlier boot already renamed it). Before the fix the platform restored the
+    twin first and removed `binary_sensor.hall_motion`, the user's configured entity, as the
+    duplicate; its entity_id, area and name were lost with it.
+    """
+    ent_reg = er.async_get(hass)
+    dev_reg = dr.async_get(hass)
+    device = dev_reg.async_get_or_create(config_entry_id=config_entry.entry_id, identifiers={(DOMAIN, f"{MAC}-1-04")})
+    twin = ent_reg.async_get_or_create(
+        "binary_sensor", DOMAIN, f"{MAC}-04-motion", config_entry=config_entry, device_id=device.id,
+        suggested_object_id="motion_04", original_device_class="motion",
+    )
+    ent_reg.async_update_entity(twin.entity_id, icon="mdi:eye")
+    mine = ent_reg.async_get_or_create(
+        "binary_sensor", DOMAIN, f"{MAC}-1-04-motion", config_entry=config_entry, device_id=device.id,
+        suggested_object_id="hall_motion", original_device_class="motion",
+    )
+    ent_reg.async_update_entity(mine.entity_id, area_id="hall", name="Hall PIR")
+    gateway = MagicMock()
+    gateway.mac = MAC
+    gateway.log_id = "[test]"
+    configured = {"binary_sensor": binary_sensor_schema(
+        {"hall_motion": {"who": "1", CONF_WHERE: "04", CONF_NAME: "Hall motion", "class": "motion"}}
+    )}
+    hass.data.setdefault(DOMAIN, {})[MAC] = {"entity": gateway, CONF_PLATFORMS: configured}
+    added: list = []
+    with caplog.at_level(logging.INFO):
+        migrate_entry_and_registries(hass, config_entry, configured)
+        attach_runtime(hass, config_entry)
+        await binary_sensor_setup_entry(hass, config_entry, added.extend)
+
+    assert [e.unique_id for e in added] == [f"{MAC}-1-04-motion"]
+    assert ent_reg.async_get(twin.entity_id) is None
+    survivor = ent_reg.async_get(mine.entity_id)
+    assert survivor is not None and survivor.entity_id == "binary_sensor.hall_motion"
+    assert (survivor.area_id, survivor.icon, survivor.name) == ("hall", "mdi:eye", "Hall PIR")
+    assert not [r for r in caplog.records if "removed stale registry entry" in r.getMessage()]
+    assert not [r for r in caplog.records if "Migrated" in r.getMessage()]
+
+
+async def test_illuminance_sensor_setup_keeps_the_yaml_entity_when_its_bus_twin_is_listed_first(hass: HomeAssistant, config_entry, caplog) -> None:
+    """End to end through `sensor.async_setup_entry`: the registry lists `{mac}-04-illuminance` first.
+
+    Before the fix the platform's restore pruned both entries at the configured address and the
+    yaml device re-created `{mac}-1-04-illuminance` from scratch: the twin's area, icon, name and
+    labels were lost.
+    """
+    ent_reg = er.async_get(hass)
+    bus_id, mine_id = _seed_who1_sensor_twins(hass, config_entry, "sensor", "illuminance")
+    gateway = MagicMock()
+    gateway.mac = MAC
+    gateway.log_id = "[test]"
+    configured = {"sensor": sensor_schema({"hall_illuminance": {CONF_WHERE: "0004", CONF_NAME: "Hall lux", "class": "illuminance"}})}
+    assert list(configured["sensor"]) == ["1-04"]
+    hass.data.setdefault(DOMAIN, {})[MAC] = {"entity": gateway, CONF_PLATFORMS: configured}
+    added: list = []
+    with caplog.at_level(logging.INFO):
+        migrate_entry_and_registries(hass, config_entry, configured)
+        attach_runtime(hass, config_entry)
+        await sensor_setup_entry(hass, config_entry, added.extend)
+        for sensor in added:  # what EntityPlatform does on add
+            ent_reg.async_get_or_create("sensor", DOMAIN, sensor.unique_id, config_entry=config_entry)
+
+    assert [type(e) for e in added] == [MyHOMEIlluminanceSensor]
+    assert added[0].unique_id == f"{MAC}-1-04-illuminance"
+    assert ent_reg.async_get(bus_id) is None
+    survivor = ent_reg.async_get(mine_id)
+    assert survivor is not None and survivor.unique_id == f"{MAC}-1-04-illuminance"
+    assert (survivor.area_id, survivor.icon, survivor.name, survivor.labels) == ("hall", "mdi:eye", "Hall", {"hall"})
+    assert [e.unique_id for e in er.async_entries_for_config_entry(ent_reg, config_entry.entry_id) if e.domain == "sensor"] == [
+        f"{MAC}-1-04-illuminance"
+    ]
 
 
 # ── persisted cover calibration (`cover_travel_times`) ───────────────────────────
