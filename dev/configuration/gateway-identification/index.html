@@ -891,6 +891,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#setup-time-a-manually-added-gateway-is-asked-who-it-is" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setup time: a manually added gateway is asked who it is
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#the-rule-the-integration-applies" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2189,6 +2200,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#setup-time-a-manually-added-gateway-is-asked-who-it-is" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setup time: a manually added gateway is asked who it is
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#the-rule-the-integration-applies" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2448,7 +2470,7 @@
 <p>If your gateway reports a code that is in none of these tables, the integration logs it, keeps your configured model, and surfaces an <code>unknown_gateway_model</code> repair issue asking for a diagnostic trace.</p>
 <h3 id="step-2-who1013-dimension-1-object_model-settles-a-shared-code">Step 2 — <code>WHO=1013</code> dimension 1 (OBJECT_MODEL) settles a shared code<a class="headerlink" href="#step-2-who1013-dimension-1-object_model-settles-a-shared-code" title="Permanent link">&para;</a></h3>
 <p>A shared code such as <code>200</code> cannot label an unconfigured gateway, and it cannot check an SSDP or manual label either. So whenever <code>WHO=13</code> answers a shared code — <strong>whatever the source of the configured model</strong> — the integration sends one status request on the command session:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>*#1013*0*1##            → *#1013**1*&lt;OBJECT_MODEL&gt;##
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>*#1013**1##             → *#1013**1*&lt;OBJECT_MODEL&gt;##
 </span></code></pre></div>
 <p><code>WHO=1013</code> is the <em>Gateway Diagnostic</em> family (Nmap's table of WHO values calls it <em>Device Diagnostic</em>); dimension 1 is the model code, and its catalogue has one code per model (<code>4</code> MH200, <code>5</code> MH202, <code>19</code> H4684, <code>26</code> LGRH4684, <code>44</code> MH200N, <code>51</code> F454, <code>67</code> MyHOMEServer1, <code>134</code> F461, … — the full list is <code>WHO1013_OBJECT_MODELS</code> in <code>const.py</code>, taken from the OpenWebNet device database as listed in #370, with H4684 and LGRH4684 confirmed via firmware reverse-engineering). A real reply is four values, not one — <code>OBJECT_MODEL</code>, <code>N_CONF</code>, <code>BRAND</code>, <code>LINE</code> (per the OpenWebNet Encyclopedia's work on <code>MHCatalogue.db</code>, via @anotherjulien in <a href="https://github.com/OpenWebNet-HA/MyHOME/pull/420">#420</a>):</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>*#1013**1*67*15*5*0##   ← MyHomeServer1 (firmware 2.87.13)
@@ -2481,6 +2503,48 @@
 <p><strong>The two families are separate number spaces.</strong> They are not two spellings of the same identifier, and the same model carries different numbers in each: an F453 is <code>42</code> for <code>WHO=1013</code> but <code>16</code> for Nmap's <code>WHO=13</code> table, and an H4684 is <code>19</code> (or <code>26</code> for Legrand LGRH4684) against <code>13</code> (2006) or <code>23</code> (Nmap). Several values <em>do</em> coincide — <code>4</code>, <code>12</code>, <code>44</code>, <code>51</code> — which is precisely why the tables are kept apart instead of merged on the ones that agree; a test pins both the overlaps and the clashes.</p>
 <p><strong>Status of the evidence.</strong> Five gateways are verified on real hardware, each with a fixture the test suite replays: the <strong>MH200</strong> answers <code>4</code> and is never asked (<code>mh200_physical_plant</code>), and the <strong>F454</strong>, <strong>MH202</strong>, <strong>MyHomeServer1</strong>, and <strong>F461</strong> answer the shared <code>200</code> and then <code>51</code>, <code>5</code>, <code>67</code>, and <code>134</code> (<code>pr_420_f454</code>, <code>pr_420_mh202</code>, <code>pr_420_myhomeserver1</code> in #420, and <code>issue_466_f461</code>). Still untraced: the claim that a 1.x <strong>F454</strong> answers <code>51</code> on <code>WHO=13</code>, and every other code in the catalogue. If you own one of those, the <code>who1013_code</code> field in your diagnostics download (below) is the evidence we are missing — please attach it to an issue.</p>
 </blockquote>
+<hr />
+<h2 id="setup-time-a-manually-added-gateway-is-asked-who-it-is">Setup time: a manually added gateway is asked who it is<a class="headerlink" href="#setup-time-a-manually-added-gateway-is-asked-who-it-is" title="Permanent link">&para;</a></h2>
+<p>The manual form (<code>Custom (IP Gateway)</code> → address → MAC and model) offers defaults that are easy to leave in place: MAC <code>00:03:50:00:00:00</code> and model <code>MyHomeServer1</code>. The runtime resolver above corrects the <strong>model</strong> later, but the <strong>MAC</strong> is the entry's <code>unique_id</code> and is fixed when the entry is created. So, once the gateway has accepted the password, the config flow opens one command session and asks, in the order the runtime uses:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">step</th>
+<th style="text-align: left;">request</th>
+<th style="text-align: left;">asked when</th>
+<th style="text-align: left;">what it settles</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">1</td>
+<td style="text-align: left;"><code>*#13**15##</code></td>
+<td style="text-align: left;">always</td>
+<td style="text-align: left;">the WHO=13 device type; every known gateway answers it</td>
+</tr>
+<tr>
+<td style="text-align: left;">2</td>
+<td style="text-align: left;"><code>*#1013**1##</code></td>
+<td style="text-align: left;">only when step 1 returned a <strong>shared</strong> code (<code>200</code>)</td>
+<td style="text-align: left;">the OBJECT_MODEL, one code per model</td>
+</tr>
+<tr>
+<td style="text-align: left;">3</td>
+<td style="text-align: left;"><code>*#13**12##</code> (MAC)</td>
+<td style="text-align: left;">only when <strong>every</strong> model the codes can name is in <code>MAC_REQUEST_SAFE_MODELS</code></td>
+<td style="text-align: left;">the gateway's real MAC</td>
+</tr>
+</tbody>
+</table>
+<p>The whole probe is best effort with a 15 s cap: a gateway that refuses the session, answers nothing or times out leaves the typed values in place.</p>
+<p><strong>The MAC request is gated, and the gate fails closed.</strong> A real H4684 (<code>020054</code>) and a real MH200 (<code>020102</code>) daemon crash on <code>*#13**12##</code> (own-firmware-oracle, real-binary runs); the F459 / F460 / F461 / MyHomeServer1 factory images answer <code>*#13**12*0*0*0*0##</code>, and the F450 / F454 / MH202 images answer with the interface's bytes. Only a model a <strong>physical unit</strong> answered with its real MAC is in <code>MAC_REQUEST_SAFE_MODELS</code> (<code>config_flow_discovery.py</code>): the F461 (firmware 2.0.11) and the MyHomeServer1 (3.87.13), both captured in the <code>tests/fixtures/traces</code> live runs. An unknown, unlisted or merely emulated-without-crash model is never asked, and when the gate stays closed the typed MAC stands. The list is meant to move into an OWNd profile flag once the oracle rows are published.</p>
+<p>What the answers do:</p>
+<ul>
+<li><strong>MAC</strong> — the reply must pass the same validation as the form (six octets, <code>0..255</code>) and must not be the all-zero factory value <code>00:00:00:00:00:00</code> (also the first form's <em>Custom</em> sentinel) or the broadcast address; otherwise the typed MAC is kept and the reply is logged at DEBUG. A usable MAC that differs from the typed one replaces it and becomes the <code>unique_id</code>. The <code>unique_id</code> is set only at this point, so a second gateway typed with the placeholder MAC is not refused before it could report its real one; a true duplicate still aborts with <code>already_configured</code>.</li>
+<li><strong>Model</strong> — the codes go through the same <code>resolve_gateway_identity</code> as at runtime: a certain code (2006 table or <code>WHO=1013</code>) corrects the chosen model, a brand variant of the reported model (<code>H4890</code> for OBJECT_MODEL <code>30</code>, <code>003598</code> for <code>51</code>) is kept, an uncertain code may label a <code>Generic</code> entry but never overrides a chosen model. A corrected model also changes the OWNd profile, the entry title and the default number of command workers, and the entry records <code>model_source: who13</code> so the diagnostics block below reports it.</li>
+<li><strong>Split authentication</strong> — a gateway whose monitor session (<code>*99*1##</code>) is open but whose command session (<code>*99*0##</code>) wants a password answers the probe with <code>password_required</code>; the flow then asks for the password (the runtime command workers need it anyway) and probes again with it. The probe's own OWNd log lines are recorded at DEBUG.</li>
+</ul>
+<p>A gateway discovered over SSDP or added through the serial transport is not probed: its identity is authoritative.</p>
 <hr />
 <h2 id="the-rule-the-integration-applies">The rule the integration applies<a class="headerlink" href="#the-rule-the-integration-applies" title="Permanent link">&para;</a></h2>
 <p>When a dimension-15 reply arrives, the handler compares the reported model with the configured one. A configured model that one of the tables lists by name has a code of its own, so only that name or a brand variant of it agrees: <code>MH200N</code> (<code>44</code>) is contradicted by <code>4</code> (MH200), and <code>F452V</code> (<code>7</code>) by <code>6</code> (F452), even though each pair shares a family. A name no table lists is compared <strong>by family</strong> (<code>F452X</code> → <code>F452</code>), so an unlisted variant suffix is never downgraded. Then:</p>
