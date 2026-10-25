@@ -1,7 +1,7 @@
 """Zone humidity (dimension 60) is not polled on gateways whose firmware drops the request.
 
-own-firmware-oracle thermo-zone-requests suite (open PR OpenWebNet-HA/own-firmware-oracle#60,
-an unpublished real-daemon verdict): ``*#4*2*60##`` and ``*#4*0*60##`` were NACKed with nothing
+own-firmware-oracle thermo-zone-requests suite (``findings/thermo-zone-requests.md`` on main,
+a ``firmware_observed`` verdict on emulated firmware): ``*#4*2*60##`` and ``*#4*0*60##`` were NACKed with nothing
 on the bus by the emulated F450, F453, F453AV, F454, H4684, MH200, MH200N and MH202, and
 forwarded by F459, F460, F461 and MyHomeServer1. The OWNd profile flag wins when it is a bool.
 A live F461 2.0.11 answered ``*#4*2*60##`` with ``*#4*2*60*39##``. On the refusing gateways the

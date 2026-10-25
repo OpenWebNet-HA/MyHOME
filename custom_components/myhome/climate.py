@@ -593,8 +593,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if self._humidity:
             if getattr(self._gateway_handler, "humidity_request_refused", False) is True:
                 # The emulated firmware of F450, F453, F453AV, F454, H4684, MH200, MH200N and
-                # MH202 did not forward the request in a real-daemon run (own-firmware-oracle
-                # PR #60, unpublished); the zone's own pushes keep the humidity fresh there.
+                # MH202 did not forward the request (own-firmware-oracle thermo-zone-requests
+                # finding, emulated firmware); the zone's own pushes keep the humidity fresh there.
                 LOGGER.debug(
                     "%s Zone %s: this gateway refuses humidity requests; waiting for its pushes",
                     self._gateway_handler.log_id,

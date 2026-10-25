@@ -173,8 +173,8 @@ ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {
     "MYHOMESERVER1": {20: "*#4*#0*20##"},
 }
 # Gateways whose emulated firmware did not forward the zone humidity request (``*#4*Z*60##``:
-# nack and nothing on the bus) in the own-firmware-oracle thermo-zone-requests run of the open
-# PR OpenWebNet-HA/own-firmware-oracle#60 (unpublished verdict, not a published row); F459,
+# nack and nothing on the bus) in the own-firmware-oracle thermo-zone-requests suite
+# (findings/thermo-zone-requests.md on main, ``firmware_observed``, emulated firmware); F459,
 # F460, F461 and MyHomeServer1 forwarded it, and the live F461 / MyHomeServer1 answer it.
 # Read from the OWNd profile first (``supports_heating_humidity_request``: ``True`` / ``False``
 # wins, ``None`` = unverified); this table is the fallback until the flag exists there.
