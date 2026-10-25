@@ -583,6 +583,67 @@ async def test_scope_events_fire_only_for_state_frames(gateway_handler):
 
 
 @pytest.mark.asyncio
+async def test_general_dim_step_point_reports_fire_no_scope_events(gateway_handler):
+    """Replay the live F461 2.0.11 capture of a general dim step (#367, 2026-10-25).
+
+    `*1*30*0##` (general dim up; the plant has no dimmer) was acknowledged in 69 ms
+    and echoed on the event session, after which every point re-reported its own
+    state twice over about two seconds: `*1*0*06##`, `*1*0*07##`, `*1*0*09##` and
+    `*2*0*05##`. `*1*31*#1##` (group 1 dim down) was acknowledged in 62 ms, echoed,
+    and followed by `*1*0*06##` only. A dim step is not an "on" and a point report
+    is a point event: none of these frames is a scope event. Both dim steps still
+    reach the member re-sync: the general step sweeps the known light areas (none
+    in this bare handler) and the group step finds that lights 06, 07 and 09 have
+    just spoken, so no sweep is pending afterwards. Capture on file, to be ingested
+    by a trace PR.
+    """
+    raw = [
+        "*1*30*0##",  # general dim up, echoed on the event session
+        "*2*0*05##",  # every point re-reports its state: cover 05 stopped
+        "*1*0*06##",  # light 06 off
+        "*1*0*07##",  # light 07 off
+        "*1*0*09##",  # light 09 off
+        "*1*0*06##",  # second round of the same reports
+        "*2*0*05##",
+        "*1*0*07##",
+        "*1*0*09##",
+        "*1*31*#1##",  # group 1 dim down, echoed on the event session
+        "*1*0*06##",  # the only report that followed it
+    ]
+    frames = [OWNMessage.parse(f) for f in raw]
+    assert all(frame is not None for frame in frames)
+    gateway_handler._schedule_resync = MagicMock(wraps=gateway_handler._schedule_resync)
+    with (
+        patch("custom_components.myhome.gateway.OWNEventSession") as mock_session_class,
+        patch("custom_components.myhome.gateway.async_dispatcher_send") as send,
+    ):
+        mock_session = MagicMock()
+        mock_session.connect = AsyncMock(return_value={"Success": True})
+        mock_session.get_next = AsyncMock(side_effect=[*frames, asyncio.CancelledError()])
+        mock_session_class.return_value = mock_session
+        gateway_handler.send_status_request = AsyncMock()
+        try:
+            await gateway_handler.listening_loop()
+        except asyncio.CancelledError:
+            pass
+
+    scope_events = [
+        call.args[0]
+        for call in gateway_handler.hass.bus.async_fire.call_args_list
+        if call.args[0].endswith(("_light_event", "_automation_event"))
+    ]
+    assert scope_events == []
+    # Every frame reached the point-to-point dispatch exactly once, in bus order.
+    assert [str(call.args[2]) for call in send.call_args_list if call.args[1] == f"myhome_message_{gateway_handler.mac}"] == raw
+    assert [str(call.args[0]) for call in gateway_handler._schedule_resync.call_args_list] == ["*1*30*0##", "*1*31*#1##"]
+    # The point reports that preceded the group step count as its leading member
+    # echoes (two are enough for a group of unknown membership), so the `#1` sweep
+    # is satisfied before it is armed; the general step has no known area to sweep.
+    assert gateway_handler._resync_timers == {}
+    assert gateway_handler._resync_manager._resync_expected_on == {}
+
+
+@pytest.mark.asyncio
 async def test_listening_loop_automation(gateway_handler):
     with patch("custom_components.myhome.gateway.OWNEventSession") as mock_session_class:
         mock_session = MagicMock()
