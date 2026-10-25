@@ -518,7 +518,8 @@ def _remove_ghost_light(
     ghost = entity_registry.async_get(ghost_id) if ghost_id else None
     if ghost is None or ghost.config_entry_id != entry.entry_id:
         return
-    from .discovery import COMPANION_SUFFIXES  # noqa: PLC0415  # discovery imports myhome_device, which imports this module
+    # discovery imports myhome_device, which imports this module: resolved at call time.
+    from .discovery import COMPANION_SUFFIXES  # noqa: PLC0415
 
     entity_registry.async_remove(ghost.entity_id)
     removed = 0
