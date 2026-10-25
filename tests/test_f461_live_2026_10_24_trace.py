@@ -289,11 +289,16 @@ def test_every_frame_parses_in_ownd(rows: list[dict], frames: list[dict]) -> Non
             assert OWNCommand.parse(r["frame"]) is not None, r
         elif r["dir"] == "rx" and r["frame"] not in ("*#*1##", "*#*0##"):
             assert OWNMessage.parse(r["frame"]) is not None, r
-    # the mode frames 108 / 208 parse but carry no mode the pinned OWNd knows
-    for raw in ("*4*108*2##", "*4*208*2##"):
+    # WHAT 108 / 208: the pinned OWNd (<= 2.0.0b11) leaves mode = None; OpenWebNet-HA/OWNd#146 decodes
+    # 108 as heating comfort and 208 as cooling comfort. Both are accepted so OWNd's MyHOME
+    # conformance gate stays green when that lands.
+    for raw, mode, season in (("*4*108*2##", "heat", "heating"), ("*4*208*2##", "cool", "conditioning")):
         msg = OWNMessage.parse(raw)
-        assert msg is not None and msg.zone == 2 and getattr(msg, "mode", None) is None
-        assert msg.human_readable_log == "Zone 2's mode is unknown."
+        assert msg is not None and msg.zone == 2
+        assert getattr(msg, "mode", None) in (None, mode)
+        assert getattr(msg, "season", None) in (None, season)
+        if getattr(msg, "mode", None) is None:
+            assert msg.human_readable_log == "Zone 2's mode is unknown."
     antifreeze = OWNMessage.parse(ANTIFREEZE)
     assert antifreeze is not None and antifreeze.mode == "off" and antifreeze.human_readable_log == "Zone 2's mode is set to 'off'."
 

@@ -21,7 +21,7 @@ What the plant said:
   and at +13 s.
 - ``*#4*2*#7*1*4##``: ACK in 89 ms, echoed ``*#4*2*7*1*4##``, ``*#4*2*12*0180*3##``,
   ``*4*107*2##``, ``*#4*2*0*0238##``; dimension 12 read 18.0 and dimension 14 read 23.5 at +1 s,
-  +13 s and +48 s; ``*#4*2##`` at +16 s answered ``0``, ``12`` = 18.0, ``*4*107*2##`` (the mode
+  +13 s and +48 s; ``*#4*2##`` at +15.5 s answered ``0``, ``12`` = 18.0, ``*4*107*2##`` (the mode
   frame in the season frame's place), ``14`` = 23.5, ``13``.
 - In this capture a heating preset moved dimension 12 and left dimension 14 at the last commanded
   value for as long as it was observed (48 s into eco); no frame realigned them. Home Assistant's
@@ -294,11 +294,16 @@ def test_every_frame_parses_in_ownd(rows: list[dict], frames: list[dict]) -> Non
             assert OWNCommand.parse(r["frame"]) is not None, r
         elif r["dir"] == "rx" and r["frame"] not in ("*#*1##", "*#*0##"):
             assert OWNMessage.parse(r["frame"]) is not None, r
-    # the mode frames 107 / 108 parse but carry no mode the pinned OWNd knows (OpenWebNet-HA/OWNd#146)
+    # WHAT 107 / 108: the pinned OWNd (<= 2.0.0b11) leaves mode = None; OpenWebNet-HA/OWNd#146 decodes
+    # them as heating eco / comfort. Both are accepted so OWNd's MyHOME conformance gate stays green
+    # when that lands (the dual-OWNd pattern of tests/test_message_edges.py).
     for raw in (MODE_ECO, MODE_COMFORT):
         msg = OWNMessage.parse(raw)
-        assert msg is not None and msg.zone == 2 and getattr(msg, "mode", None) is None
-        assert msg.human_readable_log == "Zone 2's mode is unknown."
+        assert msg is not None and msg.zone == 2
+        assert getattr(msg, "mode", None) in (None, "heat")
+        assert getattr(msg, "season", None) in (None, "heating")
+        if getattr(msg, "mode", None) is None:
+            assert msg.human_readable_log == "Zone 2's mode is unknown."
     # the dimension 7 echoes: context 1 (heating), state 3 (comfort) / 4 (eco)
     for raw, state, log in ((ECHO_COMFORT, "comfort", "Zone 2 is in heating comfort."), (ECHO_ECO, "eco", "Zone 2 is in heating eco.")):
         msg = OWNMessage.parse(raw)
@@ -446,7 +451,7 @@ async def test_replay_presets_show_dimension_12_and_keep_heating(hass: HomeAssis
     """Run 1 through the climate entity: 23.5, then 21.0 (comfort), then 18.0 (eco), heating throughout.
 
     The dimension 14 read replies (23.5) do not move the shown setpoint while dimension 12 says
-    otherwise; the mode frames 107 / 108 (``mode = None``) leave the mode alone; ``*#4*2*7*1*4##``
+    otherwise; the mode frames 107 / 108 (``mode = None`` on the pinned OWNd, heating eco / comfort once OpenWebNet-HA/OWNd#146 lands) leave the mode alone; ``*#4*2*7*1*4##``
     (eco, heating context) keeps ``heat``.
     """
     zone = await _setup_zone_2(hass)
