@@ -81,6 +81,17 @@ def _get_gateway_handler(hass: HomeAssistant, gateway_identifier: str | None) ->
     return None
 
 
+def _handler_refuses_frame(handler: MyHOMEGatewayHandler, frame: str) -> bool:
+    """Return whether the gateway firmware drops a general request (``*#4*0##`` on an F461)."""
+    target = getattr(handler, "_refused_by_gateway", None)
+    if not callable(target):
+        return False
+    try:
+        return target(frame) is True
+    except Exception:  # pragma: no cover - defensive against broken handler mocks
+        return False
+
+
 def _handler_supports_who(handler: MyHOMEGatewayHandler, who: int) -> bool:
     """Return whether the gateway handler profile advertises a WHO subsystem."""
     target = getattr(handler, "profile_supports_who", None) or getattr(
@@ -248,11 +259,19 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                     return True
                 return _handler_supports_who(handler, who)
 
+            def _general_sent(who: int, query: str) -> bool:
+                # Same gates as the startup sweep (_discovery_frames): the profile's WHOs, and not a
+                # request the firmware drops (*#4*0##, *#16*0*5## on most models), which would only
+                # cost a NACK and a BUS_QUIET_PERIOD wait in send_paced. force sends everything.
+                if force:
+                    return True
+                return _profile_supports(who) and not _handler_refuses_frame(handler, query)
+
             if getattr(handler, "is_follower", False) is True:
                 delegated: set[int] = getattr(handler, "delegated_whos", set())
                 general = [
                     q for who, q in general_queries
-                    if who in delegated and _profile_supports(who)
+                    if who in delegated and _general_sent(who, q)
                 ]
                 point_queries = (
                     energy_queries
@@ -265,7 +284,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                     delegated_away = set()
                 general = [
                     q for who, q in general_queries
-                    if who not in delegated_away and _profile_supports(who)
+                    if who not in delegated_away and _general_sent(who, q)
                 ]
                 point_queries = (
                     energy_queries

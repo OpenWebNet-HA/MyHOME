@@ -80,6 +80,27 @@ def test_f461_sweep_in_full(hass):
     assert _handler(hass, "F461")._discovery_frames() == ["*#1*0##", "*#2*0##", "*#18*51*51##", "*#18*51*113##"]
 
 
+@pytest.mark.parametrize(
+    ("force", "general"),
+    [
+        (False, ["*#1*0##", "*#2*0##"]),  # the F461 firmware drops *#4*0## and *#16*0*5##, no WHO 5 in the profile
+        (True, ["*#1*0##", "*#2*0##", "*#4*0##", "*#5*0##", "*#16*0*5##"]),
+    ],
+)
+async def test_sweep_bus_leaves_out_the_refused_requests_unless_forced(hass, attach_gateway, force, general):
+    """``myhome.sweep_bus`` applies the startup sweep's firmware gate; ``force`` sends everything."""
+    from custom_components.myhome.const import ATTR_GATEWAY, DOMAIN
+    from custom_components.myhome.services import SERVICE_SWEEP_BUS, async_setup_services
+
+    await async_setup_services(hass)
+    handler = _handler(hass, "F461")
+    handler.send_status_request = AsyncMock()
+    handler.send_paced = AsyncMock()
+    attach_gateway(MAC, handler)
+    await hass.services.async_call(DOMAIN, SERVICE_SWEEP_BUS, {ATTR_GATEWAY: MAC, "force": force}, blocking=True)
+    handler.send_paced.assert_awaited_once_with(general)
+
+
 @pytest.mark.parametrize("flag", [True, False])
 def test_profile_flag_for_the_general_heating_status_wins(hass, flag):
     """An OWNd profile that states ``supports_general_heating_status`` is believed over the table."""

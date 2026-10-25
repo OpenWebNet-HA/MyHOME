@@ -142,7 +142,7 @@ Actively queries status across all configured subsystems (lighting, automation, 
 | Parameter | Type | Required | Description | Example |
 | :--- | :---: | :---: | :--- | :--- |
 | `gateway` | string | No | Target gateway MAC address (defaults to all gateways). | `"00:03:50:20:00:01"` |
-| `force` | boolean | No | Force probe across all subsystems regardless of gateway profile restrictions (defaults to `false`). | `true` |
+| `force` | boolean | No | Force probe across all subsystems regardless of gateway profile restrictions, including the general requests the gateway firmware drops (`*#4*0##`, `*#16*0*5##` on most models; see [runtime behaviour](runtime_behaviour.md)). Defaults to `false`, which sends the same general requests as the startup sweep. | `true` |
 
 ### Example YAML Call
 ```yaml
