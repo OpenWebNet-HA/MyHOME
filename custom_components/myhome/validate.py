@@ -131,11 +131,13 @@ from .const import (
     COVER_STRATEGIES,
     DEFAULT_MIN_MOTOR_PULSE,
     DEFAULT_SLAT_TIME,
+    LOGGER,
     MAX_MIN_POSITION_DELTA,
     MAX_SLAT_TIME,
     MIN_SLAT_TIME,
     TYPE_IMPULSE_RELAY,
 )
+from .where_grammar import canonical_point_spelling
 
 
 def format_mac(address: object) -> str:
@@ -211,9 +213,37 @@ class Group(object):
         return "Where(%s, msg=%r)" % ("String", self.msg)
 
 
+# 4-digit spellings already warned about, so each rewritten address is logged once.
+_warned_point_rewrites: set[str] = set()
+
+
+def canonical_point_where(where: str) -> str:
+    """The spelling of a point address that the gateways accept and report (#147).
+
+    An area-0 point with PL 1..9 has a 2-digit form: ``0004`` is ``04``. Only the MH202
+    accepts the 4-digit spelling of such a point (``*#1*0001##`` is refused everywhere
+    else) and every gateway reports it in two digits, so a light configured as ``0004``
+    never sees its own status. Any other 4-digit input (``0015``, ``0109``, ``0209``,
+    ``1015``) is left as typed, as OWNd does (OWNd#123), and so is anything that is not
+    a 4-digit point; the ``0809`` of #135 (area 8, PL 9) is one of those, so #135 stays
+    open. A rewrite is logged once per address: this is the myhome.yaml path, and the
+    user can fix the spelling there.
+    """
+    canonical = canonical_point_spelling(where)
+    if canonical != where and where not in _warned_point_rewrites:
+        _warned_point_rewrites.add(where)
+        LOGGER.warning(
+            "WHERE '%s' is the 4-digit spelling of the point A=%s PL=%s; using '%s', the form the "
+            "gateways accept and report. Write '%s' in myhome.yaml to silence this warning.",
+            where, where[1], where[3], canonical, canonical,
+        )
+    return canonical
+
+
 class PointToPoint:
-    def __init__(self, msg: str | None = None) -> None:
+    def __init__(self, msg: str | None = None, canonical: bool = True) -> None:
         self.msg = msg
+        self.canonical = canonical
 
     def __call__(self, v: typing.Any) -> typing.Any:
         if isinstance(v, str) and v.isdigit():
@@ -222,7 +252,7 @@ class PointToPoint:
                 _a = v[0 : _length // 2]
                 _pl = v[_length // 2 :]
                 if int(_a) >= 0 and int(_a) <= 10 and int(_pl) >= 0 and int(_pl) <= 15:
-                    return f"{_a}{_pl}"
+                    return canonical_point_where(f"{_a}{_pl}") if self.canonical else f"{_a}{_pl}"
                 else:
                     raise Invalid(f"Invalid WHERE {v}, A must be [0-10] and PL must be [0-15].")
             else:
@@ -376,6 +406,7 @@ class MyHomeSensorSchema(Schema):
                     elif data[device][CONF_WHO] != "1":
                         raise Invalid("invalid sensor class for selected who")
             if CONF_WHERE in data[device]:
+                _canonical_who1_point(data[device])  # the WHO default above is in by now
                 interface = data[device].get(CONF_BUS_INTERFACE)
                 routing = f"{BUS_ROUTING}{interface}" if interface is not None else ""
                 _rekeyed_data[f"{data[device][CONF_WHO]}-{data[device][CONF_WHERE]}{routing}"] = data[device]
@@ -619,9 +650,20 @@ def _validate_impulse_covers(data: dict[str, typing.Any]) -> dict[str, typing.An
 
 cover_schema = All(cover_schema, _validate_cover_members, _validate_impulse_covers)  # type: ignore[assignment]
 
+def _canonical_who1_point(device: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    """A WHO 1 sensor WHERE is a WHO 1 point: ``0004`` is ``04`` (#147).
+
+    `SpecialWhere()` sees one field and cannot know the WHO; this runs on the
+    whole mapping once the WHO default is in. Other WHO keep their grammar.
+    """
+    if str(device.get(CONF_WHO)) == "1" and isinstance(device.get(CONF_WHERE), str):
+        device[CONF_WHERE] = canonical_point_where(device[CONF_WHERE])
+    return device
+
+
 binary_sensor_schema = MyHomeDeviceSchema(
     {
-        Required(str): {
+        Required(str): All({
             Optional(CONF_WHO, default="25"): In(["1", "9", "25"]),
             Required(CONF_WHERE): All(Coerce(str), SpecialWhere()),  # type: ignore
             Required(CONF_NAME): str,
@@ -685,7 +727,7 @@ binary_sensor_schema = MyHomeDeviceSchema(
             ),
             Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
             Optional(CONF_DEVICE_MODEL): Coerce(str),
-        }
+        }, _canonical_who1_point)
     }
 )
 
@@ -732,7 +774,7 @@ alarm_control_panel_schema = MyHomeDeviceSchema(
     {
         Required(str): {
             Optional(CONF_WHO, default="5"): "5",
-            Required(CONF_WHERE): All(Coerce(str), Any(General(), Area(), Group(), PointToPoint(), SpecialWhere())),  # type: ignore
+            Required(CONF_WHERE): All(Coerce(str), Any(General(), Area(), Group(), PointToPoint(canonical=False), SpecialWhere())),  # type: ignore
             Required(CONF_NAME): str,
             Optional(CONF_ENTITY_NAME): str,
             Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,

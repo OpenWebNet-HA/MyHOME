@@ -20,13 +20,17 @@ from .const import (
     CONF_BUS_INTERFACE,
     CONF_EXPOSE,
     CONF_FILE_PATH,
+    CONF_MEMBERS,
     CONF_PLATFORMS,
+    CONF_WHERE,
+    CONF_WHO,
     CONF_ZONE,
     DOMAIN,
     LOGGER,
     PLATFORMS,
 )
 from .repairs import async_create_legacy_yaml_imported_issue
+from .where_grammar import canonical_point_address
 
 
 def _read_legacy_yaml(
@@ -108,6 +112,55 @@ def _restore_shared_devices(
     return restored
 
 
+def canonicalise_imported_platforms(
+    snapshot: dict[str, dict[str, Any]],
+) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    """The stored copy with WHO 1 / WHO 2 point addresses in their canonical spelling (#147).
+
+    A copy taken by an earlier beta holds ``where: "0004"`` under the key ``1-0004``,
+    the spelling the validator rewrites to ``04`` today; applied as stored it would
+    recreate the ``0004`` entity next to the migrated ``04`` one on every boot. The
+    ``where``, the ``members`` and the device key are rewritten in a new copy (the
+    stored one is not touched). When the copy already has a device under the canonical
+    key, that one stays and the 4-digit twin is dropped with a WARNING. Returns the new
+    copy and one ``plat: old -> new`` line per rewritten device.
+    """
+    rewritten: list[str] = []
+    result: dict[str, dict[str, Any]] = {}
+    for plat, devices in snapshot.items():
+        new_devices: dict[str, Any] = {}
+        for d_id, cfg in devices.items():
+            who = str(cfg.get(CONF_WHO, "")) if isinstance(cfg, dict) else ""
+            if who not in ("1", "2") or not isinstance(cfg.get(CONF_WHERE), str):
+                new_devices[d_id] = cfg
+                continue
+            where = cfg[CONF_WHERE]
+            canonical = canonical_point_address(where)
+            members = cfg.get(CONF_MEMBERS)
+            new_members = (
+                [canonical_point_address(str(m)) for m in members] if isinstance(members, list) else members
+            )
+            if canonical == where and new_members == members:
+                new_devices[d_id] = cfg
+                continue
+            new_cfg = {**cfg, CONF_WHERE: canonical}
+            if new_members != members:
+                new_cfg[CONF_MEMBERS] = new_members
+            old_prefix = f"{who}-{where}"
+            new_id = f"{who}-{canonical}{d_id[len(old_prefix):]}" if d_id.startswith(old_prefix) else d_id
+            if new_id != d_id and (new_id in devices or new_id in new_devices):
+                LOGGER.warning(
+                    "Imported copy of myhome.yaml, %s: dropping '%s' (where '%s'), the copy already "
+                    "has '%s' under the canonical spelling",
+                    plat, d_id, where, new_id,
+                )
+                continue
+            new_devices[new_id] = new_cfg
+            rewritten.append(f"{plat}: {d_id} -> {new_id}")
+        result[plat] = new_devices
+    return result, rewritten
+
+
 def migrate_legacy_yaml_to_entry_options(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -120,7 +173,8 @@ def migrate_legacy_yaml_to_entry_options(
     keeps its latest content rather than the one of the upgrade. Returns whether the
     options changed.
     """
-    snapshot = _snapshot(yaml_platforms)
+    # The validator already spells point addresses canonically; this guards the copy.
+    snapshot, _ = canonicalise_imported_platforms(_snapshot(yaml_platforms))
     previous = entry.options.get(CONF_MIGRATED_YAML_PLATFORMS)
     if snapshot == previous or (previous is None and not any(snapshot.values())):
         return False
@@ -139,13 +193,29 @@ def migrate_legacy_yaml_to_entry_options(
 
 
 def _apply_imported_copy(
+    hass: HomeAssistant,
     entry: ConfigEntry,
     configured_platforms: dict[str, dict[str, dict[str, Any]]],
 ) -> None:
-    """Fall back to the copy of myhome.yaml imported into the entry options."""
+    """Fall back to the copy of myhome.yaml imported into the entry options.
+
+    A copy with 4-digit area-0 points is moved to the canonical spelling before it
+    is applied, and the moved copy is stored, so the registry migration that follows
+    and the platforms see one and the same address (#147).
+    """
     imported = entry.options.get(CONF_MIGRATED_YAML_PLATFORMS)
     if not isinstance(imported, dict) or not any(imported.values()):
         return
+    imported, rewritten = canonicalise_imported_platforms(imported)
+    if rewritten:
+        hass.config_entries.async_update_entry(
+            entry, options={**entry.options, CONF_MIGRATED_YAML_PLATFORMS: imported}
+        )
+        LOGGER.info(
+            "Imported copy of myhome.yaml for gateway %s: %d point address(es) moved to the "
+            "canonical spelling (%s)",
+            entry.data.get(CONF_MAC), len(rewritten), "; ".join(rewritten),
+        )
     _apply_yaml_platforms(_restore_shared_devices(imported), configured_platforms)
     LOGGER.info(
         "Using the imported copy of myhome.yaml for gateway %s: the file is missing, "
@@ -215,7 +285,7 @@ async def load_legacy_myhome_yaml(
     if not await _load_live_yaml(
         hass, entry, configured_platforms, platforms, configured_expose
     ):
-        _apply_imported_copy(entry, configured_platforms)
+        _apply_imported_copy(hass, entry, configured_platforms)
 
 
 async def _load_live_yaml(

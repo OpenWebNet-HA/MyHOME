@@ -55,6 +55,7 @@ Light intensity sensors (e.g. Legrand `048822` ceiling detectors configured in s
 * **Entity**: `sensor.<name>_illuminance`
 * **Device Class**: `illuminance` (unit: `lx`)
 * **Use Case**: Drive automated curtain/blind closing when solar glare exceeds threshold, or trigger dusk lighting.
+* **Address**: a WHO 1 point address; an area-0 point with PL 1..9 is spelled in two digits (`04`), so `where: "0004"` in `myhome.yaml` is resolved to `04` and a `…-1-0004-illuminance` entity is moved to `…-1-04-illuminance` at startup (#147).
 
 ---
 

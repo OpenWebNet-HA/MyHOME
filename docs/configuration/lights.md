@@ -11,7 +11,7 @@ In v2, setup and management are **100% UI-first**: lighting fixtures are automat
 When your gateway connects to Home Assistant:
 
 1. **Dynamic Bus Discovery**: The integration listens to OpenWebNet `WHO = 1` frames and scans active addresses.
-2. **Device & Entity Creation**: Each physical lighting actuator (`WHERE = 1..99` or area/point addresses `WHERE = 01..9999`) is registered as a Home Assistant `light` entity linked to the gateway device.
+2. **Device & Entity Creation**: Each physical lighting actuator (`WHERE = 1..99` or area/point addresses `WHERE = 01..9999`) is registered as a Home Assistant `light` entity linked to the gateway device. An area-0 point with PL 1..9 is addressed in two digits (`04` for A=0 PL=4): the gateways refuse the 4-digit spelling `0004` and report the point as `04`, so `where: "0004"` in `myhome.yaml` is resolved to `04` with a one-time warning, and an entity created under `0004` is moved to `04` at startup (#147). Other 4-digit addresses (`0015`, `0209`, `1015`) are used as typed.
 3. **UI Customization**: Rename lights, assign them to Areas (e.g. *Kitchen*, *Living Room*), or customize icons directly in the Home Assistant UI (**Settings → Devices & Services → Entities**).
 
 ---
