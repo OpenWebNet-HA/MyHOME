@@ -1,4 +1,4 @@
-"""The 4-digit spelling of an area-0 point (``0004``) resolves to the 2-digit form the gateways use (#147, #135)."""
+"""The 4-digit spelling of an area-0 point (``0004``) resolves to the 2-digit form the gateways use (#147)."""
 from __future__ import annotations
 
 import json

@@ -218,15 +218,16 @@ _warned_point_rewrites: set[str] = set()
 
 
 def canonical_point_where(where: str) -> str:
-    """The spelling of a point address that the gateways accept and report (#147, #135).
+    """The spelling of a point address that the gateways accept and report (#147).
 
     An area-0 point with PL 1..9 has a 2-digit form: ``0004`` is ``04``. Only the MH202
     accepts the 4-digit spelling of such a point (``*#1*0001##`` is refused everywhere
     else) and every gateway reports it in two digits, so a light configured as ``0004``
     never sees its own status. Any other 4-digit input (``0015``, ``0109``, ``0209``,
     ``1015``) is left as typed, as OWNd does (OWNd#123), and so is anything that is not
-    a 4-digit point. A rewrite is logged once per address: this is the myhome.yaml path,
-    and the user can fix the spelling there.
+    a 4-digit point; the ``0809`` of #135 (area 8, PL 9) is one of those, so #135 stays
+    open. A rewrite is logged once per address: this is the myhome.yaml path, and the
+    user can fix the spelling there.
     """
     canonical = canonical_point_spelling(where)
     if canonical != where and where not in _warned_point_rewrites:

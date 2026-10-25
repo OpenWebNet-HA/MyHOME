@@ -339,7 +339,7 @@ def _canonical_point_id(after_mac: str) -> str | None:
 def migrate_canonical_point_addresses(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Move entities and devices of 4-digit point spellings (``0004``) to the canonical one (``04``).
 
-    myhome.yaml now resolves ``0004`` to ``04`` (#147, #135). The entity created under the old
+    myhome.yaml now resolves ``0004`` to ``04`` (#147). The entity created under the old
     spelling keeps its entity_id, name and area under the new unique id; a duplicate that bus
     discovery created under the canonical spelling in this config entry is removed in its favour,
     and only once the rename has succeeded (the registry refuses a rename to a unique id in use,
