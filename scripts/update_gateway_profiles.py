@@ -183,7 +183,7 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
         "model": "**MH202**",
         "profile_name": "MH202",
         "queried_whos": [1, 2, 4, 5, 16, 18],
-        "notes": "Full support including Burglar Alarm (`*#5*0##`), Sound (`*#16*0*5##`), and Energy (`*#18*51*...`).",
+        "notes": "Burglar Alarm (`*#5*0##`) and Energy (`*#18*51*...`) queries. WHO 4 and WHO 16 are advertised, but the `010024` firmware drops `*#4*0##` and `*#16*0*5##` (own-firmware-oracle), so the sweep leaves both out and each climate zone asks `*#4*<WHERE>*0##` itself.",
     },
     {
         "model": "**H4890 / AM4890**",
@@ -195,7 +195,7 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
         "model": "**F454**",
         "profile_name": "F454",
         "queried_whos": [1, 2, 4, 16, 18],
-        "notes": "Full lighting, cover, climate, sound (`bt_difson` firmware-verified), and energy meter 51 queries. Alarm query omitted.",
+        "notes": "Full lighting, cover, sound (`bt_difson` firmware-verified), and energy meter 51 queries. The `020051` firmware drops `*#4*0##` (own-firmware-oracle), so each climate zone asks `*#4*<WHERE>*0##` itself. Alarm query omitted.",
     },
     {
         "model": "**F452 / F453 / F453AV**",
@@ -207,7 +207,7 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
         "model": "**F461**",
         "profile_name": "F461",
         "queried_whos": [1, 2, 4, 16, 18],
-        "notes": "Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted.",
+        "notes": "Lighting, cover, and energy meter 51 queries. The `020011` firmware drops `*#4*0##` and `*#16*0*5##` (own-firmware-oracle, confirmed live on 2.0.11), so the sweep leaves both out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
     },
     {
         "model": "**F455**",
@@ -219,7 +219,7 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
         "model": "**MyHomeServer1**",
         "profile_name": "MyHomeServer1",
         "queried_whos": [1, 2, 4, 16, 18],
-        "notes": "Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted.",
+        "notes": "Lighting, cover, and energy meter 51 queries. The firmware drops `*#4*0##` and `*#16*0*5##` (own-firmware-oracle `028206`, confirmed live on 3.87.13), so the sweep leaves both out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
     },
     {
         "model": "**MH201**",
@@ -231,7 +231,7 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
         "model": "**MH200 / MH200N**",
         "profile_name": "MH200N",
         "queried_whos": [1, 2, 4, 16],
-        "notes": "Lighting, cover, climate, and sound queries (`bt_difson` hardware and firmware-verified on both). Alarm and energy queries omitted.",
+        "notes": "Lighting, cover, climate, and sound queries (`bt_difson` hardware and firmware-verified on both). The MH200 `020102` firmware drops `*#4*0##` (own-firmware-oracle; the MH200N forwards it), so its climate zones ask `*#4*<WHERE>*0##` themselves. Alarm and energy queries omitted.",
     },
 ]
 

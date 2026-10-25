@@ -54,14 +54,14 @@ During startup initial discovery, status queries are gated strictly by gateway p
 <!-- GATEWAY_DISCOVERY_START -->
 | Gateway Model | Initial Discovery Subsystems Queried | Profile Support Notes |
 | :--- | :--- | :--- |
-| **MH202** | WHO 1, 2, 4, 5, 16, 18 | Full support including Burglar Alarm (`*#5*0##`), Sound (`*#16*0*5##`), and Energy (`*#18*51*...`). |
+| **MH202** | WHO 1, 2, 4, 5, 16, 18 | Burglar Alarm (`*#5*0##`) and Energy (`*#18*51*...`) queries. WHO 4 and WHO 16 are advertised, but the `010024` firmware drops `*#4*0##` and `*#16*0*5##` (own-firmware-oracle), so the sweep leaves both out and each climate zone asks `*#4*<WHERE>*0##` itself. |
 | **H4890 / AM4890** | WHO 1, 2, 4, 5, 16, 18 | Supports Burglar Alarm, Sound (`*#16*0*5##`), and Energy meter 51 queries. |
-| **F454** | WHO 1, 2, 4, 16, 18 | Full lighting, cover, climate, sound (`bt_difson` firmware-verified), and energy meter 51 queries. Alarm query omitted. |
+| **F454** | WHO 1, 2, 4, 16, 18 | Full lighting, cover, sound (`bt_difson` firmware-verified), and energy meter 51 queries. The `020051` firmware drops `*#4*0##` (own-firmware-oracle), so each climate zone asks `*#4*<WHERE>*0##` itself. Alarm query omitted. |
 | **F452 / F453 / F453AV** | WHO 1, 2, 4, 16, 18 | Lighting, cover, climate, sound (`bt_difson` firmware-verified on F453/F453AV), and energy meter 51 queries. Alarm query omitted. |
-| **F461** | WHO 1, 2, 4, 16, 18 | Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted. |
+| **F461** | WHO 1, 2, 4, 16, 18 | Lighting, cover, and energy meter 51 queries. The `020011` firmware drops `*#4*0##` and `*#16*0*5##` (own-firmware-oracle, confirmed live on 2.0.11), so the sweep leaves both out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted. |
 | **F455** | WHO 1, 2, 4, 18 | Entry-level gateway: lighting, cover, climate, and energy meter 51 queries. Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual. |
-| **MyHomeServer1** | WHO 1, 2, 4, 16, 18 | Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted. |
+| **MyHomeServer1** | WHO 1, 2, 4, 16, 18 | Lighting, cover, and energy meter 51 queries. The firmware drops `*#4*0##` and `*#16*0*5##` (own-firmware-oracle `028206`, confirmed live on 3.87.13), so the sweep leaves both out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted. |
 | **MH201** | WHO 1, 2, 4, 16, 18 | Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted. |
-| **MH200 / MH200N** | WHO 1, 2, 4, 16 | Lighting, cover, climate, and sound queries (`bt_difson` hardware and firmware-verified on both). Alarm and energy queries omitted. |
+| **MH200 / MH200N** | WHO 1, 2, 4, 16 | Lighting, cover, climate, and sound queries (`bt_difson` hardware and firmware-verified on both). The MH200 `020102` firmware drops `*#4*0##` (own-firmware-oracle; the MH200N forwards it), so its climate zones ask `*#4*<WHERE>*0##` themselves. Alarm and energy queries omitted. |
 <!-- GATEWAY_DISCOVERY_END -->
 
