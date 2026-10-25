@@ -24,7 +24,11 @@ from custom_components.myhome.const import (
     ROLE_STANDBY,
     TOPOLOGY_SHARED,
 )
-from custom_components.myhome.gateway import HUMIDITY_REQUEST_REFUSED, MyHOMEGatewayHandler
+from custom_components.myhome.gateway import (
+    HUMIDITY_REQUEST_REFUSED,
+    KNOWN_GATEWAY_MODELS,
+    MyHOMEGatewayHandler,
+)
 
 MAC = "00:03:50:00:02:57"
 
@@ -143,11 +147,23 @@ def test_a_generic_profile_with_a_vendor_prefixed_name_still_finds_its_table(has
     """``get_gateway_profile("BTicino F461")`` is a GenericGatewayProfile named "BTicino F461"."""
     handler = _handler(hass, "BTicino F461")
     assert isinstance(handler.gateway.profile, GenericGatewayProfile)
-    # HUMIDITY_REQUEST_REFUSED names no forwarding model, so the configured name is kept (#792's
-    # all-zone table adds F461 to the lookup); either way the key is not a refusing model.
-    assert "F461" in handler._model_key
+    assert handler._model_key == "F461"  # the same key as #792's tables give it
     assert handler._model_key not in HUMIDITY_REQUEST_REFUSED
     assert handler.humidity_request_refused is False
+
+
+@pytest.mark.parametrize("model", sorted(KNOWN_GATEWAY_MODELS))
+def test_every_known_model_is_keyed_as_itself_behind_a_brand_prefix(hass, model):
+    """Forwarding models included: the key is the model, whatever table it is looked up in."""
+    handler = _handler(hass, f"BTicino {model}")
+    handler.gateway.profile = GenericGatewayProfile(model_name=f"BTicino {model}")
+    assert handler._model_key == model
+    assert handler.humidity_request_refused is (model in HUMIDITY_REQUEST_REFUSED)
+
+
+def test_the_oracle_s_twelve_images_are_known_models():
+    assert HUMIDITY_REQUEST_REFUSED <= KNOWN_GATEWAY_MODELS
+    assert {"F459", "F460", "F461", "MYHOMESERVER1"} <= KNOWN_GATEWAY_MODELS
 
 
 @pytest.mark.parametrize(

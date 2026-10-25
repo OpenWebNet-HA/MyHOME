@@ -179,9 +179,21 @@ ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {
 # Read from the OWNd profile first (``supports_heating_humidity_request``: ``True`` / ``False``
 # wins, ``None`` = unverified); this table is the fallback until the flag exists there.
 HUMIDITY_REQUEST_REFUSED = frozenset({"F450", "F453", "F453AV", "F454", "H4684", "MH200", "MH200N", "MH202"})
+# Every gateway model the request tables can be keyed on: the twelve images the oracle emulates
+# (results/<P>/<V>, refusing and forwarding alike) and the other models OWNd profiles, so a
+# forwarding model named with a brand prefix ("BTicino F461") is keyed as itself (``F461``)
+# and not left as the whole string. The same key on every table of #792 / #793 / #794.
+KNOWN_GATEWAY_MODELS = frozenset(
+    {
+        "F450", "F452", "F452V", "F453", "F453AV", "F454", "F455", "F459", "F460", "F461",
+        "H4684", "H4890", "MH200", "MH200N", "MH201", "MH202", "MYHOMESERVER1",
+    }
+)
 # The models the tables know, longest first so ``MH200N`` is not read as ``MH200``.
 _ZONE_REQUEST_MODELS = sorted(
-    ACTUATOR_REQUEST_REFUSED | HUMIDITY_REQUEST_REFUSED | set(ALL_ZONE_REQUESTS), key=len, reverse=True
+    KNOWN_GATEWAY_MODELS | ACTUATOR_REQUEST_REFUSED | HUMIDITY_REQUEST_REFUSED | set(ALL_ZONE_REQUESTS),
+    key=len,
+    reverse=True,
 )
 
 
