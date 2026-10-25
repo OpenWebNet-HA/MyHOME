@@ -105,9 +105,10 @@ def test_profile_without_who_16_skips_the_sound_request(hass):
 @pytest.mark.parametrize(
     ("model", "expected"),
     [
-        ("MH201", True), ("MH202", True), ("F454", True), ("MH200", True), ("H4684", True), ("F459", True),
+        ("MH201", True), ("MH202", True), ("F450", True), ("F454", True), ("MH200", True), ("H4684", True),
+        ("F459", True),
         ("F455", False), ("F453", False), ("MH200N", False),  # unknown, or the sweep answers
-        ("F461", False), ("MyHomeServer1", False), ("Generic", False),  # polled with *#4*Z##
+        ("F460", False), ("F461", False), ("MyHomeServer1", False), ("Generic", False),  # polled with *#4*Z##
     ],
 )
 def test_which_gateways_need_a_zone_temperature_poll(hass, model, expected):

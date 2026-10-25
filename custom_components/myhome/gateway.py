@@ -168,9 +168,13 @@ SOUND_STATUS_REQUEST_REFUSED = frozenset(
     {"F450", "F459", "F460", "F461", "MH202", "MYHOMESERVER1"}
 )  # *#16*0*5## (sound-who16-source.tsv)
 # Zones of these SCS-only gateways report nothing after the startup sweep, so each zone asks
-# for its temperature (*#4*Z*0##): the ones refusing *#4*0##, and the MH201, whose standalone
-# thermostats stayed unknown after every restart (#185). MH201 is not in the oracle.
-ZONE_TEMPERATURE_POLL = GENERAL_ZONE_REQUEST_REFUSED | {"MH201"}
+# for its temperature (*#4*Z*0##): the ones refusing *#4*0## that also forward *#4*Z## to the
+# bus unanswered (#674), and the MH201, whose standalone thermostats stayed unknown after every
+# restart (#185; the MH201 is not in the oracle). F460, F461 and MyHomeServer1 refuse *#4*0##
+# too but answer *#4*Z## themselves (F460 and F461 expand it into the four dimension requests,
+# $00499013000 in trace-corpus.tsv; MyHomeServer1 replies from its cache, #649), so their zones
+# keep the zone status poll and are not listed here.
+ZONE_TEMPERATURE_POLL = frozenset({"F450", "F454", "F459", "H4684", "MH200", "MH201", "MH202"})
 
 # Gateways whose firmware drops the per-zone actuator request (``*#4*Z*20##``) instead of
 # forwarding it to the bus: own-firmware-oracle ``results/<P>/<V>/oracle/full/thermo-actuator.tsv``
@@ -446,6 +450,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         return not any(
             k in norm
             for k in (
+                "F450",
                 "F455",
                 "F454",
                 "MH200",
