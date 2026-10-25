@@ -166,6 +166,57 @@ def test_the_oracle_s_twelve_images_are_known_models():
     assert {"F459", "F460", "F461", "MYHOMESERVER1"} <= KNOWN_GATEWAY_MODELS
 
 
+# ------------------------------------------------------------------ gateway: SSDP and aliased model strings (#794, review 5644219403, 3)
+
+@pytest.mark.parametrize(
+    ("model", "profile_model"),
+    [("L4684", "H4684"), ("NT4684", "H4684"), ("003598", "F454"), ("03535", "MH202")],
+)
+def test_aliased_model_strings_follow_their_profile(hass, model, profile_model):
+    """An OWNd alias (L4684, NT4684) or MyHOME_Suite item number (003598, 03535) is keyed on its model."""
+    handler = _handler(hass, model)
+    assert handler.gateway.profile.model_name == profile_model
+    assert handler._model_key == profile_model
+
+
+def test_ssdp_model_string_hl4684_is_keyed_as_h4684(hass):
+    """SSDP announces the H4684 as ``HL4684`` (manifest.json); OWNd has no alias for it yet."""
+    handler = _handler(hass, "HL4684")
+    assert handler.gateway.profile.model_name == "HL4684"  # the Generic profile keeps the SSDP string
+    assert handler._model_key == "H4684"
+
+
+@pytest.mark.parametrize(
+    ("model", "key", "refused"),
+    [
+        ("HL4684", "H4684", True),  # the SSDP modelName, never overwritten by WHO 13 / 1013
+        ("HC4684", "H4684", True),
+        ("BTicino L4684", "H4684", True),  # OWNd aliases the word, not the brand-prefixed string
+        ("BTicino HL4684", "H4684", True),
+        ("Legrand 003598", "F454", True),  # the MyHOME_Suite item number of the F454
+        ("Legrand 003565", "MH200N", True),  # ... of the MH200N: not collapsed to MH200
+        ("Legrand 003535", "MH202", True),
+        ("BTicino MH200", "MH200", True),
+        ("BTicino MH200N", "MH200N", True),
+        ("Legrand 003594", "F455", False),  # the F455 is not in the oracle: still asked
+        ("BTicino L4684 gateway", "H4684", True),
+    ],
+)
+def test_brand_prefixed_aliases_are_resolved_before_the_table_lookup(hass, model, key, refused):
+    handler = _handler(hass, model)
+    assert isinstance(handler.gateway.profile, GenericGatewayProfile), model
+    assert handler._model_key == key
+    assert handler.humidity_request_refused is refused
+
+
+@pytest.mark.parametrize("model", ["HL4684", "BTicino L4684"])
+async def test_an_ssdp_or_brand_prefixed_h4684_zone_does_not_ask_for_humidity(hass, model):
+    """The zone status poll (``*#4*2##``) is ``supports_zone_status``'s business (#794); dimension 60 is gated here."""
+    handler = _handler(hass, model)
+    await _humidity_zone(hass, handler).async_update()
+    assert "*#4*2*60##" not in _sent(handler)
+
+
 @pytest.mark.parametrize(
     ("model", "key", "refused"),
     [("Legrand MH200N", "MH200N", True), ("MH200", "MH200", True), ("BTicino F453AV", "F453AV", True), ("Unknown", "UNKNOWN", False)],

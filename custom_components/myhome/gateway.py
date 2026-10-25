@@ -195,6 +195,28 @@ _ZONE_REQUEST_MODELS = sorted(
     key=len,
     reverse=True,
 )
+# SSDP announces the H4684 as "HL4684" (manifest.json), which OWNd does not alias to its H4684
+# profile yet (it knows h4684, l4684, n4684, nt4684, lgrh4684; #794 maps the same spelling), and
+# "HC4684" is the other prefixed spelling of the same product: keyed on the oracle's product name.
+_MODEL_SPELLINGS = {"HL4684": "H4684", "HC4684": "H4684"}
+
+
+def _alnum(name: object) -> str:
+    """A model string reduced to its upper-case letters and digits (``"BTicino F461"`` -> ``BTICINOF461``)."""
+    return "".join(character for character in str(name).upper() if character.isalnum())
+
+
+def _resolved_model(word: str) -> str | None:
+    """The model OWNd resolves one word of a model string to, or ``None`` for a word it does not know.
+
+    ``L4684`` -> ``H4684``, ``003598`` -> ``F454``, ``03565`` -> ``MH200N`` (OWNd's aliases and
+    catalogue item numbers); the spellings OWNd has no alias for are mapped first.
+    """
+    key = _MODEL_SPELLINGS.get(_alnum(word), word)
+    profile = get_gateway_profile(key)
+    if isinstance(profile, GenericGatewayProfile):
+        return None
+    return _alnum(profile.model_name)
 
 
 # A WHO 4 zone address: ``Z``, ``#Z``, ``Z#N`` (actuator), each optionally behind an
@@ -426,15 +448,23 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         """The gateway model the request tables are keyed on (``F461``, ``MYHOMESERVER1``).
 
         A known OWNd profile names the model; a ``GenericGatewayProfile`` (also what
-        ``get_gateway_profile("BTicino F461")`` returns) falls back to the configured name,
-        in which a known model is looked up as a substring (``supports_zone_status`` style).
+        ``get_gateway_profile("BTicino F461")`` returns) falls back to the configured name.
+        There a brand-prefixed alias or catalogue number is resolved word by word through
+        OWNd (``"BTicino L4684"`` -> ``H4684``, ``"Legrand 003598"`` -> ``F454``), the SSDP
+        spelling ``HL4684`` is read as ``H4684``, and otherwise a known model is looked up as
+        a substring, longest first (``supports_zone_status`` style), so ``MH200N`` stays
+        distinct from ``MH200``.
         """
         profile = getattr(self.gateway, "profile", None)
         if profile is not None and not isinstance(profile, GenericGatewayProfile):
             name = getattr(profile, "model_name", None) or self.model
         else:
             name = self.model
-        normalized = "".join(character for character in str(name).upper() if character.isalnum())
+        for word in str(name).split():
+            resolved = _resolved_model(word)
+            if resolved is not None:
+                return resolved
+        normalized = _MODEL_SPELLINGS.get(_alnum(name), _alnum(name))
         return next((model for model in _ZONE_REQUEST_MODELS if model in normalized), normalized)
 
     def _who4_target(self) -> MyHOMEGatewayHandler:
