@@ -453,14 +453,15 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         OWNd (``"BTicino L4684"`` -> ``H4684``, ``"Legrand 003598"`` -> ``F454``), the SSDP
         spelling ``HL4684`` is read as ``H4684``, and otherwise a known model is looked up as
         a substring, longest first (``supports_zone_status`` style), so ``MH200N`` stays
-        distinct from ``MH200``.
+        distinct from ``MH200``. The words are the alphanumeric runs of the string, so
+        ``"BTicino-L4684"`` and ``"F454 (003598)"`` resolve too.
         """
         profile = getattr(self.gateway, "profile", None)
         if profile is not None and not isinstance(profile, GenericGatewayProfile):
             name = getattr(profile, "model_name", None) or self.model
         else:
             name = self.model
-        for word in str(name).split():
+        for word in re.findall(r"[A-Za-z0-9]+", str(name)):
             resolved = _resolved_model(word)
             if resolved is not None:
                 return resolved

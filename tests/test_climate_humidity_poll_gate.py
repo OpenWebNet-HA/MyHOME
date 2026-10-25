@@ -214,6 +214,11 @@ def test_ssdp_model_string_hl4684_is_keyed_as_h4684(hass):
         ("BTicino MH200N", "MH200N", True),
         ("Legrand 003594", "F455", False),  # the F455 is not in the oracle: still asked
         ("BTicino L4684 gateway", "H4684", True),
+        ("BTicino-L4684", "H4684", True),  # hyphenated: the words are the alphanumeric runs
+        ("F454 (003598)", "F454", True),  # parenthesised catalogue number
+        ("Legrand (003598)", "F454", True),
+        ("BTicino-F461", "F461", False),
+        ("MyHomeServer1 (3.87.13)", "MYHOMESERVER1", False),
     ],
 )
 def test_brand_prefixed_aliases_are_resolved_before_the_table_lookup(hass, model, key, refused):
