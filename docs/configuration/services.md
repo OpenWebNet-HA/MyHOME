@@ -138,6 +138,9 @@ data:
 
 Actively queries status across all configured subsystems (lighting, automation, thermoregulation, and gateway diagnostics). It is used to refresh entity states and populate the in-band **Bus Monitor** with fresh data for troubleshooting.
 
+> [!NOTE]
+> With the default `force: false` the service sends the same general requests as the startup sweep, so on the gateways whose firmware drops `*#4*0##` before the bus (F450, F454, F459, F460, F461, H4684, MH200, MH201, MH202 and MyHomeServer1) it sends **no WHO 4 frame at all**: the general request is left out and the service triggers no per-zone `*#4*<WHERE>##` or `*#4*<WHERE>*0##` poll (those belong to the climate entities' own polling, see [climate](climate.md)). `*#16*0*5##` is left out the same way on F450, F459, F460, F461, MH202 and MyHomeServer1. With `force: true` the requests are sent, and the firmware still drops them before they reach the bus (a NACK on the command session, nothing on the event session).
+
 ### Fields
 | Parameter | Type | Required | Description | Example |
 | :--- | :---: | :---: | :--- | :--- |
