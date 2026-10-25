@@ -338,6 +338,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._full_where = (
             f"{self._where}{BUS_ROUTING}{self._interface}" if self._interface is not None else self._where
         )
+        self._interface_poll_skip_logged = False
 
         self._central = True if self._where in ("#0", "#0#1") else central
         # None: not configured. A zone then follows the plant, see the standalone property.
@@ -435,7 +436,24 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
     def _polls_temperature(self) -> bool:
         """Whether this zone asks for its temperature (*#4*Z*0##) on an SCS-only gateway (#185)."""
         gateway = getattr(self, "_gateway_handler", None)
-        return not self._central and getattr(gateway, "zone_temperature_poll_needed", False) is True
+        if self._central or getattr(gateway, "zone_temperature_poll_needed", False) is not True:
+            return False
+        if self._interface is not None and getattr(gateway, "interface_zone_request_refused", False) is True:
+            # The firmware drops *#4*Z#4#II*0## before the bus on these gateways (own-firmware-oracle
+            # PR #60: nack/silent on F450, F454, F459 and MH202 among the SCS-only models; the MH202
+            # even crashes on *#4*Z#4#II##), so the zone waits for the bus to report instead.
+            if not self._interface_poll_skip_logged:
+                LOGGER.debug(
+                    "%s %s is behind interface %s and %s firmware drops `*#4*%s*0##`; waiting for the zone to report",
+                    self._gateway_handler.log_id,
+                    self._display_name,
+                    self._interface,
+                    self._gateway_handler.model,
+                    self._full_where,
+                )
+                self._interface_poll_skip_logged = True
+            return False
+        return True
 
     def _enable_fan_mode(self) -> None:
         """Dynamically enable fan mode support if not already enabled."""
@@ -614,8 +632,14 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if isinstance(written, asyncio.Future) and not self._central:
                 written.add_done_callback(lambda future: self._poll_answered(future, frames_before))
         elif self._polls_temperature:
-            # The dimension 0 request goes out on every gateway of the firmware oracle; the
-            # dimensionless *#4*Z## times out on these (#674) and *#4*0## is refused.
+            # The plain-zone dimension 0 request goes out on every gateway of the firmware oracle
+            # (thermo-ts10.tsv); the dimensionless *#4*Z## times out on these (#674) and *#4*0## is
+            # refused. A zone behind an F422 is only polled where the firmware forwards Z#4#II
+            # requests (_polls_temperature).
+            # No _poll_answered callback on purpose: *#4*Z*0## ends with a NACK on the command
+            # session on 11 of the 12 oracle gateways even when it was forwarded to the bus
+            # (thermo-ts10.tsv: nack/out everywhere but the MH202), which cancels `written`, so the
+            # callback would count a healthy SCS zone as unresponsive.
             await self._gateway_handler.send_status_request(OWNHeatingCommand.get_temperature(self._full_where))
         if self._fan and self._season_has_fan_coil():
             await self._gateway_handler.send_status_request(

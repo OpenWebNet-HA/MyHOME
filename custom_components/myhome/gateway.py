@@ -175,6 +175,14 @@ SOUND_STATUS_REQUEST_REFUSED = frozenset(
 # $00499013000 in trace-corpus.tsv; MyHomeServer1 replies from its cache, #649), so their zones
 # keep the zone status poll and are not listed here.
 ZONE_TEMPERATURE_POLL = frozenset({"F450", "F454", "F459", "H4684", "MH200", "MH201", "MH202"})
+# A zone behind an F422 bus interface (WHERE Z#4#II) cannot be polled on these gateways: the
+# firmware drops *#4*Z#4#II*0## (and *#4*Z#4#II##) before the bus, nack/silent on ten of the
+# twelve emulated images; only H4684 and MH200 forward them (own-firmware-oracle PR #60,
+# thermo-zone-requests suite, not published yet). Read from the OWNd profile first
+# (``supports_interface_zone_requests``); this table is the fallback until the flag exists there.
+INTERFACE_ZONE_REQUEST_REFUSED = frozenset(
+    {"F450", "F453", "F453AV", "F454", "F459", "F460", "F461", "MH200N", "MH202", "MYHOMESERVER1"}
+)
 
 # Gateways whose firmware drops the per-zone actuator request (``*#4*Z*20##``) instead of
 # forwarding it to the bus: own-firmware-oracle ``results/<P>/<V>/oracle/full/thermo-actuator.tsv``
@@ -637,6 +645,14 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             # the per-zone poll pointless, whatever the fallback table says.
             return not supported
         return self._model_key in ZONE_TEMPERATURE_POLL
+
+    @property
+    def interface_zone_request_refused(self) -> bool:
+        """Whether this gateway drops the status requests of a zone behind an F422 (``*#4*Z#4#II*0##``)."""
+        supported = getattr(getattr(self.gateway, "profile", None), "supports_interface_zone_requests", None)
+        if isinstance(supported, bool):
+            return not supported
+        return self._model_key in INTERFACE_ZONE_REQUEST_REFUSED
 
     @property
     def profile(self) -> Any:

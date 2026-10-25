@@ -125,6 +125,51 @@ async def test_scs_only_zone_asks_for_its_temperature(hass, model):
     assert [str(call.args[0]) for call in handler.send_status_request.await_args_list] == ["*#4*3*0##"]
 
 
+@pytest.mark.parametrize("model", ["F450", "F454", "F459", "MH202"])
+async def test_interface_zone_is_not_polled_where_the_firmware_drops_the_request(hass, model, caplog):
+    """*#4*Z#4#II*0## is nack/silent on these SCS-only gateways (own-firmware-oracle PR #60)."""
+    handler = _handler(hass, model)
+    handler.send_status_request = AsyncMock()
+    with caplog.at_level("DEBUG", logger="custom_components.myhome"):
+        zone = _zone(hass, handler, interface="01")
+        assert zone._polls_temperature is False
+        assert zone._polls_temperature is False
+    assert zone._poll_on_add is False
+    assert handler.interface_zone_request_refused is True
+    await zone.async_update()
+    handler.send_status_request.assert_not_awaited()
+    skipped = [record for record in caplog.records if "drops `*#4*3#4#01*0##`" in record.message]
+    assert len(skipped) == 1 and skipped[0].levelname == "DEBUG"
+
+
+@pytest.mark.parametrize("model", ["H4684", "MH200", "MH201"])
+async def test_interface_zone_is_polled_where_the_firmware_forwards_the_request(hass, model):
+    """H4684 and MH200 forward *#4*Z#4#II*0## (own-firmware-oracle PR #60); the MH201 is not in the oracle."""
+    handler = _handler(hass, model)
+    handler.send_status_request = AsyncMock()
+    zone = _zone(hass, handler, interface="01")
+    assert zone._poll_on_add is True
+    await zone.async_update()
+    assert [str(call.args[0]) for call in handler.send_status_request.await_args_list] == ["*#4*3#4#01*0##"]
+
+
+@pytest.mark.parametrize(
+    ("model", "flag", "expected"),
+    [("MH202", True, True), ("H4684", False, False)],
+)
+async def test_profile_flag_wins_over_the_interface_zone_table(hass, model, flag, expected):
+    """An OWNd profile that states ``supports_interface_zone_requests`` is believed over the table."""
+    handler = _handler(hass, model)
+    handler.gateway.profile = SimpleNamespace(
+        model_name=handler.gateway.profile.model_name,
+        supports_interface_zone_requests=flag,
+        supports_who=lambda who: True,
+    )
+    assert handler.interface_zone_request_refused is (not flag)
+    zone = _zone(hass, handler, interface="01")
+    assert zone._polls_temperature is expected
+
+
 async def test_f455_zone_still_sends_nothing(hass):
     handler = _handler(hass, "F455")
     handler.send_status_request = AsyncMock()
