@@ -78,6 +78,25 @@ def test_sweep_skips_requests_the_gateway_refuses(hass, model, zone_sweep, sound
     assert frames[:2] == ["*#1*0##", "*#2*0##"]
 
 
+def test_hardware_compatibility_table_matches_the_sweep(hass):
+    """``sweep_omits`` in scripts/update_gateway_profiles.py (the "Startup Sweep Requests" column of
+    docs/getting-started/hardware-compatibility.md) is exactly what the sweep leaves out per profile."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import update_gateway_profiles as ugp
+
+    from custom_components.myhome.gateway import DISCOVERY_REQUESTS
+
+    assert len(ugp.GATEWAY_DISCOVERY_METADATA) == 11
+    for row in ugp.calibrate_discovery_with_ownd():
+        frames = _handler(hass, str(row["profile_name"]))._discovery_frames()
+        omitted = [frame for who, frame in DISCOVERY_REQUESTS if who in row["queried_whos"] and frame not in frames]
+        assert omitted == list(row["sweep_omits"]), row["model"]
+        assert sorted({who for who, frame in DISCOVERY_REQUESTS if frame in frames}) == ugp.sweep_whos(row), row["model"]
+
+
 def test_f461_sweep_in_full(hass):
     assert _handler(hass, "F461")._discovery_frames() == ["*#1*0##", "*#2*0##", "*#18*51*51##", "*#18*51*113##"]
 
