@@ -1135,7 +1135,9 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     self._gateway_handler.log_id,
                     self._full_where,
                 )
-        elif message.is_on is not None:
+        elif message.is_on is not None and getattr(message, "what", None) not in (30, 31):
+            # A WHAT 30/31 dim step is a relative command, not a state: OWNd 2.0.0b11
+            # still reports it as `is_on True`, and a step from 0 % may leave the light off (#367).
             self._attr_is_on = message.is_on
             self._is_on_restored = False
             # An "off" frame is complete for a dimmer too: there is no brightness to ask for.

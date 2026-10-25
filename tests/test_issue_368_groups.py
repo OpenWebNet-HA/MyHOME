@@ -707,3 +707,27 @@ async def test_turn_on_hs_brightness_zero_turns_off(hass: HomeAssistant):
 
     assert [str(c.args[0]) for c in gateway.send.call_args_list] == ["*1*0*#6##"]
     assert group.is_on is False
+
+
+async def test_dim_step_does_not_flip_assumed_group(hass: HomeAssistant):
+    """A WHAT 30/31 dim step to the group is not an "on" for an assumed-state group (#367)."""
+    gateway = _gateway()
+    group = _group(hass, gateway)
+    await group.async_added_to_hass()
+
+    _fire(group, "*1*31*#6##")  # dim down: OWNd 2.0.0b11 says is_on True
+    assert group.is_on is None
+    _fire(group, "*1*30*#6##")  # dim up
+    assert group.is_on is None
+    _fire(group, "*1*30#2#100*#6##")  # parameterised step
+    assert group.is_on is None
+
+    _fire(group, "*1*0*#6##")
+    assert group.is_on is False
+    _fire(group, "*1*31*#6##")
+    assert group.is_on is False  # a step from off does not switch the group on
+
+    _fire(group, "*1*1*#6##")
+    assert group.is_on is True
+    _fire(group, "*1*31*#6##")
+    assert group.is_on is True  # nor does a dim-down switch it off

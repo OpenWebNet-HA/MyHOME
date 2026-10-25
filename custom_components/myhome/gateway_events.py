@@ -294,18 +294,27 @@ class GatewayEventDispatcher:
                         and not getattr(message, "is_general", False)
                         and message.is_on is not None
                         and message.dimension is None
+                        and getattr(message, "what", None) not in (30, 31)
                     ):
                         # Only an actuator's own on/off status is a member echo: motion
-                        # frames and illuminance / PIR dimension pushes must not cancel
-                        # or count towards a resync sweep.
+                        # frames, illuminance / PIR dimension pushes and WHAT 30/31 dim
+                        # steps (relative commands, "on" only to OWNd 2.0.0b11) must not
+                        # cancel or count towards a resync sweep (#367).
                         self.handler._resync_manager.handle_ptp_echo(message)
 
                     dim = getattr(message, "dimension", None)
                     is_not_dimension = not (isinstance(dim, int) and not isinstance(dim, bool))
 
-                    if message.is_on is not None and is_not_dimension:
+                    # A dim step (WHAT 30/31) says the light changed, not that it is on (#367).
+                    # It fires no on/off event but still resyncs its members, whether OWNd
+                    # reports its `is_on` as True (2.0.0b11) or None.
+                    is_dim_step = getattr(message, "what", None) in (30, 31)
+
+                    if (message.is_on is not None or is_dim_step) and is_not_dimension:
                         event = "on" if message.is_on else "off"
-                        if message.is_general:
+                        if is_dim_step:
+                            pass  # no on/off event; the members are still resynced below
+                        elif message.is_general:
                             self.hass.bus.async_fire(
                                 "myhome_general_light_event",
                                 {"message": str(message), "event": event},
@@ -334,7 +343,24 @@ class GatewayEventDispatcher:
                             or getattr(message, "is_group", False)
                         ):
                             self.handler._schedule_resync(message)
-                elif isinstance(message, OWNAutomationEvent) and self._is_active_for_who(2):
+                elif (
+                    isinstance(message, OWNAutomationEvent)
+                    and self._is_active_for_who(2)
+                    # Only a command frame that states the motion is an open/close/stop
+                    # event (#367). As for WHO 1, a dimension frame is never one. This is
+                    # a defensive parser invariant, not a readback actuators send: a real
+                    # shutter reports DIMENSION 10 on its own point-to-point address, never
+                    # on a group, area or general WHERE. OWNd still parses a grammatically
+                    # valid scope DIMENSION 10 frame (`*#2*#5*10*10*50*001*0##`) with
+                    # `is_opening` / `is_closing` False, which must not become a stop nor
+                    # fire the gateway's `centralized_shutter_stop` trigger. A WHAT outside
+                    # the table leaves `is_opening` / `is_closing` None and states nothing.
+                    and not (
+                        isinstance(getattr(message, "dimension", None), int)
+                        and not isinstance(getattr(message, "dimension", None), bool)
+                    )
+                    and (message.is_opening is not None or message.is_closing is not None)
+                ):
                     if message.is_opening and not message.is_closing:
                         event = "open"
                     elif message.is_closing and not message.is_opening:

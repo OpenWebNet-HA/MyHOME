@@ -286,6 +286,39 @@ The MyHOME integration implements a dual-layer architecture adhering to both Hom
 3. **Keypad Broadcast Reflection**:
    A general or area command from a physical wall switch or scenario unit also moves the individual covers in Home Assistant. A group or area cover whose shutters are not known yet ends its run after its own `travel_time`, so it never stays stuck on *opening* ([#433](https://github.com/OpenWebNet-HA/MyHOME/issues/433)).
 
+### 📡 Bus Events for Scope Commands (`myhome_*_automation_event`)
+
+A WHO 2 command heard on a **general**, **area** or **group** address — from a keypad, a scenario unit or Home Assistant itself — is mirrored on the Home Assistant event bus, so an automation can react to the physical button without owning a cover entity:
+
+| Address | Event | Extra payload |
+| :--- | :--- | :--- |
+| General `0` (also `0#4#<interface>`) | `myhome_general_automation_event` | — |
+| Area `1`…`9`, `00`, `100` | `myhome_area_automation_event` | `area` |
+| Group `#1`…`#255` | `myhome_group_automation_event` | `group` |
+
+Every payload carries `message` (the raw frame), `event` (`open`, `close` or `stop`), `where`, `gateway_mac` and `entry_id`. The general event also drives the gateway device triggers *Centralized shutter open / close / stop*.
+
+Only a **command frame that states a motion** fires an event: the standard `WHAT 0` / `1` / `2` (`*2*0*0##`, `*2*1*3##`, `*2*2*#5##`) and the advanced `WHAT 10` / `11` / `12` with their parameters (`*2*10#001#1*0##` stop, `*2*11#100#001#1*0##` up, `*2*12#100#001#1*0##` down, as captured from a MyHomeServer1 + LN4660M2 keypad). Nothing fires for:
+
+* **any WHO 2 dimension frame**, as for the WHO 1 light events: a Dimension 11 level write and its event-session echo (`*#2*#5*#11#001*50##`, echoed by an F461 / MyHomeServer1 as `*#2*#5*#11#001#1*50##`; see [Protocol Note: Dimension 11 is Shutter Level](#protocol-note-dimension-11-is-shutter-level)) sets a level, it does not state a motion;
+* a **`DIMENSION 10` status frame on a scope address** (`*#2*#5*10*10*50*001*0##`, `*#2*0*10*10*50*001*0##`), guarded defensively: a physical shutter reports its `DIMENSION 10` status on its own point-to-point address, never on a group, area or general one, so such a frame is parsed but never read as a stop;
+* a `WHAT` outside the WHO 2 table, which states no motion.
+
+```yaml
+alias: "Pause the media player on a general shutter stop"
+trigger:
+  - platform: event
+    event_type: myhome_general_automation_event
+    event_data:
+      event: stop
+action:
+  - service: media_player.media_pause
+    target:
+      entity_id: media_player.living_room
+```
+
+The lighting counterparts (`myhome_general_light_event`, `myhome_area_light_event`, `myhome_group_light_event`) are described under [Synchronizing Physical Wall Switches](lights.md#synchronizing-physical-wall-switches-scs-group-buttons).
+
 ### 💡 Automation Best Practices: The Home Assistant & BTicino Way
 
 To ensure maximum reliability and preserve bus health:

@@ -191,8 +191,14 @@ class MyHOMELightGroup(MyHOMEEntity, LightEntity):
         if msg_iface != self._interface:
             return
 
-        # Parse status from the frame (assumed mode only updates attributes)
-        if isinstance(msg, OWNLightingEvent) and getattr(msg, "dimension", None) is None:
+        # Parse status from the frame (assumed mode only updates attributes). A WHAT
+        # 30/31 dim step moves the group one level but says nothing about whether it
+        # is on, whatever `is_on` OWNd gives it (#367).
+        if (
+            isinstance(msg, OWNLightingEvent)
+            and getattr(msg, "dimension", None) is None
+            and getattr(msg, "what", None) not in (30, 31)
+        ):
             if msg.is_on is True:
                 self._attr_is_on = True
             elif msg.is_on is False:

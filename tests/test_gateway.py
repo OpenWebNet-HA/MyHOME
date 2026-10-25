@@ -520,6 +520,142 @@ async def test_listening_loop_lighting_unknown_is_on_skips_event(gateway_handler
 
 
 @pytest.mark.asyncio
+async def test_scope_events_fire_only_for_state_frames(gateway_handler):
+    """#367: a dim step is not "on" and a WHO 2 dimension or unknown frame is not "stop".
+
+    Real frames only: WHO 1 relative dim steps (plain, parameterised and general),
+    the DIMENSION 11 level echoes an F461 / MyHomeServer1 puts on the event session
+    for a scope level write (OWNd parses them as `OWNAutomationCommand`), WHO 2
+    DIMENSION 10 frames on a scope address in the gateway's 3-digit priority
+    format (a physical shutter reports DIMENSION 10 on its own point-to-point
+    address only, so this is the defensive guard; OWNd parses them as
+    `OWNAutomationEvent` with `is_opening` / `is_closing` False), one frame OWNd
+    cannot parse (handed through as the raw string), one WHAT outside the WHO 2
+    table (`*2*7*0##`, `is_opening` / `is_closing` None), and the advanced
+    scope commands captured in `tests/fixtures/traces/issue_445/` (WHAT 10/11/12 on
+    WHERE 0), and the area 10 stop `*2*0*100##` as the MyHomeServer1 028206
+    firmware oracle replays it (`down *2*0*100##` -> `bus:$04B30A120A` and
+    `own:*2*0*100##` on the event session; no community capture carries it).
+    """
+    frames = [
+        OWNMessage.parse("*1*30*#5##"),  # group 5 dim up one step
+        OWNMessage.parse("*1*31*3##"),  # area 3 dim down one step
+        OWNMessage.parse("*1*30#2#100*#5##"),  # group 5 dim up, 2 levels at speed 100
+        OWNMessage.parse("*1*30*0##"),  # general dim up
+        OWNMessage.parse("*#2*#5*#11#001#1*50##"),  # DIMENSION 11 level echo, group 5 (OWNAutomationCommand)
+        OWNMessage.parse("*#2*0*#11#001#1*50##"),  # DIMENSION 11 level echo, general (OWNAutomationCommand)
+        OWNMessage.parse("*#2*#5*10*10*50*001*0##"),  # DIMENSION 10 on group 5: defensive guard (OWNAutomationEvent)
+        OWNMessage.parse("*#2*0*10*10*50*001*0##"),  # DIMENSION 10 on general: defensive guard (OWNAutomationEvent)
+        "*#2*0*10*xx*50*001*0##",  # malformed DIMENSION 10 frame: not an OWNMessage at all
+        OWNMessage.parse("*2*7*0##"),  # WHAT outside the WHO 2 table: is_opening / is_closing None
+        OWNMessage.parse("*2*10#001#1*0##"),  # advanced general stop (issue_445)
+        OWNMessage.parse("*2*11#100#001#1*0##"),  # advanced general up (issue_445)
+        OWNMessage.parse("*2*12#100#001#1*0##"),  # advanced general down (issue_445)
+        OWNMessage.parse("*2*0*100##"),  # area 10 stop (MyHomeServer1 028206 oracle replay)
+        OWNMessage.parse("*1*1*#6##"),  # group 6 on: a real state, still fired
+        OWNMessage.parse("*1*0*#6##"),  # group 6 off
+        OWNMessage.parse("*2*0*#5##"),  # group 5 stop: a real state
+        OWNMessage.parse("*2*1*3##"),  # area 3 open
+    ]
+    assert OWNMessage.parse(frames[8]) is None
+    assert [type(f).__name__ for f in frames[4:8]] == ["OWNAutomationCommand"] * 2 + ["OWNAutomationEvent"] * 2
+    assert [f.dimension for f in frames[4:8]] == [11, 11, 10, 10]
+    assert (frames[9].is_opening, frames[9].is_closing) == (None, None)
+    with patch("custom_components.myhome.gateway.OWNEventSession") as mock_session_class:
+        mock_session = MagicMock()
+        mock_session.connect = AsyncMock(return_value={"Success": True})
+        mock_session.get_next = AsyncMock(side_effect=[*frames, asyncio.CancelledError()])
+        mock_session_class.return_value = mock_session
+        gateway_handler.send_status_request = AsyncMock()
+        try:
+            await gateway_handler.listening_loop()
+        except asyncio.CancelledError:
+            pass
+
+    fired = [
+        (call.args[0], call.args[1].get("message"), call.args[1].get("event"))
+        for call in gateway_handler.hass.bus.async_fire.call_args_list
+        if call.args[0].endswith(("_light_event", "_automation_event"))
+    ]
+    assert fired == [
+        ("myhome_general_automation_event", "*2*10#001#1*0##", "stop"),
+        ("myhome_general_automation_event", "*2*11#100#001#1*0##", "open"),
+        ("myhome_general_automation_event", "*2*12#100#001#1*0##", "close"),
+        ("myhome_area_automation_event", "*2*0*100##", "stop"),
+        ("myhome_group_light_event", "*1*1*#6##", "on"),
+        ("myhome_group_light_event", "*1*0*#6##", "off"),
+        ("myhome_group_automation_event", "*2*0*#5##", "stop"),
+        ("myhome_area_automation_event", "*2*1*3##", "open"),
+    ]
+    # The dim steps still schedule the member re-sync of group 5 and area 3, with no
+    # expected polarity: a step says nothing about where the members end up. The
+    # general step sweeps the known light areas, none in this bare handler.
+    assert sorted(gateway_handler._resync_timers) == ["#5", "#6", "3"]
+    assert gateway_handler._resync_manager._resync_expected_on == {"#5": None, "3": None, "#6": False}
+
+
+@pytest.mark.asyncio
+async def test_general_dim_step_point_reports_fire_no_scope_events(gateway_handler):
+    """Replay the live F461 2.0.11 capture of a general dim step (#367, 2026-10-25).
+
+    `*1*30*0##` (general dim up; the plant has no dimmer) was acknowledged in 69 ms
+    and echoed on the event session, after which every point re-reported its own
+    state twice over about two seconds: `*1*0*06##`, `*1*0*07##`, `*1*0*09##` and
+    `*2*0*05##`. `*1*31*#1##` (group 1 dim down) was acknowledged in 62 ms, echoed,
+    and followed by `*1*0*06##` only. A dim step is not an "on" and a point report
+    is a point event: none of these frames is a scope event. Both dim steps still
+    reach the member re-sync: the general step sweeps the known light areas (none
+    in this bare handler) and the group step finds that lights 06, 07 and 09 have
+    just spoken, so no sweep is pending afterwards. Capture on file, to be ingested
+    by a trace PR.
+    """
+    raw = [
+        "*1*30*0##",  # general dim up, echoed on the event session
+        "*2*0*05##",  # every point re-reports its state: cover 05 stopped
+        "*1*0*06##",  # light 06 off
+        "*1*0*07##",  # light 07 off
+        "*1*0*09##",  # light 09 off
+        "*1*0*06##",  # second round of the same reports
+        "*2*0*05##",
+        "*1*0*07##",
+        "*1*0*09##",
+        "*1*31*#1##",  # group 1 dim down, echoed on the event session
+        "*1*0*06##",  # the only report that followed it
+    ]
+    frames = [OWNMessage.parse(f) for f in raw]
+    assert all(frame is not None for frame in frames)
+    gateway_handler._schedule_resync = MagicMock(wraps=gateway_handler._schedule_resync)
+    with (
+        patch("custom_components.myhome.gateway.OWNEventSession") as mock_session_class,
+        patch("custom_components.myhome.gateway.async_dispatcher_send") as send,
+    ):
+        mock_session = MagicMock()
+        mock_session.connect = AsyncMock(return_value={"Success": True})
+        mock_session.get_next = AsyncMock(side_effect=[*frames, asyncio.CancelledError()])
+        mock_session_class.return_value = mock_session
+        gateway_handler.send_status_request = AsyncMock()
+        try:
+            await gateway_handler.listening_loop()
+        except asyncio.CancelledError:
+            pass
+
+    scope_events = [
+        call.args[0]
+        for call in gateway_handler.hass.bus.async_fire.call_args_list
+        if call.args[0].endswith(("_light_event", "_automation_event"))
+    ]
+    assert scope_events == []
+    # Every frame reached the point-to-point dispatch exactly once, in bus order.
+    assert [str(call.args[2]) for call in send.call_args_list if call.args[1] == f"myhome_message_{gateway_handler.mac}"] == raw
+    assert [str(call.args[0]) for call in gateway_handler._schedule_resync.call_args_list] == ["*1*30*0##", "*1*31*#1##"]
+    # The point reports that preceded the group step count as its leading member
+    # echoes (two are enough for a group of unknown membership), so the `#1` sweep
+    # is satisfied before it is armed; the general step has no known area to sweep.
+    assert gateway_handler._resync_timers == {}
+    assert gateway_handler._resync_manager._resync_expected_on == {}
+
+
+@pytest.mark.asyncio
 async def test_listening_loop_automation(gateway_handler):
     with patch("custom_components.myhome.gateway.OWNEventSession") as mock_session_class:
         mock_session = MagicMock()

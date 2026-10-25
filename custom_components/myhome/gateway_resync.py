@@ -53,7 +53,9 @@ class LightingResyncManager:
         self._ptp_polarities: dict[tuple[float, str], bool | None] = {}
         self._resync_area_echoes: dict[str, set[str]] = {}
         self._group_members: dict[str, set[str]] = {}
-        self._resync_expected_on: dict[str, bool] = {}
+        # Polarity the scope frame commands, or None when it says none (a WHAT 30/31
+        # dim step): then both ON and OFF member echoes count towards cancelling.
+        self._resync_expected_on: dict[str, bool | None] = {}
         self._resync_echoed_members: dict[str, set[str]] = {}
 
     @property
@@ -248,8 +250,12 @@ class LightingResyncManager:
 
         dim = getattr(message, "dimension", None)
         is_dimension = isinstance(dim, int) and not isinstance(dim, bool)
-        msg_is_on = getattr(message, "is_on", None)
-        if msg_is_on is None or is_dimension:
+        # A WHAT 30/31 dim step moves the members without saying whether they end up
+        # on or off (#367): it is swept with an unknown polarity, whatever `is_on`
+        # OWNd gives it (True in 2.0.0b11, None once it stops calling a step "on").
+        is_dim_step = getattr(message, "what", None) in (30, 31)
+        msg_is_on: bool | None = None if is_dim_step else getattr(message, "is_on", None)
+        if (msg_is_on is None and not is_dim_step) or is_dimension:
             return
 
         now = float(self._time.monotonic())
@@ -329,7 +335,7 @@ class LightingResyncManager:
         for where in targets:
             if where in self._resync_timers:
                 self._resync_timers.pop(where)()
-            self._resync_expected_on[where] = bool(msg_is_on)
+            self._resync_expected_on[where] = msg_is_on if isinstance(msg_is_on, bool) else None
             if where.startswith("#"):
                 seeded = set(group_seed_echoes.get(where, set()))
                 self._resync_echoed_members[where] = seeded

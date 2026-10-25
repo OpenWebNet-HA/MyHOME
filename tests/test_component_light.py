@@ -21,6 +21,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import (
     OWNEvent,
     OWNLightingEvent,
+    OWNMessage,
 )
 
 from custom_components.myhome.const import (
@@ -2361,3 +2362,33 @@ async def test_dimmer_with_preset_frame_is_still_polled(hass):
 async def test_dimmer_reported_off_is_not_polled(hass):
     """An off dimmer has no brightness left to ask for, so the sweep's reply is enough (#612)."""
     assert await _poll_count_after(hass, "*1*0*11##", dimmable=True) == 0
+
+
+@pytest.mark.parametrize("step", ["*1*30*12##", "*1*31*12##", "*1*30#2#100*12##"])
+def test_dim_step_does_not_flip_point_to_point_light(hass, step):
+    """A WHAT 30/31 dim step to a light is a relative command, not an "on" state (#367)."""
+    gateway = MagicMock()
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+    light = MyHOMELight(
+        hass=hass, name="L", entity_name="L", icon=None, icon_on=None,
+        device_id="12", who="1", where="12", interface=None, dimmable=True,
+        manufacturer="B", model="M", gateway=gateway,
+    )
+    light.hass = hass
+    light.async_schedule_update_ha_state = MagicMock()
+
+    assert light.is_on is None
+    light.handle_event(OWNMessage.parse(step))
+    assert light.is_on is None
+    assert "unknown_state" not in light.extra_state_attributes
+
+    light.handle_event(OWNMessage.parse("*1*0*12##"))
+    assert light.is_on is False
+    light.handle_event(OWNMessage.parse(step))
+    assert light.is_on is False  # a step from 0 % may leave the dimmer off
+
+    light.handle_event(OWNMessage.parse("*1*1*12##"))
+    assert light.is_on is True
+    light.handle_event(OWNMessage.parse(step))
+    assert light.is_on is True

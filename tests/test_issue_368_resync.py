@@ -7,7 +7,7 @@ import pytest
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_PASSWORD, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
-from OWNd.message import OWNMessage
+from OWNd.message import OWNLightingEvent, OWNMessage
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
@@ -980,3 +980,111 @@ async def test_replay_f461_live_2026_10_18_run1_lights_group_and_general(
         (round(12.461 + RESYNC_DEBOUNCE_S, 3), "*#1*00##"),
     ]
 
+
+
+@pytest.mark.asyncio
+async def test_dim_step_sweeps_members_with_unknown_polarity(
+    hass: HomeAssistant, handler: MyHOMEGatewayHandler
+) -> None:
+    """A WHAT 30/31 dim step resyncs its members but commands no polarity (#367).
+
+    OWNd 2.0.0b11 parses `*1*31*#5##` with `is_on True`; recording that as the
+    expected polarity made the members' `*1*0*<ptp>##` echoes (dimmed down to 0 %)
+    look like the wrong polarity, so the sweep ran although every member had spoken.
+    """
+    mgr = handler._resync_manager
+
+    # Group dim-down: both OFF echoes cancel the sweep.
+    await handler._process_message(OWNMessage.parse("*1*31*#5##"))
+    assert "#5" in handler._resync_timers
+    assert mgr._resync_expected_on["#5"] is None
+    await handler._process_message(OWNMessage.parse("*1*0*51##"))
+    assert "#5" in handler._resync_timers
+    await handler._process_message(OWNMessage.parse("*1*0*52##"))
+    assert "#5" not in handler._resync_timers
+    await _advance(hass)
+    handler.send_status_request.assert_not_called()
+
+    # Group dim-up: one ON and one OFF echo count alike, the polarity is unknown.
+    mgr.cancel_all()  # forget the leading echoes of the previous phase
+    await handler._process_message(OWNMessage.parse("*1*30*#6##"))
+    assert mgr._resync_expected_on["#6"] is None
+    await handler._process_message(OWNMessage.parse("*1*1*11##"))
+    await handler._process_message(OWNMessage.parse("*1*0*12##"))
+    assert "#6" not in handler._resync_timers
+    await _advance(hass)
+    handler.send_status_request.assert_not_called()
+
+    # Area dim-down: an OFF echo from the area cancels its sweep.
+    mgr.cancel_all()
+    await handler._process_message(OWNMessage.parse("*1*31*3##"))
+    assert "3" in handler._resync_timers
+    assert mgr._resync_expected_on["3"] is None
+    await handler._process_message(OWNMessage.parse("*1*0*31##"))
+    assert "3" not in handler._resync_timers
+    await _advance(hass)
+    handler.send_status_request.assert_not_called()
+
+    # Silence after a dim step still sweeps, with the group's own status request.
+    mgr.cancel_all()
+    await handler._process_message(OWNMessage.parse("*1*31*#7##"))
+    await _advance(hass)
+    handler.send_status_request.assert_called_once()
+    assert str(handler.send_status_request.call_args[0][0]) == "*#1*#7##"
+    assert "#7" not in mgr._resync_expected_on
+
+
+@pytest.mark.asyncio
+async def test_dim_step_resync_does_not_depend_on_is_on(
+    hass: HomeAssistant, handler: MyHOMEGatewayHandler
+) -> None:
+    """Member re-sync on a dim step must survive OWNd reporting `is_on None` for WHAT 30/31."""
+    msg = MagicMock(spec=OWNLightingEvent)
+    msg.who = 1
+    msg.what = 31
+    msg.where = "#5"
+    msg.interface = None
+    msg.is_translation = False
+    msg.is_general = False
+    msg.is_area = False
+    msg.is_group = True
+    msg.group = "5"
+    msg.is_on = None
+    msg.dimension = None
+    msg.brightness = None
+    msg.unknown_state = None
+    msg.human_readable_log = "Light #5 is dimmed down one level."
+    msg.__str__ = lambda self: "*1*31*#5##"  # type: ignore[method-assign]
+
+    await handler._process_message(msg)
+    assert "#5" in handler._resync_timers
+    assert handler._resync_manager._resync_expected_on["#5"] is None
+
+    # The manager alone accepts it too, while a motion or dimension frame is still refused.
+    handler._resync_manager.cancel_all()
+    handler._resync_manager.schedule_resync(msg)
+    assert "#5" in handler._resync_timers
+    handler._resync_manager.cancel_all()
+
+
+@pytest.mark.asyncio
+async def test_point_to_point_dim_steps_are_not_member_echoes(
+    hass: HomeAssistant, handler: MyHOMEGatewayHandler
+) -> None:
+    """`*1*30*<ptp>##` / `*1*31*<ptp>##` are commands, not an actuator's status: they neither seed nor cancel a sweep (#367)."""
+    # Leading dim steps to the members do not skip the group sweep.
+    await handler._process_message(OWNMessage.parse("*1*31*11##"))
+    await handler._process_message(OWNMessage.parse("*1*31*12##"))
+    await handler._process_message(OWNMessage.parse("*1*1*#6##"))
+    assert "#6" in handler._resync_timers
+    assert handler._resync_manager.resync_group_echoes["#6"] == 0
+
+    # Trailing dim steps do not cancel it either; the members' own on/off echoes do.
+    await handler._process_message(OWNMessage.parse("*1*30*11##"))
+    await handler._process_message(OWNMessage.parse("*1*30*12##"))
+    assert "#6" in handler._resync_timers
+    await handler._process_message(OWNMessage.parse("*1*1*11##"))
+    await handler._process_message(OWNMessage.parse("*1*1*12##"))
+    assert "#6" not in handler._resync_timers
+    await _advance(hass)
+    handler.send_status_request.assert_not_called()
