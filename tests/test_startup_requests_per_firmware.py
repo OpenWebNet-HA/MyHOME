@@ -65,7 +65,7 @@ def _zone(hass, handler, where="3", **kwargs) -> MyHOMEClimate:
     [
         ("F461", False, False), ("MyHomeServer1", False, False), ("MH202", False, False),
         ("F459", False, False), ("F460", False, False), ("F450", False, False),
-        ("F454", False, True), ("MH200", False, True), ("H4684", False, True),
+        ("F454", False, True), ("MH200", False, True), ("H4684", False, True), ("HL4684", False, True),
         ("F453", True, True), ("F453AV", True, True), ("MH200N", True, True), ("Generic", True, True),
     ],
 )
@@ -101,6 +101,30 @@ async def test_sweep_bus_leaves_out_the_refused_requests_unless_forced(hass, att
     handler.send_paced.assert_awaited_once_with(general)
 
 
+@pytest.mark.parametrize(
+    ("model", "profile_model"),
+    [("L4684", "H4684"), ("NT4684", "H4684"), ("003598", "F454"), ("03535", "MH202")],
+)
+def test_aliased_model_strings_follow_their_profile(hass, model, profile_model):
+    """OWNd resolves these spellings to a profile; the SCS-only gate follows the profile's model name."""
+    handler = _handler(hass, model)
+    assert handler.gateway.profile.model_name == profile_model
+    assert handler._model_key == profile_model
+    assert handler.supports_zone_status is False
+    assert handler.zone_temperature_poll_needed is True
+
+
+def test_ssdp_model_string_hl4684_is_keyed_as_h4684(hass):
+    """SSDP announces the H4684 as ``HL4684`` (manifest.json); OWNd has no alias for it yet."""
+    handler = _handler(hass, "HL4684")
+    assert handler.gateway.profile.model_name == "HL4684"  # the Generic profile keeps the SSDP string
+    assert handler._model_key == "H4684"
+    assert handler.supports_zone_status is False
+    assert handler.general_zone_request_refused is True
+    assert handler.sound_status_request_refused is False
+    assert handler.interface_zone_request_refused is False
+
+
 @pytest.mark.parametrize("flag", [True, False])
 def test_profile_flag_for_the_general_heating_status_wins(hass, flag):
     """An OWNd profile that states ``supports_general_heating_status`` is believed over the table."""
@@ -127,7 +151,7 @@ def test_profile_without_who_16_skips_the_sound_request(hass):
     ("model", "expected"),
     [
         ("MH201", True), ("MH202", True), ("F450", True), ("F454", True), ("MH200", True), ("H4684", True),
-        ("F459", True),
+        ("HL4684", True), ("F459", True),
         ("F455", False), ("F453", False), ("MH200N", False),  # unknown, or the sweep answers
         ("F460", False), ("F461", False), ("MyHomeServer1", False), ("Generic", False),  # polled with *#4*Z##
     ],

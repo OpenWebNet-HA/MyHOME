@@ -454,12 +454,17 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     @property
     def supports_zone_status(self) -> bool:
         """Whether the gateway supports point-to-point zone status queries (*#4*Z##)."""
-        norm = self.model.upper()
+        # The configured model string and the model OWNd resolves it to, so the spellings OWNd
+        # aliases (L4684, N4684, NT4684, LGR4684 and the MyHOME_Suite item numbers such as 003598
+        # for the F454) are judged like the model they stand for.
+        names = (self.model.upper(), str(get_gateway_profile(self.model).model_name).upper())
         return not any(
             k in norm
+            for norm in names
             for k in (
                 "F450",
                 "F455",
+                "HL4684",  # the SSDP spelling of the H4684 (manifest.json); not an OWNd alias yet
                 "F454",
                 "MH200",
                 "MH201",
