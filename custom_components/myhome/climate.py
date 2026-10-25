@@ -87,6 +87,10 @@ _ZONE_CONTEXT_MODES = {"heating": HVACMode.HEAT, "cooling": HVACMode.COOL, "auto
 _ZONE_STATES_ON = ("setpoint", "comfort", "eco")
 _ZONE_STATES_OFF = ("protection", "off")
 
+# How long the fan speed poll waits for the one-shot dimension 19 answer (*#4*Z*19##,
+# 0.11 s on the live F461) before asking as it did before.
+FAN_COIL_SIDES_WAIT = 30.0
+
 # Mode digit of a setpoint write (*#4*W*#14*TTTT*M##). Legrand WHO 4 p. 8 and
 # p. 23 define M = 1 heating, 2 conditioning, 3 generic; BTicino's own client
 # always writes 3 (libqtdevices probe_device.cpp:122, thermal_device.cpp:134)
@@ -221,6 +225,14 @@ def _bus_zone(message: Any) -> int | None:
     return zone
 
 
+def _two_digit_interface(interface: str | None) -> str | None:
+    """The F422 interface as the bus and the configuration validator spell it (``01``)."""
+    if interface is None:
+        return None
+    interface = str(interface)
+    return interface.zfill(2) if interface.isdigit() else interface
+
+
 def _calling_zones(message: Any) -> tuple[list[str], str | None]:
     """Zones a heating frame concerns, and the F422 interface it came through."""
     raw_where = getattr(message, "where", None)
@@ -232,6 +244,7 @@ def _calling_zones(message: Any) -> tuple[list[str], str | None]:
     tail = where_param(message)
     if not interface and len(tail) > 1 and tail[0] == "4":
         interface = str(tail[1])
+    interface = _two_digit_interface(interface)
 
     zones: list[str] = []
     # WHERE ``<zone>#<n>`` names actuator <n> of the zone (``*#4*2#1*20*1##``
@@ -321,9 +334,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if hass is not None:
             self.hass = hass
 
-        self._interface = interface
+        self._interface = _two_digit_interface(interface)
         self._full_where = (
-            f"{self._where}#4#{self._interface}" if self._interface is not None else self._where
+            f"{self._where}{BUS_ROUTING}{self._interface}" if self._interface is not None else self._where
         )
 
         self._central = True if self._where in ("#0", "#0#1") else central
@@ -357,11 +370,22 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._attr_fan_mode: str | None = None
         self._attr_fan_modes: list[str] | None = None
         self._running_fan_speed: str | None = None
+        # Per-actuator state from dimension 20 (*#4*Z#N*20*V##), exposed as ``actuators``.
         self._actuator_states: dict[str, bool] = {}
+        # Zone-level fallback from dimension 19 (*#4*Z*19*C*H##): whether any valve or fan
+        # coil of the zone is active; None until seen. Whichever of the two arrived last
+        # drives hvac_action, so a stale one cannot keep the zone "heating".
+        self._zone_active: bool | None = None
+        self._active_source: str | None = None  # "actuators" (dimension 20) or "zone" (19)
         # Which side of the zone drives a fan coil, from dimension 19
         # (*#4*Z*19*COOLING*HEATING##: a value of 5..8 on a side is a fan coil, 0..4 a valve).
         # Empty until a dimension 19 frame has been seen.
         self._fan_coil_sides: dict[str, bool] = {}
+        # When the one-shot *#4*Z*19## was asked (a fan coil showed up before dimension 19
+        # did): while its answer is pending the fan speed is not polled blindly.
+        self._fan_coil_sides_asked_at: float | None = None
+        # The dimension 19 request was queued while a sweep held the zone requests back.
+        self._fan_coil_sides_held = False
         if fan and not self._central:
             self._enable_fan_mode()
 
@@ -445,6 +469,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             attrs["fan_mode"] = self._attr_fan_mode
             if self._running_fan_speed is not None:
                 attrs["running_fan_speed"] = self._running_fan_speed
+        if self._actuator_states:
+            attrs["actuators"] = {
+                actuator: "on" if active else "off" for actuator, active in sorted(self._actuator_states.items())
+            }
         if self._fan_coil_sides:
             attrs["fan_coil_heating"] = self._fan_coil_sides.get("heating", False)
             attrs["fan_coil_cooling"] = self._fan_coil_sides.get("cooling", False)
@@ -518,6 +546,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._attr_current_humidity = float(last_state.attributes["current_humidity"])
                 except (ValueError, TypeError):
                     pass
+            if self._fan and not self._central and not is_probe(self._where):
+                # A restored fan mode without the fan coil's side: ask for it now, before
+                # ``async_added_to_hass`` polls the zone, or the poll asks ``*#4*Z*11##`` blindly.
+                self._ask_fan_coil_sides()
 
     async def async_update(self) -> None:
         """Request status update from gateway, unless the zone has stopped answering."""
@@ -585,10 +617,105 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         other one. Until dimension 19 has told which side is which, or while the season is
         unknown, ask anyway.
         """
-        if not self._fan_coil_sides or self._season is None:
+        if not self._fan_coil_sides:
+            # Dimension 19 is on its way (asked once a fan coil showed up in dimension 20):
+            # on the live F461 it answers in 0.11 s, while *#4*Z*11## in the valve's season
+            # is NACKed after 2.1 s. Do not ask blindly while the answer is pending.
+            return not self._fan_coil_sides_pending()
+        if self._season is None:
             return True
         side = "heating" if self._season == SEASON_HEATING else "cooling"
         return self._fan_coil_sides.get(side, False)
+
+    @staticmethod
+    def _season_side(season: str | None) -> str | None:
+        """The side of the zone a season runs on (``heating`` / ``cooling``), None when unknown."""
+        if season is None:
+            return None
+        return "heating" if season == SEASON_HEATING else "cooling"
+
+    def _follow_season_change(self, previous: str | None) -> None:
+        """Ask the fan speed once the season moves to the fan coil's side at runtime.
+
+        A mixed zone (F461 plant: heating valve, cooling fan coil) that booted in the valve's
+        season skipped ``*#4*Z*11##`` (NACKed after 2.1 s there). The entity is not polled
+        afterwards (``should_poll`` is False), so when the season frame (``*4*0*Z##`` /
+        ``*4*1*Z##``) switches the zone to the fan coil's season the one-shot request is
+        queued here, as the dimension 19 / 20 paths do; ``fan_mode`` would otherwise keep
+        the synthetic ``auto`` until a command or a reconnect. The frame repeats with every
+        zone poll and OWNd spells the cooling season ``conditioning`` where a restored
+        state says ``cooling``, so only a change of side counts. The first season after a
+        start (``None`` -> a season) is the poll on add, which asked the speed itself when
+        the sides were known, and dimension 19 asks it once they become known.
+        """
+        side = self._season_side(self._season)
+        if side is None or self._season_side(previous) in (None, side):
+            return
+        if self._fan and self._fan_coil_sides.get(side, False):
+            self._request_zone_dimension(11)
+
+    def _ask_fan_coil_sides(self) -> None:
+        """Ask once which side of the zone is the fan coil (``*#4*Z*19##``).
+
+        A fan coil revealed by an actuator report (dimension 20, value 5..8) does not tell its
+        side; without dimension 19 the fan speed poll (``*#4*Z*11##``) would be sent in the
+        valve's season too and NACKed after 2.1 s on the F461. Every gateway firmware of the
+        oracle forwards ``*#4*Z*19##`` (own-firmware-oracle thermo-zone-requests).
+        """
+        if self._fan_coil_sides or self._fan_coil_sides_pending():
+            return
+        if self._request_zone_dimension(19):
+            self._fan_coil_sides_asked_at = time.monotonic()
+            self._fan_coil_sides_held = self._zone_requests_held()
+
+    def _request_zone_dimension(self, dimension: int) -> bool:
+        """Queue ``*#4*Z*DIM##`` through the gateway's paced sender; False on an older handler."""
+        request = getattr(self._gateway_handler, "request_zone_dimension", None)
+        if not callable(request):
+            return False
+        request(self._full_where, dimension)
+        return True
+
+    def _fan_coil_sides_pending(self) -> bool:
+        """Whether the one-shot dimension 19 request is still waiting for its answer.
+
+        An answer that never comes (request refused, session lost before it was sent) must
+        not disable the fan speed poll for good: after ``FAN_COIL_SIDES_WAIT`` the zone is
+        back to asking as before, and a later fan coil report may ask dimension 19 again.
+        The wait starts once the request can leave the gateway: while the startup sweep (or
+        another paced sweep) holds the zone requests back, nothing has been asked yet, and a
+        request queued during the hold starts its wait at the first check after it.
+        """
+        asked_at = self._fan_coil_sides_asked_at
+        if asked_at is None:
+            return False
+        if self._fan_coil_sides_held:
+            if self._zone_requests_held():
+                return True
+            self._fan_coil_sides_held = False
+            self._fan_coil_sides_asked_at = time.monotonic()
+            return True
+        return time.monotonic() - asked_at < FAN_COIL_SIDES_WAIT
+
+    def _zone_requests_held(self) -> bool:
+        """Whether the gateway is still holding the zone requests back (startup or paced sweep)."""
+        handler = self._gateway_handler
+        return (
+            getattr(handler, "initial_discovery_pending", False) is True
+            or getattr(handler, "sweep_active", False) is True
+        )
+
+    def _any_actuator_active(self) -> bool:
+        """Whether the most recent actuator report (dimension 20 or 19) shows activity."""
+        if self._active_source == "zone":
+            return bool(self._zone_active)
+        return any(self._actuator_states.values())
+
+    def _mark_actuators_off(self) -> None:
+        """The zone was switched OFF: every known actuator is off, the attribute stays."""
+        self._actuator_states = dict.fromkeys(self._actuator_states, False)
+        if self._zone_active is not None:
+            self._zone_active = False
 
     @property
     def _standalone(self) -> bool:
@@ -632,7 +759,20 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                         self._handle_central_mode_update,
                     )
                 )
+        zone_requests = not self._central and not is_probe(self._where)
+        if zone_requests and self._fan:
+            # A configured fan coil without its side: ask for it before the poll on add
+            # (inside ``super().async_added_to_hass()``), which must not ask ``*#4*Z*11##``
+            # blindly. A restored fan mode asks at the end of ``async_restore_last_state``.
+            self._ask_fan_coil_sides()
         await super().async_added_to_hass()
+        if zone_requests:
+            # hvac_action needs the actuators (dimension 20); without asking, it stays unknown
+            # until one of them switches. The gateway asks again after a reconnect. A secondary
+            # probe (WHERE >= 100) is push-only: *#4*105*...## NACKs in 2.1 s on the F461.
+            watch = getattr(self._gateway_handler, "watch_zone_actuators", None)
+            if callable(watch):
+                self.async_on_remove(watch(self._full_where))
 
     @callback
     def _handle_central_mode_update(self, master_mode: HVACMode) -> None:
@@ -640,7 +780,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if master_mode == HVACMode.OFF:
             self._attr_hvac_mode = HVACMode.OFF
             self._attr_hvac_action = HVACAction.OFF
-            self._actuator_states.clear()
+            self._mark_actuators_off()
         elif master_mode in (HVACMode.HEAT, HVACMode.COOL):
             if self._attr_hvac_mode != HVACMode.OFF:
                 self._attr_hvac_mode = master_mode
@@ -871,7 +1011,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._restore_nominal_before_protection()
             self._attr_hvac_mode = HVACMode.OFF
             self._attr_hvac_action = HVACAction.OFF
-            self._actuator_states.clear()
+            self._mark_actuators_off()
             self._holiday_days = None
             self._program = None
             self._scenario = None
@@ -981,6 +1121,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # zone that was OFF or not yet known is running again, so it takes
             # the season's mode. For a central unit the season is the plant
             # mode Home Assistant shows.
+            previous_season = self._season
             self._season = message.season
             season_mode = HVACMode.HEAT if message.season == SEASON_HEATING else HVACMode.COOL
             prev_mode = self._attr_hvac_mode
@@ -1009,8 +1150,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     f"myhome_central_mode_{self._gateway_handler.mac}",
                     self._attr_hvac_mode,
                 )
+            self._follow_season_change(previous_season)
         elif message.message_type == MESSAGE_TYPE_MODE:
             prev_mode = self._attr_hvac_mode
+            previous_season = self._season
             self._remember_season(message)
             # OWNd releases without MESSAGE_TYPE_SEASON decode the zone operation mode
             # frame *4*1*Z## / *4*0*Z## as a plain heat / cool mode; it still tells the
@@ -1018,6 +1161,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             raw_what = str(message).split("*")[2] if str(message).startswith("*4*") else ""
             if raw_what in ("0", "1") and not self._central:
                 self._season = SEASON_HEATING if raw_what == "1" else "cooling"
+                self._follow_season_change(previous_season)
             self._program = getattr(message, "program", None)
             self._holiday_days = getattr(message, "holiday_days", None)
             self._scenario = getattr(message, "scenario", None)
@@ -1057,7 +1201,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._restore_nominal_before_protection()
                 self._attr_hvac_mode = HVACMode.OFF
                 self._attr_hvac_action = HVACAction.OFF
-                self._actuator_states.clear()
+                self._mark_actuators_off()
             if (
                 prev_mode == HVACMode.OFF
                 and self._attr_hvac_mode != HVACMode.OFF
@@ -1111,7 +1255,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._restore_nominal_before_protection()
                 self._attr_hvac_mode = HVACMode.OFF
                 self._attr_hvac_action = HVACAction.OFF
-                self._actuator_states.clear()
+                self._mark_actuators_off()
             if message.set_temperature is not None and message.set_temperature >= 0:
                 self._target_temperature = message.set_temperature
                 self._show_nominal()
@@ -1136,17 +1280,25 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             )
             # Valves status (dimension 19): OWNd sets cooling_fan_on / fan_on only for a
             # fan-coil value (5..8) on that side, so their presence tells which side is a fan coil.
+            sides_resolved = False
             if getattr(message, "dimension", None) == 19:
+                sides_resolved = not self._fan_coil_sides
                 self._fan_coil_sides = {
                     "cooling": isinstance(getattr(message, "cooling_fan_on", None), bool),
                     "heating": isinstance(getattr(message, "fan_on", None), bool),
                 }
+                self._fan_coil_sides_asked_at = None
+                self._fan_coil_sides_held = False
             # Actuator status (Dimension 20) with values >= 5 reports fancoil fan status in OWNd.
             is_fan = isinstance(getattr(message, "fan_speed", None), int) or isinstance(
                 getattr(message, "fan_on", None), bool
             )
+            fan_enabled_now = is_fan and not self._fan
             if is_fan:
                 self._enable_fan_mode()
+                if getattr(message, "dimension", None) == 20:
+                    # The actuator report revealed a fan coil; ask which side it is on.
+                    self._ask_fan_coil_sides()
                 speed = getattr(message, "fan_speed", None)
                 if speed == 1:
                     self._running_fan_speed = "low"
@@ -1158,29 +1310,46 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._running_fan_speed = "off"
                 else:
                     self._running_fan_speed = None
+            if (
+                (sides_resolved or (fan_enabled_now and self._fan_coil_sides))
+                and self._fan
+                and self._season_has_fan_coil()
+            ):
+                # The entity is not polled after add (``should_poll`` is False) and the poll on
+                # add skipped ``*#4*Z*11##`` while the side was unknown or pending, or the fan
+                # coil showed up (dimension 20) once the side was already known: ask for the
+                # configured speed now, or ``fan_mode`` keeps the synthetic ``auto`` (dimension 20
+                # value 5, fan off, carries no speed).
+                self._request_zone_dimension(11)
 
-            actuator_id = str(
-                getattr(message, "actuator", None)
-                or getattr(message, "_actuator", None)
-                or (
-                    message._where_param[0]
-                    if getattr(message, "_where_param", None)
-                    else "valve"
-                )
-            )
             is_active = bool(message.is_active())
-            if getattr(message, "dimension", None) == 19:
-                # OWNd <= 2.0.0b11 clears _is_active when a fan-coil side is off (value 5),
-                # even if the other side's valve is open (*#4*2*19*5*1##, OWNd#116).
-                is_active = bool(
-                    is_active
-                    or message.is_heating()
-                    or message.is_cooling()
-                    or getattr(message, "cooling_fan_on", None)
-                    or getattr(message, "fan_on", None)
+            dimension = getattr(message, "dimension", None)
+            if dimension == 20:
+                actuator_id = str(
+                    getattr(message, "actuator", None)
+                    or getattr(message, "_actuator", None)
+                    or (message._where_param[0] if getattr(message, "_where_param", None) else "1")
                 )
-            self._actuator_states[actuator_id] = is_active
-            any_active = any(self._actuator_states.values())
+                self._actuator_states[actuator_id] = is_active
+                self._active_source = "actuators"
+            else:
+                # Dimension 19 (valves status) is the zone as a whole. OWNd <= 2.0.0b11 clears
+                # _is_active when a fan-coil side is off (value 5), even if the other side's
+                # valve is open (*#4*2*19*5*1##, OWNd#116).
+                if dimension == 19:
+                    is_active = bool(
+                        is_active
+                        or message.is_heating()
+                        or message.is_cooling()
+                        or getattr(message, "cooling_fan_on", None)
+                        or getattr(message, "fan_on", None)
+                    )
+                self._zone_active = is_active
+                self._active_source = "zone"
+                if not self._zone_active:
+                    # Neither side is active: every actuator of the zone is off.
+                    self._actuator_states = dict.fromkeys(self._actuator_states, False)
+            any_active = self._any_actuator_active()
 
             if any_active:
                 if self._heating and self._cooling:
