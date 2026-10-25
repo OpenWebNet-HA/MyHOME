@@ -627,6 +627,33 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         side = "heating" if self._season == SEASON_HEATING else "cooling"
         return self._fan_coil_sides.get(side, False)
 
+    @staticmethod
+    def _season_side(season: str | None) -> str | None:
+        """The side of the zone a season runs on (``heating`` / ``cooling``), None when unknown."""
+        if season is None:
+            return None
+        return "heating" if season == SEASON_HEATING else "cooling"
+
+    def _follow_season_change(self, previous: str | None) -> None:
+        """Ask the fan speed once the season moves to the fan coil's side at runtime.
+
+        A mixed zone (F461 plant: heating valve, cooling fan coil) that booted in the valve's
+        season skipped ``*#4*Z*11##`` (NACKed after 2.1 s there). The entity is not polled
+        afterwards (``should_poll`` is False), so when the season frame (``*4*0*Z##`` /
+        ``*4*1*Z##``) switches the zone to the fan coil's season the one-shot request is
+        queued here, as the dimension 19 / 20 paths do; ``fan_mode`` would otherwise keep
+        the synthetic ``auto`` until a command or a reconnect. The frame repeats with every
+        zone poll and OWNd spells the cooling season ``conditioning`` where a restored
+        state says ``cooling``, so only a change of side counts. The first season after a
+        start (``None`` -> a season) is the poll on add, which asked the speed itself when
+        the sides were known, and dimension 19 asks it once they become known.
+        """
+        side = self._season_side(self._season)
+        if side is None or self._season_side(previous) in (None, side):
+            return
+        if self._fan and self._fan_coil_sides.get(side, False):
+            self._request_zone_dimension(11)
+
     def _ask_fan_coil_sides(self) -> None:
         """Ask once which side of the zone is the fan coil (``*#4*Z*19##``).
 
@@ -1094,6 +1121,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # zone that was OFF or not yet known is running again, so it takes
             # the season's mode. For a central unit the season is the plant
             # mode Home Assistant shows.
+            previous_season = self._season
             self._season = message.season
             season_mode = HVACMode.HEAT if message.season == SEASON_HEATING else HVACMode.COOL
             prev_mode = self._attr_hvac_mode
@@ -1122,8 +1150,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     f"myhome_central_mode_{self._gateway_handler.mac}",
                     self._attr_hvac_mode,
                 )
+            self._follow_season_change(previous_season)
         elif message.message_type == MESSAGE_TYPE_MODE:
             prev_mode = self._attr_hvac_mode
+            previous_season = self._season
             self._remember_season(message)
             # OWNd releases without MESSAGE_TYPE_SEASON decode the zone operation mode
             # frame *4*1*Z## / *4*0*Z## as a plain heat / cool mode; it still tells the
@@ -1131,6 +1161,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             raw_what = str(message).split("*")[2] if str(message).startswith("*4*") else ""
             if raw_what in ("0", "1") and not self._central:
                 self._season = SEASON_HEATING if raw_what == "1" else "cooling"
+                self._follow_season_change(previous_season)
             self._program = getattr(message, "program", None)
             self._holiday_days = getattr(message, "holiday_days", None)
             self._scenario = getattr(message, "scenario", None)

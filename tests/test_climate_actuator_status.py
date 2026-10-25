@@ -772,3 +772,106 @@ async def test_zones_arriving_during_a_batch_are_coalesced_into_the_next_one(has
     handler.watch_zone_actuators("2")
     await _settle(hass)
     assert sent == [["*#4*2*20##"], ["*#4*5*20##", "*#4*7*20##"]]
+
+
+# ------------------------------------------------------------------ entity: runtime season transition (review 5642758778)
+
+def _dimension_requests(zone) -> list[tuple]:
+    return [c.args for c in zone._gateway_handler.request_zone_dimension.call_args_list]
+
+
+async def test_season_moving_to_the_fan_coil_s_side_asks_the_fan_speed_once(hass):
+    """Booted in heating (valve), the zone switches to cooling (fan coil) without a reload.
+
+    The entity is not polled after add: nothing would ask ``*#4*2*11##`` and ``fan_mode``
+    would keep the synthetic ``auto`` until a command or a reconnect.
+    """
+    zone = _zone(hass)
+    _feed(zone, *F461_POLL_REPLY, "*#4*2#2*20*5##", "*#4*2*19*5*0##")  # heating season, cooling fan coil
+    assert _dimension_requests(zone) == [("2", 19)]
+    assert zone.fan_mode == "auto"
+    _feed(zone, "*4*0*2##")  # the plant switches to the cooling season
+    assert _dimension_requests(zone) == [("2", 19), ("2", 11)]
+    _feed(zone, "*4*0*2##", "*#4*2*12*0235*3##", "*4*0*2##")  # the next polls repeat the season
+    assert _dimension_requests(zone) == [("2", 19), ("2", 11)]
+    _feed(zone, "*#4*2*11*2##")
+    assert zone.fan_mode == "medium"
+    _feed(zone, "*4*1*2##")  # back to the valve's season: nothing to ask
+    assert _dimension_requests(zone) == [("2", 19), ("2", 11)]
+
+
+async def test_season_moving_to_the_heating_fan_coil_asks_the_fan_speed(hass):
+    """The other direction: cooling valve, heating fan coil, booted in cooling."""
+    zone = _zone(hass)
+    _feed(zone, "*#4*2*0*0239##", "*4*0*2##", "*#4*2*19*0*5##")  # cooling season; dimension 19 reveals a heating fan coil
+    assert zone.extra_state_attributes["fan_coil_heating"] is True
+    assert zone.extra_state_attributes["fan_coil_cooling"] is False
+    assert _dimension_requests(zone) == []
+    _feed(zone, "*4*1*2##")
+    assert _dimension_requests(zone) == [("2", 11)]
+    _feed(zone, "*4*1*2##", "*4*0*2##", "*4*1*2##")  # repeat, the valve's season, the fan coil's again
+    assert _dimension_requests(zone) == [("2", 11), ("2", 11)]
+
+
+async def test_season_change_with_unknown_sides_asks_nothing(hass):
+    """Dimension 19 has not answered: the side is not known, the pending request decides later."""
+    zone = _zone(hass, fan=True)
+    _feed(zone, *F461_POLL_REPLY)
+    _feed(zone, "*4*0*2##", "*4*1*2##")
+    zone._gateway_handler.request_zone_dimension.assert_not_called()
+    assert zone.fan_mode == "auto"
+
+
+async def test_season_change_without_a_fan_coil_asks_nothing(hass):
+    zone = _zone(hass)
+    _feed(zone, *F461_POLL_REPLY, "*#4*2#1*20*0##", "*#4*2#2*20*0##")  # two valves
+    _feed(zone, "*4*0*2##", "*4*1*2##")
+    zone._gateway_handler.request_zone_dimension.assert_not_called()
+    assert zone.fan_mode is None
+
+
+async def test_the_first_season_after_add_does_not_ask_twice(hass):
+    """Restored sides, no season: the poll on add already asked ``*#4*2*11##``."""
+    zone = _zone(hass)
+    _added_at_once(zone)
+    zone.async_get_last_state = AsyncMock(
+        return_value=State("climate.zone_2", "cool", {"fan_mode": "auto", "fan_coil_cooling": True, "fan_coil_heating": False})
+    )
+    await zone.async_added_to_hass()
+    assert _status_frames(zone) == ["*#4*2##", "*#4*2*11##"]
+    _feed(zone, "*#4*2*0*0239##", "*4*0*2##")  # the poll's reply names the cooling season
+    zone._gateway_handler.request_zone_dimension.assert_not_called()
+
+
+async def test_a_restored_cooling_season_spelled_conditioning_by_ownd_is_not_a_change(hass):
+    """The restored attribute says ``cooling``, OWNd decodes ``*4*0*2##`` as ``conditioning``."""
+    zone = _zone(hass)
+    _added_at_once(zone)
+    zone.async_get_last_state = AsyncMock(
+        return_value=State("climate.zone_2", "cool", {"fan_mode": "low", "fan_coil_cooling": True, "fan_coil_heating": False, "season": "cooling"})
+    )
+    await zone.async_added_to_hass()
+    assert _status_frames(zone)[-1] == "*#4*2*11##"
+    _feed(zone, "*4*0*2##")
+    zone._gateway_handler.request_zone_dimension.assert_not_called()
+    _feed(zone, "*4*1*2##", "*4*0*2##")  # a real round trip through the valve's season
+    assert _dimension_requests(zone) == [("2", 11)]
+
+
+async def test_a_season_decoded_as_a_mode_by_an_older_ownd_asks_the_fan_speed_too(hass):
+    """OWNd releases without ``MESSAGE_TYPE_SEASON`` deliver ``*4*0*2##`` as a plain mode."""
+    from OWNd.message import CLIMATE_MODE_COOL, MESSAGE_TYPE_MODE
+
+    zone = _zone(hass)
+    _feed(zone, *F461_POLL_REPLY, "*#4*2#2*20*5##", "*#4*2*19*5*0##")
+    assert _dimension_requests(zone) == [("2", 19)]
+    legacy = MagicMock()
+    legacy.message_type = MESSAGE_TYPE_MODE
+    legacy.mode = CLIMATE_MODE_COOL
+    legacy.__str__ = MagicMock(return_value="*4*0*2##")
+    legacy.human_readable_log = "Zone 2 mode cool"
+    zone.handle_event(legacy)
+    assert zone._season == "cooling"
+    assert _dimension_requests(zone) == [("2", 19), ("2", 11)]
+    zone.handle_event(legacy)
+    assert _dimension_requests(zone) == [("2", 19), ("2", 11)]
