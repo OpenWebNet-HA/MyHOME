@@ -129,7 +129,7 @@ sweep_bus:
         text:
     force:
       name: Force probe
-      description: Force sweep across all subsystems (including Alarm and Energy) regardless of gateway profile restrictions.
+      description: Force sweep across all subsystems (including Alarm and Energy) regardless of gateway profile restrictions, including the general requests the gateway firmware normally drops.
       default: false
       selector:
         boolean:

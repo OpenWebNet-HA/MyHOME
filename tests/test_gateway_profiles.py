@@ -165,13 +165,29 @@ def test_generate_gateway_discovery_table_and_verify_oracle():
     block = ugp.build_discovery_block()
     assert ugp.DISCOVERY_START_MARKER in block
     assert ugp.DISCOVERY_END_MARKER in block
-    assert "| **F454** | WHO 1, 2, 4, 16, 18 |" in block
-    assert "| **F452 / F453 / F453AV** | WHO 1, 2, 4, 16, 18 |" in block
-    assert "| **F461** | WHO 1, 2, 4, 16, 18 |" in block
-    assert "| **F455** | WHO 1, 2, 4, 18 |" in block
-    assert "| **MH200 / MH200N** | WHO 1, 2, 4, 16 |" in block
+    assert "| **F454** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`) |" in block
+    assert "| **F452 / F453 / F453AV** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 4, 16, 18 |" in block
+    assert "| **F461** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`, `*#16*0*5##`) |" in block
+    assert "| **F455** | WHO 1, 2, 4, 18 | WHO 1, 2, 4, 18 |" in block
+    assert "| **MH200** *(Legacy)* | WHO 1, 2, 4, 16 | WHO 1, 2, 16 (firmware drops `*#4*0##`) |" in block
+    assert "| **MH200N** | WHO 1, 2, 4, 16 | WHO 1, 2, 4, 16 |" in block
+    assert "| **MH201** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`) |" in block
+    assert "| **H4684 / HL4684** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`) |" in block
 
     assert ugp.verify_profiles_against_oracle() == []
+
+
+def test_oracle_check_rejects_a_sweep_omission_the_profile_does_not_advertise(monkeypatch: pytest.MonkeyPatch):
+    """``sweep_omits`` may only name *#4*0## / *#16*0*5## for a WHO the profile advertises."""
+    rows = copy.deepcopy(ugp.GATEWAY_DISCOVERY_METADATA)
+    f455 = next(row for row in rows if row["profile_name"] == "F455")
+    f455["sweep_omits"] = ["*#16*0*5##"]  # the F455 profile has no WHO 16
+    mh202 = next(row for row in rows if row["profile_name"] == "MH202")
+    mh202["sweep_omits"] = ["*#5*0##"]  # not a request the firmware tables know
+    monkeypatch.setattr(ugp, "GATEWAY_DISCOVERY_METADATA", rows)
+    violations = "\n".join(ugp.verify_profiles_against_oracle())
+    assert "**F455** sweep_omits='*#16*0*5##'" in violations
+    assert "**MH202** sweep_omits='*#5*0##'" in violations
 
 
 def test_oracle_check_rejects_patched_profile_instance():

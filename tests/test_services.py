@@ -15,9 +15,20 @@ from custom_components.myhome.services import (
     SERVICE_SWEEP_BUS,
     SERVICE_SYNC_TIME,
     _get_gateway_handler,
+    _handler_refuses_frame,
     _handler_supports_who,
     async_setup_services,
 )
+
+
+def test_handler_refuses_frame_only_on_an_explicit_true() -> None:
+    """A handler without the gate, or a double returning a non-bool, never hides a request."""
+    from types import SimpleNamespace
+
+    assert _handler_refuses_frame(SimpleNamespace(), "*#4*0##") is False
+    assert _handler_refuses_frame(MagicMock(), "*#4*0##") is False
+    assert _handler_refuses_frame(SimpleNamespace(_refused_by_gateway=lambda frame: frame == "*#4*0##"), "*#4*0##") is True
+    assert _handler_refuses_frame(SimpleNamespace(_refused_by_gateway=lambda frame: frame == "*#4*0##"), "*#1*0##") is False
 
 
 async def test_services_setup_is_idempotent(hass: HomeAssistant) -> None:

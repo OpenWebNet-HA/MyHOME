@@ -292,14 +292,17 @@ _OWND_MH200_IS_MH200N = isinstance(get_gateway_profile("MH200"), MH200NProfile)
     strict=True,
 )
 async def test_discovery_asks_an_mh200_for_its_amplifiers(gateway_handler, fast_bus_pacing):
-    """A live MH200 answers *#16*0*5## with every amplifier and source (OWNd#53)."""
+    """A live MH200 answers *#16*0*5## with every amplifier and source (OWNd#53).
+
+    Its firmware refuses *#4*0## (own-firmware-oracle trace-corpus), so the sweep leaves it out.
+    """
     gateway_handler.gateway.profile = get_gateway_profile("MH200")
     await gateway_handler.initial_discovery()
 
     queued = []
     while not gateway_handler.send_buffer.empty():
         queued.append(str(gateway_handler.send_buffer.get_nowait()["message"]))
-    assert queued == ["*#1*0##", "*#2*0##", "*#4*0##", "*#16*0*5##"]
+    assert queued == ["*#1*0##", "*#2*0##", "*#16*0*5##"]
 
 
 def test_profile_supports_who_defaults_to_true_without_profile(gateway_handler):

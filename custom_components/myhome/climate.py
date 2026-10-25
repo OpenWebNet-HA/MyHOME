@@ -338,6 +338,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._full_where = (
             f"{self._where}{BUS_ROUTING}{self._interface}" if self._interface is not None else self._where
         )
+        self._interface_poll_skip_logged = False
 
         self._central = True if self._where in ("#0", "#0#1") else central
         # None: not configured. A zone then follows the plant, see the standalone property.
@@ -407,6 +408,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # True while _local_target_temperature is the zone's own dimension 12 report (the
         # setpoint in force, offset included): dimension 14 and 13 frames then leave it alone.
         self._local_target_reported = False
+        self._current_temperature_restored = False
         self._nominal_before_dim12: tuple[float | None, float] | None = None
         self._poll_health = PollHealth()
 
@@ -416,6 +418,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if (
             not self._central
             and not self._gateway_supports_zone_status
+            and not self._polls_temperature
             and not self._fan
             and not self._humidity
         ):
@@ -428,6 +431,35 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         """Whether the gateway supports point-to-point zone status queries (*#4*Z##)."""
         gateway = getattr(self, "_gateway_handler", None)
         return bool(getattr(gateway, "supports_zone_status", True))
+
+    @property
+    def _temperature_poll_wanted(self) -> bool:
+        """Whether this zone's gateway needs each zone to ask for its temperature (``*#4*Z*0##``)."""
+        gateway = getattr(self, "_gateway_handler", None)
+        return not self._central and getattr(gateway, "zone_temperature_poll_needed", False) is True
+
+    @property
+    def _interface_poll_refused(self) -> bool:
+        """Whether the per-zone temperature poll is withheld because the zone sits behind an F422.
+
+        The firmware drops *#4*Z#4#II*0## before the bus on these gateways (own-firmware-oracle
+        PR #60: nack/silent on F450, F454, F459 and MH202 among the SCS-only models; the MH202
+        even crashes on *#4*Z#4#II##), so the zone waits for the bus to report instead.
+        """
+        gateway = getattr(self, "_gateway_handler", None)
+        return (
+            self._temperature_poll_wanted
+            and self._interface is not None
+            and getattr(gateway, "interface_zone_request_refused", False) is True
+        )
+
+    @property
+    def _polls_temperature(self) -> bool:
+        """Whether this zone asks for its temperature (*#4*Z*0##) on an SCS-only gateway (#185).
+
+        A pure predicate: ``async_update`` logs (once) when it withholds the poll.
+        """
+        return self._temperature_poll_wanted and not self._interface_poll_refused
 
     def _enable_fan_mode(self) -> None:
         """Dynamically enable fan mode support if not already enabled."""
@@ -473,6 +505,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             attrs["actuators"] = {
                 actuator: "on" if active else "off" for actuator, active in sorted(self._actuator_states.items())
             }
+        if self._current_temperature_restored:
+            attrs["current_temperature_restored"] = True
         if self._fan_coil_sides:
             attrs["fan_coil_heating"] = self._fan_coil_sides.get("heating", False)
             attrs["fan_coil_cooling"] = self._fan_coil_sides.get("cooling", False)
@@ -517,6 +551,15 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if "scenario" in last_state.attributes:
                 try:
                     self._scenario = int(last_state.attributes["scenario"])
+                except (ValueError, TypeError):
+                    pass
+            restored_current = last_state.attributes.get("current_temperature")
+            if restored_current is not None and self._attr_native_current_temperature is None:
+                # Shown until the zone reports again, flagged so it is not taken for a reading:
+                # SCS-only gateways may not hear from a standalone thermostat for a long time (#185).
+                try:
+                    self._attr_native_current_temperature = float(restored_current)
+                    self._current_temperature_restored = True
                 except (ValueError, TypeError):
                     pass
             restored_season = last_state.attributes.get("season")
@@ -564,19 +607,37 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # humidity on the event session is not traced; any *#4*<WHERE>*60*<HH>## delivered there
         # still updates current_humidity (handle_event) without a poll.
         wants_humidity = self._humidity and getattr(self._gateway_handler, "humidity_request_refused", False) is not True
+        if self._interface_poll_refused and not self._interface_poll_skip_logged:
+            # The temperature poll is withheld (the fan / humidity requests below may still go out).
+            LOGGER.debug(
+                "%s %s is behind interface %s and %s firmware drops `*#4*%s*0##`; waiting for the zone to report",
+                self._gateway_handler.log_id,
+                self._display_name,
+                self._interface,
+                self._gateway_handler.model,
+                self._full_where,
+            )
+            self._interface_poll_skip_logged = True
         if (
             not self._central
             and not self._gateway_supports_zone_status
+            and not self._polls_temperature
             and not self._fan
             and not wants_humidity
         ):
-            # Physical SCS gateways (F455, F454, MH200N, MH202, etc.) do not support
-            # dimension-less status requests (*#4*Z##) for regular zones (1-99). The request
-            # is forwarded to the SCS bus where physical thermostats have no handler for it,
-            # resulting in a 10-second command session timeout per zone (#674).
-            # MyHomeServer1 intercepts *#4*Z## in software and replies from its cache (#649),
-            # and F461 expands it into the four dimension requests (#714).
-            # Other physical plants receive standard zone telemetry spontaneously via the startup sweep (*#4*0##).
+            # SCS-only gateways (F450, F453, F453AV, F454, F459, H4684, MH200, MH200N, MH202 in the
+            # firmware oracle; F455 and MH201 by field reports) expand the dimensionless zone status
+            # request *#4*Z## into four bus queries, dimension 0, 12, 14 and 13 ($0499ZZ3000 / 12 /
+            # 0E / 0D in trace-corpus.tsv). Against a 99-zone central unit every query is answered
+            # (F454 + #0, issue_629 log: *#4*1##..*#4*15## complete in ~1.3 s each with all five
+            # frames); a standalone thermostat answers only some of them, and the command session
+            # then ends with a NACK after 1.5-2 s (MH202 ACKs). The 10 s socket hang of #674 was an
+            # F455, not in the oracle, on actuator-only channels (*#4*Z*19*0*0##) where nothing
+            # answered. MyHomeServer1 replies to *#4*Z## from its cache (#649); F460 and F461 expand
+            # it into one request ($00499013000) and answer it (#714): those three keep the poll.
+            # Where the SCS-only gateway also drops the general request *#4*0##, the zone asks for
+            # its temperature below (_polls_temperature); everywhere else it waits for the sweep
+            # replies or for the thermostat's own reports.
             return
         if self._poll_health.should_skip(time.time()):
             LOGGER.debug("%s %s did not answer its last polls; not asking again yet", self._gateway_handler.log_id, self._display_name)
@@ -592,6 +653,21 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             written = await self._gateway_handler.send_status_request(request)
             if isinstance(written, asyncio.Future) and not self._central:
                 written.add_done_callback(lambda future: self._poll_answered(future, frames_before))
+        elif self._polls_temperature:
+            # One bus query instead of the four that *#4*Z## expands into: *#4*Z*0## is forwarded on
+            # all twelve oracle gateways (thermo-ts10.tsv) and a populated zone answers it in ~120 ms
+            # (F461 2.0.11, f461_live_2026-10-23 rows 521-525: *#4*2*0## -> *#4*2*0*0239## + ACK in
+            # 0.119 s), which keeps a single-worker MH200 / MH201 queue short. *#4*0## is refused on
+            # these gateways, so this is the zone's only way to a temperature after a restart. A
+            # zone behind an F422 is only polled where the firmware forwards Z#4#II requests
+            # (_polls_temperature).
+            # No _poll_answered callback on purpose: the oracle's *#4*1*0## NACK on 11 of 12 images
+            # is the bus TX timeout of an unpopulated zone (the QEMU images have no thermostat
+            # wired; the live F461 NACKs the unpopulated zone 1 the same way after 2.07 s, rows
+            # 374-376), not a verdict on a populated one. Until a command-session capture of
+            # *#4*Z*0## on an SCS-only gateway (F454 / MH200) exists, the result is left uncounted
+            # rather than risk marking a healthy zone unresponsive on a NACK.
+            await self._gateway_handler.send_status_request(OWNHeatingCommand.get_temperature(self._full_where))
         if self._fan and self._season_has_fan_coil():
             await self._gateway_handler.send_status_request(
                 cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*11##"))
@@ -1057,6 +1133,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 message.human_readable_log,
             )
             self._attr_native_current_temperature = message.main_temperature
+            self._current_temperature_restored = False
         elif message.message_type == MESSAGE_TYPE_MAIN_HUMIDITY:
             LOGGER.debug(
                 "%s %s",

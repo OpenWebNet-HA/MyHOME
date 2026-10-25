@@ -12,15 +12,15 @@ After the event session is up, the integration sends a small set of general stat
 | :--- | :--- | :--- |
 | `*#1*0##` | Lighting | All gateways |
 | `*#2*0##` | Automation / covers | All gateways |
-| `*#4*0##` | Thermoregulation | All gateways |
+| `*#4*0##` | Thermoregulation | All gateways except F450, F454, F459, F460, F461, H4684, MH200, MH201, MH202 and MyHomeServer1, whose firmware drops it (firmware oracle; the MH201 from a physical sweep trace, `tests/fixtures/traces/issue_466`); F460, F461 and MyHomeServer1 poll `*#4*<WHERE>##` per zone instead, and the zones of the SCS-only models (F450, F454, F459, H4684, MH200, MH201, MH202) ask `*#4*<WHERE>*0##` |
 | `*#5*0##` | Burglar alarm | MH202, H4890 |
-| `*#16*0*5##` | Sound system (dimension 5; lists every amplifier) | F454, H4890, MH200, MH201, MH202, MyHomeServer1 |
+| `*#16*0*5##` | Sound system (dimension 5; lists every amplifier) | Gateways whose profile advertises WHO 16, except F450, F459, F460, F461, MH202 and MyHomeServer1, whose firmware drops it (firmware oracle) |
 | `*#18*51*51##` | Energy management (meter 51 total energy) | F454, F455, MH201, MH202, MyHomeServer1, H4890 |
 | `*#18*51*113##` | Energy management (meter 51 active power) | F454, F455, MH201, MH202, MyHomeServer1, H4890 |
 
 Each request is only sent when the gateway's OWNd **profile** advertises that WHO (`GatewayProfile.supported_who`). Unknown gateways keep the full set.
 
-The requests go out one at a time. The gateway ACKs a general request at once, but the replies (one frame per device, on the event session) keep coming for seconds on a large plant, and a second request sent in that window cuts the first reply short ([#578](https://github.com/OpenWebNet-HA/MyHOME/issues/578)). So after each request is written, the next one waits until the event session has been quiet for 0.75 s, at most 15 s. A request that is NACKed or never written still gets that wait. `myhome.sweep_bus` paces its general requests the same way, so a sweep on a large plant takes a few seconds per subsystem. Entities restored at startup poll their own state only after the whole sweep has finished.
+The requests go out one at a time. The gateway ACKs a general request at once, but the replies (one frame per device, on the event session) keep coming for seconds on a large plant, and a second request sent in that window cuts the first reply short ([#578](https://github.com/OpenWebNet-HA/MyHOME/issues/578)). So after each request is written, the next one waits until the event session has been quiet for 0.75 s, at most 15 s. A request that is NACKed or never written still gets that wait. `myhome.sweep_bus` paces its general requests the same way and, unless called with `force: true`, leaves out the ones the firmware drops just like the startup sweep, so a sweep on a large plant takes a few seconds per subsystem. Entities restored at startup poll their own state only after the whole sweep has finished.
 
 > OWNd 2.0.0b8 and earlier give an **MH200** the MH200N profile, which does not advertise WHO 16, so amplifiers behind an MH200 only appear once they send bus traffic. A live MH200 answers `*#16*0*5##` with every amplifier and source; [OWNd#53](https://github.com/OpenWebNet-HA/OWNd/issues/53) gives it its own profile.
 
@@ -34,9 +34,9 @@ On a fresh installation with no `myhome.yaml` file (Day 0 blank start), the inte
 | :--- | :---: | :---: | :--- |
 | **Lighting (WHO 1)** | ✅ Yes (`*#1*0##`) | Optional (custom names / classes) | Point-to-point lights (`11`–`99`) and routed addresses. Area/general broadcasts (`WHERE="0"` / `"00"`) do not create entities. |
 | **Automation / Covers (WHO 2)** | ✅ Yes (`*#2*0##`) | Optional (`travel_time`, general cover) | Point-to-point standard covers. Venetian tilt and impulse mode require manual configuration. |
-| **Thermoregulation (WHO 4)** | ✅ Yes (`*#4*0##`) | Optional (`cooling`, `fan`) | Standard zones (`1`–`99`) and central units (`#0`, `#0#1`). Area broadcasts (`00`) and probe broadcasts do not create climate entities. |
+| **Thermoregulation (WHO 4)** | ✅ Yes (`*#4*0##`), per gateway | Optional (`cooling`, `fan`) | Standard zones (`1`–`99`) and central units (`#0`, `#0#1`). Area broadcasts (`00`) and probe broadcasts do not create climate entities. On F450, F454, F459, F460, F461, H4684, MH200, MH201, MH202 and MyHomeServer1 the firmware drops `*#4*0##` (see the table above), so with no registry entry and no `myhome.yaml` a zone is discovered from its first bus frame rather than by the startup sweep. |
 | **Burglar Alarm (WHO 5)** | ✅ Yes (`*#5*0##`) | Optional | Discovered on supported gateways (MH202, H4890). Panel tracks the central unit. |
-| **Sound System (WHO 16)** | ✅ Yes (`*#16*0*5##`) | Optional (streamer mapping) | Discovers all amplifier zones and sources via dimension 5 query. |
+| **Sound System (WHO 16)** | ✅ Yes (`*#16*0*5##`), per gateway | Optional (streamer mapping) | Discovers all amplifier zones and sources via dimension 5 query where the profile advertises WHO 16. On F450, F459, F460, F461, MH202 and MyHomeServer1 the firmware drops `*#16*0*5##`, so amplifiers there are discovered from their first bus frame. |
 | **Energy Management (WHO 18)** | ✅ First Meter 51 only | Secondary meters (`52`–`59`) | Factory default residential meter `51` is queried at startup for power and total energy. Secondary meters are discovered dynamically upon bus emission or via `myhome.sweep_bus`. |
 | **Scenario Control (WHO 15 / 25)** | ❌ Stateless | N/A (Device Triggers / Events) | Pushbuttons emit events and device triggers; no entities are created. |
 | **Light Groups (`where: '#G'`)** | ❌ Bus limitation | Required (`members: [...]`) | OpenWebNet groups have no bus membership read-back command. |

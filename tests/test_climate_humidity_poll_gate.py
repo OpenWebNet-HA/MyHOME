@@ -120,9 +120,10 @@ async def test_f461_zone_still_asks_for_its_humidity(hass):
 
 @pytest.mark.parametrize("model", ["F454", "MH202"])
 async def test_refusing_gateway_zone_does_not_ask(hass, model):
+    """No ``*60##``; the SCS-only zone's own temperature poll (``*#4*Z*0##``, #794) still goes out."""
     handler = _handler(hass, model)
     await _humidity_zone(hass, handler).async_update()
-    assert _sent(handler) == []
+    assert _sent(handler) == ["*#4*2*0##"]
 
 
 async def test_gateway_without_the_property_is_still_asked(hass):
@@ -372,9 +373,11 @@ async def test_a_configured_standby_decides_while_the_primary_is_down(hass):
 
 # ------------------------------------------------------------------ climate: nothing to send, nothing to count (review 5644219403, 4)
 
-@pytest.mark.parametrize("model", ["MH202", "F454", "Legrand MH200N"])
+@pytest.mark.parametrize("model", ["F453", "F453AV", "Legrand MH200N"])
 async def test_a_refusing_scs_gateway_s_humidity_zone_never_reaches_poll_health(hass, model):
-    """No zone status (``*#4*Z##``), no fan, humidity refused: ``async_update`` returns before ``_poll_health``."""
+    """No zone status (``*#4*Z##``), no per-zone temperature poll (the sweep's ``*#4*0##`` is
+    forwarded on these three), no fan, humidity refused: ``async_update`` returns before ``_poll_health``.
+    """
     handler = _handler(hass, model)
     zone = _humidity_zone(hass, handler)
     zone._poll_health.should_skip = MagicMock(side_effect=AssertionError("should_skip must not run"))
@@ -384,15 +387,15 @@ async def test_a_refusing_scs_gateway_s_humidity_zone_never_reaches_poll_health(
     zone._raise_unresponsive_issue.assert_not_called()
 
 
-async def test_a_refusing_gateway_with_zone_status_still_counts_its_zone_poll(hass):
-    """An F450 refuses dimension 60 but answers ``*#4*Z##``: that poll is still sent and counted."""
+async def test_a_refusing_gateway_that_polls_its_zone_temperature_still_sends_that_poll(hass):
+    """An F450 refuses dimension 60 and is SCS-only (#794): its zone still asks ``*#4*Z*0##`` and nothing else."""
     handler = _handler(hass, "F450")
-    assert handler.supports_zone_status is True
+    assert handler.supports_zone_status is False and handler.zone_temperature_poll_needed is True
     zone = _humidity_zone(hass, handler)
     zone._poll_health.should_skip = MagicMock(return_value=False)
     await zone.async_update()
     zone._poll_health.should_skip.assert_called_once()
-    assert _sent(handler) == ["*#4*2##"]
+    assert _sent(handler) == ["*#4*2*0##"]
 
 
 async def test_a_forwarding_gateway_s_humidity_zone_goes_through_poll_health(hass):
@@ -434,7 +437,7 @@ async def test_a_humidity_event_delivered_on_a_refusing_gateway_enables_humidity
     assert zone._humidity is True
     assert zone.current_humidity == 45.0
     await zone.async_update()
-    assert _sent(handler) == []  # humidity known, dimension 60 still not asked on the MH202
+    assert _sent(handler) == ["*#4*2*0##"]  # humidity known, dimension 60 still not asked on the MH202; its temperature poll (#794) is
 
 
 def test_humidity_enabled_later_still_polls_on_add_on_a_refusing_gateway(hass):
@@ -445,7 +448,7 @@ def test_humidity_enabled_later_still_polls_on_add_on_a_refusing_gateway(hass):
         heating=True, cooling=True, fan=False, humidity=False, standalone=True, central=False,
         manufacturer="BTicino", model="Heating Zone", gateway=handler,
     )
-    assert zone._poll_on_add is False
+    assert zone._poll_on_add is True  # an SCS-only zone polls its temperature on add (#794)
     zone._enable_humidity()
     assert zone._poll_on_add is True
 

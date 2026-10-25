@@ -122,8 +122,9 @@ async def test_initial_discovery_skips_non_delegated_on_secondary(hass: HomeAssi
     gw_primary.send_status_request = AsyncMock()
 
     await gw_primary.initial_discovery()
-    # Primary queries WHO=1 (*#1*0##), WHO=2 (*#2*0##), WHO=4 (*#4*0##), WHO=16 (*#16*0*5##), WHO=18 (*#18*51*51##, *#18*51*113##)
-    assert gw_primary.send_status_request.call_count == 6
+    # Primary (MH201) queries WHO=1 (*#1*0##), WHO=2 (*#2*0##), WHO=16 (*#16*0*5##), WHO=18 (*#18*51*51##,
+    # *#18*51*113##); its firmware drops *#4*0##, so that request is left out (issue_466 sweep trace)
+    assert gw_primary.send_status_request.call_count == 5
 
     # Secondary with WHO=16 delegated only
     _, gw_secondary = _create_mock_gateway(
@@ -374,14 +375,15 @@ async def test_services_multi_gateway(hass: HomeAssistant, fast_bus_pacing) -> N
     )
     gw_a.send.assert_not_called()
     gw_a.send_status_request.assert_not_called()
-    # Secondary sends RTC, Model, FW, Kernel, Distro, the delegated WHO=2, 4, 5, 16 general requests,
-    # plus the 36 delegated WHO=18 energy queries = 45 status requests
+    # Secondary sends RTC, Model, FW, Kernel, Distro, the delegated WHO=2 and 5 general requests
+    # (the MH202 firmware drops *#4*0## and *#16*0*5##, own-firmware-oracle, so the sweep leaves
+    # them out like the startup sweep does), plus the 36 delegated WHO=18 energy queries = 43
     gw_b.send.assert_not_called()
     calls_b = [str(c.args[0]) for c in gw_b.send_status_request.call_args_list]
-    assert len(calls_b) == 45
+    assert len(calls_b) == 43
     assert calls_b[:5] == ["*#13**0##", "*#13**15##", "*#13**16##", "*#13**23##", "*#13**24##"]
-    assert calls_b[5:9] == ["*#2*0##", "*#4*0##", "*#5*0##", "*#16*0*5##"]
-    assert len(calls_b[9:]) == 36
+    assert calls_b[5:7] == ["*#2*0##", "*#5*0##"]
+    assert len(calls_b[7:]) == 36
 
     # 4. _get_gateway_handler falls back to next(iter(gateways.values())) if no primary
     hass.config_entries.async_update_entry(
@@ -1323,9 +1325,11 @@ async def test_standby_connected_creates_no_cen_devices(hass: HomeAssistant) -> 
 @pytest.mark.asyncio
 async def test_secondary_initial_discovery_delegated_who4(hass: HomeAssistant) -> None:
     """Test that a secondary gateway with delegated WHO=4 sweeps *#4*0## on initial discovery (#459)."""
+    # An MH200N: its firmware forwards *#4*0## (the default MH201 of this module drops it).
     _, gw_sec = _create_mock_gateway(
         hass,
         "00:03:50:aa:bb:02",
+        name="MH200N",
         topology=TOPOLOGY_SHARED,
         role=ROLE_SECONDARY,
         primary_gateway="00:03:50:aa:bb:01",

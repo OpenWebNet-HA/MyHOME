@@ -177,64 +177,110 @@ GATEWAY_METADATA: list[dict[str, object]] = [
     },
 ]
 
-# Authoritative startup discovery capabilities calibrated against OWNd.profiles and firmware_oracle.json
+# Authoritative startup discovery capabilities calibrated against OWNd.profiles and firmware_oracle.json.
+# ``queried_whos`` is what the OWNd profile advertises (recomputed from the profile and checked by
+# verify_profiles_against_oracle); ``sweep_omits`` lists the general requests of those WHOs the
+# startup sweep leaves out anyway because the gateway firmware drops them before the bus
+# (GENERAL_ZONE_REQUEST_REFUSED / SOUND_STATUS_REQUEST_REFUSED in custom_components/myhome/gateway.py;
+# tests/test_startup_requests_per_firmware.py checks these lists against the sweep itself).
+GENERAL_ZONE_STATUS = "*#4*0##"
+SOUND_STATUS = "*#16*0*5##"
 GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
     {
         "model": "**MH202**",
         "profile_name": "MH202",
         "queried_whos": [1, 2, 4, 5, 16, 18],
-        "notes": "Full support including Burglar Alarm (`*#5*0##`), Sound (`*#16*0*5##`), and Energy (`*#18*51*...`).",
+        "sweep_omits": [GENERAL_ZONE_STATUS, SOUND_STATUS],
+        "notes": "Burglar Alarm (`*#5*0##`) and Energy (`*#18*51*...`) queries. WHO 4 and WHO 16 are advertised, but the `010024` firmware drops `*#4*0##` and `*#16*0*5##` (own-firmware-oracle), so the sweep leaves both out and each climate zone asks `*#4*<WHERE>*0##` itself.",
     },
     {
         "model": "**H4890 / AM4890**",
         "profile_name": "H4890",
         "queried_whos": [1, 2, 4, 5, 16, 18],
+        "sweep_omits": [],
         "notes": "Supports Burglar Alarm, Sound (`*#16*0*5##`), and Energy meter 51 queries.",
     },
     {
         "model": "**F454**",
         "profile_name": "F454",
         "queried_whos": [1, 2, 4, 16, 18],
-        "notes": "Full lighting, cover, climate, sound (`bt_difson` firmware-verified), and energy meter 51 queries. Alarm query omitted.",
+        "sweep_omits": [GENERAL_ZONE_STATUS],
+        "notes": "Full lighting, cover, sound (`bt_difson` firmware-verified), and energy meter 51 queries. The `020051` firmware drops `*#4*0##` (own-firmware-oracle), so each climate zone asks `*#4*<WHERE>*0##` itself. Alarm query omitted.",
     },
     {
         "model": "**F452 / F453 / F453AV**",
         "profile_name": "F453AV",
         "queried_whos": [1, 2, 4, 16, 18],
+        "sweep_omits": [],
         "notes": "Lighting, cover, climate, sound (`bt_difson` firmware-verified on F453/F453AV), and energy meter 51 queries. Alarm query omitted.",
     },
     {
         "model": "**F461**",
         "profile_name": "F461",
         "queried_whos": [1, 2, 4, 16, 18],
-        "notes": "Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted.",
+        "sweep_omits": [GENERAL_ZONE_STATUS, SOUND_STATUS],
+        "notes": "Lighting, cover, and energy meter 51 queries. The `020011` firmware drops `*#4*0##` and `*#16*0*5##` (own-firmware-oracle, confirmed live on 2.0.11), so the sweep leaves both out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
     },
     {
         "model": "**F455**",
         "profile_name": "F455",
         "queried_whos": [1, 2, 4, 18],
+        "sweep_omits": [],
         "notes": "Entry-level gateway: lighting, cover, climate, and energy meter 51 queries. Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual.",
     },
     {
         "model": "**MyHomeServer1**",
         "profile_name": "MyHomeServer1",
         "queried_whos": [1, 2, 4, 16, 18],
-        "notes": "Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted.",
+        "sweep_omits": [GENERAL_ZONE_STATUS, SOUND_STATUS],
+        "notes": "Lighting, cover, and energy meter 51 queries. The firmware drops `*#4*0##` and `*#16*0*5##` (own-firmware-oracle `028206`, confirmed live on 3.87.13), so the sweep leaves both out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
     },
     {
         "model": "**MH201**",
         "profile_name": "MH201",
         "queried_whos": [1, 2, 4, 16, 18],
-        "notes": "Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Alarm query omitted.",
+        "sweep_omits": [GENERAL_ZONE_STATUS],
+        "notes": "Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Not in own-firmware-oracle; a physical MH201 3.3.6 returned no zone frame to `*#4*0##` although its zones report (`tests/fixtures/traces/issue_466`), so the sweep leaves it out and each climate zone asks `*#4*<WHERE>*0##` itself. Alarm query omitted.",
     },
     {
-        "model": "**MH200 / MH200N**",
+        "model": "**MH200** *(Legacy)*",
+        "profile_name": "MH200",
+        "queried_whos": [1, 2, 4, 16],
+        "sweep_omits": [GENERAL_ZONE_STATUS],
+        "notes": "Lighting, cover, climate, and sound queries (`bt_difson` hardware and firmware-verified). The `020102` firmware drops `*#4*0##` (own-firmware-oracle), so its climate zones ask `*#4*<WHERE>*0##` themselves. Alarm and energy queries omitted.",
+    },
+    {
+        "model": "**MH200N**",
         "profile_name": "MH200N",
         "queried_whos": [1, 2, 4, 16],
-        "notes": "Lighting, cover, climate, and sound queries (`bt_difson` hardware and firmware-verified on both). Alarm and energy queries omitted.",
+        "sweep_omits": [],
+        "notes": "Lighting, cover, climate, and sound queries (`bt_difson` hardware and firmware-verified). The `010108` firmware forwards `*#4*0##` (own-firmware-oracle), unlike the MH200. Alarm and energy queries omitted.",
+    },
+    {
+        "model": "**H4684 / HL4684**",
+        "profile_name": "H4684",
+        "queried_whos": [1, 2, 4, 16, 18],
+        "sweep_omits": [GENERAL_ZONE_STATUS],
+        "notes": "Lighting, cover, climate, sound, and energy meter 51 queries. The `020054` firmware drops `*#4*0##` (own-firmware-oracle), so each climate zone asks `*#4*<WHERE>*0##` itself; the SSDP spelling `HL4684` is keyed on the same tables. Alarm query omitted.",
     },
 ]
 
+
+def _frame_who(frame: str) -> int:
+    """Return the WHO of a general status request such as ``*#4*0##``."""
+    return int(frame.split("*")[1].lstrip("#"))
+
+
+def sweep_whos(row: dict[str, object]) -> list[int]:
+    """Return the WHOs whose general request the startup sweep actually sends for ``row``."""
+    whos = row.get("queried_whos")
+    omitted = {_frame_who(str(frame)) for frame in cast_list(row.get("sweep_omits"))}
+    return [w for w in whos if w not in omitted] if isinstance(whos, list) else []
+
+
+def cast_list(value: object) -> list[object]:
+    """Return ``value`` as a list (an absent ``sweep_omits`` means nothing is omitted)."""
+    return list(value) if isinstance(value, (list, tuple)) else []
 
 
 def extract_gateway_models_from_const(const_path: Path = CONST_PY) -> list[str]:
@@ -430,15 +476,19 @@ def generate_gateway_discovery_table() -> str:
     """Generate the markdown table for Gateway Startup Discovery Capabilities."""
     rows = calibrate_discovery_with_ownd()
     lines = [
-        "| Gateway Model | Initial Discovery Subsystems Queried | Profile Support Notes |",
-        "| :--- | :--- | :--- |",
+        "| Gateway Model | Profile Subsystems (advertised) | Startup Sweep Requests (sent) | Profile Support Notes |",
+        "| :--- | :--- | :--- | :--- |",
     ]
     for row in rows:
         model = row["model"]
         whos = row["queried_whos"]
         who_str = "WHO " + ", ".join(str(w) for w in whos) if isinstance(whos, list) else str(whos)
+        sent = "WHO " + ", ".join(str(w) for w in sweep_whos(row))
+        omitted = cast_list(row.get("sweep_omits"))
+        if omitted:
+            sent += " (firmware drops " + ", ".join(f"`{frame}`" for frame in omitted) + ")"
         notes = row["notes"]
-        lines.append(f"| {model} | {who_str} | {notes} |")
+        lines.append(f"| {model} | {who_str} | {sent} | {notes} |")
     return "\n".join(lines)
 
 
@@ -543,6 +593,12 @@ def verify_profiles_against_oracle(oracle_path: Path = ORACLE_JSON) -> list[str]
                 f"Discovery row {row.get('model')} queried_whos={row.get('queried_whos')} "
                 f"disagrees with {prof_name} profile {expected_whos}."
             )
+        for frame in cast_list(row.get("sweep_omits")):
+            if str(frame) not in (GENERAL_ZONE_STATUS, SOUND_STATUS) or _frame_who(str(frame)) not in expected_whos:
+                violations.append(
+                    f"Discovery row {row.get('model')} sweep_omits={frame!r} is not a general request "
+                    f"of an advertised WHO of the {prof_name} profile."
+                )
 
     return violations
 

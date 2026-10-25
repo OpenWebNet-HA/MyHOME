@@ -397,7 +397,7 @@ async def test_restored_registry_entities_hold_polls_until_sweep_completes(hass:
             assert all_processed == [
                 "*#1*0##",
                 "*#2*0##",
-                "*#4*0##",
+                # no *#4*0##: the MH201 firmware drops it (issue_466 sweep trace)
                 "*#16*0*5##",
                 "*#18*51*51##",
                 "*#18*51*113##",
@@ -497,7 +497,7 @@ async def test_incomplete_state_bus_entity_retains_poll_and_defers(hass: HomeAss
             assert processed() == [
                 "*#1*0##",
                 "*#2*0##",
-                "*#4*0##",
+                # no *#4*0##: the MH201 firmware drops it (issue_466 sweep trace)
                 "*#16*0*5##",
                 "*#18*51*51##",
                 "*#18*51*113##",
