@@ -1,7 +1,10 @@
 """SSDP discovery, reconfigure, reauth, connection test, and authentication steps for MyHome config flow (#732)."""
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import ipaddress
+import logging
 import re
 import typing
 
@@ -17,6 +20,9 @@ from homeassistant.const import (
 )
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from OWNd.connection import OWNCommandSession
+from OWNd.message import OWNGatewayCommand, OWNGatewayDiagnosticCommand
+from OWNd.profiles import get_gateway_profile
 from voluptuous import All, Coerce, In, Range, Required
 
 from .const import (
@@ -33,6 +39,14 @@ from .const import (
     LOGGER,
 )
 from .gateway import command_session_default
+from .identity import (
+    UNTRUSTED_MODEL_LABELS,
+    CodeReading,
+    GatewayIdentityEvidence,
+    read_who13,
+    read_who1013,
+    resolve_gateway_identity,
+)
 from .typing_compat import flow_schema
 
 TEST_CONNECTION_ABORT_REASONS = frozenset(
@@ -48,6 +62,142 @@ TEST_CONNECTION_ABORT_REASONS = frozenset(
     }
 )
 TEST_CONNECTION_RETRY_DELAY: float = 1.5
+IDENTIFY_TIMEOUT: float = 15.0
+# Models a physical unit answered *#13**12## with its real MAC (F461 2.0.11,
+# MyHomeServer1 3.87.13, both 2026-10-24). Real H4684 020054 and MH200 020102
+# daemons crash on the request, and the absence of a crash on an emulated daemon
+# is no proof of safety, so an unknown or unlisted model is never asked.
+MAC_REQUEST_SAFE_MODELS: frozenset[str] = frozenset({"F461", "MYHOMESERVER1"})
+# A reported MAC that names no interface: the all-zero factory value (also the
+# "Custom (IP Gateway)" sentinel of the first form) and the broadcast address.
+UNUSABLE_MACS: frozenset[str] = frozenset({"00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff"})
+
+
+
+class _RecordAtDebug(logging.Filter):
+    """Lower every record of the identification probe to DEBUG.
+
+    The probe is best effort and its refusals are expected: a gateway with an open
+    monitor session (`*99*1##`) and a password-protected command session (`*99*0##`)
+    answers it with `password_required`, which OWNd would otherwise log at WARNING and
+    ERROR in the middle of a successful setup.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.levelno = logging.DEBUG
+        record.levelname = logging.getLevelName(logging.DEBUG)
+        return True
+
+
+# A registered child logger, so logging.getLogger(PROBE_LOGGER.name) is this object.
+PROBE_LOGGER: logging.Logger = LOGGER.getChild("identify")
+PROBE_LOGGER.addFilter(_RecordAtDebug())
+
+
+class GatewayIdentity(typing.NamedTuple):
+    """What ``identify_gateway`` learned: the three answers, and whether the command session wants a password."""
+
+    mac: str | None
+    who13_code: str | None
+    who1013_code: str | None
+    password_required: bool = False
+
+
+def mac_request_is_safe(who13_code: str | None, who1013_code: str | None = None) -> bool:
+    """Whether every model the reported codes can name is known to answer *#13**12##.
+
+    The WHO=1013 code decides when present (it is only asked on the shared code 200);
+    otherwise the WHO=13 device type does.
+    """
+    if who1013_code:
+        models = read_who1013(who1013_code).models
+    elif who13_code and not read_who13(who13_code).shared:
+        models = read_who13(who13_code).models
+    else:
+        return False
+    normalised = {m.strip().upper().replace(" ", "").replace("-", "").replace("_", "") for m in models}
+    return bool(normalised) and normalised <= MAC_REQUEST_SAFE_MODELS
+
+
+def validated_reported_mac(mac: typing.Any) -> str | None:
+    """The MAC a gateway reported, normalised, or ``None`` when it cannot name the gateway.
+
+    OWNd formats any six integers of ``*#13**12*a*b*c*d*e*f##`` without range checks,
+    so an octet above 255 yields a 13-digit string, and a factory configuration answers
+    six zeros; neither may replace the MAC the user typed.
+    """
+    if not mac:
+        return None
+    try:
+        formatted = dr.format_mac(str(MACAddress(str(mac))))
+    except ValueError:
+        return None
+    return None if formatted in UNUSABLE_MACS else formatted
+
+
+def _inband_reading(who13_code: str | None, who1013_code: str | None) -> CodeReading:
+    """The code reading the resolver labelled the gateway from: WHO=1013 when known, else WHO=13."""
+    if who1013_code and read_who1013(who1013_code).known:
+        return read_who1013(who1013_code)
+    return read_who13(who13_code or "")
+
+
+async def identify_gateway(gateway: typing.Any) -> GatewayIdentity:
+    """Ask an authenticated gateway who it is: ``(mac, who13_code, who1013_code)``.
+
+    A command session refused with ``password_required`` yields ``password_required=True``
+    and nothing else: the gateway protects ``*99*0##`` although its monitor session was
+    open, and the runtime command workers will need that password anyway.
+
+    The order follows the runtime identification (#420): ``*#13**15##`` first, which
+    every gateway answers; ``*#1013**1##`` only when that answer is the shared code
+    ``200`` (F454 / F461 / MyHomeServer1 class), keeping older gateways away from a
+    diagnostic frame they may not support; ``*#13**12##`` (MAC) only from a model known
+    to answer it (``MAC_REQUEST_SAFE_MODELS``): it crashes a daemon on the H4684 and the
+    MH200 in the firmware oracle. Best effort: any failure or silence yields ``None``.
+    """
+    mac: str | None = None
+    code13: str | None = None
+    code1013: str | None = None
+    session = OWNCommandSession(gateway=gateway, logger=PROBE_LOGGER)
+
+    async def _ask(request: typing.Any) -> list[typing.Any]:
+        replies = await session.send(request, is_status_request=True)
+        return replies if isinstance(replies, list) else []
+
+    try:
+        async with asyncio.timeout(IDENTIFY_TIMEOUT):
+            res = await session.connect()
+            if not (isinstance(res, dict) and res.get("Success")):
+                refused = isinstance(res, dict) and res.get("Message") == "password_required"
+                return GatewayIdentity(None, None, None, password_required=bool(refused))
+            for reply in await _ask(OWNGatewayCommand.request_device_type()):
+                value = getattr(reply, "device_type_code", None)
+                if getattr(reply, "who", None) == 13 and value:
+                    code13 = code13 or str(value)
+            # A shared code (WHO13_SHARED_DEVICE_TYPES) names no model: ask WHO=1013 (#420)
+            if code13 and read_who13(code13).shared:
+                for reply in await _ask(OWNGatewayDiagnosticCommand.request_diagnostic_object_model()):
+                    if getattr(reply, "who", None) == 1013 and getattr(reply, "object_model", None):
+                        code1013 = code1013 or str(reply.object_model)
+            if mac_request_is_safe(code13, code1013):
+                for reply in await _ask(OWNGatewayCommand.request_mac_address()):
+                    mac = mac or getattr(reply, "mac_address", None)
+            else:
+                LOGGER.debug(
+                    "Gateway %s reports WHO=13 device type %s / WHO=1013 model %s; not asking its MAC "
+                    "(*#13**12##), which is only known to be answered by %s",
+                    getattr(gateway, "address", None),
+                    code13,
+                    code1013,
+                    ", ".join(sorted(MAC_REQUEST_SAFE_MODELS)),
+                )
+    except Exception as err:  # pylint: disable=broad-except
+        LOGGER.debug("Gateway %s identification failed: %r", getattr(gateway, "address", None), err)
+    finally:
+        with contextlib.suppress(Exception):
+            await session.close()
+    return GatewayIdentity(mac, code13, code1013)
 
 
 class MACAddress:
@@ -303,18 +453,7 @@ class ConfigFlowDiscoveryMixin:
         gateway = self.gateway_handler
         assert gateway is not None
 
-        self.context.update(  # type: ignore[attr-defined]
-            {
-                CONF_HOST: gateway.host,
-                CONF_NAME: gateway.model_name,
-                CONF_MAC: gateway.serial,
-                "title_placeholders": {
-                    CONF_HOST: str(gateway.host or ""),
-                    CONF_NAME: str(gateway.model_name or ""),
-                    CONF_MAC: str(gateway.serial or ""),
-                },
-            }
-        )
+        self._update_flow_context(gateway)
 
         async def _run_test_connection() -> dict[str, typing.Any]:
             try:
@@ -368,6 +507,30 @@ class ConfigFlowDiscoveryMixin:
                     reason="reauth_successful",
                 )
 
+            model_source: str | None = None
+            if getattr(self, "_identify_after_auth", False):
+                model_source = await self._async_apply_gateway_identity(gateway)
+                if model_source is None and not getattr(self, "_command_password_asked", False):
+                    # Split authentication: the monitor session is open, the command
+                    # session is password-protected. Ask once (the command workers need
+                    # it); a second refusal, e.g. after a blank password, is not asked again.
+                    self._command_password_asked = True
+                    LOGGER.debug(
+                        "Gateway %s (%s:%s) accepts the monitor session without a password "
+                        "but protects the command session; asking for it",
+                        gateway.model_name,
+                        gateway.address,
+                        gateway.port,
+                    )
+                    return await self.async_step_password()  # type: ignore
+                self._identify_after_auth = False
+                # The MAC and model may have changed: the flow title must say so
+                self._update_flow_context(gateway)
+                # The manual step left the unique_id to this point: the MAC the gateway
+                # reports, or the typed one, decides whether this gateway already exists.
+                await self.async_set_unique_id(dr.format_mac(gateway.serial), raise_on_progress=False)  # type: ignore[attr-defined]
+                self._abort_if_unique_id_configured()  # type: ignore[attr-defined]
+
             _new_entry_data = {
                 CONF_ID: dr.format_mac(gateway.serial),
                 CONF_HOST: gateway.address,
@@ -384,6 +547,8 @@ class ConfigFlowDiscoveryMixin:
                 CONF_MAC: dr.format_mac(gateway.serial),
                 CONF_UDN: gateway.udn,
             }
+            if model_source:
+                _new_entry_data["model_source"] = model_source
             _new_entry_options = {
                 CONF_WORKER_COUNT: command_session_default(gateway.model_name),
             }
@@ -403,7 +568,8 @@ class ConfigFlowDiscoveryMixin:
             )
         else:
             msg = test_result.get("Message")
-            LOGGER.warning(
+            # password_required is the normal first answer of a password-protected gateway.
+            (LOGGER.debug if msg == "password_required" else LOGGER.warning)(
                 "Gateway %s (%s:%s) test connection failed: %s",
                 gateway.model_name,
                 gateway.address,
@@ -422,6 +588,75 @@ class ConfigFlowDiscoveryMixin:
                     else "cannot_connect"
                 )
                 return self.async_abort(reason=abort_reason)  # type: ignore[attr-defined]
+
+    def _update_flow_context(self, gateway: typing.Any) -> None:
+        """Keep the flow context and its title placeholders in step with the gateway's MAC and model."""
+        self.context.update(  # type: ignore[attr-defined]
+            {
+                CONF_HOST: gateway.host,
+                CONF_NAME: gateway.model_name,
+                CONF_MAC: gateway.serial,
+                "title_placeholders": {
+                    CONF_HOST: str(gateway.host or ""),
+                    CONF_NAME: str(gateway.model_name or ""),
+                    CONF_MAC: str(gateway.serial or ""),
+                },
+            }
+        )
+
+    async def _async_apply_gateway_identity(self, gateway: typing.Any) -> str | None:
+        """Correct the MAC and model typed in the manual step from what the gateway reports.
+
+        The caller sets the unique_id from the final MAC afterwards. The model follows
+        ``resolve_gateway_identity``, the same verdict the runtime reaches: a brand
+        variant of the reported model is kept, an uncertain WHO=13 code may label a
+        ``Generic`` entry but never overrides a chosen model, a certain code corrects
+        it. Returns the source the model rests on, for the entry's ``model_source``, or
+        ``None`` when the command session wants a password the monitor session did not.
+        """
+        from . import config_flow as _cf
+
+        mac, code13, code, password_required = GatewayIdentity(*await _cf.identify_gateway(gateway))
+        if password_required and not gateway.password:
+            return None
+        # A refusal after a password was given is a refusal, not a question: nothing reported
+        reported_mac = validated_reported_mac(mac)
+        if mac and not reported_mac:
+            LOGGER.debug(
+                "Gateway at %s reports the MAC %r, which names no interface; keeping the entered %s",
+                gateway.address,
+                mac,
+                gateway.serial,
+            )
+        if reported_mac and reported_mac != dr.format_mac(str(gateway.serial)):
+            LOGGER.info(
+                "Gateway at %s reports MAC %s; using it instead of the entered %s",
+                gateway.address,
+                reported_mac,
+                gateway.serial,
+            )
+            gateway.serial = reported_mac
+        configured = str(gateway.model_name or "").strip()
+        resolution = resolve_gateway_identity(
+            GatewayIdentityEvidence(
+                manual=None if configured.lower() in UNTRUSTED_MODEL_LABELS else configured,
+                who13_code=code13,
+                who1013_code=code,
+            )
+        )
+        model = resolution.model
+        if model and model != configured:
+            reading = resolution.corrected_reading or _inband_reading(code13, code)
+            LOGGER.info(
+                "Gateway at %s reports %s; using it instead of the selected model %s",
+                gateway.address,
+                reading.describe(),
+                configured,
+            )
+            gateway.model_name = gateway.model = model
+            gateway.profile = get_gateway_profile(model, gateway.model_number)
+            gateway._log_id = f"[{model} gateway - {gateway.host}]"  # pylint: disable=protected-access
+        return resolution.source
 
     async def async_step_port(self, user_input=None, errors=None):  # type: ignore
         """Port information for the gateway is missing."""
