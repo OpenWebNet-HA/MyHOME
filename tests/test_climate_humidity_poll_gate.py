@@ -68,7 +68,6 @@ def _entry(model: str) -> MagicMock:
 
 def _handler(hass, model: str) -> MyHOMEGatewayHandler:
     handler = MyHOMEGatewayHandler(hass, _entry(model))
-    handler.gateway.profile = get_gateway_profile(model)
     handler.send_status_request = AsyncMock()
     return handler
 
@@ -202,20 +201,23 @@ def test_aliased_model_strings_follow_their_profile(hass, model, profile_model):
     assert handler._model_key == profile_model
 
 
-def test_ssdp_model_string_hl4684_is_keyed_as_h4684(hass):
-    """SSDP announces the H4684 as ``HL4684`` (manifest.json); OWNd has no alias for it yet."""
-    handler = _handler(hass, "HL4684")
-    assert handler.gateway.profile.model_name == "HL4684"  # the Generic profile keeps the SSDP string
+@pytest.mark.parametrize("ssdp_model", ["HL4684", "H/L4684", "HC4684"])
+def test_ssdp_model_string_hl4684_is_keyed_as_h4684(hass, ssdp_model):
+    """SSDP announces the H4684 as ``H/L4684`` or ``HL4684``; handler keeps the SSDP name and resolves H4684Profile."""
+    handler = _handler(hass, ssdp_model)
+    assert handler.model == ssdp_model
+    assert handler.gateway.profile.model_name == "H4684"
     assert handler._model_key == "H4684"
+    assert handler.humidity_request_refused is True
 
 
 @pytest.mark.parametrize(
     ("model", "key", "refused"),
     [
-        ("HL4684", "H4684", True),  # the SSDP modelName, never overwritten by WHO 13 / 1013
-        ("HC4684", "H4684", True),
         ("BTicino L4684", "H4684", True),  # OWNd aliases the word, not the brand-prefixed string
         ("BTicino HL4684", "H4684", True),
+        ("BTicino H/L4684", "H4684", True),
+        ("BTicino HC4684", "H4684", True),
         ("Legrand 003598", "F454", True),  # the MyHOME_Suite item number of the F454
         ("Legrand 003565", "MH200N", True),  # ... of the MH200N: not collapsed to MH200
         ("Legrand 003535", "MH202", True),

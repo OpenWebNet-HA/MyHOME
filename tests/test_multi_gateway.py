@@ -359,7 +359,7 @@ async def test_services_multi_gateway(hass: HomeAssistant, fast_bus_pacing) -> N
     # covers/climate/audio/energy are delegated away, so its only general request is Lighting (*#1*0##). All are status requests.
     gw_a.send.assert_not_called()
     assert [str(c.args[0]) for c in gw_a.send_status_request.call_args_list] == [
-        "*#13**0##", "*#13**15##", "*#13**16##", "*#13**23##", "*#13**24##", "*#1*0##",
+        "*#13**0##", "*#13**15##", "*#13**16##", "*#13**23##", "*#13**24##", "*#1013*0*1##", "*#1*0##",
     ]
     gw_b.send.assert_not_called()
     gw_b.send_status_request.assert_not_called()
@@ -380,10 +380,10 @@ async def test_services_multi_gateway(hass: HomeAssistant, fast_bus_pacing) -> N
     # them out like the startup sweep does), plus the 36 delegated WHO=18 energy queries = 43
     gw_b.send.assert_not_called()
     calls_b = [str(c.args[0]) for c in gw_b.send_status_request.call_args_list]
-    assert len(calls_b) == 43
-    assert calls_b[:5] == ["*#13**0##", "*#13**15##", "*#13**16##", "*#13**23##", "*#13**24##"]
-    assert calls_b[5:7] == ["*#2*0##", "*#5*0##"]
-    assert len(calls_b[7:]) == 36
+    assert len(calls_b) == 44
+    assert calls_b[:6] == ["*#13**0##", "*#13**15##", "*#13**16##", "*#13**23##", "*#13**24##", "*#1013*0*1##"]
+    assert calls_b[6:8] == ["*#2*0##", "*#5*0##"]
+    assert len(calls_b[8:]) == 36
 
     # 4. _get_gateway_handler falls back to next(iter(gateways.values())) if no primary
     hass.config_entries.async_update_entry(

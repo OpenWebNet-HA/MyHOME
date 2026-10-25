@@ -154,15 +154,15 @@ GATEWAY_METADATA: list[dict[str, object]] = [
         "notes": "Audio/video & web server gateway",
     },
     {
-        "model": "**HL4684**",
-        "const_models": [],
-        "ssdp_models": ["HL4684"],
-        "profile_name": "Generic",
+        "model": "**H4684 / H/L4684**",
+        "const_models": ["H4684"],
+        "ssdp_models": ["H/L4684", "HL4684"],
+        "profile_name": "H4684",
         "protocol": "OpenWebNet",
         "max_workers": "1 worker",
         "delay": "50 ms",
         "upnp": "✅ SSDP",
-        "notes": '10" Touch screen display IP gateway',
+        "notes": "Colour touch screen IP gateway (Axolute / LivingLight)",
     },
     {
         "model": "**Legrand 3578**",
@@ -257,11 +257,11 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
         "notes": "Lighting, cover, climate, and sound queries (`bt_difson` hardware and firmware-verified). The `010108` firmware forwards `*#4*0##` (own-firmware-oracle), unlike the MH200. Alarm and energy queries omitted.",
     },
     {
-        "model": "**H4684 / HL4684**",
+        "model": "**H4684 / H/L4684**",
         "profile_name": "H4684",
         "queried_whos": [1, 2, 4, 16, 18],
         "sweep_omits": [GENERAL_ZONE_STATUS],
-        "notes": "Lighting, cover, climate, sound, and energy meter 51 queries. The `020054` firmware drops `*#4*0##` (own-firmware-oracle), so each climate zone asks `*#4*<WHERE>*0##` itself; the SSDP spelling `HL4684` is keyed on the same tables. Alarm query omitted.",
+        "notes": "Lighting, cover, climate, sound, and energy meter 51 queries (`bt_multi` WHO 22 also enabled on firmware >= `6.0.0`). Both `020054` (own-firmware-oracle) and live `6.0.11` (`tests/fixtures/traces/issue_466`) drop `*#4*0##`, so each climate zone asks `*#4*<WHERE>*0##` itself; the SSDP spellings `H/L4684` and `HL4684` resolve to `H4684Profile`. Alarm query omitted.",
     },
 ]
 

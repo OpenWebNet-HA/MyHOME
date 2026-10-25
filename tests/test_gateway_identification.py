@@ -92,7 +92,10 @@ def test_official_table_is_the_2006_document_verbatim():
     assert GATEWAY_DEVICE_TYPE_MAP["44"] == "MH200N"
     # code 200: observed on F454 (#370, #420), MyHOMEServer1 (#292 / #297, #420), MH202 (#420);
     # reported for F461 (#370), observed on H4890 (#466), observed on MH201 (OWNd#116)
-    assert WHO13_OBSERVED_DEVICE_TYPES == {"200": ("F454", "MyHomeServer1", "MH202", "F461", "H4890", "MH201")}
+    assert WHO13_OBSERVED_DEVICE_TYPES == {
+        "23": ("H4684", "H/L4684", "L4684"),
+        "200": ("F454", "MyHomeServer1", "MH202", "F461", "H4890", "MH201"),
+    }
     assert WHO13_SHARED_DEVICE_TYPES == {"200"}
     assert WHO13_SHARED_DEVICE_TYPES <= set(WHO13_OBSERVED_DEVICE_TYPES)
     # every model a shared WHO=13 code may stand for has a WHO=1013 code that settles it
@@ -124,7 +127,6 @@ def test_third_party_table_is_the_nmap_device_table():
         "12": ("F453AV",),
         "15": ("F427",),
         "16": ("F453",),
-        "23": ("H4684",),
         "27": ("L4686SDK",),
         "44": ("MH200N",),
         "51": ("F454",),
@@ -154,7 +156,11 @@ def test_who13_and_who1013_are_separate_identifier_spaces():
     12, 44, 51 - which is exactly why this is pinned: agreeing on a few codes is
     not a reason to treat one table as the other.
     """
-    who13_all = {**WHO13_OFFICIAL_DEVICE_TYPES, **{c: m[0] for c, m in WHO13_THIRD_PARTY_DEVICE_TYPES.items()}}
+    who13_all = {
+        **WHO13_OFFICIAL_DEVICE_TYPES,
+        **{c: m[0] for c, m in WHO13_OBSERVED_DEVICE_TYPES.items() if c not in WHO13_SHARED_DEVICE_TYPES},
+        **{c: m[0] for c, m in WHO13_THIRD_PARTY_DEVICE_TYPES.items()},
+    }
     by_model_who13 = {model: code for code, model in who13_all.items()}
     by_model_who1013 = {models[0]: code for code, models in WHO1013_OBJECT_MODELS.items()}
 
@@ -219,6 +225,8 @@ def test_h4684_ground_truth_firmware_mapping():
     assert r19.alternative_names == ("L4684",)
     assert r19.compatible_with("H4684") is True
     assert r19.compatible_with("L4684") is True
+    assert r19.compatible_with("H/L4684") is True
+    assert r19.compatible_with("HL4684") is True
 
     r26 = read_who1013("26")
     assert r26.canonical == "LGRH4684"

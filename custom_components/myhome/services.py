@@ -246,11 +246,12 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         for gw_mac, handler in target_gateways.items():
             _LOGGER.info("Executing diagnostic bus sweep on gateway %s (force=%s)", gw_mac, force)
             gateway_queries = [
-                "*#13**0##",   # Gateway real-time clock
-                "*#13**15##",  # Gateway device model
-                "*#13**16##",  # Gateway firmware version
-                "*#13**23##",  # Gateway kernel version (modern Linux gateways; NACK ignored on older)
-                "*#13**24##",  # Gateway distribution version (modern Linux gateways; NACK ignored on older)
+                "*#13**0##",     # Gateway real-time clock
+                "*#13**15##",    # Gateway device model
+                "*#13**16##",    # Gateway firmware version
+                "*#13**23##",    # Gateway kernel version (modern Linux gateways; NACK ignored on older)
+                "*#13**24##",    # Gateway distribution version (modern Linux gateways; NACK ignored on older)
+                "*#1013*0*1##",  # Gateway diagnostic OBJECT_MODEL
             ]
             general_queries = ((1, "*#1*0##"), (2, "*#2*0##"), (4, "*#4*0##"), (5, "*#5*0##"), (16, "*#16*0*5##"))
 

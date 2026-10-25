@@ -667,5 +667,46 @@ Verbatim bus trace contributed by **@TheDarkWizard** on [#466 (comment 608572493
 4. **Lighting (WHO 1)**:
    - 9 frames reporting actuator lighting status (`*1*0*0014##`, `*1*0*0016##`, etc.).
 
+---
 
+# #466 BTicino H/L4684 Colour Touchscreen Gateway Trace (FW 6.0.11 — WHO 1, 2, 3, 4, 13, 16, 18, 22)
 
+Verbatim Home Assistant diagnostics download contributed by **@andrea-mag** on [#466 (comment 6398442412)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6398442412) (`HA 2026.10.2`, `MyHOME 2.0.0b16`, `OWNd 2.0.0b11`).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino H/L4684 (Colour Touch Screen IP Gateway, Axolute / LivingLight; UPnP `modelName`: `H/L4684`, `deviceType`: `urn:schemas-bticino-it:device:touchscreen:1`)
+- **Firmware**: `6.0.11` (`*#13**16*6*0*11##`)
+- **Kernel**: `2.6.2` (`*#13**23*2*6*2##`)
+- **Distribution**: `6.0.0` (`*#13**24*6*0*0##`)
+- **WHO 13 Device Type Code**: `23` (`*#13**15*23##`)
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `config_entry-myhome_HL4684_fw6_0_11.json` | HA Diagnostic Download (257 frames: 212 rx / 45 tx) | First physical on-wire capture from a BTicino H/L4684 touchscreen gateway, spanning `myhome.sweep_bus` across lighting & covers (`WHO 1` / `WHO 2`), autonomous load-control priority broadcasts (`WHO 3`), 8-zone thermoregulation (`WHO 4`), gateway identification (`WHO 13`), dual-dialect `WHO 16` + `WHO 22` sound system inventory, and `WHO 18` energy sweep queries. |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Gateway Identity & Software Stack (WHO 13 — 5 tx / 5 rx)**:
+   - Clock `*#13**0##` -> `*#13**0*14*41*00*##`.
+   - Device type `*#13**15##` -> `*#13**15*23##` (empirically confirming Nmap's code `23` on physical `H/L4684` FW `6.0.11`, distinct from 2006 spec code `13` on FW `2.0.54`).
+   - Firmware `*#13**16##` -> `*#13**16*6*0*11##` (`6.0.11`), kernel `*#13**23##` -> `*#13**23*2*6*2##` (`2.6.2`), distribution `*#13**24##` -> `*#13**24*6*0*0##` (`6.0.0`).
+
+2. **Load Control Priority Cycle (WHO 3 — 29 rx)**:
+   - Autonomous periodic load-priority status broadcasts (`*3*1*#1##` through `*3*1*#8##`, *Load priority 1–8 enabled*), cycling one priority every `~25.8 s` (`~3 min 26 s` per full `#1 -> #8` round-robin loop).
+
+3. **Thermoregulation & Actuator Telemetry (WHO 4 — 1 tx / 64 rx)**:
+   - General status query `[tx] *#4*0##` returns `0` `WHO 4` frames on the event session before the next sweep query `1.33 s` later (`*#16*0*5##`), corroborating the `020054` firmware-oracle `silent` verdict on live `6.0.11` hardware.
+   - Autonomous bus traffic covers 8 zones (`11, 22, 33, 44, 55, 66, 77, 88`; `Zone 33` configured with `fan: true`, the other 7 with `fan: false`) plus central pump/boiler actuators `0#1`, `0#3`, `0#4` (`*#4*0#<N>*20*0##`, `26` frames):
+     - Ambient temperatures (`*#4*Z*0*0TTT##`), generic effective setpoints (`*#4*Z*14*0TTT*3##`), and Zone `66` mode/setpoint frames (`*4*1*66##`, `*4*303*66##`, `*#4*66*12*0170*3##`).
+     - Zone actuator channels (`11#1`, `22#1`, `33#1`, `33#2`, `44#1`, `55#1`, `66#2`, `66#3`, `77#1`, `77#2`, `88#1`) emit `*#4*<Z>#<N>*20*5##` (`18` frames).
+
+4. **Dual-Dialect Sound System Inventory (WHO 16 & WHO 22 — 1 tx / 28 rx)**:
+   - Single `[tx] *#16*0*5##` triggers `14` paired `WHO 16` (`bt_difson`) + `WHO 22` (`bt_multi`) replies (`4–14 ms` apart) on `H/L4684` FW `6.0.11`, covering `2` active stereo sources (`*16*3*101##` / `*#22*2#1*12*1*4##`, `*16*3*102##` / `*#22*2#2*12*1*4##`) and `12` amplifier zones (`11, 12, 13, 21, 22, 31, 32, 33, 41, 42, 51, 61` via `*16*13*<A><Z>##` / `*#22*3#<A>#<Z>*12*0*10##`; on zone `61`, `*#22*3#6#1*12*0*10##` arrives `13.6 ms` before `*16*13*61##`).
+
+5. **Lighting, Automation & Energy Sweep Queries (WHO 1, WHO 2 & WHO 18 — 38 tx / 86 rx)**:
+   - `[tx] *#1*0##` and `[tx] *#2*0##` each trigger the same `43`-frame A/PL status burst (`42` `WHO 1` light/relay status frames + `1` `WHO 2` shutter status frame `*2*0*99##`, `86` `rx` frames total).
+   - `36` `WHO 18` `tx` queries (`*#18*51..59*51##` / `*1200##` and `*#18*71#0..79#0*51##` / `*1200##`): Dimension `51` queries wait `~943 ms` (SCS bus timeout with no meter answering), whereas unsupported Dimension `1200` queries return immediately (`~57 ms` including `50 ms` queue pacing).

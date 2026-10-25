@@ -322,6 +322,7 @@ SUPPORTED_GATEWAY_MODELS = [
     "AM4890",
     "H4890",
     "LN4890",
+    "H4684",
     "Generic",
 ]
 
@@ -353,7 +354,11 @@ WHO13_OFFICIAL_DEVICE_TYPES = {
 #        Shared across modern gateway families (not all Linux-based, e.g. MH201),
 #        so it identifies none of them (see WHO13_SHARED_DEVICE_TYPES).
 #        It contradicts legacy gateways (e.g. MH200/F452), but only as field evidence.
+#    23: Confirmed on physical BTicino H/L4684 touchscreen gateway (issue #466
+#        comment 6398442412, firmware 6.0.11, kernel 2.6.2, distro 6.0.0; UPnP
+#        modelName `H/L4684`, distinct from 2006 spec code `13` on FW 2.0.54).
 WHO13_OBSERVED_DEVICE_TYPES: dict[str, tuple[str, ...]] = {
+    "23": ("H4684", "H/L4684", "L4684"),
     "200": ("F454", "MyHomeServer1", "MH202", "F461", "H4890", "MH201"),
 }
 # Codes from an independent implementation: the `device` table of Nmap's
@@ -380,7 +385,6 @@ WHO13_THIRD_PARTY_DEVICE_TYPES: dict[str, tuple[str, ...]] = {
     "12": ("F453AV",),
     "15": ("F427",),  # Nmap: "F427 (Gateway Open-KNX)"
     "16": ("F453",),
-    "23": ("H4684",),  # a second code for the model the 2006 table gives as 13
     "27": ("L4686SDK",),
     "44": ("MH200N",),
     "51": ("F454",),
@@ -487,7 +491,7 @@ def gateway_model_family(model: str | None) -> str:
     """
     if not model:
         return ""
-    name = str(model).strip().upper().replace(" ", "").replace("-", "").replace("_", "")
+    name = str(model).strip().upper().replace(" ", "").replace("-", "").replace("_", "").replace("/", "")
     m = re.match(r"^([A-Z]+\d+)[A-Z]*$", name)
     return m.group(1) if m else name
 

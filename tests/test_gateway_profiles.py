@@ -43,6 +43,7 @@ def test_extract_gateway_models_from_const():
     assert "F452V" in models
     assert "F453" in models
     assert "F453AV" in models
+    assert "H4684" in models
     assert "Generic" in models
 
 
@@ -53,6 +54,7 @@ def test_extract_ssdp_models_from_manifest():
     assert "MyHomeServer1" in ssdp_models
     assert "AM4890" in ssdp_models
     assert "HL4684" in ssdp_models
+    assert "H/L4684" in ssdp_models
 
 
 def test_generate_gateway_profiles_table():
@@ -172,7 +174,7 @@ def test_generate_gateway_discovery_table_and_verify_oracle():
     assert "| **MH200** *(Legacy)* | WHO 1, 2, 4, 16 | WHO 1, 2, 16 (firmware drops `*#4*0##`) |" in block
     assert "| **MH200N** | WHO 1, 2, 4, 16 | WHO 1, 2, 4, 16 |" in block
     assert "| **MH201** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`) |" in block
-    assert "| **H4684 / HL4684** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`) |" in block
+    assert "| **H4684 / H/L4684** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`) |" in block
 
     assert ugp.verify_profiles_against_oracle() == []
 
