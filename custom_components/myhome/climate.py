@@ -558,11 +558,17 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # bus captures confirm querying #0#1 times out on plants without a physical 4-zone unit (#629).
             # They receive setpoints via commands (*#4*#0#1*#14*T*M##), broadcast events, or restored state.
             return
+        # Humidity is asked only where the gateway forwards the request: the emulated firmware
+        # of F450, F453, F453AV, F454, H4684, MH200, MH200N and MH202 did not (own-firmware-oracle
+        # thermo-zone-requests finding, emulated firmware). Whether those gateways put the probe's
+        # humidity on the event session is not traced; any *#4*<WHERE>*60*<HH>## delivered there
+        # still updates current_humidity (handle_event) without a poll.
+        wants_humidity = self._humidity and getattr(self._gateway_handler, "humidity_request_refused", False) is not True
         if (
             not self._central
             and not self._gateway_supports_zone_status
             and not self._fan
-            and not self._humidity
+            and not wants_humidity
         ):
             # Physical SCS gateways (F455, F454, MH200N, MH202, etc.) do not support
             # dimension-less status requests (*#4*Z##) for regular zones (1-99). The request
@@ -590,9 +596,16 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             await self._gateway_handler.send_status_request(
                 cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*11##"))
             )
-        if self._humidity:
+        if wants_humidity:
             await self._gateway_handler.send_status_request(
                 cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*60##"))
+            )
+        elif self._humidity:
+            LOGGER.debug(
+                "%s Zone %s: this gateway refuses humidity requests; not asked (a *#4*%s*60*HH## event still updates it)",
+                self._gateway_handler.log_id,
+                self._full_where,
+                self._full_where,
             )
 
     @callback
