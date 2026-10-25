@@ -527,7 +527,9 @@ async def test_scope_events_fire_only_for_state_frames(gateway_handler):
     WHO 2 DIMENSION 10 status readbacks (the only readable WHO 2 dimension), one
     frame OWNd cannot parse (handed through as the raw string), and the advanced
     scope commands captured in `tests/fixtures/traces/issue_445/` (WHAT 10/11/12 on
-    WHERE 0) and `issue_645/` (`*2*0*100##`).
+    WHERE 0), and the area 10 stop `*2*0*100##` as the MyHomeServer1 028206
+    firmware oracle replays it (`down *2*0*100##` -> `bus:$04B30A120A` and
+    `own:*2*0*100##` on the event session; no community capture carries it).
     """
     frames = [
         OWNMessage.parse("*1*30*#5##"),  # group 5 dim up one step
@@ -540,7 +542,7 @@ async def test_scope_events_fire_only_for_state_frames(gateway_handler):
         OWNMessage.parse("*2*10#001#1*0##"),  # advanced general stop (issue_445)
         OWNMessage.parse("*2*11#100#001#1*0##"),  # advanced general up (issue_445)
         OWNMessage.parse("*2*12#100#001#1*0##"),  # advanced general down (issue_445)
-        OWNMessage.parse("*2*0*100##"),  # area 10 stop (issue_645)
+        OWNMessage.parse("*2*0*100##"),  # area 10 stop (MyHomeServer1 028206 oracle replay)
         OWNMessage.parse("*1*1*#6##"),  # group 6 on: a real state, still fired
         OWNMessage.parse("*1*0*#6##"),  # group 6 off
         OWNMessage.parse("*2*0*#5##"),  # group 5 stop: a real state
