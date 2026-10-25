@@ -17,7 +17,13 @@ from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PASSWORD, C
 from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
 
 from custom_components.myhome.climate import MyHOMEClimate
-from custom_components.myhome.const import CONF_FIRMWARE
+from custom_components.myhome.const import (
+    CONF_FIRMWARE,
+    ROLE_PRIMARY,
+    ROLE_SECONDARY,
+    ROLE_STANDBY,
+    TOPOLOGY_SHARED,
+)
 from custom_components.myhome.gateway import HUMIDITY_REQUEST_REFUSED, MyHOMEGatewayHandler
 
 MAC = "00:03:50:00:02:57"
@@ -167,3 +173,104 @@ async def test_vendor_prefixed_refusing_gateway_zone_does_not_ask(hass):
     handler = _handler(hass, "Legrand MH200N")
     await _humidity_zone(hass, handler).async_update()
     assert _sent(handler) == []
+
+
+# ------------------------------------------------------------------ gateway: WHO 4 delegation and warm standby (review 5644219403, 1)
+
+@pytest.mark.parametrize(("primary_model", "secondary_model"), [("MH202", "F461"), ("F454", "MyHomeServer1")])
+async def test_who4_delegated_to_a_forwarding_secondary_is_asked(hass, primary_model, secondary_model):
+    """The request goes through the secondary WHO 4 is delegated to: its table decides, not the primary's."""
+    primary = _handler(hass, primary_model)
+    secondary = _handler(hass, secondary_model)
+    primary._delegated_target = MagicMock(return_value=secondary)
+    assert primary._who4_target() is secondary
+    assert primary.humidity_request_refused is False
+    await _humidity_zone(hass, primary).async_update()
+    assert "*#4*2*60##" in _sent(primary)  # send_status_request itself routes it to the secondary
+
+
+@pytest.mark.parametrize(("primary_model", "secondary_model"), [("F461", "MH202"), ("MyHomeServer1", "F454")])
+async def test_who4_delegated_to_a_refusing_secondary_is_not_asked(hass, primary_model, secondary_model):
+    primary = _handler(hass, primary_model)
+    secondary = _handler(hass, secondary_model)
+    primary._delegated_target = MagicMock(return_value=secondary)
+    assert primary.humidity_request_refused is True
+    await _humidity_zone(hass, primary).async_update()
+    assert "*#4*2*60##" not in _sent(primary)
+
+
+@pytest.mark.parametrize(("primary_model", "standby_model"), [("F461", "MH202"), ("MyHomeServer1", "F454")])
+async def test_failover_to_a_refusing_standby_does_not_ask(hass, primary_model, standby_model):
+    """A primary F461 failed over to a standby MH202: *#4*Z*60## would be NACKed by the MH202."""
+    primary = _handler(hass, primary_model)
+    standby = _handler(hass, standby_model)
+    primary._failover_target = MagicMock(return_value=standby)
+    assert primary._who4_target() is standby
+    assert primary.humidity_request_refused is True
+    await _humidity_zone(hass, primary).async_update()
+    assert "*#4*2*60##" not in _sent(primary)
+
+
+@pytest.mark.parametrize(("primary_model", "standby_model"), [("MH202", "F461"), ("F454", "MyHomeServer1")])
+async def test_failover_to_a_forwarding_standby_still_asks(hass, primary_model, standby_model):
+    primary = _handler(hass, primary_model)
+    standby = _handler(hass, standby_model)
+    primary._failover_target = MagicMock(return_value=standby)
+    assert primary.humidity_request_refused is False
+    await _humidity_zone(hass, primary).async_update()
+    assert "*#4*2*60##" in _sent(primary)
+
+
+def test_a_delegated_secondary_is_preferred_to_the_standby(hass):
+    """``send_status_request`` asks the delegated secondary first, the standby only without one."""
+    primary = _handler(hass, "F461")
+    secondary = _handler(hass, "MH202")
+    standby = _handler(hass, "MyHomeServer1")
+    primary._delegated_target = MagicMock(return_value=secondary)
+    primary._failover_target = MagicMock(return_value=standby)
+    assert primary._who4_target() is secondary
+    assert primary.humidity_request_refused is True
+
+
+@pytest.mark.parametrize(("model", "refused"), [("MH202", True), ("F461", False)])
+def test_without_delegation_or_failover_the_gateway_decides_itself(hass, model, refused):
+    """A standalone gateway (no secondary, no standby) is its own WHO 4 target: nothing changes."""
+    handler = _handler(hass, model)
+    assert handler._who4_target() is handler
+    assert handler.humidity_request_refused is refused
+
+
+async def test_a_configured_secondary_decides_for_the_primary_it_serves(hass):
+    """The real topology lookup: a secondary entry with WHO 4 delegated, connected, is the target."""
+    from tests.test_multi_gateway import _create_mock_gateway
+
+    _, primary = _create_mock_gateway(hass, "00:03:50:00:02:57", name="MH202", topology=TOPOLOGY_SHARED, role=ROLE_PRIMARY)
+    _, secondary = _create_mock_gateway(
+        hass, "00:03:50:00:02:58", name="F461", topology=TOPOLOGY_SHARED, role=ROLE_SECONDARY,
+        primary_gateway="00:03:50:00:02:57", delegated_whos=[4],
+    )
+    primary.gateway.profile = get_gateway_profile("MH202")
+    secondary.gateway.profile = get_gateway_profile("F461")
+    assert primary.humidity_request_refused is True  # the secondary is not connected yet
+    secondary.is_connected = True
+    assert primary._who4_target() is secondary
+    assert primary.humidity_request_refused is False
+
+
+async def test_a_configured_standby_decides_while_the_primary_is_down(hass):
+    from tests.test_multi_gateway import _create_mock_gateway
+
+    _, primary = _create_mock_gateway(hass, "00:03:50:00:02:57", name="F461", topology=TOPOLOGY_SHARED, role=ROLE_PRIMARY)
+    _, standby = _create_mock_gateway(
+        hass, "00:03:50:00:02:59", name="MH202", topology=TOPOLOGY_SHARED, role=ROLE_STANDBY,
+        primary_gateway="00:03:50:00:02:57",
+    )
+    primary.gateway.profile = get_gateway_profile("F461")
+    standby.gateway.profile = get_gateway_profile("MH202")
+    standby.is_connected = True
+    assert primary.is_connected is False
+    assert primary._who4_target() is standby
+    assert primary.humidity_request_refused is True
+    primary.is_connected = True  # back: its own table again
+    assert primary._who4_target() is primary
+    assert primary.humidity_request_refused is False

@@ -530,8 +530,14 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     def humidity_request_refused(self) -> bool:
         """Whether this gateway drops humidity requests (``*#4*Z*60##``) instead of forwarding them.
 
-        The OWNd profile flag wins when it exists; otherwise the oracle-derived table.
+        The request goes where ``send_status_request`` sends it: a secondary gateway WHO 4 is
+        delegated to, or the warm standby while this primary is down, decides with its own
+        profile and table. The OWNd profile flag wins when it exists; otherwise the
+        oracle-derived table.
         """
+        target = self._who4_target()
+        if target is not self:
+            return target.humidity_request_refused
         supported = getattr(getattr(self.gateway, "profile", None), "supports_heating_humidity_request", None)
         if isinstance(supported, bool):
             return not supported
