@@ -405,3 +405,124 @@ async def test_full_tilt_from_unknown_that_runs_long_moves_a_known_curtain(hass,
     await _yield()
     assert cover.current_cover_tilt_position == 100
     assert cover.current_cover_position == 75
+
+
+def _controlled_sleep(release: asyncio.Event):
+    """asyncio.sleep stand-in: zero-length sleeps yield, longer ones wait for ``release``."""
+    real_sleep = asyncio.sleep
+
+    async def fake_sleep(duration, *args, **kwargs):
+        if duration <= 0:
+            await real_sleep(0)
+            return
+        await release.wait()
+
+    return fake_sleep
+
+
+async def test_close_from_unknown_settles_when_the_actuator_stops_early(hass, gateway, clock, fake_time) -> None:
+    """The F411/2 stops itself at 5 s while travel_time is 6: the end position settles on the timer (review 5642333408)."""
+    cover = _make_cover(hass, gateway)
+    release = asyncio.Event()
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_controlled_sleep(release)):
+        try:
+            await _close_from_unknown(cover, gateway, clock)
+            clock.now += 5.0
+            cover.handle_event(OWNEvent.parse("*2*0*05##"))  # the actuator's own timer, before travel_time
+            assert cover.is_closing is True  # the run is still settling
+            assert cover.current_cover_position is None
+            assert cover.extra_state_attributes["last_run_seconds"] == pytest.approx(5.0)  # measured anyway
+            clock.now += 3.1  # travel_time + END_SETTLE_MARGIN passed
+        finally:
+            release.set()
+        await asyncio.wait_for(cover._stop_task, 1.0)
+    assert cover.is_closing is False
+    assert cover.current_cover_position == 0
+    assert cover.is_closed is True
+    assert [raw for raw, _ in gateway.deliveries] == ["*2*2*05##"]  # no stop frame was sent
+
+
+async def test_open_from_unknown_settles_on_the_timer_without_a_stop_status(hass, gateway, clock, fake_time) -> None:
+    """open_cover from unknown on a gateway that relays no stop status: 100 % after travel_time + 2 s."""
+    cover = _make_cover(hass, gateway)
+    release = asyncio.Event()
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_controlled_sleep(release)):
+        try:
+            await cover.async_open_cover()
+            raw, written = gateway.deliveries[-1]
+            assert raw == "*2*1*05##"
+            written.set_result(clock.now)
+            await _yield()
+            clock.now += 0.12
+            cover.handle_event(OWNEvent.parse("*2*1*05##"))  # direction echo, then silence
+            await _yield()
+            assert cover.is_opening is True
+            assert cover.current_cover_position is None
+            clock.now += 8.1
+        finally:
+            release.set()
+        await asyncio.wait_for(cover._stop_task, 1.0)
+    assert cover.current_cover_position == 100
+    assert cover.is_closed is False
+    assert cover.is_opening is False
+
+
+async def test_early_actuator_stop_of_a_known_run_still_freezes_the_estimate(hass, gateway, clock, fake_time) -> None:
+    """Regression guard: from a known position the early stop still ends the run at the timed estimate."""
+    cover = _make_cover(hass, gateway)
+    cover._attr_current_cover_position = 100
+    cover._start_position = 100
+    cover._attr_is_closed = False
+    await cover.async_close_cover()
+    raw, written = gateway.deliveries[-1]
+    assert raw == "*2*2*05##"
+    written.set_result(clock.now)
+    await _yield()
+    clock.now += 0.12
+    cover.handle_event(OWNEvent.parse("*2*2*05##"))
+    clock.now += 3.0
+    cover.handle_event(OWNEvent.parse("*2*0*05##"))  # stopped halfway
+    assert cover.is_closing is False
+    assert cover.current_cover_position == 50
+
+
+async def test_restored_open_without_a_position_stays_open_and_unknown(hass, gateway) -> None:
+    """A last state "open" with no position says nothing about the height: open, position unknown (review 5642333408)."""
+    cover = _make_cover(hass, gateway)
+    cover.async_get_last_state = AsyncMock(return_value=State("cover.x", "open", {}))
+    await cover.async_added_to_hass()
+    assert cover.current_cover_position is None
+    assert cover.is_closed is False
+    assert cover.state == "open"
+    with pytest.raises(ServiceValidationError) as err:
+        await cover.async_set_cover_position(position=50)
+    assert err.value.translation_key == "cover_position_unknown"
+    assert gateway.deliveries == []
+
+
+async def test_restored_closed_without_a_position_is_still_closed(hass, gateway) -> None:
+    """"closed" is a height: a restored closed state without a position is 0 %."""
+    cover = _make_cover(hass, gateway)
+    cover.async_get_last_state = AsyncMock(return_value=State("cover.x", "closed", {}))
+    await cover.async_added_to_hass()
+    assert cover.current_cover_position == 0
+    assert cover.is_closed is True
+
+
+async def test_reversal_during_a_settling_run_from_unknown_ends_at_the_next_stop(hass, gateway, clock, fake_time) -> None:
+    """A keypad reversal cancels the settle; the stop that follows ends the reversed run (no stuck closing)."""
+    cover = _make_cover(hass, gateway)
+    release = asyncio.Event()
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_controlled_sleep(release)):
+        try:
+            await _close_from_unknown(cover, gateway, clock)
+            clock.now += 2.0
+            cover.handle_event(OWNEvent.parse("*2*1*05##"))  # somebody reversed it from the keypad
+            assert cover.is_opening is True
+            clock.now += 1.0
+            cover.handle_event(OWNEvent.parse("*2*0*05##"))  # and stopped it
+        finally:
+            release.set()
+    assert cover.is_opening is False
+    assert cover.is_closing is False
+    assert cover.current_cover_position is None  # still unknown: no end stop was reached

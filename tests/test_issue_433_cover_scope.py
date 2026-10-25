@@ -358,6 +358,8 @@ async def test_scope_cover_behind_an_interface_commands_each_member(gateway) -> 
     gateway.send.reset_mock()
     await area.async_close_cover()
     assert sorted(_sent(gateway)) == ["*2*2*11#4#02##", "*2*2*12#4#02##"]
+    for p in points:
+        p._cancel_stop_task()  # the members' runs from unknown settle on their travel timer
 
 
 async def test_scope_cover_on_the_main_bus_sends_one_scope_frame(gateway) -> None:

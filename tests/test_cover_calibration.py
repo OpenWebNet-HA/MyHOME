@@ -972,6 +972,7 @@ async def test_actuator_stop_status_ends_the_measured_run(hass, gateway, clock, 
     cover.handle_event(OWNEvent.parse("*2*0*21##"))
     attrs = cover.extra_state_attributes
     assert attrs["last_run_seconds"] == pytest.approx(18.4) and attrs["last_run_direction"] == "close"
+    cover._cancel_stop_task()  # a run from unknown settles its end position on the travel timer
 
 
 async def test_set_position_re_anchor_does_not_shorten_the_measured_run(hass, gateway, clock, fake_time, sleeps):

@@ -112,6 +112,8 @@ class MyHOMEScopeCover(MyHOMECover):
     A scope with no known members ends a run after its travel time.
     """
 
+    _settles_open_close_from_unknown = False  # the members settle their own runs
+
     def __init__(self, *args: Any, scope: CoverScope, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.scope = scope

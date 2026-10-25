@@ -981,14 +981,14 @@ class TestMyHOMECoverEntity:
         assert basic_cover._start_position == 43
         assert basic_cover.is_closed is False
 
-        # 5. Invalid position attribute with state 'open' -> falls back to 100%
+        # 5. Invalid position attribute with state 'open' -> open, position unknown
         basic_cover._attr_current_cover_position = 50
         basic_cover.async_get_last_state = AsyncMock(
             return_value=State("cover.basic_shutter", "open", {ATTR_CURRENT_POSITION: "invalid"})
         )
         await basic_cover.async_added_to_hass()
-        assert basic_cover.current_cover_position == 100
-        assert basic_cover._start_position == 100
+        assert basic_cover.current_cover_position is None
+        assert basic_cover._start_position is None
         assert basic_cover.is_closed is False
 
         # 6. Invalid position attribute with state 'closed' -> falls back to 0%
@@ -1022,13 +1022,13 @@ class TestMyHOMECoverEntity:
         assert basic_cover._start_position == 0
         assert basic_cover.is_closed is True
 
-        # 2. State 'open' -> position 100%, is_closed False
+        # 2. State 'open' without a position -> open, position unknown (no height is implied)
         basic_cover.async_get_last_state = AsyncMock(
             return_value=State("cover.basic_shutter", "open", {})
         )
         await basic_cover.async_added_to_hass()
-        assert basic_cover.current_cover_position == 100
-        assert basic_cover._start_position == 100
+        assert basic_cover.current_cover_position is None
+        assert basic_cover._start_position is None
         assert basic_cover.is_closed is False
 
         # 3. State 'unknown' -> position remains unchanged (default 50)
