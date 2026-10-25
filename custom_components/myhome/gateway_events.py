@@ -347,9 +347,12 @@ class GatewayEventDispatcher:
                     isinstance(message, OWNAutomationEvent)
                     and self._is_active_for_who(2)
                     # Only a command frame that states the motion is an open/close/stop
-                    # event (#367). As for WHO 1, a dimension frame is never one: a
-                    # DIMENSION 10 status readback on a scope address
-                    # (`*#2*#5*10*10*50*0*0##`) is stationary, not a stop, and must not
+                    # event (#367). As for WHO 1, a dimension frame is never one. This is
+                    # a defensive parser invariant, not a readback actuators send: a real
+                    # shutter reports DIMENSION 10 on its own point-to-point address, never
+                    # on a group, area or general WHERE. OWNd still parses a grammatically
+                    # valid scope DIMENSION 10 frame (`*#2*#5*10*10*50*001*0##`) with
+                    # `is_opening` / `is_closing` False, which must not become a stop nor
                     # fire the gateway's `centralized_shutter_stop` trigger. A WHAT outside
                     # the table leaves `is_opening` / `is_closing` None and states nothing.
                     and not (

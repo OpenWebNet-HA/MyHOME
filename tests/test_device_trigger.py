@@ -1244,7 +1244,13 @@ async def test_family_filter_combines_with_gateway_mac_mismatch(hass: HomeAssist
 
 @pytest.mark.asyncio
 async def test_centralized_shutter_stop_ignores_dimension_10_status(hass: HomeAssistant):
-    """A stationary WHO 2 DIMENSION 10 readback on WHERE 0 is not a general stop (#367)."""
+    """A WHO 2 dimension frame on a scope address is not a general stop (#367).
+
+    A physical shutter reports DIMENSION 10 on its own point-to-point address, so a
+    scope DIMENSION 10 frame is guarded defensively (3-digit priority as an F461 /
+    MyHomeServer1 encodes it); the DIMENSION 11 level echo is what such a gateway
+    really puts on the event session for a scope level write.
+    """
     from custom_components.myhome.const import CONF_BROADCAST_RESYNC
     from custom_components.myhome.gateway import MyHOMEGatewayHandler
 
@@ -1261,9 +1267,11 @@ async def test_centralized_shutter_stop_ignores_dimension_10_status(hass: HomeAs
     action_stop = AsyncMock()
     unsub = await async_attach_trigger(hass, {CONF_TYPE: CONF_CENTRALIZED_SHUTTER_STOP}, action_stop, {"trigger_name": "stop"})
 
-    # Stationary status readbacks: shutterStatus 10 at 50 %, on the general and a group address.
-    await handler._process_message(OWNMessage.parse("*#2*0*10*10*50*0*0##"))
-    await handler._process_message(OWNMessage.parse("*#2*#5*10*10*50*0*0##"))
+    # Scope DIMENSION 10 frames (defensive guard) and the real DIMENSION 11 level echoes.
+    await handler._process_message(OWNMessage.parse("*#2*0*10*10*50*001*0##"))
+    await handler._process_message(OWNMessage.parse("*#2*#5*10*10*50*001*0##"))
+    await handler._process_message(OWNMessage.parse("*#2*0*#11#001#1*50##"))
+    await handler._process_message(OWNMessage.parse("*#2*#5*#11#001#1*50##"))
     await hass.async_block_till_done()
     action_stop.assert_not_called()
 

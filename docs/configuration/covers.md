@@ -300,8 +300,8 @@ Every payload carries `message` (the raw frame), `event` (`open`, `close` or `st
 
 Only a **command frame that states a motion** fires an event: the standard `WHAT 0` / `1` / `2` (`*2*0*0##`, `*2*1*3##`, `*2*2*#5##`) and the advanced `WHAT 10` / `11` / `12` with their parameters (`*2*10#001#1*0##` stop, `*2*11#100#001#1*0##` up, `*2*12#100#001#1*0##` down, as captured from a MyHomeServer1 + LN4660M2 keypad). Nothing fires for:
 
-* a **DIMENSION 10 status readback** on a scope address (`*#2*0*10*10*50*0*0##`, `*#2*#5*10*10*50*0*0##`): the shutter is stationary at 50 %, nothing was stopped;
-* a dimension write such as the Dimension 11 level (`*#2*#5*#11#001*50##`, see [Protocol Note: Dimension 11 is Shutter Level](#protocol-note-dimension-11-is-shutter-level));
+* **any WHO 2 dimension frame**, as for the WHO 1 light events: a Dimension 11 level write and its event-session echo (`*#2*#5*#11#001*50##`, echoed by an F461 / MyHomeServer1 as `*#2*#5*#11#001#1*50##`; see [Protocol Note: Dimension 11 is Shutter Level](#protocol-note-dimension-11-is-shutter-level)) sets a level, it does not state a motion;
+* a **`DIMENSION 10` status frame on a scope address** (`*#2*#5*10*10*50*001*0##`, `*#2*0*10*10*50*001*0##`), guarded defensively: a physical shutter reports its `DIMENSION 10` status on its own point-to-point address, never on a group, area or general one, so such a frame is parsed but never read as a stop;
 * a `WHAT` outside the WHO 2 table, which states no motion.
 
 ```yaml
