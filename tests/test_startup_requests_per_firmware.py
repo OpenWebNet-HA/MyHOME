@@ -2,7 +2,8 @@
 
 - ``*#4*0##`` is refused (not forwarded to the bus) by F450, F454, F459, F460, F461, H4684,
   MH200, MH202 and MyHomeServer1; F453, F453AV and MH200N forward it
-  (``results/<P>/<V>/oracle/full/trace-corpus.tsv``). Where it is refused, an SCS-only
+  (``results/<P>/<V>/oracle/full/trace-corpus.tsv``). The MH201 is not in the oracle: a
+  physical MH201 3.3.6 answered ``*#4*0##`` with no zone frame (``issue_466`` sweep trace). Where it is refused, an SCS-only
   gateway's zones ask for their temperature one by one (``*#4*Z*0##``), which every
   emulated gateway forwards.
 - ``*#16*0*5##`` is refused by F450, F459, F460, F461, MH202 and MyHomeServer1
@@ -65,7 +66,8 @@ def _zone(hass, handler, where="3", **kwargs) -> MyHOMEClimate:
     [
         ("F461", False, False), ("MyHomeServer1", False, False), ("MH202", False, False),
         ("F459", False, False), ("F460", False, False), ("F450", False, False),
-        ("F454", False, True), ("MH200", False, True), ("H4684", False, True), ("HL4684", False, True),
+        ("F454", False, True), ("MH200", False, True), ("MH201", False, True),
+        ("H4684", False, True), ("HL4684", False, True),
         ("F453", True, True), ("F453AV", True, True), ("MH200N", True, True), ("Generic", True, True),
     ],
 )

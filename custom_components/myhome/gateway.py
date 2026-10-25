@@ -162,16 +162,22 @@ DISCOVERY_REQUESTS: tuple[tuple[int, str], ...] = (
 # (``supports_general_heating_status``, ``supports_who(16)``); these tables are the fallback
 # until the flags exist there. Gateways not listed keep sending the request.
 GENERAL_ZONE_REQUEST_REFUSED = frozenset(
-    {"F450", "F454", "F459", "F460", "F461", "H4684", "MH200", "MH202", "MYHOMESERVER1"}
-)  # *#4*0## (trace-corpus.tsv); F453, F453AV and MH200N forward it
+    {"F450", "F454", "F459", "F460", "F461", "H4684", "MH200", "MH201", "MH202", "MYHOMESERVER1"}
+)  # *#4*0## (trace-corpus.tsv); F453, F453AV and MH200N forward it. The MH201 is not in the
+# oracle: a physical MH201 3.3.6 sent *#4*0## and got no zone frame back although zones 2, 3
+# and 4 report on that plant (tests/fixtures/traces/issue_466, sweep 19-11-35 frame 11 against
+# trace 19-05-42 frames 0-10).
 SOUND_STATUS_REQUEST_REFUSED = frozenset(
     {"F450", "F459", "F460", "F461", "MH202", "MYHOMESERVER1"}
 )  # *#16*0*5## (sound-who16-source.tsv)
 # Zones of these SCS-only gateways report nothing after the startup sweep, so each zone asks
-# for its temperature (*#4*Z*0##): the ones refusing *#4*0## that also forward *#4*Z## to the
-# bus unanswered (#674), and the MH201, whose standalone thermostats stayed unknown after every
-# restart (#185; the MH201 is not in the oracle). F460, F461 and MyHomeServer1 refuse *#4*0##
-# too but answer *#4*Z## themselves (F460 and F461 expand it into the four dimension requests,
+# for its temperature (*#4*Z*0##, one bus query answered in ~120 ms on a populated zone): the
+# models refusing *#4*0## whose *#4*Z## is expanded into four bus queries ($0499ZZ3000 / 12 /
+# 0E / 0D in trace-corpus.tsv, ~1.3 s per zone when a central unit answers them all, a NACK
+# after 1.5-2 s when a standalone thermostat answers only some), and the MH201, whose
+# standalone thermostats stayed unknown after every restart (#185; its *#4*0## refusal is the
+# issue_466 sweep trace, the MH201 is not in the oracle). F460, F461 and MyHomeServer1 refuse
+# *#4*0## too but answer *#4*Z## themselves (F460 and F461 expand it into one request,
 # $00499013000 in trace-corpus.tsv; MyHomeServer1 replies from its cache, #649), so their zones
 # keep the zone status poll and are not listed here.
 ZONE_TEMPERATURE_POLL = frozenset({"F450", "F454", "F459", "H4684", "MH200", "MH201", "MH202"})
