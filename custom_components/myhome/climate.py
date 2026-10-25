@@ -560,7 +560,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return
         # Humidity is asked only where the gateway forwards the request: the emulated firmware
         # of F450, F453, F453AV, F454, H4684, MH200, MH200N and MH202 did not (own-firmware-oracle
-        # thermo-zone-requests finding, emulated firmware); the zone's own pushes keep it fresh there.
+        # thermo-zone-requests finding, emulated firmware). Whether those gateways put the probe's
+        # humidity on the event session is not traced; any *#4*<WHERE>*60*<HH>## delivered there
+        # still updates current_humidity (handle_event) without a poll.
         wants_humidity = self._humidity and getattr(self._gateway_handler, "humidity_request_refused", False) is not True
         if (
             not self._central
@@ -600,8 +602,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             )
         elif self._humidity:
             LOGGER.debug(
-                "%s Zone %s: this gateway refuses humidity requests; waiting for its pushes",
+                "%s Zone %s: this gateway refuses humidity requests; not asked (a *#4*%s*60*HH## event still updates it)",
                 self._gateway_handler.log_id,
+                self._full_where,
                 self._full_where,
             )
 

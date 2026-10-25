@@ -5,7 +5,9 @@ a ``firmware_observed`` verdict on emulated firmware): ``*#4*2*60##`` and ``*#4*
 on the bus by the emulated F450, F453, F453AV, F454, H4684, MH200, MH200N and MH202, and
 forwarded by F459, F460, F461 and MyHomeServer1. The OWNd profile flag wins when it is a bool.
 A live F461 2.0.11 answered ``*#4*2*60##`` with ``*#4*2*60*39##``. On the refusing gateways the
-request only costs a command-session round trip; the zone's own pushes keep the humidity fresh.
+request only costs a command-session round trip; whether they put the probe's humidity on the
+event session is not traced, and any ``*#4*<WHERE>*60*<HH>##`` delivered there still updates
+``current_humidity`` without a poll.
 
 The "captured frames" section replays rows of two committed traces (the loaders the other
 trace tests use): ``f461_live_2026-10-23`` (``*#4*2*60##`` answered ``*#4*2*60*39##`` on the
