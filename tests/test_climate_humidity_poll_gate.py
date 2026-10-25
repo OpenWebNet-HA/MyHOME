@@ -6,14 +6,22 @@ on the bus by the emulated F450, F453, F453AV, F454, H4684, MH200, MH200N and MH
 forwarded by F459, F460, F461 and MyHomeServer1. The OWNd profile flag wins when it is a bool.
 A live F461 2.0.11 answered ``*#4*2*60##`` with ``*#4*2*60*39##``. On the refusing gateways the
 request only costs a command-session round trip; the zone's own pushes keep the humidity fresh.
+
+The "captured frames" section replays rows of two committed traces (the loaders the other
+trace tests use): ``f461_live_2026-10-23`` (``*#4*2*60##`` answered ``*#4*2*60*39##`` on the
+command session, echoed on the event session, and three spontaneous ``*#4*2*60*38##`` pushes)
+and ``myhomeserver1_live_2026-10-24`` (``*#4*39*60##`` answered ``*#4*39*60*51##``).
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PASSWORD, CONF_PORT
+from OWNd.message import OWNHeatingEvent
 from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
 
 from custom_components.myhome.climate import MyHOMEClimate
@@ -31,6 +39,12 @@ from custom_components.myhome.gateway import (
 )
 
 MAC = "00:03:50:00:02:57"
+TRACES = Path(__file__).resolve().parent / "fixtures" / "traces"
+F461_LIVE = TRACES / "f461_live_2026-10-23" / "myhome_trace_F461_live_2026-10-23.json"
+MHS1_LIVE = TRACES / "myhomeserver1_live_2026-10-24" / "myhome_trace_MyHomeServer1_live_2026-10-24.json"
+F461_RUN2 = "run2_reviewer_reads"
+F461_RUN6 = "run6_event_session_ha_fixed_integration"
+MHS1_RUN3 = "run3_reads_lights_addresses_humidity"
 
 
 def _entry(model: str) -> MagicMock:
@@ -399,3 +413,97 @@ def test_humidity_enabled_later_still_polls_on_add_on_a_refusing_gateway(hass):
     assert zone._poll_on_add is False
     zone._enable_humidity()
     assert zone._poll_on_add is True
+
+
+# ------------------------------------------------------------------ captured frames (review 5644219403, 4.2)
+
+@pytest.fixture(scope="module")
+def f461_rows() -> list[dict]:
+    assert F461_LIVE.is_file(), F461_LIVE
+    return json.loads(F461_LIVE.read_text(encoding="utf-8"))["rows"]
+
+
+@pytest.fixture(scope="module")
+def mhs1_rows() -> list[dict]:
+    assert MHS1_LIVE.is_file(), MHS1_LIVE
+    return json.loads(MHS1_LIVE.read_text(encoding="utf-8"))["rows"]
+
+
+def _result(rows: list[dict], run: str, frame: str) -> dict:
+    found = [r for r in rows if r["dir"] == "result" and r["run"] == run and r["frame"] == frame]
+    assert len(found) == 1, (run, frame, len(found))
+    return found[0]
+
+
+def _evt(rows: list[dict], run: str, frame: str) -> list[dict]:
+    return [r for r in rows if r["run"] == run and r["dir"] == "rx" and r["session"] == "evt" and r["frame"] == frame]
+
+
+def test_f461_capture_answers_the_humidity_request(f461_rows):
+    """F461 2.0.11, zone 2: ``*#4*2*60##`` is ACKed with ``*#4*2*60*39##`` in 0.14 s, echoed on the event session."""
+    result = _result(f461_rows, F461_RUN2, "*#4*2*60##")
+    assert result["ack"] is True
+    assert result["replies"] == ["*#4*2*60*39##"]
+    sent = next(r for r in f461_rows if r["run"] == F461_RUN2 and r["dir"] == "tx" and r["frame"] == "*#4*2*60##")
+    assert 0 < result["t"] - sent["t"] < 0.5
+    assert len(_evt(f461_rows, F461_RUN2, "*#4*2*60*39##")) == 2  # one echo per request of the run
+    assert len(_evt(f461_rows, F461_RUN6, "*#4*2*60*38##")) == 3  # spontaneous pushes, 30 minutes of HA
+
+
+async def test_captured_f461_reply_and_pushes_update_the_zone(hass, f461_rows):
+    """The captured reply and the three spontaneous pushes replayed through the entity."""
+    handler = _handler(hass, "F461")
+    zone = _humidity_zone(hass, handler)
+    await zone.async_update()
+    assert _sent(handler) == ["*#4*2##", "*#4*2*60##"]
+    for frame in _result(f461_rows, F461_RUN2, "*#4*2*60##")["replies"]:
+        zone.handle_event(OWNHeatingEvent(frame))
+    assert zone.current_humidity == 39.0
+    for row in _evt(f461_rows, F461_RUN6, "*#4*2*60*38##"):
+        zone.handle_event(OWNHeatingEvent(row["frame"]))
+    assert zone.current_humidity == 38.0
+
+
+async def test_captured_pushes_keep_a_refusing_gateway_s_zone_fresh_without_a_poll(hass, f461_rows):
+    """What the gate relies on: the probe's own ``*#4*Z*60*HH##`` pushes, here the F461's, enable and refresh humidity."""
+    handler = _handler(hass, "MH202")
+    zone = MyHOMEClimate(
+        hass=hass, name="Zone 2", device_id="4-2", who="4", where="2",
+        heating=True, cooling=True, fan=False, humidity=False, standalone=True, central=False,
+        manufacturer="BTicino", model="Heating Zone", gateway=handler,
+    )
+    zone.hass = hass
+    zone.entity_id = "climate.zone_2"
+    zone.async_write_ha_state = MagicMock()
+    assert zone.current_humidity is None
+    for row in _evt(f461_rows, F461_RUN6, "*#4*2*60*38##"):
+        zone.handle_event(OWNHeatingEvent(row["frame"]))
+    assert zone._humidity is True
+    assert zone.current_humidity == 38.0
+    await zone.async_update()
+    assert _sent(handler) == []  # humidity enabled by the push, still not polled on the MH202
+
+
+def test_myhomeserver1_capture_answers_the_humidity_request(mhs1_rows):
+    """MyHomeServer1 3.87.13, zone 39: ``*#4*39*60##`` is ACKed with ``*#4*39*60*51##`` in 0.2 s."""
+    result = _result(mhs1_rows, MHS1_RUN3, "*#4*39*60##")
+    assert result["ack"] is True
+    assert result["replies"] == ["*#4*39*60*51##"]
+    assert len(_evt(mhs1_rows, MHS1_RUN3, "*#4*39*60*51##")) == 1
+
+
+async def test_captured_myhomeserver1_reply_updates_zone_39(hass, mhs1_rows):
+    handler = _handler(hass, "MyHomeServer1")
+    zone = MyHOMEClimate(
+        hass=hass, name="Zone 39", device_id="4-39", who="4", where="39",
+        heating=True, cooling=True, fan=False, humidity=True, standalone=True, central=False,
+        manufacturer="BTicino", model="Heating Zone", gateway=handler,
+    )
+    zone.hass = hass
+    zone.entity_id = "climate.zone_39"
+    zone.async_write_ha_state = MagicMock()
+    await zone.async_update()
+    assert _sent(handler) == ["*#4*39##", "*#4*39*60##"]
+    for frame in _result(mhs1_rows, MHS1_RUN3, "*#4*39*60##")["replies"]:
+        zone.handle_event(OWNHeatingEvent(frame))
+    assert zone.current_humidity == 51.0
