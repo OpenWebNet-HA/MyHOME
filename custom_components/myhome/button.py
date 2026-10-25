@@ -117,6 +117,8 @@ async def async_setup_entry(
     def _create_buttons_for_device(dev_id: str | int, cfg: dict[str, Any]) -> list[ButtonEntity]:
         """Lock and unlock buttons for one actuator (a yaml entry or an announcement)."""
         who = str(cfg.get(CONF_WHO, "1"))
+        if who not in ("1", "2"):
+            return []
         address = Address.from_config(str(dev_id), cfg)
         if not address.where or address.where.startswith("#"):
             return []  # groups / general have no lock

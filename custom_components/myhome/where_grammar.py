@@ -25,10 +25,12 @@ here too, so every module that stores or compares an address spells it alike.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import OWNd.message as _ownd_msg
 from OWNd.message import (
+    OWNCommand,
     OWNLightingCommand,
     OWNLightingEvent,
     OWNMessage,
@@ -202,6 +204,11 @@ __all__ = [
     "is_valid_rgb_tuple",
     "normalize_expose_where",
     "normalize_where",
+    "parse_thermo_actuator_where",
+    "thermo_event_actuator",
+    "thermo_event_interface",
+    "thermo_event_zone",
+    "validate_thermo_trigger_command",
     "where_param",
     "zone_number",
 ]
@@ -279,4 +286,124 @@ def expose_message_where(message: Any) -> str:
     tail = where_param(message)
     full_str = f"{raw_str}#{'#'.join(str(p) for p in tail)}" if tail else raw_str
     return normalize_expose_where(who, full_str) if isinstance(who, int) else full_str
+
+
+_THERMO_ACTUATOR_WHERE_RE = re.compile(
+    r"^(0?[1-9]|[1-9][0-9])(?:#([1-9]))?(?:#4#([0-9]{1,2}))?$"
+)
+
+
+def parse_thermo_actuator_where(
+    raw: str | int | None, interface: str | None = None
+) -> tuple[str, str, str | None, str | None]:
+    """Parse and normalize a WHO=4 thermo actuator WHERE address.
+
+    Accepts ``Z`` (``1``..``99``) or ``Z#N`` (``Z=1..99``, ``N=1..9``), with an
+    optional F422 bus routing suffix ``#4#IF`` (``00``..``15``) or ``interface``
+    parameter. Rejects central units (``#0`` / ``0``), pumps (``0#N``), and
+    temperature probes (``>= 100``).
+
+    Returns ``(normalized_where, zone_str, actuator_or_none, normalized_interface)``.
+    """
+    if raw is None or isinstance(raw, bool) or isinstance(interface, bool):
+        raise ValueError("Invalid WHO=4 thermo actuator WHERE address")
+    clean = str(raw).strip().removeprefix("4-")
+    match = _THERMO_ACTUATOR_WHERE_RE.fullmatch(clean)
+    if match is None:
+        raise ValueError(f"Invalid WHO=4 thermo actuator WHERE address: {raw!r}")
+
+    zone_str = str(int(match.group(1)))
+    actuator = match.group(2)
+    emb_if_raw = match.group(3)
+    emb_if: str | None = None
+    if emb_if_raw is not None:
+        emb_int = int(emb_if_raw)
+        if emb_int > 15:
+            raise ValueError(f"Invalid F422 bus interface: {emb_if_raw!r}")
+        emb_if = f"{emb_int:02d}"
+
+    arg_if: str | None = None
+    if interface is not None and str(interface).strip() != "":
+        if_clean = str(interface).strip()
+        if not if_clean.isdigit() or int(if_clean) > 15:
+            raise ValueError(f"Invalid F422 bus interface: {interface!r}")
+        arg_if = f"{int(if_clean):02d}"
+
+    if emb_if is not None and arg_if is not None and emb_if != arg_if:
+        raise ValueError(
+            f"Conflicting F422 bus interface in WHERE ({emb_if}) and interface ({arg_if})"
+        )
+
+    norm_if = arg_if if arg_if is not None else emb_if
+    norm_where = f"{zone_str}#{actuator}" if actuator is not None else zone_str
+    return norm_where, zone_str, actuator, norm_if
+
+
+def thermo_event_interface(message: Any) -> str | None:
+    """Return normalized 2-digit F422 interface from a WHO=4 event, or ``None``."""
+    raw_if = getattr(message, "interface", None)
+    if not raw_if:
+        tail = where_param(message)
+        if len(tail) > 1 and tail[0] == "4":
+            raw_if = str(tail[1])
+        elif len(tail) > 2 and tail[1] == "4":
+            raw_if = str(tail[2])
+    if not raw_if:
+        return None
+    if_str = str(raw_if)
+    return if_str.zfill(2) if if_str.isdigit() else if_str
+
+
+def thermo_event_zone(message: Any) -> str | None:
+    """Return zone ``"1"``..``"99"`` of a WHO=4 event, or ``None`` for pumps/probes/central."""
+    if is_pump(message) or is_probe(str(getattr(message, "where", None))):
+        return None
+    zone = getattr(message, "zone", None)
+    if isinstance(zone, int) and 1 <= zone <= 99:
+        return str(zone)
+    return None
+
+
+def thermo_event_actuator(message: Any) -> str:
+    """Return actuator id ``"1"``..``"9"`` (default ``"1"``) of a WHO=4 Dimension 20 event."""
+    act = getattr(message, "actuator", None)
+    if act is not None and str(act).isdigit():
+        return str(int(str(act)))
+    tail = where_param(message)
+    if tail and tail[0] != "4" and str(tail[0]).isdigit():
+        return str(int(str(tail[0])))
+    return "1"
+
+
+_TRIGGER_COMMAND_RE = re.compile(
+    r"^\*(?:[0-9]+\*[0-9#]+\*[0-9#]+|#[0-9]+\*[0-9#]+\*#[0-9]+(?:\*[0-9#]+)+)##$"
+)
+
+
+def validate_thermo_trigger_command(raw: str | None) -> str:
+    """Validate an OpenWebNet command frame used to trigger a thermo switch."""
+    if not isinstance(raw, str):
+        raise ValueError("OpenWebNet command must be a string")
+    frame = raw.strip()
+    if not frame.startswith("*") or not frame.endswith("##"):
+        raise ValueError("OpenWebNet command must start with '*' and end with '##'")
+    if frame.startswith("*#*"):
+        raise ValueError("ACK/NACK frames cannot be used as trigger commands")
+    if frame.startswith("*#") and "*#" not in frame[2:]:
+        raise ValueError(
+            "OpenWebNet status request cannot be used as a write/trigger command"
+        )
+    if frame.startswith("*#4*") and "*#22*" in frame:
+        raise ValueError(
+            "WHO=4 Dimension 22 is a status dimension, not an actuator write command"
+        )
+    if not _TRIGGER_COMMAND_RE.fullmatch(frame):
+        raise ValueError(f"Invalid OpenWebNet command frame: {frame}")
+    try:
+        parsed = OWNCommand.parse(frame)
+    except Exception as err:  # pragma: no cover - defensive against future OWNd changes
+        raise ValueError(f"Invalid OpenWebNet command frame: {frame}") from err
+    if parsed is None:  # pragma: no cover - defensive against future OWNd changes
+        raise ValueError(f"Invalid OpenWebNet command frame: {frame}")
+    return frame
 

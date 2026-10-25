@@ -167,6 +167,45 @@
       "abort": {
         "reconfigure_successful": "Exposed entity binding updated successfully."
       }
+    },
+    "thermo_switch": {
+      "initiate_flow": {
+        "user": "Add thermo actuator / towel-warmer switch (WHO 4)",
+        "reconfigure": "Reconfigure thermo actuator switch"
+      },
+      "entry_type": "Thermo actuator switch",
+      "step": {
+        "user": {
+          "title": "Add WHO=4 thermo actuator / towel-warmer switch",
+          "description": "Configure a probe-less thermoregulation relay (e.g. BTicino F430/2 or F430/4 towel warmer) as an on/off switch. Use Z#N (e.g. 7#1) to target one actuator channel without affecting a real thermostat on zone Z, or Z (e.g. 7) to claim the entire zone as a switch. Leave the trigger commands blank to send direct Dimension 20 writes (e.g. *#4*7#1*#20*1## and *#4*7#1*#20*0##; forwarded onto the SCS bus by F454, MH200N, F459, F460, and F461, though listed as read-only in the public OpenWebNet specification and unverified on physical probe-less F430 hardware). On MyHomeServer1 (Home + Project) 'Towel Warmer' objects, provide the paired CEN+ (e.g. *25*21#1*21## and *25*21#2*21##) or WHO=1 OpenWebNet frames linked to your Home + Project scenarios/automations.",
+          "data": {
+            "where": "Thermo actuator WHERE address (e.g. 7#1, 7, or 7#1#4#01)",
+            "name": "Friendly name (optional)",
+            "turn_on_command": "Custom Turn ON OpenWebNet frame (optional, e.g. *25*21#1*21##)",
+            "turn_off_command": "Custom Turn OFF OpenWebNet frame (optional, e.g. *25*21#2*21##)"
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure WHO=4 thermo actuator switch",
+          "description": "Update the WHERE address, friendly name, or custom OpenWebNet trigger commands for this probe-less thermo actuator switch.",
+          "data": {
+            "where": "Thermo actuator WHERE address (e.g. 7#1, 7, or 7#1#4#01)",
+            "name": "Friendly name (optional)",
+            "turn_on_command": "Custom Turn ON OpenWebNet frame (optional, e.g. *25*21#1*21##)",
+            "turn_off_command": "Custom Turn OFF OpenWebNet frame (optional, e.g. *25*21#2*21##)"
+          }
+        }
+      },
+      "error": {
+        "where_required": "A WHO=4 zone or actuator WHERE address is required (e.g. 7#1 or 7).",
+        "invalid_where": "Invalid WHO=4 actuator WHERE address. Expected Z (1..99) or Z#N (N=1..9), optionally behind #4#IF (00..15).",
+        "paired_commands_required": "Provide both Turn ON and Turn OFF OpenWebNet commands together, or leave both blank for direct Dimension 20 control.",
+        "invalid_command": "Invalid OpenWebNet command frame (must be a valid write/action frame such as *25*21#1*21## or *1*1*09##, not a status read or ACK).",
+        "already_configured": "A WHO=4 thermo actuator switch is already configured for this WHERE address."
+      },
+      "abort": {
+        "reconfigure_successful": "Thermo actuator switch updated successfully."
+      }
     }
   },
   "options": {
@@ -646,6 +685,9 @@
     },
     "sync_time_unsupported_offset": {
       "message": "Cannot synchronise the gateway clock for time zone \"{timezone}\": {error}. OpenWebNet only carries whole-hour UTC offsets."
+    },
+    "thermo_switch_no_timer": {
+      "message": "{name} is a WHO=4 thermo actuator and does not support WHO=1 hardware bus timers; use a Home Assistant automation delay instead."
     }
   },
   "entity": {

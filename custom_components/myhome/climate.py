@@ -21,6 +21,7 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import DATA_RESTORE_STATE
 from OWNd.message import (
     CLIMATE_MODE_AUTO,
     CLIMATE_MODE_COOL,
@@ -52,6 +53,7 @@ from OWNd.message import (
 
 from .const import (
     BUS_ROUTING,
+    CONF_BUS_INTERFACE,
     CONF_CENTRAL,
     CONF_COOLING_SUPPORT,
     CONF_DEVICE_MODEL,
@@ -60,6 +62,8 @@ from .const import (
     CONF_HUMIDITY_SUPPORT,
     CONF_MANUFACTURER,
     CONF_STANDALONE,
+    CONF_WHERE,
+    CONF_WHO,
     DOMAIN,
     LOGGER,
 )
@@ -76,7 +80,15 @@ from .discovery import (
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 from .poll_health import PollHealth
-from .where_grammar import is_probe, is_pump, where_param, zone_number
+from .thermo_switch import load_thermo_switch_subentries
+from .where_grammar import (
+    is_probe,
+    is_pump,
+    parse_thermo_actuator_where,
+    thermo_event_actuator,
+    where_param,
+    zone_number,
+)
 
 PLATFORM = Platform.CLIMATE
 PARALLEL_UPDATES = 0
@@ -120,8 +132,74 @@ async def async_setup_entry(
     runtime = get_runtime_data(config_entry)
     if runtime is None or PLATFORM not in runtime.platforms:
         return True
+    load_thermo_switch_subentries(config_entry, runtime.platforms)
     gateway = runtime.gateway
     configured = runtime.platforms.get(PLATFORM, {})
+
+    thermo_switch_whole_zones: set[tuple[str, str | None]] = set()
+    thermo_switch_actuator_zones: set[tuple[str, str | None]] = set()
+    for sw_cfg in runtime.platforms.get("switch", {}).values():
+        if not isinstance(sw_cfg, dict) or str(sw_cfg.get(CONF_WHO)) != "4":
+            continue
+        try:
+            _nw, sw_zone, sw_act, sw_if = parse_thermo_actuator_where(
+                sw_cfg.get(CONF_WHERE), sw_cfg.get(CONF_BUS_INTERFACE)
+            )
+        except ValueError:
+            continue
+        zone_addr = Address(sw_zone, sw_if)
+        if not _zone_config(configured, zone_addr, zone_addr.key):
+            if sw_act is None:
+                thermo_switch_whole_zones.add((sw_zone, sw_if))
+            else:
+                thermo_switch_actuator_zones.add((sw_zone, sw_if))
+
+    real_hvac_states = {
+        HVACMode.OFF.value,
+        HVACMode.HEAT.value,
+        HVACMode.COOL.value,
+        HVACMode.HEAT_COOL.value,
+        HVACMode.AUTO.value,
+        HVACMode.DRY.value,
+        HVACMode.FAN_ONLY.value,
+    }
+
+    def has_real_thermostat_state(entity_id: str) -> bool:
+        states_obj = getattr(hass, "states", None)
+        live = states_obj.get(entity_id) if states_obj is not None else None
+        hass_data = getattr(hass, "data", None)
+        restore_obj = hass_data.get(DATA_RESTORE_STATE) if isinstance(hass_data, dict) else None
+        last_states = getattr(restore_obj, "last_states", None)
+        stored = last_states.get(entity_id) if isinstance(last_states, dict) else None
+        restored = getattr(stored, "state", None)
+        for st in (live, restored):
+            if st is None:
+                continue
+            attrs = getattr(st, "attributes", None) or {}
+            if (
+                attrs.get("current_temperature") is not None
+                or attrs.get("temperature") is not None
+                or attrs.get("current_humidity") is not None
+                or getattr(st, "state", None) in real_hvac_states
+            ):
+                return True
+        return False
+
+    def is_thermo_switch_whole_zone(address: Address) -> bool:
+        return (
+            zone_number(address.where),
+            _two_digit_interface(address.interface),
+        ) in thermo_switch_whole_zones
+
+    def is_thermo_switch_ghost(entry: er.RegistryEntry, address: Address) -> bool:
+        pair = (zone_number(address.where), _two_digit_interface(address.interface))
+        if pair in thermo_switch_whole_zones:
+            return True
+        if pair in thermo_switch_actuator_zones:
+            return not has_real_thermostat_state(entry.entity_id)
+        return False
+
+    pending_actuators: dict[tuple[str, str | None], dict[str, bool]] = {}
 
     def build(ctx: DeviceContext) -> MyHOMEClimate:
         where, interface = ctx.address.where, ctx.address.interface
@@ -137,7 +215,7 @@ async def async_setup_entry(
         default_model = (
             "Central Unit (3550)" if where == "#0" else "Central Unit (4695)" if where == "#0#1" else "Heating Zone"
         )
-        return MyHOMEClimate(
+        entity = MyHOMEClimate(
             hass=hass,
             device_id=ctx.key,
             who=ctx.who,
@@ -154,14 +232,51 @@ async def async_setup_entry(
             model=cfg.get(CONF_DEVICE_MODEL, default_model),
             gateway=gateway,
         )
+        cached = pending_actuators.pop((zone, _two_digit_interface(interface)), None)
+        if cached:
+            entity._actuator_states.update(cached)
+            entity._active_source = "actuators"
+        return entity
 
     def accept(ctx: DeviceContext) -> bool:
         if is_probe(ctx.address.where):
             LOGGER.debug("Skipping non-zone address %s for climate platform", ctx.address.where)
             return False
+        if is_thermo_switch_whole_zone(ctx.address):
+            LOGGER.debug(
+                "Skipping climate zone %s: configured as WHO=4 thermo switch (#785)",
+                ctx.address.key,
+            )
+            return False
+        if (
+            ctx.source == "bus"
+            and getattr(ctx.message, "message_type", None) == MESSAGE_TYPE_ACTION
+            and getattr(ctx.message, "dimension", None) == 20
+            and not isinstance(getattr(ctx.message, "fan_speed", None), int)
+            and not isinstance(getattr(ctx.message, "fan_on", None), bool)
+        ):
+            zone_pair = (
+                zone_number(ctx.address.where),
+                _two_digit_interface(ctx.address.interface),
+            )
+            act_id = thermo_event_actuator(ctx.message)
+            pending_actuators.setdefault(zone_pair, {})[act_id] = bool(
+                ctx.message.is_active()
+            )
+            LOGGER.debug(
+                "Deferring climate zone %s creation on Dimension 20 actuator-only frame (#785)",
+                ctx.address.key,
+            )
+            return False
         return True
 
     def duplicate_climate(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
+        if is_thermo_switch_ghost(entry, ctx.address):
+            LOGGER.info(
+                "climate: pruning probe-less zone %s claimed by WHO=4 thermo switch (#785)",
+                entry.entity_id,
+            )
+            return True
         if ctx.cfg:
             return False
         return is_broadcast_where(ctx.address.clean_where)
@@ -244,6 +359,8 @@ def _calling_zones(message: Any) -> tuple[list[str], str | None]:
     tail = where_param(message)
     if not interface and len(tail) > 1 and tail[0] == "4":
         interface = str(tail[1])
+    elif not interface and len(tail) > 2 and tail[1] == "4":
+        interface = str(tail[2])
     interface = _two_digit_interface(interface)
 
     zones: list[str] = []

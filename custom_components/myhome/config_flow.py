@@ -36,6 +36,7 @@ from .config_flow_discovery import (
 )
 from .config_flow_expose import ExposeSubentryFlowHandler
 from .config_flow_options import MyhomeOptionsFlowHandler
+from .config_flow_thermo_switch import ThermoSwitchSubentryFlowHandler
 from .config_flow_topology import ConfigFlowTopologyMixin
 from .const import (
     CONF_DEVICE_TYPE,
@@ -43,6 +44,7 @@ from .const import (
     DOMAIN,
     LOGGER,
     SUBENTRY_TYPE_EXPOSE,
+    SUBENTRY_TYPE_THERMO_SWITCH,
     SUPPORTED_GATEWAY_MODELS,
 )
 from .gateway import MyHOMEGatewayHandler, command_session_default
@@ -68,7 +70,10 @@ class MyhomeFlowHandler(
         cls, config_entry: ConfigEntry
     ) -> dict[str, type[ConfigSubentryFlow]]:
         """Return subentries supported by this integration."""
-        return {SUBENTRY_TYPE_EXPOSE: ExposeSubentryFlowHandler}
+        return {
+            SUBENTRY_TYPE_EXPOSE: ExposeSubentryFlowHandler,
+            SUBENTRY_TYPE_THERMO_SWITCH: ThermoSwitchSubentryFlowHandler,
+        }
 
     def __init__(self):  # type: ignore
         """Initialize the MyHome flow."""
