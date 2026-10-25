@@ -433,27 +433,33 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         return bool(getattr(gateway, "supports_zone_status", True))
 
     @property
-    def _polls_temperature(self) -> bool:
-        """Whether this zone asks for its temperature (*#4*Z*0##) on an SCS-only gateway (#185)."""
+    def _temperature_poll_wanted(self) -> bool:
+        """Whether this zone's gateway needs each zone to ask for its temperature (``*#4*Z*0##``)."""
         gateway = getattr(self, "_gateway_handler", None)
-        if self._central or getattr(gateway, "zone_temperature_poll_needed", False) is not True:
-            return False
-        if self._interface is not None and getattr(gateway, "interface_zone_request_refused", False) is True:
-            # The firmware drops *#4*Z#4#II*0## before the bus on these gateways (own-firmware-oracle
-            # PR #60: nack/silent on F450, F454, F459 and MH202 among the SCS-only models; the MH202
-            # even crashes on *#4*Z#4#II##), so the zone waits for the bus to report instead.
-            if not self._interface_poll_skip_logged:
-                LOGGER.debug(
-                    "%s %s is behind interface %s and %s firmware drops `*#4*%s*0##`; waiting for the zone to report",
-                    self._gateway_handler.log_id,
-                    self._display_name,
-                    self._interface,
-                    self._gateway_handler.model,
-                    self._full_where,
-                )
-                self._interface_poll_skip_logged = True
-            return False
-        return True
+        return not self._central and getattr(gateway, "zone_temperature_poll_needed", False) is True
+
+    @property
+    def _interface_poll_refused(self) -> bool:
+        """Whether the per-zone temperature poll is withheld because the zone sits behind an F422.
+
+        The firmware drops *#4*Z#4#II*0## before the bus on these gateways (own-firmware-oracle
+        PR #60: nack/silent on F450, F454, F459 and MH202 among the SCS-only models; the MH202
+        even crashes on *#4*Z#4#II##), so the zone waits for the bus to report instead.
+        """
+        gateway = getattr(self, "_gateway_handler", None)
+        return (
+            self._temperature_poll_wanted
+            and self._interface is not None
+            and getattr(gateway, "interface_zone_request_refused", False) is True
+        )
+
+    @property
+    def _polls_temperature(self) -> bool:
+        """Whether this zone asks for its temperature (*#4*Z*0##) on an SCS-only gateway (#185).
+
+        A pure predicate: ``async_update`` logs (once) when it withholds the poll.
+        """
+        return self._temperature_poll_wanted and not self._interface_poll_refused
 
     def _enable_fan_mode(self) -> None:
         """Dynamically enable fan mode support if not already enabled."""
@@ -601,6 +607,17 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # humidity on the event session is not traced; any *#4*<WHERE>*60*<HH>## delivered there
         # still updates current_humidity (handle_event) without a poll.
         wants_humidity = self._humidity and getattr(self._gateway_handler, "humidity_request_refused", False) is not True
+        if self._interface_poll_refused and not self._interface_poll_skip_logged:
+            # The temperature poll is withheld (the fan / humidity requests below may still go out).
+            LOGGER.debug(
+                "%s %s is behind interface %s and %s firmware drops `*#4*%s*0##`; waiting for the zone to report",
+                self._gateway_handler.log_id,
+                self._display_name,
+                self._interface,
+                self._gateway_handler.model,
+                self._full_where,
+            )
+            self._interface_poll_skip_logged = True
         if (
             not self._central
             and not self._gateway_supports_zone_status

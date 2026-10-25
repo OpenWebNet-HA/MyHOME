@@ -174,19 +174,44 @@ async def test_scs_only_zone_asks_for_its_temperature(hass, model):
 
 @pytest.mark.parametrize("model", ["F450", "F454", "F459", "MH202"])
 async def test_interface_zone_is_not_polled_where_the_firmware_drops_the_request(hass, model, caplog):
-    """*#4*Z#4#II*0## is nack/silent on these SCS-only gateways (own-firmware-oracle PR #60)."""
+    """*#4*Z#4#II*0## is nack/silent on these SCS-only gateways (own-firmware-oracle PR #60).
+
+    ``_polls_temperature`` is a pure predicate: construction and reading it log nothing; the
+    one-shot DEBUG line is written by ``async_update`` when it actually withholds the poll.
+    """
     handler = _handler(hass, model)
     handler.send_status_request = AsyncMock()
+
+    def skipped() -> list:
+        return [record for record in caplog.records if "drops `*#4*3#4#01*0##`" in record.message]
+
     with caplog.at_level("DEBUG", logger="custom_components.myhome"):
         zone = _zone(hass, handler, interface="01")
         assert zone._polls_temperature is False
-        assert zone._polls_temperature is False
-    assert zone._poll_on_add is False
-    assert handler.interface_zone_request_refused is True
-    await zone.async_update()
-    handler.send_status_request.assert_not_awaited()
-    skipped = [record for record in caplog.records if "drops `*#4*3#4#01*0##`" in record.message]
-    assert len(skipped) == 1 and skipped[0].levelname == "DEBUG"
+        assert zone._interface_poll_refused is True
+        assert zone._poll_on_add is False
+        assert handler.interface_zone_request_refused is True
+        assert skipped() == []  # nothing logged in __init__ or by the property
+        await zone.async_update()
+        handler.send_status_request.assert_not_awaited()
+        assert len(skipped()) == 1 and skipped()[0].levelname == "DEBUG"
+        await zone.async_update()
+        handler.send_status_request.assert_not_awaited()
+        assert len(skipped()) == 1  # once per entity
+
+
+async def test_withheld_interface_poll_is_logged_even_when_humidity_keeps_the_update_going(hass, caplog):
+    """A humidity zone behind an F422 on an F454 still sends its *60## request; the withheld *0## is logged once."""
+    handler = _handler(hass, "F454")
+    handler.send_status_request = AsyncMock()
+    zone = _zone(hass, handler, interface="01", humidity=True)
+    assert zone._polls_temperature is False and zone._interface_poll_refused is True
+    with caplog.at_level("DEBUG", logger="custom_components.myhome"):
+        await zone.async_update()
+        await zone.async_update()
+    sent = [str(call.args[0]) for call in handler.send_status_request.await_args_list]
+    assert sent == ["*#4*3#4#01*60##", "*#4*3#4#01*60##"]
+    assert len([record for record in caplog.records if "drops `*#4*3#4#01*0##`" in record.message]) == 1
 
 
 @pytest.mark.parametrize("model", ["H4684", "MH200", "MH201"])
@@ -217,13 +242,16 @@ async def test_profile_flag_wins_over_the_interface_zone_table(hass, model, flag
     assert zone._polls_temperature is expected
 
 
-async def test_f455_zone_still_sends_nothing(hass):
+async def test_f455_zone_still_sends_nothing(hass, caplog):
     handler = _handler(hass, "F455")
     handler.send_status_request = AsyncMock()
-    zone = _zone(hass, handler)
+    zone = _zone(hass, handler, interface="01")
     assert zone._poll_on_add is False
-    await zone.async_update()
+    assert zone._interface_poll_refused is False  # no temperature poll wanted, so nothing is "withheld"
+    with caplog.at_level("DEBUG", logger="custom_components.myhome"):
+        await zone.async_update()
     handler.send_status_request.assert_not_awaited()
+    assert not [record for record in caplog.records if "firmware drops" in record.message]
 
 
 async def test_central_unit_is_not_a_temperature_poll(hass):
