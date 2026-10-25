@@ -341,3 +341,61 @@ async def test_a_configured_standby_decides_while_the_primary_is_down(hass):
     primary.is_connected = True  # back: its own table again
     assert primary._who4_target() is primary
     assert primary.humidity_request_refused is False
+
+
+# ------------------------------------------------------------------ climate: nothing to send, nothing to count (review 5644219403, 4)
+
+@pytest.mark.parametrize("model", ["MH202", "F454", "Legrand MH200N"])
+async def test_a_refusing_scs_gateway_s_humidity_zone_never_reaches_poll_health(hass, model):
+    """No zone status (``*#4*Z##``), no fan, humidity refused: ``async_update`` returns before ``_poll_health``."""
+    handler = _handler(hass, model)
+    zone = _humidity_zone(hass, handler)
+    zone._poll_health.should_skip = MagicMock(side_effect=AssertionError("should_skip must not run"))
+    zone._raise_unresponsive_issue = MagicMock()
+    await zone.async_update()
+    assert _sent(handler) == []
+    zone._raise_unresponsive_issue.assert_not_called()
+
+
+async def test_a_refusing_gateway_with_zone_status_still_counts_its_zone_poll(hass):
+    """An F450 refuses dimension 60 but answers ``*#4*Z##``: that poll is still sent and counted."""
+    handler = _handler(hass, "F450")
+    assert handler.supports_zone_status is True
+    zone = _humidity_zone(hass, handler)
+    zone._poll_health.should_skip = MagicMock(return_value=False)
+    await zone.async_update()
+    zone._poll_health.should_skip.assert_called_once()
+    assert _sent(handler) == ["*#4*2##"]
+
+
+async def test_a_forwarding_gateway_s_humidity_zone_goes_through_poll_health(hass):
+    handler = _handler(hass, "F461")
+    zone = _humidity_zone(hass, handler)
+    zone._poll_health.should_skip = MagicMock(return_value=False)
+    await zone.async_update()
+    zone._poll_health.should_skip.assert_called_once()
+    assert _sent(handler) == ["*#4*2##", "*#4*2*60##"]
+
+
+async def test_a_skipping_zone_on_a_refusing_gateway_is_still_held_back(hass):
+    """``should_skip`` still rules where a request would be sent (an F461 zone that stopped answering)."""
+    handler = _handler(hass, "F461")
+    zone = _humidity_zone(hass, handler)
+    zone._poll_health.should_skip = MagicMock(return_value=True)
+    zone._raise_unresponsive_issue = MagicMock()
+    await zone.async_update()
+    assert _sent(handler) == []
+    zone._raise_unresponsive_issue.assert_called_once()
+
+
+def test_humidity_enabled_later_still_polls_on_add_on_a_refusing_gateway(hass):
+    """``_poll_on_add`` is untouched: the first update runs so the identity can settle before the gate decides."""
+    handler = _handler(hass, "MH202")
+    zone = MyHOMEClimate(
+        hass=hass, name="Zone 2", device_id="4-2", who="4", where="2",
+        heating=True, cooling=True, fan=False, humidity=False, standalone=True, central=False,
+        manufacturer="BTicino", model="Heating Zone", gateway=handler,
+    )
+    assert zone._poll_on_add is False
+    zone._enable_humidity()
+    assert zone._poll_on_add is True
