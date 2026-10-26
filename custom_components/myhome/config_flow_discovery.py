@@ -22,7 +22,6 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from OWNd.connection import OWNCommandSession
 from OWNd.message import OWNGatewayCommand, OWNGatewayDiagnosticCommand
-from OWNd.profiles import get_gateway_profile
 from voluptuous import All, Coerce, In, Range, Required
 
 from .const import (
@@ -38,7 +37,7 @@ from .const import (
     DOMAIN,
     LOGGER,
 )
-from .gateway import command_session_default
+from .gateway import _profile_for_model, command_session_default
 from .identity import (
     UNTRUSTED_MODEL_LABELS,
     CodeReading,
@@ -654,7 +653,9 @@ class ConfigFlowDiscoveryMixin:
                 configured,
             )
             gateway.model_name = gateway.model = model
-            gateway.profile = get_gateway_profile(model, gateway.model_number)
+            # The firmware is not known yet (the runtime re-resolves with it at connect time);
+            # the same helper as the runtime, so SSDP spellings map the same way.
+            gateway.profile = _profile_for_model(model)
             gateway._log_id = f"[{model} gateway - {gateway.host}]"  # pylint: disable=protected-access
         return resolution.source
 
