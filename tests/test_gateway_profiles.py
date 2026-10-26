@@ -354,6 +354,48 @@ def test_pinned_rows_are_ignored_when_ownd_is_importable(monkeypatch: pytest.Mon
     assert row["notes"] == ("sound" if 16 in row["queried_whos"] else "no sound")
 
 
+def test_oracle_check_rejects_a_stale_sweep_omission_at_the_pin_bump(monkeypatch: pytest.MonkeyPatch):
+    """Once ``pinned_whos`` drops WHO 16 (the OWNd #142 pin bump) a leftover ``*#16*0*5##`` is flagged.
+
+    ``sweep_omits`` is checked against ``pinned_whos`` (what the row advertises on the pinned
+    OWNd), not against whatever OWNd is on ``PYTHONPATH``; a ``pinned_whos`` entry outside the
+    startup sweep is flagged too.
+    """
+    rows = copy.deepcopy(ugp.GATEWAY_DISCOVERY_METADATA)
+    f461 = next(row for row in rows if row["profile_name"] == "F461")
+    assert f461["sweep_omits"] == ["*#4*0##", "*#16*0*5##"]
+    f461["pinned_whos"] = [1, 2, 4, 18]  # the pin bump edit, without the sweep_omits edit
+    mhs1 = next(row for row in rows if row["profile_name"] == "MyHomeServer1")
+    mhs1["pinned_whos"] = [1, 2, 4, 18, 22]  # WHO 22 is never a startup sweep request
+    monkeypatch.setattr(ugp, "GATEWAY_DISCOVERY_METADATA", rows)
+    violations = ugp.verify_profiles_against_oracle()
+    assert [v for v in violations if "**F461** sweep_omits='*#16*0*5##'" in v]
+    assert [v for v in violations if "**F461** sweep_omits='*#4*0##'" in v] == []
+    assert [v for v in violations if "**MyHomeServer1** pinned_whos=[1, 2, 4, 18, 22]" in v]
+    assert [v for v in violations if "**MyHomeServer1** sweep_omits='*#16*0*5##'" in v]
+    assert len(violations) == 3
+
+
+def test_discovery_table_without_ownd_follows_the_pinned_rows_at_the_pin_bump(monkeypatch: pytest.MonkeyPatch):
+    """After the pin bump the CI jobs without OWNd generate the WHO 22 wording from ``pinned_whos`` alone."""
+    monkeypatch.setitem(sys.modules, "OWNd.profiles", None)
+    rows = copy.deepcopy(ugp.GATEWAY_DISCOVERY_METADATA)
+    for row in rows:
+        if row["profile_name"] in ("F461", "MyHomeServer1"):
+            row["pinned_whos"] = [1, 2, 4, 18]
+    calibrated = {row["model"]: row for row in ugp.calibrate_discovery_with_ownd(rows)}
+    for model in ("**F461**", "**MyHomeServer1**"):
+        assert calibrated[model]["queried_whos"] == [1, 2, 4, 18]
+        assert calibrated[model]["sweep_omits"] == ["*#4*0##"]
+        assert "WHO 22 only" in str(calibrated[model]["notes"])
+    assert calibrated["**MH202**"]["queried_whos"] == [1, 2, 4, 5, 16, 18]
+    assert calibrated["**MH202**"]["sweep_omits"] == ["*#4*0##", "*#16*0*5##"]
+    monkeypatch.setattr(ugp, "GATEWAY_DISCOVERY_METADATA", rows)
+    block = ugp.build_discovery_block()
+    assert "| **F461** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`) | Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only" in block
+    assert "| **MH202** | WHO 1, 2, 4, 5, 16, 18 | WHO 1, 2, 5, 18 (firmware drops `*#4*0##`, `*#16*0*5##`) |" in block
+
+
 def test_oracle_check_rejects_patched_profile_instance():
     """A profile instance rewritten after import fails the check instead of verifying the rewrite."""
     from OWNd.profiles import get_gateway_profile
