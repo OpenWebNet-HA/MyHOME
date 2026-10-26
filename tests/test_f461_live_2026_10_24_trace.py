@@ -575,7 +575,12 @@ def test_antifreeze_is_the_only_operation_that_left_12_and_14_apart(rows: list[d
 
 @pytest.mark.asyncio
 async def test_replay_knob_turn_shows_dimension_12(hass: HomeAssistant, rows: list[dict]) -> None:
-    """Run 1 through the climate entity: 29.0 then 18.0 from dimension 12; dimension 14 changes nothing."""
+    """Run 1 through the climate entity: 29.0 then 18.0 shown from dimension 12.
+
+    Every dimension 14 frame of run 1 carries 18.0 as well, so the values alone cannot tell which
+    dimension drives the display: the dimension 12 hold flag says it (#812's presets replay, 14 = 23.5
+    while 12 = 26.0, is the one where the values differ).
+    """
     zone = await _setup_zone_2(hass)
     seen = _replay(zone, _evt(rows, RUN1))
     assert seen[0] == (dim(12, "0290"), 29.0, None)
@@ -583,6 +588,8 @@ async def test_replay_knob_turn_shows_dimension_12(hass: HomeAssistant, rows: li
     assert seen[4] == (dim(12, "0180"), 18.0, HVACMode.HEAT)
     assert all(target == 18.0 for _, target, _ in seen[4:])
     assert zone.target_temperature == 18.0
+    assert zone._target_temperature == 18.0  # the commanded value coincides with the one in force here
+    assert zone._local_target_reported is True  # only a dimension 12 report sets it: 18.0 is shown from dimension 12
     assert zone.current_temperature == 23.9
     assert zone.extra_state_attributes["local_offset"] == 0
     assert zone.extra_state_attributes["knob_pos"] == "0"

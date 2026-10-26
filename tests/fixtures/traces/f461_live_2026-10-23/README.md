@@ -54,7 +54,7 @@ corpus replayers that drive a clock from `frames[].timestamp` never go backwards
 
 | `run` | UTC | What it was |
 |---|---|---|
-| `run1_oracle_replay_readonly` | 20:38-20:44 | 165 status / dimension requests mirrored from the firmware-oracle suites (WHO 1, 2, 3, 4, 5, 8, 9, 13, 14, 16, 17, 18, 22, 25, 1001, 1013) plus 31 plant reads (`*#1*06##`, `*#4*2*12##`, `*#13**27##`, ...); read-only, no WHO 4 dimension 22, no report-form writes |
+| `run1_oracle_replay_readonly` | 20:38-20:44 | 165 read-only requests: 134 status / dimension requests mirrored from the firmware-oracle suites (WHO 1, 2, 3, 4, 5, 8, 9, 13, 14, 16, 17, 18, 22, 25, 1001, 1013) plus 31 plant reads (`*#1*06##`, `*#4*2*12##`, `*#13**27##`, ...); read-only, no WHO 4 dimension 22, no report-form writes |
 | `run2_reviewer_reads` | 21:02 | `*#1*0007##` / `*#1*07##` / `*#1*7##`, `*#4*0*60##`, `*#4*2*60##`, `*#22*3#1#1*1##`, `*#13**0##` |
 | `run3_climate_setpoint_restore` | 21:13 | `*#4*2*#14*0235*3##` restores the setpoint in force, then `*#4*2##` |
 | `run4_final_state` | 21:13 | `*#1*06##`, `*#1*07##`, `*#2*05##`, `*#4*2##` after the Home Assistant session (dimension 12 = 14 = 21.0) |
@@ -69,7 +69,8 @@ corpus replayers that drive a clock from `frames[].timestamp` never go backwards
 * `*#4*2##` is answered in 1.3 s with `*#4*2*0*0239##`, `*#4*2*12*0235*3##`, `*4*1*2##`, `*#4*2*14*0210*3##`,
   `*#4*2*13*00##`: dimension 12 (23.5, the setpoint in force, set at the thermostat) precedes and differs from
   dimension 14 (21.0, the last value written from Home Assistant). `*#4*2*#14*0235*3##` (mode 3) is ACKed in
-  78 ms, dimension 12 follows at once, dimension 14 catches up 0.3 s later, the season frame stays `*4*1*2##`.
+  78 ms and dimension 12 follows at once; no dimension 14 is pushed, the next `*#4*2##` reads 14 = 23.5 (0.3 s after
+  the dimension 12 of its own reply); the season frame stays `*4*1*2##`.
 * `*#4*2*20##` is ACKed in 111 ms with `*#4*2#1*20*0##` on the command session, followed by `*#4*2#2*20*5##` on the
   event session; `*#4*#0*20##` returns both on the command session after 2.1 s. In run 6 the two actuator frames
   followed every `*#4*2##` burst within 3 s because the patched integration under test (#792) sent `*#4*#0*20##`

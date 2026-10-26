@@ -163,7 +163,7 @@ PHYSICAL_ONLY_TX_FRAMES: dict[str, str] = {
     "*#18*51*113*100##": "F461 2026-10-23: ACK in 1.41 s (report form accepted, not echoed)",
     "*#2*05*11##": "F461 2026-10-23: NACK in 6 ms (no position reporting on an F411/2)",
     "*#4*#0*0*0215##": "F461 2026-10-23: NACK after 4.13 s (central-unit report form, no central unit)",
-    "*#4*0*60##": "F461 2026-10-23: ACK *#4*2*60*39## after 2.13 s; MyHomeServer1 2026-10-24: ACK, 17 zones in 0.5 s",
+    "*#4*0*60##": "F461 2026-10-23: ACK *#4*2*60*39## after 2.13 s; MyHomeServer1 2026-10-24: ACK after 0.50 s with 8 replies; 17 zones by 0.97 s",
     # --- MyHomeServer1 3.87.13, myhomeserver1_live_2026-10-24 (the oracle emulates 2.82.06)
     "*#4*35*60##": "MyHomeServer1 2026-10-24: NACK after 2.13 s (no humidity probe in zone 35); 2026-10-25: NACK after 2.15 s",
     "*#4*39*60##": "MyHomeServer1 2026-10-24: ACK *#4*39*60*51## in 204 ms; 2026-10-25: ACK *#4*39*60*47## in 215 ms",

@@ -527,14 +527,16 @@ async def test_replay_hvac_action_idle_heating_idle(hass: HomeAssistant, rows: l
 
 @pytest.mark.asyncio
 async def test_replay_action_sequence_matches_the_recorded_entity_states(hass: HomeAssistant, rows: list[dict], trace_payload: dict) -> None:
-    """Over the whole capture the entity's action changes exactly as Home Assistant recorded it live: idle, heating, idle."""
+    """Over the whole capture the entity's action changes as Home Assistant recorded it live (idle, heating); the final idle was read back, not recorded."""
     zone = await _setup_zone_2(hass)
     seen = _replay(zone, _evt(rows))
     actions = [action for _, action, *_ in seen if action is not None]
-    assert [a for i, a in enumerate(actions) if i == 0 or a != actions[i - 1]] == [HVACAction.IDLE, HVACAction.HEATING, HVACAction.IDLE]
+    changes = [a for i, a in enumerate(actions) if i == 0 or a != actions[i - 1]]
+    assert changes == [HVACAction.IDLE, HVACAction.HEATING, HVACAction.IDLE]
     targets = [target for _, _, target, _ in seen if target is not None]
     assert [t for i, t in enumerate(targets) if i == 0 or t != targets[i - 1]] == [23.5, 26.0, 23.5]
     recorded = [s for s in trace_payload["capture"]["home_assistant_entity_states"] if s["kind"] == "state"]
     assert [s["hvac_action"] for s in recorded] == ["idle", "heating"], "the live entity went idle -> heating on the first write (the restore's idle was read back, not recorded)"
+    assert [a.value for a in changes[: len(recorded)]] == [s["hvac_action"] for s in recorded]
     assert all(s["hvac_mode"] == "heat" and s["fan"] == "off" for s in recorded)
     assert zone.hvac_mode == HVACMode.HEAT and zone.hvac_action == HVACAction.IDLE
