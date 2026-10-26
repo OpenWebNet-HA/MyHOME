@@ -68,13 +68,21 @@ def _apply_yaml_platforms(
                 configured_platforms[plat][d_id] = runtime_cfg
                 if isinstance(runtime_cfg, dict):
                     who, dash, clean_id = d_id.partition("-")
-                    if dash and who.isdigit():
+                    is_thermo_switch = (
+                        plat == "switch" and str(runtime_cfg.get(CONF_WHO)) == "4"
+                    )
+                    if dash and who.isdigit() and not is_thermo_switch:
                         configured_platforms[plat][clean_id] = runtime_cfg
                     iface = runtime_cfg.get(CONF_BUS_INTERFACE) or runtime_cfg.get("bus_interface")
                     # A routed device never claims the bare key: that is the local bus's (#408)
                     routing = f"{BUS_ROUTING}{iface}" if iface is not None else ""
                     if "where" in runtime_cfg:
-                        configured_platforms[plat][f"{runtime_cfg['where']}{routing}"] = runtime_cfg
+                        where_key = (
+                            f"4-{runtime_cfg['where']}{routing}"
+                            if is_thermo_switch
+                            else f"{runtime_cfg['where']}{routing}"
+                        )
+                        configured_platforms[plat][where_key] = runtime_cfg
                     if CONF_ZONE in runtime_cfg or "zone" in runtime_cfg:
                         z_val = str(runtime_cfg.get(CONF_ZONE) or runtime_cfg.get("zone"))
                         configured_platforms[plat][f"{z_val}{routing}"] = runtime_cfg

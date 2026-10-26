@@ -35,6 +35,7 @@ from .gateway import MyHOMEGatewayHandler, command_session_limit
 from .legacy_yaml import load_legacy_myhome_yaml
 from .migrate import migrate_entry_and_registries, prune_stale_devices
 from .services import async_setup_services
+from .thermo_switch import load_thermo_switch_subentries
 from .topology import async_check_primary_links
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -212,6 +213,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bo
     await load_legacy_myhome_yaml(
         hass, entry, configured_platforms, configured_expose=configured_expose
     )
+    load_thermo_switch_subentries(entry, configured_platforms)
 
     _generate_events = (
         entry.options.get(CONF_GENERATE_EVENTS, False)

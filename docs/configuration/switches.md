@@ -1,6 +1,6 @@
-# Switches & Relays (WHO = 1)
+# Switches & Relays (WHO = 1 & WHO = 4)
 
-The **MyHOME** integration provides full control for on/off relay actuators, socket outlets, contactors, and appliance relays operating on OpenWebNet **WHO = 1**.
+The **MyHOME** integration provides full control for on/off relay actuators, socket outlets, contactors, and appliance relays operating on OpenWebNet **WHO = 1**, as well as probe-less thermoregulation relays / towel warmers (`F430/2`, `F430/4`) operating on **WHO = 4**.
 
 In v2, setup and management are **100% UI-first**: switch relays are automatically discovered over the SCS bus, and entity types (such as distinguishing between a wall switch and a power outlet) are configured natively through Home Assistant's UI settings without manual YAML.
 
@@ -42,6 +42,30 @@ target:
   entity_id: switch.bed_heating_pad
 data:
   time: 1800   # Turn on and automatically turn off after 30 minutes (1800s)
+```
+
+---
+
+## 🔥 Probe-less Thermo Actuators & Towel Warmers (`WHO = 4`)
+
+Bathroom towel warmers and electric radiant relays are often wired to `F430/2` or `F430/4` thermoregulation actuators (`WHO = 4`, e.g. Zone `7`, Actuator `1` → `WHERE = 7#1`) **without** a room temperature probe.
+
+* **No Phantom Climate Entities (Safe Coexistence with Real Thermostats)**: Actuator-only Dimension 20 status frames (`*#4*7#1*20*0/1##`) no longer spawn broken temperature-less `climate` entities. Configuring a per-actuator switch (`WHERE = 7#1`) prunes any temperature-less ghost `climate` entity on that zone while preserving any real thermostat that reports temperature or mode on the same zone; configuring a zone-wide switch (`WHERE = 7`) claims the entire zone unless `climate:` is also explicitly configured.
+* **UI Configuration (Recommended)**: Navigate to **Settings → Devices & Services → MyHome**, click **Add thermo actuator / towel-warmer switch (WHO 4)** on your gateway, and enter `WHERE` (e.g. `7#1` for actuator 1 of zone 7, `7` for the whole zone, or `7#1#4#01` behind an F422 bus interface).
+* **Direct Dimension 20 Control (`turn_on_command` / `turn_off_command` left blank)**: When left blank, Home Assistant sends `*#4*7#1*#20*1##` / `*#4*7#1*#20*0##` and tracks live relay state in real time from both `*#4*7#1*#20*0/1##` bus writes and `*#4*7#1*20*...##` status replies (plus state restoration across restarts). Although the public OpenWebNet `WHO = 4` specification lists Dimension 20 as read-only, emulated gateway firmwares (`F454`, `MH200N`, `F459`, `F460`, `F461`) and real `MyHomeServer1` hardware translate `#20` writes onto the SCS bus (`$0496813100\r` / `$0496813101\r`; `H4684` and `MH200` drop Dimension 20 frames). If your gateway or actuator ignores direct `#20` writes, bind paired CEN+ or `WHO = 1` scenario triggers instead.
+* **`MyHomeServer1` (Home + Project "Towel Warmer")**: On `MyHomeServer1`, `bt_thermo_manager` actively locks Home + Project *Towel Warmer* (`BNTR`) objects and immediately reverts direct `*#4*Z#N*#20*1/0##` bus writes unless `towel.setSync` is invoked by a Home + Project / Home + Control Scenario or Automation. Create **two** Scenarios (*Turn Towel Warmer ON* and *Turn Towel Warmer OFF*): **important — when adding the Towel Warmer to a Scenario's action list in Home + Project or Home + Control, its default action state is `OFF` (`*#4*Z#N*#20*0##`); tap the Towel Warmer item inside the ON scenario's action list to toggle its target state to `ON` (or select a boost duration) before saving.** Bind each scenario to a **CEN+ (`WHO = 25`)** virtual button (no extra physical hardware required — e.g. `*25*21#1*21##` for ON and `*25*21#2*21##` for OFF) or a spare `WHO = 1` channel, and enter those frames in `turn_on_command` and `turn_off_command`.
+
+```yaml
+# Optional YAML equivalent in myhome.yaml:
+switch:
+  bathroom_towel_warmer:
+    who: "4"
+    where: "7#1"
+    name: Bathroom Towel Warmer
+    # Optional — required on MyHomeServer1 Home + Project BNTR Towel Warmers
+    # (or on gateways like H4684 / MH200 that drop Dimension 20 writes):
+    turn_on_command: "*25*21#1*21##"
+    turn_off_command: "*25*21#2*21##"
 ```
 
 ---

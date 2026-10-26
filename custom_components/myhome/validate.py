@@ -1,4 +1,6 @@
 """Validator for the MyHome configuration file."""
+from __future__ import annotations
+
 import math
 import re
 import typing
@@ -121,7 +123,9 @@ from .const import (
     CONF_STRATEGY,
     CONF_TRAVEL_TIME,
     CONF_TURN_OFF_ACTION,
+    CONF_TURN_OFF_COMMAND,
     CONF_TURN_ON_ACTION,
+    CONF_TURN_ON_COMMAND,
     CONF_TYPE,
     CONF_VALUE_TEMPLATE,
     CONF_WATCHDOG_MARGIN,
@@ -137,7 +141,11 @@ from .const import (
     MIN_SLAT_TIME,
     TYPE_IMPULSE_RELAY,
 )
-from .where_grammar import canonical_point_spelling
+from .where_grammar import (
+    canonical_point_spelling,
+    parse_thermo_actuator_where,
+    validate_thermo_trigger_command,
+)
 
 
 def format_mac(address: object) -> str:
@@ -322,7 +330,7 @@ class MyHomeConfigSchema(Schema):
                             _rekeyed_data[gateway_mac][CONF_PLATFORMS][BUTTON][key] = value
                 if SWITCH in _rekeyed_data[gateway_mac][CONF_PLATFORMS]:
                     for key, value in _rekeyed_data[gateway_mac][CONF_PLATFORMS][SWITCH].items():
-                        if not value[CONF_WHERE].startswith("#"):
+                        if str(value.get(CONF_WHO, "1")) == "1" and not value[CONF_WHERE].startswith("#"):
                             _rekeyed_data[gateway_mac][CONF_PLATFORMS][BUTTON][key] = value
                 if COVER in _rekeyed_data[gateway_mac][CONF_PLATFORMS]:
                     for key, value in _rekeyed_data[gateway_mac][CONF_PLATFORMS][COVER].items():
@@ -455,33 +463,82 @@ def _validate_light_members(data: dict[str, typing.Any]) -> dict[str, typing.Any
 light_schema = All(light_schema, _validate_light_members)  # type: ignore[assignment]
 
 
+_WHO1_WHERE_VALIDATOR = Any(
+    General(),  # type: ignore[no-untyped-call]
+    Area(),  # type: ignore[no-untyped-call]
+    Group(),  # type: ignore[no-untyped-call]
+    PointToPoint(),
+    msg="Invalid <WHERE>, expecting a valid General, Area, Group or Point-to-Point <WHERE>",
+)
+
+
+def _validate_switch_entry(entry: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    """Validate WHO=1 lighting relays vs WHO=4 probe-less thermo actuator switches."""
+    who = str(entry.get(CONF_WHO, "1"))
+    entry[CONF_WHO] = who
+    if who == "1":
+        if CONF_TURN_ON_COMMAND in entry or CONF_TURN_OFF_COMMAND in entry:
+            raise Invalid(
+                "turn_on_command and turn_off_command are only supported on WHO=4 thermo switches"
+            )
+        entry[CONF_WHERE] = _WHO1_WHERE_VALIDATOR(str(entry[CONF_WHERE]))
+        return entry
+
+    try:
+        norm_where, _zone, _act, norm_if = parse_thermo_actuator_where(
+            entry[CONF_WHERE], entry.get(CONF_BUS_INTERFACE)
+        )
+    except ValueError as err:
+        raise Invalid(str(err)) from err
+    entry[CONF_WHERE] = norm_where
+    if norm_if is not None:
+        entry[CONF_BUS_INTERFACE] = norm_if
+
+    on_cmd = entry.get(CONF_TURN_ON_COMMAND)
+    off_cmd = entry.get(CONF_TURN_OFF_COMMAND)
+    if bool(on_cmd) != bool(off_cmd):
+        raise Invalid(
+            "turn_on_command and turn_off_command must both be provided together"
+        )
+    if on_cmd is not None and off_cmd is not None:
+        try:
+            entry[CONF_TURN_ON_COMMAND] = validate_thermo_trigger_command(on_cmd)
+            entry[CONF_TURN_OFF_COMMAND] = validate_thermo_trigger_command(off_cmd)
+        except ValueError as err:
+            raise Invalid(str(err)) from err
+    return entry
+
+
 switch_schema = MyHomeDeviceSchema(
     {
-        Required(str): {
-            Optional(CONF_WHO, default="1"): "1",
-            Required(CONF_WHERE): All(
-                Coerce(str), Any(General(), Area(), Group(), PointToPoint(), msg="Invalid <WHERE>, expecting a valid General, Area, Group or Point-to-Point <WHERE>")  # type: ignore
-            ),
-            Optional(CONF_BUS_INTERFACE): All(Coerce(str), BusInterface()),  # type: ignore
-            Required(CONF_NAME): str,
-            Optional(CONF_ENTITY_NAME): str,
-            Optional(CONF_ICON): str,
-            Optional(CONF_ICON_ON): str,
-            Optional(CONF_DEVICE_CLASS): In(
-                [
-                    SwitchDeviceClass.OUTLET,
-                    SwitchDeviceClass.SWITCH,
-                ]
-            ),
-            Optional("device_class"): In(
-                [
-                    SwitchDeviceClass.OUTLET,
-                    SwitchDeviceClass.SWITCH,
-                ]
-            ),
-            Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
-            Optional(CONF_DEVICE_MODEL): Coerce(str),
-        }
+        Required(str): All(
+            {
+                Optional(CONF_WHO, default="1"): All(Coerce(str), In(["1", "4"])),
+                Required(CONF_WHERE): Coerce(str),
+                Optional(CONF_BUS_INTERFACE): All(Coerce(str), BusInterface()),  # type: ignore
+                Required(CONF_NAME): str,
+                Optional(CONF_ENTITY_NAME): str,
+                Optional(CONF_ICON): str,
+                Optional(CONF_ICON_ON): str,
+                Optional(CONF_TURN_ON_COMMAND): str,
+                Optional(CONF_TURN_OFF_COMMAND): str,
+                Optional(CONF_DEVICE_CLASS): In(
+                    [
+                        SwitchDeviceClass.OUTLET,
+                        SwitchDeviceClass.SWITCH,
+                    ]
+                ),
+                Optional("device_class"): In(
+                    [
+                        SwitchDeviceClass.OUTLET,
+                        SwitchDeviceClass.SWITCH,
+                    ]
+                ),
+                Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
+                Optional(CONF_DEVICE_MODEL): Coerce(str),
+            },
+            _validate_switch_entry,
+        )
     }
 )
 
