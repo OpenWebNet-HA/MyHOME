@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#switches-relays-who-1" class="md-skip">
+        <a href="#switches-relays-who-1-who-4" class="md-skip">
           Skip to content
         </a>
       
@@ -985,6 +985,17 @@
     <span class="md-ellipsis">
       
         ⏱️ Native Hardware Bus Timers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#probe-less-thermo-actuators-towel-warmers-who-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🔥 Probe-less Thermo Actuators &amp; Towel Warmers (WHO = 4)
       
     </span>
   </a>
@@ -2022,6 +2033,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#probe-less-thermo-actuators-towel-warmers-who-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🔥 Probe-less Thermo Actuators &amp; Towel Warmers (WHO = 4)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#legacy-yaml-note" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2052,8 +2074,8 @@
   
 
 
-<h1 id="switches-relays-who-1">Switches &amp; Relays (WHO = 1)<a class="headerlink" href="#switches-relays-who-1" title="Permanent link">&para;</a></h1>
-<p>The <strong>MyHOME</strong> integration provides full control for on/off relay actuators, socket outlets, contactors, and appliance relays operating on OpenWebNet <strong>WHO = 1</strong>.</p>
+<h1 id="switches-relays-who-1-who-4">Switches &amp; Relays (WHO = 1 &amp; WHO = 4)<a class="headerlink" href="#switches-relays-who-1-who-4" title="Permanent link">&para;</a></h1>
+<p>The <strong>MyHOME</strong> integration provides full control for on/off relay actuators, socket outlets, contactors, and appliance relays operating on OpenWebNet <strong>WHO = 1</strong>, as well as probe-less thermoregulation relays / towel warmers (<code>F430/2</code>, <code>F430/4</code>) operating on <strong>WHO = 4</strong>.</p>
 <p>In v2, setup and management are <strong>100% UI-first</strong>: switch relays are automatically discovered over the SCS bus, and entity types (such as distinguishing between a wall switch and a power outlet) are configured natively through Home Assistant's UI settings without manual YAML.</p>
 <hr />
 <h2 id="auto-discovery">🚀 Auto-Discovery<a class="headerlink" href="#auto-discovery" title="Permanent link">&para;</a></h2>
@@ -2085,6 +2107,26 @@
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">switch.bed_heating_pad</span>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nt">data</span><span class="p">:</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">time</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1800</span><span class="w">   </span><span class="c1"># Turn on and automatically turn off after 30 minutes (1800s)</span>
+</span></code></pre></div>
+<hr />
+<h2 id="probe-less-thermo-actuators-towel-warmers-who-4">🔥 Probe-less Thermo Actuators &amp; Towel Warmers (<code>WHO = 4</code>)<a class="headerlink" href="#probe-less-thermo-actuators-towel-warmers-who-4" title="Permanent link">&para;</a></h2>
+<p>Bathroom towel warmers and electric radiant relays are often wired to <code>F430/2</code> or <code>F430/4</code> thermoregulation actuators (<code>WHO = 4</code>, e.g. Zone <code>7</code>, Actuator <code>1</code> → <code>WHERE = 7#1</code>) <strong>without</strong> a room temperature probe.</p>
+<ul>
+<li><strong>No Phantom Climate Entities (Safe Coexistence with Real Thermostats)</strong>: Actuator-only Dimension 20 status frames (<code>*#4*7#1*20*0/1##</code>) no longer spawn broken temperature-less <code>climate</code> entities. Configuring a per-actuator switch (<code>WHERE = 7#1</code>) prunes any temperature-less ghost <code>climate</code> entity on that zone while preserving any real thermostat that reports temperature or mode on the same zone; configuring a zone-wide switch (<code>WHERE = 7</code>) claims the entire zone unless <code>climate:</code> is also explicitly configured.</li>
+<li><strong>UI Configuration (Recommended)</strong>: Navigate to <strong>Settings → Devices &amp; Services → MyHome</strong>, click <strong>Add thermo actuator / towel-warmer switch (WHO 4)</strong> on your gateway, and enter <code>WHERE</code> (e.g. <code>7#1</code> for actuator 1 of zone 7, <code>7</code> for the whole zone, or <code>7#1#4#01</code> behind an F422 bus interface).</li>
+<li><strong>Direct Dimension 20 Control (<code>turn_on_command</code> / <code>turn_off_command</code> left blank)</strong>: When left blank, Home Assistant sends <code>*#4*7#1*#20*1##</code> / <code>*#4*7#1*#20*0##</code> and tracks live relay state in real time from both <code>*#4*7#1*#20*0/1##</code> bus writes and <code>*#4*7#1*20*...##</code> status replies (plus state restoration across restarts). Although the public OpenWebNet <code>WHO = 4</code> specification lists Dimension 20 as read-only, emulated gateway firmwares (<code>F454</code>, <code>MH200N</code>, <code>F459</code>, <code>F460</code>, <code>F461</code>) and real <code>MyHomeServer1</code> hardware translate <code>#20</code> writes onto the SCS bus (<code>$0496813100\r</code> / <code>$0496813101\r</code>; <code>H4684</code> and <code>MH200</code> drop Dimension 20 frames). If your gateway or actuator ignores direct <code>#20</code> writes, bind paired CEN+ or <code>WHO = 1</code> scenario triggers instead.</li>
+<li><strong><code>MyHomeServer1</code> (Home + Project "Towel Warmer")</strong>: On <code>MyHomeServer1</code>, <code>bt_thermo_manager</code> actively locks Home + Project <em>Towel Warmer</em> (<code>BNTR</code>) objects and immediately reverts direct <code>*#4*Z#N*#20*1/0##</code> bus writes unless <code>towel.setSync</code> is invoked by a Home + Project / Home + Control Scenario or Automation. Create <strong>two</strong> Scenarios (<em>Turn Towel Warmer ON</em> and <em>Turn Towel Warmer OFF</em>): <strong>important — when adding the Towel Warmer to a Scenario's action list in Home + Project or Home + Control, its default action state is <code>OFF</code> (<code>*#4*Z#N*#20*0##</code>); tap the Towel Warmer item inside the ON scenario's action list to toggle its target state to <code>ON</code> (or select a boost duration) before saving.</strong> Bind each scenario to a <strong>CEN+ (<code>WHO = 25</code>)</strong> virtual button (no extra physical hardware required — e.g. <code>*25*21#1*21##</code> for ON and <code>*25*21#2*21##</code> for OFF) or a spare <code>WHO = 1</code> channel, and enter those frames in <code>turn_on_command</code> and <code>turn_off_command</code>.</li>
+</ul>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Optional YAML equivalent in myhome.yaml:</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">switch</span><span class="p">:</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">bathroom_towel_warmer</span><span class="p">:</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="s">"4"</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"7#1"</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Bathroom Towel Warmer</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="c1"># Optional — required on MyHomeServer1 Home + Project BNTR Towel Warmers</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="c1"># (or on gateways like H4684 / MH200 that drop Dimension 20 writes):</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="nt">turn_on_command</span><span class="p">:</span><span class="w"> </span><span class="s">"*25*21#1*21##"</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="nt">turn_off_command</span><span class="p">:</span><span class="w"> </span><span class="s">"*25*21#2*21##"</span>
 </span></code></pre></div>
 <hr />
 <h2 id="legacy-yaml-note">🔄 Legacy YAML Note<a class="headerlink" href="#legacy-yaml-note" title="Permanent link">&para;</a></h2>
