@@ -239,10 +239,11 @@ async def test_interface_zone_is_not_polled_across_any_unrouted_gateway(hass, mo
         assert len(skipped()) == 1  # once per entity
 
 
-async def test_withheld_interface_poll_also_withholds_humidity_and_fan_cross_polls(hass, caplog):
+@pytest.mark.parametrize("model", ["F459", "F453", "F453AV", "MH200N"])
+async def test_withheld_interface_poll_also_withholds_humidity_and_fan_cross_polls(hass, caplog, model):
     """On F459, *#4*3#4#01*60## truncates at # and cross-polls local main-bus zone 3 ($06D102030308000000);
-    all WHO 4 polls on a routed zone are withheld and logged once."""
-    handler = _handler(hass, "F459")
+    on F453/F453AV/MH200N, fan=True would otherwise poll *11##; all WHO 4 polls on a routed zone are withheld and logged once."""
+    handler = _handler(hass, model)
     handler.send_status_request = AsyncMock()
     zone = _zone(hass, handler, interface="01", humidity=True, fan=True)
     assert zone._polls_temperature is False and zone._interface_poll_refused is True

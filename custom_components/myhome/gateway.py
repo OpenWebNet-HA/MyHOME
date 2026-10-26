@@ -291,10 +291,10 @@ def _resolved_model(word: str) -> str | None:
     return _alnum(profile.model_name)
 
 
-# A WHO 4 zone address: ``Z``, ``#Z``, ``Z#N`` (actuator), each optionally behind an
-# interface of exactly two digits (``Z#4#01``): the grammar of OWNd#140's builder
+# A WHO 4 zone address: ``Z`` (0..99), ``#Z``, ``Z#N`` (actuator 0..9), each optionally behind
+# an interface of exactly two digits (``Z#4#01``): the grammar of OWNd#140's builder
 # (``OWNHeatingCommand.actuators_status``).
-_ZONE_WHERE = re.compile(rf"^#?[0-9]+(?:#[0-9]+)?(?:{re.escape(BUS_ROUTING)}[0-9]{{2}})?$")
+_ZONE_WHERE = re.compile(rf"^#?[0-9]{{1,2}}(?:#[0-9])?(?:{re.escape(BUS_ROUTING)}[0-9]{{2}})?$")
 
 
 def _validate_zone_where(where: str) -> str:
@@ -306,7 +306,7 @@ def _validate_zone_where(where: str) -> str:
     dimension 22 write; ``2##`` ends the frame early. The builder of OWNd#140
     (``OWNHeatingCommand.actuators_status``) accepts and rejects the same addresses.
     """
-    zone, routing, interface = (where or "").partition(BUS_ROUTING)
+    zone, routing, interface = (where or "").rpartition(BUS_ROUTING)
     if routing and len(interface) == 1 and interface.isdigit():
         where = f"{zone}{routing}{interface.zfill(2)}"
     if not _ZONE_WHERE.match(where or ""):

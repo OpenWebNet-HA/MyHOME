@@ -66,7 +66,7 @@ class Address:
         if key_suffix and device_id.endswith(key_suffix):
             device_id = device_id[: -len(key_suffix)]
         base, routing, interface = device_id.rpartition(BUS_ROUTING)
-        if routing and interface.isdigit():
+        if routing and base and interface.isdigit() and 1 <= len(interface) <= 2:
             return cls(base, interface.zfill(2), key_suffix)
         return cls(device_id, None, key_suffix)
 
@@ -85,7 +85,7 @@ class Address:
         where = str(cfg.get(CONF_WHERE, cfg.get(CONF_ZONE, dev_id)))
         if not interface:
             base, routing, inline_iface = where.rpartition(BUS_ROUTING)
-            if routing and inline_iface.isdigit():
+            if routing and base and inline_iface.isdigit() and 1 <= len(inline_iface) <= 2:
                 return cls(base, inline_iface.zfill(2))
         return cls(where, str(interface) if interface else None)
 

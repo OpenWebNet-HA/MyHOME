@@ -77,7 +77,7 @@ from .discovery import (
     default_known_keys,
     is_broadcast_where,
 )
-from .gateway import MyHOMEGatewayHandler
+from .gateway import _ZONE_WHERE, MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 from .poll_health import PollHealth
 from .thermo_switch import load_thermo_switch_subentries
@@ -94,6 +94,8 @@ from .where_grammar import (
 
 PLATFORM = Platform.CLIMATE
 PARALLEL_UPDATES = 0
+
+_FOUR_ZONE_CENTRAL = ("#0#1", "#0#2", "#0#3", "#0#4")
 
 # A dimension 12 frame and the frame that turns the zone OFF follow within ~0.1 s (#454, #383)
 _PROTECTION_FRAME_WINDOW = 2.0
@@ -238,17 +240,22 @@ async def async_setup_entry(
 
     def build(ctx: DeviceContext) -> MyHOMEClimate:
         where, interface = ctx.address.where, ctx.address.interface
+        clean_where = where.removeprefix("4-")
         zone = zone_number(where)
         cfg = _zone_config(configured, ctx.address, ctx.key) or ctx.cfg
         suffix = f"{zone}I{interface}" if interface else zone
-        is_central = zone in ("0", "01") or where in ("#0", "#0#1")
+        is_central = clean_where in ("0", "#0", *_FOUR_ZONE_CENTRAL)
         if ctx.source != "bus":
             is_central = cfg.get(CONF_CENTRAL, is_central)
         default_name = f"Central Unit {suffix}" if is_central and ctx.source != "bus" else f"Climate Zone {suffix}"
         registry_name = getattr(ctx.registry_entry, "name", None)
         name = cfg.get(CONF_NAME) or (registry_name if isinstance(registry_name, str) else None) or default_name
         default_model = (
-            "Central Unit (3550)" if where == "#0" else "Central Unit (4695)" if where == "#0#1" else "Heating Zone"
+            "Central Unit (3550)"
+            if clean_where == "#0"
+            else "Central Unit (4695)"
+            if clean_where in _FOUR_ZONE_CENTRAL
+            else "Heating Zone"
         )
         entity = MyHOMEClimate(
             hass=hass,
@@ -355,7 +362,7 @@ async def async_setup_entry(
 
     def known_keys(ctx: DeviceContext) -> list[str]:
         keys = [*default_known_keys(ctx), ctx.address.where, ctx.address.clean_where, ctx.config_id or ""]
-        if not ctx.address.interface:
+        if not ctx.address.interface and "#" not in ctx.address.clean_where.removeprefix("#"):
             keys.append(zone_number(ctx.address.where))
         return [k for k in keys if k]
 
@@ -375,7 +382,8 @@ def _zone_config(configured: dict[str, Any], address: Address, key: str) -> dict
     A routed zone only matches interface-qualified spellings: zone 1 exists
     on every bus, so the bare ones name the local bus's zone (#408).
     """
-    where, zone = address.where, zone_number(address.where)
+    where, clean = address.where, address.clean_where
+    zone = zone_number(where) if "#" not in clean.removeprefix("#") else clean
     if address.interface:
         routing = f"{BUS_ROUTING}{address.interface}"
         return config_for(configured, address, key, f"4-{zone}{routing}", f"4-{key}", f"#{zone}{routing}")
@@ -511,7 +519,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
     ) -> None:
         if interface is None and BUS_ROUTING in where:
             base_where, _, inline_interface = where.rpartition(BUS_ROUTING)
-            if inline_interface.isdigit():
+            if base_where and inline_interface.isdigit() and 1 <= len(inline_interface) <= 2:
                 where = base_where
                 interface = inline_interface
         super().__init__(
@@ -534,7 +542,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         )
         self._interface_poll_skip_logged = False
 
-        self._central = True if self._where in ("#0", "#0#1") else central
+        self._central = True if self._where.removeprefix("4-") in ("#0", *_FOUR_ZONE_CENTRAL) else central
         # None: not configured. A zone then follows the plant, see the standalone property.
         self._standalone_config = False if self._central else standalone
         if self._central:
@@ -622,7 +630,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             )
         ):
             self._poll_on_add = False
-        elif self._central and self._where not in ("#0", "0"):
+        elif self._central and self._where.removeprefix("4-") not in ("#0", "0"):
             self._poll_on_add = False
 
     @property
@@ -828,8 +836,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
     async def async_update(self) -> None:
         """Request status update from gateway, unless the zone has stopped answering."""
-        if self._central and self._where not in ("#0", "0"):
-            # 4-zone central units (#0#1) do not participate in point-to-point status polling;
+        if self._central and self._where.removeprefix("4-") not in ("#0", "0"):
+            # 4-zone central units (#0#1..#0#4) do not participate in point-to-point status polling;
             # bus captures confirm querying #0#1 times out on plants without a physical 4-zone unit (#629).
             # They receive setpoints via commands (*#4*#0#1*#14*T*M##), broadcast events, or restored state.
             return
@@ -852,13 +860,14 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 or self._fan
                 or wants_humidity
             ) and not self._interface_poll_skip_logged:
+                iface = self._interface or self._full_where.rpartition(BUS_ROUTING)[2]
                 LOGGER.debug(
                     "%s %s is behind interface %s and %s does not route WHO 4 requests across `#4#%s`; waiting for the zone to report",
                     self._gateway_handler.log_id,
                     self._display_name,
-                    self._interface,
+                    iface,
                     self._gateway_handler.model,
-                    self._interface,
+                    iface,
                 )
                 self._interface_poll_skip_logged = True
             return
@@ -1101,13 +1110,29 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # blindly. A restored fan mode asks at the end of ``async_restore_last_state``.
             self._ask_fan_coil_sides()
         await super().async_added_to_hass()
-        if zone_requests and self._where.removeprefix("4-").removeprefix("#").count("#") < 2:
+        if zone_requests and _ZONE_WHERE.match(self._full_where):
             # hvac_action needs the actuators (dimension 20); without asking, it stays unknown
             # until one of them switches. The gateway asks again after a reconnect. A secondary
             # probe (WHERE >= 100) or 3-token split address (3#Z#N) is not a Dimension 20 target.
             watch = getattr(self._gateway_handler, "watch_zone_actuators", None)
             if callable(watch):
                 self.async_on_remove(watch(self._full_where))
+
+    def _refuse_interface_write(self) -> bool:
+        """Refuse WHO 4 writes that would strip ``#4#II`` and hit local main-bus ``_where``."""
+        if not self._interface_poll_refused:
+            return False
+        iface = self._interface or self._full_where.rpartition(BUS_ROUTING)[2]
+        LOGGER.warning(
+            "%s %s is behind interface %s and %s does not route WHO 4 across `#4#%s`; not writing to local `%s`",
+            self._gateway_handler.log_id,
+            self._display_name,
+            iface,
+            self._gateway_handler.model,
+            iface,
+            self._where,
+        )
+        return True
 
     @callback
     def _handle_central_mode_update(self, master_mode: HVACMode) -> None:
@@ -1135,6 +1160,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         }
         speed_code = fan_mode_map.get(str(fan_mode).lower())
         if speed_code is not None:
+            if self._refuse_interface_write():
+                return
             # OWNd raises for a central unit or general zone: the firmware forwards
             # *#4*Z*#11*S## only for a plain zone 1..99 (OWNd#77, A2).
             try:
@@ -1178,6 +1205,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
+        if self._refuse_interface_write():
+            return
         if self._central:
             mode_map = {
                 HVACMode.OFF: "off",
@@ -1269,6 +1298,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
+        if self._refuse_interface_write():
+            return
         target_temperature = float(
             kwargs.get("temperature", self._local_target_temperature)  # type: ignore[arg-type]
         ) - self._local_offset
