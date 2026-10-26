@@ -416,6 +416,27 @@ def test_oracle_check_rejects_a_pin_that_disagrees_with_the_installed_profile(mo
     ]
 
 
+@pytest.mark.parametrize("profile_name", ["Generic", "BTicino Nonesuch 9000"])
+def test_oracle_check_rejects_a_row_that_resolves_to_the_generic_profile(monkeypatch: pytest.MonkeyPatch, profile_name):
+    """A row whose ``profile_name`` is ``Generic`` or names no OWNd profile is flagged, not silently accepted.
+
+    ``get_gateway_profile`` answers ``GenericGatewayProfile`` for both; the check must say which row
+    points at a profile that does not exist instead of deriving an empty advertised column from it.
+    """
+    rows = copy.deepcopy(ugp.GATEWAY_DISCOVERY_METADATA)
+    f455 = next(row for row in rows if row["profile_name"] == "F455")
+    f455["profile_name"] = profile_name
+    monkeypatch.setattr(ugp, "GATEWAY_DISCOVERY_METADATA", rows)
+    violations = ugp.verify_profiles_against_oracle()
+    assert [
+        v
+        for v in violations
+        if "**F455**" in v and f"{profile_name} (resolves to the generic profile)." in v
+    ]
+    # the other rows still resolve: no generic-profile violation is reported for them
+    assert [v for v in violations if "resolves to the generic profile" in v and "**F455**" not in v] == []
+
+
 def test_discovery_row_with_an_unreadable_pin_and_no_ownd_is_empty(monkeypatch: pytest.MonkeyPatch):
     """Without OWNd an unreadable ``pinned_whos`` yields an empty row: ``none`` cells, no omissions, the plain notes."""
     monkeypatch.setitem(sys.modules, "OWNd.profiles", None)
