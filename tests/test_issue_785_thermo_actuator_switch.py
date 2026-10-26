@@ -71,6 +71,7 @@ from custom_components.myhome.thermo_switch import has_thermo_switch_subentry
 from custom_components.myhome.validate import config_schema, switch_schema
 from custom_components.myhome.where_grammar import (
     parse_thermo_actuator_where,
+    thermo_dim20_is_active,
     thermo_event_actuator,
     thermo_event_interface,
     thermo_event_zone,
@@ -1146,3 +1147,95 @@ async def test_integration_setup_and_subentry_immediate_removal(
         assert ent_reg.async_get_entity_id("switch", DOMAIN, f"{MAC}-4-7#1") is None
 
         assert await hass.config_entries.async_unload(entry.entry_id) is True
+
+
+@pytest.mark.asyncio
+async def test_thermo_switch_real_hardware_dim20_write_frames_and_reverse_interlock(
+    hass: HomeAssistant,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Verify real-hardware MyHomeServer1 #20 write echoes and reverse-interlock revert (#785).
+
+    On physical MyHomeServer1 + F430/2 hardware (issue #785 comment 6404491430):
+    - Home + Control ON emits ``*#4*7#1*#20*1##`` (OWNHeatingCommand) on the Bus Monitor.
+    - Scenarios emit ``*#4*7#1*#20*0##`` / ``*#4*7#1*#20*1##`` (OWNHeatingCommand).
+    - Sending ``*#4*7#1*#20*0##`` while Home + Control holds the towel warmer ON opens the
+      contact briefly before ``bt_thermo_manager`` immediately sends ``*#4*7#1*#20*1##``.
+    """
+    # Unit-check thermo_dim20_is_active & thermo_event_zone on OWNHeatingCommand edge cases
+    assert thermo_dim20_is_active(OWNMessage.parse("*#4*7#1*#20*1##")) is True
+    assert thermo_dim20_is_active(OWNMessage.parse("*#4*7#1*#20*0##")) is False
+    assert thermo_dim20_is_active(OWNMessage.parse("*#4*7#1*#20*200##")) is True
+    assert thermo_dim20_is_active(OWNMessage.parse("*#4*7#1*#20*100##")) is False
+    assert thermo_dim20_is_active(OWNMessage.parse("*#4*7#1*20##")) is None
+    assert thermo_dim20_is_active(OWNMessage.parse("*#4*7#1*#20*999##")) is None
+    assert thermo_dim20_is_active(OWNMessage.parse("*#4*#0*#14*0200*1##")) is None
+    assert thermo_event_zone(OWNMessage.parse("*#4*#0*#14*0200*1##")) is None
+    assert thermo_event_zone(OWNMessage.parse("*#4*0#1*#20*1##")) is None
+    assert thermo_event_zone(OWNMessage.parse("*#4*7#1*#20*1##")) == "7"
+
+    bad_cmd = OWNMessage.parse("*#4*7#1*#20*1##")
+    assert bad_cmd is not None
+    object.__setattr__(bad_cmd, "_dimension_value", ["abc"])
+    assert thermo_dim20_is_active(bad_cmd) is None
+    non_cmd_dim20 = MagicMock(dimension=20, message_type=None)
+    assert thermo_dim20_is_active(non_cmd_dim20) is None
+
+    gw = _mock_gateway()
+    entry = _mock_entry(
+        hass,
+        gw,
+        platforms={
+            "switch": {
+                "4-7#1": {"who": "4", "where": "7#1", "name": "Bath Towel"},
+                "4-8": {"who": "4", "where": "8", "name": "Zone 8 Radiators"},
+                "4-9": {"who": "4", "where": "9", "name": "Zone 9 Fresh"},
+            }
+        },
+    )
+    added: list[MyHOMEThermoSwitch] = []
+    await switch_setup_entry(hass, entry, added.extend)
+    by_where = {sw._where: sw for sw in added}
+    towel = by_where["7#1"]
+    zone8 = by_where["8"]
+    zone9 = by_where["9"]
+    for sw in added:
+        sw.async_write_ha_state = MagicMock()  # type: ignore[method-assign]
+
+    # 1. Status request *#4*7#1*20## on event session must NOT alter switch state
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNMessage.parse("*#4*7#1*20##"))
+    assert towel.is_on is None
+
+    # 2. Home + Control turns towel warmer ON -> *#4*7#1*#20*1## updates HA immediately!
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNMessage.parse("*#4*7#1*#20*1##"))
+    assert towel.is_on is True
+
+    # 3. Reverse-interlock test: HA sends direct Turn OFF (*#4*7#1*#20*0##) while locked ON;
+    #    bus echoes *#4*7#1*#20*0## and 0.16s later bt_thermo_manager forces *#4*7#1*#20*1##!
+    caplog.clear()
+    with patch("custom_components.myhome.switch.time.monotonic", side_effect=[100.0, 100.02, 100.18]):
+        await towel.async_turn_off()
+        async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNMessage.parse("*#4*7#1*#20*0##"))
+        assert towel.is_on is False
+        async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNMessage.parse("*#4*7#1*#20*1##"))
+    assert towel.is_on is True
+    assert "reverted to ON" in caplog.text
+    assert "bt_thermo_manager" in caplog.text
+
+    # 4. Scenario sets towel warmer OFF via towel.setSync(status=0) -> *#4*7#1*#20*0##!
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNMessage.parse("*#4*7#1*#20*0##"))
+    assert towel.is_on is False
+
+    # 5. Zone-all-actuators target Z#0 (*#4*Z#0*#20*VAL##) on per-actuator, populated zone, and empty zone
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNMessage.parse("*#4*7#0*#20*1##"))
+    assert towel.is_on is True
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNMessage.parse("*#4*8#1*#20*1##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNMessage.parse("*#4*8#2*#20*1##"))
+    assert zone8.extra_state_attributes["actuators"] == {"1": "on", "2": "on"}
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNMessage.parse("*#4*8#0*#20*0##"))
+    assert zone8.is_on is False
+    assert zone8.extra_state_attributes["actuators"] == {"1": "off", "2": "off"}
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNMessage.parse("*#4*9#0*#20*1##"))
+    assert zone9.is_on is True
+    assert zone9.extra_state_attributes["actuators"] == {"1": "on"}
+

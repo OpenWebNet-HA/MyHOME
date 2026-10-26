@@ -205,6 +205,7 @@ __all__ = [
     "normalize_expose_where",
     "normalize_where",
     "parse_thermo_actuator_where",
+    "thermo_dim20_is_active",
     "thermo_event_actuator",
     "thermo_event_interface",
     "thermo_event_zone",
@@ -354,18 +355,26 @@ def thermo_event_interface(message: Any) -> str | None:
     return if_str.zfill(2) if if_str.isdigit() else if_str
 
 
+_DIM20_ACTIVE_CODES = frozenset({1, 2, 6, 7, 8, 9})
+_DIM20_INACTIVE_CODES = frozenset({0, 3, 4, 5, 100})
+
+
 def thermo_event_zone(message: Any) -> str | None:
-    """Return zone ``"1"``..``"99"`` of a WHO=4 event, or ``None`` for pumps/probes/central."""
-    if is_pump(message) or is_probe(str(getattr(message, "where", None))):
+    """Return zone ``"1"``..``"99"`` of a WHO=4 event or command, or ``None`` for pumps/probes/central."""
+    raw_where = str(getattr(message, "where", None) or "")
+    if is_pump(message) or is_probe(raw_where):
         return None
     zone = getattr(message, "zone", None)
-    if isinstance(zone, int) and 1 <= zone <= 99:
+    if isinstance(zone, int) and not isinstance(zone, bool) and 1 <= zone <= 99:
         return str(zone)
+    bare = raw_where.removeprefix("4-").removeprefix("#")
+    if bare.isdigit() and 1 <= int(bare) <= 99:
+        return str(int(bare))
     return None
 
 
 def thermo_event_actuator(message: Any) -> str:
-    """Return actuator id ``"1"``..``"9"`` (default ``"1"``) of a WHO=4 Dimension 20 event."""
+    """Return actuator id ``"0"``..``"9"`` (default ``"1"``) of a WHO=4 Dimension 20 frame."""
     act = getattr(message, "actuator", None)
     if act is not None and str(act).isdigit():
         return str(int(str(act)))
@@ -374,6 +383,37 @@ def thermo_event_actuator(message: Any) -> str:
         return str(int(str(tail[0])))
     return "1"
 
+
+def thermo_dim20_is_active(message: Any) -> bool | None:
+    """Return actuator active state for a WHO=4 Dimension 20 event or ``#20`` write, or ``None``.
+
+    On ``MyHomeServer1`` (``bt_thermo_manager``), toggling a Towel Warmer in Home + Control,
+    running a ``BNTR`` Scenario, or reverting an unauthorized write broadcasts a Dimension 20
+    *write* frame (``*#4*Z#N*#20*1##`` / ``*#4*Z#N*#20*0##``, parsed by ``OWNd`` as
+    :class:`OWNHeatingCommand` with ``dimension == 20`` and non-empty ``dimension_value``)
+    while the physical ``F430`` actuator only emits ``*#4*Z#N*20*VAL##`` when polled.
+    Dimension 20 status *requests* (``*#4*Z#N*20##``) have an empty ``dimension_value``
+    and return ``None``.
+    """
+    if getattr(message, "dimension", None) != 20:
+        return None
+    if getattr(message, "message_type", None) == "hvac_action" and callable(
+        getattr(message, "is_active", None)
+    ):
+        return bool(message.is_active())
+    if isinstance(message, OWNCommand):
+        vals = getattr(message, "dimension_value", None)
+        if not isinstance(vals, (list, tuple)) or not vals:
+            return None
+        first = str(vals[0])
+        if not first.isdigit():
+            return None
+        code = int(first)
+        if code in _DIM20_ACTIVE_CODES or 101 <= code <= 200:
+            return True
+        if code in _DIM20_INACTIVE_CODES:
+            return False
+    return None
 
 _TRIGGER_COMMAND_RE = re.compile(
     r"^\*(?:[0-9]+\*[0-9#]+\*[0-9#]+|#[0-9]+\*[0-9#]+\*#[0-9]+(?:\*[0-9#]+)+)##$"

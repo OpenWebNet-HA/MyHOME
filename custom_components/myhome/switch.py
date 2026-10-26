@@ -28,6 +28,7 @@ from homeassistant.helpers.entity_registry import RegistryEntry
 from OWNd.message import (
     MESSAGE_TYPE_ACTION,
     OWNCommand,
+    OWNHeatingCommand,
     OWNHeatingEvent,
     OWNLightingCommand,
     OWNLightingEvent,
@@ -63,6 +64,7 @@ from .thermo_switch import has_thermo_switch_subentry, load_thermo_switch_subent
 from .typing_compat import as_any
 from .where_grammar import (
     parse_thermo_actuator_where,
+    thermo_dim20_is_active,
     thermo_event_actuator,
     thermo_event_interface,
     thermo_event_zone,
@@ -269,7 +271,7 @@ async def async_setup_entry(
             async_add_entities,
             platform=PLATFORM,
             who="4",
-            event_type=OWNHeatingEvent,
+            event_type=None,
             build=build_thermo,
             announce=False,
             accept=lambda ctx: ctx.source != "bus" and str(ctx.cfg.get(CONF_WHO) or "") == "4",
@@ -643,32 +645,45 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
                 )
 
     @callback
-    def handle_event(self, message: OWNHeatingEvent) -> None:
-        """Update switch state from WHO=4 Dimension 20 / Dimension 19 events."""
+    def handle_event(self, message: OWNHeatingEvent | OWNHeatingCommand) -> None:
+        """Update switch state from WHO=4 Dimension 20 events/writes or Dimension 19 events."""
         if getattr(message, "is_translation", None) is True:
             return
         if thermo_event_interface(message) != self._interface:
             return
-        if getattr(message, "message_type", None) != MESSAGE_TYPE_ACTION:
-            return
         if thermo_event_zone(message) != self._zone:
             return
 
-        dimension = getattr(message, "dimension", None)
-        if dimension == 20:
+        dim20_active = thermo_dim20_is_active(message)
+        if dim20_active is not None:
             act_id = thermo_event_actuator(message)
-            if self._actuator is not None and act_id != self._actuator:
-                return
-            is_active = bool(message.is_active())
-            self._actuator_states[act_id] = is_active
+            if act_id == "0":
+                if self._actuator is not None:
+                    self._actuator_states[self._actuator] = dim20_active
+                elif self._actuator_states:
+                    self._actuator_states = dict.fromkeys(
+                        self._actuator_states, dim20_active
+                    )
+                else:
+                    self._actuator_states["1"] = dim20_active
+                new_state = dim20_active
+            else:
+                if self._actuator is not None and act_id != self._actuator:
+                    return
+                self._actuator_states[act_id] = dim20_active
+                new_state = (
+                    dim20_active
+                    if self._actuator is not None
+                    else any(self._actuator_states.values())
+                )
             self._active_source = "actuators"
-            new_state = (
-                is_active
-                if self._actuator is not None
-                else any(self._actuator_states.values())
-            )
             self._bus_state_complete = True
-        elif dimension == 19 and self._actuator is None:
+        elif (
+            isinstance(message, OWNHeatingEvent)
+            and getattr(message, "message_type", None) == MESSAGE_TYPE_ACTION
+            and getattr(message, "dimension", None) == 19
+            and self._actuator is None
+        ):
             is_active = bool(
                 message.is_active()
                 or message.is_heating()
