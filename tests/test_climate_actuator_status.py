@@ -167,11 +167,19 @@ async def test_f461_asks_every_zone_s_actuators_with_one_frame(hass, fast_bus_pa
     assert _drain(handler) == ["*#4*#0*20##"]
 
 
-async def test_routed_zone_is_asked_on_its_own(hass, fast_bus_pacing):
+async def test_routed_zone_is_withheld_by_default_and_asked_when_profile_opts_in(hass, fast_bus_pacing):
     handler = _handler(hass, "F461")
     handler._initial_discovery_done.set()
     handler.watch_zone_actuators("2")
     handler.watch_zone_actuators("3#4#01")
+    await _settle(hass)
+    assert _drain(handler) == ["*#4*#0*20##"]
+
+    handler.gateway.profile = SimpleNamespace(
+        model_name=handler.gateway.profile.model_name, supports_interface_zone_requests=True
+    )
+    handler.request_zone_dimension("2", 20)
+    handler.request_zone_dimension("3#4#01", 20)
     await _settle(hass)
     assert _drain(handler) == ["*#4*#0*20##", "*#4*3#4#01*20##"]
 
@@ -550,13 +558,20 @@ def test_a_plain_or_routed_zone_address_is_accepted(hass, where):
     assert handler._zone_requests == {(where, 20)}
 
 
-async def test_a_one_digit_interface_is_asked_with_two_digits(hass, fast_bus_pacing):
-    """``3#4#1`` is zone 3 behind interface 01: the frame says ``#4#01``, as OWNd#140's builder requires."""
+async def test_a_one_digit_interface_is_normalized_to_two_digits_and_gated(hass, fast_bus_pacing):
+    """``3#4#1`` is normalized to ``3#4#01``, withheld by default, and sent only when the profile opts in."""
     handler = _handler(hass, "F454")
     handler._initial_discovery_done.set()
     unwatch = handler.watch_zone_actuators("3#4#1")
     assert handler._actuator_zones == {"3#4#01": 1}
     assert handler._zone_requests == {("3#4#01", 20)}
+    await _settle(hass)
+    assert _drain(handler) == []
+
+    handler.gateway.profile = SimpleNamespace(
+        model_name=handler.gateway.profile.model_name, supports_interface_zone_requests=True
+    )
+    handler.request_zone_dimension("3#4#1", 20)
     await _settle(hass)
     assert _drain(handler) == ["*#4*3#4#01*20##"]
     unwatch()
@@ -720,6 +735,9 @@ async def test_zones_discovered_after_the_sweep_share_one_all_zone_request(hass,
     """Dynamically discovered zones arrive a few tens of ms apart: one *#4*#0*20##, not one each."""
     monkeypatch.setattr("custom_components.myhome.gateway.ZONE_REQUEST_COALESCE", 0.2)
     handler = _handler(hass, "F461")
+    handler.gateway.profile = SimpleNamespace(
+        model_name=handler.gateway.profile.model_name, supports_interface_zone_requests=True
+    )
     handler._initial_discovery_done.set()
     handler.watch_zone_actuators("2")
     await asyncio.sleep(0.05)
@@ -1082,3 +1100,123 @@ async def test_replay_myhomeserver1_all_zone_actuator_burst_through_the_climate_
     ]
     assert gw.watch_zone_actuators.call_count == 34
     assert [str(c.args[0]) for c in gw.send_status_request.await_args_list] == [f"*#4*{z}##" for z in zones]
+
+
+# ------------------------------------------------------------------ WHO 4 #4#II non-routing & MH202 crash guards
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        "F450", "F453", "F453AV", "F454", "F459", "F460", "F461",
+        "H4684", "MH200", "MH200N", "MH202", "MyHomeServer1", "Generic",
+    ],
+)
+def test_interface_zone_request_refused_defaults_true_across_fleet(hass, model):
+    """0 of 12 oracle gateways route WHO 4 across #4#II, and Generic may be an unidentified MH202."""
+    handler = _handler(hass, model)
+    assert handler.interface_zone_request_refused is True
+
+
+@pytest.mark.parametrize(("flag", "expected"), [(True, False), (False, True), (None, True)])
+def test_interface_zone_request_refused_respects_profile_flag_and_delegation(hass, flag, expected):
+    primary = _handler(hass, "F461")
+    secondary = _handler(hass, "F454")
+    secondary.gateway.profile = SimpleNamespace(
+        model_name="F454", supports_interface_zone_requests=flag
+    )
+    primary._delegated_target = MagicMock(return_value=secondary)
+    assert primary.interface_zone_request_refused is expected
+
+
+async def test_routed_zone_on_generic_or_f461_never_polls_status_or_raises_unresponsive(hass, fast_bus_pacing):
+    """Prevents Generic->MH202 coso SIGSEGV on *#4*2#4#01## and false unresponsive repair on F461."""
+    for model in ("Generic", "F461"):
+        handler = _handler(hass, model)
+        handler._initial_discovery_done.set()
+        handler.send_status_request = AsyncMock()
+        zone = MyHOMEClimate(
+            hass=hass,
+            name="Zone 2 Bus 01",
+            device_id="4-2#4#01",
+            who="4",
+            where="2",
+            interface="01",
+            heating=True,
+            cooling=True,
+            fan=False,
+            humidity=False,
+            standalone=True,
+            central=False,
+            manufacturer="BTicino",
+            model="Heating Zone",
+            gateway=handler,
+        )
+        zone.hass = hass
+        zone.entity_id = "climate.zone_2_bus_01"
+        zone.async_write_ha_state = MagicMock()
+        assert zone._poll_on_add is False
+        zone._enable_fan_mode()
+        zone._enable_humidity()
+        assert zone._poll_on_add is False
+        zone._ask_fan_coil_sides()
+        assert zone._fan_coil_sides_asked_at is None
+        await zone.async_added_to_hass()
+        await zone.async_update()
+        await zone.async_update()
+        await _settle(hass)
+        handler.send_status_request.assert_not_awaited()
+        assert zone._poll_health.unresponsive is False
+        assert "unresponsive" not in zone.extra_state_attributes
+
+
+def test_is_actuator_where_distinguishes_actuators_from_central_and_routed():
+    from custom_components.myhome.where_grammar import is_actuator_where
+
+    assert is_actuator_where("2#1") is True
+    assert is_actuator_where("#2#9") is True
+    assert is_actuator_where("4-2#0") is True
+    assert is_actuator_where("0#0") is True
+    assert is_actuator_where("0#1") is True
+    assert is_actuator_where("#0") is False
+    assert is_actuator_where("#0#1") is False
+    assert is_actuator_where("4-#0#4") is False
+    assert is_actuator_where("2") is False
+    assert is_actuator_where("2#4#01") is False
+    assert is_actuator_where("2#1#4#01") is False
+
+
+async def test_actuator_where_never_sends_dimensionless_status_request(hass):
+    """Dimensionless *#4*2#1## NACKs on 9 gateways and crashes coso with SIGSEGV on MH202 010024."""
+    for model in ("Generic", "F461", "MH202"):
+        handler = _handler(hass, model)
+        handler.send_status_request = AsyncMock()
+        zone = MyHOMEClimate(
+            hass=hass,
+            name="Zone 2 Act 1",
+            device_id="4-2#1",
+            who="4",
+            where="2#1",
+            heating=True,
+            cooling=False,
+            fan=False,
+            humidity=False,
+            standalone=True,
+            central=False,
+            manufacturer="BTicino",
+            model="Heating Zone",
+            gateway=handler,
+        )
+        zone.hass = hass
+        zone.entity_id = "climate.zone_2_act_1"
+        zone.async_write_ha_state = MagicMock()
+        assert zone._poll_on_add is False
+        assert zone._polls_temperature is False
+        await zone.async_update()
+        handler.send_status_request.assert_not_awaited()
+
+        # Even if fan is enabled dynamically, *#4*2#1## is still suppressed in async_update
+        zone._enable_fan_mode()
+        await zone.async_update()
+        sent = [str(c.args[0]) for c in handler.send_status_request.await_args_list]
+        assert "*#4*2#1##" not in sent
+        assert "*#4*2#1*0##" not in sent

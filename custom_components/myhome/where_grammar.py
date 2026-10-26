@@ -198,6 +198,7 @@ __all__ = [
     "area_of_where",
     "canonical_thermo_zone",
     "expose_message_where",
+    "is_actuator_where",
     "is_apl_address",
     "is_probe",
     "is_pump",
@@ -214,6 +215,20 @@ __all__ = [
     "where_param",
     "zone_number",
 ]
+
+
+def is_actuator_where(where: str) -> bool:
+    """Whether ``where`` addresses a WHO 4 actuator (``Z#N`` / ``0#N``) rather than a zone or central unit.
+
+    ``#0#1``..``#0#4`` is a 4-zone central unit, not an actuator; ``Z#4#II`` carries
+    bus routing. Dimensionless ``*#4*Z#N##`` NACKs on nine gateways, cross-polls local
+    zone ``Z`` on H4684/MH200, and crashes ``coso`` with ``SIGSEGV`` on MH202 ``010024``.
+    """
+    clean = (where or "").strip().removeprefix("4-")
+    if clean.startswith("#0#") or "#4#" in clean:
+        return False
+    zone, sep, act = clean.removeprefix("#").partition("#")
+    return bool(sep) and zone.isdigit() and act.isdigit() and 0 <= int(act) <= 9
 
 
 def zone_number(where: str) -> str:
