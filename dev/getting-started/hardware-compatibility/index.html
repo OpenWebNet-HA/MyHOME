@@ -2128,12 +2128,12 @@
 <td>Audio/video &amp; web server gateway</td>
 </tr>
 <tr>
-<td><strong>HL4684</strong></td>
+<td><strong>H4684 / H/L4684</strong></td>
 <td>OpenWebNet</td>
 <td>1 worker</td>
 <td>50 ms</td>
 <td>✅ SSDP</td>
-<td>10" Touch screen display IP gateway</td>
+<td>Colour touch screen IP gateway (Axolute / LivingLight)</td>
 </tr>
 <tr>
 <td><strong>Legrand 3578</strong></td>
@@ -2298,10 +2298,10 @@
 <td style="text-align: left;">Lighting, cover, climate, and sound queries (<code>bt_difson</code> hardware and firmware-verified). The <code>010108</code> firmware forwards <code>*#4*0##</code> (own-firmware-oracle), unlike the MH200. Alarm and energy queries omitted.</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>H4684 / HL4684</strong></td>
+<td style="text-align: left;"><strong>H4684 / H/L4684</strong></td>
 <td style="text-align: left;">WHO 1, 2, 4, 16, 18</td>
 <td style="text-align: left;">WHO 1, 2, 16, 18 (firmware drops <code>*#4*0##</code>)</td>
-<td style="text-align: left;">Lighting, cover, climate, sound, and energy meter 51 queries. The <code>020054</code> firmware drops <code>*#4*0##</code> (own-firmware-oracle), so each climate zone asks <code>*#4*&lt;WHERE&gt;*0##</code> itself; the SSDP spelling <code>HL4684</code> is keyed on the same tables. Alarm query omitted.</td>
+<td style="text-align: left;">Lighting, cover, climate, sound, and energy meter 51 queries (<code>bt_multi</code> WHO 22 also enabled on firmware &gt;= <code>6.0.0</code>). Both <code>020054</code> (own-firmware-oracle) and live <code>6.0.11</code> (<code>tests/fixtures/traces/issue_466</code>) drop <code>*#4*0##</code>, so each climate zone asks <code>*#4*&lt;WHERE&gt;*0##</code> itself; the SSDP spellings <code>H/L4684</code> and <code>HL4684</code> resolve to <code>H4684Profile</code>. Alarm query omitted.</td>
 </tr>
 </tbody>
 </table>
