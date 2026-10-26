@@ -548,9 +548,21 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             target_temp = last_state.attributes.get("temperature")
             if target_temp is not None:
                 try:
-                    self._target_temperature = float(target_temp)
+                    shown = float(target_temp)
                 except (ValueError, TypeError):
-                    pass
+                    shown = None
+                if shown is not None:
+                    # The saved value is what the slider showed, knob offset included (the
+                    # setpoint in force, or the commanded one plus the offset), so the nominal
+                    # is that less the saved offset. As on the live path, the first dimension
+                    # 13 / 14 report after the restart then puts the offset on the nominal,
+                    # not a second time on a value that already carries it (#791).
+                    try:
+                        self._local_offset = int(float(last_state.attributes.get("local_offset") or 0))
+                    except (ValueError, TypeError):
+                        pass
+                    self._target_temperature = shown - self._local_offset
+                    self._local_target_temperature = shown
             if "program" in last_state.attributes:
                 try:
                     self._program = int(last_state.attributes["program"])

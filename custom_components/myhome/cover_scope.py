@@ -112,7 +112,9 @@ class MyHOMEScopeCover(MyHOMECover):
     A scope with no known members ends a run after its travel time.
     """
 
-    _settles_open_close_from_unknown = False  # the members settle their own runs
+    # No position of its own to settle: the members with no position settle on their
+    # travel timer, armed by _async_run_members_to_end for a scope frame the gateway relays.
+    _settles_open_close_from_unknown = False
 
     def __init__(self, *args: Any, scope: CoverScope, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -210,7 +212,7 @@ class MyHOMEScopeCover(MyHOMECover):
                     await asyncio.sleep(PACED_FANOUT_DELAY)
                 await member.async_open_cover(**kwargs)
             return
-        await super().async_open_cover(**kwargs)
+        await self._async_run_members_to_end(True)
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         if members := self._fan_out():
@@ -219,7 +221,37 @@ class MyHOMEScopeCover(MyHOMECover):
                     await asyncio.sleep(PACED_FANOUT_DELAY)
                 await member.async_close_cover(**kwargs)
             return
-        await super().async_close_cover(**kwargs)
+        await self._async_run_members_to_end(False)
+
+    async def _async_run_members_to_end(self, opening: bool) -> asyncio.Future[Any] | None:
+        """One scope frame runs every member to its end stop (no F422 fan-out: the main bus,
+        or a general frame, which crosses the interface natively).
+
+        The gateway relays the frame to the members, which took it as an external run
+        and froze at the actuator's own stop: a member with no position stayed unknown
+        when its F411/2 stopped before `travel_time`, while the same member commanded
+        directly settled on its travel timer (#795). Such members now open their run on
+        the scope's frame and settle like their own open / close; members with a known
+        position keep timing the run from it, as for a direct command.
+        """
+        direction = "open" if opening else "close"
+        followers = [m for m in self._members() if m._runs_to_end_from_unknown(opening)]
+        for member in followers:
+            member._begin_run(direction)
+        try:
+            written = await self._async_move(direction)
+        except Exception:
+            for member in followers:
+                member._abort_motion()  # the scope frame never reached the bus: nothing moved
+            raise
+        for member in followers:
+            member._follow_scope_run_to_end(opening, written)
+        return written
+
+    async def _async_run_to_end(self, opening: bool) -> None:
+        """`set_cover_position: 0` / `100` with one scope frame: the members settle too."""
+        written = await self._async_run_members_to_end(opening)
+        self._settle_run_to_end(opening, written)
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
         if members := self._fan_out():
@@ -228,6 +260,11 @@ class MyHOMEScopeCover(MyHOMECover):
                     await asyncio.sleep(PACED_FANOUT_DELAY)
                 await member.async_stop_cover(**kwargs)
             return
+        for member in self._members():
+            if member._end_run_from_unknown:
+                # The relayed stop must end the member's run from unknown (position still
+                # unknown), not be taken for the actuator's own early stop: as a direct stop.
+                member._cancel_stop_task()
         await super().async_stop_cover(**kwargs)
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:

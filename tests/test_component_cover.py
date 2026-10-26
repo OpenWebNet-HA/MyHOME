@@ -1031,7 +1031,7 @@ class TestMyHOMECoverEntity:
         assert basic_cover._start_position is None
         assert basic_cover.is_closed is False
 
-        # 3. State 'unknown' -> position remains unchanged (default 50)
+        # 3. State 'unknown' -> position remains unchanged (preset to 50)
         basic_cover._attr_current_cover_position = 50
         basic_cover._start_position = 50
         basic_cover.async_get_last_state = AsyncMock(

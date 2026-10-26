@@ -370,6 +370,8 @@ async def test_scope_cover_on_the_main_bus_sends_one_scope_frame(gateway) -> Non
         family.add(c)
     await area.async_open_cover()
     assert _sent(gateway) == ["*2*1*1##"]
+    for c in family.members(area.scope):
+        c._cancel_stop_task()  # the members' runs from unknown settle on their travel timer
 
 
 def test_general_scope_behind_an_interface_holds_that_interface_only(gateway) -> None:
@@ -450,6 +452,8 @@ async def test_general_scope_cover_behind_an_interface_sends_native_broadcast(ga
     gateway.send.reset_mock()
     await general.async_close_cover()
     assert _sent(gateway) == ["*2*2*0#4#02##"]
+    for p in points:
+        p._cancel_stop_task()  # the members' runs from unknown settle on their travel timer
 
 
 async def test_general_scope_cover_behind_an_interface_paces_member_positioning(gateway) -> None:
