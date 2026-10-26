@@ -87,16 +87,20 @@ def gateway_supported_whos(model: str | None, firmware: str | None = None) -> se
     whos: set[int] = set()
     norm = (model or "").strip().upper()
     try:
-        from OWNd.profiles import get_gateway_profile
+        import OWNd.profiles as _ownd_profiles
 
-        try:
-            profile = get_gateway_profile(model or "", firmware)
-        except TypeError:  # pragma: no cover - fallback for OWNd without firmware argument
-            profile = get_gateway_profile(model or "")
+        from .gateway import _firmware_at_least, _profile_for_model
+
+        profile = _profile_for_model(
+            model or "", firmware, lookup=_ownd_profiles.get_gateway_profile
+        )
         supports = getattr(profile, "supports_who", None)
         for w in getattr(profile, "supported_who", None) or ():
             if not callable(supports) or supports(int(w)):
                 whos.add(int(w))
+        # TODO(OWNd>2.0.0b11): remove shim once manifest.json pins an OWNd release containing OWNd#147.
+        if getattr(profile, "model_name", None) == "H4684" and _firmware_at_least(firmware, (6, 0, 0)):
+            whos.add(22)
     except Exception:
         pass
     # Model-specific hardware capability constraints:

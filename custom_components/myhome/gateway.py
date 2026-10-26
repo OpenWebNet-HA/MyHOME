@@ -124,17 +124,55 @@ __all__ = [
 ]
 
 
+def _call_get_gateway_profile(
+    model: str | None, firmware: str | None = None, *, lookup: Any = None
+) -> Any:
+    """Call ``get_gateway_profile`` with optional firmware, tolerating 1-arg mocks."""
+    fn = lookup if lookup is not None else get_gateway_profile
+    if firmware:
+        try:
+            return fn(model, firmware)
+        except TypeError:  # pragma: no cover - fallback for 1-arg mocks or older OWNd
+            return fn(model)
+    return fn(model)
+
+
+def _profile_for_model(
+    model: str | None, firmware: str | None = None, *, lookup: Any = None
+) -> Any:
+    """Resolve ``model`` to an OWNd profile, mapping SSDP spellings like ``H/L4684``."""
+    profile = _call_get_gateway_profile(model, firmware, lookup=lookup)
+    if isinstance(profile, GenericGatewayProfile) and model:
+        mapped = _MODEL_SPELLINGS.get(_alnum(model))
+        if mapped is not None:
+            return _call_get_gateway_profile(mapped, firmware, lookup=lookup)
+    return profile
+
+
+def _firmware_at_least(firmware: str | None, minimum: tuple[int, int, int]) -> bool:
+    """Return whether ``firmware`` parses to at least ``minimum`` (V, R, B)."""
+    if not firmware:
+        return False
+    parts = [int(m) for m in re.findall(r"\d+", str(firmware))]
+    if not parts:
+        return False
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts[:3]) >= minimum
+
+
 def command_session_limit(model: str | None) -> int | None:
     """Return how many command sessions a known gateway model accepts at once."""
-    profile = get_gateway_profile(model)
-    if isinstance(profile, GenericGatewayProfile):
+    profile = _profile_for_model(model)
+    max_sessions = getattr(profile, "max_command_sessions", None)
+    if isinstance(profile, GenericGatewayProfile) or max_sessions is None:
         return None
-    return int(profile.max_command_sessions)
+    return int(max_sessions)
 
 
 def command_session_default(model: str | None) -> int:
     """Return how many command sessions a new entry should start with."""
-    profile = get_gateway_profile(model)
+    profile = _profile_for_model(model)
     default = int(getattr(profile, "default_command_sessions", 1))
     limit = command_session_limit(model)
     return max(1, min(default, limit) if limit is not None else 1)
@@ -229,9 +267,9 @@ _ZONE_REQUEST_MODELS = sorted(
     key=len,
     reverse=True,
 )
-# SSDP announces the H4684 as "HL4684" (manifest.json), which OWNd does not alias to its H4684
-# profile yet (it knows h4684, l4684, n4684, nt4684, lgrh4684; #794 maps the same spelling), and
-# "HC4684" is the other prefixed spelling of the same product: keyed on the oracle's product name.
+# SSDP announces the H4684 as "H/L4684" (issue #466) or "HL4684" (manifest.json), which OWNd<=2.0.0b11
+# does not alias to its H4684 profile yet, and "HC4684" is the other prefixed spelling of the same product.
+# TODO(OWNd>2.0.0b11): remove shim once manifest.json pins an OWNd release containing OWNd#147.
 _MODEL_SPELLINGS = {"HL4684": "H4684", "HC4684": "H4684"}
 
 
@@ -313,6 +351,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self.config_entry = config_entry
         self.generate_events = generate_events
         self.gateway = OWNGateway(build_info)
+        if isinstance(self.gateway.profile, GenericGatewayProfile):
+            self.gateway.profile = _profile_for_model(self.gateway.model_name, self.gateway.firmware)
         self.is_connected = False
         self._available = False
         self._failover_active = False
@@ -460,17 +500,21 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     @property
     def supports_zone_status(self) -> bool:
         """Whether the gateway supports point-to-point zone status queries (*#4*Z##)."""
-        # The configured model string and the model OWNd resolves it to, so the spellings OWNd
-        # aliases (L4684, N4684, NT4684, LGR4684 and the MyHOME_Suite item numbers such as 003598
-        # for the F454) are judged like the model they stand for.
-        names = (self.model.upper(), str(get_gateway_profile(self.model).model_name).upper())
+        # Check the configured model string, its alphanumeric form (so "BTicino H/L4684" matches
+        # "HL4684"), and the profile model _profile_for_model resolves it to (L4684, NT4684,
+        # H/L4684, HL4684, HC4684, and MyHOME_Suite catalogue codes such as 003598).
+        names = (
+            self.model.upper(),
+            _alnum(self.model),
+            str(_profile_for_model(self.model).model_name).upper(),
+        )
         return not any(
             k in norm
             for norm in names
             for k in (
                 "F450",
                 "F455",
-                "HL4684",  # the SSDP spelling of the H4684 (manifest.json); not an OWNd alias yet
+                "HL4684",  # TODO(OWNd>2.0.0b11): remove once manifest.json pins OWNd containing OWNd#147
                 "F454",
                 "MH200",
                 "MH201",
@@ -766,6 +810,9 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
     def _profile_supports_who(self, who: int) -> bool:
         """Return whether the gateway profile advertises a WHO subsystem (True when unknown)."""
+        # TODO(OWNd>2.0.0b11): remove shim once manifest.json pins an OWNd release containing OWNd#147.
+        if who == 22 and self._model_key == "H4684" and _firmware_at_least(self.firmware, (6, 0, 0)):
+            return True
         profile = getattr(self.gateway, "profile", None)
         supports = getattr(profile, "supports_who", None)
         if not callable(supports):

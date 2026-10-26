@@ -368,6 +368,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
         # Fan mode support (fancoil 3-speed + auto)
         self._fan: bool = False
+        self._fan_configured: bool = bool(fan and not self._central)
         self._attr_fan_mode: str | None = None
         self._attr_fan_modes: list[str] | None = None
         self._running_fan_speed: str | None = None
@@ -473,6 +474,18 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if self._attr_fan_mode is None:
                 self._attr_fan_mode = "auto"
 
+    def _has_no_fan_coil_sides(self) -> bool:
+        """Whether dimension 19 reported that neither side of this zone is a fan coil."""
+        return bool(self._fan_coil_sides) and not any(self._fan_coil_sides.values())
+
+    def _disable_fan_mode(self) -> None:
+        """Retract dynamically enabled fan mode once dimension 19 proves a pure-valve zone."""
+        self._fan = False
+        self._attr_supported_features &= ~ClimateEntityFeature.FAN_MODE
+        self._attr_fan_modes = None
+        self._attr_fan_mode = None
+        self._running_fan_speed = None
+
     def _enable_humidity(self) -> None:
         """Dynamically enable humidity support if not already enabled."""
         if self._central:
@@ -573,9 +586,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     "heating": bool(last_state.attributes.get("fan_coil_heating", False)),
                     "cooling": bool(last_state.attributes.get("fan_coil_cooling", False)),
                 }
-            if "fan_mode" in last_state.attributes or bool(
-                last_state.attributes.get("supported_features", 0) & ClimateEntityFeature.FAN_MODE
-            ):
+            if (
+                "fan_mode" in last_state.attributes
+                or bool(last_state.attributes.get("supported_features", 0) & ClimateEntityFeature.FAN_MODE)
+            ) and not (self._has_no_fan_coil_sides() and not self._fan_configured):
                 self._enable_fan_mode()
                 restored_fan_mode = last_state.attributes.get("fan_mode")
                 if restored_fan_mode in ("auto", "low", "medium", "high"):
@@ -1379,10 +1393,18 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 }
                 self._fan_coil_sides_asked_at = None
                 self._fan_coil_sides_held = False
-            # Actuator status (Dimension 20) with values >= 5 reports fancoil fan status in OWNd.
-            is_fan = isinstance(getattr(message, "fan_speed", None), int) or isinstance(
-                getattr(message, "fan_on", None), bool
-            )
+                if self._has_no_fan_coil_sides() and not self._fan_configured:
+                    # Pure-valve actuator channels can report value 5 on dimension 20 (issue #466 H/L4684
+                    # zones 11..88) while dimension 19 carries 0..4 on both sides once _ask_fan_coil_sides()
+                    # (*#4*Z*19##) is answered (myhomeserver1_live_2026-10-25 zones 35..70, issue_674 F455):
+                    # retract the tentative fan_mode once dimension 19 proves neither side is a fan coil.
+                    self._disable_fan_mode()
+            # Actuator status (Dimension 20) with values >= 5 reports fancoil fan status in OWNd,
+            # unless dimension 19 already proved neither side of an unconfigured zone is a fan coil.
+            is_fan = (
+                isinstance(getattr(message, "fan_speed", None), int)
+                or isinstance(getattr(message, "fan_on", None), bool)
+            ) and not (self._has_no_fan_coil_sides() and not self._fan_configured)
             fan_enabled_now = is_fan and not self._fan
             if is_fan:
                 self._enable_fan_mode()

@@ -59,8 +59,8 @@ UNTRUSTED_MODEL_LABELS: frozenset[str] = frozenset({"", "generic", "gateway", "u
 
 
 def _normalized(model: str | None) -> str:
-    """Compare model names without case, spaces, dashes or underscores."""
-    return str(model or "").strip().upper().replace(" ", "").replace("-", "").replace("_", "")
+    """Compare model names without case, spaces, dashes, slashes or underscores."""
+    return str(model or "").strip().upper().replace(" ", "").replace("-", "").replace("_", "").replace("/", "")
 
 
 def _same_product_names() -> dict[str, frozenset[str]]:
@@ -403,6 +403,7 @@ class GatewayIdentityMixin:
                     fw,
                 )
                 self.gateway.firmware = fw
+                self.gateway.profile = _gw._profile_for_model(self.gateway.model_name, fw)
                 if self.config_entry is not None:
                     new_data = dict(self.config_entry.data)
                     if new_data.get(CONF_FIRMWARE) != fw:
@@ -534,10 +535,7 @@ class GatewayIdentityMixin:
             from .topology import entry_firmware
 
             fw = entry_firmware(self.config_entry)
-        try:
-            self.gateway.profile = _gw.get_gateway_profile(model, fw)
-        except TypeError:  # pragma: no cover - fallback for OWNd without firmware argument
-            self.gateway.profile = _gw.get_gateway_profile(model)
+        self.gateway.profile = _gw._profile_for_model(model, fw)
         self.gateway._log_id = f"[{model} gateway - {self.gateway.host}]"
         self._trim_sending_workers(model)
         new_data = dict(self.config_entry.data)

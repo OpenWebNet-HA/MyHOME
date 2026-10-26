@@ -22,6 +22,11 @@
     {
       "st": "upnp:rootdevice",
       "manufacturer": "BTicino S.p.A.",
+      "modelName": "H/L4684"
+    },
+    {
+      "st": "upnp:rootdevice",
+      "manufacturer": "BTicino S.p.A.",
       "modelName": "HL4684"
     },
     {

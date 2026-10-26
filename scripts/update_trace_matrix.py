@@ -10,6 +10,16 @@ DOCS_MD = REPO_ROOT / 'docs' / 'trace-availability.md'
 START_MARKER = '<!-- TRACE_MATRIX_START -->'
 END_MARKER = '<!-- TRACE_MATRIX_END -->'
 
+GATEWAY_CANONICAL_KEYS = {
+    "H/L4684": "H4684",
+    "HL4684": "H4684",
+    "L4684": "H4684",
+    "AM4890": "H4890",
+    "LN4890": "H4890",
+    "LN4890A": "H4890",
+}
+
+
 def get_who(frame):
     if not frame.startswith('*'):
         return None
@@ -53,6 +63,7 @@ def build_matrix():
                         if m:
                             gateway = m.group(1)
 
+                gateway = GATEWAY_CANONICAL_KEYS.get(gateway, gateway)
                 if whos:
                     if gateway not in gateways_data:
                         gateways_data[gateway] = set()
@@ -84,7 +95,7 @@ def build_matrix():
         all_whos_found.update(whos)
 
     who_names = {
-        0: 'Scenario', 1: 'Lights', 2: 'Autom.', 4: 'Climate', 5: 'Alarm', 9: 'Power',
+        0: 'Scenario', 1: 'Lights', 2: 'Autom.', 3: 'Load', 4: 'Climate', 5: 'Alarm', 9: 'Power',
         13: 'Gateway', 14: 'Lock', 15: 'CEN', 16: 'Audio', 17: 'Scenario', 18: 'Energy',
         22: 'Audio Diff.', 25: 'Diag', 1001: 'Diag', 1013: 'Diag', 1022: 'Diag'
     }
@@ -92,6 +103,7 @@ def build_matrix():
     whos_list = sorted([w for w in all_whos_found if w in who_names])
 
     GATEWAY_DISPLAY_NAMES = {
+        "H4684": "H4684 / H/L4684",
         "H4890": "H4890 / AM4890",
     }
 

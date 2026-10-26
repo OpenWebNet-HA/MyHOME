@@ -32,7 +32,6 @@ import pytest
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PASSWORD, CONF_PORT
 from homeassistant.core import State
 from OWNd.message import OWNHeatingEvent
-from OWNd.profiles import get_gateway_profile
 
 from custom_components.myhome.climate import MyHOMEClimate
 from custom_components.myhome.const import CONF_FIRMWARE
@@ -60,9 +59,7 @@ def _entry(model: str) -> MagicMock:
 
 
 def _handler(hass, model: str) -> MyHOMEGatewayHandler:
-    handler = MyHOMEGatewayHandler(hass, _entry(model))
-    handler.gateway.profile = get_gateway_profile(model)
-    return handler
+    return MyHOMEGatewayHandler(hass, _entry(model))
 
 
 def _zone(hass, handler, where="3", **kwargs) -> MyHOMEClimate:
@@ -85,7 +82,7 @@ def _zone(hass, handler, where="3", **kwargs) -> MyHOMEClimate:
         ("F461", False, False), ("MyHomeServer1", False, False), ("MH202", False, False),
         ("F459", False, False), ("F460", False, False), ("F450", False, False),
         ("F454", False, True), ("MH200", False, True), ("MH201", False, True),
-        ("H4684", False, True), ("HL4684", False, True),
+        ("H4684", False, True), ("HL4684", False, True), ("H/L4684", False, True),
         ("F453", True, True), ("F453AV", True, True), ("MH200N", True, True), ("Generic", True, True),
     ],
 )
@@ -153,10 +150,12 @@ def test_aliased_model_strings_follow_their_profile(hass, model, profile_model):
     assert handler.zone_temperature_poll_needed is True
 
 
-def test_ssdp_model_string_hl4684_is_keyed_as_h4684(hass):
-    """SSDP announces the H4684 as ``HL4684`` (manifest.json); OWNd has no alias for it yet."""
-    handler = _handler(hass, "HL4684")
-    assert handler.gateway.profile.model_name == "HL4684"  # the Generic profile keeps the SSDP string
+@pytest.mark.parametrize("ssdp_model", ["H/L4684", "HL4684", "HC4684"])
+def test_ssdp_model_string_hl4684_is_keyed_as_h4684(hass, ssdp_model):
+    """SSDP announces the H4684 as ``H/L4684`` (or ``HL4684``); handler resolves ``H4684Profile``."""
+    handler = _handler(hass, ssdp_model)
+    assert handler.model == ssdp_model
+    assert handler.gateway.profile.model_name == "H4684"
     assert handler._model_key == "H4684"
     assert handler.supports_zone_status is False
     assert handler.general_zone_request_refused is True
@@ -190,7 +189,7 @@ def test_profile_without_who_16_skips_the_sound_request(hass):
     ("model", "expected"),
     [
         ("MH201", True), ("MH202", True), ("F450", True), ("F454", True), ("MH200", True), ("H4684", True),
-        ("HL4684", True), ("F459", True),
+        ("HL4684", True), ("H/L4684", True), ("F459", True),
         ("F455", False), ("F453", False), ("MH200N", False),  # unknown, or the sweep answers
         ("F460", False), ("F461", False), ("MyHomeServer1", False), ("Generic", False),  # polled with *#4*Z##
     ],

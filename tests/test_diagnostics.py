@@ -195,7 +195,7 @@ async def test_diagnostics_carry_no_household_identity(hass: HomeAssistant):
         "name": "MyHomeServer1",
     }
     mock_entry.options = {
-        "file_path": "C:/Users/rossi/myhome.yaml", "command_worker_count": 1,
+        "file_path": "C:/Users/rossi/myhome.yaml", "config_file_path": "/config/myhome.yaml", "command_worker_count": 1,
         # decoder slots: the media_player is named after a room, its slot -> source mapping is diagnostics
         "decoder_1_entity": "media_player.rossi_living_room", "decoder_1_source": 2, "decoder_1_pre_gain": 10,
         "decoder_2_entity": "", "decoder_2_source": 2, "decoder_2_pre_gain": 0,
@@ -208,6 +208,7 @@ async def test_diagnostics_carry_no_household_identity(hass: HomeAssistant):
     for key in ("host", CONF_MAC, "id", "UDN", "ssdp_location", "friendly_name", CONF_PASSWORD):
         assert data[key] == "**REDACTED**", key
     assert options["file_path"] == "**REDACTED**"
+    assert options["config_file_path"] == "**REDACTED**"
     assert data["port"] == 20000 and data["name"] == "MyHomeServer1" and options["command_worker_count"] == 1
     assert options["decoder_1_entity"] == "media_player.decoder_1"  # the slot, not the room
     assert options["decoder_1_source"] == 2 and options["decoder_1_pre_gain"] == 10
