@@ -15,7 +15,7 @@ here (synthetic in the fixture), where the emulated 2.82.06 returns zeros (oracl
 | Item | Value |
 |---|---|
 | Gateway | MyHomeServer1, firmware 3.87.13 (`*#13**16*3*87*13##`), WHO 13 device type `200`, WHO 13 dimension 27 model name `77#121#72#111#109#101#83#101#114#118#101#114#49` = "MyHomeServer1", WHO 1013 object model `67.15.5.0` (`*#1013**1*67*15*5*0##`), clock time zone `999` |
-| Thermoregulation | WHO 4 zones 35-70 (34 zones report a temperature); the plant broadcasts setpoints as dimension 7 (`*#4*Z*7*1*1*T##`), temperatures (`*#4*Z*0*T##`), dimension 5 and humidity on 17 zones; every zone has actuator `Z#1`, five have a fan coil `Z#2`, and zone 0 has actuators `0#1`-`0#4`; `*#4*#0##` is unanswered (no central unit answers) |
+| Thermoregulation | WHO 4 zones 35-70 (33 zones report a temperature, 34 answer the actuator request); the plant broadcasts setpoints as dimension 7 (`*#4*Z*7*1*1*T##`), temperatures (`*#4*Z*0*T##`), dimension 5 and humidity on 17 zones; every zone has actuator `Z#1`, five have a fan coil `Z#2`, and zone 0 has actuators `0#1`-`0#4`; `*#4*#0##` is unanswered (no central unit answers) |
 | Lighting | about 100 WHO 1 points in 74 addresses: two-digit `11`-`69`, four-digit area-0 `0010`-`0015` and four-digit `0110`-`0515` |
 | Automation | `*#2*0##` is ACKed without data |
 | Not present | WHO 16 sound diffusion, WHO 5 alarm (both refused locally) |

@@ -410,13 +410,13 @@ def test_zone_status_reply_order_and_dimension_12_differs_from_14(rows: list[dic
 
 
 def test_setpoint_write_mode_3_restores_the_setpoint_in_force(rows: list[dict]) -> None:
-    """*#4*2*#14*0235*3## is ACKed, dimension 12 follows at once, dimension 14 catches up, the season stays."""
+    """*#4*2*#14*0235*3## is ACKed, dimension 12 follows at once, no dimension 14 is pushed; the next *#4*2## reads 14 = 23.5, the season stays."""
     write = _result(rows, RUN3, "*#4*2*#14*0235*3##")
     assert write["ack"] is True and write["reply_time_s"] < 0.2
     assert write["events_after"] == [], "the ACK comes before the thermostat reports"
     assert _evt_between(rows, RUN3, "*#4*2*#14*0235*3##") == ["*#4*2*12*0235*3##", "*4*1*2##", "*#4*2*0*0239##"]
-    evt = [r["frame"] for r in _evt(rows, RUN3)]
-    assert evt.index("*#4*2*12*0235*3##") < evt.index("*#4*2*14*0235*3##")
+    # A dimension 14 write echoes dimension 12, never dimension 14 (so does the 10-24 capture).
+    assert not any(f.startswith("*#4*2*14*") for f in _evt_between(rows, RUN3, "*#4*2*#14*0235*3##"))
     after = _result(rows, RUN3, "*#4*2##")
     assert after["replies"] == [
         "*#4*2*0*0239##",
@@ -629,7 +629,7 @@ async def test_replay_run7_lights_and_shutter_through_the_entities(hass: HomeAss
 
 @pytest.mark.asyncio
 async def test_replay_run4b_zone_2_through_the_climate_entity(hass: HomeAssistant, rows: list[dict]) -> None:
-    """The final reads: 24.1 degrees measured, 23.5 in force and commanded, heating season, valve off."""
+    """The final reads: 24.1 degrees measured, 23.5 in force and commanded, heating season (run 4b carries no actuator frame)."""
     entities = await _setup_plant(hass, _gateway())
     zone2 = entities["2"]
     for r in _evt(rows, RUN4B):
@@ -639,6 +639,7 @@ async def test_replay_run4b_zone_2_through_the_climate_entity(hass: HomeAssistan
             zone2.handle_event(msg)
     assert zone2.current_temperature == 24.1
     assert zone2.target_temperature == 23.5
+    assert zone2._target_temperature == 23.5  # commanded (dimension 14) = in force (dimension 12) after the restore
     assert zone2.hvac_mode == HVACMode.HEAT
     assert zone2.extra_state_attributes["season"] == "heating"
     assert zone2.extra_state_attributes["local_offset"] == 0

@@ -214,7 +214,7 @@ def test_zone_35_status_reply_order_and_dimensions(rows: list[dict]) -> None:
 
 
 def test_actuator_status_per_zone_and_all_zones(rows: list[dict]) -> None:
-    """*#4*35*20## -> *#4*35#1*20*0##; *#4*#0*20## is ACKed with 44 actuator frames, zone 0 included."""
+    """*#4*35*20## -> *#4*35#1*20*0##; *#4*#0*20## is ACKed and followed by 43 actuator frames, zone 0 included (44 in the run with the zone 35 reply)."""
     zone = _result(rows, RUN2, "*#4*35*20##")
     assert zone["ack"] is True and zone["reply_time_s"] < 0.3
     assert zone["replies"] == ["*#4*35#1*20*0##"] and zone["events_after"] == ["*#4*35#1*20*0##"]
