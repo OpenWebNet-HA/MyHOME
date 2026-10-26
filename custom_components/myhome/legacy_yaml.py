@@ -231,15 +231,11 @@ def _apply_imported_copy(
 def _same_mac(first: Any, second: Any) -> bool:
     """Whether two MAC spellings (colons, hyphens, dots, raw hex) name the same gateway.
 
-    Diagnostic path only: when ``dr.format_mac`` rejects a value the two are compared
-    as plain strings, so a malformed section key keeps the orphan WARNING instead of
-    raising into the generic "Failed to parse" error of ``_load_live_yaml``.
+    ``dr.format_mac`` never raises: a value that is no MAC comes back as it went in, so two
+    equal malformed strings still compare equal. Such a section key never gets this far
+    anyway: ``validate.config_schema`` rejects it first with the "Failed to parse" error.
     """
-    first_text, second_text = str(first), str(second)
-    try:
-        return dr.format_mac(first_text) == dr.format_mac(second_text)
-    except Exception:
-        return first_text == second_text
+    return dr.format_mac(str(first)) == dr.format_mac(str(second))
 
 
 def _log_mac_mismatch(hass: HomeAssistant, entry: ConfigEntry, keys: list[Any]) -> None:

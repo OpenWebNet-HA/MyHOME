@@ -7,7 +7,6 @@ import pytest
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_MAC
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr
 
 from custom_components.myhome.const import (
     CONF_FILE_PATH,
@@ -468,50 +467,38 @@ async def test_legacy_yaml_other_gateway_section_spelled_differently_does_not_wa
     assert _myhome_warnings(caplog) == []
 
 
-async def test_legacy_yaml_mac_mismatch_keeps_warning_when_format_mac_raises(
+def test_same_mac_compares_spellings_and_never_raises():
+    """`dr.format_mac` returns a non-MAC unchanged, so no fallback is needed: equal junk is equal, a MAC is not junk."""
+    assert _same_mac("00-03-50-99-99-99", "00:03:50:99:99:99") is True
+    assert _same_mac("0003.5099.9999", "00:03:50:99:99:99") is True
+    assert _same_mac("not-a-mac", "not-a-mac") is True
+    assert _same_mac("not-a-mac", "00:03:50:99:99:99") is False
+    assert _same_mac(None, "None") is True
+
+
+async def test_legacy_yaml_malformed_section_key_is_a_parse_error_not_a_mismatch(
     mock_hass, base_entry, tmp_path, caplog
 ):
-    """A key dr.format_mac rejects is still reported at WARNING, not as a parse ERROR."""
+    """A section key that is no MAC is refused by the schema before the mismatch check could run."""
     yaml_file = tmp_path / "myhome.yaml"
     yaml_file.write_text(
-        "'00:03:50:00:00:00':\n  light:\n    hallway:\n      where: '21'\n      name: 'Hallway'\n",
+        "'not-a-mac':\n  light:\n    hallway:\n      where: '21'\n      name: 'Hallway'\n",
         encoding="utf-8",
     )
-    mock_hass.config_entries.async_entries.return_value = [
-        base_entry,
-        _other_entry("00:03:50:99:99:99"),
-    ]
+    mock_hass.config_entries.async_entries.return_value = [base_entry]
     configured_platforms = _make_configured_platforms()
-    real_format_mac = dr.format_mac
-
-    def _raising_format_mac(value: str) -> str:
-        if value != base_entry.data[CONF_MAC]:
-            raise ValueError(f"malformed MAC {value!r}")
-        return real_format_mac(value)
 
     with (
         caplog.at_level("WARNING", logger="custom_components.myhome"),
-        patch("custom_components.myhome.legacy_yaml.dr.format_mac", _raising_format_mac),
+        patch("custom_components.myhome.legacy_yaml._log_mac_mismatch") as mismatch,
     ):
         await load_legacy_myhome_yaml(mock_hass, base_entry, configured_platforms)
 
+    mismatch.assert_not_called()
     assert configured_platforms["light"] == {}
-    assert not [r for r in caplog.records if r.levelname == "ERROR"]
-    warnings = _myhome_warnings(caplog)
-    assert len(warnings) == 1, warnings
-    assert "00:03:50:81:22:33" in warnings[0]
-    assert "00:03:50:00:00:00" in warnings[0]
-
-
-def test_same_mac_falls_back_to_string_comparison_when_format_mac_raises():
-    """The helper compares raw strings when dr.format_mac raises, and never raises itself."""
-
-    def _raising_format_mac(value: str) -> str:
-        raise ValueError(f"malformed MAC {value!r}")
-
-    with patch("custom_components.myhome.legacy_yaml.dr.format_mac", _raising_format_mac):
-        assert _same_mac("not-a-mac", "not-a-mac") is True
-        assert _same_mac("not-a-mac", "00:03:50:99:99:99") is False
+    errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert len(errors) == 1 and "Invalid MAC address" in errors[0]
+    assert _myhome_warnings(caplog) == []
 
 
 async def test_legacy_yaml_mac_mismatch_skips_other_entry_without_mac(
