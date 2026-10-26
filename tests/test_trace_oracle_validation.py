@@ -44,6 +44,15 @@ CLOCK_DEPENDENT_TX_FRAMES: frozenset[str] = frozenset({
     "*#13**22##",
     "*#13**#22*12*21*24*001*04*13*04*2026##",
     "*#13**#22*17*33*54*002*05*11*09*2026##",
+    # f461_who13_clock_tz_live_2026-10-26: clock writes carrying the capture's wall clock and a
+    # non-standard (0530 / 124) or the standard (999) time zone, sent to the physical F461 2.0.11
+    # for OpenWebNet-HA/OWNd#144 (ACKed, not stored, not echoed); the oracle's who13-clock suite
+    # writes 14:30:00, so no stimulus matches the live time field.
+    "*#13**#0*22*46*45*0530##",
+    "*#13**#0*22*46*56*124##",
+    "*#13**#22*22*47*06*0530*1*26*10*2026##",
+    "*#13**#22*22*47*17*124*1*26*10*2026##",
+    "*#13**#0*22*59*08*999##",
 })
 
 
