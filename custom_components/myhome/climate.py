@@ -509,6 +509,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         interface: str | None = None,
         humidity: bool = False,
     ) -> None:
+        if interface is None and BUS_ROUTING in where:
+            base_where, _, inline_interface = where.rpartition(BUS_ROUTING)
+            if inline_interface.isdigit():
+                where = base_where
+                interface = inline_interface
         super().__init__(
             hass=hass,
             name=name,
@@ -605,12 +610,12 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._attr_hvac_mode: HVACMode | None = None
         self._attr_hvac_action: HVACAction | None = None
 
-        supports_status = self._gateway_supports_zone_status and not is_actuator_where(self._where)
         if (
             self._interface_poll_refused
+            or is_actuator_where(self._where)
             or (
                 not self._central
-                and not supports_status
+                and not self._gateway_supports_zone_status
                 and not self._polls_temperature
                 and not self._fan
                 and not self._humidity
@@ -644,8 +649,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         """
         gateway = getattr(self, "_gateway_handler", None)
         return (
-            not self._central
-            and self._interface is not None
+            (self._interface is not None or BUS_ROUTING in self._full_where)
             and getattr(gateway, "interface_zone_request_refused", False) is True
         )
 
@@ -667,7 +671,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return
         if not self._fan:
             self._fan = True
-            self._poll_on_add = not self._interface_poll_refused
+            self._poll_on_add = not self._interface_poll_refused and not is_actuator_where(self._where)
             self._attr_supported_features |= ClimateEntityFeature.FAN_MODE
             self._attr_fan_modes = ["auto", "low", "medium", "high"]
             if self._attr_fan_mode is None:
@@ -691,7 +695,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return
         if not self._humidity:
             self._humidity = True
-            self._poll_on_add = not self._interface_poll_refused
+            self._poll_on_add = not self._interface_poll_refused and not is_actuator_where(self._where)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -834,11 +838,19 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # thermo-zone-requests finding, emulated firmware). Whether those gateways put the probe's
         # humidity on the event session is not traced; any *#4*<WHERE>*60*<HH>## delivered there
         # still updates current_humidity (handle_event) without a poll.
+        if is_actuator_where(self._where):
+            # Per-actuator and split addresses (Z#N, Z#0, 0#N, 0#0, 3#Z#N) are not zone probes:
+            # *#4*Z#N## crashes MH202 coso with SIGSEGV (NACK on 9 others, local-zone cross-poll
+            # on H4684/MH200), and *0## / *11## / *60## either NACK or truncate onto zone Z.
+            return
         wants_humidity = self._humidity and getattr(self._gateway_handler, "humidity_request_refused", False) is not True
-        supports_status = self._gateway_supports_zone_status and not is_actuator_where(self._where)
         if self._interface_poll_refused:
             if (
-                supports_status or self._temperature_poll_wanted or self._fan or wants_humidity
+                self._central
+                or self._gateway_supports_zone_status
+                or self._temperature_poll_wanted
+                or self._fan
+                or wants_humidity
             ) and not self._interface_poll_skip_logged:
                 LOGGER.debug(
                     "%s %s is behind interface %s and %s does not route WHO 4 requests across `#4#%s`; waiting for the zone to report",
@@ -852,7 +864,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return
         if (
             not self._central
-            and not supports_status
+            and not self._gateway_supports_zone_status
             and not self._polls_temperature
             and not self._fan
             and not wants_humidity
@@ -875,7 +887,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             LOGGER.debug("%s %s did not answer its last polls; not asking again yet", self._gateway_handler.log_id, self._display_name)
             self._raise_unresponsive_issue()
             return
-        if self._central or supports_status:
+        if self._central or self._gateway_supports_zone_status:
             # A 99-zone central unit (#0) answers the plain status request (*#4*#0##) within ~0.17 s,
             # reporting its mode via *4*202*#0## (conditional OFF) and operational flags (#629). Dimension 14
             # (*#4*#0*14##) is NACKed. Only an F454 has been captured so far, so the poll is informational:
@@ -891,8 +903,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # (F461 2.0.11, f461_live_2026-10-23 rows 521-525: *#4*2*0## -> *#4*2*0*0239## + ACK in
             # 0.119 s), which keeps a single-worker MH200 / MH201 queue short. *#4*0## is refused on
             # these gateways, so this is the zone's only way to a temperature after a restart. A
-            # zone behind an F422 is only polled where the firmware forwards Z#4#II requests
-            # (_polls_temperature).
+            # zone behind an #4#II interface is withheld above unless the OWNd profile explicitly
+            # sets supports_interface_zone_requests = True (_polls_temperature).
             # No _poll_answered callback on purpose: the oracle's *#4*1*0## NACK on 11 of 12 images
             # is the bus TX timeout of an unpopulated zone (the QEMU images have no thermostat
             # wired; the live F461 NACKs the unpopulated zone 1 the same way after 2.07 s, rows
@@ -991,7 +1003,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
     def _request_zone_dimension(self, dimension: int) -> bool:
         """Queue ``*#4*Z*DIM##`` through the gateway's paced sender; False on an older handler."""
-        if self._interface_poll_refused:
+        if self._interface_poll_refused or is_actuator_where(self._where):
             return False
         request = getattr(self._gateway_handler, "request_zone_dimension", None)
         if not callable(request):
@@ -1089,10 +1101,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # blindly. A restored fan mode asks at the end of ``async_restore_last_state``.
             self._ask_fan_coil_sides()
         await super().async_added_to_hass()
-        if zone_requests:
+        if zone_requests and self._where.removeprefix("4-").removeprefix("#").count("#") < 2:
             # hvac_action needs the actuators (dimension 20); without asking, it stays unknown
             # until one of them switches. The gateway asks again after a reconnect. A secondary
-            # probe (WHERE >= 100) is push-only: *#4*105*...## NACKs in 2.1 s on the F461.
+            # probe (WHERE >= 100) or 3-token split address (3#Z#N) is not a Dimension 20 target.
             watch = getattr(self._gateway_handler, "watch_zone_actuators", None)
             if callable(watch):
                 self.async_on_remove(watch(self._full_where))

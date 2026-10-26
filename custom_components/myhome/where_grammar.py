@@ -218,17 +218,24 @@ __all__ = [
 
 
 def is_actuator_where(where: str) -> bool:
-    """Whether ``where`` addresses a WHO 4 actuator (``Z#N`` / ``0#N``) rather than a zone or central unit.
+    """Whether ``where`` addresses a WHO 4 actuator or split unit rather than a zone or central unit.
 
-    ``#0#1``..``#0#4`` is a 4-zone central unit, not an actuator; ``Z#4#II`` carries
-    bus routing. Dimensionless ``*#4*Z#N##`` NACKs on nine gateways, cross-polls local
+    Covers ``Z#N`` / ``Z#0`` / ``0#N`` / ``0#0`` and 3-token ``3#Z#N`` / ``A#B#C`` addresses
+    (with or without a trailing ``#4#II`` interface suffix). ``#0#1``..``#0#4`` is a 4-zone
+    central unit, not an actuator, and ``Z#4#II`` is a routed zone. Dimensionless ``*#4*Z#N##``
+    (and 3-token ``A#B#C`` with ``1 <= C <= 9``) NACKs on nine gateways, cross-polls local
     zone ``Z`` on H4684/MH200, and crashes ``coso`` with ``SIGSEGV`` on MH202 ``010024``.
     """
     clean = (where or "").strip().removeprefix("4-")
-    if clean.startswith("#0#") or "#4#" in clean:
+    base, routing, iface = clean.rpartition("#4#")
+    if routing and iface.isdigit():
+        clean = base
+    if clean.startswith("#0#"):
         return False
-    zone, sep, act = clean.removeprefix("#").partition("#")
-    return bool(sep) and zone.isdigit() and act.isdigit() and 0 <= int(act) <= 9
+    parts = clean.removeprefix("#").split("#")
+    if len(parts) in (2, 3):
+        return all(part.isdigit() for part in parts) and 0 <= int(parts[-1]) <= 9
+    return False
 
 
 def zone_number(where: str) -> str:

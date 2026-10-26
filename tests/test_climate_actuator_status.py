@@ -1173,31 +1173,44 @@ def test_is_actuator_where_distinguishes_actuators_from_central_and_routed():
     from custom_components.myhome.where_grammar import is_actuator_where
 
     assert is_actuator_where("2#1") is True
+    assert is_actuator_where("2#4") is True
     assert is_actuator_where("#2#9") is True
     assert is_actuator_where("4-2#0") is True
     assert is_actuator_where("0#0") is True
     assert is_actuator_where("0#1") is True
+    assert is_actuator_where("2#1#4#01") is True
+    assert is_actuator_where("2#4#4#01") is True
+    assert is_actuator_where("3#2#1") is True
+    assert is_actuator_where("3#2#1#4#01") is True
     assert is_actuator_where("#0") is False
     assert is_actuator_where("#0#1") is False
     assert is_actuator_where("4-#0#4") is False
+    assert is_actuator_where("#0#4#01") is False
+    assert is_actuator_where("#0#1#4#01") is False
+    assert is_actuator_where("#4#01") is False
     assert is_actuator_where("2") is False
     assert is_actuator_where("2#4#01") is False
-    assert is_actuator_where("2#1#4#01") is False
 
 
-async def test_actuator_where_never_sends_dimensionless_status_request(hass):
-    """Dimensionless *#4*2#1## NACKs on 9 gateways and crashes coso with SIGSEGV on MH202 010024."""
-    for model in ("Generic", "F461", "MH202"):
+@pytest.mark.parametrize("where", ["2#1", "3#2#1", "2#1#4#01"])
+async def test_actuator_where_never_sends_status_or_zone_dimension_polls(hass, fast_bus_pacing, where):
+    """Actuator and 3-token split addresses suppress *#4*W## (MH202 SIGSEGV), *0##, *11##, *19## and *60##."""
+    for model in ("Generic", "F461", "F459", "MH202", "H4684"):
         handler = _handler(hass, model)
+        handler._initial_discovery_done.set()
+        if "#4#" in where:
+            handler.gateway.profile = SimpleNamespace(
+                model_name=model, supports_interface_zone_requests=True
+            )
         handler.send_status_request = AsyncMock()
         zone = MyHOMEClimate(
             hass=hass,
-            name="Zone 2 Act 1",
-            device_id="4-2#1",
+            name=f"Actuator {where}",
+            device_id=f"4-{where}",
             who="4",
-            where="2#1",
+            where=where,
             heating=True,
-            cooling=False,
+            cooling=True,
             fan=False,
             humidity=False,
             standalone=True,
@@ -1207,16 +1220,91 @@ async def test_actuator_where_never_sends_dimensionless_status_request(hass):
             gateway=handler,
         )
         zone.hass = hass
-        zone.entity_id = "climate.zone_2_act_1"
+        zone.entity_id = "climate.zone_act"
         zone.async_write_ha_state = MagicMock()
         assert zone._poll_on_add is False
         assert zone._polls_temperature is False
-        await zone.async_update()
-        handler.send_status_request.assert_not_awaited()
-
-        # Even if fan is enabled dynamically, *#4*2#1## is still suppressed in async_update
         zone._enable_fan_mode()
+        zone._enable_humidity()
+        assert zone._poll_on_add is False
+        zone._ask_fan_coil_sides()
+        assert zone._fan_coil_sides_asked_at is None
+        await zone.async_added_to_hass()
         await zone.async_update()
+        await _settle(hass)
         sent = [str(c.args[0]) for c in handler.send_status_request.await_args_list]
-        assert "*#4*2#1##" not in sent
-        assert "*#4*2#1*0##" not in sent
+        if where == "3#2#1" or model in ("MH202", "H4684"):
+            expected: list[str] = []
+        elif where == "2#1" and model == "F461":
+            expected = ["*#4*#0*20##"]
+        else:
+            expected = [f"*#4*{where}*20##"]
+        assert sent == expected
+
+
+async def test_inline_routed_where_and_routed_central_withhold_polls(hass, fast_bus_pacing, caplog):
+    """Inline ``where='2#4#01'`` (interface=None) and routed central ``#0#4#01`` both withhold WHO 4 polls."""
+    for model in ("Generic", "F461", "F459", "H4684", "MH202"):
+        handler = _handler(hass, model)
+        handler._initial_discovery_done.set()
+        handler.send_status_request = AsyncMock()
+
+        inline_zone = MyHOMEClimate(
+            hass=hass,
+            name="Inline Zone 2 Bus 01",
+            device_id="4-2#4#01",
+            who="4",
+            where="2#4#1",
+            heating=True,
+            cooling=True,
+            fan=True,
+            humidity=True,
+            standalone=True,
+            central=False,
+            manufacturer="BTicino",
+            model="Heating Zone",
+            gateway=handler,
+        )
+        inline_zone.hass = hass
+        inline_zone.entity_id = "climate.inline_zone_2_bus_01"
+        inline_zone.async_write_ha_state = MagicMock()
+        assert (inline_zone._where, inline_zone._interface, inline_zone._full_where) == ("2", "01", "2#4#01")
+        assert inline_zone._interface_poll_refused is True
+        assert inline_zone._poll_on_add is False
+        await inline_zone.async_added_to_hass()
+        await inline_zone.async_update()
+
+        routed_central = MyHOMEClimate(
+            hass=hass,
+            name="Central Bus 01",
+            device_id="4-#0#4#01",
+            who="4",
+            where="#0#4#01",
+            heating=True,
+            cooling=True,
+            fan=False,
+            humidity=False,
+            standalone=False,
+            central=True,
+            manufacturer="BTicino",
+            model="Central Unit (3550)",
+            gateway=handler,
+        )
+        routed_central.hass = hass
+        routed_central.entity_id = "climate.central_bus_01"
+        routed_central.async_write_ha_state = MagicMock()
+        assert (routed_central._where, routed_central._interface, routed_central._full_where) == (
+            "#0", "01", "#0#4#01"
+        )
+        assert routed_central._central is True
+        assert routed_central._interface_poll_refused is True
+        assert routed_central._poll_on_add is False
+        caplog.clear()
+        with caplog.at_level("DEBUG", logger="custom_components.myhome"):
+            await routed_central.async_added_to_hass()
+            await routed_central.async_update()
+            await routed_central.async_update()
+        await _settle(hass)
+        handler.send_status_request.assert_not_awaited()
+        assert _drain(handler) == []
+        assert len([r for r in caplog.records if "does not route WHO 4 requests across `#4#01`" in r.message]) == 1
