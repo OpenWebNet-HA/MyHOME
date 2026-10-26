@@ -476,8 +476,10 @@ def build_options_block() -> str:
 def discovery_whos_for(profile: object) -> list[int]:
     """The startup discovery WHOs the runtime sends to a gateway with ``profile``.
 
-    Mirrors ``MyHOMEGatewayHandler._profile_supports_who``: a WHO is queried only when
-    the OWNd profile advertises it.
+    The same rule as ``MyHOMEGatewayHandler._profile_supports_who`` for a real OWNd
+    profile: a WHO is queried only when the profile advertises it. The two differ at the
+    edges: an object without ``supports_who`` yields no rows here (the table lists what a
+    profile advertises), while the runtime gate assumes everything and queries every WHO.
     """
     supports = getattr(profile, "supports_who", None)
     if not callable(supports):

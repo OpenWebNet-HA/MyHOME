@@ -131,7 +131,8 @@ def canonicalise_imported_platforms(
     ``where``, the ``members`` and the device key are rewritten in a new copy (the
     stored one is not touched). When the copy already has a device under the canonical
     key, that one stays and the 4-digit twin is dropped with a WARNING. Returns the new
-    copy and one ``plat: old -> new`` line per rewritten device.
+    copy and one line per rewritten device: ``plat: old -> new`` for a moved key, or
+    ``plat: key members [old] -> [new]`` when only a scope cover's members moved.
     """
     rewritten: list[str] = []
     result: dict[str, dict[str, Any]] = {}
@@ -164,7 +165,10 @@ def canonicalise_imported_platforms(
                 )
                 continue
             new_devices[new_id] = new_cfg
-            rewritten.append(f"{plat}: {d_id} -> {new_id}")
+            if new_id != d_id:
+                rewritten.append(f"{plat}: {d_id} -> {new_id}")
+            else:
+                rewritten.append(f"{plat}: {d_id} members {members} -> {new_members}")
         result[plat] = new_devices
     return result, rewritten
 
@@ -235,15 +239,11 @@ def _apply_imported_copy(
 def _same_mac(first: Any, second: Any) -> bool:
     """Whether two MAC spellings (colons, hyphens, dots, raw hex) name the same gateway.
 
-    Diagnostic path only: when ``dr.format_mac`` rejects a value the two are compared
-    as plain strings, so a malformed section key keeps the orphan WARNING instead of
-    raising into the generic "Failed to parse" error of ``_load_live_yaml``.
+    ``dr.format_mac`` never raises: a value that is no MAC comes back as it went in, so two
+    equal malformed strings still compare equal. Such a section key never gets this far
+    anyway: ``validate.config_schema`` rejects it first with the "Failed to parse" error.
     """
-    first_text, second_text = str(first), str(second)
-    try:
-        return dr.format_mac(first_text) == dr.format_mac(second_text)
-    except Exception:
-        return first_text == second_text
+    return dr.format_mac(str(first)) == dr.format_mac(str(second))
 
 
 def _log_mac_mismatch(hass: HomeAssistant, entry: ConfigEntry, keys: list[Any]) -> None:
