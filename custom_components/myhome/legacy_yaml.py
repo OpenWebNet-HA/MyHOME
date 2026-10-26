@@ -123,7 +123,8 @@ def canonicalise_imported_platforms(
     ``where``, the ``members`` and the device key are rewritten in a new copy (the
     stored one is not touched). When the copy already has a device under the canonical
     key, that one stays and the 4-digit twin is dropped with a WARNING. Returns the new
-    copy and one ``plat: old -> new`` line per rewritten device.
+    copy and one line per rewritten device: ``plat: old -> new`` for a moved key, or
+    ``plat: key members [old] -> [new]`` when only a scope cover's members moved.
     """
     rewritten: list[str] = []
     result: dict[str, dict[str, Any]] = {}
@@ -156,7 +157,10 @@ def canonicalise_imported_platforms(
                 )
                 continue
             new_devices[new_id] = new_cfg
-            rewritten.append(f"{plat}: {d_id} -> {new_id}")
+            if new_id != d_id:
+                rewritten.append(f"{plat}: {d_id} -> {new_id}")
+            else:
+                rewritten.append(f"{plat}: {d_id} members {members} -> {new_members}")
         result[plat] = new_devices
     return result, rewritten
 

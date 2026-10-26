@@ -365,6 +365,14 @@ def test_imported_copy_is_rewritten_to_the_canonical_spelling(caplog) -> None:
     assert again == result and rewritten_again == []
 
 
+def test_imported_copy_reports_a_members_only_rewrite_as_such() -> None:
+    """A scope cover under a canonical key whose `members` hold `0004`: the line names the members, not a key move."""
+    snapshot = {"cover": {"2-1": {"who": "2", "where": "1", "members": ["0004", "12"], "name": "Area 1", "entities": {}}}}
+    result, rewritten = canonicalise_imported_platforms(snapshot)
+    assert result["cover"]["2-1"]["members"] == ["04", "12"]
+    assert rewritten == ["cover: 2-1 members ['0004', '12'] -> ['04', '12']"]
+
+
 def test_imported_copy_keeps_the_canonical_device_on_a_collision(caplog) -> None:
     """A copy holding both `1-0004` and `1-04` keeps `1-04`; the twin is dropped, not overwritten."""
     snapshot = {"light": {
