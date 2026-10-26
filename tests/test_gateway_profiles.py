@@ -215,7 +215,7 @@ def test_oracle_check_rejects_a_sweep_omission_the_profile_does_not_advertise(mo
 
 
 def test_discovery_whos_follow_the_runtime_gate():
-    """``discovery_whos_for`` mirrors ``MyHOMEGatewayHandler._profile_supports_who`` over the discovery WHOs."""
+    """``discovery_whos_for`` follows ``_profile_supports_who`` for real profiles; without ``supports_who`` it yields no rows (the runtime gate assumes everything)."""
     from OWNd.profiles import get_gateway_profile
 
     for name in ("F454", "F455", "F461", "MH200N", "MH202", "MyHomeServer1"):
