@@ -277,9 +277,9 @@ def test_discovery_table_without_ownd_uses_the_pinned_rows(monkeypatch: pytest.M
         assert row["queried_whos"] == pinned[model]
         assert "pinned_whos" not in row
         assert "notes_without_who16" not in row
-    # The pinned OWNd 2.0.0b11 still lists WHO 16 on the F461 / MyHomeServer1 (OWNd #142 pending).
-    assert rows["**F461**"]["queried_whos"] == [1, 2, 4, 16, 18]
-    assert rows["**MyHomeServer1**"]["queried_whos"] == [1, 2, 4, 16, 18]
+    # Whether the F461 / MyHomeServer1 rows carry WHO 16 is the pin's business (the committed
+    # docs pin it, see the next test), not this test's: it stays right across the pin bump.
+    assert all(row["queried_whos"] for row in rows.values())
     assert "none" not in ugp.generate_gateway_discovery_table()
 
 
@@ -366,6 +366,7 @@ def test_oracle_check_rejects_a_stale_sweep_omission_at_the_pin_bump(monkeypatch
     f461["sweep_omits"] = ["*#4*0##", "*#16*0*5##"]  # the pinned-release omissions
     f461["pinned_whos"] = [1, 2, 4, 18]  # the pin bump edit, without the sweep_omits edit
     mhs1 = next(row for row in rows if row["profile_name"] == "MyHomeServer1")
+    mhs1["sweep_omits"] = ["*#4*0##", "*#16*0*5##"]  # the pinned-release omissions
     mhs1["pinned_whos"] = [1, 2, 4, 18, 22]  # WHO 22 is never a startup sweep request
     monkeypatch.setattr(ugp, "GATEWAY_DISCOVERY_METADATA", rows)
     violations = ugp.verify_profiles_against_oracle()
