@@ -363,7 +363,7 @@ def test_oracle_check_rejects_a_stale_sweep_omission_at_the_pin_bump(monkeypatch
     """
     rows = copy.deepcopy(ugp.GATEWAY_DISCOVERY_METADATA)
     f461 = next(row for row in rows if row["profile_name"] == "F461")
-    assert f461["sweep_omits"] == ["*#4*0##", "*#16*0*5##"]
+    f461["sweep_omits"] = ["*#4*0##", "*#16*0*5##"]  # the pinned-release omissions
     f461["pinned_whos"] = [1, 2, 4, 18]  # the pin bump edit, without the sweep_omits edit
     mhs1 = next(row for row in rows if row["profile_name"] == "MyHomeServer1")
     mhs1["pinned_whos"] = [1, 2, 4, 18, 22]  # WHO 22 is never a startup sweep request
@@ -373,7 +373,60 @@ def test_oracle_check_rejects_a_stale_sweep_omission_at_the_pin_bump(monkeypatch
     assert [v for v in violations if "**F461** sweep_omits='*#4*0##'" in v] == []
     assert [v for v in violations if "**MyHomeServer1** pinned_whos=[1, 2, 4, 18, 22]" in v]
     assert [v for v in violations if "**MyHomeServer1** sweep_omits='*#16*0*5##'" in v]
-    assert len(violations) == 3
+    assert [v for v in violations if "**MyHomeServer1** pinned_whos=[1, 2, 4, 18, 22] disagrees with the installed" in v]
+    assert len(violations) == 4
+
+
+def test_oracle_check_rejects_a_pin_that_disagrees_with_the_installed_profile(monkeypatch: pytest.MonkeyPatch):
+    """``pinned_whos`` may differ from the installed profile only by WHO 16, and only where the row declares it.
+
+    A pin that gains a WHO the profile does not advertise (with or without a matching
+    ``sweep_omits``) or loses one it does is a stale or mistyped pin and is flagged; the F461 /
+    MyHomeServer1 rows, which carry ``notes_without_who16``, may list WHO 16 or not whatever the
+    installed OWNd says about it (before and after OWNd #142). A pin that is not a list of WHO
+    numbers is flagged instead of raising.
+    """
+    rows = copy.deepcopy(ugp.GATEWAY_DISCOVERY_METADATA)
+    f455 = next(row for row in rows if row["profile_name"] == "F455")
+    f455["pinned_whos"] = [1, 2, 4, 16, 18]  # the F455 profile has no WHO 16, and no notes_without_who16
+    f455["sweep_omits"] = ["*#16*0*5##"]
+    f454 = next(row for row in rows if row["profile_name"] == "F454")
+    f454["pinned_whos"] = [1, 2, 16, 18]  # lost WHO 4, which the profile advertises
+    mh202 = next(row for row in rows if row["profile_name"] == "MH202")
+    mh202["pinned_whos"] = "1, 2, 4"
+    for name in ("F461", "MyHomeServer1"):
+        next(row for row in rows if row["profile_name"] == name)["pinned_whos"] = [1, 2, 4, 18]
+    monkeypatch.setattr(ugp, "GATEWAY_DISCOVERY_METADATA", rows)
+    violations = ugp.verify_profiles_against_oracle()
+    assert [v for v in violations if "**F455** pinned_whos=[1, 2, 4, 16, 18] disagrees with the installed F455 profile [1, 2, 4, 18]." in v]
+    assert [v for v in violations if "**F455** sweep_omits=" in v] == []  # 16 is in the (wrong) pin; the pin itself is flagged
+    assert [v for v in violations if "**F454** pinned_whos=[1, 2, 16, 18] disagrees with the installed F454 profile [1, 2, 4, 16, 18]." in v]
+    assert [v for v in violations if "**MH202** pinned_whos='1, 2, 4' is not a list of WHO numbers." in v]
+    assert [v for v in violations if "**MH202** sweep_omits=" in v]  # an unreadable pin advertises nothing
+    assert [v for v in violations if "**F461**" in v or "**MyHomeServer1**" in v] == [
+        v for v in violations if "sweep_omits='*#16*0*5##'" in v and ("**F461**" in v or "**MyHomeServer1**" in v)
+    ]
+
+
+def test_discovery_row_with_an_unreadable_pin_and_no_ownd_is_empty(monkeypatch: pytest.MonkeyPatch):
+    """Without OWNd an unreadable ``pinned_whos`` yields an empty row: ``none`` cells, no omissions, the plain notes."""
+    monkeypatch.setitem(sys.modules, "OWNd.profiles", None)
+    metadata = [
+        {
+            "model": "**F461**",
+            "profile_name": "F461",
+            "pinned_whos": "1, 2, 4, 18",
+            "sweep_omits": ["*#4*0##", "*#16*0*5##"],
+            "notes": "sound",
+            "notes_without_who16": "no sound",
+        }
+    ]
+    (row,) = ugp.calibrate_discovery_with_ownd(metadata)
+    assert row["queried_whos"] == []
+    assert row["sweep_omits"] == []
+    assert row["notes"] == "sound"
+    monkeypatch.setattr(ugp, "GATEWAY_DISCOVERY_METADATA", metadata)
+    assert "| **F461** | none | none | sound |" in ugp.generate_gateway_discovery_table()
 
 
 def test_discovery_table_without_ownd_follows_the_pinned_rows_at_the_pin_bump(monkeypatch: pytest.MonkeyPatch):

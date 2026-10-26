@@ -295,6 +295,14 @@ def cast_list(value: object) -> list[object]:
     return list(value) if isinstance(value, (list, tuple)) else []
 
 
+def pinned_whos(row: dict[str, object]) -> list[int] | None:
+    """Return ``row["pinned_whos"]`` as WHO numbers, or ``None`` when it is not a list of them."""
+    pinned = row.get("pinned_whos")
+    if not isinstance(pinned, (list, tuple)) or not all(isinstance(w, int) and not isinstance(w, bool) for w in pinned):
+        return None
+    return list(pinned)
+
+
 def extract_gateway_models_from_const(const_path: Path = CONST_PY) -> list[str]:
     """Parse SUPPORTED_GATEWAY_MODELS from custom_components/myhome/const.py using AST."""
     if not const_path.exists():
@@ -491,10 +499,11 @@ def calibrate_discovery_with_ownd(
         GATEWAY_DISCOVERY_METADATA if discovery_metadata is None else discovery_metadata
     )
     for row in calibrated:
-        pinned = row.pop("pinned_whos", [])
+        pinned = pinned_whos(row) or []
+        row.pop("pinned_whos", None)
         without_who16 = row.pop("notes_without_who16", None)
         if get_gateway_profile is None:
-            queried = [int(w) for w in pinned] if isinstance(pinned, list) else []
+            queried = pinned
         else:
             prof_name = row.get("profile_name")
             prof = get_gateway_profile(str(prof_name)) if prof_name else None
@@ -505,7 +514,7 @@ def calibrate_discovery_with_ownd(
         row["sweep_omits"] = [
             frame for frame in cast_list(row.get("sweep_omits")) if _frame_who(str(frame)) in queried
         ]
-        if without_who16 and 16 not in queried:
+        if queried and without_who16 and 16 not in queried:
             row["notes"] = without_who16
     return calibrated
 
@@ -521,7 +530,7 @@ def generate_gateway_discovery_table() -> str:
         model = row["model"]
         whos = row["queried_whos"]
         who_str = "WHO " + ", ".join(str(w) for w in whos) if whos else "none"
-        sent = "WHO " + ", ".join(str(w) for w in sweep_whos(row))
+        sent = "WHO " + ", ".join(str(w) for w in sweep_whos(row)) if whos else "none"
         omitted = cast_list(row.get("sweep_omits"))
         if omitted:
             sent += " (firmware drops " + ", ".join(f"`{frame}`" for frame in omitted) + ")"
@@ -624,15 +633,32 @@ def verify_profiles_against_oracle(oracle_path: Path = ORACLE_JSON) -> list[str]
 
     for row in GATEWAY_DISCOVERY_METADATA:
         prof_name = str(row.get("profile_name", ""))
-        if isinstance(get_gateway_profile(prof_name), GenericGatewayProfile):
+        prof = get_gateway_profile(prof_name)
+        if isinstance(prof, GenericGatewayProfile):
             violations.append(
                 f"Discovery row {row.get('model')} names an OWNd profile that does not exist: "
                 f"{prof_name} (resolves to the generic profile)."
             )
-        pinned = [int(w) for w in cast_list(row.get("pinned_whos"))]
+        pinned = pinned_whos(row)
+        if pinned is None:
+            violations.append(
+                f"Discovery row {row.get('model')} pinned_whos={row.get('pinned_whos')!r} is not a list of WHO numbers."
+            )
+            pinned = []
         if [w for w in pinned if w not in STARTUP_DISCOVERY_WHOS]:
             violations.append(
                 f"Discovery row {row.get('model')} pinned_whos={pinned} names a WHO the startup sweep never asks for."
+            )
+        # The pin may differ from the installed profile only by WHO 16, and only on a row that
+        # declares the WHO 16 switch (``notes_without_who16``): the one profile change the
+        # fallback absorbs between the pinned release and the next (OWNd #142). Any other
+        # difference is a stale or mistyped pin.
+        expected_whos = discovery_whos_for(prof)
+        tolerated = {16} if row.get("notes_without_who16") else set()
+        if (set(pinned) ^ set(expected_whos)) - tolerated:
+            violations.append(
+                f"Discovery row {row.get('model')} pinned_whos={pinned} disagrees with the installed "
+                f"{prof_name} profile {expected_whos}."
             )
         for frame in cast_list(row.get("sweep_omits")):
             if str(frame) not in (GENERAL_ZONE_STATUS, SOUND_STATUS) or _frame_who(str(frame)) not in pinned:
