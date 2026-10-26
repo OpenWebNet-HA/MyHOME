@@ -303,6 +303,11 @@ def pinned_whos(row: dict[str, object]) -> list[int] | None:
     return list(pinned)
 
 
+def in_sweep_order(whos: list[int]) -> list[int]:
+    """Return ``whos`` in the order of STARTUP_DISCOVERY_WHOS, without repeats (what the sweep sends)."""
+    return [w for w in STARTUP_DISCOVERY_WHOS if w in whos]
+
+
 def extract_gateway_models_from_const(const_path: Path = CONST_PY) -> list[str]:
     """Parse SUPPORTED_GATEWAY_MODELS from custom_components/myhome/const.py using AST."""
     if not const_path.exists():
@@ -503,7 +508,7 @@ def calibrate_discovery_with_ownd(
         row.pop("pinned_whos", None)
         without_who16 = row.pop("notes_without_who16", None)
         if get_gateway_profile is None:
-            queried = pinned
+            queried = in_sweep_order(pinned)
         else:
             prof_name = row.get("profile_name")
             prof = get_gateway_profile(str(prof_name)) if prof_name else None
@@ -648,6 +653,11 @@ def verify_profiles_against_oracle(oracle_path: Path = ORACLE_JSON) -> list[str]
         if [w for w in pinned if w not in STARTUP_DISCOVERY_WHOS]:
             violations.append(
                 f"Discovery row {row.get('model')} pinned_whos={pinned} names a WHO the startup sweep never asks for."
+            )
+        elif pinned != in_sweep_order(pinned):
+            violations.append(
+                f"Discovery row {row.get('model')} pinned_whos={pinned} is not in startup sweep order "
+                f"{in_sweep_order(pinned)} (a repeated or reordered WHO)."
             )
         # The pin may differ from the installed profile only by WHO 16, and only on a row that
         # declares the WHO 16 switch (``notes_without_who16``): the one profile change the

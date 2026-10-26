@@ -394,6 +394,10 @@ def test_oracle_check_rejects_a_pin_that_disagrees_with_the_installed_profile(mo
     f454["pinned_whos"] = [1, 2, 16, 18]  # lost WHO 4, which the profile advertises
     mh202 = next(row for row in rows if row["profile_name"] == "MH202")
     mh202["pinned_whos"] = "1, 2, 4"
+    h4890 = next(row for row in rows if row["profile_name"] == "H4890")
+    h4890["pinned_whos"] = [1, 1, 2, 4, 5, 16, 18]  # a repeated WHO
+    mh201 = next(row for row in rows if row["profile_name"] == "MH201")
+    mh201["pinned_whos"] = [2, 1, 4, 16, 18]  # reordered
     for name in ("F461", "MyHomeServer1"):
         next(row for row in rows if row["profile_name"] == name)["pinned_whos"] = [1, 2, 4, 18]
     monkeypatch.setattr(ugp, "GATEWAY_DISCOVERY_METADATA", rows)
@@ -403,6 +407,9 @@ def test_oracle_check_rejects_a_pin_that_disagrees_with_the_installed_profile(mo
     assert [v for v in violations if "**F454** pinned_whos=[1, 2, 16, 18] disagrees with the installed F454 profile [1, 2, 4, 16, 18]." in v]
     assert [v for v in violations if "**MH202** pinned_whos='1, 2, 4' is not a list of WHO numbers." in v]
     assert [v for v in violations if "**MH202** sweep_omits=" in v]  # an unreadable pin advertises nothing
+    assert [v for v in violations if "**H4890 / AM4890** pinned_whos=[1, 1, 2, 4, 5, 16, 18] is not in startup sweep order [1, 2, 4, 5, 16, 18]" in v]
+    assert [v for v in violations if "**MH201** pinned_whos=[2, 1, 4, 16, 18] is not in startup sweep order [1, 2, 4, 16, 18]" in v]
+    assert [v for v in violations if ("**H4890 / AM4890**" in v or "**MH201**" in v) and "disagrees" in v] == []
     assert [v for v in violations if "**F461**" in v or "**MyHomeServer1**" in v] == [
         v for v in violations if "sweep_omits='*#16*0*5##'" in v and ("**F461**" in v or "**MyHomeServer1**" in v)
     ]
@@ -427,6 +434,12 @@ def test_discovery_row_with_an_unreadable_pin_and_no_ownd_is_empty(monkeypatch: 
     assert row["notes"] == "sound"
     monkeypatch.setattr(ugp, "GATEWAY_DISCOVERY_METADATA", metadata)
     assert "| **F461** | none | none | sound |" in ugp.generate_gateway_discovery_table()
+    # A repeated or reordered pin (which the oracle check flags) is still rendered in sweep order.
+    metadata[0]["pinned_whos"] = [18, 1, 1, 4, 2]
+    (row,) = ugp.calibrate_discovery_with_ownd(metadata)
+    assert row["queried_whos"] == [1, 2, 4, 18]
+    assert row["sweep_omits"] == ["*#4*0##"]
+    assert row["notes"] == "no sound"
 
 
 def test_discovery_table_without_ownd_follows_the_pinned_rows_at_the_pin_bump(monkeypatch: pytest.MonkeyPatch):
