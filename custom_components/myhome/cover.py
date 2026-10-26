@@ -1541,18 +1541,16 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             and self._travel_for(opening) > 0
         )
 
-    async def _async_move(self, direction: str, is_tilting: bool = False) -> asyncio.Future[Any] | None:
-        """Queue a direction command and return its delivery future."""
+    def _begin_run(self, direction: str, is_tilting: bool = False) -> None:
+        """Open the run of a direction frame about to be queued: this cover's own, or a scope
+        frame that moves it (the gateway relays that frame to every member, so it is the
+        member's motor-start echo too)."""
         self._cancel_stop_task()
         self._end_run_from_unknown = False
         if not is_tilting or self._tilt_follows is not None:
             # A curtain command, or a blind's own pulse, takes the motor over.
             self._end_pulse_for_takeover()
         self._is_tilting = is_tilting
-        if direction == "open":
-            command = OWNAutomationCommand.raise_shutter(self._full_where)
-        else:
-            command = OWNAutomationCommand.lower_shutter(self._full_where)
         if is_tilting:
             # A slat pulse opens an echo window like any command (the gateway
             # relays a stop status before the direction status, which must not
@@ -1580,6 +1578,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._is_closed_before_move = self._attr_is_closed
             self._attr_is_closed = False
             self._begin_command(direction)
+
+    async def _async_move(self, direction: str, is_tilting: bool = False) -> asyncio.Future[Any] | None:
+        """Queue a direction command and return its delivery future."""
+        self._begin_run(direction, is_tilting)
+        if direction == "open":
+            command = OWNAutomationCommand.raise_shutter(self._full_where)
+        else:
+            command = OWNAutomationCommand.lower_shutter(self._full_where)
         written = await self._gateway_handler.send(command)
         if self._calibrating or self.calibration_hub.is_calibrating:
             _record_calibration_frame(self._gateway_handler, "tx", str(command), direction_action=direction, entity_id=self.entity_id)
@@ -1616,10 +1622,26 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         END_SETTLE_MARGIN has passed, publish the end position; the real stop
         status, if it comes, finds nothing left to change.
         """
-        travel_time = self._travel_for(opening)
         written = await self._async_move("open" if opening else "close")
+        self._settle_run_to_end(opening, written)
+
+    def _follow_scope_run_to_end(self, opening: bool, written: asyncio.Future[Any] | None) -> None:
+        """A scope frame just queued is this cover's direction frame as well.
+
+        ``_begin_run`` opened the run before the frame was queued, as ``_async_move`` does
+        for an own command; the write is tracked and the run settles on the travel timer
+        like an own open / close from an unknown position, instead of freezing to no
+        position at the actuator's own stop (#795).
+        """
+        self._track_write(written)
+        self._settle_run_to_end(opening, written)
+        self._publish_state()
+
+    def _settle_run_to_end(self, opening: bool, written: asyncio.Future[Any] | None) -> None:
+        """Settle the run just queued on the travel timer (see ``_async_run_to_end``)."""
+        travel_time = self._travel_for(opening)
         generation = self._run_generation
-        # _async_move anchored _start_position: None means the run starts unknown.
+        # _begin_run anchored _start_position: None means the run starts unknown.
         self._end_run_from_unknown = self._start_position is None and not self._strategy.assumed_state
 
         async def _settle() -> None:

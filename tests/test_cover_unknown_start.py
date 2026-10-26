@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.components.cover import ATTR_CURRENT_POSITION
 from homeassistant.core import State
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from OWNd.message import OWNEvent
 
-from custom_components.myhome.cover import MyHOMECover
+from custom_components.myhome.cover import CoverFamily, CoverScope, MyHOMECover, MyHOMEScopeCover
 
 
 class Clock:
@@ -526,3 +526,202 @@ async def test_reversal_during_a_settling_run_from_unknown_ends_at_the_next_stop
     assert cover.is_opening is False
     assert cover.is_closing is False
     assert cover.current_cover_position is None  # still unknown: no end stop was reached
+
+
+# ------------------------------------------------------------------ members of a scope cover on the main bus
+
+
+def _make_area(hass, gateway, members):
+    """Area 1 on the main bus (no F422): one scope frame moves every member."""
+    family = CoverFamily()
+    area = MyHOMEScopeCover(
+        hass=hass, gateway=gateway, name="Area 1", entity_name=None, device_id="1", who="2", where="1",
+        interface=None, advanced=False, manufacturer="BTicino", model="Area", travel_time=6,
+        scope=CoverScope.of("1"),
+    )
+    area.hass = hass
+    area.entity_id = "cover.area_1"
+    area.async_write_ha_state = MagicMock()
+    area.async_schedule_update_ha_state = MagicMock()
+    for cover in (*members, area):
+        family.add(cover)
+    return area
+
+
+def _make_members(hass, gateway):
+    return [
+        _make_cover(hass, gateway, name=f"Shutter {where}", device_id=where, where=where)
+        for where in ("11", "12")
+    ]
+
+
+async def _open_area_from_unknown(area, members, gateway, clock):
+    """open_cover on the area: one scope frame, relayed by the gateway to the scope cover and its members."""
+    await area.async_open_cover()
+    raw, written = gateway.deliveries[-1]
+    assert raw == "*2*1*1##"
+    assert all(m.is_opening and m._end_run_from_unknown for m in members)
+    written.set_result(clock.now)
+    await _yield()
+    clock.now += 0.12
+    for cover in (area, *members):
+        cover.handle_event(OWNEvent.parse("*2*1*1##"))
+    assert area.is_opening is True
+    assert all(m.is_opening and m.current_cover_position is None for m in members)
+
+
+async def test_scope_open_on_the_main_bus_settles_members_whose_actuator_stops_early(hass, gateway, clock, fake_time) -> None:
+    """The area's one frame moves members with no position: an F411/2 stop at 5 s settles them on the timer, as a direct open does."""
+    members = _make_members(hass, gateway)
+    area = _make_area(hass, gateway, members)
+    release = asyncio.Event()
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_controlled_sleep(release)):
+        try:
+            await _open_area_from_unknown(area, members, gateway, clock)
+            clock.now += 5.0
+            for member in members:
+                member.handle_event(OWNEvent.parse(f"*2*0*{member._where}##"))  # each actuator's own timer
+            assert all(m.is_opening and m.current_cover_position is None for m in members)  # still settling
+            assert members[0].extra_state_attributes["last_run_seconds"] == pytest.approx(5.0)
+            clock.now += 3.1  # travel_time + END_SETTLE_MARGIN passed
+        finally:
+            release.set()
+        await asyncio.wait_for(asyncio.gather(*(m._stop_task for m in members)), 1.0)
+    assert [m.current_cover_position for m in members] == [100, 100]
+    assert all(m.is_closed is False and m.is_opening is False for m in members)
+    assert area.current_cover_position == 100
+    assert area.is_closed is False
+    assert area.is_opening is False
+    assert [raw for raw, _ in gateway.deliveries] == ["*2*1*1##"]  # no per-member frame, no stop frame
+
+
+async def test_scope_close_on_the_main_bus_leaves_a_known_member_to_the_actuator_stop(hass, gateway, clock, fake_time) -> None:
+    """Only members with no position are settled on the timer; a known one is timed from its position, as for a direct close."""
+    members = _make_members(hass, gateway)
+    known, unknown = members
+    known._attr_current_cover_position = known._start_position = 100
+    known._attr_is_closed = False
+    area = _make_area(hass, gateway, members)
+    release = asyncio.Event()
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_controlled_sleep(release)):
+        try:
+            await area.async_close_cover()
+            raw, written = gateway.deliveries[-1]
+            assert raw == "*2*2*1##"
+            assert known._end_run_from_unknown is False and known._stop_task is None
+            assert unknown._end_run_from_unknown is True
+            written.set_result(clock.now)
+            await _yield()
+            clock.now += 0.12
+            for cover in (area, *members):
+                cover.handle_event(OWNEvent.parse("*2*2*1##"))
+            clock.now += 3.0
+            for member in members:
+                member.handle_event(OWNEvent.parse(f"*2*0*{member._where}##"))
+            assert known.is_closing is False
+            assert known.current_cover_position == 50  # halfway down a 6 s travel from 100
+            assert unknown.is_closing is True
+            assert unknown.current_cover_position is None
+            clock.now += 5.1
+        finally:
+            release.set()
+        await asyncio.wait_for(unknown._stop_task, 1.0)
+    assert unknown.current_cover_position == 0
+    assert unknown.is_closed is True
+    assert area.current_cover_position == 25
+    assert area.is_closed is False
+
+
+async def test_scope_frame_that_fails_at_once_leaves_the_members_as_they_were(hass, gateway, clock, fake_time) -> None:
+    """A scope frame refused on queueing: the members were not moved and go back to unknown, nothing settles."""
+    members = _make_members(hass, gateway)
+    area = _make_area(hass, gateway, members)
+
+    async def _refuse(message):
+        fut = asyncio.get_running_loop().create_future()
+        fut.set_exception(ConnectionError("gateway connection lost"))
+        gateway.deliveries.append((str(message), fut))
+        return fut
+
+    gateway.send = AsyncMock(side_effect=_refuse)
+    with pytest.raises(HomeAssistantError):
+        await area.async_open_cover()
+    assert [raw for raw, _ in gateway.deliveries] == ["*2*1*1##"]
+    for member in members:
+        assert member.is_opening is False
+        assert member.is_closed is None
+        assert member.current_cover_position is None
+        assert member._end_run_from_unknown is False
+        assert member._stop_task is None
+    assert area.is_opening is False
+
+
+async def test_scope_frame_lost_after_queueing_aborts_the_members_runs(hass, gateway, clock, fake_time) -> None:
+    """The scope frame's delivery fails later: each member's tracked write aborts its run, as an own command would."""
+    members = _make_members(hass, gateway)
+    area = _make_area(hass, gateway, members)
+    await area.async_open_cover()
+    raw, written = gateway.deliveries[-1]
+    assert raw == "*2*1*1##"
+    assert all(m.is_opening for m in members)
+    written.set_exception(ConnectionError("gateway connection lost"))
+    await _yield()
+    for member in members:
+        assert member.is_opening is False
+        assert member.is_closed is None
+        assert member.current_cover_position is None
+        assert member._end_run_from_unknown is False
+    assert area.is_opening is False
+
+
+async def test_scope_set_position_0_on_the_main_bus_settles_the_members_too(hass, gateway, clock, fake_time) -> None:
+    """`set_cover_position: 0` on the area is a full run of the scope: its members with no position settle like its own run."""
+    members = _make_members(hass, gateway)
+    area = _make_area(hass, gateway, members)
+    release = asyncio.Event()
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_controlled_sleep(release)):
+        try:
+            await area.async_set_cover_position(position=0)
+            raw, written = gateway.deliveries[-1]
+            assert raw == "*2*2*1##"
+            assert all(m.is_closing and m._end_run_from_unknown for m in members)
+            assert area._stop_task is not None  # the scope's own settle, as before
+            written.set_result(clock.now)
+            await _yield()
+            clock.now += 0.12
+            for cover in (area, *members):
+                cover.handle_event(OWNEvent.parse("*2*2*1##"))
+            clock.now += 5.0
+            for member in members:
+                member.handle_event(OWNEvent.parse(f"*2*0*{member._where}##"))
+            assert all(m.is_closing and m.current_cover_position is None for m in members)
+            clock.now += 3.1
+        finally:
+            release.set()
+        await asyncio.wait_for(asyncio.gather(area._stop_task, *(m._stop_task for m in members)), 1.0)
+    assert [m.current_cover_position for m in members] == [0, 0]
+    assert area.current_cover_position == 0
+    assert area.is_closed is True
+
+
+async def test_scope_stop_on_the_main_bus_leaves_the_settling_members_unknown(hass, gateway, clock, fake_time) -> None:
+    """stop_cover on the area before the end stop: the relayed stop ends each member's run, no position is invented."""
+    members = _make_members(hass, gateway)
+    area = _make_area(hass, gateway, members)
+    await _open_area_from_unknown(area, members, gateway, clock)
+    clock.now += 2.0
+    await area.async_stop_cover()
+    raw, stop_written = gateway.deliveries[-1]
+    assert raw == "*2*0*1##"
+    assert all(m._end_run_from_unknown is False and m._stop_task is None for m in members)
+    stop_written.set_result(clock.now)
+    await _yield()
+    clock.now += 0.05
+    for member in members:
+        member.handle_event(OWNEvent.parse(f"*2*0*{member._where}##"))  # the relayed stop status
+        assert member.is_opening is False
+        assert member.current_cover_position is None
+        assert member.is_closed is None
+        assert member.extra_state_attributes["last_run_seconds"] == pytest.approx(2.05)
+    assert area.is_opening is False
+    assert area.current_cover_position is None
