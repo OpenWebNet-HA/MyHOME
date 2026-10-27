@@ -35,11 +35,22 @@ MAX_GAP_CM = 20.0
 LIFT_REPEAT_BELOW_TOUCHING = True
 # Floating-point slack on the ends of an intermediate reading range, far below any tape.
 RANGE_SLACK_CM = 1e-9
+# L-9: an intermediate reading is refused only when it cannot be physical: more than the travel plus the tape's error.
+READING_TOLERANCE_CM = 3.0
+# L-9: a reading further than this share of the travel outside the heights the rolls 1-5 explain is far from the
+# model: accepted, fitted with the roll held at its limit, and reported (`reading_discrepancy`).
+READING_WARN_SHARE = 0.10
 # During a check these end it and return to review instead of ending the session.
 CHECK_RETURNS = frozenset({"stopped", "unexpected_stop", "unexpected_movement"})
 # Steps whose run ends at an end stop that the operator confirms with `endpoint`. A stop
 # status from the bus there dates the end of the run instead of interrupting it.
 ENDPOINT_STEPS = frozenset({"home", "reset", "opening", "closing", "top"})
+
+
+def edge_percent(reading_cm: float, travel_cm: float) -> float:
+    """R-1: where a tape reading puts the edge, in percent of the travel. A reading accepted above the travel (L-9: up
+    to its physical limit, the tape read past the window's top) is the top, never past it."""
+    return min(100.0, max(0.0, 100 * reading_cm / travel_cm))
 
 
 class GeometryCalibrationSession(guided.CalibrationSession):
@@ -66,6 +77,8 @@ class GeometryCalibrationSession(guided.CalibrationSession):
         self.readings: dict[str, float] = {}
         self.geometry: dict[str, float] = {}
         self.geometry_provenance: dict[str, Any] = {}
+        # L-9: the intermediate readings far from the model's heights, by step (half_open, half_close).
+        self.reading_discrepancy: dict[str, dict[str, float]] = {}
         # A verification of the measured model, requested from review; None until one is.
         self.check: CalibrationCheck | None = None
         # While a check runs: the verdict it replaces, given back if it is stopped before moving.
@@ -89,6 +102,8 @@ class GeometryCalibrationSession(guided.CalibrationSession):
                 "touching_cm": TOUCHING_CM, "max_gap_cm": MAX_GAP_CM, "lift_repeat": LIFT_REPEAT_BELOW_TOUCHING,
                 "gap_warn_cm": GAP_WARN_CM, "gap_warning": self.gap_warning,
                 "reading_range": self._reading_range(),
+                "reading_band": self._reading_band(),
+                "reading_discrepancy": {step: dict(item) for step, item in self.reading_discrepancy.items()},
                 # travel_cm is this measurement's; the travel already saved for the cover stays readable.
                 "saved_travel_cm": view["travel_cm"],
                 "check": self.check.view() if self.check is not None and self.active else None,
@@ -108,6 +123,7 @@ class GeometryCalibrationSession(guided.CalibrationSession):
         self.geometry_provenance = {}
         self.samples.clear()
         self.readings.clear()
+        self.reading_discrepancy.clear()
         self.measured_travel = None
         self.still_resting = self.gap_warning = False
         self.check = None
@@ -157,7 +173,7 @@ class GeometryCalibrationSession(guided.CalibrationSession):
     def _check(self, msg: dict[str, Any]) -> None:
         """Verify the measured model before Save: back to the end stop, then a timed run and a reading."""
         model = profile_motion({**self.values, "geometry": self.geometry})
-        check = CalibrationCheck.plan(cast(CoverMotionModel, model), cast(float, self.measured_travel),
+        check = CalibrationCheck.plan_possible(cast(CoverMotionModel, model), cast(float, self.measured_travel),
                                            msg.get("direction"), msg.get("target_cm"), fraction=GEOMETRY_CHECK_FRACTION)
         self.check, self.check_before, self.checking = check, self.check, True
         self.check_interrupted = None
@@ -349,7 +365,24 @@ class GeometryCalibrationSession(guided.CalibrationSession):
         return float(value)
 
     def _reading_range(self) -> dict[str, float] | None:
-        """The heights the fit accepts for this intermediate stop, or None if no reading can fit."""
+        """L-9: the heights accepted for an intermediate stop: the physical ones, from 0 to the travel plus the tape's error."""
+        if self.phase != "reading" or not self.step.startswith("half_"):
+            return None
+        return {"min_cm": 0.1, "max_cm": cast(float, self.measured_travel) + READING_TOLERANCE_CM}
+
+    def _reading_band(self) -> dict[str, float] | None:
+        """L-9: the heights near the model for this stop (the rolls 1-5, widened by READING_WARN_SHARE of the travel),
+        and the middle of what the rolls explain as the expected one; None where the model has no heights."""
+        span = self._model_span()
+        if span is None:
+            return None
+        travel, slack = cast(float, self.measured_travel), READING_WARN_SHARE * cast(float, self.measured_travel)
+        return {"min_cm": max(0.0, span[0] - slack), "max_cm": min(travel, span[1] + slack), "expected_cm": (span[0] + span[1]) / 2,
+                # L-30: the heights the rolls 1-5 explain, the «usually between» of the field's hint.
+                "model_min_cm": span[0], "model_max_cm": span[1]}
+
+    def _model_span(self) -> tuple[float, float] | None:
+        """The heights the rolls 1-5 explain for this intermediate stop, or None if no roll gives one."""
         if self.phase != "reading" or not self.step.startswith("half_"):
             return None
         travel = cast(float, self.measured_travel)
@@ -361,23 +394,29 @@ class GeometryCalibrationSession(guided.CalibrationSession):
                                  self.samples["half_open"], self.values["closing_time"])
         else:
             span = opening_roll_range(self.values["opening_time"], 0.0, self.samples["half_open"], travel)
-        return None if span is None else {"min_cm": span[0], "max_cm": span[1]}
+        return span
 
     def _reading(self, value: Any) -> None:
         if self.step == "check":
             # The verdict is published with the measurements; Save stays available either way.
             check = cast(CalibrationCheck, self.check)
             check.read(value)
-            self.edge_position = 100 * cast(float, check.measured_cm) / check.travel_cm
+            self.edge_position = edge_percent(cast(float, check.measured_cm), check.travel_cm)
             self.checking, self.check_before = False, None
             self.step, self.phase = "half_close", "review"
             self.emit()
             return
         number = self._gap(value) if self.step == "lift" else centimetres(value)
         span = self._reading_range()
-        # Outside the computed range no roll from 1 to 5 fits: say which readings would.
-        if span and not span["min_cm"] - RANGE_SLACK_CM <= number <= span["max_cm"] + RANGE_SLACK_CM:
-            raise ProfileError("reading_out_of_range")
+        # L-9: only a reading that cannot be physical is refused; one far from the model is kept and reported.
+        if span and number > span["max_cm"] + RANGE_SLACK_CM:
+            raise ProfileError("reading_over_travel")
+        band = self._reading_band()
+        if band and not band["min_cm"] - RANGE_SLACK_CM <= number <= band["max_cm"] + RANGE_SLACK_CM:
+            self.reading_discrepancy[self.step] = {"reading_cm": number, "expected_cm": band["expected_cm"],
+                                                   "min_cm": band["min_cm"], "max_cm": band["max_cm"]}
+        elif self.step.startswith("half_"):
+            self.reading_discrepancy.pop(self.step, None)
         if self.step == "lift":
             # Still resting: keep nothing of this run, return to the bottom and lift off again.
             self.still_resting = number < TOUCHING_CM
@@ -397,24 +436,24 @@ class GeometryCalibrationSession(guided.CalibrationSession):
         elif self.step == "half_open":
             if self.slats:
                 slat, roll = opening_fit(self.values["opening_time"], self.samples["lift"], self.readings["gap"],
-                                         cast(float, self.measured_travel), self.samples["half_open"], number)
+                                         cast(float, self.measured_travel), self.samples["half_open"], number,
+                                         clamp=True, closing=self.values["closing_time"])
             else:
                 slat, roll = 0.0, opening_roll_fit(self.values["opening_time"], 0.0, self.samples["half_open"],
-                                                   number, cast(float, self.measured_travel))
-            if slat >= self.values["closing_time"]:
-                raise vol.Invalid("Slat time exceeds closing time")
+                                                   number, cast(float, self.measured_travel), clamp=True)
+            # The clamped fit keeps the slat time from 0 to below both full times (`opening_rolls`); without slats it is 0.
             self.geometry = {"slat_time_s": slat, "opening_roll": roll}
             self.geometry_provenance = {key: evidence("guided", self.cover.unique_id) for key in self.geometry}
             self.readings["half_open"] = number
-            self.edge_position = 100 * number / cast(float, self.measured_travel)
+            self.edge_position = edge_percent(number, cast(float, self.measured_travel))
             self.step, self.after_position = "top", "half_close"
         else:
             roll = closing_fit(self.values["closing_time"], self.geometry["slat_time_s"], self.samples["half_close"],
-                               number, cast(float, self.measured_travel))
+                               number, cast(float, self.measured_travel), clamp=True)
             self.geometry["closing_roll"] = roll
             self.geometry_provenance["closing_roll"] = evidence("guided", self.cover.unique_id)
             self.readings["half_close"] = number
-            self.edge_position = 100 * number / cast(float, self.measured_travel)
+            self.edge_position = edge_percent(number, cast(float, self.measured_travel))
             self.phase = "review"
             self.emit()
             return
@@ -432,6 +471,7 @@ class GeometryCalibrationSession(guided.CalibrationSession):
         # Without slats the return to the bottom is the same close as the first one.
         self.step = "top" if target in {"half_close", "closing"} else "reset" if self.slats else "home"
         self.after_position = target
+        self.reading_discrepancy.pop(target, None)
         if target == "lift":  # A lift-off run repeated on request is one more attempt, and keeps nothing.
             self.lift_attempts += 1
             self.samples.pop("lift", None)
@@ -450,6 +490,12 @@ class GeometryCalibrationSession(guided.CalibrationSession):
         # The last tape reading or confirmed end stop is an actual physical observation, not
         # an old-model estimate. Seed the newly applied model only after the atomic save; after
         # a check that moved the cover unread there is nothing to seed.
+        # L-36: a profile written while the cover still looked in motion waits for its next stop status, and until then
+        # the old model keeps estimating; the motor is known to be still here, so the new model applies now, then the
+        # position is anchored in it.
+        self.cover._attr_is_opening = self.cover._attr_is_closing = False
+        self.cover._move_start_time = None
+        self.cover._apply_pending_cover_profile()
         if self.edge_position is None:
             self._forget_position()
         else:

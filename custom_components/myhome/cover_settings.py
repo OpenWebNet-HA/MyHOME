@@ -10,6 +10,7 @@ import math
 from typing import Any
 
 import voluptuous as vol
+from homeassistant.util import dt as dt_util
 
 from .cover_geometry import GEOMETRY_KEYS, UNKNOWN, merge_geometry, profile_motion
 from .cover_profile_provenance import EVIDENCE
@@ -44,17 +45,57 @@ def reference_profile(profile: dict[str, Any], previous: dict[str, Any] | None =
 
 
 def set_overrides(data: dict[str, Any], unique: str, overrides: dict[str, Any]) -> None:
-    """Changing timing overrides must preserve the cover's own travel."""
+    """Changing timing overrides must preserve the cover's own travel and verified check."""
     record = data["covers"].setdefault(unique, {})
     record["overrides"] = overrides
-    if not overrides and "travel_cm" not in record:
+    if not overrides and "travel_cm" not in record and "check_cm" not in record:
         data["covers"].pop(unique)
+
+
+# L-73: the verified precision of the cover's calibration, kept in its record at save: the gap at the check in whole
+# centimetres (absolute), the height read and the height expected, and when it was saved. Absent: no check.
+CHECK_FIELDS = ("check_cm", "check_measured_cm", "check_expected_cm", "check_at")
+
+
+def record_check(data: dict[str, Any], unique: str, check: Any) -> None:
+    """A calibration save: keep its completed check, or clear the one of the times it replaces."""
+    deviation, measured = getattr(check, "deviation_cm", None), getattr(check, "measured_cm", None)
+    if not isinstance(deviation, int) or measured is None or getattr(check, "expected_cm", None) is None:
+        clear_check(data, unique)
+        return
+    data["covers"].setdefault(unique, {"overrides": {}}).update({
+        "check_cm": abs(deviation), "check_measured_cm": float(measured),
+        "check_expected_cm": float(check.expected_cm), "check_at": dt_util.utcnow().isoformat()})
+
+
+# What a profile gives its followers' times: an edit of any of these gives them other times (and their checks go).
+PROFILE_TIMING = ("opening_time", "closing_time", "geometry", "reference_travel_cm")
+
+
+def profile_times_changed(before: dict[str, Any] | None, after: dict[str, Any] | None) -> bool:
+    """R-3: whether a profile write changes the times of the covers that follow it."""
+    return any((before or {}).get(key) != (after or {}).get(key) for key in PROFILE_TIMING)
+
+
+def clear_check(data: dict[str, Any], unique: str) -> None:
+    """New times without a check of their own: the stored check no longer describes this cover."""
+    record = data["covers"].get(unique)
+    if record is None or "check_cm" not in record:
+        return
+    for key in CHECK_FIELDS:
+        record.pop(key, None)
+    set_overrides(data, unique, record.get("overrides", {}))
 
 
 OVERRIDE = vol.Schema({vol.Required("value"): seconds, vol.Required("provenance"): EVIDENCE})
 COVER_RECORD = vol.Schema({vol.Optional("overrides", default=dict): {
     vol.In(KEYS): OVERRIDE,
-}, vol.Optional("travel_cm"): centimetres})
+}, vol.Optional("travel_cm"): centimetres,
+    # L-73: absent in older records (no check).
+    vol.Optional("check_cm"): vol.All(int, vol.Range(min=0)),
+    vol.Optional("check_measured_cm"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    vol.Optional("check_expected_cm"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    vol.Optional("check_at"): str})
 # Keep native evidence verbatim in storage. Public responses allowlist its fields.
 NATIVE_EVIDENCE = vol.Schema({vol.Required("source"): str,
                              vol.Required("recorded_at"): vol.Any(str, None),

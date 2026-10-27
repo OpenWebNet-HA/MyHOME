@@ -16,7 +16,7 @@ from .const import DOMAIN
 from .cover_calibration import ready_cover, replay, send_error
 from .cover_calibration_automatic import SETTLE_SECONDS, AutomaticCalibrationSession
 from .cover_profile_provenance import PROVENANCE
-from .cover_settings import set_overrides
+from .cover_settings import clear_check, set_overrides
 from .typing_compat import as_any
 
 WS_TARGETS = "myhome/cover_calibration/targets"
@@ -30,6 +30,20 @@ def gateway(hass: Any, entry_id: str) -> Any:
     if entry is None or entry.domain != DOMAIN:
         raise profiles.ProfileError("target_not_found")
     return entry
+
+
+def cover_label(hass: Any, entity_id: str, record: Any = None) -> str:
+    """The cover's name as Home Assistant shows it (L-5).
+
+    The registry's own name when the user gave one, otherwise the state's friendly name (a MyHOME cover takes its
+    name from its device, so the registry's `original_name` is empty), and the entity id only when neither exists.
+    """
+    record = record or er.async_get(hass).async_get(entity_id)
+    if record and record.name:
+        return str(record.name)
+    state = hass.states.get(entity_id)
+    friendly = state.attributes.get("friendly_name") if state else None
+    return str(friendly or (record.original_name if record else None) or entity_id)
 
 
 async def read_targets(hass: Any, entry_id: str) -> Any:
@@ -49,7 +63,7 @@ async def read_targets(hass: Any, entry_id: str) -> Any:
             except profiles.ProfileError as error:
                 reason = str(error)
             targets.append({"entity_id": record.entity_id,
-                            "name": record.name or record.original_name or record.entity_id,
+                            "name": cover_label(hass, record.entity_id, record),
                             "reason": reason})
         return {"entry_id": entry_id, "revision": store.data["revision"], "max_batch": MAX_BATCH,
                 "targets": sorted(targets, key=lambda row: row["entity_id"])}
@@ -66,8 +80,7 @@ class BatchCalibrationSession(AutomaticCalibrationSession):
 
     def view(self) -> Any:
         def label(cover: Any) -> Any:
-            record = er.async_get(self.hass).async_get(cover.entity_id)
-            return (record.name or record.original_name or record.entity_id) if record else cover.entity_id
+            return cover_label(self.hass, cover.entity_id)
         return {**super().view(), "save_modes": ["new"], "batch": True, "cover_index": self.cover_index,
                 "targets": [{"entity_id": cover.entity_id, "name": label(cover),
                              "travel_cm": self.store.data["covers"].get(cover.unique_id, {}).get("travel_cm")} for cover in self.covers],
@@ -149,6 +162,8 @@ class BatchCalibrationSession(AutomaticCalibrationSession):
                 data["profiles"][profile_id] = profile
                 data["assignments"][cover.unique_id] = profile_id
                 set_overrides(data, cover.unique_id, {})
+                # L-73: a batch measures times only: an older check of these covers no longer applies.
+                clear_check(data, cover.unique_id)
             await profiles.commit_profiles(self.hass, self.store, self.entry_id, data,
                                            [cover.unique_id for cover in self.covers])
         return data["revision"]

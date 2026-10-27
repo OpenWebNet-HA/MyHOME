@@ -370,6 +370,26 @@ async def test_websocket_session_subscription_actions_and_disconnect(hass, plant
     assert str(queued[-1][0]) == "*2*0*11##"
 
 
+@pytest.mark.parametrize("origin", [None, "wizard"])
+async def test_start_origin_is_published_for_other_tabs(hass, plant, hass_ws_client, origin):
+    """A session started by the panel's wizard says so in its view: another tab opens it in the wizard, not the dialog."""
+    register_api(hass)
+    plant.gateways[0].async_queue_calibration = lambda *args: None
+    with patch("aiohttp.connector.DefaultResolver", ThreadedResolver):
+        client = await hass_ws_client(hass)
+        try:
+            request = {"entry_id": plant.entries[0].entry_id, "entity_id": plant.records[0].entity_id, "revision": 0}
+            await client.send_json({"id": 1, "type": WS_START, **request, "origin": "devices"})
+            assert not (await client.receive_json())["success"]
+            await client.send_json({"id": 2, "type": WS_START, **request, **({"origin": origin} if origin else {})})
+            assert (await client.receive_json())["success"]
+            event = (await client.receive_json())["event"]
+            assert event.get("origin") == origin and event["mode"] == "guided"
+        finally:
+            await client.close()
+    await hass.async_block_till_done()
+
+
 @pytest.mark.parametrize("shutdown_first", [True, False])
 @pytest.mark.parametrize("calibration", ["guided", "automatic"], indirect=True)
 async def test_shutdown_and_repeated_cleanup_remove_listener_only_once(hass, calibration, caplog, shutdown_first):

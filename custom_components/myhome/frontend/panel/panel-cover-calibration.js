@@ -147,6 +147,12 @@ export class CoverCalibration {
     return done;
   }
 
+  /** Close, and stop answering for this view when the tab's identity changes: it will not be opened again. */
+  dispose() {
+    views.delete(this);
+    return this.close();
+  }
+
   async open(context) {
     // Reopening the same session swaps the subscription without leaving it.
     this.close({ leave: !context.resume || context.resume.session_id !== this._state?.session_id });
@@ -177,7 +183,7 @@ export class CoverCalibration {
         <p class="muted cal-help">${esc(t(geometry ? "calGeometryHelp" : quick ? (quick === "opening" ? "calQuickOpeningHelp" : "calQuickClosingHelp") : automatic ? "calAutomaticHelp" : "calHelp"))}</p>
         <p class="muted">${esc(t("calRecoveryHelp"))}</p>
       </details>
-      ${context.resume ? `<p>${esc(context.resume.entity_id)}</p>` : ""}
+      ${context.resume ? `<p class="cal-resume-entity">${esc(context.resume.entity_id)}</p>` : ""}
       ${context.entity_ids ? `<p class="notice">${esc(t("calBatchHelp"))}</p><ol id="cal-targets"></ol>` : ""}
       <div class="cal-status">
         ${visualMarkup()}
@@ -377,7 +383,7 @@ export class CoverCalibration {
     this._renderElapsed();
     host.querySelector("#cal-stop-status").hidden = !state.stop_requested;
     // A paused cycle explains itself, with the step that will start and until when it waits.
-    const pausedNotice = host.querySelector("#cal-paused"), pausedText = paused ? pause(state, t, this._context.hass.language) : "";
+    const pausedNotice = host.querySelector("#cal-paused"), pausedText = paused ? pause(state, t, this._context.hass.language, readOnly) : "";
     pausedNotice.hidden = !paused;
     if (pausedNotice.textContent !== pausedText) pausedNotice.textContent = pausedText;
     const proceed = host.querySelector('[data-cal-action="continue"]');
@@ -663,7 +669,7 @@ function parseReading(value) {
 }
 
 /** What `continue` will start, and when the session ends if nobody continues it (browser time, with the date if not today). */
-function pause(state, t, language) {
+function pause(state, t, language, readOnly = false) {
   const next = state.next_step || {};
   const name = `${state.targets?.[next.cover_index]?.name ?? next.entity_id}`;
   // Replacements are functions, so that a name such as "$&" is shown as it is.
@@ -676,7 +682,8 @@ function pause(state, t, language) {
       expires = new Intl.DateTimeFormat(language || "en", today ? { timeStyle: "short" } : { dateStyle: "short", timeStyle: "short" }).format(date);
     }
   } catch { /* No time to show. */ }
-  return t("calPausedBody").replace("{step}", () => step).replace("{expires}", () => expires);
+  // D-18: a reader has no «Continua» yet, only «Prendi il controllo»: the note names that first (its own text).
+  return t(readOnly && t("wiz_T516") !== "wiz_T516" ? "wiz_T516" : "calPausedBody").replace("{step}", () => step).replace("{expires}", () => expires);
 }
 
 /** Limits such as {touching_cm} come from the session view, never from the text. */

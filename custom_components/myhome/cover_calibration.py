@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import copy
+import json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -123,6 +124,8 @@ class CalibrationSession:
         self.listener = True
         self.closed = False
         self.client_id = client_id
+        # Which client started it ("wizard": the Calibration tab's wizard): a second tab opens it in the same view.
+        self.origin: str | None = None
         self.attachment = uuid4().hex
         # Used only when the client identifies itself (client_id).
         self.owner = client_id
@@ -131,6 +134,9 @@ class CalibrationSession:
         self.subscribers: dict[str, Subscriber] = {}
         # A cycle paused without its owner: the step that would have started, and how.
         self.next_step: dict[str, Any] | None = None
+        # L-25: what the owner's panel shows (its screen and the choices made on it), published to the readers as is.
+        # It is the panel's own description: the session never reads it and it changes nothing of the session.
+        self.shown: dict[str, Any] | None = None
         self.paused_at: datetime | None = None
         self.resume_step: tuple[Callable[[], None], Callable[[], None]] | None = None
         self.moved = False
@@ -172,6 +178,8 @@ class CalibrationSession:
                     "idle_expires_at": None if self.closed or self.lease_expires_at is None
                     else self.lease_expires_at.isoformat()} if self.client_id else {}),
                 "save_modes": ["new", "cover", "shared"] if self.store.profile(self.cover.unique_id) else ["new", "cover"],
+                **({"origin": self.origin} if self.origin else {}),
+                **({"screen": copy.deepcopy(self.shown)} if self.shown is not None else {}),
                 **({"direction": self.direction} if self.direction else {})}
 
     def present(self) -> bool:
@@ -231,6 +239,19 @@ class CalibrationSession:
         self.touch()
         for subscriber in list(self.subscribers.values()):
             self.send_to(subscriber)
+        self.notify_list()
+
+    def notify_list(self) -> None:
+        """L-107: the panel's lists learn of every transition (a session started, moved on, closed) at once.
+
+        Sent on the profiles subscription they already hold, without data: each list reads the session again.
+        """
+        from homeassistant.helpers.dispatcher import async_dispatcher_send
+
+        from .cover_profiles import WS_SUBSCRIBE
+
+        async_dispatcher_send(self.hass, f"{WS_SUBSCRIBE}:{self.entry_id}", {
+            "entry_id": self.entry_id, "revision": self.store.data["revision"], "kind": "session"})
 
     def announce(self, connection: Any, subscription_id: Any) -> None:
         """A new session's first view is a transition; a replayed subscription only reads it."""
@@ -298,6 +319,8 @@ class CalibrationSession:
         changed = claim and sequence == self.sequence and client_id != self.owner
         if changed:
             self.owner, self.owner_seen = client_id, monotonic()
+            # The previous owner's screen is not the new owner's: readers wait for the new owner's first `show`.
+            self.shown = None
         return subscriber, changed
 
     def same_request(self, msg: dict[str, Any]) -> bool:
@@ -331,6 +354,15 @@ class CalibrationSession:
         if action == "detach":
             self.leave(subscriber)
             return {**self.view(), **self.overlay(subscriber, attached=False)}
+        if action == "show":
+            # L-25: the owner's screen to its readers. Not a transition: no sequence, no lease, nothing to the bus.
+            if not owner:
+                raise ProfileError("calibration_owned")
+            self.shown = msg.get("screen") or None
+            for item in list(self.subscribers.values()):
+                if item.client_id != self.owner:
+                    self.send_to(item)
+            return {**self.view(), **self.overlay(subscriber)}
         if not owner and action != "stop":
             raise ProfileError("calibration_owned")
         if owner:
@@ -406,10 +438,14 @@ class CalibrationSession:
         if self.shutdown is not None:
             unsubscribe, self.shutdown = self.shutdown, None
             unsubscribe()
-        if self.store.calibration is self:
+        released = self.store.calibration is self
+        if released:
             self.store.calibration = None
         if self.cover._calibration is self:
             self.cover._calibration = None
+        if released and self.client_id:
+            # L-107: the gateway is free (possibly after the last Stop): the lists drop the session at once.
+            self.notify_list()
 
     def move(self, direction: Any) -> None:
         expected = "confirm_closed" if direction == "open" else "confirm_open"
@@ -650,7 +686,10 @@ class CalibrationSession:
     async def save_profiles(self, msg: dict[str, Any]) -> Any:
         if msg.get("save_mode", "new") != "new":
             from .cover_calibration_save import save_measurement
-            return await save_measurement(self, msg)
+            revision = await save_measurement(self, msg)
+            # R-4: saved on the cover («solo tempi») or on its shared profile, the same re-anchoring as a new profile.
+            self._apply_saved_times()
+            return revision
         travel = self.store.data["covers"].get(self.cover.unique_id, {}).get("travel_cm")
         result = await write_profile(self.hass, {
             "entry_id": self.entry_id, "entity_id": self.cover.entity_id,
@@ -658,7 +697,18 @@ class CalibrationSession:
             "profile": {"name": msg.get("name", ""), **self.values,
                         **({"reference_travel_cm": travel} if travel is not None else {})},
         }, calibration=self)
+        self._apply_saved_times()
         return result["revision"]
+
+    def _apply_saved_times(self) -> None:
+        """L-36: as the geometry session: in review the motor is still at the end stop the operator confirmed, so the
+        new times apply now and that end stop stays the anchor."""
+        position = self.cover._attr_current_cover_position
+        self.cover._attr_is_opening = self.cover._attr_is_closing = False
+        self.cover._move_start_time = None
+        self.cover._apply_pending_cover_profile()
+        if position in (0, 100):
+            self.confirm_position(position)
 
 
 def ready_cover(hass: Any, store: Any, entry_id: str, entity_id: str) -> Any:
@@ -737,6 +787,7 @@ async def begin(hass: Any, connection: Any, msg: dict[str, Any]) -> Any:
         elif "slats" in msg:
             raise ProfileError("invalid_profile")
         session = session_type(hass, store, entry, cover, connection, msg["id"], client_id=msg.get("client_id"), **options)
+        session.origin = msg.get("origin")
         store.calibration = cover._calibration = session
         session.subscribe()
         return session
@@ -750,6 +801,7 @@ async def begin(hass: Any, connection: Any, msg: dict[str, Any]) -> Any:
     vol.Optional("slats"): bool,
     vol.Optional("client_id"): vol.All(str, vol.Length(min=1, max=64)),
     vol.Optional("session_id"): vol.All(str, vol.Length(min=1, max=64)),
+    vol.Optional("origin"): vol.In(["wizard"]),
 }))
 @require_admin
 @async_response
@@ -768,10 +820,18 @@ def send_error(connection: Any, msg: dict[str, Any], error: Any) -> None:
     connection.send_error(msg["id"], code, code)
 
 
+def shown_screen(value: dict[str, Any]) -> dict[str, Any]:
+    """L-25: a panel's screen description: plain data, small (it travels with every view)."""
+    if len(json.dumps(value)) > 2048:
+        raise vol.Invalid("screen too large")
+    return value
+
+
 @websocket_command(as_any({
     vol.Required("type"): WS_ACTION, vol.Required("entry_id"): str,
     vol.Required("session_id"): str,
-    vol.Required("action"): vol.In(["run", "open", "close", "endpoint", "stop", "cancel", "save", "preview_save", "heartbeat", "detach", "next", "lift", "reading", "repeat", "continue", "check"]),
+    vol.Required("action"): vol.In(["run", "open", "close", "endpoint", "stop", "cancel", "save", "preview_save", "heartbeat", "detach", "next", "lift", "reading", "repeat", "continue", "check", "show"]),
+    vol.Optional("screen"): vol.All(dict, shown_screen),
     vol.Optional("reading_cm"): vol.Any(int, float),
     vol.Optional("direction"): vol.In(["opening", "closing"]),
     vol.Optional("target_cm"): vol.Any(int, float),

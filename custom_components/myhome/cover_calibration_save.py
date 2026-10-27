@@ -10,7 +10,7 @@ from .cover_geometry import reference_timing
 from .cover_profile_mutations import shared_preview
 from .cover_profile_provenance import DIRECTIONS, PROVENANCE
 from .cover_profiles import PROFILE, ProfileError, commit_profiles, target
-from .cover_settings import seconds, set_overrides
+from .cover_settings import clear_check, profile_times_changed, record_check, seconds, set_overrides
 
 
 async def save_measurement(session: Any, msg: dict[str, Any], *, preview: bool = False) -> Any:
@@ -68,5 +68,12 @@ async def save_measurement(session: Any, msg: dict[str, Any], *, preview: bool =
             for direction in directions:
                 overrides.pop(direction, None)
             set_overrides(data, entity.unique_id, overrides)
+            # R-3: the other covers that follow the profile get other times: their checks no longer apply.
+            if profile_times_changed(store.data["profiles"].get(profile_id), profile):
+                for unique in affected:
+                    if unique != entity.unique_id:
+                        clear_check(data, unique)
+        # L-73: times saved without a check of their own: the measured cover's stored check no longer applies.
+        record_check(data, entity.unique_id, getattr(session, "check", None))
         await commit_profiles(hass, store, entry.entry_id, data, affected)
         return data["revision"]

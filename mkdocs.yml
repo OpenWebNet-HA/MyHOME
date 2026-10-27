@@ -123,6 +123,7 @@ nav:
       - Cover Calibration: cover-calibration.md
       - Calibration Reservation: cover-calibration-reservation.md
       - Guided Geometry: cover-guided-geometry.md
+      - Calibration Screens: panel-calibration-screens.md
       - Nonlinear Model: cover-nonlinear-model.md
       - Nonlinear Runtime: cover-nonlinear-runtime.md
       - Cover Settings Backend: cover-settings-backend.md

@@ -26,10 +26,10 @@ export class CoverProfileEditor {
     this.dialog = null;
   }
 
-  async open({ host, hass, entity, t, onSaved }) {
+  async open({ host, hass, entity, t, onSaved, onWizard }) {
     this.close();
     const generation = this._generation;
-    this._context = { host, hass, entity, t, onSaved, generation };
+    this._context = { host, hass, entity, t, onSaved, onWizard, generation };
     this._editorMode = null;
     this._lastEditorMode = null;
     const address = entity.address;
@@ -220,8 +220,9 @@ export class CoverProfileEditor {
     for (const control of form.querySelectorAll('[name="travel_cm"], [data-profile-action="travel"], [data-profile-action="overrides"], [name^="use_"]')) control.disabled = !data.writable || busy;
     for (const direction of ["opening", "closing"]) form.elements[`override_${direction}`].disabled = !data.writable || busy || !form.elements[`use_${direction}`].checked;
     for (const line of form.querySelectorAll("[data-profile-busy]")) line.hidden = !busy;
-    for (const id of ["profile-calibrate", "profile-calibrate-batch"]) {
-      this.dialog.querySelector(`#${id}`).disabled = !!session || !data.writable || this._stale;
+    for (const id of ["profile-calibrate", "profile-calibrate-batch", "profile-wizard"]) {
+      const button = this.dialog.querySelector(`#${id}`);
+      if (button) button.disabled = !!session || !data.writable || this._stale;
     }
   }
 
@@ -399,6 +400,7 @@ export class CoverProfileEditor {
             <p id="cal-no-slats-help" class="muted" hidden>${esc(t("calNoSlatsHelp"))}</p>
             <button type="button" id="profile-calibrate" class="primary profile-calibrate" ${disabled}><ha-icon icon="mdi:timer-outline" aria-hidden="true"></ha-icon><span id="cal-label">${esc(t("calTitle"))}</span></button>
             <button type="button" id="profile-calibrate-batch" class="ghost profile-calibrate-batch" ${disabled}><ha-icon icon="mdi:select-group" aria-hidden="true"></ha-icon><span>${esc(t("calBatchTitle"))}</span></button>
+            ${this._context.onWizard ? `<button type="button" id="profile-wizard" class="ghost profile-wizard" ${disabled}><ha-icon icon="mdi:window-shutter-settings" aria-hidden="true"></ha-icon><span>${esc(t("calNewWizard"))}</span></button>` : ""}
             <details class="profile-meta calibration-guide" id="profile-calibration-guide"><summary>${esc(t("profileCalibrationGuide"))}</summary>
               ${data.height_scaling ? `<p class="muted" id="profile-travel-help">${esc(t("profileTravelHelp"))}</p>` : ""}
               <p id="cal-scope-help" class="muted">${esc(t("calSingleDirectionGuided"))}</p>
@@ -479,6 +481,14 @@ export class CoverProfileEditor {
       for (const id of ["#cal-slats-field", "#cal-no-slats-help"]) host.querySelector(id).hidden = mode !== "geometry";
     };
     host.querySelector("#profile-calibrate-batch").onclick = () => this._selectBatch();
+    // The new wizard lives in the Calibration tab; the measurement above stays available beside it.
+    const wizard = host.querySelector("#profile-wizard");
+    if (wizard) wizard.onclick = () => {
+      if (this._stale || !data.writable || this._calibrating) return;
+      const { entity, onWizard } = this._context;
+      this.close();
+      onWizard(entity);
+    };
     host.querySelector("#cal-mode").onchange = () => {
       const scope = host.querySelector("#cal-direction");
       if (host.querySelector("#cal-mode").value !== "guided") scope.value = "";

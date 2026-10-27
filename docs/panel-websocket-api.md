@@ -1,5 +1,17 @@
 # MyHOME panel API: implemented reference
 
+> Panel 0.43.0 adds the [Calibration view and wizard](panel-calibration-screens.md). Message and view changes, all
+> additive except the meaning of `reading_range`: `start` takes `origin: "wizard"` and views carry it back
+> ([below](#wizard-session-additions-0430)); the owner publishes its screen with the new verb `show` and views carry
+> it as `screen`; geometry views add `reading_band` and `reading_discrepancy`, and `reading_range` is now the physical
+> limit of a reading, refused above it with the new error `reading_over_travel`
+> ([reading range](#guided-geometry-intermediate-reading-range-0410)); the check's view adds `planned_seconds` and a
+> check the model cannot make moves to the nearest one it can ([check](#guided-geometry-check-of-the-measured-model));
+> the overview's covers add `check_cm`, `check_measured_cm`, `check_expected_cm` and `check_at`
+> ([verified precision](#verified-precision-in-the-overview)); the gateway's profile subscription adds an empty
+> `session` event on every session transition, and the cover read takes an optional `client_id` and answers
+> `client_owner` ([below](#wizard-session-additions-0430)).
+
 > Panel 0.40.0 [pauses an automatic or batch cycle whose owner is absent](#pause-without-the-owner-0400) and keeps its measurements until the owner sends `continue`.
 
 > Panel 0.41.0 adds the [accepted range of intermediate tape readings](#guided-geometry-intermediate-reading-range-0410) to guided roll measurement, shows profile values rounded and locks the cover's travel and personal values while a measurement runs.
@@ -26,17 +38,47 @@
 > Existing endpoints remain available; native writes use the shared store and revision. Earlier release descriptions below remain historical where superseded.
 
 
+## Wizard session additions (0.43.0)
+
+`start` takes an optional `origin`, `"wizard"` for a session the panel's wizard starts; the views carry it back as
+`origin` (absent otherwise), so that another tab opens such a session in the wizard rather than in the profile
+dialog. Any other value fails the schema.
+
+`action: "show"` takes `screen`, a small object (at most 2048 bytes of JSON) describing the owner's current screen
+(its code, path, scope and the wizard's local flags). Only the owner may send it (`calibration_owned` otherwise). It
+is not a transition: no `sequence` change, no lease renewal, nothing on the bus. The session keeps the last one and
+every view carries it as `screen` (absent until the first `show`), so that a reader shows the owner's step.
+
+`myhome/cover_profiles/subscribe` also sends `kind: "session"` events: on every transition of a session of that
+gateway (its start, each step, its close) and when the gateway is freed (at the close, or after the last Stop is
+confirmed). The event carries no data beyond the usual envelope (`entry_id`, the unchanged `revision`, `kind`): it
+only says that the gateway's session changed. A client that lists sessions coalesces a burst of them (the panel waits
+250 ms after the last) and reads the gateway again (`overview`, then `read` of a cover); a profile editor ignores
+them, since the revision has not changed.
+
+```json
+{"id":20,"type":"event","event":{"entry_id":"ENTRY","revision":4,"kind":"session"}}
+```
+
+`myhome/cover_profiles/read` takes an optional `client_id` (the calling tab's identity, as in `start` and `resume`,
+1 to 64 characters). With it, the `calibration` view in the answer adds `client_owner`: `true` only when that client
+owns the running session (its `resume` then continues as owner, without a claim), `false` otherwise, including a
+closed session. Who the owner is is never returned; without `client_id` the field is absent. The panel names the
+session's action by it («Riprendi sessione» to the owner's tab, «Segui sessione» to everyone else). A backend older
+than 0.43.0 rejects the extra field (`extra keys not allowed`), so a 0.43.0 panel needs a 0.43.0 backend.
+
 ## Guided geometry: check of the measured model
 
 A check runs the cover from an end stop towards a height for the motor seconds the
 model needs to get there, stops it on time, and compares the tape reading of the
 bottom edge with where the model puts it. In a `mode: "geometry"` session it is
-offered in `review` only: there the measurement is complete and nothing moves. The
-panel does not send it yet; the screens arrive with the profile path that makes it
-mandatory. From panel 0.42.0 a session that reaches a check is shown like an
-intermediate run: no elapsed time during the check run, the positioning text and the
-automatic Stop illustration, and the height illustration at its reading. The check's
-own briefing and reading texts are not written yet.
+offered in `review` only: there the measurement is complete and nothing moves. From
+panel 0.43.0 the wizard ends every base calibration with it (step «Verifica»): it sends
+`direction: "closing"` and `target_cm` half the travel of the view at the moment of
+sending (no `target_cm` at all when the view has no travel). A session that reaches a
+check is shown like an intermediate run: no elapsed time during the check run, the
+positioning text and the automatic Stop illustration, and the height illustration at
+its reading.
 
 `action: "check"` takes two optional keys, with the same owner, `sequence` and
 writability rules as every other verb (`calibration_owned`, `calibration_step`,
@@ -55,12 +97,18 @@ run crosses the slat phase and the opening roll. The check primitive itself
 assigned profile.
 
 A value that is not one of the two directions, or not a number, fails the schema
-(`invalid_format`). A check that says nothing about the curtain is refused with
-`invalid_check`: a target outside 10 % to 90 % of the travel, not finite, or whose
-planned run lasts no more than the slat time plus 1 s (a descent from the top to
-90 % on a slow motor, for instance). Nothing is sent, the session stays in `review`,
-and a verdict already there is kept. Any other mode refuses `check` with
-`calibration_step`.
+(`invalid_format`). A target outside 10 % to 90 % of the travel, or not finite, is
+refused with `invalid_check`, not clamped. A run must move the curtain at least 1 s:
+on an ascent beyond the slat phase, which comes first; on a descent from the top the
+curtain moves from the first second and the slats close only at the bottom, so the
+whole run counts (from 0.43.0; before, the slat time was counted on a descent too, and
+a slat-heavy cover could never start a downward check). From 0.43.0 a geometry session
+moves a check whose run would be too short to the nearest target of the band its model
+can make, in the same direction first, then in the other one (steps of 5 % of the
+travel); the view's `check.direction` and `check.target_cm` say what was planned. Only
+a model that can make no check at all is refused with `invalid_check`. Nothing is sent
+on a refusal, the session stays in `review`, and a verdict already there is kept. Any
+other mode refuses `check` with `calibration_step`.
 
 The check follows the rules of the measurement. Each movement has its own briefing
 and starts only on `next`: `check` leads to the `home` briefing (upward check) or
@@ -100,7 +148,8 @@ Geometry views add `check_threshold_cm` (`4`), `check_interrupted` and `check`:
 
 | Key of `check` | Meaning |
 | --- | --- |
-| `direction`, `target_cm` | As requested, or the defaults |
+| `direction`, `target_cm` | As planned: the request, the defaults, or (0.43.0) the nearest feasible check |
+| `planned_seconds` | (0.43.0) Motor seconds the check run is planned to last, from its end stop to the target: the panel's progress bar |
 | `check_seconds` | Motor seconds of the check run, from the motor start to the Stop write; `null` until the run has stopped |
 | `expected_cm` | Where the model puts the bottom edge after `check_seconds`, to a tenth of a centimetre; `null` until then |
 | `measured_cm` | The tape reading; `null` until it is entered |
@@ -199,6 +248,17 @@ the cover to an end stop (`home`, `reset`, `top`) show no elapsed time, since no
 measured, and their text says which end stop to confirm; the measured runs keep it.
 
 ## Guided geometry: intermediate reading range (0.41.0)
+
+> **Changed in 0.43.0 (L-9).** `reading_range` is now the physical limit of an intermediate reading:
+> `{"min_cm": 0.1, "max_cm": travel + 3}` (the tape's error over the travel). A reading above it is refused with
+> `reading_over_travel` (no longer `reading_out_of_range`, which the backend does not send any more); every reading
+> within it is accepted. The heights the model explains move to `reading_band`:
+> `{"min_cm", "max_cm", "expected_cm", "model_min_cm", "model_max_cm"}`, where `model_min_cm`/`model_max_cm` are the
+> heights the rolls 1–5 explain (the 0.41.0 range), `min_cm`/`max_cm` the same widened by 10 % of the travel, and
+> `expected_cm` the middle of the model's heights; `null` outside an intermediate reading or when no roll explains
+> the stop. A reading outside `reading_band` is accepted, fitted with the roll held at its limit, and reported in
+> `reading_discrepancy`: an object keyed by step (`half_open`, `half_close`) with `{"reading_cm", "expected_cm",
+> "min_cm", "max_cm"}`, kept until that step is measured again. The rest of this section describes 0.41.0.
 
 While an intermediate reading is asked (`phase: "reading"`, `step` `half_open` or
 `half_close`), geometry views add `reading_range: {"min_cm": …, "max_cm": …}`: the
@@ -328,6 +388,28 @@ areas and A-PL. Effective/configured values and provenance are taken directly fr
 the backend, never recalculated from the displayed profile. Missing runtime values
 are shown as unknown. No new endpoint, persisted field or write operation is added.
 See [behavior and scope](sidepanel.md#shared-profile-view-0250).
+
+## Verified precision in the overview
+
+Each entry of `covers` in the `myhome/cover_profiles/overview` response carries
+the check kept at the cover's last calibration save:
+
+| Field | Meaning |
+| --- | --- |
+| `check_cm` | The gap at the check, in whole centimetres, absolute (the session's `deviation_cm` without its sign); `null` without a check |
+| `check_measured_cm` | The height read with the tape at the check, in cm |
+| `check_expected_cm` | The height the model expected there, in cm |
+| `check_at` | When the calibration with that check was saved (ISO 8601, UTC) |
+
+They are stored in the cover's record (`covers.<cover>` in the profile store)
+only when a geometry session is saved after a completed check (a reading at the
+check, whatever the verdict). Every other write that gives the cover other
+times removes them: a calibration saved without a completed check (times only,
+a check cut short or never made, a batch), an assigned or copied profile, times
+typed by hand, an edit of the profile it follows. A rename or a new travel keeps
+them; a cancelled session changes nothing. Records written before have none of
+the fields and read as no check. The threshold is the session's
+`check_threshold_cm` (4 cm).
 
 ## Session recovery (0.24.0) and ownership per tab (0.39.0)
 
@@ -667,7 +749,9 @@ not fall back.
 ```
 
 Both target fields are required. The entity must be a native MyHOME `cover` whose
-registry `config_entry_id` matches the requested MyHOME entry. Persistence uses
+registry `config_entry_id` matches the requested MyHOME entry. From 0.43.0 an optional `client_id` adds
+`client_owner` to the `calibration` view of the answer: `true` only when that client owns the running session, never
+who the owner is; older backends reject the field ([wizard session additions](#wizard-session-additions-0430)). Persistence uses
 its native unique ID internally, so an entity rename retains its assignment.
 Clients must use the new entity ID after a rename; the old request target is invalid.
 
@@ -856,6 +940,8 @@ Example:
 | `profile_in_use` | Delete still has assignments; show usage and remove assignments first |
 | `profile_limit` | Creating would exceed 200 profiles |
 | `invalid_profile` | Missing save profile or validation failure inside the operation/load |
+| `invalid_check` | (calibration) A check outside the band, or one the measured model cannot make at all |
+| `reading_over_travel` | (calibration, 0.43.0) An intermediate reading above the travel plus 3 cm |
 | `storage_error` | An `OSError` while loading/migrating/saving; do not announce success |
 
 Domain refusals currently repeat the error token in `message`; `invalid_profile`
@@ -926,6 +1012,10 @@ invalidate this subscription. Ordinary cover state changes use native HA updates
 
 Entry removal emits `kind: "removed"` with the last in-memory revision; process
 this terminal event regardless of revision equality and close the editor.
+
+From 0.43.0 the subscription also emits `kind: "session"`, with the current (unchanged) revision, whenever a
+session of the gateway starts, moves on, closes or frees the gateway; see
+[wizard session additions](#wizard-session-additions-0430). It carries no session data: coalesce and read again.
 HA's `unsubscribe_events` command and socket closure release the listener. A
 placeholder cleanup callback also handles disconnect while waiting for storage.
 

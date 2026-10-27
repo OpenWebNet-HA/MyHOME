@@ -5,6 +5,8 @@
   background: var(--primary-background-color, #f5f7f9);
   font-family: var(--paper-font-body1_-_font-family, Roboto, system-ui, sans-serif);
   -webkit-font-smoothing: antialiased;
+  /* Safari on iOS enlarges text in landscape unless the page opts out: the panel keeps its sizes. */
+  -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
   --panel-border: var(--divider-color, #e0e6ea);
   --panel-accent: var(--primary-color, #03a9f4);
   --panel-accent-soft: color-mix(in srgb, var(--panel-accent) 12%, transparent);
@@ -73,7 +75,19 @@ button, a.button {
 button ha-icon, a.button ha-icon { --mdc-icon-size: 18px; flex-shrink: 0; }
 button:hover, a.button:hover { border-color: var(--panel-accent); background: var(--panel-accent-soft); }
 button:active, a.button:active { transform: translateY(1px); }
-button:disabled { opacity: .55; cursor: wait; transform: none; }
+/* L-65: one cursor wherever a button cannot be pressed, the passing state (`is-settling`) included. */
+button:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+/* L-112: the calibration's buttons (wizard bar and header, list head, rows, blocks, a cover's page) change state with a
+   200 ms ease-out of their paint only (fill, border, text, opacity, shadow): the disabled attribute still flips at once,
+   no size, layout or transform eases, the focus ring appears at once. A button drawn new starts in its state (no
+   transition on a first paint); with reduced motion every change is instant. */
+@media (prefers-reduced-motion: no-preference) {
+  :is(.wiz-actions, .wiz-head, .cal-tab-top, .cal-row-actions, .cal-block-action, .cal-page-session) button {
+    transition: background-color 200ms ease-out, border-color 200ms ease-out, color 200ms ease-out, opacity 200ms ease-out, box-shadow 200ms ease-out; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.wiz-actions, .wiz-head, .cal-tab-top, .cal-row-actions, .cal-block-action, .cal-page-session) button { transition: none; }
+}
 button.primary { background: var(--panel-accent); color: var(--text-primary-color, #fff); border-color: var(--panel-accent); box-shadow: 0 4px 12px -5px color-mix(in srgb, var(--panel-accent) 70%, transparent); }
 button.primary:hover { background: var(--panel-accent-strong); border-color: var(--panel-accent-strong); }
 button.ghost { background: transparent; border-color: transparent; }
@@ -172,6 +186,8 @@ label { display: grid; gap: 6px; font-size: 12px; font-weight: 500; color: var(-
 .filters label { min-width: 0; gap: 4px; }
 .filters input, .filters select { min-height: 38px; padding-block: 8px; border-radius: 8px; }
 #discovery-help { margin-top: 16px; font-size: 12px; }
+/* The Devices tab's footer note does not belong to the Calibration tab (list, sequence view, wizard). */
+#items:has(.cal-tab) ~ #discovery-help { display: none; }
 .notice { padding: 12px 16px; border: 1px solid var(--panel-border); border-radius: 12px; margin-bottom: 18px; font-size: 13px; background: var(--panel-surface); }
 .notice.muted { display: flex; gap: 10px; align-items: start; border-style: dashed; background: transparent; }
 .notice.muted::before { content: "i"; flex-shrink: 0; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-size: 11px; font-weight: 700; font-style: italic; font-family: Georgia, serif; background: var(--panel-accent-soft); color: var(--panel-accent); }
@@ -291,6 +307,8 @@ label { display: grid; gap: 6px; font-size: 12px; font-weight: 500; color: var(-
 .empty { border: 1px dashed var(--panel-border); border-radius: var(--panel-radius); padding: 48px 24px; text-align: center; grid-column: 1 / -1; background: color-mix(in srgb, var(--panel-surface) 60%, transparent); }
 .empty h2 { margin-bottom: 8px; font-size: 16px; }
 #toast { min-height: 20px; margin-top: 14px; }
+/* An empty message area takes no room (it left a 34 px band under every page). */
+#toast:empty { display: none; }
 #toast:not(:empty) { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; background: color-mix(in srgb, var(--panel-success) 12%, transparent); color: var(--panel-success); font-weight: 500; animation: fade-in var(--panel-ease); }
 #toast:not(:empty)::before { content: "✓"; font-weight: 700; }
 @keyframes fade-in { from { opacity: 0; transform: translateY(4px); } }
@@ -634,3 +652,1204 @@ button.danger-solid:hover { background: color-mix(in srgb, var(--panel-error) 85
 .catalogue-candidate input[type="checkbox"] { width: 22px; height: 22px; min-height: 22px; padding: 0; flex-shrink: 0; accent-color: var(--panel-accent); }
 .catalogue-candidate > span { min-width: 0; }
 .catalogue-candidate p { margin: 4px 0; }
+
+/* ---------- WHO 2 · Calibration tab ---------- */
+/* M6-2: iOS safe areas (Dynamic Island, home indicator, landscape notch), through variables so a harness can emulate
+   them; the full-screen views, their bars and the sheets keep their content clear of them. */
+:host { --cal-safe-top: env(safe-area-inset-top, 0px); --cal-safe-right: env(safe-area-inset-right, 0px);
+  --cal-safe-bottom: env(safe-area-inset-bottom, 0px); --cal-safe-left: env(safe-area-inset-left, 0px);
+  /* Q-18: our buttons and controls take the shell's 8 px radius (chips, counts and the progress bar stay round). */
+  --cal-btn-radius: 8px; }
+/* M5-1: the tab's own width decides its layout, not the window's (Home Assistant's sidebar takes ~256 px: a 1390 px
+   window leaves the tab ~1130 px). Below 768 px of window the wizard and the details go full screen. */
+#cover-calibration-tab { container: caltab / inline-size; }
+.cal-tab { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+/* L-8: room under an inline wizard or sequence so that its head can reach the window's top (set by revealHead). */
+.cal-tab { padding-bottom: var(--wiz-room, 0px); }
+.cal-tab h3 { margin: 0; font-size: 18px; }
+/* Q-25: the tab's head is its title with «Come funziona ›» under it and, on the same row at the right, «Calibra una
+   tapparella» (primary) and «Calibra in sequenza»; 32 px above it and 32 px down to the filter bar (24 on the phone). */
+.cal-tab-top { display: grid; gap: 12px; margin: 22px 0 18px; }
+.cal-tab-head { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; justify-content: space-between; }
+.cal-tab-heading { display: grid; justify-items: start; gap: 4px; min-width: 0; }
+/* U-2/U-3: «Come funziona ›» is a link-like toggle; its text opens under the title row, at most 720 px, 14 px. */
+/* Q-32 (decided 8 Oct): one disclosure for every short explanation that opens under a blue text link («Come capire se
+   ha le lamelle» A-03, «Come funziona» in the head and in the empty states): the link in the accent, 14 px 500, an
+   18 px chevron-down 4 px after it that turns 180° when open (the panel's 160 ms ease), the paragraph
+   under it 14 px in the secondary colour. A native <details> where the text sits right under the link; a button with
+   aria-expanded where it opens elsewhere (the head). Underline only on hover with a real pointer and on keyboard
+   focus, on the label only, never on the chevron; nothing left by a tap (no underline, no tint). */
+.cal-disclosure summary, .cal-disclosure-toggle { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; margin: 0; padding: 0; border: 0;
+  background: transparent; box-shadow: none; color: var(--panel-accent); font-size: 14px; font-weight: 500; line-height: 1.3; text-decoration: none;
+  list-style: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cal-disclosure summary::-webkit-details-marker { display: none; }
+.cal-disclosure summary ha-icon, .cal-disclosure-toggle ha-icon { --mdc-icon-size: 18px; flex: none; transition: transform var(--panel-ease); }
+.cal-disclosure[open] summary ha-icon, .cal-disclosure-toggle[aria-expanded="true"] ha-icon { transform: rotate(180deg); }
+.cal-disclosure-toggle:hover, .cal-disclosure-toggle:active { background: transparent; border-color: transparent; transform: none; }
+@media (hover: hover) { :is(.cal-disclosure summary, .cal-disclosure-toggle):hover .cal-disclosure-label { text-decoration: underline; } }
+:is(.cal-disclosure summary, .cal-disclosure-toggle):focus-visible .cal-disclosure-label { text-decoration: underline; }
+:is(.cal-disclosure summary, .cal-disclosure-toggle):focus:not(:focus-visible) { outline: none; }
+.cal-disclosure > p { margin: 0 0 12px; font-size: 14px; line-height: 1.5; color: var(--panel-text-2); }
+@media (prefers-reduced-motion: reduce) { .cal-disclosure summary ha-icon, .cal-disclosure-toggle ha-icon { transition: none; } }
+.cal-tab-how-text { max-width: 720px; margin: 0; font-size: 14px; line-height: 1.5; }
+.cal-tab-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Q-12 (Figma «R · Breakpoint», «Chip»): status, profile and filter chips are one shape: 24 px high, 4 px × 10 px
+   inside (3 px plus the 1 px border), 12 px text, filled with their colour at 12 % and bordered with it at 20 %:
+   grey, blue (accent), green and orange. The maintainer's category chips are left as they are. */
+.cal-chip, .cal-badge, .cal-profile-chip { --cal-chip: var(--panel-text-2); box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px;
+  min-height: 24px; padding: 3px 10px; border: 1px solid color-mix(in srgb, var(--cal-chip) 20%, transparent); border-radius: 999px;
+  background: color-mix(in srgb, var(--cal-chip) 12%, transparent); color: var(--cal-chip); font-size: 12px; font-weight: 500; line-height: 16px;
+  vertical-align: middle; }
+.cal-chip:hover { background: color-mix(in srgb, var(--cal-chip) 18%, transparent); }
+.cal-chip[aria-pressed="true"] { --cal-chip: var(--panel-accent); }
+.cal-chip .count { padding: 0 6px; border-radius: 999px; font-size: 11px; font-weight: 500; line-height: 14px;
+  background: color-mix(in srgb, var(--cal-chip) 16%, transparent); color: inherit; }
+/* D-38: on the active chip the number is the accent mixed towards the text (70 %), as on the tabs (3 Oct), readable
+   on its tinted fill in light and dark. */
+.cal-chip[aria-pressed="true"] .count { color: color-mix(in srgb, var(--panel-accent) 70%, var(--primary-text-color, #182b37)); }
+/* X-4: a notice is plain flow text; only one built as [icon][text] lays the two side by side (a flex notice with bare
+   text made every inline piece, a bold run or a held «10 cm», a column of its own). Notes are never flex or grid. */
+.cal-tab .notice { display: block; margin: 0; }
+/* N-08: «Aggiorna» under an error keeps its own width. */
+.cal-tab [data-action="cal-tab-refresh"] { justify-self: start; width: fit-content; }
+.cal-tab .notice:has(> ha-icon) { display: flex; gap: 10px; align-items: start; }
+.cal-tab .notice ha-icon { --mdc-icon-size: 18px; flex-shrink: 0; }
+.cal-tab-busy { border-color: color-mix(in srgb, var(--panel-warning) 45%, transparent); background: color-mix(in srgb, var(--panel-warning) 12%, var(--panel-surface)); }
+/* L-17: the «Successo» note (a profile assigned, a calibration saved): the success colour at 8 % behind, 20 % for the
+   border and its 3 px bar, text and icon in the full colour (a lighter tint on dark themes), as the other notes. */
+.cal-tab-done, .cal-note.is-success { border: 1px solid color-mix(in srgb, var(--panel-success) 20%, transparent); border-inline-start-width: 3px;
+  background: color-mix(in srgb, var(--panel-success) 8%, var(--panel-surface)); color: var(--panel-success); }
+.cal-tab-done ha-icon, .cal-note.is-success ha-icon { color: var(--panel-success); }
+[data-theme="dark"] .cal-tab-done, [data-theme="dark"] .cal-note.is-success { color: color-mix(in srgb, var(--panel-success) 70%, var(--primary-text-color, #fff)); }
+[data-theme="dark"] .cal-tab-done ha-icon, [data-theme="dark"] .cal-note.is-success ha-icon { color: inherit; }
+.cal-head-lead { display: flex; align-items: center; }
+.cal-expand-all { min-width: 32px; min-height: 32px; padding: 0 4px; margin-inline-start: -4px; }
+.cal-assign-busy { margin-bottom: 12px; }
+.cal-dialog-cancel { background: transparent; }
+.cal-dialog-cancel:hover { background: var(--panel-accent-soft); }
+.cal-assign-none strong { display: flex; align-items: center; gap: 6px; height: 20px; }
+.cal-assign-none ha-icon { --mdc-icon-size: 16px; margin-block: -2px; color: var(--panel-text-2); }
+/* "Nota (calibrazione)": every explanatory note of the Calibration tab and of its expanded details. Accent at 8 %
+   behind, a 3 px bar of accent at 20 % on the left, secondary text; it follows its block (at most 360 px in the details). */
+/* A note: opaque tint, a 1 px border all round in its own tint at 75 %, the left bar 3 px thick. */
+.cal-note { margin: 0; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--panel-accent) 75%, transparent); border-inline-start-width: 3px;
+  border-radius: var(--cal-btn-radius); background: color-mix(in srgb, var(--panel-accent) 8%, var(--panel-surface)); color: var(--panel-text-2);
+  font-size: 13px; line-height: 18px; font-weight: 400; }
+.cal-details-grid .cal-note { margin-top: 8px; max-width: 360px; }
+/* The warning variant (T-06): the same shape in the theme's warning colours, text in the text colour. Both variants are
+   opaque (tint over the surface), so they never blend with the row that hosts them. */
+.cal-note.is-warning { border-color: color-mix(in srgb, var(--panel-warning) 75%, transparent);
+  background: color-mix(in srgb, var(--panel-warning) 8%, var(--panel-surface)); color: var(--primary-text-color, #182b37); }
+/* On dark themes the warning text takes the note's own tint instead of plain white. */
+/* D-18: hosting the maintainer's view, the tab's dialog names the cover in its title: the view's own line with the
+   entity id is left out. */
+dialog.cal-dialog .cal-resume-entity { display: none; }
+/* D-23/D-36: a number and its unit stay on one line (`units()` in panel-calibration-text.js). */
+.cal-nb { white-space: nowrap; }
+/* D-14: native controls (radios, drop-downs) follow the theme: on a dark one an unticked radio is a dark ring, not a
+   white disc that reads as ticked. */
+[data-theme="dark"] { color-scheme: dark; }
+[data-theme="light"] { color-scheme: light; }
+/* M2-2: on dark themes the info notes take a light accent for their text, as the warning ones take their own tint. */
+/* L-60: the success note keeps its own green tint (it lost it to this rule, same weight and later). */
+[data-theme="dark"] .cal-note:not(.is-warning, .is-success) { color: color-mix(in srgb, var(--panel-accent) 70%, var(--primary-text-color, #fff)); }
+[data-theme="dark"] .cal-note.is-warning, [data-theme="dark"] .wiz-notice[data-tone="warning"], [data-theme="dark"] .cal-tab-busy { color: color-mix(in srgb, var(--panel-warning) 70%, var(--primary-text-color, #fff)); }
+.cal-list { border: 1px solid var(--panel-border); border-radius: var(--panel-radius); background: var(--panel-surface); overflow: visible; }
+.cal-list-head { display: none; }
+.cal-list-rows { display: contents; }
+/* Column headers sort the list (desktop); on phones a small "Sort by" bar above the cards does the same. */
+.cal-sort { display: inline-flex; align-items: center; gap: 4px; min-height: 0; padding: 2px 0; border: 0; background: transparent; color: inherit; font: inherit; }
+.cal-sort:hover { background: transparent; color: var(--primary-text-color, #182b37); }
+.cal-sort ha-icon { --mdc-icon-size: 16px; width: 16px; height: 16px; color: var(--panel-text-2); }
+/* Q-25: on the phone the two buttons stack at full width under the title and its link, the primary first. */
+@media (max-width: 719px) and (min-height: 500px), (max-width: 719px) and (orientation: portrait) {
+  .cal-tab-top { margin: 14px 0 10px; }
+  /* X-1: stacked, «Come funziona» opens right under its link, before the buttons: the head's two parts and the text
+     are one column of the top block (on wider layouts the text stays under the whole title row). */
+  .cal-tab-head { display: contents; }
+  .cal-tab-heading { order: 1; }
+  .cal-tab-how-text { order: 2; font-size: 13px; }
+  .cal-tab-actions { order: 3; }
+  .cal-tab-actions { flex-direction: column; flex-wrap: nowrap; }
+  .cal-tab-actions button { width: 100%; min-height: 48px; justify-content: center; font-size: 14px; }
+  .cal-tab-actions button:not(.primary) { background: transparent; }
+}
+/* M4-3: rings only for the keyboard, drawn on the wrapper of a borderless select; no grey flash on a tap. */
+.cal-tab, .wiz, dialog.cal-dialog { -webkit-tap-highlight-color: transparent; }
+/* X-6: a dialog's or sheet's own box takes the focus when it opens after a tap: never a ring on it; inside the tab's
+   dialogs a ring only from the keyboard, as in the tab and the wizard. */
+:is(dialog.cal-dialog, .wiz-dialog-card, .wiz-sheet-card):focus { outline: none; }
+dialog.cal-dialog :is(button, select, input):focus:not(:focus-visible) { outline: none; }
+.cal-compact-sort select:focus, .cal-compact-sort select:focus-visible { outline: none; box-shadow: none; border-color: transparent; }
+.cal-compact-sort:has(select:focus-visible) { outline: 2px solid var(--panel-accent); outline-offset: 2px; }
+.cal-tab :is(button, select, input):focus:not(:focus-visible), .wiz :is(button, select, input):focus:not(:focus-visible) { outline: none; }
+.cal-compact-filter, .cal-compact-sort { box-sizing: border-box; display: flex; align-items: center; gap: 4px; min-width: 0; min-height: 44px; margin: 0;
+  padding: 0 8px 0 12px; border: 1px solid var(--panel-border); border-radius: var(--cal-btn-radius); background: var(--panel-surface);
+  color: var(--primary-text-color, #182b37); font-size: 14px; font-weight: 400; }
+.cal-compact-sort { flex-direction: row; white-space: nowrap; }
+/* L-96: the box of these selects is their label: the same outline as the other fields. */
+.cal-compact-filter, .cal-compact-sort { border-color: color-mix(in srgb, var(--primary-text-color, #182b37) 35%, transparent); }
+.cal-compact-sort > span { flex: none; }
+.cal-compact-sort select { flex: 1; min-width: 0; width: auto; min-height: 42px; padding: 0 18px 0 0;
+  background-position: calc(100% - 9px) 50%, calc(100% - 4px) 50%; border: 0; background-color: transparent;
+  color: inherit; font-size: 14px; text-overflow: ellipsis; }
+/* P-3/Q-24: one filter and order bar for the Calibration list, A-01 and the sequence, in two states chosen by measure
+   (`fitBars` in panel-calibration-layout.js, `is-chips`): the chips (filters with their counts, or the sequence's
+   selection shortcuts) on the left and «Ordina per» on the right whenever both fit on the bar's line with at least
+   16 px between them; otherwise two native drop-downs, the counts above them (T-01c M). */
+.cal-filterbar-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.cal-tab-chips { display: none; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cal-filterbar-label { margin-inline-end: 4px; font-size: 13px; color: var(--panel-text-2); }
+/* Q-24 (b): the two drop-downs are equal, 50 % each net of the 8 px gap; only when the order's longest choice needs
+   more than half does it take exactly the extra from the filter or the selection. */
+.cal-tab-compact { display: flex; gap: 8px; }
+.cal-tab-compact > .cal-compact-filter { flex: 1 1 0; min-width: 0; }
+.cal-tab-compact > .cal-filterbar-sort { flex: 1 1 0; min-width: max-content; }
+.cal-filterbar .cal-tab-summary { margin: 0 0 8px; }
+.cal-sort-long { display: none; }
+.cal-filterbar.is-chips .cal-tab-summary { display: none; }
+.cal-filterbar.is-chips .cal-filterbar-row { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.cal-filterbar.is-chips .cal-tab-chips { display: flex; flex: 1 1 auto; min-width: 0; }
+.cal-filterbar.is-chips .cal-tab-compact { display: flex; flex: none; margin-inline-start: auto; }
+.cal-filterbar.is-chips .cal-tab-compact .cal-compact-filter { display: none; }
+/* Q-26 (Figma): with the chips, «Ordina per ▾» is drawn as a chip: 24 px, 4 × 8/10 px inside, round, the neutral chip
+   colour at 12 % with a 20 % border, 12 px text in the secondary colour, a 16 px chevron 6 px after. */
+/* U-11 (Q-31): on the surface colour (white in light) and tappable everywhere: the native drop-down covers the whole chip,
+   invisible, over the label, the current choice and the chevron, which take no taps; no ring of its own on a tap, the
+   chip's outline only from the keyboard. */
+.cal-filterbar.is-chips .cal-filterbar-sort { --cal-chip: var(--panel-text-2); position: relative; flex: none; box-sizing: border-box; gap: 6px; min-height: 24px; height: 24px;
+  padding: 4px 8px 4px 10px; border: 1px solid color-mix(in srgb, var(--cal-chip) 20%, transparent); border-radius: 999px;
+  background: var(--panel-surface); font-size: 12px; font-weight: 500; line-height: 16px; color: var(--panel-text-2);
+  cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cal-filterbar.is-chips .cal-filterbar-sort > span { pointer-events: none; }
+.cal-filterbar.is-chips .cal-filterbar-sort select { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; min-height: 0; margin: 0; padding: 0;
+  border: 0; border-radius: inherit; background: none; opacity: 0; font-size: 12px; cursor: pointer; -webkit-appearance: none; appearance: none;
+  -webkit-tap-highlight-color: transparent; }
+.cal-filterbar.is-chips .cal-filterbar-sort select:is(:focus, :focus-visible, :active) { outline: none; box-shadow: none; }
+.cal-filterbar.is-chips .cal-filterbar-sort::after { content: ""; flex: none; width: 16px; height: 16px; background: currentColor; pointer-events: none;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7.41 8.58 12 13.17l4.59-4.59L18 10l-6 6-6-6z'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7.41 8.58 12 13.17l4.59-4.59L18 10l-6 6-6-6z'/%3E%3C/svg%3E") center / 16px 16px no-repeat; }
+/* Q-27: the table sorts by its headers (the active one keeps its arrow): from 1016 px of content the bar has no order. */
+@container caltab (min-width: 1016px) { .cal-tab-filters .cal-filterbar-sort { display: none; } }
+.cal-sort-value { display: none; }
+.cal-filterbar.is-chips .cal-sort-value { display: inline; }
+.cal-filterbar.is-chips .cal-sort-short { display: none; }
+.cal-filterbar.is-chips .cal-sort-long { display: inline; }
+/* While measuring, the chips keep one line at their own width. */
+.cal-filterbar.is-measuring .cal-tab-chips { flex: none; flex-wrap: nowrap; }
+.cal-row { border-top: 1px solid var(--panel-border); }
+.cal-row:first-of-type, .cal-list-head + .cal-row { border-top: 0; }
+/* L-7: the tints under the pointer only with a real pointer: a tap on a phone leaves no tinted card behind (iOS keeps
+   :hover after a tap), no tap flash; the keyboard's ring stays (:focus-visible). */
+.cal-row-main { cursor: pointer; transition: background var(--panel-ease); -webkit-tap-highlight-color: transparent; }
+/* L-99: under the pointer a row (table row or card) takes the accent at 12 % over the surface. */
+@media (hover: hover) { .cal-row-main:hover { background: color-mix(in srgb, var(--panel-accent) 12%, var(--panel-surface)); } }
+.cal-row.is-running { background: color-mix(in srgb, var(--panel-warning) 7%, var(--panel-surface)); }
+/* L-98 (in place of L-83's accent tints): an open row's band in the secondary background at 65 % over the surface, its
+   details at 30 %, in both themes. L-101: under the pointer the open band's grey intensifies (the text colour at 6 % over
+   it), as the yellow of a row in progress does; closed rows take the accent (L-99). A row in progress keeps its yellow. */
+.cal-row.is-expanded .cal-row-main { background: color-mix(in srgb, var(--panel-surface-2) 65%, var(--panel-surface)); }
+@media (hover: hover) { .cal-row.is-expanded .cal-row-main:hover {
+  background: color-mix(in srgb, var(--primary-text-color, #182b37) 6%, color-mix(in srgb, var(--panel-surface-2) 65%, var(--panel-surface))); } }
+.cal-row.is-expanded .cal-row-details { background: color-mix(in srgb, var(--panel-surface-2) 30%, var(--panel-surface)); }
+/* A cover in progress keeps its yellow in every state (pointer, expanded title, details): no blue over the yellow. */
+@media (hover: hover) { .cal-row.is-running .cal-row-main:hover { background: color-mix(in srgb, var(--panel-warning) 14%, transparent); } }
+.cal-row.is-running.is-expanded .cal-row-main { background: color-mix(in srgb, var(--panel-warning) 12%, transparent); }
+@media (hover: hover) { .cal-row.is-running.is-expanded .cal-row-main:hover { background: color-mix(in srgb, var(--panel-warning) 16%, transparent); } }
+.cal-row.is-running.is-expanded .cal-row-details { background: color-mix(in srgb, var(--panel-warning) 5%, transparent); }
+.cal-row-main { display: grid; grid-template-columns: max-content minmax(0, 1fr) auto; grid-template-areas: "cover cover actions" "status profile profile"; gap: 8px 8px; align-items: center; padding: 12px 14px; }
+.cal-row-toggle { grid-area: cover; justify-content: start; gap: var(--cal-lead-gap, 12px); min-width: 0; padding: 4px; border: 0; background: transparent; text-align: start; font-weight: 400; }
+.cal-row-toggle:hover { background: transparent; }
+/* Chevron → icon and icon → name share one gap. */
+.cal-row-lead { display: inline-flex; align-items: center; gap: var(--cal-lead-gap, 12px); flex-shrink: 0; }
+.cal-row-chevron { display: inline-grid; place-items: center; width: 18px; height: 18px; --mdc-icon-size: 18px; transition: transform var(--panel-ease); color: var(--panel-text-2); }
+.cal-row-toggle[aria-expanded="true"] .cal-row-chevron { transform: rotate(90deg); }
+.cal-row-icon { display: inline-grid; place-items: center; width: 40px; height: 40px; flex-shrink: 0; border-radius: var(--cal-btn-radius); background: var(--panel-accent-soft); color: var(--panel-accent); }
+.cal-row-name { display: grid; gap: 2px; min-width: 0; }
+.cal-row-name strong { font-size: 14px; overflow-wrap: anywhere; }
+/* Responsive map §3.3: the line under a cover's name (list, A-01, sequence, details page, wizard header) wraps only
+   between its units; the bus address is one unit that never breaks, and nothing ends in «…». */
+/* Q-15: the address's pairs are the units of the line; the wizard's header keeps its address whole. */
+.cal-row-address { white-space: normal; }
+.cal-row-address-part { white-space: nowrap; }
+.wiz-head-sub .cal-row-address { white-space: nowrap; }
+.cal-row-address-label { color: var(--panel-text-2); }
+.cal-row-address-value { color: var(--primary-text-color, #182b37); font-weight: 500; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; font-variant-numeric: tabular-nums; }
+.cal-row-status { grid-area: status; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding-inline-start: 4px; }
+.cal-row-profile { grid-area: profile; }
+.cal-row-profile > .muted { display: none; }
+/* Row actions as the maintainer's outlined buttons: 40 px, divider border, radius 10, text colour; ⋮ a 40 px square. */
+.cal-row-actions { grid-area: actions; display: flex; gap: 8px; align-items: center; justify-content: end; }
+.cal-row-action { min-height: 40px; padding-inline: 14px; background: transparent; font-weight: 600; white-space: nowrap; }
+.cal-row-actions .icon-button { width: 40px; min-width: 40px; height: 40px; min-height: 40px; padding: 0; border-color: var(--panel-border); background: transparent; color: var(--panel-text-2); }
+.cal-row-actions .icon-button:hover { border-color: var(--panel-accent); background: var(--panel-accent-soft); color: var(--panel-text-2); }
+.cal-menu-wrap { position: relative; }
+.cal-menu { position: absolute; inset-inline-end: 0; top: calc(100% + 4px); z-index: 3; display: grid; min-width: 200px; padding: 6px; border: 1px solid var(--panel-border); border-radius: var(--cal-btn-radius); background: var(--panel-surface); box-shadow: var(--panel-shadow-hover); }
+.cal-menu button { justify-content: start; border: 0; background: transparent; }
+/* L-104: a label that wraps («Annulla la calibrazione in corso») reads from the start, at every width, its icon on the
+   first line (lines as tall as the 18 px icon); the whole stays centred in the item's height, 40 or 44 px. */
+.cal-menu button { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-content: center; align-items: start;
+  justify-content: stretch; text-align: start; line-height: 18px; }
+.cal-menu button:hover, .cal-menu button:focus-visible { background: var(--panel-accent-soft); }
+/* L-110: an item that cannot be used now (Change profile on a cover in progress) stays, off, with no tint under the pointer. */
+.cal-menu button:disabled, .cal-menu button:disabled:hover { background: transparent; cursor: not-allowed; }
+/* L-10: cancelling the calibration in progress, in the row's menu, in red; its confirmation's two buttons on one row. */
+.cal-menu button.cal-menu-danger { color: var(--panel-error); }
+.cal-menu button.cal-menu-danger:hover, .cal-menu button.cal-menu-danger:focus-visible { background: color-mix(in srgb, var(--panel-error) 8%, transparent); }
+.cal-badge[data-status="calibrated"] { --cal-chip: var(--panel-accent); }
+/* L-73: «Verificata · N cm»: green within the check's threshold, yellow beyond (its text darkened to read on its light
+   fill, as «In corso»; on dark themes the full warning colour). */
+.cal-badge[data-status="verified"] { --cal-chip: var(--panel-success); white-space: nowrap; }
+.cal-badge[data-status="verified"][data-tone="warning"] { --cal-chip: var(--panel-warning); color: color-mix(in srgb, var(--panel-warning) 55%, #000); }
+[data-theme="dark"] .cal-badge[data-status="verified"][data-tone="warning"] { color: var(--panel-warning); }
+/* D-19: «In corso · …» on one line like every chip (Q-12), its text the warning colour darkened to read on its light fill
+   (the dark theme lightens it instead, below). */
+.cal-badge[data-status="running"] { --cal-chip: var(--panel-warning); white-space: nowrap; color: color-mix(in srgb, var(--panel-warning) 55%, #000); }
+/* L-63: on dark themes its text and border are the full warning colour (the 12 % fill stays): the tint read faint. */
+[data-theme="dark"] .cal-badge[data-status="running"] { color: var(--panel-warning); border-color: var(--panel-warning); }
+/* Q-22: in rows, cards and headers a profile's name is cut at 180 px («…», whole in the tooltip); the details'
+   «Profilo» block shows it whole. */
+.cal-profile-chip { --cal-chip: var(--panel-accent); max-width: 180px; }
+.cal-chip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-details-grid .cal-profile-chip { max-width: 100%; }
+.cal-details-grid .cal-chip-text { white-space: normal; overflow-wrap: break-word; }
+/* D-05: a note naming a long profile wraps inside its box. */
+.cal-note { overflow-wrap: anywhere; }
+.cal-profile-chip ha-icon { --mdc-icon-size: 8px; }
+/* Details start 12 px below the row (24 px under the cover icon) and end 20 px under the lowest block action. */
+.cal-row-details { padding: 12px 14px 20px; }
+/* Three blocks of at most 360 px, side by side while they fit, then wrapped; label and value stay close. */
+.cal-details-grid { display: flex; flex-wrap: wrap; gap: 16px 40px; }
+.cal-details-grid > section { flex: 1 1 260px; min-width: 0; max-width: 360px; }
+/* Block titles as large as the text under them, bold, over a divider as wide as the block (10 px above and below). */
+/* Q-9: the blocks' titles as the shell's `.device-name` (15 px semibold, text colour), over a full-width divider; the
+   pairs under them at 14 px. The phone's page keeps its titles without the divider. */
+.cal-details-grid h4 { margin: 0 0 10px; padding-bottom: 10px; border-bottom: 1px solid var(--panel-border); font-size: 15px; font-weight: 600; line-height: 1.3; color: var(--primary-text-color, #182b37); }
+.cal-details-grid p { margin: 6px 0 0; font-size: 13px; }
+/* Q-2/Q-6: compact pairs. The labels in one column as wide as the block's longest, the value 26 px after it,
+   left-aligned (never pushed to the block's edge); both halves share the label column (subgrid). Q-4: in a block at
+   least 480 px wide the halves sit side by side (auto-fill 220 px, 32 px apart); notes and buttons stay full width. */
+.cal-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 26px; row-gap: 4px; margin: 0; font-size: 14px; }
+.cal-facts-col { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; row-gap: 4px; margin: 0; }
+.cal-facts-col > div { display: contents; }
+.cal-facts dt { color: var(--panel-text-2); }
+.cal-facts dd { margin: 0; font-weight: 600; text-align: start; font-variant-numeric: tabular-nums; }
+.cal-details-grid > section { container: calblock / inline-size; }
+@container calblock (min-width: 480px) {
+  .cal-facts { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); column-gap: 32px; }
+  .cal-facts-col { grid-column: auto; grid-template-columns: max-content minmax(0, 1fr); column-gap: 26px; align-content: start; }
+}
+/* Each block's own action, under its content: no bottom space on the content, 20 px above the button. */
+.cal-block-action { display: grid; padding-top: 20px; }
+/* The blocks' secondary actions are the maintainer's outlined buttons: no surface fill, so they read the same on light and dark themes. */
+.cal-block-action button:not(.primary) { background: transparent; }
+.cal-block-action button:not(.primary):hover { background: var(--panel-accent-soft); }
+/* As in the design, the action spans the whole width of its block. */
+.cal-block-action > button { width: 100%; justify-content: center; }
+/* L-64: in the list (head, rows, details) a button that cannot be pressed is outlined only, never filled: no fill, a
+   border and its label in the text colour at 24 % and 45 %, the same in both themes. The passing state of a primary
+   (`is-settling`) keeps its own look. */
+:is(.cal-tab-top, .cal-list, .cal-block-action) button:disabled:not(.is-settling),
+:is(.cal-tab-top, .cal-list, .cal-block-action) button:disabled:not(.is-settling):hover {
+  background: transparent; border-color: color-mix(in srgb, var(--primary-text-color, #182b37) 24%, transparent);
+  color: color-mix(in srgb, var(--primary-text-color, #182b37) 45%, transparent); box-shadow: none; opacity: 1; cursor: not-allowed; }
+/* Q-3, the list by the tab's content width (container `caltab`; `LIST_BANDS` in panel-calibration-layout.js):
+   table with the actions column from 1200 px; table over three full-width columns 1016–1199; cards below, their three
+   detail blocks in one row from 700 px, one under the other below. The phone (window under 720 px) opens a page. */
+@container caltab (max-width: 1015px) {
+  /* T-01 M: every cover is a card of its own, 12 px apart. First line: chevron, icon, name block and ⋮ at the top
+     right; second line: status and profile on the left, Measure/Refine on the right. */
+  .cal-list { border: 0; border-radius: 0; background: transparent; }
+  /* D-39: the cards are never wider than the list. */
+  .cal-list-rows { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .cal-row, .cal-row:first-of-type, .cal-list-head + .cal-row { border: 1px solid var(--panel-border); border-radius: var(--cal-btn-radius); background: var(--panel-surface); }
+  /* L-66: the card of a session in progress has the table row's warning fill too (the card's own surface, set above
+     with a heavier selector for the first card, hid it). */
+  .cal-row.is-running, .cal-row.is-running:first-of-type, .cal-list-head + .cal-row.is-running {
+    border-color: color-mix(in srgb, var(--panel-warning) 60%, transparent); background: color-mix(in srgb, var(--panel-warning) 7%, var(--panel-surface)); }
+  /* M4-6 + P-4: the chips on the left, the action on the right and never wrapping, centred on the chips. Status and
+     profile side by side while they fit the card, one under the other only when they do not. */
+  .cal-row-main { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "cover cover menu" "chips action action"; row-gap: 6px; border-radius: calc(var(--cal-btn-radius) - 1px); }
+  .cal-row-actions { display: contents; }
+  .cal-menu-wrap { grid-area: menu; align-self: start; justify-self: end; }
+  .cal-row-chips { grid-area: chips; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; align-self: center; min-width: 0; padding-inline-start: 4px; }
+  .cal-row-status, .cal-row-profile { min-width: 0; max-width: 100%; padding: 0; }
+  .cal-row-main:not(:has(.cal-row-profile .cal-profile-chip)) .cal-row-profile { display: none; }
+  .cal-row-action { grid-area: action; align-self: center; justify-self: end; white-space: nowrap; }
+  .cal-row-main .cal-badge { max-width: 100%; }
+  /* D-39: the 180 px cap is on the cell too, a length (a percentage counts as none while the chips' box is sized, so
+     the cell kept the whole name's width and the chips stopped ~70 px before the action). */
+  .cal-row-main .cal-row-profile { max-width: 180px; }
+  .cal-row-main .cal-profile-chip { max-width: min(100%, 180px); }
+  .cal-row-last-inline { display: block; color: var(--panel-text-2); }
+  /* Responsive map: from 720 px of window a card opens in place; its three blocks one under the other. */
+  .cal-row.is-expanded .cal-row-main { border-radius: calc(var(--cal-btn-radius) - 1px) calc(var(--cal-btn-radius) - 1px) 0 0; }
+  .cal-row-details { border-radius: 0 0 calc(var(--cal-btn-radius) - 1px) calc(var(--cal-btn-radius) - 1px); }
+  .cal-details-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px 32px; }
+  .cal-details-grid > section { max-width: none; }
+  .cal-details-grid .cal-note { max-width: none; }
+}
+/* Cards from 700 px: the three blocks in one row, equal, compressed together (never two and one); the blocks' buttons
+   in their own row at the bottom. */
+@container caltab (min-width: 700px) and (max-width: 1015px) {
+  .cal-details-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .cal-details-grid > section { display: flex; flex-direction: column; }
+  .cal-details-grid .cal-block-action { margin-top: auto; }
+}
+.cal-row-toggle .cal-row-name { flex: 1 1 auto; }
+/* Q-13/Q-15, the cards' header outside the phone (Figma «R · Breakpoint», «Scheda tapparella»): L-2, the chevron of
+   the table rows (same place, same turn) says the card opens in place (a tap anywhere opens it); the icon and its texts
+   fill the space (names wrap), the status and profile chips side by side while they fit and one under the other when
+   not, then the action (never wrapping) and ⋮. On the phone a card opens its page: no chevron. */
+@media (max-width: 719px) and (min-height: 500px), (max-width: 719px) and (orientation: portrait) { .cal-row-chevron { display: none; } }
+@media (min-width: 720px), (max-height: 499px) and (orientation: landscape) {
+  @container caltab (max-width: 1015px) {
+    .cal-row-main { display: flex; flex-wrap: nowrap; align-items: center; gap: 12px 16px; }
+    /* D-07/D-39 (decided 8 Oct): one card layout at every width. The line under the name wraps between its units and,
+       inside a unit, only between words when the column is narrower than the unit: never inside a word, never «…»;
+       so the column is never narrower than its longest word. */
+    .cal-row-toggle { flex: 1 1 200px; min-width: min-content; padding: 0; }
+    .cal-row-chips { flex: 0 1 auto; min-width: min-content; padding: 0; justify-content: start; }
+    .cal-row-actions { display: flex; flex: none; gap: 8px; align-items: center; }
+    .cal-row-last-inline { display: none; }
+  }
+  /* Q-14: an open card with stacked blocks: the chips and the pairs' second half share one left edge (`--cal-col2`,
+     measured by the script: the wider of the header's texts and the pairs' first half). */
+  @container caltab (max-width: 699px) {
+    .cal-row.is-aligned .cal-row-toggle { flex: 0 0 calc(var(--cal-col2) - 16px); }
+    .cal-row.is-aligned .cal-facts { grid-template-columns: calc(var(--cal-col2) - 32px) minmax(0, 1fr); column-gap: 32px; }
+  }
+  .cal-row.is-measuring .cal-row-main .cal-row-name, .cal-row.is-measuring .cal-row-main .cal-row-name * { white-space: nowrap; }
+  /* Q-22: the three-column header over the blocks needs its third column to hold the widest profile chip (180), the
+     widest action and ⋮ on one line: CARD_HEADER_COLUMNS in panel-calibration-layout.js gives 1160 px of content,
+     beyond the cards' band (up to 1015 px), so the cards keep this header at every width. */
+}
+@media (min-width: 720px), (max-height: 499px) and (orientation: landscape) { .cal-page { display: none; } }
+/* T-05 M: a cover's details as a page over the list (phones only; wider windows and landscape phones open the row). */
+.cal-page { position: fixed; inset: 0; z-index: 8; display: flex; flex-direction: column; height: 100vh; height: 100dvh;
+  background: var(--primary-background-color, #fafafa); }
+.cal-page-head { display: flex; align-items: start; gap: 12px; padding: calc(16px + var(--cal-safe-top)) calc(16px + var(--cal-safe-right)) 16px calc(16px + var(--cal-safe-left));
+  border-bottom: 1px solid var(--panel-border); background: var(--panel-surface); }
+.cal-page-head-text { flex: 1; min-width: 0; }
+.cal-page-head h2 { margin: 0; font-size: 20px; font-weight: 600; overflow-wrap: anywhere; }
+.cal-page-head .muted { margin: 2px 0 0; font-size: 13px; }
+.cal-page-close { flex: none; width: 40px; min-width: 40px; height: 40px; min-height: 40px; padding: 0; margin: -4px -4px 0 0; border: 0; background: transparent; color: var(--panel-text-2); }
+.cal-page-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  padding: 16px calc(16px + var(--cal-safe-right)) calc(24px + var(--cal-safe-bottom)) calc(16px + var(--cal-safe-left)); }
+.cal-page-title { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 20px; }
+.cal-page-title h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.cal-page.is-running .cal-page-head { background: color-mix(in srgb, var(--panel-warning) 7%, var(--panel-surface)); }
+/* M-11: the three blocks one under the other, each title more prominent, divided by lines that run from edge to edge
+   of the window (the negative margins equal the page's 16 px padding). */
+.cal-page .cal-details-grid { display: block; }
+.cal-page .cal-details-grid > section { max-width: none; padding-block: 20px; }
+.cal-page .cal-details-grid > section:first-child { padding-top: 0; }
+.cal-page .cal-details-grid > section + section { margin-inline: -16px; padding-inline: 16px; border-top: 1px solid var(--panel-border); }
+.cal-page .cal-details-grid h4 { margin: 0 0 12px; padding: 0; border: 0; font-size: 15px; font-weight: 600; color: var(--primary-text-color, #182b37); }
+.cal-page .cal-details-grid .cal-note { max-width: none; }
+.cal-page-session { margin: 0 0 16px; }
+.cal-page-session button { width: 100%; min-height: 48px; justify-content: center; }
+.cal-tab-back { justify-self: start; }
+/* T-04 / T-04b: empty states as a card (no timed cover; nothing matches the filter). */
+.cal-empty { display: grid; justify-items: center; gap: 8px; padding: 32px 24px; border: 1px solid var(--panel-border); border-radius: var(--cal-btn-radius);
+  background: var(--panel-surface); text-align: center; }
+.cal-empty-icon { display: inline-grid; place-items: center; width: 40px; height: 40px; margin-bottom: 4px; border-radius: var(--cal-btn-radius); background: var(--panel-accent-soft); color: var(--panel-text-2); }
+.cal-empty h4 { margin: 0; font-size: 16px; font-weight: 600; }
+.cal-empty > .muted { max-width: 480px; font-size: 13px; line-height: 1.5; }
+.cal-empty-how > p { max-width: 480px; margin: 0 auto; }
+.cal-dialog-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; padding-block: 18px 4px; }
+.cal-dialog-body > p { margin: 0; }
+/* Responsive map, one rule for every dialog of the tab and the wizard (profile, exit, Steps, Calibration in progress):
+   centred while the window is at least 720 × 500 px, a sheet from the bottom otherwise (D14). */
+@media (max-width: 719px), (max-height: 499px) {
+  /* The tab's own dialogs (Assign/Change profile, sessions) as sheets from the bottom (T-09 M); the maintainer's dialogs
+     are not touched. */
+  dialog.cal-dialog { width: 100%; max-width: none; max-height: 90vh; margin: auto 0 0; border-radius: 18px 18px 0 0;
+    padding-bottom: var(--cal-safe-bottom); }
+  dialog.cal-dialog::backdrop { background: rgb(0 0 0 / 55%); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  dialog.cal-dialog > * { padding-inline: calc(16px + var(--cal-safe-left)) calc(16px + var(--cal-safe-right)); }
+  dialog.cal-dialog .dialog-foot { flex-direction: column-reverse; align-items: stretch; }
+  /* X-5: no drag handle on the sheets: it suggested a drag-to-close they do not have; ✕, the buttons, Escape and a tap
+     outside close them. */
+  dialog.cal-dialog .dialog-foot button { width: 100%; justify-content: center; }
+  /* M2-6: the sheet holds its place; only its body scrolls, the footer stays at the bottom with the fade above it. */
+  dialog.cal-dialog[open] { display: flex; flex-direction: column; overflow: hidden; overscroll-behavior: contain; }
+  dialog.cal-dialog .dialog-head, dialog.cal-dialog .dialog-foot { flex: none; }
+  dialog.cal-dialog .cal-dialog-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  dialog.cal-dialog .dialog-foot { position: relative; padding-block: 12px; background: var(--panel-surface); }
+  /* D-17/N-03: the maintainer's view in a sheet (an opened session, the sequence's run): its Stop/Cancel bar is compact
+     (57 px) and sits flush with the sheet's bottom, and its main action («Prendi il controllo», «Continua», «Conferma
+     e avvia…», «Riprendi») is held just above the bar while its place is further down, on the surface (a spread
+     shadow covers what scrolls behind it), so it is in view without scrolling and the bar never hides it. */
+  dialog.cal-dialog .calibration-safety-actions { bottom: -4px; padding-block: 8px; }
+  dialog.cal-dialog :is(.calibration-safety-actions, .cal-actions) button { min-height: 40px; padding-block: 6px; }
+  dialog.cal-dialog :is(#cal-take-control, #cal-reconnect, .cal-actions) { position: sticky; bottom: 61px; z-index: 1;
+    box-shadow: 0 0 0 8px var(--panel-surface); }
+  dialog.cal-dialog .cal-actions { background: var(--panel-surface); }
+  /* X-7: the same fade as the wizard's action bars (40 px, the surface to transparent), its bottom 1 px into the band
+     (which has no border, unlike the wizard's bar) so no pixel row is left between them at any sub-pixel position. */
+  dialog.cal-dialog .dialog-foot::before { content: ""; position: absolute; inset-inline: 0; bottom: calc(100% - 1px); height: 40px; pointer-events: none;
+    background: linear-gradient(to top, var(--panel-surface), transparent); opacity: 0; transition: opacity var(--panel-ease); }
+  dialog.cal-dialog .dialog-foot.has-more::before { opacity: 1; }
+  dialog.cal-dialog[open] { animation: wiz-sheet-in 220ms cubic-bezier(.2, 0, 0, 1); }
+  dialog.cal-dialog.is-leaving { animation: wiz-sheet-out 220ms cubic-bezier(.3, 0, 1, 1) forwards; }
+}
+@media (max-width: 719px) and (prefers-reduced-motion: reduce), (max-height: 499px) and (prefers-reduced-motion: reduce) {
+  dialog.cal-dialog, .wiz-dialog, .wiz-dialog .wiz-dialog-card { animation: none !important; }
+}
+/* Sequence selection (T-06, M4-5): a view with the wizard's chrome (the .wiz classes); its content keeps the list's
+   rows with a circle and the place of each ticked cover. */
+.cal-batch-wiz .wiz-main { display: grid; gap: 14px; align-content: start; }
+.cal-batch-wiz .wiz-main > * { margin: 0; }
+.cal-batch-wiz .wiz-actions { align-content: start; }
+.cal-batch-sticky { display: grid; gap: 10px; }
+/* M5-2: with columns, the status and Start stay in view while the list scrolls (sticky inside the wizard: the wizard
+   clips instead of hiding its overflow, so it is not a scroll box of its own). */
+.wiz.cal-batch-wiz { overflow: clip; }
+@media (min-width: 720px) {
+  .cal-batch-sticky { position: sticky; top: 76px; }
+}
+/* The place in the sequence goes to the row's right edge; no gap is left between circle and icon. A long status
+   wraps inside its column rather than run under the place (D8). */
+.cal-batch-wiz .cal-batch-row { position: relative; padding-inline-end: 48px; }
+/* The place sits at the card's right edge, level with the icon row (the card is 12 px inside, the icon row 40 px). */
+.cal-batch-wiz .cal-batch-order { position: absolute; inset-inline-end: 12px; top: 20px; }
+.cal-batch-status { min-width: 0; }
+.cal-batch-status .badge { max-width: 100%; white-space: normal; }
+.cal-batch-wiz .cal-batch-summary { margin: 0; font-size: 14px; font-weight: 500; text-align: center; }
+.cal-batch-note p { margin: 0; }
+.cal-batch-note p + p { margin-top: 8px; }
+.cal-batch-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.cal-batch-shortcuts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; font-size: 12px; }
+.cal-batch-capacity { margin: 0; font-size: 12px; }
+/* R-6 (Figma «R · Breakpoint», «Liste nel wizard»): A-01's and the sequence's covers are cards, 12 px apart, as the
+   list's: [circle][icon][name and its line] with the chips beside them while they fit (side by side, or one under the
+   other), under them on a narrow list. */
+.cal-batch-rows { display: grid; gap: 12px; }
+.cal-batch-row { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "lead name" "status status"; align-items: center; gap: 8px 12px;
+  min-height: 48px; padding: 12px; border: 1px solid var(--panel-border); border-radius: var(--cal-btn-radius); background: var(--panel-surface); cursor: pointer;
+  font-size: 13px; font-weight: 400; color: inherit; }
+/* D-40 (decided 8 Oct): beside the name when it keeps 200 px (`fitRows()`, measured as the page cards, Q-15): side by
+   side, or one under the other (`is-stacked`); under the name otherwise. */
+.cal-batch-row.is-beside { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "lead name status"; }
+.cal-batch-row.is-beside .cal-batch-chips { justify-content: end; }
+.cal-batch-row.is-stacked .cal-batch-chips { flex-direction: column; align-items: end; }
+.cal-batch-row:hover { background: var(--panel-accent-soft); }
+.cal-batch-row.is-selected { background: color-mix(in srgb, var(--panel-accent) 6%, var(--panel-surface)); }
+.cal-batch-lead { grid-area: lead; display: inline-flex; align-items: center; gap: 12px; }
+/* M3-6: the selection is a clean circle (no native square under a radius): a ring when empty, the accent with a white
+   check when ticked; focus as the radios'. The same in light and dark. */
+.cal-batch-lead input { appearance: none; -webkit-appearance: none; box-sizing: border-box; flex: none; width: 20px; height: 20px; min-height: 0; margin: 0; padding: 0;
+  border: 2px solid var(--panel-text-2); border-radius: 50%; background: transparent no-repeat center / 12px 12px; cursor: pointer; }
+.cal-batch-lead input:checked { border-color: var(--panel-accent); background-color: var(--panel-accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.3 2.3 4.7-4.9' fill='none' stroke='%23fff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+.cal-batch-lead input:focus-visible { outline: 2px solid var(--panel-accent); outline-offset: 2px; }
+.cal-batch-lead input:disabled { opacity: .45; cursor: not-allowed; }
+/* Q-11: the same 40 px cover icon as the list's, in A-01 and the sequence too. */
+.cal-batch-order { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; font-size: 12px; font-weight: 600;
+  background: var(--panel-accent); color: var(--text-primary-color, #fff); font-variant-numeric: tabular-nums; }
+.cal-batch-order:empty { visibility: hidden; }
+.cal-batch-row .cal-row-name { grid-area: name; }
+.cal-batch-chips { grid-area: status; display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; min-width: 0; }
+.cal-batch-status { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cal-batch-profile { display: none; }
+/* Responsive map: the lists inside the wizard (A-01, the sequence) are cards at every width, in their frame (D19,
+   D21): the profile as a chip under the status, no column headers (Sort by is a drop-down above the list). */
+.cal-batch-row .cal-batch-profile:has(.cal-profile-chip) { display: block; max-width: 100%; }
+.wiz-main .cal-list { border: 0; border-radius: 0; background: transparent; }
+.cal-batch-limit:empty { display: none; }
+@media (max-width: 719px), (max-height: 499px) and (orientation: landscape) {
+  /* GM2: on the phone the reading field takes the content's width (more specific than the base rule, which comes later). */
+  .wiz-main .wiz-field { max-width: none; }
+}
+@container caltab (min-width: 1016px) {
+  /* One grid for header, rows and expanded details (Figma «R · Breakpoint» 1434/1016): three equal columns, cover
+     (chevron, icon and name) | status | profile, and from 1200 px the 158 px actions column. The details' three blocks
+     sit under the three columns, the first from the row's left edge; under the actions column a hole. */
+  .cal-list { --cal-lead-gap: 12px; --cal-gap: 32px; --cal-cols: repeat(3, minmax(0, 1fr)); }
+  .cal-list-head, .cal-row-main, .cal-row-details { display: grid; grid-template-columns: var(--cal-cols); grid-template-areas: none;
+    column-gap: var(--cal-gap); padding-inline: 12px; }
+  .cal-list-head, .cal-row-main { align-items: center; }
+  .cal-list-head { padding-block: 12px; border-bottom: 1px solid var(--panel-border); font-size: 12px; color: var(--panel-text-2); }
+  /* The column of «Tapparella» holds the expand-all button and its label (aligned with the names). */
+  .cal-list-head > .cal-head-lead { grid-column: 1; grid-row: 1; justify-self: start; }
+  /* Q-21: «Tapparella» starts where the names do, right of the chevron and the icon. */
+  .cal-list-head > .cal-sort-cell:nth-child(2) { grid-column: 1; grid-row: 1; padding-inline-start: calc(18px + 40px + 2 * var(--cal-lead-gap)); }
+  .cal-list-head > :nth-child(3) { grid-column: 2; }
+  .cal-list-head > :nth-child(4) { grid-column: 3; }
+  .cal-list-head > :nth-child(5) { display: none; }
+  .cal-row-main { padding-block: 12px; row-gap: 0; }
+  /* The phone layout names grid areas: every cell goes back to row 1 and its own column. */
+  .cal-row-chips { display: contents; }
+  .cal-row-toggle, .cal-row-status, .cal-row-profile, .cal-row-actions { grid-area: auto; grid-row: 1; }
+  .cal-row-toggle { grid-column: 1; display: flex; align-items: center; gap: var(--cal-lead-gap); padding: 0; }
+  .cal-row-status { grid-column: 2; padding: 0; }
+  .cal-row-profile { grid-column: 3; justify-self: start; }
+  /* 1016–1199: CTA and ⋮ at the right inside the profile column. D-03: the profile keeps clear of them, the room of the
+     158 px actions column of the wider table and a 12 px gap; the chip is cut sooner (Q-22's 180 px stays the most). */
+  .cal-row-actions { grid-column: 3; justify-self: end; }
+  .cal-row-profile { min-width: 0; max-width: calc(100% - max(158px, var(--cal-actions-w, 158px)) - 12px); }
+  .cal-row-profile .cal-profile-chip { max-width: min(180px, 100%); }
+  .cal-row-profile > .muted { display: block; font-size: 13px; }
+  .cal-row-last-inline { display: none; }
+  .cal-row-details { padding-block: 12px 20px; align-items: start; }
+  .cal-details-grid { display: contents; }
+  /* The three blocks share the row's height; each action sits at the bottom of its block, so they line up. */
+  .cal-details-grid > section { grid-row: 1; max-width: none; align-self: stretch; display: flex; flex-direction: column; }
+  .cal-details-grid .cal-block-action { margin-top: auto; }
+  .cal-details-grid > section:nth-child(1) { grid-column: 1; }
+  .cal-details-grid > section:nth-child(2) { grid-column: 2; }
+  .cal-details-grid > section:nth-child(3) { grid-column: 3; }
+  .cal-details-grid .cal-note { max-width: none; }
+}
+@container caltab (min-width: 1200px) {
+  /* L-109: the actions column as wide as its widest row (CTA and ⋮, measured by `fitActions`), 158 px at least. */
+  .cal-list { --cal-cols: repeat(3, minmax(0, 1fr)) max(158px, var(--cal-actions-w, 158px)); }
+  .cal-list-head > :nth-child(5) { display: block; grid-column: 4; }
+  .cal-row-actions { grid-column: 4; }
+  .cal-row-profile { max-width: none; }
+}
+
+/* ---------- Calibration wizard (stepper · instruction · actions) ---------- */
+/* A-01: the covers as the sequence view's rows, one radio each; the chosen row opens with its notes. */
+.wiz-picker { display: grid; gap: 12px; margin-top: 4px; }
+/* The choice is already in the radio and the opened row: a neutral tint, so its notes keep their own colour. */
+.wiz-pick-row.is-selected { background: color-mix(in srgb, var(--primary-text-color, #182b37) 4%, var(--panel-surface)); }
+.wiz-pick-chips { margin: 0; }
+.wiz-pick-row .cal-batch-lead { gap: 12px; }
+.wiz-pick-notes { grid-column: 1 / -1; display: grid; gap: 6px; padding-bottom: 4px; }
+.wiz-pick-notes .cal-note { max-width: none; }
+.wiz-pick-empty { margin: 0; padding: 12px; }
+.wiz { --wiz-side: color-mix(in srgb, var(--primary-text-color, #182b37) 4%, var(--primary-background-color, #fafafa)); position: relative; border: 1px solid var(--panel-border); border-radius: var(--panel-radius); background: var(--panel-surface); overflow: hidden; }
+.wiz-head { display: flex; align-items: start; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--panel-border); }
+.wiz-head-text { flex: 1; min-width: 0; }
+.wiz-back { flex: none; margin: -2px 0 0 -8px; }
+.wiz-cover { margin: 0; font-size: 20px; font-weight: 600; overflow-wrap: anywhere; }
+.wiz-head .muted { margin-top: 2px; }
+/* L-56: 44 px high, its label centred, centred in the header band. */
+.wiz-discard { display: inline-flex; align-items: center; justify-content: center; align-self: center; box-sizing: border-box; min-height: 44px; padding: 0 16px;
+  border: 1px solid var(--panel-error); border-radius: var(--cal-btn-radius); background: transparent; color: var(--panel-error); font-weight: 500; }
+@media (hover: hover) { .wiz-discard:hover { background: color-mix(in srgb, var(--panel-error) 8%, transparent); } }
+/* L-61: a reader's header button only stops following: the same shape, secondary (accent outline), never red. */
+.wiz-unfollow { display: inline-flex; align-items: center; justify-content: center; align-self: center; box-sizing: border-box; min-height: 44px; padding: 0 16px;
+  border: 1px solid var(--panel-accent); border-radius: var(--cal-btn-radius); background: transparent; color: var(--panel-accent); font-weight: 500; }
+@media (hover: hover) { .wiz-unfollow:hover { background: color-mix(in srgb, var(--panel-accent) 8%, transparent); } }
+.wiz-unfollow:active { background: color-mix(in srgb, var(--panel-accent) 12%, transparent); }
+/* L-47: the row menu's cancel confirmation, outlined red as every action that discards now. */
+.cal-abort-confirm { border-color: var(--panel-error); }
+.wiz-x { display: none; }
+.wiz-compact { display: none; }
+.wiz-columns { display: grid; grid-template-columns: minmax(0, 1fr); }
+.wiz-steps { padding: 18px 20px; background: var(--wiz-side); }
+.wiz-steps-line { margin: 0; font-size: 12px; color: var(--panel-text-2); }
+.wiz-steps ol, .wiz-sheet-steps ol { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 4px; }
+.wiz-steps ol > li, .wiz-sheet-steps ol > li { display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 8px; padding: 5px 0; font-size: 14px; color: var(--panel-text-2); }
+.wiz-step-mark { width: 14px; height: 14px; margin-top: 3px; border-radius: 50%; border: 1.5px solid var(--panel-border); box-sizing: border-box; }
+li[data-step-state="done"] > .wiz-step-mark { border-color: var(--panel-accent); background: var(--panel-accent); box-shadow: inset 0 0 0 2px var(--wiz-side); }
+li[data-step-state="current"] > .wiz-step-mark, .wiz-dot { border: 1.5px solid var(--panel-accent); background: linear-gradient(90deg, var(--panel-accent) 50%, transparent 50%); }
+li[data-step-state="current"], li[data-step-state="done"] { color: var(--primary-text-color, #182b37); }
+li[data-step-state="current"] > .wiz-step-label { font-weight: 600; }
+/* M3-3: an ended session: the step it reached stays, greyed. */
+[data-interrupted] li[data-step-state="current"] > .wiz-step-mark, .wiz-compact[data-interrupted] .wiz-dot { border-color: var(--panel-text-2);
+  background: linear-gradient(90deg, var(--panel-text-2) 50%, transparent 50%); }
+[data-interrupted] li[data-step-state="current"], [data-interrupted] li[data-step-state="done"] { color: var(--panel-text-2); }
+.wiz-steps ul, .wiz-sheet-steps ul { grid-column: 2; list-style: none; margin: 4px 0 2px; padding: 0; font-size: 12px; color: var(--panel-text-2); display: grid; gap: 2px; }
+.wiz-main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-content: start; padding: 20px; min-width: 0; }
+.wiz-title { margin: 0; font-size: 18px; font-weight: 600; outline: none; }
+.wiz-preview { display: flex; gap: 8px; align-items: start; margin: 0; padding: 10px 12px; border-radius: var(--cal-btn-radius); font-size: 13px;
+  background: color-mix(in srgb, var(--panel-warning) 14%, var(--panel-surface)); border: 1px dashed color-mix(in srgb, var(--panel-warning) 60%, transparent); }
+.wiz-body p { margin: 0 0 10px; line-height: 1.55; }
+.wiz-body p:last-child { margin-bottom: 0; }
+/* The motor bar is as wide as the drawing under it (at most 564 px), left-aligned; its value at the right end. */
+.wiz-stopwatch { box-sizing: border-box; width: min(100%, var(--wiz-stopwatch-width, 564px)); display: flex; justify-content: space-between; gap: 12px; padding: 10px 16px; border-radius: var(--cal-btn-radius); background: var(--panel-accent-soft); font-variant-numeric: tabular-nums; }
+/* Label/value pairs follow the tab's blocks: the label regular, the value bold. */
+.wiz-stopwatch-label { font-weight: 400; color: var(--panel-text-2); }
+/* Live values keep their width: tabular digits and a minimum width, so the label never moves while they count. */
+.wiz-stopwatch-value { font-weight: 600; font-variant-numeric: tabular-nums; min-width: 14ch; text-align: end; }
+.wiz-wait { display: grid; gap: 10px; padding: 18px 20px; border-radius: var(--cal-btn-radius); border: 1px solid var(--panel-border); background: var(--panel-surface-2); }
+.wiz-wait p { margin: 0; }
+.wiz-wait-stages { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; font-size: 13px; }
+.wiz-wait-stages li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* L-53: a leg's label on one line beside its circle; in a box under 480 px its «— circa N s» goes (the time left is
+   under the active bar), and only then does it ellipsize. */
+.wiz-wait { container: wizwait / inline-size; }
+.wiz-stage-label { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@container wizwait (max-width: 479px) { .wiz-stage-time { display: none; } }
+.wiz-wait-meter { display: grid; gap: 6px; }
+.wiz-wait-stages .wiz-wait-meter { flex-basis: 100%; padding-inline-start: 24px; }
+.wiz-wait-stages ha-icon { --mdc-icon-size: 16px; flex-shrink: 0; }
+.wiz-wait-stages li[data-step-state="future"] { color: var(--panel-text-2); }
+/* D-24: the track is the text colour at 14 %, seen on the wait's box in light and dark (the surface vanished on dark). */
+.wiz-progress { height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--primary-text-color, #182b37) 14%, transparent); overflow: hidden; }
+.wiz-progress span { display: block; height: 100%; width: 0; background: var(--primary-text-color, #182b37); transition: width 100ms linear; }
+/* Unknown duration: a short segment sweeps the track instead of a share. */
+.wiz-progress.is-indeterminate span { width: 30%; animation: wiz-progress-sweep 1.6s ease-in-out infinite; }
+@keyframes wiz-progress-sweep { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .wiz-progress.is-indeterminate span { animation: none; width: 100%; opacity: .35; } }
+.wiz-wait p.wiz-wait-remaining { font-size: 12px; font-variant-numeric: tabular-nums; min-width: 22ch; }
+/* What a step has just measured: tiles side by side, a small label and a big value (its unit smaller). */
+.wiz-results { display: flex; flex-wrap: wrap; gap: 12px; }
+.wiz-result { display: grid; gap: 2px; min-width: 150px; padding: 12px 16px; border-radius: var(--cal-btn-radius); background: var(--panel-accent-soft); }
+.wiz-result-label { font-size: 12px; color: var(--panel-text-2); }
+.wiz-result-value { font-size: 32px; line-height: 1.15; font-weight: 600; font-variant-numeric: tabular-nums; }
+.wiz-result-value small, .wiz-result-extra { font-size: 16px; font-weight: 500; }
+/* L-55: a tile with its note (the check's precision): side by side, the note under the tile where the row is narrow. */
+.wiz-result-caption { font-size: 12px; color: var(--panel-text-2); }
+.wiz-result-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch; flex: 1 1 100%; min-width: 0; container: wiz-result-row / inline-size; }
+.wiz-result-row > .wiz-result { flex: none; }
+/* L-71/L-81: beside the tile the note keeps its own height, centred against the tile, about 280 px wide (three or four
+   lines); where the row is too narrow for both (phone portrait) it goes under the tile at full width. */
+.wiz-result-note { flex: 0 1 280px; min-width: 200px; max-width: 280px; align-self: center; box-sizing: border-box; }
+@container wiz-result-row (max-width: 479px) { .wiz-result-note { flex: 1 1 100%; max-width: none; } }
+/* L-69: the check's tile in its note's colours: the success or warning tint behind, a 1 px border in the note's tint,
+   its text in the note's text colour (lighter tints on dark themes, as the notes). */
+.wiz-result.is-success { background: color-mix(in srgb, var(--panel-success) 8%, var(--panel-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--panel-success) 20%, transparent); color: var(--panel-success); }
+.wiz-result.is-warning { background: color-mix(in srgb, var(--panel-warning) 8%, var(--panel-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--panel-warning) 75%, transparent); color: color-mix(in srgb, var(--panel-warning) 60%, #000); }
+.wiz-result:is(.is-success, .is-warning) :is(.wiz-result-label, .wiz-result-caption) { color: inherit; }
+[data-theme="dark"] .wiz-result.is-success { color: color-mix(in srgb, var(--panel-success) 70%, var(--primary-text-color, #fff)); }
+[data-theme="dark"] .wiz-result.is-warning { color: color-mix(in srgb, var(--panel-warning) 70%, var(--primary-text-color, #fff)); }
+/* D-11: a result that is not valid: on the error colour, its value struck through in the secondary colour. */
+.wiz-result.is-invalid { background: color-mix(in srgb, var(--panel-error) 8%, var(--panel-surface)); }
+.wiz-result.is-invalid .wiz-result-value { color: var(--panel-text-2); }
+.wiz-result.is-invalid .wiz-result-number { text-decoration: line-through; text-decoration-thickness: 2px; }
+/* N-14: on a dark theme the secondary background is almost the page's: the box is the text colour at 6 % on the
+   surface, with a hairline, seen in both themes. */
+.wiz-box { display: grid; gap: 4px; padding: 12px 14px; border-radius: var(--cal-btn-radius); border: 1px solid var(--panel-border);
+  background: color-mix(in srgb, var(--primary-text-color, #182b37) 6%, var(--panel-surface)); }
+.wiz-box p { margin: 0; }
+/* L-1/L-28: more than three actions: in the columns all of them, as ordinary buttons (the disclosure's toggle hidden);
+   in a bar of one column (phone, single column) the first one, «Altre opzioni ▾» with the others as blue links, then
+   the red ones. */
+.wiz-more { display: grid; min-width: 0; }
+.wiz-more-toggle { display: none; }
+.wiz-more-list { display: grid; gap: 12px; min-width: 0; }
+.wiz-more-toggle { align-items: center; justify-content: center; gap: 4px; min-height: 44px; padding: 0; border: 0; background: transparent; box-shadow: none;
+  color: var(--panel-accent); font-size: 14px; font-weight: 500; -webkit-tap-highlight-color: transparent; }
+.wiz-more-toggle ha-icon { display: inline-flex; --mdc-icon-size: 20px; transition: transform var(--panel-ease); }
+.wiz-more.is-open .wiz-more-toggle ha-icon { transform: rotate(180deg); }
+.wiz-more-toggle:hover { background: transparent; text-decoration: underline; }
+.wiz-link { min-height: 44px; padding: 0; border: 0; background: transparent; box-shadow: none; color: var(--panel-accent); font-size: 14px; font-weight: 500;
+  -webkit-tap-highlight-color: transparent; }
+.wiz-link:hover { background: transparent; text-decoration: underline; }
+.wiz-choice { max-width: 420px; }
+.wiz-choice-hint { font-weight: 400; }
+.wiz-radios { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; max-width: none; }
+/* G2-7: the label of a group of fields («Profilo da seguire», «Altezza del bordo inferiore», «Nome del profilo», …) is
+   15 px, semibold, in the text colour, everywhere; hints under the fields stay small and grey. */
+.wiz-radios legend { margin-bottom: 6px; font-size: 15px; font-weight: 600; color: var(--primary-text-color, #182b37); }
+.wiz-field > label, .wiz-profile-block > label:not(.wiz-switch) { font-size: 15px; font-weight: 600; color: var(--primary-text-color, #182b37); }
+.wiz-profile-block > label:not(.wiz-switch) input { font-weight: 400; }
+/* Plain radio rows, as in the mockups: no card, no tinted background on the chosen one. */
+/* The circle sits centred on the first line: a 20 px line and a 16 px circle 2 px down, whatever follows the label. */
+.wiz-radio { display: flex; gap: 10px; align-items: start; padding: 6px 0; font-size: 14px; line-height: 20px; font-weight: 400; color: var(--primary-text-color, #182b37); cursor: pointer; }
+/* The same circle on every row: it never shrinks beside a long description. */
+.wiz-radio input { flex: none; width: 16px; height: 16px; min-height: 0; margin: 2px 0 0; accent-color: var(--panel-accent); }
+.wiz-radio small { line-height: 18px; }
+.wiz-radio .wiz-recommended { line-height: 16px; padding-block: 2px; }
+/* G4-3: about 4 px of visible space between the bold label and its explanation (line boxes included); further note
+   lines keep their own 4 px. The space between options is unchanged. */
+.wiz-radio small { display: block; margin-top: 1px; }
+.wiz-radio small + small { margin-top: 4px; }
+.wiz-radio-explain { display: block; margin-top: 1px; }
+/* L-115: a disabled option is dimmed, but its yellow note (why it cannot be chosen) stays at full strength. */
+.wiz-radio.is-disabled { cursor: not-allowed; }
+.wiz-radio.is-disabled > input, .wiz-radio.is-disabled .wiz-radio-text > :not(.wiz-radio-notice, .wiz-radio-warning) { opacity: .6; }
+.wiz-radio-notice { display: block; margin-block: 6px 2px; }
+/* D-29: on «Nessun profilo» of the cover a profile was measured on, only the choice is off: its note, which says why,
+   stays readable in the secondary colour. */
+.cal-assign-none.is-disabled { opacity: 1; }
+.cal-assign-none.is-disabled input, .cal-assign-none.is-disabled strong { opacity: .6; }
+.wiz-radio-text { display: grid; gap: 0; min-width: 0; }
+.wiz-radio-label { display: flex; flex-wrap: wrap; align-items: center; gap: 1px 8px; }
+.wiz-recommended { background: var(--panel-accent-soft); color: var(--panel-accent); font-size: 11px; padding: 1px 8px; }
+.wiz-subline { margin: 8px 0 0; }
+.wiz-radio-warning { display: block; margin-top: 6px; }
+.wiz-field { display: grid; gap: 6px; max-width: 320px; }
+.wiz-field input { font-size: 18px; min-height: 52px; }
+/* G3-4: why a value is refused, under the field, in the error colour. */
+.wiz-field-error { margin: 0; color: var(--panel-error); font-size: 13px; font-weight: 500; scroll-margin-bottom: 36px; }
+/* L-9: a reading far from the model is accepted; the field says so in yellow, under itself. */
+.wiz-field-warning { margin: 0; }
+.wiz-field input[aria-invalid="true"] { border-color: var(--panel-error); box-shadow: 0 0 0 3px color-mix(in srgb, var(--panel-error) 20%, transparent); }
+/* Z-2: in error only the field's border, its unit and the message are red; the help line stays grey. */
+.wiz-field input[aria-invalid="true"] ~ span { color: var(--panel-error); }
+/* L-96: the fields of the wizard, the tab and its dialogs read as fields: the surface with a 1 px outline of the text
+   colour at 35 % (the divider's 12 % was barely visible), both themes. Low weight on purpose: hover, the keyboard's
+   accent focus, the error's red and the borderless sort selects all keep their own rules. */
+:where(.wiz, .cal-tab, dialog.cal-dialog) :where(input, select, textarea):not([type="checkbox"], [type="radio"]) {
+  background-color: var(--panel-surface); border: 1px solid color-mix(in srgb, var(--primary-text-color, #182b37) 35%, transparent); }
+.input-suffix { display: flex; align-items: center; gap: 8px; }
+.wiz-precision { margin: 0; font-size: 13px; }
+.wiz-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.wiz-table th, .wiz-table td { padding: 8px 10px; text-align: start; border-bottom: 1px solid var(--panel-border); }
+.wiz-table thead th { background: var(--panel-surface-2); font-weight: 600; }
+.wiz-table tbody th { font-weight: 400; }
+.wiz-table tbody td { font-weight: 600; }
+.wiz-steps ul strong, .wiz-sheet-steps ul strong { font-weight: 600; color: var(--primary-text-color, #182b37); }
+.wiz-table s { color: var(--panel-text-2); }
+.wiz-accordion { border: 1px solid var(--panel-border); border-radius: var(--cal-btn-radius); padding: 0 14px; }
+.wiz-accordion summary { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 46px; cursor: pointer; list-style: none; font-weight: 500; }
+.wiz-accordion summary::-webkit-details-marker { display: none; }
+.wiz-accordion summary ha-icon { transition: transform var(--panel-ease); }
+.wiz-accordion[open] summary ha-icon { transform: rotate(180deg); }
+/* G2-3: the slats explanation, right after its question and before the answers. */
+.wiz-help { margin: -6px 0 6px; }
+.wiz-accordion > p, .wiz-accordion > table, .wiz-accordion > pre { margin: 0 0 12px; }
+.wiz-code { padding: 10px 12px; border-radius: var(--cal-btn-radius); background: var(--panel-surface-2); font-size: 12px; overflow-x: auto; }
+.wiz-profile-block { display: grid; gap: 10px; padding: 14px 16px; border-radius: var(--cal-btn-radius); background: var(--panel-surface-2); border: 1px solid var(--panel-border); }
+.wiz-profile-block p { margin: 0; }
+/* N-05: the name field keeps its 420 px; the switch's label takes the block's width (no early wrap). */
+.wiz-profile-block label:not(.wiz-switch) { max-width: 420px; }
+.wiz-switch { display: flex !important; align-items: center; gap: 10px; font-size: 14px; color: var(--primary-text-color, #182b37); cursor: pointer; }
+/* Track 36×20, thumb 16 with 2 px all round, in both states: no border from the panel's input style, which pushed the
+   thumb 1 px down and right. */
+.wiz-switch input { appearance: none; -webkit-appearance: none; box-sizing: border-box; width: 36px; height: 20px; min-height: 0; margin: 0; padding: 0; border: 0;
+  border-radius: 999px; background: var(--panel-border); position: relative; flex-shrink: 0; cursor: pointer; transition: background var(--panel-ease); }
+.wiz-switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--panel-surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 25%); transition: transform var(--panel-ease); }
+.wiz-switch input:checked { background: var(--panel-accent); }
+.wiz-switch input:checked::after { transform: translateX(16px); }
+.wiz-name-line { font-size: 13px; }
+.wiz-name-input[aria-invalid="true"] { border-color: var(--panel-error); outline-color: var(--panel-error); }
+.wiz-name-error { margin: 4px 0 0; font-size: 13px; color: var(--panel-error); }
+.wiz-notices, .wiz-result-notices { display: grid; gap: 8px; }
+.wiz-notices:empty, .wiz-result-notices:empty { display: none; }
+.wiz-notice { display: block; margin: 0; }
+.wiz-notice[data-tone="warning"] { border-color: color-mix(in srgb, var(--panel-warning) 45%, transparent); background: color-mix(in srgb, var(--panel-warning) 10%, var(--panel-surface)); }
+.wiz-notice[data-tone="error"] { color: var(--panel-error); border-color: color-mix(in srgb, var(--panel-error) 40%, transparent); background: color-mix(in srgb, var(--panel-error) 8%, transparent); }
+/* R-1 (Figma «R · Breakpoint», Wizard): the actions column 24 px inside, its buttons 44 px high, 12 px apart. */
+.wiz-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-content: start; padding: 24px; background: var(--wiz-side); }
+.wiz-action { width: 100%; min-height: 44px; border-radius: var(--cal-btn-radius); font-size: 15px; }
+/* D7: a label too long for a narrow column takes two even lines inside the pill, never one word alone. */
+.wiz-action, .wiz-take { padding-block: 8px; line-height: 1.2; text-wrap: balance; }
+/* D18: in a wide bottom bar (phone in portrait from 560 px, the column in the page) the actions keep 480 px, centred. */
+.wiz-actions { container: wizbar / inline-size; }
+/* D-22: a red Stop alone in the bar is centred too (the shell's `button.danger` sets it to the start). */
+@container wizbar (min-width: 560px) { .wiz-actions > *, .wiz-actions > button.danger { box-sizing: border-box; width: 100%; max-width: 480px; justify-self: center; } }
+/* G2-10: «Stopping…» in the place of ①/② while the backend waits for the actuator's stop. */
+.wiz-action.status { display: flex; align-items: center; justify-content: center; gap: 10px; box-sizing: border-box; margin: 0; padding: 0 16px;
+  border: 1px dashed var(--panel-border); color: var(--panel-text-2); font-weight: 500; }
+/* U-9: a state in place of Stop (the cover has stopped): plain, no spinner, no dashed box. */
+.wiz-action.status.is-still { border-style: solid; border-color: transparent; background: transparent; font-weight: 400; }
+/* L-51: a state line (the cover has stopped, a run settling, a preview where nothing moves, «Stopping…») is a caption:
+   secondary size and colour, the whole width of the column or bar, centred, wrapping only when it must. */
+.wiz-actions .wiz-action.status { width: 100%; max-width: none; min-height: 0; padding: 6px 0; font-size: 13px; line-height: 18px; text-align: center; }
+.wiz-actions .wiz-action.status:not(.is-still) { min-height: 44px; padding-inline: 12px; }
+.wiz-spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--panel-accent) 25%, transparent);
+  border-top-color: var(--panel-accent); animation: wiz-spin 900ms linear infinite; }
+@keyframes wiz-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .wiz-spinner { animation: none; border-color: var(--panel-accent); } }
+/* Q-29's look (the accent at 38 %) is now the passing disabled state only (`is-settling`, D-13 below). */
+/* D-13 (decided 8 Oct): two disabled primaries. Off until the user acts (nothing chosen yet, a form to fill, a session to
+   finish) is neutral like Home Assistant's, the text colour at 12 % with its label at 45 %, in both themes. Off only for
+   a moment, enabling by itself (`is-settling`: the hold after a change, a request, the motor starting or settling)
+   keeps Q-29's light primary, so the change to enabled is quiet. */
+:is(.wiz-action.primary, button.primary):disabled, :is(.wiz-action.primary, button.primary):disabled:hover {
+  background: color-mix(in srgb, var(--primary-text-color, #182b37) 12%, var(--panel-surface)); border-color: transparent;
+  color: color-mix(in srgb, var(--primary-text-color, #182b37) 45%, transparent); box-shadow: none; opacity: 1; cursor: not-allowed; }
+:is(.wiz-action.primary, button.primary).is-settling:disabled, :is(.wiz-action.primary, button.primary).is-settling:disabled:hover {
+  background: color-mix(in srgb, var(--panel-accent) 38%, var(--panel-surface)); border-color: transparent;
+  color: color-mix(in srgb, var(--panel-accent) 40%, var(--primary-text-color, #182b37)); box-shadow: none; opacity: 1; cursor: not-allowed; }
+/* Z-7: on a dark theme the passing state read as an enabled tonal button: there it is a faint accent tint with the
+   neutral disabled label, clearly off beside an enabled primary and close to the neutral one. */
+[data-theme="dark"] :is(.wiz-action.primary, button.primary).is-settling:disabled, [data-theme="dark"] :is(.wiz-action.primary, button.primary).is-settling:disabled:hover {
+  background: color-mix(in srgb, var(--panel-accent) 14%, var(--panel-surface)); color: color-mix(in srgb, var(--primary-text-color, #fff) 45%, transparent); }
+.wiz-action.secondary { border-color: var(--panel-accent); color: var(--panel-accent); background: transparent; }
+/* L-47: outlined actions answer the pointer as the primary does: the accent at 8 % under the pointer, 12 % pressed. */
+@media (hover: hover) { .wiz-action.secondary:hover:not(:disabled) { background: color-mix(in srgb, var(--panel-accent) 8%, transparent); } }
+.wiz-action.secondary:active:not(:disabled) { background: color-mix(in srgb, var(--panel-accent) 12%, transparent); }
+/* L-47 (revised, HANDOFF §9.122) and L-95b: red is only for emergencies and abandoning a process. Abandoning is outlined,
+   red text and border («Annulla la misurazione», «Esci senza salvare», «Abbandona la calibrazione»); the emergency
+   («Ferma la tapparella») is filled, in every layout (the L-95 block at the end of the sheet). */
+.wiz-action.stop, .wiz-action.danger-outline { min-height: 44px; border: 1px solid var(--panel-error); color: var(--panel-error); background: transparent; box-shadow: none; }
+.wiz-action.link { min-height: 44px; border: 0; background: transparent; box-shadow: none; color: var(--panel-accent); }
+/* L-116: the emergency Stop is the last of the actions (outlined ways out may follow), always drawn in a bar with the
+   ①/② pair, never next to a timing confirm, in every layout (phone bar, landscape column, desktop column).
+   L-116b/c: the space before it is 85 % of an action's height (44 px: about 37 px), a separation and not the bar's
+   ordinary 12 px, with a hairline in its middle. */
+.wiz-actions { --wiz-action-height: 44px; --cal-stop-gap: calc(0.85 * var(--wiz-action-height)); }
+/* L-119b: Stop lives in a slot of its own, the action's height whatever it holds: «Ferma la tapparella» or, once the run
+   is over, «La corsa è finita: la tapparella è ferma» (centred, the state's colour). The gap and the hairline belong to
+   the slot, so the swap moves nothing in the bar. */
+.wiz-actions > .wiz-stop-slot { position: relative; box-sizing: border-box; display: grid; height: var(--wiz-action-height); min-width: 0; }
+.wiz-actions > .wiz-stop-slot:not(:first-child) { margin-top: calc(var(--cal-stop-gap) - 12px); }
+.wiz-actions > .wiz-stop-slot:not(:first-child)::before { content: ""; position: absolute; inset-inline: 0; top: calc(var(--cal-stop-gap) / -2 - 0.5px); height: 1px;
+  background: var(--panel-border); pointer-events: none; }
+.wiz-actions > .wiz-stop-slot > .wiz-action { box-sizing: border-box; width: 100%; max-width: none; height: 100%; min-height: 0; margin: 0; }
+.wiz-actions > .wiz-stop-slot > .wiz-action.status { padding-block: 0; }
+/* L-119b: «Riprendi» after a lost connection sits in its notice, in the content, not in the bar. */
+.wiz-notice-action { min-height: 0; margin-inline-start: 4px; padding: 0; border: 0; background: none; box-shadow: none; color: inherit; font: inherit;
+  font-weight: 600; text-decoration: underline; cursor: pointer; }
+@media (hover: hover) { :is(.wiz-action.stop, .wiz-action.danger-outline, .wiz-action.danger):hover:not(:disabled) { background: color-mix(in srgb, var(--panel-error) 8%, transparent); } }
+:is(.wiz-action.stop, .wiz-action.danger-outline, .wiz-action.danger):active:not(:disabled) { background: color-mix(in srgb, var(--panel-error) 12%, transparent); }
+@media (hover: hover) { .wiz-action.link:hover:not(:disabled) { background: transparent; text-decoration: underline; color: color-mix(in srgb, var(--panel-accent) 80%, #000); } }
+.wiz-action.danger { border: 1px solid var(--panel-error); background: transparent; color: var(--panel-error); }
+/* L-57: no accent on a red button: its border stays red under the pointer, pressed and focused (the shell's
+   `button:hover` would turn it blue), and its keyboard ring is red too. */
+:is(.wiz-discard, .wiz-leave, .wiz-action.stop, .wiz-action.danger-outline, .wiz-action.danger, .cal-abort-confirm):is(:hover, :active, :focus, :focus-visible) { border-color: var(--panel-error); }
+@media (hover: hover) { :is(.wiz-discard, .wiz-leave):hover { background: color-mix(in srgb, var(--panel-error) 8%, transparent); } }
+:is(.wiz-discard, .wiz-leave, .cal-abort-confirm):active { background: color-mix(in srgb, var(--panel-error) 12%, transparent); }
+:is(.wiz-discard, .wiz-leave, .wiz-action.stop, .wiz-action.danger-outline, .wiz-action.danger, .cal-abort-confirm):focus-visible { outline-color: var(--panel-error); }
+/* L-47: a blue text link among the actions (a way on that is neither the primary nor red). */
+.wiz-action.text { min-height: 44px; border: 0; background: transparent; box-shadow: none; color: var(--panel-accent); }
+@media (hover: hover) { :is(.wiz-action.text, .wiz-link, .wiz-more-toggle, .cal-disclosure-toggle):hover:not(:disabled) { background: transparent; text-decoration: underline; color: color-mix(in srgb, var(--panel-accent) 80%, #000); } }
+/* Dark pass (L-60…L-65): on a dark theme a link under the pointer turns lighter, not darker (darker sank into the
+   background). */
+@media (hover: hover) { [data-theme="dark"] :is(.wiz-action.link, .wiz-action.text, .wiz-link, .wiz-more-toggle, .cal-disclosure-toggle):hover:not(:disabled) { color: color-mix(in srgb, var(--panel-accent) 80%, #fff); } }
+/* S-07: plain text at the top of the actions column, then Take control (outlined while the owner is present). */
+.wiz-readonly { display: grid; gap: 12px; }
+/* L-58: the reader's note fills the width of the column or bar (the Nota «Avviso»). */
+.wiz-readonly .wiz-readonly-note { width: 100%; box-sizing: border-box; }
+.wiz-readonly p { margin: 0; font-size: 14px; line-height: 1.5; }
+.wiz-take { width: 100%; min-height: 44px; border-radius: var(--cal-btn-radius); font-size: 15px; }
+/* S-01…S-05: the motor's state as plain lines under the text. */
+.wiz-status p { margin: 0; line-height: 1.55; }
+.wiz-sheet, .wiz-dialog { position: fixed; inset: 0; z-index: 10; display: flex; background: rgb(0 0 0 / 40%); }
+.wiz-sheet { align-items: center; justify-content: center; padding: 20px; }
+/* R-3 (Figma «R · Breakpoint», «Passi»): a 360 px card centred on a desktop, its «Passi» title and ✕ on the surface,
+   the steps on the side colour; a sheet from the bottom on a phone; a 320 px side panel from the right in landscape. */
+.wiz-sheet-card { position: relative; box-sizing: border-box; width: min(100%, 360px); max-height: calc(100dvh - 40px); overflow: auto; padding: 0;
+  border-radius: 18px; background: var(--wiz-side); box-shadow: var(--panel-shadow-hover); }
+.wiz-sheet-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 52px;
+  padding: 4px 8px 4px 20px; background: var(--panel-surface); }
+.wiz-sheet-title { margin: 0; font-size: 18px; font-weight: 600; }
+.wiz-sheet-steps { padding: 8px 20px 24px; }
+.wiz-sheet-close { flex: none; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; justify-content: center; border: 0; background: transparent; }
+.wiz-sheet-close ha-icon { --mdc-icon-size: 24px; }
+/* Sheets slide up from the bottom when shown and down when they leave (`is-leaving`, removed by the wizard after 220 ms). */
+@keyframes wiz-sheet-in { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes wiz-sheet-out { from { transform: none; } to { transform: translateY(100%); } }
+@keyframes wiz-panel-in { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes wiz-panel-out { from { transform: none; } to { transform: translateX(100%); } }
+/* M5-4: full screen (a phone, or a landscape phone) the wizard, the sequence and the details page slide up on open and
+   down on close. */
+@media (max-width: 719px), (max-height: 499px) and (orientation: landscape) {
+  .cal-tab > .wiz, .cal-page { animation: wiz-sheet-in 220ms cubic-bezier(.2, 0, 0, 1); }
+  .cal-tab > .wiz.is-leaving, .cal-page.is-leaving { animation: wiz-sheet-out 220ms cubic-bezier(.3, 0, 1, 1) forwards; }
+}
+@media (prefers-reduced-motion: reduce) { .cal-tab > .wiz, .cal-page { animation: none !important; } }
+@keyframes wiz-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes wiz-scrim-out { from { opacity: 1; } to { opacity: 0; } }
+.wiz-sheet:not([hidden]) { animation: wiz-scrim-in 220ms ease-out; }
+.wiz-sheet:not([hidden]) .wiz-sheet-card { animation: dialog-in 200ms cubic-bezier(.2, .7, .2, 1); }
+.wiz-sheet.is-leaving { animation: wiz-scrim-out 220ms ease-in forwards; }
+@media (prefers-reduced-motion: reduce) { .wiz-sheet, .wiz-sheet .wiz-sheet-card { animation: none !important; } }
+.wiz-dialog { align-items: center; justify-content: center; padding: 20px; }
+/* R-5 (Figma «R · Breakpoint», «Dialoghi»): centred cards 560 px wide, 24 px inside, the buttons on the right; as
+   sheets (phone, landscape) a handle on top, the title with ✕, the buttons stacked with the primary first (phone) or
+   side by side (landscape, the sheet 560 px wide and centred). */
+.wiz-dialog-card { box-sizing: border-box; width: min(100%, 560px); padding: 24px; border-radius: 18px; background: var(--panel-surface); box-shadow: var(--panel-shadow-hover); }
+.wiz-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; }
+.wiz-dialog-card h4 { margin: 0; font-size: 18px; }
+.wiz-dialog-x, .cal-dialog-x { display: inline-flex; flex: none; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; margin: -10px -10px -10px 0;
+  justify-content: center; border: 0; background: transparent; color: var(--panel-text-2); }
+.wiz-dialog-x ha-icon, .cal-dialog-x ha-icon { --mdc-icon-size: 24px; }
+.wiz-dialog-x[hidden], .cal-dialog-x[hidden] { display: none; }
+/* N-04: centred too, the tab's dialogs keep their title row and buttons in view: only the body scrolls, within the
+   window less 48 px, with the bars' fade above the buttons while it goes on. */
+dialog.cal-dialog[open] { display: flex; flex-direction: column; max-height: calc(100vh - 48px); max-height: calc(100dvh - 48px); overflow: hidden; }
+dialog.cal-dialog .dialog-head, dialog.cal-dialog .dialog-foot { flex: none; }
+dialog.cal-dialog .cal-dialog-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+dialog.cal-dialog .dialog-foot { position: relative; background: var(--panel-surface); }
+dialog.cal-dialog .dialog-foot::before { content: ""; position: absolute; inset-inline: 0; bottom: calc(100% - 1px); height: 40px; pointer-events: none;
+  background: linear-gradient(to top, var(--panel-surface), transparent); opacity: 0; transition: opacity var(--panel-ease); }
+dialog.cal-dialog .dialog-foot.has-more::before { opacity: 1; }
+dialog.cal-dialog > * { padding-inline: 24px; }
+dialog.cal-dialog .dialog-icon { display: none; }
+/* L-94: the title band as much above as below (it was 24 px above, 12 px below: R-5's card inset on a band). */
+dialog.cal-dialog .dialog-head { justify-content: space-between; padding-block: 18px; }
+.wiz-dialog-card .actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: end; margin-top: 16px; }
+/* "Calibration in progress": wide enough on desktop for its three buttons on one row (Figma S-08b, 592 px). */
+.wiz-nav-dialog .wiz-dialog-card { width: min(100%, 592px); box-sizing: border-box; }
+@media (min-width: 720px) and (min-height: 500px) { .wiz-nav-dialog .wiz-dialog-card .actions { flex-wrap: nowrap; } }
+/* S-08: "Exit without saving" as red text beside the primary, both on the right (R-5, Figma «Dialoghi»). */
+.wiz-leave { color: var(--panel-error); border: 1px solid var(--panel-error); background: transparent; box-shadow: none; }
+@media (hover: hover) { .wiz-leave:hover { background: color-mix(in srgb, var(--panel-error) 8%, transparent); } }
+.wiz-leave:active { background: color-mix(in srgb, var(--panel-error) 12%, transparent); }
+/* Drawings of the steps: Figma size, never wider than the column. */
+.wiz-illustration { display: block; max-width: 100%; height: auto; margin: 0; }
+/* M2-7: A-07 has a drawing of its own on phones; only one of the two is shown. A landscape phone keeps the wide one. */
+.wiz-illustration.wiz-ill-phone { display: none; }
+@media (max-width: 719px) and (min-height: 500px), (max-width: 719px) and (orientation: portrait) {
+  .wiz-illustration.wiz-ill-wide { display: none; }
+  .wiz-illustration.wiz-ill-phone { display: block; }
+}
+/* The drawings' palette (Figma "v2 panel" variables): light, and dark with the Home Assistant theme. */
+.wiz { --wiz-ill-surface: #FFFFFF; --wiz-ill-cover-skeleton: #FFFFFF; --wiz-ill-text-on-accent: #FFFFFF; --wiz-ill-cover-border: #2E2E2E;
+  --wiz-ill-cover-slats: #BDBDBD; --wiz-ill-cover-last-slat: #939393; --wiz-ill-text: #141414; --wiz-ill-text-2: #5E5E5E; --wiz-ill-accent: #009AC7; }
+.wiz[data-theme="dark"] { --wiz-ill-surface: #1C1C1C; --wiz-ill-cover-skeleton: #242424; --wiz-ill-text-on-accent: #FFFFFF; --wiz-ill-cover-border: #606060;
+  --wiz-ill-cover-slats: #6D6D6D; --wiz-ill-cover-last-slat: #535353; --wiz-ill-text: #E1E1E1; --wiz-ill-text-2: #9B9B9B; --wiz-ill-accent: #009AC7; }
+/* Responsive map, the wizard's layouts (the sequence's too), by the tab's own width: from 1000 px steps | content |
+   actions; from 700 px the steps strip on top (PASSI) and content | actions; below 700 px one column in the page, the
+   actions a bar held at the bottom of the window (sticky, D6); below 720 px of window full screen (phone). The actions
+   column is 30 % of the wizard, 240 to 320 px. */
+@media (min-width: 720px) {
+  @container caltab (min-width: 700px) and (max-width: 999px) {
+    .wiz-columns { grid-template-columns: minmax(0, 1fr) clamp(240px, 30%, 320px); min-height: 420px; }
+    .wiz-actions { border-inline-start: 1px solid var(--panel-border); }
+  }
+  @container caltab (max-width: 699px) {
+    /* Clipped rather than hidden: the wizard is then no scroll box of its own. U-1: Home Assistant scrolls the page on
+       <html> while the panel grows, so a sticky bar never sticks: the script docks it to the window (`is-docked`). */
+    .wiz, .wiz.cal-batch-wiz { overflow: clip; --wiz-single: 1; }
+    .wiz.is-docked > .wiz-frame > .wiz-columns { padding-bottom: var(--dock-height); }
+    .wiz.is-docked > .wiz-frame > .wiz-columns > .wiz-actions { position: fixed; z-index: 7; inset-inline-start: var(--dock-left); bottom: 0;
+      width: var(--dock-width); box-sizing: border-box; border-radius: 0; box-shadow: 0 -8px 24px -16px rgb(0 0 0 / 40%); }
+    .wiz-actions { position: sticky; bottom: 0; z-index: 2; padding: 12px 16px; border-top: 1px solid var(--panel-border);
+      border-radius: 0 0 var(--panel-radius) var(--panel-radius); background: var(--panel-surface); }
+    .cal-batch-sticky { position: static; }
+    .wiz-more-toggle { display: inline-flex; }
+    .wiz-more:not(.is-open) > .wiz-more-list { display: none; }
+    .wiz-more-list { gap: 0; justify-items: center; }
+    .wiz-more-list > .wiz-action { min-height: 44px; height: auto; border: 0; background: transparent; box-shadow: none; color: var(--panel-accent); font-weight: 500; }
+    /* R-2: the text scrolls under the bar through a 40 px fade of the surface; D-43: only while it does, the bar docked
+       over the wizard, not when the bar sits at the end of the content. */
+    .wiz-actions::before { content: ""; position: absolute; inset-inline: 0; bottom: calc(100% + 1px); height: 40px; pointer-events: none;
+      background: linear-gradient(to top, var(--panel-surface), transparent); opacity: 0; }
+    .wiz.is-docked > .wiz-frame > .wiz-columns > .wiz-actions::before { opacity: 1; }
+  }
+}
+@container caltab (max-width: 999px) {
+  .wiz-compact { display: flex; align-items: center; gap: 10px; padding: 8px 16px; background: var(--panel-surface-2); border-bottom: 1px solid var(--panel-border); font-size: 13px; }
+  .wiz-compact-line { flex: 1; }
+  .wiz-dot { width: 14px; height: 14px; border-radius: 50%; box-sizing: border-box; }
+  .wiz-steps-button { min-height: 32px; padding: 4px 12px; border-radius: var(--cal-btn-radius); border-color: var(--panel-accent); color: var(--panel-accent); font-weight: 600; text-transform: uppercase; font-size: 12px; }
+  .wiz-steps { display: none; }
+}
+@container caltab (min-width: 1000px) {
+  .wiz-columns { grid-template-columns: 240px minmax(0, 1fr) clamp(240px, 30%, 320px); min-height: 420px; }
+  /* 1 px dividers between the side columns and the centre (none on the phone, where the columns stack). */
+  .wiz-steps { border-inline-end: 1px solid var(--panel-border); }
+  .wiz-actions { border-inline-start: 1px solid var(--panel-border); }
+  .wiz-sheet { display: none !important; }
+}
+@media (max-width: 719px) {
+  /* The whole window, even when an ancestor of Home Assistant holds a transform (fixed then follows it). */
+  .wiz { position: fixed; inset: 0; z-index: 8; display: flex; flex-direction: column; height: 100vh; height: 100dvh; border: 0; border-radius: 0; }
+  .wiz-frame { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+  .wiz-head { padding: calc(12px + var(--cal-safe-top)) calc(16px + var(--cal-safe-right)) 12px calc(16px + var(--cal-safe-left)); }
+  .wiz-compact { padding-inline: calc(16px + var(--cal-safe-left)) calc(16px + var(--cal-safe-right)); }
+  .wiz-discard, .wiz-unfollow { display: none; }
+  .wiz-x { display: inline-flex; }
+  /* M2-1: every ✕ of a title bar or sheet is a 44 px touch target with a 24 px icon. */
+  .wiz-x, .wiz-sheet-close, .cal-page-close { width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; justify-content: center; }
+  .wiz-x ha-icon, .wiz-sheet-close ha-icon, .cal-page-close ha-icon { --mdc-icon-size: 24px; }
+  /* L-92: the back arrow is the ✕'s twin: the same 44 px target, 24 px glyph and colour (-10 px above and below keep
+     the header's height), each glyph 16 px from its edge. L-102: the arrow, the ✕ and the title block all centred on
+     the band's height (below the status bar's safe area). */
+  .wiz-head { align-items: center; }
+  .wiz-cover { line-height: 24px; }
+  .wiz-back { display: inline-flex; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; justify-content: center; align-items: center;
+    margin: -10px 0 -10px -10px; }
+  .wiz-back ha-icon { --mdc-icon-size: 24px; }
+  .wiz-x { align-items: center; margin: -10px -10px -10px 0; }
+  .wiz-columns { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  /* The content scrolls between the phase strip and the action bar: min-height 0 lets it shrink (without it the column
+     grew past the bar and showed a scrollbar that scrolled nothing). */
+  .wiz-main { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+    padding: 16px calc(16px + var(--cal-safe-right)) 16px calc(16px + var(--cal-safe-left));
+    display: flex; flex-direction: column; }
+  /* A column of blocks that keep their own height: in the scrolling grid a scaled drawing kept a shorter row and the
+     text under it slid beneath the drawing. */
+  .wiz-main > * { flex-shrink: 0; min-width: 0; }
+  /* L-84: the bar on its own surface, the steps strip's at the top, in both themes. */
+  .wiz-actions { padding: 12px calc(16px + var(--cal-safe-right)) calc(12px + var(--cal-safe-bottom)) calc(16px + var(--cal-safe-left)); border-top: 1px solid var(--panel-border); background: var(--panel-surface-2); }
+  /* A fade above the bar while the content goes on below it (`has-more`, set from the content's scroll). */
+  .wiz-actions { position: relative; }
+  .wiz-actions::before { content: ""; position: absolute; inset-inline: 0; bottom: calc(100% + 1px); height: 40px; pointer-events: none;
+    background: linear-gradient(to top, var(--panel-surface), transparent); opacity: 0; transition: opacity var(--panel-ease); }
+  .wiz-actions.has-more::before { opacity: 1; }
+  /* The actions stack, one per line, as in every phone mockup: ① and ② are never side by side. */
+  /* Stop (and the red links) as plain red text: no tint left by a tap (hover tints only with a real pointer), the bar's height. */
+  .wiz-action.stop, .wiz-action.link { min-height: 44px; background: transparent; }
+  .wiz-more-toggle { display: inline-flex; }
+  .wiz-more:not(.is-open) > .wiz-more-list { display: none; }
+  .wiz-more-list { gap: 0; justify-items: center; }
+  .wiz-more-list > .wiz-action { min-height: 44px; height: auto; border: 0; background: transparent; box-shadow: none; color: var(--panel-accent); font-weight: 500; }
+}
+/* The wizard's sheets: the Steps sheet and the confirmations (S-08, Calibration in progress) from the bottom on a phone or a
+   short window (S-08 M); centred cards otherwise. */
+@media (max-width: 719px), (max-height: 499px) {
+  .wiz-sheet { align-items: end; padding: 0; }
+  .wiz-sheet .wiz-sheet-card { width: 100%; border-radius: 18px 18px 0 0; box-shadow: none; }
+  .wiz-sheet .wiz-sheet-card { padding: 0 var(--cal-safe-right) var(--cal-safe-bottom) var(--cal-safe-left); }
+  /* Full width, rounded top, buttons stacked full width with the primary first, over a darker blurred scrim; they slide
+     up and down. */
+  /* M2-6: the wizard's sheets keep the scroll to themselves. */
+  .wiz-dialog, .wiz-sheet { overscroll-behavior: contain; }
+  .wiz-dialog .wiz-dialog-card, .wiz-sheet .wiz-sheet-card { max-height: 90vh; max-height: 90dvh; overflow-y: auto; overscroll-behavior: contain; }
+  .wiz-dialog, .wiz-sheet { background: rgb(0 0 0 / 55%); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  .wiz-dialog { align-items: end; padding: 0; }
+  .wiz-dialog .wiz-dialog-card { width: 100%; max-width: none; box-sizing: border-box; border-radius: 18px 18px 0 0;
+    padding: 22px calc(16px + var(--cal-safe-right)) calc(16px + var(--cal-safe-bottom)) calc(16px + var(--cal-safe-left)); }
+  .wiz-dialog .actions { flex-direction: column-reverse; align-items: stretch; flex-wrap: nowrap; }
+  .wiz-dialog .actions button { width: 100%; justify-content: center; }
+  .wiz-dialog .wiz-leave { margin: 0; }
+  .wiz-dialog:not([hidden]) { animation: wiz-scrim-in 220ms ease-out; }
+  .wiz-dialog:not([hidden]) .wiz-dialog-card { animation: wiz-sheet-in 220ms cubic-bezier(.2, 0, 0, 1); }
+  .wiz-dialog.is-leaving { animation: wiz-scrim-out 220ms ease-in forwards; }
+  .wiz-dialog.is-leaving .wiz-dialog-card { animation: wiz-sheet-out 220ms cubic-bezier(.3, 0, 1, 1) forwards; }
+  .wiz-sheet:not([hidden]) .wiz-sheet-card { animation: wiz-sheet-in 220ms cubic-bezier(.2, 0, 0, 1); }
+  .wiz-sheet.is-leaving .wiz-sheet-card { animation: wiz-sheet-out 220ms cubic-bezier(.3, 0, 1, 1) forwards; }
+}
+/* A landscape phone: the sheets take the whole height but 8 px above, their body scrolls and the buttons sit side by
+   side, so the content keeps its room (D14). */
+@media (max-height: 499px) and (orientation: landscape) {
+  dialog.cal-dialog { max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px); }
+  dialog.cal-dialog { width: min(100%, 560px); margin: auto auto 0; }
+  /* D-01: the maintainer's view in a landscape sheet keeps its body: its Stop/Cancel bar and buttons are compact and
+     the title row is tighter (the sheet's own «Chiudi» is already left out, D-18). */
+  dialog.cal-dialog:has(.calibration-safety-actions) .dialog-head { padding-block: 8px; }
+  .wiz-dialog { justify-content: center; }
+  .wiz-dialog .wiz-dialog-card { width: min(100%, 560px); padding: 24px 20px calc(16px + var(--cal-safe-bottom)); }
+  /* The 560 px sheet is centred, clear of the side safe areas: its own 20 px inside. */
+  dialog.cal-dialog > * { padding-inline: 20px; }
+  .wiz-dialog .wiz-dialog-card, .wiz-sheet .wiz-sheet-card { max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px); }
+  /* D-30: side by side while their labels fit on one line each; a label that does not fit moves its button to a row of
+     its own rather than wrap («Continua la calibrazione», «Conferma presa di controllo»). */
+  dialog.cal-dialog .dialog-foot, .wiz-dialog .actions { flex-direction: row; flex-wrap: wrap; justify-content: end; }
+  dialog.cal-dialog .dialog-foot button, .wiz-dialog .actions button { flex: 1 1 auto; width: auto; min-width: 0; white-space: nowrap; }
+}
+/* L-74/L-80/L-82: the notes of the tab, the wizard and their dialogs (`.cal-note` in every tone, the tab's notices:
+   in progress, done, error, the wizard's). Every one has a bar on the left, 2 px, in its tone's solid colour
+   (`--note-tone`), no radius and no icon.
+   Light theme (the default): info and success are quotes (no fill, the bar only) with their text in their colour, a
+   clearly blue info text; warning and error keep their box (tinted fill, a border all round in their tint, square).
+   Dark theme: every tone is a quote; text colours as before (the lighter tints above).
+   The weight of `.cal-tab .notice` (through :is) and the place after every tone's own rule let these win. */
+:is(.cal-note, .cal-tab .notice) { --note-tone: var(--panel-accent); background: none; border: 0 solid transparent;
+  border-inline-start: 2px solid var(--note-tone); border-radius: 0; padding: 4px 0 4px 12px; box-shadow: none; }
+:is(.cal-note.is-success, .cal-tab .notice.cal-tab-done, .cal-tab .notice[data-tone="success"]) { --note-tone: var(--panel-success); }
+:is(.cal-note.is-warning, .cal-tab .notice.cal-tab-busy, .cal-tab .notice[data-tone="warning"]) { --note-tone: var(--panel-warning); }
+:is(.cal-tab .notice.error, .cal-tab .notice[data-tone="error"]) { --note-tone: var(--panel-error); }
+.cal-tab .notice ha-icon { display: none; }
+/* Light (L-89): an info note's text in the accent itself. L-88: where the text has the tone's
+   colour (info, success, error) the bar takes exactly the text's colour, one token for both; a warning's text is its
+   colour darkened (L-90, below), its bar the solid yellow. */
+.cal-note:not(.is-warning, .is-success) { color: var(--panel-accent); border-inline-start-color: var(--panel-accent); }
+/* L-90: on the light theme a warning's text is its own colour darkened to read on its tint; the bar stays solid. */
+:is(.cal-note.is-warning, .cal-tab .notice.cal-tab-busy, .cal-tab .notice[data-tone="warning"]) { color: color-mix(in srgb, var(--panel-warning) 60%, #000); }
+:is(.cal-note.is-success, .cal-tab .notice.cal-tab-done, .cal-tab .notice[data-tone="success"]) { border-inline-start-color: var(--panel-success); }
+/* Light: warning and error notes in their box, as before L-74 but square, with the 2 px bar. */
+.cal-note.is-warning { background: color-mix(in srgb, var(--panel-warning) 8%, var(--panel-surface));
+  border: 1px solid color-mix(in srgb, var(--panel-warning) 75%, transparent); border-inline-start: 2px solid var(--note-tone); padding: 8px 12px; }
+.cal-tab .notice.cal-tab-busy { background: color-mix(in srgb, var(--panel-warning) 12%, var(--panel-surface));
+  border: 1px solid color-mix(in srgb, var(--panel-warning) 45%, transparent); border-inline-start: 2px solid var(--note-tone); padding: 8px 12px; }
+.cal-tab .notice[data-tone="warning"] { background: color-mix(in srgb, var(--panel-warning) 10%, var(--panel-surface));
+  border: 1px solid color-mix(in srgb, var(--panel-warning) 45%, transparent); border-inline-start: 2px solid var(--note-tone); padding: 8px 12px; }
+.cal-tab .notice:is(.error, [data-tone="error"]) { background: color-mix(in srgb, var(--panel-error) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--panel-error) 40%, transparent); border-inline-start: 2px solid var(--note-tone); padding: 8px 12px; }
+/* Dark: every tone a quote, its text as before. */
+[data-theme="dark"] :is(.cal-note.is-warning, .cal-tab .notice.cal-tab-busy, .cal-tab .notice[data-tone="warning"], .cal-tab .notice.error, .cal-tab .notice[data-tone="error"]) {
+  background: none; border: 0 solid transparent; border-inline-start: 2px solid var(--note-tone); padding: 4px 0 4px 12px; }
+[data-theme="dark"] .cal-note:not(.is-warning, .is-success) { color: color-mix(in srgb, var(--panel-accent) 70%, var(--primary-text-color, #fff)); border-inline-start-color: var(--note-tone); }
+[data-theme="dark"] :is(.cal-note.is-warning, .cal-tab .notice.cal-tab-busy, .cal-tab .notice[data-tone="warning"]) { color: color-mix(in srgb, var(--panel-warning) 70%, var(--primary-text-color, #fff)); }
+/* L-72: one corner radius for the calibration tab, the wizard and their dialogs: the shell's 8 px (`--cal-btn-radius`)
+   for notes, tiles, cards, boxes, menus, inputs, drop-downs and buttons. Chips and counts stay pills, marks and radios
+   round; the dialogs' and sheets' own frames and the list and wizard frames keep Home Assistant's card radius. */
+:is(.cal-tab, dialog.cal-dialog) :is(button, a.button, select, textarea, input):not(.cal-chip, [type="checkbox"], [type="radio"]) { border-radius: var(--cal-btn-radius); }
+/* The sort chip's invisible select keeps the chip's pill (its focus ring follows it). */
+:is(.cal-tab, dialog.cal-dialog) .cal-filterbar.is-chips .cal-filterbar-sort select { border-radius: inherit; }
+/* R-4 (Q-17): every button of the wizard, the sequence, the blocks and the dialogs has its label centred, and the
+   shell's radius through `--cal-btn-radius`. */
+.wiz-action, .wiz-take, .wiz-dialog-card .actions button, dialog.cal-dialog .dialog-foot button, .cal-block-action > button {
+  justify-content: center; text-align: center; border-radius: var(--cal-btn-radius); }
+.wiz-dialog-card .actions button, dialog.cal-dialog .dialog-foot button { min-height: 44px; }
+.wiz-action-note { margin: -4px 8px 4px; font-size: 12px; line-height: 1.4; text-align: center; }
+/* Responsive map §3.2, a landscape phone (under 500 px high, whatever its width): the wizard and the sequence full
+   screen with the tablet's layout, so the content keeps its room (D11) and Stop stays in view (D12). A 44 px header with
+   the subtitle beside the title, the steps strip, the content scrolling on the left and the actions in a column of their
+   own on the right (240 to 280 px), scrolling by themselves, Stop at their top; no stepper. */
+@media (max-height: 499px) and (orientation: landscape) {
+  .wiz { position: fixed; inset: 0; z-index: 8; display: flex; flex-direction: column; height: 100vh; height: 100dvh; border: 0; border-radius: 0; overflow: hidden; }
+  .wiz-frame { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+  .wiz-head { box-sizing: border-box; min-height: 44px; align-items: center; gap: 8px;
+    padding: var(--cal-safe-top) calc(8px + var(--cal-safe-right)) 0 calc(12px + var(--cal-safe-left)); }
+  .wiz-back { width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; justify-content: center; margin: 0 -4px 0 -4px; }
+  .wiz-back ha-icon { --mdc-icon-size: 24px; }
+  .wiz-head-text { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; column-gap: 10px; }
+  .wiz-cover { font-size: 16px; }
+  .wiz-head .muted { margin: 0; font-size: 12px; }
+  .wiz-discard, .wiz-unfollow { display: none; }
+  .wiz-x { display: inline-flex; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; justify-content: center; margin: 0; }
+  .wiz-x ha-icon { --mdc-icon-size: 24px; }
+  .wiz-steps { display: none; }
+  .wiz-compact { display: flex; align-items: center; gap: 10px; padding: 4px calc(12px + var(--cal-safe-right)) 4px calc(12px + var(--cal-safe-left));
+    background: var(--panel-surface-2); border-bottom: 1px solid var(--panel-border); font-size: 13px; }
+  .wiz-compact-line { flex: 1; }
+  .wiz-dot { width: 14px; height: 14px; border-radius: 50%; box-sizing: border-box; }
+  .wiz-steps-button { min-height: 32px; padding: 4px 12px; border-radius: var(--cal-btn-radius); border-color: var(--panel-accent); color: var(--panel-accent); font-weight: 600; text-transform: uppercase; font-size: 12px; }
+  .wiz-columns { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) calc(clamp(240px, 35%, 280px) + var(--cal-safe-right));
+    grid-template-rows: minmax(0, 1fr); }
+  .wiz-main { min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column;
+    padding: 12px 16px calc(12px + var(--cal-safe-bottom)) calc(16px + var(--cal-safe-left)); }
+  .wiz-main > * { flex-shrink: 0; min-width: 0; }
+  .wiz-actions { position: static; min-height: 0; overflow-y: auto; overscroll-behavior: contain; align-content: start; border-top: 0; border-radius: 0;
+    border-inline-start: 1px solid var(--panel-border); background: var(--wiz-side);
+    padding: 12px calc(16px + var(--cal-safe-right)) calc(12px + var(--cal-safe-bottom)) 16px; }
+  /* Z-9: a two-line label grows its button (54 px, as at 796/700) instead of squeezing into 44 px. */
+  .wiz-actions { grid-auto-rows: max-content; }
+  .wiz-actions > .wiz-action { height: auto; flex: none; }
+  .wiz-actions::before { display: none; }
+  /* L-1: a side column again: the other ways on stacked, no disclosure. */
+  .wiz-more-toggle { display: none; }
+  .wiz-more:not(.is-open) > .wiz-more-list { display: grid; }
+  .wiz-more-list { gap: 12px; justify-items: stretch; }
+  .wiz-more-list > .wiz-action { height: auto; border: 1px solid var(--panel-accent); background: transparent; color: var(--panel-accent); box-shadow: none; font-weight: inherit; }
+  /* R-2: the centre column fades into its bottom edge while it has more to scroll. */
+  .wiz-main::after { content: ""; flex: none; position: sticky; bottom: calc(-12px - var(--cal-safe-bottom)); height: 40px; margin-top: -40px;
+    pointer-events: none; background: linear-gradient(to top, var(--panel-surface), transparent); opacity: 0; transition: opacity var(--panel-ease); }
+  .wiz-columns:has(> .wiz-actions.has-more) > .wiz-main::after { opacity: 1; }
+  /* Z-3: Stop below the primary, as in every other layout (no longer first). */
+  /* R-3: «Passi» as a side panel from the right, full height, square corners. */
+  .wiz-sheet { align-items: stretch; justify-content: end; padding: 0; }
+  /* D-26: the panel reaches the window's right edge: its title row and steps keep clear of the safe area inside it. */
+  .wiz-sheet .wiz-sheet-card { width: calc(320px + var(--cal-safe-right)); height: 100%; max-height: none; border-radius: 0; padding: 0; }
+  .wiz-sheet .wiz-sheet-head { padding-top: 4px; padding-inline-end: calc(8px + var(--cal-safe-right)); }
+  .wiz-sheet .wiz-sheet-steps { padding-inline-end: calc(20px + var(--cal-safe-right)); }
+  .wiz-sheet:not([hidden]) .wiz-sheet-card { animation: wiz-panel-in 220ms cubic-bezier(.2, 0, 0, 1); }
+  .wiz-sheet.is-leaving .wiz-sheet-card { animation: wiz-panel-out 220ms cubic-bezier(.3, 0, 1, 1) forwards; }
+  .cal-batch-sticky { position: static; }
+}
+/* L-95 (Figma FB2Nm01ewc4nwlUfKYts4T, 937:56699, 11 Oct): the wizard's bands and buttons recoloured, light and dark, every
+   colour a theme token (Figma's flattened hex read back as token + alpha). Kept in this one block, last in the sheet. */
+.wiz { --wiz-strip: color-mix(in srgb, var(--panel-accent) 15%, var(--primary-background-color, #fafafa));
+  --wiz-bar: color-mix(in srgb, var(--panel-accent) 20%, var(--primary-background-color, #fafafa));
+  --wiz-off: var(--primary-text-color, #141414); --wiz-off-fill: 15%; --wiz-off-text: 30%; --wiz-off-line: 30%; }
+.wiz[data-theme="dark"] { --wiz-strip: color-mix(in srgb, var(--panel-accent) 20%, var(--primary-background-color, #111));
+  --wiz-bar: color-mix(in srgb, var(--panel-accent) 20%, var(--primary-background-color, #111));
+  --wiz-off: var(--text-primary-color, #fff); --wiz-off-fill: 15%; --wiz-off-text: 40%; --wiz-off-line: 30%; }
+/* The steps strip: the accent at 15 % (dark 20 %) on the page's background; a hairline under it on the dark theme only.
+   PASSI on the surface, accent outline and text. */
+.wiz-compact { background: var(--wiz-strip); border-bottom-color: transparent; }
+.wiz[data-theme="dark"] .wiz-compact { border-bottom-color: var(--panel-border); }
+.wiz-steps-button { background: var(--panel-surface); }
+/* The action bar (where it is a bar: under the content, and the landscape phone's column): the accent at 20 % on the
+   page's background, the hairline above it as before. */
+@media (min-width: 720px) { @container caltab (max-width: 699px) { .wiz-actions { background: var(--wiz-bar); } } }
+@media (max-width: 719px), (max-height: 499px) and (orientation: landscape) { .wiz-actions { background: var(--wiz-bar); } }
+/* Disabled in the wizard (D-13's «off until the user acts»): the text colour at 15 % with its label at 30 % on the light theme, the
+   on-accent white at 15 % with its label at 40 % on the dark one, over the bar's own tint; the outlined one the same
+   colour at 30 % for its outline. `is-settling` keeps its own look. */
+.wiz :is(.wiz-action.primary, button.primary):disabled:not(.is-settling), .wiz :is(.wiz-action.primary, button.primary):disabled:not(.is-settling):hover {
+  background: color-mix(in srgb, var(--wiz-off) var(--wiz-off-fill), transparent); color: color-mix(in srgb, var(--wiz-off) var(--wiz-off-text), transparent); }
+.wiz .wiz-action.secondary:disabled, .wiz .wiz-action.secondary:disabled:hover { opacity: 1; background: transparent;
+  border-color: color-mix(in srgb, var(--wiz-off) var(--wiz-off-line), transparent); color: color-mix(in srgb, var(--wiz-off) var(--wiz-off-text), transparent); }
+/* «Ferma la tapparella»: the error colour filled, on-accent text (it was outlined, L-47). */
+.wiz-action.stop { border-color: var(--panel-error); background: var(--panel-error); color: var(--text-primary-color, #fff); }
+@media (hover: hover) { .wiz-action.stop:hover:not(:disabled) { background: color-mix(in srgb, var(--panel-error) 88%, black); } }
+.wiz-action.stop:active:not(:disabled) { background: color-mix(in srgb, var(--panel-error) 80%, black); }
+/* Dark: the bar's state line («La corsa è finita…») in the accent at 60 %. */
+.wiz[data-theme="dark"] .wiz-actions .wiz-action.status { color: color-mix(in srgb, var(--panel-accent) 60%, transparent); }
+/* The phone's title band: the strong accent (dark: at 70 % on the background, with a hairline under it), title, arrow
+   and ✕ in the on-accent white, the subtitle at 80 %. */
+@media (max-width: 719px), (max-height: 499px) and (orientation: landscape) {
+  .wiz-head { background: var(--panel-accent-strong); border-bottom-color: transparent; color: var(--text-primary-color, #fff); }
+  .wiz[data-theme="dark"] .wiz-head { background: color-mix(in srgb, var(--panel-accent-strong) 70%, var(--primary-background-color, #111));
+    border-bottom-color: var(--panel-border); }
+  .wiz-head :is(.wiz-cover, .wiz-back, .wiz-x), .wiz-head :is(.wiz-back, .wiz-x):hover { color: var(--text-primary-color, #fff); }
+  .wiz-head .wiz-head-sub, .wiz-head .wiz-head-sub :is(.cal-row-address-label, .cal-row-address-value) {
+    color: color-mix(in srgb, var(--text-primary-color, #fff) 80%, transparent); }
+}

@@ -18,7 +18,7 @@ from .cover_geometry import stamp_geometry
 from .cover_profile_mutations import shared_preview
 from .cover_profile_provenance import DIRECTIONS, evidence
 from .cover_profiles import MAX_PROFILES, PROFILE, ProfileError, commit_profiles, get_store, respond
-from .cover_settings import reference_profile
+from .cover_settings import clear_check, profile_times_changed, reference_profile
 from .typing_compat import as_any
 
 WS_MANAGE = "myhome/cover_profiles/manage"
@@ -77,6 +77,10 @@ async def manage_profile(hass: Any, msg: dict[str, Any]) -> dict[str, Any]:
             stamp_geometry(profile, previous, None)
             data["profiles"][profile_id] = profile
             affected = followers
+            # R-3: other times for every follower: their stored checks no longer apply.
+            if profile_times_changed(previous, profile):
+                for unique in followers:
+                    clear_check(data, unique)
         elif action == "duplicate":
             name = NAME(msg.get("name"))
             if len(data["profiles"]) >= MAX_PROFILES:

@@ -13,7 +13,16 @@ from .const import DOMAIN
 from .cover_geometry import geometry_impact, stamp_geometry
 from .cover_profile_provenance import DIRECTIONS, evidence
 from .cover_profiles import PROFILE, ProfileError, commit_profiles, snapshot
-from .cover_settings import KEYS, centimetres, reference_profile, resolve, seconds, set_overrides
+from .cover_settings import (
+    KEYS,
+    centimetres,
+    clear_check,
+    profile_times_changed,
+    reference_profile,
+    resolve,
+    seconds,
+    set_overrides,
+)
 
 OVERRIDE_PATCH = vol.All({vol.In(KEYS): vol.Any(None, seconds)}, vol.Length(min=1))
 
@@ -70,11 +79,18 @@ async def mutate_settings(hass: Any, store: Any, entry: Any, entity: Any, msg: d
         if "travel_cm" not in msg:
             raise vol.Invalid("travel_cm is required")
         record = data["covers"].setdefault(entity.unique_id, {"overrides": {}})
+        travel_before = record.get("travel_cm")
         if msg["travel_cm"] is None:
             record.pop("travel_cm", None)
         else:
             record["travel_cm"] = centimetres(msg["travel_cm"])
         set_overrides(data, entity.unique_id, record["overrides"])
+        # N-1: a profile with a reference travel scales this cover's times to its own travel: another travel gives
+        # it other times, and the stored check described the old ones.
+        assigned = data["profiles"].get(data["assignments"].get(entity.unique_id))
+        if (assigned is not None and assigned.get("reference_travel_cm") is not None
+                and data["covers"].get(entity.unique_id, {}).get("travel_cm") != travel_before):
+            clear_check(data, entity.unique_id)
         affected = [entity.unique_id]
     elif action == "overrides":
         patch = OVERRIDE_PATCH(msg.get("overrides", {}))
@@ -85,6 +101,9 @@ async def mutate_settings(hass: Any, store: Any, entry: Any, entity: Any, msg: d
             elif direction not in overrides or overrides[direction]["value"] != value:
                 overrides[direction] = {"value": value, "provenance": evidence("manual", entity.unique_id)}
         set_overrides(data, entity.unique_id, overrides)
+        # L-73: times entered by hand: the stored check described other times.
+        if patch:
+            clear_check(data, entity.unique_id)
         affected = [entity.unique_id]
     else:
         profile_id = msg.get("profile_id")
@@ -109,5 +128,9 @@ async def mutate_settings(hass: Any, store: Any, entry: Any, entity: Any, msg: d
         }
         stamp_geometry(profile, previous, entity.unique_id)
         data["profiles"][profile_id] = profile
+        # L-73: new times for every cover that follows the profile: their stored checks no longer apply.
+        if profile_times_changed(previous, profile):
+            for unique in affected:
+                clear_check(data, unique)
     await commit_profiles(hass, store, entry.entry_id, data, affected)
     return snapshot(hass, store, entry, entity)

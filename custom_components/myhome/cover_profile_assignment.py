@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigEntryState
 from .cover_geometry import geometry_impact
 from .cover_profile_provenance import DIRECTIONS
 from .cover_profiles import ProfileError, commit_profiles, target
+from .cover_settings import clear_check
 
 SELECTION = vol.All([str], vol.Length(min=1, max=200), vol.Unique())
 
@@ -70,6 +71,9 @@ async def assign_profiles(hass: Any, store: Any, entry: Any, msg: dict[str, Any]
         raise ProfileError("preview_required")
     data = copy.deepcopy(store.data)
     for unique in identities:
+        # R-3: a cover that starts following this profile gets other times: its stored check no longer applies.
+        if data["assignments"].get(unique) != profile_id:
+            clear_check(data, unique)
         data["assignments"][unique] = profile_id
     await commit_profiles(hass, store, entry.entry_id, data, identities)
     return {"entry_id": entry.entry_id, "revision": data["revision"],

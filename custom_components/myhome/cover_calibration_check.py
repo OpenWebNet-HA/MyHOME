@@ -93,9 +93,40 @@ class CalibrationCheck:
                 or not MIN_TARGET_FRACTION <= target / travel_cm <= MAX_TARGET_FRACTION):
             raise ProfileError("invalid_check")
         check = cls(model, travel_cm, direction, float(target))
-        if check.planned_seconds <= model.slat_time_s + MIN_CURTAIN_SECONDS:
+        # L-78: the slat phase lies at the start of an ascent and at the end of a descent: down from the top the curtain
+        # moves from the first second, so only an ascent has the slat time to cross before the curtain counts.
+        if check.planned_seconds - (model.slat_time_s if check.opening else 0) <= MIN_CURTAIN_SECONDS:
             raise ProfileError("invalid_check")
         return check
+
+    @classmethod
+    def plan_possible(cls, model: CoverMotionModel, travel_cm: float, direction: Any = None,
+                      target_cm: Any = None, *, fraction: float = HALF_TRAVEL_FRACTION) -> CalibrationCheck:
+        """The check asked for, or the nearest one this model can make (L-78: never a dead end).
+
+        A request the session should take but this model cannot carry out (a run that would not move the curtain
+        long enough, e.g. after a late lift-off fitted a long slat phase) is moved to the nearest fraction of the band
+        that it can, in the same direction first, then in the other one. A request outside the contract (an unknown
+        direction, a target that is not a number or lies outside the band) is still refused, not clamped, and so is a
+        model that can make no check at all.
+        """
+        try:
+            return cls.plan(model, travel_cm, direction, target_cm, fraction=fraction)
+        except ProfileError:
+            if (direction not in (None, *CHECK_DIRECTIONS) or not _finite(travel_cm) or travel_cm <= 0
+                    or (target_cm is not None and (not _finite(target_cm)
+                                                   or not MIN_TARGET_FRACTION <= target_cm / travel_cm <= MAX_TARGET_FRACTION))):
+                raise
+        asked = DEFAULT_CHECK_DIRECTION if direction is None else direction
+        wanted = (fraction if target_cm is None else target_cm / travel_cm)
+        steps = [round(MIN_TARGET_FRACTION + index * 0.05, 2) for index in range(int(round((MAX_TARGET_FRACTION - MIN_TARGET_FRACTION) / 0.05)) + 1)]
+        for way in (asked, *[other for other in CHECK_DIRECTIONS if other != asked]):
+            for share in sorted(steps, key=lambda value: (abs(value - wanted), value)):
+                try:
+                    return cls.plan(model, travel_cm, way, travel_cm * share)
+                except ProfileError:
+                    continue
+        raise ProfileError("invalid_check")
 
     def again(self) -> CalibrationCheck:
         """The same run, with nothing of the previous one."""
@@ -133,6 +164,8 @@ class CalibrationCheck:
         self.passed = passes(self.deviation_cm)
 
     def view(self) -> dict[str, Any]:
+        # L-44: the planned run too (the panel's bar for the run to the target).
         return {"direction": self.direction, "target_cm": self.target_cm, "check_seconds": self.check_seconds,
+                "planned_seconds": round(self.planned_seconds, 2),
                 "expected_cm": self.expected_cm, "measured_cm": self.measured_cm,
                 "deviation_cm": self.deviation_cm, "passed": self.passed}

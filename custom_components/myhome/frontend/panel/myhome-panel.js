@@ -5,11 +5,12 @@ const assetUrl = (name) => {
   url.search = new URL(import.meta.url).search;
   return url.href;
 };
-const [{ translations }, model, { escapeHtml, replacePreservingFocus }, { BusMonitorSection }, { CoverProfileEditor }, { CoverProfileList }, { ProfileCatalogueEditor }] = await Promise.all([
+const [{ translations }, model, { escapeHtml, replacePreservingFocus }, { BusMonitorSection }, { CoverProfileEditor }, { CoverProfileList }, { ProfileCatalogueEditor }, { CalibrationTab }] = await Promise.all([
   import(assetUrl("panel-translations.js")), import(assetUrl("panel-model.js")),
   import(assetUrl("panel-dom.js")), import(assetUrl("panel-bus-monitor.js")),
   import(assetUrl("panel-cover-profiles.js")),
   import(assetUrl("panel-cover-profile-list.js")), import(assetUrl("panel-profile-catalogue-editor.js")),
+  import(assetUrl("panel-calibration-tab.js")),
 ]);
 const SETTINGS_URL = "/config/integrations/integration/myhome";
 const CATEGORY_VIEW_STORAGE_KEY = "myhome-panel-category-view-v1";
@@ -39,9 +40,14 @@ class MyHomePanel extends HTMLElement {
     this._profileEditor = new CoverProfileEditor();
     this._profileList = new CoverProfileList();
     this._catalogueEditor = new ProfileCatalogueEditor();
+    this._calibrationTab = new CalibrationTab();
     this._coverView = "devices";
+    // A tab may object to being left (an open calibration): see setBeforeLeave().
+    this._beforeLeave = null;
     this._visibilityChanged = () => this._updatePolling();
     this._locationChanged = () => this._syncGatewayFromUrl();
+    // Review nit: the browser's Back/Forward goes through the tab's guard too (a live calibration asks first).
+    this._popped = () => this._guardedLocation();
   }
 
   set hass(value) {
@@ -91,7 +97,7 @@ class MyHomePanel extends HTMLElement {
     this._started = true;
     this._busMonitor.hass = this._hass;
     this._syncGatewayFromUrl();
-    window.addEventListener("popstate", this._locationChanged);
+    window.addEventListener("popstate", this._popped);
     window.addEventListener("location-changed", this._locationChanged);
     this._buildShell();
     this._renderInventory();
@@ -122,10 +128,10 @@ class MyHomePanel extends HTMLElement {
 
   _stop() {
     this._profileEditor.close(); this._catalogueEditor.close();
-    this._profileList.clear();
+    this._profileList.clear(); this._calibrationTab.clear();
     this._started = false;
     document.removeEventListener("visibilitychange", this._visibilityChanged);
-    window.removeEventListener("popstate", this._locationChanged);
+    window.removeEventListener("popstate", this._popped);
     window.removeEventListener("location-changed", this._locationChanged);
     this._session++;
     clearInterval(this._timer);
@@ -159,6 +165,7 @@ class MyHomePanel extends HTMLElement {
       }
       if (changed) this._renderInventory();
       this._profileList.refresh();
+      this._calibrationTab.refresh();
     } catch (error) {
       if (session === this._session) this._showError(this._t("loadError"));
     } finally {
@@ -168,6 +175,32 @@ class MyHomePanel extends HTMLElement {
         if (this._refreshAgain) { this._refreshAgain = false; this._refresh(); }
       }
     }
+  }
+
+  /**
+   * Back/Forward to another gateway: the tab's guard first. While it asks, the address goes back to the gateway shown
+   * (one entry, the one the browser just left, written again); leaving then goes back to the gateway asked for with
+   * the browser's own Back, so the history does not grow. A second Back while the question is open returns to the
+   * gateway shown without asking twice.
+   */
+  _guardedLocation() {
+    const skip = this._popSkip;
+    this._popSkip = null;
+    if (skip === "sync") { this._syncGatewayFromUrl(); return; }
+    if (skip === "stay") return;
+    if (this._popAsking) { this._popSkip = "stay"; history.forward(); return; }
+    const url = new URL(window.location.href), entryId = url.searchParams.get("entry_id");
+    const pending = entryId !== this._entryQuery && this._beforeLeave ? this._beforeLeave() : null;
+    if (!pending) { this._syncGatewayFromUrl(); return; }
+    const back = new URL(url.href);
+    if (this._entryQuery) back.searchParams.set("entry_id", this._entryQuery); else back.searchParams.delete("entry_id");
+    history.pushState(null, "", back.href);
+    this._popAsking = Promise.resolve(pending).then((leave) => {
+      this._popAsking = null;
+      if (!leave) return;
+      this._popSkip = "sync";
+      history.back();
+    });
   }
 
   _syncGatewayFromUrl() {
@@ -255,8 +288,11 @@ class MyHomePanel extends HTMLElement {
       focused?.focus();
     }
     for (const [id, key] of [["search", "query"], ["category", "category"], ["area", "area"]]) {
-      this.shadowRoot.getElementById(id).addEventListener(id === "search" ? "input" : "change", (event) => {
-        this._filters[key] = event.target.value;
+      this.shadowRoot.getElementById(id).addEventListener(id === "search" ? "input" : "change", async (event) => {
+        // The type and area filters may hide the tab: it is asked first, and the filter goes back if it objects.
+        const field = event.target, pending = key !== "query" && this._beforeLeave ? this._beforeLeave() : null;
+        if (pending && !(await pending)) { field.value = this._filters[key]; return; }
+        this._filters[key] = field.value;
         this._renderContent();
       });
     }
@@ -383,10 +419,10 @@ class MyHomePanel extends HTMLElement {
     root.getElementById("discovery-help").hidden = isBus || !this._data.gateways.length;
     root.getElementById("items").hidden = isBus;
     root.getElementById("monitor").hidden = !isBus;
-    if (isBus) { this._profileEditor.close(); this._catalogueEditor.close(); this._profileList.clear(); this._renderMonitor(); return; }
+    if (isBus) { this._profileEditor.close(); this._catalogueEditor.close(); this._profileList.clear(); this._calibrationTab.clear(); this._renderMonitor(); return; }
     this._removeMonitor();
     if (!this._data.gateways.length) {
-      this._profileList.clear();
+      this._profileList.clear(); this._calibrationTab.clear();
       root.getElementById("items").innerHTML = this._empty(this._t("noGateways"), this._t("noGatewaysHelp"));
       return;
     }
@@ -396,8 +432,8 @@ class MyHomePanel extends HTMLElement {
       && !scope.entities.some((entity) => entity.device_id === device.id && entity.entry_id === entryId)),
     })).filter((device) => device.entry_ids.length);
     const groups = model.groupByWho([...scope.entities, ...emptyDevices]);
-    // A selected profile view must also work on gateways without registered covers.
-    if (this._coverView === "profiles" && !groups.some(([who]) => who === "2")) {
+    // A selected profile or calibration view must also work on gateways without registered covers.
+    if (this._coverView !== "devices" && !groups.some(([who]) => who === "2")) {
       groups.push(["2", []]);
       groups.sort(([a], [b]) => a === model.WHO_UNKNOWN ? 1 : b === model.WHO_UNKNOWN ? -1 : Number(a) - Number(b));
     }
@@ -417,13 +453,19 @@ class MyHomePanel extends HTMLElement {
     }
     const previousProfileHost = root.getElementById("cover-profile-list");
     const profileFocus = previousProfileHost?.contains(root.activeElement) ? root.activeElement : null;
+    // The calibration view keeps its element, and with it an open wizard, across inventory renders.
+    const previousCalibrationHost = root.getElementById("cover-calibration-tab");
+    const calibrationFocus = previousCalibrationHost?.contains(root.activeElement) ? root.activeElement : null;
+    // L-8b: while the kept element is out of the page for a moment the page is shorter, and anything that measures it
+    // then clamps the scroll to the top: where the page and its scrolling boxes stood is put back after the swap.
+    const scrolled = previousCalibrationHost ? scrollPositions(previousCalibrationHost) : null;
     replacePreservingFocus(root.getElementById("items"), visibleGroups.map(([who, members]) => `
       <section class="who-group" data-who="${escapeHtml(who)}" aria-labelledby="who-title-${escapeHtml(who)}">
         <div class="who-heading"><h2 id="who-title-${escapeHtml(who)}">${escapeHtml(this._whoLabel(who))}</h2>
           <span class="count">${escapeHtml(this._inventoryCount(members))}</span>
           ${who === "2" ? `<nav class="cover-view-tabs" aria-label="${escapeHtml(this._t("profileViewLabel"))}">
-            ${["devices", "profiles"].map((view) => `<button type="button" data-action="cover-view" data-id="${view}" aria-pressed="${this._coverView === view}">${escapeHtml(this._t(view === "devices" ? "devices" : "profileListTitle"))}</button>`).join("")}</nav>` : ""}</div>
-        ${who === "2" && this._coverView === "profiles" ? '<div id="cover-profile-list"></div>' : `<div class="device-groups">${[
+            ${["devices", "profiles", "calibration"].map((view) => `<button type="button" data-action="cover-view" data-id="${view}" aria-pressed="${this._coverView === view}">${escapeHtml(this._t({ devices: "devices", profiles: "profileListTitle", calibration: "calTabTab" }[view]))}</button>`).join("")}</nav>` : ""}</div>
+        ${who === "2" && this._coverView === "profiles" ? '<div id="cover-profile-list"></div>' : who === "2" && this._coverView === "calibration" ? '<div id="cover-calibration-tab" class="cal-tab"></div>' : `<div class="device-groups">${[
           ...model.groupEntitiesByDevice(members.filter((item) => item.entity_id), scope.devices),
           ...members.filter((item) => !item.entity_id).flatMap((device) => device.entry_ids
             .filter((entryId) => scope.gateways.some((gateway) => gateway.entry_id === entryId))
@@ -442,6 +484,18 @@ class MyHomePanel extends HTMLElement {
       inventory: this._data, filters: this._filters, t: (key) => this._t(key),
       addressDetails: (entity) => this._addressDetails(entity) });
     else this._profileList.clear();
+    let calibrationHost = root.getElementById("cover-calibration-tab");
+    if (calibrationHost && previousCalibrationHost) {
+      calibrationHost.replaceWith(previousCalibrationHost);
+      calibrationHost = previousCalibrationHost;
+      calibrationFocus?.focus({ preventScroll: true });
+      scrolled?.();
+    }
+    if (calibrationHost) this._calibrationTab.show({ host: calibrationHost, hass: this._hass, gateways: scope.gateways,
+      inventory: this._data, filters: this._filters, t: (key) => this._t(key),
+      addressDetails: (entity) => this._addressDetails(entity), onOpenCover: (entityId) => this._openCoverProfile(entityId),
+      dialogHost: root.getElementById("dialog-host"), setBeforeLeave: (guard) => this.setBeforeLeave(guard) });
+    else this._calibrationTab.clear();
     this._updateStates();
   }
 
@@ -534,6 +588,7 @@ class MyHomePanel extends HTMLElement {
     if (!this._data) return;
     this._profileEditor.updateState(this._hass);
     this._profileList.updateHass(this._hass);
+    this._calibrationTab.updateHass(this._hass);
     for (const element of this.shadowRoot.querySelectorAll("[data-state]")) {
       const entity = this._data.entities.find((item) => item.entity_id === element.dataset.state);
       const state = this._hass?.states?.[element.dataset.state];
@@ -594,12 +649,52 @@ class MyHomePanel extends HTMLElement {
       host: this.shadowRoot.getElementById("dialog-host"), hass: this._hass, entity,
       t: (key) => this._t(key),
       onSaved: (message) => { this.shadowRoot.getElementById("toast").textContent = message; this._refresh(); },
+      onWizard: (target) => this._openCalibrationWizard(target),
     });
+  }
+
+  /** "New guided measurement" in the profile dialog: the Calibration tab, with the wizard on that cover. */
+  _openCalibrationWizard(entity) {
+    if (!this._data) return;
+    this._view = "entities";
+    this._coverView = "calibration";
+    if (this._categoryMode === "single") this._selectedWho = "2";
+    this._calibrationTab.requestWizard(entity.entry_id, entity.entity_id);
+    this._renderContent();
+    this.shadowRoot.getElementById("cover-calibration-tab")?.scrollIntoView?.({ block: "start" });
+  }
+
+  /**
+   * A tab registers `guard` while leaving it would interrupt something (null to remove it). Before the panel moves
+   * away from the tab (Entities/Bus monitor, gateway, WHO category, cover view, a link, the type and area filters) it
+   * calls `guard()`: a falsy result lets the navigation happen at once; a promise delays it and cancels it if it
+   * resolves to false.
+   */
+  setBeforeLeave(guard) { this._beforeLeave = typeof guard === "function" ? guard : null; }
+
+  /** Whether a click moves the panel away from what it shows. */
+  _leaves(target, event) {
+    const action = target.dataset.action;
+    if (target.matches("a")) return !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey;
+    if (target.dataset.view) return target.dataset.view !== this._view;
+    if (action === "select-gateway") return target.dataset.id !== this._entryId;
+    if (action === "cover-view") return target.dataset.id !== this._coverView;
+    return action === "select-who" || action === "toggle-category-view";
   }
 
   _onClick(event) {
     const target = event.target.closest("button, a");
     if (!target) return;
+    const pending = this._beforeLeave && this._leaves(target, event) ? this._beforeLeave() : null;
+    if (pending) {
+      event.preventDefault();
+      Promise.resolve(pending).then((leave) => { if (leave) this._navigate(target, event); });
+      return;
+    }
+    this._navigate(target, event);
+  }
+
+  _navigate(target, event) {
     if (target.matches("a") && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
       event.preventDefault();
       history.pushState(null, "", target.getAttribute("href"));
@@ -737,3 +832,17 @@ class MyHomePanel extends HTMLElement {
 }
 
 if (!customElements.get("myhome-panel")) customElements.define("myhome-panel", MyHomePanel);
+
+/** L-8b: the scroll of every box holding `node` (and of the window), and the function that puts them back. */
+function scrollPositions(node) {
+  const view = node.ownerDocument?.defaultView, list = [];
+  for (let current = node.parentNode || node.host; current; current = current.parentNode || current.host) {
+    if (current.nodeType === 11) { current = current.host; if (!current) break; }
+    if (current.nodeType === 1 && current.scrollTop) list.push([current, current.scrollTop]);
+  }
+  const y = view?.scrollY || 0;
+  return () => {
+    for (const [box, top] of list) if (box.isConnected && Math.abs(box.scrollTop - top) > 1) box.scrollTop = top;
+    if (view && Math.abs((view.scrollY || 0) - y) > 1) view.scrollTo?.(view.scrollX || 0, y);
+  };
+}

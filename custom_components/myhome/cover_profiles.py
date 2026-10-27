@@ -48,8 +48,11 @@ from .cover_settings import (
     MODEL,
     NATIVE,
     centimetres,
+    clear_check,
     migrate,
     native_provenance,
+    profile_times_changed,
+    record_check,
     reference_profile,
     resolve,
     seconds,
@@ -214,8 +217,12 @@ def target(hass: Any, entry_id: str, entity_id: str) -> Any:
     return entry, entity
 
 
-def snapshot(hass: Any, store: Any, entry: Any, entity: Any) -> Any:
-    """An allowlisted view; never expose gateway credentials or runtime objects."""
+def snapshot(hass: Any, store: Any, entry: Any, entity: Any, client_id: str | None = None) -> Any:
+    """An allowlisted view; never expose gateway credentials or runtime objects.
+
+    L-93: with `client_id`, the open session also says whether that client owns it (`client_owner`): its `resume`
+    then carries on as owner, any other client's only follows it. Who the owner is stays private.
+    """
     cover = store.covers.get(entity.unique_id)
     writable = bool(entry.state == ConfigEntryState.LOADED and entry.disabled_by is None
                     and entity.disabled_by is None and cover and cover.available)
@@ -234,8 +241,10 @@ def snapshot(hass: Any, store: Any, entry: Any, entity: Any) -> Any:
                 for unique, value in store.data["assignments"].items() if value == profile_id]
     return {
         "entry_id": entry.entry_id, "entity_id": entity.entity_id,
-        "calibration": ({key: value for key, value in store.calibration.view().items()
-                         if key != "attachment"} if store.calibration and (store.calibration.client_id or store.calibration.closed) else None),
+        "calibration": ({**{key: value for key, value in store.calibration.view().items() if key != "attachment"},
+                         **({"client_owner": bool(store.calibration.client_id) and client_id == store.calibration.owner
+                             and not store.calibration.closed} if client_id is not None else {})}
+                        if store.calibration and (store.calibration.client_id or store.calibration.closed) else None),
         "revision": store.data["revision"], "assigned_profile_id": assigned["id"] if assigned else None,
         "model": model_name(cover._effective_cover_settings) if cover else None,
         "configured_model": NONLINEAR_MODEL if assigned and "geometry" in assigned else MODEL,
@@ -281,12 +290,12 @@ def public_settings(store: Any, entity: Any, records: Any, *, active: bool) -> A
             for direction, item in values.items()}
 
 
-async def read_profile(hass: Any, entry_id: str, entity_id: str) -> Any:
+async def read_profile(hass: Any, entry_id: str, entity_id: str, client_id: str | None = None) -> Any:
     entry, entity = target(hass, entry_id, entity_id)
     store = get_store(hass, entry_id)
     async with store.lock:
         await store.load()
-        return snapshot(hass, store, entry, entity)
+        return snapshot(hass, store, entry, entity, client_id)
 
 
 async def write_profile(hass: Any, msg: dict[str, Any], *, calibration: Any=None) -> Any:
@@ -319,6 +328,7 @@ async def write_profile(hass: Any, msg: dict[str, Any], *, calibration: Any=None
         profile_id = msg.get("profile_id")
         if profile_id is not None and profile_id not in data["profiles"]:
             raise ProfileError("profile_not_found")
+        times_changed = False
         if msg["action"] == "save":
             profile = PROFILE(msg["profile"])
             source_id = msg.get("copy_from_profile_id")
@@ -346,6 +356,7 @@ async def write_profile(hass: Any, msg: dict[str, Any], *, calibration: Any=None
                     for direction in DIRECTIONS
                 }
             stamp_geometry(profile, previous, entity.unique_id)
+            times_changed = previous is None or profile_times_changed(previous, profile)
             if calibration is not None and calibration.geometry_provenance is not None:
                 profile["geometry_provenance"] = copy.deepcopy(GEOMETRY_PROVENANCE(calibration.geometry_provenance))
                 data["covers"].setdefault(entity.unique_id, {})["travel_cm"] = calibration.measured_travel
@@ -354,6 +365,8 @@ async def write_profile(hass: Any, msg: dict[str, Any], *, calibration: Any=None
                 # The measured cover follows the new profile; old overrides must
                 # not silently mask the measurement just accepted in review.
                 set_overrides(data, entity.unique_id, {})
+                # L-73: a completed check is kept with the cover; times saved without one clear the old check.
+                record_check(data, entity.unique_id, getattr(calibration, "check", None))
         elif "copy_from_profile_id" in msg:
             raise ProfileError("invalid_profile")
         if msg["action"] == "delete":
@@ -366,6 +379,11 @@ async def write_profile(hass: Any, msg: dict[str, Any], *, calibration: Any=None
             data["assignments"].pop(entity.unique_id, None)
         else:
             data["assignments"][entity.unique_id] = profile_id
+        # L-73: other times for this cover without a calibration (an assigned or copied profile, an edit): its stored
+        # check no longer applies, and an assigned profile never carries another cover's check.
+        if calibration is None and msg["action"] != "delete" and (
+                times_changed or store.data["assignments"].get(entity.unique_id) != data["assignments"].get(entity.unique_id)):
+            clear_check(data, entity.unique_id)
         await commit_profiles(hass, store, entry_id, data,
                               [entity.unique_id] if msg["action"] != "delete" else [])
         return snapshot(hass, store, entry, entity)
@@ -464,11 +482,12 @@ async def respond(hass: Any, connection: Any, msg: dict[str, Any], operation: An
         connection.send_result(msg["id"], result)
 
 
-@websocket_command(as_any({vol.Required("type"): WS_READ, **TARGET}))
+@websocket_command(as_any({vol.Required("type"): WS_READ, **TARGET,
+                           vol.Optional("client_id"): vol.All(str, vol.Length(min=1, max=64))}))
 @require_admin
 @async_response
 async def ws_read(hass: Any, connection: Any, msg: dict[str, Any]) -> None:
-    await respond(hass, connection, msg, read_profile(hass, msg["entry_id"], msg["entity_id"]))
+    await respond(hass, connection, msg, read_profile(hass, msg["entry_id"], msg["entity_id"], msg.get("client_id")))
 
 
 @websocket_command(as_any({

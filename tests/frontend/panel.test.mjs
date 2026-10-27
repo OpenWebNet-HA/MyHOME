@@ -710,6 +710,39 @@ test("bus sweep follows the selected gateway and preserves unscoped Lovelace usa
   ]);
 });
 
+test("Back/Forward asks the tab's guard first: staying keeps the gateway, leaving goes back, the history never grows", async () => {
+  const popped = () => new Promise((resolve) => window.addEventListener("popstate", () => setTimeout(resolve, 0), { once: true }));
+  const entry = () => new URL(window.location.href).searchParams.get("entry_id");
+  window.history.replaceState(null, "", "/myhome?entry_id=two");
+  window.history.pushState(null, "", "/myhome?entry_id=one");
+  const { panel } = await mount();
+  assert.equal(panel._entryId, "one");
+  const length = window.history.length;
+  let answers = [];
+  panel.setBeforeLeave(() => new Promise((resolve) => { answers.push(resolve); }));
+  // Back: the question; the address back on the gateway shown, in place of the entry just left.
+  let wait = popped(); window.history.back(); await wait;
+  assert.equal(panel._entryId, "one", "nothing changes before the answer");
+  assert.equal(entry(), "one", "the address is back on the gateway shown");
+  assert.equal(window.history.length, length, "no entry added");
+  // A second Back while it asks: back to the gateway shown, asked once only.
+  wait = popped(); window.history.back(); await wait; await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(entry(), "one");
+  assert.equal(answers.length, 1, "one question, one answer awaited");
+  // Staying keeps it.
+  answers[0](false); await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(panel._entryId, "one");
+  // Back again, leaving: the browser goes back to the other gateway, no entry added.
+  wait = popped(); window.history.back(); await wait;
+  wait = popped(); answers[1](true); await wait;
+  assert.equal(panel._entryId, "two", "leaving goes on to the other gateway");
+  assert.equal(entry(), "two");
+  assert.equal(window.history.length, length, "the history did not grow");
+  panel.setBeforeLeave(null);
+  panel.remove();
+  window.history.replaceState(null, "", "/myhome");
+});
+
 test("gateway deep links work on first load, route changes and browser navigation", async () => {
   window.history.replaceState(null, "", "/myhome?entry_id=two");
   const { panel, root } = await mount();
@@ -1745,4 +1778,53 @@ test("a personal value field rounds like the summary, a halfway value included",
   assert.equal(form.elements.override_closing.value, "1.5");
   form.querySelector('[data-profile-action="overrides"]').click(); await tick();
   assert.deepEqual(writes.at(-1).overrides, { opening: 14.45, closing: 1.45 });
+});
+
+test("a tab's leave guard is asked before the panel moves away, and can keep it in place", async () => {
+  const { panel, root } = await mount();
+  const busTab = () => root.querySelector('[data-view="bus"]');
+  // No objection (a falsy result): the navigation happens at once, as without a guard.
+  let asked = 0;
+  panel.setBeforeLeave(() => { asked += 1; return null; });
+  busTab().click();
+  assert.equal(asked, 1);
+  assert.equal(panel._view, "bus");
+  root.querySelector('[data-view="entities"]').click();
+  assert.equal(panel._view, "entities");
+  // A promise delays the navigation; false keeps the panel where it is.
+  let answer;
+  panel.setBeforeLeave(() => new Promise((resolve) => { answer = resolve; }));
+  busTab().click();
+  assert.equal(panel._view, "entities", "nothing moves while the tab decides");
+  answer(false); await tick();
+  assert.equal(panel._view, "entities");
+  busTab().click();
+  answer(true); await tick();
+  assert.equal(panel._view, "bus", "true lets it go");
+  // A click that stays on the same view does not ask.
+  asked = 0;
+  panel.setBeforeLeave(() => { asked += 1; return null; });
+  busTab().click();
+  assert.equal(asked, 0);
+  root.querySelector('[data-view="entities"]').click();
+  // The type filter goes back when the tab objects.
+  panel.setBeforeLeave(() => Promise.resolve(false));
+  const category = root.getElementById("category");
+  const previous = category.value;
+  change(category, [...category.options].find((option) => option.value && option.value !== previous).value);
+  await tick(); await tick();
+  assert.equal(category.value, previous);
+  assert.equal(panel._filters.category, previous);
+  panel.setBeforeLeave(null);
+  assert.equal(panel._beforeLeave, null);
+});
+
+test("an empty message area takes no room under the page", async () => {
+  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  assert.match(css, /#toast:empty \{ display: none; \}/);
+});
+
+test("the panel keeps its text sizes on a landscape iPhone (text-size-adjust)", async () => {
+  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  assert.match(css.match(/^:host \{[^}]*\}/m)[0], /-webkit-text-size-adjust: 100%; text-size-adjust: 100%;/);
 });

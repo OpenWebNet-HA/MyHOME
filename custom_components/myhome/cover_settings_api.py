@@ -15,7 +15,7 @@ from .const import DOMAIN
 from .cover_geometry import NONLINEAR_MODEL, model_name, public_geometry
 from .cover_profile_assignment import assignment_reason
 from .cover_profiles import WS_OVERVIEW, ProfileError, get_store, public_settings, respond
-from .cover_settings import MODEL
+from .cover_settings import CHECK_FIELDS, MODEL
 from .typing_compat import as_any
 
 
@@ -39,6 +39,8 @@ async def overview(hass: Any, entry_id: str) -> dict[str, Any]:
                            "name": record.name or record.original_name or record.entity_id,
                            "profile_id": store.data["assignments"].get(unique),
                            "travel_cm": store.data["covers"].get(unique, {}).get("travel_cm"),
+                           # L-73: the verified precision kept at the last calibration save (None: no check).
+                           **{key: store.data["covers"].get(unique, {}).get(key) for key in CHECK_FIELDS},
                            "available": bool(cover and cover.available and not record.disabled_by),
                            "advanced": bool(cover and cover._advanced),
                            "pending": bool(cover and cover._pending_profile is not None),

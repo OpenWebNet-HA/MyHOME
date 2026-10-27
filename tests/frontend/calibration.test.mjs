@@ -742,6 +742,20 @@ test("an intermediate reading shows the range the fit accepts, inside its true e
   assert.equal(english.host.querySelector("#cal-expected").textContent, "For this cover the reading should be between 36.7 and 54.8 cm. Enter what the tape says.");
 });
 
+test("the dialog names the 0.43.0 refusals in words, not as a connection failure", async () => {
+  const { host, push } = await mount({ mode: "geometry", language: "it",
+    call: (message, state) => { if (message.action === "reading") throw { code: "reading_over_travel" }; if (message.action === "check") throw { code: "invalid_check" }; return state; } });
+  const form = host.querySelector("#cal-reading"), input = form.elements.reading_cm;
+  push({ phase: "reading", step: "half_open", reading_kind: "half_open", can_repeat: true, save_modes: ["new"], reading_range: { min_cm: 0.1, max_cm: 201 } });
+  input.value = "45"; input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  form.dispatchEvent(new dom.window.Event("submit", { cancelable: true })); await tick();
+  assert.equal(host.querySelector("#cal-reason").textContent,
+    "La lettura (45 cm) supera la più alta possibile (201 cm: la corsa e l’errore del metro). Controlla il metro e scrivila di nuovo.");
+  for (const code of ["reading_over_travel", "invalid_check"]) {
+    assert.ok(translations.en[`profileError_${code}`] && translations.it[`profileError_${code}`], code);
+  }
+});
+
 test("an intermediate reading outside the range is held back while typed and the refusal names the range", async () => {
   const { host, push, calls } = await mount({ mode: "geometry", language: "it",
     call: (message, state) => { if (message.action === "reading") throw { code: "reading_out_of_range" }; return state; } });

@@ -479,6 +479,68 @@ async def test_stop_is_accepted_from_every_reader_and_nothing_else_is(hass, reco
     assert session.owner == "first-controller"  # Stop did not take the session.
 
 
+async def test_the_owner_publishes_its_screen_to_readers_without_a_transition(hass, recovering):
+    """L-25: `show` carries the owner's panel screen to its readers; no sequence, lease or bus change; readers cannot."""
+    cal, session = recovering, recovering.session
+    owner = next(item for item in session.subscribers.values() if item.client_id == session.owner)
+    other = reader(cal, "second-tab")
+    sequence, lease, queued = session.sequence, session.lease_expires_at, len(cal.queue)
+    screen = {"code": "A-12", "path": "A", "local": {"ackAscent": False}}
+    result = await call(hass, cal, cal.connection, owner.token, "show", screen=screen)
+    assert result["screen"] == screen and session.view()["screen"] == screen
+    assert (session.sequence, session.lease_expires_at, len(cal.queue)) == (sequence, lease, queued)
+    assert other.connection.send_event.call_args[0][1]["screen"] == screen, "the reader got it"
+    assert await call(hass, cal, other.connection, other.token, "show", screen={"code": "X"}) == "calibration_owned"
+    assert session.view()["screen"] == screen
+
+
+async def test_a_screen_too_large_to_travel_with_every_view_is_refused(hass, plant, hass_ws_client):
+    """L-25: `show` takes a small description only (2048 bytes of JSON): a larger one fails the schema, nothing kept."""
+    import asyncio
+
+    register_api(hass)
+    plant.gateways[0].async_queue_calibration = lambda *args: None
+    entry_id = plant.entries[0].entry_id
+
+    async def answer(client, message_id):
+        while (message := await asyncio.wait_for(client.receive_json(), 2))["id"] != message_id or message["type"] != "result":
+            pass
+        return message
+
+    async def event(client):
+        while (message := await asyncio.wait_for(client.receive_json(), 2))["type"] != "event":
+            pass
+        return message["event"]
+
+    with patch("aiohttp.connector.DefaultResolver", ThreadedResolver):
+        owner = await hass_ws_client(hass)
+        await owner.send_json({"id": 1, "type": WS_START, "entry_id": entry_id, "entity_id": plant.records[0].entity_id,
+                               "revision": 0, "client_id": "tab-one"})
+        state = await event(owner)
+        session = get_store(hass, entry_id).calibration
+        show = {"type": WS_ACTION, "entry_id": entry_id, "session_id": session.id, "attachment": state["attachment"], "action": "show"}
+        await owner.send_json({"id": 2, **show, "screen": {"code": "A-12", "local": {"note": "x" * 2100}}})
+        refused = await answer(owner, 2)
+        assert not refused["success"] and refused["error"]["code"] == "invalid_format"
+        assert "screen" not in session.view(), "nothing kept"
+        await owner.send_json({"id": 3, **show, "screen": {"code": "A-12", "path": "A"}})
+        assert (await answer(owner, 3))["result"]["screen"] == {"code": "A-12", "path": "A"}, "a small one goes through"
+        await owner.close()
+        session.close()
+
+
+async def test_a_new_owner_does_not_inherit_the_previous_owner_s_screen(hass, recovering):
+    """Review nit: on a claim the old owner's screen goes; the new owner's first `show` is what readers see."""
+    cal, session = recovering, recovering.session
+    owner = next(item for item in session.subscribers.values() if item.client_id == session.owner)
+    await call(hass, cal, cal.connection, owner.token, "show", screen={"code": "A-12", "path": "A"})
+    claimed = reader(cal, "second-tab", claim=True, sequence=session.sequence)
+    assert claimed.claimed and session.owner == "second-tab"
+    assert "screen" not in session.view(), "the previous owner's screen is dropped"
+    result = await call(hass, cal, claimed.connection, claimed.token, "show", screen={"code": "A-12", "path": "A"})
+    assert result["screen"] == {"code": "A-12", "path": "A"}, "the same screen, now the new owner's"
+
+
 async def test_stop_during_review_keeps_the_completed_measurements(hass, recovering):
     """Behaviour decision: in review nothing moves; Stop is written, the values stay, Cancel discards them."""
     cal, session = recovering, recovering.session
@@ -809,6 +871,91 @@ async def test_open_session_reads_for_another_tab_and_gives_a_reloaded_owner_its
         await reloaded.close()
         await other.close()
         session.close()
+
+
+async def test_a_profile_is_neither_assigned_nor_unlinked_while_the_cover_has_a_session(hass, plant, hass_ws_client):
+    """L-105: the panel no longer offers it; Home Assistant refuses it anyway (calibration_busy), for every cover of the gateway."""
+    from custom_components.myhome.cover_profiles import write_profile
+    from tests.test_cover_profiles import message
+
+    register_api(hass)
+    plant.gateways[0].async_queue_calibration = lambda *args: None
+    profile_id = (await write_profile(hass, message(plant, 0, index=1)))["assigned_profile_id"]
+
+    async def answer(client, message_id):
+        while (reply := await client.receive_json())["id"] != message_id or reply["type"] != "result":
+            pass
+        return reply
+
+    with patch("aiohttp.connector.DefaultResolver", ThreadedResolver):
+        owner = await hass_ws_client(hass)
+        await owner.send_json({"id": 1, "type": WS_START, "entry_id": plant.entries[0].entry_id, "entity_id": plant.records[0].entity_id,
+                               "revision": 1, "client_id": "tab-one"})
+        assert (await answer(owner, 1))["success"]
+        for index, target in ((0, profile_id), (0, None), (1, None)):
+            with pytest.raises(ProfileError, match="calibration_busy"):
+                await write_profile(hass, message(plant, 1, index=index, action="assign", profile_id=target))
+        await owner.close()
+
+
+async def test_the_lists_learn_of_a_session_at_once_on_their_profiles_subscription(hass, plant, hass_ws_client):
+    """L-107: a session's transitions (start, moves, close) reach the gateway's profiles subscription without data."""
+    from custom_components.myhome.cover_profiles import register_api as register_profiles
+
+    register_profiles(hass)
+    plant.gateways[0].async_queue_calibration = lambda *args: None
+    entry_id = plant.entries[0].entry_id
+
+    async def next_event(client, subscription):
+        while (message := await client.receive_json())["id"] != subscription or message["type"] != "event":
+            pass
+        return message["event"]
+
+    with patch("aiohttp.connector.DefaultResolver", ThreadedResolver):
+        listing = await hass_ws_client(hass)
+        await listing.send_json({"id": 1, "type": "myhome/cover_profiles/subscribe", "entry_id": entry_id})
+        assert (await next_event(listing, 1))["kind"] == "ready"
+        owner = await hass_ws_client(hass)
+        await owner.send_json({"id": 1, "type": WS_START, "entry_id": entry_id, "entity_id": plant.records[0].entity_id,
+                               "revision": 0, "client_id": "tab-one"})
+        event = await next_event(listing, 1)
+        assert event == {"entry_id": entry_id, "revision": 0, "kind": "session"}, "the start, at once"
+        get_store(hass, entry_id).calibration.close()
+        await hass.async_block_till_done()
+        assert (await next_event(listing, 1))["kind"] == "session", "the close too"
+        await owner.close()
+        await listing.close()
+
+
+async def test_a_read_says_whether_the_reading_client_owns_the_open_session(hass, plant, hass_ws_client):
+    """L-93: the list names its action by what `resume` will do: the owner's tab resumes, any other follows."""
+    from custom_components.myhome.cover_profiles import register_api as register_profiles
+
+    register_profiles(hass)
+    plant.gateways[0].async_queue_calibration = lambda *args: None
+    entry_id, entity_id = plant.entries[0].entry_id, plant.records[0].entity_id
+
+    async def answer(client, message_id):
+        while (message := await client.receive_json())["id"] != message_id or message["type"] != "result":
+            pass
+        return message
+
+    with patch("aiohttp.connector.DefaultResolver", ThreadedResolver):
+        owner = await hass_ws_client(hass)
+        await owner.send_json({"id": 1, "type": WS_START, "entry_id": entry_id, "entity_id": entity_id,
+                               "revision": 0, "client_id": "tab-one"})
+        assert (await answer(owner, 1))["success"]
+        assert (await read_profile(hass, entry_id, entity_id, "tab-one"))["calibration"]["client_owner"] is True
+        assert (await read_profile(hass, entry_id, entity_id, "tab-two"))["calibration"]["client_owner"] is False
+        plain = (await read_profile(hass, entry_id, entity_id))["calibration"]
+        assert "client_owner" not in plain and plain["owner"] is False, "who owns it stays private"
+        # The same through the websocket, as the panel asks it.
+        reader = await hass_ws_client(hass)
+        await reader.send_json({"id": 1, "type": "myhome/cover_profiles/read", "entry_id": entry_id, "entity_id": entity_id,
+                                "client_id": "tab-one"})
+        assert (await answer(reader, 1))["result"]["calibration"]["client_owner"] is True
+        await reader.close()
+        await owner.close()
 
 
 async def test_every_reader_is_told_whether_the_owner_is_present(hass, recovering):

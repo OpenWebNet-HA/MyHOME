@@ -11,9 +11,19 @@ def winding(height: float, roll: float) -> float:
     return height * (roll + 1) / (math.sqrt(1 + (roll * roll - 1) * height) + 1)
 
 
+ROLL_RANGE = (1.0, 5.0)
+
+
 def opening_fit(total: float, lift: float, gap: float, travel: float,
-                elapsed: float, height: float) -> tuple[float, float]:
-    """Use the actual lift-off gap to correct slat time jointly with the roll."""
+                elapsed: float, height: float, *, clamp: bool = False,
+                closing: float | None = None) -> tuple[float, float]:
+    """Use the actual lift-off gap to correct slat time jointly with the roll.
+
+    `clamp` (L-9): a reading the rolls 1-5 cannot explain is still accepted; the roll is held at the nearest end of
+    the rolls whose slat time is possible (from 0 to below both full times, `closing` included).
+    """
+    if clamp and 0 <= gap < travel and 0 <= lift < elapsed < total:
+        height = min(max(height, gap + 1e-6 * travel), travel * (1 - 1e-9))
     if not 0 <= gap < height < travel or not 0 <= lift < elapsed < total:
         raise vol.Invalid("Inconsistent lift-off or tape reading")
 
@@ -22,8 +32,17 @@ def opening_fit(total: float, lift: float, gap: float, travel: float,
         slat = (lift - total * fraction) / (1 - fraction)
         return slat + (total - slat) * winding(height / travel, roll), slat
 
-    low, high = 1.0, 5.0
-    if not prediction(low)[0] - 1e-8 <= elapsed <= prediction(high)[0] + 1e-8:
+    low, high = ROLL_RANGE
+    if clamp:
+        rolls = opening_rolls(total, lift, gap, travel, total if closing is None else closing)
+        if rolls is None:
+            raise vol.Invalid("Lift-off gap contradicts the measured motor time")
+        low, high = rolls
+        if elapsed <= prediction(low)[0]:
+            return max(0.0, prediction(low)[1]), low
+        if elapsed >= prediction(high)[0]:
+            return max(0.0, prediction(high)[1]), high
+    elif not prediction(low)[0] - 1e-8 <= elapsed <= prediction(high)[0] + 1e-8:
         raise vol.Invalid("Reading outside the supported roll range")
     for _ in range(48):
         middle = (low + high) / 2
@@ -38,18 +57,22 @@ def opening_fit(total: float, lift: float, gap: float, travel: float,
     return max(0.0, slat), roll
 
 
-def closing_fit(total: float, slat: float, elapsed: float, height: float, travel: float) -> float:
-    """One closing point fixes one roll; the full motor time stays unchanged."""
+def closing_fit(total: float, slat: float, elapsed: float, height: float, travel: float, *, clamp: bool = False) -> float:
+    """One closing point fixes one roll; the full motor time stays unchanged (`clamp`: see `_roll`)."""
+    if clamp and 0 < travel:
+        height = min(max(height, 1e-6 * travel), travel * (1 - 1e-9))
     if not 0 <= slat < total or not 0 < elapsed < total - slat or not 0 < height < travel:
         raise vol.Invalid("Inconsistent closing reading")
-    return _roll(1 - elapsed / (total - slat), height, travel)
+    return _roll(1 - elapsed / (total - slat), height, travel, clamp=clamp)
 
 
-def opening_roll_fit(total: float, slat: float, elapsed: float, height: float, travel: float) -> float:
+def opening_roll_fit(total: float, slat: float, elapsed: float, height: float, travel: float, *, clamp: bool = False) -> float:
     """Mirror of closing_fit for an ascent after a known slat phase (0 without slats)."""
+    if clamp and 0 < travel:
+        height = min(max(height, 1e-6 * travel), travel * (1 - 1e-9))
     if not 0 <= slat < total or not slat < elapsed < total or not 0 < height < travel:
         raise vol.Invalid("Inconsistent opening reading")
-    return _roll((elapsed - slat) / (total - slat), height, travel)
+    return _roll((elapsed - slat) / (total - slat), height, travel, clamp=clamp)
 
 
 def height_at(fraction: float, roll: float) -> float:
@@ -80,46 +103,71 @@ def opening_range(total: float, lift: float, gap: float, travel: float, elapsed:
     """
     if not 0 <= gap < travel or not 0 <= lift < elapsed < total:
         return None
-
-    def slat(roll: float) -> float:
-        fraction = winding(gap / travel, roll)
-        return (lift - total * fraction) / (1 - fraction)
-
-    def roll_where(limit: float) -> float:
-        low, high = 1.0, 5.0
-        for _ in range(48):
-            middle = (low + high) / 2
-            if slat(middle) >= limit:
-                low = middle
-            else:
-                high = middle
-        return (low + high) / 2
-
-    cap = min(total, closing)
-    if slat(1.0) < 0 or slat(5.0) >= cap:
+    rolls = opening_rolls(total, lift, gap, travel, closing)
+    if rolls is None:
         return None
-    lowest = 5.0 if slat(5.0) >= 0 else roll_where(0.0)
-    highest = 1.0 if slat(1.0) < cap else roll_where(cap)
+    highest, lowest = rolls
 
     def height(roll: float) -> float:
-        phase = slat(roll)
+        phase = _slat(total, lift, gap, travel, roll)
         return travel * height_at((elapsed - phase) / (total - phase), roll)
 
     # A stop after the lift-off and before the full time is always between the gap and the travel.
     return height(lowest), height(highest)
 
 
+def _slat(total: float, lift: float, gap: float, travel: float, roll: float) -> float:
+    fraction = winding(gap / travel, roll)
+    return (lift - total * fraction) / (1 - fraction)
+
+
+def opening_rolls(total: float, lift: float, gap: float, travel: float, closing: float) -> tuple[float, float] | None:
+    """The rolls (low, high) within 1-5 whose slat time from the lift-off is from 0 to below both full times.
+
+    The slat time falls as the roll grows, so they form one interval; its ends are found by bisection where a slat
+    limit cuts the 1-5 range, each taken on its own side of the limit (a slat time from 0, below the cap), never at a
+    midpoint that rounding could put across it. None when no roll gives a possible slat time. Its callers have
+    already checked the gap below the travel and the lift-off within the full time.
+    """
+    def slat(roll: float) -> float:
+        return _slat(total, lift, gap, travel, roll)
+
+    def roll_where(limit: float) -> tuple[float, float]:
+        """The two rolls 2⁻⁴⁸ apart around `limit`: (slat time at or above it, slat time below it)."""
+        low, high = ROLL_RANGE
+        for _ in range(48):
+            middle = (low + high) / 2
+            if slat(middle) >= limit:
+                low = middle
+            else:
+                high = middle
+        return low, high
+
+    cap = min(total, closing)
+    if slat(ROLL_RANGE[0]) < 0 or slat(ROLL_RANGE[1]) >= cap:
+        return None
+    high = ROLL_RANGE[1] if slat(ROLL_RANGE[1]) >= 0 else roll_where(0.0)[0]
+    low = ROLL_RANGE[0] if slat(ROLL_RANGE[0]) < cap else roll_where(cap)[1]
+    return low, high
+
+
 def _span(fraction: float, travel: float) -> tuple[float, float]:
     return travel * height_at(fraction, 5.0), travel * height_at(fraction, 1.0)
 
 
-def _roll(fraction: float, height: float, travel: float) -> float:
-    """Invert winding(): the roll that puts this motor fraction at this height."""
+def _roll(fraction: float, height: float, travel: float, *, clamp: bool = False) -> float:
+    """Invert winding(): the roll that puts this motor fraction at this height.
+
+    `clamp` (L-9): a reading no roll from 1 to 5 explains is held at the nearest end (above roll 5 when the edge is
+    lower than any roll puts it, below roll 1 when it is higher) instead of being refused.
+    """
     h = height / travel
     denominator = h - fraction * fraction
     if denominator <= 0:
+        if clamp:
+            return ROLL_RANGE[1]
         raise vol.Invalid("Reading outside the supported roll range")
     roll = (2 * fraction - fraction * fraction - h) / denominator
-    if not 1 - 1e-8 <= roll <= 5 + 1e-8:
+    if not clamp and not ROLL_RANGE[0] - 1e-8 <= roll <= ROLL_RANGE[1] + 1e-8:
         raise vol.Invalid("Reading outside the supported roll range")
-    return min(5.0, max(1.0, roll))
+    return min(ROLL_RANGE[1], max(ROLL_RANGE[0], roll))

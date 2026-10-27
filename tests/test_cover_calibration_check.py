@@ -44,6 +44,11 @@ TRAVEL = 200.0
 RAISE, LOWER, STOP = "*2*1*11##", "*2*2*11##", "*2*0*11##"
 
 
+def unplanned(view):
+    """The check's view without its planned run (L-44: published for the panel's bar), asserted on its own."""
+    return {key: value for key, value in view.items() if key != "planned_seconds"}
+
+
 def height_after(seconds, *, opening=True, model=MODEL):
     """Where the bottom edge is after `seconds` of motor from an end stop, by the runtime's own inversion."""
     total, roll = (model.opening_time_s, model.opening_roll) if opening else (model.closing_time_s, model.closing_roll)
@@ -108,7 +113,8 @@ def test_a_check_plans_half_the_travel_upwards_from_the_bottom_by_default():
     assert (down.start.height, down.start.slats) == (1, 1)
     assert down.planned_seconds == pytest.approx(18 * (1 - winding(.25, 3)))
     assert height_after(down.planned_seconds, opening=False) == pytest.approx(.25)
-    assert check.view() == {"direction": "opening", "target_cm": 100.0, "check_seconds": None, "expected_cm": None,
+    assert check.view()["planned_seconds"] == round(check.planned_seconds, 2), "L-44: the planned run, for the panel's bar"
+    assert unplanned(check.view()) == {"direction": "opening", "target_cm": 100.0, "check_seconds": None, "expected_cm": None,
                             "measured_cm": None, "deviation_cm": None, "passed": None}
 
 
@@ -125,10 +131,15 @@ def test_a_check_aims_between_a_tenth_and_nine_tenths_and_moves_the_curtain_past
     for direction in ("opening", "closing"):
         assert CalibrationCheck.plan(MODEL, TRAVEL, direction, 20).target_cm == 20
     assert CalibrationCheck.plan(MODEL, TRAVEL, "opening", 180).target_cm == 180
-    # Down from the top to 90 %: 18 s of curtain times 1 - u(0.9, 3) is about 1.2 s, not more than 2 + 1.
-    assert CalibrationCheck(MODEL, TRAVEL, "closing", 180).planned_seconds < 3
+    # L-78: down from the top the curtain moves from the first second (the slats close at the bottom): to 90 %, 18 s of
+    # curtain times 1 - u(0.9, 3) is about 1.2 s of curtain, more than the 1 s asked for.
+    assert 1 < CalibrationCheck(MODEL, TRAVEL, "closing", 180).planned_seconds < 3
+    assert CalibrationCheck.plan(MODEL, TRAVEL, "closing", 180).target_cm == 180
+    # A descent too short to say anything is still refused: to 90 % of a curtain lowered in 6 s is under a second.
+    quick = CoverMotionModel(opening_time_s=8, closing_time_s=8, slat_time_s=2, opening_roll=2, closing_roll=3)
+    assert CalibrationCheck(quick, TRAVEL, "closing", 180).planned_seconds <= 1
     with pytest.raises(ProfileError, match="invalid_check"):
-        CalibrationCheck.plan(MODEL, TRAVEL, "closing", 180)
+        CalibrationCheck.plan(quick, TRAVEL, "closing", 180)
     # Ten seconds of slats and two of curtain: halfway up is exactly 11 s, not more than 10 + 1.
     slow_slats = CoverMotionModel(opening_time_s=12, closing_time_s=12, slat_time_s=10)
     assert CalibrationCheck(slow_slats, TRAVEL, "opening", 100).planned_seconds == 11
@@ -142,7 +153,7 @@ def test_no_run_no_verdict_and_readings_outside_the_travel_are_refused():
     check = CalibrationCheck.plan(MODEL, TRAVEL)
     with pytest.raises(ProfileError, match="calibration_step"):
         check.read(100)
-    assert set(check.view().values()) == {"opening", 100.0, None}
+    assert set(unplanned(check.view()).values()) == {"opening", 100.0, None}
     check.ran(check.planned_seconds + .5)
     assert check.check_seconds == pytest.approx(check.planned_seconds + .5)
     # The late Stop is not the model's fault: the expectation follows the real motor time.
@@ -180,7 +191,7 @@ def test_the_window_of_the_twentieth_of_september_fails_going_up_and_passes_comi
     really = 198 * height_after(up.planned_seconds, model=window)
     assert really == pytest.approx(108.6, abs=.2)
     up.read(round(really, 1))
-    assert up.view() == {"direction": "opening", "target_cm": 99.0, "check_seconds": pytest.approx(15.43, abs=.05),
+    assert unplanned(up.view()) == {"direction": "opening", "target_cm": 99.0, "check_seconds": pytest.approx(15.43, abs=.05),
                          "expected_cm": 99.0, "measured_cm": 108.6, "deviation_cm": 10, "passed": False}
 
     down = CalibrationCheck.plan(inherited, 198, "closing")
@@ -230,7 +241,7 @@ async def test_a_check_from_review_homes_runs_timed_and_returns_the_verdict(hass
     await act(cal, "reading", reading_cm=expected + 4.5)
     view = cal.session.view()
     assert (view["phase"], view["step"], view["can_repeat"]) == ("review", "half_close", True)
-    assert view["check"] == {"direction": "opening", "target_cm": 150.0, "check_seconds": pytest.approx(planned + .5),
+    assert unplanned(view["check"]) == {"direction": "opening", "target_cm": 150.0, "check_seconds": pytest.approx(planned + .5),
                              "expected_cm": expected, "measured_cm": expected + 4.5, "deviation_cm": 5, "passed": False}
     assert commands(cal, sent) == [LOWER, STOP, RAISE, STOP]
     # The measurement is untouched and Save stays available whatever the verdict.
@@ -280,7 +291,7 @@ async def test_repeat_on_the_reading_runs_the_same_check_again_from_its_end_stop
     await act(cal, "repeat")
     view = cal.session.view()
     assert (view["phase"], view["step"], cal.session.after_position) == ("briefing", "top", "check")
-    assert view["check"] == {"direction": "closing", "target_cm": 60.0, "check_seconds": None, "expected_cm": None,
+    assert unplanned(view["check"]) == {"direction": "closing", "target_cm": 60.0, "check_seconds": None, "expected_cm": None,
                              "measured_cm": None, "deviation_cm": None, "passed": None}
     assert len(cal.queue) == sent
     await endpoint(cal, 5)
@@ -494,8 +505,8 @@ async def test_a_check_is_offered_only_in_review_to_its_owner_with_the_current_s
 
 
 @pytest.mark.parametrize("extra", [{"target_cm": 0}, {"target_cm": 19}, {"target_cm": 181}, {"target_cm": 200},
-                                   {"target_cm": 250}, {"target_cm": -5}, {"direction": "sideways"},
-                                   {"direction": "closing", "target_cm": 180}])
+                                   {"target_cm": 250}, {"target_cm": -5}, {"direction": "sideways"}])
+# L-78: down to 180 cm is no longer here: a descent moves the curtain from the start and that run is a valid check.
 async def test_a_check_the_cover_cannot_make_sends_nothing_and_keeps_review(geometry, extra):
     """Fork `test_calibration_session_paths.py:1304`: refused, not clamped into another run."""
     cal = geometry

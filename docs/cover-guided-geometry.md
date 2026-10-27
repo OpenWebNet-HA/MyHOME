@@ -106,10 +106,11 @@ clamp to plausible geometry (apart from numerical endpoint rounding).
 
 One point per direction fits the roll; it cannot verify accuracy. The summary
 explicitly says precision is unverified, and the API returns `accuracy: null` and
-`independent_check: false`. From panel 0.41.0 an intermediate reading shows the range
-of heights the fit accepts for that stop (`reading_range`, roll 5 to roll 1) instead
-of a halfway reference; it is neither a target nor a tolerance, and a reading outside
-it is refused with `reading_out_of_range` (see [the API](panel-websocket-api.md#guided-geometry-intermediate-reading-range-0410)).
+`independent_check: false`. From panel 0.41.0 an intermediate reading showed the range
+of heights the fit accepts for that stop (roll 5 to roll 1) instead of a halfway reference. From 0.43.0 those heights
+are `reading_band` (with `expected_cm` and the 10 % widening); `reading_range` is the physical limit, 0.1 cm to the
+travel plus 3 cm, above which a reading is refused with `reading_over_travel`; a reading outside the band is accepted,
+fitted with the roll held at its limit, and reported in `reading_discrepancy` (see [the API](panel-websocket-api.md#guided-geometry-intermediate-reading-range-0410)).
 
 ## Check of the measured model
 
@@ -121,15 +122,18 @@ model needs to bring the bottom edge to the target, and stops on time. By defaul
 run rises from the bottom, because an ascent crosses the slat phase and the opening
 roll, a descent from the top neither; and it aims at three quarters of the travel,
 away from the two intermediate readings, which land near 40 %. A target outside 10 %
-to 90 % of the travel, or a run no longer than the slat time plus 1 s, is refused.
+to 90 % of the travel is refused. A run must move the curtain at least 1 s: beyond the slat phase on an ascent, the
+whole run on a descent (the slats close at the bottom). From 0.43.0 a check the model cannot make is moved to the
+nearest one it can (same direction first), and refused only when there is none.
 
 The reading after it (from 0.1 cm) is compared with where the model puts the edge
 after the motor seconds really run, to a tenth of a centimetre. The difference is
 rounded to the whole centimetre with ties away from zero, and the check passes within
 4 cm (`CHECK_THRESHOLD_CM`). The verdict comes back to `review` in the `check` key of
 the view and stays there until another check, a repeated measurement step or the end
-of the session; Save remains available whatever it says, the verdict is not stored,
-and the check reading seeds the runtime position after Save.
+of the session; Save remains available whatever it says. From 0.43.0 a Save after a completed check keeps it
+with the cover (`check_cm`, `check_measured_cm`, `check_expected_cm`, `check_at`, listed by the overview), and the
+check reading seeds the runtime position after Save.
 
 A check never costs the measurement. Stop in its briefings or at its reading returns
 to `review` with everything, the previous verdict included. Stop while it moves, an
