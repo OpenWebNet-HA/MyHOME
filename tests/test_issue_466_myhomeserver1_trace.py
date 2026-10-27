@@ -21,7 +21,7 @@ from homeassistant.const import (
     CONF_PASSWORD,
     CONF_PORT,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import (
     OWNAutomationEvent,
@@ -386,7 +386,7 @@ async def test_myhomeserver1_kw8011_dummy_scenario_multi_action_sequence(hass: H
 
     # Capture raw bus events
     bus_events = []
-    hass.bus.async_listen("myhome_cenplus_event", lambda ev: bus_events.append(ev.data))
+    hass.bus.async_listen("myhome_cenplus_event", callback(lambda ev: bus_events.append(ev.data)))
 
     # 1. Short press: *25*21#1*21##
     msg1 = OWNMessage.parse("*25*21#1*21##")
@@ -505,7 +505,7 @@ async def test_myhomeserver1_cen_long_press_trace_replay(hass: HomeAssistant) ->
     )
 
     bus_events = []
-    hass.bus.async_listen("myhome_cenplus_event", lambda ev: bus_events.append(ev.data))
+    hass.bus.async_listen("myhome_cenplus_event", callback(lambda ev: bus_events.append(ev.data)))
 
     for item in raw_frames:
         raw = item["raw"]

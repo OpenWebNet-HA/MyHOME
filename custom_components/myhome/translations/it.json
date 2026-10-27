@@ -153,12 +153,14 @@
           "gateway_role": "Ruolo del gateway",
           "primary_gateway": "Gateway primario",
           "delegated_whos": "Sottosistemi delegati",
-          "ignored_addresses": "Indirizzi ignorati"
+          "ignored_addresses": "Indirizzi ignorati",
+          "tuner_pictures": "Immagini dei sintonizzatori"
         },
         "data_description": {
           "decoder_1_pre_gain": "Calibra in base all'hardware, non a occhio: se l'uscita di linea di questo decoder alimenta un modulo BTicino Ingresso RCA (L/N/NT4560) o Controllo Stereo (L4561), aumenta il Pre-Gain durante la riproduzione finché il led di segnale di quel modulo lampeggia arancione — non fisso verde (segnale troppo basso) né fisso rosso/arancione (distorsione). Collega sempre l'uscita di linea fissa ('OUT') del decoder, mai un'uscita cuffia/AUX dipendente dal volume: un secondo stadio di guadagno incontrollato in quel punto causa esattamente la distorsione contro cui mette in guardia la guida guasti BTicino.",
           "delegated_whos": "Solo per il ruolo secondario: sottosistemi di cui questo gateway rileva i nuovi dispositivi. I dispositivi che il primario ha già restano sul primario.",
           "ignored_addresses": "Ignora permanentemente gli indirizzi elencati (es. 1/74, 1/74#4#01): salta il rilevamento, le entità e il tracciamento guasti. Separa le voci con a capo o virgole.",
+          "tuner_pictures": "Una voce MHz=URL per riga (es. 96.2=/local/radio/one.png): l'immagine mostrata finché un sintonizzatore è su quella frequenza. Immagini tue; nessuna è inclusa.",
           "command_worker_count": "Consigliato per il {model}: {session_default}. Accetta al massimo {session_limit} sessione/i di comando, e ognuna, insieme alla sessione eventi, occupa una delle sue poche connessioni, necessarie anche all'app Legrand/BTicino e ad altri client. Aumenta solo se i comandi si accodano."
         }
       },
@@ -234,7 +236,17 @@
         },
         "duration": {
           "name": "Duration",
-          "description": "For how long the instant power information will be sent."
+          "description": "For how long the instant power information will be sent in minutes (0 to stop)."
+        }
+      }
+    },
+    "stop_sending_instant_power": {
+      "name": "Stop sending instant power",
+      "description": "Stop automatic instant power draw updates for a sensor.",
+      "fields": {
+        "entity_id": {
+          "name": "Entity",
+          "description": "Name(s) of entities that will stop sending instant power information."
         }
       }
     },
@@ -316,15 +328,31 @@
           "name": "Tempo di corsa in salita",
           "description": "Secondi per un'apertura completa (1-180)."
         },
+        "slat_time": {
+          "name": "Tempo di orientamento lamelle",
+          "description": "Secondi necessari alle lamelle di una veneziana per una rotazione completa (0.5-10). Usato solo dalle tapparelle con slat_tilt abilitato."
+        },
         "copied_from": {
           "name": "Copiato da",
           "description": "La tapparella da cui sono stati presi questi tempi; la sorgente viene quindi indicata come \"copied\" invece di \"manual\"."
+        },
+        "min_motor_pulse": {
+          "name": "Soglia minima di avvio motore",
+          "description": "Durata minima in secondi (0.0-5.0) di un impulso motore per superare l'inerzia e il freno meccanico (0.0 disabilita)."
         }
       }
     },
     "reset_cover_travel_time": {
       "name": "Reimposta il tempo di corsa della tapparella",
       "description": "Dimentica i tempi di corsa misurati o impostati manualmente e torna al travel_time di myhome.yaml o al valore predefinito di 25 s."
+    },
+    "cancel_cover_request": {
+      "name": "Annulla richiesta cancello o porta garage",
+      "description": "Annulla una richiesta di approvazione in sospeso o un preavviso in corso di un cancello o porta garage a impulso. L'annullamento è sempre sicuro; non si muove nulla."
+    },
+    "acknowledge_cover_fault": {
+      "name": "Riconosci guasto cancello o porta garage",
+      "description": "Cancella il guasto bloccato quando un cancello o una porta garage non ha raggiunto lo stato previsto dopo un impulso (possibile ostacolo o inversione). Solo un utente autorizzato presente a casa può riconoscerlo; fino ad allora la chiusura da Home Assistant resta bloccata."
     }
   },
   "issues": {
@@ -384,6 +412,10 @@
     "primary_gateway_missing": {
       "title": "Gateway principale di {gateway} mancante",
       "description": "{gateway} è configurato come gateway secondario o standby per {primary}, ma tale gateway non è più configurato come gateway principale condiviso. {gateway} sospende il rilevamento fino alla riconfigurazione."
+    },
+    "legacy_yaml_imported": {
+      "title": "Configurazione myhome.yaml importata per {gateway}",
+      "description": "La configurazione dei dispositivi in `myhome.yaml` per {gateway} è stata copiata nelle opzioni della voce di configurazione di Home Assistant. Finché `myhome.yaml` esiste resta il riferimento e la copia ne segue le modifiche. Se il file viene rimosso o diventa illeggibile, i dispositivi mantengono la configurazione dell'ultima copia."
     }
   },
   "exceptions": {
@@ -409,7 +441,7 @@
       "message": "{name}: nessuno stato di arresto dall'attuatore entro {timeout} s - potrebbe non segnalare lo stato; imposta travel_time manualmente"
     },
     "cover_reports_position": {
-      "message": "{name} segnala la propria posizione; la calibrazione del tempo di corsa non si applica"
+      "message": "{name} segnala la propria posizione (advanced: true in myhome.yaml); la calibrazione del tempo di corsa non si applica. Se si tratta di un attuatore temporizzato standard (es. F411) che non supporta la dimensione 10, rimuovere advanced: true da myhome.yaml."
     },
     "calibration_in_progress": {
       "message": "{name} è già in fase di calibrazione"
@@ -418,7 +450,7 @@
       "message": "{name}: corsa {direction} non plausibile di {seconds} s; non salvata"
     },
     "travel_time_missing": {
-      "message": "Specifica almeno travel_time oppure travel_time_down/up"
+      "message": "Specifica almeno travel_time, travel_time_down/up oppure min_motor_pulse"
     },
     "travel_time_out_of_range": {
       "message": "{field} deve essere compreso tra {min} s e {max} s"
@@ -428,6 +460,12 @@
     },
     "cover_busy_calibrating": {
       "message": "{entity_id} è in fase di calibrazione; riprova quando sarà terminata"
+    },
+    "cover_busy_moving": {
+      "message": "{name} è in movimento; fermala prima di orientare le lamelle"
+    },
+    "slat_tilt_not_enabled": {
+      "message": "{name} non ha slat_tilt abilitato; slat_time non può essere impostato"
     },
     "decoders_busy": {
       "message": "{entity_id}: tutti gli ingressi della matrice audio sono attualmente usati da altre stanze"
@@ -466,7 +504,10 @@
       "message": "{entity_id}: la ricerca di frequenza è supportata solo sulle entità sintonizzatore"
     },
     "cover_position_unknown": {
-      "message": "Esegui un’apertura o una chiusura completa prima di impostare una posizione intermedia."
+      "message": "{name}: esegui un’apertura o una chiusura completa prima di impostare una posizione intermedia."
+    },
+    "volume_not_finite": {
+      "message": "{entity_id}: il livello del volume {volume} non è un numero finito valido"
     }
   },
   "entity": {

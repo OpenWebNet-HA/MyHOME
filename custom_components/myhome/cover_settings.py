@@ -100,10 +100,16 @@ COVER_RECORD = vol.Schema({vol.Optional("overrides", default=dict): {
 NATIVE_EVIDENCE = vol.Schema({vol.Required("source"): str,
                              vol.Required("recorded_at"): vol.Any(str, None),
                              vol.Required("origin_unique_id"): vol.Any(str, None)})
-NATIVE = vol.Schema({vol.Required("up"): seconds, vol.Required("down"): seconds,
+_TIMED_NATIVE = vol.Schema({vol.Required("up"): seconds, vol.Required("down"): seconds,
                     vol.Optional("provenance"): {vol.Required(direction): NATIVE_EVIDENCE for direction in KEYS}},
                     extra=vol.ALLOW_EXTRA)
 
+
+# A native blind may store only slat timing or motor pulse, without travel calibration.
+NATIVE = vol.Any(_TIMED_NATIVE, vol.Schema({
+    vol.Optional("slat_time"): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=10)),
+    vol.Optional("min_motor_pulse"): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
+}))
 
 def native_provenance(native: dict[str, Any], direction: str) -> dict[str, Any]:
     """Keep per-key evidence when available, otherwise report the original record."""
@@ -143,7 +149,7 @@ def resolve(*, profile: dict[str, Any] | None, native: dict[str, Any] | None,
                 value = (getattr(motion, f"{direction}_time_s") if motion else
                          round(seconds(value * centimetres(travel_cm) / centimetres(profile["reference_travel_cm"])), 4))
                 scaled = True
-        elif native is not None:
+        elif native is not None and native_key in native:
             value, origin = native[native_key], "native_fallback"
             provenance = native_provenance(native, direction)
         else:

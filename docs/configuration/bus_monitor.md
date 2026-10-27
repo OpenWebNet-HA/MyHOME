@@ -104,6 +104,9 @@ Two ways to begin a capture. **Both are harmless** — neither can switch a load
 
 The bar at the bottom writes a raw OpenWebNet frame to the SCS bus exactly as typed. That **can** switch loads, move shutters, or arm/disarm the burglar alarm, so it is disabled until you tick **I understand the risk** in the orange bar above it; the bar turns red while armed. Untick it when you are done. Start Trace and Sweep Bus never use this path. (The backend additionally refuses the command for non-administrator users.)
 
+> [!NOTE]
+> For gateway and bus safety, structurally invalid frames, signaling frames (`*#*1##`, `*#*0##`), and commands known to crash gateway hardware (specifically WHO 4 Dimension 22 split-unit IR frames, which crash the thermostat daemon on F461 / F454 / MH200N gateways and trigger a reboot) are blocked by the backend and return `ERR_INVALID_FORMAT`.
+
 ### 6. Time stamps
 
 Frames are stamped in **UTC** by the integration (`timestamp` / `iso_time`) and rendered by the card in the **browser's local time zone**, so they line up with the Home Assistant logbook. Exports keep the UTC values. *(#305)*

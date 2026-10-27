@@ -152,6 +152,18 @@ def test_f461_gateway_diagnostics_frames() -> None:
     assert firmware_reply.who == 13
     assert firmware_reply._firmware_version == "2.0.11"
 
+    kernel_reply = OWNMessage.parse("*#13**23*5*10*35##")
+    assert isinstance(kernel_reply, OWNGatewayEvent)
+    assert kernel_reply.who == 13
+    assert kernel_reply.dimension == 23
+    assert getattr(kernel_reply, "kernel_version", getattr(kernel_reply, "_kernel_version", None)) == "5.10.35"
+
+    distribution_reply = OWNMessage.parse("*#13**24*2*26*4##")
+    assert isinstance(distribution_reply, OWNGatewayEvent)
+    assert distribution_reply.who == 13
+    assert distribution_reply.dimension == 24
+    assert getattr(distribution_reply, "distribution_version", getattr(distribution_reply, "_distribution_version", None)) == "2.26.4"
+
 
 def test_f461_gateway_object_model_frame() -> None:
     """Verify the WHO 1013 gateway object model identity reply from the F461.

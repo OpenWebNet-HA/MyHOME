@@ -422,10 +422,12 @@ async def write_native_timing(hass: Any, entry: Any, cover: Any, result: Any) ->
             record = NATIVE(result)
             record["provenance"] = {
                 direction: native_provenance(previous, direction)
-                if previous and previous[key] == record[key] and result.get("source") != "measured"
+                if previous and previous.get(key) == record[key] and result.get("source") != "measured"
                 else native_provenance(record, direction)
-                for direction, key in KEYS.items()
+                for direction, key in KEYS.items() if key in record
             }
+            if not record["provenance"]:
+                record.pop("provenance")
             data["native_fallbacks"][str(cover._device_id)] = record
         await commit_profiles(hass, store, entry.entry_id, data, [])
         cover._profile_store = store
@@ -443,6 +445,8 @@ async def bind_cover(hass: Any, cover: Any) -> None:
         cover._profile_store = store
         if not cover._advanced:
             cover.async_apply_cover_profile(store.profile(entity.unique_id))
+        else:
+            cover._apply_native_motor_settings(cover.native_cover_fallback())
 
     @callback
     def unbind() -> None:

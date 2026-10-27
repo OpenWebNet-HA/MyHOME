@@ -8,7 +8,7 @@ from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.components.switch import SwitchDeviceClass
 from homeassistant.const import CONF_MAC, CONF_NAME
-from voluptuous import ALLOW_EXTRA, Invalid
+from voluptuous import ALLOW_EXTRA, Invalid, MultipleInvalid
 
 from custom_components.myhome.const import (
     CONF_ADVANCED_SHUTTER,
@@ -23,7 +23,10 @@ from custom_components.myhome.const import (
     CONF_ICON_ON,
     CONF_INVERTED,
     CONF_MANUFACTURER,
+    CONF_MIN_POSITION_DELTA,
     CONF_PLATFORMS,
+    CONF_SLAT_TILT,
+    CONF_SLAT_TIME,
     CONF_WHERE,
     CONF_WHO,
     CONF_ZONE,
@@ -31,6 +34,7 @@ from custom_components.myhome.const import (
 from custom_components.myhome.validate import (
     Area,
     BusInterface,
+    DoorEntryWhere,
     General,
     Group,
     MacAddress,
@@ -43,6 +47,7 @@ from custom_components.myhome.validate import (
     cover_schema,
     format_mac,
     light_schema,
+    lock_schema,
     sensor_schema,
     switch_schema,
 )
@@ -168,7 +173,7 @@ class TestWhereValidators:
         assert validator("11") == "11"
         assert validator("00") == "00"
         assert validator("99") == "99"
-        assert validator("0101") == "0101"
+        assert validator("0101") == "0101"  # left as typed; only area 0 is rewritten (#147, OWNd#123)
         assert validator("1015") == "1015"
         assert validator("0000") == "0000"
         assert repr(validator) == "Where(String, msg='custom p2p msg')"
@@ -333,18 +338,42 @@ class TestDeviceSchemas:
             switch_schema(raw)
 
     def test_cover_schema(self):
-        """Test cover schema with advanced shutter boolean."""
+        """Test cover schema with advanced shutter boolean and slat_time validation."""
         raw = {
             "bedroom_blind": {
                 CONF_WHERE: "31",
                 CONF_NAME: "Bedroom Blind",
                 CONF_ADVANCED_SHUTTER: True,
+                CONF_SLAT_TILT: True,
+                CONF_SLAT_TIME: 2.5,
             }
         }
         res = cover_schema(raw)
         assert "2-31" in res
         assert res["2-31"][CONF_WHO] == "2"
         assert res["2-31"][CONF_ADVANCED_SHUTTER] is True
+        assert res["2-31"][CONF_SLAT_TILT] is True
+        assert res["2-31"][CONF_SLAT_TIME] == 2.5
+
+        with pytest.raises(Invalid, match="slat_time can only be defined on a cover with slat_tilt enabled"):
+            cover_schema({"c": {CONF_WHERE: "31", CONF_NAME: "Blind", CONF_SLAT_TIME: 2.0}})
+        with pytest.raises(Invalid, match="slat_time can only be defined on a cover with slat_tilt enabled"):
+            cover_schema({"c": {CONF_WHERE: "31", CONF_NAME: "Blind", CONF_SLAT_TILT: False, CONF_SLAT_TIME: 2.0}})
+
+    def test_cover_schema_min_position_delta(self):
+        """min_position_delta is a whole percent in 1..5, only on an advanced cover (discussion #770)."""
+        res = cover_schema({"c": {CONF_WHERE: "31", CONF_NAME: "Shutter", CONF_ADVANCED_SHUTTER: True, CONF_MIN_POSITION_DELTA: "1"}})
+        assert res["2-31"][CONF_MIN_POSITION_DELTA] == 1
+        res = cover_schema({"c": {CONF_WHERE: "31", CONF_NAME: "Shutter", "strategy": "native", CONF_MIN_POSITION_DELTA: 5}})
+        assert res["2-31"][CONF_MIN_POSITION_DELTA] == 5
+        # Not set: no key, the cover falls back to MIN_POSITION_DELTA.
+        assert CONF_MIN_POSITION_DELTA not in cover_schema({"c": {CONF_WHERE: "31", CONF_NAME: "Shutter", CONF_ADVANCED_SHUTTER: True}})["2-31"]
+
+        for bad in (0, 6):
+            with pytest.raises(Invalid):
+                cover_schema({"c": {CONF_WHERE: "31", CONF_NAME: "Shutter", CONF_ADVANCED_SHUTTER: True, CONF_MIN_POSITION_DELTA: bad}})
+        with pytest.raises(Invalid, match="min_position_delta only applies to an advanced cover"):
+            cover_schema({"c": {CONF_WHERE: "31", CONF_NAME: "Shutter", CONF_MIN_POSITION_DELTA: 1}})
 
     def test_binary_sensor_schema(self):
         """Test binary sensor schema across supported WHOs (1, 9, 25)."""
@@ -735,4 +764,169 @@ class TestFullConfigSchema:
         }
         res_cov = cover_schema(cov_data)
         assert res_cov["2-22"][CONF_ADVANCED_SHUTTER] is True
+
+        # Cover travel_time bounds (0..300; 0 selects SimpleUpDownStopStrategy)
+        for valid_tt in (0, 1, 25, 300):
+            res_tt = cover_schema(
+                {"cov1": {CONF_WHERE: "22", CONF_NAME: "Living Cover", "travel_time": valid_tt}}
+            )
+            assert res_tt["2-22"]["travel_time"] == valid_tt
+
+        for invalid_tt in (-1, -5, 301):
+            with pytest.raises(Invalid):
+                cover_schema(
+                    {"cov1": {CONF_WHERE: "22", CONF_NAME: "Living Cover", "travel_time": invalid_tt}}
+                )
+
+        # Cover with slat_tilt
+        cov_tilt_data = {
+            "cov2": {
+                CONF_WHERE: "23",
+                CONF_NAME: "Venetian Blind",
+                "slat_tilt": True,
+                "slat_time": 3.5,
+            }
+        }
+        res_cov_tilt = cover_schema(cov_tilt_data)
+        assert res_cov_tilt["2-23"][CONF_SLAT_TILT] is True
+        assert res_cov_tilt["2-23"][CONF_SLAT_TIME] == 3.5
+
+        # Invalid slat_time (< 0.5s or > 10.0s)
+        for invalid_time in (0.2, 12.0, -1.0):
+            with pytest.raises(MultipleInvalid):
+                cover_schema({
+                    "cov_bad": {
+                        CONF_WHERE: "24",
+                        CONF_NAME: "Bad Blind",
+                        "slat_tilt": True,
+                        "slat_time": invalid_time,
+                    }
+                })
+
+
+class TestLockSchemaValidation:
+    """Test validation and restrictions on lock_schema."""
+
+    @pytest.mark.parametrize("where", ["12", "72", "4"])
+    def test_who1_lock_rejected(self, where):
+        """A WHO=1 relay can be a motorized gate: as a lock it would bypass the access policy."""
+        with pytest.raises(Invalid):
+            lock_schema({"lock1": {CONF_WHO: "1", CONF_WHERE: where, CONF_NAME: "Gate as lock"}})
+
+    def test_who8_lock_rejected(self):
+        """Only WHO=6 door entry strikes are locks."""
+        with pytest.raises(Invalid):
+            lock_schema({"lock1": {CONF_WHO: "8", CONF_WHERE: "74", CONF_NAME: "Intercom lock"}})
+
+    def test_who_defaults_to_6(self):
+        res = lock_schema({"lock1": {CONF_WHERE: "4001", CONF_NAME: "Front door"}})
+        assert "6-4001" in res
+        assert res["6-4001"]["pulse_duration"] == 5.0
+
+    @pytest.mark.parametrize("where", ["4001#2", "4095#2", "4000", "1", "99", "4099"])
+    def test_who6_riser_and_panel_addresses_validate(self, where):
+        """WHO 6 endpoints are 1..99 or 4000..4099, with #2 appended on a riser installation."""
+        res = lock_schema({"lock1": {CONF_WHO: "6", CONF_WHERE: where, CONF_NAME: "Door"}})
+        assert f"6-{where}" in res
+
+    @pytest.mark.parametrize(
+        "where",
+        [
+            "4001#3", "#2", "40#2#2", "abc", "12345", "4001#", "100", "500",
+            "3999", "4101", "9999", "01", "0001", "0000", "0#2", "4100#2",
+        ],
+    )
+    def test_who6_malformed_where_rejected(self, where):
+        with pytest.raises(Invalid, match="Invalid door entry WHERE"):
+            lock_schema({"lock1": {CONF_WHO: "6", CONF_WHERE: where, CONF_NAME: "Door"}})
+
+    @pytest.mark.parametrize("bad_code", ["abc", "12-34", "123a", ""])
+    def test_lock_non_digit_code_rejected(self, bad_code):
+        """Lock code must contain only digits so it matches code_format."""
+        with pytest.raises(Invalid, match="only digits"):
+            lock_schema({"lock1": {CONF_WHO: "6", CONF_WHERE: "4001", CONF_NAME: "Door", "code": bad_code}})
+
+    def test_who6_validates(self):
+        """WHO=6 door entry lock with entrance panel WHERE succeeds."""
+        data = {
+            "lock1": {
+                CONF_WHO: "6",
+                CONF_WHERE: "1",
+                CONF_NAME: "Main Entrance Panel",
+            }
+        }
+        res = lock_schema(data)
+        assert "6-1" in res
+
+    def test_who6_general_or_broadcast_rejected(self):
+        """WHO=6 door entry lock cannot use general 0 or the broadcast address."""
+        for where in ("0", "4100"):
+            with pytest.raises(Invalid, match="cannot use general"):
+                lock_schema({"lock1": {CONF_WHO: "6", CONF_WHERE: where, CONF_NAME: "General Lock"}})
+
+    def test_door_entry_where_repr(self):
+        assert repr(DoorEntryWhere("custom door msg")) == "DoorEntryWhere(msg='custom door msg')"
+
+    def test_who6_group_rejected(self):
+        with pytest.raises(Invalid):
+            lock_schema({"lock1": {CONF_WHO: "6", CONF_WHERE: "#2", CONF_NAME: "Group Lock"}})
+
+    def test_pulse_duration_bounds(self):
+        """Pulse duration must be between 0.1 and 10.0 seconds."""
+        with pytest.raises(Invalid):
+            lock_schema({
+                "lock1": {
+                    CONF_WHO: "6",
+                    CONF_WHERE: "12",
+                    CONF_NAME: "Negative Pulse Lock",
+                    "pulse_duration": -3.0,
+                }
+            })
+        with pytest.raises(Invalid):
+            lock_schema({
+                "lock1": {
+                    CONF_WHO: "6",
+                    CONF_WHERE: "12",
+                    CONF_NAME: "Too Long Pulse Lock",
+                    "pulse_duration": 15.0,
+                }
+            })
+
+class TestImpulseCoverTypeConsistency:
+    """`type` has to agree with `who`; it used to be ignored silently."""
+
+    @staticmethod
+    def _cover(**cfg):
+        return cover_schema({"gate": {CONF_WHERE: "72", CONF_NAME: "Gate", **cfg}})
+
+    def test_impulse_type_with_who2_rejected(self):
+        with pytest.raises(Invalid, match="needs who: 1"):
+            self._cover(**{CONF_WHO: "2", "type": "impulse_relay"})
+
+    @pytest.mark.parametrize("kind", ["shutter", "standard"])
+    def test_shutter_type_with_who1_rejected(self, kind):
+        with pytest.raises(Invalid, match="who: 1 is an impulse relay"):
+            self._cover(**{CONF_WHO: "1", "type": kind})
+
+    def test_matching_types_validate(self):
+        assert "1-72" in self._cover(**{CONF_WHO: "1", "type": "impulse_relay"})
+        assert "1-72" in self._cover(**{CONF_WHO: "1"})
+        assert "2-72" in self._cover(**{CONF_WHO: "2", "type": "shutter"})
+
+    def test_pin_code_needs_an_access_block(self):
+        """A PIN is only checked by the access policy; a plain impulse cover needs none."""
+        assert "1-72" in self._cover(**{CONF_WHO: "1"})
+        with pytest.raises(Invalid, match="pin_code is checked by the access policy"):
+            self._cover(**{CONF_WHO: "1", "pin_code": "1234"})
+
+    @pytest.mark.parametrize("bad_pin", ["abcd", "12-34", "12a4", ""])
+    def test_impulse_cover_non_digit_pin_rejected(self, bad_pin):
+        with pytest.raises(Invalid, match="only digits"):
+            self._cover(**{CONF_WHO: "1", "pin_code": bad_pin, "access": {}})
+
+    @pytest.mark.parametrize(("pulse", "cycle"), [(2.0, 1.0), (1.5, 1.5)])
+    def test_impulse_cover_min_cycle_time_must_exceed_pulse_duration(self, pulse, cycle):
+        with pytest.raises(Invalid, match="min_cycle_time must be greater than pulse_duration"):
+            self._cover(**{CONF_WHO: "1", "pulse_duration": pulse, "min_cycle_time": cycle})
+
 

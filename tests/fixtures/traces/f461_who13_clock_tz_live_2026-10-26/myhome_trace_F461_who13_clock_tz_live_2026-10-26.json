@@ -1,0 +1,1480 @@
+{
+  "capture": {
+    "kind": "derived_trace_archive",
+    "started_at": "2026-10-26T20:46:39+00:00",
+    "notes": "Live BTicino F461 (firmware 2.0.11 / WHO 13 device type 200 / WHO 1013 134.15.5.0) WHO 13 clock capture of 2026-10-26, 20:46-20:59 UTC, on the physical test plant (gateway clock UTC + 2 h), asked for in OpenWebNet-HA/OWNd#144 (comment 6426869553): does the F461 ACK, echo or store a clock write whose time-zone field is non-standard (0530, 124)? Sessions: one event-only listener for the whole run (00_listener.jsonl, 1500 s, stopped at 20:59:39 UTC) and one short probe invocation per step, each on its own command + event sessions (tools/probe.py, 3 s pause after each request); listener and probe both ran OpenWebNet-HA/OWNd#144 head da77a53 (the probe sends raw strings but refuses a frame its OWNd cannot parse, and OWNd master raises on a 0530 / 124 time zone). Steps: baseline reads *#13**0## / *#13**22## (999); *#13**#0*HH*MM*SS*0530##; *#13**#0*HH*MM*SS*124##; *#13**#22*HH*MM*SS*0530*W*DD*MM*YYYY##; the same with 124; each write followed by *#13**0## and *#13**22## read-backs; then the listener alone through the gateway's spontaneous 10-minute clock broadcast at 20:50:00 UTC (*#13**#1*01*26*10*2026## then *#13**#0*22*50*00*##, empty time-zone field); then the restore *#13**#0*HH*MM*SS*999## and its read-backs. Every request was ACKed in 9 - 18 ms (one read in 59 ms), every write with no reply, nothing was echoed on the event session within 3 s of any write nor anywhere in the listener window, every read-back reported 999, and the broadcast carried no 0530 / 124: the physical F461 neither stores nor echoes a non-standard time zone, and it did not echo the 999 restore either. The time field of each write (the shell's wall clock at expansion, 1 - 2 s before the send) was not in effect at its read-back: the read-backs kept following the wall clock (deduction at 1 s resolution). Every tx row carries both decodes of the written string: ownd_class / ownd_log from the #144 head (OWNGatewayCommand, timezone None, raw_timezone kept) and ownd_master_error from OWNd master (ValueError); every rx row carries ownd_class / ownd_log (what the #144-head listener logged at capture time, re-decoded offline to the same result) and ownd_master_class / ownd_master_log (identical: the F461 emitted only 999 and empty time-zone fields). Timing: t is the listener's clock, one monotonic axis over all runs, shifted so t = 0 is the baseline *#13**0## request; the probe's rows are placed on it through the frames both sessions received (capture.runs[].probe_segments[].listener_offset_s, spread <= 15 ms); tx.t = probe record time - 3 s pause - reply_time_s, result.t = tx.t + reply_time_s; command-session replies sit at the request's t (t_estimated); result.events_after holds the event-session frames of the pending window (tx.t <= t <= result.t), result.events_within_wait the frames the probe's own event session received between the send and the record 3 s later. A zone-2 temperature report (*#4*2*0*0240##) and a humidity report (*#4*2*60*39##) reached the listener during the broadcast wait and are kept as captured. A first attempt (frames with an empty time field, refused by the probe's OWNd before anything reached the gateway) is not included. Nothing is synthetic except the gateway's MAC and LAN address in the gateway block; the HMAC handshakes are not included.",
+    "window": {
+      "first": "2026-10-26T20:46:39+00:00",
+      "last": "2026-10-26T20:59:16+00:00",
+      "frames": 16,
+      "rows": 79
+    },
+    "listener": {
+      "file": "00_listener.jsonl",
+      "started_utc": "20:46:32.8",
+      "stopped_utc": "20:59:39",
+      "duration_s": 1500,
+      "ownd": "OpenWebNet-HA/OWNd#144 head da77a53 (OWNEventSession)",
+      "probe": "tools/probe.py, raw strings, OpenWebNet-HA/OWNd#144 head da77a53 on PYTHONPATH, is_status_request from the frame form, 3 s pause after each request"
+    },
+    "decoders": {
+      "ownd_class / ownd_log / ownd_timezone / ownd_raw_timezone": "OpenWebNet-HA/OWNd#144 head da77a53 (the OWNd the listener and the probe ran; the event rows carry what it logged at capture time, re-decoded offline to the same result)",
+      "ownd_master_class / ownd_master_log, or ownd_master_error": "OWNd master 050dc1d decoded offline (OWNCommand.parse for tx rows, OWNMessage.parse for rx rows); ownd_master_error is the exception text when it raised"
+    },
+    "runs": [
+      {
+        "run": "run1_baseline_reads",
+        "listener": "00_listener.jsonl",
+        "utc": "20:46:39-20:46:42",
+        "t_offset": 0.0,
+        "rows": 10,
+        "frames": 2,
+        "probe_requests": [
+          "*#13**0##",
+          "*#13**22##"
+        ],
+        "probe_segments": [
+          {
+            "file": "01_baseline.jsonl",
+            "step": "baseline_reads",
+            "probe_wait_s": 3.0,
+            "listener_offset_s": -1.045,
+            "alignment_frames": 2,
+            "alignment_spread_s": 0.0,
+            "t_first_request": 0.0,
+            "utc": "20:46:39-20:46:42"
+          }
+        ]
+      },
+      {
+        "run": "run2_write_dim0_tz_0530",
+        "listener": "00_listener.jsonl",
+        "utc": "20:46:47-20:46:53",
+        "t_offset": 7.365,
+        "rows": 13,
+        "frames": 2,
+        "probe_requests": [
+          "*#13**#0*22*46*45*0530##",
+          "*#13**0##",
+          "*#13**22##"
+        ],
+        "probe_segments": [
+          {
+            "file": "02_write_0530.jsonl",
+            "step": "write_dim0_tz_0530",
+            "probe_wait_s": 3.0,
+            "listener_offset_s": 6.319,
+            "alignment_frames": 2,
+            "alignment_spread_s": 0.0,
+            "t_first_request": 7.365,
+            "utc": "20:46:47-20:46:53"
+          }
+        ]
+      },
+      {
+        "run": "run3_write_dim0_tz_124",
+        "listener": "00_listener.jsonl",
+        "utc": "20:46:57-20:47:03",
+        "t_offset": 17.74,
+        "rows": 13,
+        "frames": 2,
+        "probe_requests": [
+          "*#13**#0*22*46*56*124##",
+          "*#13**0##",
+          "*#13**22##"
+        ],
+        "probe_segments": [
+          {
+            "file": "03_write_124.jsonl",
+            "step": "write_dim0_tz_124",
+            "probe_wait_s": 3.0,
+            "listener_offset_s": 16.696,
+            "alignment_frames": 2,
+            "alignment_spread_s": 0.001,
+            "t_first_request": 17.74,
+            "utc": "20:46:57-20:47:03"
+          }
+        ]
+      },
+      {
+        "run": "run4_write_dim22_tz_0530",
+        "listener": "00_listener.jsonl",
+        "utc": "20:47:07-20:47:14",
+        "t_offset": 28.174,
+        "rows": 13,
+        "frames": 2,
+        "probe_requests": [
+          "*#13**#22*22*47*06*0530*1*26*10*2026##",
+          "*#13**0##",
+          "*#13**22##"
+        ],
+        "probe_segments": [
+          {
+            "file": "04_write_22_0530.jsonl",
+            "step": "write_dim22_tz_0530",
+            "probe_wait_s": 3.0,
+            "listener_offset_s": 27.131,
+            "alignment_frames": 2,
+            "alignment_spread_s": 0.001,
+            "t_first_request": 28.174,
+            "utc": "20:47:07-20:47:14"
+          }
+        ]
+      },
+      {
+        "run": "run5_write_dim22_tz_124",
+        "listener": "00_listener.jsonl",
+        "utc": "20:47:18-20:47:24",
+        "t_offset": 38.628,
+        "rows": 13,
+        "frames": 2,
+        "probe_requests": [
+          "*#13**#22*22*47*17*124*1*26*10*2026##",
+          "*#13**0##",
+          "*#13**22##"
+        ],
+        "probe_segments": [
+          {
+            "file": "04b_write_22_124.jsonl",
+            "step": "write_dim22_tz_124",
+            "probe_wait_s": 3.0,
+            "listener_offset_s": 37.58,
+            "alignment_frames": 2,
+            "alignment_spread_s": 0.0,
+            "t_first_request": 38.628,
+            "utc": "20:47:18-20:47:24"
+          }
+        ]
+      },
+      {
+        "run": "run6_clock_broadcast_listen",
+        "listener": "00_listener.jsonl",
+        "utc": "20:50:00-20:55:44",
+        "t_offset": 200.853,
+        "rows": 4,
+        "frames": 4,
+        "probe_requests": []
+      },
+      {
+        "run": "run7_restore_tz_999",
+        "listener": "00_listener.jsonl",
+        "utc": "20:59:10-20:59:16",
+        "t_offset": 750.316,
+        "rows": 13,
+        "frames": 2,
+        "probe_requests": [
+          "*#13**#0*22*59*08*999##",
+          "*#13**0##",
+          "*#13**22##"
+        ],
+        "probe_segments": [
+          {
+            "file": "05_restore_999.jsonl",
+            "step": "restore_tz_999",
+            "probe_wait_s": 3.0,
+            "listener_offset_s": 749.278,
+            "alignment_frames": 2,
+            "alignment_spread_s": 0.0,
+            "t_first_request": 750.316,
+            "utc": "20:59:10-20:59:16"
+          }
+        ]
+      }
+    ]
+  },
+  "gateway": {
+    "model": "F461",
+    "manufacturer": "BTicino",
+    "firmware": "2.0.11",
+    "kernel": "5.10.35",
+    "distribution": "2.26.4",
+    "ip": "192.0.2.92",
+    "mac": "00:03:50:00:10:26",
+    "identification": {
+      "model": "F461",
+      "who13_code": "200",
+      "who13_model_name": "F461",
+      "who1013_code": "134"
+    }
+  },
+  "frames": [
+    {
+      "timestamp": 0.004,
+      "direction": "rx",
+      "raw": "*#13**0*22*46*39*999##",
+      "run": "run1_baseline_reads",
+      "session": "evt"
+    },
+    {
+      "timestamp": 3.018,
+      "direction": "rx",
+      "raw": "*#13**22*22*46*42*999*01*26*10*2026##",
+      "run": "run1_baseline_reads",
+      "session": "evt"
+    },
+    {
+      "timestamp": 10.384,
+      "direction": "rx",
+      "raw": "*#13**0*22*46*50*999##",
+      "run": "run2_write_dim0_tz_0530",
+      "session": "evt"
+    },
+    {
+      "timestamp": 13.397,
+      "direction": "rx",
+      "raw": "*#13**22*22*46*53*999*01*26*10*2026##",
+      "run": "run2_write_dim0_tz_0530",
+      "session": "evt"
+    },
+    {
+      "timestamp": 20.755,
+      "direction": "rx",
+      "raw": "*#13**0*22*47*00*999##",
+      "run": "run3_write_dim0_tz_124",
+      "session": "evt"
+    },
+    {
+      "timestamp": 23.766,
+      "direction": "rx",
+      "raw": "*#13**22*22*47*03*999*01*26*10*2026##",
+      "run": "run3_write_dim0_tz_124",
+      "session": "evt"
+    },
+    {
+      "timestamp": 31.207,
+      "direction": "rx",
+      "raw": "*#13**0*22*47*11*999##",
+      "run": "run4_write_dim22_tz_0530",
+      "session": "evt"
+    },
+    {
+      "timestamp": 34.22,
+      "direction": "rx",
+      "raw": "*#13**22*22*47*14*999*01*26*10*2026##",
+      "run": "run4_write_dim22_tz_0530",
+      "session": "evt"
+    },
+    {
+      "timestamp": 41.648,
+      "direction": "rx",
+      "raw": "*#13**0*22*47*21*999##",
+      "run": "run5_write_dim22_tz_124",
+      "session": "evt"
+    },
+    {
+      "timestamp": 44.668,
+      "direction": "rx",
+      "raw": "*#13**22*22*47*24*999*01*26*10*2026##",
+      "run": "run5_write_dim22_tz_124",
+      "session": "evt"
+    },
+    {
+      "timestamp": 200.853,
+      "direction": "rx",
+      "raw": "*#13**#1*01*26*10*2026##",
+      "run": "run6_clock_broadcast_listen",
+      "session": "evt"
+    },
+    {
+      "timestamp": 200.855,
+      "direction": "rx",
+      "raw": "*#13**#0*22*50*00*##",
+      "run": "run6_clock_broadcast_listen",
+      "session": "evt"
+    },
+    {
+      "timestamp": 320.411,
+      "direction": "rx",
+      "raw": "*#4*2*0*0240##",
+      "run": "run6_clock_broadcast_listen",
+      "session": "evt"
+    },
+    {
+      "timestamp": 544.817,
+      "direction": "rx",
+      "raw": "*#4*2*60*39##",
+      "run": "run6_clock_broadcast_listen",
+      "session": "evt"
+    },
+    {
+      "timestamp": 753.34,
+      "direction": "rx",
+      "raw": "*#13**0*22*59*13*999##",
+      "run": "run7_restore_tz_999",
+      "session": "evt"
+    },
+    {
+      "timestamp": 756.358,
+      "direction": "rx",
+      "raw": "*#13**22*22*59*16*999*01*26*10*2026##",
+      "run": "run7_restore_tz_999",
+      "session": "evt"
+    }
+  ],
+  "rows": [
+    {
+      "run": "run1_baseline_reads",
+      "t": 0.0,
+      "utc": "20:46:39",
+      "step": "baseline_reads",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**0##",
+      "is_status_request": true,
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "*#13**0##",
+      "ownd_raw_timezone": null,
+      "ownd_timezone": null,
+      "ownd_master_class": "OWNGatewayCommand",
+      "ownd_master_log": "*#13**0##"
+    },
+    {
+      "run": "run1_baseline_reads",
+      "t": 0.0,
+      "t_estimated": true,
+      "step": "baseline_reads",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**0*22*46*39*999##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal time is: 22:46:39.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal time is: 22:46:39."
+    },
+    {
+      "run": "run1_baseline_reads",
+      "t": 0.004,
+      "utc": "20:46:39",
+      "step": "baseline_reads",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**0*22*46*39*999##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal time is: 22:46:39.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal time is: 22:46:39."
+    },
+    {
+      "run": "run1_baseline_reads",
+      "t": 0.01,
+      "t_estimated": true,
+      "step": "baseline_reads",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_baseline_reads",
+      "t": 0.01,
+      "utc": "20:46:39",
+      "step": "baseline_reads",
+      "dir": "result",
+      "frame": "*#13**0##",
+      "ack": true,
+      "reply_time_s": 0.01,
+      "replies": [
+        "*#13**0*22*46*39*999##"
+      ],
+      "events_after": [
+        "*#13**0*22*46*39*999##"
+      ],
+      "events_within_wait": [
+        "*#13**0*22*46*39*999##"
+      ],
+      "wait_s": 3.0,
+      "note": "baseline_time_read_tz_999_reply_also_on_evt"
+    },
+    {
+      "run": "run1_baseline_reads",
+      "t": 3.012,
+      "utc": "20:46:42",
+      "step": "baseline_reads",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**22##",
+      "is_status_request": true,
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "*#13**22##",
+      "ownd_raw_timezone": null,
+      "ownd_timezone": null,
+      "ownd_master_class": "OWNGatewayCommand",
+      "ownd_master_log": "*#13**22##"
+    },
+    {
+      "run": "run1_baseline_reads",
+      "t": 3.012,
+      "t_estimated": true,
+      "step": "baseline_reads",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**22*22*46*42*999*01*26*10*2026##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal datetime is: 2026-10-26 22:46:42.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal datetime is: 2026-10-26 22:46:42."
+    },
+    {
+      "run": "run1_baseline_reads",
+      "t": 3.018,
+      "utc": "20:46:42",
+      "step": "baseline_reads",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**22*22*46*42*999*01*26*10*2026##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal datetime is: 2026-10-26 22:46:42.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal datetime is: 2026-10-26 22:46:42."
+    },
+    {
+      "run": "run1_baseline_reads",
+      "t": 3.023,
+      "t_estimated": true,
+      "step": "baseline_reads",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_baseline_reads",
+      "t": 3.023,
+      "utc": "20:46:42",
+      "step": "baseline_reads",
+      "dir": "result",
+      "frame": "*#13**22##",
+      "ack": true,
+      "reply_time_s": 0.011,
+      "replies": [
+        "*#13**22*22*46*42*999*01*26*10*2026##"
+      ],
+      "events_after": [
+        "*#13**22*22*46*42*999*01*26*10*2026##"
+      ],
+      "events_within_wait": [
+        "*#13**22*22*46*42*999*01*26*10*2026##"
+      ],
+      "wait_s": 3.0,
+      "note": "baseline_datetime_read_tz_999_reply_also_on_evt"
+    },
+    {
+      "run": "run2_write_dim0_tz_0530",
+      "t": 7.365,
+      "utc": "20:46:47",
+      "step": "write_dim0_tz_0530",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**#0*22*46*45*0530##",
+      "is_status_request": false,
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "Gateway broadcasting internal time: 22:46:45.",
+      "ownd_raw_timezone": "0530",
+      "ownd_timezone": null,
+      "ownd_master_error": "ValueError: Invalid gateway timezone: '0530'"
+    },
+    {
+      "run": "run2_write_dim0_tz_0530",
+      "t": 7.375,
+      "t_estimated": true,
+      "step": "write_dim0_tz_0530",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_write_dim0_tz_0530",
+      "t": 7.375,
+      "utc": "20:46:47",
+      "step": "write_dim0_tz_0530",
+      "dir": "result",
+      "frame": "*#13**#0*22*46*45*0530##",
+      "ack": true,
+      "reply_time_s": 0.01,
+      "replies": [],
+      "events_after": [],
+      "events_within_wait": [],
+      "wait_s": 3.0,
+      "note": "set_time_tz_0530_acked_no_reply_no_echo_on_evt"
+    },
+    {
+      "run": "run2_write_dim0_tz_0530",
+      "t": 10.378,
+      "utc": "20:46:50",
+      "step": "write_dim0_tz_0530",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**0##",
+      "is_status_request": true,
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "*#13**0##",
+      "ownd_raw_timezone": null,
+      "ownd_timezone": null,
+      "ownd_master_class": "OWNGatewayCommand",
+      "ownd_master_log": "*#13**0##"
+    },
+    {
+      "run": "run2_write_dim0_tz_0530",
+      "t": 10.378,
+      "t_estimated": true,
+      "step": "write_dim0_tz_0530",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**0*22*46*50*999##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal time is: 22:46:50.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal time is: 22:46:50."
+    },
+    {
+      "run": "run2_write_dim0_tz_0530",
+      "t": 10.384,
+      "utc": "20:46:50",
+      "step": "write_dim0_tz_0530",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**0*22*46*50*999##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal time is: 22:46:50.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal time is: 22:46:50."
+    },
+    {
+      "run": "run2_write_dim0_tz_0530",
+      "t": 10.389,
+      "t_estimated": true,
+      "step": "write_dim0_tz_0530",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_write_dim0_tz_0530",
+      "t": 10.389,
+      "utc": "20:46:50",
+      "step": "write_dim0_tz_0530",
+      "dir": "result",
+      "frame": "*#13**0##",
+      "ack": true,
+      "reply_time_s": 0.011,
+      "replies": [
+        "*#13**0*22*46*50*999##"
+      ],
+      "events_after": [
+        "*#13**0*22*46*50*999##"
+      ],
+      "events_within_wait": [
+        "*#13**0*22*46*50*999##"
+      ],
+      "wait_s": 3.0,
+      "note": "readback_after_tz_0530_write_still_999"
+    },
+    {
+      "run": "run2_write_dim0_tz_0530",
+      "t": 13.392,
+      "utc": "20:46:53",
+      "step": "write_dim0_tz_0530",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**22##",
+      "is_status_request": true,
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "*#13**22##",
+      "ownd_raw_timezone": null,
+      "ownd_timezone": null,
+      "ownd_master_class": "OWNGatewayCommand",
+      "ownd_master_log": "*#13**22##"
+    },
+    {
+      "run": "run2_write_dim0_tz_0530",
+      "t": 13.392,
+      "t_estimated": true,
+      "step": "write_dim0_tz_0530",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**22*22*46*53*999*01*26*10*2026##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal datetime is: 2026-10-26 22:46:53.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal datetime is: 2026-10-26 22:46:53."
+    },
+    {
+      "run": "run2_write_dim0_tz_0530",
+      "t": 13.397,
+      "utc": "20:46:53",
+      "step": "write_dim0_tz_0530",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**22*22*46*53*999*01*26*10*2026##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal datetime is: 2026-10-26 22:46:53.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal datetime is: 2026-10-26 22:46:53."
+    },
+    {
+      "run": "run2_write_dim0_tz_0530",
+      "t": 13.403,
+      "t_estimated": true,
+      "step": "write_dim0_tz_0530",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_write_dim0_tz_0530",
+      "t": 13.403,
+      "utc": "20:46:53",
+      "step": "write_dim0_tz_0530",
+      "dir": "result",
+      "frame": "*#13**22##",
+      "ack": true,
+      "reply_time_s": 0.011,
+      "replies": [
+        "*#13**22*22*46*53*999*01*26*10*2026##"
+      ],
+      "events_after": [
+        "*#13**22*22*46*53*999*01*26*10*2026##"
+      ],
+      "events_within_wait": [
+        "*#13**22*22*46*53*999*01*26*10*2026##"
+      ],
+      "wait_s": 3.0,
+      "note": "readback_dim22_after_tz_0530_write_still_999"
+    },
+    {
+      "run": "run3_write_dim0_tz_124",
+      "t": 17.74,
+      "utc": "20:46:57",
+      "step": "write_dim0_tz_124",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**#0*22*46*56*124##",
+      "is_status_request": false,
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "Gateway broadcasting internal time: 22:46:56.",
+      "ownd_raw_timezone": "124",
+      "ownd_timezone": null,
+      "ownd_master_error": "ValueError: offset must be a timedelta strictly between -timedelta(hours=24) and timedelta(hours=24), not datetime.timedelta(days=-1)"
+    },
+    {
+      "run": "run3_write_dim0_tz_124",
+      "t": 17.749,
+      "t_estimated": true,
+      "step": "write_dim0_tz_124",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run3_write_dim0_tz_124",
+      "t": 17.749,
+      "utc": "20:46:57",
+      "step": "write_dim0_tz_124",
+      "dir": "result",
+      "frame": "*#13**#0*22*46*56*124##",
+      "ack": true,
+      "reply_time_s": 0.009,
+      "replies": [],
+      "events_after": [],
+      "events_within_wait": [],
+      "wait_s": 3.0,
+      "note": "set_time_tz_124_acked_no_reply_no_echo_on_evt"
+    },
+    {
+      "run": "run3_write_dim0_tz_124",
+      "t": 20.749,
+      "utc": "20:47:00",
+      "step": "write_dim0_tz_124",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**0##",
+      "is_status_request": true,
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "*#13**0##",
+      "ownd_raw_timezone": null,
+      "ownd_timezone": null,
+      "ownd_master_class": "OWNGatewayCommand",
+      "ownd_master_log": "*#13**0##"
+    },
+    {
+      "run": "run3_write_dim0_tz_124",
+      "t": 20.749,
+      "t_estimated": true,
+      "step": "write_dim0_tz_124",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**0*22*47*00*999##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal time is: 22:47:00.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal time is: 22:47:00."
+    },
+    {
+      "run": "run3_write_dim0_tz_124",
+      "t": 20.755,
+      "utc": "20:47:00",
+      "step": "write_dim0_tz_124",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**0*22*47*00*999##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal time is: 22:47:00.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal time is: 22:47:00."
+    },
+    {
+      "run": "run3_write_dim0_tz_124",
+      "t": 20.758,
+      "t_estimated": true,
+      "step": "write_dim0_tz_124",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run3_write_dim0_tz_124",
+      "t": 20.758,
+      "utc": "20:47:00",
+      "step": "write_dim0_tz_124",
+      "dir": "result",
+      "frame": "*#13**0##",
+      "ack": true,
+      "reply_time_s": 0.009,
+      "replies": [
+        "*#13**0*22*47*00*999##"
+      ],
+      "events_after": [
+        "*#13**0*22*47*00*999##"
+      ],
+      "events_within_wait": [
+        "*#13**0*22*47*00*999##"
+      ],
+      "wait_s": 3.0,
+      "note": "readback_after_tz_124_write_still_999"
+    },
+    {
+      "run": "run3_write_dim0_tz_124",
+      "t": 23.758,
+      "utc": "20:47:03",
+      "step": "write_dim0_tz_124",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**22##",
+      "is_status_request": true,
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "*#13**22##",
+      "ownd_raw_timezone": null,
+      "ownd_timezone": null,
+      "ownd_master_class": "OWNGatewayCommand",
+      "ownd_master_log": "*#13**22##"
+    },
+    {
+      "run": "run3_write_dim0_tz_124",
+      "t": 23.758,
+      "t_estimated": true,
+      "step": "write_dim0_tz_124",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**22*22*47*03*999*01*26*10*2026##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal datetime is: 2026-10-26 22:47:03.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal datetime is: 2026-10-26 22:47:03."
+    },
+    {
+      "run": "run3_write_dim0_tz_124",
+      "t": 23.766,
+      "utc": "20:47:03",
+      "step": "write_dim0_tz_124",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**22*22*47*03*999*01*26*10*2026##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal datetime is: 2026-10-26 22:47:03.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal datetime is: 2026-10-26 22:47:03."
+    },
+    {
+      "run": "run3_write_dim0_tz_124",
+      "t": 23.817,
+      "t_estimated": true,
+      "step": "write_dim0_tz_124",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run3_write_dim0_tz_124",
+      "t": 23.817,
+      "utc": "20:47:03",
+      "step": "write_dim0_tz_124",
+      "dir": "result",
+      "frame": "*#13**22##",
+      "ack": true,
+      "reply_time_s": 0.059,
+      "replies": [
+        "*#13**22*22*47*03*999*01*26*10*2026##"
+      ],
+      "events_after": [
+        "*#13**22*22*47*03*999*01*26*10*2026##"
+      ],
+      "events_within_wait": [
+        "*#13**22*22*47*03*999*01*26*10*2026##"
+      ],
+      "wait_s": 3.0,
+      "note": "readback_dim22_after_tz_124_write_still_999"
+    },
+    {
+      "run": "run4_write_dim22_tz_0530",
+      "t": 28.174,
+      "utc": "20:47:07",
+      "step": "write_dim22_tz_0530",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**#22*22*47*06*0530*1*26*10*2026##",
+      "is_status_request": false,
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "Gateway broadcasting internal datetime: 2026-10-26 22:47:06.",
+      "ownd_raw_timezone": "0530",
+      "ownd_timezone": null,
+      "ownd_master_error": "ValueError: Invalid gateway timezone: '0530'"
+    },
+    {
+      "run": "run4_write_dim22_tz_0530",
+      "t": 28.192,
+      "t_estimated": true,
+      "step": "write_dim22_tz_0530",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_write_dim22_tz_0530",
+      "t": 28.192,
+      "utc": "20:47:07",
+      "step": "write_dim22_tz_0530",
+      "dir": "result",
+      "frame": "*#13**#22*22*47*06*0530*1*26*10*2026##",
+      "ack": true,
+      "reply_time_s": 0.018,
+      "replies": [],
+      "events_after": [],
+      "events_within_wait": [],
+      "wait_s": 3.0,
+      "note": "set_datetime_tz_0530_acked_no_reply_no_echo_on_evt"
+    },
+    {
+      "run": "run4_write_dim22_tz_0530",
+      "t": 31.193,
+      "utc": "20:47:10",
+      "step": "write_dim22_tz_0530",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**0##",
+      "is_status_request": true,
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "*#13**0##",
+      "ownd_raw_timezone": null,
+      "ownd_timezone": null,
+      "ownd_master_class": "OWNGatewayCommand",
+      "ownd_master_log": "*#13**0##"
+    },
+    {
+      "run": "run4_write_dim22_tz_0530",
+      "t": 31.193,
+      "t_estimated": true,
+      "step": "write_dim22_tz_0530",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**0*22*47*11*999##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal time is: 22:47:11.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal time is: 22:47:11."
+    },
+    {
+      "run": "run4_write_dim22_tz_0530",
+      "t": 31.207,
+      "utc": "20:47:10",
+      "step": "write_dim22_tz_0530",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**0*22*47*11*999##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal time is: 22:47:11.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal time is: 22:47:11."
+    },
+    {
+      "run": "run4_write_dim22_tz_0530",
+      "t": 31.21,
+      "t_estimated": true,
+      "step": "write_dim22_tz_0530",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_write_dim22_tz_0530",
+      "t": 31.21,
+      "utc": "20:47:10",
+      "step": "write_dim22_tz_0530",
+      "dir": "result",
+      "frame": "*#13**0##",
+      "ack": true,
+      "reply_time_s": 0.017,
+      "replies": [
+        "*#13**0*22*47*11*999##"
+      ],
+      "events_after": [
+        "*#13**0*22*47*11*999##"
+      ],
+      "events_within_wait": [
+        "*#13**0*22*47*11*999##"
+      ],
+      "wait_s": 3.0,
+      "note": "readback_after_dim22_tz_0530_write_still_999"
+    },
+    {
+      "run": "run4_write_dim22_tz_0530",
+      "t": 34.211,
+      "utc": "20:47:13",
+      "step": "write_dim22_tz_0530",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**22##",
+      "is_status_request": true,
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "*#13**22##",
+      "ownd_raw_timezone": null,
+      "ownd_timezone": null,
+      "ownd_master_class": "OWNGatewayCommand",
+      "ownd_master_log": "*#13**22##"
+    },
+    {
+      "run": "run4_write_dim22_tz_0530",
+      "t": 34.211,
+      "t_estimated": true,
+      "step": "write_dim22_tz_0530",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**22*22*47*14*999*01*26*10*2026##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal datetime is: 2026-10-26 22:47:14.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal datetime is: 2026-10-26 22:47:14."
+    },
+    {
+      "run": "run4_write_dim22_tz_0530",
+      "t": 34.22,
+      "utc": "20:47:14",
+      "step": "write_dim22_tz_0530",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**22*22*47*14*999*01*26*10*2026##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal datetime is: 2026-10-26 22:47:14.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal datetime is: 2026-10-26 22:47:14."
+    },
+    {
+      "run": "run4_write_dim22_tz_0530",
+      "t": 34.222,
+      "t_estimated": true,
+      "step": "write_dim22_tz_0530",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_write_dim22_tz_0530",
+      "t": 34.222,
+      "utc": "20:47:14",
+      "step": "write_dim22_tz_0530",
+      "dir": "result",
+      "frame": "*#13**22##",
+      "ack": true,
+      "reply_time_s": 0.011,
+      "replies": [
+        "*#13**22*22*47*14*999*01*26*10*2026##"
+      ],
+      "events_after": [
+        "*#13**22*22*47*14*999*01*26*10*2026##"
+      ],
+      "events_within_wait": [
+        "*#13**22*22*47*14*999*01*26*10*2026##"
+      ],
+      "wait_s": 3.0,
+      "note": "readback_dim22_after_dim22_tz_0530_write_still_999"
+    },
+    {
+      "run": "run5_write_dim22_tz_124",
+      "t": 38.628,
+      "utc": "20:47:18",
+      "step": "write_dim22_tz_124",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**#22*22*47*17*124*1*26*10*2026##",
+      "is_status_request": false,
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "Gateway broadcasting internal datetime: 2026-10-26 22:47:17.",
+      "ownd_raw_timezone": "124",
+      "ownd_timezone": null,
+      "ownd_master_error": "ValueError: offset must be a timedelta strictly between -timedelta(hours=24) and timedelta(hours=24), not datetime.timedelta(days=-1)"
+    },
+    {
+      "run": "run5_write_dim22_tz_124",
+      "t": 38.64,
+      "t_estimated": true,
+      "step": "write_dim22_tz_124",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run5_write_dim22_tz_124",
+      "t": 38.64,
+      "utc": "20:47:18",
+      "step": "write_dim22_tz_124",
+      "dir": "result",
+      "frame": "*#13**#22*22*47*17*124*1*26*10*2026##",
+      "ack": true,
+      "reply_time_s": 0.012,
+      "replies": [],
+      "events_after": [],
+      "events_within_wait": [],
+      "wait_s": 3.0,
+      "note": "set_datetime_tz_124_acked_no_reply_no_echo_on_evt"
+    },
+    {
+      "run": "run5_write_dim22_tz_124",
+      "t": 41.643,
+      "utc": "20:47:21",
+      "step": "write_dim22_tz_124",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**0##",
+      "is_status_request": true,
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "*#13**0##",
+      "ownd_raw_timezone": null,
+      "ownd_timezone": null,
+      "ownd_master_class": "OWNGatewayCommand",
+      "ownd_master_log": "*#13**0##"
+    },
+    {
+      "run": "run5_write_dim22_tz_124",
+      "t": 41.643,
+      "t_estimated": true,
+      "step": "write_dim22_tz_124",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**0*22*47*21*999##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal time is: 22:47:21.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal time is: 22:47:21."
+    },
+    {
+      "run": "run5_write_dim22_tz_124",
+      "t": 41.648,
+      "utc": "20:47:21",
+      "step": "write_dim22_tz_124",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**0*22*47*21*999##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal time is: 22:47:21.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal time is: 22:47:21."
+    },
+    {
+      "run": "run5_write_dim22_tz_124",
+      "t": 41.653,
+      "t_estimated": true,
+      "step": "write_dim22_tz_124",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run5_write_dim22_tz_124",
+      "t": 41.653,
+      "utc": "20:47:21",
+      "step": "write_dim22_tz_124",
+      "dir": "result",
+      "frame": "*#13**0##",
+      "ack": true,
+      "reply_time_s": 0.01,
+      "replies": [
+        "*#13**0*22*47*21*999##"
+      ],
+      "events_after": [
+        "*#13**0*22*47*21*999##"
+      ],
+      "events_within_wait": [
+        "*#13**0*22*47*21*999##"
+      ],
+      "wait_s": 3.0,
+      "note": "readback_after_dim22_tz_124_write_still_999"
+    },
+    {
+      "run": "run5_write_dim22_tz_124",
+      "t": 44.654,
+      "utc": "20:47:24",
+      "step": "write_dim22_tz_124",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**22##",
+      "is_status_request": true,
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "*#13**22##",
+      "ownd_raw_timezone": null,
+      "ownd_timezone": null,
+      "ownd_master_class": "OWNGatewayCommand",
+      "ownd_master_log": "*#13**22##"
+    },
+    {
+      "run": "run5_write_dim22_tz_124",
+      "t": 44.654,
+      "t_estimated": true,
+      "step": "write_dim22_tz_124",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**22*22*47*24*999*01*26*10*2026##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal datetime is: 2026-10-26 22:47:24.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal datetime is: 2026-10-26 22:47:24."
+    },
+    {
+      "run": "run5_write_dim22_tz_124",
+      "t": 44.668,
+      "utc": "20:47:24",
+      "step": "write_dim22_tz_124",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**22*22*47*24*999*01*26*10*2026##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal datetime is: 2026-10-26 22:47:24.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal datetime is: 2026-10-26 22:47:24."
+    },
+    {
+      "run": "run5_write_dim22_tz_124",
+      "t": 44.672,
+      "t_estimated": true,
+      "step": "write_dim22_tz_124",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run5_write_dim22_tz_124",
+      "t": 44.672,
+      "utc": "20:47:24",
+      "step": "write_dim22_tz_124",
+      "dir": "result",
+      "frame": "*#13**22##",
+      "ack": true,
+      "reply_time_s": 0.018,
+      "replies": [
+        "*#13**22*22*47*24*999*01*26*10*2026##"
+      ],
+      "events_after": [
+        "*#13**22*22*47*24*999*01*26*10*2026##"
+      ],
+      "events_within_wait": [
+        "*#13**22*22*47*24*999*01*26*10*2026##"
+      ],
+      "wait_s": 3.0,
+      "note": "readback_dim22_after_dim22_tz_124_write_still_999"
+    },
+    {
+      "run": "run6_clock_broadcast_listen",
+      "t": 200.853,
+      "utc": "20:50:00",
+      "step": "listen",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**#1*01*26*10*2026##",
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "Gateway broadcasting internal date: 2026-10-26.",
+      "ownd_raw_timezone": null,
+      "ownd_timezone": null,
+      "ownd_master_class": "OWNGatewayCommand",
+      "ownd_master_log": "Gateway broadcasting internal date: 2026-10-26."
+    },
+    {
+      "run": "run6_clock_broadcast_listen",
+      "t": 200.855,
+      "utc": "20:50:00",
+      "step": "listen",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**#0*22*50*00*##",
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "Gateway broadcasting internal time: 22:50:00.",
+      "ownd_raw_timezone": null,
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayCommand",
+      "ownd_master_log": "Gateway broadcasting internal time: 22:50:00."
+    },
+    {
+      "run": "run6_clock_broadcast_listen",
+      "t": 320.411,
+      "utc": "20:52:00",
+      "step": "listen",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*0*0240##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's main sensor is reporting a temperature of 24.0°C.",
+      "ownd_master_class": "OWNHeatingEvent",
+      "ownd_master_log": "Zone 2's main sensor is reporting a temperature of 24.0°C."
+    },
+    {
+      "run": "run6_clock_broadcast_listen",
+      "t": 544.817,
+      "utc": "20:55:44",
+      "step": "listen",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*60*39##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's main sensor is reporting a humidity of 39.0%.",
+      "ownd_master_class": "OWNHeatingEvent",
+      "ownd_master_log": "Zone 2's main sensor is reporting a humidity of 39.0%."
+    },
+    {
+      "run": "run7_restore_tz_999",
+      "t": 750.316,
+      "utc": "20:59:10",
+      "step": "restore_tz_999",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**#0*22*59*08*999##",
+      "is_status_request": false,
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "Gateway broadcasting internal time: 22:59:08.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayCommand",
+      "ownd_master_log": "Gateway broadcasting internal time: 22:59:08."
+    },
+    {
+      "run": "run7_restore_tz_999",
+      "t": 750.328,
+      "t_estimated": true,
+      "step": "restore_tz_999",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run7_restore_tz_999",
+      "t": 750.328,
+      "utc": "20:59:10",
+      "step": "restore_tz_999",
+      "dir": "result",
+      "frame": "*#13**#0*22*59*08*999##",
+      "ack": true,
+      "reply_time_s": 0.012,
+      "replies": [],
+      "events_after": [],
+      "events_within_wait": [],
+      "wait_s": 3.0,
+      "note": "restore_set_time_tz_999"
+    },
+    {
+      "run": "run7_restore_tz_999",
+      "t": 753.33,
+      "utc": "20:59:13",
+      "step": "restore_tz_999",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**0##",
+      "is_status_request": true,
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "*#13**0##",
+      "ownd_raw_timezone": null,
+      "ownd_timezone": null,
+      "ownd_master_class": "OWNGatewayCommand",
+      "ownd_master_log": "*#13**0##"
+    },
+    {
+      "run": "run7_restore_tz_999",
+      "t": 753.33,
+      "t_estimated": true,
+      "step": "restore_tz_999",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**0*22*59*13*999##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal time is: 22:59:13.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal time is: 22:59:13."
+    },
+    {
+      "run": "run7_restore_tz_999",
+      "t": 753.34,
+      "utc": "20:59:13",
+      "step": "restore_tz_999",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**0*22*59*13*999##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal time is: 22:59:13.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal time is: 22:59:13."
+    },
+    {
+      "run": "run7_restore_tz_999",
+      "t": 753.344,
+      "t_estimated": true,
+      "step": "restore_tz_999",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run7_restore_tz_999",
+      "t": 753.344,
+      "utc": "20:59:13",
+      "step": "restore_tz_999",
+      "dir": "result",
+      "frame": "*#13**0##",
+      "ack": true,
+      "reply_time_s": 0.014,
+      "replies": [
+        "*#13**0*22*59*13*999##"
+      ],
+      "events_after": [
+        "*#13**0*22*59*13*999##"
+      ],
+      "events_within_wait": [
+        "*#13**0*22*59*13*999##"
+      ],
+      "wait_s": 3.0,
+      "note": "readback_after_restore"
+    },
+    {
+      "run": "run7_restore_tz_999",
+      "t": 756.344,
+      "utc": "20:59:16",
+      "step": "restore_tz_999",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**22##",
+      "is_status_request": true,
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "*#13**22##",
+      "ownd_raw_timezone": null,
+      "ownd_timezone": null,
+      "ownd_master_class": "OWNGatewayCommand",
+      "ownd_master_log": "*#13**22##"
+    },
+    {
+      "run": "run7_restore_tz_999",
+      "t": 756.344,
+      "t_estimated": true,
+      "step": "restore_tz_999",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**22*22*59*16*999*01*26*10*2026##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal datetime is: 2026-10-26 22:59:16.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal datetime is: 2026-10-26 22:59:16."
+    },
+    {
+      "run": "run7_restore_tz_999",
+      "t": 756.358,
+      "utc": "20:59:16",
+      "step": "restore_tz_999",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**22*22*59*16*999*01*26*10*2026##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal datetime is: 2026-10-26 22:59:16.",
+      "ownd_raw_timezone": "999",
+      "ownd_timezone": "",
+      "ownd_master_class": "OWNGatewayEvent",
+      "ownd_master_log": "Gateway's internal datetime is: 2026-10-26 22:59:16."
+    },
+    {
+      "run": "run7_restore_tz_999",
+      "t": 756.361,
+      "t_estimated": true,
+      "step": "restore_tz_999",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run7_restore_tz_999",
+      "t": 756.361,
+      "utc": "20:59:16",
+      "step": "restore_tz_999",
+      "dir": "result",
+      "frame": "*#13**22##",
+      "ack": true,
+      "reply_time_s": 0.017,
+      "replies": [
+        "*#13**22*22*59*16*999*01*26*10*2026##"
+      ],
+      "events_after": [
+        "*#13**22*22*59*16*999*01*26*10*2026##"
+      ],
+      "events_within_wait": [
+        "*#13**22*22*59*16*999*01*26*10*2026##"
+      ],
+      "wait_s": 3.0,
+      "note": "readback_dim22_after_restore"
+    }
+  ]
+}

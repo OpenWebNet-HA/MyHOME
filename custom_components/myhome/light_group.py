@@ -24,8 +24,9 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
 from OWNd.message import OWNLightingCommand, OWNLightingEvent
 
-from .const import DOMAIN, eight_bits_to_min_percent, percent_to_eight_bits
+from .const import BUS_ROUTING, DOMAIN, eight_bits_to_min_percent, percent_to_eight_bits
 from .myhome_device import MyHOMEEntity
+from .where_grammar import is_valid_hs_tuple
 
 LOGGER = logging.getLogger(__name__)
 
@@ -113,7 +114,11 @@ class MyHOMELightGroup(MyHOMEEntity, LightEntity):
         self._attr_brightness = None
         self._attr_color_temp_kelvin = None
         self._attr_hs_color = None
-        self._full_where = f"#{group}"
+        _, _, raw_iface = str(device_id).partition(BUS_ROUTING)
+        self._interface: str | None = (
+            raw_iface.zfill(2) if raw_iface.isdigit() else (raw_iface or None)
+        )
+        self._full_where = f"#{group}{BUS_ROUTING}{self._interface}" if self._interface else f"#{group}"
         # Last known brightness (0-100%), used as HSV "value" when only hue/saturation
         # are being set so a colour change never silently zeroes the group's level.
         # For groups with declared members the displayed brightness is derived from
@@ -127,10 +132,20 @@ class MyHOMELightGroup(MyHOMEEntity, LightEntity):
 
         # Resolve members if any
         if self._declared_members:
+            resync_mgr = getattr(self._gateway_handler, "_resync_manager", None)
+            register_fn = getattr(resync_mgr, "register_group_members", None)
+            if callable(register_fn):
+                register_fn(self._full_where, self._declared_members)
+                self.async_on_remove(lambda: register_fn(self._full_where, []))
             registry = er.async_get(self.hass)
             for w in self._declared_members:
-                # The entity unique_id is `{mac}-1-{w}`
-                unique_id = f"{self._gateway_handler.mac}-1-{w}"
+                member_key = (
+                    f"{w}{BUS_ROUTING}{self._interface}"
+                    if self._interface and BUS_ROUTING not in str(w)
+                    else str(w)
+                )
+                # The entity unique_id is `{mac}-1-{w}` (or `{mac}-1-{w}#4#{iface}`)
+                unique_id = f"{self._gateway_handler.mac}-1-{member_key}"
                 entity_id = registry.async_get_entity_id("light", DOMAIN, unique_id)
                 if entity_id:
                     self._member_entity_ids.append(entity_id)
@@ -167,8 +182,23 @@ class MyHOMELightGroup(MyHOMEEntity, LightEntity):
         if not getattr(msg, "is_group", False) or str(getattr(msg, "group", "")) != str(self._group):
             return
 
-        # Parse status from the frame (assumed mode only updates attributes)
-        if isinstance(msg, OWNLightingEvent) and getattr(msg, "dimension", None) is None:
+        msg_raw_iface = getattr(msg, "interface", None)
+        msg_iface = (
+            msg_raw_iface.zfill(2)
+            if isinstance(msg_raw_iface, str) and msg_raw_iface.isdigit()
+            else (msg_raw_iface if isinstance(msg_raw_iface, str) and msg_raw_iface else None)
+        )
+        if msg_iface != self._interface:
+            return
+
+        # Parse status from the frame (assumed mode only updates attributes). A WHAT
+        # 30/31 dim step moves the group one level but says nothing about whether it
+        # is on, whatever `is_on` OWNd gives it (#367).
+        if (
+            isinstance(msg, OWNLightingEvent)
+            and getattr(msg, "dimension", None) is None
+            and getattr(msg, "what", None) not in (30, 31)
+        ):
             if msg.is_on is True:
                 self._attr_is_on = True
             elif msg.is_on is False:
@@ -177,23 +207,21 @@ class MyHOMELightGroup(MyHOMEEntity, LightEntity):
         # Also parse dimension frames (status replies and the gateway's echo of a
         # group dimension write, *#1*#G*#D*...##, which OWNd parses as a command).
         dim = getattr(msg, "dimension", None)
-        vals = getattr(msg, "_dimension_value", [])
-        if dim == 1 and vals:
-            # Dimension 1 carries ``level + 100`` on the bus (``150`` is 50 %); anything
-            # outside 100..200 is not a level.
-            raw = int(vals[0])
-            if 100 <= raw <= 200:
-                pct = raw - 100
+        if dim == 1:
+            pct = getattr(msg, "brightness", None)
+            if isinstance(pct, int) and not isinstance(pct, bool) and 0 <= pct <= 100:
                 self._attr_brightness = percent_to_eight_bits(pct)
                 if pct > 0:
                     self._last_brightness_pct = pct
-        elif dim == 14 and vals and int(vals[0]) > 1:
-            self._attr_color_temp_kelvin = int(1000000 / int(vals[0]))
-        elif dim == 12 and len(vals) >= 3:
-            h = int(vals[0])
-            s = int(vals[1])
-            if h <= 360:  # ``*12*511*127*255`` is the "not supported" sentinel
-                self._attr_hs_color = (h, s)
+        elif dim == 14:
+            kelvin = getattr(msg, "color_temp_kelvin", None)
+            if isinstance(kelvin, int) and not isinstance(kelvin, bool):
+                self._attr_color_temp_kelvin = kelvin
+        elif dim == 12:
+            hs_val = getattr(msg, "hs_color", getattr(msg, "hs", None))
+            raw_v = getattr(msg, "value", None)
+            if is_valid_hs_tuple(hs_val, raw_v):
+                self._attr_hs_color = hs_val
 
         if self._on_icon and self._off_icon:
             self._attr_icon = self._on_icon if self._attr_is_on else self._off_icon

@@ -1,4 +1,7 @@
 """Validator for the MyHome configuration file."""
+from __future__ import annotations
+
+import math
 import re
 import typing
 
@@ -13,8 +16,14 @@ from homeassistant.components.binary_sensor import (  # type: ignore[attr-define
 )
 from homeassistant.components.button import DOMAIN as BUTTON  # type: ignore
 from homeassistant.components.climate import DOMAIN as CLIMATE  # type: ignore
-from homeassistant.components.cover import DOMAIN as COVER
+from homeassistant.components.cover import (
+    DOMAIN as COVER,
+)
+from homeassistant.components.cover import (
+    CoverDeviceClass,
+)
 from homeassistant.components.light import DOMAIN as LIGHT  # type: ignore
+from homeassistant.components.lock import DOMAIN as LOCK  # type: ignore
 from homeassistant.components.sensor import (
     DOMAIN as SENSOR,
 )
@@ -27,8 +36,16 @@ from homeassistant.components.switch import (  # type: ignore
 from homeassistant.components.switch import (  # type: ignore[attr-defined, unused-ignore]
     SwitchDeviceClass,
 )
-from homeassistant.const import CONF_MAC, CONF_NAME
+from homeassistant.const import (
+    CONF_ATTRIBUTE,
+    CONF_CODE,
+    CONF_ENTITY_ID,
+    CONF_MAC,
+    CONF_NAME,
+)
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.device_registry import format_mac as ha_format_mac
+from homeassistant.helpers.template import Template
 from voluptuous import (
     All,
     Any,
@@ -36,39 +53,98 @@ from voluptuous import (
     Coerce,
     In,
     Invalid,
+    Match,
     Optional,
+    Range,
     Required,
     Schema,
 )
 
 from .const import (
     BUS_ROUTING,
+    CALIBRATION_MAX_MOTOR_PULSE,
+    CALIBRATION_MAX_RUN,
+    CALIBRATION_MIN_MOTOR_PULSE,
+    CALIBRATION_MIN_RUN,
+    CONF_ACCESS,
     CONF_ADVANCED_SHUTTER,
+    CONF_ALLOWED_USERS,
+    CONF_APPROVAL_TIMEOUT,
+    CONF_APPROVERS,
+    CONF_BIDIRECTIONAL,
+    CONF_BRIGHTNESS_STEP_PCT,
     CONF_BUS_INTERFACE,
+    CONF_CAMERA,
     CONF_CENTRAL,
+    CONF_CLOSE_BLOCK_ENTITY,
     CONF_COLOR_TEMP,
+    CONF_COOLDOWN,
     CONF_COOLING_SUPPORT,
+    CONF_DEFAULT,
     CONF_DEVICE_CLASS,
     CONF_DEVICE_MODEL,
+    CONF_DIMENSION,
     CONF_DIMMABLE,
     CONF_ENTITIES,
     CONF_ENTITY_NAME,
+    CONF_EXPOSE,
     CONF_FAN_SUPPORT,
     CONF_HEATING_SUPPORT,
     CONF_HS,
+    CONF_HUMIDITY_SUPPORT,
     CONF_ICON,
     CONF_ICON_ON,
     CONF_INVERTED,
     CONF_LOCK_FEATURES,
     CONF_MANUFACTURER,
     CONF_MEMBERS,
+    CONF_MIN_CYCLE_TIME,
+    CONF_MIN_DELTA,
+    CONF_MIN_MOTOR_PULSE,
+    CONF_MIN_POSITION_DELTA,
+    CONF_ON_STATES,
+    CONF_PERIODIC_SEND,
+    CONF_PIN_CODE,
     CONF_PLATFORMS,
+    CONF_PREWARN_LIGHT,
+    CONF_PREWARN_SECONDS,
+    CONF_PULSE_DURATION,
+    CONF_REMOTE_CLOSE,
+    CONF_RESPOND_TO_READ,
     CONF_RGB,
+    CONF_SAFETY_CHECK_DAYS,
+    CONF_SAFETY_DEVICES_VERIFIED,
+    CONF_SLAT_TILT,
+    CONF_SLAT_TIME,
     CONF_STANDALONE,
+    CONF_STATE_SENSOR,
+    CONF_STEP_DOWN_ACTION,
+    CONF_STEP_UP_ACTION,
+    CONF_STRATEGY,
     CONF_TRAVEL_TIME,
+    CONF_TURN_OFF_ACTION,
+    CONF_TURN_OFF_COMMAND,
+    CONF_TURN_ON_ACTION,
+    CONF_TURN_ON_COMMAND,
+    CONF_TYPE,
+    CONF_VALUE_TEMPLATE,
+    CONF_WATCHDOG_MARGIN,
     CONF_WHERE,
     CONF_WHO,
     CONF_ZONE,
+    COVER_STRATEGIES,
+    DEFAULT_MIN_MOTOR_PULSE,
+    DEFAULT_SLAT_TIME,
+    LOGGER,
+    MAX_MIN_POSITION_DELTA,
+    MAX_SLAT_TIME,
+    MIN_SLAT_TIME,
+    TYPE_IMPULSE_RELAY,
+)
+from .where_grammar import (
+    canonical_point_spelling,
+    parse_thermo_actuator_where,
+    validate_thermo_trigger_command,
 )
 
 
@@ -145,9 +221,37 @@ class Group(object):
         return "Where(%s, msg=%r)" % ("String", self.msg)
 
 
+# 4-digit spellings already warned about, so each rewritten address is logged once.
+_warned_point_rewrites: set[str] = set()
+
+
+def canonical_point_where(where: str) -> str:
+    """The spelling of a point address that the gateways accept and report (#147).
+
+    An area-0 point with PL 1..9 has a 2-digit form: ``0004`` is ``04``. Only the MH202
+    accepts the 4-digit spelling of such a point (``*#1*0001##`` is refused everywhere
+    else) and every gateway reports it in two digits, so a light configured as ``0004``
+    never sees its own status. Any other 4-digit input (``0015``, ``0109``, ``0209``,
+    ``1015``) is left as typed, as OWNd does (OWNd#123), and so is anything that is not
+    a 4-digit point; the ``0809`` of #135 (area 8, PL 9) is one of those, so #135 stays
+    open. A rewrite is logged once per address: this is the myhome.yaml path, and the
+    user can fix the spelling there.
+    """
+    canonical = canonical_point_spelling(where)
+    if canonical != where and where not in _warned_point_rewrites:
+        _warned_point_rewrites.add(where)
+        LOGGER.warning(
+            "WHERE '%s' is the 4-digit spelling of the point A=%s PL=%s; using '%s', the form the "
+            "gateways accept and report. Write '%s' in myhome.yaml to silence this warning.",
+            where, where[1], where[3], canonical, canonical,
+        )
+    return canonical
+
+
 class PointToPoint:
-    def __init__(self, msg: str | None = None) -> None:
+    def __init__(self, msg: str | None = None, canonical: bool = True) -> None:
         self.msg = msg
+        self.canonical = canonical
 
     def __call__(self, v: typing.Any) -> typing.Any:
         if isinstance(v, str) and v.isdigit():
@@ -156,7 +260,7 @@ class PointToPoint:
                 _a = v[0 : _length // 2]
                 _pl = v[_length // 2 :]
                 if int(_a) >= 0 and int(_a) <= 10 and int(_pl) >= 0 and int(_pl) <= 15:
-                    return f"{_a}{_pl}"
+                    return canonical_point_where(f"{_a}{_pl}") if self.canonical else f"{_a}{_pl}"
                 else:
                     raise Invalid(f"Invalid WHERE {v}, A must be [0-10] and PL must be [0-15].")
             else:
@@ -209,7 +313,9 @@ class MyHomeConfigSchema(Schema):
             _rekeyed_data[gateway_mac] = {}
             _rekeyed_data[gateway_mac][CONF_PLATFORMS] = {}
             for platform in data[gateway]:
-                if platform != CONF_MAC:
+                if platform == CONF_EXPOSE:
+                    _rekeyed_data[gateway_mac][CONF_EXPOSE] = data[gateway][CONF_EXPOSE]
+                elif platform != CONF_MAC:
                     _rekeyed_data[gateway_mac][CONF_PLATFORMS][platform] = data[gateway][platform]
 
             if (
@@ -224,7 +330,7 @@ class MyHomeConfigSchema(Schema):
                             _rekeyed_data[gateway_mac][CONF_PLATFORMS][BUTTON][key] = value
                 if SWITCH in _rekeyed_data[gateway_mac][CONF_PLATFORMS]:
                     for key, value in _rekeyed_data[gateway_mac][CONF_PLATFORMS][SWITCH].items():
-                        if not value[CONF_WHERE].startswith("#"):
+                        if str(value.get(CONF_WHO, "1")) == "1" and not value[CONF_WHERE].startswith("#"):
                             _rekeyed_data[gateway_mac][CONF_PLATFORMS][BUTTON][key] = value
                 if COVER in _rekeyed_data[gateway_mac][CONF_PLATFORMS]:
                     for key, value in _rekeyed_data[gateway_mac][CONF_PLATFORMS][COVER].items():
@@ -308,6 +414,7 @@ class MyHomeSensorSchema(Schema):
                     elif data[device][CONF_WHO] != "1":
                         raise Invalid("invalid sensor class for selected who")
             if CONF_WHERE in data[device]:
+                _canonical_who1_point(data[device])  # the WHO default above is in by now
                 interface = data[device].get(CONF_BUS_INTERFACE)
                 routing = f"{BUS_ROUTING}{interface}" if interface is not None else ""
                 _rekeyed_data[f"{data[device][CONF_WHO]}-{data[device][CONF_WHERE]}{routing}"] = data[device]
@@ -356,49 +463,182 @@ def _validate_light_members(data: dict[str, typing.Any]) -> dict[str, typing.Any
 light_schema = All(light_schema, _validate_light_members)  # type: ignore[assignment]
 
 
+_WHO1_WHERE_VALIDATOR = Any(
+    General(),  # type: ignore[no-untyped-call]
+    Area(),  # type: ignore[no-untyped-call]
+    Group(),  # type: ignore[no-untyped-call]
+    PointToPoint(),
+    msg="Invalid <WHERE>, expecting a valid General, Area, Group or Point-to-Point <WHERE>",
+)
+
+
+def _validate_switch_entry(entry: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    """Validate WHO=1 lighting relays vs WHO=4 probe-less thermo actuator switches."""
+    who = str(entry.get(CONF_WHO, "1"))
+    entry[CONF_WHO] = who
+    if who == "1":
+        if CONF_TURN_ON_COMMAND in entry or CONF_TURN_OFF_COMMAND in entry:
+            raise Invalid(
+                "turn_on_command and turn_off_command are only supported on WHO=4 thermo switches"
+            )
+        entry[CONF_WHERE] = _WHO1_WHERE_VALIDATOR(str(entry[CONF_WHERE]))
+        return entry
+
+    try:
+        norm_where, _zone, _act, norm_if = parse_thermo_actuator_where(
+            entry[CONF_WHERE], entry.get(CONF_BUS_INTERFACE)
+        )
+    except ValueError as err:
+        raise Invalid(str(err)) from err
+    entry[CONF_WHERE] = norm_where
+    if norm_if is not None:
+        entry[CONF_BUS_INTERFACE] = norm_if
+
+    on_cmd = entry.get(CONF_TURN_ON_COMMAND)
+    off_cmd = entry.get(CONF_TURN_OFF_COMMAND)
+    if bool(on_cmd) != bool(off_cmd):
+        raise Invalid(
+            "turn_on_command and turn_off_command must both be provided together"
+        )
+    if on_cmd is not None and off_cmd is not None:
+        try:
+            entry[CONF_TURN_ON_COMMAND] = validate_thermo_trigger_command(on_cmd)
+            entry[CONF_TURN_OFF_COMMAND] = validate_thermo_trigger_command(off_cmd)
+        except ValueError as err:
+            raise Invalid(str(err)) from err
+    return entry
+
+
 switch_schema = MyHomeDeviceSchema(
     {
-        Required(str): {
-            Optional(CONF_WHO, default="1"): "1",
-            Required(CONF_WHERE): All(
-                Coerce(str), Any(General(), Area(), Group(), PointToPoint(), msg="Invalid <WHERE>, expecting a valid General, Area, Group or Point-to-Point <WHERE>")  # type: ignore
-            ),
-            Optional(CONF_BUS_INTERFACE): All(Coerce(str), BusInterface()),  # type: ignore
-            Required(CONF_NAME): str,
-            Optional(CONF_ENTITY_NAME): str,
-            Optional(CONF_ICON): str,
-            Optional(CONF_ICON_ON): str,
-            Optional(CONF_DEVICE_CLASS): In(
-                [
-                    SwitchDeviceClass.OUTLET,
-                    SwitchDeviceClass.SWITCH,
-                ]
-            ),
-            Optional("device_class"): In(
-                [
-                    SwitchDeviceClass.OUTLET,
-                    SwitchDeviceClass.SWITCH,
-                ]
-            ),
-            Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
-            Optional(CONF_DEVICE_MODEL): Coerce(str),
-        }
+        Required(str): All(
+            {
+                Optional(CONF_WHO, default="1"): All(Coerce(str), In(["1", "4"])),
+                Required(CONF_WHERE): Coerce(str),
+                Optional(CONF_BUS_INTERFACE): All(Coerce(str), BusInterface()),  # type: ignore
+                Required(CONF_NAME): str,
+                Optional(CONF_ENTITY_NAME): str,
+                Optional(CONF_ICON): str,
+                Optional(CONF_ICON_ON): str,
+                Optional(CONF_TURN_ON_COMMAND): str,
+                Optional(CONF_TURN_OFF_COMMAND): str,
+                Optional(CONF_DEVICE_CLASS): In(
+                    [
+                        SwitchDeviceClass.OUTLET,
+                        SwitchDeviceClass.SWITCH,
+                    ]
+                ),
+                Optional("device_class"): In(
+                    [
+                        SwitchDeviceClass.OUTLET,
+                        SwitchDeviceClass.SWITCH,
+                    ]
+                ),
+                Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
+                Optional(CONF_DEVICE_MODEL): Coerce(str),
+            },
+            _validate_switch_entry,
+        )
     }
 )
+
+def _validate_access(access: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    """Cross-field rules of an impulse cover's access policy."""
+    allowed = set(access[CONF_ALLOWED_USERS])
+    approvers = access[CONF_APPROVERS]
+    missing = sorted(allowed - set(approvers))
+    if missing:
+        raise Invalid(f"every allowed user needs an approver (notify service); missing for {missing}")
+    extra = sorted(set(approvers) - allowed)
+    if extra:
+        raise Invalid(f"approvers lists users that are not in allowed_users: {extra}")
+    for user, service in approvers.items():
+        if not service.startswith("notify.") or service == "notify.":
+            raise Invalid(f"approver of {user} must be a notify service such as notify.mobile_app_phone")
+    if access[CONF_REMOTE_CLOSE] == "with_camera" and CONF_CAMERA not in access:
+        raise Invalid("remote_close: with_camera needs a camera entity")
+    return access
+
+
+access_schema = All(
+    Schema(
+        {
+            Optional(CONF_ALLOWED_USERS, default=[]): [Coerce(str)],
+            Optional(CONF_APPROVERS, default={}): {Coerce(str): Coerce(str)},
+            Optional(CONF_REMOTE_CLOSE, default="never"): In(["never", "at_home", "with_camera"]),
+            Optional(CONF_SAFETY_DEVICES_VERIFIED): cv.date,
+            Optional(CONF_SAFETY_CHECK_DAYS, default=31): All(Coerce(int), Range(min=1, max=366)),
+            Optional(CONF_CAMERA): cv.entity_id,
+            Optional(CONF_PREWARN_LIGHT): cv.entity_id,
+            Optional(CONF_PREWARN_SECONDS, default=5): All(Coerce(float), Range(min=3, max=30)),
+            Optional(CONF_CLOSE_BLOCK_ENTITY): cv.entity_id,
+            Optional(CONF_WATCHDOG_MARGIN, default=10): All(Coerce(float), Range(min=1, max=120)),
+            Optional(CONF_APPROVAL_TIMEOUT, default=60): All(Coerce(float), Range(min=15, max=300)),
+        }
+    ),
+    _validate_access,
+)
+
 
 cover_schema = MyHomeDeviceSchema(
     {
         Required(str): {
-            Optional(CONF_WHO, default="2"): "2",
+            Optional(CONF_WHO, default="2"): In(["1", "2"]),
             Required(CONF_WHERE): All(
                 Coerce(str), Any(General(), Area(), Group(), PointToPoint(), msg="Invalid <WHERE>, expecting a valid General, Area, Group or Point-to-Point <WHERE>")  # type: ignore
             ),
             Optional(CONF_BUS_INTERFACE): All(Coerce(str), BusInterface()),  # type: ignore
             Required(CONF_NAME): str,
             Optional(CONF_ENTITY_NAME): str,
+            Optional(CONF_DEVICE_CLASS): In(
+                [
+                    CoverDeviceClass.AWNING,
+                    CoverDeviceClass.BLIND,
+                    CoverDeviceClass.CURTAIN,
+                    CoverDeviceClass.DAMPER,
+                    CoverDeviceClass.DOOR,
+                    CoverDeviceClass.GARAGE,
+                    CoverDeviceClass.GATE,
+                    CoverDeviceClass.SHADE,
+                    CoverDeviceClass.SHUTTER,
+                    CoverDeviceClass.WINDOW,
+                ]
+            ),
+            Optional("device_class"): In(
+                [
+                    CoverDeviceClass.AWNING,
+                    CoverDeviceClass.BLIND,
+                    CoverDeviceClass.CURTAIN,
+                    CoverDeviceClass.DAMPER,
+                    CoverDeviceClass.DOOR,
+                    CoverDeviceClass.GARAGE,
+                    CoverDeviceClass.GATE,
+                    CoverDeviceClass.SHADE,
+                    CoverDeviceClass.SHUTTER,
+                    CoverDeviceClass.WINDOW,
+                ]
+            ),
+            Optional(CONF_TYPE): In([TYPE_IMPULSE_RELAY, "shutter", "standard"]),
+            Optional(CONF_PIN_CODE): All(Coerce(str), Match(r"^\d+$", msg="PIN code must contain only digits")),
+            Optional(CONF_STATE_SENSOR): cv.entity_id,
+            Optional(CONF_PULSE_DURATION, default=0.5): All(Coerce(float), Range(min=0.2, max=2.0)),
+            Optional(CONF_MIN_CYCLE_TIME, default=5.0): All(Coerce(float), Range(min=1.0, max=120.0)),
+            Optional(CONF_ACCESS): access_schema,
             Optional(CONF_ADVANCED_SHUTTER, default=False): Boolean(),
             Optional("advanced_shutter", default=False): Boolean(),
-            Optional(CONF_TRAVEL_TIME, default=25): Coerce(int),
+            Optional(CONF_STRATEGY): In(list(COVER_STRATEGIES)),
+            Optional(CONF_SLAT_TILT, default=False): Boolean(),
+            Optional(CONF_SLAT_TIME): All(
+                Coerce(float), Range(min=MIN_SLAT_TIME, max=MAX_SLAT_TIME)
+            ),
+            Optional(CONF_TRAVEL_TIME, default=25): All(
+                Coerce(int),
+                Any(0, Range(min=int(CALIBRATION_MIN_RUN), max=int(CALIBRATION_MAX_RUN))),
+            ),
+            Optional(CONF_MIN_MOTOR_PULSE, default=DEFAULT_MIN_MOTOR_PULSE): All(
+                Coerce(float), Range(min=CALIBRATION_MIN_MOTOR_PULSE, max=CALIBRATION_MAX_MOTOR_PULSE)
+            ),
+            Optional(CONF_MIN_POSITION_DELTA): All(Coerce(int), Range(min=1, max=MAX_MIN_POSITION_DELTA)),
             Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
             Optional(CONF_DEVICE_MODEL): Coerce(str),
             Optional(CONF_MEMBERS): [All(Coerce(str), PointToPoint())],
@@ -415,13 +655,72 @@ def _validate_cover_members(data: dict[str, typing.Any]) -> dict[str, typing.Any
             where = cfg.get(CONF_WHERE)
             if not where or not str(where).startswith("#"):
                 raise Invalid("Members can only be defined on a group cover (where must start with #)")
+        strategy = cfg.get(CONF_STRATEGY)
+        advanced = bool(cfg.get(CONF_ADVANCED_SHUTTER) or cfg.get("advanced_shutter"))
+        if strategy not in (None, "native") and advanced:
+            raise Invalid(f"strategy: {strategy} cannot be combined with advanced (use strategy: native)")
+        if strategy == "timed" and cfg.get(CONF_SLAT_TILT):
+            raise Invalid("strategy: timed cannot be combined with slat_tilt (use strategy: venetian)")
+        if strategy == "timed" and cfg.get(CONF_TRAVEL_TIME) == 0:
+            raise Invalid("strategy: timed requires a positive travel_time")
+        if strategy == "venetian":
+            cfg[CONF_SLAT_TILT] = True
+        elif strategy == "native":
+            cfg[CONF_ADVANCED_SHUTTER] = True
+        elif strategy == "simple" and cfg.get(CONF_SLAT_TILT):
+            raise Invalid("strategy: simple cannot be combined with slat_tilt")
+        if cfg.get(CONF_SLAT_TILT) and cfg.get(CONF_TRAVEL_TIME) == 0 and not cfg.get(CONF_ADVANCED_SHUTTER):
+            raise Invalid("slat_tilt requires a positive travel_time or advanced_shutter")
+        if CONF_SLAT_TIME in cfg and not cfg.get(CONF_SLAT_TILT):
+            raise Invalid("slat_time can only be defined on a cover with slat_tilt enabled")
+        if CONF_MIN_POSITION_DELTA in cfg and not cfg.get(CONF_ADVANCED_SHUTTER) and not advanced:
+            raise Invalid("min_position_delta only applies to an advanced cover (use min_motor_pulse on a timed cover)")
+        cfg.setdefault(CONF_SLAT_TIME, DEFAULT_SLAT_TIME)
     return data
 
-cover_schema = All(cover_schema, _validate_cover_members)  # type: ignore[assignment]
+
+def _validate_impulse_covers(data: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    """An impulse cover pulses exactly one relay; access settings only apply to impulse covers."""
+    for device, cfg in data.items():
+        is_impulse = str(cfg.get(CONF_WHO)) == "1"
+        cover_type = cfg.get(CONF_TYPE)
+        if cover_type == TYPE_IMPULSE_RELAY and not is_impulse:
+            raise Invalid(f"{device}: type: {TYPE_IMPULSE_RELAY} needs who: 1 (a WHO 2 shutter has no impulse relay)")
+        if is_impulse and cover_type in ("shutter", "standard"):
+            raise Invalid(f"{device}: who: 1 is an impulse relay; type: {cover_type} only applies to who: 2")
+        if is_impulse:
+            try:
+                PointToPoint()(str(cfg[CONF_WHERE]))
+            except Invalid as err:
+                raise Invalid(
+                    f"{device}: an impulse cover (who: 1) needs a point-to-point <WHERE>; a general, area or "
+                    "group address would pulse several motors at once"
+                ) from err
+            if float(cfg.get(CONF_MIN_CYCLE_TIME, 5.0)) <= float(cfg.get(CONF_PULSE_DURATION, 0.5)):
+                raise Invalid(f"{device}: min_cycle_time must be greater than pulse_duration")
+            if CONF_PIN_CODE in cfg and CONF_ACCESS not in cfg:
+                raise Invalid(f"{device}: pin_code is checked by the access policy; add an access: block or remove it")
+        elif CONF_ACCESS in cfg or CONF_PIN_CODE in cfg or CONF_STATE_SENSOR in cfg:
+            raise Invalid(f"{device}: access, pin_code and state_sensor only apply to impulse covers (who: 1)")
+    return data
+
+
+cover_schema = All(cover_schema, _validate_cover_members, _validate_impulse_covers)  # type: ignore[assignment]
+
+def _canonical_who1_point(device: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    """A WHO 1 sensor WHERE is a WHO 1 point: ``0004`` is ``04`` (#147).
+
+    `SpecialWhere()` sees one field and cannot know the WHO; this runs on the
+    whole mapping once the WHO default is in. Other WHO keep their grammar.
+    """
+    if str(device.get(CONF_WHO)) == "1" and isinstance(device.get(CONF_WHERE), str):
+        device[CONF_WHERE] = canonical_point_where(device[CONF_WHERE])
+    return device
+
 
 binary_sensor_schema = MyHomeDeviceSchema(
     {
-        Required(str): {
+        Required(str): All({
             Optional(CONF_WHO, default="25"): In(["1", "9", "25"]),
             Required(CONF_WHERE): All(Coerce(str), SpecialWhere()),  # type: ignore
             Required(CONF_NAME): str,
@@ -485,7 +784,7 @@ binary_sensor_schema = MyHomeDeviceSchema(
             ),
             Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
             Optional(CONF_DEVICE_MODEL): Coerce(str),
-        }
+        }, _canonical_who1_point)
     }
 )
 
@@ -519,6 +818,7 @@ climate_schema = MyHomeDeviceSchema(
             Optional(CONF_HEATING_SUPPORT, default=True): Boolean(),
             Optional(CONF_COOLING_SUPPORT, default=False): Boolean(),
             Optional(CONF_FAN_SUPPORT, default=False): Boolean(),
+            Optional(CONF_HUMIDITY_SUPPORT, default=False): Boolean(),
             Optional(CONF_STANDALONE, default=False): Boolean(),
             Optional(CONF_CENTRAL, default=False): Boolean(),
             Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
@@ -531,13 +831,308 @@ alarm_control_panel_schema = MyHomeDeviceSchema(
     {
         Required(str): {
             Optional(CONF_WHO, default="5"): "5",
-            Required(CONF_WHERE): All(Coerce(str), Any(General(), Area(), Group(), PointToPoint(), SpecialWhere())),  # type: ignore
+            Required(CONF_WHERE): All(Coerce(str), Any(General(), Area(), Group(), PointToPoint(canonical=False), SpecialWhere())),  # type: ignore
             Required(CONF_NAME): str,
             Optional(CONF_ENTITY_NAME): str,
             Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
             Optional(CONF_DEVICE_MODEL, default="F4201"): Coerce(str),
         }
     }
+)
+
+class DoorEntryWhere:
+    """WHERE of a WHO 6 door entry endpoint: 1..99 or 4000..4099, optionally with ``#2`` riser."""
+
+    def __init__(self, msg: str | None = None) -> None:
+        self.msg = msg
+
+    def __call__(self, v: typing.Any) -> typing.Any:
+        if isinstance(v, str):
+            m = re.fullmatch(r"(\d{1,4})(#2)?", v)
+            if m and not (len(m.group(1)) > 1 and m.group(1).startswith("0")):
+                num = int(m.group(1))
+                riser = m.group(2) is not None
+                if (not riser and num in (0, 4100)) or (1 <= num <= 99) or (4000 <= num <= 4099):
+                    return v
+        raise Invalid(
+            f"Invalid door entry WHERE {v}, expected 1-99 or 4000-4099 (optionally followed by #2)."
+        )
+
+    def __repr__(self) -> str:
+        return "DoorEntryWhere(msg=%r)" % self.msg
+
+
+lock_schema = MyHomeDeviceSchema(
+    {
+        Required(str): {
+            # Only door entry strikes. A WHO 1 relay can be a motorized gate, and a lock
+            # would let it bypass the cover's access policy, so there is no `who: 1` here.
+            Optional(CONF_WHO, default="6"): "6",
+            Required(CONF_WHERE): All(Coerce(str), DoorEntryWhere()),
+            Optional(CONF_BUS_INTERFACE): All(Coerce(str), BusInterface()),  # type: ignore
+            Required(CONF_NAME): str,
+            Optional(CONF_ENTITY_NAME): str,
+            Optional(CONF_CODE): All(Coerce(str), Match(r"^\d+$", msg="PIN code must contain only digits")),
+            Optional(CONF_PULSE_DURATION, default=5.0): All(
+                Coerce(float), Range(min=0.1, max=10.0)
+            ),
+            Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
+            Optional(CONF_DEVICE_MODEL, default="Door Entry Lock"): Coerce(str),
+        }
+    }
+)
+
+
+def _validate_locks(data: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    """A door entry lock needs a single entrance address, never general, area or broadcast."""
+    for device, cfg in data.items():
+        where = str(cfg.get(CONF_WHERE, ""))
+        num = int(where.split("#", 1)[0])
+        if num in (0, 4100):
+            raise Invalid(f"{device}: a door entry lock cannot use general ('0') or broadcast ('4100') addressing")
+    return data
+
+
+lock_schema = All(lock_schema, _validate_locks)  # type: ignore[assignment]
+
+
+def _finite_float(v: typing.Any) -> float:
+    """Coerce ``v`` to a finite float, rejecting booleans and NaN/inf."""
+    if isinstance(v, bool):
+        raise Invalid("boolean is not a valid numeric value")
+    try:
+        fval = float(v)
+    except (TypeError, ValueError, OverflowError) as err:
+        raise Invalid(f"expected a finite number, got {v!r}") from err
+    if not math.isfinite(fval):
+        raise Invalid("numeric value must be finite")
+    return fval
+
+
+def _non_bool_int(v: typing.Any) -> int:
+    """Coerce ``v`` to an int, rejecting booleans, non-finite floats, and fractional floats."""
+    if isinstance(v, bool) or (
+        isinstance(v, float) and (not math.isfinite(v) or not v.is_integer())
+    ):
+        raise Invalid(f"expected an integer, got {v!r}")
+    try:
+        return int(v)
+    except (TypeError, ValueError, OverflowError) as err:
+        raise Invalid(f"expected an integer, got {v!r}") from err
+
+
+def _non_bool_str(v: typing.Any) -> str:
+    """Coerce ``v`` to a string, rejecting booleans/non-finite floats and treating None as empty."""
+    if v is None:
+        return ""
+    if isinstance(v, bool) or (isinstance(v, float) and not math.isfinite(v)):
+        raise Invalid(f"expected a string, got {v!r}")
+    return str(v)
+
+
+def _stringify_templates(val: typing.Any) -> typing.Any:
+    """Convert any pre-compiled HA Template objects back to raw template strings."""
+    if isinstance(val, Template):
+        return val.template
+    if isinstance(val, dict):
+        return {
+            _stringify_templates(k): _stringify_templates(v) for k, v in val.items()
+        }
+    if isinstance(val, list):
+        return [_stringify_templates(x) for x in val]
+    return val
+
+
+def _validate_expose_action(val: typing.Any) -> list[dict[str, typing.Any]]:
+    """Validate an expose action sequence using Home Assistant's SCRIPT_SCHEMA."""
+    if isinstance(val, bool) or val is None:
+        raise Invalid("expose action must be a valid script action or sequence")
+    if isinstance(val, (list, dict)) and not val:
+        raise Invalid("expose action sequence cannot be empty")
+    return typing.cast(
+        list[dict[str, typing.Any]],
+        _stringify_templates(cv.SCRIPT_SCHEMA(_stringify_templates(val))),
+    )
+
+
+# External probe N00 (N = 1..9) or individual probe PZZ (P = 1..8, ZZ = 01..99).
+# 0, 1..99 and 001..099 address all probes, a zone's master probe and all probes
+# of a zone, so a virtual probe must not answer on them.
+_WHO4_EXPOSE_PROBE_RE = re.compile(r"(?:[1-9]00|[1-8](?:0[1-9]|[1-9]\d))")
+_WHO18_EXPOSE_WHERE_RE = re.compile(
+    r"(?:5(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])(?:#\d)?|7(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])#0)"
+)
+
+
+def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    """Validate cross-field constraints on a single expose entry."""
+    from .where_grammar import is_apl_address, is_probe, normalize_expose_where
+
+    who = int(item[CONF_WHO])
+    raw_where_val = item.get(CONF_WHERE)
+    raw_where = str(raw_where_val if raw_where_val is not None else "").strip()
+    dim = item.get(CONF_DIMENSION)
+    default_val = item.get(CONF_DEFAULT)
+    if (isinstance(default_val, float) and not math.isfinite(default_val)) or (
+        isinstance(default_val, str)
+        and default_val.strip().lower()
+        in ("nan", "inf", "+inf", "-inf", "infinity", "+infinity", "-infinity")
+    ):
+        raise Invalid("expose 'default' must be a finite value")
+
+    if who == 13:
+        if raw_where:
+            raise Invalid(f"WHO=13 does not take a 'where' address (got {raw_where!r})")
+        if dim is not None and int(dim) not in (0, 1, 22):
+            raise Invalid(
+                f"WHO=13 expose dimension must be one of 0, 1, 22 (got {dim})"
+            )
+        item[CONF_WHERE] = ""
+        return item
+
+    if not raw_where or "*" in raw_where:
+        raise Invalid(
+            f"expose entry for WHO={who} requires a non-empty 'where' address without '*'"
+        )
+
+    where = normalize_expose_where(who, raw_where)
+    item[CONF_WHERE] = where
+
+    has_entity = bool(item.get(CONF_ENTITY_ID))
+    action_keys = (
+        CONF_TURN_ON_ACTION,
+        CONF_TURN_OFF_ACTION,
+        CONF_STEP_UP_ACTION,
+        CONF_STEP_DOWN_ACTION,
+    )
+    has_actions = any(item.get(k) for k in action_keys)
+    if who in (4, 18) and not has_entity:
+        raise Invalid(f"expose entry for WHO={who} requires 'entity_id'")
+    if who in (1, 2) and not (has_entity or has_actions):
+        raise Invalid(
+            f"expose entry for WHO={who} requires 'entity_id' or custom action(s)"
+        )
+
+    if who in (1, 2):
+        if dim is not None:
+            raise Invalid(f"WHO={who} expose does not support 'dimension' (got {dim})")
+        base_where, sep, suffix = where.partition("#")
+        if (
+            where.startswith("#")
+            or not is_apl_address(base_where)
+            or (sep and not re.fullmatch(r"4#(0\d|1[0-5])", suffix))
+        ):
+            raise Invalid(
+                f"WHO={who} expose 'where' must be a point-to-point actuator address (got {raw_where!r})"
+            )
+    elif who == 4:
+        if not (is_probe(where) and _WHO4_EXPOSE_PROBE_RE.fullmatch(where)):
+            raise Invalid(
+                f"WHO=4 expose 'where' must be a probe address (external probe '100'..'900' or probe PZZ '101'..'899', got {raw_where!r})"
+            )
+        if dim is not None and int(dim) != 0:
+            raise Invalid(
+                f"WHO=4 temperature probe expose supports only dimension 0 (got {dim})"
+            )
+        if default_val is not None:
+            def_temp = _finite_float(default_val)
+            if not -99.9 <= def_temp <= 99.9:
+                raise Invalid(
+                    "WHO=4 expose 'default' must be between -99.9 and 99.9"
+                )
+    elif who == 18:
+        if dim is None:
+            raise Invalid(
+                "WHO=18 energy expose requires 'dimension' (one of 51, 52, 53, 54, 113)"
+            )
+        if int(dim) not in (51, 52, 53, 54, 113):
+            raise Invalid(
+                f"WHO=18 energy expose dimension must be one of 51, 52, 53, 54, 113 (got {dim})"
+            )
+        if not _WHO18_EXPOSE_WHERE_RE.fullmatch(where):
+            raise Invalid(
+                f"WHO=18 expose 'where' must be '5N' (e.g. '51'..'5255') or '7N#0' (got {raw_where!r})"
+            )
+        if default_val is not None:
+            def_en = _finite_float(default_val)
+            if def_en < 0.0:
+                raise Invalid("WHO=18 expose 'default' must be non-negative")
+    return item
+
+
+def _validate_expose_list(entries: list[dict[str, typing.Any]]) -> list[dict[str, typing.Any]]:
+    """Reject duplicate (who, where, dimension) bindings within an expose list."""
+    seen: set[tuple[int, str, int | None]] = set()
+    for item in entries:
+        who = int(item[CONF_WHO])
+        where = str(item.get(CONF_WHERE) or "")
+        raw_dim = item.get(CONF_DIMENSION)
+        if raw_dim is not None:
+            dim: int | None = int(raw_dim)
+        elif who == 4:
+            dim = 0
+        elif who == 13:
+            dim = 22
+        else:
+            dim = None
+        key = (who, where, dim)
+        if key in seen:
+            raise Invalid(
+                f"Duplicate expose binding for WHO={who} WHERE={where!r} dimension={dim}"
+            )
+        seen.add(key)
+    return entries
+
+
+expose_entry_schema = All(
+    Schema(
+        {
+            Required(CONF_WHO): All(_non_bool_int, In([1, 2, 4, 13, 18])),
+            Optional(CONF_WHERE): _non_bool_str,
+            Optional(CONF_ENTITY_ID): cv.entity_id,
+            Optional(CONF_ATTRIBUTE): _non_bool_str,
+            Optional(CONF_DIMENSION): _non_bool_int,
+            Optional(CONF_VALUE_TEMPLATE): _non_bool_str,
+            Optional(CONF_COOLDOWN, default=1.0): All(
+                _finite_float, Range(min=0.0, max=3600.0)
+            ),
+            Optional(CONF_MIN_DELTA): All(_finite_float, Range(min=0.0)),
+            Optional(CONF_PERIODIC_SEND): All(
+                _finite_float, Range(min=0.0, max=604800.0)
+            ),
+            Optional(CONF_RESPOND_TO_READ, default=True): Boolean(),
+            Optional(CONF_BIDIRECTIONAL): Boolean(),
+            Optional(CONF_DEFAULT): Any(str, int, float, bool),
+            Optional(CONF_ON_STATES): Any([Coerce(str)], Coerce(str)),
+            Optional(CONF_TURN_ON_ACTION): _validate_expose_action,
+            Optional(CONF_TURN_OFF_ACTION): _validate_expose_action,
+            Optional(CONF_STEP_UP_ACTION): _validate_expose_action,
+            Optional(CONF_STEP_DOWN_ACTION): _validate_expose_action,
+            Optional(CONF_BRIGHTNESS_STEP_PCT, default=10): All(
+                _non_bool_int, Range(min=1, max=100)
+            ),
+        }
+    ),
+    _validate_expose_entry,
+)
+
+
+def _coerce_expose_collection(value: typing.Any) -> list[dict[str, typing.Any]]:
+    """Accept either a list of expose dicts or a named slug->dict mapping in YAML."""
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        if not value:
+            return []
+        if all(isinstance(v, dict) for v in value.values()):
+            return [dict(v) for v in value.values()]
+    raise Invalid(
+        "expose configuration must be a list of bindings or a mapping of named bindings"
+    )
+
+
+expose_schema = All(
+    _coerce_expose_collection, Schema([expose_entry_schema]), _validate_expose_list
 )
 
 # The device schemas are Schema subclasses whose overridden __call__ performs
@@ -556,6 +1151,8 @@ gateway_schema = Schema(
         Optional(SENSOR): lambda v: sensor_schema(v),
         Optional(CLIMATE): lambda v: climate_schema(v),
         Optional(ALARM_CONTROL_PANEL): lambda v: alarm_control_panel_schema(v),
+        Optional(LOCK): lambda v: lock_schema(v),
+        Optional(CONF_EXPOSE): lambda v: expose_schema(v),
     }
 )
 

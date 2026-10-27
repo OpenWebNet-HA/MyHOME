@@ -1,6 +1,7 @@
 """Support for MyHome lights."""
 
 import asyncio
+import inspect
 from typing import Any, cast
 
 import voluptuous as vol
@@ -43,6 +44,7 @@ from OWNd.message import (
 )
 
 from .const import (
+    BUS_ROUTING,
     CONF_COLOR_TEMP,
     CONF_DEVICE_MODEL,
     CONF_DIMMABLE,
@@ -70,13 +72,21 @@ from .const import (
     percent_to_eight_bits,
 )
 from .data import MyHOMEConfigEntry
-from .discovery import Address, DeviceContext, KnownDevices, PlatformDiscovery, parse_unique_id
+from .discovery import (
+    Address,
+    DeviceContext,
+    KnownDevices,
+    PlatformDiscovery,
+    is_motion_end,
+    parse_unique_id,
+)
 from .gateway import MyHOMEGatewayHandler
 from .light_dali import DaliFeatureLock
 from .light_fade import SoftwareFadeEngine
 from .light_group import MyHOMELightGroup, _color_modes_from_flags
 from .myhome_device import MyHOMEEntity
 from .typing_compat import as_any
+from .where_grammar import is_valid_hs_tuple, is_valid_rgb_tuple
 
 PARALLEL_UPDATES = 0
 
@@ -142,6 +152,7 @@ async def async_setup_entry(
         # never learns another mode from the bus (#288 / #307).
         lock_features = cfg.get(CONF_LOCK_FEATURES, False)
         dimmable = cfg.get(CONF_DIMMABLE, False)
+        probe_dimmer_on_add = False
         if ctx.source == "bus" and not dimmable and not lock_features:
             # Auto-detect a dimmer from the first frame that carries a level or no-load status
             dimmable = (
@@ -149,7 +160,15 @@ async def async_setup_entry(
                 or ctx.message.brightness_preset is not None
                 or getattr(ctx.message, "unknown_state", None) == 19
             )
-        kwargs = {"lock_features": lock_features}
+            if not dimmable and getattr(ctx.message, "is_on", None) is True:
+                probe_dimmer_on_add = (
+                    getattr(gateway, "sweep_active", False) is True
+                    or getattr(gateway, "initial_discovery_pending", False) is True
+                )
+        kwargs: dict[str, Any] = {
+            "lock_features": lock_features,
+            "probe_dimmer_on_add": probe_dimmer_on_add,
+        }
         if ctx.source != "bus":
             kwargs |= {
                 "color_temp": cfg.get(CONF_COLOR_TEMP, False),
@@ -173,11 +192,25 @@ async def async_setup_entry(
         )
 
     def ghost(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
-        # A light created in an earlier session for an address that is really a switch or sensor
-        return foreign.owns(ctx.address, ctx.key)
+        # A light created in an earlier session for an address that is really a switch or
+        # sensor. A light declared in myhome.yaml is never a ghost: a WHO 1 motion sensor
+        # can share its address with the actuator it drives (#777).
+        if not foreign.blocks_light(ctx.address, ctx.key):
+            return False
+        if foreign.is_sensor_only(ctx.address, ctx.key):
+            LOGGER.warning(
+                "Removing %s: WHO 1 address %s also reports motion or illuminance, so its light was"
+                " taken for sensor telemetry. If a light actuator shares this address (a detector"
+                " driving its own load), declare it under light: in myhome.yaml",
+                entry.entity_id,
+                ctx.address.key,
+            )
+        return True
 
     def accept(ctx: DeviceContext) -> bool:
-        return not foreign.owns(ctx.address, ctx.key)
+        return not foreign.blocks_light(ctx.address, ctx.key)
+
+    hinted: set[str] = set()
 
     @callback
     def route_foreign(message: Any, address: Address, known: KnownDevices) -> bool:
@@ -189,12 +222,26 @@ async def async_setup_entry(
         """
         if foreign.is_sensor_frame(message):
             foreign.mark_sensor(address)
-            known.discard(address.key)
+            if not foreign.is_configured_light(address):
+                known.discard(address.key)
             return True
-        if foreign.owns(address, address.key):
-            runtime.router.publish(
-                "1", (address.key, address.where, normalize_where(address.where)), message
+        if foreign.is_sensor_only(address, address.key) and address.key not in hinted and getattr(message, "is_on", None) is not None:
+            # A sensor that switches no load of its own (Legrand 048834 in scenario mode,
+            # #244) and a detector driving the actuator at its own address (067226 + F411,
+            # #777) look the same here; only the user knows which it is.
+            hinted.add(address.key)
+            LOGGER.info(
+                "WHO 1 address %s reports motion or illuminance, so its on/off frames do not create a"
+                " light. If a light actuator shares this address, declare it under light: in myhome.yaml",
+                address.key,
             )
+        if foreign.blocks_light(address, address.key):
+            keys: tuple[str, ...] = (
+                (address.key, address.clean_key)
+                if address.interface and not foreign.is_switch(address, address.key)
+                else (address.key, address.where, normalize_where(address.where))
+            )
+            runtime.router.publish("1", keys, message)
             return True
         return False
 
@@ -233,7 +280,7 @@ async def async_setup_entry(
 
 
 class _ForeignAddresses:
-    """WHO=1 addresses that belong to the switch or sensor platforms, not to a light."""
+    """WHO=1 addresses that belong to the switch, cover, lock, or sensor platforms, not to a light."""
 
     SENSOR_MESSAGE_TYPES = (
         "motion_detected",
@@ -247,13 +294,31 @@ class _ForeignAddresses:
     ) -> None:
         runtime = config_entry.runtime_data
         self.switches: set[str] = set()
+        self.covers: set[str] = set()
         self.sensors: set[str] = set()
+        #: Lights declared in myhome.yaml: they keep their address even when a
+        #: WHO 1 sensor reports on it (#777).
+        self.lights: set[str] = set()
+
+        for dev_id, cfg in runtime.platforms.get("light", {}).items():
+            address = Address.from_config(dev_id, cfg)
+            if address.where.startswith("#"):
+                continue
+            self.lights.update(self._spellings(address))
 
         for dev_id, cfg in runtime.platforms.get("switch", {}).items():
+            if str(cfg.get(CONF_WHO, "1")) != "1":
+                continue
             address = Address.from_config(dev_id, cfg)
             self.switches.update(
                 {str(dev_id), address.where, address.clean_key, address.clean_where}
             )
+        for platform, default_who in (("cover", "2"), ("lock", "6")):
+            for dev_id, cfg in runtime.platforms.get(platform, {}).items():
+                if str(cfg.get(CONF_WHO, default_who)) != "1":
+                    continue
+                address = Address.from_config(dev_id, cfg)
+                self._add_cover(str(dev_id), address)
         for platform, default_who in (("binary_sensor", "25"), ("sensor", "1")):
             for dev_id, cfg in runtime.platforms.get(platform, {}).items():
                 if str(cfg.get(CONF_WHO, default_who)) != "1":
@@ -268,8 +333,10 @@ class _ForeignAddresses:
             entries = []
         for entry in entries:
             who, device_id = parse_unique_id(entry.unique_id or "", gateway_mac, entry_mac)
-            if entry.domain == "switch":
+            if entry.domain == "switch" and who in (None, "1"):
                 self.switches.update({device_id, device_id.split("#4#")[0].split("-")[-1]})
+            elif entry.domain in ("cover", "lock") and who == "1":
+                self._add_cover(device_id, Address.from_device_id(device_id))
             elif entry.domain in ("binary_sensor", "sensor"):
                 if who == "1":
                     dev = device_id.split("-")[0]
@@ -283,6 +350,14 @@ class _ForeignAddresses:
                     continue
                 self._add_sensor(dev, dev.split("#4#")[0].split("-")[-1])
 
+    def _add_cover(self, dev_id: str, address: Address) -> None:
+        if address.interface:
+            self.covers.update({dev_id, address.key, address.clean_key})
+        else:
+            self.covers.update(
+                {dev_id, address.key, address.clean_key, address.where, address.clean_where}
+            )
+
     def _add_sensor(self, *wheres: str) -> None:
         for where in wheres:
             self.sensors.update({where, normalize_where(where)})
@@ -290,12 +365,59 @@ class _ForeignAddresses:
     def mark_sensor(self, address: Address) -> None:
         self._add_sensor(address.where, address.key, address.clean_where)
 
-    def owns(self, address: Address, key: str) -> bool:
-        candidates = {key, address.where, address.clean_where}
-        if candidates & self.switches:
-            return True
-        candidates |= {normalize_where(address.where), normalize_where(address.clean_where)}
+    @staticmethod
+    def _spellings(address: Address) -> set[str]:
+        """Every spelling of the address, bus interface included: a light at 52 behind
+        interface 01 does not vouch for a sensor at 52 on another bus."""
+        routing = f"{BUS_ROUTING}{address.interface}" if address.interface else ""
+        wheres = {address.where, address.clean_where, normalize_where(address.where), normalize_where(address.clean_where)}
+        return {f"{where}{routing}" for where in wheres if where}
+
+    def is_switch(self, address: Address, key: str) -> bool:
+        return bool({key, address.where, address.clean_where} & self.switches)
+
+    def is_cover(self, address: Address, key: str) -> bool:
+        cover_candidates = (
+            {key, address.key, address.clean_key}
+            if address.interface
+            else {key, address.key, address.clean_key, address.where, address.clean_where}
+        )
+        return bool(cover_candidates & self.covers)
+
+    def is_sensor(self, address: Address, key: str) -> bool:
+        candidates = {
+            key,
+            address.where,
+            address.clean_where,
+            normalize_where(address.where),
+            normalize_where(address.clean_where),
+        }
         return bool(candidates & self.sensors)
+
+    def is_configured_light(self, address: Address) -> bool:
+        """Whether myhome.yaml declares a light at this address (and bus interface)."""
+        return bool(self._spellings(address) & self.lights)
+
+    def blocks_light(self, address: Address, key: str) -> bool:
+        """Whether no light may exist at this address.
+
+        Switch and cover addresses always block. A sensor address blocks only
+        lights that nobody declared: a motion detector such as the Legrand 067226
+        drives an F411 channel at its own A/PL and reports WHAT 34 / 39 and
+        dimensions 5-7 there, so a configured light and the sensor coexist (#777).
+        """
+        if self.is_switch(address, key) or self.is_cover(address, key):
+            return True
+        return self.is_sensor(address, key) and not self.is_configured_light(address)
+
+    def is_sensor_only(self, address: Address, key: str) -> bool:
+        """A sensor address with no configured light: the one case a user can fix in myhome.yaml."""
+        return (
+            not self.is_switch(address, key)
+            and not self.is_cover(address, key)
+            and self.is_sensor(address, key)
+            and not self.is_configured_light(address)
+        )
 
     @classmethod
     def is_sensor_frame(cls, message: Any) -> bool:
@@ -307,6 +429,7 @@ class _ForeignAddresses:
             or getattr(message, "message_type", None) in cls.SENSOR_MESSAGE_TYPES
             or getattr(message, "dimension", None) in (5, 6, 7)
             or getattr(message, "_state", None) == 34
+            or is_motion_end(message)
         )
 
 
@@ -334,6 +457,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         color_temp: bool = False,
         rgb: bool = False,
         lock_features: bool = False,
+        probe_dimmer_on_add: bool = False,
     ) -> None:
         super().__init__(
             hass=hass,
@@ -352,6 +476,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._full_where = (
             f"{self._where}#4#{self._interface}" if self._interface is not None else self._where
         )
+        self._probe_dimmer_on_add = probe_dimmer_on_add
 
         # With lock_features the configuration is authoritative: the light
         # supports exactly the modes declared (rgb / color_temp / dimmable) and
@@ -590,6 +715,45 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 OWNLightingCommand.status(self._full_where)
             )
 
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass."""
+        await super().async_added_to_hass()
+        if self._probe_dimmer_on_add:
+            self._probe_dimmer_on_add = False
+            target_hass = self.hass or self._hass
+            if target_hass is not None:
+                probe_task = target_hass.async_create_background_task(
+                    self.async_probe_dimmer_capability(),
+                    name=f"myhome_{self.entity_id}_probe_dimmer",
+                )
+
+                def _cancel_probe() -> None:
+                    probe_task.cancel()
+
+                self.async_on_remove(_cancel_probe)
+
+    async def async_probe_dimmer_capability(self) -> None:
+        """Query Dimension 1 (*#1*WHERE*1##) after any active sweep to detect ON dimmers (#733)."""
+        if self._lock_features or (
+            set(self._attr_supported_color_modes or ()) - {ColorMode.ONOFF, ColorMode.UNKNOWN}
+        ):
+            return
+        if (
+            hasattr(self._gateway_handler, "wait_for_initial_discovery")
+            and (
+                getattr(self._gateway_handler, "sweep_active", False) is True
+                or getattr(self._gateway_handler, "initial_discovery_pending", False) is True
+            )
+        ):
+            await self._gateway_handler.wait_for_initial_discovery()
+            if self._lock_features or (
+                set(self._attr_supported_color_modes or ()) - {ColorMode.ONOFF, ColorMode.UNKNOWN}
+            ):
+                return
+        await self._gateway_handler.send_status_request(
+            OWNLightingCommand.get_brightness(self._full_where)
+        )
+
     # ── Transition helpers (software stepped dimming) ────────────────────────
 
     def _get_transition_mode_config(self) -> str:
@@ -622,9 +786,12 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         if pct <= 0:
             await self._gateway_handler.send(OWNLightingCommand.switch_off(self._full_where))
         else:
-            await self._gateway_handler.send(
-                OWNLightingCommand.set_brightness(self._full_where, pct, 0)
-            )
+            cmd = OWNLightingCommand.set_brightness(self._full_where, pct, 0)
+            send_fade = getattr(self._gateway_handler, "send_fade_step", None)
+            if self._fade_engine.is_fading and inspect.iscoroutinefunction(send_fade):
+                await send_fade(cmd)
+            else:
+                await self._gateway_handler.send(cmd)
 
     async def _maybe_instant_brightness(
         self, start_pct: int, target_pct: int, is_on: bool | None = None
@@ -938,6 +1105,11 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         """
         if getattr(message, "is_translation", None) is True:
             return
+        if _ForeignAddresses.is_sensor_frame(message):
+            # A detector sharing this address (Legrand 067226 + F411, #777) reports motion,
+            # end of movement and dimensions 5-7 here; the binary_sensor and sensor platforms
+            # route them to this light's address key too. None of them is the light's state.
+            return
 
         LOGGER.debug(
             "%s %s",
@@ -965,9 +1137,18 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     self._gateway_handler.log_id,
                     self._full_where,
                 )
-        elif message.is_on is not None:
+        elif message.is_on is not None and getattr(message, "what", None) not in (30, 31):
+            # A WHAT 30/31 dim step is a relative command, not a state: OWNd 2.0.0b11
+            # still reports it as `is_on True`, and a step from 0 % may leave the light off (#367).
             self._attr_is_on = message.is_on
             self._is_on_restored = False
+            # An "off" frame is complete for a dimmer too: there is no brightness to ask for.
+            if (
+                not message.is_on
+                or not (set(self._attr_supported_color_modes or ()) - {ColorMode.ONOFF, ColorMode.UNKNOWN})
+                or getattr(message, "brightness", None) is not None
+            ):
+                self._bus_state_complete = True
             self._attr_extra_state_attributes.pop("unknown_state", None)
             if message.is_on and self._attr_extra_state_attributes.pop("no_load", None):
                 LOGGER.info(
@@ -1000,10 +1181,11 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         if is_fading and not self._attr_is_on:
             self._cancel_fade_if_active()
 
+        raw_val = getattr(message, "value", None)
         hs = getattr(message, "hs", None)
-        has_hs = isinstance(hs, (tuple, list)) and len(hs or ()) == 2
+        has_hs = is_valid_hs_tuple(hs, raw_val)
         rgb = getattr(message, "rgb", None)
-        has_rgb = isinstance(rgb, (tuple, list)) and len(rgb or ()) == 3
+        has_rgb = is_valid_rgb_tuple(rgb, raw_val)
         has_color_temp = isinstance(getattr(message, "color_temp", None), int)
         has_level = message.brightness is not None or message.brightness_preset is not None
 

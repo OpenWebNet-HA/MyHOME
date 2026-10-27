@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from .bus_monitor import BusMonitor
     from .cover_calibration import CoverCalibrationHub
     from .decoder_pool import DecoderPool
+    from .expose import ExposeManager
     from .gateway import MyHOMEGatewayHandler
 
 
@@ -43,6 +44,10 @@ class MyHOMERuntimeData:
     router: FrameRouter = field(default_factory=FrameRouter)
     # Cover calibration state and serialization per gateway
     calibration_hub: CoverCalibrationHub | None = None
+    # Declarative expose bindings loaded from myhome.yaml
+    expose: list[dict[str, Any]] = field(default_factory=list)
+    # Runtime expose manager handling HA <-> SCS bus virtual device bindings
+    expose_manager: ExposeManager | None = None
 
     @property
     def mac(self) -> str:

@@ -1,0 +1,846 @@
+{
+  "capture": {
+    "kind": "derived_trace_archive",
+    "started_at": "2026-10-25T08:31:43+00:00",
+    "notes": "Live BTicino F461 (firmware 2.0.11 / WHO 13 device type 200 / WHO 1013 134.15.5.0) WHO 4 capture of 2026-10-25, 08:31-08:36 UTC, on the physical test plant's Living Now KW4691 standalone thermostat at Zone 2 (BT-F430/2 heating valve as actuator 1, BT-F430/4 fan coil as actuator 2, heating season, no central unit), recorded with OWNd master. Purpose: the actuator-switching capture asked for in review 5642758778 of MyHOME pull request 792 (actuator status at startup and hvac_action from dimension 20): a local Home Assistant running the integration at the head of pull request 792 (0e44bcd7, PyPI OWNd pin) was restarted with an event-only listener on the bus; its startup sweep (*#4*2##, *#4*2*60##, *#4*2*19##) was followed by the all-zones actuator request *#4*#0*20##, answered by both actuators within 0.13 s; then climate.set_temperature 26.0 (*#4*2*#14*0260*3##) made the heating valve report itself on 2.2 s after the echo (*#4*2#1*#20*1##, then *#4*2#1*20*1##), and climate.set_temperature 23.5 made it report itself off 2.2 s after the echo (*#4*2#1*#20*0##, *#4*2#1*20*0##); the fan coil (actuator 2) sent nothing but its startup reply *#4*2#2*20*5##. Sessions: one event-only listener (evt.jsonl, started 08:31:36.5 UTC for 3600 s, stopped at 08:37 UTC); no probe command session: every request is Home Assistant's, on its own command session, taken from its debug log (not included), hence source = home_assistant and t_estimated = true on every tx / command-session rx / result row: tx.t is when the worker handed the frame to the session, result.t the ACK, command-session rx rows sit at the time the log collected each reply (the F461 delivers them one by one), and the log's local clock was placed on the listener's axis through the 14 frames both logs hold (spread 3 ms). The two setpoint writes opened a new command session first (the previous one had been closed idle); their reply_time_s includes that handshake (24 - 27 ms). Timing: t is one monotonic axis over the three runs (capture.runs[].t_offset is each run's first row; t = 0 is Home Assistant's *#2*05## cover poll, whose reply is the listener's first frame); result.events_after holds only the event-session frames that arrived while the request was pending (tx.t <= t <= result.t). capture.home_assistant_entity_states lists the climate entity's service calls and state changes recorded from Home Assistant's event bus (UTC wall clock) for the first write; the restore was requested over the REST API and its state change (idle at 08:35:57.464 UTC) was read back, not recorded, so it is not listed. The listener's frames after 08:35:57 UTC (none until it was stopped at 08:37) and Home Assistant's requests before the listener started (*#1*0##, *#2*0##, the *#4*0## and *#16*0*5## NACKs, the WHO 18 meter reads) are not included.",
+    "window": {
+      "first": "2026-10-25T08:31:43+00:00",
+      "last": "2026-10-25T08:35:57+00:00",
+      "frames": 20,
+      "rows": 51
+    },
+    "listener": {
+      "file": "evt.jsonl",
+      "started_utc": "08:31:36.5",
+      "duration_s": 3600,
+      "stopped_utc": "08:37",
+      "home_assistant_log_alignment": "listener t = Home Assistant log seconds (local, UTC + 2 h) - 36.546, checked on the 14 frames both logs hold (36.544 - 36.547)"
+    },
+    "runs": [
+      {
+        "run": "run1_startup_sweep_and_actuator_request",
+        "listener": "evt.jsonl",
+        "utc": "08:31:43-08:31:48",
+        "t_offset": 0.0,
+        "rows": 35,
+        "frames": 10,
+        "home_assistant_requests": [
+          "*#2*05##",
+          "*#4*2##",
+          "*#4*2*60##",
+          "*#4*2*19##",
+          "*#4*#0*20##"
+        ],
+        "purpose": "Home Assistant's startup, 12.1 s after the climate entity was added: the cover 05 post-discovery poll, *#4*2## (0, 12 = 23.5, *4*1*2##, 14 = 23.5, 13 in 1.31 s), *#4*2*60## (34 %), *#4*2*19## (*#4*2*19*5*0##: cooling fan coil off, heating valve off), then *#4*#0*20##, answered by the fan coil (*#4*2#2*20*5##, +88 ms) and the valve (*#4*2#1*20*0##, +128 ms) and ACKed 2.13 s after it was sent; the command session was closed idle 15 s later"
+      },
+      {
+        "run": "run2_setpoint_26_0_valve_on",
+        "listener": "evt.jsonl",
+        "utc": "08:32:59-08:33:02",
+        "t_offset": 76.431,
+        "rows": 8,
+        "frames": 5,
+        "home_assistant_requests": [
+          "*#4*2*#14*0260*3##"
+        ],
+        "purpose": "climate.set_temperature 26.0 from 23.5 (measured 24.0): *#4*2*#14*0260*3## ACKed in 90 ms with no reply, echoed on the event session as *#4*2*12*0260*3##, *4*1*2##, *#4*2*0*0240## 26 ms after the ACK (no dimension 14 frame); 2.2 s after the echo the heating valve reported itself on, first as *#4*2#1*#20*1## then 37 ms later as *#4*2#1*20*1##; the fan coil sent nothing"
+      },
+      {
+        "run": "run3_restore_23_5_valve_off",
+        "listener": "evt.jsonl",
+        "utc": "08:35:55-08:35:57",
+        "t_offset": 251.82,
+        "rows": 8,
+        "frames": 5,
+        "home_assistant_requests": [
+          "*#4*2*#14*0235*3##"
+        ],
+        "purpose": "climate.set_temperature 23.5 (restore): *#4*2*#14*0235*3## ACKed in 104 ms with no reply, echoed as *#4*2*12*0235*3##, *4*1*2##, *#4*2*0*0240## 50 ms after the ACK; 2.1 s after the echo the valve reported itself off, *#4*2#1*#20*0## then *#4*2#1*20*0## 3 ms later"
+      }
+    ],
+    "home_assistant_entity_states": [
+      {
+        "utc": "08:32:59.787",
+        "kind": "service_call",
+        "service": "climate.set_temperature",
+        "temperature": 26.0
+      },
+      {
+        "utc": "08:32:59.910",
+        "kind": "state",
+        "last_updated_utc": "08:32:59.908",
+        "hvac_mode": "heat",
+        "hvac_action": "idle",
+        "actuators": {
+          "1": "off",
+          "2": "off"
+        },
+        "temperature": 26.0,
+        "local_target": 26.0,
+        "fan": "off"
+      },
+      {
+        "utc": "08:33:02.150",
+        "kind": "state",
+        "last_updated_utc": "08:33:02.148",
+        "hvac_mode": "heat",
+        "hvac_action": "heating",
+        "actuators": {
+          "1": "on",
+          "2": "off"
+        },
+        "temperature": 26.0,
+        "local_target": 26.0,
+        "fan": "off"
+      },
+      {
+        "utc": "08:33:59.788",
+        "kind": "service_call",
+        "service": "climate.set_temperature",
+        "temperature": 23.5,
+        "note": "not delivered: this row is the harness's record of the websocket call it sent; it reused a message id and Home Assistant dropped the message, so no service ran, no state changed and nothing reached the gateway or the bus. The restore reached the bus through a REST call at 08:35:55 UTC (run 3), whose state change was read back (hvac_action idle, last_updated 08:35:57.464 UTC), not recorded"
+      }
+    ]
+  },
+  "gateway": {
+    "model": "F461",
+    "manufacturer": "BTicino",
+    "firmware": "2.0.11",
+    "kernel": "5.10.35",
+    "distribution": "2.26.4",
+    "ip": "192.0.2.92",
+    "mac": "00:03:50:00:10:25",
+    "identification": {
+      "model": "F461",
+      "who13_code": "200",
+      "who13_model_name": "F461",
+      "who1013_code": "134"
+    }
+  },
+  "frames": [
+    {
+      "timestamp": 0.07,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run1_startup_sweep_and_actuator_request",
+      "session": "evt"
+    },
+    {
+      "timestamp": 0.711,
+      "direction": "rx",
+      "raw": "*#4*2*0*0240##",
+      "run": "run1_startup_sweep_and_actuator_request",
+      "session": "evt"
+    },
+    {
+      "timestamp": 1.017,
+      "direction": "rx",
+      "raw": "*#4*2*12*0235*3##",
+      "run": "run1_startup_sweep_and_actuator_request",
+      "session": "evt"
+    },
+    {
+      "timestamp": 1.018,
+      "direction": "rx",
+      "raw": "*4*1*2##",
+      "run": "run1_startup_sweep_and_actuator_request",
+      "session": "evt"
+    },
+    {
+      "timestamp": 1.344,
+      "direction": "rx",
+      "raw": "*#4*2*14*0235*3##",
+      "run": "run1_startup_sweep_and_actuator_request",
+      "session": "evt"
+    },
+    {
+      "timestamp": 1.437,
+      "direction": "rx",
+      "raw": "*#4*2*13*00##",
+      "run": "run1_startup_sweep_and_actuator_request",
+      "session": "evt"
+    },
+    {
+      "timestamp": 1.613,
+      "direction": "rx",
+      "raw": "*#4*2*60*34##",
+      "run": "run1_startup_sweep_and_actuator_request",
+      "session": "evt"
+    },
+    {
+      "timestamp": 1.766,
+      "direction": "rx",
+      "raw": "*#4*2*19*5*0##",
+      "run": "run1_startup_sweep_and_actuator_request",
+      "session": "evt"
+    },
+    {
+      "timestamp": 2.613,
+      "direction": "rx",
+      "raw": "*#4*2#2*20*5##",
+      "run": "run1_startup_sweep_and_actuator_request",
+      "session": "evt"
+    },
+    {
+      "timestamp": 2.653,
+      "direction": "rx",
+      "raw": "*#4*2#1*20*0##",
+      "run": "run1_startup_sweep_and_actuator_request",
+      "session": "evt"
+    },
+    {
+      "timestamp": 76.547,
+      "direction": "rx",
+      "raw": "*#4*2*12*0260*3##",
+      "run": "run2_setpoint_26_0_valve_on",
+      "session": "evt"
+    },
+    {
+      "timestamp": 76.549,
+      "direction": "rx",
+      "raw": "*4*1*2##",
+      "run": "run2_setpoint_26_0_valve_on",
+      "session": "evt"
+    },
+    {
+      "timestamp": 76.611,
+      "direction": "rx",
+      "raw": "*#4*2*0*0240##",
+      "run": "run2_setpoint_26_0_valve_on",
+      "session": "evt"
+    },
+    {
+      "timestamp": 78.75,
+      "direction": "rx",
+      "raw": "*#4*2#1*#20*1##",
+      "run": "run2_setpoint_26_0_valve_on",
+      "session": "evt"
+    },
+    {
+      "timestamp": 78.787,
+      "direction": "rx",
+      "raw": "*#4*2#1*20*1##",
+      "run": "run2_setpoint_26_0_valve_on",
+      "session": "evt"
+    },
+    {
+      "timestamp": 251.974,
+      "direction": "rx",
+      "raw": "*#4*2*12*0235*3##",
+      "run": "run3_restore_23_5_valve_off",
+      "session": "evt"
+    },
+    {
+      "timestamp": 251.976,
+      "direction": "rx",
+      "raw": "*4*1*2##",
+      "run": "run3_restore_23_5_valve_off",
+      "session": "evt"
+    },
+    {
+      "timestamp": 252.03,
+      "direction": "rx",
+      "raw": "*#4*2*0*0240##",
+      "run": "run3_restore_23_5_valve_off",
+      "session": "evt"
+    },
+    {
+      "timestamp": 254.1,
+      "direction": "rx",
+      "raw": "*#4*2#1*#20*0##",
+      "run": "run3_restore_23_5_valve_off",
+      "session": "evt"
+    },
+    {
+      "timestamp": 254.103,
+      "direction": "rx",
+      "raw": "*#4*2#1*20*0##",
+      "run": "run3_restore_23_5_valve_off",
+      "session": "evt"
+    }
+  ],
+  "rows": [
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 0.0,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "startup_sweep",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#2*05##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 0.07,
+      "step": "startup_sweep",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 0.071,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "startup_sweep",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*2*0*05##"
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 0.074,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "startup_sweep",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 0.074,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "utc": "08:31:43",
+      "step": "startup_sweep",
+      "dir": "result",
+      "frame": "*#2*05##",
+      "ack": true,
+      "reply_time_s": 0.074,
+      "replies": [
+        "*2*0*05##"
+      ],
+      "events_after": [
+        "*2*0*05##"
+      ],
+      "note": "cover_05_post_discovery_poll_stopped"
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 0.126,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "startup_sweep",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 0.711,
+      "step": "startup_sweep",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*0*0240##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's main sensor is reporting a temperature of 24.0°C."
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 0.713,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "startup_sweep",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*0*0240##"
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 1.017,
+      "step": "startup_sweep",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*12*0235*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local target temperature is set to 23.5°C."
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 1.018,
+      "step": "startup_sweep",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*4*1*2##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's season is heating."
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 1.019,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "startup_sweep",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*12*0235*3##"
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 1.019,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "startup_sweep",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*4*1*2##"
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 1.344,
+      "step": "startup_sweep",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*14*0235*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's target temperature is set to 23.5°C."
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 1.345,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "startup_sweep",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*14*0235*3##"
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 1.437,
+      "step": "startup_sweep",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*13*00##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local offset is set to 0°C."
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 1.439,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "startup_sweep",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*13*00##"
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 1.44,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "startup_sweep",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 1.44,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "utc": "08:31:44",
+      "step": "startup_sweep",
+      "dir": "result",
+      "frame": "*#4*2##",
+      "ack": true,
+      "reply_time_s": 1.314,
+      "replies": [
+        "*#4*2*0*0240##",
+        "*#4*2*12*0235*3##",
+        "*4*1*2##",
+        "*#4*2*14*0235*3##",
+        "*#4*2*13*00##"
+      ],
+      "events_after": [
+        "*#4*2*0*0240##",
+        "*#4*2*12*0235*3##",
+        "*4*1*2##",
+        "*#4*2*14*0235*3##",
+        "*#4*2*13*00##"
+      ],
+      "note": "zone_status_12_eq_14_0235_heating_order_0_12_season_14_13"
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 1.491,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "startup_sweep",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2*60##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 1.613,
+      "step": "startup_sweep",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*60*34##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's main sensor is reporting a humidity of 34.0%."
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 1.614,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "startup_sweep",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*60*34##"
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 1.615,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "startup_sweep",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 1.615,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "utc": "08:31:44",
+      "step": "startup_sweep",
+      "dir": "result",
+      "frame": "*#4*2*60##",
+      "ack": true,
+      "reply_time_s": 0.124,
+      "replies": [
+        "*#4*2*60*34##"
+      ],
+      "events_after": [
+        "*#4*2*60*34##"
+      ],
+      "note": "humidity_34"
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 1.668,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "startup_sweep",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2*19##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 1.766,
+      "step": "startup_sweep",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*19*5*0##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's cooling fan is off; heating valve is off."
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 1.768,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "startup_sweep",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*19*5*0##"
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 1.771,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "startup_sweep",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 1.771,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "utc": "08:31:45",
+      "step": "startup_sweep",
+      "dir": "result",
+      "frame": "*#4*2*19##",
+      "ack": true,
+      "reply_time_s": 0.103,
+      "replies": [
+        "*#4*2*19*5*0##"
+      ],
+      "events_after": [
+        "*#4*2*19*5*0##"
+      ],
+      "note": "valves_status_cooling_fan_coil_off_5_heating_valve_off_0"
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 2.525,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "startup_actuator_request",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*#0*20##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 2.613,
+      "step": "startup_actuator_request",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2#2*20*5##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's fan is off."
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 2.614,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "startup_actuator_request",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2#2*20*5##"
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 2.653,
+      "step": "startup_actuator_request",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2#1*20*0##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's actuator 1 is off."
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 2.654,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "startup_actuator_request",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2#1*20*0##"
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 4.659,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "startup_actuator_request",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_startup_sweep_and_actuator_request",
+      "t": 4.659,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "utc": "08:31:48",
+      "step": "startup_actuator_request",
+      "dir": "result",
+      "frame": "*#4*#0*20##",
+      "ack": true,
+      "reply_time_s": 2.134,
+      "replies": [
+        "*#4*2#2*20*5##",
+        "*#4*2#1*20*0##"
+      ],
+      "events_after": [
+        "*#4*2#2*20*5##",
+        "*#4*2#1*20*0##"
+      ],
+      "note": "all_zones_actuator_status_both_actuators_answer_within_0_13_s_fan_coil_first_ack_after_2_13_s"
+    },
+    {
+      "run": "run2_setpoint_26_0_valve_on",
+      "t": 76.431,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "setpoint_write_26_0",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2*#14*0260*3##",
+      "is_status_request": false
+    },
+    {
+      "run": "run2_setpoint_26_0_valve_on",
+      "t": 76.521,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "setpoint_write_26_0",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_setpoint_26_0_valve_on",
+      "t": 76.521,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "utc": "08:32:59",
+      "step": "setpoint_write_26_0",
+      "dir": "result",
+      "frame": "*#4*2*#14*0260*3##",
+      "ack": true,
+      "reply_time_s": 0.09,
+      "replies": [],
+      "events_after": [],
+      "note": "climate_set_temperature_26_0_no_reply_echo_12_season_0_after_ack_valve_on_2_2_s_later"
+    },
+    {
+      "run": "run2_setpoint_26_0_valve_on",
+      "t": 76.547,
+      "step": "setpoint_write_26_0",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*12*0260*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local target temperature is set to 26.0°C."
+    },
+    {
+      "run": "run2_setpoint_26_0_valve_on",
+      "t": 76.549,
+      "step": "setpoint_write_26_0",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*4*1*2##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's season is heating."
+    },
+    {
+      "run": "run2_setpoint_26_0_valve_on",
+      "t": 76.611,
+      "step": "setpoint_write_26_0",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*0*0240##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's main sensor is reporting a temperature of 24.0°C."
+    },
+    {
+      "run": "run2_setpoint_26_0_valve_on",
+      "t": 78.75,
+      "step": "setpoint_write_26_0",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2#1*#20*1##",
+      "ownd_class": "OWNHeatingCommand",
+      "ownd_log": "*#4*2#1*#20*1##"
+    },
+    {
+      "run": "run2_setpoint_26_0_valve_on",
+      "t": 78.787,
+      "step": "setpoint_write_26_0",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2#1*20*1##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's actuator 1 is on."
+    },
+    {
+      "run": "run3_restore_23_5_valve_off",
+      "t": 251.82,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "setpoint_write_23_5",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2*#14*0235*3##",
+      "is_status_request": false
+    },
+    {
+      "run": "run3_restore_23_5_valve_off",
+      "t": 251.924,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "step": "setpoint_write_23_5",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run3_restore_23_5_valve_off",
+      "t": 251.924,
+      "t_estimated": true,
+      "source": "home_assistant",
+      "utc": "08:35:55",
+      "step": "setpoint_write_23_5",
+      "dir": "result",
+      "frame": "*#4*2*#14*0235*3##",
+      "ack": true,
+      "reply_time_s": 0.104,
+      "replies": [],
+      "events_after": [],
+      "note": "climate_set_temperature_23_5_no_reply_echo_12_season_0_after_ack_valve_off_2_2_s_later"
+    },
+    {
+      "run": "run3_restore_23_5_valve_off",
+      "t": 251.974,
+      "step": "setpoint_write_23_5",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*12*0235*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local target temperature is set to 23.5°C."
+    },
+    {
+      "run": "run3_restore_23_5_valve_off",
+      "t": 251.976,
+      "step": "setpoint_write_23_5",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*4*1*2##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's season is heating."
+    },
+    {
+      "run": "run3_restore_23_5_valve_off",
+      "t": 252.03,
+      "step": "setpoint_write_23_5",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*0*0240##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's main sensor is reporting a temperature of 24.0°C."
+    },
+    {
+      "run": "run3_restore_23_5_valve_off",
+      "t": 254.1,
+      "step": "setpoint_write_23_5",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2#1*#20*0##",
+      "ownd_class": "OWNHeatingCommand",
+      "ownd_log": "*#4*2#1*#20*0##"
+    },
+    {
+      "run": "run3_restore_23_5_valve_off",
+      "t": 254.103,
+      "step": "setpoint_write_23_5",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2#1*20*0##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's actuator 1 is off."
+    }
+  ]
+}

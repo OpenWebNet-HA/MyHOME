@@ -169,3 +169,156 @@ def test_f454_step_commands_specific_frame_grammar() -> None:
     # 7. Gateway date/time broadcast
     clock_frame = OWNMessage.parse("*#13**#1*03*07*10*2026##")
     assert isinstance(clock_frame, (OWNGatewayCommand, OWNGatewayEvent))
+
+
+def test_f454_trace_motor_deadband_invariant() -> None:
+    """MIN_MOTOR_PULSE sits between the runs that did and did not move the motor.
+
+    Durations are the spacing of the bus status frames (start to stop status,
+    and the DIMENSION 10 moving/stopped telemetry), not the time the relay was
+    energised. The reporter heard the relay click without movement at 1%
+    (#466 comment 6038376669); 2% moved the curtain.
+    1. 1% steps: status runs of 178-215 ms (DIMENSION 10: 133-216 ms), all
+       shorter than MIN_MOTOR_PULSE.
+    2. 2% steps: status runs of 390-409 ms (DIMENSION 10: 355-392 ms);
+       MIN_MOTOR_PULSE is no longer than the longest of them, so the floor is a
+       run known to move this motor.
+    3. 2% (MIN_POSITION_DELTA) on this 20.4 s motor is not stretched by the floor.
+    """
+    from custom_components.myhome.cover_motion import (
+        MIN_MOTOR_PULSE,
+        MIN_POSITION_DELTA,
+        compute_run_duration,
+        quantize_position_delta,
+    )
+
+    with open(F454_STEP_TRACE_FILE, "r", encoding="utf-8") as f:
+        trace_data = json.load(f)
+
+    raw_frames = trace_data["data"]["bus_monitor"]["recent_frames"]
+
+    relay_pulses_1pct: list[float] = []
+    relay_pulses_2pct: list[float] = []
+    dim10_pulses_1pct: list[float] = []
+    dim10_pulses_2pct: list[float] = []
+
+    for i, frame in enumerate(raw_frames):
+        raw = frame.get("raw", "")
+        # Identify relative step commands (*2*11#<step>#... or *2*12#<step>#...)
+        if raw.startswith("*2*11#") or raw.startswith("*2*12#"):
+            step_pct = int(raw.split("*")[2].split("#")[1])
+
+            relay_start_ts: float | None = None
+            relay_stop_ts: float | None = None
+            dim10_start_ts: float | None = None
+            dim10_stop_ts: float | None = None
+
+            # Scan subsequent frames of this step movement sequence
+            for j in range(i + 1, min(i + 15, len(raw_frames))):
+                sub_frame = raw_frames[j]
+                r = sub_frame.get("raw", "")
+                ts = float(sub_frame["timestamp"])
+
+                # Physical relay movement status (*2*1*31## up, *2*2*31## down, *2*0*31## stop)
+                if r in ("*2*1*31##", "*2*2*31##") and relay_start_ts is None:
+                    relay_start_ts = ts
+                elif r == "*2*0*31##":
+                    relay_stop_ts = ts
+                    break
+
+                # In-flight Dimension 10 telemetry (*#2*31*10*<state>*<level>*001*0##)
+                if r.startswith("*#2*31*10*"):
+                    parts = r.split("*")
+                    state = parts[4]
+                    if state in ("11", "12") and dim10_start_ts is None:
+                        dim10_start_ts = ts
+                    elif state == "10":
+                        dim10_stop_ts = ts
+
+            if relay_start_ts is not None and relay_stop_ts is not None:
+                duration = relay_stop_ts - relay_start_ts
+                if step_pct == 1:
+                    relay_pulses_1pct.append(duration)
+                elif step_pct == 2:
+                    relay_pulses_2pct.append(duration)
+
+            if dim10_start_ts is not None and dim10_stop_ts is not None:
+                duration = dim10_stop_ts - dim10_start_ts
+                if step_pct == 1:
+                    dim10_pulses_1pct.append(duration)
+                elif step_pct == 2:
+                    dim10_pulses_2pct.append(duration)
+
+    # 1. 1% steps (no movement): every run is shorter than the floor
+    assert len(relay_pulses_1pct) == 6, f"Expected 6 1% status runs, found {len(relay_pulses_1pct)}"
+    assert 0.175 <= min(relay_pulses_1pct) and max(relay_pulses_1pct) <= 0.220
+    assert max(relay_pulses_1pct) < MIN_MOTOR_PULSE, relay_pulses_1pct
+
+    assert len(dim10_pulses_1pct) == 6, f"Expected 6 1% dim10 runs, found {len(dim10_pulses_1pct)}"
+    assert 0.130 <= min(dim10_pulses_1pct) and max(dim10_pulses_1pct) <= 0.220
+    assert max(dim10_pulses_1pct) < MIN_MOTOR_PULSE, dim10_pulses_1pct
+
+    # 2. 2% steps (movement): the floor is no longer than a run that moved the motor
+    assert len(relay_pulses_2pct) == 2, f"Expected 2 2% status runs, found {len(relay_pulses_2pct)}"
+    assert 0.380 <= min(relay_pulses_2pct) and max(relay_pulses_2pct) <= 0.415
+    assert MIN_MOTOR_PULSE <= max(relay_pulses_2pct), relay_pulses_2pct
+
+    assert len(dim10_pulses_2pct) == 2, f"Expected 2 2% dim10 runs, found {len(dim10_pulses_2pct)}"
+    assert 0.350 <= min(dim10_pulses_2pct) and max(dim10_pulses_2pct) <= 0.400
+
+    # 3. A 1% change is widened to the 2% that moved this motor; a 1% timed run
+    # is stretched to the floor, a 2% one (0.408 s) is not.
+    assert MIN_POSITION_DELTA == 2
+    assert quantize_position_delta(curr_pos=40, target_pos=41) == 42
+    assert quantize_position_delta(curr_pos=40, target_pos=39) == 38
+    assert quantize_position_delta(curr_pos=40, target_pos=40) == 40
+    assert quantize_position_delta(curr_pos=40, target_pos=45) == 45
+
+    full_travel_time = 20.4
+    assert compute_run_duration(1, full_travel_time) == MIN_MOTOR_PULSE
+    assert compute_run_duration(2, full_travel_time) == pytest.approx(0.408)
+
+
+def test_f454_step_and_full_run_firmware_oracle_conformance() -> None:
+    """Verify F454 step commands (*2*11#..., *2*12#...) and full-run endpoints against firmware_oracle.json."""
+    oracle_path = Path(__file__).resolve().parent / "golden" / "firmware_oracle.json"
+    verdicts = json.loads(oracle_path.read_text(encoding="utf-8"))["verdicts"]
+
+    all_autom_gateways = {
+        "F453AV",
+        "F454",
+        "F459",
+        "F460",
+        "F461",
+        "H4684",
+        "MH200",
+        "MH200N",
+        "MH202",
+        "MyHomeServer1",
+    }
+    advanced_who2_gateways = {"F454", "F459", "F460", "F461", "MH202", "MyHomeServer1"}
+
+    # 1. Step commands *2*11#1#001*31## and *2*12#1#001*31## are forwarded by the 6 advanced
+    # WHO 2 gateways and normalized with #1 selector (*2*1000#11#1#001#1*31##).
+    for step_frame, expected_echo in (
+        ("*2*11#1#001*31##", "*2*1000#11#1#001#1*31##"),
+        ("*2*12#1#001*31##", "*2*1000#12#1#001#1*31##"),
+    ):
+        by_prod = {e["product"]: e for e in verdicts[step_frame]}
+        for prod in advanced_who2_gateways:
+            assert by_prod[prod]["verdict"] == "out"
+            assert len(by_prod[prod]["bus_frames"]) == 1
+            assert by_prod[prod]["emitted_own"] == [expected_echo]
+        for legacy_prod in all_autom_gateways - advanced_who2_gateways:
+            assert by_prod[legacy_prod]["reply"] == "nack"
+            assert by_prod[legacy_prod]["verdict"] == "silent"
+
+    # 2. Full-run endpoint commands (*2*1*31## at 100%, *2*2*31## at 0%) are forwarded
+    # across all 10 automation gateways, and on 9 of 10 gateways (all except MH202)
+    # bt_autom synthesizes a pre-direction STOP telegram ($033100120A) before UP/DOWN.
+    for full_run_frame in ("*2*1*31##", "*2*2*31##"):
+        by_prod = {e["product"]: e for e in verdicts[full_run_frame]}
+        for prod in all_autom_gateways:
+            assert by_prod[prod]["verdict"] == "out"
+            if prod != "MH202":
+                assert len(by_prod[prod]["bus_frames"]) == 2

@@ -153,12 +153,14 @@
           "gateway_role": "Rôle de la passerelle",
           "primary_gateway": "Passerelle principale",
           "delegated_whos": "Sous-systèmes délégués",
-          "ignored_addresses": "Adresses ignorées"
+          "ignored_addresses": "Adresses ignorées",
+          "tuner_pictures": "Images des tuners"
         },
         "data_description": {
           "decoder_1_pre_gain": "Calibrez à partir du matériel, pas au jugé : si la sortie ligne de ce décodeur alimente un module BTicino Ingresso RCA (L/N/NT4560) ou Controllo Stereo (L4561), augmentez le Pre-Gain pendant la lecture jusqu'à ce que la led de signal de ce module clignote en orange — ni fixe vert (signal trop faible) ni fixe rouge/orange (écrêtage). Câblez toujours la sortie ligne fixe (« OUT ») du décodeur, jamais une sortie casque/AUX dépendante du volume : un second étage de gain incontrôlé à cet endroit provoque exactement la distorsion contre laquelle le guide de dépannage BTicino met en garde.",
           "delegated_whos": "Rôle secondaire uniquement : sous-systèmes dont cette passerelle découvre les nouveaux appareils. Les appareils que la principale possède déjà restent sur la principale.",
           "ignored_addresses": "Ignore définitivement les adresses indiquées (ex. 1/74, 1/74#4#01) : ignore la découverte, supprime les entités et désactive le suivi des pannes. Séparez les entrées par des retours à la ligne ou des virgules.",
+          "tuner_pictures": "Une entrée MHz=URL par ligne (ex. 96.2=/local/radio/one.png) : l'image affichée tant qu'un tuner est sur cette fréquence. Vos propres images ; aucune n'est fournie.",
           "command_worker_count": "Recommandé pour la {model} : {session_default}. Elle accepte au plus {session_limit} session(s) de commande, et chacune, avec la session d'événements, occupe l'une de ses rares connexions, dont l'application Legrand/BTicino et d'autres clients ont aussi besoin. N'augmentez que si les commandes s'accumulent."
         }
       },
@@ -234,7 +236,17 @@
         },
         "duration": {
           "name": "Durée",
-          "description": "Pendant combien de temps la puissance instantanée va-t-elle être automatiquement envoyée."
+          "description": "Pendant combien de temps la puissance instantanée va-t-elle être automatiquement envoyée en minutes (0 pour arrêter)."
+        }
+      }
+    },
+    "stop_sending_instant_power": {
+      "name": "Arrêter d'envoyer la puissance instantanée",
+      "description": "Arrêter les mises à jour automatiques de la puissance instantanée d'un capteur.",
+      "fields": {
+        "entity_id": {
+          "name": "Entitée",
+          "description": "Nom(s) des entitées qui vont arrêter d'envoyer la puissance instantanée."
         }
       }
     },
@@ -316,15 +328,31 @@
           "name": "Temps de course en montée",
           "description": "Secondes pour une ouverture complète (1-180)."
         },
+        "slat_time": {
+          "name": "Temps d'orientation des lames",
+          "description": "Secondes nécessaires aux lames d'un store vénitien pour une rotation complète (0.5-10). Utilisé uniquement par les volets ayant slat_tilt activé."
+        },
         "copied_from": {
           "name": "Copié depuis",
           "description": "Le volet dont ces temps ont été repris ; la source est alors indiquée comme \"copied\" au lieu de \"manual\"."
+        },
+        "min_motor_pulse": {
+          "name": "Seuil de démarrage du moteur",
+          "description": "Durée minimale en secondes (0.0-5.0) d'une impulsion moteur pour surmonter l'inertie et le frein mécanique (0.0 désactive)."
         }
       }
     },
     "reset_cover_travel_time": {
       "name": "Réinitialiser le temps de course du volet",
       "description": "Oublie les temps de course mesurés ou définis manuellement et revient au travel_time de myhome.yaml ou à la valeur par défaut de 25 s."
+    },
+    "cancel_cover_request": {
+      "name": "Annuler la demande de portail ou de porte de garage",
+      "description": "Annule une demande d'approbation en attente ou un préavis en cours pour un portail ou une porte de garage à impulsion. L'annulation est toujours sûre ; rien ne bouge."
+    },
+    "acknowledge_cover_fault": {
+      "name": "Acquitter le défaut de portail ou de porte de garage",
+      "description": "Efface le défaut verrouillé lorsqu'un portail ou une porte de garage n'a pas atteint l'état attendu après une impulsion (obstacle ou inversion possible). Seul un utilisateur autorisé présent au domicile peut l'acquitter ; jusque-là, la fermeture depuis Home Assistant reste bloquée."
     }
   },
   "issues": {
@@ -384,6 +412,10 @@
     "primary_gateway_missing": {
       "title": "Passerelle principale de {gateway} manquante",
       "description": "{gateway} est configurée comme passerelle secondaire ou de secours pour {primary}, mais cette passerelle n'est plus configurée comme passerelle principale partagée. {gateway} suspend la découverte jusqu'à sa reconfiguration."
+    },
+    "legacy_yaml_imported": {
+      "title": "Configuration myhome.yaml importée pour {gateway}",
+      "description": "La configuration des appareils de `myhome.yaml` pour {gateway} a été copiée dans les options de l'entrée de configuration Home Assistant. Tant que `myhome.yaml` existe, il reste la référence et la copie suit ses modifications. Si le fichier est supprimé ou devient illisible, les appareils conservent la configuration de la dernière copie."
     }
   },
   "exceptions": {
@@ -409,7 +441,7 @@
       "message": "{name} : aucun état d'arrêt de l'actionneur dans les {timeout} s - il ne signale peut-être pas son état ; définissez travel_time manuellement"
     },
     "cover_reports_position": {
-      "message": "{name} signale sa position ; la calibration du temps de course ne s'y applique pas"
+      "message": "{name} signale sa position (advanced: true dans myhome.yaml) ; la calibration du temps de course ne s'y applique pas. S'il s'agit d'un actionneur temporisé standard (ex. F411) qui ne prend pas en charge la dimension 10, retirez advanced: true de myhome.yaml."
     },
     "calibration_in_progress": {
       "message": "{name} est déjà en cours de calibration"
@@ -418,7 +450,7 @@
       "message": "{name} : course {direction} invraisemblable de {seconds} s ; non enregistrée"
     },
     "travel_time_missing": {
-      "message": "Au moins travel_time ou travel_time_down/up doit être indiqué"
+      "message": "Au moins travel_time, travel_time_down/up ou min_motor_pulse doit être indiqué"
     },
     "travel_time_out_of_range": {
       "message": "{field} doit être compris entre {min} s et {max} s"
@@ -428,6 +460,12 @@
     },
     "cover_busy_calibrating": {
       "message": "{entity_id} est en cours de calibration ; réessayez lorsqu'elle sera terminée"
+    },
+    "cover_busy_moving": {
+      "message": "{name} est en mouvement ; arrêtez-le avant d'orienter les lames"
+    },
+    "slat_tilt_not_enabled": {
+      "message": "{name} n'a pas slat_tilt activé ; slat_time ne peut pas être défini"
     },
     "decoders_busy": {
       "message": "{entity_id} : toutes les entrées de la matrice audio sont actuellement utilisées par d'autres pièces"
@@ -464,6 +502,9 @@
     },
     "seek_not_supported": {
       "message": "{entity_id} : la recherche de fréquence n'est prise en charge que sur les entités tuner"
+    },
+    "volume_not_finite": {
+      "message": "{entity_id} : le niveau de volume {volume} n'est pas un nombre fini valide"
     }
   },
   "entity": {

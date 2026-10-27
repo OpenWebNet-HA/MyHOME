@@ -1,0 +1,315 @@
+s6-rc: info: service legacy-cont-init successfully started
+s6-rc: info: service legacy-services: starting
+services-up: info: copying legacy longrun home-assistant (no readiness notification)
+s6-rc: info: service legacy-services successfully started
+[33m2026-10-09 20:31:20.531 WARNING (SyncWorker_0) [homeassistant.loader] We found a custom integration myhome which has not been tested by Home Assistant. This component might cause stability problems, be sure to disable it if you experience issues with Home Assistant[0m
+[33m2026-10-09 20:31:20.532 WARNING (SyncWorker_0) [homeassistant.loader] We found a custom integration hacs which has not been tested by Home Assistant. This component might cause stability problems, be sure to disable it if you experience issues with Home Assistant[0m
+[33m2026-10-09 20:31:20.533 WARNING (SyncWorker_0) [homeassistant.loader] We found a custom integration dahua which has not been tested by Home Assistant. This component might cause stability problems, be sure to disable it if you experience issues with Home Assistant[0m
+[33m2026-10-09 20:31:20.533 WARNING (SyncWorker_0) [homeassistant.loader] We found a custom integration myhome which has not been tested by Home Assistant. This component might cause stability problems, be sure to disable it if you experience issues with Home Assistant[0m
+[33m2026-10-09 20:31:36.708 WARNING (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Timed out awaiting the complete response for `*#4*35##`; command session closed.[0m
+[33m2026-10-09 20:31:46.793 WARNING (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Timed out awaiting the complete response for `*#4*34##`; command session closed.[0m
+[33m2026-10-09 20:31:56.881 WARNING (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Timed out awaiting the complete response for `*#4*36##`; command session closed.[0m
+[36m2026-10-09 20:32:01.117 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*45*12*0100*3##`[0m
+[36m2026-10-09 20:32:01.117 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 45's local target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:01.117 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 45's local target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:01.294 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*45*14*0100*3##`[0m
+[36m2026-10-09 20:32:01.294 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 45's target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:01.294 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 45's target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:01.844 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*46*0*0208##`[0m
+[36m2026-10-09 20:32:01.844 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 46's main sensor is reporting a temperature of 20.8°C.[0m
+[36m2026-10-09 20:32:01.845 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 46's main sensor is reporting a temperature of 20.8°C.[0m
+[36m2026-10-09 20:32:02.609 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#*1##`[0m
+[36m2026-10-09 20:32:02.609 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Unsupported message type: `*#*1##`[0m
+[36m2026-10-09 20:32:02.966 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*35*0*0196##`[0m
+[36m2026-10-09 20:32:02.966 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 35's main sensor is reporting a temperature of 19.6°C.[0m
+[36m2026-10-09 20:32:02.966 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 35's main sensor is reporting a temperature of 19.6°C.[0m
+[36m2026-10-09 20:32:03.144 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*35*14*0100*3##`[0m
+[36m2026-10-09 20:32:03.145 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 35's target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:03.145 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 35's target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:03.388 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*35*14*0100*3##`[0m
+[36m2026-10-09 20:32:03.388 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 35's target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:03.389 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 35's target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:03.562 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*34*0*0187##`[0m
+[36m2026-10-09 20:32:03.563 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 34's main sensor is reporting a temperature of 18.7°C.[0m
+[36m2026-10-09 20:32:03.563 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 34's main sensor is reporting a temperature of 18.7°C.[0m
+[36m2026-10-09 20:32:03.806 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*34*0*0187##`[0m
+[36m2026-10-09 20:32:03.806 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 34's main sensor is reporting a temperature of 18.7°C.[0m
+[36m2026-10-09 20:32:03.806 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 34's main sensor is reporting a temperature of 18.7°C.[0m
+[36m2026-10-09 20:32:03.980 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*34*12*0100*3##`[0m
+[36m2026-10-09 20:32:03.980 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 34's local target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:03.981 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 34's local target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:04.159 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*34*14*0100*3##`[0m
+[36m2026-10-09 20:32:04.159 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 34's target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:04.159 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 34's target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:04.402 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#*1##`[0m
+[36m2026-10-09 20:32:04.402 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Unsupported message type: `*#*1##`[0m
+[36m2026-10-09 20:32:04.927 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*36*0*0193##`[0m
+[36m2026-10-09 20:32:04.928 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's main sensor is reporting a temperature of 19.3°C.[0m
+[36m2026-10-09 20:32:04.928 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's main sensor is reporting a temperature of 19.3°C.[0m
+[36m2026-10-09 20:32:05.174 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*36*0*0193##`[0m
+[36m2026-10-09 20:32:05.174 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's main sensor is reporting a temperature of 19.3°C.[0m
+[36m2026-10-09 20:32:05.174 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's main sensor is reporting a temperature of 19.3°C.[0m
+[36m2026-10-09 20:32:06.964 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Command session closed.[0m
+[33m2026-10-09 20:32:06.964 WARNING (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Timed out awaiting the complete response for `*#4*28##`; command session closed.[0m
+[36m2026-10-09 20:32:07.015 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message `*#4*37##` was successfully unqueued by worker 0.[0m
+[36m2026-10-09 20:32:07.015 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Opening command session.[0m
+[36m2026-10-09 20:32:07.016 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Negotiating command session.[0m
+[36m2026-10-09 20:32:07.027 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Received SHA challenge: `*98*2##`[0m
+[36m2026-10-09 20:32:07.027 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Accepting sha256 challenge, initiating handshake.[0m
+[36m2026-10-09 20:32:07.043 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Sending command session password.[0m
+[36m2026-10-09 20:32:07.052 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Session established successfully.[0m
+[36m2026-10-09 20:32:09.255 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*36*14*0100*3##`[0m
+[36m2026-10-09 20:32:09.255 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:09.255 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:12.448 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*36*0*0193##`[0m
+[36m2026-10-09 20:32:12.448 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's main sensor is reporting a temperature of 19.3°C.[0m
+[36m2026-10-09 20:32:12.448 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's main sensor is reporting a temperature of 19.3°C.[0m
+[36m2026-10-09 20:32:12.691 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*36*0*0193##`[0m
+[36m2026-10-09 20:32:12.691 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's main sensor is reporting a temperature of 19.3°C.[0m
+[36m2026-10-09 20:32:12.691 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's main sensor is reporting a temperature of 19.3°C.[0m
+[36m2026-10-09 20:32:13.213 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*36*12*0100*3##`[0m
+[36m2026-10-09 20:32:13.214 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's local target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:13.214 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's local target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:13.390 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*4*1*36##`[0m
+[36m2026-10-09 20:32:13.390 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's mode is set to 'heat'.[0m
+[36m2026-10-09 20:32:13.390 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's mode is set to 'heat'.[0m
+[36m2026-10-09 20:32:13.649 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*36*12*0100*3##`[0m
+[36m2026-10-09 20:32:13.649 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's local target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:13.649 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's local target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:13.889 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*4*1*36##`[0m
+[36m2026-10-09 20:32:13.890 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's mode is set to 'heat'.[0m
+[36m2026-10-09 20:32:13.890 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's mode is set to 'heat'.[0m
+[36m2026-10-09 20:32:14.067 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*4*4002#64*0#2##`[0m
+[36m2026-10-09 20:32:14.438 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*4*4002*64##`[0m
+[36m2026-10-09 20:32:14.629 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*36*14*0100*3##`[0m
+[36m2026-10-09 20:32:14.629 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:14.629 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:14.872 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*36*14*0100*3##`[0m
+[36m2026-10-09 20:32:14.872 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:14.872 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:32:15.048 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*4*4002#64*0#3##`[0m
+[36m2026-10-09 20:32:15.414 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*64#1*#20*0##`[0m
+[36m2026-10-09 20:32:15.414 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Unsupported message type: `*#4*64#1*#20*0##`[0m
+[36m2026-10-09 20:32:15.605 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*64#1*20*0##`[0m
+[36m2026-10-09 20:32:15.606 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 64's actuator 1 is off.[0m
+[36m2026-10-09 20:32:15.606 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 64's actuator 1 is off.[0m
+[36m2026-10-09 20:32:15.781 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*64#1*20*0##`[0m
+[36m2026-10-09 20:32:15.781 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 64's actuator 1 is off.[0m
+[36m2026-10-09 20:32:15.782 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 64's actuator 1 is off.[0m
+[36m2026-10-09 20:32:17.055 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Command session closed.[0m
+[33m2026-10-09 20:32:17.055 WARNING (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Timed out awaiting the complete response for `*#4*37##`; command session closed.[0m
+[36m2026-10-09 20:32:17.105 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message `*#4*27##` was successfully unqueued by worker 0.[0m
+[36m2026-10-09 20:32:17.105 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Opening command session.[0m
+[36m2026-10-09 20:32:17.107 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Negotiating command session.[0m
+[36m2026-10-09 20:32:17.122 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Received SHA challenge: `*98*2##`[0m
+[36m2026-10-09 20:32:17.122 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Accepting sha256 challenge, initiating handshake.[0m
+[36m2026-10-09 20:32:17.133 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Sending command session password.[0m
+[36m2026-10-09 20:32:17.142 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Session established successfully.[0m
+[36m2026-10-09 20:32:27.144 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Command session closed.[0m
+[33m2026-10-09 20:32:27.144 WARNING (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Timed out awaiting the complete response for `*#4*27##`; command session closed.[0m
+[36m2026-10-09 20:32:27.195 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message `*#4*29##` was successfully unqueued by worker 0.[0m
+[36m2026-10-09 20:32:27.195 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Opening command session.[0m
+[36m2026-10-09 20:32:27.197 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Negotiating command session.[0m
+[36m2026-10-09 20:32:27.204 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Received SHA challenge: `*98*2##`[0m
+[36m2026-10-09 20:32:27.204 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Accepting sha256 challenge, initiating handshake.[0m
+[36m2026-10-09 20:32:27.213 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Sending command session password.[0m
+[36m2026-10-09 20:32:27.223 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Session established successfully.[0m
+[36m2026-10-09 20:32:37.225 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Command session closed.[0m
+[33m2026-10-09 20:32:37.225 WARNING (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Timed out awaiting the complete response for `*#4*29##`; command session closed.[0m
+[36m2026-10-09 20:32:37.275 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message `*#4*26##` was successfully unqueued by worker 0.[0m
+[36m2026-10-09 20:32:37.275 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Opening command session.[0m
+[36m2026-10-09 20:32:37.277 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Negotiating command session.[0m
+[36m2026-10-09 20:32:37.284 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Received SHA challenge: `*98*2##`[0m
+[36m2026-10-09 20:32:37.284 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Accepting sha256 challenge, initiating handshake.[0m
+[36m2026-10-09 20:32:37.293 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Sending command session password.[0m
+[36m2026-10-09 20:32:37.297 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Session established successfully.[0m
+[36m2026-10-09 20:32:47.299 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Command session closed.[0m
+[33m2026-10-09 20:32:47.299 WARNING (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Timed out awaiting the complete response for `*#4*26##`; command session closed.[0m
+[36m2026-10-09 20:32:47.349 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message `*#4*15##` was successfully unqueued by worker 0.[0m
+[36m2026-10-09 20:32:47.349 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Opening command session.[0m
+[36m2026-10-09 20:32:47.351 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Negotiating command session.[0m
+[36m2026-10-09 20:32:47.372 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Received SHA challenge: `*98*2##`[0m
+[36m2026-10-09 20:32:47.372 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Accepting sha256 challenge, initiating handshake.[0m
+[36m2026-10-09 20:32:47.383 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Sending command session password.[0m
+[36m2026-10-09 20:32:47.392 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Session established successfully.[0m
+[36m2026-10-09 20:32:57.394 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Command session closed.[0m
+[33m2026-10-09 20:32:57.394 WARNING (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Timed out awaiting the complete response for `*#4*15##`; command session closed.[0m
+[36m2026-10-09 20:32:57.444 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message `*#4*17##` was successfully unqueued by worker 0.[0m
+[36m2026-10-09 20:32:57.444 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Opening command session.[0m
+[36m2026-10-09 20:32:57.446 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Negotiating command session.[0m
+[36m2026-10-09 20:32:57.453 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Received SHA challenge: `*98*2##`[0m
+[36m2026-10-09 20:32:57.453 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Accepting sha256 challenge, initiating handshake.[0m
+[36m2026-10-09 20:32:57.463 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Sending command session password.[0m
+[36m2026-10-09 20:32:57.493 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Session established successfully.[0m
+[36m2026-10-09 20:33:07.494 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Command session closed.[0m
+[33m2026-10-09 20:33:07.494 WARNING (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Timed out awaiting the complete response for `*#4*17##`; command session closed.[0m
+[36m2026-10-09 20:33:07.545 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message `*#4*16##` was successfully unqueued by worker 0.[0m
+[36m2026-10-09 20:33:07.545 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Opening command session.[0m
+[36m2026-10-09 20:33:07.546 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Negotiating command session.[0m
+[36m2026-10-09 20:33:07.562 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Received SHA challenge: `*98*2##`[0m
+[36m2026-10-09 20:33:07.563 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Accepting sha256 challenge, initiating handshake.[0m
+[36m2026-10-09 20:33:07.573 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Sending command session password.[0m
+[36m2026-10-09 20:33:07.582 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Session established successfully.[0m
+[36m2026-10-09 20:33:17.583 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Command session closed.[0m
+[33m2026-10-09 20:33:17.583 WARNING (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Timed out awaiting the complete response for `*#4*16##`; command session closed.[0m
+[36m2026-10-09 20:33:17.634 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message `*#4*14##` was successfully unqueued by worker 0.[0m
+[36m2026-10-09 20:33:17.634 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Opening command session.[0m
+[36m2026-10-09 20:33:17.635 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Negotiating command session.[0m
+[36m2026-10-09 20:33:17.652 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Received SHA challenge: `*98*2##`[0m
+[36m2026-10-09 20:33:17.652 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Accepting sha256 challenge, initiating handshake.[0m
+[36m2026-10-09 20:33:17.663 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Sending command session password.[0m
+[36m2026-10-09 20:33:17.672 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Session established successfully.[0m
+[36m2026-10-09 20:33:19.636 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*4*4002#65*0#2##`[0m
+[36m2026-10-09 20:33:19.827 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*4*4002*65##`[0m
+[36m2026-10-09 20:33:20.018 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*4*4002#65*0#3##`[0m
+[36m2026-10-09 20:33:20.210 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*4*4002*65##`[0m
+[36m2026-10-09 20:33:20.530 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*35*0*0196##`[0m
+[36m2026-10-09 20:33:20.530 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 35's main sensor is reporting a temperature of 19.6°C.[0m
+[36m2026-10-09 20:33:20.530 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 35's main sensor is reporting a temperature of 19.6°C.[0m
+[36m2026-10-09 20:33:20.946 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*35*12*0100*3##`[0m
+[36m2026-10-09 20:33:20.947 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 35's local target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:33:20.947 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 35's local target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:33:21.121 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*4*1*35##`[0m
+[36m2026-10-09 20:33:21.122 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 35's mode is set to 'heat'.[0m
+[36m2026-10-09 20:33:21.122 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 35's mode is set to 'heat'.[0m
+[36m2026-10-09 20:33:21.798 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*35*14*0100*3##`[0m
+[36m2026-10-09 20:33:21.799 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 35's target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:33:21.799 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 35's target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:33:22.216 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*35*13*00##`[0m
+[36m2026-10-09 20:33:22.216 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 35's local offset is set to 0°C.[0m
+[36m2026-10-09 20:33:22.216 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 35's local offset is set to 0°C.[0m
+[36m2026-10-09 20:33:23.028 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*65#1*#20*0##`[0m
+[36m2026-10-09 20:33:23.028 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Unsupported message type: `*#4*65#1*#20*0##`[0m
+[36m2026-10-09 20:33:23.221 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*65#1*20*0##`[0m
+[36m2026-10-09 20:33:23.221 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 65's actuator 1 is off.[0m
+[36m2026-10-09 20:33:23.222 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 65's actuator 1 is off.[0m
+[36m2026-10-09 20:33:23.759 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*34*0*0187##`[0m
+[36m2026-10-09 20:33:23.759 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 34's main sensor is reporting a temperature of 18.7°C.[0m
+[36m2026-10-09 20:33:23.760 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 34's main sensor is reporting a temperature of 18.7°C.[0m
+[36m2026-10-09 20:33:24.177 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*34*12*0100*3##`[0m
+[36m2026-10-09 20:33:24.177 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 34's local target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:33:24.177 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 34's local target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:33:24.353 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*4*1*34##`[0m
+[36m2026-10-09 20:33:24.353 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 34's mode is set to 'heat'.[0m
+[36m2026-10-09 20:33:24.353 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 34's mode is set to 'heat'.[0m
+[36m2026-10-09 20:33:25.159 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*34*14*0100*3##`[0m
+[36m2026-10-09 20:33:25.159 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 34's target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:33:25.160 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 34's target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:33:25.581 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*34*13*00##`[0m
+[36m2026-10-09 20:33:25.581 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 34's local offset is set to 0°C.[0m
+[36m2026-10-09 20:33:25.581 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 34's local offset is set to 0°C.[0m
+[36m2026-10-09 20:33:26.414 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*36*0*0193##`[0m
+[36m2026-10-09 20:33:26.414 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's main sensor is reporting a temperature of 19.3°C.[0m
+[36m2026-10-09 20:33:26.415 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's main sensor is reporting a temperature of 19.3°C.[0m
+[36m2026-10-09 20:33:26.835 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*36*12*0100*3##`[0m
+[36m2026-10-09 20:33:26.835 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's local target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:33:26.835 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's local target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:33:27.012 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*4*1*36##`[0m
+[36m2026-10-09 20:33:27.012 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's mode is set to 'heat'.[0m
+[36m2026-10-09 20:33:27.012 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's mode is set to 'heat'.[0m
+[36m2026-10-09 20:33:27.673 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Command session closed.[0m
+[33m2026-10-09 20:33:27.673 WARNING (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Timed out awaiting the complete response for `*#4*14##`; command session closed.[0m
+[36m2026-10-09 20:33:27.725 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message `*#4*7##` was successfully unqueued by worker 0.[0m
+[36m2026-10-09 20:33:27.725 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Opening command session.[0m
+[36m2026-10-09 20:33:27.726 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Negotiating command session.[0m
+[36m2026-10-09 20:33:27.734 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Received SHA challenge: `*98*2##`[0m
+[36m2026-10-09 20:33:27.734 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Accepting sha256 challenge, initiating handshake.[0m
+[36m2026-10-09 20:33:27.753 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Sending command session password.[0m
+[36m2026-10-09 20:33:27.757 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Session established successfully.[0m
+[36m2026-10-09 20:33:28.547 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*36*14*0100*3##`[0m
+[36m2026-10-09 20:33:28.547 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:33:28.547 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's target temperature is set to 10.0°C.[0m
+[36m2026-10-09 20:33:28.790 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Collected command response `*#4*36*14*0100*3##`.[0m
+[36m2026-10-09 20:33:29.137 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*36*13*00##`[0m
+[36m2026-10-09 20:33:29.137 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's local offset is set to 0°C.[0m
+[36m2026-10-09 20:33:29.138 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's local offset is set to 0°C.[0m
+[36m2026-10-09 20:33:29.427 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Collected command response `*#4*36*13*00##`.[0m
+[36m2026-10-09 20:33:29.756 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message `*#4*7##` was successfully sent.[0m
+[36m2026-10-09 20:33:29.807 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message `*#4*9##` was successfully unqueued by worker 0.[0m
+[36m2026-10-09 20:33:30.278 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*6*19*0*0##`[0m
+[36m2026-10-09 20:33:30.279 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 6's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:30.279 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 6's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:39.809 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Command session closed.[0m
+[33m2026-10-09 20:33:39.809 WARNING (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Timed out awaiting the complete response for `*#4*9##`; command session closed.[0m
+[36m2026-10-09 20:33:39.859 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message `*#4*6##` was successfully unqueued by worker 0.[0m
+[36m2026-10-09 20:33:39.859 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Opening command session.[0m
+[36m2026-10-09 20:33:39.861 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Negotiating command session.[0m
+[36m2026-10-09 20:33:39.872 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Received SHA challenge: `*98*2##`[0m
+[36m2026-10-09 20:33:39.873 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Accepting sha256 challenge, initiating handshake.[0m
+[36m2026-10-09 20:33:39.874 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Sending command session password.[0m
+[36m2026-10-09 20:33:39.882 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Session established successfully.[0m
+[36m2026-10-09 20:33:40.246 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*7*19*0*0##`[0m
+[36m2026-10-09 20:33:40.246 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 7's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:40.247 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 7's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:41.099 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*8*19*0*0##`[0m
+[36m2026-10-09 20:33:41.099 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 8's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:41.100 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 8's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:42.081 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*9*19*0*0##`[0m
+[36m2026-10-09 20:33:42.081 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 9's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:42.081 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 9's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:43.173 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*14*19*0*0##`[0m
+[36m2026-10-09 20:33:43.173 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 14's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:43.173 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 14's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:44.581 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*15*19*0*0##`[0m
+[36m2026-10-09 20:33:44.581 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 15's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:44.582 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 15's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:45.620 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*16*19*0*0##`[0m
+[36m2026-10-09 20:33:45.621 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 16's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:45.621 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 16's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:46.550 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*17*19*0*0##`[0m
+[36m2026-10-09 20:33:46.550 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 17's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:46.550 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 17's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:47.795 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*26*19*0*0##`[0m
+[36m2026-10-09 20:33:47.795 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 26's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:47.795 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 26's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:49.000 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*28*19*0*0##`[0m
+[36m2026-10-09 20:33:49.000 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 28's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:49.000 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 28's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:49.885 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Command session closed.[0m
+[33m2026-10-09 20:33:49.885 WARNING (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Timed out awaiting the complete response for `*#4*6##`; command session closed.[0m
+[36m2026-10-09 20:33:49.935 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message `*#4*8##` was successfully unqueued by worker 0.[0m
+[36m2026-10-09 20:33:49.935 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Opening command session.[0m
+[36m2026-10-09 20:33:49.937 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Negotiating command session.[0m
+[36m2026-10-09 20:33:49.953 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Received SHA challenge: `*98*2##`[0m
+[36m2026-10-09 20:33:49.953 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Accepting sha256 challenge, initiating handshake.[0m
+[36m2026-10-09 20:33:49.983 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Sending command session password.[0m
+[36m2026-10-09 20:33:49.993 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Session established successfully.[0m
+[36m2026-10-09 20:33:52.210 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*29*19*0*0##`[0m
+[36m2026-10-09 20:33:52.210 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 29's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:52.210 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 29's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:55.998 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*34*19*0*0##`[0m
+[36m2026-10-09 20:33:55.998 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 34's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:55.999 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 34's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:59.653 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*35*19*0*0##`[0m
+[36m2026-10-09 20:33:59.653 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 35's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:59.654 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 35's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:33:59.993 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Command session closed.[0m
+[33m2026-10-09 20:33:59.993 WARNING (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Timed out awaiting the complete response for `*#4*8##`; command session closed.[0m
+[36m2026-10-09 20:34:00.044 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message `*#4*21##` was successfully unqueued by worker 0.[0m
+[36m2026-10-09 20:34:00.044 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Opening command session.[0m
+[36m2026-10-09 20:34:00.046 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Negotiating command session.[0m
+[36m2026-10-09 20:34:00.062 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Received SHA challenge: `*98*2##`[0m
+[36m2026-10-09 20:34:00.062 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Accepting sha256 challenge, initiating handshake.[0m
+[36m2026-10-09 20:34:00.073 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Sending command session password.[0m
+[36m2026-10-09 20:34:00.082 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Session established successfully.[0m
+[36m2026-10-09 20:34:03.264 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*36*19*0*0##`[0m
+[36m2026-10-09 20:34:03.264 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:34:03.265 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 36's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:34:06.766 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*42*19*0*0##`[0m
+[36m2026-10-09 20:34:06.766 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 42's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:34:06.767 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 42's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:34:10.083 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Command session closed.[0m
+[33m2026-10-09 20:34:10.083 WARNING (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Timed out awaiting the complete response for `*#4*21##`; command session closed.[0m
+[36m2026-10-09 20:34:10.134 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message `*#4*46##` was successfully unqueued by worker 0.[0m
+[36m2026-10-09 20:34:10.134 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Opening command session.[0m
+[36m2026-10-09 20:34:10.135 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Negotiating command session.[0m
+[36m2026-10-09 20:34:10.144 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Received SHA challenge: `*98*2##`[0m
+[36m2026-10-09 20:34:10.144 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Accepting sha256 challenge, initiating handshake.[0m
+[36m2026-10-09 20:34:10.153 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Sending command session password.[0m
+[36m2026-10-09 20:34:10.163 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Session established successfully.[0m
+[36m2026-10-09 20:34:10.363 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*42*60*52##`[0m
+[36m2026-10-09 20:34:10.363 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 42's main sensor is reporting a humidity of 52.0%.[0m
+[36m2026-10-09 20:34:10.364 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 42's main sensor is reporting a humidity of 52.0%.[0m
+[36m2026-10-09 20:34:11.493 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Message received: `*#4*43*19*0*0##`[0m
+[36m2026-10-09 20:34:11.494 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 43's cooling valve is off; heating valve is off.[0m
+[36m2026-10-09 20:34:11.494 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.168.1.136] Zone 43's cooling valve is off; heating valve is off.[0m

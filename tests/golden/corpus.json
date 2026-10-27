@@ -1643,7 +1643,7 @@
     "_file": "who02_automation.yaml"
   },
   {
-    "id": "cover.dim.write.tilt.30",
+    "id": "cover.dim.write.level.30.unparam",
     "frame": "*#2*93*#11*30##",
     "direction": "dimension_write",
     "who": 2,
@@ -1655,7 +1655,7 @@
     ],
     "source": "legrand-spec",
     "mcp_valid": true,
-    "mcp_notes": "Automation dimension write: Set slat tilt angle to 30%",
+    "mcp_notes": "Automation: Unparameterized Dimension 11 write to 30%; listed in legacy 2015 Legrand WHO_2 spec as 'slat tilt' but verified by modern OpenWebNet Encyclopedia and firmware oracle as absolute shutter level (Go to level) operation",
     "roundtrip": true,
     "_file": "who02_automation.yaml"
   },
@@ -2019,6 +2019,23 @@
     "source": "community-plant-capture",
     "mcp_valid": true,
     "mcp_notes": "Automation: Dimension 10 report with status-code 12 (closing, from initial position 100%) captured mid-movement immediately after the local DOWN event (cover.evt.down.ptp.lnkeypad.02); first real-world confirmation of OWNd's state==12 'closing from initial position' branch (message.py OWNAutomationEvent), previously reachable only via spec inference; openwebnet-mcp reads dimension_values[0] as a raw percentage ('12% open'), which is the grammar-only misreading the README Provenance section warns about",
+    "roundtrip": true,
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.cmd.level.relayed.40.31",
+    "frame": "*#2*31*#11#001#1*40##",
+    "direction": "dimension_write",
+    "who": 2,
+    "what": null,
+    "where": "31",
+    "dimension": 11,
+    "dimension_values": [
+      "40"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Automation: Relayed absolute shutter level 40% with priority 001 and set selector 1 to address 31 (PR #491, #466)",
     "roundtrip": true,
     "_file": "who02_automation.yaml"
   },
@@ -3052,6 +3069,105 @@
     "_file": "who13_gateway.yaml"
   },
   {
+    "id": "gateway.resp.model.device_type.h4684",
+    "frame": "*#13**15*13##",
+    "direction": "dimension_response",
+    "who": 13,
+    "what": null,
+    "where": "",
+    "dimension": 15,
+    "dimension_values": [
+      "13"
+    ],
+    "source": "legrand-spec",
+    "mcp_valid": true,
+    "mcp_notes": "Gateway Management: Gateway reports device type code 13 (H4684 3.5\" color touch screen, official 2006 table and bt_device firmware)",
+    "roundtrip": true,
+    "_file": "who13_gateway.yaml"
+  },
+  {
+    "id": "gateway.resp.model.device_type.lgrh4684",
+    "frame": "*#13**15*20##",
+    "direction": "dimension_response",
+    "who": 13,
+    "what": null,
+    "where": "",
+    "dimension": 15,
+    "dimension_values": [
+      "20"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Gateway Management: Gateway reports device type code 20 (LGRH4684 Legrand color touch screen, verified from bt_device firmware 2.0.54)",
+    "roundtrip": true,
+    "_file": "who13_gateway.yaml"
+  },
+  {
+    "id": "gateway.req.diagnostic_object_model",
+    "frame": "*#1013**1##",
+    "direction": "dimension_request",
+    "who": 1013,
+    "what": null,
+    "where": "",
+    "dimension": 1,
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Gateway Diagnostic: Request gateway diagnostic object model code",
+    "roundtrip": true,
+    "_file": "who13_gateway.yaml"
+  },
+  {
+    "id": "gateway.resp.diagnostic_object_model.mh200",
+    "frame": "*#1013**1*4##",
+    "direction": "dimension_response",
+    "who": 1013,
+    "what": null,
+    "where": "",
+    "dimension": 1,
+    "dimension_values": [
+      "4"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Gateway Diagnostic: Physical gateway reports object model 4 (MH200, captured live via myhome-gateway MCP)",
+    "roundtrip": true,
+    "_file": "who13_gateway.yaml"
+  },
+  {
+    "id": "gateway.resp.diagnostic_object_model.h4684",
+    "frame": "*#1013**1*19##",
+    "direction": "dimension_response",
+    "who": 1013,
+    "what": null,
+    "where": "",
+    "dimension": 1,
+    "dimension_values": [
+      "19"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Gateway Diagnostic: Gateway reports object model 19 (H4684 3.5\" color touch screen, verified from TiDisplayColor firmware)",
+    "roundtrip": true,
+    "_file": "who13_gateway.yaml"
+  },
+  {
+    "id": "gateway.resp.diagnostic_object_model.lgrh4684",
+    "frame": "*#1013**1*26##",
+    "direction": "dimension_response",
+    "who": 1013,
+    "what": null,
+    "where": "",
+    "dimension": 1,
+    "dimension_values": [
+      "26"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Gateway Diagnostic: Gateway reports object model 26 (LGRH4684 Legrand color touch screen, verified from TiDisplayColor firmware)",
+    "roundtrip": true,
+    "_file": "who13_gateway.yaml"
+  },
+  {
     "id": "issue_466.who15.0",
     "frame": "*15*02*55##",
     "direction": "event",
@@ -3717,6 +3833,70 @@
     "_file": "who16_sound.yaml"
   },
   {
+    "id": "sound.dim.volume.duck.41",
+    "frame": "*#16*41*1*1##",
+    "direction": "dimension_response",
+    "who": 16,
+    "where": "41",
+    "dimension": 1,
+    "dimension_values": [
+      "1"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Plant MH202 (issue #669): video intercom stream start triggers hardware audio ducking to volume 1 on amplifier 41.",
+    "roundtrip": true,
+    "_file": "who16_sound.yaml"
+  },
+  {
+    "id": "sound.dim.volume.restore.41",
+    "frame": "*#16*41*1*6##",
+    "direction": "dimension_response",
+    "who": 16,
+    "where": "41",
+    "dimension": 1,
+    "dimension_values": [
+      "6"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Plant MH202 (issue #669): video intercom stream stop restores volume 6 on amplifier 41.",
+    "roundtrip": true,
+    "_file": "who16_sound.yaml"
+  },
+  {
+    "id": "sound.dim.volume.restore.61",
+    "frame": "*#16*61*1*7##",
+    "direction": "dimension_response",
+    "who": 16,
+    "where": "61",
+    "dimension": 1,
+    "dimension_values": [
+      "7"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Plant MH202 (issue #669): video intercom stream stop restores volume 7 on amplifier 61.",
+    "roundtrip": true,
+    "_file": "who16_sound.yaml"
+  },
+  {
+    "id": "sound.dim.volume.restore.51",
+    "frame": "*#16*51*1*0##",
+    "direction": "dimension_response",
+    "who": 16,
+    "where": "51",
+    "dimension": 1,
+    "dimension_values": [
+      "0"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Plant MH202 (issue #669): video intercom stream stop restores volume 0 on amplifier 51.",
+    "roundtrip": true,
+    "_file": "who16_sound.yaml"
+  },
+  {
     "id": "energy.req.active_power.meter1",
     "frame": "*#18*1*1##",
     "direction": "dimension_request",
@@ -3823,6 +4003,107 @@
     "source": "community-plant-capture",
     "mcp_valid": true,
     "mcp_notes": "Energy Management: Actuator channel 77#0 reports 415 Watts active power (issue #247 reporter plant)",
+    "roundtrip": true,
+    "_file": "who18_energy.yaml"
+  },
+  {
+    "id": "energy.cmd.start_stream.meter56.2",
+    "frame": "*#18*56*#1200#1*2##",
+    "direction": "dimension_write",
+    "who": 18,
+    "what": null,
+    "where": "56",
+    "dimension": 1200,
+    "dimension_values": [
+      "2"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Energy Management: Start 2-minute instantaneous active power auto-update stream on meter 56 (F454 authentic capture)",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNEnergyCommand",
+      "method": "start_sending_instant_power",
+      "args": [
+        "56",
+        2
+      ]
+    },
+    "_file": "who18_energy.yaml"
+  },
+  {
+    "id": "energy.resp.auto_update_interval.meter56.2",
+    "frame": "*#18*56*1200#1*2##",
+    "direction": "dimension_response",
+    "who": 18,
+    "what": null,
+    "where": "56",
+    "dimension": 1200,
+    "dimension_values": [
+      "2"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Energy Management: Meter 56 reports 2-minute active power auto-update interval active (F454 authentic capture)",
+    "roundtrip": true,
+    "_file": "who18_energy.yaml"
+  },
+  {
+    "id": "energy.cmd.stop_stream.meter56",
+    "frame": "*#18*56*#1200#1*0##",
+    "direction": "dimension_write",
+    "who": 18,
+    "what": null,
+    "where": "56",
+    "dimension": 1200,
+    "dimension_values": [
+      "0"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Energy Management: Stop instantaneous active power auto-update stream on meter 56",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNEnergyCommand",
+      "method": "start_sending_instant_power",
+      "args": [
+        "56",
+        0
+      ]
+    },
+    "_file": "who18_energy.yaml"
+  },
+  {
+    "id": "energy.resp.auto_update_interval.meter56.0",
+    "frame": "*#18*56*1200#1*0##",
+    "direction": "dimension_response",
+    "who": 18,
+    "what": null,
+    "where": "56",
+    "dimension": 1200,
+    "dimension_values": [
+      "0"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Energy Management: Meter 56 reports instantaneous active power auto-update stopped / expired (interval 0, F454 authentic capture)",
+    "roundtrip": true,
+    "_file": "who18_energy.yaml"
+  },
+  {
+    "id": "energy.resp.auto_update_interval.meter54.255",
+    "frame": "*#18*54*1200#1*255##",
+    "direction": "dimension_response",
+    "who": 18,
+    "what": null,
+    "where": "54",
+    "dimension": 1200,
+    "dimension_values": [
+      "255"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Energy Management: Meter 54 reports 255-minute active power auto-update interval active (F454 authentic capture)",
     "roundtrip": true,
     "_file": "who18_energy.yaml"
   },
@@ -4055,6 +4336,38 @@
     "source": "community-plant-capture",
     "mcp_valid": false,
     "mcp_notes": "RDS text for source 1 under DIMENSION 10, where WHO=16 reports the same payload under DIMENSION 8. Station name replaced with ' Radio 1' for the same reason as sound.dim.rds.response.101.",
+    "roundtrip": true,
+    "_file": "who22_sound_diffusion.yaml"
+  },
+  {
+    "id": "sounddiff.dim.volume.duck.area4.point1",
+    "frame": "*#22*3#4#1*1*1##",
+    "direction": "dimension_response",
+    "who": 22,
+    "where": "3",
+    "dimension": 1,
+    "dimension_values": [
+      "1"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": false,
+    "mcp_notes": "Plant MH202 (issue #669): video intercom stream start ducks volume to 1 on area 4 point 1 (zone 41). Mirrors *#16*41*1*1##.",
+    "roundtrip": true,
+    "_file": "who22_sound_diffusion.yaml"
+  },
+  {
+    "id": "sounddiff.dim.volume.restore.area4.point1",
+    "frame": "*#22*3#4#1*1*6##",
+    "direction": "dimension_response",
+    "who": 22,
+    "where": "3",
+    "dimension": 1,
+    "dimension_values": [
+      "6"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": false,
+    "mcp_notes": "Plant MH202 (issue #669): video intercom stream stop restores volume 6 on area 4 point 1 (zone 41). Mirrors *#16*41*1*6##.",
     "roundtrip": true,
     "_file": "who22_sound_diffusion.yaml"
   },

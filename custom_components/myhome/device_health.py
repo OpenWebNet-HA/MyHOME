@@ -281,7 +281,7 @@ class DeviceHealth:
         where = message_where(message)
         if where is None or self.is_ignored(1, where):
             return
-        values = getattr(message, "_dimension_value", None)
+        values = getattr(message, "dimension_value", None)
         if not isinstance(values, list) or not values:
             return
         mask = str(values[0])

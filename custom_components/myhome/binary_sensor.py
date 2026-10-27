@@ -44,7 +44,7 @@ from .const import (
     LOGGER,
     normalize_where,
 )
-from .discovery import Address, DeviceContext, PlatformDiscovery
+from .discovery import Address, DeviceContext, PlatformDiscovery, is_motion_end
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 
@@ -250,6 +250,17 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     def route_keys(message, address: Address | None) -> list[str]:  # type: ignore
         return _spellings(address.where) if address is not None else []
 
+    @callback
+    def anonymous_sensor_reply(message: typing.Any) -> None:
+        """Route a WHERE=0 PIR dimension reply to the sensor whose request is in flight (#777)."""
+        dimension = getattr(message, "dimension", None)
+        if dimension not in (5, 7):
+            return
+        claim = getattr(gateway, "claim_in_flight_dimension_where", None)
+        where = claim(1, dimension) if callable(claim) else None
+        if isinstance(where, str) and where and any(k in ctx_discovery["1"].known for k in _spellings(where)):
+            ctx_discovery["1"].route(message, Address(where))
+
     common = dict(hass=hass, config_entry=config_entry, async_add_entities=async_add_entities, platform=PLATFORM)
     ctx_discovery["25"] = PlatformDiscovery(
         who="25", event_type=OWNDryContactEvent, build=build_dry_contact,
@@ -265,7 +276,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
         who="1", event_type=OWNLightingEvent, build=build_motion,
         registry_address=registry_address("1"), reject_registry_entry=duplicate,
         accept=yaml_who(1, BinarySensorDeviceClass.MOTION),
-        known_keys=known_keys, route_keys=route_keys, address=_motion_address, **common,  # type: ignore
+        known_keys=known_keys, route_keys=route_keys, address=_motion_address,
+        on_general=anonymous_sensor_reply, **common,  # type: ignore
     )
 
     entities: list[Entity] = []
@@ -360,6 +372,7 @@ def _motion_address(message) -> Address | None:  # type: ignore
         or getattr(message, "message_type", None) in (MESSAGE_TYPE_MOTION, MESSAGE_TYPE_MOTION_TIMEOUT, MESSAGE_TYPE_PIR_SENSITIVITY)
         or getattr(message, "dimension", None) in (5, 7)
         or getattr(message, "_state", None) == 34
+        or is_motion_end(message)
     )
     if not is_motion or getattr(message, "where", None) is None:
         return None
@@ -607,7 +620,8 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
     @callback
     def handle_event(self, message: OWNLightingEvent) -> None:
         """Handle an event message."""
-        if message.message_type not in [
+        motion_end = is_motion_end(message)
+        if not motion_end and message.message_type not in [
             MESSAGE_TYPE_MOTION,
             MESSAGE_TYPE_MOTION_TIMEOUT,
             MESSAGE_TYPE_PIR_SENSITIVITY,
@@ -619,14 +633,17 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
             self._gateway_handler.log_id,
             message.human_readable_log,
         )
-        if message.message_type == MESSAGE_TYPE_MOTION and message.motion:
+        if motion_end:
+            # WHAT 39: the detector's occupancy timer ran out (#777).
+            self._attr_is_on = self._inverted
+        elif message.message_type == MESSAGE_TYPE_MOTION and message.motion:
             self._attr_is_on = message.motion != self._inverted
         elif message.message_type == MESSAGE_TYPE_MOTION_TIMEOUT:
             if message.motion_timeout is not None:
                 self._timeout = message.motion_timeout + timedelta(seconds=15)
                 self._attr_extra_state_attributes["Timeout"] = self._timeout.total_seconds()
         elif message.message_type == MESSAGE_TYPE_PIR_SENSITIVITY:
-            if message.pir_sensitivity is not None:
+            if message.pir_sensitivity is not None and 0 <= message.pir_sensitivity < len(PIR_SENSITIVITY):
                 self._attr_extra_state_attributes["Sensitivity"] = PIR_SENSITIVITY[message.pir_sensitivity]
         self._last_updated = datetime.now(timezone.utc)  # type: ignore
         self._attr_force_update = True

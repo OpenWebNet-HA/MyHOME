@@ -54,6 +54,29 @@ class ZoneGroupLayer(ZoneDecoderLayer):
         """Return a list of entity ids belonging to this entity's group, leader first."""
         return _get_group_members(self._runtime_data, self.entity_id)
 
+    def _reconcile_pool_loss(self, pool: DecoderPool) -> None:
+        """Clear parked/decoder state and schedule power-off on displaced zones."""
+        displaced = pool.pop_displaced_zones() if isinstance(pool, DecoderPool) else set()
+        runtime = self._runtime_data
+        for zone in list(runtime.media_players.values()) if runtime is not None else ():
+            if zone is self or not isinstance(zone, ZoneGroupLayer):
+                continue
+            has_group = pool.is_leader(zone.entity_id) or pool.get_leader(zone.entity_id) is not None
+            owned = pool.owned_decoder(zone.entity_id)
+            if not has_group and owned is None and (
+                zone._parked
+                or zone._active_decoder is not None
+                or zone.entity_id in displaced
+            ):
+                was_parked = zone._parked
+                zone._parked = False
+                zone._wake_pending = False
+                zone._active_decoder = None
+                zone._cancel_auto_off()
+                if not was_parked and zone._attr_state == MediaPlayerState.ON:
+                    zone._schedule_delayed_off()
+                zone.async_write_ha_state()
+
     async def async_join_players(self, group_members: list[str]) -> None:
         """Add players to this zone's group (additive; existing members stay).
 
@@ -148,6 +171,7 @@ class ZoneGroupLayer(ZoneDecoderLayer):
         except EnvironmentBusyError as err:
             raise self._environment_busy_error(err.owner, err.environment) from err
         self._write_zone_state(old_leader)
+        self._reconcile_pool_loss(pool)
 
         # Decoders the joining zones held are no longer anyone's: stop them.
         for decoder_id in change.released:
@@ -177,6 +201,11 @@ class ZoneGroupLayer(ZoneDecoderLayer):
             source_num = self._source_number(self._attr_source)
         if source_num is None:
             source_num = self._default_source()
+
+        if self._active_decoder:
+            await self._async_apply_decoder_feed_volume(
+                self._active_decoder, suppress_errors=True
+            )
 
         # Routing follows the opt-in of _routing_configured(): until the matrix
         # is described in the options, the wall-panel routing is trusted.
@@ -229,6 +258,9 @@ class ZoneGroupLayer(ZoneDecoderLayer):
                 return
             if new_leader_ent:
                 new_leader_ent._active_decoder = result[0]
+                await new_leader_ent._async_apply_decoder_feed_volume(
+                    result[0], suppress_errors=True
+                )
 
             self._cancel_pending_off()
             self._cancel_auto_off()
@@ -404,6 +436,8 @@ class ZoneGroupLayer(ZoneDecoderLayer):
         await self._async_wake_zone()
         if route and source_num is not None:
             await self._route_to(source_num, sent)
+        if decoder_id:
+            await self._async_apply_decoder_feed_volume(decoder_id, suppress_errors=True)
         self.async_write_ha_state()
         members = self._group_entities(pool)[1:]
         if not members:
@@ -633,7 +667,12 @@ class ZoneGroupLayer(ZoneDecoderLayer):
             if pool.get_leader(self.entity_id) or pool.is_leader(self.entity_id) or self._active_decoder:
                 return
 
-            if self._attr_state != MediaPlayerState.ON or self._parked or self._turning_off:
+            if (
+                self._attr_state != MediaPlayerState.ON
+                or self._parked
+                or self._turning_off
+                or self._pending_off_task is not None
+            ):
                 return
 
             source_num = self._source_number(self._attr_source) if self._attr_source else None
@@ -674,6 +713,9 @@ class ZoneGroupLayer(ZoneDecoderLayer):
             if self._attr_source is None:
                 self._attr_source = self._source_label(source_num)
 
+            await leader_ent._async_apply_decoder_feed_volume(
+                decoder_id, suppress_errors=True
+            )
             self.async_write_ha_state()
             leader_ent.async_write_ha_state()
             LOGGER.info(

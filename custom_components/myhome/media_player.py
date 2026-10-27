@@ -22,10 +22,12 @@ and other sources to the matrix by implementing a *Dynamic Proxy* pattern:
       decoder's input.  Without that the routing set at the wall panels is
       trusted, as in earlier releases.
    d. Forwards the stream URL to the backend decoder via the HA service bus.
-5. State, metadata (title, artist, album art), and volume are mirrored from
+5. State and metadata (title, artist, album art) are mirrored from
    the backend decoder back to the BTicino zone entity.
-6. Volume changes on the zone apply **gain staging** (decoder volume =
-   zone_volume + pre_gain) to keep the analog signal level high and reduce bus noise.
+6. Gain staging keeps the backend decoder at a fixed high line-level feed
+   (``min(1.0, 0.75 + pre_gain / 100)`` when ``pre_gain > 0``) while room
+   volume controls only the BTicino zone amplifier, maximising signal-to-noise
+   ratio and eliminating analog bus hiss.
 7. When the zone is turned off, the decoder is released back to the pool.
 
 Source selection
@@ -85,6 +87,7 @@ builds the :class:`~.decoder_pool.DecoderPool` from the options.
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 from datetime import datetime
 from typing import Any
@@ -93,11 +96,12 @@ from homeassistant.components.media_player.const import (
     MediaPlayerEntityFeature,
     MediaPlayerState,
 )
-from homeassistant.const import Platform
+from homeassistant.const import CONF_MAC, Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 from OWNd.message import OWNSoundCommand, OWNSoundEvent
@@ -106,6 +110,7 @@ from .const import (
     CONF_SOURCE_NAME,
     CONF_SOURCE_SLOTS,
     CONF_SOURCE_TUNER,
+    CONF_TUNER_PICTURES,
     DOMAIN,
     LOGGER,
     SERVICE_TUNER_SEEK_DOWN,
@@ -114,22 +119,36 @@ from .const import (
 from .data import MyHOMEConfigEntry
 from .decoder_pool import EnvironmentBusyError
 from .discovery import Address, DeviceContext, PlatformDiscovery
+from .media_player_decoder import DEFAULT_DECODER_FEED_LEVEL, decoder_feed_volume
 from .media_player_group import ZoneGroupLayer
 from .media_player_pool import (
     STREAM_INCOMPATIBLE_PLATFORMS,
     build_pool,
     sync_multiple_audio_gateways,
 )
+from .media_player_power import (
+    WAKE_ECHO_WINDOW,
+    PowerTransition,
+    determine_power_transition,
+)
 from .media_player_routing import parse_routing_address, route_pseudo_zones, zone_environment
-from .sound_source import MyHOMESoundSource, source_address
+from .sound_source import MyHOMESoundSource, source_address, who22_tuner_listener
+from .tuner_decode import parse_tuner_pictures
 
 PARALLEL_UPDATES = 0
 
 # The amplifier wake sequence starts with an OFF frame, and the gateway reports
 # that frame back on the event session like any other bus traffic. An OFF that
 # arrives this soon after a wake is our own and must not tear the zone down.
-_WAKE_ECHO_WINDOW = 3.0  # seconds
+_WAKE_ECHO_WINDOW = WAKE_ECHO_WINDOW  # seconds (centralised in media_player_power)
 _RESTORE_CONFIRM_WINDOW = 120.0  # seconds a restored zone has to show up on the bus
+
+__all__ = [
+    "DEFAULT_DECODER_FEED_LEVEL",
+    "MyHOMEMediaPlayer",
+    "async_setup_entry",
+    "decoder_feed_volume",
+]
 
 
 async def async_setup_entry(
@@ -186,6 +205,13 @@ async def async_setup_entry(
         )
     if sound_sources:
         async_add_entities(sound_sources)
+        # An F500 mirrors its reports onto WHO=22; a plant may deliver only those.
+        mac = str(config_entry.data.get(CONF_MAC) or runtime.mac)
+        config_entry.async_on_unload(
+            async_dispatcher_connect(
+                hass, f"myhome_message_{mac}", who22_tuner_listener(sound_sources)
+            )
+        )
 
     discovery = PlatformDiscovery(
         hass,
@@ -247,6 +273,7 @@ def _build_sound_sources(
 ) -> list[MyHOMESoundSource]:
     """Create an entity for every matrix input the user declared to be a tuner."""
     options = config_entry.options
+    pictures = parse_tuner_pictures(options.get(CONF_TUNER_PICTURES))
     sources: list[MyHOMESoundSource] = []
     for i in range(1, CONF_SOURCE_SLOTS + 1):
         if not options.get(CONF_SOURCE_TUNER.format(i)):
@@ -263,6 +290,7 @@ def _build_sound_sources(
                 manufacturer="BTicino",
                 model="Audio Source",
                 gateway=gateway,
+                pictures=pictures,
             )
         )
     return sources
@@ -436,6 +464,7 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
         except EnvironmentBusyError as err:
             raise self._environment_busy_error(err.owner, err.environment) from err
         self._write_zone_state(old_leader)
+        self._reconcile_pool_loss(pool)
         if result is None:
             if exclude and set(pool.decoder_entity_ids) <= exclude:
                 # Nothing is busy: no configured decoder can take this media.
@@ -558,6 +587,7 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
                 },
             ) from err
 
+        await self._async_apply_decoder_feed_volume(decoder_id, suppress_errors=True)
         if members_task is not None:
             await members_task
         self.async_schedule_update_ha_state()
@@ -575,6 +605,7 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
         elif self._attr_state == MediaPlayerState.OFF:
             await self._async_wake_zone()
         await self._async_finish_group_wake(members_task, self._forward_to_decoder("media_play"))
+        await self._async_apply_decoder_feed_volume(self._effective_decoder, suppress_errors=True)
 
     async def async_media_stop(self) -> None:
         """Stop playback on the active decoder, or leave group if caller is a member."""
@@ -750,59 +781,55 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
         await self._gateway_handler.send(OWNSoundCommand.volume_down(self._where))
 
     async def async_set_volume_level(self, volume: float) -> None:
-        """Set zone volume and apply gain staging to the active decoder.
+        """Set zone volume and ensure fixed line-level gain staging on the active decoder.
 
         Gain staging strategy
         ---------------------
-        Keep the decoder volume proportionally higher than the BTicino zone
-        volume to maximise signal level in the analog chain and minimise
-        amplification of the bus noise floor.
-
-        Decoder volume = ``min(1.0, zone_volume + pre_gain / 100)``.
-
-        The ``_syncing_volume`` flag prevents a feedback loop:
-        ``zone.set_volume → decoder.volume_set → state_changed event
-        → zone._async_decoder_state_changed → zone.set_volume → …``
+        Drive the backend decoder at a fixed high line-level feed
+        (``min(1.0, 0.75 + pre_gain / 100)`` when ``pre_gain > 0``) independent
+        of the BTicino room amplifier's variable listening volume.  This keeps
+        the signal-to-noise ratio on the 2-wire SCS analog bus as high as
+        possible so room amplifiers do not need to be turned up to 75%+ where
+        analog hiss becomes audible, and prevents a quiet room in a multi-room
+        group from throttling the shared streamer feed.
 
         Args:
             volume: Target volume in the range 0.0–1.0.
+
+        Raises:
+            HomeAssistantError: If ``volume`` is not a finite number.
         """
+        if not math.isfinite(volume):
+            raise HomeAssistantError(
+                f"{self.entity_id}: volume level {volume} is not a valid finite number",
+                translation_domain=DOMAIN,
+                translation_key="volume_not_finite",
+                translation_placeholders={
+                    "entity_id": str(self.entity_id),
+                    "volume": str(volume),
+                },
+            )
+
         # Auto-unmute if the user slides the volume up
         if self._attr_is_volume_muted and volume > 0:
             self._attr_is_volume_muted = False
 
         # BTicino hardware uses a 0–31 integer scale
-        hw_volume = int(round(volume * 31.0))
+        hw_volume = max(0, min(31, int(round(volume * 31.0))))
         await self._gateway_handler.send(OWNSoundCommand.set_volume(self._where, hw_volume))
 
-        # Gain staging: keep decoder louder than the BTicino analog stage
-        if self._active_decoder:
-            pool = self._get_pool()
-            if pool:
-                pre_gain_pct = pool.get_pre_gain(self._active_decoder)
-                decoder_volume = min(1.0, volume + pre_gain_pct / 100.0)
-                self._syncing_volume = True
-                try:
-                    target_dec = (
-                        self._streaming_target(self._active_decoder) or self._active_decoder
-                    )
-                    await self.hass.services.async_call(
-                        "media_player",
-                        "volume_set",
-                        {
-                            "entity_id": target_dec,
-                            "volume_level": decoder_volume,
-                        },
-                    )
-                finally:
-                    self._syncing_volume = False
+        # Gain staging: maintain fixed high line-level feed on the backend decoder
+        # when the room is audible (never pull the shared feed down to 0).
+        if volume > 0 and self._active_decoder:
+            await self._async_apply_decoder_feed_volume(self._active_decoder)
 
     async def async_mute_volume(self, mute: bool) -> None:
-        """Mute or unmute the zone and propagate to the active decoder.
+        """Mute or unmute the zone and propagate to the active decoder when solo.
 
         Muting is emulated by driving the BTicino zone volume to 0 (or
-        restoring it).  If the active decoder supports hardware mute, that is
-        also applied for immediate effect.
+        restoring it).  If the active decoder supports hardware mute and this
+        zone is not leading a multi-room group, mute is also applied to the
+        decoder for immediate effect.
 
         Args:
             mute: ``True`` to mute, ``False`` to unmute.
@@ -820,19 +847,22 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
 
         self._attr_is_volume_muted = mute
 
-        # Propagate mute to decoder if it supports the attribute
+        # Propagate mute to decoder only when this zone is not leading a group
         if self._active_decoder:
-            target_dec = self._streaming_target(self._active_decoder) or self._active_decoder
-            dec_state = self.hass.states.get(target_dec)
-            if dec_state and dec_state.attributes.get("is_volume_muted") is not None:
-                try:
-                    await self.hass.services.async_call(
-                        "media_player",
-                        "volume_mute",
-                        {"entity_id": target_dec, "is_volume_muted": mute},
-                    )
-                except Exception:  # pylint: disable=broad-except
-                    pass  # Not all decoders support mute; volume=0 covers the rest
+            pool = self._get_pool()
+            members = pool.get_members(self.entity_id) if pool else []
+            if not (isinstance(members, list) and members):
+                target_dec = self._streaming_target(self._active_decoder) or self._active_decoder
+                dec_state = self.hass.states.get(target_dec)
+                if dec_state and dec_state.attributes.get("is_volume_muted") is not None:
+                    try:
+                        await self.hass.services.async_call(
+                            "media_player",
+                            "volume_mute",
+                            {"entity_id": target_dec, "is_volume_muted": mute},
+                        )
+                    except Exception:  # pylint: disable=broad-except
+                        pass  # Not all decoders support mute; volume=0 covers the rest
 
         self.async_schedule_update_ha_state()
 
@@ -950,24 +980,29 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
                     source_num,
                     CONF_SOURCE_SLOTS,
                 )
-        elif message.is_on:
-            self._cancel_pending_off()  # confirmed on: nothing left to time out
-            self._parked = False
-            self._attr_state = MediaPlayerState.ON
-            if not self._status_seen:
-                self._mark_status_seen()
-                self._restore_claim()
-                self._check_stray_at_startup()
-            trigger_auto_join = True
-        elif message.is_off:
-            if self._is_wake_echo():
+        else:
+            transition = determine_power_transition(
+                message=message,
+                is_parked=self._parked,
+                is_wake_echo=self._is_wake_echo(),
+            )
+            if transition == PowerTransition.WAKE_ON:
+                self._cancel_pending_off()  # confirmed on: nothing left to time out
+                self._parked = False
+                self._attr_state = MediaPlayerState.ON
+                if not self._status_seen:
+                    self._mark_status_seen()
+                    self._restore_claim()
+                    self._check_stray_at_startup()
+                trigger_auto_join = True
+            elif transition == PowerTransition.WAKE_ECHO_OFF:
                 # Our own wake sequence's OFF: the ON follows it.
                 LOGGER.debug("%s: ignoring the OFF echo of the wake sequence", self.entity_id)
-            elif self._parked:
+            elif transition == PowerTransition.PARKED_CONFIRM_OFF:
                 # The anti-hiss OFF we sent ourselves: the room stays in its group.
                 self._mark_status_seen()
                 self._attr_state = MediaPlayerState.OFF
-            else:
+            elif transition == PowerTransition.REAL_OFF:
                 self._mark_status_seen()
                 # A real OFF (wall switch or otherwise) makes any pending
                 # group-leave OFF redundant; _async_handle_turn_off below
@@ -977,26 +1012,7 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
                 if not self._turning_off:
                     self.hass.async_create_task(self._async_handle_turn_off(from_bus=True))
 
-        what = getattr(message, "what", getattr(message, "_what", None))
-        is_volume_up = False
-        if what is not None:
-            try:
-                is_volume_up = 1001 <= int(what) <= 1015
-            except (ValueError, TypeError):
-                pass
-
-        if not message.is_off and (is_volume_up or (message.volume is not None and message.volume > 0)):
-            if self._attr_state != MediaPlayerState.ON or self._parked:
-                self._cancel_pending_off()
-                self._parked = False
-                self._attr_state = MediaPlayerState.ON
-                if not self._status_seen:
-                    self._mark_status_seen()
-                    self._restore_claim()
-                    self._check_stray_at_startup()
-                trigger_auto_join = True
-
-        if message.volume is not None:
+        if message.volume is not None and 0 <= message.volume <= 31:
             self._attr_volume_level = message.volume / 31.0
             # Volume 0 is not a mute: only async_mute_volume() mutes. Music
             # Assistant locks the slider of a muted player and leaves it out of

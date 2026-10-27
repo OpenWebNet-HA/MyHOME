@@ -37,7 +37,7 @@ Maintained by the **[OpenWebNet-HA](https://github.com/OpenWebNet-HA)** communit
 - **Thermoregulation Central Unit Coordination (P4)**: Dedicated master coordination for 99-zone Central Unit (`#0`, model `Central Unit (3550)`) and 4-zone Central Unit (`#0#1`, model `Central Unit (4695)`). Master Heating/Cooling switches (`*4*3xx*#0##`) propagate across internal dispatchers to subordinate zones (`standalone=False`), automatically synchronizing whole-home climate operations with physical central units.
 - **Multi-Gateway Routing & Plant Isolation (P6)**: Namespaced event dispatchers (`f"myhome_cen_event_{mac}"`, `f"myhome_central_mode_{mac}"`) and device trigger filtering by parent gateway MAC (`via_device`), eliminating cross-talk and phantom triggers across physical plants combining multiple gateways (e.g. F454 + MH200N / MH201).
 - **DALI Tunable White & Color Temperature**: Native support for DALI DT8 ballasts (F429 / F461 gateways) with auto-detection of color temperature (`ColorMode.COLOR_TEMP`, 2000K–6535K / mireds), seamless Kelvin/mireds conversion, and sentinel filtering.
-- **Declarative Hardware Profiles**: Auto-detects and tunes connection limits and queue pacing specifically for your gateway model (`MH200`, `MH200N`, `MH202`, `F454`, `F455`, `AM4890`, `MyHomeServer1`, and `Legrand 3578`). Eliminates hardware session exhaustion and buffer overflows.
+- **Declarative Hardware Profiles**: Auto-detects and tunes connection limits and queue pacing specifically for your gateway model (`F454`, `F455`, `F461`, `MH202`, `MH201`, `MyHomeServer1`, `MH200N`, `MH200`, `H4890 / AM4890`, `F452 / F453AV`, `HL4684`, and `Legrand 3578`). Eliminates hardware session exhaustion and buffer overflows.
 - **USB / Serial Gateway & OpenZigBee Support**: Native asynchronous transport for the **Legrand 3578 USB/Serial interface** via `pyserial-asyncio` with dynamic port discovery, authentication bypass, and OpenZigBee addressing (`<8-digit id>#9`).
 - **Zero-Friction Migration**: Upgrades preserve all existing custom entity IDs (`light.keuken`, `cover.living`) and friendly names. Unique IDs migrate transparently (`MAC-WHERE` → `MAC-WHO-WHERE`) with no broken dashboards or automations.
 - **Adaptive Inter-Frame Bus Pacing**: Hardened priority command queue with model-specific inter-frame delays (e.g. 150ms for legacy MH200 vs 20ms for F454) preventing command dropping during heavy automation bursts.
@@ -60,7 +60,7 @@ We now maintain a comprehensive, community-curated **[GitHub Wiki](https://githu
 ### Key Wiki Resources & Current Status
 - **[WHO Specifications Archive & Status Matrix](https://github.com/OpenWebNet-HA/MyHOME/wiki/OpenWebNet-Protocol-&-WHO-Specifications#openwebnet-who-specifications-matrix)**: Complete catalog of all OpenWebNet WHO families (WHO 0 to WHO 1004, HMAC authentication, and core system intro) with official PDF documentation references, current implementation status, and frame syntax.
 - **[CEN / CEN+ Automations & Community Blueprint](https://community.home-assistant.io/t/myhome-cen-commands/260345)**: Community blueprint by **gST84** to trigger actions, toggle non-BTicino smart devices, and dim lights from physical MyHOME pushbuttons.
-- **[Hardware Gateway Profiles](docs/configuration/gateways.md)**: Deep dive into connection constraints, socket limits, pacing delays, and watchdog behaviors for MH200, MH200N, MH202, F454, F455, MyHomeServer1, and Legrand 3578.
+- **[Hardware Gateway Profiles](docs/configuration/gateways.md)**: Deep dive into connection constraints, socket limits, pacing delays, and watchdog behaviors across all 12 supported gateway models (F454, F455, F461, MH202, MH201, MyHomeServer1, MH200N, MH200, H4890/AM4890, F452/F453AV, HL4684, and Legrand 3578).
 - **[Sound System 2.0 & Audio Matrix Guide](docs/configuration/media_player.md)**: Setup instructions for F441/F441M matrices, room amplifier calibration, and Dynamic Proxy streaming.
 - **[Bus Monitor Lovelace Card](docs/configuration/bus_monitor.md)**: Bus card installation, live frame decoding, diagnostic logging, and syntax injector reference.
 - **[Community Contribution Guide](https://github.com/OpenWebNet-HA/MyHOME/wiki/OpenWebNet-Protocol-&-WHO-Specifications#how-to-contribute-specifications)**: How to cross-check documentation versions and contribute missing WHO PDF specifications.
@@ -90,8 +90,8 @@ We now maintain a comprehensive, community-curated **[GitHub Wiki](https://githu
 | **MH200N** | OpenWebNet | 1 worker | 150 ms | ✅ SSDP | Second-generation scenario programmer |
 | **MH200** *(Legacy)* | OpenWebNet | 1 worker | 150 ms | ✅ SSDP | Strict single-session pacing; watchdog hardened |
 | **H4890 / AM4890** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | 3.5" Touch screen display IP gateway (Axolute / Livinglight) |
-| **F452 / F453AV** | OpenWebNet | 1 worker | 50 ms | ✅ Port 49153 | Audio/video & web server gateway |
-| **HL4684** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | 10" Touch screen display IP gateway |
+| **F452 / F453AV** | OpenWebNet | 1 worker | 150 ms | ✅ Port 49153 | Audio/video & web server gateway |
+| **H4684 / H/L4684** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | Colour touch screen IP gateway (Axolute / LivingLight) |
 | **Legrand 3578** | OpenWebNet (Serial) | 1 worker | 50 ms | ❌ Manual (Serial) | USB / Serial gateway & OpenZigBee interface |
 <!-- GATEWAY_PROFILES_END -->
 
@@ -99,18 +99,19 @@ We now maintain a comprehensive, community-curated **[GitHub Wiki](https://githu
 ### 📊 Hardware Trace Availability Matrix
 
 <!-- TRACE_MATRIX_START -->
-| Gateway Model | WHO 0<br>Scenario | WHO 1<br>Lights | WHO 2<br>Autom. | WHO 4<br>Climate | WHO 5<br>Alarm | WHO 9<br>Power | WHO 13<br>Gateway | WHO 14<br>Lock | WHO 15<br>CEN | WHO 16<br>Audio | WHO 17<br>Scenario | WHO 18<br>Energy | WHO 22<br>Audio Diff. | WHO 25<br>Diag | WHO 1001<br>Diag | WHO 1013<br>Diag | WHO 1022<br>Diag |
-| :--- |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |
-| **F453AV** |  | ✅ | ✅ | ✅ | ✅ |  | ✅ |  |  | ✅ |  | ✅ |  |  | ✅ |  |  |
-| **F454** |  | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  | ✅ |  | ✅ |  | ✅ |  | ✅ |  |
-| **F455** |  | ✅ | ✅ | ✅ | ✅ |  | ✅ |  |  | ✅ |  | ✅ |  |  |  | ✅ |  |
-| **F461** |  | ✅ | ✅ | ✅ | ✅ |  | ✅ |  |  | ✅ |  | ✅ |  |  |  | ✅ |  |
-| **H4890 / AM4890** |  | ✅ | ✅ | ✅ | ✅ | ✅ |  |  |  | ✅ |  | ✅ | ✅ | ✅ |  |  |  |
-| **MH200** |  | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  |  | ✅ | ✅ |  |  |  | ✅ | ✅ |  |
-| **MH200N** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **MH201** | ✅ | ✅ | ✅ | ✅ |  |  | ✅ | ✅ | ✅ | ✅ |  | ✅ |  | ✅ |  |  |  |
-| **MH202** |  | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  |  |  | ✅ |  | ✅ |  | ✅ |  |
-| **MyHomeServer1** |  | ✅ | ✅ | ✅ |  | ✅ | ✅ | ✅ | ✅ | ✅ |  | ✅ |  | ✅ | ✅ | ✅ |  |
+| Gateway Model | WHO 0<br>Scenario | WHO 1<br>Lights | WHO 2<br>Autom. | WHO 3<br>Load | WHO 4<br>Climate | WHO 5<br>Alarm | WHO 9<br>Power | WHO 13<br>Gateway | WHO 14<br>Lock | WHO 15<br>CEN | WHO 16<br>Audio | WHO 17<br>Scenario | WHO 18<br>Energy | WHO 22<br>Audio Diff. | WHO 25<br>Diag | WHO 1001<br>Diag | WHO 1013<br>Diag | WHO 1022<br>Diag |
+| :--- |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |
+| **F453AV** |  | ✅ | ✅ |  | ✅ | ✅ |  | ✅ |  |  | ✅ |  | ✅ |  |  | ✅ |  |  |
+| **F454** |  | ✅ | ✅ |  | ✅ | ✅ | ✅ | ✅ | ✅ |  | ✅ |  | ✅ |  | ✅ |  | ✅ |  |
+| **F455** |  | ✅ | ✅ |  | ✅ | ✅ |  | ✅ |  |  | ✅ |  | ✅ |  |  |  | ✅ |  |
+| **F461** |  | ✅ | ✅ |  | ✅ | ✅ |  | ✅ | ✅ |  | ✅ |  | ✅ |  |  |  | ✅ |  |
+| **H4684 / H/L4684** |  | ✅ | ✅ | ✅ | ✅ |  |  | ✅ |  |  | ✅ |  | ✅ | ✅ |  |  | ✅ |  |
+| **H4890 / AM4890** |  | ✅ | ✅ |  | ✅ | ✅ | ✅ |  |  |  | ✅ |  | ✅ | ✅ | ✅ |  |  |  |
+| **MH200** |  | ✅ | ✅ |  | ✅ | ✅ | ✅ | ✅ |  |  | ✅ | ✅ |  |  |  | ✅ | ✅ |  |
+| **MH200N** | ✅ | ✅ | ✅ |  | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **MH201** | ✅ | ✅ | ✅ |  | ✅ |  |  | ✅ | ✅ | ✅ | ✅ |  | ✅ |  | ✅ |  |  |  |
+| **MH202** |  | ✅ | ✅ |  | ✅ | ✅ | ✅ | ✅ | ✅ |  | ✅ |  | ✅ | ✅ | ✅ |  | ✅ |  |
+| **MyHomeServer1** |  | ✅ | ✅ |  | ✅ |  | ✅ | ✅ | ✅ | ✅ | ✅ |  | ✅ | ✅ | ✅ | ✅ | ✅ |  |
 <!-- TRACE_MATRIX_END -->
 
 *Checkmarks (✅) indicate that at least one `diagnostic_summary.json` or `.txt` bus capture in our test corpus contains frames for that subsystem from the specified gateway model. This matrix is automatically updated from the fixtures repository.*
@@ -122,7 +123,8 @@ We now maintain a comprehensive, community-curated **[GitHub Wiki](https://githu
 |---|---|---|
 | **`light`** | WHO=1 | On/Off, Dimmers with brightness control & transitions (stepped & native), DALI DT8 Tunable White (Dimension 14, 2000K–6535K), HS/RGB colour, Hardware-offloaded bus timers (`myhome.turn_on_timed` / `timer` parameter) |
 | **`switch`** | WHO=1 | Relays, auxiliary switches, socket actuators (switch/outlet device classes), Hardware-offloaded bus timers (`myhome.turn_on_timed` / `timer` parameter) |
-| **`cover`** | WHO=2 | Motorized shutters, blinds, roll-ups with state tracking, position-reporting actuators & virtual travel-time positioning |
+| **`cover`** | WHO=1 / WHO=2 | Motorized shutters, blinds, roll-ups with state tracking, position-reporting actuators & virtual travel-time positioning; impulse gates & garage doors (`WHO=1`) with sensor feedback and an optional multi-factor approval workflow |
+| **`lock`** | WHO=6 | Native video door entry strikes (`WHO=6`, configured in `myhome.yaml`) with constant-time PIN authentication and auto-relock |
 | **`climate`** | WHO=4 | Heating, cooling, 4-pipe systems, thermostats, setpoints, fancoil 3-speed modes, offset tracking, Central Unit 3550 (`#0`) & 4695 (`#0#1`) master coordination & seasonal propagation |
 | **`alarm_control_panel`** | WHO=5 | Central units (3485/3486), read-only state (disarmed / armed away / triggered), zone 0 broadcast sync; arm/disarm via AUX frames ([docs](docs/configuration/alarm.md)) |
 | **`binary_sensor`** | WHO=1 / 9 / 25 | Magnetic contacts, door/window sensors, PIR motion, AUX channels (1–9), dry contacts (F482/3477), inverted contacts |
@@ -153,7 +155,7 @@ We now maintain a comprehensive, community-curated **[GitHub Wiki](https://githu
 > [!WARNING]
 > **⚠️ Do NOT use HACS to install beta / pre-release versions!**  
 > In **HACS 2.0+**, pre-release access was moved to Home Assistant entity switches (`switch.myhome_pre_release`) that are disabled by default. Due to upstream Home Assistant registry caching, enabling these switches frequently gets stuck in an *"unavailable"* loop or reverts to *"disabled"*. Furthermore, because pre-releases are built on the active development branch (`v2-phase1-architecture`) while the default branch is `master`, HACS download validation frequently fails with:  
-> `The version 2.0.0b14 for this integration can not be used with HACS`  
+> `The version 2.0.0b16 for this integration can not be used with HACS`  
 > 
 > **To avoid frustration, please use Method 1 (Terminal & SSH) or Method 2 (Manual) below — they take less than 10 seconds and preserve all existing devices, entities, and settings 100% safely.**
 
@@ -169,9 +171,9 @@ cd /config/custom_components
 [ -d myhome.backup ] && mv myhome.backup /config/myhome_backup_old
 # Create a safety backup in /config (outside custom_components) before updating:
 [ -d myhome ] && rm -rf /config/myhome_backup && cp -r myhome /config/myhome_backup
-# Download and install the latest v2.0.0b14 release:
+# Download and install the latest v2.0.0b16 release:
 rm -rf myhome
-wget -O myhome_beta.zip https://github.com/OpenWebNet-HA/MyHOME/releases/download/2.0.0b14/myhome.zip
+wget -O myhome_beta.zip https://github.com/OpenWebNet-HA/MyHOME/releases/download/2.0.0b16/myhome.zip
 unzip -q myhome_beta.zip -d myhome
 rm myhome_beta.zip
 ha core restart
@@ -179,7 +181,7 @@ ha core restart
 
 *(For **Home Assistant Container / Docker**, run on your Docker host:)*
 ```bash
-docker exec -it homeassistant bash -c 'cd /config/custom_components && [ -d myhome.backup ] && mv myhome.backup /config/myhome_backup_old; [ -d myhome ] && rm -rf /config/myhome_backup && cp -r myhome /config/myhome_backup; rm -rf myhome && wget -O myhome_beta.zip https://github.com/OpenWebNet-HA/MyHOME/releases/download/2.0.0b14/myhome.zip && unzip -q myhome_beta.zip -d myhome && rm myhome_beta.zip'
+docker exec -it homeassistant bash -c 'cd /config/custom_components && [ -d myhome.backup ] && mv myhome.backup /config/myhome_backup_old; [ -d myhome ] && rm -rf /config/myhome_backup && cp -r myhome /config/myhome_backup; rm -rf myhome && wget -O myhome_beta.zip https://github.com/OpenWebNet-HA/MyHOME/releases/download/2.0.0b16/myhome.zip && unzip -q myhome_beta.zip -d myhome && rm myhome_beta.zip'
 docker restart homeassistant
 ```
 
@@ -191,7 +193,7 @@ docker restart homeassistant
 ### Method 2: Manual Installation (Archive / Samba)
 
 1. Download the release package:  
-   👉 **[Download myhome.zip (v2.0.0b14)](https://github.com/OpenWebNet-HA/MyHOME/releases/download/2.0.0b14/myhome.zip)** (or browse all [GitHub Releases](https://github.com/OpenWebNet-HA/MyHOME/releases))
+   👉 **[Download myhome.zip (v2.0.0b16)](https://github.com/OpenWebNet-HA/MyHOME/releases/download/2.0.0b16/myhome.zip)** (or browse all [GitHub Releases](https://github.com/OpenWebNet-HA/MyHOME/releases))
 2. Open your Home Assistant configuration directory (via **Samba Share**, **Studio Code Server**, or **File Editor** add-on).
 3. **Important:** If you wish to back up your existing `myhome` folder first, copy it to `/config/myhome_backup/` (**outside** `custom_components/`). **Never rename or copy it to `custom_components/myhome.backup`.**
 4. Extract `myhome.zip` directly into `/config/custom_components/myhome/` (overwriting the existing files).
@@ -396,13 +398,14 @@ Without `members` the entity is `assumed_state`: Home Assistant shows separate O
 
 ### ⚡ Custom Services
 
-The integration registers three specialized services under the `myhome` domain:
+The integration registers specialized services under the `myhome` domain:
 
 | Service | Fields | Description |
 |---|---|---|
 | **`myhome.send_message`** | `gateway` *(optional)*<br>`message` *(required)* | Send an arbitrary, validated OpenWebNet frame (e.g. `*1*0*0##`) directly to the SCS bus. Useful for scripts, custom diagnostic probes, and testing. |
 | **`myhome.sync_time`** | `gateway` *(optional)* | Synchronizes the gateway's internal real-time clock with Home Assistant's local time using standard OpenWebNet date/time frames (WHO=13). |
-| **`myhome.start_sending_instant_power`** | `entity_id` *(required)*<br>`duration` *(required)* | Requests high-frequency instant active power telemetry (W) from energy management counters (WHO=18) for `duration` seconds. |
+| **`myhome.start_sending_instant_power`** | `entity_id` *(required)*<br>`duration` *(required)* | Requests high-frequency instant active power telemetry (W) from energy management counters (WHO=18) for `duration` minutes. |
+| **`myhome.stop_sending_instant_power`** | `entity_id` *(required)* | Stops high-frequency instant active power telemetry from energy management counters (WHO=18). |
 
 ---
 
@@ -415,6 +418,7 @@ The integration fires native events to the Home Assistant event bus for automati
   - `pushbutton`: Pushbutton index (0–31)
   - `event`: Trigger action (`pushbutton_short_press`, `pushbutton_short_release`, `pushbutton_long_press`, `pushbutton_long_press_repeat` (CEN+, every ~0.5 s while held), `pushbutton_long_release`, or rotary dial `rotary_cw_slow`, `rotary_cw_fast`, `rotary_ccw_slow`, `rotary_ccw_fast`)
 * **`myhome_alarm_event`**: State transitions emitted by burglar alarm systems (WHO=5), including partition `where`, `state`, `state_code`, and `is_alarm` flag.
+* **`myhome_scene_event`**: Scenario lifecycle transitions emitted by scenario programmers (e.g., MH200N, MH201, F420; WHO=17). Event payload includes `scenario`, `where`, `state` (1=start, 2=stop, 3=enable, 4=disable), `is_on` (`True` when started, `False` when stopped; denotes execution lifecycle rather than load power states), `is_enabled` (`True`/`False` for scheduled enablement), `gateway_mac`, and `entry_id`.
 * **Broadcast Subsystem Events**: Global and area broadcast commands are mirrored as:
   - `myhome_general_light_event`, `myhome_area_light_event`, `myhome_group_light_event`
   - `myhome_general_automation_event`, `myhome_area_automation_event`, `myhome_group_automation_event`
@@ -762,7 +766,7 @@ The development of the MyHOME integration is organized into strategic release mi
   - [x] Power meters and energy counters (`WHO = 18`) as Home Assistant energy sensors.
   - [ ] Energy management central units & multi-function power meters (`WHO = 18` F520/F521/F522/F523/3522): not started, needs a scope decision and captures.
   - ~~Multi-room FM tuner presets and RDS metadata (`WHO = 22`)~~: formally deprecated in favour of the Dynamic Streaming Proxy.
-- [ ] **Stable v2.0.0**: merge the v2 line ([PR #232](https://github.com/OpenWebNet-HA/MyHOME/pull/232)) into `master` so HACS users receive it; today every release is a pre-release (latest: v2.0.0b14).
+- [ ] **Stable v2.0.0**: merge the v2 line ([PR #232](https://github.com/OpenWebNet-HA/MyHOME/pull/232)) into `master` so HACS users receive it; today every release is a pre-release (latest: v2.0.0b16).
 
 ---
 

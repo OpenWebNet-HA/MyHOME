@@ -3,19 +3,27 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, cast
+import re
+from typing import TYPE_CHECKING, Any, cast
 
+import voluptuous as vol
 from homeassistant.const import CONF_MAC
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 
 from .const import (
+    ATTR_ACTION,
     ATTR_GATEWAY,
     ATTR_MESSAGE,
+    ATTR_WHERE,
     DOMAIN,
+    SERVICE_SEND_SCENARIO_PLUS_COMMAND,
     SERVICE_STOP_COVER_CALIBRATION,
 )
 from .data import get_runtime_data
+from .typing_compat import as_any
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -24,7 +32,19 @@ _LOGGER = logging.getLogger(__name__)
 
 SERVICE_SYNC_TIME = "sync_time"
 SERVICE_SEND_MESSAGE = "send_message"
+# *#4*<where>*22## and *#4*<where>*#22*...## (split control): never forwarded, see handle_send_message.
+_WHO4_DIMENSION_22 = re.compile(r"^\*#4\*[^*]*\*#?22(\*[^#]*)?##$")
 SERVICE_SWEEP_BUS = "sweep_bus"
+
+# Closed schemas: a misspelt key such as `gw_mac` (#189) raises instead of being
+# dropped and the frame going to the default gateway.
+SYNC_TIME_SCHEMA = vol.Schema({vol.Optional(ATTR_GATEWAY): cv.string})
+SEND_MESSAGE_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_GATEWAY): cv.string,
+        vol.Required(ATTR_MESSAGE): cv.string,
+    }
+)
 
 
 def _loaded_gateways(hass: HomeAssistant) -> dict[str, MyHOMEGatewayHandler]:
@@ -61,6 +81,54 @@ def _get_gateway_handler(hass: HomeAssistant, gateway_identifier: str | None) ->
     return None
 
 
+def _handler_refuses_frame(handler: MyHOMEGatewayHandler, frame: str) -> bool:
+    """Return whether the gateway firmware drops a general request (``*#4*0##`` on an F461)."""
+    target = getattr(handler, "_refused_by_gateway", None)
+    if not callable(target):
+        return False
+    try:
+        return target(frame) is True
+    except Exception:  # pragma: no cover - defensive against broken handler mocks
+        return False
+
+
+def _handler_supports_who(handler: MyHOMEGatewayHandler, who: int) -> bool:
+    """Return whether the gateway handler profile advertises a WHO subsystem."""
+    target = getattr(handler, "profile_supports_who", None) or getattr(
+        handler, "_profile_supports_who", None
+    )
+    if callable(target):
+        try:
+            return bool(target(who))
+        except Exception:  # pragma: no cover - defensive against broken handler mocks
+            return True
+    return True
+
+
+def _build_time_sync_commands(timezone: str) -> tuple[Any, Any]:
+    """Build the WHO 13 datetime and time frames for ``timezone``.
+
+    The WHO 13 offset field (``0HH`` / ``1HH``) only carries whole hours, so
+    OWNd >= 2.0.0b11 raises ``ValueError`` for zones such as Asia/Kolkata
+    (+05:30) instead of sending a truncated offset.
+    """
+    from OWNd.message import OWNGatewayCommand
+
+    try:
+        return (
+            OWNGatewayCommand.set_datetime_to_now(timezone),
+            OWNGatewayCommand.set_time_to_now(timezone),
+        )
+    except ValueError as err:
+        raise ServiceValidationError(
+            f'Cannot synchronise the gateway clock for time zone "{timezone}": {err}. '
+            "OpenWebNet only carries whole-hour UTC offsets.",
+            translation_domain=DOMAIN,
+            translation_key="sync_time_unsupported_offset",
+            translation_placeholders={"timezone": timezone, "error": str(err)},
+        ) from err
+
+
 async def async_setup_services(hass: HomeAssistant) -> None:
     """Register MyHOME domain services."""
     if hass.services.has_service(DOMAIN, SERVICE_SYNC_TIME):
@@ -75,9 +143,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 _LOGGER.error("No MyHOME gateways found, cannot sync time.")
                 return
             timezone = hass.config.as_dict().get("time_zone", "UTC")
-            from OWNd.message import OWNGatewayCommand
-            cmd_datetime = OWNGatewayCommand.set_datetime_to_now(timezone)
-            cmd_time = OWNGatewayCommand.set_time_to_now(timezone)
+            cmd_datetime, cmd_time = _build_time_sync_commands(timezone)
             # Once per bus: a secondary/standby shares its primary's bus
             for gw_handler in gateways.values():
                 if getattr(gw_handler, "is_follower", False) is not True:
@@ -89,9 +155,9 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         timezone = hass.config.as_dict().get("time_zone", "UTC")
         handler = _get_gateway_handler(hass, gateway)
         if handler is not None:
-            from OWNd.message import OWNGatewayCommand
-            await handler.send(OWNGatewayCommand.set_datetime_to_now(timezone))
-            await handler.send(OWNGatewayCommand.set_time_to_now(timezone))
+            cmd_datetime, cmd_time = _build_time_sync_commands(timezone)
+            await handler.send(cmd_datetime)
+            await handler.send(cmd_time)
             return
 
         _LOGGER.error(
@@ -103,7 +169,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
     async def handle_send_message(call: ServiceCall) -> None:
         """Handle sending an arbitrary OpenWebNet message."""
         gateway = call.data.get(ATTR_GATEWAY, None)
-        message = call.data.get(ATTR_MESSAGE, None)
+        message: str = call.data[ATTR_MESSAGE]  # required by SEND_MESSAGE_SCHEMA
         if gateway is None:
             if not _loaded_gateways(hass):
                 _LOGGER.error("No MyHOME gateways found, cannot send message `%s`.", message)
@@ -114,22 +180,34 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         _LOGGER.debug("Handling message `%s` to be sent to `%s`", message, gateway)
         handler = _get_gateway_handler(hass, gateway)
         if handler is not None:
-            if message is not None:
-                from OWNd.message import OWNCommand
-                own_message = OWNCommand.parse(message)
-                if own_message is not None and own_message.is_valid:
-                    _LOGGER.debug(
-                        "%s Sending valid OpenWebNet Message: `%s`",
-                        handler.log_id,
-                        own_message,
-                    )
-                    await handler.send(own_message)
-                    return
+            from OWNd.message import OWNCommand
+            if _WHO4_DIMENSION_22.match(str(message).strip()):
                 _LOGGER.error(
-                    "Could not parse message `%s`, not sending it.", message
+                    "%s Refusing to send `%s`: a WHO 4 dimension 22 request kills the thermostat "
+                    "handler of F461 / F454 / MH200N-class gateways and reboots the gateway "
+                    "about three minutes later (tests/fixtures/traces/f461_live_2026-10-15).",
+                    handler.log_id,
+                    message,
                 )
                 return
-            _LOGGER.error("No message specified to send.")
+            own_message = OWNCommand.parse(message)
+            if own_message is not None and own_message.is_valid:
+                _LOGGER.debug(
+                    "%s Sending valid OpenWebNet Message: `%s`",
+                    handler.log_id,
+                    own_message,
+                )
+                if own_message.is_status_request or own_message.is_dimension_request:
+                    # A status or dimension request goes out as one: a NACK then means
+                    # "no such device" (DEBUG, not retried) instead of a failed command
+                    # logged as ERROR and sent twice (#777: *#1*52*5## on an F454).
+                    await handler.send_status_request(own_message)
+                else:
+                    await handler.send(own_message)
+                return
+            _LOGGER.error(
+                "Could not parse message `%s`, not sending it.", message
+            )
             return
 
         _LOGGER.error(
@@ -163,24 +241,57 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             for query in (f"*#18*{addr}*51##", f"*#18*{addr}*1200##")
         ]
 
+        force = bool(call.data.get("force", False))
+
         for gw_mac, handler in target_gateways.items():
-            _LOGGER.info("Executing diagnostic bus sweep on gateway %s", gw_mac)
+            _LOGGER.info("Executing diagnostic bus sweep on gateway %s (force=%s)", gw_mac, force)
             gateway_queries = [
-                "*#13**0##",   # Gateway real-time clock
-                "*#13**15##",  # Gateway device model
-                "*#13**16##",  # Gateway firmware version
+                "*#13**0##",     # Gateway real-time clock
+                "*#13**15##",    # Gateway device model
+                "*#13**16##",    # Gateway firmware version
+                "*#13**23##",    # Gateway kernel version (modern Linux gateways; NACK ignored on older)
+                "*#13**24##",    # Gateway distribution version (modern Linux gateways; NACK ignored on older)
+                "*#1013*0*1##",  # Gateway diagnostic OBJECT_MODEL
             ]
             general_queries = ((1, "*#1*0##"), (2, "*#2*0##"), (4, "*#4*0##"), (5, "*#5*0##"), (16, "*#16*0*5##"))
+
+            def _profile_supports(who: int) -> bool:
+                if force:
+                    return True
+                return _handler_supports_who(handler, who)
+
+            def _general_sent(who: int, query: str) -> bool:
+                # Same gates as the startup sweep (_discovery_frames): the profile's WHOs, and not a
+                # request the firmware drops (*#4*0##, *#16*0*5## on most models), which would only
+                # cost a NACK and a BUS_QUIET_PERIOD wait in send_paced. force sends everything.
+                if force:
+                    return True
+                return _profile_supports(who) and not _handler_refuses_frame(handler, query)
+
             if getattr(handler, "is_follower", False) is True:
                 delegated: set[int] = getattr(handler, "delegated_whos", set())
-                general = [q for who, q in general_queries if who in delegated]
-                point_queries = energy_queries if 18 in delegated else []
+                general = [
+                    q for who, q in general_queries
+                    if who in delegated and _general_sent(who, q)
+                ]
+                point_queries = (
+                    energy_queries
+                    if 18 in delegated and _profile_supports(18)
+                    else []
+                )
             else:
                 delegated_away: object = getattr(handler, "delegated_away_whos", set())
                 if not isinstance(delegated_away, (set, frozenset, list, tuple)):
                     delegated_away = set()
-                general = [q for who, q in general_queries if who not in delegated_away]
-                point_queries = energy_queries if 18 not in delegated_away else []
+                general = [
+                    q for who, q in general_queries
+                    if who not in delegated_away and _general_sent(who, q)
+                ]
+                point_queries = (
+                    energy_queries
+                    if 18 not in delegated_away and _profile_supports(18)
+                    else []
+                )
 
             for query in gateway_queries:
                 await _send_query(handler, query)
@@ -207,7 +318,76 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         gateway = call.data.get(ATTR_GATEWAY, None)
         await async_stop_cover_calibration(hass, gateway_mac=gateway)
 
-    hass.services.async_register(DOMAIN, SERVICE_SYNC_TIME, handle_sync_time)
-    hass.services.async_register(DOMAIN, SERVICE_SEND_MESSAGE, handle_send_message)
+    async def handle_send_scenario_plus_command(call: ServiceCall) -> None:
+        """Handle sending a scenario plus command."""
+        gateway = call.data.get(ATTR_GATEWAY, None)
+        if gateway is not None:
+            gateway = dr.format_mac(gateway)
+        handler = _get_gateway_handler(hass, gateway)
+        if handler is None:
+            if gateway is not None:
+                raise ServiceValidationError(
+                    f"Gateway '{gateway}' not found for scenario plus command",
+                    translation_domain=DOMAIN,
+                    translation_key="scenario_plus_gateway_not_found",
+                    translation_placeholders={"gateway": str(gateway)},
+                )
+            raise ServiceValidationError(
+                "No active MyHOME gateways found",
+                translation_domain=DOMAIN,
+                translation_key="scenario_plus_no_gateway",
+            )
+
+        where_raw = call.data.get(ATTR_WHERE)
+        if where_raw is None or not str(where_raw).strip():
+            raise ServiceValidationError(
+                "No where/object specified for scenario plus command",
+                translation_domain=DOMAIN,
+                translation_key="scenario_plus_missing_where",
+            )
+        where = str(where_raw).strip()
+
+        action = str(call.data.get(ATTR_ACTION) or "").lower().strip()
+        allowed_actions = ("on", "off", "increase", "decrease", "stop")
+        if action not in allowed_actions:
+            raise ServiceValidationError(
+                f"Unknown scenario plus action '{action}'",
+                translation_domain=DOMAIN,
+                translation_key="scenario_plus_unknown_action",
+                translation_placeholders={"action": action},
+            )
+
+        from OWNd.message import OWNScenarioPlusCommand
+
+        cmd: Any = None
+        try:
+            if action == "on":
+                cmd = OWNScenarioPlusCommand.turn_on(where)
+            elif action == "off":
+                cmd = OWNScenarioPlusCommand.turn_off(where)
+            elif action == "increase":
+                cmd = OWNScenarioPlusCommand.increase(where)
+            elif action == "decrease":
+                cmd = OWNScenarioPlusCommand.decrease(where)
+            elif action == "stop":
+                cmd = OWNScenarioPlusCommand.stop(where)
+        except ValueError:
+            cmd = None
+
+        # Command objects mocked in tests may not define `is_valid`; default to
+        # True only when the attribute is absent.
+        if cmd is None or not getattr(cmd, "is_valid", True):
+            raise ServiceValidationError(
+                f"Could not build scenario plus command for where '{where}' and action '{action}'",
+                translation_domain=DOMAIN,
+                translation_key="scenario_plus_command_invalid",
+                translation_placeholders={"where": where, "action": action},
+            )
+
+        await handler.send(cmd)
+
+    hass.services.async_register(DOMAIN, SERVICE_SYNC_TIME, handle_sync_time, schema=as_any(SYNC_TIME_SCHEMA))
+    hass.services.async_register(DOMAIN, SERVICE_SEND_MESSAGE, handle_send_message, schema=as_any(SEND_MESSAGE_SCHEMA))
     hass.services.async_register(DOMAIN, SERVICE_SWEEP_BUS, handle_sweep_bus)
     hass.services.async_register(DOMAIN, SERVICE_STOP_COVER_CALIBRATION, handle_stop_cover_calibration)
+    hass.services.async_register(DOMAIN, SERVICE_SEND_SCENARIO_PLUS_COMMAND, handle_send_scenario_plus_command)

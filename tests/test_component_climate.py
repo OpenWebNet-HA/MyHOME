@@ -157,10 +157,25 @@ async def test_climate_properties_and_hvac_modes(hass):
     assert str(gateway.send.call_args[0][0]) == "*4*303*1##"
     gateway.send.reset_mock()
 
-    # Test set_hvac_mode AUTO
+    # Test set_hvac_mode AUTO on a standalone zone without a central unit: *4*311*#1## is a
+    # central-unit command nobody acts on (F461 capture, tests/test_f461_live_plant.py), so the
+    # zone is switched on with a generic setpoint write; without a known setpoint nothing is sent.
+    gateway.has_central_unit = False
+    await climate.async_set_hvac_mode(HVACMode.AUTO)
+    gateway.send.assert_not_called()
+    climate._target_temperature = 21.0
+    await climate.async_set_hvac_mode(HVACMode.AUTO)
+    gateway.send.assert_called_once()
+    assert str(gateway.send.call_args[0][0]) == "*#4*1*#14*0210*3##"
+    gateway.send.reset_mock()
+    # Behind a central unit the automatic program is asked from the central
+    gateway.has_central_unit = True
+    climate._standalone_config = None
     await climate.async_set_hvac_mode(HVACMode.AUTO)
     gateway.send.assert_called_once()
     assert str(gateway.send.call_args[0][0]) == "*4*311*#1##"
+    gateway.has_central_unit = False
+    climate._standalone_config = True
     gateway.send.reset_mock()
 
     # Test set_hvac_mode HEAT
@@ -658,13 +673,13 @@ async def test_climate_fan_mode_and_attributes(hass):
     climate_fancoil.handle_event(event)
     assert climate_fancoil.fan_mode == "auto"
 
-    # Test async_added_to_hass immediately sends status requests (general + Dimension 11 fan status)
+    # async_added_to_hass sends the general status request at once; the fan speed (dimension 11)
+    # waits for dimension 19 (which side is the fan coil), asked through the gateway's paced sender
     climate_fancoil.async_on_remove = MagicMock()
     await climate_fancoil.async_added_to_hass()
-    assert gateway.send_status_request.await_count == 2
-    sent_requests = [str(call[0][0]) for call in gateway.send_status_request.call_args_list]
-    assert "*#4*5##" in sent_requests
-    assert "*#4*5*11##" in sent_requests
+    assert gateway.send_status_request.await_count == 1
+    assert [str(call[0][0]) for call in gateway.send_status_request.call_args_list] == ["*#4*5##"]
+    gateway.request_zone_dimension.assert_any_call("5", 19)
 
 
 async def test_climate_central_fan_mode_guard(hass):

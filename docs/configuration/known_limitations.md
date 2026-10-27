@@ -11,6 +11,8 @@ Things the integration does not do, or does with a caveat, and the reason. Where
 | **A gateway's model can be mislabelled.** | Only the WHO 13 device-type reply is available in-band, and its official table stops at 2006 hardware. | The [identification rules](gateway-identification.md) correct manual choices and raise a repair issue when evidence contradicts SSDP; use the reconfigure flow to set the model explicitly. |
 | **Serial (Legrand 3578) gateways are not discovered.** | No SSDP on a USB port. | Add the integration manually and pick the serial transport. |
 | **No HMAC on MH200 / MH200N / MH201 / AM4890 / 3578.** | Those gateways only implement the numeric (SHA-less) password. | Configure the numeric OpenWebNet password on the gateway. |
+| **Broadcast, Area 00, and General 0 frames do not generate entities.** | Broadcast frames (`WHERE="0"`, `"00"`) coordinate multiple actuators and do not represent individual physical devices (except WHO 5 where `WHERE="0"` is the alarm central unit). Creating entities from these frames produced phantom entities like `sensor.zone_00` or `climate.climate_zone_00`. | Control individual actuators or use YAML declared groups (`where: '#G'`) and manual scenes. |
+| **Secondary energy meters (`52`–`59`) require bus activity or manual configuration for initial setup.** | Startup discovery queries factory default meter `51` (`*#18*51*51##`, `*#18*51*113##`) to avoid long startup sweep delays. | Secondary meters appear automatically when they transmit power/energy readings on the bus, or immediately when running `myhome.sweep_bus`. They can also be declared in `myhome.yaml`. |
 
 ## Lighting (WHO 1)
 
@@ -29,6 +31,7 @@ Things the integration does not do, or does with a caveat, and the reason. Where
 | **Timed covers report a calculated position.** It drifts if the motor runs at a different speed than assumed, or after a manual stop mid-travel. | The actuator has no encoder; only position-reporting actuators (dimension 10) know where the shutter is. | Calibrate with `myhome.calibrate_cover` (or `myhome.set_cover_travel_time`); a full open or close resynchronises the estimate. |
 | **Calibration on an MH200 / MH200N can fail** with *no stop status from the actuator*. | The single-session gateway delays or drops the actuator's stop status; some actuators also enforce a 60 s safety cut-off that ends the run early. | Measure the run with a stopwatch and store the timings via `myhome.set_cover_travel_time`. |
 | **One calibration at a time per gateway.** | Two motors on one paced session make the timings meaningless. | Queue is automatic; `myhome.stop_cover_calibration` cancels it. |
+| **Rapid concurrent point-to-point commands behind an F422 interface can drop frames.** | The physical F422 interface internal FIFO buffer and secondary SCS bus arbitration saturate under rapid unpaced bursts. | Use native General broadcast covers (`where: '0'`, `bus_interface: '<id>'`) which send a single OpenWebNet broadcast (`*2*WHAT*0#4#<id>##`), or rely on the integration's automatic 0.3 s paced member fan-out for position control. See [Covers](covers.md#the-bticino-way--real-world-plant-discovery). |
 | **No slat / tilt control.** | Not implemented; the frames exist in OWNd. | `myhome.send_message` with the tilt frame. |
 
 ## Thermoregulation (WHO 4)
@@ -37,6 +40,7 @@ Things the integration does not do, or does with a caveat, and the reason. Where
 | :--- | :--- | :--- |
 | **Weekly programs, holiday and scenario modes are not exposed.** | Only manual set-point, auto, off and the seasonal modes are modelled on the climate entity. | `myhome.send_message` with the central-unit mode frame (`*4*<mode>*#0##`). |
 | **4-zone central unit 4695 (`#0#1`) is verified on synthetic frames only.** | No community trace from a 4695 plant yet. | Please attach a trace to RFC #248 if you own one. |
+| **A commanded setpoint (dimension 14) that arrives without a following dimension 12 does not update the slider once the zone has reported a setpoint in force.** | The slider follows dimension 12 (the setpoint the thermostat regulates to, knob offset included) as soon as the zone has reported it; a dimension 14 that is not the echo of a write from Home Assistant is kept as the commanded value only. Both captured plants (F461 2.0.11 with a KW4691, MyHomeServer1 3.87.13 with 36 zones) emit dimension 12 after every write and after every local change, so the slider stays current there; a gateway that echoed only dimension 14 for an external change would leave the slider on the previous value until the next dimension 12 report or poll. | Reload the entity (`homeassistant.update_entity`) to poll `*#4*Z##`; please attach a trace if you see this. |
 | **Probes (`WHERE ≥ 100`) are read-only and push-driven.** | They NACK the explicit poll (`*#4*ZPP*15##`) and push readings on their own schedule. | Nothing needed; a probe that goes silent is polled again after 5 min. |
 
 ## Burglar alarm (WHO 5)

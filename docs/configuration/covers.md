@@ -26,7 +26,37 @@ The integration distinguishes between two types of MyHOME covers:
 | **Standard (Timed) Covers** | Standard relay actuators (`F411/2`, `F411U2`, standard `F401`, older flush-mount units) | ✅ Estimated | Actuator has no position feedback. The v2 runtime estimates position from the elapsed share of the **travel time** (`travel_time_down` and `travel_time_up`). |
 
 > [!NOTE]
-> Every discovered cover starts as a **timed** cover. Position-reporting hardware is not detected automatically: set `advanced_shutter: true` for that cover in `/config/myhome.yaml` (see [Troubleshooting → Cover position is wrong](troubleshooting.md#cover-position-is-wrong)). Advanced covers refuse `myhome.calibrate_cover` and `myhome.set_cover_travel_time`, as they do not need a travel time.
+> Every discovered cover starts as a **timed** cover. Position-reporting hardware is not detected automatically: set `advanced_shutter: true` for that cover in `/config/myhome.yaml` (see [Troubleshooting → Cover position is wrong](troubleshooting.md#cover-position-is-wrong)). Advanced covers refuse `myhome.calibrate_cover` and travel times in `myhome.set_cover_travel_time`, as they do not need a travel time (a Venetian blind with `slat_tilt` still accepts `slat_time` there).
+
+### Choosing the cover model (`strategy`)
+
+Each WHO=2 cover runs one of four position models. Without `strategy`, the flags pick it: `advanced_shutter: true` gives `native`, `slat_tilt: true` gives `venetian`, `travel_time: 0` gives `simple`, and anything else gives `timed`. Set `strategy` in `/config/myhome.yaml` to name it explicitly:
+
+| `strategy` | Position | Use for |
+| :--- | :--- | :--- |
+| `timed` | Estimated from the travel time | Standard relay actuators (the default). Needs a positive `travel_time`. |
+| `venetian` | Estimated, plus slat tilt | Venetian blinds; implies `slat_tilt: true` and needs a positive `travel_time` (or `advanced_shutter`). |
+| `native` | Reported by the actuator (`Dimension = 10`) | Advanced actuators; implies `advanced_shutter: true`. Can be combined with `slat_tilt`. |
+| `simple` | None (open / close / stop only) | Relays with no measured travel time. The entity has no position slider and an assumed state: closed after a closing run, open after an opening one. |
+
+An explicit `strategy` cannot be combined with a flag that selects another model (`advanced_shutter` with anything but `native`, `slat_tilt` with `timed` or `simple`, `travel_time: 0` with `timed`): the configuration is rejected. A cover set up with `travel_time: 0` becomes `timed` once it is calibrated (`myhome.calibrate_cover` or `myhome.set_cover_travel_time`), and `simple` again after `myhome.reset_cover_travel_time`. An explicit `strategy: simple` stays simple even when travel times are stored.
+
+---
+
+## 🏷️ Device class (`class`)
+
+A WHO 2 cover is a `shutter` unless `/config/myhome.yaml` says otherwise. `class:` (or `device_class:`) accepts the Home Assistant cover classes `awning`, `blind`, `curtain`, `damper`, `door`, `garage`, `gate`, `shade`, `shutter` and `window`, and picks the entity's icon and the wording of its states. It applies to every WHO 2 cover, point-to-point as well as [general, area and group covers](#general-area-and-group-covers). A configured class also wins over the `blind` that `slat_tilt: true` (or `strategy: venetian`) would otherwise set.
+
+```yaml
+# /config/myhome.yaml
+cover:
+  living_room_curtain:
+    where: '32'
+    name: Living Room Curtain
+    class: curtain
+```
+
+Covers set up in the UI (without `myhome.yaml`) change their device class in Home Assistant with the **"Show As"** feature, like [switches](switches.md) and [binary sensors](binary-sensors.md): **Settings → Devices & Services → Entities**, select the cover entity, click the **Settings (gear)** icon and pick the class under **Show As**.
 
 ---
 
@@ -34,13 +64,35 @@ The integration distinguishes between two types of MyHOME covers:
 
 For standard covers without hardware position feedback, the integration provides a software estimator enabling full `open_cover`, `close_cover`, `stop_cover`, and slider-based `set_cover_position` support:
 
+* **Unknown Until the First Full Run**: A timed actuator cannot report where the curtain is (for an F411/2, the gateway answers `*#2*<WHERE>*10##` with no position frame), so a cover with no restored state starts as `unknown`, with no position, instead of an invented `open` at 50 %. The restored position from the last run of Home Assistant is kept. The position becomes known at an end stop. `open_cover`, `close_cover` and `set_cover_position: 0` / `100` run to the limit switch and settle the end position on the travel time plus 2 s, like the full runs of a known cover, whether the cover is commanded directly or as a member of an area / group cover whose one scope frame on the main bus moves it: the actuator's own stop status may come earlier (an F411/2 whose timer is shorter than `travel_time`), later or not at all; a stop status before the travel time does not end that run, one at or after it anchors the end position at once. A stop sent from Home Assistant during such a run leaves the position unknown; a keypad stop in that window cannot be told apart from the actuator's own stop and settles at the end position too. A keypad run that lasts the full travel time anchors the position as well; a keypad stop before that leaves it unknown. The state restored from the last run of Home Assistant is kept: a restored `closed` is 0 %, a restored `open` without a position stays open with an unknown position until an end stop. While it is unknown, `set_cover_position` with any other target is refused (*"… the position is unknown until the cover has run fully open or closed once"*) and sends nothing, because there is no position to time the run from.
 * **Direction-Aware Travel Times**: Because gravity and motor friction cause shutters to fall faster than they rise, the v2 engine tracks separate `travel_time_down` and `travel_time_up` durations (default: `25.0s`).
 * **Frame Anchor Timing**: The run timer starts when the direction frame is **written to the gateway**, not when Home Assistant queues it.
 * **Echo Suppression**: The gateway relays a momentary stop status (~0.1 s) followed by translation and the actual motor start (~0.55 s). The v2 engine recognizes these as command echoes, re-anchoring the timer to the true motor start rather than falsely treating them as manual stop commands.
+* **Motor Start-Up Floor (`min_motor_pulse`)**: A tubular motor needs a moment after the relay closes before the curtain moves. On an F454 with Somfy Ilmo 50 WT motors (20.4 s travel), 1 % steps (~0.2 s) clicked the relay without moving the curtain, while 2 % steps (~0.4 s) moved it ([#466](https://github.com/OpenWebNet-HA/MyHOME/issues/466)). A position change that would run shorter than the configured floor runs for `min_motor_pulse` seconds (default: `0.4 s`, configurable per cover via YAML `min_motor_pulse` or `myhome.set_cover_travel_time`; `0.0` disables), and the estimate books the movement of that longer run: on a 5 s cover with the default 0.4 s floor, 50 % → 51 % ends at 58 %. Other motors may need more or less.
+* **Stop Status Re-Anchoring**: When a timed run is stopped, the estimate is provisionally frozen at the stop write. If the gateway relays the stop status (`*2*0*<WHERE>##`) within the echo window (measured at 34–47 ms, median 42 ms on a MyHOMEServer1 and 64–120 ms on an F461), the final position and `last_run_seconds` are re-anchored to `stop status - start anchor` ([#705](https://github.com/OpenWebNet-HA/MyHOME/issues/705)). Gateways that do not relay the stop status keep the write-time freeze.
+* **0 % and 100 % Are Full Runs**: Setting position to 0 % or 100 % sends a plain close / open, exactly like the buttons, and lets the motor stop on its limit switch instead of timing a stop. This also happens when the cover already reports 0 % or 100 %, so it is the way to put a drifted estimate back in step. A short move whose run would reach an end becomes a full run to that end too. No stop frame is sent, so the entity reports `opening` / `closing` until the actuator's own stop status arrives, which can be long after the curtain reached the end (about 60 s on one MyHOMEServer1) or never on a gateway that does not relay it. The integration therefore settles on 0 % / 100 % once the stored travel time plus 2 s has passed, without a stop frame. That can be a few seconds before a slow curtain physically arrives; automations waiting for `open` / `closed` see the state change at that point. The open and close buttons are unchanged and still wait for the actuator's status.
 * **Resynchronization**: Running a cover to its full travel limit (fully open or fully closed) automatically resets any minor timing drift to 0% or 100%.
+
+> [!NOTE]
+> Small moves can still drift. The estimate assumes the curtain moves for the whole run. A motor's start-up time (measured only on the Somfy Ilmo 50 WT in [#466](https://github.com/OpenWebNet-HA/MyHOME/issues/466); another installation measured none on runs of about 0.76 s) is lost on every run, and the slat phase of a roller shutter with slats is booked as travel (one report: a 40 % request from fully closed lifted the curtain only about 18 % of its travel). A series of short moves can therefore book more travel than the curtain made. Send the cover to 0 % or 100 % now and then to re-sync it.
+>
+> Venetian blinds are handled as a plain lift cover: lift only, no tilt, and no fine positioning.
 
 > [!WARNING]
 > **Half the time is not half the height.** The estimate is linear: 50 % means the motor ran for half of the stored travel time. A roller shutter does not move at constant speed — coming down from the top the curtain runs fast on a full roll and is well past the middle at half time; going up from the bottom the first seconds go into gathering the slats and the curtain barely moves. Measured on a 107 cm shutter with exact travel times: `set_cover_position: 50` stopped at 27 cm from the sill coming down and at 37 cm going up, against a true midpoint of about 53 cm, while Home Assistant reported 50 % both times. The end positions (0 % / 100 %) are exact; intermediate positions are approximate and differ by direction. Treat the slider as "roughly there", not as a measurement — this applies to calibrated and manually set times alike.
+
+**Advanced covers** track their own level (`Dimension = 10` at motor start and motor stop; no intermediate frames are emitted while the motor runs), and the actuator turns a `Dimension = 11` level write (`*#2*<WHERE>*#11#001*<LEVEL>##`) into a timed run proportional to its learned travel time. On a short-travel shutter (~20 s, ~0.2 s per percent) a 1 % change is too brief to move the curtain ([#466](https://github.com/OpenWebNet-HA/MyHOME/issues/466)), so by default the integration widens any change smaller than 2 % to 2 % (50 % → 51 % is sent as 52 %), except while the cover is moving (it then reports the level it started from, so the request goes out as asked). Target levels `0 %` and `100 %` — including a move near an end whose widened target clamps to `0 %` or `100 %` (e.g. `98 %` → `99 %` widened to `100 %` at `min_position_delta: 2`) — are sent as plain close / open full runs so the motor stops on its limit switch.
+
+The smallest change is set per cover with `min_position_delta` in `/config/myhome.yaml` (whole percent, `1`–`5`, default `2`; a timed cover with it is rejected, it uses `min_motor_pulse` instead). On a long-travel shutter each percent is a longer run: on a 3.75 m F401 shutter behind an F454 (`91.3 s` up / `87.8 s` down, ~0.9 s per percent; [discussion #770](https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19144038)), captured `*#2*21*#11#001*<LEVEL>##` 2 % steps ran 1.7–1.8 s each — already past the ~1.4 s mechanical slat pivot (`3` short `H4660M2` keypad pulses all reported `2 %`) — so `min_position_delta: 1` (~0.9 s per 1 % step) is needed to reach intermediate slat angles before the curtain lifts. `1` sends every change as asked; a very fast motor may need `3`–`5`. The active value is shown as the `min_position_delta` attribute.
+
+```yaml
+# /config/myhome.yaml
+cover:
+  living_room_shutter:
+    where: '31'
+    advanced_shutter: true
+    min_position_delta: 1
+```
 
 ---
 
@@ -98,9 +150,10 @@ target:
 data:
   travel_time_down: 22.5
   travel_time_up: 24.0
+  min_motor_pulse: 0.4
 ```
 
-The result is stored exactly like a measured calibration, with `calibration_source: manual`, and overwrites whatever a previous calibration attempt may have saved (also visible under `cover_travel_times` in the integration's diagnostics download). When the numbers you pass were measured on an identical shutter, add `copied_from: cover.<other_shutter>` to record where they came from; `calibration_source` then reads `copied` and the entity is exposed as a `copied_from` attribute.
+When setting travel times, the result is stored like a measured calibration, with `calibration_source: manual`, and overwrites whatever a previous calibration attempt may have saved (also visible under `cover_travel_times` in the integration's diagnostics download). When only `min_motor_pulse` is set, existing travel times, source, and calibration timestamps remain untouched. When the numbers you pass were measured on an identical shutter, add `copied_from: cover.<other_shutter>` to record where they came from; `calibration_source` then reads `copied` and the entity is exposed as a `copied_from` attribute.
 
 To forget the measured or manual times and return to the `travel_time` from `myhome.yaml` (or the 25 s default when none is configured):
 ```yaml
@@ -108,6 +161,66 @@ action: myhome.reset_cover_travel_time
 target:
   entity_id: cover.living_room_shutter
 ```
+
+---
+
+## 🪟 Venetian Blinds & Slat Tilt Positioning (Timed Slat Inching)
+
+For Venetian blinds, motorized louvres, and external venetian blinds (EVBs/BSO) with adjustable slat tilt angles, the integration provides timed slat travel (inching):
+
+* **Supported Features**: `SET_TILT_POSITION`, `OPEN_TILT` (100%), `CLOSE_TILT` (0%), and `STOP_TILT`.
+* **Device Class**: Sets the entity device class to `blind` (`CoverDeviceClass.BLIND`) unless [`class`](#device-class-class) is set.
+* **Attributes**: Exposes `current_cover_tilt_position` (0–100%), `slat_tilt: true`, and `slat_time: <seconds>`.
+
+### Physical Architecture & Slat Travel Time
+
+Physical BTicino / Legrand MyHOME Venetian blind actuators (such as the F411U2 configured in Venetian mode) control slat tilt angle mechanically through brief motor pulses: when the motor runs, the slats first rotate through their full angular range (typically 1.5–2.5 seconds) before linear curtain lifting or lowering commences.
+
+The integration models this behavior with timed travel:
+* When a tilt command is issued, the shutter motor runs in the required direction for a calculated duration:
+  $$\text{duration} = \frac{|\text{target\_tilt} - \text{current\_tilt}|}{100} \times \text{slat\_time}$$
+* The pulse is timed from the **motor start**, not from the frame write: from the direction status the gateway relays (`*2*1*<WHERE>##` / `*2*2*<WHERE>##`), or, when the gateway relays none, from the write plus the measured 0.55 s motor-start delay (see [Runtime behaviour → Timed covers](runtime_behaviour.md)). Timed from the write, a pulse shorter than about half a second would end before the motor started. Nothing is counted while the frame still waits in the send queue.
+* When the target duration elapses, an automatic stop command (`*2*0*<WHERE>##`) halts the motor. The angle is settled when that stop is **written**, not when it was due: the send queue is first-in first-out, so behind other frames (several blinds tilted at once, a busy gateway) the stop leaves late and the slats turn on until then. The angle follows the real motor time at one full rotation per `slat_time`, also past the target, up to 0 % / 100 %. Motor time past a full rotation moves the curtain, and a timed cover's position estimate moves by that time over its curtain travel time (`travel_time - slat_time`; a position-reporting cover reports its own level).
+* A new tilt target while the previous pulse's stop still waits in the queue waits for that stop to be written, so it starts from the real angle; the new direction frame could not leave before that stop anyway. Tilt requests run one at a time, and a newer target replaces one still waiting, so a dragged slider sends only where it ended.
+* A new target in the **same direction** while the pulse still runs moves the pulse's stop and sends nothing; only a change of direction sends a new direction frame.
+* Like any command, a pulse opens an echo window: the stop status the gateway relays right after our direction frame is ignored, so it cannot cancel the pulse's stop and leave the motor running.
+* Steps shorter than the cover's `min_motor_pulse` (default **0.4 s**, or 20 % at `slat_time: 2.0`) are skipped: the motor would barely answer while the angle was recorded as changed. On the 3.75 m F401 shutter with tilting slats ([discussion #770](https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19144521), `slat_time: 1.4`, `min_motor_pulse: 0.2`), pulses of 0.26–0.39 s (`15 %`–`25 %`) all produced the same visual slat opening while 0.74 s (`50 %`) reached horizontal and 1.44 s (`100 %`) fully opened the slats before the curtain started to lift — matching the default **0.4 s** floor (`Dimension 10` stayed at `0 %`–`1 %` throughout).
+* **Unknown until the first full rotation**: a blind with no restored slat angle has none (`current_cover_tilt_position` is not set), as the actuator cannot report it. `set_cover_tilt_position: 0` / `100` (and `open_cover_tilt` / `close_cover_tilt`) run a full `slat_time` against the slat stop and anchor the angle there; any other target is refused until then (*"… the slat angle is unknown until the slats have been tilted fully open or closed once"*) and sends nothing, because there is no angle to time the pulse from. A pulse stopped before the stop leaves the angle unknown. An area / group / general blind takes its members' mean angle and is unknown while none of them knows theirs.
+* A tilt command while the curtain itself is running is refused (*"… is moving; stop it before tilting the slats"*). The run turns the slats anyway, and a pulse would leave the curtain's travel estimate behind. Opening, closing or setting the position during a pulse ends the pulse at the angle it reached; the new command takes the motor over, and the pulse's own stop is dropped. Setting the position the blind is already at, while a pulse or a run is going, stops the motor there.
+* During a curtain run the slats turn first at one full rotation per `slat_time` (towards 100 % when opening, towards 0 % when closing), and only the remaining motor time moves the curtain estimate over `travel_time - slat_time`. A stop status with no run behind it (such as the relay of a pulse's own stop) leaves the angle alone, so slats tilted open on a lowered blind stay open.
+
+### Configuration
+
+Slat tilt and travel duration can be declared in `/config/myhome.yaml`:
+
+```yaml
+cover:
+  living_room_venetian:
+    where: '31'
+    name: Living Room Venetian Blind
+    slat_tilt: true
+    slat_time: 2.0
+```
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `slat_tilt` | boolean | `false` | Enables Venetian blind slat tilt controls and sets device class to `blind` unless `class` is set. |
+| `slat_time` | float | `2.0` | Full slat rotation travel time in seconds (allowed range: `0.5`–`10.0` s). A value set with `myhome.set_cover_travel_time` is stored and wins over this one after a restart, until `myhome.reset_cover_travel_time`. |
+
+Higher tilt is assumed to be *open* (an opening pulse raises the angle, verified on an F401 roller shutter with tilting slats in [discussion #770](https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19144521) with `slat_time: 1.4`). Dedicated Venetian actuators (such as the F411U2 in Venetian mode) still await a keypad / app capture (#492).
+
+### Protocol Note: Dimension 11 is Shutter Level
+
+In OpenWebNet WHO 2, **Dimension 11** (`*#2*<WHERE>*#11#PRIORITY*LEVEL##`) represents an absolute **Go to level / Shutter position** command, **not** slat tilt angle. Gateway firmwares (MH200N, MyHomeServer1) reject query frames (`*#2*<WHERE>*11##`) with a NACK because Dimension 11 is write-only.
+
+When an actuator or external controller broadcasts a Dimension 11 event (such as `*#2*31*#11#001#1*40##` indicating 40% level), the integration ignores it: the motor needs time to get there and a keypad can stop it midway, so the position only follows the actuator's own status reports (Dimension 10 / status frames).
+
+### Travel Time Calibration & Slat Rotation
+
+End-to-end travel time (`travel_time_down` / `travel_time_up`) includes one full slat rotation (`slat_time`) at the start of the run:
+* On a slat blind, linear curtain travel is estimated over `travel_time_down - slat_time` and `travel_time_up - slat_time` after the slats finish rotating.
+* Mid-tilt stops do not corrupt or reset linear curtain position estimation.
+* Tilt commands are safely rejected if the cover is actively running automated travel-time calibration.
 
 ---
 
@@ -134,9 +247,354 @@ cover:
     members: ['11', '13']
 ```
 
-**Behind an F422 interface** (`bus_interface: '02'`, logical `#4#` addressing) the gateway does not pass general or area commands through: on an MH200 both `*2*2*1##` and `*2*1*1#4#02##` left the covers behind interface 02 standing, while point commands moved them. A general, area or group cover with a `bus_interface` therefore sends each of its covers its own command (one frame per shutter, paced by the gateway queue); on the main bus it sends the single scope frame.
+**Behind an F422 interface** (`bus_interface: '02'`, logical `#4#` addressing), physical actuators reside on an isolated secondary SCS bus segment (e.g. `11#4#02` … `22#4#02`).
 
-A general or area command from a keypad also moves the individual covers in Home Assistant. A group or area cover whose shutters are not known yet ends its run after its own `travel_time`, so it never stays stuck on *opening* ([#433](https://github.com/OpenWebNet-HA/MyHOME/issues/433)).
+### 🏛️ The BTicino Way & Real-World Plant Discovery
+
+In large MyHOME installations, F422 interfaces physically segment the SCS bus (e.g., separating ground floor from upper floors or main house from outbuildings/curtain lines). How commands are routed across an F422 is fundamental to reliability:
+
+#### 1. Why Naive Fan-Out Overwhelms F422 Hardware Buffers
+In real-world plant operation with an MH200 gateway and F422 interface, an automation triggering 10 individual shutters at sunset (`action: cover.close_cover` targeting 10 individual entities) encountered reproducible dropped frames:
+- Home Assistant dispatched 10 concurrent requests via `asyncio.gather()`.
+- When fanning out 10 individual point-to-point OpenWebNet commands (`*2*2*14#4#02##`, `*2*2*19#4#02##`, `*2*2*18#4#02##`, …), even with the gateway's worker queue pacing (e.g., 0.15 s per frame), the burst overwhelmed the physical F422 interface's internal FIFO buffer and secondary SCS bus arbitration.
+- By the 6th or 7th consecutive command, the F422 buffer overflowed. The gateway returned NACK (`*#*0##`), causing OWNd to cancel delivery and abort motion on the un-acknowledged curtain (e.g. `13#4#02`, "Oost 1"). The shutter remained stuck open while the rest closed.
+- Compounding this, a common legacy automation pattern of placing a `delay: 45s` followed by an explicit `cover.stop_cover` sent `*2*0*13#4#02##` 45 seconds later when the bus was quiet again. The actuator acknowledged the stop frame, permanently cementing the stuck shutter in its open position and masking the failure.
+
+#### 2. Native Broadcast: The BTicino Protocol Architecture
+BTicino physical keypads and scenario units (such as `LN4660M2` or CEN/CEN+ controls programmed with `A=GEN` or Area `A=1..9`) never send individual point commands. They emit **native OpenWebNet broadcasts**:
+- **Main Bus General**: `*2*WHAT*0##`
+- **Secondary Bus General via F422**: `*2*WHAT*0#4#<interface>##` (e.g., `*2*2*0#4#02##` for General Down on interface 02, `*2*1*0#4#02##` for General Up, `*2*0*0#4#02##` for General Stop)
+- **Secondary Bus Area via F422**: `*2*WHAT*<area>#4#<interface>##` (e.g., `*2*2*1#4#02##`)
+
+The gateway routes the single broadcast frame through the F422 interface onto the secondary bus once. Every actuator on that bus reads the frame off the physical wire simultaneously. All relays energize in unison with **zero queue latency, zero interface congestion, and 100% mechanical synchronization**.
+
+### ⚙️ How the MyHOME Integration Handles Scope Covers
+
+The MyHOME integration implements a dual-layer architecture adhering to both Home Assistant standards and BTicino protocol engineering:
+
+1. **Native Broadcast for General Scope Covers (`where: '0'`)**:
+   When `open_cover`, `close_cover`, or `stop_cover` is called on a General cover behind an interface (`where: '0'`, `bus_interface: '02'`), the integration sends the native OpenWebNet broadcast frame directly (`*2*WHAT*0#4#<bus>##`).
+   - Actuators on the interface bus respond simultaneously without dropping frames.
+   - When the gateway echoes `*2*WHAT*0#4#<bus>##`, the integration scopes the incoming frame strictly to entities on that interface (`interface == "02"`), preserving total bus isolation.
+   - When individual actuators reach their end stops and report status frames (`*2*0*11#4#02##`, etc.), Home Assistant tracks each entity and aggregates the General cover's position automatically.
+
+2. **Paced Member Fan-Out (`PACED_FANOUT_DELAY = 0.3s`) for Percentage Positioning**:
+   OpenWebNet has no broadcast protocol for percentage positioning (Dimension 10 positioning `*#2*WHERE*#10*LEVEL##` is strictly point-to-point; there is no broadcast level command).
+   When `set_cover_position` is called on a scope/group cover, or when non-general scopes must address individual actuators, the integration staggers member commands with a safety interval of **0.3 s (300 ms)**.
+   This gives the F422 hardware FIFO buffer adequate time to serialize frames onto the secondary bus, completely eliminating frame loss during multi-cover repositioning.
+
+3. **Keypad Broadcast Reflection**:
+   A general or area command from a physical wall switch or scenario unit also moves the individual covers in Home Assistant. A group or area cover whose shutters are not known yet ends its run after its own `travel_time`, so it never stays stuck on *opening* ([#433](https://github.com/OpenWebNet-HA/MyHOME/issues/433)).
+
+### 📡 Bus Events for Scope Commands (`myhome_*_automation_event`)
+
+A WHO 2 command heard on a **general**, **area** or **group** address — from a keypad, a scenario unit or Home Assistant itself — is mirrored on the Home Assistant event bus, so an automation can react to the physical button without owning a cover entity:
+
+| Address | Event | Extra payload |
+| :--- | :--- | :--- |
+| General `0` (also `0#4#<interface>`) | `myhome_general_automation_event` | — |
+| Area `1`…`9`, `00`, `100` | `myhome_area_automation_event` | `area` |
+| Group `#1`…`#255` | `myhome_group_automation_event` | `group` |
+
+Every payload carries `message` (the raw frame), `event` (`open`, `close` or `stop`), `where`, `gateway_mac` and `entry_id`. The general event also drives the gateway device triggers *Centralized shutter open / close / stop*.
+
+Only a **command frame that states a motion** fires an event: the standard `WHAT 0` / `1` / `2` (`*2*0*0##`, `*2*1*3##`, `*2*2*#5##`) and the advanced `WHAT 10` / `11` / `12` with their parameters (`*2*10#001#1*0##` stop, `*2*11#100#001#1*0##` up, `*2*12#100#001#1*0##` down, as captured from a MyHomeServer1 + LN4660M2 keypad). Nothing fires for:
+
+* **any WHO 2 dimension frame**, as for the WHO 1 light events: a Dimension 11 level write and its event-session echo (`*#2*#5*#11#001*50##`, echoed by an F461 / MyHomeServer1 as `*#2*#5*#11#001#1*50##`; see [Protocol Note: Dimension 11 is Shutter Level](#protocol-note-dimension-11-is-shutter-level)) sets a level, it does not state a motion;
+* a **`DIMENSION 10` status frame on a scope address** (`*#2*#5*10*10*50*001*0##`, `*#2*0*10*10*50*001*0##`), guarded defensively: a physical shutter reports its `DIMENSION 10` status on its own point-to-point address, never on a group, area or general one, so such a frame is parsed but never read as a stop;
+* a `WHAT` outside the WHO 2 table, which states no motion.
+
+```yaml
+alias: "Pause the media player on a general shutter stop"
+trigger:
+  - platform: event
+    event_type: myhome_general_automation_event
+    event_data:
+      event: stop
+action:
+  - service: media_player.media_pause
+    target:
+      entity_id: media_player.living_room
+```
+
+The lighting counterparts (`myhome_general_light_event`, `myhome_area_light_event`, `myhome_group_light_event`) are described under [Synchronizing Physical Wall Switches](lights.md#synchronizing-physical-wall-switches-scs-group-buttons).
+
+### 💡 Automation Best Practices: The Home Assistant & BTicino Way
+
+To ensure maximum reliability and preserve bus health:
+
+#### Recommended: Target the General Scope Cover
+Declare a General scope cover in `/config/myhome.yaml` for each bus interface, and target that single entity in your automations:
+
+```yaml
+# /config/myhome.yaml
+00:03:50:XX:XX:XX:
+  cover:
+    all_shutters_oost:
+      where: "0"
+      bus_interface: "02"
+      name: "All Shutters East"
+```
+
+In your automation:
+```yaml
+alias: Close Windows at Sunset
+triggers:
+  - trigger: sun
+    event: sunset
+    offset: "00:30:00"
+actions:
+  - action: cover.close_cover
+    target:
+      entity_id: cover.all_shutters_oost
+```
+
+#### Retire the Legacy `delay: 45s` + `stop_cover` Anti-Pattern
+In legacy configurations, users often placed a `delay: 45s` followed by `cover.stop_cover` to ensure motors stopped. **This pattern is unnecessary and counterproductive**:
+- BTicino actuators (F411, F401, LN4661M2) incorporate hardware limit switches and configurable travel timers (e.g. configurator `M` or MyHOME_Suite cutoff).
+- The MyHOME integration automatically calculates direction-aware travel times (`travel_time_down` / `travel_time_up`) and handles stop detection.
+- Sending a delayed `cover.stop_cover` floods the bus with redundant frames and can accidentally cement a stalled or out-of-sync shutter. Let the hardware and integration manage motion termination naturally.
+
+### 🪟 Slat Tilt on Scope Covers
+
+**Slat tilt on a scope cover** (with `slat_tilt: true`): on the main bus one scope pulse turns the slats of every member with `slat_tilt`. The members follow that pulse (its direction and stop frames turn their slats and do not count as a curtain run), and the scope cover times and settles it for all of them. A scope tilt is refused while one of its covers is running. Behind an F422 each blind gets its own pulse, **one after the other**: queued together, every stop would wait behind the other blinds' direction frames and the slats would turn on. The last blind therefore moves a few seconds after the first.
+
+---
+
+## 🚪 Impulse Covers: Motorized Gates & Garage Doors (`WHO = 1`)
+
+In BTicino MyHOME installations, motorized garage doors and sliding/swing entrance gates are controlled via **monostable impulse relays** on `WHO = 1` (such as `F411/2` or `F411U2`).
+
+Because monostable relays only send a momentary pulse (`open` / `stop` / `close` / `stop`) with no inherent directional knowledge on the bus, Home Assistant implements the specialized **`MyHOMEImpulseCover`** entity.
+
+**By default the cover is a plain hardware interface.** `open_cover`, `close_cover` and `stop_cover` pulse the relay straight away, from a dashboard, a wall tablet, a button, a script or a voice assistant; nobody has to approve anything on a phone. The integration only does what belongs to the hardware:
+
+- It sends the pulse (hardware-timed WHAT 18 where the installed OWNd has it, ON followed by OFF otherwise) and keeps a deadband (`min_cycle_time`) so a double tap cannot send two pulses. A pulse that was not sent raises an error.
+- With a `state_sensor` it knows the real position: `open_cover` on an open or opening door and `close_cover` on a closed or closing door send nothing, because a pulse would only undo the request. Without a sensor the position is assumed and every pulse goes out as asked.
+- `stop_cover` is never withheld.
+- If the OFF that ends a software pulse cannot be delivered it is retried, and the relay is released before the next pulse.
+
+Who may operate the door, from where and with which confirmation is a policy of your installation. Build it with automations or blueprints, or switch on the optional supervised workflow below with an `access:` block.
+
+### 🛡️ Safety Architecture & Threat Model
+
+> [!CAUTION]
+> **HOME ASSISTANT IS A SUPERVISORY AUTOMATION SYSTEM, NOT A CERTIFIED SAFETY SYSTEM**
+> Primary entrapment and crush protection (e.g. European Standard **EN 12453 / EN 12445** or North American **UL 325**) **must be provided by the motorized gate or garage door hardware itself**: certified infrared photocells, safety contact edges, and mechanical force limiters built into the motor control board.
+> The optional `AccessController` is designed exclusively to prevent Home Assistant from *causing* an unintended, accidental, or unattended movement.
+
+#### 📊 Optional Human-in-the-Loop Access Policy (`access:`)
+
+Everything in this part applies **only to a cover that has an `access:` block**. Without it the cover pulses directly, as described above.
+
+```text
+  [ User / Dashboard / Widget / Siri / Alexa ]
+                       │
+                       │ 1. cover.open_cover / close_cover
+                       ▼
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                    MyHOME AccessController                     │
+  │                                                                 │
+  │  [ Check User & Lockout ] ──( unauthorized )──> ❌ AccessDenied │
+  │             │ (authorized)                                      │
+  │             ▼                                                   │
+  │  [ Classify State Sensor ]                                      │
+  │       ├─ Sensor = Closed ─────────> Effect: OPEN                │
+  │       └─ Sensor = Open / Unknown ──> Effect: MAY_CLOSE          │
+  │                                           │                     │
+  │                                  [ Safety Verification ]        │
+  │                                  - Photocells valid (<31d)?     │
+  │                                  - User at home / Camera ok?    │
+  │                                  - Close-block switch off?      │
+  │                                           │ (all pass)          │
+  │             ┌─────────────────────────────┘                     │
+  │             ▼                                                   │
+  │  [ Generate 128-bit CSPRNG Nonce ]                              │
+  │  - Single-use token: secrets.token_urlsafe(16)                  │
+  │  - Bound to: user_id + entity_id + effect + 60s timeout         │
+  └─────────────────────────────┬───────────────────────────────────┘
+                                │ 2. Push Notification
+                                ▼
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                 Companion App (iOS / Android)                   │
+  │                                                                 │
+  │   🔔 "Security Request: Approve garage_door_1 close?"           │
+  │   [ ✅ Area Clear - Close ] (authenticationRequired: true)       │
+  │                                                                 │
+  │   👉 User unlocks phone via FaceID / Fingerprint / Biometrics   │
+  └─────────────────────────────┬───────────────────────────────────┘
+                                │ 3. mobile_app_notification_action
+                                ▼
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                    MyHOME AccessController                     │
+  │                                                                 │
+  │  [ Validate Nonce & User Context (constant-time HMAC) ]         │
+  │             │ (valid)                                           │
+  │             ▼                                                   │
+  │  [ Pre-Warning Phase (optional 5s flasher) ]                    │
+  │       └─( wall switch pressed? )──> ❌ Cancel movement          │
+  │             │ (clear)                                           │
+  │             ▼                                                   │
+  │  [ Bus Impulse ] ──> *1*1*WHERE## (WHO 1 Relay Monostable Pulse)│
+  │             │                                                   │
+  │             ▼                                                   │
+  │  [ Watchdog Timer (travel_time + margin) ]                      │
+  │       ├─ Sensor confirms target state ──> ✅ IDLE (Success)     │
+  │       └─ Sensor fails to reach state  ──> ⚠️ FAULT (Latched)    │
+  │                                           (Zero auto-retry)     │
+  └─────────────────────────────────────────────────────────────────┘
+```
+
+#### 📊 Authentic BTicino Hardware Sequence (MH200 Trace Capture)
+
+```text
+  Entrance Panel (PE1)          MH200 Gateway            Handset (74)         Gate/Garage Relay (71/72)
+          │                           │                       │                           │
+          │ 1. Bell Pressed           │                       │                           │
+          │──────────────────────────>│                       │                           │
+          │   *#16*81*1*1##..88##     │                       │                           │
+          │   (Audio matrix routing)  │                       │                           │
+          │                           │                       │                           │
+          │   *8*1#1#4*74##           │                       │                           │
+          │   (WHO 8 Video Call)      │                       │                           │
+          │                           │─────── Ring ─────────>│                           │
+          │                           │                       │                           │
+          │                           │<─── Pick Up / Talk ───│                           │
+          │                           │   *8*9#1#4*73##       │                           │
+          │                           │   (Caller address)    │                           │
+          │                           │                       │                           │
+          │                           │<── Hang Up / End ─────│                           │
+          │                           │   *6*9##              │                           │
+          │                           │   (Camera OFF)        │                           │
+          │                           │                       │                           │
+          │                           │                       │ 2. Gate Button Pressed    │
+          │                           │<──────────────────────│                           │
+          │                           │   *1*1*72##           │                           │
+          │                           │   (WHO 1 Pulse)       │                           │
+          │                           │──────────────────────────────────────────────────>│
+          │                           │                       │                   [ Gate Moves ]
+```
+
+#### Key Principles of the Optional Human-in-the-Loop Policy (with `access:`):
+
+1. **Zero Direct Movement on Open and Close Calls**:
+   Calls to `cover.open_cover` or `close_cover` (whether from dashboards, mobile widgets, voice assistants, or automations) **never pulse the relay directly**. Instead, they create an authenticated approval request for an authorized person. Automations and scripts are refused because they have no person behind them. **`stop_cover` is the exception**: while a request is pending, the pre-warning runs or the door moves under supervision, it cancels the request or pulses the relay to stop the door at once, for anyone, without approval.
+2. **Cryptographic Single-Use Nonce & User Binding**:
+   Each approval request generates a 128-bit CSPRNG token (`secrets.token_urlsafe(16)`), tightly bound to the requesting `user_id`, target entity, and physical direction. Replayed, stale, or forged approval actions are discarded.
+3. **Biometric Phone Unlock Requirement**:
+   Actionable push notifications to the Companion App enforce `authenticationRequired: true` (iOS FaceID/TouchID, Android biometrics/screen lock). The phone must be actively unlocked by the authorized approver.
+4. **Fail-Closed Sensor Direction Checks**:
+   A pulse is classified as a pure **OPEN** *only* when the ground-truth state sensor (`state_sensor`, a binary sensor that is `off` when the door is closed and `on` otherwise) proves the door is closed. In all other states, the pulse is classified as **MAY_CLOSE**, requiring:
+   - Verified active safety devices within `safety_check_days`.
+   - The user to be on site (`person` entity reports `home`) or visual confirmation via a camera snapshot.
+   - Any external close-block switch to report `off`.
+   - Any missing, unavailable, or non-binary sensor state immediately fails closed.
+5. **Audible / Visual Pre-Warning & Watchdog**:
+   Before a close pulse, an optional pre-warning flasher (`prewarn_light`) triggers for `prewarn_seconds`. After the pulse, an anti-stuck watchdog monitors motion: if the expected state is not reached within `travel_time + watchdog_margin`, a latching fault is asserted with **zero automatic retries**. A latched fault survives a restart or reload of Home Assistant and can only be cleared on site by an authorized user using the `myhome.acknowledge_cover_fault` action; an in-flight request or pre-warning can be cancelled at any time using `myhome.cancel_cover_request` (see [Services](services.md#14-myhomecancel_cover_request)).
+6. **A Wall Button Starts the Gate, It Does Not Stop It**:
+   A press of the wall button (or any other keypad on the bus) closes the relay and energizes the motor by itself; Home Assistant only sees the resulting `*1*1*WHERE##` frame afterwards. When such a frame arrives during an approval request or the pre-warning countdown, Home Assistant therefore *drops its own pending request* so that no second pulse follows and stops or reverses the gate. The movement the button started is not aborted. Use the hardware's own stop input or the remote control for an emergency stop.
+
+### ⚙️ Configuring an Impulse Cover
+
+An impulse cover needs `who: 1` and a single point-to-point `where`. The minimal configuration is a hardware interface with no approval step:
+
+```yaml
+# /config/myhome.yaml
+00:03:50:XX:XX:XX:
+  cover:
+    garage_door:
+      who: 1
+      where: "71"
+      name: Garage door
+      device_class: garage
+      state_sensor: binary_sensor.garage_door_closed   # optional: off = closed, on = not closed
+```
+
+Add an `access:` block to opt in to the supervised workflow (phone approval, PIN, presence, camera, pre-warning, safety audit). **With `access:` an empty `allowed_users` refuses every open and close request** with `AccessDenied`: that policy is fail-closed. The full example:
+
+```yaml
+# /config/myhome.yaml
+00:03:50:XX:XX:XX:
+  cover:
+    garage_door:
+      who: 1
+      type: impulse_relay            # optional; only valid together with who: 1
+      where: "71"                    # one relay, never a general, area or group address
+      name: Garage door
+      device_class: garage           # garage or gate (default gate)
+      state_sensor: binary_sensor.garage_door_closed   # off = closed, on = not closed
+      travel_time: 25                # seconds, for the dashboard estimate and the watchdog
+      pulse_duration: 0.5            # seconds the relay is closed (0.2 - 2.0)
+      min_cycle_time: 5              # seconds between two pulses (1 - 120)
+      pin_code: "1234"               # optional second factor, asked on the phone; needs access:
+      access:
+        allowed_users:               # Home Assistant user ids
+          - 1a2b3c4d5e6f47a8b9c0d1e2f3a4b5c6
+        approvers:                   # one notify service per allowed user
+          1a2b3c4d5e6f47a8b9c0d1e2f3a4b5c6: notify.mobile_app_phone
+        remote_close: at_home        # never (default), at_home or with_camera
+        camera: camera.driveway      # needed for remote_close: with_camera
+        safety_devices_verified: 2026-09-01   # date you last tested photocells and force limiter
+        safety_check_days: 31
+        prewarn_light: light.driveway_flasher
+        prewarn_seconds: 5
+        close_block_entity: input_boolean.gate_close_block
+        watchdog_margin: 10          # seconds added to travel_time before a fault is latched
+        approval_timeout: 60
+```
+
+| Key | Meaning |
+| :--- | :--- |
+| `state_sensor` | Binary sensor of the ground-truth position. Without it the position is assumed and, with `access:`, every pulse is treated as one that can close the door. |
+| `pulse_duration` | Relay pulse in seconds. `0.5` uses the timed WHAT 18 command (`*1*18*WHERE##`, specified in `WHO_1.pdf` for 0.5 s timed ON and verified on physical `F461` + `BT-F411/4` hardware in `tests/fixtures/traces/issue_667/myhome_trace_F461_impulse_intercom_2026-10-19.json`, where the actuator emits `*1*1*WHERE##` and autonomously turns off with `*1*0*WHERE##` after ~0.53 s; not yet replayed in the QEMU firmware oracle) where the installed OWNd exposes `switch_on_timed`, and ON (`*1*1*WHERE##`) followed by OFF (`*1*0*WHERE##`) otherwise. |
+| `min_cycle_time` | Deadband after a pulse that reached the bus (must be strictly greater than `pulse_duration`). A failed send does not start it. |
+| `pin_code` | Digit-only PIN asked in the approval notification; only valid together with `access:`. A reply that carries no text is refused without counting as a wrong attempt. |
+| `access.*` | Optional. Turns on the supervised workflow, see the flow above: `allowed_users`, `approvers`, `remote_close`, `camera`, `safety_devices_verified`, `safety_check_days`, `prewarn_light`, `prewarn_seconds`, `close_block_entity`, `watchdog_margin`, `approval_timeout`. |
+
+> [!NOTE]
+> `type: impulse_relay` together with `who: 2` (and `type: shutter` or `standard` together with `who: 1`) is rejected when the configuration is validated; it used to fall back to an ordinary shutter silently.
+
+### 🔒 Configuring a Door Strike Lock
+
+```yaml
+00:03:50:XX:XX:XX:
+  lock:
+    front_door:
+      who: 6                         # the only value; WHO 1 relays are covers
+      where: "4001"                  # 1-99 or 4000-4099 endpoints; append #2 on a riser installation: "4001#2"
+      name: Front door
+      code: "1234"                   # optional digit-only PIN; asked on every unlock
+      pulse_duration: 5.0            # seconds until the lock shows locked again (default 5.0 s)
+```
+
+Locks exist only when they are configured here (and are restored from the registry on restart with their YAML configuration intact). Neither a lock release seen on the bus nor a stale registry entry removed from `myhome.yaml` creates a lock entity, because such an entity would carry no code.
+
+### ⚠️ Strict Distinction: Covers vs. Locks
+
+```text
+  ┌───────────────────────────────────────┐   ┌───────────────────────────────────────┐
+  │    HEAVY MACHINERY (KINETIC RISK)     │   │      PEDESTRIAN ACCESS (LOW MASS)     │
+  │                                       │   │                                       │
+  │   - Motorized Sliding / Swing Gates   │   │   - Front Door Latch / Strike         │
+  │   - Sectional / Roller Garage Doors   │   │   - Pedestrian Wicket Gate Buzzer     │
+  │                                       │   │   - Elettroserratura (12V AC/DC)      │
+  │                   │                   │   │                   │                   │
+  │                   ▼                   │   │                   ▼                   │
+  │       PLATFORM: cover (impulse)       │   │            PLATFORM: lock             │
+  │                   │                   │   │                   │                   │
+  │  - Optional AccessController          │   │  - Direct momentary pulse (1-3s)      │
+  │  - Dual binary sensor feedback        │   │  - Optional PIN authentication        │
+  │  - Biometric challenge-response nonce │   │  - Automatic re-lock state machine    │
+  │  - 5s pre-warning flasher             │   │  - Doorbell one-tap unlock safe       │
+  │  - Anti-stuck watchdog (latched fault)│   │                                       │
+  │  - Certified EN 12453 safety check    │   │                                       │
+  └───────────────────────────────────────┘   └───────────────────────────────────────┘
+```
+
+| Physical Device | Required Entity Platform | Why |
+| :--- | :--- | :--- |
+| **Motorized Gates & Garage Doors** | `cover` (`type: impulse_relay`) | Heavy kinetic machinery with kinetic entrapment/crush risk. Use a `state_sensor`, and the optional `access:` workflow where you want supervision. **Never configure a motorized gate or garage as a `lock`**: its door lock-style unlock would carry no sensor feedback. |
+| **Pedestrian Door Strikes** | `lock:` block, `who: 6` only | Low-mass momentary electric door buzzers (elettroserrature) on a WHO 6 entrance panel that release a pedestrian latch. A `lock` cannot be a WHO 1 relay: a motorized gate needs the cover's sensor feedback and stop handling, so `who: 1` is rejected there. |
 
 ---
 
@@ -144,3 +602,4 @@ A general or area command from a keypad also moves the individual covers in Home
 
 > [!NOTE]
 > If you are upgrading from legacy v0.9 installations and still have manual `cover:` blocks in `/config/myhome.yaml`, please refer to the [v0.9.4 Legacy Cover Documentation](../../0.9.4/configuration/covers/) or the [Legacy YAML Migration Guide](../migration/legacy-yaml.md). In v2, all covers are managed dynamically via Home Assistant's native registry.
+

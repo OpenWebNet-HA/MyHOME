@@ -23,6 +23,7 @@ from OWNd.message import (
     OWNHeatingCommand,
     OWNLightingEvent,
     OWNMessage,
+    OWNSceneEvent,
 )
 from OWNd.profiles import GatewayProfile
 
@@ -46,6 +47,7 @@ from custom_components.myhome.const import (
     DOMAIN,
 )
 from custom_components.myhome.gateway import MyHOMEGatewayHandler
+from custom_components.myhome.gateway_events import OWNScenarioPlusEvent
 
 
 @pytest.fixture
@@ -232,9 +234,10 @@ async def test_gateway_send_and_send_status_request(gateway_handler):
 
 @pytest.mark.asyncio
 async def test_gateway_initial_discovery_queues_sweep(gateway_handler, fast_bus_pacing):
-    """The startup sweep queues lighting, covers, heating and audio status requests.
+    """The startup sweep queues lighting, covers, heating, audio and energy meter status requests.
 
     WHO 16 goes out as dimension 5 (``*#16*0*5##``): gateways NACK the bare ``*#16*0##``.
+    WHO 18 probes meter 51 for total energy and active power.
     """
     await gateway_handler.initial_discovery()
     queued = []
@@ -242,7 +245,7 @@ async def test_gateway_initial_discovery_queues_sweep(gateway_handler, fast_bus_
         item = gateway_handler.send_buffer.get_nowait()
         assert item["is_status_request"] is True
         queued.append(str(item["message"]))
-    assert queued == ["*#1*0##", "*#2*0##", "*#4*0##", "*#16*0*5##"]
+    assert queued == ["*#1*0##", "*#2*0##", "*#4*0##", "*#16*0*5##", "*#18*51*51##", "*#18*51*113##"]
 
 
 @pytest.mark.asyncio
@@ -265,7 +268,7 @@ async def test_gateway_initial_discovery_f454_nack_continues(gateway_handler, fa
 
         async def mock_send(message, is_status_request):
             sent_frames.append(str(message))
-            if str(message) == "*#16*0*5##":
+            if str(message) == "*#18*51*113##":
                 gateway_handler._terminate_sender = True
             if str(message) == "*#1*0##":
                 # F454 NACK returns None/empty without raising
@@ -282,7 +285,7 @@ async def test_gateway_initial_discovery_f454_nack_continues(gateway_handler, fa
         finally:
             worker.cancel()
 
-        assert sent_frames == ["*#1*0##", "*#2*0##", "*#4*0##", "*#16*0*5##"]
+        assert sent_frames == ["*#1*0##", "*#2*0##", "*#4*0##", "*#16*0*5##", "*#18*51*51##", "*#18*51*113##"]
         assert elapsed < 2.0
         assert not gateway_handler.initial_discovery_pending
 
@@ -311,7 +314,7 @@ async def test_gateway_initial_discovery_skips_who1_when_delegated_away(gateway_
     while not gateway_handler.send_buffer.empty():
         item = gateway_handler.send_buffer.get_nowait()
         queued.append(str(item["message"]))
-    assert queued == ["*#2*0##", "*#4*0##", "*#16*0*5##"]
+    assert queued == ["*#2*0##", "*#4*0##", "*#16*0*5##", "*#18*51*51##", "*#18*51*113##"]
 
 
 @pytest.mark.asyncio
@@ -323,7 +326,59 @@ async def test_gateway_initial_discovery_profile_unsupported(gateway_handler, fa
         while not gateway_handler.send_buffer.empty():
             item = gateway_handler.send_buffer.get_nowait()
             queued.append(str(item["message"]))
-        assert queued == ["*#2*0##", "*#4*0##", "*#16*0*5##"]
+        assert queued == ["*#2*0##", "*#4*0##", "*#5*0##", "*#16*0*5##", "*#18*51*51##", "*#18*51*113##"]
+
+
+@pytest.mark.asyncio
+async def test_gateway_initial_discovery_profiles_who5_who18(mock_config_entry, fast_bus_pacing):
+    """Profile-specific discovery sends WHO 5 on MH202, WHO 18 on F454, neither on MH200N (#681)."""
+    mock_hass = MagicMock()
+    mock_hass.data = {}
+
+    from OWNd.profiles import get_gateway_profile
+
+    # MH202: supports WHO 1, 2, 4, 5, 16, 18
+    h_mh202 = MyHOMEGatewayHandler(mock_hass, mock_config_entry)
+    h_mh202.gateway.profile = get_gateway_profile("MH202")
+    frames_mh202 = h_mh202._discovery_frames()
+    assert "*#5*0##" in frames_mh202
+    assert "*#18*51*51##" in frames_mh202
+    assert "*#18*51*113##" in frames_mh202
+
+    # F454: supports WHO 1, 2, 4, 16, 18, but NOT WHO 5
+    h_f454 = MyHOMEGatewayHandler(mock_hass, mock_config_entry)
+    h_f454.gateway.profile = get_gateway_profile("F454")
+    frames_f454 = h_f454._discovery_frames()
+    assert "*#5*0##" not in frames_f454
+    assert "*#18*51*51##" in frames_f454
+    assert "*#18*51*113##" in frames_f454
+
+    # MH200N: supports WHO 1, 2, 4, 16, but NOT WHO 5 or WHO 18
+    h_mh200n = MyHOMEGatewayHandler(mock_hass, mock_config_entry)
+    h_mh200n.gateway.profile = get_gateway_profile("MH200N")
+    frames_mh200n = h_mh200n._discovery_frames()
+    assert "*#5*0##" not in frames_mh200n
+    assert "*#18*51*51##" not in frames_mh200n
+    assert "*#18*51*113##" not in frames_mh200n
+
+    # F455: supports WHO 1, 2, 4, 18, but NOT WHO 5 or WHO 16
+    h_f455 = MyHOMEGatewayHandler(mock_hass, mock_config_entry)
+    h_f455.gateway.profile = get_gateway_profile("F455")
+    frames_f455 = h_f455._discovery_frames()
+    assert "*#16*0*5##" not in frames_f455
+    assert "*#5*0##" not in frames_f455
+    assert "*#18*51*51##" in frames_f455
+    assert "*#18*51*113##" in frames_f455
+
+    # H4890: supports WHO 1, 2, 4, 5, 16, 18
+    h_h4890 = MyHOMEGatewayHandler(mock_hass, mock_config_entry)
+    h_h4890.gateway.profile = get_gateway_profile("H4890")
+    frames_h4890 = h_h4890._discovery_frames()
+    assert "*#5*0##" in frames_h4890
+    assert "*#16*0*5##" in frames_h4890
+    assert "*#18*51*51##" in frames_h4890
+    assert "*#18*51*113##" in frames_h4890
+
 
 
 @pytest.mark.asyncio
@@ -462,6 +517,142 @@ async def test_listening_loop_lighting_unknown_is_on_skips_event(gateway_handler
         assert "myhome_general_light_event" not in fired_events
         assert "myhome_area_light_event" not in fired_events
         assert "myhome_group_light_event" not in fired_events
+
+
+@pytest.mark.asyncio
+async def test_scope_events_fire_only_for_state_frames(gateway_handler):
+    """#367: a dim step is not "on" and a WHO 2 dimension or unknown frame is not "stop".
+
+    Real frames only: WHO 1 relative dim steps (plain, parameterised and general),
+    the DIMENSION 11 level echoes an F461 / MyHomeServer1 puts on the event session
+    for a scope level write (OWNd parses them as `OWNAutomationCommand`), WHO 2
+    DIMENSION 10 frames on a scope address in the gateway's 3-digit priority
+    format (a physical shutter reports DIMENSION 10 on its own point-to-point
+    address only, so this is the defensive guard; OWNd parses them as
+    `OWNAutomationEvent` with `is_opening` / `is_closing` False), one frame OWNd
+    cannot parse (handed through as the raw string), one WHAT outside the WHO 2
+    table (`*2*7*0##`, `is_opening` / `is_closing` None), and the advanced
+    scope commands captured in `tests/fixtures/traces/issue_445/` (WHAT 10/11/12 on
+    WHERE 0), and the area 10 stop `*2*0*100##` as the MyHomeServer1 028206
+    firmware oracle replays it (`down *2*0*100##` -> `bus:$04B30A120A` and
+    `own:*2*0*100##` on the event session; no community capture carries it).
+    """
+    frames = [
+        OWNMessage.parse("*1*30*#5##"),  # group 5 dim up one step
+        OWNMessage.parse("*1*31*3##"),  # area 3 dim down one step
+        OWNMessage.parse("*1*30#2#100*#5##"),  # group 5 dim up, 2 levels at speed 100
+        OWNMessage.parse("*1*30*0##"),  # general dim up
+        OWNMessage.parse("*#2*#5*#11#001#1*50##"),  # DIMENSION 11 level echo, group 5 (OWNAutomationCommand)
+        OWNMessage.parse("*#2*0*#11#001#1*50##"),  # DIMENSION 11 level echo, general (OWNAutomationCommand)
+        OWNMessage.parse("*#2*#5*10*10*50*001*0##"),  # DIMENSION 10 on group 5: defensive guard (OWNAutomationEvent)
+        OWNMessage.parse("*#2*0*10*10*50*001*0##"),  # DIMENSION 10 on general: defensive guard (OWNAutomationEvent)
+        "*#2*0*10*xx*50*001*0##",  # malformed DIMENSION 10 frame: not an OWNMessage at all
+        OWNMessage.parse("*2*7*0##"),  # WHAT outside the WHO 2 table: is_opening / is_closing None
+        OWNMessage.parse("*2*10#001#1*0##"),  # advanced general stop (issue_445)
+        OWNMessage.parse("*2*11#100#001#1*0##"),  # advanced general up (issue_445)
+        OWNMessage.parse("*2*12#100#001#1*0##"),  # advanced general down (issue_445)
+        OWNMessage.parse("*2*0*100##"),  # area 10 stop (MyHomeServer1 028206 oracle replay)
+        OWNMessage.parse("*1*1*#6##"),  # group 6 on: a real state, still fired
+        OWNMessage.parse("*1*0*#6##"),  # group 6 off
+        OWNMessage.parse("*2*0*#5##"),  # group 5 stop: a real state
+        OWNMessage.parse("*2*1*3##"),  # area 3 open
+    ]
+    assert OWNMessage.parse(frames[8]) is None
+    assert [type(f).__name__ for f in frames[4:8]] == ["OWNAutomationCommand"] * 2 + ["OWNAutomationEvent"] * 2
+    assert [f.dimension for f in frames[4:8]] == [11, 11, 10, 10]
+    assert (frames[9].is_opening, frames[9].is_closing) == (None, None)
+    with patch("custom_components.myhome.gateway.OWNEventSession") as mock_session_class:
+        mock_session = MagicMock()
+        mock_session.connect = AsyncMock(return_value={"Success": True})
+        mock_session.get_next = AsyncMock(side_effect=[*frames, asyncio.CancelledError()])
+        mock_session_class.return_value = mock_session
+        gateway_handler.send_status_request = AsyncMock()
+        try:
+            await gateway_handler.listening_loop()
+        except asyncio.CancelledError:
+            pass
+
+    fired = [
+        (call.args[0], call.args[1].get("message"), call.args[1].get("event"))
+        for call in gateway_handler.hass.bus.async_fire.call_args_list
+        if call.args[0].endswith(("_light_event", "_automation_event"))
+    ]
+    assert fired == [
+        ("myhome_general_automation_event", "*2*10#001#1*0##", "stop"),
+        ("myhome_general_automation_event", "*2*11#100#001#1*0##", "open"),
+        ("myhome_general_automation_event", "*2*12#100#001#1*0##", "close"),
+        ("myhome_area_automation_event", "*2*0*100##", "stop"),
+        ("myhome_group_light_event", "*1*1*#6##", "on"),
+        ("myhome_group_light_event", "*1*0*#6##", "off"),
+        ("myhome_group_automation_event", "*2*0*#5##", "stop"),
+        ("myhome_area_automation_event", "*2*1*3##", "open"),
+    ]
+    # The dim steps still schedule the member re-sync of group 5 and area 3, with no
+    # expected polarity: a step says nothing about where the members end up. The
+    # general step sweeps the known light areas, none in this bare handler.
+    assert sorted(gateway_handler._resync_timers) == ["#5", "#6", "3"]
+    assert gateway_handler._resync_manager._resync_expected_on == {"#5": None, "3": None, "#6": False}
+
+
+@pytest.mark.asyncio
+async def test_general_dim_step_point_reports_fire_no_scope_events(gateway_handler):
+    """Replay the live F461 2.0.11 capture of a general dim step (#367, 2026-10-25).
+
+    `*1*30*0##` (general dim up; the plant has no dimmer) was acknowledged in 69 ms
+    and echoed on the event session, after which every point re-reported its own
+    state twice over about two seconds: `*1*0*06##`, `*1*0*07##`, `*1*0*09##` and
+    `*2*0*05##`. `*1*31*#1##` (group 1 dim down) was acknowledged in 62 ms, echoed,
+    and followed by `*1*0*06##` only. A dim step is not an "on" and a point report
+    is a point event: none of these frames is a scope event. Both dim steps still
+    reach the member re-sync: the general step sweeps the known light areas (none
+    in this bare handler) and the group step finds that lights 06, 07 and 09 have
+    just spoken, so no sweep is pending afterwards. Capture on file, to be ingested
+    by a trace PR.
+    """
+    raw = [
+        "*1*30*0##",  # general dim up, echoed on the event session
+        "*2*0*05##",  # every point re-reports its state: cover 05 stopped
+        "*1*0*06##",  # light 06 off
+        "*1*0*07##",  # light 07 off
+        "*1*0*09##",  # light 09 off
+        "*1*0*06##",  # second round of the same reports
+        "*2*0*05##",
+        "*1*0*07##",
+        "*1*0*09##",
+        "*1*31*#1##",  # group 1 dim down, echoed on the event session
+        "*1*0*06##",  # the only report that followed it
+    ]
+    frames = [OWNMessage.parse(f) for f in raw]
+    assert all(frame is not None for frame in frames)
+    gateway_handler._schedule_resync = MagicMock(wraps=gateway_handler._schedule_resync)
+    with (
+        patch("custom_components.myhome.gateway.OWNEventSession") as mock_session_class,
+        patch("custom_components.myhome.gateway.async_dispatcher_send") as send,
+    ):
+        mock_session = MagicMock()
+        mock_session.connect = AsyncMock(return_value={"Success": True})
+        mock_session.get_next = AsyncMock(side_effect=[*frames, asyncio.CancelledError()])
+        mock_session_class.return_value = mock_session
+        gateway_handler.send_status_request = AsyncMock()
+        try:
+            await gateway_handler.listening_loop()
+        except asyncio.CancelledError:
+            pass
+
+    scope_events = [
+        call.args[0]
+        for call in gateway_handler.hass.bus.async_fire.call_args_list
+        if call.args[0].endswith(("_light_event", "_automation_event"))
+    ]
+    assert scope_events == []
+    # Every frame reached the point-to-point dispatch exactly once, in bus order.
+    assert [str(call.args[2]) for call in send.call_args_list if call.args[1] == f"myhome_message_{gateway_handler.mac}"] == raw
+    assert [str(call.args[0]) for call in gateway_handler._schedule_resync.call_args_list] == ["*1*30*0##", "*1*31*#1##"]
+    # The point reports that preceded the group step count as its leading member
+    # echoes (two are enough for a group of unknown membership), so the `#1` sweep
+    # is satisfied before it is armed; the general step has no known area to sweep.
+    assert gateway_handler._resync_timers == {}
+    assert gateway_handler._resync_manager._resync_expected_on == {}
 
 
 @pytest.mark.asyncio
@@ -1149,6 +1340,7 @@ async def test_gateway_cen_event_and_auto_registration(gateway_handler: MyHOMEGa
     """Test receiving OWNCENEvent dispatches bus event and registers CEN scenario device."""
     mock_dr = MagicMock()
     mock_dr.async_get_device.return_value = None
+    mock_dr.async_get_device_by_identifier.return_value = None
     gateway_handler.config_entry.entry_id = "test_entry_123"
     gateway_handler.device_registry_id = "gateway_device_123"
 
@@ -1207,6 +1399,7 @@ async def test_gateway_cenplus_event_and_auto_registration(gateway_handler: MyHO
     """Test receiving OWNCENPlusEvent dispatches bus event and registers CEN+ scenario device."""
     mock_dr = MagicMock()
     mock_dr.async_get_device.return_value = None
+    mock_dr.async_get_device_by_identifier.return_value = None
     gateway_handler.config_entry.entry_id = "test_entry_456"
     gateway_handler.device_registry_id = "gateway_device_456"
 
@@ -1262,6 +1455,97 @@ async def test_gateway_cenplus_event_and_auto_registration(gateway_handler: MyHO
                     "manufacturer": "BTicino",
                     "model": "CEN+ Scenario Control",
                 }
+
+
+@pytest.mark.asyncio
+async def test_gateway_scenarioplus_event_and_auto_registration(gateway_handler: MyHOMEGatewayHandler):
+    """Test receiving OWNScenarioPlusEvent dispatches bus event and registers CEN+ scenario device."""
+    mock_dr = MagicMock()
+    mock_dr.async_get_device.return_value = None
+    gateway_handler.config_entry.entry_id = "test_entry_789"
+    gateway_handler.device_registry_id = "gateway_device_789"
+
+    scenarioplus_msg = MagicMock(spec=OWNScenarioPlusEvent)
+    scenarioplus_msg.object = "15"
+    scenarioplus_msg.action = "on"
+    scenarioplus_msg.human_readable_log = "Scenario plus 15: on."
+
+    with patch("custom_components.myhome.gateway.OWNEventSession") as mock_session_class:
+        mock_session = MagicMock()
+        mock_session.connect = AsyncMock(return_value={"Success": True})
+        mock_session.get_next = AsyncMock(side_effect=[scenarioplus_msg, asyncio.CancelledError()])
+        mock_session_class.return_value = mock_session
+
+        with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
+            with patch.object(gateway_handler.hass.bus, "async_fire") as mock_fire:
+                try:
+                    await gateway_handler.listening_loop()
+                except asyncio.CancelledError:
+                    pass
+
+                # Check bus event fired
+                mock_fire.assert_called_once_with(
+                    "myhome_scenario_plus_event",
+                    {
+                        "object": 15,
+                        "action": "on",
+                        "where": "15",
+                        "gateway_mac": gateway_handler.mac,
+                        "entry_id": "test_entry_789",
+                    },
+                )
+
+                # Check device registry auto-registration
+                mock_dr.async_get_or_create.assert_called_once()
+                kwargs = mock_dr.async_get_or_create.call_args.kwargs
+                via = {k: kwargs.pop(k) for k in ("via_device", "via_device_id") if k in kwargs}
+                assert via == {"via_device_id": "gateway_device_789"}
+                assert kwargs == {
+                    "config_entry_id": "test_entry_789",
+                    "identifiers": {(DOMAIN, f"{gateway_handler.mac}-25-15")},
+                    "name": "CEN+ Unit 15",
+                    "manufacturer": "BTicino",
+                    "model": "CEN+ Scenario Plus Control",
+                }
+
+
+@pytest.mark.asyncio
+async def test_gateway_scene_event_dispatching(gateway_handler: MyHOMEGatewayHandler):
+    """Test receiving OWNSceneEvent dispatches myhome_scene_event bus event."""
+    gateway_handler.config_entry.entry_id = "test_entry_789"
+
+    scene_msg = MagicMock(spec=OWNSceneEvent)
+    scene_msg.scenario = "1"
+    scene_msg.where = "1"
+    scene_msg.state = 1
+    scene_msg.is_on = True
+    scene_msg.is_enabled = None
+    scene_msg.human_readable_log = "Scene 1 is started."
+
+    with patch("custom_components.myhome.gateway.OWNEventSession") as mock_session_class:
+        mock_session = MagicMock()
+        mock_session.connect = AsyncMock(return_value={"Success": True})
+        mock_session.get_next = AsyncMock(side_effect=[scene_msg, asyncio.CancelledError()])
+        mock_session_class.return_value = mock_session
+
+        with patch.object(gateway_handler.hass.bus, "async_fire") as mock_fire:
+            try:
+                await gateway_handler.listening_loop()
+            except asyncio.CancelledError:
+                pass
+
+            mock_fire.assert_called_once_with(
+                "myhome_scene_event",
+                {
+                    "scenario": 1,
+                    "where": "1",
+                    "state": 1,
+                    "is_on": True,
+                    "is_enabled": None,
+                    "gateway_mac": gateway_handler.mac,
+                    "entry_id": "test_entry_789",
+                },
+            )
 
 
 @pytest.mark.asyncio
@@ -1646,7 +1930,42 @@ def test_handle_gateway_diagnostics_dimension_0(gateway_handler, mock_config_ent
         msg_empty = OWNEvent.parse("*#13**0*23*52*03*##")
         gateway_handler._handle_gateway_diagnostics(msg_empty)
         create_issue.assert_not_called()
+        delete_issue.assert_not_called()
 
+        # 7. F461 model is exempted from unconfigured timezone repair (Issue #709)
+        gateway_handler.gateway.model_name = "F461"
+        gateway_handler._handle_gateway_diagnostics(msg)
+        create_issue.assert_not_called()
+        delete_issue.assert_called_once_with(gateway_handler.hass, "entry_diag")
+
+        delete_issue.reset_mock()
+
+        # 8. F461 dimension 22 is also exempted
+        gateway_handler._handle_gateway_diagnostics(msg_dim22_999)
+        create_issue.assert_not_called()
+        delete_issue.assert_called_once_with(gateway_handler.hass, "entry_diag")
+
+        delete_issue.reset_mock()
+
+        # 9. Resolved WHO=1013 object model code 134 also exempts even if model_name was Generic
+        gateway_handler.gateway.model_name = "Generic"
+        gateway_handler._who1013["code"] = "134"
+        gateway_handler._handle_gateway_diagnostics(msg)
+        create_issue.assert_not_called()
+        delete_issue.assert_called_once_with(gateway_handler.hass, "entry_diag")
+
+
+def test_resolve_identity_clears_timezone_issue_for_f461(gateway_handler):
+    """Verify that resolving identity to F461 clears any existing unconfigured timezone issue (Issue #709)."""
+    from OWNd.message import OWNEvent
+
+    gateway_handler.config_entry.entry_id = "entry_diag"
+    gateway_handler.config_entry.data[CONF_NAME] = "Generic"
+    gateway_handler.gateway.model_name = "Generic"
+    with patch("custom_components.myhome.gateway.async_delete_unconfigured_timezone_issue") as delete_issue:
+        msg = OWNEvent.parse("*#1013**1*134*15*5*0##")
+        gateway_handler._handle_gateway_identity_diagnostics(msg)
+        delete_issue.assert_called_once_with(gateway_handler.hass, "entry_diag")
 
 
 def test_compat_gateway_timezone():
@@ -1673,57 +1992,6 @@ def test_compat_gateway_timezone():
     assert cmd_short is not None
     assert cmd_short._timezone == ""
     assert cmd_short._time == datetime.time(23, 6, 59)
-
-
-def test_status_request_log_filter():
-    """Verify spurious status-request retry errors are downgraded to DEBUG (issue #406)."""
-    import logging
-
-    from custom_components.myhome.gateway import _StatusRequestLogFilter
-
-    log_filter = _StatusRequestLogFilter()
-
-    # 1. Status request retry error should be downgraded to DEBUG
-    rec_status = logging.LogRecord(
-        name="custom_components.myhome.gateway",
-        level=logging.ERROR,
-        pathname="gateway.py",
-        lineno=1,
-        msg="%s Could not send message `%s`. Retrying (%d)...",
-        args=("gw_id", "*#4*0##", 1),
-        exc_info=None,
-    )
-    assert log_filter.filter(rec_status) is True
-    assert rec_status.levelno == logging.DEBUG
-    assert rec_status.levelname == "DEBUG"
-
-    # 2. Regular command error should remain ERROR
-    rec_cmd = logging.LogRecord(
-        name="custom_components.myhome.gateway",
-        level=logging.ERROR,
-        pathname="gateway.py",
-        lineno=1,
-        msg="%s Could not send message `%s`. Retrying (%d)...",
-        args=("gw_id", "*1*1*21##", 1),
-        exc_info=None,
-    )
-    assert log_filter.filter(rec_cmd) is True
-    assert rec_cmd.levelno == logging.ERROR
-    assert rec_cmd.levelname == "ERROR"
-
-    # 3. Unrelated error message should remain ERROR
-    rec_other = logging.LogRecord(
-        name="custom_components.myhome.gateway",
-        level=logging.ERROR,
-        pathname="gateway.py",
-        lineno=1,
-        msg="Some other failure",
-        args=(),
-        exc_info=None,
-    )
-    assert log_filter.filter(rec_other) is True
-    assert rec_other.levelno == logging.ERROR
-    assert rec_other.levelname == "ERROR"
 
 
 @pytest.mark.asyncio
@@ -1916,6 +2184,51 @@ def test_gateway_ignored_addresses(mock_config_entry):
     ignored = handler.ignored_addresses
     assert (1, "74") in ignored
     assert (1, "75") not in ignored
+
+
+@pytest.mark.asyncio
+async def test_replay_f461_who14_live_2026_10_18_gateway_identity(gateway_handler):
+    """Replay live F461 WHO=13 Dims 15/16/23/24 from f461_who14_live_2026-10-18 and WHO=1013 Dim 1 (#732, #744)."""
+    import json
+    from pathlib import Path
+
+    trace_path = (
+        Path(__file__).parent
+        / "fixtures"
+        / "traces"
+        / "f461_who14_live_2026-10-18"
+        / "myhome_trace_F461_who14_live_2026-10-18.json"
+    )
+    trace = json.loads(trace_path.read_text(encoding="utf-8"))
+    who13_frames = [
+        f["raw"]
+        for f in trace["frames"]
+        if f.get("run") == "run1_gateway_and_sweeps" and f["raw"].startswith("*#13**")
+    ]
+    assert who13_frames == [
+        "*#13**15*200##",
+        "*#13**16*2*0*11##",
+        "*#13**23*5*10*35##",
+        "*#13**24*2*26*4##",
+    ]
+
+    gateway_handler.config_entry.data[CONF_NAME] = "Generic"
+    gateway_handler.config_entry.data[CONF_UDN] = ""
+    gateway_handler.gateway.model_name = "Generic"
+    for raw in [*who13_frames, "*#1013*200*1*134*15*5*0##"]:
+        msg = OWNMessage.parse(raw)
+        assert msg is not None
+        await gateway_handler._process_message(msg)
+
+    ident = gateway_handler.identification()
+    assert ident["model"] == "F461"
+    assert ident["who13_code"] == "200"
+    assert ident["who13_firmware"] == "2.0.11"
+    assert ident["who13_kernel"] == "5.10.35"
+    assert ident["who13_distribution"] == "2.26.4"
+    assert ident["who1013_code"] == "134"
+    assert ident["who1013_model"] == "F461"
+
 
 
 

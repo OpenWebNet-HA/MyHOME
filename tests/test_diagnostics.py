@@ -75,10 +75,11 @@ async def test_diagnostics_with_full_gateway_and_bus_monitor(hass: HomeAssistant
 
     # Mock gateway and profile
     mock_profile = MagicMock()
-    mock_profile.name = "MH200N"
+    mock_profile.model_name = "MH200N"
+    mock_profile.display_name = "MH200N Gateway"
     mock_profile.command_queue_delay = 0.05
     mock_profile.max_queue_size = 250
-    mock_profile.keepalive_interval = 90.0
+    mock_profile.event_keepalive_interval = 90.0
 
     mock_gw = MagicMock()
     mock_gw.model_name = "MH200N"
@@ -194,7 +195,7 @@ async def test_diagnostics_carry_no_household_identity(hass: HomeAssistant):
         "name": "MyHomeServer1",
     }
     mock_entry.options = {
-        "file_path": "C:/Users/rossi/myhome.yaml", "command_worker_count": 1,
+        "file_path": "C:/Users/rossi/myhome.yaml", "config_file_path": "/config/myhome.yaml", "command_worker_count": 1,
         # decoder slots: the media_player is named after a room, its slot -> source mapping is diagnostics
         "decoder_1_entity": "media_player.rossi_living_room", "decoder_1_source": 2, "decoder_1_pre_gain": 10,
         "decoder_2_entity": "", "decoder_2_source": 2, "decoder_2_pre_gain": 0,
@@ -207,6 +208,7 @@ async def test_diagnostics_carry_no_household_identity(hass: HomeAssistant):
     for key in ("host", CONF_MAC, "id", "UDN", "ssdp_location", "friendly_name", CONF_PASSWORD):
         assert data[key] == "**REDACTED**", key
     assert options["file_path"] == "**REDACTED**"
+    assert options["config_file_path"] == "**REDACTED**"
     assert data["port"] == 20000 and data["name"] == "MyHomeServer1" and options["command_worker_count"] == 1
     assert options["decoder_1_entity"] == "media_player.decoder_1"  # the slot, not the room
     assert options["decoder_1_source"] == 2 and options["decoder_1_pre_gain"] == 10
@@ -427,3 +429,93 @@ async def test_diagnostics_audio_block_names_no_room(hass: HomeAssistant):
     dump = str(audio)
     for identifying in ("bureau", "eetkamer", "living_room", "mxn10"):
         assert identifying not in dump
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("model", "keepalive"),
+    [("F461", 90), ("MH201", None)],
+)
+async def test_diagnostics_report_the_real_ownd_profile(hass: HomeAssistant, model, keepalive):
+    """The profile block reads OWNd's real profile fields, not a Generic/90 s fallback."""
+    from OWNd.profiles import get_gateway_profile
+
+    mac = "00:03:50:aa:bb:dd"
+    mock_entry = MagicMock()
+    mock_entry.entry_id = f"test_profile_{model}"
+    mock_entry.version = 1
+    mock_entry.domain = DOMAIN
+    mock_entry.title = "Gateway"
+    mock_entry.data = {CONF_MAC: mac}
+    mock_entry.options = {}
+
+    profile = get_gateway_profile(model)
+    mock_gw = MagicMock()
+    mock_gw.model_name = model
+    mock_gw.manufacturer = "BTicino S.p.A."
+    mock_gw.firmware = "2.0.11"
+    mock_gw.profile = profile
+
+    mock_handler = MagicMock()
+    mock_handler.gateway = mock_gw
+    mock_handler.is_connected = True
+    mock_handler.sending_workers = []
+    mock_handler.send_buffer = None
+    mock_handler.bus_monitor = None
+    mock_handler.identification = None
+    mock_handler.bus_topology = None
+    mock_handler.device_health = None
+
+    hass.data[DOMAIN] = {mac: {CONF_ENTITY: mock_handler, CONF_PLATFORMS: {}}}
+    attach_runtime(hass, mock_entry, mac, mock_handler)
+
+    diag = await async_get_config_entry_diagnostics(hass, mock_entry)
+
+    assert diag["profile"]["name"] == model
+    assert diag["profile"]["display_name"] == f"{model} Gateway"
+    assert diag["profile"]["keepalive_interval"] == keepalive
+    assert diag["profile"]["keepalive_summary"] == profile.keepalive_summary
+    assert diag["profile"]["command_queue_delay"] == profile.command_queue_delay
+    assert diag["profile"]["max_queue_size"] == profile.max_queue_size
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_profile_without_keepalive_fields_reports_none(hass: HomeAssistant):
+    """A profile object without the keepalive fields yields None, never a made-up 90 s."""
+    from types import SimpleNamespace
+
+    mac = "00:03:50:aa:bb:de"
+    mock_entry = MagicMock()
+    mock_entry.entry_id = "test_profile_double"
+    mock_entry.version = 1
+    mock_entry.domain = DOMAIN
+    mock_entry.title = "Gateway"
+    mock_entry.data = {CONF_MAC: mac}
+    mock_entry.options = {}
+
+    # Only the fields every GatewayProfile has; no event_keepalive_interval / keepalive_summary.
+    profile = SimpleNamespace(model_name="F454", display_name="F454 Gateway", command_queue_delay=0.1, max_queue_size=250)
+    mock_gw = MagicMock()
+    mock_gw.model_name = "F454"
+    mock_gw.manufacturer = "BTicino S.p.A."
+    mock_gw.firmware = "2.0.51"
+    mock_gw.profile = profile
+
+    mock_handler = MagicMock()
+    mock_handler.gateway = mock_gw
+    mock_handler.is_connected = True
+    mock_handler.sending_workers = []
+    mock_handler.send_buffer = None
+    mock_handler.bus_monitor = None
+    mock_handler.identification = None
+    mock_handler.bus_topology = None
+    mock_handler.device_health = None
+
+    hass.data[DOMAIN] = {mac: {CONF_ENTITY: mock_handler, CONF_PLATFORMS: {}}}
+    attach_runtime(hass, mock_entry, mac, mock_handler)
+
+    diag = await async_get_config_entry_diagnostics(hass, mock_entry)
+
+    assert diag["profile"]["name"] == "F454"
+    assert diag["profile"]["keepalive_interval"] is None
+    assert diag["profile"]["keepalive_summary"] is None

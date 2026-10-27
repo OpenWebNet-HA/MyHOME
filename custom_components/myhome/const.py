@@ -6,12 +6,24 @@ from typing import Any
 
 from homeassistant.const import Platform
 
+from .where_grammar import (
+    area_of_where as area_of_where,
+)
+from .where_grammar import (
+    is_apl_address as is_apl_address,
+)
+from .where_grammar import (
+    normalize_where as normalize_where,
+)
+
 LOGGER = logging.getLogger(__package__)
 DOMAIN = "myhome"
 
 ATTR_GATEWAY = "gateway"
 ATTR_MESSAGE = "message"
-INTEGRATION_VERSION = "2.0.0b15"
+ATTR_WHERE = "where"
+ATTR_ACTION = "action"
+INTEGRATION_VERSION = "2.0.0b16"
 # hass.data[DOMAIN] key holding the OWNd version resolved off the event loop
 DATA_OWND_VERSION = "_ownd_version"
 
@@ -47,6 +59,7 @@ PLATFORMS: tuple[Platform, ...] = (
     Platform.MEDIA_PLAYER,
     Platform.BUTTON,
     Platform.ALARM_CONTROL_PANEL,
+    Platform.LOCK,
 )
 CONF_ADDRESS = "address"
 CONF_OWN_PASSWORD = "password"
@@ -68,6 +81,25 @@ CONF_WHO = "who"
 CONF_WHERE = "where"
 CONF_BUS_INTERFACE = "interface"
 CONF_IGNORED_ADDRESSES = "ignored_addresses"
+CONF_EXPOSE = "expose"
+SUBENTRY_TYPE_EXPOSE = "expose"
+SUBENTRY_TYPE_THERMO_SWITCH = "thermo_switch"
+CONF_TURN_ON_COMMAND = "turn_on_command"
+CONF_TURN_OFF_COMMAND = "turn_off_command"
+CONF_DIMENSION = "dimension"
+CONF_COOLDOWN = "cooldown"
+CONF_MIN_DELTA = "min_delta"
+CONF_PERIODIC_SEND = "periodic_send"
+CONF_RESPOND_TO_READ = "respond_to_read"
+CONF_BIDIRECTIONAL = "bidirectional"
+CONF_VALUE_TEMPLATE = "value_template"
+CONF_DEFAULT = "default"
+CONF_ON_STATES = "on_states"
+CONF_TURN_ON_ACTION = "turn_on_action"
+CONF_TURN_OFF_ACTION = "turn_off_action"
+CONF_STEP_UP_ACTION = "step_up_action"
+CONF_STEP_DOWN_ACTION = "step_down_action"
+CONF_BRIGHTNESS_STEP_PCT = "brightness_step_pct"
 #: F422 bus-routing separator in a WHERE: ``APL#4#<bus>``.
 BUS_ROUTING = "#4#"
 CONF_ZONE = "zone"
@@ -80,9 +112,17 @@ CONF_GATEWAY = "gateway"
 CONF_DEVICE_CLASS = "class"
 CONF_INVERTED = "inverted"
 CONF_ADVANCED_SHUTTER = "advanced"
+CONF_SLAT_TILT = "slat_tilt"
+CONF_SLAT_TIME = "slat_time"
+CONF_STRATEGY = "strategy"
+COVER_STRATEGIES = ("native", "timed", "venetian", "simple")
+DEFAULT_SLAT_TIME = 2.0
+MIN_SLAT_TIME = 0.5
+MAX_SLAT_TIME = 10.0
 CONF_HEATING_SUPPORT = "heat"
 CONF_COOLING_SUPPORT = "cool"
 CONF_FAN_SUPPORT = "fan"
+CONF_HUMIDITY_SUPPORT = "humidity"
 CONF_STANDALONE = "standalone"
 CONF_SDOMOTICA_COMPAT = "sdomotica_compat"
 CONF_CENTRAL = "central"
@@ -100,6 +140,37 @@ CONF_CENTRALIZED_SHUTTER_CLOSE = "centralized_shutter_close"
 CONF_CENTRALIZED_SHUTTER_STOP = "centralized_shutter_stop"
 CONF_TRAVEL_TIME = "travel_time"
 DEFAULT_TRAVEL_TIME = 25
+CONF_MIN_MOTOR_PULSE = "min_motor_pulse"
+DEFAULT_MIN_MOTOR_PULSE = 0.4
+# Smallest level change (%) sent to an advanced cover; default MIN_POSITION_DELTA in cover_motion.py.
+CONF_MIN_POSITION_DELTA = "min_position_delta"
+MAX_MIN_POSITION_DELTA = 5
+
+# Impulse cover / access controls (gates, garage doors, impulse relays)
+CONF_TYPE = "type"
+TYPE_IMPULSE_RELAY = "impulse_relay"
+CONF_PIN_CODE = "pin_code"
+CONF_STATE_SENSOR = "state_sensor"
+CONF_PULSE_DURATION = "pulse_duration"
+DEFAULT_PULSE_DURATION = 0.5
+CONF_MIN_CYCLE_TIME = "min_cycle_time"
+DEFAULT_MIN_CYCLE_TIME = 5.0
+# Access policy of impulse gates / garage doors (see access_policy.py)
+CONF_ACCESS = "access"
+CONF_ALLOWED_USERS = "allowed_users"
+CONF_APPROVERS = "approvers"
+CONF_REMOTE_CLOSE = "remote_close"
+CONF_SAFETY_DEVICES_VERIFIED = "safety_devices_verified"
+CONF_SAFETY_CHECK_DAYS = "safety_check_days"
+CONF_CAMERA = "camera"
+CONF_PREWARN_LIGHT = "prewarn_light"
+CONF_PREWARN_SECONDS = "prewarn_seconds"
+CONF_CLOSE_BLOCK_ENTITY = "close_block_entity"
+CONF_WATCHDOG_MARGIN = "watchdog_margin"
+CONF_APPROVAL_TIMEOUT = "approval_timeout"
+EVENT_ACCESS_PREWARNING = "myhome_access_prewarning"
+SERVICE_CANCEL_COVER_REQUEST = "cancel_cover_request"
+SERVICE_ACKNOWLEDGE_COVER_FAULT = "acknowledge_cover_fault"
 
 # Cover calibration (timed covers measure their own travel times on the bus)
 CONF_COVER_TRAVEL_TIMES = "cover_travel_times"  # config entry option: {device_id: {...}}
@@ -107,10 +178,13 @@ SERVICE_CALIBRATE_COVER = "calibrate_cover"
 SERVICE_STOP_COVER_CALIBRATION = "stop_cover_calibration"
 SERVICE_SET_COVER_TRAVEL_TIME = "set_cover_travel_time"
 SERVICE_RESET_COVER_TRAVEL_TIME = "reset_cover_travel_time"
+SERVICE_SEND_SCENARIO_PLUS_COMMAND = "send_scenario_plus_command"
 EVENT_COVER_CALIBRATION = "myhome_cover_calibration"
 CALIBRATION_RUN_TIMEOUT = 180.0  # s to wait for the actuator's stop status per run
 CALIBRATION_MIN_RUN = 1.0        # s: anything shorter is not a full travel
 CALIBRATION_MAX_RUN = 300.0      # s: anything longer is an actuator with no run-time limit
+CALIBRATION_MIN_MOTOR_PULSE = 0.0  # s: 0.0 disables floor
+CALIBRATION_MAX_MOTOR_PULSE = 5.0  # s: upper limit for motor start-up deadband floor
 CALIBRATION_SETTLE = 1.0         # s pause between runs so the actuator relay settles
 # An actuator with the factory 60 s run-time limit stops itself, not at the end
 # stop: measured 61.5 s for a 14 s shutter on a MyHOMEServer1 (#319). A run that
@@ -142,6 +216,8 @@ SOURCE_UNCONFIGURED_SUFFIX = " (not configured)"
 # messages that an RCA interface does not. The user declares it, because a
 # source device that has not spoken yet is indistinguishable on the bus.
 CONF_SOURCE_TUNER = "source_{}_tuner"
+#: Optional user-supplied pictures per FM frequency, one "<MHz>=<url>" per line.
+CONF_TUNER_PICTURES = "tuner_pictures"
 #: Stored stations a WHO=16 tuner exposes (5 for F500, up to 15 for F500N).
 TUNER_STATION_COUNT = 5
 TUNER_MAX_STATION_COUNT = 15
@@ -173,6 +249,9 @@ SOFTWARE_TRANSITION_MAX_STEPS = 25
 RESYNC_DEBOUNCE_S = 0.5
 RESYNC_LEADING_WINDOW_S = 1.5
 
+# Pacing delay between member commands during scope cover fan-out (prevents F422 buffer overflow)
+PACED_FANOUT_DELAY = 0.3
+
 # ── Multi-Gateway & Shared Bus Support (Issue #453) ─────────────────────────
 CONF_BUS_TOPOLOGY = "bus_topology"
 TOPOLOGY_STANDALONE = "standalone"
@@ -198,17 +277,6 @@ SHARED_BUS_EVIDENCE_COUNT = 3
 SHARED_BUS_EVIDENCE_WINDOW_S = 600.0
 
 
-def who4_raw_to_celsius(raw: str) -> float:
-    """Decode a raw WHO 4 temperature (``SXXX``, tenths of a degree) that OWNd did not decode.
-
-    Raises ``ValueError`` when ``raw`` is not a number. Exactly zero is ``0.0`` whatever the sign digit.
-    """
-    if len(raw) == 4 and raw.startswith("1"):
-        magnitude = float(raw[1:]) / 10.0
-        return -magnitude if magnitude else 0.0
-    return float(raw) / 10.0
-
-
 def eight_bits_to_percent(value: int) -> int:
     """Convert an 8-bit brightness (0-255) to percentage (0-100)."""
     return int(round((value * 100) / 255, 0))
@@ -226,79 +294,6 @@ def eight_bits_to_min_percent(value: int) -> int:
 def percent_to_eight_bits(value: int) -> int:
     """Convert a percentage (0-100) to 8-bit brightness (0-255)."""
     return int(round((value * 255) / 100, 0))
-
-
-def is_apl_address(base: str) -> bool:
-    """Check if base address is a valid OpenWebNet Point-to-Point (APL) address.
-
-    Point-to-point addressing combinations:
-      - A = 00; PL [01-15]     -> 4 digits (e.g. 0015 = Area 00, PL 15)
-      - A [1-9]; PL [1-9]      -> 2 digits (e.g. 15 = Area 1, PL 5)
-      - A = 10; PL [01-15]     -> 4 digits (e.g. 1015 = Area 10, PL 15)
-      - A [01-09]; PL [10-15]  -> 4 digits (e.g. 0115 = Area 1, PL 15)
-    """
-    if not base.isdigit():
-        return False
-    if len(base) == 2:
-        a = int(base[0])
-        pl = int(base[1])
-        return 1 <= a <= 9 and 1 <= pl <= 9
-    if len(base) == 4:
-        a = int(base[:2])
-        pl = int(base[2:])
-        if a == 0:
-            return 1 <= pl <= 15
-        if 1 <= a <= 9:
-            return 10 <= pl <= 15
-        if a == 10:
-            return 1 <= pl <= 15
-    return False
-
-
-def area_of_where(where: str | int | None) -> str | None:
-    """Return the area status WHERE for a given Point-to-Point (APL) WHERE."""
-    if where is None:
-        return None
-    where_str = str(where).strip()
-    parts = where_str.split("#", 1)
-    base = parts[0]
-    if not is_apl_address(base):
-        return None
-    if len(base) == 2:
-        return base[0]
-    # Length is 4
-    a = base[:2]
-    if a == "00":
-        return "00"
-    if a == "10":
-        return "100"
-    return str(int(a))
-
-
-def normalize_where(where: str | int | None) -> str:
-    """Normalize OpenWebNet address while preserving Point-to-Point (APL) addressing.
-
-    Point-to-point WHERE addresses must never have leading zeros stripped:
-      - '0015' means Area 00, Point 15 (4 digits)
-      - '15' means Area 1, Point 5 (2 digits)
-    Area broadcasts '00' (Area 0) and '100' (Area 10) are also preserved.
-    Other numeric addresses (such as zero-padded CEN+/dry contact object IDs like '0021')
-    have leading zeros stripped to match integer IDs.
-    """
-    if where is None:
-        return ""
-    where_str = str(where).strip()
-    if not where_str:
-        return ""
-    parts = where_str.split("#", 1)
-    base = parts[0]
-    if is_apl_address(base) or base in ("00", "100", "0"):
-        norm_base = base
-    elif base.isdigit():
-        norm_base = str(int(base))
-    else:
-        norm_base = base
-    return f"{norm_base}#{parts[1]}" if len(parts) > 1 else norm_base
 
 
 SERVICE_TURN_ON_TIMED = "turn_on_timed"
@@ -330,6 +325,7 @@ SUPPORTED_GATEWAY_MODELS = [
     "AM4890",
     "H4890",
     "LN4890",
+    "H4684",
     "Generic",
 ]
 
@@ -355,13 +351,18 @@ WHO13_OFFICIAL_DEVICE_TYPES = {
 #   200: Confirmed on physical hardware for F454 (PR #420 sweep, firmware 2.0.51;
 #        earlier in issue #370 with SSDP), MH202 (PR #420 sweep, firmware 1.0.21),
 #        MyHOMEServer1 (PR #420 trace, firmware 2.87.13; earlier in issue
-#        #292/#297), H4890 (issue #466 sweep, firmware 4.0.15), and F461 (issue
+#        #292/#297), H4890 (issue #466 sweep, firmware 4.0.15), F461 (issue
 #        #466 comment 5870342995 sweep, firmware 2.0.11; reported without
-#        diagnostics in issue #370). Shared across modern Linux-based
-#        gateway families, so it identifies none of them (see WHO13_SHARED_DEVICE_TYPES).
+#        diagnostics in issue #370), and MH201 (firmware 3.3.6, 3.6.27; OWNd#116).
+#        Shared across modern gateway families (not all Linux-based, e.g. MH201),
+#        so it identifies none of them (see WHO13_SHARED_DEVICE_TYPES).
 #        It contradicts legacy gateways (e.g. MH200/F452), but only as field evidence.
+#    23: Confirmed on physical BTicino H/L4684 touchscreen gateway (issue #466
+#        comment 6398442412, firmware 6.0.11, kernel 2.6.2, distro 6.0.0; UPnP
+#        modelName `H/L4684`, distinct from 2006 spec code `13` on FW 2.0.54).
 WHO13_OBSERVED_DEVICE_TYPES: dict[str, tuple[str, ...]] = {
-    "200": ("F454", "MyHomeServer1", "MH202", "F461", "H4890"),
+    "23": ("H4684", "H/L4684", "L4684"),
+    "200": ("F454", "MyHomeServer1", "MH202", "F461", "H4890", "MH201"),
 }
 # Codes from an independent implementation: the `device` table of Nmap's
 # openwebnet-discovery.nse, whose `device_dimension["Device Type"] = "15"` is this
@@ -387,7 +388,6 @@ WHO13_THIRD_PARTY_DEVICE_TYPES: dict[str, tuple[str, ...]] = {
     "12": ("F453AV",),
     "15": ("F427",),  # Nmap: "F427 (Gateway Open-KNX)"
     "16": ("F453",),
-    "23": ("H4684",),  # a second code for the model the 2006 table gives as 13
     "27": ("L4686SDK",),
     "44": ("MH200N",),
     "51": ("F454",),
@@ -402,7 +402,7 @@ WHO13_SHARED_DEVICE_TYPES: frozenset[str] = frozenset({"200"})
 #
 # This is a different identifier space from WHO=13 dimension 15, not a newer
 # spelling of it, and the two disagree for the same model: an F453 is 42 here but
-# 16 for Nmap, an H4684 is 29 here but 13 (2006) or 23 (Nmap) there, and no
+# 16 for Nmap, an H4684 is 19 (and 26 for LGRH4684) here but 13 (2006) or 23 (Nmap) there, and no
 # WHO=13 code means what 200 means. Some values do coincide (4, 12, 44, 51 ...),
 # which is why the tables are kept apart rather than merged on the ones that
 # match. This one is consulted only after WHO=13 returned a shared code, and
@@ -416,11 +416,13 @@ WHO13_SHARED_DEVICE_TYPES: frozenset[str] = frozenset({"200"})
 # only brand value ever traced is 5, "Legrand BTicino", which does not
 # discriminate - so the BTicino name is always the one displayed.
 #
-# Four codes are confirmed on physical hardware: 51 F454, 5 MH202, and 67
-# MyHomeServer1 (PR #420, fixtures under tests/fixtures/plants/pr_420_*), and 134
+# Five codes are confirmed on physical hardware: 51 F454, 5 MH202, and 67
+# MyHomeServer1 (PR #420, fixtures under tests/fixtures/plants/pr_420_*), 134
 # F461 (issue #466 comment 5870342995, fixtures under
-# tests/fixtures/plants/issue_466_f461/). The rest of the table is from the
-# database, untraced.
+# tests/fixtures/plants/issue_466_f461/), and 10 MH201 (OWNd#116). Codes 19
+# (H4684) and 26 (LGRH4684) are confirmed by reverse engineering and live QEMU
+# emulation of the bt_device binary from H4684 firmware 2.0.54. The rest of the
+# table is from the database, untraced.
 #
 # A dimension-1 reply is four values, not one (@anotherjulien in #420, from the
 # OpenWebNet Encyclopedia's work on MHCatalogue.db):
@@ -437,8 +439,10 @@ WHO1013_OBJECT_MODELS: dict[str, tuple[str, ...]] = {
     "4": ("MH200",),
     "5": ("MH202", "003535"),
     "8": ("F455", "003594"),
+    "10": ("MH201",),
     "12": ("F453AV",),
-    "29": ("H4684", "L4684"),
+    "19": ("H4684", "L4684"),
+    "26": ("LGRH4684",),
     "30": ("AM4890", "H4890", "573958", "067292", "078479", "HW4890", "LN4890", "LN4890A"),
     "35": ("BMNE500",),
     "38": ("573992",),
@@ -490,7 +494,7 @@ def gateway_model_family(model: str | None) -> str:
     """
     if not model:
         return ""
-    name = str(model).strip().upper().replace(" ", "").replace("-", "").replace("_", "")
+    name = str(model).strip().upper().replace(" ", "").replace("-", "").replace("_", "").replace("/", "")
     m = re.match(r"^([A-Z]+\d+)[A-Z]*$", name)
     return m.group(1) if m else name
 
@@ -503,7 +507,7 @@ def build_timed_turn_on_command(
     seconds: float = 0,
 ) -> Any:
     """Build OpenWebNet hardware timer command for WHO=1."""
-    from OWNd.message import OWNCommand
+    from OWNd.message import OWNLightingCommand
 
     total_seconds = float(duration if duration is not None else 0.0)
     total_seconds += (int(hours) * 3600) + (int(minutes) * 60) + float(seconds)
@@ -514,13 +518,16 @@ def build_timed_turn_on_command(
     rounded_secs = round(total_seconds, 1)
     if rounded_secs in PRESET_TIMERS:
         what = PRESET_TIMERS[rounded_secs]
-        frame = f"*1*{what}*{where}##"
-    else:
-        int_secs = int(round(total_seconds))
-        h = max(0, min(255, int_secs // 3600))
-        m = max(0, min(59, (int_secs % 3600) // 60))
-        s = max(0, min(59, int_secs % 60))
-        frame = f"*#1*{where}*#2*{h}*{m}*{s}##"
+        if hasattr(OWNLightingCommand, "switch_on_timed"):
+            return OWNLightingCommand.switch_on_timed(where, what)
+        return OWNLightingCommand.parse(f"*1*{what}*{where}##")
 
-    parsed = OWNCommand.parse(frame)
-    return parsed if parsed is not None else OWNCommand(frame)
+    int_secs = int(round(total_seconds))
+    h = max(0, min(255, int_secs // 3600))
+    m = max(0, min(59, (int_secs % 3600) // 60))
+    s = max(0, min(59, int_secs % 60))
+    if hasattr(OWNLightingCommand, "set_variable_timer"):
+        return OWNLightingCommand.set_variable_timer(where, h, m, s)
+    return OWNLightingCommand.parse(f"*#1*{where}*#2*{h}*{m}*{s}##")
+
+

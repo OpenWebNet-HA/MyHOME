@@ -572,3 +572,184 @@ Authentic on-wire bus trace recorded on a physical **BTicino MH200** (firmware 2
 5. **WHO 13 & WHO 1013 (Gateway Identity)**:
    - Model code 4 (MH200), Firmware 2.1.0 (`*#13**16*2*1*0##`), and Object Model 4 (`*#1013**1*4##`).
 
+---
+
+# #466 BTicino F454 & F520 WHO 18 Dimension 1200 Energy Stream Lifecycle
+
+Authentic on-wire bus trace captured and contributed by **@xtimmy86x** on [PR #661 (comment 6067730589, 6067865874)](https://github.com/OpenWebNet-HA/MyHOME/pull/661#issuecomment-6067730589) from a physical BTicino F454 gateway (firmware 2.0) and physical BTicino F520 energy meters. This verifies the complete lifecycle of WHO 18 Dimension 1200 automatic instant power updates from physical hardware on a live plant, including the start command, meter interval confirmation, periodic active power telemetry, and the zero-duration interval notification emitted upon 2-minute stream expiry.
+
+## Hardware Profile
+
+- **Gateway**: BTicino F454
+- **Firmware**: 2.0
+- **Energy Meter**: BTicino F520 (multi-circuit single-phase electricity meter / load controller)
+- **Tested Energy Meter Addresses**: WHERE `56` (streamed address), plus background meters `51`, `53`, `54`, `55`, `57`, `58`, `59`, `510`, `511`
+- **Connection**: TCP OpenWebNet (Port 20000)
+- **Client Environment**: Home Assistant 2026.10.0.dev0, MyHOME 2.0.0b14, OWNd 2.0.0b9
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_trace_F454_who18_2026-10-08T19-30-16.json` | Bus Monitor Trace (66 frames: 1 tx / 65 rx) | Authentic, untouched on-wire trace capturing start stream command (`*#18*56*#1200#1*2##`), meter interval confirmation (`*#18*56*1200#1*2##`, delay ~235 ms), periodic active power telemetry across meters 51-511, zero-duration stream lease expiry notification (`*#18*56*1200#1*0##`, delay ~126.2 s), subsequent interval frame (`*#18*56*1200#1*255##`), and totalizer consumption reports (dimensions 51 and 54). |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Auto-Update Stream Start Command (WHO 18 Dimension 1200 Write)**:
+   - Client sends 2-minute instantaneous active power stream request to meter 56:
+     - `19:27:55.541903 TX *#18*56*#1200#1*2##`
+   - Frame structure: `*#18*WHERE*#1200#Type*Time##` (`Type 1` = active power, `Time 2` = 2 minutes).
+
+2. **Meter Auto-Update Interval Confirmation**:
+   - Energy meter 56 confirms active stream lease ~235 ms after start command:
+     - `19:27:55.776619 RX *#18*56*1200#1*2##`
+   - Proves on physical hardware that meters answer Dimension 1200 writes with `*#18*WHERE*1200#Type*Time##`.
+
+3. **Autonomous Active Power Telemetry (WHO 18 Dimension 113)**:
+   - Periodic active power telemetry is received without polling queries:
+     - Meter 56: `*#18*56*113*9##` (9 W, arriving at ~30s cadence across the capture window)
+     - Meter 51: `*#18*51*113*572##`, `570##`, `569##`, `568##`, `571##`
+     - Meter 53: `*#18*53*113*365##`, `366##`, `364##`
+     - Meter 54: `*#18*54*113*0##`
+     - Meter 55: `*#18*55*113*89##`, `88##`
+     - Meter 57: `*#18*57*113*0##`
+     - Meter 58: `*#18*58*113*0##`
+     - Meter 59: `*#18*59*113*20##`
+     - Meter 510: `*#18*510*113*144##`, `145##`
+     - Meter 511: `*#18*511*113*67##`, `68##`
+
+4. **Stream Expiry / Lease End Notification (Interval 0)**:
+   - Exactly 126.18 seconds (~2 minutes plus bus roundtrip/scheduling) after the start command, meter 56 autonomously emits an interval 0 notification:
+     - `19:30:01.726662 RX *#18*56*1200#1*0##`
+   - This provides definitive physical proof that BTicino F520 energy meters broadcast `*#18*WHERE*1200#Type*0##` when the auto-update stream expires, allowing Home Assistant / MyHOME to seamlessly transition stream status and restart or deactivate streaming without polling.
+
+5. **Subsequent Interval Frame**:
+   - `19:30:01.870024 RX *#18*56*1200#1*255##` arrives ~143 ms after the expiry frame. Meter 54 also broadcasts `*#18*54*1200#1*255##` at `19:28:59.553859`.
+
+6. **Cumulative Energy Totalizer & Partial Consumption Telemetry**:
+   - Periodic totalizer reports:
+     - Dimension 51 (Totalizer): `*#18*51*51*35098267##` (35,098,267 Wh), `*#18*53*51*18915332##`, `*#18*54*51*2186911##`, `*#18*55*51*3033954##`
+     - Dimension 54 (Current day partial consumption): `*#18*51*54*13165##` (13,165 Wh), `*#18*53*54*7919##`, `*#18*54*54*1179##`, `*#18*55*54*1916##`
+
+---
+
+# #466 BTicino MyHomeServer1 WHO 25 Scenario Plus Trace & Bus Echo (`*25*11#0*11##`)
+
+Verbatim bus trace contributed by **@TheDarkWizard** on [#466 (comment 6085724930)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6085724930) in response to the community call for real-world WHO 25 scenario plus traces ([#466 (comment 6085158753)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6085158753)), exported from Home Assistant diagnostics (HA 2026.9.4, integration 2.0.0b14, OWNd 2.0.0b9, gateway firmware 2.87.13).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino MyHomeServer1
+- **Firmware**: 2.87.13
+- **Connection**: TCP OpenWebNet (Port 20000)
+- **Profile**: `MyHomeServer1Profile`
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `config_entry-myhome_MyHomeServer1_who25_scenario_plus.json` | HA Diagnostic Download (500 frames: 6 tx / 494 rx) | Authentic physical plant capture confirming gateway acceptance, SCS bus transmission, and OpenWebNet monitor echo of WHO 25 Scheduled Scenario PLUS command `*25*11#0*11##`, interleaved with WHO 18 Dimension 113 power readings on meters 51 and 52, WHO 4 climate reports, and WHO 1 lighting status. Originally uploaded as `Cen&Cen+CallToAction.json`. |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Scheduled Scenario PLUS (WHO 25)**:
+   - Command transmitted from Home Assistant: `[tx] *25*11#0*11##` (`2026-10-09T17:14:12.215385+00:00`).
+   - Gateway acknowledges and puts `B1 01 93 00` onto the physical SCS bus, echoing back on the monitor session: `[rx] *25*11#0*11##` (`2026-10-09T17:14:12.298174+00:00`) exactly 82.8 ms later.
+   - Immediate status inquiry: `[tx] *#25*11##` (`2026-10-09T17:14:12.300230+00:00`).
+   - OFF command attempt with parameter `#0`: `[tx] *25*12#0*11##` (`2026-10-09T17:14:39.916800+00:00`). Note that in the OpenWebNet protocol and `bt_luci` firmware, OFF takes no `#0` parameter (`*25*12*WHERE##`), explaining the absence of a monitor echo for this variant.
+
+2. **Energy Management (WHO 18)**:
+   - 424 frames of active power measurements (`*#18*51*113*<watts>##` on meter 51 and `*#18*52*113*<watts>##` on meter 52).
+
+3. **Thermoregulation (WHO 4)**:
+   - 63 frames reporting thermoregulation dimension 60 setpoints and status across zones (`*#4*1*60*49##`, `*#4*2*60*49##`, `*#4*5*60*49##`, etc.).
+
+4. **Lighting (WHO 1)**:
+   - 9 frames reporting actuator lighting status (`*1*0*0014##`, `*1*0*0016##`, etc.).
+
+---
+
+# #466 BTicino H/L4684 Colour Touchscreen Gateway Trace (FW 6.0.11 — WHO 1, 2, 3, 4, 13, 16, 18, 22)
+
+Verbatim Home Assistant diagnostics download contributed by **@andrea-mag** on [#466 (comment 6398442412)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6398442412) (`HA 2026.10.2`, `MyHOME 2.0.0b16`, `OWNd 2.0.0b11`).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino H/L4684 (Colour Touch Screen IP Gateway, Axolute / LivingLight; UPnP `modelName`: `H/L4684`, `deviceType`: `urn:schemas-bticino-it:device:touchscreen:1`)
+- **Firmware**: `6.0.11` (`*#13**16*6*0*11##`)
+- **Kernel**: `2.6.2` (`*#13**23*2*6*2##`)
+- **Distribution**: `6.0.0` (`*#13**24*6*0*0##`)
+- **WHO 13 Device Type Code**: `23` (`*#13**15*23##`)
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `config_entry-myhome_HL4684_fw6_0_11.json` | HA Diagnostic Download (257 frames: 212 rx / 45 tx) | First physical on-wire capture from a BTicino H/L4684 touchscreen gateway, spanning `myhome.sweep_bus` across lighting & covers (`WHO 1` / `WHO 2`), autonomous load-control priority broadcasts (`WHO 3`), 8-zone thermoregulation (`WHO 4`), gateway identification (`WHO 13`), dual-dialect `WHO 16` + `WHO 22` sound system inventory, and `WHO 18` energy sweep queries. |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Gateway Identity & Software Stack (WHO 13 — 5 tx / 5 rx)**:
+   - Clock `*#13**0##` -> `*#13**0*14*41*00*##`.
+   - Device type `*#13**15##` -> `*#13**15*23##` (empirically confirming Nmap's code `23` on physical `H/L4684` FW `6.0.11`, distinct from 2006 spec code `13` on FW `2.0.54`).
+   - Firmware `*#13**16##` -> `*#13**16*6*0*11##` (`6.0.11`), kernel `*#13**23##` -> `*#13**23*2*6*2##` (`2.6.2`), distribution `*#13**24##` -> `*#13**24*6*0*0##` (`6.0.0`).
+
+2. **Load Control Priority Cycle (WHO 3 — 29 rx)**:
+   - Autonomous periodic load-priority status broadcasts (`*3*1*#1##` through `*3*1*#8##`, *Load priority 1–8 enabled*), cycling one priority every `~25.8 s` (`~3 min 26 s` per full `#1 -> #8` round-robin loop).
+
+3. **Thermoregulation & Actuator Telemetry (WHO 4 — 1 tx / 64 rx)**:
+   - General status query `[tx] *#4*0##` returns `0` `WHO 4` frames on the event session before the next sweep query `1.33 s` later (`*#16*0*5##`), corroborating the `020054` firmware-oracle `silent` verdict on live `6.0.11` hardware.
+   - Autonomous bus traffic covers 8 zones (`11, 22, 33, 44, 55, 66, 77, 88`; `Zone 33` configured with `fan: true`, the other 7 with `fan: false`) plus central pump/boiler actuators `0#1`, `0#3`, `0#4` (`*#4*0#<N>*20*0##`, `26` frames):
+     - Ambient temperatures (`*#4*Z*0*0TTT##`), generic effective setpoints (`*#4*Z*14*0TTT*3##`), and Zone `66` mode/setpoint frames (`*4*1*66##`, `*4*303*66##`, `*#4*66*12*0170*3##`).
+     - Zone actuator channels (`11#1`, `22#1`, `33#1`, `33#2`, `44#1`, `55#1`, `66#2`, `66#3`, `77#1`, `77#2`, `88#1`) emit `*#4*<Z>#<N>*20*5##` (`18` frames).
+
+4. **Dual-Dialect Sound System Inventory (WHO 16 & WHO 22 — 1 tx / 28 rx)**:
+   - Single `[tx] *#16*0*5##` triggers `14` paired `WHO 16` (`bt_difson`) + `WHO 22` (`bt_multi`) replies (`4–14 ms` apart) on `H/L4684` FW `6.0.11`, covering `2` active stereo sources (`*16*3*101##` / `*#22*2#1*12*1*4##`, `*16*3*102##` / `*#22*2#2*12*1*4##`) and `12` amplifier zones (`11, 12, 13, 21, 22, 31, 32, 33, 41, 42, 51, 61` via `*16*13*<A><Z>##` / `*#22*3#<A>#<Z>*12*0*10##`; on zone `61`, `*#22*3#6#1*12*0*10##` arrives `13.6 ms` before `*16*13*61##`).
+
+5. **Lighting, Automation & Energy Sweep Queries (WHO 1, WHO 2 & WHO 18 — 38 tx / 86 rx)**:
+   - `[tx] *#1*0##` and `[tx] *#2*0##` each trigger the same `43`-frame A/PL status burst (`42` `WHO 1` light/relay status frames + `1` `WHO 2` shutter status frame `*2*0*99##`, `86` `rx` frames total).
+   - `36` `WHO 18` `tx` queries (`*#18*51..59*51##` / `*1200##` and `*#18*71#0..79#0*51##` / `*1200##`): Dimension `51` queries wait `~943 ms` (SCS bus timeout with no meter answering), whereas unsupported Dimension `1200` queries return immediately (`~57 ms` including `50 ms` queue pacing).
+
+---
+
+# #466 BTicino MH201 (FW 3.6.43) Bus Sweep, WHO 1013 Identity & Command-Session Timeout Trace
+
+Verbatim bus sweep trace contributed by **@emil-d** on [#466 (comment 6436427163)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6436427163), exported from `<myhome-bus-card>` (`Home Assistant 2026.10.4`, `MyHOME 2.0.0b16`, `OWNd 2.0.0b11`, gateway firmware `3.6.43`).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino MH201 (1-DIN Hotel Room Scenario Manager / OpenWebNet IP Gateway)
+- **Firmware**: `3.6.43` (`*#13**16*3*6*43##`)
+- **WHO 13 Device Type Code**: `200` (`*#13**15*200##`)
+- **WHO 1013 Object Model**: `10` (`N_CONF=15`, `BRAND=0`, `LINE=5` recorded in `gateway.identification` from startup `*#1013**1*10*15*0*5##`)
+- **Reported Plant Topology**:
+  - `IN` bus (powered by `E46ADCN`): MH201 (`3.6.43`), lighting/dimmer actuators (`31`, `32`, `71`, `72`, `73`, including `F414` dimmer), `F425` scenario memory module (no covers, climate, alarm, or energy meters on the automation bus).
+  - Bus Coupling: `F422` SCS/SCS interface in galvanic separation mode (`MOD` empty, `I1..I3` empty, `I4 = 2`).
+  - `OUT` bus (powered separately by `346000`): `F441M` multi-channel audio matrix (`S1` = `F500 COAX` radio tuner, `S2`/`S3` = jack nodes, outputs `1, 3, 4, 5, 6`), and physical sound controls/amplifiers.
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_sweep_MH201_all_2026-10-27T07-28-09.json` | Bus Card Export (22 frames: 13 tx / 9 rx, buffer not truncated, `SHA-256: 54717d7ef7b207d04a475d9c379d1b043f8e50a533cbfec400e248c315f5e2bb`) | Verbatim `<myhome-bus-card>` `myhome.sweep_bus` export on physical `MH201` firmware `3.6.43`, carrying the first committed physical `WHO 1013` `OBJECT_MODEL = 10` (`15*0*5`) identification metadata alongside `WHO 1` lighting discovery and exact on-wire timing of silent command-session timeouts (`*#2*0##`, `*#4*0##`) and single-slot TCP reconnect lockouts. |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Gateway Identification & Embedded MCU Profile (WHO 13 & WHO 1013)**:
+   - **Startup Identity Metadata (`gateway.identification`)**: First committed physical fixture carrying `who1013_code: "10"` (`who1013_model: "MH201"`, `who1013_n_conf: "15"`, `who1013_brand: "0"`, `who1013_line: "5"`, `profile: "MH201Profile"`, `conflict: null`). Unlike Linux-based gateways (`F454`, `MH202`, `MyHomeServer1`, `F461`) which emit trailing `15*5*0` (`BRAND=5`, `LINE=0`), physical `MH201` firmware emits `15*0*5` (`BRAND=0`, `LINE=5`).
+   - **Sweep Gateway Queries (`frames[0..7]`)**:
+     - `*#13**0##` -> `*#13**0*09*26*26*##` in `253.9 ms` (local clock with empty timezone field).
+     - `*#13**15##` -> `*#13**15*200##` in `18.6 ms` (shared modern device code `200`).
+     - `*#13**16##` -> `*#13**16*3*6*43##` in `18.8 ms` (first committed capture of `MH201` firmware `3.6.43`).
+     - `*#13**23##` and `*#13**24##` -> zero `rx` data frames on the event session, answered on the command session by a fast `*#*0##` `NACK` in `~9.8–9.9 ms` + `100 ms` `MH201Profile.command_queue_delay` (`+109.9 ms` and `+109.8 ms` to the next `tx`, confirming unsupported Linux kernel/distribution dimensions are immediately NACKed rather than silently hung).
+
+2. **Lighting General Scan (WHO 1, `frames[8..14]`)**:
+   - `[tx] *#1*0##` (`07:26:31.757Z`) is echoed on the event session in `66.9 ms` (`[rx] *#1*0##`) and answered by 5 `OFF` lighting endpoints within `283.8 ms`: `*1*0*31##`, `*1*0*71##`, `*1*0*72##`, `*1*0*73##`, and `*1*0*32##`, followed by `BUS_QUIET_PERIOD = 0.750 s` (`+0.751 s` to `frames[15]`).
+
+3. **Silent Command-Session Hangs & Single-Slot TCP Lockout (`frames[15..21]`)**:
+   - **`frames[15]` (`07:26:32.792Z`, `[tx] *#2*0##`)**: On a plant with no WHO 2 cover actuators, the MH201 emits neither an event-session echo nor a command-session `ACK`/`NACK`. `OWNCommandSession.send_command` hits `COMMAND_TIMEOUT = 10.0 s` and closes the client socket, followed by `BUS_QUIET_PERIOD = 0.750 s` (`+10.753 s` to `frames[16]`).
+   - **`frames[16]` (`07:26:43.545Z`, `[tx] *#4*0##`)**: Sent on `2.0.0b16` (prior to #794 adding `MH201` to `GENERAL_ZONE_REQUEST_REFUSED`); `CommandWorkerPool.sending_loop` logs `tx` to `bus_monitor` before `connect()`. Because the MH201's single TCP command slot remains occupied server-side by the unacknowledged `*#2*0##` session, `connect()` backs off (`1 + 2 + 4 + 6 = 13.0 s`, `~13.74 s`), opens the slot once freed, writes `*#4*0##`, and again receives neither `ACK` nor `NACK` for `COMMAND_TIMEOUT = 10.0 s` + `0.750 s` = **`+24.494 s`** to `frames[17]`.
+   - **`frames[17..21]` (`*#16*0*5##` at `+14.477 s`, then `*#18*51*51##`, `*#18*51*1200##`, `*#18*52*51##`, `*#18*52*1200##` at `+13.682 s`, `+13.701 s`, `+13.685 s`)**: Each `tx` is recorded in `bus_monitor` prior to `connect()`, which exhausts all `MAX_CONNECT_ATTEMPTS = 5` (`1 + 2 + 4 + 6 = 13.0 s` sleep + 5 refused TCP `*99*0##` handshakes at `~136–145 ms` each = `13.682–13.727 s`). On `*#16*0*5##`, `send_paced` then waits `BUS_QUIET_PERIOD = 0.750 s` (`13.727 + 0.750 = +14.477 s`) before `handle_sweep_bus` enqueues all `36` `WHO 18` point queries into `FrameScheduler` (`capture.started_at = 07:27:23.987Z` when the service call returns); on `frames[18..21]`, the worker hits `continue` on failed `connect()` (bypassing `command_queue_delay`) and immediately pops the next buffered `WHO 18` query with zero extra sleep until export at `07:28:09.554Z`.
+   - **Independent Idle-Session Sound Probe**: Contributor separately sent `*#16*0*5##` on a fresh command session (`*99*0##`) when the command slot was free: the MH201 returned neither `ACK` nor `NACK` on the command session, echoed `*#16*0*5##` once on the event session (`*99*1##`) with zero amplifier/matrix replies, and never forwarded `WHO 16` bus traffic when physical sound controls were operated across the `F422` (`I4 = 2`) galvanic interface.

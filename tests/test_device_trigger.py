@@ -1,5 +1,5 @@
 """Tests for MyHOME device triggers."""
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.components.device_automation import (
@@ -9,12 +9,17 @@ from homeassistant.components.device_automation import (
 from homeassistant.const import (
     CONF_DEVICE_ID,
     CONF_DOMAIN,
+    CONF_HOST,
+    CONF_MAC,
+    CONF_PASSWORD,
     CONF_PLATFORM,
+    CONF_PORT,
     CONF_TYPE,
 )
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.setup import async_setup_component
+from OWNd.message import OWNMessage
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome.const import (
@@ -1234,4 +1239,46 @@ async def test_family_filter_combines_with_gateway_mac_mismatch(hass: HomeAssist
     hass.bus.async_fire("myhome_cenplus_event", {**base, "gateway_mac": "00:03:50:aa:bb:cc"})
     await hass.async_block_till_done()
     action.assert_called_once()
+    unsub()
+
+
+@pytest.mark.asyncio
+async def test_centralized_shutter_stop_ignores_dimension_10_status(hass: HomeAssistant):
+    """A WHO 2 dimension frame on a scope address is not a general stop (#367).
+
+    A physical shutter reports DIMENSION 10 on its own point-to-point address, so a
+    scope DIMENSION 10 frame is guarded defensively (3-digit priority as an F461 /
+    MyHomeServer1 encodes it); the DIMENSION 11 level echo is what such a gateway
+    really puts on the event session for a scope level write.
+    """
+    from custom_components.myhome.const import CONF_BROADCAST_RESYNC
+    from custom_components.myhome.gateway import MyHOMEGatewayHandler
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_HOST: "192.0.2.5", CONF_PORT: 20000, CONF_PASSWORD: "open", CONF_MAC: "00:03:50:00:03:67"},
+        options={CONF_BROADCAST_RESYNC: False},
+    )
+    entry.add_to_hass(hass)
+    with patch("custom_components.myhome.gateway.OWNGateway"):
+        handler = MyHOMEGatewayHandler(hass, entry, generate_events=False, broadcast_resync=False)
+    handler.gateway.serial = "00:03:50:00:03:67"
+
+    action_stop = AsyncMock()
+    unsub = await async_attach_trigger(hass, {CONF_TYPE: CONF_CENTRALIZED_SHUTTER_STOP}, action_stop, {"trigger_name": "stop"})
+
+    # Scope DIMENSION 10 frames (defensive guard) and the real DIMENSION 11 level echoes.
+    await handler._process_message(OWNMessage.parse("*#2*0*10*10*50*001*0##"))
+    await handler._process_message(OWNMessage.parse("*#2*#5*10*10*50*001*0##"))
+    await handler._process_message(OWNMessage.parse("*#2*0*#11#001#1*50##"))
+    await handler._process_message(OWNMessage.parse("*#2*#5*#11#001#1*50##"))
+    await hass.async_block_till_done()
+    action_stop.assert_not_called()
+
+    # The general stop and the advanced general stop (issue_445 trace) still trigger.
+    await handler._process_message(OWNMessage.parse("*2*0*0##"))
+    await handler._process_message(OWNMessage.parse("*2*10#001#1*0##"))
+    await hass.async_block_till_done()
+    assert action_stop.await_count == 2
+    assert [c.args[0]["trigger"]["event"]["message"] for c in action_stop.await_args_list] == ["*2*0*0##", "*2*10#001#1*0##"]
     unsub()

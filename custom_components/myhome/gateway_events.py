@@ -16,6 +16,7 @@ from OWNd.message import (
     OWNAuxEvent,
     OWNCENEvent,
     OWNCENPlusEvent,
+    OWNDoorEntryEvent,
     OWNDryContactEvent,
     OWNEnergyCommand,
     OWNEnergyEvent,
@@ -25,6 +26,8 @@ from OWNd.message import (
     OWNHeatingEvent,
     OWNLightingEvent,
     OWNMessage,
+    OWNScenarioPlusEvent,
+    OWNSceneEvent,
 )
 
 from .const import (
@@ -43,6 +46,9 @@ from .const import (
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
+
+# WHO 8 call kinds of the entrance panels PE1..PE4 (6: handset to handset, 14: pager).
+ENTRANCE_PANEL_KINDS = frozenset({1, 2, 3, 4})
 
 
 class GatewayEventDispatcher:
@@ -75,7 +81,12 @@ class GatewayEventDispatcher:
         """Return the registered CEN device set."""
         return self._cen_devices
 
-    def ensure_cen_device(self, who: int, object_id: int | str) -> None:
+    def ensure_cen_device(
+        self,
+        who: int,
+        object_id: int | str,
+        model: str | None = None,
+    ) -> None:
         """Ensure CEN/CEN+ scenario unit is registered in device registry."""
         if getattr(self.handler, "is_standby", False) or not self._is_active_for_who(who):
             # Standby gateways never register devices on their own config entry,
@@ -115,12 +126,27 @@ class GatewayEventDispatcher:
             if obj_str.isdigit() and len(obj_str) > 1 and obj_str.startswith("0"):
                 norm_str = str(int(obj_str))
 
-            existing_wire_dev = device_registry.async_get_device(identifiers={wire_ident})
-            existing_norm_dev = (
-                device_registry.async_get_device(identifiers={(DOMAIN, f"{self.handler.mac}-{who}-{norm_str}")})
-                if norm_str is not None
-                else None
-            )
+            if hasattr(device_registry, "async_get_device_by_identifier"):
+                existing_wire_dev = device_registry.async_get_device_by_identifier(
+                    wire_ident, config_entry_id=config_entry.entry_id
+                )
+                existing_norm_dev = (
+                    device_registry.async_get_device_by_identifier(
+                        (DOMAIN, f"{self.handler.mac}-{who}-{norm_str}"),
+                        config_entry_id=config_entry.entry_id,
+                    )
+                    if norm_str is not None
+                    else None
+                )
+            else:
+                existing_wire_dev = device_registry.async_get_device(identifiers={wire_ident})
+                existing_norm_dev = (
+                    device_registry.async_get_device(
+                        identifiers={(DOMAIN, f"{self.handler.mac}-{who}-{norm_str}")}
+                    )
+                    if norm_str is not None
+                    else None
+                )
 
             # Prevent passing multiple identifiers if two separate devices already exist in the registry,
             # which would cause async_get_or_create to raise ValueError.
@@ -141,7 +167,7 @@ class GatewayEventDispatcher:
                 identifiers=identifiers,
                 name=dev_name,
                 manufacturer="BTicino",
-                model=f"{type_name} Scenario Control",
+                model=model or f"{type_name} Scenario Control",
                 **via_kwargs,
             )
             self._cen_devices.add(device_key)
@@ -156,6 +182,26 @@ class GatewayEventDispatcher:
             self._logger.debug("Could not auto-register %s device %s: %s", who, object_id, err)
 
     _ensure_cen_device = ensure_cen_device
+
+    @staticmethod
+    def _intercom_call_kind(message: OWNMessage) -> int | None:
+        """Call kind of a WHO 8 call (`*8*1#<kind>#<mm>*<where>##`), or None when unreadable."""
+        kind = getattr(message, "call_kind", None)
+        if kind is None:
+            pub_params = getattr(message, "what_param", None)
+            priv_params = getattr(message, "_what_param", None)
+            params = (
+                pub_params
+                if isinstance(pub_params, (list, tuple))
+                else priv_params
+                if isinstance(priv_params, (list, tuple))
+                else []
+            )
+            kind = params[0] if params else None
+        try:
+            return int(kind) if kind is not None else None
+        except (TypeError, ValueError):
+            return None
 
     def _is_active_for_who(self, who: int | None) -> bool:
         """Return True if this gateway is the active owner for this WHO subsystem."""
@@ -239,6 +285,8 @@ class GatewayEventDispatcher:
             or isinstance(message, OWNHeatingEvent)
         ):
             if not message.is_translation:
+                if isinstance(message, OWNHeatingEvent) and str(message.where or "").startswith("#0"):
+                    self.handler.has_central_unit = True
                 if isinstance(message, OWNLightingEvent) and self._is_active_for_who(1):
                     if (
                         not getattr(message, "is_group", False)
@@ -246,18 +294,27 @@ class GatewayEventDispatcher:
                         and not getattr(message, "is_general", False)
                         and message.is_on is not None
                         and message.dimension is None
+                        and getattr(message, "what", None) not in (30, 31)
                     ):
                         # Only an actuator's own on/off status is a member echo: motion
-                        # frames and illuminance / PIR dimension pushes must not cancel
-                        # or count towards a resync sweep.
+                        # frames, illuminance / PIR dimension pushes and WHAT 30/31 dim
+                        # steps (relative commands, "on" only to OWNd 2.0.0b11) must not
+                        # cancel or count towards a resync sweep (#367).
                         self.handler._resync_manager.handle_ptp_echo(message)
 
                     dim = getattr(message, "dimension", None)
-                    is_not_dimension = dim is None or type(dim).__name__ == "MagicMock"
+                    is_not_dimension = not (isinstance(dim, int) and not isinstance(dim, bool))
 
-                    if message.is_on is not None and is_not_dimension:
+                    # A dim step (WHAT 30/31) says the light changed, not that it is on (#367).
+                    # It fires no on/off event but still resyncs its members, whether OWNd
+                    # reports its `is_on` as True (2.0.0b11) or None.
+                    is_dim_step = getattr(message, "what", None) in (30, 31)
+
+                    if (message.is_on is not None or is_dim_step) and is_not_dimension:
                         event = "on" if message.is_on else "off"
-                        if message.is_general:
+                        if is_dim_step:
+                            pass  # no on/off event; the members are still resynced below
+                        elif message.is_general:
                             self.hass.bus.async_fire(
                                 "myhome_general_light_event",
                                 {"message": str(message), "event": event},
@@ -286,7 +343,24 @@ class GatewayEventDispatcher:
                             or getattr(message, "is_group", False)
                         ):
                             self.handler._schedule_resync(message)
-                elif isinstance(message, OWNAutomationEvent) and self._is_active_for_who(2):
+                elif (
+                    isinstance(message, OWNAutomationEvent)
+                    and self._is_active_for_who(2)
+                    # Only a command frame that states the motion is an open/close/stop
+                    # event (#367). As for WHO 1, a dimension frame is never one. This is
+                    # a defensive parser invariant, not a readback actuators send: a real
+                    # shutter reports DIMENSION 10 on its own point-to-point address, never
+                    # on a group, area or general WHERE. OWNd still parses a grammatically
+                    # valid scope DIMENSION 10 frame (`*#2*#5*10*10*50*001*0##`) with
+                    # `is_opening` / `is_closing` False, which must not become a stop nor
+                    # fire the gateway's `centralized_shutter_stop` trigger. A WHAT outside
+                    # the table leaves `is_opening` / `is_closing` None and states nothing.
+                    and not (
+                        isinstance(getattr(message, "dimension", None), int)
+                        and not isinstance(getattr(message, "dimension", None), bool)
+                    )
+                    and (message.is_opening is not None or message.is_closing is not None)
+                ):
                     if message.is_opening and not message.is_closing:
                         event = "open"
                     elif message.is_closing and not message.is_opening:
@@ -295,7 +369,7 @@ class GatewayEventDispatcher:
                         event = "stop"
 
                     where_raw = getattr(message, "where", None)
-                    where_val = str(where_raw) if (where_raw is not None and not str(where_raw).startswith("<MagicMock")) else "0"
+                    where_val = str(where_raw) if (isinstance(where_raw, (str, int)) and not isinstance(where_raw, bool)) else "0"
 
                     auto_payload: dict[str, Any] = {
                         "message": str(message),
@@ -348,6 +422,8 @@ class GatewayEventDispatcher:
                     message,
                 )
         elif isinstance(message, OWNHeatingCommand) and message.dimension is not None and message.dimension == 14 and self._is_active_for_who(4):
+            if not getattr(self.handler, "supports_zone_status", True):
+                return
             where_str = cast(str, message.where)
             where = where_str[1:] if where_str.startswith("#") else where_str
             self._logger.debug(
@@ -385,7 +461,7 @@ class GatewayEventDispatcher:
             except (ValueError, TypeError):  # pragma: no cover - defensive
                 obj_val = raw_obj
             try:
-                pb_val = int(message.push_button)
+                pb_val: int | None = int(message.push_button)
             except (ValueError, TypeError):  # pragma: no cover - defensive
                 pb_val = message.push_button
 
@@ -415,6 +491,47 @@ class GatewayEventDispatcher:
                     cenplus_payload["entry_id"] = target_entry_id
                 self.hass.bus.async_fire("myhome_cenplus_event", cenplus_payload)
                 dispatcher_send(self.hass, f"myhome_cenplus_event_{target_mac}", cenplus_payload)
+            self._logger.debug(
+                "%s %s",
+                self.handler.log_id,
+                message.human_readable_log,
+            )
+        elif isinstance(message, OWNScenarioPlusEvent):
+            raw_obj = str(message.object) if getattr(message, "object", None) is not None else ""
+            if not raw_obj and getattr(message, "where", None) is not None:  # pragma: no cover - defensive
+                raw_obj = str(message.where)
+            clean_obj = raw_obj.split("#")[0]
+            try:
+                obj_val = int(clean_obj)
+            except (ValueError, TypeError):  # pragma: no cover - defensive
+                obj_val = raw_obj
+
+            target_mac = self.handler.mac
+            config_entry = getattr(self.handler, "config_entry", None)
+            target_entry_id = getattr(config_entry, "entry_id", None) if config_entry else None
+
+            if getattr(self.handler, "is_standby", False):
+                primary_gw = self.handler._get_primary_gateway()
+                if primary_gw is not None and not primary_gw.is_connected and self.handler._profile_supports_who(25):
+                    target_mac = primary_gw.mac
+                    pri_entry = getattr(primary_gw, "config_entry", None)
+                    target_entry_id = getattr(pri_entry, "entry_id", None) if pri_entry else None
+                else:
+                    target_mac = None
+
+            if target_mac is not None and self._is_active_for_who(25):
+                if raw_obj:
+                    self.handler._ensure_cen_device(25, raw_obj, model="CEN+ Scenario Plus Control")
+                scenarioplus_payload: dict[str, Any] = {
+                    "object": obj_val,
+                    "action": getattr(message, "action", None),
+                    "where": raw_obj,
+                    "gateway_mac": target_mac,
+                }
+                if target_entry_id and isinstance(target_entry_id, str):
+                    scenarioplus_payload["entry_id"] = target_entry_id
+                self.hass.bus.async_fire("myhome_scenario_plus_event", scenarioplus_payload)
+                dispatcher_send(self.hass, f"myhome_scenario_plus_event_{target_mac}", scenarioplus_payload)
             self._logger.debug(
                 "%s %s",
                 self.handler.log_id,
@@ -498,6 +615,78 @@ class GatewayEventDispatcher:
             )
             if isinstance(message, OWNGatewayEvent):
                 self.handler._handle_gateway_diagnostics(message)
+        elif isinstance(message, OWNDoorEntryEvent) or getattr(message, "who", None) in (6, 8):
+            if getattr(message, "is_translation", False):
+                self._logger.debug(
+                    "%s Ignoring translation message `%s`",
+                    self.handler.log_id,
+                    message,
+                )
+                return
+            who = getattr(message, "who", None)
+            what_pub = getattr(message, "what", None)
+            what = what_pub if isinstance(what_pub, (int, str)) else getattr(message, "_what", None)
+            where_val = getattr(message, "where", "")
+            # WHO 8 WHAT 1 starts any call session. Only the entrance panels (kinds 1-4)
+            # ring the door; internal handset calls (kind 6), external intercom calls
+            # across SCS interfaces (kind 7), and pager broadcasts (kind 14) from
+            # libqtdevices TS10_1_0_23 must not, and a kind that cannot be read fails
+            # closed. Older OWNd releases flag every WHAT 1 as an incoming call, so WHO 8
+            # never trusts the library's is_call / is_incoming_call.
+            is_who8_call = who == 8 and what == 1 and self._intercom_call_kind(message) in ENTRANCE_PANEL_KINDS
+            is_broadcast = getattr(message, "is_broadcast_call", who == 6 and what == 6 and str(where_val) == "4100")
+            # WHO 6 WHAT 20 is not in the published WHO 6 table (WHAT 0, 6, 9, 10, 11, 12,
+            # 18, 22) and no bus capture of it exists in this repository: unverified.
+            is_chime = getattr(message, "is_chime", who == 6 and what == 20)
+            if who == 8:
+                is_call = is_who8_call
+            else:
+                is_incoming = getattr(message, "is_incoming_call", who == 6 and what == 6)
+                is_call = getattr(message, "is_call", is_incoming or is_chime)
+
+            target_mac = self.handler.mac
+            config_entry = getattr(self.handler, "config_entry", None)
+            target_entry_id = getattr(config_entry, "entry_id", None) if config_entry else None
+
+            if getattr(self.handler, "is_standby", False):
+                primary_gw = self.handler._get_primary_gateway()
+                if (
+                    primary_gw is not None
+                    and not primary_gw.is_connected
+                    and who is not None
+                    and self.handler._profile_supports_who(who)
+                ):
+                    target_mac = primary_gw.mac
+                    pri_entry = getattr(primary_gw, "config_entry", None)
+                    target_entry_id = getattr(pri_entry, "entry_id", None) if pri_entry else None
+                else:
+                    target_mac = None
+
+            # On a shared bus every gateway sees the same frame; only the active owner
+            # of the subsystem may announce it or each ring fires once per gateway.
+            if target_mac is not None and is_call and self._is_active_for_who(who):
+                event_name = (
+                    "broadcast_call"
+                    if is_broadcast
+                    else "chime"
+                    if is_chime
+                    else "call"
+                )
+                doorbell_payload = {
+                    "where": str(where_val),
+                    "event": event_name,
+                    "is_broadcast": is_broadcast,
+                    "gateway_mac": target_mac,
+                }
+                if target_entry_id and isinstance(target_entry_id, str):
+                    doorbell_payload["entry_id"] = target_entry_id
+                self.hass.bus.async_fire("myhome_doorbell_event", doorbell_payload)
+                dispatcher_send(self.hass, f"myhome_doorbell_event_{target_mac}", doorbell_payload)
+            self._logger.debug(
+                "%s %s",
+                self.handler.log_id,
+                getattr(message, "human_readable_log", str(message)),
+            )
         elif getattr(message, "who", None) == 1013:
             if getattr(message, "dimension", getattr(message, "_dimension", None)) == 1:
                 self.handler._handle_gateway_identity_diagnostics(message)
@@ -516,6 +705,47 @@ class GatewayEventDispatcher:
                 self.handler.log_id,
                 message,
             )
+        elif isinstance(message, OWNSceneEvent):
+            target_mac = self.handler.mac
+            config_entry = getattr(self.handler, "config_entry", None)
+            target_entry_id = getattr(config_entry, "entry_id", None) if config_entry else None
+
+            if getattr(self.handler, "is_standby", False):
+                primary_gw = self.handler._get_primary_gateway()
+                if primary_gw is not None and not primary_gw.is_connected and self.handler._profile_supports_who(17):
+                    target_mac = primary_gw.mac
+                    pri_entry = getattr(primary_gw, "config_entry", None)
+                    target_entry_id = getattr(pri_entry, "entry_id", None) if pri_entry else None
+                else:
+                    target_mac = None
+
+            if target_mac is not None and self._is_active_for_who(17):
+                scene_val: int | str | None = message.scenario
+                if message.scenario is not None:
+                    try:
+                        scene_val = int(message.scenario)
+                    except ValueError:
+                        pass
+
+                scene_payload: dict[str, Any] = {
+                    "scenario": scene_val,
+                    "where": str(message.where),
+                    "state": message.state,
+                    "is_on": message.is_on,
+                    "is_enabled": message.is_enabled,
+                    "gateway_mac": target_mac,
+                }
+                if target_entry_id and isinstance(target_entry_id, str):
+                    scene_payload["entry_id"] = target_entry_id
+
+                self.hass.bus.async_fire("myhome_scene_event", scene_payload)
+                dispatcher_send(self.hass, f"myhome_scene_event_{target_mac}", scene_payload)
+
+                self._logger.debug(
+                    "%s %s",
+                    self.handler.log_id,
+                    message.human_readable_log,
+                )
         else:
             self._logger.debug(
                 "%s Unsupported message type: `%s`",

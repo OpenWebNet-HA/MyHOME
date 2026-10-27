@@ -122,16 +122,15 @@ def test_a_reading_that_crosses_zero_follows_the_bus(hass: HomeAssistant, gatewa
 
 @pytest.mark.parametrize(("raw", "expected"), ALL_CASES)
 def test_raw_decoder(raw: str, expected: float) -> None:
-    from custom_components.myhome.const import who4_raw_to_celsius
+    from OWNd.message import who4_temperature
 
-    _assert_temperature(who4_raw_to_celsius(raw), expected)
+    _assert_temperature(who4_temperature(raw), expected)
 
 
 def test_raw_decoder_rejects_garbage_and_the_sensor_ignores_it(hass: HomeAssistant, gateway: MagicMock) -> None:
-    from custom_components.myhome.const import who4_raw_to_celsius
+    from OWNd.message import who4_temperature
 
-    with pytest.raises(ValueError):
-        who4_raw_to_celsius("n/a")
+    assert who4_temperature("n/a") is None
 
     sensor = _sensor(hass, gateway)
     sensor._attr_native_value = 4.2

@@ -939,10 +939,18 @@ async def async_stop_cover_calibration(hass: Any = None, gateway_mac: str | None
 
 
 def _stored_calibration(config_entry: Any, device_id: str) -> dict[str, Any] | None:
-    """Return the persisted calibration for a cover, if any."""
+    """Return the persisted calibration for a cover, if any.
+
+    Records are keyed by the canonical device id (`04`, `04#4#01`); a record a
+    migration could not move is still found under its 4-digit spelling (#147).
+    """
     options = getattr(config_entry, "options", None) or {}
     stored = options.get(CONF_COVER_TRAVEL_TIMES) or {}
     entry = stored.get(str(device_id))
+    if entry is None:
+        base, sep, rest = str(device_id).partition("#")
+        if len(base) == 2 and base[0] == "0" and base[1] != "0":
+            entry = stored.get(f"00{base}{sep}{rest}")
     return dict(entry) if isinstance(entry, dict) else None
 
 

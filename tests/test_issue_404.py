@@ -225,12 +225,12 @@ async def test_fancoil_fan_in_auto_hvac_mode_determines_action_from_temperature(
     climate._target_temperature = 22.0
 
     # 1. Current temp 25.0°C > target 22.0°C -> Cooling
-    climate._attr_current_temperature = 25.0
+    climate._attr_native_current_temperature = 25.0
     climate.handle_event(OWNEvent.parse("*#4*1#2*20*8##"))
     assert climate.hvac_action == HVACAction.COOLING
 
     # 2. Current temp 19.0°C < target 22.0°C -> Heating
-    climate._attr_current_temperature = 19.0
+    climate._attr_native_current_temperature = 19.0
     climate.handle_event(OWNEvent.parse("*#4*1#2*20*8##"))
     assert climate.hvac_action == HVACAction.HEATING
 

@@ -42,3 +42,7 @@ Two rooms unchecked and one added in Music Assistant while the leader keeps play
 
 ### Restart, park, join and play, 2026-09-29 (`live_2026-09-29_group_restart_park_join_and_play.json`)
 Build with the routing memory: two rooms joined and the parked group played; shows the one remaining repeat (a leaving room cleared the memory) that the follow-up commit removes.
+
+### Parked group decoder takeover, 2026-10-16 (`live_2026-10-16_parked_group_decoder_takeover.json`)
+Captured from a live MH200 + F441M plant where Environment 1 (`zone_17` leading `zone_18`) was parked (`parked: true`, hardware amplifiers off, `decoder_1` in `off`) while reporting `idle` in Home Assistant. When Music Assistant attempted to start a new sync group on `badkamer` (`zone_36`) with `zone_21`, `zone_23`, `zone_22`, and `zone_35`, `DecoderPool` saw `zone_17` in `idle` and rejected playback with `"All audio matrix inputs are currently in use by other rooms!"`. Replayed in `tests/test_audio_group_live_replay.py` to verify that an idle decoder held by a parked group is cleanly reassigned to the new room, the parked group dissolves to `off` without redundant `*16*13*17##` / `*16*13*18##` bus frames, and the new rooms wake and route to Source 2.
+

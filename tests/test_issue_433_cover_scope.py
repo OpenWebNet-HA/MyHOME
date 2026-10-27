@@ -19,6 +19,7 @@ replayed.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from datetime import timedelta
 from types import SimpleNamespace
@@ -34,6 +35,7 @@ from homeassistant.const import (
     CONF_PORT,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
 from OWNd.message import OWNEvent, OWNMessage
@@ -356,6 +358,8 @@ async def test_scope_cover_behind_an_interface_commands_each_member(gateway) -> 
     gateway.send.reset_mock()
     await area.async_close_cover()
     assert sorted(_sent(gateway)) == ["*2*2*11#4#02##", "*2*2*12#4#02##"]
+    for p in points:
+        p._cancel_stop_task()  # the members' runs from unknown settle on their travel timer
 
 
 async def test_scope_cover_on_the_main_bus_sends_one_scope_frame(gateway) -> None:
@@ -366,6 +370,8 @@ async def test_scope_cover_on_the_main_bus_sends_one_scope_frame(gateway) -> Non
         family.add(c)
     await area.async_open_cover()
     assert _sent(gateway) == ["*2*1*1##"]
+    for c in family.members(area.scope):
+        c._cancel_stop_task()  # the members' runs from unknown settle on their travel timer
 
 
 def test_general_scope_behind_an_interface_holds_that_interface_only(gateway) -> None:
@@ -394,6 +400,7 @@ async def test_scope_cover_behind_an_interface_positions_each_member(gateway) ->
     area = _cover(gateway, "1", "02", scope=CoverScope.of("1", "02"))
     for c in (*points, area):
         family.add(c)
+        c._attr_current_cover_position = 50  # known: a partial target can be timed
     with patch.object(MyHOMECover, "async_set_cover_position", AsyncMock()) as timed:
         await area.async_set_cover_position(position=40)
     assert timed.await_count == 2  # one timed run per member, none for the scope
@@ -425,3 +432,334 @@ async def test_scope_cover_timeout_edges(hass: HomeAssistant, gateway) -> None:
     await group.async_will_remove_from_hass()
     unsub.assert_called_once()
     assert group._unsub_members is None and group._run_timeout is None
+
+
+async def test_general_scope_cover_behind_an_interface_sends_native_broadcast(gateway) -> None:
+    """A general cover (WHERE=0) behind an F422 interface sends native broadcast frames."""
+    family = CoverFamily()
+    points = [_cover(gateway, "11", "02"), _cover(gateway, "12", "02"), _cover(gateway, "13", "02")]
+    general = _cover(gateway, "0", "02", scope=CoverScope.of("0", "02"))
+    for c in (*points, general):
+        family.add(c)
+
+    await general.async_open_cover()
+    assert _sent(gateway) == ["*2*1*0#4#02##"]
+
+    gateway.send.reset_mock()
+    await general.async_stop_cover()
+    assert _sent(gateway) == ["*2*0*0#4#02##"]
+
+    gateway.send.reset_mock()
+    await general.async_close_cover()
+    assert _sent(gateway) == ["*2*2*0#4#02##"]
+    for p in points:
+        p._cancel_stop_task()  # the members' runs from unknown settle on their travel timer
+
+
+async def test_general_scope_cover_behind_an_interface_paces_member_positioning(gateway) -> None:
+    """OpenWebNet has no broadcast percentage position: members behind an interface are positioned with pacing."""
+    family = CoverFamily()
+    points = [_cover(gateway, "11", "02"), _cover(gateway, "12", "02"), _cover(gateway, "13", "02")]
+    general = _cover(gateway, "0", "02", scope=CoverScope.of("0", "02"))
+    for c in (*points, general):
+        family.add(c)
+        c._attr_current_cover_position = 50  # known: a partial target can be timed
+
+    with (
+        patch.object(MyHOMECover, "async_set_cover_position", AsyncMock()) as member_pos,
+        patch("asyncio.sleep", AsyncMock()) as mock_sleep,
+    ):
+        await general.async_set_cover_position(position=50)
+
+    assert member_pos.await_count == 3
+    # First member moves immediately (i=0), subsequent members (i=1, 2) sleep PACED_FANOUT_DELAY (0.3s)
+    assert mock_sleep.await_count == 2
+    mock_sleep.assert_awaited_with(0.3)
+
+
+def test_relay_general_scopes_to_interface_covers(gateway) -> None:
+    """A general frame with an interface (e.g. *2*2*0#4#02##) only moves covers on that interface."""
+    family = CoverFamily()
+    c_int = _cover(gateway, "11", "02")
+    c_main = _cover(gateway, "85")
+    general_int = _cover(gateway, "0", "02", scope=CoverScope.of("0", "02"))
+    for c in (c_int, c_main, general_int):
+        family.add(c)
+
+    router = FrameRouter()
+    c_int_events = []
+    c_main_events = []
+    general_int_events = []
+    router.subscribe("2", [c_int._device_id], c_int_events.append)
+    router.subscribe("2", [c_main._device_id], c_main_events.append)
+    router.subscribe("2", [general_int._device_id], general_int_events.append)
+
+    runtime = SimpleNamespace(router=router)
+
+    def relay_general(message) -> None:
+        interface = getattr(message, "interface", None)
+        if interface:
+            keys = [f"0#4#{interface}", *family.keys_moved_by("0", interface)]
+            runtime.router.publish("2", keys, message)
+        else:
+            runtime.router.publish("2", ("general",), message)
+
+    msg_int = OWNEvent.parse("*2*2*0#4#02##")
+    relay_general(msg_int)
+
+    assert len(c_int_events) == 1
+    assert len(general_int_events) == 1
+    assert len(c_main_events) == 0  # main bus cover 85 must not receive interface 02 general frame!
+
+
+async def test_scope_cover_tilt_handling(hass: HomeAssistant, gateway) -> None:
+    """Test that scope covers fan out tilt commands to members and memberless scopes do not arm run timeout on tilt."""
+    fut = asyncio.Future()
+    fut.set_result(time.monotonic())
+    gateway.send.return_value = fut
+
+    # 1. Memberless scope cover with slat_tilt=True: tilt move does not arm full-travel _run_timeout
+    group = _cover(gateway, "#7", scope=CoverScope.of("#7"), slat_tilt=True, slat_time=2.0)
+    group.entity_id = "cover.group_7"
+    group.hass = hass
+    await group.async_set_cover_tilt_position(tilt_position=100)
+    assert group._is_tilting is True
+    assert group._run_timeout is None
+
+    # Receiving a tilt movement event while tilting also does not arm _run_timeout
+    group.handle_event(OWNEvent.parse("*2*1*#7##"))
+    assert group._run_timeout is None
+    await group.async_stop_cover_tilt()
+    assert group._is_tilting is False
+
+    await group.async_close_cover_tilt()
+    await group.async_stop_cover_tilt()
+    await group.async_open_cover_tilt()
+    await group.async_stop_cover_tilt()
+
+    # 2. Scope cover with member covers with slat_tilt=True fans out tilt commands and aggregates tilt
+    family = CoverFamily()
+    p1 = _cover(gateway, "11", "02", slat_tilt=True)
+    p1.entity_id = "cover.point_11_02"
+    p2 = _cover(gateway, "12", "02", slat_tilt=True)
+    p2.entity_id = "cover.point_12_02"
+    area = _cover(gateway, "1", "02", scope=CoverScope.of("1", "02"), slat_tilt=True)
+    area.entity_id = "cover.area_1_02"
+    for c in (p1, p2, area):
+        family.add(c)
+    p1._attr_current_cover_tilt_position = 20
+    p2._attr_current_cover_tilt_position = 40
+    assert area.current_cover_tilt_position == 30
+
+    # Behind the F422 each blind gets its own pulse, one after the other: the next
+    # one starts only once the previous blind's stop is on the bus.
+    order: list[str] = []
+
+    async def fake_set(self, **kwargs):
+        order.append(f"set {self._where} {kwargs['tilt_position']}")
+
+    async def fake_wait(self):
+        order.append(f"end {self._where}")
+
+    with patch.object(MyHOMECover, "async_set_cover_tilt_position", fake_set), \
+         patch.object(MyHOMECover, "_async_wait_pulse_end", fake_wait):
+        await area.async_open_cover_tilt()
+        assert order == ["set 11 100", "end 11", "set 12 100", "end 12"]
+        order.clear()
+        await area.async_close_cover_tilt()
+        assert order == ["set 11 0", "end 11", "set 12 0", "end 12"]
+        order.clear()
+        await area.async_set_cover_tilt_position(tilt_position=60)
+        assert order == ["set 11 60", "end 11", "set 12 60", "end 12"]
+
+    with patch.object(MyHOMECover, "async_stop_cover_tilt", AsyncMock()) as mock_stop:
+        await area.async_stop_cover_tilt()
+        assert mock_stop.await_count == 2
+
+
+def _local_area_with_blinds(gateway):
+    """Area 1 on the local bus with two Venetian blinds, lowered, slats closed."""
+    family = CoverFamily()
+    p1 = _cover(gateway, "11", slat_tilt=True)
+    p2 = _cover(gateway, "12", slat_tilt=True)
+    area = _cover(gateway, "1", scope=CoverScope.of("1"), slat_tilt=True)
+    for c in (p1, p2, area):
+        family.add(c)
+    for m in (p1, p2):
+        m._attr_current_cover_position = m._start_position = 0
+        m._attr_current_cover_tilt_position = 0
+    return area, p1, p2
+
+
+def _write_each_send(gateway, fail: str | None = None):
+    loop = asyncio.get_running_loop()
+
+    async def send(cmd):
+        fut = loop.create_future()
+        if fail is not None and str(cmd) == fail:
+            fut.set_exception(OSError("connection lost"))
+        else:
+            fut.set_result(time.monotonic())
+        return fut
+
+    gateway.send.side_effect = send
+
+
+async def test_scope_tilt_on_the_local_bus_turns_member_slats_not_curtains(gateway) -> None:
+    """One area frame turns every member's slats: members follow the pulse, not a curtain run."""
+    area, p1, p2 = _local_area_with_blinds(gateway)
+    _write_each_send(gateway)
+    with patch("asyncio.sleep", new=AsyncMock()):
+        await area.async_set_cover_tilt_position(tilt_position=50)
+        assert p1._tilt_follows is area and p1._is_tilting
+        for c in (area, p1, p2):
+            c.handle_event(OWNEvent.parse("*2*0*1##"))  # relayed stop before the direction status
+        assert p1._is_tilting and p2._is_tilting
+        for c in (area, p1, p2):
+            c.handle_event(OWNEvent.parse("*2*1*1##"))
+        assert p1._run_started_at is None  # no curtain run anchored
+        assert p1._tilt_start_time == area._tilt_start_time
+        await area._stop_task
+    for m in (p1, p2):
+        m.handle_event(OWNEvent.parse("*2*0*1##"))  # relay of the scope stop
+        assert m.current_cover_tilt_position == 50
+        assert m.current_cover_position == 0
+        assert not m.is_opening
+    assert area.current_cover_tilt_position == 50
+    assert [str(c.args[0]) for c in gateway.send.call_args_list] == ["*2*1*1##", "*2*0*1##"]
+
+
+async def test_curtain_command_right_after_a_scope_pulse_releases_the_followers(gateway) -> None:
+    """Taken over before the motor start was known: no slat travel is counted for anyone."""
+    area, p1, p2 = _local_area_with_blinds(gateway)
+    _write_each_send(gateway)
+    await area.async_set_cover_tilt_position(tilt_position=50)
+    await area.async_close_cover()
+    for m in (p1, p2):
+        assert m._is_tilting is False and m._tilt_follows is None
+        assert m.current_cover_tilt_position == 0
+
+
+async def test_scope_without_slat_tilt_ignores_tilt_commands(gateway) -> None:
+    area = _cover(gateway, "1", scope=CoverScope.of("1"))
+    await area.async_set_cover_tilt_position(tilt_position=50)
+    gateway.send.assert_not_called()
+
+
+async def test_member_error_in_a_one_by_one_tilt_does_not_stop_the_others(gateway) -> None:
+    family = CoverFamily()
+    p1 = _cover(gateway, "11", "02", slat_tilt=True)
+    p2 = _cover(gateway, "12", "02", slat_tilt=True)
+    area = _cover(gateway, "1", "02", scope=CoverScope.of("1", "02"), slat_tilt=True)
+    for c in (p1, p2, area):
+        family.add(c)
+    tilted: list[str] = []
+
+    async def fake_set(self, **kwargs):
+        if self._where == "11":
+            raise HomeAssistantError("Cover 11 is moving; stop it before tilting the slats")
+        tilted.append(self._where)
+
+    with patch.object(MyHOMECover, "async_set_cover_tilt_position", fake_set), \
+         patch.object(MyHOMECover, "_async_wait_pulse_end", AsyncMock()):
+        with pytest.raises(HomeAssistantError, match="Cover 11"):
+            await area.async_set_cover_tilt_position(tilt_position=50)
+    assert tilted == ["12"]
+
+
+async def test_scope_tilt_is_refused_while_a_member_runs(gateway) -> None:
+    area, p1, _p2 = _local_area_with_blinds(gateway)
+    p1.handle_event(OWNEvent.parse("*2*1*11##"))  # keypad run of one member
+    with pytest.raises(HomeAssistantError, match="is moving"):
+        await area.async_set_cover_tilt_position(tilt_position=50)
+    gateway.send.assert_not_called()
+
+
+async def test_undelivered_scope_pulse_releases_its_followers(gateway) -> None:
+    area, p1, p2 = _local_area_with_blinds(gateway)
+    _write_each_send(gateway, fail="*2*1*1##")
+    with pytest.raises(HomeAssistantError):
+        await area.async_set_cover_tilt_position(tilt_position=50)
+    for m in (p1, p2):
+        assert m._is_tilting is False
+        assert m._tilt_follows is None
+        assert m.current_cover_tilt_position == 0
+
+
+async def test_member_command_during_a_scope_pulse_takes_its_motor_over(gateway) -> None:
+    area, p1, p2 = _local_area_with_blinds(gateway)
+    _write_each_send(gateway)
+    with patch("asyncio.sleep", new=AsyncMock()):
+        await area.async_set_cover_tilt_position(tilt_position=100)
+        area.handle_event(OWNEvent.parse("*2*1*1##"))
+        start = area._tilt_start_time
+        with patch("time.monotonic", return_value=start + 0.5):
+            await p1.async_close_cover()  # a quarter of the slat travel done
+        assert p1._tilt_follows is None and p1.is_closing
+        assert p1.current_cover_tilt_position == 25
+        assert p2._tilt_follows is area  # the other blind still follows
+        await area._stop_task
+    assert p2.current_cover_tilt_position == 100
+
+
+def test_scope_cover_state_follows_its_members_like_a_cover_group(gateway) -> None:
+    """Fresh timed members are unknown, so is the area; one known member decides (review 5639677952 on #795)."""
+    family = CoverFamily()
+    points = [_cover(gateway, "11"), _cover(gateway, "12")]
+    area = _cover(gateway, "1", scope=CoverScope.of("1", None))
+    for c in (*points, area):
+        family.add(c)
+    assert all(m.is_closed is None for m in points)
+    assert area.is_closed is None
+    assert area.state is None  # rendered "unknown", not "open"
+    assert area.current_cover_position is None
+
+    points[0]._attr_current_cover_position = 50  # one member known and open
+    assert area.is_closed is False
+    assert area.state == "open"
+
+    points[0]._attr_current_cover_position = 0  # the known member is closed, the other still unknown
+    assert area.is_closed is True  # as HA Core's CoverGroup: unknown members do not count
+    assert area.state == "closed"
+
+    points[1]._attr_current_cover_position = 100
+    assert area.is_closed is False
+
+
+async def test_scope_position_behind_an_interface_is_refused_before_any_member_moves(gateway) -> None:
+    """A mixed known / unknown fan-out raises before a frame, not after the first member started."""
+    family = CoverFamily()
+    points = [_cover(gateway, "11", "02"), _cover(gateway, "12", "02")]
+    area = _cover(gateway, "1", "02", scope=CoverScope.of("1", "02"))
+    for c in (*points, area):
+        family.add(c)
+    points[0]._attr_current_cover_position = 50  # known
+    assert points[1].current_cover_position is None  # unknown
+    with pytest.raises(ServiceValidationError) as err:
+        await area.async_set_cover_position(position=40)
+    assert err.value.translation_key == "cover_position_unknown"
+    assert _sent(gateway) == []  # member 11 was not started
+    assert points[0].is_opening is False and points[0].is_closing is False
+    # The end positions are full runs for every member and go through.
+    with patch.object(MyHOMECover, "async_set_cover_position", AsyncMock()) as timed:
+        await area.async_set_cover_position(position=0)
+    assert timed.await_count == 2
+
+
+async def test_scope_tilt_follows_its_members_and_is_unknown_until_they_are(gateway) -> None:
+    """The scope's slat angle is its members' mean, None while no member knows its angle."""
+    family = CoverFamily()
+    p1 = _cover(gateway, "11", slat_tilt=True)
+    p2 = _cover(gateway, "12", slat_tilt=True)
+    area = _cover(gateway, "1", scope=CoverScope.of("1"), slat_tilt=True)
+    for c in (p1, p2, area):
+        family.add(c)
+    assert area.current_cover_tilt_position is None
+    with pytest.raises(ServiceValidationError) as err:
+        await area.async_set_cover_tilt_position(tilt_position=50)
+    assert err.value.translation_key == "cover_tilt_position_unknown"
+    assert _sent(gateway) == []
+    p1._attr_current_cover_tilt_position = 0
+    assert area.current_cover_tilt_position == 0  # the one known member
+    p2._attr_current_cover_tilt_position = 100
+    assert area.current_cover_tilt_position == 50

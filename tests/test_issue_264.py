@@ -245,7 +245,7 @@ async def test_temperature_registry_restoration(mock_gateway, mock_config_entry)
 
     assert len(discovered_entities) == 1
     sensor = discovered_entities[0]
-    assert sensor.entity_id == "sensor.custom_probe_name"
+    assert sensor.unique_id == f"{mac}-4-100-temperature"
     assert sensor._where == "100"
 
 

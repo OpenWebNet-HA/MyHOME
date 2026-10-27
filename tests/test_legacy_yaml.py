@@ -11,7 +11,11 @@ from homeassistant.core import HomeAssistant
 from custom_components.myhome.const import (
     CONF_FILE_PATH,
 )
-from custom_components.myhome.legacy_yaml import _read_legacy_yaml, load_legacy_myhome_yaml
+from custom_components.myhome.legacy_yaml import (
+    _read_legacy_yaml,
+    _same_mac,
+    load_legacy_myhome_yaml,
+)
 
 
 @pytest.fixture
@@ -350,3 +354,171 @@ async def test_legacy_yaml_mac_key_fallback_branches(mock_hass, base_entry, tmp_
         await load_legacy_myhome_yaml(mock_hass, base_entry, configured_platforms)
         assert "15" in configured_platforms["light"]
 
+
+
+# ── 5. MAC mismatch is logged (#106) ────────────────────────────────────────
+
+
+async def test_legacy_yaml_mac_mismatch_warns_with_entry_mac_and_keys(
+    mock_hass, base_entry, tmp_path, caplog
+):
+    """A section under a MAC no gateway has is reported, naming the entry MAC and the keys found."""
+    yaml_file = tmp_path / "myhome.yaml"
+    yaml_file.write_text(
+        "'00:03:50:00:00:00':\n  light:\n    hallway:\n      where: '21'\n      name: 'Hallway'\n",
+        encoding="utf-8",
+    )
+    mock_hass.config_entries.async_entries.return_value = [base_entry]
+    configured_platforms = _make_configured_platforms()
+
+    with caplog.at_level("WARNING", logger="custom_components.myhome"):
+        await load_legacy_myhome_yaml(mock_hass, base_entry, configured_platforms)
+
+    assert "21" not in configured_platforms["light"]
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert any("00:03:50:81:22:33" in m and "00:03:50:00:00:00" in m for m in warnings), warnings
+
+
+async def test_legacy_yaml_section_of_another_gateway_does_not_warn(
+    mock_hass, base_entry, tmp_path, caplog
+):
+    """With two gateways, a file that only has the other gateway's section is not a mismatch."""
+    yaml_file = tmp_path / "myhome.yaml"
+    yaml_file.write_text(
+        "'00:03:50:99:99:99':\n  light:\n    hallway:\n      where: '21'\n      name: 'Hallway'\n",
+        encoding="utf-8",
+    )
+    other = MagicMock(spec=ConfigEntry)
+    other.entry_id = "other"
+    other.data = {CONF_MAC: "00:03:50:99:99:99"}
+    other.disabled_by = None
+    base_entry.disabled_by = None
+    mock_hass.config_entries.async_entries.return_value = [base_entry, other]
+    configured_platforms = _make_configured_platforms()
+
+    with caplog.at_level("WARNING", logger="custom_components.myhome"):
+        await load_legacy_myhome_yaml(mock_hass, base_entry, configured_platforms)
+
+    assert not [r for r in caplog.records if r.levelname == "WARNING" and "myhome.yaml" in r.getMessage()]
+
+
+def _other_entry(mac: str | None) -> ConfigEntry:
+    other = MagicMock(spec=ConfigEntry)
+    other.entry_id = "other"
+    other.data = {CONF_MAC: mac} if mac is not None else {}
+    other.disabled_by = None
+    return other
+
+
+def _myhome_warnings(caplog) -> list[str]:
+    return [
+        r.getMessage()
+        for r in caplog.records
+        if r.levelname == "WARNING" and "myhome.yaml" in r.getMessage()
+    ]
+
+
+async def test_legacy_yaml_mixed_sections_warn_only_for_orphan_keys(
+    mock_hass, base_entry, tmp_path, caplog
+):
+    """One section of another gateway plus one orphan: the warning names the orphan only."""
+    yaml_file = tmp_path / "myhome.yaml"
+    yaml_file.write_text(
+        "'00:03:50:99:99:99':\n  light:\n    hallway:\n      where: '21'\n      name: 'Hallway'\n"
+        "'00:03:50:00:00:00':\n  light:\n    kitchen:\n      where: '22'\n      name: 'Kitchen'\n",
+        encoding="utf-8",
+    )
+    mock_hass.config_entries.async_entries.return_value = [
+        base_entry,
+        _other_entry("00:03:50:99:99:99"),
+    ]
+    configured_platforms = _make_configured_platforms()
+
+    with caplog.at_level("WARNING", logger="custom_components.myhome"):
+        await load_legacy_myhome_yaml(mock_hass, base_entry, configured_platforms)
+
+    assert configured_platforms["light"] == {}
+    warnings = _myhome_warnings(caplog)
+    assert len(warnings) == 1, warnings
+    assert "00:03:50:81:22:33" in warnings[0]
+    assert "00:03:50:00:00:00" in warnings[0]
+    assert "00:03:50:99:99:99" not in warnings[0]
+
+
+async def test_legacy_yaml_other_gateway_section_spelled_differently_does_not_warn(
+    mock_hass, base_entry, tmp_path, caplog
+):
+    """A hyphen-spelled section of the other gateway is recognised as its section, not an orphan."""
+    yaml_file = tmp_path / "myhome.yaml"
+    yaml_file.write_text(
+        "'00-03-50-99-99-99':\n  light:\n    hallway:\n      where: '21'\n      name: 'Hallway'\n",
+        encoding="utf-8",
+    )
+    mock_hass.config_entries.async_entries.return_value = [
+        base_entry,
+        _other_entry("00:03:50:99:99:99"),
+    ]
+    configured_platforms = _make_configured_platforms()
+
+    with caplog.at_level("WARNING", logger="custom_components.myhome"):
+        await load_legacy_myhome_yaml(mock_hass, base_entry, configured_platforms)
+
+    assert configured_platforms["light"] == {}
+    assert _myhome_warnings(caplog) == []
+
+
+def test_same_mac_compares_spellings_and_never_raises():
+    """`dr.format_mac` returns a non-MAC unchanged, so no fallback is needed: equal junk is equal, a MAC is not junk."""
+    assert _same_mac("00-03-50-99-99-99", "00:03:50:99:99:99") is True
+    assert _same_mac("0003.5099.9999", "00:03:50:99:99:99") is True
+    assert _same_mac("not-a-mac", "not-a-mac") is True
+    assert _same_mac("not-a-mac", "00:03:50:99:99:99") is False
+    assert _same_mac(None, "None") is True
+
+
+async def test_legacy_yaml_malformed_section_key_is_a_parse_error_not_a_mismatch(
+    mock_hass, base_entry, tmp_path, caplog
+):
+    """A section key that is no MAC is refused by the schema before the mismatch check could run."""
+    yaml_file = tmp_path / "myhome.yaml"
+    yaml_file.write_text(
+        "'not-a-mac':\n  light:\n    hallway:\n      where: '21'\n      name: 'Hallway'\n",
+        encoding="utf-8",
+    )
+    mock_hass.config_entries.async_entries.return_value = [base_entry]
+    configured_platforms = _make_configured_platforms()
+
+    with (
+        caplog.at_level("WARNING", logger="custom_components.myhome"),
+        patch("custom_components.myhome.legacy_yaml._log_mac_mismatch") as mismatch,
+    ):
+        await load_legacy_myhome_yaml(mock_hass, base_entry, configured_platforms)
+
+    mismatch.assert_not_called()
+    assert configured_platforms["light"] == {}
+    errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert len(errors) == 1 and "Invalid MAC address" in errors[0]
+    assert _myhome_warnings(caplog) == []
+
+
+async def test_legacy_yaml_mac_mismatch_skips_other_entry_without_mac(
+    mock_hass, base_entry, tmp_path, caplog
+):
+    """Another entry with no MAC is skipped: the key stays an orphan and "None" is never printed."""
+    yaml_file = tmp_path / "myhome.yaml"
+    yaml_file.write_text(
+        "'00:03:50:00:00:00':\n  light:\n    hallway:\n      where: '21'\n      name: 'Hallway'\n",
+        encoding="utf-8",
+    )
+    mock_hass.config_entries.async_entries.return_value = [base_entry, _other_entry(None)]
+    configured_platforms = _make_configured_platforms()
+
+    with caplog.at_level("WARNING", logger="custom_components.myhome"):
+        await load_legacy_myhome_yaml(mock_hass, base_entry, configured_platforms)
+
+    assert configured_platforms["light"] == {}
+    warnings = _myhome_warnings(caplog)
+    assert len(warnings) == 1, warnings
+    assert "00:03:50:81:22:33" in warnings[0]
+    assert "00:03:50:00:00:00" in warnings[0]
+    assert "None" not in warnings[0]

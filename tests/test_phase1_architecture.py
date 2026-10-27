@@ -1196,6 +1196,72 @@ class TestEntityRegistryMigrationSafety:
 
         await hass.config_entries.async_unload(entry.entry_id)
 
+    @pytest.mark.asyncio
+    async def test_preserve_legacy_compat_name_on_ha_2026_11(self, hass: HomeAssistant):
+        """Verify preserve_legacy_compat_name sets compat_name when RegistryEntry supports it (HA 2026.11+)."""
+        from types import SimpleNamespace
+
+        from custom_components.myhome.migrate import preserve_legacy_compat_name
+
+        fake_entry = SimpleNamespace(entity_id="light.keuken_lamp", compat_name=None)
+        updated_entry = SimpleNamespace(entity_id="light.keuken_lamp", compat_name="Keuken Plafond")
+
+        assert preserve_legacy_compat_name(hass, "light.keuken_lamp", None, "Keuken Plafond") is None
+        assert preserve_legacy_compat_name(hass, "light.keuken_lamp", fake_entry, None) is fake_entry
+        assert preserve_legacy_compat_name(hass, "light.keuken_lamp", updated_entry, "Keuken Plafond") is updated_entry
+
+        with patch.object(
+            er.async_get(hass),
+            "_async_update_entity",
+            return_value=updated_entry,
+        ) as mock_update:
+            res = preserve_legacy_compat_name(
+                hass, "light.keuken_lamp", fake_entry, "Keuken Plafond"
+            )
+            assert res is updated_entry
+            mock_update.assert_called_once_with(
+                "light.keuken_lamp", compat_name="Keuken Plafond"
+            )
+
+        # Subclasses that override async_added_to_hass() without super() (such as
+        # MyHOMEMediaPlayer) still restore _legacy_compat_name via _register_availability_listener().
+        from custom_components.myhome.media_player import MyHOMEMediaPlayer
+
+        fake_gw = SimpleNamespace(
+            mac="00:03:50:00:12:34",
+            device_registry_id=None,
+            availability_signal="myhome_avail_test",
+            profile_supports_who=lambda _who: True,
+        )
+        mp = MyHOMEMediaPlayer(
+            hass=hass,
+            name="Audio Zone 1",
+            entity_name=None,
+            device_id="1#16",
+            who="16",
+            where="1",
+            manufacturer="BTicino",
+            model="Audio System",
+            gateway=fake_gw,
+        )
+        mp.hass = hass
+        mp.entity_id = "media_player.zone_living"
+        mp.registry_entry = SimpleNamespace(entity_id="media_player.zone_living", compat_name=None)
+        mp._legacy_compat_name = "Woonkamer Audio"
+        updated_mp_entry = SimpleNamespace(
+            entity_id="media_player.zone_living", compat_name="Woonkamer Audio"
+        )
+        with patch.object(
+            er.async_get(hass),
+            "_async_update_entity",
+            return_value=updated_mp_entry,
+        ) as mock_mp_update:
+            await mp.async_added_to_hass()
+            assert mp.registry_entry is updated_mp_entry
+            mock_mp_update.assert_called_once_with(
+                "media_player.zone_living", compat_name="Woonkamer Audio"
+            )
+
 class TestPhase1GoldenPlantSampleIssue247:
     """End-to-end golden plant conformance tests using real production data from Issue #247.
 

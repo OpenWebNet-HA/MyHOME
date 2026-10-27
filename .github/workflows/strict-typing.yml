@@ -30,11 +30,14 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: Install Home Assistant (pinned by pytest-homeassistant-custom-component) and mypy
+      - name: Install Home Assistant (pinned by pytest-homeassistant-custom-component), pinned OWNd, and mypy
+        # OWNd is the exact `OWNd==` pin from manifest.json, so mypy checks the
+        # integration against the types users install.
         run: |
           python -m pip install --upgrade pip
-          pip install pytest-homeassistant-custom-component mypy
-          python -c "import homeassistant.const as c; print('Home Assistant', c.__version__)"
+          OWND_PIN=$(python -c "import json; print(next(r for r in json.load(open('custom_components/myhome/manifest.json'))['requirements'] if r.startswith('OWNd==')))")
+          pip install pytest-homeassistant-custom-component mypy "$OWND_PIN"
+          python -c "import homeassistant.const as c, OWNd; print('Home Assistant', c.__version__, '| OWNd', OWNd.__version__)"
 
       - name: mypy --strict ratchet
         # `shell: bash` (not the default) so the step runs with `pipefail`: without it

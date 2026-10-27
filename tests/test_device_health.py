@@ -369,9 +369,9 @@ async def test_frames_without_a_point_address_or_a_binary_mask_are_ignored(hass)
     health = _health(hass)
     health.observe(SimpleNamespace(who=1, where=None, unknown_state=99, is_on=None))
     health.observe(SimpleNamespace(who=1, where="74", unknown_state=32, is_on=None))
-    health.observe(SimpleNamespace(who=1001, where="74", dimension=99, _dimension_value=["01"]))
-    health.observe(SimpleNamespace(who=1001, where="74", dimension=11, _dimension_value=[]))
-    health.observe(SimpleNamespace(who=1001, where="74", dimension=11, _dimension_value=["1201"]))
+    health.observe(SimpleNamespace(who=1001, where="74", dimension=99, dimension_value=["01"]))
+    health.observe(SimpleNamespace(who=1001, where="74", dimension=11, dimension_value=[]))
+    health.observe(SimpleNamespace(who=1001, where="74", dimension=11, dimension_value=["1201"]))
     health.observe(_frame(FAULT))
     assert _issue(hass).translation_placeholders["evidence"] == ""
 

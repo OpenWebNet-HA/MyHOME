@@ -93,11 +93,12 @@ def test_sync_trace_matrix_missing_target(tmp_path, monkeypatch):
 def test_parse_services_yaml():
     """Verify parse_services_yaml extracts services correctly."""
     services = syncdoc.parse_services_yaml()
-    assert len(services) >= 11
+    assert len(services) >= 12
     for expected_svc in (
         "send_message", "turn_on_timed", "sync_time", "sweep_bus",
         "calibrate_cover", "stop_cover_calibration", "set_cover_travel_time",
         "reset_cover_travel_time", "start_sending_instant_power",
+        "stop_sending_instant_power",
         "tuner_seek_up", "tuner_seek_down",
     ):
         assert expected_svc in services
@@ -331,12 +332,23 @@ def test_check_all_documentation_real_tree():
     assert ok is True, f"Real tree documentation drift detected: {messages}"
 
 
+def test_sync_gateway_discovery_detects_drift_and_updates(tmp_path, monkeypatch):
+    """Verify sync_gateway_discovery detects drift and updates hardware-compatibility.md."""
+    (tmp_path / "getting-started").mkdir(parents=True, exist_ok=True)
+    hw_doc = tmp_path / "getting-started" / "hardware-compatibility.md"
+    hw_doc.write_text(
+        f"{syncdoc.DISCOVERY_START_MARKER}\nOutdated Discovery Table\n{syncdoc.DISCOVERY_END_MARKER}",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(syncdoc, "DOCS_DIR", tmp_path)
 
+    ok, messages = syncdoc.sync_gateway_discovery(update=False)
+    assert ok is False
+    assert any("Gateway Discovery table out of sync" in m for m in messages)
 
+    ok_up, messages_up = syncdoc.sync_gateway_discovery(update=True)
+    assert ok_up is True
+    assert any("Updated Gateway Discovery table" in m for m in messages_up)
 
-
-
-
-
-
-
+    ok_after, _ = syncdoc.sync_gateway_discovery(update=False)
+    assert ok_after is True

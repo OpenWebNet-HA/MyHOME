@@ -153,12 +153,14 @@
           "gateway_role": "Gatewayrol",
           "primary_gateway": "Primaire gateway",
           "delegated_whos": "Gedelegeerde subsystemen",
-          "ignored_addresses": "Genegeerde adressen"
+          "ignored_addresses": "Genegeerde adressen",
+          "tuner_pictures": "Tunerafbeeldingen"
         },
         "data_description": {
           "decoder_1_pre_gain": "Kalibreer aan de hand van de hardware, niet op gevoel: voedt de line-out van deze decoder een BTicino Ingresso RCA-module (L/N/NT4560) of Controllo Stereo (L4561), verhoog dan Pre-Gain tijdens het afspelen tot het signaal-ledje van die module oranje knippert — niet vast groen (signaal te laag) of vast rood/oranje (clipping). Sluit altijd de vaste line-out ('OUT') van de decoder aan, nooit een volume-afhankelijke hoofdtelefoon-/AUX-uitgang: een tweede ongecontroleerde versterkingstrap daar veroorzaakt precies de vervorming waar BTicino's eigen storingzoektabel voor waarschuwt.",
           "delegated_whos": "Alleen voor de rol secundair: subsystemen waarvan deze gateway nieuwe apparaten detecteert. Apparaten die de primaire gateway al heeft, blijven bij de primaire.",
           "ignored_addresses": "Negeer vermelde adressen permanent (bijv. 1/74, 1/74#4#01): slaat detectie, entiteiten en storingsregistratie over. Scheid meerdere vermeldingen met nieuwe regels of komma's.",
+          "tuner_pictures": "Eén MHz=URL per regel (bijv. 96.2=/local/radio/one.png): de afbeelding die wordt getoond zolang een tuner op die frequentie staat. Je eigen afbeeldingen; er worden er geen meegeleverd.",
           "command_worker_count": "Aanbevolen voor de {model}: {session_default}. Hij accepteert maximaal {session_limit} commandosessie(s), en elke sessie gebruikt samen met de eventsessie een van de weinige verbindingen, die ook de Legrand/BTicino-app en andere clients nodig hebben. Verhoog alleen als commando's in de wachtrij komen."
         }
       },
@@ -234,7 +236,17 @@
         },
         "duration": {
           "name": "Duration",
-          "description": "For how long the instant power information will be sent."
+          "description": "For how long the instant power information will be sent in minutes (0 to stop)."
+        }
+      }
+    },
+    "stop_sending_instant_power": {
+      "name": "Stop sending instant power",
+      "description": "Stop automatic instant power draw updates for a sensor.",
+      "fields": {
+        "entity_id": {
+          "name": "Entity",
+          "description": "Name(s) of entities that will stop sending instant power information."
         }
       }
     },
@@ -316,15 +328,31 @@
           "name": "Looptijd omhoog",
           "description": "Seconden voor een volledige openingsbeweging (1-180)."
         },
+        "slat_time": {
+          "name": "Kanteltijd lamellen",
+          "description": "Seconden die de lamellen van een jaloezie nodig hebben voor een volledige kanteling (0.5-10). Alleen gebruikt door rolluiken met slat_tilt ingeschakeld."
+        },
         "copied_from": {
           "name": "Gekopieerd van",
           "description": "Het rolluik waarvan deze tijden zijn overgenomen; de bron wordt dan gemeld als \"copied\" in plaats van \"manual\"."
+        },
+        "min_motor_pulse": {
+          "name": "Minimale motorpulsduur",
+          "description": "Minimale duur in seconden (0.0-5.0) van een motorpuls om mechanische speling en remtraagheid te overwinnen (0.0 schakelt uit)."
         }
       }
     },
     "reset_cover_travel_time": {
       "name": "Looptijd rolluik terugzetten",
       "description": "Vergeet de gemeten of handmatig ingestelde looptijden en valt terug op travel_time uit myhome.yaml of de standaardwaarde van 25 s."
+    },
+    "cancel_cover_request": {
+      "name": "Annuleer poort- of garagedeurverzoek",
+      "description": "Annuleert een openstaand goedkeuringsverzoek of een lopende voorwaarschuwing van een impuls-poort of garagedeur. Annuleren is altijd veilig; er beweegt niets."
+    },
+    "acknowledge_cover_fault": {
+      "name": "Bevestig en herstel poort- of garagedeurstoring",
+      "description": "Wist de vergrendelde storing wanneer een poort of garagedeur niet de verwachte status bereikte na een impuls (mogelijk obstakel of omkering). Alleen een geautoriseerde gebruiker die thuis is kan dit bevestigen; tot die tijd blijft sluiten vanuit Home Assistant geblokkeerd."
     }
   },
   "issues": {
@@ -384,6 +412,10 @@
     "primary_gateway_missing": {
       "title": "Primaire gateway van {gateway} ontbreekt",
       "description": "{gateway} is geconfigureerd als secundaire of warm-standby gateway voor {primary}, maar die gateway is niet langer geconfigureerd als gedeelde primaire gateway. {gateway} onderdrukt detectie totdat deze opnieuw is geconfigureerd."
+    },
+    "legacy_yaml_imported": {
+      "title": "Verouderde myhome.yaml geïmporteerd voor {gateway}",
+      "description": "De apparaatconfiguratie in `myhome.yaml` voor {gateway} is gekopieerd naar de configuratie-opties van Home Assistant. Zolang `myhome.yaml` bestaat, blijft dat bestand leidend en volgt de kopie de wijzigingen. Wordt het bestand verwijderd of onleesbaar, dan houden de apparaten de configuratie van de laatste kopie."
     }
   },
   "exceptions": {
@@ -409,7 +441,7 @@
       "message": "{name}: geen stopstatus van de actuator binnen {timeout} s - mogelijk meldt hij geen status; stel travel_time handmatig in"
     },
     "cover_reports_position": {
-      "message": "{name} meldt zijn positie; looptijdkalibratie is daarop niet van toepassing"
+      "message": "{name} meldt zijn positie (advanced: true in myhome.yaml); looptijdkalibratie is daarop niet van toepassing. Als dit een standaard tijdgestuurde actuator is (bijv. F411) die dimensie 10 niet ondersteunt, verwijder dan advanced: true uit myhome.yaml."
     },
     "calibration_in_progress": {
       "message": "{name} wordt al gekalibreerd"
@@ -418,7 +450,7 @@
       "message": "{name}: onwaarschijnlijke {direction}-loop van {seconds} s; niet opgeslagen"
     },
     "travel_time_missing": {
-      "message": "Geef ten minste travel_time of travel_time_down/up op"
+      "message": "Geef ten minste travel_time, travel_time_down/up of min_motor_pulse op"
     },
     "travel_time_out_of_range": {
       "message": "{field} moet tussen {min} s en {max} s liggen"
@@ -428,6 +460,12 @@
     },
     "cover_busy_calibrating": {
       "message": "{entity_id} wordt gekalibreerd; probeer het opnieuw wanneer dat klaar is"
+    },
+    "cover_busy_moving": {
+      "message": "{name} beweegt; stop het voordat u de lamellen kantelt"
+    },
+    "slat_tilt_not_enabled": {
+      "message": "{name} heeft slat_tilt niet ingeschakeld; slat_time kan niet worden ingesteld"
     },
     "decoders_busy": {
       "message": "{entity_id}: alle ingangen van de audiomatrix zijn momenteel in gebruik door andere ruimtes"
@@ -464,6 +502,9 @@
     },
     "seek_not_supported": {
       "message": "{entity_id}: frequentie zoeken wordt alleen ondersteund op tunerbron-entiteiten"
+    },
+    "volume_not_finite": {
+      "message": "{entity_id}: volumeniveau {volume} is geen geldig eindig getal"
     }
   },
   "entity": {

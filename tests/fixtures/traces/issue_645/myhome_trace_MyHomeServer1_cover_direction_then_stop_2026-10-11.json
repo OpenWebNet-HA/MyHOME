@@ -1,0 +1,166 @@
+{
+  "capture": {
+    "kind": "trace",
+    "started_at": "2026-10-11T16:32:34.000000+00:00",
+    "filters": {
+      "who": "2",
+      "where": "91",
+      "direction": null
+    },
+    "window": {
+      "first": "2026-10-11T16:32:34.000000+00:00",
+      "last": "2026-10-11T16:32:34.216000+00:00",
+      "frames": 9,
+      "buffer_frames": 9,
+      "buffer_depth": 200,
+      "truncated": false
+    }
+  },
+  "environment": {
+    "home_assistant_version": "2026.9.2",
+    "integration_version": "2.0.0b15",
+    "ownd_version": "2.0.0b9",
+    "exported_at": "2026-10-11T16:32:35.000000+00:00"
+  },
+  "gateway": {
+    "model": "MyHomeServer1",
+    "manufacturer": "BTicino S.p.A.",
+    "firmware": "2.87.13",
+    "mac_prefix": "00:03:50",
+    "connection_type": "tcp",
+    "queue_pacing": 0.02,
+    "is_connected": true,
+    "identification": {
+      "model": "MyHomeServer1",
+      "source": "ssdp",
+      "configured_model": "MyHomeServer1",
+      "ssdp_model": "MyHomeServer1",
+      "who13_code": null,
+      "who13_model": null,
+      "who13_model_official": null,
+      "who13_model_observed": null,
+      "who13_firmware": null,
+      "who13_kernel": null,
+      "who13_distribution": null,
+      "profile": "MyHomeServer1Profile",
+      "conflict": null
+    }
+  },
+  "telemetry": {
+    "total_rx": 7,
+    "total_tx": 2,
+    "captured_in_buffer": 9,
+    "buffer_depth": 200,
+    "queue_depth": 0
+  },
+  "frames": [
+    {
+      "timestamp": 1791736354.0,
+      "iso_time": "2026-10-11T16:32:34.000000+00:00",
+      "direction": "tx",
+      "raw": "*2*1*91##",
+      "who": "2",
+      "what": "1",
+      "where": "91",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791736354.05,
+      "iso_time": "2026-10-11T16:32:34.050000+00:00",
+      "direction": "rx",
+      "raw": "*2*1000#0*91##",
+      "who": "2",
+      "what": "1000#0",
+      "where": "91",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791736354.095,
+      "iso_time": "2026-10-11T16:32:34.095000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*91##",
+      "who": "2",
+      "what": "0",
+      "where": "91",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791736354.118,
+      "iso_time": "2026-10-11T16:32:34.118000+00:00",
+      "direction": "rx",
+      "raw": "*2*1000#1*91##",
+      "who": "2",
+      "what": "1000#1",
+      "where": "91",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791736354.119,
+      "iso_time": "2026-10-11T16:32:34.119000+00:00",
+      "direction": "rx",
+      "raw": "*#*1##",
+      "who": null,
+      "what": null,
+      "where": null,
+      "dimension": null,
+      "is_ack": true,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791736354.139,
+      "iso_time": "2026-10-11T16:32:34.139000+00:00",
+      "direction": "tx",
+      "raw": "*2*0*91##",
+      "who": "2",
+      "what": "0",
+      "where": "91",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791736354.179,
+      "iso_time": "2026-10-11T16:32:34.179000+00:00",
+      "direction": "rx",
+      "raw": "*2*1000#0*91##",
+      "who": "2",
+      "what": "1000#0",
+      "where": "91",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791736354.179,
+      "iso_time": "2026-10-11T16:32:34.179000+00:00",
+      "direction": "rx",
+      "raw": "*#*1##",
+      "who": null,
+      "what": null,
+      "where": null,
+      "dimension": null,
+      "is_ack": true,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791736354.216,
+      "iso_time": "2026-10-11T16:32:34.216000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*91##",
+      "who": "2",
+      "what": "0",
+      "where": "91",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    }
+  ]
+}

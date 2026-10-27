@@ -11,7 +11,7 @@ from typing import Any
 from homeassistant.components.automation.config import AUTOMATION_BLUEPRINT_SCHEMA
 from homeassistant.components.blueprint.models import Blueprint, BlueprintInputs
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import template
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
@@ -65,6 +65,7 @@ def _register_services(hass: HomeAssistant) -> Calls:
     calls: Calls = []
 
     def recorder(action: str) -> Callable[[Any], None]:
+        @callback
         def record(call: Any) -> None:
             entity_id = call.data.get("entity_id", [])
             calls.append((action, [entity_id] if isinstance(entity_id, str) else list(entity_id)))

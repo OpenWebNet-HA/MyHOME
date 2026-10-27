@@ -44,6 +44,7 @@ from homeassistant.helpers.entity import Entity
 
 from .const import BUS_ROUTING, CONF_BUS_INTERFACE, CONF_WHERE, CONF_WHO, CONF_ZONE, DOMAIN, LOGGER
 from .data import MyHOMEConfigEntry, MyHOMERuntimeData
+from .expose import is_exposed_on_bus
 from .ignored import IgnoredAddresses
 from .myhome_device import MyHOMEEntity
 from .topology import peer_unique_id
@@ -102,6 +103,30 @@ class Address:
     def suffix(self) -> str:
         """Default-name suffix: ``12`` or ``12I01`` for a routed address."""
         return f"{self.clean_where}I{self.interface}" if self.interface else self.clean_where
+
+
+def is_broadcast_where(where: str | None) -> bool:
+    """Return whether an address is an OpenWebNet general or area broadcast (0 or 00).
+
+    Central units (#0, #0#1) and CEN 4-digit zone 0 pushbuttons (0001..0015)
+    are physical point targets and return False.
+    """
+    if not where:
+        return False
+    clean = str(where).split("-")[-1]
+    return not clean.startswith("#") and clean.split("#")[0] in ("0", "00")
+
+
+def is_motion_end(message: Any) -> bool:
+    """``*1*39*WHERE##``: a WHO 1 detector reports the end of movement (WHAT 39).
+
+    The gateway translator decodes the SCS presence status frame (class 0x1D) value 00
+    as WHAT 34 and value 01 as WHAT 39 (OpenWebNet-HA/own-firmware-oracle#56, merged, findings/who1-motion-detector.md:
+    F454, F459, F460, F461, MH200N, MH202, MyHomeServer1); an F454 + Legrand 067226 sends WHAT 39 about
+    45 s after the last WHAT 34 (#777). OWNd releases without WHAT 39 report it as
+    ``unknown_state`` 39, later ones as ``motion_end``.
+    """
+    return getattr(message, "motion_end", False) is True or getattr(message, "unknown_state", None) == 39
 
 
 def parse_unique_id(unique_id: str, mac: str, entry_mac: str | None = None) -> tuple[str | None, str]:
@@ -186,7 +211,7 @@ def prune_entity(hass: HomeAssistant, registry: er.EntityRegistry, entry: er.Reg
         if button is not None:
             registry.async_remove(button)
     if entry.device_id and not er.async_entries_for_device(registry, entry.device_id, include_disabled_entities=True):
-        dr.async_get(hass).async_update_device(entry.device_id, remove_config_entry_id=config_entry_id)
+        dr.async_get(hass).async_remove_device(entry.device_id)
 
 
 @callback
@@ -285,8 +310,13 @@ def message_has_state(entity: MyHOMEEntity, message: Any) -> bool:
         return getattr(message, "is_on", None) is not None
 
     # Heating zone: mode, setpoint and temperature arrive in separate frames, so a
-    # temperature-only frame must not cancel the poll for the rest.
+    # temperature-only frame must not cancel the poll for the rest on gateways that support it.
     if isinstance(entity, ClimateEntity):
+        if not getattr(entity, "_gateway_supports_zone_status", True):
+            # SCS-only gateway: only a zone that asks for its temperature (#185) still needs to.
+            return getattr(entity, "_polls_temperature", False) is not True or (
+                getattr(message, "main_temperature", None) is not None
+            )
         return False
 
     # Switch / binary device
@@ -420,12 +450,22 @@ class PlatformDiscovery:
         self.ignored_addresses = IgnoredAddresses.from_config_entry(config_entry)
 
     def _is_ignored(self, address: Address) -> bool:
-        """Whether this address is configured to be ignored on this gateway."""
+        """Whether this address is configured to be ignored or exposed as a virtual device on this gateway."""
         try:
             who_int = int(self.who)
         except (ValueError, TypeError):
             return False
-        return self.ignored_addresses.is_ignored(who_int, address.where, address.interface)
+        if self.ignored_addresses.is_ignored(who_int, address.where, address.interface):
+            return True
+        if self.platform != "climate":
+            full_where = (
+                f"{address.where}#4#{address.interface}"
+                if address.interface
+                else address.where
+            )
+            if is_exposed_on_bus(self.hass, self.config_entry, who_int, full_where):
+                return True
+        return False
 
     # ── registry ────────────────────────────────────────────────────────
 
@@ -464,6 +504,18 @@ class PlatformDiscovery:
                         LOGGER.info("%s: removed stale registry entry %s", self.platform, entry.entity_id)
                     except Exception as err:  # the entry may already be gone
                         LOGGER.debug("%s: could not remove %s: %s", self.platform, entry.entity_id, err)
+                continue
+
+            if not self.general_is_device and not ctx.cfg and is_broadcast_where(address.clean_where):
+                LOGGER.info(
+                    "%s: Pruned phantom broadcast entity %s (WHO %s WHERE %s)",
+                    self.platform,
+                    entry.entity_id,
+                    self.who,
+                    address.key,
+                )
+                if registry is not None:
+                    prune_entity(self.hass, registry, entry, self.config_entry.entry_id)
                 continue
 
             # Ignored addresses: permanently skip discovery, entities and fault tracking
@@ -588,6 +640,13 @@ class PlatformDiscovery:
             for entity in created:
                 if message_has_state(entity, ctx.message):
                     entity._poll_on_add = False
+        elif (
+            ctx.registry_entry is not None
+            and not ctx.registry_entry.has_entity_name
+            and ctx.registry_entry.name
+        ):
+            for entity in created:
+                entity._legacy_compat_name = ctx.registry_entry.name
         self.known.add(*keys)
         for entity in created:
             entity.async_on_remove(self.router.subscribe(self.who, keys, entity.handle_event))
@@ -600,11 +659,17 @@ class PlatformDiscovery:
         """Discover from, then route, one frame of this platform's WHO."""
         if self.event_type is not None and not isinstance(message, self.event_type):
             return
+        msg_who = getattr(message, "who", getattr(message, "_who", None))
+        if isinstance(msg_who, (str, int)) and str(msg_who) != str(self.who):
+            return
         if getattr(message, "is_translation", None) is True:
             return
-        if not self.general_is_device and (
-            getattr(message, "is_general", False) is True or str(getattr(message, "where", "")) == "0"
-        ):
+        where_raw = str(getattr(message, "where", ""))
+        is_general_msg = (
+            getattr(message, "is_general", False) is True
+            or is_broadcast_where(where_raw)
+        )
+        if not self.general_is_device and is_general_msg:
             if self.on_general:
                 self.on_general(message)
             return

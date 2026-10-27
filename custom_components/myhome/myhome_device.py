@@ -18,6 +18,7 @@ from homeassistant.helpers.typing import UNDEFINED
 from .const import CONF_ENTITIES, DOMAIN, LOGGER
 from .data import get_runtime_data
 from .device_health import DeviceHealth, Fault, FaultKind
+from .migrate import preserve_legacy_compat_name
 
 __all__ = ["Entity", "MyHOMEEntity"]
 
@@ -37,8 +38,10 @@ class MyHOMEEntity(RestoreEntity):
     # Whether to request a status update from the bus right after being added.
     # Push-only devices set this to False to avoid a useless (NACKed) query.
     _poll_on_add: bool = True
+    _bus_state_complete: bool = False
     # Sensors / binary sensors: let Home Assistant name the entity after its device class.
     _name_from_device_class: bool = False
+    _legacy_compat_name: str | None = None
 
     _attr_has_entity_name = True
 
@@ -224,6 +227,19 @@ class MyHOMEEntity(RestoreEntity):
         target_hass = self.hass or self._hass
         if target_hass is None:
             return
+        # Must run after EntityPlatform._async_add_entity_impl has attached device_id
+        # and set has_entity_name=True (which clears compat_name on HA 2026.11+),
+        # and before add_to_platform_finish() writes the initial state. Placing this
+        # here covers subclasses (media_player, advanced covers, alarm, sound_source)
+        # that override async_added_to_hass() without calling super().
+        if self._legacy_compat_name and self.entity_id:
+            self.registry_entry = preserve_legacy_compat_name(
+                target_hass,
+                self.entity_id,
+                self.registry_entry,
+                self._legacy_compat_name,
+            )
+            self._cached_friendly_name = None
         self.async_on_remove(
             async_dispatcher_connect(
                 target_hass,
@@ -249,7 +265,10 @@ class MyHOMEEntity(RestoreEntity):
         if self._poll_on_add:
             if (
                 hasattr(self._gateway_handler, "wait_for_initial_discovery")
-                and getattr(self._gateway_handler, "initial_discovery_pending", False) is True
+                and (
+                    getattr(self._gateway_handler, "sweep_active", False) is True
+                    or getattr(self._gateway_handler, "initial_discovery_pending", False) is True
+                )
             ):
                 target_hass = self.hass or self._hass
                 if target_hass is not None:
@@ -268,6 +287,12 @@ class MyHOMEEntity(RestoreEntity):
     async def _async_poll_after_discovery(self) -> None:
         """Poll device status once initial discovery has completed."""
         await self._gateway_handler.wait_for_initial_discovery()
+        if self._bus_state_complete:
+            LOGGER.debug("%s: state already reported on the bus, skipping post-discovery poll", self.entity_id)
+            # The startup sweep already reported the full state. Querying the point again
+            # makes an actuator re-announce itself, which MH200/MH200N scenarios with a
+            # "light is ON" start condition take for a real switch-on (#612).
+            return
         await self.async_update()
 
     async def async_update(self) -> None:

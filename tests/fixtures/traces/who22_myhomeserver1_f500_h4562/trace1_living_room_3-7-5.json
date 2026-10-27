@@ -1,0 +1,102 @@
+{
+  "capture": {
+    "kind": "hand-transcribed debug-log excerpt",
+    "title": "Living Room 3#7#5: power ON with source 1, F500 preset change, matrix switch, volume steps, atomic OFF",
+    "reporter": "bboykaos",
+    "source": "https://github.com/OpenWebNet-HA/OWNd/pull/103#issuecomment-6113362654",
+    "captured_at": "2026-10-11",
+    "abbreviated": true,
+    "abbreviation_note": "The reporter elided repeated frames with '...'; only frames literally present in the comment are listed, in bus order."
+  },
+  "gateway": {
+    "model": "MyHomeServer1",
+    "firmware": "2.x",
+    "connection_type": "tcp"
+  },
+  "frames": [
+    {
+      "raw": "*22*1#4#1*3#7#5##",
+      "note": "Turn ON zone, source 1 (stereo)"
+    },
+    {
+      "raw": "*#22*3#7#5*12*1*1##",
+      "note": "Status: ON, audio channel 1"
+    },
+    {
+      "raw": "*#22*5#2#1*11*1*1015*5##",
+      "note": "Tuner: FM, 101.5 MHz, preset 5"
+    },
+    {
+      "raw": "*#22*5#2#1*10*82*65*68*73*79##",
+      "note": "RDS station name chunk (5 ASCII codes)"
+    },
+    {
+      "raw": "*22*9*2#1##",
+      "note": "Next preset on source 1 (F500)"
+    },
+    {
+      "raw": "*#22*5#2#1*11*1*933*1##",
+      "note": "Tuner: FM, 93.3 MHz, preset 1"
+    },
+    {
+      "raw": "*#22*5#2#1*10*68*69*69*74*65##",
+      "note": "RDS station name chunk (5 ASCII codes)"
+    },
+    {
+      "raw": "*22*35#4#1#2*3#7#5##",
+      "note": "Matrix route: zone 3#7#5 to source 2"
+    },
+    {
+      "raw": "*#22*3#7#5*12*1*2##",
+      "note": "Status: ON, audio channel 2 (AUX 2)"
+    },
+    {
+      "raw": "*22*4#1*3#7#5##",
+      "note": "Volume step down"
+    },
+    {
+      "raw": "*#22*3#7#5*1*14##",
+      "note": "Volume 14"
+    },
+    {
+      "raw": "*22*4#1*3#7#5##",
+      "note": "Volume step down"
+    },
+    {
+      "raw": "*#22*3#7#5*1*13##",
+      "note": "Volume 13"
+    },
+    {
+      "raw": "*22*4#1*3#7#5##",
+      "note": "Volume step down"
+    },
+    {
+      "raw": "*#22*3#7#5*1*8##",
+      "note": "Volume 8"
+    },
+    {
+      "raw": "*22*3#1*3#7#5##",
+      "note": "Volume step up"
+    },
+    {
+      "raw": "*#22*3#7#5*1*9##",
+      "note": "Volume 9"
+    },
+    {
+      "raw": "*22*3#1*3#7#5##",
+      "note": "Volume step up"
+    },
+    {
+      "raw": "*#22*3#7#5*1*18##",
+      "note": "Volume 18"
+    },
+    {
+      "raw": "*22*0#4#0*3#7#5##",
+      "note": "Atomic turn OFF"
+    },
+    {
+      "raw": "*#22*3#7#5*12*0*10##",
+      "note": "Status: standby (state 0, type 10)"
+    }
+  ]
+}

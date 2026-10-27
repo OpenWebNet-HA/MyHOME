@@ -193,3 +193,36 @@ Someone reports "the kitchen light does not react". Ask them for:
 2. A raw command sent from the card's **Send frame** bar (administrators only) — `*1*1*12##` — while watching whether the actuator answers with `*1*1*12##` or the gateway with a NACK.
 
 The [troubleshooting guide](troubleshooting.md) maps the usual symptoms to what the trace shows.
+
+## 10. Whole-house & secondary bus shutter automations (the BTicino way)
+
+When closing many shutters together at sunset, targeting a dozen individual cover entities causes Home Assistant to dispatch commands concurrently. Behind an F422 interface, sending rapid consecutive point-to-point commands overloads the interface FIFO buffer, causing un-acknowledged shutters to stall open.
+
+Instead, declare a **General scope cover** (`where: "0"`, with `bus_interface:` if on a secondary bus) in `myhome.yaml`:
+
+```yaml
+# /config/myhome.yaml
+00:03:50:81:22:33:
+  cover:
+    all_shutters_east:
+      where: "0"
+      bus_interface: "02"
+      name: "All East Shutters"
+```
+
+In your automation, trigger this single entity:
+
+```yaml
+automation:
+  - alias: Close Windows at Sunset
+    triggers:
+      - trigger: sun
+        event: sunset
+        offset: "00:30:00"
+    actions:
+      - action: cover.close_cover
+        target:
+          entity_id: cover.all_shutters_east
+```
+
+The integration emits a single native OpenWebNet broadcast frame (`*2*2*0#4#02##`). All actuators energize simultaneously in total synchrony with zero bus queue latency and zero dropped frames. No artificial `delay:` or manual `cover.stop_cover` is needed—actuators stop cleanly on their own limit switches.

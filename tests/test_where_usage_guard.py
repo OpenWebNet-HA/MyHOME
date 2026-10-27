@@ -35,12 +35,16 @@ REVIEWED: dict[str, str] = {
     "sensor.py::async_setup_entry.energy_bus_address": "WHO 18: WHERE is the meter address",
     "sensor.py::async_setup_entry.illuminance_bus_address": "WHO 1 light sensor: WHERE is the address",
     "media_player.py::_zone_address": "WHO 16: WHERE is the sound zone",
+    "sound_source.py::who22_source_id": "WHO 22: WHERE (5#2#S or 2#S) names the tuner source a frame is about",
     "media_player.py::MyHOMEMediaPlayer.handle_event": "WHO 16: WHERE is the sound zone",
     "cover.py::MyHOMECover.handle_event": "WHO 2 calibration: general frame test and the cover's own WHERE",
+    "cover.py::MyHOMECover._handle_echo": "WHO 2 stop echo: general frame test (WHERE 0)",
     "gateway_resync.py::LightingResyncManager.handle_ptp_echo": "WHO 1 point-to-point echo: WHERE is the APL address",
     "gateway_resync.py::LightingResyncManager.schedule_resync": "WHO 1 point-to-point echo: WHERE is the APL address",
-    "gateway.py::MyHOMEGatewayHandler._correlate_shared_bus_traffic": "general-frame test for shared-bus correlation",
+    "topology.py::GatewayTopologyMixin._correlate_shared_bus_traffic": "general-frame test for shared-bus correlation",
     "device_health.py::message_where": "WHO 1 / 1001 point frames: WHERE (+ F422 interface) is the actuator address",
+    "gateway_sessions.py::_extract_target_key": "FrameScheduler target key: (WHO, WHERE) serialization key across all subsystems",
+    "gateway_sessions.py::CommandWorkerPool.claim_in_flight_dimension_where": "WHO-filtered in-flight dimension request WHERE for anonymous WHERE 0 reply correlation",
     # Diagnostics only: the WHERE is shown or filtered on, never routed.
     "bus_monitor.py::BusFrame.__init__": "diagnostics record",
     "websocket.py::_matches_filter": "diagnostics filter",
@@ -117,3 +121,24 @@ def test_probe_is_defined_once():
             ):
                 offenders.append(f"{path.name}:{node.lineno}")
     assert not offenders, f"probe test (>= 100) outside where_grammar: {offenders}"
+
+
+def test_no_magicmock_in_production():
+    """Production modules must not branch on ``MagicMock``."""
+    offenders = []
+    for path in sorted(ROOT.rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        if "MagicMock" in text:
+            offenders.append(str(path.relative_to(ROOT)))
+    assert not offenders, f"MagicMock reference in production code: {offenders}"
+
+
+def test_no_private_dimension_value_in_production():
+    """Production modules must use public ``dimension_value``, never ``_dimension_value``."""
+    offenders = []
+    for path in sorted(ROOT.rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        if "_dimension_value" in text:
+            offenders.append(str(path.relative_to(ROOT)))
+    assert not offenders, f"_dimension_value reference in production code: {offenders}"
+

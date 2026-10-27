@@ -8,20 +8,38 @@ How the v2 integration decides *what to poll*, *what to trust from the bus*, and
 
 After the event session is up, the integration sends a small set of general status requests to hydrate entities:
 
-| Frame | Subsystem |
-| :--- | :--- |
-| `*#1*0##` | Lighting |
-| `*#2*0##` | Automation / covers |
-| `*#4*0##` | Thermoregulation |
-| `*#16*0*5##` | Sound system (dimension 5; lists every amplifier) |
+| Frame | Subsystem | Supported Gateways |
+| :--- | :--- | :--- |
+| `*#1*0##` | Lighting | All gateways |
+| `*#2*0##` | Automation / covers | All gateways |
+| `*#4*0##` | Thermoregulation | All gateways except F450, F454, F459, F460, F461, H4684, MH200, MH201, MH202 and MyHomeServer1, whose firmware drops it (firmware oracle; the MH201 from a physical sweep trace, `tests/fixtures/traces/issue_466`); F460, F461 and MyHomeServer1 poll `*#4*<WHERE>##` per zone instead, and the zones of the SCS-only models (F450, F454, F459, H4684, MH200, MH201, MH202) ask `*#4*<WHERE>*0##` |
+| `*#5*0##` | Burglar alarm | MH202, H4890 |
+| `*#16*0*5##` | Sound system (dimension 5; lists every amplifier) | Gateways whose profile advertises WHO 16, except F450, F459, F460, F461, MH202 and MyHomeServer1, whose firmware drops it (firmware oracle) |
+| `*#18*51*51##` | Energy management (meter 51 total energy) | F454, F455, MH201, MH202, MyHomeServer1, H4890 |
+| `*#18*51*113##` | Energy management (meter 51 active power) | F454, F455, MH201, MH202, MyHomeServer1, H4890 |
 
 Each request is only sent when the gateway's OWNd **profile** advertises that WHO (`GatewayProfile.supported_who`). Unknown gateways keep the full set.
 
-The requests go out one at a time. The gateway ACKs a general request at once, but the replies (one frame per device, on the event session) keep coming for seconds on a large plant, and a second request sent in that window cuts the first reply short ([#578](https://github.com/OpenWebNet-HA/MyHOME/issues/578)). So after each request is written, the next one waits until the event session has been quiet for 0.75 s, at most 15 s. A request that is NACKed or never written still gets that wait. `myhome.sweep_bus` paces its general requests the same way, so a sweep on a large plant takes a few seconds per subsystem. Entities restored at startup poll their own state only after the whole sweep has finished.
+The requests go out one at a time. The gateway ACKs a general request at once, but the replies (one frame per device, on the event session) keep coming for seconds on a large plant, and a second request sent in that window cuts the first reply short ([#578](https://github.com/OpenWebNet-HA/MyHOME/issues/578)). So after each request is written, the next one waits until the event session has been quiet for 0.75 s, at most 15 s. A request that is NACKed or never written still gets that wait. `myhome.sweep_bus` paces its general requests the same way and, unless called with `force: true`, leaves out the ones the firmware drops just like the startup sweep, so a sweep on a large plant takes a few seconds per subsystem. Entities restored at startup poll their own state only after the whole sweep has finished.
 
 > OWNd 2.0.0b8 and earlier give an **MH200** the MH200N profile, which does not advertise WHO 16, so amplifiers behind an MH200 only appear once they send bus traffic. A live MH200 answers `*#16*0*5##` with every amplifier and source; [OWNd#53](https://github.com/OpenWebNet-HA/OWNd/issues/53) gives it its own profile.
 
 > The WHO 16 status request is `*#16*WHERE*5##` (spec section 1.5.2). Gateways NACK the bare `*#16*0##` for every address, whether or not the plant has audio, so an old NACK on that frame never meant "no audio".
+
+### Day 0 Blank-Start Discovery Matrix (Auto-discovered vs Manual Configuration)
+
+On a fresh installation with no `myhome.yaml` file (Day 0 blank start), the integration automatically queries and hydrates standard residential hardware subsystems according to gateway capabilities:
+
+| Subsystem / Feature | Auto-Discovered on Blank Start | Requires `myhome.yaml` or UI Configuration | Notes |
+| :--- | :---: | :---: | :--- |
+| **Lighting (WHO 1)** | ✅ Yes (`*#1*0##`) | Optional (custom names / classes) | Point-to-point lights (`11`–`99`) and routed addresses. Area/general broadcasts (`WHERE="0"` / `"00"`) do not create entities. |
+| **Automation / Covers (WHO 2)** | ✅ Yes (`*#2*0##`) | Optional (`travel_time`, general cover) | Point-to-point standard covers. Venetian tilt and impulse mode require manual configuration. |
+| **Thermoregulation (WHO 4)** | ✅ Yes (`*#4*0##`), per gateway | Optional (`cooling`, `fan`) | Standard zones (`1`–`99`) and central units (`#0`, `#0#1`). Area broadcasts (`00`) and probe broadcasts do not create climate entities. On F450, F454, F459, F460, F461, H4684, MH200, MH201, MH202 and MyHomeServer1 the firmware drops `*#4*0##` (see the table above), so with no registry entry and no `myhome.yaml` a zone is discovered from its first bus frame rather than by the startup sweep. |
+| **Burglar Alarm (WHO 5)** | ✅ Yes (`*#5*0##`) | Optional | Discovered on supported gateways (MH202, H4890). Panel tracks the central unit. |
+| **Sound System (WHO 16)** | ✅ Yes (`*#16*0*5##`), per gateway | Optional (streamer mapping) | Discovers all amplifier zones and sources via dimension 5 query where the profile advertises WHO 16. On F450, F459, F460, F461, MH202 and MyHomeServer1 the firmware drops `*#16*0*5##`, so amplifiers there are discovered from their first bus frame. |
+| **Energy Management (WHO 18)** | ✅ First Meter 51 only | Secondary meters (`52`–`59`) | Factory default residential meter `51` is queried at startup for power and total energy. Secondary meters are discovered dynamically upon bus emission or via `myhome.sweep_bus`. |
+| **Scenario Control (WHO 15 / 25)** | ❌ Stateless | N/A (Device Triggers / Events) | Pushbuttons emit events and device triggers; no entities are created. |
+| **Light Groups (`where: '#G'`)** | ❌ Bus limitation | Required (`members: [...]`) | OpenWebNet groups have no bus membership read-back command. |
 
 ---
 
@@ -42,8 +60,11 @@ Instead, the integration debounces across a bidirectional window:
 3. If member point-to-point status frames arrive before the timer fires (**trailing echoes**),
    the sweep is cancelled:
 
-   - For an **area**, only point-to-point echoes in that matching area cancel its timer;
-     unrelated areas stay armed.
+   - For an **area**, point-to-point echoes in that matching area only skip or cancel its
+     timer once *all* known `light`/`switch` entities registered in that area have echoed
+     with matching polarity (preventing partial CEN/Scenario bursts such as `MH200N`
+     scenarios from starving non-echoing actuators in the same area); unrelated areas stay
+     armed.
    - For a **group**, receiving multiple member echoes ($\ge 2$) in the window cancels its
      timer, protecting against unrelated bus frames.
 4. Otherwise, one status request is sent:
@@ -70,7 +91,7 @@ Every entity platform shares one setup skeleton (`custom_components/myhome/disco
 | **Discover** | The first frame from an unknown address creates the entity. | New actuators appear on their own; nothing needs a restart. |
 | **Route** | Every frame is delivered to the entities that own the address, through the gateway's frame router (`router.py`). | An entity is subscribed the moment it is created, under every spelling of its address, so no frame of a burst is lost while Home Assistant adds it. |
 
-Addresses follow the OpenWebNet `WHERE` conventions - point-to-point `APL` (`12`), area `A` (`1`), group `#G` (`#5`), general `0` - plus the F422 bus-routing form `APL#4#<bus>` (`0311#4#01`). Area, group and general frames never create an entity: they are broadcasts, not devices (the alarm central unit is the one subsystem where `WHERE = 0` is a real device). Translation frames (`*1*1000#1*14##`) are ignored as well.
+Addresses follow the OpenWebNet `WHERE` conventions - point-to-point `APL` (`12`), area `A` (`1`), group `#G` (`#5`), general `0` - plus the F422 bus-routing form `APL#4#<bus>` (`0311#4#01`). An area-0 point with PL 1..9 is spelled in two digits everywhere (`04`, not `0004`): `myhome.yaml` devices, `expose:` entries and the UI expose flow resolve `0004` to `04`, the form the gateways accept and report (#147). Area, group and general frames never create an entity: they are broadcasts, not devices (the alarm central unit is the one subsystem where `WHERE = 0` is a real device). Translation frames (`*1*1000#1*14##`) are ignored as well.
 
 Platforms only add what differs: which `WHO` they serve, how a device is built, and a few hooks - the light platform hands WHO 1 frames for configured switches and motion / illuminance sensors to those platforms instead of creating a light, the cover platform relays a general `*2*x*0##` to every cover, the media player maps stereo-module pseudo zones (`10x`-`14x`) to amplifier `x`, the climate platform reads the zone a heating frame concerns from its parameters (`*4*4001#5*0##` is about zone 5), and the sensor and binary-sensor platforms run one such cycle per subsystem they serve (energy meters, illuminance and temperature probes; dry contacts, auxiliary channels and motion sensors). A meter address owns one entity per measurement it reports. Contacts and probes remember every spelling of their address (`0021` and `21`) so a renamed entity is never duplicated after a restart.
 
@@ -151,13 +172,15 @@ The v2 model therefore:
 1. **Starts the clock at the write, not at enqueue.** The gateway's send queue reports when each frame actually left the socket (after any reconnect of the command session, and only when the gateway acknowledged it); with several covers commanded together the last one can leave many seconds after it was queued. A frame that is never delivered (connection lost, NACK) cancels its report, and the cover falls back to a run timed from now.
 2. **Opens an echo window** for each command, from enqueue until 1.5 s after the write (bounded: it closes at once when delivery fails, and 30 s after enqueue at the latest). Inside it, the relayed stop status is ignored and our own direction status **re-anchors the clock to the real motor start** — no gateway-specific latency constant needed. A gateway that never relays that status gets the measured 0.55 s motor-start delay added to the write time instead. An opposite-direction frame, or any frame after the window, is a genuine command (wall switch, scenario) and is handled normally.
 3. **Times `set_position` from that anchor**, then re-anchors at the target when the timer fires and lets the stop frame's own write time settle the estimate (target plus whatever the queue delay added).
-4. **Freezes the estimate for a stop at its write**, not at enqueue, and repaints the entity at every write so the estimate is right without waiting for a status frame.
+4. **Freezes the estimate for a stop provisionally at its write**, not at enqueue, and repaints the entity at every write so the estimate is responsive without waiting for a status frame. Gateways that never relay stop status keep this write-time freeze.
+5. **Re-anchors at the stop status echo**, when the gateway relays it within the echo window (34–47 ms, median 42 ms on MyHOMEServer1; 64–120 ms on F461). When the stop status arrives, the final position and `last_run_seconds` are re-anchored from `stop status - start anchor`.
+6. **Prioritises cover stops ahead of queued commands** (`#645`), while preserving FIFO order relative to earlier stops and never overtaking pending motion frames for the same cover or overlapping scopes (such as area or general broadcasts). Across multi-worker gateways, workers acquire sequential tickets at dequeue to keep wire delivery strictly FIFO regardless of session pacing.
 
 Trade-off: a wall-switch stop pressed in the ≤ 0.6 s between the write and the motor start is treated as an echo. The motor has not moved yet, so nothing is lost; once the motor-start status arrives the window closes and wall-switch stops are honoured immediately.
 
 **Calibration.** Because the actuator reports its motor start and stop, a timed cover can measure its own travel: `myhome.calibrate_cover` (or the *Calibrate travel time* button on the cover's device, or *Calibrate all covers* on the gateway) drives the cover fully up, then fully down (timed), then fully up (timed), one cover at a time per gateway, and stores the up and down times in the config entry options. The model then uses the up time when opening and the down time when closing. Measured values are the actuator's run times — equal to the physical travel on an installer-calibrated actuator; otherwise an upper bound. A run that ends at the factory 60 s cutoff is refused and nothing is stored; a run-time parameter the installer set longer than the travel (30 s on a 14 s shutter) is not detectable on the bus and is stored as is — a run stopped by hand (`last_run_seconds`) is the only check. See [Services → `myhome.calibrate_cover`](services.md#6-myhomecalibrate_cover).
 
-*(#302, measurements by @Interstellar0verdrive)*
+*(#302, #645, #705, measurements by @Interstellar0verdrive and @gdluck)*
 
 ---
 

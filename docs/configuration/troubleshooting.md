@@ -60,6 +60,19 @@ Log: `Event connection lost, reconnecting...` (OWNd) followed by a reconnect. Th
 
 Watch the card: if the actuator's own status frame (`*1*1*<where>##`) is missing after the press, the command was a group / area / general command that this actuator does not echo. See [Known Limitations](known_limitations.md#lighting-who-1) for the workaround.
 
+### Toggling a single light (or pressing a button) unexpectedly triggers an entire scenario / other lights
+
+- **Log / Bus trace**:
+  `Message *1*1*61## was successfully sent.` followed within ~20–65 ms by `Message received: *15*03*61##` → `Message received: *17*1*1##` (`Scene 1 is started`) → multiple other lights switching on.
+- **Root causes**:
+  1. **A Basic CEN (`WHO = 15`) control shares an `A`/`PL` address with a physical light or shutter actuator ([#612](https://github.com/OpenWebNet-HA/MyHOME/issues/612), [#773](https://github.com/OpenWebNet-HA/MyHOME/issues/773))**:  
+     A control device configured in Basic CEN mode (`M = CEN`) has been given the same `A`/`PL` address (e.g. `61`) as a physical light actuator (`WHO = 1`). When Home Assistant sends a command (`*1*1*61##`) or status request (`*#1*61##`) to address `61`, the CEN control at `61` reacts on the SCS bus by emitting `*15*<BUTTON>*61##`, which triggers the scenario programmed on your `MH200N` / `MH201` / `MH202` / `F420` (`*17*1*<SCENE>##`). Per BTicino's scenario-programmer manuals, `CEN` controls must use dedicated `A`/`PL` addresses that never duplicate any actuator address.
+  2. **A `CEN` / `CEN+` button is bound in both the MyHome app/programmer and Home Assistant ([Discussion #770](https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19121695))**:  
+     Home Assistant passively observes `WHO = 15` / `WHO = 25` button frames on the bus and cannot suppress native scenario execution. If a physical button is already configured in **MyHome_Up** (`MyHomeServer1`) or **MyHOME_Suite / TiMH200N** to run a bus scenario, attaching a Home Assistant automation to the same button will run both simultaneously.
+- **Resolution**:
+  - Reassign the `M = CEN` control (or the actuator) to a free `A`/`PL` address not used by any actuator, or remove/update the scenario trigger in **TiMH200N / MyHOME_Suite / MyHome_Up**. See [Scenario Controls & Pushbuttons](cen_cenplus.md#native-home-assistant-device-triggers).
+  - As a temporary software-only workaround until the plant configuration is updated, add the colliding address (e.g. `1:61`) to **Settings → Devices & Services → MyHOME → Configure → Ignored addresses** so Home Assistant does not address it.
+
 ### A light or cover shows up twice, or as the wrong platform
 
 Discovery creates a `light` for every WHO 1 actuator unless the address is configured as a `switch`, `binary_sensor` or `sensor` in `myhome.yaml`, and a `cover` for every WHO 2 address. If you have a relay driving a socket, declare it under `switch:` so no light is created; the stale light entity can then be removed from its device page.
@@ -82,7 +95,9 @@ Log: `Could not send message *#4*<ZPP>*15##`. Probe addresses (`WHERE ≥ 100`) 
 
 ### Cover position is wrong
 
-Timed covers estimate position from the travel time. Calibrate it (`myhome.calibrate_cover` or the device's **Calibrate travel time** button) or measure it with a stopwatch and save it with `myhome.set_cover_travel_time`. A full open or close resynchronises the estimate. Position-reporting actuators (dimension 10) are exact; if yours reports position but the entity does not follow, set `advanced_shutter: true` in `myhome.yaml`.
+- **Timed covers (`F411/2`, `F411/4`, `F411U2`, standard `F401`)**: Timed covers estimate position from the travel time. Calibrate it (`myhome.calibrate_cover` or the device's **Calibrate travel time** button) or measure it with a stopwatch and save it with `myhome.set_cover_travel_time`. A full open or close resynchronises the estimate.
+- **Cover stuck at `50%`, no `travel_time_down` / `travel_time_up` attributes, and calibration fails with `"{name} reports its position"`**: The cover has `advanced: true` (or `advanced_shutter: true` / `strategy: native`) set in `/config/myhome.yaml` on a standard actuator (such as an `F411/2` or `F411/4`) that does not support OpenWebNet Dimension 10 position reporting (`*#2*<WHERE>*10##` times out at startup). Remove `advanced: true` / `advanced_shutter: true` from `/config/myhome.yaml` and reload the MyHOME integration so the cover uses the timed position engine and accepts travel-time calibration ([#761](https://github.com/OpenWebNet-HA/MyHOME/issues/761)).
+- **Position-reporting actuators (Dimension 10)**: Actuators that natively report position (`67557`, `H4661M2`, `LN4661M2`, `F401` in advanced mode) are exact; if yours reports position on the bus (`*#2*<WHERE>*10*...##`) but the entity does not follow, set `advanced_shutter: true` in `myhome.yaml`.
 
 ### Calibration fails with "no stop status from the actuator"
 

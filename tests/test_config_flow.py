@@ -160,6 +160,10 @@ async def test_form_already_configured(hass: HomeAssistant) -> None:
             "custom_components.myhome.config_flow.OWNSession.test_connection",
             return_value={"Success": True},
         ),
+        patch(
+            "custom_components.myhome.config_flow.identify_gateway",
+            AsyncMock(return_value=(None, None, None)),
+        ) as identify,
     ):
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
@@ -189,8 +193,10 @@ async def test_form_already_configured(hass: HomeAssistant) -> None:
             },
         )
 
+    # The duplicate is refused once the gateway has had the chance to report its MAC
     assert result4["type"] == FlowResultType.ABORT
     assert result4["reason"] == "already_configured"
+    identify.assert_awaited_once()
 
 
 async def test_form_discovery(hass: HomeAssistant) -> None:
@@ -527,6 +533,10 @@ async def test_password_required_and_error(hass: HomeAssistant) -> None:
             ],
         ),
         patch(
+            "custom_components.myhome.config_flow.identify_gateway",
+            AsyncMock(return_value=(None, None, None)),
+        ),
+        patch(
             "custom_components.myhome.async_setup_entry",
             return_value=True,
         ),
@@ -608,9 +618,14 @@ async def test_user_step_discovery_timeout(hass: HomeAssistant) -> None:
         assert result["reason"] == "discovery_timeout"
 
 
-async def test_custom_step_validation_and_timeout(hass: HomeAssistant) -> None:
+async def test_custom_step_validation_and_timeout(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
     """Test custom step error on invalid IP and timeout fallback to custom_manual."""
     import asyncio
+    import logging
+
+    caplog.set_level(logging.DEBUG, logger="custom_components.myhome")
 
     with patch("custom_components.myhome.config_flow.find_gateways", return_value=[]):
         result = await hass.config_entries.flow.async_init(
@@ -640,6 +655,7 @@ async def test_custom_step_validation_and_timeout(hass: HomeAssistant) -> None:
             )
             assert result_manual["type"] == FlowResultType.FORM
             assert result_manual["step_id"] == "custom_manual"
+        assert "UPnP lookup of 192.168.1.50 failed, asking for the MAC: TimeoutError()" in caplog.text
 
 
 async def test_custom_manual_step_invalid_inputs(hass: HomeAssistant) -> None:
@@ -915,6 +931,10 @@ async def test_custom_manual_entry_manufacturer_type(hass: HomeAssistant) -> Non
         patch(
             "custom_components.myhome.config_flow.OWNSession.test_connection",
             return_value={"Success": True},
+        ),
+        patch(
+            "custom_components.myhome.config_flow.identify_gateway",
+            AsyncMock(return_value=(None, None, None)),
         ),
         patch(
             "custom_components.myhome.async_setup_entry",
@@ -1395,6 +1415,44 @@ async def test_options_flow_source_names_and_environment_defaults(hass: HomeAssi
     # "none" means leave the routing alone, so environment 3 is not stored
     assert options[CONF_SOURCE_DEFAULTS] == {"2": 2}
 
+
+async def test_options_flow_tuner_pictures_are_stored_only_once_set(hass: HomeAssistant) -> None:
+    """An untouched picture field adds no option; a set one is stored, a cleared one blanked."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.config_flow import MyhomeOptionsFlowHandler
+    from custom_components.myhome.const import CONF_TUNER_PICTURES
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"mac": "00:03:50:00:12:34", "host": "192.168.1.50", "port": 20000},
+        options={},
+        unique_id="00:03:50:00:12:34",
+    )
+    entry.add_to_hass(hass)
+
+    async def submit(**extra):
+        flow = MyhomeOptionsFlowHandler(entry)
+        flow.hass = hass
+        with patch.object(hass.config_entries, "async_reload", return_value=True):
+            return (
+                await flow.async_step_user(
+                    {
+                        "address": "192.168.1.50",
+                        "password": "12345",
+                        "command_worker_count": 1,
+                        "generate_events": False,
+                        **extra,
+                    }
+                )
+            )["data"]
+
+    assert CONF_TUNER_PICTURES not in await submit()
+    stored = await submit(**{CONF_TUNER_PICTURES: "  96.2=/local/radio/one.png  "})
+    assert stored[CONF_TUNER_PICTURES] == "96.2=/local/radio/one.png"
+
+    hass.config_entries.async_update_entry(entry, options=stored)
+    assert (await submit(**{CONF_TUNER_PICTURES: ""}))[CONF_TUNER_PICTURES] == ""
 
 async def test_options_flow_auto_join_streaming_toggle(hass: HomeAssistant) -> None:
     """Validate CONF_AUTO_JOIN_STREAMING default, toggle, and persistence."""
@@ -2531,3 +2589,154 @@ async def test_options_flow_ignored_addresses(hass: HomeAssistant) -> None:
     schema = result_reopen["data_schema"].schema
     ignored_key = [k for k in schema if str(k) == CONF_IGNORED_ADDRESSES or getattr(k, "schema", None) == CONF_IGNORED_ADDRESSES][0]
     assert ignored_key.description["suggested_value"] == "1/74\n1/74#4#01"
+
+    # Verify that an invalid non-empty address produces a validation error and does NOT
+    # clear or modify the previously configured addresses
+    result_invalid_reopen = await hass.config_entries.options.async_configure(
+        result_reopen["flow_id"],
+        user_input={
+            "command_worker_count": 1,
+            "generate_events": False,
+            "address": "192.168.1.135",
+            "password": "pass",
+            CONF_IGNORED_ADDRESSES: "not_valid_here",
+        },
+    )
+    assert result_invalid_reopen["type"] == FlowResultType.FORM
+    assert result_invalid_reopen["errors"][CONF_IGNORED_ADDRESSES] == "invalid_ignored_address"
+    assert entry.options[CONF_IGNORED_ADDRESSES] == ["1/74", "1/74#4#01"]
+
+    # Test clearing ignored addresses with empty string (#612)
+    with patch.object(hass.config_entries, "async_reload", return_value=True):
+        result_cleared = await hass.config_entries.options.async_configure(
+            result_reopen["flow_id"],
+            user_input={
+                "command_worker_count": 1,
+                "generate_events": False,
+                "address": "192.168.1.135",
+                "password": "pass",
+                CONF_IGNORED_ADDRESSES: "",
+            },
+        )
+        await hass.async_block_till_done()
+
+    assert result_cleared["type"] == FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_IGNORED_ADDRESSES] == []
+
+    # Re-open options flow: verify suggested_value is now empty
+    with patch("custom_components.myhome.config_flow.find_gateways"):
+        result_reopen_empty = await _open_gateway_options(hass, entry.entry_id)
+
+    schema_empty = result_reopen_empty["data_schema"].schema
+    ignored_key_empty = [k for k in schema_empty if str(k) == CONF_IGNORED_ADDRESSES or getattr(k, "schema", None) == CONF_IGNORED_ADDRESSES][0]
+    assert ignored_key_empty.description["suggested_value"] == ""
+
+    # Re-populate with 1/61 to test omitted key behavior (HA frontend strips cleared optional fields)
+    with patch.object(hass.config_entries, "async_reload", return_value=True):
+        await hass.config_entries.options.async_configure(
+            result_reopen_empty["flow_id"],
+            user_input={
+                "command_worker_count": 1,
+                "generate_events": False,
+                "address": "192.168.1.135",
+                "password": "pass",
+                CONF_IGNORED_ADDRESSES: "1/61",
+            },
+        )
+        await hass.async_block_till_done()
+    assert entry.options[CONF_IGNORED_ADDRESSES] == ["1/61"]
+
+    # Re-open and clear by omitting CONF_IGNORED_ADDRESSES from user_input (#612)
+    with patch("custom_components.myhome.config_flow.find_gateways"):
+        result_reopen_omit = await _open_gateway_options(hass, entry.entry_id)
+
+    with patch.object(hass.config_entries, "async_reload", return_value=True):
+        result_omitted = await hass.config_entries.options.async_configure(
+            result_reopen_omit["flow_id"],
+            user_input={
+                "command_worker_count": 1,
+                "generate_events": False,
+                "address": "192.168.1.135",
+                "password": "pass",
+                # CONF_IGNORED_ADDRESSES omitted
+            },
+        )
+        await hass.async_block_till_done()
+
+    assert result_omitted["type"] == FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_IGNORED_ADDRESSES] == []
+
+    # Test submitting None (supported via vol.Maybe)
+    with patch("custom_components.myhome.config_flow.find_gateways"):
+        result_reopen_none = await _open_gateway_options(hass, entry.entry_id)
+
+    with patch.object(hass.config_entries, "async_reload", return_value=True):
+        result_none = await hass.config_entries.options.async_configure(
+            result_reopen_none["flow_id"],
+            user_input={
+                "command_worker_count": 1,
+                "generate_events": False,
+                "address": "192.168.1.135",
+                "password": "pass",
+                CONF_IGNORED_ADDRESSES: None,
+            },
+        )
+        await hass.async_block_till_done()
+
+    assert result_none["type"] == FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_IGNORED_ADDRESSES] == []
+
+    # Test submitting a single comma: the UI workaround shared with users before the fix
+    # to clear the field without triggering the frontend key-omission behavior (#612)
+    with patch("custom_components.myhome.config_flow.find_gateways"):
+        result_reopen_comma = await _open_gateway_options(hass, entry.entry_id)
+
+    with patch.object(hass.config_entries, "async_reload", return_value=True):
+        result_comma = await hass.config_entries.options.async_configure(
+            result_reopen_comma["flow_id"],
+            user_input={
+                "command_worker_count": 1,
+                "generate_events": False,
+                "address": "192.168.1.135",
+                "password": "pass",
+                CONF_IGNORED_ADDRESSES: ",",
+            },
+        )
+        await hass.async_block_till_done()
+
+    assert result_comma["type"] == FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_IGNORED_ADDRESSES] == []
+
+
+@pytest.mark.asyncio
+async def test_config_flow_injects_ha_websession_into_discovery(hass: HomeAssistant):
+    """Verify async_get_clientsession(hass) is passed to find_gateways and get_gateway."""
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+    expected_session = async_get_clientsession(hass)
+    with patch(
+        "custom_components.myhome.config_flow.find_gateways",
+        new_callable=AsyncMock,
+        return_value=[],
+    ) as mock_find, patch(
+        "custom_components.myhome.config_flow.get_gateway",
+        new_callable=AsyncMock,
+        return_value=None,
+    ) as mock_get:
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        assert result["type"] == FlowResultType.FORM
+        mock_find.assert_awaited_once_with(session=expected_session)
+
+        result2 = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={"serial": "00:00:00:00:00:00"}
+        )
+        assert result2["step_id"] == "custom"
+
+        result3 = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={"address": "192.168.1.99", "port": 20000},
+        )
+        assert result3["step_id"] == "custom_manual"
+        mock_get.assert_awaited_once_with("192.168.1.99", session=expected_session)

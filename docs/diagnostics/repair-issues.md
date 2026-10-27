@@ -18,6 +18,8 @@ OpenWebNet gateways maintain an internal real-time clock (RTC) queried via WHO=1
 - Dimension 0: `*#13**0*<HH>*<MM>*<SS>*999##`
 - Dimension 22: `*#13**22*<HH>*<MM>*<SS>*999*<DAY>*<MONTH>*<YEAR>##`
 
+*(Note: The F461 gateway is configured via the Home + Project app and its firmware always reports `999` over OpenWebNet; it is automatically exempted from this repair issue).*
+
 ### Why it matters
 1. **Clock & Timestamp Drift**: Without a configured timezone, scheduled scenario triggers and time broadcasts on the SCS bus may diverge from local daylight saving time or Home Assistant's clock.
 2. **Diagnostic Reliability**: Underlying protocol parsers expect a standard UTC offset format (such as `+01:00` or numeric minute offsets).
@@ -327,3 +329,22 @@ Keep the audio matrix on one gateway until #426 is fixed, and remove the sound z
 
 ### How it clears
 Automatically, when only one gateway has sound zones.
+
+---
+
+## Legacy YAML Configuration Imported
+
+**Repair Key**: `legacy_yaml_imported`  
+**Severity**: `WARNING`  
+**Auto-Resolving**: Informational  
+**Fixable via UI**: No
+
+### What it means
+The first time the integration reads a valid `myhome.yaml` section for a gateway, it copies the validated device definitions into the gateway's config entry options (`migrated_yaml_platforms`) and raises this notice once.
+
+- While `myhome.yaml` exists, the file stays in charge. On every start the copy is refreshed if the file changed; an empty section for the gateway (`<mac>: {}`) empties it.
+- If the file is removed, cannot be parsed, fails validation, or no longer has a section for this gateway, the gateway's devices load from the last copy instead, including their travel times and feature flags.
+
+### How to resolve
+This notice is informational. Once you have verified your entities in Home Assistant, you can archive or remove `myhome.yaml` and dismiss the notice.
+

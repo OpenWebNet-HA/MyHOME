@@ -115,12 +115,13 @@ async def test_seek_commands(hass, tuner, mock_gateway):
 
 @pytest.mark.asyncio
 async def test_set_frequency(hass, tuner, mock_gateway):
-    """Frequency is written as six digits in kHz, per the specification's examples."""
+    """Frequency is written in kHz without zero padding, as the F500N capture shows."""
     tuner._station = 1
     tuner._attr_source = "Station 1"
     await tuner.async_set_frequency(107.0)
-    assert _sent(mock_gateway) == ["*#16*101*#6*0*107000##"]
-    assert tuner.extra_state_attributes["frequency"] == 107.0
+    await tuner.async_set_frequency(96.2)
+    assert _sent(mock_gateway) == ["*#16*101*#6*0*107000##", "*#16*101*#6*0*96200##"]
+    assert tuner.extra_state_attributes["frequency"] == 96.2
     assert "station" not in tuner.extra_state_attributes
     assert tuner.source is None
 
@@ -128,7 +129,7 @@ async def test_set_frequency(hass, tuner, mock_gateway):
 @pytest.mark.asyncio
 async def test_set_frequency_outside_the_fm_band_is_refused(hass, tuner, mock_gateway):
     """A frequency that cannot be FM is a mistake, not a command."""
-    for value in (10.7, 120.0, 0):
+    for value in (10.7, 120.0, 0, float("nan"), float("inf"), float("-inf")):
         with pytest.raises(HomeAssistantError):
             await tuner.async_set_frequency(value)
     mock_gateway.send.assert_not_called()
@@ -145,8 +146,9 @@ async def test_play_media_takes_a_station_or_a_frequency(hass, tuner, mock_gatew
     assert _sent(mock_gateway) == ["*#16*101*#6*0*107500##"]
 
     mock_gateway.send.reset_mock()
-    with pytest.raises(HomeAssistantError):
-        await tuner.async_play_media(MediaType.CHANNEL, "BNR Nieuwsradio")
+    for invalid_media in ("BNR Nieuwsradio", "nan", "inf", "-inf"):
+        with pytest.raises(HomeAssistantError):
+            await tuner.async_play_media(MediaType.CHANNEL, invalid_media)
     mock_gateway.send.assert_not_called()
 
 

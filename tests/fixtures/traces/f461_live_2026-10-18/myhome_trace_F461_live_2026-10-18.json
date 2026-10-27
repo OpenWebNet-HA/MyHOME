@@ -1,0 +1,3523 @@
+{
+  "capture": {
+    "kind": "derived_trace_archive",
+    "started_at": "2026-10-18T19:49:42+00:00",
+    "notes": "Live BTicino F461 (firmware 2.0.11 / WHO 1013 134.15.5.0) multi-session bus capture covering the expanded plant (F411/4 lights at WHERE 06 & 07 + Group #1 + General 0, F411/2 5s timed shutter at WHERE 05 with pre-move STOP and hardware auto-stop, KW4691 standalone climate Zone 2) and PR #750 Expose virtual actuator/sensor/clock/energy verification.",
+    "window": {
+      "first": "2026-10-18T19:49:42+00:00",
+      "last": "2026-10-18T19:51:14+00:00",
+      "frames": 73,
+      "rows": 294
+    }
+  },
+  "gateway": {
+    "model": "F461",
+    "manufacturer": "BTicino",
+    "firmware": "2.0.11",
+    "kernel": "5.10.35",
+    "ip": "192.0.2.92",
+    "mac": "00:03:50:00:04:97",
+    "identification": {
+      "model": "F461",
+      "who13_code": "200",
+      "who1013_code": "134"
+    }
+  },
+  "frames": [
+    {
+      "timestamp": 0.554,
+      "direction": "rx",
+      "raw": "*#13**15*200##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 1.509,
+      "direction": "rx",
+      "raw": "*#13**16*2*0*11##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 2.308,
+      "direction": "rx",
+      "raw": "*1*0*06##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 3.115,
+      "direction": "rx",
+      "raw": "*1*0*07##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 3.93,
+      "direction": "rx",
+      "raw": "*1*1*06##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 4.018,
+      "direction": "rx",
+      "raw": "*#1*#1*15*1##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 4.65,
+      "direction": "rx",
+      "raw": "*1*0*06##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 4.73,
+      "direction": "rx",
+      "raw": "*#1*#1*15*0##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 5.337,
+      "direction": "rx",
+      "raw": "*1*1*07##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 5.408,
+      "direction": "rx",
+      "raw": "*#1*#1*15*1##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 6.048,
+      "direction": "rx",
+      "raw": "*1*0*07##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 6.136,
+      "direction": "rx",
+      "raw": "*#1*#1*15*0##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 6.752,
+      "direction": "rx",
+      "raw": "*1*0*06##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 6.807,
+      "direction": "rx",
+      "raw": "*1*0*07##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 8.738,
+      "direction": "rx",
+      "raw": "*1*1*#1##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 8.786,
+      "direction": "rx",
+      "raw": "*1*1*06##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 8.836,
+      "direction": "rx",
+      "raw": "*#1*#1*15*1##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 8.898,
+      "direction": "rx",
+      "raw": "*1*1*07##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 9.447,
+      "direction": "rx",
+      "raw": "*1*0*#1##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 9.505,
+      "direction": "rx",
+      "raw": "*1*0*06##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 9.555,
+      "direction": "rx",
+      "raw": "*1*0*07##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 9.606,
+      "direction": "rx",
+      "raw": "*#1*#1*15*0##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 10.183,
+      "direction": "rx",
+      "raw": "*1*1*0##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 10.245,
+      "direction": "rx",
+      "raw": "*#1*#1*15*1##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 10.91,
+      "direction": "rx",
+      "raw": "*1*1*06##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 11.693,
+      "direction": "rx",
+      "raw": "*1*1*07##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 12.461,
+      "direction": "rx",
+      "raw": "*1*0*0##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 12.541,
+      "direction": "rx",
+      "raw": "*#1*#1*15*0##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 13.205,
+      "direction": "rx",
+      "raw": "*1*0*06##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 13.997,
+      "direction": "rx",
+      "raw": "*1*0*07##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 18.265,
+      "direction": "rx",
+      "raw": "*#13**#1*00*18*10*2026##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 18.313,
+      "direction": "rx",
+      "raw": "*#13**#0*22*50*00*##",
+      "run": "run1_lights_group_and_general",
+      "session": "evt"
+    },
+    {
+      "timestamp": 20.114,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run2_shutter_05_travel_and_reversal",
+      "session": "evt"
+    },
+    {
+      "timestamp": 22.602,
+      "direction": "rx",
+      "raw": "*2*1000#0*05##",
+      "run": "run2_shutter_05_travel_and_reversal",
+      "session": "evt"
+    },
+    {
+      "timestamp": 22.67,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run2_shutter_05_travel_and_reversal",
+      "session": "evt"
+    },
+    {
+      "timestamp": 22.72,
+      "direction": "rx",
+      "raw": "*2*1000#1*05##",
+      "run": "run2_shutter_05_travel_and_reversal",
+      "session": "evt"
+    },
+    {
+      "timestamp": 22.72,
+      "direction": "rx",
+      "raw": "*2*1*05##",
+      "run": "run2_shutter_05_travel_and_reversal",
+      "session": "evt"
+    },
+    {
+      "timestamp": 24.792,
+      "direction": "rx",
+      "raw": "*2*1000#0*05##",
+      "run": "run2_shutter_05_travel_and_reversal",
+      "session": "evt"
+    },
+    {
+      "timestamp": 24.852,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run2_shutter_05_travel_and_reversal",
+      "session": "evt"
+    },
+    {
+      "timestamp": 25.526,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run2_shutter_05_travel_and_reversal",
+      "session": "evt"
+    },
+    {
+      "timestamp": 26.275,
+      "direction": "rx",
+      "raw": "*2*1000#0*05##",
+      "run": "run2_shutter_05_travel_and_reversal",
+      "session": "evt"
+    },
+    {
+      "timestamp": 26.325,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run2_shutter_05_travel_and_reversal",
+      "session": "evt"
+    },
+    {
+      "timestamp": 26.373,
+      "direction": "rx",
+      "raw": "*2*1000#1*05##",
+      "run": "run2_shutter_05_travel_and_reversal",
+      "session": "evt"
+    },
+    {
+      "timestamp": 26.421,
+      "direction": "rx",
+      "raw": "*2*1*05##",
+      "run": "run2_shutter_05_travel_and_reversal",
+      "session": "evt"
+    },
+    {
+      "timestamp": 27.964,
+      "direction": "rx",
+      "raw": "*2*1000#0*05##",
+      "run": "run2_shutter_05_travel_and_reversal",
+      "session": "evt"
+    },
+    {
+      "timestamp": 28.014,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run2_shutter_05_travel_and_reversal",
+      "session": "evt"
+    },
+    {
+      "timestamp": 28.072,
+      "direction": "rx",
+      "raw": "*2*1000#2*05##",
+      "run": "run2_shutter_05_travel_and_reversal",
+      "session": "evt"
+    },
+    {
+      "timestamp": 28.119,
+      "direction": "rx",
+      "raw": "*2*2*05##",
+      "run": "run2_shutter_05_travel_and_reversal",
+      "session": "evt"
+    },
+    {
+      "timestamp": 34.341,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run2_shutter_05_travel_and_reversal",
+      "session": "evt"
+    },
+    {
+      "timestamp": 34.657,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run2_shutter_05_travel_and_reversal",
+      "session": "evt"
+    },
+    {
+      "timestamp": 35.953,
+      "direction": "rx",
+      "raw": "*#4*2*0*0249##",
+      "run": "run3_climate_zone2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 36.277,
+      "direction": "rx",
+      "raw": "*#4*2*12*0245*3##",
+      "run": "run3_climate_zone2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 36.323,
+      "direction": "rx",
+      "raw": "*4*1*2##",
+      "run": "run3_climate_zone2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 36.598,
+      "direction": "rx",
+      "raw": "*#4*2*14*0245*3##",
+      "run": "run3_climate_zone2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 36.691,
+      "direction": "rx",
+      "raw": "*#4*2*13*00##",
+      "run": "run3_climate_zone2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 37.492,
+      "direction": "rx",
+      "raw": "*#4*2*0*0249##",
+      "run": "run3_climate_zone2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 38.325,
+      "direction": "rx",
+      "raw": "*#4*2*19*5*0##",
+      "run": "run3_climate_zone2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 39.14,
+      "direction": "rx",
+      "raw": "*#4*2#1*20*0##",
+      "run": "run3_climate_zone2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 39.189,
+      "direction": "rx",
+      "raw": "*#4*2#2*20*5##",
+      "run": "run3_climate_zone2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 39.94,
+      "direction": "rx",
+      "raw": "*1*1*06##",
+      "run": "run4_expose_virtual_bus_verification",
+      "session": "evt"
+    },
+    {
+      "timestamp": 40.019,
+      "direction": "rx",
+      "raw": "*#1*#1*15*1##",
+      "run": "run4_expose_virtual_bus_verification",
+      "session": "evt"
+    },
+    {
+      "timestamp": 40.645,
+      "direction": "rx",
+      "raw": "*1*0*06##",
+      "run": "run4_expose_virtual_bus_verification",
+      "session": "evt"
+    },
+    {
+      "timestamp": 40.732,
+      "direction": "rx",
+      "raw": "*#1*#1*15*0##",
+      "run": "run4_expose_virtual_bus_verification",
+      "session": "evt"
+    },
+    {
+      "timestamp": 56.186,
+      "direction": "rx",
+      "raw": "*2*1000#0*25##",
+      "run": "run4_expose_virtual_bus_verification",
+      "session": "evt"
+    },
+    {
+      "timestamp": 56.416,
+      "direction": "rx",
+      "raw": "*2*1000#1*25##",
+      "run": "run4_expose_virtual_bus_verification",
+      "session": "evt"
+    },
+    {
+      "timestamp": 57.553,
+      "direction": "rx",
+      "raw": "*2*1000#0*25##",
+      "run": "run4_expose_virtual_bus_verification",
+      "session": "evt"
+    },
+    {
+      "timestamp": 57.833,
+      "direction": "rx",
+      "raw": "*2*1000#2*25##",
+      "run": "run4_expose_virtual_bus_verification",
+      "session": "evt"
+    },
+    {
+      "timestamp": 58.946,
+      "direction": "rx",
+      "raw": "*2*1000#0*25##",
+      "run": "run4_expose_virtual_bus_verification",
+      "session": "evt"
+    },
+    {
+      "timestamp": 63.229,
+      "direction": "rx",
+      "raw": "*#4*2*0*0249##",
+      "run": "run4_expose_virtual_bus_verification",
+      "session": "evt"
+    },
+    {
+      "timestamp": 78.212,
+      "direction": "rx",
+      "raw": "*#13**0*22*51*00*999##",
+      "run": "run4_expose_virtual_bus_verification",
+      "session": "evt"
+    },
+    {
+      "timestamp": 78.908,
+      "direction": "rx",
+      "raw": "*#13**1*00*18*10*2026##",
+      "run": "run4_expose_virtual_bus_verification",
+      "session": "evt"
+    },
+    {
+      "timestamp": 79.619,
+      "direction": "rx",
+      "raw": "*#13**22*22*51*02*999*00*18*10*2026##",
+      "run": "run4_expose_virtual_bus_verification",
+      "session": "evt"
+    },
+    {
+      "timestamp": 80.337,
+      "direction": "rx",
+      "raw": "*#13**0*22*51*02*999##",
+      "run": "run4_expose_virtual_bus_verification",
+      "session": "evt"
+    }
+  ],
+  "rows": [
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 0.501,
+      "step": "gateway_id",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**15##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 0.554,
+      "step": "gateway_id",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**15*200##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway device type is: F454 / MyHomeServer1 / MH202 / F461 / H4890 / F450 / F459 / F460 / MH201."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 0.651,
+      "step": "gateway_id",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**15*200##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 0.651,
+      "step": "gateway_id",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 1.452,
+      "step": "gateway_id",
+      "dir": "result",
+      "frame": "*#13**15##",
+      "ack": true,
+      "reply_time_s": 0.15,
+      "replies": [
+        "*#13**15*200##"
+      ],
+      "events_after": [
+        "*#13**15*200##"
+      ],
+      "note": "who13_device_type_and_spontaneous_1013"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 1.452,
+      "step": "gateway_id",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**16##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 1.509,
+      "step": "gateway_id",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**16*2*0*11##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's firmware version is: 2.0.11."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 1.564,
+      "step": "gateway_id",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**16*2*0*11##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 1.564,
+      "step": "gateway_id",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 2.164,
+      "step": "gateway_id",
+      "dir": "result",
+      "frame": "*#13**16##",
+      "ack": true,
+      "reply_time_s": 0.111,
+      "replies": [
+        "*#13**16*2*0*11##"
+      ],
+      "events_after": [
+        "*#13**16*2*0*11##"
+      ],
+      "note": "who13_firmware_version"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 2.164,
+      "step": "light_poll",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*06##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 2.308,
+      "step": "light_poll",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched off."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 2.376,
+      "step": "light_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*0*06##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 2.376,
+      "step": "light_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 2.977,
+      "step": "light_poll",
+      "dir": "result",
+      "frame": "*#1*06##",
+      "ack": true,
+      "reply_time_s": 0.212,
+      "replies": [
+        "*1*0*06##"
+      ],
+      "events_after": [
+        "*1*0*06##"
+      ],
+      "note": "poll_light_06"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 2.977,
+      "step": "light_poll",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*07##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 3.115,
+      "step": "light_poll",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched off."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 3.18,
+      "step": "light_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*0*07##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 3.18,
+      "step": "light_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 3.781,
+      "step": "light_poll",
+      "dir": "result",
+      "frame": "*#1*07##",
+      "ack": true,
+      "reply_time_s": 0.203,
+      "replies": [
+        "*1*0*07##"
+      ],
+      "events_after": [
+        "*1*0*07##"
+      ],
+      "note": "poll_light_07"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 3.781,
+      "step": "point_switch",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*1*06##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 3.9,
+      "step": "point_switch",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 3.93,
+      "step": "point_switch",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched on."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 4.018,
+      "step": "point_switch",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#1*#1*15*1##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light/motion sensor #1 has sent an unknown dimension 15."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 4.501,
+      "step": "point_switch",
+      "dir": "result",
+      "frame": "*1*1*06##",
+      "ack": true,
+      "reply_time_s": 0.119,
+      "replies": [],
+      "events_after": [
+        "*1*1*06##",
+        "*#1*#1*15*1##"
+      ],
+      "note": "light_06_on_emits_group1_dim15_1"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 4.501,
+      "step": "point_switch",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*0*06##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 4.619,
+      "step": "point_switch",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 4.65,
+      "step": "point_switch",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched off."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 4.73,
+      "step": "point_switch",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#1*#1*15*0##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light/motion sensor #1 has sent an unknown dimension 15."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 5.22,
+      "step": "point_switch",
+      "dir": "result",
+      "frame": "*1*0*06##",
+      "ack": true,
+      "reply_time_s": 0.118,
+      "replies": [],
+      "events_after": [
+        "*1*0*06##",
+        "*#1*#1*15*0##"
+      ],
+      "note": "light_06_off_emits_group1_dim15_0"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 5.22,
+      "step": "point_switch",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*1*07##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 5.3,
+      "step": "point_switch",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 5.337,
+      "step": "point_switch",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched on."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 5.408,
+      "step": "point_switch",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#1*#1*15*1##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light/motion sensor #1 has sent an unknown dimension 15."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 5.901,
+      "step": "point_switch",
+      "dir": "result",
+      "frame": "*1*1*07##",
+      "ack": true,
+      "reply_time_s": 0.08,
+      "replies": [],
+      "events_after": [
+        "*1*1*07##",
+        "*#1*#1*15*1##"
+      ],
+      "note": "light_07_on_emits_group1_dim15_1"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 5.901,
+      "step": "point_switch",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*0*07##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 6.01,
+      "step": "point_switch",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 6.048,
+      "step": "point_switch",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched off."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 6.136,
+      "step": "point_switch",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#1*#1*15*0##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light/motion sensor #1 has sent an unknown dimension 15."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 6.613,
+      "step": "point_switch",
+      "dir": "result",
+      "frame": "*1*0*07##",
+      "ack": true,
+      "reply_time_s": 0.109,
+      "replies": [],
+      "events_after": [
+        "*1*0*07##",
+        "*#1*#1*15*0##"
+      ],
+      "note": "light_07_off_emits_group1_dim15_0"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 6.613,
+      "step": "group_1",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*#1##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 6.752,
+      "step": "group_1",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched off."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 6.807,
+      "step": "group_1",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched off."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 7.804,
+      "step": "group_1",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*0*06##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 7.804,
+      "step": "group_1",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*0*07##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 7.804,
+      "step": "group_1",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 8.604,
+      "step": "group_1",
+      "dir": "result",
+      "frame": "*#1*#1##",
+      "ack": true,
+      "reply_time_s": 1.191,
+      "replies": [
+        "*1*0*06##",
+        "*1*0*07##"
+      ],
+      "events_after": [
+        "*1*0*06##",
+        "*1*0*07##"
+      ],
+      "note": "poll_group_1_returns_06_and_07"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 8.605,
+      "step": "group_1",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*1*#1##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 8.738,
+      "step": "group_1",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*#1##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light #1 is switched on."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 8.738,
+      "step": "group_1",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 8.786,
+      "step": "group_1",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched on."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 8.836,
+      "step": "group_1",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#1*#1*15*1##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light/motion sensor #1 has sent an unknown dimension 15."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 8.898,
+      "step": "group_1",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched on."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 9.339,
+      "step": "group_1",
+      "dir": "result",
+      "frame": "*1*1*#1##",
+      "ack": true,
+      "reply_time_s": 0.133,
+      "replies": [],
+      "events_after": [
+        "*1*1*#1##",
+        "*1*1*06##",
+        "*#1*#1*15*1##",
+        "*1*1*07##"
+      ],
+      "note": "group_1_on_emits_06_07_and_dim15_1"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 9.339,
+      "step": "group_1",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*0*#1##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 9.447,
+      "step": "group_1",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*#1##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light #1 is switched off."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 9.449,
+      "step": "group_1",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 9.505,
+      "step": "group_1",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched off."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 9.555,
+      "step": "group_1",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched off."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 9.606,
+      "step": "group_1",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#1*#1*15*0##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light/motion sensor #1 has sent an unknown dimension 15."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 10.05,
+      "step": "group_1",
+      "dir": "result",
+      "frame": "*1*0*#1##",
+      "ack": true,
+      "reply_time_s": 0.11,
+      "replies": [],
+      "events_after": [
+        "*1*0*#1##",
+        "*1*0*06##",
+        "*1*0*07##",
+        "*#1*#1*15*0##"
+      ],
+      "note": "group_1_off_emits_06_07_and_dim15_0"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 10.05,
+      "step": "general_0",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*1*0##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 10.183,
+      "step": "general_0",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*0##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 0 is switched on."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 10.184,
+      "step": "general_0",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 10.245,
+      "step": "general_0",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#1*#1*15*1##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light/motion sensor #1 has sent an unknown dimension 15."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 10.785,
+      "step": "general_0",
+      "dir": "result",
+      "frame": "*1*1*0##",
+      "ack": true,
+      "reply_time_s": 0.134,
+      "replies": [],
+      "events_after": [
+        "*1*1*0##",
+        "*#1*#1*15*1##"
+      ],
+      "note": "general_on_emits_dim15_1_only"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 10.785,
+      "step": "general_0",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*06##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 10.91,
+      "step": "general_0",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched on."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 10.969,
+      "step": "general_0",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*1*06##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 10.969,
+      "step": "general_0",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 11.57,
+      "step": "general_0",
+      "dir": "result",
+      "frame": "*#1*06##",
+      "ack": true,
+      "reply_time_s": 0.184,
+      "replies": [
+        "*1*1*06##"
+      ],
+      "events_after": [
+        "*1*1*06##"
+      ],
+      "note": "resync_poll_06_after_general_on"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 11.57,
+      "step": "general_0",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*07##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 11.693,
+      "step": "general_0",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched on."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 11.749,
+      "step": "general_0",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*1*07##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 11.749,
+      "step": "general_0",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 12.349,
+      "step": "general_0",
+      "dir": "result",
+      "frame": "*#1*07##",
+      "ack": true,
+      "reply_time_s": 0.178,
+      "replies": [
+        "*1*1*07##"
+      ],
+      "events_after": [
+        "*1*1*07##"
+      ],
+      "note": "resync_poll_07_after_general_on"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 12.349,
+      "step": "general_0",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*0*0##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 12.461,
+      "step": "general_0",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*0##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 0 is switched off."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 12.463,
+      "step": "general_0",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 12.541,
+      "step": "general_0",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#1*#1*15*0##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light/motion sensor #1 has sent an unknown dimension 15."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 13.065,
+      "step": "general_0",
+      "dir": "result",
+      "frame": "*1*0*0##",
+      "ack": true,
+      "reply_time_s": 0.114,
+      "replies": [],
+      "events_after": [
+        "*1*0*0##",
+        "*#1*#1*15*0##"
+      ],
+      "note": "general_off_emits_dim15_0_only"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 13.065,
+      "step": "general_0",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*06##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 13.205,
+      "step": "general_0",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched off."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 13.257,
+      "step": "general_0",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*0*06##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 13.257,
+      "step": "general_0",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 13.858,
+      "step": "general_0",
+      "dir": "result",
+      "frame": "*#1*06##",
+      "ack": true,
+      "reply_time_s": 0.192,
+      "replies": [
+        "*1*0*06##"
+      ],
+      "events_after": [
+        "*1*0*06##"
+      ],
+      "note": "resync_poll_06_after_general_off"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 13.858,
+      "step": "general_0",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*07##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 13.997,
+      "step": "general_0",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched off."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 14.052,
+      "step": "general_0",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*0*07##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 14.052,
+      "step": "general_0",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 14.653,
+      "step": "general_0",
+      "dir": "result",
+      "frame": "*#1*07##",
+      "ack": true,
+      "reply_time_s": 0.194,
+      "replies": [
+        "*1*0*07##"
+      ],
+      "events_after": [
+        "*1*0*07##"
+      ],
+      "note": "resync_poll_07_after_general_off"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 14.653,
+      "step": "unpopulated_old_lights",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*01##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 16.718,
+      "step": "unpopulated_old_lights",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 17.319,
+      "step": "unpopulated_old_lights",
+      "dir": "result",
+      "frame": "*#1*01##",
+      "ack": false,
+      "reply_time_s": 2.065,
+      "replies": [],
+      "events_after": [],
+      "note": "unpopulated_old_light_01_nack"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 17.319,
+      "step": "unpopulated_old_lights",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*04##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 18.265,
+      "step": "unpopulated_old_lights",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**#1*00*18*10*2026##",
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "Gateway broadcasting internal date: 2026-10-18."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 18.313,
+      "step": "unpopulated_old_lights",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**#0*22*50*00*##",
+      "ownd_class": "OWNGatewayCommand",
+      "ownd_log": "Gateway broadcasting internal time: 22:50:00."
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 19.393,
+      "step": "unpopulated_old_lights",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run1_lights_group_and_general",
+      "t": 19.994,
+      "step": "unpopulated_old_lights",
+      "dir": "result",
+      "frame": "*#1*04##",
+      "ack": false,
+      "reply_time_s": 2.074,
+      "replies": [],
+      "events_after": [
+        "*#13**#1*00*18*10*2026##",
+        "*#13**#0*22*50*00*##"
+      ],
+      "note": "unpopulated_old_light_04_nack"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 19.994,
+      "step": "shutter_poll",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#2*05##",
+      "is_status_request": true
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 20.114,
+      "step": "shutter_poll",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 20.171,
+      "step": "shutter_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*2*0*05##"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 20.171,
+      "step": "shutter_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 20.772,
+      "step": "shutter_poll",
+      "dir": "result",
+      "frame": "*#2*05##",
+      "ack": true,
+      "reply_time_s": 0.177,
+      "replies": [
+        "*2*0*05##"
+      ],
+      "events_after": [
+        "*2*0*05##"
+      ],
+      "note": "initial_shutter_05_status"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 20.772,
+      "step": "shutter_poll",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#2*05*10##",
+      "is_status_request": true
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 21.917,
+      "step": "shutter_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 22.518,
+      "step": "shutter_poll",
+      "dir": "result",
+      "frame": "*#2*05*10##",
+      "ack": true,
+      "reply_time_s": 1.145,
+      "replies": [],
+      "events_after": [],
+      "note": "shutter_05_dim10_query"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 22.518,
+      "step": "partial_up",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*2*1*05##",
+      "is_status_request": false
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 22.602,
+      "step": "partial_up",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1000#0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "*2*1000#0*05##"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 22.67,
+      "step": "partial_up",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 22.677,
+      "step": "partial_up",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 22.72,
+      "step": "partial_up",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1000#1*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "*2*1000#1*05##"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 22.72,
+      "step": "partial_up",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 is opening."
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 24.68,
+      "step": "partial_up",
+      "dir": "result",
+      "frame": "*2*1*05##",
+      "ack": true,
+      "reply_time_s": 0.159,
+      "replies": [],
+      "events_after": [
+        "*2*1000#0*05##",
+        "*2*0*05##",
+        "*2*1000#1*05##",
+        "*2*1*05##"
+      ],
+      "note": "raise_shutter_05_for_2s"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 24.68,
+      "step": "partial_up",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*2*0*05##",
+      "is_status_request": false
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 24.792,
+      "step": "partial_up",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 24.792,
+      "step": "partial_up",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1000#0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "*2*1000#0*05##"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 24.852,
+      "step": "partial_up",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 25.392,
+      "step": "partial_up",
+      "dir": "result",
+      "frame": "*2*0*05##",
+      "ack": true,
+      "reply_time_s": 0.112,
+      "replies": [],
+      "events_after": [
+        "*2*1000#0*05##",
+        "*2*0*05##"
+      ],
+      "note": "stop_shutter_05_after_2s"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 25.392,
+      "step": "partial_up",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#2*05##",
+      "is_status_request": true
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 25.526,
+      "step": "partial_up",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 25.581,
+      "step": "partial_up",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*2*0*05##"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 25.581,
+      "step": "partial_up",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 26.182,
+      "step": "partial_up",
+      "dir": "result",
+      "frame": "*#2*05##",
+      "ack": true,
+      "reply_time_s": 0.189,
+      "replies": [
+        "*2*0*05##"
+      ],
+      "events_after": [
+        "*2*0*05##"
+      ],
+      "note": "poll_shutter_05_after_stop"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 26.182,
+      "step": "reversal_and_autostop",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*2*1*05##",
+      "is_status_request": false
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 26.275,
+      "step": "reversal_and_autostop",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1000#0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "*2*1000#0*05##"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 26.325,
+      "step": "reversal_and_autostop",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 26.358,
+      "step": "reversal_and_autostop",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 26.373,
+      "step": "reversal_and_autostop",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1000#1*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "*2*1000#1*05##"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 26.421,
+      "step": "reversal_and_autostop",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 is opening."
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 27.86,
+      "step": "reversal_and_autostop",
+      "dir": "result",
+      "frame": "*2*1*05##",
+      "ack": true,
+      "reply_time_s": 0.175,
+      "replies": [],
+      "events_after": [
+        "*2*1000#0*05##",
+        "*2*0*05##",
+        "*2*1000#1*05##",
+        "*2*1*05##"
+      ],
+      "note": "raise_shutter_05_before_reversal"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 27.86,
+      "step": "reversal_and_autostop",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*2*2*05##",
+      "is_status_request": false
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 27.964,
+      "step": "reversal_and_autostop",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1000#0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "*2*1000#0*05##"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 28.014,
+      "step": "reversal_and_autostop",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 28.04,
+      "step": "reversal_and_autostop",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 28.072,
+      "step": "reversal_and_autostop",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1000#2*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "*2*1000#2*05##"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 28.119,
+      "step": "reversal_and_autostop",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*2*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 is closing."
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 34.341,
+      "step": "reversal_and_autostop",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 34.54,
+      "step": "reversal_and_autostop",
+      "dir": "result",
+      "frame": "*2*2*05##",
+      "ack": true,
+      "reply_time_s": 0.18,
+      "replies": [],
+      "events_after": [
+        "*2*1000#0*05##",
+        "*2*0*05##",
+        "*2*1000#2*05##",
+        "*2*2*05##",
+        "*2*0*05##"
+      ],
+      "note": "reverse_to_down_and_wait_for_5s_hardware_autostop"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 34.54,
+      "step": "reversal_and_autostop",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#2*05##",
+      "is_status_request": true
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 34.657,
+      "step": "reversal_and_autostop",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 34.718,
+      "step": "reversal_and_autostop",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*2*0*05##"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 34.718,
+      "step": "reversal_and_autostop",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_shutter_05_travel_and_reversal",
+      "t": 35.319,
+      "step": "reversal_and_autostop",
+      "dir": "result",
+      "frame": "*#2*05##",
+      "ack": true,
+      "reply_time_s": 0.178,
+      "replies": [
+        "*2*0*05##"
+      ],
+      "events_after": [
+        "*2*0*05##"
+      ],
+      "note": "poll_shutter_05_after_hardware_autostop"
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 35.319,
+      "step": "zone2_poll",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2##",
+      "is_status_request": true
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 35.953,
+      "step": "zone2_poll",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*0*0249##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's main sensor is reporting a temperature of 24.9\u00b0C."
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 36.277,
+      "step": "zone2_poll",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*12*0245*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local target temperature is set to 24.5\u00b0C."
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 36.323,
+      "step": "zone2_poll",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*4*1*2##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's season is heating."
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 36.598,
+      "step": "zone2_poll",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*14*0245*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's target temperature is set to 24.5\u00b0C."
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 36.691,
+      "step": "zone2_poll",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*13*00##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local offset is set to 0\u00b0C."
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 36.751,
+      "step": "zone2_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*0*0249##"
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 36.751,
+      "step": "zone2_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*12*0245*3##"
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 36.751,
+      "step": "zone2_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*4*1*2##"
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 36.751,
+      "step": "zone2_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*14*0245*3##"
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 36.751,
+      "step": "zone2_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*13*00##"
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 36.751,
+      "step": "zone2_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 37.352,
+      "step": "zone2_poll",
+      "dir": "result",
+      "frame": "*#4*2##",
+      "ack": true,
+      "reply_time_s": 1.432,
+      "replies": [
+        "*#4*2*0*0249##",
+        "*#4*2*12*0245*3##",
+        "*4*1*2##",
+        "*#4*2*14*0245*3##",
+        "*#4*2*13*00##"
+      ],
+      "events_after": [
+        "*#4*2*0*0249##",
+        "*#4*2*12*0245*3##",
+        "*4*1*2##",
+        "*#4*2*14*0245*3##",
+        "*#4*2*13*00##"
+      ],
+      "note": "zone2_full_status_5_frames"
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 37.352,
+      "step": "zone2_poll",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2*0##",
+      "is_status_request": true
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 37.492,
+      "step": "zone2_poll",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*0*0249##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's main sensor is reporting a temperature of 24.9\u00b0C."
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 37.546,
+      "step": "zone2_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*0*0249##"
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 37.546,
+      "step": "zone2_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 38.146,
+      "step": "zone2_poll",
+      "dir": "result",
+      "frame": "*#4*2*0##",
+      "ack": true,
+      "reply_time_s": 0.193,
+      "replies": [
+        "*#4*2*0*0249##"
+      ],
+      "events_after": [
+        "*#4*2*0*0249##"
+      ],
+      "note": "zone2_temperature_dim0"
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 38.147,
+      "step": "zone2_poll",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2*19##",
+      "is_status_request": true
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 38.325,
+      "step": "zone2_poll",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*19*5*0##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's cooling fan is off; heating valve is off."
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 38.389,
+      "step": "zone2_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*19*5*0##"
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 38.389,
+      "step": "zone2_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 38.989,
+      "step": "zone2_poll",
+      "dir": "result",
+      "frame": "*#4*2*19##",
+      "ack": true,
+      "reply_time_s": 0.242,
+      "replies": [
+        "*#4*2*19*5*0##"
+      ],
+      "events_after": [
+        "*#4*2*19*5*0##"
+      ],
+      "note": "zone2_fancoil_valve_dim19"
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 38.989,
+      "step": "zone2_poll",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2*20##",
+      "is_status_request": true
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 39.14,
+      "step": "zone2_poll",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2#1*20*0##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's actuator 1 is off."
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 39.189,
+      "step": "zone2_poll",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2#2*20*5##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's fan is off."
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 39.194,
+      "step": "zone2_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2#1*20*0##"
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 39.194,
+      "step": "zone2_poll",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run3_climate_zone2",
+      "t": 39.795,
+      "step": "zone2_poll",
+      "dir": "result",
+      "frame": "*#4*2*20##",
+      "ack": true,
+      "reply_time_s": 0.205,
+      "replies": [
+        "*#4*2#1*20*0##"
+      ],
+      "events_after": [
+        "*#4*2#1*20*0##",
+        "*#4*2#2*20*5##"
+      ],
+      "note": "zone2_actuator_dim20"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 39.795,
+      "step": "who1_expose_populated",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*1*06##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 39.909,
+      "step": "who1_expose_populated",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 39.94,
+      "step": "who1_expose_populated",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched on."
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 40.019,
+      "step": "who1_expose_populated",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#1*#1*15*1##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light/motion sensor #1 has sent an unknown dimension 15."
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 40.511,
+      "step": "who1_expose_populated",
+      "dir": "result",
+      "frame": "*1*1*06##",
+      "ack": true,
+      "reply_time_s": 0.114,
+      "replies": [],
+      "events_after": [
+        "*1*1*06##",
+        "*#1*#1*15*1##"
+      ],
+      "note": "expose_who1_on_populated_06"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 40.511,
+      "step": "who1_expose_populated",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*0*06##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 40.606,
+      "step": "who1_expose_populated",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 40.645,
+      "step": "who1_expose_populated",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched off."
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 40.732,
+      "step": "who1_expose_populated",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#1*#1*15*0##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light/motion sensor #1 has sent an unknown dimension 15."
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 41.208,
+      "step": "who1_expose_populated",
+      "dir": "result",
+      "frame": "*1*0*06##",
+      "ack": true,
+      "reply_time_s": 0.095,
+      "replies": [],
+      "events_after": [
+        "*1*0*06##",
+        "*#1*#1*15*0##"
+      ],
+      "note": "expose_who1_off_populated_06"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 41.208,
+      "step": "who1_expose_virtual",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*1*08##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 43.269,
+      "step": "who1_expose_virtual",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 43.87,
+      "step": "who1_expose_virtual",
+      "dir": "result",
+      "frame": "*1*1*08##",
+      "ack": false,
+      "reply_time_s": 2.061,
+      "replies": [],
+      "events_after": [],
+      "note": "expose_who1_on_virtual_08_no_retry"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 43.87,
+      "step": "who1_expose_virtual",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*0*08##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 45.932,
+      "step": "who1_expose_virtual",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 46.533,
+      "step": "who1_expose_virtual",
+      "dir": "result",
+      "frame": "*1*0*08##",
+      "ack": false,
+      "reply_time_s": 2.062,
+      "replies": [],
+      "events_after": [],
+      "note": "expose_who1_off_virtual_08_no_retry"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 46.533,
+      "step": "who1_expose_virtual",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*5*08##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 48.595,
+      "step": "who1_expose_virtual",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 49.183,
+      "step": "who1_expose_virtual",
+      "dir": "result",
+      "frame": "*1*5*08##",
+      "ack": false,
+      "reply_time_s": 2.062,
+      "replies": [],
+      "events_after": [],
+      "note": "expose_who1_dim_preset_virtual_08"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 49.184,
+      "step": "who1_expose_virtual",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*08*1*150*0##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 49.238,
+      "step": "who1_expose_virtual",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 49.839,
+      "step": "who1_expose_virtual",
+      "dir": "result",
+      "frame": "*#1*08*1*150*0##",
+      "ack": false,
+      "reply_time_s": 0.055,
+      "replies": [],
+      "events_after": [],
+      "note": "expose_who1_report_brightness_virtual_08"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 49.839,
+      "step": "who1_expose_virtual",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*08*#1*150*0##",
+      "is_status_request": false
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 49.965,
+      "step": "who1_expose_virtual",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 50.566,
+      "step": "who1_expose_virtual",
+      "dir": "result",
+      "frame": "*#1*08*#1*150*0##",
+      "ack": true,
+      "reply_time_s": 0.126,
+      "replies": [],
+      "events_after": [],
+      "note": "expose_who1_write_brightness_virtual_08_acked"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 50.566,
+      "step": "who1_expose_virtual",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*08##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 52.621,
+      "step": "who1_expose_virtual",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 53.222,
+      "step": "who1_expose_virtual",
+      "dir": "result",
+      "frame": "*#1*08##",
+      "ack": false,
+      "reply_time_s": 2.055,
+      "replies": [],
+      "events_after": [],
+      "note": "query_who1_status_virtual_08"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 53.222,
+      "step": "who1_expose_virtual",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*08*1##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 55.279,
+      "step": "who1_expose_virtual",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 55.879,
+      "step": "who1_expose_virtual",
+      "dir": "result",
+      "frame": "*#1*08*1##",
+      "ack": false,
+      "reply_time_s": 2.056,
+      "replies": [],
+      "events_after": [],
+      "note": "query_who1_dim1_virtual_08"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 55.88,
+      "step": "who2_expose_virtual",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*2*1*25##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 56.186,
+      "step": "who2_expose_virtual",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1000#0*25##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "*2*1000#0*25##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 56.416,
+      "step": "who2_expose_virtual",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1000#1*25##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "*2*1000#1*25##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 56.418,
+      "step": "who2_expose_virtual",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 57.219,
+      "step": "who2_expose_virtual",
+      "dir": "result",
+      "frame": "*2*1*25##",
+      "ack": false,
+      "reply_time_s": 0.539,
+      "replies": [],
+      "events_after": [
+        "*2*1000#0*25##",
+        "*2*1000#1*25##"
+      ],
+      "note": "expose_who2_raise_virtual_25_emits_premove_stop_and_up_on_evt"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 57.219,
+      "step": "who2_expose_virtual",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*2*2*25##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 57.553,
+      "step": "who2_expose_virtual",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1000#0*25##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "*2*1000#0*25##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 57.833,
+      "step": "who2_expose_virtual",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1000#2*25##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "*2*1000#2*25##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 57.835,
+      "step": "who2_expose_virtual",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 58.636,
+      "step": "who2_expose_virtual",
+      "dir": "result",
+      "frame": "*2*2*25##",
+      "ack": false,
+      "reply_time_s": 0.615,
+      "replies": [],
+      "events_after": [
+        "*2*1000#0*25##",
+        "*2*1000#2*25##"
+      ],
+      "note": "expose_who2_lower_virtual_25_emits_premove_stop_and_down_on_evt"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 58.636,
+      "step": "who2_expose_virtual",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*2*0*25##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 58.946,
+      "step": "who2_expose_virtual",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1000#0*25##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "*2*1000#0*25##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 58.948,
+      "step": "who2_expose_virtual",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 59.749,
+      "step": "who2_expose_virtual",
+      "dir": "result",
+      "frame": "*2*0*25##",
+      "ack": false,
+      "reply_time_s": 0.312,
+      "replies": [],
+      "events_after": [
+        "*2*1000#0*25##"
+      ],
+      "note": "expose_who2_stop_virtual_25_emits_stop_translation_on_evt"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 59.749,
+      "step": "who2_expose_virtual",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#2*25*10*10*50*0*0##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 59.805,
+      "step": "who2_expose_virtual",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 60.406,
+      "step": "who2_expose_virtual",
+      "dir": "result",
+      "frame": "*#2*25*10*10*50*0*0##",
+      "ack": false,
+      "reply_time_s": 0.055,
+      "replies": [],
+      "events_after": [],
+      "note": "expose_who2_report_level_virtual_25"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 60.406,
+      "step": "who2_expose_virtual",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#2*25##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 60.717,
+      "step": "who2_expose_virtual",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 61.317,
+      "step": "who2_expose_virtual",
+      "dir": "result",
+      "frame": "*#2*25##",
+      "ack": false,
+      "reply_time_s": 0.311,
+      "replies": [],
+      "events_after": [],
+      "note": "query_who2_status_virtual_25"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 61.317,
+      "step": "who2_expose_virtual",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#2*25*10##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 62.456,
+      "step": "who2_expose_virtual",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 63.056,
+      "step": "who2_expose_virtual",
+      "dir": "result",
+      "frame": "*#2*25*10##",
+      "ack": true,
+      "reply_time_s": 1.138,
+      "replies": [],
+      "events_after": [],
+      "note": "query_who2_dim10_virtual_25_acked"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 63.056,
+      "step": "who4_expose_probe",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2*0*0999##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 63.229,
+      "step": "who4_expose_probe",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*0*0249##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's main sensor is reporting a temperature of 24.9\u00b0C."
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 63.277,
+      "step": "who4_expose_probe",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*0*0249##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 63.277,
+      "step": "who4_expose_probe",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 63.878,
+      "step": "who4_expose_probe",
+      "dir": "result",
+      "frame": "*#4*2*0*0999##",
+      "ack": true,
+      "reply_time_s": 0.22,
+      "replies": [
+        "*#4*2*0*0249##"
+      ],
+      "events_after": [
+        "*#4*2*0*0249##"
+      ],
+      "note": "who4_dim0_without_hash_parsed_as_read_on_zone2"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 63.878,
+      "step": "who4_expose_probe",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*50*0*0215##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 66.011,
+      "step": "who4_expose_probe",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 66.612,
+      "step": "who4_expose_probe",
+      "dir": "result",
+      "frame": "*#4*50*0*0215##",
+      "ack": false,
+      "reply_time_s": 2.134,
+      "replies": [],
+      "events_after": [],
+      "note": "expose_who4_report_temp_50_nack_timeout"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 66.612,
+      "step": "who4_expose_probe",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*50*#0*0215##",
+      "is_status_request": false
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 66.768,
+      "step": "who4_expose_probe",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 67.369,
+      "step": "who4_expose_probe",
+      "dir": "result",
+      "frame": "*#4*50*#0*0215##",
+      "ack": true,
+      "reply_time_s": 0.155,
+      "replies": [],
+      "events_after": [],
+      "note": "expose_who4_write_temp_50_acked_156ms"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 67.369,
+      "step": "who4_expose_probe",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*000*0*0215##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 69.437,
+      "step": "who4_expose_probe",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 70.037,
+      "step": "who4_expose_probe",
+      "dir": "result",
+      "frame": "*#4*000*0*0215##",
+      "ack": false,
+      "reply_time_s": 2.068,
+      "replies": [],
+      "events_after": [],
+      "note": "expose_who4_report_temp_000_nack"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 70.037,
+      "step": "who4_expose_probe",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*102*0*0215##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 72.155,
+      "step": "who4_expose_probe",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 72.757,
+      "step": "who4_expose_probe",
+      "dir": "result",
+      "frame": "*#4*102*0*0215##",
+      "ack": false,
+      "reply_time_s": 2.118,
+      "replies": [],
+      "events_after": [],
+      "note": "expose_who4_report_temp_102_nack"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 72.757,
+      "step": "who4_expose_probe",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*50*0##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 74.888,
+      "step": "who4_expose_probe",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 75.489,
+      "step": "who4_expose_probe",
+      "dir": "result",
+      "frame": "*#4*50*0##",
+      "ack": false,
+      "reply_time_s": 2.131,
+      "replies": [],
+      "events_after": [],
+      "note": "query_who4_dim0_virtual_50"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 75.489,
+      "step": "who4_expose_probe",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*000*0##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 77.555,
+      "step": "who4_expose_probe",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 78.155,
+      "step": "who4_expose_probe",
+      "dir": "result",
+      "frame": "*#4*000*0##",
+      "ack": false,
+      "reply_time_s": 2.066,
+      "replies": [],
+      "events_after": [],
+      "note": "query_who4_dim0_virtual_000"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 78.155,
+      "step": "who13_expose_clock",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**0##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 78.212,
+      "step": "who13_expose_clock",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**0*22*51*00*999##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal time is: 22:51:00."
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 78.266,
+      "step": "who13_expose_clock",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**0*22*51*00*999##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 78.266,
+      "step": "who13_expose_clock",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 78.867,
+      "step": "who13_expose_clock",
+      "dir": "result",
+      "frame": "*#13**0##",
+      "ack": true,
+      "reply_time_s": 0.111,
+      "replies": [
+        "*#13**0*22*51*00*999##"
+      ],
+      "events_after": [
+        "*#13**0*22*51*00*999##"
+      ],
+      "note": "query_who13_time"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 78.867,
+      "step": "who13_expose_clock",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**1##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 78.908,
+      "step": "who13_expose_clock",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**1*00*18*10*2026##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal date is: 2026-10-18."
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 78.964,
+      "step": "who13_expose_clock",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**1*00*18*10*2026##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 78.964,
+      "step": "who13_expose_clock",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 79.565,
+      "step": "who13_expose_clock",
+      "dir": "result",
+      "frame": "*#13**1##",
+      "ack": true,
+      "reply_time_s": 0.097,
+      "replies": [
+        "*#13**1*00*18*10*2026##"
+      ],
+      "events_after": [
+        "*#13**1*00*18*10*2026##"
+      ],
+      "note": "query_who13_date"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 79.565,
+      "step": "who13_expose_clock",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**22##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 79.619,
+      "step": "who13_expose_clock",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**22*22*51*02*999*00*18*10*2026##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal datetime is: 2026-10-18 22:51:02."
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 79.682,
+      "step": "who13_expose_clock",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**22*22*51*02*999*00*18*10*2026##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 79.682,
+      "step": "who13_expose_clock",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 80.282,
+      "step": "who13_expose_clock",
+      "dir": "result",
+      "frame": "*#13**22##",
+      "ack": true,
+      "reply_time_s": 0.117,
+      "replies": [
+        "*#13**22*22*51*02*999*00*18*10*2026##"
+      ],
+      "events_after": [
+        "*#13**22*22*51*02*999*00*18*10*2026##"
+      ],
+      "note": "query_who13_datetime"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 80.282,
+      "step": "who13_expose_clock",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**0*22*51*00*999##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 80.337,
+      "step": "who13_expose_clock",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**0*22*51*02*999##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's internal time is: 22:51:02."
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 80.398,
+      "step": "who13_expose_clock",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**0*22*51*02*999##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 80.398,
+      "step": "who13_expose_clock",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 81.199,
+      "step": "who13_expose_clock",
+      "dir": "result",
+      "frame": "*#13**0*22*51*00*999##",
+      "ack": true,
+      "reply_time_s": 0.116,
+      "replies": [
+        "*#13**0*22*51*02*999##"
+      ],
+      "events_after": [
+        "*#13**0*22*51*02*999##"
+      ],
+      "note": "expose_who13_report_time_parsed_as_read"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 81.199,
+      "step": "who13_expose_clock",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**#0*22*51*00*999##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 81.271,
+      "step": "who13_expose_clock",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 82.072,
+      "step": "who13_expose_clock",
+      "dir": "result",
+      "frame": "*#13**#0*22*51*00*999##",
+      "ack": true,
+      "reply_time_s": 0.071,
+      "replies": [],
+      "events_after": [],
+      "note": "expose_who13_set_time_broadcasts_on_evt"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 82.072,
+      "step": "who18_expose_energy",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#18*51*113*450##",
+      "is_status_request": false
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 83.34,
+      "step": "who18_expose_energy",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 83.941,
+      "step": "who18_expose_energy",
+      "dir": "result",
+      "frame": "*#18*51*113*450##",
+      "ack": true,
+      "reply_time_s": 1.268,
+      "replies": [],
+      "events_after": [],
+      "note": "expose_who18_active_power_dim113_acked"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 83.941,
+      "step": "who18_expose_energy",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#18*51*51*12345##",
+      "is_status_request": false
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 85.342,
+      "step": "who18_expose_energy",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 85.943,
+      "step": "who18_expose_energy",
+      "dir": "result",
+      "frame": "*#18*51*51*12345##",
+      "ack": true,
+      "reply_time_s": 1.401,
+      "replies": [],
+      "events_after": [],
+      "note": "expose_who18_total_energy_dim51_acked"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 85.943,
+      "step": "who18_expose_energy",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#18*51*54*320##",
+      "is_status_request": false
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 87.345,
+      "step": "who18_expose_energy",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 87.946,
+      "step": "who18_expose_energy",
+      "dir": "result",
+      "frame": "*#18*51*54*320##",
+      "ack": true,
+      "reply_time_s": 1.403,
+      "replies": [],
+      "events_after": [],
+      "note": "expose_who18_daily_energy_dim54_acked"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 87.946,
+      "step": "who18_expose_energy",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#18*51*#1200#1*1##",
+      "is_status_request": false
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 88.095,
+      "step": "who18_expose_energy",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 88.696,
+      "step": "who18_expose_energy",
+      "dir": "result",
+      "frame": "*#18*51*#1200#1*1##",
+      "ack": true,
+      "reply_time_s": 0.149,
+      "replies": [],
+      "events_after": [],
+      "note": "expose_who18_stream_enable_dim1200_acked"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 88.696,
+      "step": "who18_expose_energy",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#18*51*#1200#1*0##",
+      "is_status_request": false
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 88.84,
+      "step": "who18_expose_energy",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 89.441,
+      "step": "who18_expose_energy",
+      "dir": "result",
+      "frame": "*#18*51*#1200#1*0##",
+      "ack": true,
+      "reply_time_s": 0.144,
+      "replies": [],
+      "events_after": [],
+      "note": "expose_who18_stream_disable_dim1200_acked"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 89.441,
+      "step": "who18_expose_energy",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#18*51*113##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 90.355,
+      "step": "who18_expose_energy",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 90.956,
+      "step": "who18_expose_energy",
+      "dir": "result",
+      "frame": "*#18*51*113##",
+      "ack": true,
+      "reply_time_s": 0.914,
+      "replies": [],
+      "events_after": [],
+      "note": "query_who18_dim113_acked"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 90.956,
+      "step": "who18_expose_energy",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#18*51*1200##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 91.007,
+      "step": "who18_expose_energy",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_expose_virtual_bus_verification",
+      "t": 91.607,
+      "step": "who18_expose_energy",
+      "dir": "result",
+      "frame": "*#18*51*1200##",
+      "ack": false,
+      "reply_time_s": 0.051,
+      "replies": [],
+      "events_after": [],
+      "note": "query_who18_dim1200_nack"
+    }
+  ]
+}

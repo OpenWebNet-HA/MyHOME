@@ -22,7 +22,7 @@ from homeassistant.const import (
     CONF_PASSWORD,
     CONF_PORT,
 )
-from homeassistant.core import Event, HomeAssistant
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import OWNAutomationEvent, OWNMessage
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -273,6 +273,7 @@ async def test_centralized_button_fires_general_automation_bus_events(hass: Home
 
     captured_events: list[dict] = []
 
+    @callback
     def on_event(event: Event) -> None:
         captured_events.append(event.data)
 
@@ -370,7 +371,7 @@ async def test_myhomeserver1_stationary_stop_trace_fires_single_general_stop_eve
     handler._on_event_connection_state_change(True)
 
     captured_events: list[dict] = []
-    hass.bus.async_listen("myhome_general_automation_event", lambda event: captured_events.append(event.data))
+    hass.bus.async_listen("myhome_general_automation_event", callback(lambda event: captured_events.append(event.data)))
 
     replayed = 0
     for item in raw_frames:
@@ -453,7 +454,7 @@ async def test_myhomeserver1_local_room_keypad_does_not_fire_general_automation_
     handler._on_event_connection_state_change(True)
 
     captured_events: list[dict] = []
-    hass.bus.async_listen("myhome_general_automation_event", lambda event: captured_events.append(event.data))
+    hass.bus.async_listen("myhome_general_automation_event", callback(lambda event: captured_events.append(event.data)))
 
     replayed = 0
     for item in raw_frames:

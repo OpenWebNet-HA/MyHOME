@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import collections
-import logging
+import inspect
+import re
 import time
 from collections.abc import Callable, Iterable
 from typing import Any
@@ -23,11 +24,12 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later
 from OWNd.connection import OWNCommandSession, OWNEventSession, OWNGateway, OWNSession
-from OWNd.message import OWNCommand, OWNGatewayEvent
+from OWNd.message import OWNCommand
 from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
 
 from .bus_monitor import BusMonitor
 from .const import (
+    BUS_ROUTING,
     CONF_DEVICE_TYPE,
     CONF_FIRMWARE,
     CONF_MANUFACTURER,
@@ -35,21 +37,7 @@ from .const import (
     CONF_SSDP_LOCATION,
     CONF_SSDP_ST,
     CONF_UDN,
-    DOMAIN,
-    IDENTIFICATION_MANUAL,
-    IDENTIFICATION_SERIAL,
-    IDENTIFICATION_SSDP,
-    IDENTIFICATION_UNKNOWN,
-    IDENTIFICATION_WHO13,
     LOGGER,
-    ROLE_SECONDARY,
-    ROLE_STANDBY,
-    SHARED_BUS_EVIDENCE_COUNT,
-    SHARED_BUS_EVIDENCE_WINDOW_S,
-    SHARED_BUS_TX_ECHO_S,
-    TOPOLOGY_SHARED,
-    WHO1013_BRANDS,
-    WHO1013_LINES,
 )
 from .device_health import DeviceHealth
 from .gateway_events import GatewayEventDispatcher
@@ -61,14 +49,17 @@ from .gateway_sessions import (
     EVENT_RESTART_BACKOFF_MAX,
     EVENT_RESTART_BACKOFF_MIN,
     EVENT_STALL_TIMEOUT,
+    CommandPriorityQueue,
     CommandWorkerPool,
     EventSessionRunner,
+    FrameScheduler,
     _cancel_written,
     _resolve_written,
     _session_is_open,
 )
 from .identity import (
     GatewayIdentityEvidence,
+    GatewayIdentityMixin,
     GatewayIdentityResolution,
     read_who13,
     read_who1013,
@@ -83,18 +74,12 @@ from .repairs import (
     async_delete_unconfigured_timezone_issue,
     async_delete_unknown_model_issue,
 )
-from .topology import (
-    delegated_away_whos,
-    entry_delegated_whos,
-    entry_is_follower,
-    entry_primary_mac,
-    entry_role,
-    entry_topology,
-)
+from .topology import GatewayTopologyMixin
 
 __all__ = [
     "AVAILABILITY_GRACE",
     "COMMAND_SESSION_IDLE_TIMEOUT",
+    "CommandPriorityQueue",
     "CommandWorkerPool",
     "EVENT_INACTIVITY_TIMEOUT",
     "EVENT_READY_TIMEOUT",
@@ -102,7 +87,12 @@ __all__ = [
     "EVENT_RESTART_BACKOFF_MIN",
     "EVENT_STALL_TIMEOUT",
     "EventSessionRunner",
+    "FrameScheduler",
     "GatewayEventDispatcher",
+    "GatewayIdentityEvidence",
+    "GatewayIdentityMixin",
+    "GatewayIdentityResolution",
+    "GatewayTopologyMixin",
     "GenericGatewayProfile",
     "LightingResyncManager",
     "MyHOMEGatewayHandler",
@@ -110,66 +100,79 @@ __all__ = [
     "OWNEventSession",
     "OWNGateway",
     "OWNSession",
-    "_StatusRequestLogFilter",
     "_cancel_written",
     "_resolve_written",
     "_session_is_open",
     "async_call_later",
+    "async_create_identity_corrected_issue",
+    "async_create_identity_issue",
+    "async_create_unconfigured_timezone_issue",
+    "async_create_unknown_model_issue",
+    "async_delete_identity_issue",
+    "async_delete_unconfigured_timezone_issue",
+    "async_delete_unknown_model_issue",
     "async_dispatcher_send",
     "command_session_default",
     "command_session_limit",
     "dr",
     "er",
     "get_gateway_profile",
+    "read_who13",
+    "read_who1013",
+    "resolve_gateway_identity",
     "time",
 ]
 
 
-class _StatusRequestLogFilter(logging.Filter):
-    """Downgrade spurious status-request retry errors to DEBUG.
-
-    OWNd < 2.0.0b8 logged intermediate status-request retries (*#...##) as ERROR
-    instead of DEBUG when the gateway NACKed uninstalled optional subsystems
-    (issue #406, OpenWebNet-HA/OWNd#43).
-    """
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        if (
-            record.levelno == logging.ERROR
-            and "Could not send message `*#" in record.getMessage()
-        ):
-            record.levelno = logging.DEBUG
-            record.levelname = "DEBUG"
-        return True
+def _call_get_gateway_profile(
+    model: str | None, firmware: str | None = None, *, lookup: Any = None
+) -> Any:
+    """Call ``get_gateway_profile`` with optional firmware, tolerating 1-arg mocks."""
+    fn = lookup if lookup is not None else get_gateway_profile
+    if firmware:
+        try:
+            return fn(model, firmware)
+        except TypeError:  # pragma: no cover - fallback for 1-arg mocks or older OWNd
+            return fn(model)
+    return fn(model)
 
 
-LOGGER.addFilter(_StatusRequestLogFilter())
+def _profile_for_model(
+    model: str | None, firmware: str | None = None, *, lookup: Any = None
+) -> Any:
+    """Resolve ``model`` to an OWNd profile, mapping SSDP spellings like ``H/L4684``."""
+    profile = _call_get_gateway_profile(model, firmware, lookup=lookup)
+    if isinstance(profile, GenericGatewayProfile) and model:
+        mapped = _MODEL_SPELLINGS.get(_alnum(model))
+        if mapped is not None:
+            return _call_get_gateway_profile(mapped, firmware, lookup=lookup)
+    return profile
+
+
+def _firmware_at_least(firmware: str | None, minimum: tuple[int, int, int]) -> bool:
+    """Return whether ``firmware`` parses to at least ``minimum`` (V, R, B)."""
+    if not firmware:
+        return False
+    parts = [int(m) for m in re.findall(r"\d+", str(firmware))]
+    if not parts:
+        return False
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts[:3]) >= minimum
 
 
 def command_session_limit(model: str | None) -> int | None:
-    """Return how many command sessions a known gateway model accepts at once.
-
-    Returns ``None`` for a model OWNd has no profile for: the generic profile's
-    limit of 1 is a safe default, not a measured limit, so it must not override
-    what the user configured.  An MH200N given 3 sessions stops answering new
-    ones and its event session goes quiet (issue #425).
-    """
-    profile = get_gateway_profile(model)
-    if isinstance(profile, GenericGatewayProfile):
+    """Return how many command sessions a known gateway model accepts at once."""
+    profile = _profile_for_model(model)
+    max_sessions = getattr(profile, "max_command_sessions", None)
+    if isinstance(profile, GenericGatewayProfile) or max_sessions is None:
         return None
-    return int(profile.max_command_sessions)
+    return int(max_sessions)
 
 
 def command_session_default(model: str | None) -> int:
-    """Return how many command sessions a new entry should start with.
-
-    The profile's ``default_command_sessions`` leaves headroom below the
-    gateway's socket limit for the vendor app and for a reconnect overlap
-    (an F455 takes 5 connections in all: 4 command sessions plus the event
-    session would use every one).  Never above the limit; 1 when the model is
-    unknown or an older OWNd profile has no default.
-    """
-    profile = get_gateway_profile(model)
+    """Return how many command sessions a new entry should start with."""
+    profile = _profile_for_model(model)
     default = int(getattr(profile, "default_command_sessions", 1))
     limit = command_session_limit(model)
     return max(1, min(default, limit) if limit is not None else 1)
@@ -178,22 +181,147 @@ def command_session_default(model: str | None) -> int:
 AVAILABILITY_GRACE = 60
 BUS_QUIET_PERIOD = 0.75
 BUS_QUIET_CAP = 15.0
-# How long a paced request may sit in the send queue and on the command session
-# (connect, negotiation, OWNd's command timeout) before the sweep stops waiting for it.
 PACED_WRITE_TIMEOUT = 60.0
-# The startup sweep, in order. Each entry is (WHO, general status request).
+# How long a zone request waits for others once the startup sweep is over: zones discovered
+# from incoming frames arrive over 1-2 s, and each would otherwise start its own all-zone
+# sweep (*#4*#0*20##) on an F461.
+ZONE_REQUEST_COALESCE = 0.1
 DISCOVERY_REQUESTS: tuple[tuple[int, str], ...] = (
     (1, "*#1*0##"),
     (2, "*#2*0##"),
     (4, "*#4*0##"),
+    (5, "*#5*0##"),
     (16, "*#16*0*5##"),
+    (18, "*#18*51*51##"),
+    (18, "*#18*51*113##"),
+)
+# Startup requests the firmware drops instead of forwarding them to the bus (own-firmware-oracle,
+# results/mcp_index.json at 53f9514; "silent" verdicts). Read from the OWNd profile first
+# (``supports_general_heating_status``, ``supports_who(16)``); these tables are the fallback
+# until the flags exist there. Gateways not listed keep sending the request.
+GENERAL_ZONE_REQUEST_REFUSED = frozenset(
+    {"F450", "F454", "F459", "F460", "F461", "H4684", "MH200", "MH201", "MH202", "MYHOMESERVER1"}
+)  # *#4*0## (trace-corpus.tsv); F453, F453AV and MH200N forward it. The MH201 is not in the
+# oracle: a physical MH201 3.3.6 sent *#4*0## and got no zone frame back although zones 2, 3
+# and 4 report on that plant (tests/fixtures/traces/issue_466, sweep 19-11-35 frame 11 against
+# trace 19-05-42 frames 0-10).
+SOUND_STATUS_REQUEST_REFUSED = frozenset(
+    {"F450", "F459", "F460", "F461", "MH202", "MYHOMESERVER1"}
+)  # *#16*0*5## (sound-who16-source.tsv)
+# Zones of these SCS-only gateways report nothing after the startup sweep, so each zone asks
+# for its temperature (*#4*Z*0##, one bus query answered in ~120 ms on a populated zone): the
+# models refusing *#4*0## whose *#4*Z## is expanded into four bus queries ($0499ZZ3000 / 12 /
+# 0E / 0D in trace-corpus.tsv, ~1.3 s per zone when a central unit answers them all, a NACK
+# after 1.5-2 s when a standalone thermostat answers only some), and the MH201, whose
+# standalone thermostats stayed unknown after every restart (#185; its *#4*0## refusal is the
+# issue_466 sweep trace, the MH201 is not in the oracle). F460, F461 and MyHomeServer1 refuse
+# *#4*0## too but answer *#4*Z## themselves (F460 and F461 expand it into one request,
+# $00499013000 in trace-corpus.tsv; MyHomeServer1 replies from its cache, #649), so their zones
+# keep the zone status poll and are not listed here.
+ZONE_TEMPERATURE_POLL = frozenset({"F450", "F454", "F459", "H4684", "MH200", "MH201", "MH202"})
+# A zone behind an F422 bus interface (WHERE Z#4#II) cannot be polled on these gateways: the
+# firmware drops *#4*Z#4#II*0## (and *#4*Z#4#II##) before the bus, nack/silent on ten of the
+# twelve emulated images; only H4684 and MH200 forward them (own-firmware-oracle PR #60,
+# thermo-zone-requests suite, not published yet). Read from the OWNd profile first
+# (``supports_interface_zone_requests``); this table is the fallback until the flag exists there.
+INTERFACE_ZONE_REQUEST_REFUSED = frozenset(
+    {"F450", "F453", "F453AV", "F454", "F459", "F460", "F461", "MH200N", "MH202", "MYHOMESERVER1"}
 )
 
+# Gateways whose firmware drops the per-zone actuator request (``*#4*Z*20##``) instead of
+# forwarding it to the bus: own-firmware-oracle ``results/<P>/<V>/oracle/full/thermo-actuator.tsv``
+# (``*#4*1*20##`` "silent" on these six, "out" on F450, F454, F459, F460, F461, MyHomeServer1).
+# Read from the OWNd profile first (``supports_heating_actuator_status``); this table is the
+# fallback until the flag exists there.
+ACTUATOR_REQUEST_REFUSED = frozenset({"F453", "F453AV", "H4684", "MH200", "MH200N", "MH202"})
+# One request for every zone, by dimension. The live F461 2.0.11 answered ``*#4*#0*20##`` with
+# the actuators of each zone (``*#4*2#1*20*0##``, ``*#4*2#2*20*5##`` after 2.1 s).
+# The MyHomeServer1 3.87.13 (myhomeserver1_live_2026-10-24, run2_reads_thermo_sound_alarm_lights)
+# answered it in 0.39 s with 43 actuator frames for its 34 zones, where asking each zone
+# through the paced sender takes about 32 s; the emulated 028206 forwards it ("out").
+ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {
+    "F461": {20: "*#4*#0*20##"},
+    "MYHOMESERVER1": {20: "*#4*#0*20##"},
+}
+# Gateways whose emulated firmware did not forward the zone humidity request (``*#4*Z*60##``:
+# nack and nothing on the bus) in the own-firmware-oracle thermo-zone-requests suite
+# (findings/thermo-zone-requests.md on main, ``firmware_observed``, emulated firmware); F459,
+# F460, F461 and MyHomeServer1 forwarded it, and the live F461 / MyHomeServer1 answer it.
+# Read from the OWNd profile first (``supports_heating_humidity_request``: ``True`` / ``False``
+# wins, ``None`` = unverified); this table is the fallback until the flag exists there.
+HUMIDITY_REQUEST_REFUSED = frozenset({"F450", "F453", "F453AV", "F454", "H4684", "MH200", "MH200N", "MH202"})
+# Every gateway model the request tables can be keyed on: the twelve images the oracle emulates
+# (results/<P>/<V>, refusing and forwarding alike) and the other models OWNd profiles, so a
+# forwarding model named with a brand prefix ("BTicino F461") is keyed as itself (``F461``)
+# and not left as the whole string. The same key on every table of #792 / #793 / #794.
+KNOWN_GATEWAY_MODELS = frozenset(
+    {
+        "F450", "F452", "F452V", "F453", "F453AV", "F454", "F455", "F459", "F460", "F461",
+        "H4684", "H4890", "MH200", "MH200N", "MH201", "MH202", "MYHOMESERVER1",
+    }
+)
+# The models the tables know, longest first so ``MH200N`` is not read as ``MH200``.
+_ZONE_REQUEST_MODELS = sorted(
+    KNOWN_GATEWAY_MODELS | ACTUATOR_REQUEST_REFUSED | HUMIDITY_REQUEST_REFUSED | set(ALL_ZONE_REQUESTS)
+    | GENERAL_ZONE_REQUEST_REFUSED | SOUND_STATUS_REQUEST_REFUSED | ZONE_TEMPERATURE_POLL,
+    key=len,
+    reverse=True,
+)
+# SSDP announces the H4684 as "H/L4684" (issue #466) or "HL4684" (manifest.json), which OWNd<=2.0.0b11
+# does not alias to its H4684 profile yet, and "HC4684" is the other prefixed spelling of the same product.
+# TODO(OWNd>2.0.0b11): remove shim once manifest.json pins an OWNd release containing OWNd#147.
+_MODEL_SPELLINGS = {"HL4684": "H4684", "HC4684": "H4684"}
 
-class MyHOMEGatewayHandler:
+
+def _alnum(name: object) -> str:
+    """A model string reduced to its upper-case letters and digits (``"BTicino F461"`` -> ``BTICINOF461``)."""
+    return "".join(character for character in str(name).upper() if character.isalnum())
+
+
+def _resolved_model(word: str) -> str | None:
+    """The model OWNd resolves one word of a model string to, or ``None`` for a word it does not know.
+
+    ``L4684`` -> ``H4684``, ``003598`` -> ``F454``, ``03565`` -> ``MH200N`` (OWNd's aliases and
+    catalogue item numbers); the spellings OWNd has no alias for are mapped first.
+    """
+    key = _MODEL_SPELLINGS.get(_alnum(word), word)
+    profile = get_gateway_profile(key)
+    if isinstance(profile, GenericGatewayProfile):
+        return None
+    return _alnum(profile.model_name)
+
+
+# A WHO 4 zone address: ``Z``, ``#Z``, ``Z#N`` (actuator), each optionally behind an
+# interface of exactly two digits (``Z#4#01``): the grammar of OWNd#140's builder
+# (``OWNHeatingCommand.actuators_status``).
+_ZONE_WHERE = re.compile(rf"^#?[0-9]+(?:#[0-9]+)?(?:{re.escape(BUS_ROUTING)}[0-9]{{2}})?$")
+
+
+def _validate_zone_where(where: str) -> str:
+    """The WHO 4 zone address as it goes into ``*#4*WHERE*DIM##``, or ``ValueError``.
+
+    A one-digit interface is written with two (``3#4#1`` -> ``3#4#01``), as the frames on
+    the wire and the configuration validator spell it. Anything else would change the
+    frame's grammar: ``2*22`` would turn a dimension 20 request into ``*#4*2*22*20##``, a
+    dimension 22 write; ``2##`` ends the frame early. The builder of OWNd#140
+    (``OWNHeatingCommand.actuators_status``) accepts and rejects the same addresses.
+    """
+    zone, routing, interface = (where or "").partition(BUS_ROUTING)
+    if routing and len(interface) == 1 and interface.isdigit():
+        where = f"{zone}{routing}{interface.zfill(2)}"
+    if not _ZONE_WHERE.match(where or ""):
+        raise ValueError(f"Invalid zone address: {where!r}")
+    return where
+
+
+def _zone_request_frame(where: str, dimension: int) -> str:
+    """The dimension request of one zone (``*#4*WHERE*DIM##``), validated like a builder."""
+    return f"*#4*{_validate_zone_where(where)}*{dimension}##"
+
+
+class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     """Manages a single MyHOME Gateway."""
 
-    # Device registry id of the gateway device; set once the entry's device exists.
     device_registry_id: str | None = None
 
     def __init__(
@@ -223,6 +351,8 @@ class MyHOMEGatewayHandler:
         self.config_entry = config_entry
         self.generate_events = generate_events
         self.gateway = OWNGateway(build_info)
+        if isinstance(self.gateway.profile, GenericGatewayProfile):
+            self.gateway.profile = _profile_for_model(self.gateway.model_name, self.gateway.firmware)
         self.is_connected = False
         self._available = False
         self._failover_active = False
@@ -230,22 +360,15 @@ class MyHOMEGatewayHandler:
         self._unavailable_timer: CALLBACK_TYPE | None = None
         self.listening_worker: asyncio.Task[None] | None = None
         self.bus_monitor = BusMonitor()
-        # Faults of the devices on this bus, raised as repair issues (device_health.py).
         self.device_health = DeviceHealth(self)
         self.device_registry_id = None
         self.broadcast_resync = broadcast_resync
+        self.has_central_unit = False
 
-        # Identity evidence, recorded as observed and exported in diagnostics, the
-        # WebSocket info payload and every trace (see identification()). What the
-        # integration believes is decided in one place from all of it: _resolve_identity.
         self._who13: dict[str, Any] = {
             "code": None, "model": None, "model_official": None, "model_observed": None,
             "firmware": None, "kernel": None, "distribution": None,
         }
-        # WHO=1013 dimension 1: asked once when WHO=13 answered a code shared by
-        # several models; `pending` until it answers or the session reconnects. A reply
-        # is OBJECT_MODEL * N_CONF * BRAND * LINE - only the first decides the identity,
-        # the rest is recorded for diagnostics.
         self._who1013: dict[str, Any] = {
             "code": None, "model": None, "names": (), "pending": False,
             "n_conf": None, "brand": None, "line": None,
@@ -253,7 +376,6 @@ class MyHOMEGatewayHandler:
         self._identity_conflict: str | None = None
         self._identity_resolution: GatewayIdentityResolution | None = None
 
-        # Decomposed runners and managers
         self._event_dispatcher = GatewayEventDispatcher(self)
         self._resync_manager = LightingResyncManager(self)
         self._event_runner = EventSessionRunner(self)
@@ -262,24 +384,32 @@ class MyHOMEGatewayHandler:
             event_session_ready=self._event_runner.event_session_ready,
         )
 
-        # Expose shared containers for backward compatibility
         self._cen_devices: set[tuple[int, Any]] = self._event_dispatcher.cen_devices
         self._resync_timers: dict[str, CALLBACK_TYPE] = self._resync_manager.resync_timers
         self._resync_group_echoes: dict[str, int] = self._resync_manager.resync_group_echoes
         self._recent_ptp: collections.deque[tuple[float, str, str | None]] = self._resync_manager.recent_ptp
         self._sender_stop: asyncio.Event = self._command_pool.sender_stop
         self._initial_discovery_done: asyncio.Event = asyncio.Event()
-        # Monotonic time of the last frame seen on the event session; the startup sweep
-        # waits for the bus to go quiet between general requests.
+        # Paced sweeps in flight; close_listener() bumps the epoch so a sweep that was
+        # running at the time cannot end one started after the reconnect.
+        self._active_sweeps: int = 0
+        self._sweep_epoch: int = 0
+        self._sweep_idle: asyncio.Event = asyncio.Event()
+        self._sweep_idle.set()
         self._last_event_frame_at: float = 0.0
+        # Heating zones whose actuators are asked after the startup sweep and every reconnect,
+        # and the (zone, dimension) requests waiting for the next paced run.
+        self._actuator_zones: dict[str, int] = {}
+        self._zone_requests: set[tuple[str, int]] = set()
+        self._zone_request_task: asyncio.Task[None] | None = None
 
     @property
-    def send_buffer(self) -> asyncio.Queue[Any]:
+    def send_buffer(self) -> FrameScheduler | asyncio.Queue[Any]:
         """Return the send queue."""
         return self._command_pool.send_buffer
 
     @send_buffer.setter
-    def send_buffer(self, value: asyncio.Queue[Any]) -> None:
+    def send_buffer(self, value: FrameScheduler | asyncio.Queue[Any]) -> None:
         self._command_pool.send_buffer = value
 
     @property
@@ -314,69 +444,9 @@ class MyHOMEGatewayHandler:
         """Event set when the event session is established."""
         return self._event_runner._event_session_ready
 
-    def _ensure_cen_device(self, who: int, object_id: int | str) -> None:
+    def _ensure_cen_device(self, who: int, object_id: int | str, model: str | None = None) -> None:
         """Ensure CEN/CEN+ scenario unit is registered in device registry."""
-        self._event_dispatcher.ensure_cen_device(who, object_id)
-
-    @property
-    def identification_source(self) -> str:
-        """How the configured model was established (SSDP > manual > serial > WHO=13)."""
-        data = getattr(self.config_entry, "data", None) or {}
-        if data.get("transport_type") == "serial":
-            return IDENTIFICATION_SERIAL
-        if data.get(CONF_SSDP_LOCATION) or data.get(CONF_UDN):
-            return IDENTIFICATION_SSDP
-        model_source = data.get("model_source")
-        if model_source == IDENTIFICATION_WHO13:
-            return IDENTIFICATION_WHO13
-        if model_source == IDENTIFICATION_MANUAL:
-            # The owner picked the model in the options flow; that choice outranks
-            # any WHO=13 label applied earlier.
-            return IDENTIFICATION_MANUAL
-        model = data.get(CONF_NAME)
-        if model and str(model).strip().lower() not in ("", "generic", "gateway", "unknown"):
-            return IDENTIFICATION_MANUAL
-        return IDENTIFICATION_UNKNOWN
-
-    def identification(self) -> dict[str, Any]:
-        """Evidence behind the model label, for diagnostics and trace exports."""
-        data = getattr(self.config_entry, "data", None) or {}
-        return {
-            "model": self.model,
-            "source": self.identification_source,
-            "configured_model": data.get(CONF_NAME),
-            "ssdp_model": data.get(CONF_NAME) if self.identification_source == IDENTIFICATION_SSDP else None,
-            "ssdp_location": data.get(CONF_SSDP_LOCATION) or None,
-            "who13_code": self._who13["code"],
-            "who13_model": self._who13["model"],
-            "who13_model_official": self._who13["model_official"],
-            "who13_model_observed": self._who13["model_observed"],
-            "who13_firmware": self._who13["firmware"],
-            "who13_kernel": self._who13["kernel"],
-            "who13_distribution": self._who13["distribution"],
-            "who1013_code": self._who1013["code"],
-            "who1013_model": self._who1013["model"],
-            # The same product under another brand (Legrand's 003598 for a BTicino
-            # F454), never an order code: the owner's box may carry this name.
-            "who1013_other_names": list(self._who1013["names"]),
-            "who1013_n_conf": self._who1013["n_conf"],
-            "who1013_brand": self._describe_who1013("brand", WHO1013_BRANDS),
-            "who1013_line": self._describe_who1013("line", WHO1013_LINES),
-            "profile": type(self.profile).__name__ if self.profile is not None else None,
-            "conflict": self._identity_conflict,
-        }
-
-    def _describe_who1013(self, field: str, table: dict[str, str]) -> str | None:
-        """Render a WHO=1013 metadata value as ``code (meaning)``, or the bare code.
-
-        Only values actually observed are in the tables, so an unseen one still
-        reaches diagnostics instead of being dropped as unrecognised.
-        """
-        value = self._who1013[field]
-        if value is None:
-            return None
-        meaning = table.get(str(value))
-        return f"{value} ({meaning})" if meaning else str(value)
+        self._event_dispatcher.ensure_cen_device(who, object_id, model=model)
 
     @property
     def mac(self) -> str:
@@ -428,209 +498,229 @@ class MyHOMEGatewayHandler:
         return firmware
 
     @property
+    def supports_zone_status(self) -> bool:
+        """Whether the gateway supports point-to-point zone status queries (*#4*Z##)."""
+        # Check the configured model string, its alphanumeric form (so "BTicino H/L4684" matches
+        # "HL4684"), and the profile model _profile_for_model resolves it to (L4684, NT4684,
+        # H/L4684, HL4684, HC4684, and MyHOME_Suite catalogue codes such as 003598).
+        names = (
+            self.model.upper(),
+            _alnum(self.model),
+            str(_profile_for_model(self.model).model_name).upper(),
+        )
+        return not any(
+            k in norm
+            for norm in names
+            for k in (
+                "F450",
+                "F455",
+                "HL4684",  # TODO(OWNd>2.0.0b11): remove once manifest.json pins OWNd containing OWNd#147
+                "F454",
+                "MH200",
+                "MH201",
+                "MH202",
+                "F452",
+                "F453",
+                "F458",
+                "F459",
+                "H4684",
+            )
+        )
+
+    @property
+    def _model_key(self) -> str:
+        """The gateway model the request tables are keyed on (``F461``, ``MYHOMESERVER1``).
+
+        A known OWNd profile names the model; a ``GenericGatewayProfile`` (also what
+        ``get_gateway_profile("BTicino F461")`` returns) falls back to the configured name.
+        There a brand-prefixed alias or catalogue number is resolved word by word through
+        OWNd (``"BTicino L4684"`` -> ``H4684``, ``"Legrand 003598"`` -> ``F454``), the SSDP
+        spelling ``HL4684`` is read as ``H4684``, and otherwise a known model is looked up as
+        a substring, longest first (``supports_zone_status`` style), so ``MH200N`` stays
+        distinct from ``MH200``. The words are the alphanumeric runs of the string, so
+        ``"BTicino-L4684"`` and ``"F454 (003598)"`` resolve too.
+        """
+        profile = getattr(self.gateway, "profile", None)
+        if profile is not None and not isinstance(profile, GenericGatewayProfile):
+            name = getattr(profile, "model_name", None) or self.model
+        else:
+            name = self.model
+        for word in re.findall(r"[A-Za-z0-9]+", str(name)):
+            resolved = _resolved_model(word)
+            if resolved is not None:
+                return resolved
+        normalized = _MODEL_SPELLINGS.get(_alnum(name), _alnum(name))
+        return next((model for model in _ZONE_REQUEST_MODELS if model in normalized), normalized)
+
+    def _who4_target(self) -> MyHOMEGatewayHandler:
+        """The gateway a WHO 4 status request goes through, the way ``send_status_request`` routes it.
+
+        On a shared bus WHO 4 may be delegated to a secondary gateway, or served by the warm
+        standby while this primary is down: that gateway's refusal and all-zone tables apply.
+        """
+        probe = OWNCommand.parse("*#4*#0*20##")
+        if probe is None:  # pragma: no cover - a fixed, well-formed frame
+            return self
+        return self._delegated_target(probe) or self._failover_target(probe) or self
+
+    @property
+    def actuator_request_refused(self) -> bool:
+        """Whether this gateway drops the zone actuator request (``*#4*Z*20##``).
+
+        The OWNd profile flag wins when it exists; otherwise the oracle-derived table.
+        """
+        supported = getattr(getattr(self.gateway, "profile", None), "supports_heating_actuator_status", None)
+        if isinstance(supported, bool):
+            return not supported
+        return self._model_key in ACTUATOR_REQUEST_REFUSED
+
+    def all_zone_request(self, dimension: int) -> str | None:
+        """The single request this gateway answers with every zone's ``dimension``, if any."""
+        return ALL_ZONE_REQUESTS.get(self._model_key, {}).get(dimension)
+
+    @callback
+    def watch_zone_actuators(self, where: str) -> CALLBACK_TYPE:
+        """Ask for a heating zone's actuators (dimension 20) now and after every reconnect.
+
+        Returns the callback that stops it. The zone is always recorded: whether the gateway
+        refuses the request is decided when it is sent, once the in-band identity (WHO 13 /
+        WHO 1013) has settled, so a model corrected after the entities were added is honoured.
+        """
+        where = _validate_zone_where(where)  # before the zone is counted: no phantom watch
+        self._actuator_zones[where] = self._actuator_zones.get(where, 0) + 1
+        self.request_zone_dimension(where, 20)
+
+        @callback
+        def _unwatch() -> None:
+            count = self._actuator_zones.get(where, 0) - 1
+            if count > 0:
+                self._actuator_zones[where] = count
+            else:
+                self._actuator_zones.pop(where, None)
+
+        return _unwatch
+
+    @callback
+    def request_zone_dimension(self, where: str, dimension: int) -> None:
+        """Ask a heating zone for one dimension once the startup sweep is over.
+
+        Zones asking together share one paced run; where the gateway answers one request
+        for every zone (``all_zone_request``), that frame replaces the local zones' own.
+        """
+        if dimension == 22:
+            # *#4*Z*22## kills the F461 thermostat handler and reboots the gateway.
+            raise ValueError("WHO 4 dimension 22 is never requested")
+        self._zone_requests.add((_validate_zone_where(where), dimension))
+        if self._zone_request_task is None or self._zone_request_task.done():
+            self._zone_request_task = self.hass.async_create_background_task(
+                self._send_zone_requests(), name=f"myhome_{self.mac}_zone_requests"
+            )
+
+    async def _send_zone_requests(self) -> None:
+        """Send the waiting zone requests through the paced sender, until none is left."""
+        coalesce = self._initial_discovery_done.is_set()
+        await self.wait_for_initial_discovery()
+        while self._zone_requests:
+            # Zones added in the same pass join this run; after the sweep, zones discovered
+            # from the bus over the next tenth of a second do too instead of each sweeping on
+            # its own, and so do zones that arrived while the previous batch was being sent.
+            await asyncio.sleep(ZONE_REQUEST_COALESCE if coalesce else 0)
+            coalesce = True
+            pending, self._zone_requests = self._zone_requests, set()
+            frames: list[str] = []
+            target = self._who4_target()
+            for dimension in sorted({dim for _where, dim in pending}):
+                wheres = sorted(where for where, dim in pending if dim == dimension)
+                if dimension == 20 and target.actuator_request_refused:
+                    LOGGER.debug(
+                        "%s Zones %s: %s refuses the actuator request; not asking", self.log_id, wheres, target.model
+                    )
+                    continue
+                all_zones = target.all_zone_request(dimension)
+                if all_zones is not None and any(BUS_ROUTING not in where for where in wheres):
+                    frames.append(all_zones)
+                    wheres = [where for where in wheres if BUS_ROUTING in where]  # behind an interface
+                for where in wheres:
+                    # One zone the builder rejects must not drop the others of the batch.
+                    try:
+                        frames.append(_zone_request_frame(where, dimension))
+                    except ValueError as err:
+                        LOGGER.warning("%s Zone %s: dimension %s not requested: %s", self.log_id, where, dimension, err)
+            if not frames:
+                continue  # every item skipped (refusing gateway): no empty sweep
+            try:
+                await self.send_paced(frames)
+            except Exception:  # a transport error must not end the task silently (#593)
+                LOGGER.exception("%s Zone requests %s could not be sent", self.log_id, frames)
+
+    @property
+    def humidity_request_refused(self) -> bool:
+        """Whether this gateway drops humidity requests (``*#4*Z*60##``) instead of forwarding them.
+
+        The request goes where ``send_status_request`` sends it: a secondary gateway WHO 4 is
+        delegated to, or the warm standby while this primary is down, decides with its own
+        profile and table. The OWNd profile flag wins when it exists; otherwise the
+        oracle-derived table.
+        """
+        target = self._who4_target()
+        if target is not self:
+            return target.humidity_request_refused
+        supported = getattr(getattr(self.gateway, "profile", None), "supports_heating_humidity_request", None)
+        if isinstance(supported, bool):
+            return not supported
+        return self._model_key in HUMIDITY_REQUEST_REFUSED
+
+    @property
+    def general_zone_request_refused(self) -> bool:
+        """Whether this gateway drops the general heating status request (``*#4*0##``)."""
+        supported = getattr(getattr(self.gateway, "profile", None), "supports_general_heating_status", None)
+        if isinstance(supported, bool):
+            return not supported
+        return self._model_key in GENERAL_ZONE_REQUEST_REFUSED
+
+    @property
+    def sound_status_request_refused(self) -> bool:
+        """Whether this gateway drops the sound status request (``*#16*0*5##``)."""
+        if not self._profile_supports_who(16):
+            return True
+        return self._model_key in SOUND_STATUS_REQUEST_REFUSED
+
+    @property
+    def zone_temperature_poll_needed(self) -> bool:
+        """Whether each zone must ask for its temperature (``*#4*Z*0##``) itself.
+
+        Only on SCS-only gateways (no ``*#4*Z##``) whose startup sweep brings no zone
+        temperature; elsewhere the zone status poll or the sweep reports it.
+        """
+        if self.supports_zone_status:
+            return False
+        supported = getattr(getattr(self.gateway, "profile", None), "supports_general_heating_status", None)
+        if isinstance(supported, bool):
+            # The OWNd profile wins when it states the flag: a sweep the gateway answers makes
+            # the per-zone poll pointless, whatever the fallback table says.
+            return not supported
+        return self._model_key in ZONE_TEMPERATURE_POLL
+
+    @property
+    def interface_zone_request_refused(self) -> bool:
+        """Whether this gateway drops the status requests of a zone behind an F422 (``*#4*Z#4#II*0##``)."""
+        supported = getattr(getattr(self.gateway, "profile", None), "supports_interface_zone_requests", None)
+        if isinstance(supported, bool):
+            return not supported
+        return self._model_key in INTERFACE_ZONE_REQUEST_REFUSED
+
+    @property
     def profile(self) -> Any:
         """Return gateway profile."""
         return self.gateway.profile
 
     @property
     def command_session_idle_timeout(self) -> float:
-        """Idle timeout before releasing the command session socket.
-
-        Uses the gateway profile's custom timeout if configured; otherwise falls
-        back to COMMAND_SESSION_IDLE_TIMEOUT.
-        """
+        """Idle timeout before releasing the command session socket."""
         profile = getattr(self.gateway, "profile", None)
         profile_timeout = getattr(profile, "command_session_idle_timeout", None) if profile else None
         idle_timeout_default = float(COMMAND_SESSION_IDLE_TIMEOUT)
         return float(profile_timeout) if profile_timeout is not None else idle_timeout_default
-
-    @property
-    def available(self) -> bool:
-        """Return the grace-filtered gateway availability."""
-        if self._available:
-            return True
-        standby = self._get_standby_gateway()
-        if standby is not None and standby.available:
-            return True
-        return False
-
-    def is_who_available(self, who: str | int) -> bool:
-        """Return True if this gateway (or its failover) can currently handle the given WHO."""
-        if self._available:
-            return True
-        standby = self._get_standby_gateway()
-        if standby is not None and standby.available:
-            return standby._profile_supports_who(int(who))
-        return False
-
-    @property
-    def availability_signal(self) -> str:
-        """Return the dispatcher signal for availability changes."""
-        return f"{DOMAIN}_{self.mac}_availability"
-
-    @property
-    def bus_topology(self) -> str:
-        """Bus topology for this gateway: 'standalone' or 'shared'."""
-        return entry_topology(self.config_entry)
-
-    @property
-    def gateway_role(self) -> str:
-        """Role of this gateway: 'primary', 'secondary' or 'standby'."""
-        return entry_role(self.config_entry)
-
-    @property
-    def is_follower(self) -> bool:
-        """Return True if this gateway is a secondary or standby gateway on a shared bus."""
-        return entry_is_follower(self.config_entry)
-
-    @property
-    def is_standby(self) -> bool:
-        """Return True if this gateway is configured as a warm standby failover."""
-        return self.bus_topology == TOPOLOGY_SHARED and self.gateway_role == ROLE_STANDBY
-
-    @property
-    def is_secondary(self) -> bool:
-        """Return True if this gateway is configured as a secondary gateway."""
-        return self.bus_topology == TOPOLOGY_SHARED and self.gateway_role == ROLE_SECONDARY
-
-    @property
-    def is_primary(self) -> bool:
-        """Return True if this gateway acts as primary (or standalone) on its bus."""
-        return not self.is_follower
-
-    @property
-    def failover_active(self) -> bool:
-        """Return True if failover to standby is currently active."""
-        return self._failover_active
-
-    @property
-    def primary_gateway_mac(self) -> str | None:
-        """The primary gateway MAC if this gateway is secondary."""
-        return entry_primary_mac(self.config_entry)
-
-    @property
-    def delegated_whos(self) -> set[int]:
-        """Subsystems (WHOs) this secondary gateway discovers for the bus."""
-        return entry_delegated_whos(self.config_entry)
-
-    @property
-    def delegated_away_whos(self) -> set[int]:
-        """Subsystems this primary leaves to its secondaries: no sweep, no new entities."""
-        if self.is_follower or not getattr(self, "hass", None):
-            return set()
-        return delegated_away_whos(self.hass, self.mac)
-
-    @property
-    def bus_group(self) -> str:
-        """The configured bus this gateway belongs to (the primary's MAC)."""
-        return self.primary_gateway_mac or self.mac
-
-    def _get_standby_gateway(self) -> "MyHOMEGatewayHandler" | None:
-        """Find the standby gateway configured for this primary gateway."""
-        if not getattr(self, "hass", None):
-            return None
-        for entry in self.hass.config_entries.async_entries(DOMAIN):
-            runtime_data = getattr(entry, "runtime_data", None)
-            gw: MyHOMEGatewayHandler | None = getattr(runtime_data, "gateway", None)
-            if (
-                gw is not None
-                and gw.bus_topology == TOPOLOGY_SHARED
-                and gw.gateway_role == ROLE_STANDBY
-                and gw.primary_gateway_mac == self.mac
-            ):
-                return gw
-        return None
-
-    def _get_secondary_for_who(self, who: int) -> "MyHOMEGatewayHandler" | None:
-        """Find the connected secondary gateway handling a delegated WHO subsystem."""
-        if not getattr(self, "hass", None):
-            return None
-        for entry in self.hass.config_entries.async_entries(DOMAIN):
-            runtime_data = getattr(entry, "runtime_data", None)
-            gw: MyHOMEGatewayHandler | None = getattr(runtime_data, "gateway", None)
-            if (
-                gw is not None
-                and gw.bus_topology == TOPOLOGY_SHARED
-                and gw.gateway_role == ROLE_SECONDARY
-                and gw.primary_gateway_mac == self.mac
-                and who in gw.delegated_whos
-            ):
-                return gw
-        return None
-
-    def _get_primary_gateway(self) -> "MyHOMEGatewayHandler" | None:
-        """Find the configured primary gateway for this secondary/standby gateway."""
-        if not getattr(self, "hass", None) or not self.primary_gateway_mac:
-            return None
-        for entry in self.hass.config_entries.async_entries(DOMAIN):
-            runtime_data = getattr(entry, "runtime_data", None)
-            gw: MyHOMEGatewayHandler | None = getattr(runtime_data, "gateway", None)
-            if gw is not None and gw.mac == self.primary_gateway_mac:
-                return gw
-        return None
-
-    def _record_failover_active(self, standby: "MyHOMEGatewayHandler") -> None:
-        """Record that failover to standby is currently active and raise repair issue."""
-        if self._failover_active:
-            return
-        self._failover_active = True
-        LOGGER.warning(
-            "%s Primary gateway offline; warm standby %s now carries its traffic.",
-            self.log_id,
-            standby.log_id,
-        )
-        from .repairs import async_create_failover_issue
-        async_create_failover_issue(
-            self.hass,
-            self.mac,
-            standby.mac,
-            self.name,
-            standby.name,
-        )
-
-    def _clear_failover(self) -> None:
-        """Forget an active failover and resolve its repair issue."""
-        if not self._failover_active:
-            return
-        self._failover_active = False
-        from .repairs import async_delete_failover_issue
-        async_delete_failover_issue(self.hass, self.mac)
-
-    def health_owner(self) -> DeviceHealth | None:
-        """The tracker that files device faults seen by this gateway.
-
-        Its own, except for a warm standby carrying an offline primary's traffic: the
-        primary's, so that one entry owns every issue of the devices it configures
-        and a recovery seen on either side withdraws it.
-        """
-        if self.is_standby:
-            primary_gw = self._get_primary_gateway()
-            if primary_gw is None or primary_gw.is_connected or primary_gw._get_standby_gateway() is not self:
-                return None
-            return primary_gw.device_health
-        return self.device_health
-
-    @property
-    def ignored_addresses(self) -> Any:
-        """Addresses configured to be ignored on this gateway."""
-        from .ignored import IgnoredAddresses
-
-        return IgnoredAddresses.from_config_entry(self.config_entry)
-
-    def _bridge_to_primary(self, message: Any) -> None:
-        """Hand a bus frame to the offline primary's entities (warm standby only).
-
-        Only the primary's own standby bridges: a secondary on the same bus sees
-        the same frame, and bridging from both would deliver it twice. Frames of
-        the gateway itself (WHO=13/1013) describe this gateway, not the bus.
-        """
-        if not self.is_standby or getattr(message, "who", None) in (13, 1013):
-            return
-        primary_gw = self._get_primary_gateway()
-        if primary_gw is None or primary_gw.is_connected or primary_gw._get_standby_gateway() is not self:
-            return
-        primary_gw._evaluate_failover()
-        async_dispatcher_send(self.hass, f"myhome_message_{primary_gw.mac}", message)
 
     async def test(self) -> dict[str, Any]:
         """Test gateway connection."""
@@ -640,6 +730,7 @@ class MyHOMEGatewayHandler:
     @callback
     def _on_event_connection_state_change(self, connected: bool) -> None:
         """Gate commands and publish sustained event-session availability."""
+        was_connected = self.is_connected
         self.is_connected = connected
         self._event_runner.is_connected = connected
         self._update_event_watchdog(progress=False)
@@ -659,6 +750,15 @@ class MyHOMEGatewayHandler:
                 self._available = True
                 LOGGER.info("%s Gateway available again.", self.log_id)
                 self._notify_availability()
+            if not was_connected and self._initial_discovery_done.is_set():
+                runtime = getattr(self.config_entry, "runtime_data", None)
+                expose_mgr = getattr(runtime, "expose_manager", None)
+                sync_fn = getattr(expose_mgr, "async_sync_all", None)
+                if inspect.iscoroutinefunction(sync_fn):
+                    self.hass.async_create_task(sync_fn())
+                # Actuators that switched while the session was down sent their frame to nobody.
+                for where in list(self._actuator_zones):
+                    self.request_zone_dimension(where, 20)
             return
 
         self._event_session_ready.clear()
@@ -666,8 +766,7 @@ class MyHOMEGatewayHandler:
             return
         if self._available and self._unavailable_timer is None:
             LOGGER.warning(
-                "%s Gateway connection lost; marking unavailable in %ss "
-                "if not recovered.",
+                "%s Gateway connection lost; marking unavailable in %ss if not recovered.",
                 self.log_id,
                 AVAILABILITY_GRACE,
             )
@@ -696,37 +795,6 @@ class MyHOMEGatewayHandler:
         )
         self._notify_availability()
 
-    def _outage_confirmed(self) -> bool:
-        """Down past the reconnect grace, or not up yet a grace period after setup.
-
-        A dropped event session that recovers within the grace is routine; the
-        failover issue is only raised for an outage that outlived it.
-        """
-        return (
-            not self.is_connected
-            and not self._available
-            and time.monotonic() - self._setup_at >= AVAILABILITY_GRACE
-        )
-
-    @callback
-    def _evaluate_failover(self) -> None:
-        """Raise or clear the failover issue from the primary's and standby's state."""
-        standby = self._get_standby_gateway()
-        if standby is not None and standby._available and self._outage_confirmed():
-            self._record_failover_active(standby)
-        else:
-            self._clear_failover()
-
-    @callback
-    def _notify_availability(self) -> None:
-        """Notify all entities bound to this gateway, and any primary backed by this standby."""
-        async_dispatcher_send(self.hass, self.availability_signal)
-        if self.is_standby:
-            primary = self._get_primary_gateway()
-            if primary is not None and not primary._available:
-                primary._evaluate_failover()
-                async_dispatcher_send(self.hass, primary.availability_signal)
-
     @callback
     def _update_event_watchdog(self, *, progress: bool) -> None:
         """Arm the stall deadline while disconnected, disarm it while connected."""
@@ -737,15 +805,14 @@ class MyHOMEGatewayHandler:
         await self._event_runner.listening_loop()
 
     def profile_supports_who(self, who: int) -> bool:
-        """Return whether the startup sweep asks this gateway's profile about a WHO.
-
-        Entities of a WHO the profile leaves out of :meth:`initial_discovery`
-        (WHO=16 on the MH200 profile) have to ask for their own status.
-        """
+        """Return whether the startup sweep asks this gateway's profile about a WHO."""
         return self._profile_supports_who(who)
 
     def _profile_supports_who(self, who: int) -> bool:
         """Return whether the gateway profile advertises a WHO subsystem (True when unknown)."""
+        # TODO(OWNd>2.0.0b11): remove shim once manifest.json pins an OWNd release containing OWNd#147.
+        if who == 22 and self._model_key == "H4684" and _firmware_at_least(self.firmware, (6, 0, 0)):
+            return True
         profile = getattr(self.gateway, "profile", None)
         supports = getattr(profile, "supports_who", None)
         if not callable(supports):
@@ -755,331 +822,9 @@ class MyHOMEGatewayHandler:
         except Exception:  # pragma: no cover - defensive against foreign profile objects
             return True
 
-    def _record_tx(self, written_at: float, message: Any) -> None:
-        """Remember a written frame for shared-bus detection."""
-        if not getattr(self, "hass", None):
-            return
-        domain_data = self.hass.data.setdefault(DOMAIN, {})
-        recent_tx = domain_data.setdefault("_recent_tx", collections.deque(maxlen=50))
-        recent_tx.append((written_at, self.mac, self.bus_group, str(message).strip()))
-
-    def _correlate_shared_bus_traffic(self, message: Any) -> None:
-        """Correlate bus traffic with other gateways to detect unconfigured shared buses.
-
-        Gateways configured on the same bus (one primary and the secondaries or
-        standby pointing at it) are expected to see the same frames; any other
-        pair seeing them is a bus nobody told Home Assistant about.
-        """
-        if not getattr(self, "hass", None) or getattr(message, "who", None) in (13, 1013):
-            return
-
-        # Ignore general, area, and group frames: isolated plants commonly share these (#459)
-        if (
-            getattr(message, "is_general", False)
-            or getattr(message, "is_area", False)
-            or getattr(message, "is_group", False)
-        ):
-            return
-        where = getattr(message, "where", None)
-        if where is not None:
-            where_str = str(where).strip()
-            if where_str in ("0", "#0") or where_str.startswith("#"):
-                return
-
-        domain_data = self.hass.data.setdefault(DOMAIN, {})
-        now = time.monotonic()
-        raw_msg = str(message).strip()
-        if raw_msg.endswith("*0##") or raw_msg.endswith("*#0##") or "*0*0##" in raw_msg:
-            return
-
-        group = self.bus_group
-
-        # 0. The echo of a frame this gateway wrote proves nothing: two isolated buses
-        #    get identical frames whenever an automation sends the same command to both.
-        recent_tx = domain_data.get("_recent_tx") or ()
-        if any(
-            tx_mac == self.mac and tx_frame == raw_msg and now - tx_time <= SHARED_BUS_TX_ECHO_S
-            for tx_time, tx_mac, _tx_group, tx_frame in recent_tx
-        ):
-            return
-
-        # 1. Another gateway wrote this exact frame just now (TX -> RX echo)
-        for tx_time, tx_mac, tx_group, tx_frame in recent_tx:
-            if tx_group != group and tx_frame == raw_msg and now - tx_time <= SHARED_BUS_TX_ECHO_S:
-                self._record_shared_bus_evidence(tx_mac, now)
-                return
-
-    def _record_shared_bus_evidence(self, other_mac: str, now: float) -> None:
-        """Count one correlated TX->RX echo; raise the repair issue on three echoes in the window."""
-        from homeassistant.helpers import device_registry as dr
-        my_mac = dr.format_mac(str(self.mac))
-        other_mac = dr.format_mac(str(other_mac))
-
-        if not other_mac or other_mac == my_mac:
-            return
-        domain_data = self.hass.data.setdefault(DOMAIN, {})
-        evidence_map = domain_data.setdefault("_shared_bus_evidence", {})
-        pair_key = tuple(sorted([my_mac, other_mac]))
-        seen = evidence_map.setdefault(pair_key, collections.deque(maxlen=SHARED_BUS_EVIDENCE_COUNT))
-        seen.append(now)
-        # Only evidence inside one window counts: coincidences spread over days do not add up.
-        # Exactly matches documented rule: three confirmed TX->RX echoes within 10 minutes (Issue #459).
-        if len(seen) == SHARED_BUS_EVIDENCE_COUNT and seen[-1] - seen[0] <= SHARED_BUS_EVIDENCE_WINDOW_S:
-            seen.clear()
-            from .repairs import async_create_shared_bus_issue
-            async_create_shared_bus_issue(self.hass, pair_key[0], pair_key[1])
-
     async def _process_message(self, message: Any) -> None:
         """Process a received message and dispatch to Home Assistant."""
         await self._event_dispatcher.process_message(message)
-
-    def _handle_gateway_diagnostics(self, message: OWNGatewayEvent) -> None:
-        """Handle WHO=13 Gateway Management diagnostic telemetry."""
-        dim = getattr(message, "dimension", getattr(message, "_dimension", None))
-        dim_val = getattr(message, "dimension_value", getattr(message, "_dimension_value", []))
-
-        # ── Dimension 0 & 22: Time & Timezone ────────────────────────────────
-        if dim in (0, 22) and dim_val:
-            # Check if timezone is 999. In both dimension 0 and 22, dim_val[3] carries the timezone.
-            # The OWNd < 2.0.0b7 compat shim clears the time_zone property, but leaves dim_val[3] as "999".
-            if len(dim_val) > 3 and str(dim_val[3]) == "999":
-                if self.config_entry:
-                    async_create_unconfigured_timezone_issue(self.hass, self.config_entry.entry_id, self.config_entry.title)
-            elif len(dim_val) > 3 and str(dim_val[3]) != "":
-                if self.config_entry:
-                    async_delete_unconfigured_timezone_issue(self.hass, self.config_entry.entry_id)
-
-        # ── Dimension 15: Device type (MODEL REQUEST) ────────────────────
-        if dim == 15 and dim_val:
-            self._handle_device_type(str(dim_val[0]))
-
-        # ── Dimensions 23 / 24: kernel and distribution, corroborating evidence ──
-        elif dim in (23, 24) and dim_val:
-            self._who13["kernel" if dim == 23 else "distribution"] = ".".join(str(v) for v in dim_val)
-
-        # ── Dimension 16: Firmware Version ───────────────────────────────
-        elif dim == 16:
-            fw = getattr(message, "firmware_version", getattr(message, "_firmware_version", None))
-            if fw:
-                self._who13["firmware"] = fw
-            if fw and fw != self.gateway.firmware:
-                LOGGER.info(
-                    "%s Auto-detected gateway firmware `%s` via WHO=13 Dimension 16.",
-                    self.log_id,
-                    fw,
-                )
-                self.gateway.firmware = fw
-                if self.config_entry is not None:
-                    new_data = dict(self.config_entry.data)
-                    if new_data.get(CONF_FIRMWARE) != fw:
-                        new_data[CONF_FIRMWARE] = fw
-                        self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
-                if self.device_registry_id:
-                    dev_reg = dr.async_get(self.hass)
-                    dev_reg.async_update_device(self.device_registry_id, sw_version=fw)
-
-    def _handle_device_type(self, raw_code: str) -> None:
-        """Record a WHO=13 dimension-15 reply and let the resolver decide what it means."""
-        reading = read_who13(raw_code)
-        self._who13["code"] = raw_code
-        self._who13["model"] = reading.canonical if reading.known else None
-        self._who13["model_official"] = reading.canonical if reading.certain else None
-        self._who13["model_observed"] = " / ".join(reading.models) if reading.known and not reading.certain else None
-        self._resolve_identity()
-
-    def _handle_gateway_identity_diagnostics(self, message: Any) -> None:
-        """Record a WHO=1013 dimension-1 (OBJECT_MODEL) reply and let the resolver decide."""
-        dim_val = getattr(message, "dimension_value", getattr(message, "_dimension_value", []))
-        if not dim_val or not isinstance(dim_val, list):
-            return
-        reading = read_who1013(str(dim_val[0]))
-        self._who1013["code"] = reading.code
-        self._who1013["model"] = reading.canonical if reading.known else None
-        self._who1013["names"] = reading.alternative_names if reading.known else ()
-        # OBJECT_MODEL * N_CONF * BRAND * LINE; a shorter reply simply leaves the
-        # missing fields unset rather than shifting the ones that did arrive.
-        for index, field in enumerate(("n_conf", "brand", "line"), start=1):
-            self._who1013[field] = str(dim_val[index]) if len(dim_val) > index else None
-        self._who1013["pending"] = False
-        self._resolve_identity()
-
-    def _identity_evidence(self) -> GatewayIdentityEvidence:
-        """Everything observed so far, each source kept apart."""
-        source = self.identification_source
-        configured = str(self.gateway.model_name or "") or None
-        return GatewayIdentityEvidence(
-            manual=configured if source == IDENTIFICATION_MANUAL else None,
-            technical=configured if source in (IDENTIFICATION_SSDP, IDENTIFICATION_SERIAL) else None,
-            technical_source=source if source in (IDENTIFICATION_SSDP, IDENTIFICATION_SERIAL) else None,
-            prior_label=configured if source == IDENTIFICATION_WHO13 else None,
-            who13_code=self._who13["code"],
-            who1013_code=self._who1013["code"],
-        )
-
-    def _resolve_identity(self) -> None:
-        """Decide the effective model from the evidence and bring everything in step with it.
-
-        Idempotent: the same evidence yields the same verdict, so a re-broadcast of a
-        WHO=13 reply neither repeats a correction nor flaps a repair issue.
-        """
-        configured = str(self.gateway.model_name or "")
-        resolution = resolve_gateway_identity(self._identity_evidence())
-        entry_id = getattr(self.config_entry, "entry_id", None)
-        entry_id = entry_id if isinstance(entry_id, str) else None
-        changed = resolution != self._identity_resolution
-        self._identity_resolution = resolution
-
-        # A shared WHO=13 code is the cue to ask WHO=1013 - once per answer.
-        if resolution.request_who1013:
-            if changed:
-                LOGGER.info(
-                    "%s WHO=13 reports device type %s (seen on multiple modern gateways); "
-                    "keeping model `%s` until WHO=1013 answers.",
-                    self.log_id, self._who13["code"], configured,
-                )
-            self._request_object_model()
-
-        # Codes in no table: keep the model, ask for a trace. Withdrawn once every
-        # code the gateway answered is known.
-        unknown = resolution.unknown_code
-        if unknown:
-            if changed:
-                LOGGER.info(
-                    "%s The gateway reports model code %s, unknown to the OpenWebNet tables and to field "
-                    "evidence; keeping model `%s`. Please attach a trace to an issue so it can be documented.",
-                    self.log_id, unknown, configured,
-                )
-            if entry_id:
-                async_create_unknown_model_issue(self.hass, entry_id, unknown)
-        elif entry_id:
-            async_delete_unknown_model_issue(self.hass, entry_id)
-
-        # The effective model.
-        model = resolution.model or configured
-        if model and model.lower() != configured.lower():
-            reading = resolution.corrected_reading
-            LOGGER.warning(
-                "%s Gateway model `%s` set from %s (was `%s`, source %s).",
-                self.log_id, model, reading.describe() if reading else "in-band evidence", configured,
-                self.identification_source,
-            )
-            self._apply_model(model)
-            if resolution.corrected_from and reading is not None and entry_id:
-                async_create_identity_corrected_issue(
-                    self.hass, entry_id, resolution.corrected_from, model, reading.raw
-                )
-
-        # A certain contradiction of an SSDP / serial identity: kept, but the owner is asked.
-        reading = resolution.conflict_reading
-        if resolution.conflict and reading is not None:
-            if changed:
-                LOGGER.warning("%s Gateway identity mismatch: %s.", self.log_id, resolution.conflict)
-            self._set_conflict(
-                resolution.conflict, entry_id,
-                who13_model=reading.canonical, raw_code=reading.raw, source=resolution.source, official=reading.certain,
-            )
-        else:
-            self._set_conflict(None, entry_id)
-        self._sync_device_registry_model(model)
-
-    def _apply_model(self, model: str) -> None:
-        """Make ``model`` the entry's model: handler, profile, log id, config entry and title."""
-        self.gateway.model_name = model
-        self.gateway.model = model
-        fw = getattr(self.gateway, "firmware", None)
-        if not fw and self.config_entry:
-            from .topology import entry_firmware
-
-            fw = entry_firmware(self.config_entry)
-        try:
-            self.gateway.profile = get_gateway_profile(model, fw)
-        except TypeError:  # pragma: no cover - fallback for OWNd without firmware argument
-            self.gateway.profile = get_gateway_profile(model)
-        self.gateway._log_id = f"[{model} gateway - {self.gateway.host}]"
-        self._trim_sending_workers(model)
-        new_data = dict(self.config_entry.data)
-        if new_data.get(CONF_NAME) == model:
-            return
-        new_data[CONF_NAME] = model
-        new_data["model_source"] = IDENTIFICATION_WHO13
-        update_kwargs: dict[str, Any] = {"data": new_data}
-        if str(getattr(self.config_entry, "title", "")).endswith("Gateway"):
-            update_kwargs["title"] = f"{model} Gateway"
-        self.hass.config_entries.async_update_entry(self.config_entry, **update_kwargs)
-
-    def _trim_sending_workers(self, model: str) -> None:
-        """Stop the command workers a corrected model has no sessions for."""
-        limit = command_session_limit(model)
-        if limit is None or len(self.sending_workers) <= limit:
-            return
-        LOGGER.warning(
-            "%s The %s accepts at most %d command session(s); stopping %d of %d command workers.",
-            self.log_id,
-            model,
-            limit,
-            len(self.sending_workers) - limit,
-            len(self.sending_workers),
-        )
-        for worker in self.sending_workers[limit:]:
-            worker.cancel()
-        del self.sending_workers[limit:]
-
-    def _request_object_model(self) -> None:
-        """Queue ``*#1013*0*1##`` (Gateway Diagnostic, dimension 1 OBJECT_MODEL) once.
-
-        Sent as a status request: OWNd retries a NACK once and logs both attempts at
-        DEBUG, and the delivery future is cancelled, which nobody awaits. Not repeated
-        while an answer is pending; a reconnect of the event session clears that.
-        """
-        if self._who1013["pending"]:
-            return
-        cmd = OWNCommand.parse("*#1013*0*1##")
-        if cmd is None:
-            return
-        LOGGER.debug("%s Requesting WHO=1013 dimension 1 (OBJECT_MODEL) to settle the model.", self.log_id)
-        try:
-            self.send_buffer.put_nowait(
-                {"message": cmd, "written": self.hass.loop.create_future(), "is_status_request": True}
-            )
-        except asyncio.QueueFull:
-            LOGGER.warning("%s Cannot queue the WHO=1013 request: send buffer full.", self.log_id)
-            return
-        self._who1013["pending"] = True
-
-    def _set_conflict(self, conflict: str | None, entry_id: str | None, **issue: Any) -> None:
-        """Track the identity conflict and keep the repair issue in step with it."""
-        changed = conflict != self._identity_conflict
-        self._identity_conflict = conflict
-        if not entry_id:
-            return
-        if conflict:
-            if changed:
-                async_create_identity_issue(
-                    self.hass, entry_id, str(self.gateway.model_name or ""), issue["who13_model"],
-                    issue["raw_code"], issue["source"], issue["official"],
-                )
-            return
-        # Always clear on the no-conflict path: a fresh handler (after a reload) starts
-        # with no conflict in memory while the previous instance's warning may still
-        # sit in the issue registry. Deleting an absent issue is a no-op.
-        async_delete_identity_issue(self.hass, entry_id)
-
-    def _sync_device_registry_model(self, model: str) -> None:
-        """Keep the device registry in step with the resolved identity."""
-        if not model or not self.device_registry_id:
-            return
-        dev_reg = dr.async_get(self.hass)
-        device = dev_reg.async_get(self.device_registry_id)
-        if device is None:
-            return
-        updates: dict[str, Any] = {}
-        if getattr(device, "model", None) != model:
-            updates["model"] = model
-        model_id = self._who1013["code"]
-        if model_id is not None and getattr(device, "model_id", None) != model_id:
-            updates["model_id"] = model_id
-        if updates:
-            dev_reg.async_update_device(self.device_registry_id, **updates)
 
     async def sending_loop(self, worker_id: int) -> None:
         """Run sending loop for worker."""
@@ -1090,16 +835,38 @@ class MyHOMEGatewayHandler:
         """Whether the startup sweep is still running."""
         return not self._initial_discovery_done.is_set()
 
+    @property
+    def sweep_active(self) -> bool:
+        """Whether a paced bus sweep is currently running."""
+        return self._active_sweeps > 0
+
+    def _begin_sweep(self) -> int:
+        """Mark a paced sweep as active so newly discovered entities defer polls.
+
+        Returns the epoch to hand back to ``_end_sweep``.
+        """
+        self._active_sweeps += 1
+        self._sweep_idle.clear()
+        return self._sweep_epoch
+
+    def _end_sweep(self, epoch: int | None = None) -> None:
+        """Mark a paced sweep as completed and unblock deferred polls when idle.
+
+        A sweep begun before close_listener() reset the count (an older ``epoch``)
+        no longer counts.
+        """
+        if epoch is not None and epoch != self._sweep_epoch:
+            return
+        self._active_sweeps = max(0, self._active_sweeps - 1)
+        if self._active_sweeps == 0:
+            self._sweep_idle.set()
+
     def note_event_frame(self) -> None:
         """Record that a frame just arrived on the event session."""
         self._last_event_frame_at = time.monotonic()
 
     async def _wait_for_bus_quiet(self, since: float) -> None:
-        """Wait until no event frame arrived for BUS_QUIET_PERIOD since ``since``, at most BUS_QUIET_CAP.
-
-        The cap runs from the call, so time the write spent on the command session does
-        not eat into it.
-        """
+        """Wait until no event frame arrived for BUS_QUIET_PERIOD since ``since``, at most BUS_QUIET_CAP."""
         deadline = time.monotonic() + BUS_QUIET_CAP
         while True:
             now = time.monotonic()
@@ -1113,11 +880,7 @@ class MyHOMEGatewayHandler:
             await asyncio.sleep(min(remaining, deadline - now))
 
     async def _wait_for_write(self, written: Any, message: OWNCommand) -> None:
-        """Wait, at most PACED_WRITE_TIMEOUT, until a queued frame was written or dropped.
-
-        On a one-session gateway the worker only resolves the write once OWNd returned
-        the ACK or NACK, so this also covers the time the frame waited in the queue.
-        """
+        """Wait, at most PACED_WRITE_TIMEOUT, until a queued frame was written or dropped."""
         if not isinstance(written, asyncio.Future):
             return
         await asyncio.wait({written}, timeout=PACED_WRITE_TIMEOUT)
@@ -1130,40 +893,36 @@ class MyHOMEGatewayHandler:
             )
 
     async def send_paced(self, frames: Iterable[str], *, status_request: bool = True) -> None:
-        """Send general requests one at a time, each once the bus finished answering the last.
+        """Send general requests one at a time, each once the bus finished answering the last."""
+        epoch = self._begin_sweep()
+        try:
+            for frame in frames:
+                cmd = OWNCommand.parse(frame)
+                if cmd is None:
+                    continue
+                written = await (self.send_status_request(cmd) if status_request else self.send(cmd))
+                await self._wait_for_write(written, cmd)
+                await self._wait_for_bus_quiet(time.monotonic())
+        finally:
+            self._end_sweep(epoch)
 
-        A general request is answered by one event-session frame per device, spread over
-        seconds on a large plant; the gateway ACKs it long before the last reply is out,
-        and a request sent inside that window truncates the reply (#578). The quiet gap
-        counts from the end of the write, and still runs when the write failed or timed
-        out: a NACKed request may have replies in flight. The startup sweep and
-        ``myhome.sweep_bus`` both go through here.
-        """
-        for frame in frames:
-            cmd = OWNCommand.parse(frame)
-            if cmd is None:
-                continue
-            written = await (self.send_status_request(cmd) if status_request else self.send(cmd))
-            await self._wait_for_write(written, cmd)
-            await self._wait_for_bus_quiet(time.monotonic())
+    def _refused_by_gateway(self, frame: str) -> bool:
+        """Whether this gateway's firmware drops the startup request instead of forwarding it."""
+        if frame == "*#4*0##":
+            return self.general_zone_request_refused
+        if frame == "*#16*0*5##":
+            return self.sound_status_request_refused
+        return False
 
     def _discovery_frames(self) -> list[str]:
         """The startup general requests this gateway sends, after topology and profile gates."""
         frames: list[str] = []
         for who, frame in DISCOVERY_REQUESTS:
             if getattr(self, "is_follower", False) is True and who not in getattr(self, "delegated_whos", set()):
-                LOGGER.debug(
-                    "%s Skipping WHO=%s discovery: follower gateway on shared bus.",
-                    self.log_id,
-                    who,
-                )
+                LOGGER.debug("%s Skipping WHO=%s discovery: follower gateway on shared bus.", self.log_id, who)
                 continue
             if who in getattr(self, "delegated_away_whos", set()):
-                LOGGER.debug(
-                    "%s Skipping WHO=%s discovery: delegated to a secondary gateway.",
-                    self.log_id,
-                    who,
-                )
+                LOGGER.debug("%s Skipping WHO=%s discovery: delegated to a secondary gateway.", self.log_id, who)
                 continue
             if not self._profile_supports_who(who):
                 LOGGER.debug(
@@ -1173,33 +932,36 @@ class MyHOMEGatewayHandler:
                     self.gateway.model_name,
                 )
                 continue
+            if self._refused_by_gateway(frame):
+                LOGGER.debug("%s Skipping `%s`: %s firmware refuses it.", self.log_id, frame, self.gateway.model_name)
+                continue
             frames.append(frame)
         return frames
 
     async def initial_discovery(self) -> None:
-        """Send the startup sweep that discovers devices missing from the config.
-
-        The sweep only counts as done after the bus answered its last request, which is
-        what holds back the polls of restored entities.
-        """
+        """Send the startup sweep that discovers devices missing from the config."""
         try:
             await self.send_paced(self._discovery_frames())
         finally:
             self._initial_discovery_done.set()
+        runtime = getattr(self.config_entry, "runtime_data", None)
+        expose_mgr = getattr(runtime, "expose_manager", None)
+        sync_fn = getattr(expose_mgr, "async_sync_all", None)
+        if inspect.iscoroutinefunction(sync_fn):
+            await sync_fn()
 
     async def wait_for_initial_discovery(self, timeout: float | None = None) -> None:
-        """Wait until startup initial discovery finishes.
-
-        The default timeout is the longest the sweep can take: every request waits at
-        most PACED_WRITE_TIMEOUT for its write and BUS_QUIET_CAP for the bus.
-        """
-        if self._initial_discovery_done.is_set():
+        """Wait until startup initial discovery and any active paced sweep finish."""
+        if self._initial_discovery_done.is_set() and self._sweep_idle.is_set():
             return
         if timeout is None:
             timeout = len(DISCOVERY_REQUESTS) * (PACED_WRITE_TIMEOUT + BUS_QUIET_CAP)
         try:
             async with asyncio.timeout(timeout):
-                await self._initial_discovery_done.wait()
+                if not self._initial_discovery_done.is_set():
+                    await self._initial_discovery_done.wait()
+                if not self._sweep_idle.is_set():
+                    await self._sweep_idle.wait()
         except TimeoutError:
             LOGGER.debug("%s Timed out waiting for initial discovery", self.log_id)
 
@@ -1209,10 +971,17 @@ class MyHOMEGatewayHandler:
         if self._unavailable_timer is not None:
             self._unavailable_timer()
         self._resync_manager.cancel_all()
+        if self._zone_request_task is not None:
+            self._zone_request_task.cancel()
+            self._zone_request_task = None
+        self._zone_requests.clear()
         self._unavailable_timer = None
         self.is_connected = False
         self._available = False
         self._clear_failover()
+        self._active_sweeps = 0
+        self._sweep_epoch += 1
+        self._sweep_idle.set()
         self._initial_discovery_done.set()
         if self.is_standby:
             primary = self._get_primary_gateway()
@@ -1220,53 +989,9 @@ class MyHOMEGatewayHandler:
                 primary._evaluate_failover()
                 async_dispatcher_send(self.hass, primary.availability_signal)
 
-
         self._event_runner.close()
         self._command_pool.close()
         return True
-
-    def _delegated_target(self, message: OWNCommand) -> "MyHOMEGatewayHandler" | None:
-        """The connected secondary gateway that owns the delegated WHO subsystem."""
-        msg_who = getattr(message, "who", getattr(message, "_who", None))
-        if msg_who in (13, 1013) or msg_who is None:
-            return None
-        if msg_who not in self.delegated_away_whos:
-            return None
-        sec = self._get_secondary_for_who(msg_who)
-        if sec is None or not sec.is_connected:
-            return None
-        LOGGER.debug(
-            "%s Subsystem WHO=%s is delegated; sending `%s` through secondary gateway %s.",
-            self.log_id,
-            msg_who,
-            message,
-            sec.log_id,
-        )
-        return sec
-
-    def _failover_target(self, message: OWNCommand) -> "MyHOMEGatewayHandler" | None:
-        """The connected warm standby to send through while this primary is disconnected."""
-        msg_who = getattr(message, "who", getattr(message, "_who", None))
-        if msg_who in (13, 1013):
-            return None
-
-        if self.is_connected:
-            return None
-        standby = self._get_standby_gateway()
-        if standby is None or not standby.is_connected:
-            return None
-
-        if msg_who is not None and not standby._profile_supports_who(int(msg_who)):
-            return None
-
-        LOGGER.debug(
-            "%s Primary gateway is disconnected; sending `%s` through standby gateway %s.",
-            self.log_id,
-            message,
-            standby.log_id,
-        )
-        self._evaluate_failover()
-        return standby
 
     def async_queue_calibration(
         self,
@@ -1287,15 +1012,31 @@ class MyHOMEGatewayHandler:
         )
         return written
 
-    async def send(self, message: OWNCommand) -> asyncio.Future[float]:
+    async def send(self, message: OWNCommand, *, is_cancel: bool = False) -> asyncio.Future[float]:
         """Queue a command; the returned future resolves to the monotonic write time."""
         delegated = self._delegated_target(message)
         if delegated is not None:
+            if is_cancel:
+                return await delegated.send(message, is_cancel=True)
             return await delegated.send(message)
         standby = self._failover_target(message)
         if standby is not None:
+            if is_cancel:
+                return await standby.send(message, is_cancel=True)
             return await standby.send(message)
+        if is_cancel:
+            return await self._command_pool.send(message, is_cancel=True)
         return await self._command_pool.send(message)
+
+    async def send_fade_step(self, message: OWNCommand) -> asyncio.Future[float]:
+        """Queue an intermediate software fade step; superseded by newer steps or commands."""
+        delegated = self._delegated_target(message)
+        if delegated is not None:
+            return await delegated.send_fade_step(message)
+        standby = self._failover_target(message)
+        if standby is not None:
+            return await standby.send_fade_step(message)
+        return await self._command_pool.send_fade_step(message)
 
     async def send_status_request(self, message: OWNCommand) -> asyncio.Future[float]:
         """Queue a status request; the returned future resolves to the monotonic write time."""
@@ -1306,6 +1047,18 @@ class MyHOMEGatewayHandler:
         if standby is not None:
             return await standby.send_status_request(message)
         return await self._command_pool.send_status_request(message)
+
+    def claim_in_flight_dimension_where(self, who: int, dimension: int) -> str | None:
+        """Claim the sole point-to-point WHERE with an in-flight dimension request (#777)."""
+        if who not in (13, 1013) and who in self.delegated_away_whos:
+            sec = self._get_secondary_for_who(who)
+            if sec is not None and sec.is_connected:
+                return sec._command_pool.claim_in_flight_dimension_where(who, dimension)
+        if who not in (13, 1013) and not self.is_connected:
+            standby = self._get_standby_gateway()
+            if standby is not None and standby.is_connected and standby._profile_supports_who(int(who)):
+                return standby._command_pool.claim_in_flight_dimension_where(who, dimension)
+        return self._command_pool.claim_in_flight_dimension_where(who, dimension)
 
     def _known_light_areas(self) -> list[str]:
         """Return list of known light areas."""

@@ -1,7 +1,7 @@
 """Real timed-cover commands use the frozen nonlinear model and bus anchors."""
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.exceptions import HomeAssistantError
@@ -75,6 +75,7 @@ async def test_unknown_state_needs_full_run_and_restart_does_not_invent_slat_pos
         cover._anchor_run(210)
         cover._freeze_position(230)
         assert cover.current_cover_position == 0 and cover.is_closed
+    cover._cancel_stop_task()
 
 
 async def test_runtime_stop_and_reversal_inside_slats_and_external_status(hass, plant):
@@ -220,3 +221,78 @@ async def test_homing_without_echo_includes_motor_start_delay_and_endpoint_reque
         await cover.async_set_cover_position(position=100)
         assert str(plant.gateways[0].send.call_args.args[0]) == '*2*0*11##'
         assert not cover.is_opening and cover.current_cover_position == 100
+
+
+@pytest.mark.parametrize("interruption", ["before_anchor", "after_wait", "error", "cancel"])
+async def test_profile_auto_stop_never_stops_a_superseding_run(hass, plant, interruption):
+    """The nonlinear timer obeys v2 generation guards and failed/cancelled writes."""
+    cover, _ = await configured(hass, plant)
+    cover._motion.confirm(0)
+
+    async def anchor(_):
+        cover._anchor_run(100)
+        if interruption == "before_anchor":
+            cover._run_generation += 1
+        elif interruption == "error":
+            raise HomeAssistantError("write failed")
+        elif interruption == "cancel":
+            raise asyncio.CancelledError
+        return 100
+
+    async def wait(_):
+        assert interruption == "after_wait"
+        cover._run_generation += 1
+
+    with (
+        patch("custom_components.myhome.cover.time.monotonic", return_value=100),
+        patch.object(cover, "_await_motion_anchor", side_effect=anchor),
+        patch("custom_components.myhome.cover.asyncio.sleep", side_effect=wait),
+        patch.object(cover, "async_stop_cover", new_callable=AsyncMock) as stop,
+    ):
+        await cover.async_set_cover_position(position=50)
+        await cover._stop_task
+        stop.assert_not_awaited()
+    assert [str(call.args[0]) for call in plant.gateways[0].send.call_args_list] == ["*2*1*11##"]
+
+
+async def test_profile_homing_timer_confirms_physical_endpoint(hass, plant):
+    """A full v2 homing run anchors the panel's physical model without an echo."""
+    cover, _ = await configured(hass, plant)
+
+    async def anchor(_):
+        cover._anchor_run(100)
+        return 100
+
+    with (
+        patch("custom_components.myhome.cover.time.monotonic", return_value=100),
+        patch.object(cover, "_await_motion_anchor", side_effect=anchor),
+        patch("custom_components.myhome.cover.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await cover.async_open_cover()
+        await cover._stop_task
+    assert cover._motion.position == MotionPosition.at_height(1)
+    assert cover.current_cover_position == 100
+    assert not cover.is_opening
+    assert cover._motion.anchor is None
+
+
+async def test_profile_stop_echo_preserves_frozen_physical_position(hass, plant):
+    cover, _ = await configured(hass, plant)
+    cover._motion.confirm(0)
+    with patch("custom_components.myhome.cover.time.monotonic", return_value=100):
+        await cover.async_open_cover()
+        cover._anchor_run(100)
+    with patch("custom_components.myhome.cover.time.monotonic", return_value=105):
+        await cover.async_stop_cover()
+        position = cover._motion.position
+        cover.handle_event(OWNMessage.parse("*2*0*11##"))
+    assert cover._motion.position == position
+    assert not cover.is_opening
+    assert cover._motion.anchor is None
+
+
+async def test_tilt_command_interrupts_panel_calibration_before_returning(hass, plant):
+    cover, _ = await configured(hass, plant)
+    cover._calibration = MagicMock()
+    await cover.async_set_cover_tilt_position()
+    cover._calibration.interrupt.assert_called_once_with("external_command")

@@ -260,3 +260,57 @@ async def test_native_partial_edit_retains_unchanged_direction_evidence(hass, pl
     after = await read_profile(hass, entry.entry_id, cover.entity_id)
     assert after["effective"]["opening"]["provenance"] == before["effective"]["opening"]["provenance"]
     assert after["effective"]["closing"]["provenance"]["recorded_at"] != before["effective"]["closing"]["provenance"]["recorded_at"]
+
+
+@pytest.mark.parametrize("advanced", [False, True])
+async def test_native_slat_only_settings_survive_shared_store_restart(hass, plant, advanced):
+    """The v2 slat-only service remains durable without inventing travel times."""
+    from unittest.mock import MagicMock
+
+    from custom_components.myhome.cover import MyHOMECover
+
+    entry, gateway = plant.entries[0], plant.gateways[0]
+    gateway.config_entry = entry
+
+    def make_cover():
+        cover = MyHOMECover(hass, "Blind", "Blind", "11", "2", "11", None,
+                            advanced, "BTicino", "Blind", gateway, travel_time=30,
+                            slat_tilt=True)
+        cover.entity_id = plant.records[0].entity_id
+        cover.hass = hass
+        cover.async_write_ha_state = MagicMock()
+        cover.async_on_remove = MagicMock()
+        return cover
+
+    cover = make_cover()
+    await bind_cover(hass, cover)
+    await cover.async_set_travel_time(slat_time=3.5)
+    assert cover.native_cover_fallback() == {"slat_time": 3.5}
+    exported = await export_profiles(hass, entry.entry_id)
+    record = exported["native_fallbacks"][0]
+    assert record["opening_time"] is None and record["closing_time"] is None
+    assert record["slat_time"] == 3.5
+    hass.data[DATA_KEY].pop(entry.entry_id)
+    restored = make_cover()
+    await bind_cover(hass, restored)
+    assert restored._slat_time == 3.5
+    assert restored.extra_state_attributes["slat_time"] == 3.5
+    assert restored._calibration_source == "default"
+    assert restored._travel_time_up == 30
+
+
+async def test_native_calibration_failure_does_not_publish_new_timings(hass, plant):
+    """The merged native calibration publishes its result only after durable save."""
+    entry, cover = plant.entries[0], plant.covers[0]
+    plant.gateways[0].config_entry = entry
+    before = copy.deepcopy(get_store(hass, entry.entry_id).data)
+    with (
+        patch.object(cover, "_calibration_run", AsyncMock(side_effect=[20, 21, 22])),
+        patch("custom_components.myhome.cover.asyncio.sleep", AsyncMock()),
+        patch.object(Store, "_async_write_data", side_effect=WriteError("full")),
+    ):
+        with pytest.raises(OSError):
+            await cover.async_calibrate()
+    assert get_store(hass, entry.entry_id).data == before
+    assert cover._travel_time_down == cover._travel_time_up == 30
+    assert cover._calibration_source == "default"

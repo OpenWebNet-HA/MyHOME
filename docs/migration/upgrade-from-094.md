@@ -44,7 +44,7 @@ If you have the **Terminal & SSH** add-on installed (or connect via SSH), paste 
 
 ```bash
 # Set target beta release version (check https://github.com/OpenWebNet-HA/MyHOME/releases)
-TAG="2.0.0b15"
+TAG="2.0.0b16"
 
 # Download, extract cleanly, verify, and restart Home Assistant
 mkdir -p /config/custom_components && cd /config/custom_components && \
@@ -114,6 +114,7 @@ Before upgrading, review these key architectural changes:
 
 * **You do NOT need to delete `myhome.yaml` immediately**: The v2 runtime reads existing `myhome.yaml` files on startup to preserve custom entity names and map physical SCS lighting groups (`WHERE = #G`).
 * **Transitioning to UI**: You can gradually move custom friendly names and Area assignments directly into the Home Assistant UI (**Settings → Devices & Services → Entities**). Once your entities are organized in the UI, `myhome.yaml` can be removed.
+* **A copy is kept in the gateway's options**: the first start that reads a valid `myhome.yaml` section copies it into the gateway's config entry and raises the [Legacy YAML Configuration Imported](../diagnostics/repair-issues.md#legacy-yaml-configuration-imported) notice. The copy follows later edits of the file and takes its place once the file is removed or unreadable, so devices keep settings such as travel times and feature flags.
 
 ---
 
