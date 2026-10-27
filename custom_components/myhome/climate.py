@@ -82,6 +82,7 @@ from .myhome_device import MyHOMEEntity
 from .poll_health import PollHealth
 from .thermo_switch import load_thermo_switch_subentries
 from .where_grammar import (
+    canonical_thermo_zone,
     is_probe,
     is_pump,
     parse_thermo_actuator_where,
@@ -148,14 +149,18 @@ async def async_setup_entry(
         except ValueError:
             continue
         zone_addr = Address(sw_zone, sw_if)
-        if not _zone_config(configured, zone_addr, zone_addr.key):
+        zpad_addr = Address(f"0{sw_zone}", sw_if) if len(sw_zone) == 1 else None
+        has_explicit_climate = bool(
+            _zone_config(configured, zone_addr, zone_addr.key)
+            or (zpad_addr is not None and _zone_config(configured, zpad_addr, zpad_addr.key))
+        )
+        if not has_explicit_climate:
             if sw_act is None:
                 thermo_switch_whole_zones.add((sw_zone, sw_if))
             else:
                 thermo_switch_actuator_zones.add((sw_zone, sw_if))
 
     real_hvac_states = {
-        HVACMode.OFF.value,
         HVACMode.HEAT.value,
         HVACMode.COOL.value,
         HVACMode.HEAT_COOL.value,
@@ -165,6 +170,11 @@ async def async_setup_entry(
     }
 
     def has_real_thermostat_state(entity_id: str) -> bool:
+        # MyHOMEClimate.async_restore_last_state coerces STATE_UNKNOWN /
+        # STATE_UNAVAILABLE into HVACMode.OFF ("off"), which HA then persists in
+        # .storage/core.restore_state across restarts (#263). Bare state == "off"
+        # without thermostat telemetry is therefore not evidence of a physical
+        # thermostat (#785).
         states_obj = getattr(hass, "states", None)
         live = states_obj.get(entity_id) if states_obj is not None else None
         hass_data = getattr(hass, "data", None)
@@ -180,32 +190,43 @@ async def async_setup_entry(
                 attrs.get("current_temperature") is not None
                 or attrs.get("temperature") is not None
                 or attrs.get("current_humidity") is not None
+                or attrs.get("season") is not None
+                or attrs.get("program") is not None
+                or attrs.get("holiday_days") is not None
+                or attrs.get("scenario") is not None
+                or attrs.get("knob_pos") not in (None, "UNKNOWN")
+                or attrs.get("fan_coil_cooling") is True
+                or attrs.get("fan_coil_heating") is True
                 or getattr(st, "state", None) in real_hvac_states
             ):
                 return True
         return False
 
+    def thermo_zone_pair(address: Address) -> tuple[str, str | None] | None:
+        cz = canonical_thermo_zone(address.where)
+        if cz is None:
+            return None
+        return (cz, _two_digit_interface(address.interface))
+
     def is_thermo_switch_whole_zone(address: Address) -> bool:
-        return (
-            zone_number(address.where),
-            _two_digit_interface(address.interface),
-        ) in thermo_switch_whole_zones
+        pair = thermo_zone_pair(address)
+        return pair is not None and pair in thermo_switch_whole_zones
 
     def is_thermo_switch_actuator_zone(address: Address) -> bool:
-        return (
-            zone_number(address.where),
-            _two_digit_interface(address.interface),
-        ) in thermo_switch_actuator_zones
+        pair = thermo_zone_pair(address)
+        return pair is not None and pair in thermo_switch_actuator_zones
 
     def is_thermo_switch_ghost(entry: er.RegistryEntry, address: Address) -> bool:
-        pair = (zone_number(address.where), _two_digit_interface(address.interface))
+        pair = thermo_zone_pair(address)
+        if pair is None:
+            return False
         if pair in thermo_switch_whole_zones:
             return True
         if pair in thermo_switch_actuator_zones:
             return not has_real_thermostat_state(entry.entity_id)
         return False
 
-    pending_actuators: dict[tuple[str, str | None], dict[str, bool]] = {}
+    pending_actions: dict[tuple[str, str | None], dict[str, OWNHeatingEvent]] = {}
 
     def build(ctx: DeviceContext) -> MyHOMEClimate:
         where, interface = ctx.address.where, ctx.address.interface
@@ -238,10 +259,10 @@ async def async_setup_entry(
             model=cfg.get(CONF_DEVICE_MODEL, default_model),
             gateway=gateway,
         )
-        cached = pending_actuators.pop((zone, _two_digit_interface(interface)), None)
-        if cached:
-            entity._actuator_states.update(cached)
-            entity._active_source = "actuators"
+        zone_pair = thermo_zone_pair(ctx.address)
+        if zone_pair is not None:
+            for deferred in pending_actions.pop(zone_pair, {}).values():
+                entity.handle_event(deferred)
         return entity
 
     def accept(ctx: DeviceContext) -> bool:
@@ -267,19 +288,45 @@ async def async_setup_entry(
             return False
         if (
             ctx.source == "bus"
+            and is_thermo_switch_actuator_zone(ctx.address)
+            and getattr(ctx.message, "message_type", None) == MESSAGE_TYPE_ACTION
+            and getattr(ctx.message, "dimension", None) == 19
+            and not isinstance(getattr(ctx.message, "cooling_fan_on", None), bool)
+            and not isinstance(getattr(ctx.message, "fan_on", None), bool)
+        ):
+            zone_pair = thermo_zone_pair(ctx.address)
+            if zone_pair is not None:
+                events = pending_actions.setdefault(zone_pair, {})
+                dim19_active = bool(
+                    ctx.message.is_active()
+                    or ctx.message.is_heating()
+                    or ctx.message.is_cooling()
+                )
+                if dim19_active:
+                    events.pop("dim19", None)
+                    events["dim19"] = ctx.message
+                else:
+                    events.pop("dim19", None)
+                    events.pop("dim19_off", None)
+                    events["dim19_off"] = ctx.message
+            LOGGER.debug(
+                "Deferring climate zone %s creation on Dimension 19 valve-only frame (#785)",
+                ctx.address.key,
+            )
+            return False
+        if (
+            ctx.source == "bus"
             and getattr(ctx.message, "message_type", None) == MESSAGE_TYPE_ACTION
             and getattr(ctx.message, "dimension", None) == 20
             and not isinstance(getattr(ctx.message, "fan_speed", None), int)
             and not isinstance(getattr(ctx.message, "fan_on", None), bool)
         ):
-            zone_pair = (
-                zone_number(ctx.address.where),
-                _two_digit_interface(ctx.address.interface),
-            )
-            act_id = thermo_event_actuator(ctx.message)
-            pending_actuators.setdefault(zone_pair, {})[act_id] = bool(
-                ctx.message.is_active()
-            )
+            zone_pair = thermo_zone_pair(ctx.address)
+            if zone_pair is not None:
+                slot = f"act:{thermo_event_actuator(ctx.message)}"
+                events = pending_actions.setdefault(zone_pair, {})
+                events.pop(slot, None)
+                events[slot] = ctx.message
             LOGGER.debug(
                 "Deferring climate zone %s creation on Dimension 20 actuator-only frame (#785)",
                 ctx.address.key,
@@ -722,8 +769,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 except (ValueError, TypeError):
                     pass
             restored_season = last_state.attributes.get("season")
-            if restored_season in (SEASON_HEATING, "cooling"):
+            if restored_season in (SEASON_HEATING, "cooling", "conditioning"):
                 self._season = str(restored_season)
+            restored_knob = last_state.attributes.get("knob_pos")
+            if isinstance(restored_knob, str) and restored_knob and restored_knob != "UNKNOWN":
+                self._knob_pos = restored_knob
             if (
                 "fan_coil_heating" in last_state.attributes
                 or "fan_coil_cooling" in last_state.attributes

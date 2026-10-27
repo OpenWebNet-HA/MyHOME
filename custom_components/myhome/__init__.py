@@ -189,6 +189,10 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bool:
     """Set up a MyHOME gateway from a config entry."""
+    # Yield once so an eager reload task spawned by ConfigSubentryFlow.async_step_user
+    # (before ConfigSubentryFlowManager.async_finish_flow commits async_add_subentry)
+    # observes the newly added subentry in entry.subentries.
+    await asyncio.sleep(0)
     LOGGER.info(
         "Setting up MyHOME gateway '%s' (v%s, OWNd v%s)",
         entry.title,
