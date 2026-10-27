@@ -1042,13 +1042,24 @@ async def test_climate_coexists_with_per_actuator_switch_and_prunes_ghosts(
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*8*0*0210##"))
     assert sorted(c._where for c in added_climates) == ["3", "5", "6"]
 
-    # Per-actuator switch 7#1: Dimension 20 alone does NOT create a phantom climate entity...
+    # Per-actuator switch 7#1: Dimension 20 and typeless pump/auxiliary frames
+    # (*4*4001*7##, *4*4002*7##, *4*4001#7*0#1##, *4*4002#7*0#1##, *#4*7*5*0##)
+    # do NOT re-spawn the pruned phantom climate entity (#785)...
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*7#1*20*1##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*4*4001#7*0#1##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*4*4001*7##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*4*4002#7*0#1##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*4*4002*7##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*7*5*0##"))
     assert sorted(c._where for c in added_climates) == ["3", "5", "6"]
 
-    # ...but if a real temperature probe exists on Zone 7, climate discovers Zone 7 & inherits {"1": True}!
+    # ...whereas an unconfigured heating zone 2 without a thermo switch still discovers on *4*4001#2*0#3##...
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*4*4001#2*0#3##"))
+    assert sorted(c._where for c in added_climates) == ["2", "3", "5", "6"]
+
+    # ...and if a real temperature probe exists on Zone 7, climate discovers Zone 7 & inherits {"1": True}!
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*7*0*0215##"))
-    assert sorted(c._where for c in added_climates) == ["3", "5", "6", "7"]
+    assert sorted(c._where for c in added_climates) == ["2", "3", "5", "6", "7"]
     zone7 = next(c for c in added_climates if c._where == "7")
     assert zone7._actuator_states == {"1": True}
     assert zone7._active_source == "actuators"
@@ -1238,4 +1249,30 @@ async def test_thermo_switch_real_hardware_dim20_write_frames_and_reverse_interl
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNMessage.parse("*#4*9#0*#20*1##"))
     assert zone9.is_on is True
     assert zone9.extra_state_attributes["actuators"] == {"1": "on"}
+
+
+def test_subentry_translations_present_across_all_locales() -> None:
+    """Verify config_subentries and thermo_switch_no_timer are localized in en, it, fr, nl."""
+    comp_dir = Path(__file__).resolve().parent.parent / "custom_components" / "myhome"
+    strings = json.loads((comp_dir / "strings.json").read_text(encoding="utf-8"))
+    expected_subentries = strings["config_subentries"]
+
+    def _leaf_paths(node: object, prefix: tuple[str, ...] = ()) -> set[tuple[str, ...]]:
+        if isinstance(node, dict):
+            out: set[tuple[str, ...]] = set()
+            for key, val in node.items():
+                out |= _leaf_paths(val, prefix + (str(key),))
+            return out
+        return {prefix}
+
+    expected_paths = _leaf_paths(expected_subentries)
+    for locale in ("en", "it", "fr", "nl"):
+        loc = json.loads(
+            (comp_dir / "translations" / f"{locale}.json").read_text(encoding="utf-8")
+        )
+        assert "config_subentries" in loc, f"Missing config_subentries in {locale}.json"
+        assert _leaf_paths(loc["config_subentries"]) == expected_paths
+        msg = loc["exceptions"]["thermo_switch_no_timer"]["message"]
+        assert "{name}" in msg
+
 

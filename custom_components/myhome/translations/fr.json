@@ -107,6 +107,104 @@
       "reconfigure_successful": "Connexion de la passerelle reconfigurée avec succès."
     }
   },
+  "config_subentries": {
+    "expose": {
+      "initiate_flow": {
+        "user": "Exposer une entité sur le bus SCS",
+        "reconfigure": "Reconfigurer l'entité exposée"
+      },
+      "entry_type": "Entité exposée",
+      "step": {
+        "user": {
+          "title": "Exposer une entité Home Assistant sur le bus SCS",
+          "description": "Émuler un appareil OpenWebNet virtuel sur le bus SCS piloté par une entité Home Assistant.",
+          "data": {
+            "who": "Sous-système WHO",
+            "where": "Adresse WHERE",
+            "entity_id": "Entité source",
+            "attribute": "Attribut d'état (optionnel)",
+            "dimension": "Dimension OpenWebNet (optionnel)",
+            "cooldown": "Délai minimal entre envois (secondes)",
+            "min_delta": "Seuil minimal de variation (optionnel)",
+            "periodic_send": "Intervalle de diffusion périodique (secondes)",
+            "respond_to_read": "Répondre aux requêtes d'état/dimension du bus",
+            "bidirectional": "Bidirectionnel (agir sur les commandes reçues du bus)",
+            "brightness_step_pct": "Pas de luminosité par appui variateur (%)",
+            "on_states": "États 'on' personnalisés (séparés par des virgules, optionnel)",
+            "value_template": "Modèle de valeur (Jinja2, optionnel)"
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigurer l'entité exposée",
+          "description": "Mettre à jour l'adresse OpenWebNet, l'entité source ou les paramètres de régulation de cette exposition.",
+          "data": {
+            "who": "Sous-système WHO",
+            "where": "Adresse WHERE",
+            "entity_id": "Entité source",
+            "attribute": "Attribut d'état (optionnel)",
+            "dimension": "Dimension OpenWebNet (optionnel)",
+            "cooldown": "Délai minimal entre envois (secondes)",
+            "min_delta": "Seuil minimal de variation (optionnel)",
+            "periodic_send": "Intervalle de diffusion périodique (secondes)",
+            "respond_to_read": "Répondre aux requêtes d'état/dimension du bus",
+            "bidirectional": "Bidirectionnel (agir sur les commandes reçues du bus)",
+            "brightness_step_pct": "Pas de luminosité par appui variateur (%)",
+            "on_states": "États 'on' personnalisés (séparés par des virgules, optionnel)",
+            "value_template": "Modèle de valeur (Jinja2, optionnel)"
+          }
+        }
+      },
+      "error": {
+        "invalid_who": "Sous-système WHO non pris en charge (pris en charge : 1, 2, 4, 13, 18).",
+        "where_required": "Une adresse WHERE est requise pour ce sous-système WHO.",
+        "entity_required": "Une entité Home Assistant source est requise pour ce sous-système WHO.",
+        "invalid_dimension": "Dimension non valide pour le sous-système WHO sélectionné.",
+        "invalid_expose": "Configuration non valide ou liaison WHO/WHERE/dimension déjà existante."
+      },
+      "abort": {
+        "reconfigure_successful": "Liaison de l'entité exposée mise à jour avec succès."
+      }
+    },
+    "thermo_switch": {
+      "initiate_flow": {
+        "user": "Ajouter un actionneur thermique / sèche-serviettes (WHO 4)",
+        "reconfigure": "Reconfigurer l'interrupteur d'actionneur thermique"
+      },
+      "entry_type": "Interrupteur d'actionneur thermique",
+      "step": {
+        "user": {
+          "title": "Ajouter un actionneur thermique / sèche-serviettes WHO=4",
+          "description": "Configurer un relais de thermorégulation sans sonde (par ex. sèche-serviettes BTicino F430/2 ou F430/4) comme interrupteur marche/arrêt. Utilisez Z#N (ex. 7#1) pour cibler un canal d'actionneur sans affecter un thermostat réel sur la zone Z, ou Z (ex. 7) pour attribuer toute la zone comme interrupteur. Laissez les commandes vides pour envoyer des écritures directes de Dimension 20 (*#4*7#1*#20*1## et *#4*7#1*#20*0##). Sur MyHomeServer1 (Home + Project) pour les objets 'Sèche-serviettes', renseignez la paire de trames OpenWebNet CEN+ (ex. *25*21#1*21## et *25*21#2*21##) ou WHO=1 associées à vos scénarios/automatisations Home + Project.",
+          "data": {
+            "where": "Adresse WHERE de l'actionneur thermique (ex. 7#1, 7 ou 7#1#4#01)",
+            "name": "Nom convivial (optionnel)",
+            "turn_on_command": "Trame OpenWebNet marche personnalisée (optionnel, ex. *25*21#1*21##)",
+            "turn_off_command": "Trame OpenWebNet arrêt personnalisée (optionnel, ex. *25*21#2*21##)"
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigurer l'interrupteur d'actionneur thermique WHO=4",
+          "description": "Mettre à jour l'adresse WHERE, le nom convivial ou les trames OpenWebNet personnalisées de cet actionneur thermique sans sonde.",
+          "data": {
+            "where": "Adresse WHERE de l'actionneur thermique (ex. 7#1, 7 ou 7#1#4#01)",
+            "name": "Nom convivial (optionnel)",
+            "turn_on_command": "Trame OpenWebNet marche personnalisée (optionnel, ex. *25*21#1*21##)",
+            "turn_off_command": "Trame OpenWebNet arrêt personnalisée (optionnel, ex. *25*21#2*21##)"
+          }
+        }
+      },
+      "error": {
+        "where_required": "Une adresse WHERE de zone ou d'actionneur WHO=4 est requise (ex. 7#1 ou 7).",
+        "invalid_where": "Adresse WHERE d'actionneur WHO=4 non valide. Attendu : Z (1..99) ou Z#N (N=1..9), éventuellement derrière #4#IF (00..15).",
+        "paired_commands_required": "Renseignez les deux commandes OpenWebNet marche et arrêt ensemble, ou laissez les deux vides pour le contrôle direct par Dimension 20.",
+        "invalid_command": "Trame de commande OpenWebNet non valide (doit être une trame d'action ou d'écriture valide telle que *25*21#1*21## ou *1*1*09##, et non une lecture d'état ou un ACK).",
+        "already_configured": "Un interrupteur d'actionneur thermique WHO=4 est déjà configuré pour cette adresse WHERE."
+      },
+      "abort": {
+        "reconfigure_successful": "Interrupteur d'actionneur thermique mis à jour avec succès."
+      }
+    }
+  },
   "options": {
     "step": {
       "user": {
@@ -490,6 +588,9 @@
     },
     "volume_not_finite": {
       "message": "{entity_id} : le niveau de volume {volume} n'est pas un nombre fini valide"
+    },
+    "thermo_switch_no_timer": {
+      "message": "{name} est un actionneur thermique WHO=4 et ne prend pas en charge les temporisations matérielles sur bus WHO=1 ; utilisez plutôt un délai d'automatisation Home Assistant."
     }
   },
   "entity": {

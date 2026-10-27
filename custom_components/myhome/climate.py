@@ -191,6 +191,12 @@ async def async_setup_entry(
             _two_digit_interface(address.interface),
         ) in thermo_switch_whole_zones
 
+    def is_thermo_switch_actuator_zone(address: Address) -> bool:
+        return (
+            zone_number(address.where),
+            _two_digit_interface(address.interface),
+        ) in thermo_switch_actuator_zones
+
     def is_thermo_switch_ghost(entry: er.RegistryEntry, address: Address) -> bool:
         pair = (zone_number(address.where), _two_digit_interface(address.interface))
         if pair in thermo_switch_whole_zones:
@@ -246,6 +252,17 @@ async def async_setup_entry(
             LOGGER.debug(
                 "Skipping climate zone %s: configured as WHO=4 thermo switch (#785)",
                 ctx.address.key,
+            )
+            return False
+        if (
+            ctx.source == "bus"
+            and is_thermo_switch_actuator_zone(ctx.address)
+            and getattr(ctx.message, "message_type", None) is None
+        ):
+            LOGGER.debug(
+                "Deferring climate zone %s creation on typeless WHO=4 frame (%s) for thermo switch zone (#785)",
+                ctx.address.key,
+                ctx.message,
             )
             return False
         if (
