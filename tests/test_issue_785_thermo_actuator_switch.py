@@ -1781,3 +1781,378 @@ async def test_zero_padded_zones_fancoil_and_all_telemetry_preservation_and_burs
     await climate_setup_entry(hass, yaml_entry, yaml_climates.extend)
     assert [c._where for c in yaml_climates] == ["06"]
 
+
+@pytest.mark.asyncio
+async def test_ghost_pruning_supports_ha_2026_11_registry_indexed_restore_state_and_legacy_last_states(
+    hass: HomeAssistant,
+) -> None:
+    """Verify cold-boot ghost pruning works across HA 2026.11+ and HA <= 2026.10 RestoreStateData (#785).
+
+    Covers:
+    1. HA 2026.11+ ``RestoreStateData`` (``core#183906``): exposes ``async_get_stored_state(entity_id)``
+       backed by ``last_states_by_entity_registry_id`` with NO ``.last_states`` attribute, including
+       when the user renamed ``entity_id`` in the entity registry.
+    2. HA <= 2026.10 ``RestoreStateData``: exposes ``.last_states`` dict keyed by ``entity_id`` with
+       NO ``async_get_stored_state`` method.
+    3. Missing ``DATA_RESTORE_STATE`` in ``hass.data``: falls back cleanly to live ``hass.states``.
+    """
+    from types import SimpleNamespace
+
+    from homeassistant.helpers.restore_state import DATA_RESTORE_STATE
+
+    ent_reg = er.async_get(hass)
+    orig_restore = hass.data.get(DATA_RESTORE_STATE)
+
+    try:
+        # --- Case 1: HA 2026.11+ RestoreStateData (async_get_stored_state, no .last_states) ---
+        entry_v11 = _mock_entry(
+            hass,
+            _mock_gateway(),
+            platforms={
+                "switch": {
+                    "4-3#2": {"who": "4", "where": "3#2", "name": "Aux 3 Towel"},
+                    "4-7#1": {"who": "4", "where": "7#1", "name": "Bath 7 Towel"},
+                    "4-9#1": {"who": "4", "where": "9#1", "name": "Bath 9 Towel"},
+                }
+            },
+        )
+        real_z3 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-3", config_entry=entry_v11)
+        real_z3 = ent_reg.async_update_entity(
+            real_z3.entity_id, new_entity_id="climate.living_room_renamed"
+        )
+        ghost_z7 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-7", config_entry=entry_v11)
+        ghost_z9 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-9", config_entry=entry_v11)
+
+        by_reg_id = {
+            real_z3.id: SimpleNamespace(
+                state=State("climate.old_name", "off", {"current_temperature": 21.5})
+            ),
+            ghost_z7.id: SimpleNamespace(
+                state=State(
+                    ghost_z7.entity_id,
+                    "off",
+                    {"knob_pos": "UNKNOWN", "actuators": {"1": "off"}},
+                )
+            ),
+        }
+
+        class _HA202611RestoreData:
+            """Stub matching HA 2026.11+ RestoreStateData (authoritative even if foreign .last_states exists)."""
+
+            def __init__(self) -> None:
+                # Stale/foreign entity-ID dict entry for ghost_z9 must NOT be consulted
+                # when async_get_stored_state is callable and returns None.
+                self.last_states = {
+                    ghost_z9.entity_id: SimpleNamespace(
+                        state=State(ghost_z9.entity_id, "off", {"current_temperature": 22.0})
+                    )
+                }
+
+            def async_get_stored_state(self, entity_id: str) -> SimpleNamespace | None:
+                reg_entry = ent_reg.async_get(entity_id)
+                if reg_entry is None:
+                    return None
+                return by_reg_id.get(reg_entry.id)
+
+        hass.data[DATA_RESTORE_STATE] = _HA202611RestoreData()
+        added_v11: list = []
+        await climate_setup_entry(hass, entry_v11, added_v11.extend)
+
+        assert ent_reg.async_get("climate.living_room_renamed") is not None
+        assert ent_reg.async_get(ghost_z7.entity_id) is None
+        assert ent_reg.async_get(ghost_z9.entity_id) is None
+        assert [c._where for c in added_v11] == ["3"]
+        ent_reg.async_remove("climate.living_room_renamed")
+
+        # --- Case 2: HA <= 2026.10 RestoreStateData (.last_states dict, no async_get_stored_state) ---
+        entry_v10 = _mock_entry(
+            hass,
+            _mock_gateway(),
+            platforms={
+                "switch": {
+                    "4-4#2": {"who": "4", "where": "4#2", "name": "Aux 4 Towel"},
+                    "4-8#1": {"who": "4", "where": "8#1", "name": "Bath 8 Towel"},
+                }
+            },
+        )
+        real_z4 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-4", config_entry=entry_v10)
+        ghost_z8 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-8", config_entry=entry_v10)
+
+        hass.data[DATA_RESTORE_STATE] = SimpleNamespace(
+            last_states={
+                real_z4.entity_id: SimpleNamespace(
+                    state=State(real_z4.entity_id, "off", {"season": "conditioning"})
+                ),
+                ghost_z8.entity_id: SimpleNamespace(
+                    state=State(ghost_z8.entity_id, "off", {})
+                ),
+            }
+        )
+        added_v10: list = []
+        await climate_setup_entry(hass, entry_v10, added_v10.extend)
+
+        assert ent_reg.async_get(real_z4.entity_id) is not None
+        assert ent_reg.async_get(ghost_z8.entity_id) is None
+        assert [c._where for c in added_v10] == ["4"]
+        ent_reg.async_remove(real_z4.entity_id)
+
+        # --- Case 3: Missing DATA_RESTORE_STATE falls back cleanly to live hass.states ---
+        hass.data.pop(DATA_RESTORE_STATE, None)
+        entry_none = _mock_entry(
+            hass,
+            _mock_gateway(),
+            platforms={
+                "switch": {
+                    "4-10#1": {"who": "4", "where": "10#1", "name": "Bath 10 Towel"},
+                    "4-11#2": {"who": "4", "where": "11#2", "name": "Aux 11 Towel"},
+                }
+            },
+        )
+        ghost_z10 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-10", config_entry=entry_none)
+        real_z11 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-11", config_entry=entry_none)
+        hass.states.async_set(real_z11.entity_id, "heat", {})
+
+        added_none: list = []
+        await climate_setup_entry(hass, entry_none, added_none.extend)
+
+        assert ent_reg.async_get(ghost_z10.entity_id) is None
+        assert ent_reg.async_get(real_z11.entity_id) is not None
+        assert [c._where for c in added_none] == ["11"]
+    finally:
+        if orig_restore is not None:
+            hass.data[DATA_RESTORE_STATE] = orig_restore
+
+
+def test_seed_core_translations_patches_mock_restore_cache_for_ha_2026_11(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify seed_core_translations.py and conftest.py bridge HA 2026.11+ mock_restore_cache (#785)."""
+    import os
+    import subprocess
+    import sys
+    from types import SimpleNamespace
+    from typing import Any
+
+    import pytest_homeassistant_custom_component as phcc
+    from homeassistant.helpers import restore_state as rs
+    from homeassistant.helpers.json import JSONEncoder
+    from homeassistant.util import dt as dt_util
+
+    import scripts.seed_core_translations as seed_mod
+    from tests.conftest import _bridge_phcc_restore_cache
+
+    fake_pkg = tmp_path / "phcc"
+    fake_pkg.mkdir()
+    fake_init = fake_pkg / "__init__.py"
+    fake_init.write_text("", encoding="utf-8")
+    fake_common = fake_pkg / "common.py"
+
+    synthetic_common = (
+        "from __future__ import annotations\n"
+        "import json\n"
+        "import logging\n"
+        "from collections.abc import Mapping, Sequence\n"
+        "from typing import Any\n"
+        "from homeassistant.components.logger import (\n"
+        "    DOMAIN as LOGGER_DOMAIN,\n"
+        "    SERVICE_SET_LEVEL,\n"
+        "    _clear_logger_overwrites,\n"
+        ")\n"
+        "from homeassistant.core import HomeAssistant, State\n"
+        "from homeassistant.helpers import restore_state as rs\n"
+        "from homeassistant.helpers.json import JSONEncoder\n"
+        "from homeassistant.util import dt as dt_util\n"
+        "_LOGGER = logging.getLogger(__name__)\n\n\n"
+        "def mock_restore_cache(hass: HomeAssistant, states: Sequence[State]) -> None:\n"
+        '    """Mock the DATA_RESTORE_CACHE."""\n'
+        "    key = rs.DATA_RESTORE_STATE\n"
+        "    data = rs.RestoreStateData(hass)\n"
+        "    now = dt_util.utcnow()\n"
+        "\n"
+        "    last_states = {}\n"
+        "    for state in states:\n"
+        "        restored_state = state.as_dict()\n"
+        "        restored_state = {\n"
+        "            **restored_state,\n"
+        '            "attributes": json.loads(\n'
+        '                json.dumps(restored_state["attributes"], cls=JSONEncoder)\n'
+        "            ),\n"
+        "        }\n"
+        "        last_states[state.entity_id] = rs.StoredState.from_dict(\n"
+        '            {"state": restored_state, "last_seen": now}\n'
+        "        )\n"
+        "    data.last_states = last_states\n"
+        '    _LOGGER.debug("Restore cache: %s", data.last_states)\n'
+        '    assert len(data.last_states) == len(states), f"Duplicate entity_id? {states}"\n'
+        "\n"
+        "    rs.async_get.cache_clear()\n"
+        "    hass.data[key] = data\n"
+        "\n"
+        "\n"
+        "def mock_restore_cache_with_extra_data(\n"
+        "    hass: HomeAssistant, states: Sequence[tuple[State, Mapping[str, Any]]]\n"
+        ") -> None:\n"
+        '    """Mock the DATA_RESTORE_CACHE."""\n'
+        "    key = rs.DATA_RESTORE_STATE\n"
+        "    data = rs.RestoreStateData(hass)\n"
+        "    now = dt_util.utcnow()\n"
+        "\n"
+        "    last_states = {}\n"
+        "    for state, extra_data in states:\n"
+        "        restored_state = state.as_dict()\n"
+        "        restored_state = {\n"
+        "            **restored_state,\n"
+        '            "attributes": json.loads(\n'
+        '                json.dumps(restored_state["attributes"], cls=JSONEncoder)\n'
+        "            ),\n"
+        "        }\n"
+        "        last_states[state.entity_id] = rs.StoredState.from_dict(\n"
+        '            {"state": restored_state, "extra_data": extra_data, "last_seen": now}\n'
+        "        )\n"
+        "    data.last_states = last_states\n"
+        '    _LOGGER.debug("Restore cache: %s", data.last_states)\n'
+        '    assert len(data.last_states) == len(states), f"Duplicate entity_id? {states}"\n'
+        "\n"
+        "    rs.async_get.cache_clear()\n"
+        "    hass.data[key] = data\n"
+    )
+    fake_common.write_text(synthetic_common, encoding="utf-8")
+    monkeypatch.setattr(phcc, "__file__", str(fake_init))
+
+    # 1. HA <= 2026.10 (no _async_load_stored_states): logger patched, mock_restore_cache untouched
+    class _LegacyRestoreStateData:
+        pass
+
+    monkeypatch.setattr(rs, "RestoreStateData", _LegacyRestoreStateData)
+    seed_mod._patch_pytest_ha_custom_component()
+    after_v10 = fake_common.read_text(encoding="utf-8")
+    assert "from homeassistant.components.logger.helpers import _clear_logger_overwrites" in after_v10
+    assert "data.last_states = last_states" in after_v10
+    assert "def _mock_restore_cache(" not in after_v10
+
+    # 2. HA 2026.11+ (_async_load_stored_states present): mock_restore_cache rewritten & idempotent
+    class _ModernRestoreStateData:
+        def __init__(self) -> None:
+            self.last_states_by_entity_id: dict[str, Any] = {}
+            self.last_states_by_entity_registry_id: dict[str, Any] = {}
+
+        def _async_load_stored_states(self, stored_states: list[dict[str, Any]]) -> None:
+            self.last_states_by_entity_id = {}
+            self.last_states_by_entity_registry_id = {}
+            for item in stored_states:
+                eid = item["state"]["entity_id"]
+                if ".reg_" in eid:
+                    self.last_states_by_entity_registry_id[f"reg-{eid}"] = item
+                else:
+                    self.last_states_by_entity_id[eid] = item
+
+    monkeypatch.setattr(rs, "RestoreStateData", _ModernRestoreStateData)
+    seed_mod._patch_pytest_ha_custom_component()
+    after_v11 = fake_common.read_text(encoding="utf-8")
+    assert "def _mock_restore_cache(" in after_v11
+    assert "data._async_load_stored_states(stored_states)" in after_v11
+    assert "data.last_states = last_states" not in after_v11
+
+    # Idempotent on second run
+    seed_mod._patch_pytest_ha_custom_component()
+    assert fake_common.read_text(encoding="utf-8") == after_v11
+
+    # 3. Reformatted common.py (single-line logger import, wrapped signatures, reversed order)
+    reformatted_common = (
+        "from homeassistant.components.logger import _clear_logger_overwrites, DOMAIN as LOGGER_DOMAIN\n"
+        "def mock_restore_cache_with_extra_data(hass, states):\n"
+        "    data = rs.RestoreStateData(hass)\n"
+        "    data.last_states = {}\n"
+        "    hass.data[rs.DATA_RESTORE_STATE] = data\n\n"
+        "def mock_restore_cache(\n"
+        "    hass,\n"
+        "    states,\n"
+        "):\n"
+        "    data = rs.RestoreStateData(hass)\n"
+        "    data.last_states = {}\n"
+        "    hass.data[rs.DATA_RESTORE_STATE] = data\n"
+    )
+    fake_common.write_text(reformatted_common, encoding="utf-8")
+    seed_mod._patch_pytest_ha_custom_component()
+    after_reformatted = fake_common.read_text(encoding="utf-8")
+    assert "from homeassistant.components.logger import DOMAIN as LOGGER_DOMAIN" in after_reformatted
+    assert "from homeassistant.components.logger.helpers import _clear_logger_overwrites" in after_reformatted
+    assert "def _mock_restore_cache(" in after_reformatted
+    assert "data.last_states =" not in after_reformatted
+
+    # 4. Execute the rewritten helpers to verify runtime behavior
+    modern_data = _ModernRestoreStateData()
+    ns: dict[str, Any] = {
+        "json": json,
+        "JSONEncoder": JSONEncoder,
+        "dt_util": dt_util,
+        "_LOGGER": MagicMock(),
+        "rs": SimpleNamespace(async_get=lambda _hass: modern_data),
+    }
+    exec(compile(after_v11[after_v11.index("def _mock_restore_cache(") :], str(fake_common), "exec"), ns)
+    ns["mock_restore_cache"](
+        None,
+        [
+            State("climate.reg_z7", "unknown", {}),
+            State("climate.unreg_z8", "off", {"current_temperature": 21.0}),
+        ],
+    )
+    assert "reg-climate.reg_z7" in modern_data.last_states_by_entity_registry_id
+    assert "climate.unreg_z8" in modern_data.last_states_by_entity_id
+
+    ns["mock_restore_cache_with_extra_data"](
+        None,
+        [(State("cover.reg_c1", "open", {}), {"pos": 100})],
+    )
+    assert modern_data.last_states_by_entity_registry_id == {
+        "reg-cover.reg_c1": {
+            "state": modern_data.last_states_by_entity_registry_id["reg-cover.reg_c1"]["state"],
+            "extra_data": {"pos": 100},
+            "last_seen": modern_data.last_states_by_entity_registry_id["reg-cover.reg_c1"]["last_seen"],
+        }
+    }
+    with pytest.raises(AssertionError, match="Duplicate entity_id"):
+        ns["mock_restore_cache"](
+            None,
+            [State("climate.reg_dup", "off", {}), State("climate.reg_dup", "heat", {})],
+        )
+
+    # 5. Exercise conftest._bridge_phcc_restore_cache directly (legacy no-op, modern patch, idempotence)
+    dummy_common = SimpleNamespace()
+    legacy_rs = SimpleNamespace(RestoreStateData=_LegacyRestoreStateData)
+    assert _bridge_phcc_restore_cache(dummy_common, legacy_rs, JSONEncoder, dt_util) is False
+
+    bridge_data = _ModernRestoreStateData()
+    modern_rs = SimpleNamespace(
+        RestoreStateData=_ModernRestoreStateData,
+        async_get=lambda _hass: bridge_data,
+    )
+    assert _bridge_phcc_restore_cache(dummy_common, modern_rs, JSONEncoder, dt_util) is True
+    assert _bridge_phcc_restore_cache(dummy_common, modern_rs, JSONEncoder, dt_util) is False
+    dummy_common.mock_restore_cache(None, [State("climate.reg_z12", "heat", {"temperature": 20.5})])
+    assert "reg-climate.reg_z12" in bridge_data.last_states_by_entity_registry_id
+    dummy_common.mock_restore_cache_with_extra_data(
+        None, [(State("switch.unreg_s1", "on", {}), {"raw": 1})]
+    )
+    assert bridge_data.last_states_by_entity_id["switch.unreg_s1"]["extra_data"] == {"raw": 1}
+
+    # 6. Importing tests.conftest before pytest_homeassistant_custom_component.plugins must not break patch_recorder
+    repo_root = str(Path(__file__).resolve().parent.parent)
+    env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join([repo_root, *sys.path]),
+    }
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import tests.conftest; import pytest_homeassistant_custom_component.plugins",
+        ],
+        cwd=repo_root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr

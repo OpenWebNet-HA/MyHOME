@@ -179,8 +179,15 @@ async def async_setup_entry(
         live = states_obj.get(entity_id) if states_obj is not None else None
         hass_data = getattr(hass, "data", None)
         restore_obj = hass_data.get(DATA_RESTORE_STATE) if isinstance(hass_data, dict) else None
-        last_states = getattr(restore_obj, "last_states", None)
-        stored = last_states.get(entity_id) if isinstance(last_states, dict) else None
+        # HA 2026.11+ (core#183906) indexes stored states by entity registry ID and
+        # exposes async_get_stored_state(entity_id); HA <= 2026.10 stores a dict on
+        # RestoreStateData.last_states keyed by entity_id.
+        get_stored = getattr(restore_obj, "async_get_stored_state", None)
+        if callable(get_stored):
+            stored = get_stored(entity_id)
+        else:
+            last_states = getattr(restore_obj, "last_states", None)
+            stored = last_states.get(entity_id) if isinstance(last_states, dict) else None
         restored = getattr(stored, "state", None)
         for st in (live, restored):
             if st is None:
