@@ -4,24 +4,26 @@ Contributed by @emil-d in https://github.com/OpenWebNet-HA/MyHOME/issues/466#iss
 (BTicino MH201 firmware 3.6.43, Home Assistant 2026.10.4, MyHOME 2.0.0b16, OWNd 2.0.0b11).
 
 Pins five hardware facts from the verbatim `<myhome-bus-card>` sweep export:
-1. Schema, privacy hygiene, and frame-level `OWNd` parser coverage across all 22 frames (13 `tx`, 9 `rx`).
+1. Verbatim SHA-256 provenance, privacy hygiene, and frame-level `OWNd` parser coverage across all
+   22 frames (13 `tx`, 9 `rx`).
 2. First committed physical fixture carrying `WHO 1013` `OBJECT_MODEL = 10` (`MH201`) with trailing
    metadata `N_CONF = 15`, `BRAND = 0`, `LINE = 5` (distinct from Linux gateways' `15*5*0`), alongside
    `WHO 13` device type `200` and firmware `3.6.43`.
-3. Sub-300 ms `WHO 13` replies (`*#13**0##`, `*#13**15##`, `*#13**16##`) paired with silence on
-   Linux-only kernel/distribution dimensions (`*#13**23##`, `*#13**24##`).
+3. Sub-300 ms `WHO 13` replies (`*#13**0##`, `*#13**15##`, `*#13**16##`) paired with fast command-session
+   `NACK` (`~10 ms`, zero `rx` event frames) on Linux-only kernel/distribution dimensions (`23`, `24`).
 4. Exact on-wire timing of silent command-session timeouts (`COMMAND_TIMEOUT = 10.0 s` on unanswered
    `*#2*0##` and `*#4*0##`) and single-slot TCP reconnect lockouts (`MAX_CONNECT_ATTEMPTS = 5`,
-   `1 + 2 + 4 + 6 = 13.0 s` backoff) on the MH201's 1-session command stack.
+   `1 + 2 + 4 + 6 = 13.0 s` backoff + 5 TCP `*99*0##` handshakes) on the MH201's 1-session stack.
 5. Full integration replay discovering the 5 `OFF` lighting endpoints (`31`, `32`, `71`, `72`, `73`)
-   with zero phantom cover, climate, audio, or energy entities.
+   with zero phantom cover, climate, audio, alarm, or energy sensor entities.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -61,6 +63,7 @@ from custom_components.myhome.gateway import (
     command_session_default,
     command_session_limit,
 )
+from custom_components.myhome.services import _handler_refuses_frame
 from scripts.anonymize_plant_fixture import findings
 
 TRACE_PATH = (
@@ -70,16 +73,22 @@ TRACE_PATH = (
     / "issue_466"
     / "myhome_sweep_MH201_all_2026-10-27T07-28-09.json"
 )
+# `<myhome-bus-card>` exports `JSON.stringify(tracePayload, null, 2)` (no trailing newline);
+# keep the fixture byte-for-byte identical to @emil-d's attachment on #466.
+VERBATIM_FIXTURE_SHA256 = "54717d7ef7b207d04a475d9c379d1b043f8e50a533cbfec400e248c315f5e2bb"
 
 
 def _load_trace() -> dict[str, Any]:
     assert TRACE_PATH.is_file(), f"Missing trace fixture: {TRACE_PATH}"
-    return json.loads(TRACE_PATH.read_text(encoding="utf-8"))
+    return cast(dict[str, Any], json.loads(TRACE_PATH.read_text(encoding="utf-8")))
 
 
 def test_mh201_3_6_43_sweep_schema_privacy_and_frame_counts() -> None:
-    """Verify verbatim fixture privacy, metadata, telemetry, and full `OWNd` parse coverage."""
+    """Verify verbatim SHA-256 provenance, privacy, metadata, telemetry, and `OWNd` parse coverage."""
+    # Normalize CRLF when checked out with `core.autocrlf=true` on Windows hosts
     raw_text = TRACE_PATH.read_text(encoding="utf-8")
+    assert not raw_text.endswith("\n")
+    assert hashlib.sha256(raw_text.encode("utf-8")).hexdigest() == VERBATIM_FIXTURE_SHA256
     assert findings(raw_text) == []
 
     doc = json.loads(raw_text)
@@ -99,6 +108,7 @@ def test_mh201_3_6_43_sweep_schema_privacy_and_frame_counts() -> None:
     assert gw["firmware"] == "3.6.43"
     assert gw["mac_prefix"] == "00:03:50"
     assert gw["connection_type"] == "tcp"
+    assert gw["queue_pacing"] == MH201Profile().command_queue_delay == 0.1
 
     telemetry = doc["telemetry"]
     assert telemetry["total_tx"] == 13
@@ -217,8 +227,10 @@ async def test_mh201_3_6_43_first_physical_who1013_object_model_10_and_replay(
 
 
 def test_mh201_3_6_43_who13_queries_and_non_linux_mcu_silence() -> None:
-    """Verify fast WHO 13 replies (`0`, `15`, `16`) and non-response on Linux dimensions (`23`, `24`)."""
+    """Verify fast WHO 13 replies (`0`, `15`, `16`) and fast NACK (no `rx`) on Linux dims (`23`, `24`)."""
     frames = _load_trace()["frames"]
+    queue_pacing = MH201Profile().command_queue_delay
+    assert queue_pacing == 0.1
 
     # Frame 0..1: clock read (*#13**0## -> *#13**0*09*26*26*## with empty TZ field)
     assert frames[0]["direction"] == "tx" and frames[0]["raw"] == "*#13**0##"
@@ -227,19 +239,29 @@ def test_mh201_3_6_43_who13_queries_and_non_linux_mcu_silence() -> None:
     clock_msg = OWNEvent.parse(frames[1]["raw"])
     assert isinstance(clock_msg, OWNGatewayEvent)
 
-    # Frame 2..3: device model (*#13**15## -> *#13**15*200## in ~18.6 ms)
+    # Frame 2..3: device model (*#13**15## -> *#13**15*200## in ~18.6 ms after 100 ms queue pacing)
+    assert frames[2]["timestamp"] - frames[1]["timestamp"] == pytest.approx(queue_pacing, abs=0.005)
     assert frames[2]["direction"] == "tx" and frames[2]["raw"] == "*#13**15##"
     assert frames[3]["direction"] == "rx" and frames[3]["raw"] == "*#13**15*200##"
     assert frames[3]["timestamp"] - frames[2]["timestamp"] == pytest.approx(0.0186, abs=0.005)
 
-    # Frame 4..5: firmware version (*#13**16## -> *#13**16*3*6*43## in ~18.8 ms)
+    # Frame 4..5: firmware version (*#13**16## -> *#13**16*3*6*43## in ~18.8 ms after 100 ms queue pacing)
+    assert frames[4]["timestamp"] - frames[3]["timestamp"] == pytest.approx(queue_pacing, abs=0.005)
     assert frames[4]["direction"] == "tx" and frames[4]["raw"] == "*#13**16##"
     assert frames[5]["direction"] == "rx" and frames[5]["raw"] == "*#13**16*3*6*43##"
     assert frames[5]["timestamp"] - frames[4]["timestamp"] == pytest.approx(0.0188, abs=0.005)
 
-    # Frame 6..7: Linux kernel (23) and distro (24) queries get zero rx replies in the entire sweep
+    # Frame 6..7: Linux kernel (23) and distro (24) queries emit zero rx data frames, and advance in
+    # ~109.8-109.9 ms (~9.9 ms command-session *#*0## NACK + 100 ms queue_pacing) rather than 10 s timeout
+    assert frames[6]["timestamp"] - frames[5]["timestamp"] == pytest.approx(queue_pacing, abs=0.005)
     assert frames[6]["direction"] == "tx" and frames[6]["raw"] == "*#13**23##"
     assert frames[7]["direction"] == "tx" and frames[7]["raw"] == "*#13**24##"
+    assert frames[7]["timestamp"] - frames[6]["timestamp"] == pytest.approx(
+        queue_pacing + 0.0099, abs=0.005
+    )
+    assert frames[8]["timestamp"] - frames[7]["timestamp"] == pytest.approx(
+        queue_pacing + 0.0098, abs=0.005
+    )
     rx_dims_who13 = {
         f["dimension"]
         for f in frames
@@ -285,16 +307,22 @@ def test_mh201_3_6_43_command_timeout_and_single_slot_lockout_timings(
         COMMAND_TIMEOUT + BUS_QUIET_PERIOD, abs=0.05
     )
 
-    # *#4*0## waits ~13.74 s for the single TCP command slot to free (backoff 1+2+4+6 = 13.0 s),
-    # then hits COMMAND_TIMEOUT (10.0 s) + BUS_QUIET_PERIOD (0.75 s) = 24.494 s
-    backoff_sleep_total = sum(max(1, i * 2) for i in range(MAX_CONNECT_ATTEMPTS - 1))
-    assert backoff_sleep_total == 13
-    assert frames[17]["direction"] == "tx" and frames[17]["raw"] == "*#16*0*5##"
-    assert frames[17]["timestamp"] - frames[16]["timestamp"] == pytest.approx(
-        backoff_sleep_total + 0.74 + COMMAND_TIMEOUT + BUS_QUIET_PERIOD, abs=0.05
+    # Every subsequent frame (frames[16..21]) enters OWNSession.connect() for MAX_CONNECT_ATTEMPTS = 5
+    # against the MH201's locked single command slot:
+    # - 4 inter-attempt backoff sleeps: sum(max(1, i * 2) for i in range(4)) = 1 + 2 + 4 + 6 = 13.0 s
+    # - 5 TCP *99*0## handshake round-trips against the MH201 MCU (~136-149 ms each = 0.682-0.744 s)
+    backoff_sleep_total = float(
+        sum(max(1, i * 2) for i in range(MAX_CONNECT_ATTEMPTS - 1))
     )
+    assert backoff_sleep_total == 13.0
 
-    # Current MH201 handler omits *#4*0## from unforced discovery/sweeps (#794)
+    # frames[16..17] (*#4*0## -> *#16*0*5##, 24.494 s): 5th connect() attempt succeeds once *#2*0##'s
+    # server socket expires, then *#4*0## hits COMMAND_TIMEOUT (10.0 s) + BUS_QUIET_PERIOD (0.75 s)
+    assert frames[17]["direction"] == "tx" and frames[17]["raw"] == "*#16*0*5##"
+    dt_climate = frames[17]["timestamp"] - frames[16]["timestamp"]
+    assert dt_climate == pytest.approx(24.494, abs=0.01)
+
+    # Current MH201 handler omits *#4*0## from both startup discovery and unforced sweeps (#794)
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
@@ -306,16 +334,21 @@ def test_mh201_3_6_43_command_timeout_and_single_slot_lockout_timings(
             CONF_FIRMWARE: "3.6.43",
         },
     )
+    entry.add_to_hass(hass)
     handler = MyHOMEGatewayHandler(hass, entry)
     assert handler.general_zone_request_refused is True
     assert "*#4*0##" not in handler._discovery_frames()
+    assert _handler_refuses_frame(handler, "*#4*0##") is True
 
-    # Frames 17..21: connect() exhausts MAX_CONNECT_ATTEMPTS = 5 (~13.63-13.73 s) on the locked slot
+    # frames[17..18] (*#16*0*5## -> *#18*51*51##, 14.477 s): connect() exhausts all 5 attempts,
+    # cancels `written`, and `send_paced` waits BUS_QUIET_PERIOD (0.75 s)
     assert frames[18]["direction"] == "tx" and frames[18]["raw"] == "*#18*51*51##"
-    assert frames[18]["timestamp"] - frames[17]["timestamp"] == pytest.approx(
-        backoff_sleep_total + 0.73 + BUS_QUIET_PERIOD, abs=0.05
-    )
+    dt_sound = frames[18]["timestamp"] - frames[17]["timestamp"]
+    assert dt_sound == pytest.approx(14.477, abs=0.01)
 
+    # frames[18..21] (*#18*51..52*51/1200##, 13.682 / 13.701 / 13.685 s): all 36 WHO=18 queries are
+    # already queued in FrameScheduler by `handle_sweep_bus`, and failed `connect()` hits `continue`
+    # in `sending_loop` (skipping `command_queue_delay`), leaving purely backoff_sleep_total + 5 TCP RTTs
     energy_queries = [f["raw"] for f in frames[18:22]]
     assert energy_queries == [
         "*#18*51*51##",
@@ -323,10 +356,20 @@ def test_mh201_3_6_43_command_timeout_and_single_slot_lockout_timings(
         "*#18*52*51##",
         "*#18*52*1200##",
     ]
-    for prev_f, next_f in zip(frames[18:21], frames[19:22], strict=True):
-        assert next_f["timestamp"] - prev_f["timestamp"] == pytest.approx(
-            backoff_sleep_total + 0.64 + 0.05, abs=0.05
-        )
+    dt_energy = [
+        next_f["timestamp"] - prev_f["timestamp"]
+        for prev_f, next_f in zip(frames[18:21], frames[19:22], strict=True)
+    ]
+    assert dt_energy == pytest.approx([13.682, 13.701, 13.685], abs=0.01)
+
+    # Across all five 5-attempt cycles, residual TCP handshake overhead is uniformly 0.68-0.75 s
+    five_attempt_handshake_overheads = [
+        dt_climate - (backoff_sleep_total + COMMAND_TIMEOUT + BUS_QUIET_PERIOD),
+        dt_sound - (backoff_sleep_total + BUS_QUIET_PERIOD),
+        *(dt - backoff_sleep_total for dt in dt_energy),
+    ]
+    for overhead in five_attempt_handshake_overheads:
+        assert 0.68 <= overhead <= 0.75
 
 
 async def test_mh201_3_6_43_sweep_replay_discovers_five_lights_and_no_phantom_entities(
@@ -387,13 +430,24 @@ async def test_mh201_3_6_43_sweep_replay_discovers_five_lights_and_no_phantom_en
     for reg_entry in entries:
         by_domain.setdefault(reg_entry.domain, []).append(reg_entry)
 
-    assert len(by_domain.get("light", [])) == 5
-    for light_entry in by_domain["light"]:
+    light_entries = by_domain.get("light", [])
+    assert len(light_entries) == 5
+    discovered_light_wheres = {
+        reg_entry.unique_id.rsplit("-", 1)[-1] for reg_entry in light_entries
+    }
+    assert discovered_light_wheres == {"31", "32", "71", "72", "73"}
+    for light_entry in light_entries:
         state = hass.states.get(light_entry.entity_id)
         assert state is not None
         assert state.state == STATE_OFF
 
-    for forbidden_domain in ("cover", "climate", "media_player", "alarm_control_panel"):
+    for forbidden_domain in (
+        "cover",
+        "climate",
+        "media_player",
+        "alarm_control_panel",
+        "sensor",
+    ):
         assert by_domain.get(forbidden_domain, []) == []
 
     assert await hass.config_entries.async_unload(entry.entry_id)

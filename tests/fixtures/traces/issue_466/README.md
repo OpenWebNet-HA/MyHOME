@@ -724,16 +724,16 @@ Verbatim bus sweep trace contributed by **@emil-d** on [#466 (comment 6436427163
 - **WHO 13 Device Type Code**: `200` (`*#13**15*200##`)
 - **WHO 1013 Object Model**: `10` (`N_CONF=15`, `BRAND=0`, `LINE=5` recorded in `gateway.identification` from startup `*#1013**1*10*15*0*5##`)
 - **Reported Plant Topology**:
-  - `IN` bus: MH201 (`3.6.43`), lighting actuators (`31`, `32`, `71`, `72`, `73`), `F425` scenario memory module (no covers, climate, alarm, or energy meters on the automation bus).
+  - `IN` bus (powered by `E46ADCN`): MH201 (`3.6.43`), lighting/dimmer actuators (`31`, `32`, `71`, `72`, `73`, including `F414` dimmer), `F425` scenario memory module (no covers, climate, alarm, or energy meters on the automation bus).
   - Bus Coupling: `F422` SCS/SCS interface in galvanic separation mode (`MOD` empty, `I1..I3` empty, `I4 = 2`).
-  - `OUT` bus (powered separately by `346000`): `F441M` multi-channel audio matrix, `F500 COAX` radio tuner, and physical sound controls/amplifiers.
+  - `OUT` bus (powered separately by `346000`): `F441M` multi-channel audio matrix (`S1` = `F500 COAX` radio tuner, `S2`/`S3` = jack nodes, outputs `1, 3, 4, 5, 6`), and physical sound controls/amplifiers.
 - **Connection**: TCP OpenWebNet (Port 20000)
 
 ## Contributed Files
 
 | File | Type | Description |
 |---|---|---|
-| `myhome_sweep_MH201_all_2026-10-27T07-28-09.json` | Bus Card Export (22 frames: 13 tx / 9 rx, buffer not truncated) | Complete `myhome.sweep_bus` capture on physical `MH201` firmware `3.6.43`, carrying the first committed physical `WHO 1013` `OBJECT_MODEL = 10` (`15*0*5`) identification metadata alongside `WHO 1` lighting discovery and exact on-wire timing of silent command-session timeouts (`*#2*0##`, `*#4*0##`) and single-slot TCP reconnect lockouts. |
+| `myhome_sweep_MH201_all_2026-10-27T07-28-09.json` | Bus Card Export (22 frames: 13 tx / 9 rx, buffer not truncated, `SHA-256: 54717d7ef7b207d04a475d9c379d1b043f8e50a533cbfec400e248c315f5e2bb`) | Verbatim `<myhome-bus-card>` `myhome.sweep_bus` export on physical `MH201` firmware `3.6.43`, carrying the first committed physical `WHO 1013` `OBJECT_MODEL = 10` (`15*0*5`) identification metadata alongside `WHO 1` lighting discovery and exact on-wire timing of silent command-session timeouts (`*#2*0##`, `*#4*0##`) and single-slot TCP reconnect lockouts. |
 
 ## Sequence of Actions Recorded & Subsystems Verified
 
@@ -743,7 +743,7 @@ Verbatim bus sweep trace contributed by **@emil-d** on [#466 (comment 6436427163
      - `*#13**0##` -> `*#13**0*09*26*26*##` in `253.9 ms` (local clock with empty timezone field).
      - `*#13**15##` -> `*#13**15*200##` in `18.6 ms` (shared modern device code `200`).
      - `*#13**16##` -> `*#13**16*3*6*43##` in `18.8 ms` (first committed capture of `MH201` firmware `3.6.43`).
-     - `*#13**23##` and `*#13**24##` -> zero `rx` replies (Linux kernel and distribution dimensions are absent on the MH201 embedded MCU).
+     - `*#13**23##` and `*#13**24##` -> zero `rx` data frames on the event session, answered on the command session by a fast `*#*0##` `NACK` in `~9.8–9.9 ms` + `100 ms` `MH201Profile.command_queue_delay` (`+109.9 ms` and `+109.8 ms` to the next `tx`, confirming unsupported Linux kernel/distribution dimensions are immediately NACKed rather than silently hung).
 
 2. **Lighting General Scan (WHO 1, `frames[8..14]`)**:
    - `[tx] *#1*0##` (`07:26:31.757Z`) is echoed on the event session in `66.9 ms` (`[rx] *#1*0##`) and answered by 5 `OFF` lighting endpoints within `283.8 ms`: `*1*0*31##`, `*1*0*71##`, `*1*0*72##`, `*1*0*73##`, and `*1*0*32##`, followed by `BUS_QUIET_PERIOD = 0.750 s` (`+0.751 s` to `frames[15]`).
@@ -751,5 +751,5 @@ Verbatim bus sweep trace contributed by **@emil-d** on [#466 (comment 6436427163
 3. **Silent Command-Session Hangs & Single-Slot TCP Lockout (`frames[15..21]`)**:
    - **`frames[15]` (`07:26:32.792Z`, `[tx] *#2*0##`)**: On a plant with no WHO 2 cover actuators, the MH201 emits neither an event-session echo nor a command-session `ACK`/`NACK`. `OWNCommandSession.send_command` hits `COMMAND_TIMEOUT = 10.0 s` and closes the client socket, followed by `BUS_QUIET_PERIOD = 0.750 s` (`+10.753 s` to `frames[16]`).
    - **`frames[16]` (`07:26:43.545Z`, `[tx] *#4*0##`)**: Sent on `2.0.0b16` (prior to #794 adding `MH201` to `GENERAL_ZONE_REQUEST_REFUSED`); `CommandWorkerPool.sending_loop` logs `tx` to `bus_monitor` before `connect()`. Because the MH201's single TCP command slot remains occupied server-side by the unacknowledged `*#2*0##` session, `connect()` backs off (`1 + 2 + 4 + 6 = 13.0 s`, `~13.74 s`), opens the slot once freed, writes `*#4*0##`, and again receives neither `ACK` nor `NACK` for `COMMAND_TIMEOUT = 10.0 s` + `0.750 s` = **`+24.494 s`** to `frames[17]`.
-   - **`frames[17..21]` (`*#16*0*5##` at `+14.477 s`, then `*#18*51*51##`, `*#18*51*1200##`, `*#18*52*51##`, `*#18*52*1200##` at `+13.682 s`, `+13.701 s`, `+13.685 s`)**: Each `tx` is recorded in `bus_monitor` prior to `connect()`, which exhausts all `MAX_CONNECT_ATTEMPTS = 5` (`1 + 2 + 4 + 6 = 13.0 s` sleep + 5 refused handshakes ≈ `13.63–13.73 s`, plus `0.750 s` `send_paced` quiet wait on `*#16*0*5##` or `0.050 s` `_send_query` sleep on the energy queries) and aborts while the server-side command slot remains held.
+   - **`frames[17..21]` (`*#16*0*5##` at `+14.477 s`, then `*#18*51*51##`, `*#18*51*1200##`, `*#18*52*51##`, `*#18*52*1200##` at `+13.682 s`, `+13.701 s`, `+13.685 s`)**: Each `tx` is recorded in `bus_monitor` prior to `connect()`, which exhausts all `MAX_CONNECT_ATTEMPTS = 5` (`1 + 2 + 4 + 6 = 13.0 s` sleep + 5 refused TCP `*99*0##` handshakes at `~136–145 ms` each = `13.682–13.727 s`). On `*#16*0*5##`, `send_paced` then waits `BUS_QUIET_PERIOD = 0.750 s` (`13.727 + 0.750 = +14.477 s`) before `handle_sweep_bus` enqueues all `36` `WHO 18` point queries into `FrameScheduler` (`capture.started_at = 07:27:23.987Z` when the service call returns); on `frames[18..21]`, the worker hits `continue` on failed `connect()` (bypassing `command_queue_delay`) and immediately pops the next buffered `WHO 18` query with zero extra sleep until export at `07:28:09.554Z`.
    - **Independent Idle-Session Sound Probe**: Contributor separately sent `*#16*0*5##` on a fresh command session (`*99*0##`) when the command slot was free: the MH201 returned neither `ACK` nor `NACK` on the command session, echoed `*#16*0*5##` once on the event session (`*99*1##`) with zero amplifier/matrix replies, and never forwarded `WHO 16` bus traffic when physical sound controls were operated across the `F422` (`I4 = 2`) galvanic interface.
