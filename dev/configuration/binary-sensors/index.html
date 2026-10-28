@@ -1076,6 +1076,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#inverting-normally-closed-contacts-in-the-ui-invert-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🔁 Inverting Normally-Closed Contacts in the UI ("Invert state")
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#legacy-yaml-note" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2078,6 +2089,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#inverting-normally-closed-contacts-in-the-ui-invert-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🔁 Inverting Normally-Closed Contacts in the UI ("Invert state")
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#legacy-yaml-note" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2147,6 +2169,19 @@
 <li><strong>Lock / Tamper</strong>: Anti-tampering switches on enclosures.</li>
 <li>Click <strong>Update</strong>. Home Assistant immediately applies appropriate dynamic icons (e.g. open/closed doors, motion waves) and integrates the sensor into Area security summaries.</li>
 </ol>
+<hr />
+<h2 id="inverting-normally-closed-contacts-in-the-ui-invert-state">🔁 Inverting Normally-Closed Contacts in the UI ("Invert state")<a class="headerlink" href="#inverting-normally-closed-contacts-in-the-ui-invert-state" title="Permanent link">&para;</a></h2>
+<p>Third-party wired motion sensors, alarm reed switches, and twilight switches connected to a dry contact interface (<code>F428</code> / <code>3477</code> / <code>3480</code> / <code>F482</code>, <strong>WHO = 25</strong>) or auxiliary channel (<strong>WHO = 9</strong>) frequently use <strong>normally-closed (NC)</strong> contacts: the loop stays closed (<code>WHAT = 31</code>, <code>on</code>) at rest and opens (<code>WHAT = 32</code>, <code>off</code>) on detection or tamper.</p>
+<p>Every WHO = 25 dry contact and WHO = 9 auxiliary device exposes a per-device <strong>Invert state</strong> toggle under <strong>Configuration</strong> (<code>EntityCategory.CONFIG</code>), with no <code>myhome.yaml</code> needed:</p>
+<ol>
+<li>Navigate to <strong>Settings → Devices &amp; Services → MyHOME → Devices</strong> and open your dry contact or auxiliary device.</li>
+<li>Under <strong>Configuration</strong>, toggle <strong>Invert state</strong> on.</li>
+<li>The binary sensor flips its live state immediately (without reloading the gateway or polling the SCS bus) and persists the setting in Home Assistant's config entry options across restarts.</li>
+</ol>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>If an existing <code>myhome.yaml</code> entry specifies <code>inverted: true</code>, <strong>Invert state</strong> starts enabled automatically, and toggling it off or on from the UI takes precedence over <code>myhome.yaml</code>.</p>
+</div>
 <hr />
 <h2 id="legacy-yaml-note">🔄 Legacy YAML Note<a class="headerlink" href="#legacy-yaml-note" title="Permanent link">&para;</a></h2>
 <div class="admonition note">

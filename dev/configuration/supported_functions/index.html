@@ -2664,12 +2664,12 @@
 <tr>
 <td style="text-align: left;">Dry contacts (CEN+, WHO 25)</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">F482 / 3477; device class from YAML.</td>
+<td style="text-align: left;">F428 / 3477 / 3480 / F482; device class selectable in UI (<strong>Show As</strong>) or YAML.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Auxiliary channels (WHO 9)</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">AUX 1–9.</td>
+<td style="text-align: left;">AUX 0–9.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Motion / presence (WHO 1)</td>
@@ -2679,7 +2679,7 @@
 <tr>
 <td style="text-align: left;">Inverted contacts</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;"><code>inverted: true</code>.</td>
+<td style="text-align: left;">Per-device <strong>Invert state</strong> configuration switch (<code>EntityCategory.CONFIG</code>) on WHO 25 and WHO 9 devices, or <code>inverted: true</code> in <code>myhome.yaml</code>.</td>
 </tr>
 </tbody>
 </table>

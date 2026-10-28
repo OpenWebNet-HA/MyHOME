@@ -2372,18 +2372,11 @@
 <li><strong>Result</strong>: The interface transmits OpenWebNet dry contact frames where <code>WHAT</code> is <code>31</code> for contact closed and <code>32</code> for contact open:</li>
 <li>Contact closed (dusk): <code>*25*31#1*WHERE##</code></li>
 <li>Contact opened (dawn): <code>*25*32#1*WHERE##</code></li>
-<li>In Home Assistant, the contact is discovered automatically the first time it changes state (see <a href="../../configuration/binary-sensors/">Binary Sensors</a>). The contact closes at dusk, so the sensor reads <code>on</code> when it is dark. If you want Home Assistant's <strong>Light</strong> device class (<code>on</code> = light detected), declare it in <code>myhome.yaml</code> under your gateway with <code>inverted: true</code>, using its configured address (for example <code>15</code>):
-   <div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">00:03:50:81:22:33</span><span class="p">:</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">binary_sensor</span><span class="p">:</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">twilight_sensor</span><span class="p">:</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">      </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="s">"25"</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"15"</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"Twilight</span><span class="nv"> </span><span class="s">Sensor"</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">      </span><span class="nt">device_class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">light</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">      </span><span class="nt">inverted</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span></code></pre></div></li>
+<li>In Home Assistant, the contact is discovered automatically the first time it changes state (see <a href="../../configuration/binary-sensors/">Binary Sensors</a>). The contact closes at dusk, so the sensor reads <code>on</code> when it is dark. If you want Home Assistant's <strong>Light</strong> device class (<code>on</code> = light detected) without editing YAML:</li>
+<li>Open the dry contact entity settings and set <strong>Show as</strong> to <strong>Light</strong>.</li>
+<li>On the device page under <strong>Configuration</strong>, enable the <strong>Invert state</strong> toggle (<code>inverted: true</code> in <code>myhome.yaml</code> also remains supported).</li>
 <li>You now have full separation of concerns:</li>
-<li><code>binary_sensor.twilight_sensor</code> accurately mirrors daylight/darkness in real time.</li>
+<li>The dry contact binary sensor accurately mirrors daylight/darkness in real time.</li>
 <li><code>light.light_98</code> remains a pure actuator controlled exclusively by Home Assistant schedules, presence logic, and automations.</li>
 </ol>
 
