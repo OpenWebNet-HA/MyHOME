@@ -591,6 +591,9 @@
     },
     "thermo_switch_no_timer": {
       "message": "{name} is een WHO=4 thermo-actuator en ondersteunt geen WHO=1 hardware-bustimers; gebruik in plaats daarvan een vertraging in een Home Assistant-automatisering."
+    },
+    "invert_switch_no_timer": {
+      "message": "{name} is een configuratieschakelaar voor een binaire sensor en ondersteunt geen WHO=1 hardware-bustimers."
     }
   },
   "entity": {
@@ -614,6 +617,11 @@
       },
       "energy_month": {
         "name": "Energie (huidige maand)"
+      }
+    },
+    "switch": {
+      "invert_state": {
+        "name": "Status omkeren"
       }
     }
   },

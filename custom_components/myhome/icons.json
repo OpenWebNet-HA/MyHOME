@@ -1,4 +1,11 @@
 {
+  "entity": {
+    "switch": {
+      "invert_state": {
+        "default": "mdi:swap-horizontal"
+      }
+    }
+  },
   "services": {
     "sync_time": {
       "service": "mdi:clock-sync"

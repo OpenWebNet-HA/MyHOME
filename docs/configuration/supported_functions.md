@@ -90,10 +90,10 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 
 | Function | Status | Notes |
 | :--- | :---: | :--- |
-| Dry contacts (CEN+, WHO 25) | ✅ | F482 / 3477; device class from YAML. |
-| Auxiliary channels (WHO 9) | ✅ | AUX 1–9. |
+| Dry contacts (CEN+, WHO 25) | ✅ | F428 / 3477 / 3480 / F482; device class selectable in UI (**Show As**) or YAML. |
+| Auxiliary channels (WHO 9) | ✅ | AUX 0–9. |
 | Motion / presence (WHO 1) | ✅ | Motion frames of lighting sensors; a timeout restores `off`. |
-| Inverted contacts | ✅ | `inverted: true`. |
+| Inverted contacts | ✅ | Per-device **Invert state** configuration switch (`EntityCategory.CONFIG`) on WHO 25 and WHO 9 devices, or `inverted: true` in `myhome.yaml`. |
 
 ### `sensor` (WHO 1 / 4 / 18)
 
