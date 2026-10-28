@@ -753,3 +753,41 @@ Verbatim bus sweep trace contributed by **@emil-d** on [#466 (comment 6436427163
    - **`frames[16]` (`07:26:43.545Z`, `[tx] *#4*0##`)**: Sent on `2.0.0b16` (prior to #794 adding `MH201` to `GENERAL_ZONE_REQUEST_REFUSED`); `CommandWorkerPool.sending_loop` logs `tx` to `bus_monitor` before `connect()`. Because the MH201's single TCP command slot remains occupied server-side by the unacknowledged `*#2*0##` session, `connect()` backs off (`1 + 2 + 4 + 6 = 13.0 s`, `~13.74 s`), opens the slot once freed, writes `*#4*0##`, and again receives neither `ACK` nor `NACK` for `COMMAND_TIMEOUT = 10.0 s` + `0.750 s` = **`+24.494 s`** to `frames[17]`.
    - **`frames[17..21]` (`*#16*0*5##` at `+14.477 s`, then `*#18*51*51##`, `*#18*51*1200##`, `*#18*52*51##`, `*#18*52*1200##` at `+13.682 s`, `+13.701 s`, `+13.685 s`)**: Each `tx` is recorded in `bus_monitor` prior to `connect()`, which exhausts all `MAX_CONNECT_ATTEMPTS = 5` (`1 + 2 + 4 + 6 = 13.0 s` sleep + 5 refused TCP `*99*0##` handshakes at `~136–145 ms` each = `13.682–13.727 s`). On `*#16*0*5##`, `send_paced` then waits `BUS_QUIET_PERIOD = 0.750 s` (`13.727 + 0.750 = +14.477 s`) before `handle_sweep_bus` enqueues all `36` `WHO 18` point queries into `FrameScheduler` (`capture.started_at = 07:27:23.987Z` when the service call returns); on `frames[18..21]`, the worker hits `continue` on failed `connect()` (bypassing `command_queue_delay`) and immediately pops the next buffered `WHO 18` query with zero extra sleep until export at `07:28:09.554Z`.
    - **Independent Idle-Session Sound Probe**: Contributor separately sent `*#16*0*5##` on a fresh command session (`*99*0##`) when the command slot was free: the MH201 returned neither `ACK` nor `NACK` on the command session, echoed `*#16*0*5##` once on the event session (`*99*1##`) with zero amplifier/matrix replies, and never forwarded `WHO 16` bus traffic when physical sound controls were operated across the `F422` (`I4 = 2`) galvanic interface.
+
+---
+
+# #466 BTicino MH201 (FW 3.6.43) + F414 Classic Dimmer Traces (27-Light Sweep, Wall Pushbutton Step Dimming & HA Control)
+
+Follow-up verbatim `<myhome-bus-card>` captures contributed by **@emil-d** on [#466 (comment 6453327840)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6453327840) (`Home Assistant 2026.10.4`, `MyHOME 2.0.0b16`, `OWNd 2.0.0b11`, physical **BTicino MH201** firmware `3.6.43`, testing a physical **BTicino F414** 10-level modular dimmer at `WHERE = 42`).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino MH201 (`3.6.43`, `WHO 13` code `200`, `WHO 1013` `OBJECT_MODEL = 10` with `N_CONF = 15`, `BRAND = 0`, `LINE = 5`)
+- **Actuator Tested**: BTicino F414 (Classic 10-level incandescent/ferromagnetic modular dimmer, `60–1000 VA`, `WHERE = 42`), alongside relay actuator `WHERE = 32` and 25 additional lighting endpoints on the plant bus
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_sweep_MH201_who1-rx_2026-10-27T20-35-11.json` | Bus Card Sweep Export (85 `WHO 1` `rx` frames exported with `who="1", direction="rx"` out of 136 buffered frames = `45 tx / 91 rx`, `truncated: false`, `SHA-256: e82d019d9420a9bec4c277c5e6af06497b8b03dbd6d1ac240b1acc1074e6325b`) | Full 27-endpoint `WHO 1` plant sweep (dual 28-frame A/PL status bursts on `*#1*0##` and `*#2*0##`, completing all `45 tx` sweep queries with zero command-slot lockout), followed by physical wall-button switching on relay `32` and wall-button switching + continuous step dimming down/up (`1000#31` / `1000#30`) on `F414` dimmer `42`. |
+| `myhome_trace_MH201_all_2026-10-27T20-38-12.json` | Bus Card Trace Export (6 frames: `3 tx / 3 rx`, unfiltered, `truncated: false`, `SHA-256: e6dd65e65f943aaff4d5693da7b317c6426775fcde6a889b2ffdf756b419d983`) | Unfiltered Home Assistant `light.turn_on` / `light.turn_off` round-trip on `F414` dimmer `42`, capturing coarse status reply `*1*7*42##`, automatic Dimension 1 brightness poll `*#1*42*1##` -> `*#1*42*1*148*5##` (`48 %` at speed `5`), and discrete `*1*0*42##` turn-off. |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Full 27-Endpoint `WHO 1` Bus Sweep & Non-Blocking `*#2*0##` Completion (`myhome_sweep_MH201_who1-rx_...`, `frames[0..56]`)**:
+   - **`*#1*0##` Burst (`frames[0..28]`, `20:34:08.912Z -> 20:34:11.009Z`, `2.097 s`)**: Event echo `*#1*0##` followed by **28 `WHO 1` status replies** across **27 distinct `WHERE` addresses** (`13, 26..29, 31, 32, 35..39, 42, 45..48, 51..53, 55..58, 71..73`, with `13`, `37`, `55` `ON`, `24` `OFF` including `42`, and `38` emitting `*1*0*38##` twice).
+   - **`*#2*0##` Burst (`frames[29..56]`, `20:34:11.859Z -> 20:34:13.909Z`, `2.050 s`)**: Starting `+0.850 s` after `frames[28]` (`BUS_QUIET_PERIOD = 0.750 s` + `MH201Profile.command_queue_delay = 0.100 s`), `[tx] *#2*0##` elicits the **same 28-frame `WHO 1` A/PL status burst** (differing only in adjacent `45`/`56` bus arbitration order). Because the full plant bus answered `*#2*0##` (unlike the morning capture where only 5 endpoints were online), the MH201 command session did not hit `COMMAND_TIMEOUT = 10.0 s`, `handle_sweep_bus` returned at `capture.started_at = 20:34:17.995Z`, and all `45 tx` sweep queries (`5 WHO 13 + 4 general + 36 WHO 18`) drained cleanly (`queue_depth: 0`).
+
+2. **Physical Wall Pushbutton Command Translation (`WHAT 1000`) & `F414` Hold-to-Dim Cadence (`frames[57..84]`)**:
+   - **Relay `32` (`frames[57..60]`)**: Wall button short press ON emits `*1*1000#1*32##` -> `*1*1*32##` (`+34.9 ms`); short press OFF emits `*1*1000#0*32##` -> `*1*0*32##` (`+47.4 ms`).
+   - **Classic `F414` Dimmer `42` (`frames[61..84]`, 12 exact `(1000#X, status)` pairs)**:
+     - **Short Press ON / OFF & Level Memory**: `*1*1000#1*42##` never produces `*1*1*42##`; the `F414` answers in `34.7–35.2 ms` with its stored coarse `WHAT` level (`*1*7*42##` at `frames[62]` & `frames[66]`, and `*1*4*42##` at `frames[76]` after dimming down and cycling OFF/ON — confirming hardware level memory). Short press OFF (`*1*1000#0*42##`) answers `*1*0*42##` in `34.7–35.2 ms`.
+     - **Hold-to-Dim DOWN (`frames[67..72]`)**: Holding the wall button emits `*1*1000#31*42##` at a steady **`519.5–520.5 ms` repeat period** (`+0.4975 s` / `+0.4979 s` after the `F414` reply), stepping coarse levels `*1*6*42##` (`+22.0 ms`) -> `*1*5*42##` (`+22.6 ms`) -> `*1*4*42##` (`+21.8 ms`).
+     - **Hold-to-Dim UP (`frames[77..82]`)**: Holding the wall button emits `*1*1000#30*42##` at the identical **`519.9–520.0 ms` repeat period**, stepping `*1*5*42##` (`+21.9 ms`) -> `*1*6*42##` (`+22.0 ms`) -> `*1*7*42##` (`+22.2 ms`), with zero spontaneous Dimension 1 frames during physical button operation.
+
+3. **Home Assistant Turn-On, Dimension 1 Brightness Poll & Turn-Off (`myhome_trace_MH201_all_...`, `frames[0..5]`)**:
+   - `[0] tx *1*1*42##` (`20:38:02.525Z`) -> `[1] rx *1*7*42##` (`+326.5 ms`): `F414` turns ON to stored coarse level `WHAT 7`.
+   - `[2] tx *#1*42*1##` (`+63.6 ms` after `rx *1*7*42##`, queued by `MyHOMELight.async_turn_on()` -> `async_update()`) -> `[3] rx *#1*42*1*148*5##` (`+128.5 ms`): `F414` answers Dimension 1 on `MH201` (`3.6.43`) with **`LEVEL100 = 148` (`48 %` brightness)** at active transition speed `5` (corroborating `MH200` + `F414` where `150` (`50 %`) mapped to coarse `WHAT 7`).
+   - `[4] tx *1*0*42##` (`20:38:06.762Z`) -> `[5] rx *1*0*42##` (`+79.6 ms`): clean discrete `WHAT 0` turn-off.
+
