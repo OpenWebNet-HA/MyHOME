@@ -798,6 +798,8 @@ def test_auto_dimmer_promotion_and_flash_support(hass):
     assert light.color_mode == ColorMode.BRIGHTNESS
     assert light.supported_features & LightEntityFeature.TRANSITION
     assert not (light.supported_features & LightEntityFeature.FLASH)
+    assert light._attr_brightness_pct == 20
+    assert light.brightness == percent_to_eight_bits(20)
 
 
 async def test_discovery_callback_message_filtering(hass):
@@ -2211,11 +2213,11 @@ def test_what_19_recovers_when_load_connected(hass):
     assert light.is_on is False
     assert light.extra_state_attributes.get("no_load") is True
 
-    # Bus emits level 4 (40%) when load is attached and light is turned on
+    # Bus emits coarse preset WHAT=4 (20% on BTicino dimmerLevelTo100 curve) when load is attached and light is turned on
     light.handle_event(OWNEvent.parse("*1*4*74##"))
     assert light.is_on is True
-    assert light._attr_brightness_pct == 40
-    assert light.brightness == percent_to_eight_bits(40)
+    assert light._attr_brightness_pct == 20
+    assert light.brightness == percent_to_eight_bits(20)
     assert "no_load" not in light.extra_state_attributes
     assert "unknown_state" not in light.extra_state_attributes
 
@@ -2392,3 +2394,101 @@ def test_dim_step_does_not_flip_point_to_point_light(hass, step):
     assert light.is_on is True
     light.handle_event(OWNMessage.parse(step))
     assert light.is_on is True
+
+
+@pytest.mark.parametrize(
+    ("what_preset", "expected_pct"),
+    [
+        (2, 1),
+        (3, 10),
+        (4, 20),
+        (5, 30),
+        (6, 40),
+        (7, 50),
+        (8, 60),
+        (9, 75),
+        (10, 100),
+    ],
+)
+def test_coarse_what_2_to_10_maps_to_bticino_dimmer_curve(
+    hass, what_preset, expected_pct
+):
+    """Coarse WHAT 2..10 events map to BTicino's non-linear dimmerLevelTo100 curve (#466)."""
+    gateway = MagicMock()
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+    light = MyHOMELight(
+        hass=hass,
+        name="F414 Dimmer",
+        entity_name="F414 Dimmer",
+        icon=None,
+        icon_on=None,
+        device_id="42",
+        who="1",
+        where="42",
+        interface=None,
+        dimmable=False,
+        manufacturer="BTicino",
+        model="MH201",
+        gateway=gateway,
+    )
+    light.hass = hass
+    light.async_schedule_update_ha_state = MagicMock()
+
+    light.handle_event(OWNMessage.parse(f"*1*{what_preset}*42##"))
+
+    assert light.is_on is True
+    assert light.color_mode == ColorMode.BRIGHTNESS
+    assert light.supported_features & LightEntityFeature.TRANSITION
+    assert not (light.supported_features & LightEntityFeature.FLASH)
+    assert light._attr_brightness_pct == expected_pct
+    assert light.brightness == percent_to_eight_bits(expected_pct)
+    assert light._last_brightness_pct == expected_pct
+
+
+async def test_software_fade_after_wall_dimmer_preset_starts_from_mapped_curve(hass):
+    """Software fade after wall-button coarse dimming uses mapped curve, not preset*10 (#466)."""
+    gateway = MagicMock()
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+    cfg = MagicMock()
+    cfg.options = {CONF_TRANSITION_MODE: TRANSITION_MODE_SOFTWARE}
+    gateway.config_entry = cfg
+
+    light = MyHOMELight(
+        hass=hass,
+        name="F414 Dimmer",
+        entity_name="F414 Dimmer",
+        icon=None,
+        icon_on=None,
+        device_id="42",
+        who="1",
+        where="42",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="MH201",
+        gateway=gateway,
+    )
+    light.hass = hass
+    light.async_schedule_update_ha_state = MagicMock()
+
+    # Wall button steps dimmer down to WHAT=4 (20% on BTicino curve, NOT 40%)
+    light.handle_event(OWNMessage.parse("*1*4*42##"))
+    assert light.is_on is True
+    assert light._attr_brightness_pct == 20
+
+    with patch.object(light._fade_engine, "start_fade") as mock_start_fade:
+        await light.async_turn_on(**{ATTR_BRIGHTNESS_PCT: 10, ATTR_TRANSITION: 2.0})
+        mock_start_fade.assert_called_once_with(20, 10, 2.0)
+
+    # Wall button leaves dimmer at WHAT=7 (50%, NOT 70%) and turns OFF; transition-only turn_on
+    # restores _last_brightness_pct == 50% instead of over-driving to 70%.
+    light.handle_event(OWNMessage.parse("*1*7*42##"))
+    light.handle_event(OWNMessage.parse("*1*0*42##"))
+    assert light.is_on is False
+    assert light._last_brightness_pct == 50
+
+    with patch.object(light._fade_engine, "start_fade") as mock_start_fade:
+        await light.async_turn_on(**{ATTR_TRANSITION: 2.0})
+        mock_start_fade.assert_called_once_with(0, 50, 2.0)

@@ -93,6 +93,20 @@ PARALLEL_UPDATES = 0
 # Legacy mired attribute of stored states (core dropped ATTR_COLOR_TEMP in 2025).
 ATTR_COLOR_TEMP = "color_temp"
 
+# BTicino libqtdevices dimmerLevelTo100 mapping for WHO=1 coarse WHAT 2..10 presets
+# (mirrors OWNd.message.COARSE_PRESET_TO_PERCENT while OWNd==2.0.0b11 is pinned).
+COARSE_PRESET_TO_PERCENT: dict[int, int] = {
+    2: 1,
+    3: 10,
+    4: 20,
+    5: 30,
+    6: 40,
+    7: 50,
+    8: 60,
+    9: 75,
+    10: 100,
+}
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -1285,10 +1299,22 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 self._attr_brightness = percent_to_eight_bits(message.brightness)
                 if message.brightness > 0:
                     self._last_brightness_pct = message.brightness
-        elif has_level and message.brightness is None and isinstance(message.brightness_preset, int) and not is_fading:
-            # WHAT 2..10 is "ON at 20 %..100 %": the preset is the level, not just
-            # a hint that the actuator can dim.
-            self._apply_brightness_state(max(0, min(100, message.brightness_preset * 10)))
+        elif (
+            has_level
+            and message.brightness is None
+            and isinstance(message.brightness_preset, int)
+            and not isinstance(message.brightness_preset, bool)
+            and not is_fading
+        ):
+            # Coarse WHAT 2..10 presets map to BTicino's non-linear dimmerLevelTo100 curve
+            # (2->1%, 3->10%, 4->20%, 5->30%, 6->40%, 7->50%, 8->60%, 9->75%, 10->100%),
+            # corroborated on physical F414 and F418U2 dimmers (#466, #767).
+            preset_pct = getattr(message, "brightness_preset_percent", None)
+            if not isinstance(preset_pct, int) or isinstance(preset_pct, bool):
+                preset_pct = COARSE_PRESET_TO_PERCENT.get(
+                    message.brightness_preset, message.brightness_preset * 10
+                )
+            self._apply_brightness_state(max(0, min(100, preset_pct)))
 
         if self._off_icon is not None and self._on_icon is not None:
             self._attr_icon = self._on_icon if self._attr_is_on else self._off_icon

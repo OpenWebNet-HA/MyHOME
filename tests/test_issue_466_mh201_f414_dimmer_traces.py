@@ -456,14 +456,14 @@ async def test_mh201_f414_live_integration_replay_sweep_wall_dimming_and_ha_cont
     await hass.async_block_till_done()
     assert hass.states.get(light_42_id).state == STATE_OFF  # type: ignore[union-attr]
 
-    await _feed(sweep_frames[62]["raw"])  # *1*7*42##
+    await _feed(sweep_frames[62]["raw"])  # *1*7*42## (50% on BTicino dimmerLevelTo100 curve)
     await hass.async_block_till_done()
     state_42 = hass.states.get(light_42_id)
     assert state_42 is not None and state_42.state == STATE_ON
     assert state_42.attributes["supported_color_modes"] == [ColorMode.BRIGHTNESS]
     assert state_42.attributes[ATTR_SUPPORTED_FEATURES] & LightEntityFeature.TRANSITION
     assert not (state_42.attributes[ATTR_SUPPORTED_FEATURES] & LightEntityFeature.FLASH)
-    assert state_42.attributes[ATTR_BRIGHTNESS] == percent_to_eight_bits(70)
+    assert state_42.attributes[ATTR_BRIGHTNESS] == percent_to_eight_bits(50)
 
     # Feed remaining wall-button dimmer steps (frames[63..84]) and verify coarse step progression
     observed_f414_states: list[tuple[str, int | None]] = []
@@ -477,15 +477,15 @@ async def test_mh201_f414_live_integration_replay_sweep_wall_dimming_and_ha_cont
 
     assert observed_f414_states == [
         (STATE_OFF, None),
-        (STATE_ON, percent_to_eight_bits(70)),
-        (STATE_ON, percent_to_eight_bits(60)),
         (STATE_ON, percent_to_eight_bits(50)),
         (STATE_ON, percent_to_eight_bits(40)),
+        (STATE_ON, percent_to_eight_bits(30)),
+        (STATE_ON, percent_to_eight_bits(20)),
         (STATE_OFF, None),
+        (STATE_ON, percent_to_eight_bits(20)),
+        (STATE_ON, percent_to_eight_bits(30)),
         (STATE_ON, percent_to_eight_bits(40)),
         (STATE_ON, percent_to_eight_bits(50)),
-        (STATE_ON, percent_to_eight_bits(60)),
-        (STATE_ON, percent_to_eight_bits(70)),
         (STATE_OFF, None),
     ]
 
@@ -509,10 +509,10 @@ async def test_mh201_f414_live_integration_replay_sweep_wall_dimming_and_ha_cont
         )
         assert sent_frames == [ha_frames[0]["raw"], ha_frames[2]["raw"]]
 
-        # Feed captured rx [1] (*1*7*42##), then rx [3] (*#1*42*1*148*5## -> 48% brightness = 122)
+        # Feed captured rx [1] (*1*7*42## -> 50% = 128), then rx [3] (*#1*42*1*148*5## -> 48% = 122)
         await _feed(ha_frames[1]["raw"])
         await hass.async_block_till_done()
-        assert hass.states.get(light_42_id).attributes[ATTR_BRIGHTNESS] == percent_to_eight_bits(70)  # type: ignore[union-attr]
+        assert hass.states.get(light_42_id).attributes[ATTR_BRIGHTNESS] == percent_to_eight_bits(50) == 128  # type: ignore[union-attr]
 
         await _feed(ha_frames[3]["raw"])
         await hass.async_block_till_done()
