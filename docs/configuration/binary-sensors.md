@@ -43,6 +43,21 @@ In legacy versions, specifying whether a contact was a door, garage door, or win
 
 ---
 
+## 🔁 Inverting Normally-Closed Contacts in the UI ("Invert state")
+
+Third-party wired motion sensors, alarm reed switches, and twilight switches connected to a dry contact interface (`F428` / `3477` / `3480` / `F482`, **WHO = 25**) or auxiliary channel (**WHO = 9**) frequently use **normally-closed (NC)** contacts: the loop stays closed (`WHAT = 31`, `on`) at rest and opens (`WHAT = 32`, `off`) on detection or tamper.
+
+Every WHO = 25 dry contact and WHO = 9 auxiliary device exposes a per-device **Invert state** toggle under **Configuration** (`EntityCategory.CONFIG`), with no `myhome.yaml` needed:
+
+1. Navigate to **Settings → Devices & Services → MyHOME → Devices** and open your dry contact or auxiliary device.
+2. Under **Configuration**, toggle **Invert state** on.
+3. The binary sensor flips its live state immediately (without reloading the gateway or polling the SCS bus) and persists the setting in Home Assistant's config entry options across restarts.
+
+> [!TIP]
+> If an existing `myhome.yaml` entry specifies `inverted: true`, **Invert state** starts enabled automatically, and toggling it off or on from the UI takes precedence over `myhome.yaml`.
+
+---
+
 ## 🔄 Legacy YAML Note
 
 > [!NOTE]

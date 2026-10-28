@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import typing
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -19,7 +20,10 @@ from homeassistant.const import (
     STATE_ON,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.dispatcher import (
+    async_dispatcher_connect,
+    async_dispatcher_send,
+)
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from OWNd.message import (
@@ -34,14 +38,18 @@ from OWNd.message import (
 )
 
 from .const import (
+    BUS_ROUTING,
     CONF_DEVICE_CLASS,
     CONF_DEVICE_MODEL,
     CONF_ENTITY_NAME,
     CONF_INVERTED,
+    CONF_INVERTED_BINARY_SENSORS,
     CONF_MANUFACTURER,
     CONF_WHERE,
     CONF_WHO,
     LOGGER,
+    SIGNAL_BINARY_SENSOR_INVERTED,
+    SIGNAL_NEW_BINARY_SENSOR,
     normalize_where,
 )
 from .discovery import Address, DeviceContext, PlatformDiscovery, is_motion_end
@@ -154,7 +162,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             where=normalize_where(where) or where,
             name=name,
             entity_name=cfg.get(CONF_ENTITY_NAME),
-            inverted=cfg.get(CONF_INVERTED, False),
+            inverted=resolve_binary_sensor_inverted(config_entry, "25", where, cfg),
             device_class=device_class or BinarySensorDeviceClass.OPENING,
             manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
             model=cfg.get(CONF_DEVICE_MODEL, model),
@@ -185,7 +193,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             where=where,
             name=name,
             entity_name=cfg.get(CONF_ENTITY_NAME),
-            inverted=cfg.get(CONF_INVERTED, False),
+            inverted=resolve_binary_sensor_inverted(config_entry, "9", where, cfg),
             device_class=device_class,
             manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
             model=cfg.get(CONF_DEVICE_MODEL, "Auxiliary Channel"),
@@ -312,6 +320,38 @@ def _first_config(configured: dict[str, Any], *keys: str) -> dict[str, Any]:
     return {}
 
 
+def binary_sensor_canonical_where(who: str, where: str) -> str:
+    """Return canonical WHERE key for binary sensor options without normalizing WHO=9."""
+    raw = str(where).removeprefix(f"{who}-")
+    if str(who) == "9":
+        return raw
+    base, sep, iface = raw.partition(BUS_ROUTING)
+    norm_base = normalize_where(base) or base
+    return f"{norm_base}{BUS_ROUTING}{iface}" if sep else norm_base
+
+
+def binary_sensor_option_key(who: str, where: str) -> str:
+    """Return the ``inverted_binary_sensors`` option key ``"{who}-{canonical_where}"``."""
+    return f"{who}-{binary_sensor_canonical_where(who, where)}"
+
+
+def resolve_binary_sensor_inverted(
+    config_entry: Any,
+    who: str,
+    where: str,
+    cfg: Mapping[str, Any] | None = None,
+) -> bool:
+    """Resolve effective ``inverted`` polarity (UI options override YAML ``inverted``)."""
+    options = getattr(config_entry, "options", None)
+    if isinstance(options, Mapping):
+        stored = options.get(CONF_INVERTED_BINARY_SENSORS)
+        if isinstance(stored, Mapping):
+            opt_key = binary_sensor_option_key(who, where)
+            if opt_key in stored:
+                return bool(stored[opt_key])
+    return bool(cfg.get(CONF_INVERTED, False)) if cfg else False
+
+
 def _strip_class_suffix(candidate: str) -> str:
     for suffix in ALL_DEVICE_CLASS_SUFFIXES:
         if candidate.endswith(suffix):
@@ -319,13 +359,15 @@ def _strip_class_suffix(candidate: str) -> str:
     return candidate
 
 
-def _classify_registry_entry(entry, gateway_mac: str, entry_mac: str) -> tuple[str, str] | None:  # type: ignore
+def classify_binary_sensor_registry_entry(
+    entry: Any, gateway_mac: str, entry_mac: str
+) -> tuple[str, str] | None:
     """``(who, candidate id)`` of a registry entry, from its unique id or device class.
 
     Auxiliary channels first (an aux channel may carry the motion class), then
     dry contacts, then motion sensors.
     """
-    unique_id = entry.unique_id
+    unique_id = str(entry.unique_id or "")
     after_mac = unique_id.replace(f"{gateway_mac}-", "", 1).replace(f"{entry_mac}-", "", 1)
     if after_mac.startswith("9-") or "-9-" in unique_id:
         raw = after_mac.replace("9-", "", 1) if after_mac.startswith("9-") else after_mac
@@ -349,6 +391,9 @@ def _classify_registry_entry(entry, gateway_mac: str, entry_mac: str) -> tuple[s
         parts = where.split("-", 1)
         return "1", parts[-1] if len(parts) > 1 else where
     return None
+
+
+_classify_registry_entry = classify_binary_sensor_registry_entry
 
 
 def _primary(where: str) -> str:
@@ -391,9 +436,89 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
         del runtime.platforms[PLATFORM][_binary_sensor]
 
 
-class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
-    _name_from_device_class = True
+class _MyHOMEInvertibleBinarySensor(MyHOMEEntity, BinarySensorEntity):
+    """Shared base for WHO=25 dry contacts and WHO=9 auxiliary binary sensors."""
 
+    _name_from_device_class = True
+    _inverted: bool
+    _raw_is_on: bool | None
+
+    async def async_restore_last_state(self, last_state: typing.Any) -> None:
+        """Restore binary sensor state and reconstruct raw contact polarity."""
+        if (
+            self._raw_is_on is None
+            and last_state is not None
+            and last_state.state not in ("unknown", "unavailable")
+        ):
+            restored_on = last_state.state == "on"
+            self._attr_is_on = restored_on
+            self._raw_is_on = restored_on != self._inverted
+
+    @callback
+    def set_inverted(self, inverted: bool) -> None:
+        """Update contact inversion polarity and recompute live state."""
+        self._inverted = inverted
+        if self._raw_is_on is not None:
+            self._attr_is_on = self._raw_is_on != self._inverted
+        self._publish_state()
+
+    @callback
+    def _handle_inverted_signal(
+        self, who: str, canonical_where: str, inverted: bool
+    ) -> None:
+        """Apply an invert-state toggle targeting this contact."""
+        if (
+            who == self._who
+            and canonical_where == binary_sensor_canonical_where(self._who, self._where)
+        ):
+            self.set_inverted(inverted)
+
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass."""
+        self._register_entity_ref(self._attr_device_class)  # type: ignore
+        target_hass = self.hass or self._hass
+        if target_hass is not None:
+            gw_mac = str(self._gateway_handler.mac)
+            self.async_on_remove(
+                async_dispatcher_connect(
+                    target_hass,
+                    SIGNAL_BINARY_SENSOR_INVERTED.format(gw_mac),
+                    self._handle_inverted_signal,
+                )
+            )
+            async_dispatcher_send(
+                target_hass,
+                SIGNAL_NEW_BINARY_SENSOR.format(gw_mac),
+                {
+                    "who": self._who,
+                    "where": self._where,
+                    "device_id": self._device_id,
+                    "name": self._device_name,
+                    "manufacturer": self._manufacturer,
+                    "model": self._model,
+                    "inverted": self._inverted,
+                },
+            )
+        await super().async_added_to_hass()
+
+    async def async_will_remove_from_hass(self) -> None:
+        """When entity is removed from hass."""
+        self._unregister_entity_ref(self._attr_device_class)  # type: ignore
+
+    @callback
+    def handle_event(self, message: typing.Any) -> None:
+        """Handle an event message."""
+        LOGGER.debug(
+            "%s %s",
+            self._gateway_handler.log_id,
+            message.human_readable_log,
+        )
+        self._raw_is_on = bool(message.is_on)
+        self._attr_is_on = self._raw_is_on != self._inverted
+        self._publish_state()
+
+
+class MyHOMEDryContact(_MyHOMEInvertibleBinarySensor):
     def __init__(  # type: ignore
         self,
         hass,
@@ -423,6 +548,7 @@ class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
         )
 
         self._inverted = inverted
+        self._raw_is_on = None
 
         self._attr_device_class = device_class  # type: ignore
 
@@ -432,20 +558,6 @@ class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
         sensor_attr = f"({self._where[0]}){self._where[1:]}" if self._where else ""
         self._attr_extra_state_attributes = {"Sensor": sensor_attr}
 
-    async def async_restore_last_state(self, last_state: typing.Any) -> None:
-        """Restore dry contact state."""
-        if last_state is not None and last_state.state not in ("unknown", "unavailable"):
-            self._attr_is_on = last_state.state == "on"
-
-    async def async_added_to_hass(self) -> None:
-        """When entity is added to hass."""
-        self._register_entity_ref(self._attr_device_class)  # type: ignore
-        await super().async_added_to_hass()
-
-    async def async_will_remove_from_hass(self) -> None:
-        """When entity is removed from hass."""
-        self._unregister_entity_ref(self._attr_device_class)  # type: ignore
-
     async def async_update(self) -> None:
         """Update the entity.
 
@@ -453,21 +565,8 @@ class MyHOMEDryContact(MyHOMEEntity, BinarySensorEntity):
         """
         await self._gateway_handler.send_status_request(OWNDryContactCommand.status(self._where))
 
-    @callback
-    def handle_event(self, message: OWNDryContactEvent) -> None:
-        """Handle an event message."""
-        LOGGER.debug(
-            "%s %s",
-            self._gateway_handler.log_id,
-            message.human_readable_log,
-        )
-        self._attr_is_on = message.is_on != self._inverted
-        self._publish_state()
 
-
-class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
-    _name_from_device_class = True
-
+class MyHOMEAuxiliary(_MyHOMEInvertibleBinarySensor):
     def __init__(  # type: ignore
         self,
         hass,
@@ -496,6 +595,7 @@ class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
         )
 
         self._inverted = inverted
+        self._raw_is_on = None
 
         self._attr_device_class = device_class  # type: ignore
         if not device_class and not entity_name:
@@ -509,33 +609,8 @@ class MyHOMEAuxiliary(MyHOMEEntity, BinarySensorEntity):
         self._attr_is_on = False
         self._attr_extra_state_attributes = {"Auxiliary channel": self._where}
 
-    async def async_restore_last_state(self, last_state: typing.Any) -> None:
-        """Restore auxiliary state."""
-        if last_state is not None and last_state.state not in ("unknown", "unavailable"):
-            self._attr_is_on = last_state.state == "on"
-
-    async def async_added_to_hass(self) -> None:
-        """When entity is added to hass."""
-        self._register_entity_ref(self._attr_device_class)  # type: ignore
-        await super().async_added_to_hass()
-
-    async def async_will_remove_from_hass(self) -> None:
-        """When entity is removed from hass."""
-        self._unregister_entity_ref(self._attr_device_class)  # type: ignore
-
     async def async_update(self) -> None:
         """AUX sensors are read only and cannot be queried, no async_update implementation."""
-
-    @callback
-    def handle_event(self, message: OWNDryContactEvent) -> None:
-        """Handle an event message."""
-        LOGGER.debug(
-            "%s %s",
-            self._gateway_handler.log_id,
-            message.human_readable_log,
-        )
-        self._attr_is_on = message.is_on != self._inverted
-        self._publish_state()
 
 
 class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):

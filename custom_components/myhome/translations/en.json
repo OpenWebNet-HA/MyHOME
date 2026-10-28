@@ -688,6 +688,9 @@
     },
     "thermo_switch_no_timer": {
       "message": "{name} is a WHO=4 thermo actuator and does not support WHO=1 hardware bus timers; use a Home Assistant automation delay instead."
+    },
+    "invert_switch_no_timer": {
+      "message": "{name} is a binary sensor configuration switch and does not support WHO=1 hardware bus timers."
     }
   },
   "entity": {
@@ -711,6 +714,11 @@
       },
       "energy_month": {
         "name": "Energy (current month)"
+      }
+    },
+    "switch": {
+      "invert_state": {
+        "name": "Invert state"
       }
     }
   },

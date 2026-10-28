@@ -591,6 +591,9 @@
     },
     "thermo_switch_no_timer": {
       "message": "{name} è un attuatore di termoregolazione WHO=4 e non supporta i timer hardware su bus WHO=1; utilizza invece un ritardo nelle automazioni di Home Assistant."
+    },
+    "invert_switch_no_timer": {
+      "message": "{name} è un interruttore di configurazione di sensore binario e non supporta i timer hardware su bus WHO=1."
     }
   },
   "entity": {
@@ -614,6 +617,11 @@
       },
       "energy_month": {
         "name": "Energia (mese corrente)"
+      }
+    },
+    "switch": {
+      "invert_state": {
+        "name": "Inverti stato"
       }
     }
   },

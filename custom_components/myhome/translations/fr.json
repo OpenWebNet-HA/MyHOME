@@ -591,6 +591,9 @@
     },
     "thermo_switch_no_timer": {
       "message": "{name} est un actionneur thermique WHO=4 et ne prend pas en charge les temporisations matérielles sur bus WHO=1 ; utilisez plutôt un délai d'automatisation Home Assistant."
+    },
+    "invert_switch_no_timer": {
+      "message": "{name} est un interrupteur de configuration de capteur binaire et ne prend pas en charge les temporisations matérielles sur bus WHO=1."
     }
   },
   "entity": {
@@ -614,6 +617,11 @@
       },
       "energy_month": {
         "name": "Énergie (mois en cours)"
+      }
+    },
+    "switch": {
+      "invert_state": {
+        "name": "Inverser l'état"
       }
     }
   },

@@ -210,6 +210,12 @@ def prune_entity(hass: HomeAssistant, registry: er.EntityRegistry, entry: er.Reg
         button = registry.async_get_entity_id("button", DOMAIN, f"{entry.unique_id}{suffix}")
         if button is not None:
             registry.async_remove(button)
+    if entry.domain == "binary_sensor" and entry.device_id:
+        remaining = er.async_entries_for_device(registry, entry.device_id, include_disabled_entities=True)
+        if not any(e.domain == "binary_sensor" for e in remaining):
+            for e in list(remaining):
+                if e.domain == "switch" and (e.unique_id or "").endswith("-invert"):
+                    registry.async_remove(e.entity_id)
     if entry.device_id and not er.async_entries_for_device(registry, entry.device_id, include_disabled_entities=True):
         dr.async_get(hass).async_remove_device(entry.device_id)
 

@@ -143,17 +143,9 @@ If you prefer Home Assistant to hold **100% software authority** over whether an
 2. **Result**: The interface transmits OpenWebNet dry contact frames where `WHAT` is `31` for contact closed and `32` for contact open:
    - Contact closed (dusk): `*25*31#1*WHERE##`
    - Contact opened (dawn): `*25*32#1*WHERE##`
-3. In Home Assistant, the contact is discovered automatically the first time it changes state (see [Binary Sensors](../configuration/binary-sensors.md)). The contact closes at dusk, so the sensor reads `on` when it is dark. If you want Home Assistant's **Light** device class (`on` = light detected), declare it in `myhome.yaml` under your gateway with `inverted: true`, using its configured address (for example `15`):
-   ```yaml
-   00:03:50:81:22:33:
-     binary_sensor:
-       twilight_sensor:
-         who: "25"
-         where: "15"
-         name: "Twilight Sensor"
-         device_class: light
-         inverted: true
-   ```
+3. In Home Assistant, the contact is discovered automatically the first time it changes state (see [Binary Sensors](../configuration/binary-sensors.md)). The contact closes at dusk, so the sensor reads `on` when it is dark. If you want Home Assistant's **Light** device class (`on` = light detected) without editing YAML:
+   - Open the dry contact entity settings and set **Show as** to **Light**.
+   - On the device page under **Configuration**, enable the **Invert state** toggle (`inverted: true` in `myhome.yaml` also remains supported).
 4. You now have full separation of concerns:
-   - `binary_sensor.twilight_sensor` accurately mirrors daylight/darkness in real time.
+   - The dry contact binary sensor accurately mirrors daylight/darkness in real time.
    - `light.light_98` remains a pure actuator controlled exclusively by Home Assistant schedules, presence logic, and automations.
