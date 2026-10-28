@@ -18,6 +18,11 @@ from unittest.mock import MagicMock
 # the loop is cleared after each test while enable_event_loop_debug autouse fixture
 # calls asyncio.get_event_loop().set_debug(True).
 try:
+    import pytest_homeassistant_custom_component.patch_recorder  # noqa: F401
+except (ImportError, AssertionError):
+    pass
+
+try:
     from homeassistant.runner import HassEventLoopPolicy
 
     _orig_get_event_loop = HassEventLoopPolicy.get_event_loop
@@ -38,7 +43,14 @@ except ImportError:
 if not os.environ.get("OWND_SMOKE_TEST"):
     try:
         import OWNd  # noqa: F401
-        from OWNd.message import OWNCenCommand, OWNHeatingCommand, OWNLightingCommand  # noqa: F401
+        from OWNd.message import (  # noqa: F401
+            OWNCenCommand,
+            OWNHeatingCommand,
+            OWNLightingCommand,
+            area_of_where,
+            is_apl_address,
+            normalize_where,
+        )
         if not hasattr(OWNHeatingCommand, "central_status"):
             raise AttributeError("central_status not found on OWNHeatingCommand")
         if not hasattr(OWNLightingCommand, "get_hsv_color"):
@@ -118,6 +130,62 @@ from syrupy.types import SerializableData
 try:
     from aiohttp.web_exceptions import NotAppKeyWarning
     warnings.filterwarnings("ignore", category=NotAppKeyWarning)
+except ImportError:
+    pass
+
+def _bridge_phcc_restore_cache(common_mod, ha_rs, json_encoder, dt_util_mod) -> bool:
+    """Bridge HA 2026.11+ RestoreStateData registry-ID indexing (core#183906) in-memory."""
+    if not hasattr(ha_rs.RestoreStateData, "_async_load_stored_states") or hasattr(
+        common_mod, "_mock_restore_cache"
+    ):
+        return False
+
+    def _compat_mock_restore_cache(hass, states):
+        data = ha_rs.async_get(hass)
+        now = dt_util_mod.utcnow()
+        stored_states = []
+        for state, extra_data in states:
+            restored_state = state.as_dict()
+            restored_state = {
+                **restored_state,
+                "attributes": json.loads(
+                    json.dumps(restored_state["attributes"], cls=json_encoder)
+                ),
+            }
+            stored_states.append(
+                {"state": restored_state, "extra_data": extra_data, "last_seen": now}
+            )
+        data._async_load_stored_states(stored_states)
+        assert (
+            len(data.last_states_by_entity_id)
+            + len(data.last_states_by_entity_registry_id)
+            == len(states)
+        ), f"Duplicate entity_id? {states}"
+
+    def _compat_mock_restore_cache_plain(hass, states):
+        _compat_mock_restore_cache(hass, [(state, None) for state in states])
+
+    def _compat_mock_restore_cache_extra(hass, states):
+        _compat_mock_restore_cache(hass, states)
+
+    common_mod._mock_restore_cache = _compat_mock_restore_cache
+    common_mod.mock_restore_cache = _compat_mock_restore_cache_plain
+    common_mod.mock_restore_cache_with_extra_data = _compat_mock_restore_cache_extra
+    return True
+
+
+# Bridge HA 2026.11+ RestoreStateData registry-ID indexing (core#183906) when
+# pytest-homeassistant-custom-component is older than 2026.11 and common.py was
+# not pre-patched by scripts/seed_core_translations.py.
+try:
+    from homeassistant.helpers import restore_state as _ha_rs
+
+    if hasattr(_ha_rs.RestoreStateData, "_async_load_stored_states"):
+        from homeassistant.helpers.json import JSONEncoder as _HAJSONEncoder
+        from homeassistant.util import dt as _ha_dt_util
+        from pytest_homeassistant_custom_component import common as _phcc_common
+
+        _bridge_phcc_restore_cache(_phcc_common, _ha_rs, _HAJSONEncoder, _ha_dt_util)
 except ImportError:
     pass
 

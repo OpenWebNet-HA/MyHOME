@@ -196,6 +196,7 @@ if not hasattr(OWNSoundEvent, "volume_step_delta"):  # pragma: no cover - PyPI O
 
 __all__ = [
     "area_of_where",
+    "canonical_thermo_zone",
     "expose_message_where",
     "is_apl_address",
     "is_probe",
@@ -218,6 +219,20 @@ __all__ = [
 def zone_number(where: str) -> str:
     """The zone without a legacy ``4-`` prefix or ``#``: ``"#0"`` -> ``"0"``, ``"4-12"`` -> ``"12"``."""
     return where.removeprefix("4-").replace("#", "")
+
+
+def canonical_thermo_zone(where: str) -> str | None:
+    """Return canonical zone ``"1"``..``"99"`` for a WHO=4 address, or ``None`` for central/pumps/probes."""
+    clean = str(where).strip().removeprefix("4-")
+    if clean == "#0" or clean.startswith("#0#") or is_probe(clean):
+        return None
+    head = clean.removeprefix("#").split("#", 1)[0]
+    if not head.isdigit():
+        return None
+    zone_int = int(head)
+    if not (1 <= zone_int <= 99):
+        return None
+    return str(zone_int)
 
 
 def is_probe(where: str) -> bool:

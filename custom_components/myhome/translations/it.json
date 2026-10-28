@@ -107,6 +107,104 @@
       "reconfigure_successful": "Connessione del gateway riconfigurata con successo."
     }
   },
+  "config_subentries": {
+    "expose": {
+      "initiate_flow": {
+        "user": "Esponi entità sul bus SCS",
+        "reconfigure": "Riconfigura entità esposta"
+      },
+      "entry_type": "Entità esposta",
+      "step": {
+        "user": {
+          "title": "Esponi un'entità Home Assistant sul bus SCS",
+          "description": "Emula un dispositivo OpenWebNet virtuale sul bus SCS alimentato da un'entità Home Assistant.",
+          "data": {
+            "who": "Sottosistema WHO",
+            "where": "Indirizzo WHERE",
+            "entity_id": "Entità sorgente",
+            "attribute": "Attributo di stato (opzionale)",
+            "dimension": "Dimensione OpenWebNet (opzionale)",
+            "cooldown": "Intervallo minimo (secondi)",
+            "min_delta": "Soglia minima di variazione (opzionale)",
+            "periodic_send": "Intervallo di invio periodico (secondi)",
+            "respond_to_read": "Rispondi alle richieste di stato/dimensione sul bus",
+            "bidirectional": "Bidirezionale (esegui comandi ricevuti dal bus)",
+            "brightness_step_pct": "Passo luminosità per pressione dimmer (%)",
+            "on_states": "Stati 'on' personalizzati (separati da virgola, opzionale)",
+            "value_template": "Template del valore (Jinja2, opzionale)"
+          }
+        },
+        "reconfigure": {
+          "title": "Riconfigura entità esposta",
+          "description": "Aggiorna l'indirizzo OpenWebNet, l'entità sorgente o i parametri di invio per questa associazione.",
+          "data": {
+            "who": "Sottosistema WHO",
+            "where": "Indirizzo WHERE",
+            "entity_id": "Entità sorgente",
+            "attribute": "Attributo di stato (opzionale)",
+            "dimension": "Dimensione OpenWebNet (opzionale)",
+            "cooldown": "Intervallo minimo (secondi)",
+            "min_delta": "Soglia minima di variazione (opzionale)",
+            "periodic_send": "Intervallo di invio periodico (secondi)",
+            "respond_to_read": "Rispondi alle richieste di stato/dimensione sul bus",
+            "bidirectional": "Bidirezionale (esegui comandi ricevuti dal bus)",
+            "brightness_step_pct": "Passo luminosità per pressione dimmer (%)",
+            "on_states": "Stati 'on' personalizzati (separati da virgola, opzionale)",
+            "value_template": "Template del valore (Jinja2, opzionale)"
+          }
+        }
+      },
+      "error": {
+        "invalid_who": "Sottosistema WHO non supportato (supportati: 1, 2, 4, 13, 18).",
+        "where_required": "È richiesto un indirizzo WHERE per questo sottosistema WHO.",
+        "entity_required": "È richiesta un'entità Home Assistant sorgente per questo sottosistema WHO.",
+        "invalid_dimension": "Dimensione non valida per il sottosistema WHO selezionato.",
+        "invalid_expose": "Configurazione non valida o associazione WHO/WHERE/dimensione duplicata."
+      },
+      "abort": {
+        "reconfigure_successful": "Associazione dell'entità esposta aggiornata correttamente."
+      }
+    },
+    "thermo_switch": {
+      "initiate_flow": {
+        "user": "Aggiungi attuatore termo / scaldasalviette (WHO 4)",
+        "reconfigure": "Riconfigura interruttore attuatore termo"
+      },
+      "entry_type": "Interruttore attuatore termo",
+      "step": {
+        "user": {
+          "title": "Aggiungi attuatore termo / scaldasalviette WHO=4",
+          "description": "Configura un relè di termoregolazione senza sonda (ad es. scaldasalviette BTicino F430/2 o F430/4) come interruttore ON/OFF. Usa Z#N (es. 7#1) per controllare un singolo canale attuatore senza interferire con un eventuale termostato reale sulla zona Z, oppure Z (es. 7) per assegnare l'intera zona come interruttore. Lascia vuoti i comandi personalizzati per inviare scritture dirette sulla Dimensione 20 (*#4*7#1*#20*1## e *#4*7#1*#20*0##). Su MyHomeServer1 (Home + Project) con oggetti 'Scaldasalviette', inserisci la coppia di frame OpenWebNet CEN+ (es. *25*21#1*21## e *25*21#2*21##) o WHO=1 collegati agli scenari/automazioni di Home + Project.",
+          "data": {
+            "where": "Indirizzo WHERE attuatore termo (es. 7#1, 7 o 7#1#4#01)",
+            "name": "Nome amichevole (opzionale)",
+            "turn_on_command": "Frame OpenWebNet personalizzato ON (opzionale, es. *25*21#1*21##)",
+            "turn_off_command": "Frame OpenWebNet personalizzato OFF (opzionale, es. *25*21#2*21##)"
+          }
+        },
+        "reconfigure": {
+          "title": "Riconfigura interruttore attuatore termo WHO=4",
+          "description": "Aggiorna l'indirizzo WHERE, il nome amichevole o i comandi OpenWebNet personalizzati per questo attuatore termo senza sonda.",
+          "data": {
+            "where": "Indirizzo WHERE attuatore termo (es. 7#1, 7 o 7#1#4#01)",
+            "name": "Nome amichevole (opzionale)",
+            "turn_on_command": "Frame OpenWebNet personalizzato ON (opzionale, es. *25*21#1*21##)",
+            "turn_off_command": "Frame OpenWebNet personalizzato OFF (opzionale, es. *25*21#2*21##)"
+          }
+        }
+      },
+      "error": {
+        "where_required": "È richiesto un indirizzo WHERE di zona o attuatore WHO=4 (es. 7#1 o 7).",
+        "invalid_where": "Indirizzo WHERE attuatore WHO=4 non valido. Atteso Z (1..99) o Z#N (N=1..9), opzionalmente dietro #4#IF (00..15).",
+        "paired_commands_required": "Inserisci entrambi i comandi OpenWebNet di accensione (ON) e spegnimento (OFF), oppure lasciali entrambi vuoti per il controllo diretto tramite Dimensione 20.",
+        "invalid_command": "Frame di comando OpenWebNet non valido (deve essere un comando o scrittura valido come *25*21#1*21## o *1*1*09##, non una lettura di stato o ACK).",
+        "already_configured": "Esiste già un interruttore attuatore termo WHO=4 configurato per questo indirizzo WHERE."
+      },
+      "abort": {
+        "reconfigure_successful": "Interruttore attuatore termo aggiornato correttamente."
+      }
+    }
+  },
   "options": {
     "step": {
       "user": {
@@ -490,6 +588,9 @@
     },
     "volume_not_finite": {
       "message": "{entity_id}: il livello del volume {volume} non è un numero finito valido"
+    },
+    "thermo_switch_no_timer": {
+      "message": "{name} è un attuatore di termoregolazione WHO=4 e non supporta i timer hardware su bus WHO=1; utilizza invece un ritardo nelle automazioni di Home Assistant."
     }
   },
   "entity": {

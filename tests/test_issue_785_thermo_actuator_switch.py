@@ -21,11 +21,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import voluptuous as vol
+from homeassistant.components.climate.const import HVACAction
 from homeassistant.components.switch import SwitchDeviceClass
 from homeassistant.const import CONF_MAC, CONF_NAME
 from homeassistant.core import HomeAssistant, State
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import OWNHeatingEvent, OWNLightingEvent, OWNMessage
@@ -54,6 +56,7 @@ from custom_components.myhome.const import (
     CONF_WHO,
     DOMAIN,
     PLATFORMS,
+    SUBENTRY_TYPE_EXPOSE,
     SUBENTRY_TYPE_THERMO_SWITCH,
 )
 from custom_components.myhome.data import MyHOMERuntimeData
@@ -70,6 +73,7 @@ from custom_components.myhome.switch import (
 from custom_components.myhome.thermo_switch import has_thermo_switch_subentry
 from custom_components.myhome.validate import config_schema, switch_schema
 from custom_components.myhome.where_grammar import (
+    canonical_thermo_zone,
     parse_thermo_actuator_where,
     thermo_dim20_is_active,
     thermo_event_actuator,
@@ -227,6 +231,16 @@ def test_thermo_event_helpers() -> None:
     assert thermo_event_zone(OWNHeatingEvent("*#4*0#1*20*1##")) is None
     assert thermo_event_zone(OWNHeatingEvent("*#4*105*0*0210##")) is None
     assert thermo_event_zone(OWNHeatingEvent("*4*1*#0##")) is None
+
+    # canonical_thermo_zone normalizes 1..99 spellings while rejecting central/pumps/probes
+    assert canonical_thermo_zone("7") == "7"
+    assert canonical_thermo_zone("07") == "7"
+    assert canonical_thermo_zone("#07") == "7"
+    assert canonical_thermo_zone("4-07") == "7"
+    assert canonical_thermo_zone("07#1") == "7"
+    assert canonical_thermo_zone("99") == "99"
+    for non_zone in ("#0", "#0#1", "4-#0#1", "0", "0#1", "105", "0105", "#105", "120#1", "", "#", "abc"):
+        assert canonical_thermo_zone(non_zone) is None
 
 
 def test_validate_thermo_trigger_command() -> None:
@@ -1042,13 +1056,24 @@ async def test_climate_coexists_with_per_actuator_switch_and_prunes_ghosts(
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*8*0*0210##"))
     assert sorted(c._where for c in added_climates) == ["3", "5", "6"]
 
-    # Per-actuator switch 7#1: Dimension 20 alone does NOT create a phantom climate entity...
+    # Per-actuator switch 7#1: Dimension 20 and typeless pump/auxiliary frames
+    # (*4*4001*7##, *4*4002*7##, *4*4001#7*0#1##, *4*4002#7*0#1##, *#4*7*5*0##)
+    # do NOT re-spawn the pruned phantom climate entity (#785)...
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*7#1*20*1##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*4*4001#7*0#1##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*4*4001*7##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*4*4002#7*0#1##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*4*4002*7##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*7*5*0##"))
     assert sorted(c._where for c in added_climates) == ["3", "5", "6"]
 
-    # ...but if a real temperature probe exists on Zone 7, climate discovers Zone 7 & inherits {"1": True}!
+    # ...whereas an unconfigured heating zone 2 without a thermo switch still discovers on *4*4001#2*0#3##...
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*4*4001#2*0#3##"))
+    assert sorted(c._where for c in added_climates) == ["2", "3", "5", "6"]
+
+    # ...and if a real temperature probe exists on Zone 7, climate discovers Zone 7 & inherits {"1": True}!
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*7*0*0215##"))
-    assert sorted(c._where for c in added_climates) == ["3", "5", "6", "7"]
+    assert sorted(c._where for c in added_climates) == ["2", "3", "5", "6", "7"]
     zone7 = next(c for c in added_climates if c._where == "7")
     assert zone7._actuator_states == {"1": True}
     assert zone7._active_source == "actuators"
@@ -1239,3 +1264,895 @@ async def test_thermo_switch_real_hardware_dim20_write_frames_and_reverse_interl
     assert zone9.is_on is True
     assert zone9.extra_state_attributes["actuators"] == {"1": "on"}
 
+
+def test_subentry_translations_present_across_all_locales() -> None:
+    """Verify config_subentries and thermo_switch_no_timer are localized in en, it, fr, nl."""
+    comp_dir = Path(__file__).resolve().parent.parent / "custom_components" / "myhome"
+    strings = json.loads((comp_dir / "strings.json").read_text(encoding="utf-8"))
+    expected_subentries = strings["config_subentries"]
+
+    def _leaf_paths(node: object, prefix: tuple[str, ...] = ()) -> set[tuple[str, ...]]:
+        if isinstance(node, dict):
+            out: set[tuple[str, ...]] = set()
+            for key, val in node.items():
+                out |= _leaf_paths(val, prefix + (str(key),))
+            return out
+        return {prefix}
+
+    expected_paths = _leaf_paths(expected_subentries)
+    for locale in ("en", "it", "fr", "nl"):
+        loc = json.loads(
+            (comp_dir / "translations" / f"{locale}.json").read_text(encoding="utf-8")
+        )
+        assert "config_subentries" in loc, f"Missing config_subentries in {locale}.json"
+        assert _leaf_paths(loc["config_subentries"]) == expected_paths
+        msg = loc["exceptions"]["thermo_switch_no_timer"]["message"]
+        assert "{name}" in msg
+
+
+@pytest.mark.asyncio
+async def test_upgrade_restart_then_add_thermo_switch_subentry_prunes_ghost_and_keeps_real_zones(
+    hass: HomeAssistant,
+) -> None:
+    """Verify pre-existing climate ghosts coerced to 'off' on restart are pruned on subentry reload (#785).
+
+    Covers:
+    - Ghost Zone 7 starting as ``unknown`` in ``core.restore_state``, coerced to ``HVACMode.OFF``
+      (``"off"``) by ``MyHOMEClimate.async_restore_last_state`` on Step 1 boot (plus receiving
+      ``*#4*7#1*20*0##`` which sets ``hvac_action: "off"`` and ``actuators: {"1": "off"}``), then
+      pruned on the immediate reload when the user adds ``7#1`` via the subentry UI.
+    - Ghost Zone 8 starting with ``"off"`` already persisted in ``core.restore_state`` from prior
+      restarts before upgrade, also pruned when ``8#1`` is added.
+    - Ghost Zone 9 starting with ``"off"`` pruned immediately when ``8#1`` is reconfigured to ``9#1``
+      via the live subentry reconfigure flow.
+    - Real Thermostat Zone 3 in ``"off"`` mode WITH ``current_temperature: 21.5`` preserved when
+      auxiliary switch ``3#2`` is added.
+    - Real Thermostat Zone 4 in ``"off"`` mode WITH ``season: "conditioning"`` (no temperature yet)
+      preserved across multiple reloads when auxiliary switch ``4#2`` is added.
+    - Real Thermostat Zone 5 in ``"off"`` mode WITH ``knob_pos: "OFF"`` (no temperature yet)
+      preserved across multiple reloads when auxiliary switch ``5#2`` is added.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="MHS1",
+        data={CONF_MAC: MAC, "host": "192.0.2.78", "port": 20000},
+        unique_id=MAC,
+    )
+    entry.add_to_hass(hass)
+
+    ent_reg = er.async_get(hass)
+    ghost_z7 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-7", config_entry=entry)
+    ghost_z8 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-8", config_entry=entry)
+    ghost_z9 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-9", config_entry=entry)
+    real_z3 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-3", config_entry=entry)
+    real_z4 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-4", config_entry=entry)
+    real_z5 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-5", config_entry=entry)
+
+    mock_restore_cache(
+        hass,
+        [
+            State(ghost_z7.entity_id, "unknown", {}),
+            State(
+                ghost_z8.entity_id,
+                "off",
+                {
+                    "local_offset": 0,
+                    "local_target_temperature": None,
+                    "knob_pos": "UNKNOWN",
+                    "actuators": {"1": "off"},
+                },
+            ),
+            State(ghost_z9.entity_id, "unavailable", {}),
+            State(real_z3.entity_id, "off", {"current_temperature": 21.5}),
+            State(real_z4.entity_id, "off", {"season": "conditioning"}),
+            State(real_z5.entity_id, "off", {}),
+        ],
+    )
+
+    fake_gw = _mock_gateway()
+    fake_gw.supports_zone_status = True
+    fake_gw.zone_temperature_poll_needed = False
+    fake_gw.interface_zone_request_refused = True
+    fake_gw.humidity_request_refused = False
+    fake_gw.sweep_active = False
+    fake_gw.initial_discovery_pending = False
+    fake_gw.device_health = None
+    fake_gw.test = AsyncMock(return_value={"Success": True})
+    fake_gw.listening_loop = AsyncMock()
+    fake_gw.sending_loop = AsyncMock()
+    fake_gw.initial_discovery = AsyncMock()
+
+    with patch("custom_components.myhome.MyHOMEGatewayHandler", return_value=fake_gw):
+        # Step 1: HA boots after upgrade (before any thermo_switch subentries are added)
+        assert await hass.config_entries.async_setup(entry.entry_id) is True
+        await hass.async_block_till_done()
+
+        # Ghosts Z7, Z8, Z9 were all coerced/restored to state == "off"
+        for g_ent in (ghost_z7, ghost_z8, ghost_z9):
+            st_g = hass.states.get(g_ent.entity_id)
+            assert st_g is not None and st_g.state == "off"
+        # Ghost Z7 also receives a Dimension 20 OFF frame -> hvac_action becomes "off"
+        async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*7#1*20*0##"))
+        # Real Z5 receives a local knob OFF frame (Dimension 13 raw value 4 -> knob_pos="OFF")
+        async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*5*13*4##"))
+        await hass.async_block_till_done()
+
+        st_z7_after_dim20 = hass.states.get(ghost_z7.entity_id)
+        assert st_z7_after_dim20 is not None
+        assert st_z7_after_dim20.attributes.get("hvac_action") == "off"
+        st_z5_after_dim13 = hass.states.get(real_z5.entity_id)
+        assert st_z5_after_dim13 is not None
+        assert st_z5_after_dim13.attributes.get("knob_pos") == "OFF"
+
+        # Step 2: User adds Z#N thermo switch subentries in UI -> each triggers immediate entry reload
+        for where_str, friendly in (
+            ("7#1", "Bath 1 Towel"),
+            ("8#1", "Bath 2 Towel"),
+            ("3#2", "Zone 3 Aux Towel"),
+            ("4#2", "Zone 4 Aux Towel"),
+            ("5#2", "Zone 5 Aux Towel"),
+        ):
+            init_res = await hass.config_entries.subentries.async_init(
+                (entry.entry_id, SUBENTRY_TYPE_THERMO_SWITCH),
+                context={"source": "user"},
+            )
+            conf_res = await hass.config_entries.subentries.async_configure(
+                init_res["flow_id"],
+                {"where": where_str, "name": friendly},
+            )
+            assert conf_res["type"] == FlowResultType.CREATE_ENTRY
+            await hass.async_block_till_done()
+            assert ent_reg.async_get_entity_id("switch", DOMAIN, f"{MAC}-4-{where_str}") is not None
+
+        # Ghosts Z7 and Z8 MUST be pruned from entity registry and state machine!
+        assert ent_reg.async_get(ghost_z7.entity_id) is None
+        assert ent_reg.async_get(ghost_z8.entity_id) is None
+        assert hass.states.get(ghost_z7.entity_id) is None
+        assert hass.states.get(ghost_z8.entity_id) is None
+        # Ghost Z9 is not yet claimed by a thermo switch -> still present until reconfigure
+        assert ent_reg.async_get(ghost_z9.entity_id) is not None
+
+        # Step 3: Reconfigure subentry 8#1 -> 9#1 via live UI reconfigure flow
+        sub_8_id = next(
+            sid for sid, sub in entry.subentries.items() if sub.data.get("where") == "8#1"
+        )
+        reconf_init = await entry.start_subentry_reconfigure_flow(hass, sub_8_id)
+        reconf_done = await hass.config_entries.subentries.async_configure(
+            reconf_init["flow_id"],
+            {"where": "9#1", "name": "Bath 9 Towel"},
+        )
+        assert reconf_done["type"] == FlowResultType.ABORT
+        assert reconf_done["reason"] == "reconfigure_successful"
+        await hass.async_block_till_done()
+
+        assert ent_reg.async_get(ghost_z9.entity_id) is None
+        assert hass.states.get(ghost_z9.entity_id) is None
+        assert ent_reg.async_get_entity_id("switch", DOMAIN, f"{MAC}-4-8#1") is None
+        assert ent_reg.async_get_entity_id("switch", DOMAIN, f"{MAC}-4-9#1") is not None
+
+        # Real thermostats Z3, Z4, Z5 in "off" mode MUST survive all 6 reloads!
+        assert ent_reg.async_get(real_z3.entity_id) is not None
+        assert ent_reg.async_get(real_z4.entity_id) is not None
+        assert ent_reg.async_get(real_z5.entity_id) is not None
+        assert hass.states.get(real_z4.entity_id).attributes.get("season") == "conditioning"  # type: ignore[union-attr]
+        assert hass.states.get(real_z5.entity_id).attributes.get("knob_pos") == "OFF"  # type: ignore[union-attr]
+
+        assert await hass.config_entries.async_unload(entry.entry_id) is True
+
+
+@pytest.mark.asyncio
+async def test_pure_valve_dimension_19_deferred_on_thermo_switch_zones_and_f455_trace_coexistence(
+    hass: HomeAssistant,
+) -> None:
+    """Verify pure-valve Dimension 19 frames do not re-spawn ghosts on Z#N switch zones (#785, #674).
+
+    Covers:
+    - Pure-valve ``*#4*Z*19*0*0##``, ``*#4*Z*19*0*1##``, ``*#4*Z*19*2*3##``, ``*#4*Z*19*4*4##``
+      on ``Z#N`` switch zones are deferred and cached without creating phantom ``climate`` entities.
+    - Interleaved pre-discovery caching: Dim 20 ON -> Dim 19 OFF -> Dim 19 ON -> Dim 0 temperature
+      on Zone 7, and Dim 19 ON -> Dim 20 ON -> Dim 0 temperature on Zone 9.
+    - Fan-coil Dimension 19 frames (``*#4*10*19*5*0##``, ``*#4*11*19*0*6##``) still discover
+      genuine fan-coil zones even when an auxiliary ``Z#N`` switch exists.
+    - Routed F422 isolation: ``12#1#4#01`` defers ``*#4*12#4#01*19*0*0##`` while local ``*#4*12*19*0*0##``
+      discovers normally.
+    - Replay of ``issue_674`` F455 trace with ``7#1`` and ``64#1`` configured as thermo switches:
+      zones 7 and 64 never spawn phantom ``climate`` entities, while non-switch pure-valve Dim 19
+      zones (6, 8, 9, 14..43) keep existing ``#674`` discovery behavior.
+    """
+    gw = _mock_gateway()
+    entry = _mock_entry(
+        hass,
+        gw,
+        platforms={
+            "switch": {
+                "4-7#1": {"who": "4", "where": "7#1", "name": "Bath 7 Towel"},
+                "4-9#2": {"who": "4", "where": "9#2", "name": "Aux 9 Towel"},
+                "4-10#2": {"who": "4", "where": "10#2", "name": "Aux 10 Towel"},
+                "4-11#2": {"who": "4", "where": "11#2", "name": "Aux 11 Towel"},
+                "4-12#1#4#01": {
+                    "who": "4",
+                    "where": "12#1",
+                    "interface": "01",
+                    "name": "Routed 12 Towel",
+                },
+                "4-13#2": {"who": "4", "where": "13#2", "name": "Aux 13 Towel"},
+                "4-14#2": {"who": "4", "where": "14#2", "name": "Aux 14 Towel"},
+            }
+        },
+    )
+    added_climates: list = []
+    await climate_setup_entry(hass, entry, added_climates.extend)
+
+    # 1. Pure-valve Dimension 19 frames on 7#1 do NOT create a phantom climate entity
+    for raw in (
+        "*#4*7#1*20*1##",
+        "*#4*7*19*0*0##",
+        "*#4*7*19*2*3##",
+        "*#4*7*19*4*4##",
+        "*#4*7*19*0*1##",
+    ):
+        async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent(raw))
+    assert added_climates == []
+
+    # 2. When real temperature arrives on Zone 7, cached Dim 20 (cleared by Dim 19 0*0) + Dim 19 0*1
+    #    replay through handle_event so hvac_action == HVACAction.HEATING (preserved across AUTO mode)!
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*7*0*0215##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*4*110*7##"))
+    assert [c._where for c in added_climates] == ["7"]
+    z7 = added_climates[0]
+    assert z7._actuator_states == {"1": False}
+    assert z7._zone_active is True
+    assert z7._active_source == "zone"
+    assert z7._fan_coil_sides == {"cooling": False, "heating": False}
+    assert z7.hvac_action == HVACAction.HEATING
+
+    # 3. Reverse pre-discovery order on Zone 9: Dim 19 cooling ON -> Dim 20 ON -> Dim 0 temperature
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*9*19*1*0##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*9#1*20*1##"))
+    assert [c._where for c in added_climates] == ["7"]
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*9*0*0210##"))
+    z9 = next(c for c in added_climates if c._where == "9")
+    assert z9._actuator_states == {"1": True}
+    assert z9._zone_active is True
+    assert z9._active_source == "actuators"
+    assert z9.hvac_action == HVACAction.COOLING
+
+    # 3b. Deferred Dim 19 OFF -> Dim 0 temperature yields HVACAction.IDLE;
+    #     deferred Dim 19 heating ON -> Dim 20 OFF -> Dim 0 temperature also yields HVACAction.IDLE!
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*13*19*0*0##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*13*0*0215##"))
+    z13 = next(c for c in added_climates if c._where == "13")
+    assert z13.hvac_action == HVACAction.IDLE
+
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*14*19*0*1##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*14#1*20*0##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*14*0*0215##"))
+    z14 = next(c for c in added_climates if c._where == "14")
+    assert z14._actuator_states == {"1": False}
+    assert z14._active_source == "actuators"
+    assert z14.hvac_action == HVACAction.IDLE
+
+    # 4. Fan-coil Dimension 19 frames (cooling_fan_on / fan_on bool) still discover on Z#N zones
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*10*19*5*0##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*11*19*0*6##"))
+    assert sorted(c._where for c in added_climates) == ["10", "11", "13", "14", "7", "9"]
+
+    # 5. Routed F422 isolation: routed 12#4#01 is deferred, local 12 discovers immediately
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*12#4#01*19*0*0##"))
+    assert sorted(c._full_where for c in added_climates) == ["10", "11", "13", "14", "7", "9"]
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*12*19*0*0##"))
+    assert sorted(c._full_where for c in added_climates) == ["10", "11", "12", "13", "14", "7", "9"]
+
+    # 6. Authentic issue_674 F455 trace replay with 7#1 and 64#1 configured as thermo switches
+    f455_trace_path = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "traces"
+        / "issue_674"
+        / "myhome_trace_f455_climate_timeouts_2026-10-09.json"
+    )
+    f455_trace = json.loads(f455_trace_path.read_text(encoding="utf-8"))
+    f455_mac = "00:03:50:78:56:74"
+    f455_gw = _mock_gateway(mac=f455_mac)
+    f455_gw.supports_zone_status = False
+    f455_entry = _mock_entry(
+        hass,
+        f455_gw,
+        subentries=[
+            {
+                "subentry_type": SUBENTRY_TYPE_THERMO_SWITCH,
+                "subentry_id": "sub_f455_7_1",
+                "title": "Zone 7 Towel",
+                "unique_id": None,
+                "data": {"who": "4", "where": "7#1", "name": "Zone 7 Towel"},
+            },
+            {
+                "subentry_type": SUBENTRY_TYPE_THERMO_SWITCH,
+                "subentry_id": "sub_f455_64_1",
+                "title": "Zone 64 Towel",
+                "unique_id": None,
+                "data": {"who": "4", "where": "64#1", "name": "Zone 64 Towel"},
+            },
+        ],
+    )
+    f455_climates: list = []
+    f455_switches: list = []
+    await switch_setup_entry(hass, f455_entry, f455_switches.extend)
+    await climate_setup_entry(hass, f455_entry, f455_climates.extend)
+    for sw in f455_switches:
+        sw.async_write_ha_state = MagicMock()
+
+    for item in f455_trace["frames"]:
+        raw_f = item["raw"]
+        if raw_f in ("*#*1##", "*#*0##"):
+            continue
+        parsed = OWNMessage.parse(raw_f)
+        if parsed is not None:
+            async_dispatcher_send(hass, f"myhome_message_{f455_mac}", parsed)
+
+    discovered_f455_zones = {c._where for c in f455_climates}
+    # Configured Z#N towel-warmer zones 7 and 64 NEVER spawn phantom climate entities!
+    assert "7" not in discovered_f455_zones
+    assert "64" not in discovered_f455_zones
+    # Non-switch pure-valve Dim 19 zones (e.g. 6, 8, 9, 14) and full zones (34, 35, 36) still discover (#674)
+    assert {"6", "8", "9", "14", "34", "35", "36"} <= discovered_f455_zones
+
+
+def test_thermo_switch_english_strings_parity_and_no_stale_unverified_claim() -> None:
+    """Verify strings.json and en.json match on thermo_switch and omit stale unverified F430 wording."""
+    comp_dir = Path(__file__).resolve().parent.parent / "custom_components" / "myhome"
+    strings = json.loads((comp_dir / "strings.json").read_text(encoding="utf-8"))
+    en = json.loads((comp_dir / "translations" / "en.json").read_text(encoding="utf-8"))
+
+    assert strings["config_subentries"]["thermo_switch"] == en["config_subentries"]["thermo_switch"]
+    desc = strings["config_subentries"]["thermo_switch"]["step"]["user"]["description"]
+    assert "unverified on physical" not in desc
+    assert "MyHomeServer1" in desc
+
+
+@pytest.mark.asyncio
+async def test_zero_padded_zones_fancoil_and_all_telemetry_preservation_and_burst_subentries(
+    hass: HomeAssistant,
+) -> None:
+    """Verify zero-padded ghosts, central units (#0/#0#1), fan-coil/telemetry preservation, and burst reloads."""
+    hass.states.async_set("sensor.ext_temp", "19.5", {"unit_of_measurement": "°C"})
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="MHS1",
+        data={CONF_MAC: MAC, "host": "192.0.2.78", "port": 20000},
+        unique_id=MAC,
+    )
+    entry.add_to_hass(hass)
+
+    dev_reg = dr.async_get(hass)
+    ghost_dev = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{MAC}-4-07")},
+        name="Climate Zone 07",
+    )
+
+    ent_reg = er.async_get(hass)
+    # Central units (#0 and #0#1) in unknown/off state MUST NEVER match zone 0 or zone 1!
+    central_0 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-#0", config_entry=entry)
+    central_0_1 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-#0#1", config_entry=entry)
+    # Zero-padded ghost {MAC}-4-07 (with dedicated DeviceEntry) & single-digit F422 ghost {MAC}-4-08#4#1
+    ghost_z07 = ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{MAC}-4-07", config_entry=entry, device_id=ghost_dev.id
+    )
+    ghost_z08_if1 = ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{MAC}-4-08#4#1", config_entry=entry
+    )
+    # Spurious H/L4684 #466 ghost with fan_coil_cooling/heating == False -> MUST be pruned
+    ghost_z16 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-16", config_entry=entry)
+    # Genuine fan-coil zones in "off" mode (no temperature yet) -> MUST survive reload!
+    real_fc_cool = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-10", config_entry=entry)
+    real_fc_heat = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-11", config_entry=entry)
+    # Remaining thermostat telemetry attributes in "off" mode -> ALL MUST survive reload!
+    real_setpoint = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-12", config_entry=entry)
+    real_humidity = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-13", config_entry=entry)
+    real_program = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-14", config_entry=entry)
+    real_holiday = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-15", config_entry=entry)
+    real_scenario = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-17", config_entry=entry)
+
+    mock_restore_cache(
+        hass,
+        [
+            State(central_0.entity_id, "unknown", {}),
+            State(central_0_1.entity_id, "unknown", {}),
+            State(ghost_z07.entity_id, "unknown", {}),
+            State(ghost_z08_if1.entity_id, "off", {}),
+            State(
+                ghost_z16.entity_id,
+                "off",
+                {"fan_coil_cooling": False, "fan_coil_heating": False},
+            ),
+            State(
+                real_fc_cool.entity_id,
+                "off",
+                {"fan_coil_cooling": True, "fan_coil_heating": False},
+            ),
+            State(
+                real_fc_heat.entity_id,
+                "off",
+                {"fan_coil_cooling": False, "fan_coil_heating": True},
+            ),
+            State(real_setpoint.entity_id, "off", {"temperature": 20.5}),
+            State(real_humidity.entity_id, "off", {"current_humidity": 55.0}),
+            State(real_program.entity_id, "off", {"program": 1}),
+            State(real_holiday.entity_id, "off", {"holiday_days": 3}),
+            State(real_scenario.entity_id, "off", {"scenario": 2}),
+        ],
+    )
+
+    fake_gw = _mock_gateway()
+    fake_gw.supports_zone_status = True
+    fake_gw.zone_temperature_poll_needed = False
+    fake_gw.interface_zone_request_refused = True
+    fake_gw.humidity_request_refused = False
+    fake_gw.sweep_active = False
+    fake_gw.initial_discovery_pending = False
+    fake_gw.device_health = None
+    fake_gw.test = AsyncMock(return_value={"Success": True})
+    fake_gw.listening_loop = AsyncMock()
+    fake_gw.sending_loop = AsyncMock()
+    fake_gw.initial_discovery = AsyncMock()
+
+    with patch("custom_components.myhome.MyHOMEGatewayHandler", return_value=fake_gw):
+        assert await hass.config_entries.async_setup(entry.entry_id) is True
+        await hass.async_block_till_done()
+
+        # Concurrent burst of thermo_switch + expose subentry creations WITHOUT awaiting
+        # async_block_till_done() between flows: HA coalesces scheduled reloads cleanly.
+        for where_str in (
+            "1#1",
+            "07#1",
+            "8#1#4#01",
+            "10#2",
+            "11#2",
+            "12#2",
+            "13#2",
+            "14#2",
+            "15#2",
+            "16#1",
+            "17#2",
+        ):
+            init_res = await hass.config_entries.subentries.async_init(
+                (entry.entry_id, SUBENTRY_TYPE_THERMO_SWITCH),
+                context={"source": "user"},
+            )
+            conf_res = await hass.config_entries.subentries.async_configure(
+                init_res["flow_id"],
+                {"where": where_str, "name": f"Sw {where_str}"},
+            )
+            assert conf_res["type"] == FlowResultType.CREATE_ENTRY
+
+        exp_init = await hass.config_entries.subentries.async_init(
+            (entry.entry_id, SUBENTRY_TYPE_EXPOSE),
+            context={"source": "user"},
+        )
+        exp_step2 = await hass.config_entries.subentries.async_configure(
+            exp_init["flow_id"],
+            {"who": "4"},
+        )
+        exp_done = await hass.config_entries.subentries.async_configure(
+            exp_step2["flow_id"],
+            {"where": "105", "entity_id": "sensor.ext_temp"},
+        )
+        assert exp_done["type"] == FlowResultType.CREATE_ENTRY
+
+        await hass.async_block_till_done()
+
+        # Ghosts (including zero-padded 07, single-digit routed 08#4#1, and #466 Z16) + orphaned device pruned!
+        assert ent_reg.async_get(ghost_z07.entity_id) is None
+        assert dev_reg.async_get(ghost_dev.id) is None
+        assert ent_reg.async_get(ghost_z08_if1.entity_id) is None
+        assert ent_reg.async_get(ghost_z16.entity_id) is None
+
+        # Central units (#0 and #0#1) and all genuine fan-coil / telemetry zones survived!
+        for kept in (
+            central_0,
+            central_0_1,
+            real_fc_cool,
+            real_fc_heat,
+            real_setpoint,
+            real_humidity,
+            real_program,
+            real_holiday,
+            real_scenario,
+        ):
+            assert ent_reg.async_get(kept.entity_id) is not None, f"Unexpectedly pruned {kept.entity_id}"
+
+        assert await hass.config_entries.async_unload(entry.entry_id) is True
+
+    # Explicit zero-padded YAML climate: { zone: "06" } coexists with whole-zone switch where: "06"
+    yaml_parsed = config_schema(
+        {
+            "gw": {
+                "mac": MAC,
+                "climate": {"bath06": {"zone": "06", "name": "Explicit Bath 06"}},
+                "switch": {"towel06": {"who": 4, "where": "06", "name": "Whole Zone 06 Towel"}},
+            }
+        }
+    )
+    yaml_cfg: dict[str, dict] = {p: {} for p in PLATFORMS}
+    _apply_yaml_platforms(yaml_parsed[MAC]["platforms"], yaml_cfg)
+    yaml_entry = _mock_entry(hass, _mock_gateway(), platforms=yaml_cfg)
+    yaml_climates: list = []
+    await climate_setup_entry(hass, yaml_entry, yaml_climates.extend)
+    assert [c._where for c in yaml_climates] == ["06"]
+
+
+@pytest.mark.asyncio
+async def test_ghost_pruning_supports_ha_2026_11_registry_indexed_restore_state_and_legacy_last_states(
+    hass: HomeAssistant,
+) -> None:
+    """Verify cold-boot ghost pruning works across HA 2026.11+ and HA <= 2026.10 RestoreStateData (#785).
+
+    Covers:
+    1. HA 2026.11+ ``RestoreStateData`` (``core#183906``): exposes ``async_get_stored_state(entity_id)``
+       backed by ``last_states_by_entity_registry_id`` with NO ``.last_states`` attribute, including
+       when the user renamed ``entity_id`` in the entity registry.
+    2. HA <= 2026.10 ``RestoreStateData``: exposes ``.last_states`` dict keyed by ``entity_id`` with
+       NO ``async_get_stored_state`` method.
+    3. Missing ``DATA_RESTORE_STATE`` in ``hass.data``: falls back cleanly to live ``hass.states``.
+    """
+    from types import SimpleNamespace
+
+    from homeassistant.helpers.restore_state import DATA_RESTORE_STATE
+
+    ent_reg = er.async_get(hass)
+    orig_restore = hass.data.get(DATA_RESTORE_STATE)
+
+    try:
+        # --- Case 1: HA 2026.11+ RestoreStateData (async_get_stored_state, no .last_states) ---
+        entry_v11 = _mock_entry(
+            hass,
+            _mock_gateway(),
+            platforms={
+                "switch": {
+                    "4-3#2": {"who": "4", "where": "3#2", "name": "Aux 3 Towel"},
+                    "4-7#1": {"who": "4", "where": "7#1", "name": "Bath 7 Towel"},
+                    "4-9#1": {"who": "4", "where": "9#1", "name": "Bath 9 Towel"},
+                }
+            },
+        )
+        real_z3 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-3", config_entry=entry_v11)
+        real_z3 = ent_reg.async_update_entity(
+            real_z3.entity_id, new_entity_id="climate.living_room_renamed"
+        )
+        ghost_z7 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-7", config_entry=entry_v11)
+        ghost_z9 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-9", config_entry=entry_v11)
+
+        by_reg_id = {
+            real_z3.id: SimpleNamespace(
+                state=State("climate.old_name", "off", {"current_temperature": 21.5})
+            ),
+            ghost_z7.id: SimpleNamespace(
+                state=State(
+                    ghost_z7.entity_id,
+                    "off",
+                    {"knob_pos": "UNKNOWN", "actuators": {"1": "off"}},
+                )
+            ),
+        }
+
+        class _HA202611RestoreData:
+            """Stub matching HA 2026.11+ RestoreStateData (authoritative even if foreign .last_states exists)."""
+
+            def __init__(self) -> None:
+                # Stale/foreign entity-ID dict entry for ghost_z9 must NOT be consulted
+                # when async_get_stored_state is callable and returns None.
+                self.last_states = {
+                    ghost_z9.entity_id: SimpleNamespace(
+                        state=State(ghost_z9.entity_id, "off", {"current_temperature": 22.0})
+                    )
+                }
+
+            def async_get_stored_state(self, entity_id: str) -> SimpleNamespace | None:
+                reg_entry = ent_reg.async_get(entity_id)
+                if reg_entry is None:
+                    return None
+                return by_reg_id.get(reg_entry.id)
+
+        hass.data[DATA_RESTORE_STATE] = _HA202611RestoreData()
+        added_v11: list = []
+        await climate_setup_entry(hass, entry_v11, added_v11.extend)
+
+        assert ent_reg.async_get("climate.living_room_renamed") is not None
+        assert ent_reg.async_get(ghost_z7.entity_id) is None
+        assert ent_reg.async_get(ghost_z9.entity_id) is None
+        assert [c._where for c in added_v11] == ["3"]
+        ent_reg.async_remove("climate.living_room_renamed")
+
+        # --- Case 2: HA <= 2026.10 RestoreStateData (.last_states dict, no async_get_stored_state) ---
+        entry_v10 = _mock_entry(
+            hass,
+            _mock_gateway(),
+            platforms={
+                "switch": {
+                    "4-4#2": {"who": "4", "where": "4#2", "name": "Aux 4 Towel"},
+                    "4-8#1": {"who": "4", "where": "8#1", "name": "Bath 8 Towel"},
+                }
+            },
+        )
+        real_z4 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-4", config_entry=entry_v10)
+        ghost_z8 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-8", config_entry=entry_v10)
+
+        hass.data[DATA_RESTORE_STATE] = SimpleNamespace(
+            last_states={
+                real_z4.entity_id: SimpleNamespace(
+                    state=State(real_z4.entity_id, "off", {"season": "conditioning"})
+                ),
+                ghost_z8.entity_id: SimpleNamespace(
+                    state=State(ghost_z8.entity_id, "off", {})
+                ),
+            }
+        )
+        added_v10: list = []
+        await climate_setup_entry(hass, entry_v10, added_v10.extend)
+
+        assert ent_reg.async_get(real_z4.entity_id) is not None
+        assert ent_reg.async_get(ghost_z8.entity_id) is None
+        assert [c._where for c in added_v10] == ["4"]
+        ent_reg.async_remove(real_z4.entity_id)
+
+        # --- Case 3: Missing DATA_RESTORE_STATE falls back cleanly to live hass.states ---
+        hass.data.pop(DATA_RESTORE_STATE, None)
+        entry_none = _mock_entry(
+            hass,
+            _mock_gateway(),
+            platforms={
+                "switch": {
+                    "4-10#1": {"who": "4", "where": "10#1", "name": "Bath 10 Towel"},
+                    "4-11#2": {"who": "4", "where": "11#2", "name": "Aux 11 Towel"},
+                }
+            },
+        )
+        ghost_z10 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-10", config_entry=entry_none)
+        real_z11 = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-11", config_entry=entry_none)
+        hass.states.async_set(real_z11.entity_id, "heat", {})
+
+        added_none: list = []
+        await climate_setup_entry(hass, entry_none, added_none.extend)
+
+        assert ent_reg.async_get(ghost_z10.entity_id) is None
+        assert ent_reg.async_get(real_z11.entity_id) is not None
+        assert [c._where for c in added_none] == ["11"]
+    finally:
+        if orig_restore is not None:
+            hass.data[DATA_RESTORE_STATE] = orig_restore
+
+
+def test_seed_core_translations_patches_mock_restore_cache_for_ha_2026_11(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify seed_core_translations.py and conftest.py bridge HA 2026.11+ mock_restore_cache (#785)."""
+    import os
+    import subprocess
+    import sys
+    from types import SimpleNamespace
+    from typing import Any
+
+    import pytest_homeassistant_custom_component as phcc
+    from homeassistant.helpers import restore_state as rs
+    from homeassistant.helpers.json import JSONEncoder
+    from homeassistant.util import dt as dt_util
+
+    import scripts.seed_core_translations as seed_mod
+    from tests.conftest import _bridge_phcc_restore_cache
+
+    fake_pkg = tmp_path / "phcc"
+    fake_pkg.mkdir()
+    fake_init = fake_pkg / "__init__.py"
+    fake_init.write_text("", encoding="utf-8")
+    fake_common = fake_pkg / "common.py"
+
+    synthetic_common = (
+        "from __future__ import annotations\n"
+        "import json\n"
+        "import logging\n"
+        "from collections.abc import Mapping, Sequence\n"
+        "from typing import Any\n"
+        "from homeassistant.components.logger import (\n"
+        "    DOMAIN as LOGGER_DOMAIN,\n"
+        "    SERVICE_SET_LEVEL,\n"
+        "    _clear_logger_overwrites,\n"
+        ")\n"
+        "from homeassistant.core import HomeAssistant, State\n"
+        "from homeassistant.helpers import restore_state as rs\n"
+        "from homeassistant.helpers.json import JSONEncoder\n"
+        "from homeassistant.util import dt as dt_util\n"
+        "_LOGGER = logging.getLogger(__name__)\n\n\n"
+        "def mock_restore_cache(hass: HomeAssistant, states: Sequence[State]) -> None:\n"
+        '    """Mock the DATA_RESTORE_CACHE."""\n'
+        "    key = rs.DATA_RESTORE_STATE\n"
+        "    data = rs.RestoreStateData(hass)\n"
+        "    now = dt_util.utcnow()\n"
+        "\n"
+        "    last_states = {}\n"
+        "    for state in states:\n"
+        "        restored_state = state.as_dict()\n"
+        "        restored_state = {\n"
+        "            **restored_state,\n"
+        '            "attributes": json.loads(\n'
+        '                json.dumps(restored_state["attributes"], cls=JSONEncoder)\n'
+        "            ),\n"
+        "        }\n"
+        "        last_states[state.entity_id] = rs.StoredState.from_dict(\n"
+        '            {"state": restored_state, "last_seen": now}\n'
+        "        )\n"
+        "    data.last_states = last_states\n"
+        '    _LOGGER.debug("Restore cache: %s", data.last_states)\n'
+        '    assert len(data.last_states) == len(states), f"Duplicate entity_id? {states}"\n'
+        "\n"
+        "    rs.async_get.cache_clear()\n"
+        "    hass.data[key] = data\n"
+        "\n"
+        "\n"
+        "def mock_restore_cache_with_extra_data(\n"
+        "    hass: HomeAssistant, states: Sequence[tuple[State, Mapping[str, Any]]]\n"
+        ") -> None:\n"
+        '    """Mock the DATA_RESTORE_CACHE."""\n'
+        "    key = rs.DATA_RESTORE_STATE\n"
+        "    data = rs.RestoreStateData(hass)\n"
+        "    now = dt_util.utcnow()\n"
+        "\n"
+        "    last_states = {}\n"
+        "    for state, extra_data in states:\n"
+        "        restored_state = state.as_dict()\n"
+        "        restored_state = {\n"
+        "            **restored_state,\n"
+        '            "attributes": json.loads(\n'
+        '                json.dumps(restored_state["attributes"], cls=JSONEncoder)\n'
+        "            ),\n"
+        "        }\n"
+        "        last_states[state.entity_id] = rs.StoredState.from_dict(\n"
+        '            {"state": restored_state, "extra_data": extra_data, "last_seen": now}\n'
+        "        )\n"
+        "    data.last_states = last_states\n"
+        '    _LOGGER.debug("Restore cache: %s", data.last_states)\n'
+        '    assert len(data.last_states) == len(states), f"Duplicate entity_id? {states}"\n'
+        "\n"
+        "    rs.async_get.cache_clear()\n"
+        "    hass.data[key] = data\n"
+    )
+    fake_common.write_text(synthetic_common, encoding="utf-8")
+    monkeypatch.setattr(phcc, "__file__", str(fake_init))
+
+    # 1. HA <= 2026.10 (no _async_load_stored_states): logger patched, mock_restore_cache untouched
+    class _LegacyRestoreStateData:
+        pass
+
+    monkeypatch.setattr(rs, "RestoreStateData", _LegacyRestoreStateData)
+    seed_mod._patch_pytest_ha_custom_component()
+    after_v10 = fake_common.read_text(encoding="utf-8")
+    assert "from homeassistant.components.logger.helpers import _clear_logger_overwrites" in after_v10
+    assert "data.last_states = last_states" in after_v10
+    assert "def _mock_restore_cache(" not in after_v10
+
+    # 2. HA 2026.11+ (_async_load_stored_states present): mock_restore_cache rewritten & idempotent
+    class _ModernRestoreStateData:
+        def __init__(self) -> None:
+            self.last_states_by_entity_id: dict[str, Any] = {}
+            self.last_states_by_entity_registry_id: dict[str, Any] = {}
+
+        def _async_load_stored_states(self, stored_states: list[dict[str, Any]]) -> None:
+            self.last_states_by_entity_id = {}
+            self.last_states_by_entity_registry_id = {}
+            for item in stored_states:
+                eid = item["state"]["entity_id"]
+                if ".reg_" in eid:
+                    self.last_states_by_entity_registry_id[f"reg-{eid}"] = item
+                else:
+                    self.last_states_by_entity_id[eid] = item
+
+    monkeypatch.setattr(rs, "RestoreStateData", _ModernRestoreStateData)
+    seed_mod._patch_pytest_ha_custom_component()
+    after_v11 = fake_common.read_text(encoding="utf-8")
+    assert "def _mock_restore_cache(" in after_v11
+    assert "data._async_load_stored_states(stored_states)" in after_v11
+    assert "data.last_states = last_states" not in after_v11
+
+    # Idempotent on second run
+    seed_mod._patch_pytest_ha_custom_component()
+    assert fake_common.read_text(encoding="utf-8") == after_v11
+
+    # 3. Reformatted common.py (single-line logger import, wrapped signatures, reversed order)
+    reformatted_common = (
+        "from homeassistant.components.logger import _clear_logger_overwrites, DOMAIN as LOGGER_DOMAIN\n"
+        "def mock_restore_cache_with_extra_data(hass, states):\n"
+        "    data = rs.RestoreStateData(hass)\n"
+        "    data.last_states = {}\n"
+        "    hass.data[rs.DATA_RESTORE_STATE] = data\n\n"
+        "def mock_restore_cache(\n"
+        "    hass,\n"
+        "    states,\n"
+        "):\n"
+        "    data = rs.RestoreStateData(hass)\n"
+        "    data.last_states = {}\n"
+        "    hass.data[rs.DATA_RESTORE_STATE] = data\n"
+    )
+    fake_common.write_text(reformatted_common, encoding="utf-8")
+    seed_mod._patch_pytest_ha_custom_component()
+    after_reformatted = fake_common.read_text(encoding="utf-8")
+    assert "from homeassistant.components.logger import DOMAIN as LOGGER_DOMAIN" in after_reformatted
+    assert "from homeassistant.components.logger.helpers import _clear_logger_overwrites" in after_reformatted
+    assert "def _mock_restore_cache(" in after_reformatted
+    assert "data.last_states =" not in after_reformatted
+
+    # 4. Execute the rewritten helpers to verify runtime behavior
+    modern_data = _ModernRestoreStateData()
+    ns: dict[str, Any] = {
+        "json": json,
+        "JSONEncoder": JSONEncoder,
+        "dt_util": dt_util,
+        "_LOGGER": MagicMock(),
+        "rs": SimpleNamespace(async_get=lambda _hass: modern_data),
+    }
+    exec(compile(after_v11[after_v11.index("def _mock_restore_cache(") :], str(fake_common), "exec"), ns)
+    ns["mock_restore_cache"](
+        None,
+        [
+            State("climate.reg_z7", "unknown", {}),
+            State("climate.unreg_z8", "off", {"current_temperature": 21.0}),
+        ],
+    )
+    assert "reg-climate.reg_z7" in modern_data.last_states_by_entity_registry_id
+    assert "climate.unreg_z8" in modern_data.last_states_by_entity_id
+
+    ns["mock_restore_cache_with_extra_data"](
+        None,
+        [(State("cover.reg_c1", "open", {}), {"pos": 100})],
+    )
+    assert modern_data.last_states_by_entity_registry_id == {
+        "reg-cover.reg_c1": {
+            "state": modern_data.last_states_by_entity_registry_id["reg-cover.reg_c1"]["state"],
+            "extra_data": {"pos": 100},
+            "last_seen": modern_data.last_states_by_entity_registry_id["reg-cover.reg_c1"]["last_seen"],
+        }
+    }
+    with pytest.raises(AssertionError, match="Duplicate entity_id"):
+        ns["mock_restore_cache"](
+            None,
+            [State("climate.reg_dup", "off", {}), State("climate.reg_dup", "heat", {})],
+        )
+
+    # 5. Exercise conftest._bridge_phcc_restore_cache directly (legacy no-op, modern patch, idempotence)
+    dummy_common = SimpleNamespace()
+    legacy_rs = SimpleNamespace(RestoreStateData=_LegacyRestoreStateData)
+    assert _bridge_phcc_restore_cache(dummy_common, legacy_rs, JSONEncoder, dt_util) is False
+
+    bridge_data = _ModernRestoreStateData()
+    modern_rs = SimpleNamespace(
+        RestoreStateData=_ModernRestoreStateData,
+        async_get=lambda _hass: bridge_data,
+    )
+    assert _bridge_phcc_restore_cache(dummy_common, modern_rs, JSONEncoder, dt_util) is True
+    assert _bridge_phcc_restore_cache(dummy_common, modern_rs, JSONEncoder, dt_util) is False
+    dummy_common.mock_restore_cache(None, [State("climate.reg_z12", "heat", {"temperature": 20.5})])
+    assert "reg-climate.reg_z12" in bridge_data.last_states_by_entity_registry_id
+    dummy_common.mock_restore_cache_with_extra_data(
+        None, [(State("switch.unreg_s1", "on", {}), {"raw": 1})]
+    )
+    assert bridge_data.last_states_by_entity_id["switch.unreg_s1"]["extra_data"] == {"raw": 1}
+
+    # 6. Importing tests.conftest before pytest_homeassistant_custom_component.plugins must not break patch_recorder
+    repo_root = str(Path(__file__).resolve().parent.parent)
+    env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join([repo_root, *sys.path]),
+    }
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import tests.conftest; import pytest_homeassistant_custom_component.plugins",
+        ],
+        cwd=repo_root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr

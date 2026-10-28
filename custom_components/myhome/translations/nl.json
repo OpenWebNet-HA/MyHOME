@@ -107,6 +107,104 @@
       "reconfigure_successful": "Gatewayverbinding succesvol opnieuw geconfigureerd."
     }
   },
+  "config_subentries": {
+    "expose": {
+      "initiate_flow": {
+        "user": "Entiteit op SCS-bus aanbieden",
+        "reconfigure": "Aangeboden entiteit herconfigureren"
+      },
+      "entry_type": "Aangeboden entiteit",
+      "step": {
+        "user": {
+          "title": "Home Assistant-entiteit op SCS-bus aanbieden",
+          "description": "Emuleer een virtueel OpenWebNet-apparaat op de SCS-bus op basis van een Home Assistant-entiteit.",
+          "data": {
+            "who": "WHO-subsysteem",
+            "where": "WHERE-adres",
+            "entity_id": "Bronentiteit",
+            "attribute": "Statusattribuut (optioneel)",
+            "dimension": "OpenWebNet-dimensie (optioneel)",
+            "cooldown": "Afkoeltijd (seconden)",
+            "min_delta": "Minimale deltadrempel (optioneel)",
+            "periodic_send": "Periodiek zendinterval (seconden)",
+            "respond_to_read": "Reageren op status-/dimensievragen vanaf de bus",
+            "bidirectional": "Bidirectioneel (reageren op inkomende buscommando's)",
+            "brightness_step_pct": "Helderheidsstap per dimmerdruk (%)",
+            "on_states": "Aangepaste 'aan'-statussen (komma-gescheiden, optioneel)",
+            "value_template": "Waardesjabloon (Jinja2, optioneel)"
+          }
+        },
+        "reconfigure": {
+          "title": "Aangeboden entiteit herconfigureren",
+          "description": "Werk het OpenWebNet-adres, de bronentiteit of de verzendparameters voor deze koppeling bij.",
+          "data": {
+            "who": "WHO-subsysteem",
+            "where": "WHERE-adres",
+            "entity_id": "Bronentiteit",
+            "attribute": "Statusattribuut (optioneel)",
+            "dimension": "OpenWebNet-dimensie (optioneel)",
+            "cooldown": "Afkoeltijd (seconden)",
+            "min_delta": "Minimale deltadrempel (optioneel)",
+            "periodic_send": "Periodiek zendinterval (seconden)",
+            "respond_to_read": "Reageren op status-/dimensievragen vanaf de bus",
+            "bidirectional": "Bidirectioneel (reageren op inkomende buscommando's)",
+            "brightness_step_pct": "Helderheidsstap per dimmerdruk (%)",
+            "on_states": "Aangepaste 'aan'-statussen (komma-gescheiden, optioneel)",
+            "value_template": "Waardesjabloon (Jinja2, optioneel)"
+          }
+        }
+      },
+      "error": {
+        "invalid_who": "Niet-ondersteund WHO-subsysteem (ondersteund: 1, 2, 4, 13, 18).",
+        "where_required": "Een WHERE-adres is vereist voor dit WHO-subsysteem.",
+        "entity_required": "Een Home Assistant-bronentiteit is vereist voor dit WHO-subsysteem.",
+        "invalid_dimension": "Ongeldige dimensie voor het geselecteerde WHO-subsysteem.",
+        "invalid_expose": "Ongeldige configuratie of dubbele WHO/WHERE/dimensie-koppeling."
+      },
+      "abort": {
+        "reconfigure_successful": "Koppeling van aangeboden entiteit succesvol bijgewerkt."
+      }
+    },
+    "thermo_switch": {
+      "initiate_flow": {
+        "user": "Thermo-actuator / handdoekradiator-schakelaar toevoegen (WHO 4)",
+        "reconfigure": "Thermo-actuatorschakelaar herconfigureren"
+      },
+      "entry_type": "Thermo-actuatorschakelaar",
+      "step": {
+        "user": {
+          "title": "WHO=4 thermo-actuator / handdoekradiator-schakelaar toevoegen",
+          "description": "Configureer een thermoreguleringsrelais zonder temperatuursensor (bijv. BTicino F430/2 of F430/4 handdoekradiator) als aan/uit-schakelaar. Gebruik Z#N (bijv. 7#1) om één actuatorkanaal aan te sturen zonder een echte thermostaat op zone Z te beïnvloeden, of Z (bijv. 7) om de volledige zone als schakelaar te gebruiken. Laat de triggercommando's leeg om directe Dimensie 20-schrijfopdrachten te sturen (*#4*7#1*#20*1## en *#4*7#1*#20*0##). Geef op MyHomeServer1 (Home + Project) bij 'Handdoekradiator'-objecten het paar CEN+-frames (bijv. *25*21#1*21## en *25*21#2*21##) of WHO=1-frames op die gekoppeld zijn aan uw Home + Project-scenario's/automatiseringen.",
+          "data": {
+            "where": "Thermo-actuator WHERE-adres (bijv. 7#1, 7 of 7#1#4#01)",
+            "name": "Weergavenaam (optioneel)",
+            "turn_on_command": "Aangepast AAN OpenWebNet-frame (optioneel, bijv. *25*21#1*21##)",
+            "turn_off_command": "Aangepast UIT OpenWebNet-frame (optioneel, bijv. *25*21#2*21##)"
+          }
+        },
+        "reconfigure": {
+          "title": "WHO=4 thermo-actuatorschakelaar herconfigureren",
+          "description": "Werk het WHERE-adres, de weergavenaam of de aangepaste OpenWebNet-triggercommando's voor deze sensorloze thermo-actuatorschakelaar bij.",
+          "data": {
+            "where": "Thermo-actuator WHERE-adres (bijv. 7#1, 7 of 7#1#4#01)",
+            "name": "Weergavenaam (optioneel)",
+            "turn_on_command": "Aangepast AAN OpenWebNet-frame (optioneel, bijv. *25*21#1*21##)",
+            "turn_off_command": "Aangepast UIT OpenWebNet-frame (optioneel, bijv. *25*21#2*21##)"
+          }
+        }
+      },
+      "error": {
+        "where_required": "Een WHO=4 zone- of actuator-WHERE-adres is vereist (bijv. 7#1 of 7).",
+        "invalid_where": "Ongeldig WHO=4 actuator-WHERE-adres. Verwacht: Z (1..99) of Z#N (N=1..9), optioneel achter #4#IF (00..15).",
+        "paired_commands_required": "Geef zowel het AAN- als het UIT-OpenWebNet-commando samen op, of laat beide leeg voor directe Dimensie 20-aansturing.",
+        "invalid_command": "Ongeldig OpenWebNet-commandoframe (moet een geldig actie- of schrijfframe zijn zoals *25*21#1*21## of *1*1*09##, geen statusaanvraag of ACK).",
+        "already_configured": "Er is al een WHO=4 thermo-actuatorschakelaar geconfigureerd voor dit WHERE-adres."
+      },
+      "abort": {
+        "reconfigure_successful": "Thermo-actuatorschakelaar succesvol bijgewerkt."
+      }
+    }
+  },
   "options": {
     "step": {
       "user": {
@@ -490,6 +588,9 @@
     },
     "volume_not_finite": {
       "message": "{entity_id}: volumeniveau {volume} is geen geldig eindig getal"
+    },
+    "thermo_switch_no_timer": {
+      "message": "{name} is een WHO=4 thermo-actuator en ondersteunt geen WHO=1 hardware-bustimers; gebruik in plaats daarvan een vertraging in een Home Assistant-automatisering."
     }
   },
   "entity": {
