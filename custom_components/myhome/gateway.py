@@ -219,14 +219,14 @@ SOUND_STATUS_REQUEST_REFUSED = frozenset(
 # $00499013000 in trace-corpus.tsv; MyHomeServer1 replies from its cache, #649), so their zones
 # keep the zone status poll and are not listed here.
 ZONE_TEMPERATURE_POLL = frozenset({"F450", "F454", "F459", "H4684", "MH200", "MH201", "MH202"})
-# A zone behind an F422 bus interface (WHERE Z#4#II) cannot be polled on these gateways: the
-# firmware drops *#4*Z#4#II*0## (and *#4*Z#4#II##) before the bus, nack/silent on ten of the
-# twelve emulated images; only H4684 and MH200 forward them (own-firmware-oracle PR #60,
-# thermo-zone-requests suite, not published yet). Read from the OWNd profile first
-# (``supports_interface_zone_requests``); this table is the fallback until the flag exists there.
-INTERFACE_ZONE_REQUEST_REFUSED = frozenset(
-    {"F450", "F453", "F453AV", "F454", "F459", "F460", "F461", "MH200N", "MH202", "MYHOMESERVER1"}
-)
+# Zones behind an F422 bus interface (WHERE Z#4#II): zero of the twelve emulated gateways in
+# own-firmware-oracle (findings/thermo-zone-requests.md) emit $06EC / $06E4 interface-routed SCS
+# frames for WHO 4. Gateways either NACK/drop Z#4#II queries, truncate Z#4#II at # and cross-poll
+# local main-bus zone Z (F450, F454, F459, F460, F461, H4684, MH200, MyHomeServer1), or on MH202
+# 010024 misparse trailing #4#01 as local zone 4 actuator 1 and crash coso with SIGSEGV on
+# *#4*Z#4#01## (including while the profile is still Generic). ``interface_zone_request_refused``
+# therefore defaults to True across all models unless ``profile.supports_interface_zone_requests``
+# is explicitly True.
 
 # Gateways whose firmware drops the per-zone actuator request (``*#4*Z*20##``) instead of
 # forwarding it to the bus: own-firmware-oracle ``results/<P>/<V>/oracle/full/thermo-actuator.tsv``
@@ -291,10 +291,10 @@ def _resolved_model(word: str) -> str | None:
     return _alnum(profile.model_name)
 
 
-# A WHO 4 zone address: ``Z``, ``#Z``, ``Z#N`` (actuator), each optionally behind an
-# interface of exactly two digits (``Z#4#01``): the grammar of OWNd#140's builder
+# A WHO 4 zone address: ``Z`` (0..99), ``#Z``, ``Z#N`` (actuator 0..9), each optionally behind
+# an interface of exactly two digits (``Z#4#01``): the grammar of OWNd#140's builder
 # (``OWNHeatingCommand.actuators_status``).
-_ZONE_WHERE = re.compile(rf"^#?[0-9]+(?:#[0-9]+)?(?:{re.escape(BUS_ROUTING)}[0-9]{{2}})?$")
+_ZONE_WHERE = re.compile(rf"^#?[0-9]{{1,2}}(?:#[0-9])?(?:{re.escape(BUS_ROUTING)}[0-9]{{2}})?$")
 
 
 def _validate_zone_where(where: str) -> str:
@@ -306,7 +306,7 @@ def _validate_zone_where(where: str) -> str:
     dimension 22 write; ``2##`` ends the frame early. The builder of OWNd#140
     (``OWNHeatingCommand.actuators_status``) accepts and rejects the same addresses.
     """
-    zone, routing, interface = (where or "").partition(BUS_ROUTING)
+    zone, routing, interface = (where or "").rpartition(BUS_ROUTING)
     if routing and len(interface) == 1 and interface.isdigit():
         where = f"{zone}{routing}{interface.zfill(2)}"
     if not _ZONE_WHERE.match(where or ""):
@@ -631,6 +631,19 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             target = self._who4_target()
             for dimension in sorted({dim for _where, dim in pending}):
                 wheres = sorted(where for where, dim in pending if dim == dimension)
+                if target.interface_zone_request_refused:
+                    routed = [where for where in wheres if BUS_ROUTING in where]
+                    if routed:
+                        LOGGER.debug(
+                            "%s Zones %s: %s does not route WHO 4 dimension %s behind an interface; not asking",
+                            self.log_id,
+                            routed,
+                            target.model,
+                            dimension,
+                        )
+                        wheres = [where for where in wheres if BUS_ROUTING not in where]
+                        if not wheres:
+                            continue
                 if dimension == 20 and target.actuator_request_refused:
                     LOGGER.debug(
                         "%s Zones %s: %s refuses the actuator request; not asking", self.log_id, wheres, target.model
@@ -703,11 +716,23 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
     @property
     def interface_zone_request_refused(self) -> bool:
-        """Whether this gateway drops the status requests of a zone behind an F422 (``*#4*Z#4#II*0##``)."""
+        """Whether WHO 4 requests behind an ``#4#II`` interface are dropped, misrouted, or crash the gateway.
+
+        Zero of the twelve emulated gateways in own-firmware-oracle (``findings/thermo-zone-requests.md``)
+        emit ``$06EC`` / ``$06E4`` interface-routed SCS frames for WHO 4: gateways either NACK/drop them,
+        truncate ``Z#4#II`` at ``#`` and cross-poll local zone ``Z`` on the main bus, or on MH202 ``010024``
+        misparse trailing ``#4#01`` as local zone 4 actuator 1 and crash ``coso`` with ``SIGSEGV`` on
+        ``*#4*Z#4#01##`` (including before WHO 13 settles while the profile is still ``Generic``).
+        Delegates through ``_who4_target()``; an explicit bool ``supports_interface_zone_requests`` on the
+        OWNd profile overrides this default.
+        """
+        target = self._who4_target()
+        if target is not self:
+            return target.interface_zone_request_refused
         supported = getattr(getattr(self.gateway, "profile", None), "supports_interface_zone_requests", None)
         if isinstance(supported, bool):
             return not supported
-        return self._model_key in INTERFACE_ZONE_REQUEST_REFUSED
+        return True
 
     @property
     def profile(self) -> Any:

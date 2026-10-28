@@ -31,6 +31,7 @@ from OWNd.message import (
 )
 
 from .const import (
+    BUS_ROUTING,
     CONF_LONG_PRESS,
     CONF_LONG_PRESS_REPEAT,
     CONF_LONG_RELEASE,
@@ -43,6 +44,7 @@ from .const import (
     DOMAIN,
     LOGGER,
 )
+from .where_grammar import where_param
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -424,8 +426,24 @@ class GatewayEventDispatcher:
         elif isinstance(message, OWNHeatingCommand) and message.dimension is not None and message.dimension == 14 and self._is_active_for_who(4):
             if not getattr(self.handler, "supports_zone_status", True):
                 return
+            iface = getattr(message, "interface", None)
+            raw_tail = where_param(message)
+            tail = raw_tail if isinstance(raw_tail, list) else []
+            has_interface = (isinstance(iface, str) and bool(iface)) or (len(tail) > 1 and tail[0] == "4")
+            if has_interface:
+                if getattr(self.handler, "interface_zone_request_refused", False):
+                    return
+                iface_str: str | None = (iface if isinstance(iface, str) and iface else str(tail[1])).zfill(2)
+                base_tail = tail[:-2] if len(tail) >= 2 and tail[-2] == "4" else []
+            else:
+                iface_str = None
+                base_tail = tail
             where_str = cast(str, message.where)
             where = where_str[1:] if where_str.startswith("#") else where_str
+            if where == "0" or base_tail:
+                return
+            if iface_str is not None:
+                where = f"{where}{BUS_ROUTING}{iface_str}"
             self._logger.debug(
                 "%s Received heating command, sending query to zone %s",
                 self.handler.log_id,

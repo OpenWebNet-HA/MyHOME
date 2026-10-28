@@ -198,6 +198,7 @@ __all__ = [
     "area_of_where",
     "canonical_thermo_zone",
     "expose_message_where",
+    "is_actuator_where",
     "is_apl_address",
     "is_probe",
     "is_pump",
@@ -214,6 +215,31 @@ __all__ = [
     "where_param",
     "zone_number",
 ]
+
+
+def is_actuator_where(where: str) -> bool:
+    """Whether ``where`` addresses a WHO 4 actuator or split unit rather than a zone or central unit.
+
+    Covers ``Z#N`` / ``Z#0`` / ``0#N`` / ``0#0`` and 3-token ``3#Z#N`` / ``A#B#C`` addresses
+    (with or without a trailing ``#4#II`` interface suffix). ``#0#1``..``#0#4`` is a 4-zone
+    central unit, not an actuator, and ``Z#4#II`` is a routed zone (note that a 1-digit
+    shorthand ``3#4#1``..``3#4#9`` is normalized as zone 3 behind interface ``01``..``09``;
+    wire frames always write two-digit ``#4#01``..``#4#15``). Dimensionless ``*#4*Z#N##``
+    NACKs on nine gateways, cross-polls local zone ``Z`` on H4684/MH200, and crashes ``coso``
+    with ``SIGSEGV`` on MH202 ``010024`` (where ``libthermo.so`` ``device_recognition`` also
+    classifies non-``#`` 3-token ``A#B#C`` with ``1 <= B <= 99`` and ``1 <= C <= 9`` as local
+    actuator ``B#C``).
+    """
+    clean = (where or "").strip().removeprefix("4-")
+    base, routing, iface = clean.rpartition("#4#")
+    if routing and iface.isdigit() and 1 <= len(iface) <= 2:
+        clean = base
+    if clean in ("#0#1", "#0#2", "#0#3", "#0#4"):
+        return False
+    parts = clean.removeprefix("#").split("#")
+    if len(parts) in (2, 3):
+        return all(part.isdigit() for part in parts) and 0 <= int(parts[-1]) <= 9
+    return False
 
 
 def zone_number(where: str) -> str:

@@ -65,8 +65,10 @@ class Address:
         device_id = str(device_id)
         if key_suffix and device_id.endswith(key_suffix):
             device_id = device_id[: -len(key_suffix)]
-        where, _, interface = device_id.partition(BUS_ROUTING)
-        return cls(where, interface or None, key_suffix)
+        base, routing, interface = device_id.rpartition(BUS_ROUTING)
+        if routing and base and interface.isdigit() and 1 <= len(interface) <= 2:
+            return cls(base, interface.zfill(2), key_suffix)
+        return cls(device_id, None, key_suffix)
 
     @classmethod
     def from_message(cls, message: Any) -> Address | None:
@@ -80,8 +82,12 @@ class Address:
     def from_config(cls, dev_id: str, cfg: dict[str, Any]) -> Address:
         """Address of a ``myhome.yaml`` device: ``where`` (``zone`` for heating), else the key."""
         interface = cfg.get(CONF_BUS_INTERFACE) or cfg.get("bus_interface") or cfg.get("interface")
-        where = cfg.get(CONF_WHERE, cfg.get(CONF_ZONE, dev_id))
-        return cls(str(where), str(interface) if interface else None)
+        where = str(cfg.get(CONF_WHERE, cfg.get(CONF_ZONE, dev_id)))
+        if not interface:
+            base, routing, inline_iface = where.rpartition(BUS_ROUTING)
+            if routing and base and inline_iface.isdigit() and 1 <= len(inline_iface) <= 2:
+                return cls(base, inline_iface.zfill(2))
+        return cls(where, str(interface) if interface else None)
 
     @property
     def key(self) -> str:

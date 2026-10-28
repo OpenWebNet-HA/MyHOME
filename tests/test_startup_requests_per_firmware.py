@@ -62,10 +62,10 @@ def _handler(hass, model: str) -> MyHOMEGatewayHandler:
     return MyHOMEGatewayHandler(hass, _entry(model))
 
 
-def _zone(hass, handler, where="3", **kwargs) -> MyHOMEClimate:
+def _zone(hass, handler, where="3", fan=False, **kwargs) -> MyHOMEClimate:
     zone = MyHOMEClimate(
         hass=hass, name=f"Zone {where}", device_id=f"4-{where}", who="4", where=where,
-        heating=True, cooling=False, fan=False, standalone=True, central=False,
+        heating=True, cooling=False, fan=fan, standalone=True, central=False,
         manufacturer="BTicino", model="Heating Zone", gateway=handler, **kwargs,
     )
     zone.hass = hass
@@ -160,7 +160,7 @@ def test_ssdp_model_string_hl4684_is_keyed_as_h4684(hass, ssdp_model):
     assert handler.supports_zone_status is False
     assert handler.general_zone_request_refused is True
     assert handler.sound_status_request_refused is False
-    assert handler.interface_zone_request_refused is False
+    assert handler.interface_zone_request_refused is True
 
 
 @pytest.mark.parametrize("flag", [True, False])
@@ -208,9 +208,12 @@ async def test_scs_only_zone_asks_for_its_temperature(hass, model):
     assert [str(call.args[0]) for call in handler.send_status_request.await_args_list] == ["*#4*3*0##"]
 
 
-@pytest.mark.parametrize("model", ["F450", "F454", "F459", "MH202"])
-async def test_interface_zone_is_not_polled_where_the_firmware_drops_the_request(hass, model, caplog):
-    """*#4*Z#4#II*0## is nack/silent on these SCS-only gateways (own-firmware-oracle PR #60).
+@pytest.mark.parametrize(
+    "model",
+    ["F450", "F454", "F459", "MH202", "H4684", "MH200", "MH201", "F460", "F461", "MyHomeServer1", "Generic"],
+)
+async def test_interface_zone_is_not_polled_across_any_unrouted_gateway(hass, model, caplog):
+    """0 of 12 oracle gateways route WHO 4 across #4#II (findings/thermo-zone-requests.md).
 
     ``_polls_temperature`` is a pure predicate: construction and reading it log nothing; the
     one-shot DEBUG line is written by ``async_update`` when it actually withholds the poll.
@@ -219,7 +222,7 @@ async def test_interface_zone_is_not_polled_where_the_firmware_drops_the_request
     handler.send_status_request = AsyncMock()
 
     def skipped() -> list:
-        return [record for record in caplog.records if "drops `*#4*3#4#01*0##`" in record.message]
+        return [record for record in caplog.records if "does not route WHO 4 requests across `#4#01`" in record.message]
 
     with caplog.at_level("DEBUG", logger="custom_components.myhome"):
         zone = _zone(hass, handler, interface="01")
@@ -236,47 +239,46 @@ async def test_interface_zone_is_not_polled_where_the_firmware_drops_the_request
         assert len(skipped()) == 1  # once per entity
 
 
-async def test_withheld_interface_poll_is_logged_even_when_humidity_keeps_the_update_going(hass, caplog):
-    """A humidity zone behind an F422 on an F459 (forwards *60##, drops Z#4#II requests) still sends its
-    *60## request; the withheld *0## is logged once."""
-    handler = _handler(hass, "F459")
+@pytest.mark.parametrize("model", ["F459", "F453", "F453AV", "MH200N"])
+async def test_withheld_interface_poll_also_withholds_humidity_and_fan_cross_polls(hass, caplog, model):
+    """On F459, *#4*3#4#01*60## truncates at # and cross-polls local main-bus zone 3 ($06D102030308000000);
+    on F453/F453AV/MH200N, fan=True would otherwise poll *11##; all WHO 4 polls on a routed zone are withheld and logged once."""
+    handler = _handler(hass, model)
     handler.send_status_request = AsyncMock()
-    zone = _zone(hass, handler, interface="01", humidity=True)
+    zone = _zone(hass, handler, interface="01", humidity=True, fan=True)
     assert zone._polls_temperature is False and zone._interface_poll_refused is True
+    assert zone._poll_on_add is False
     with caplog.at_level("DEBUG", logger="custom_components.myhome"):
         await zone.async_update()
         await zone.async_update()
-    sent = [str(call.args[0]) for call in handler.send_status_request.await_args_list]
-    assert sent == ["*#4*3#4#01*60##", "*#4*3#4#01*60##"]
-    assert len([record for record in caplog.records if "drops `*#4*3#4#01*0##`" in record.message]) == 1
-
-
-@pytest.mark.parametrize("model", ["H4684", "MH200", "MH201"])
-async def test_interface_zone_is_polled_where_the_firmware_forwards_the_request(hass, model):
-    """H4684 and MH200 forward *#4*Z#4#II*0## (own-firmware-oracle PR #60); the MH201 is not in the oracle."""
-    handler = _handler(hass, model)
-    handler.send_status_request = AsyncMock()
-    zone = _zone(hass, handler, interface="01")
-    assert zone._poll_on_add is True
-    await zone.async_update()
-    assert [str(call.args[0]) for call in handler.send_status_request.await_args_list] == ["*#4*3#4#01*0##"]
+    handler.send_status_request.assert_not_awaited()
+    assert len([record for record in caplog.records if "does not route WHO 4 requests across `#4#01`" in record.message]) == 1
 
 
 @pytest.mark.parametrize(
-    ("model", "flag", "expected"),
-    [("MH202", True, True), ("H4684", False, False)],
+    ("model", "flag", "expected_temp", "expected_frames"),
+    [
+        ("MH202", True, True, ["*#4*3#4#01*0##"]),
+        ("H4684", True, True, ["*#4*3#4#01*0##"]),
+        ("H4684", False, False, []),
+        ("F461", True, False, ["*#4*3#4#01##"]),
+    ],
 )
-async def test_profile_flag_wins_over_the_interface_zone_table(hass, model, flag, expected):
-    """An OWNd profile that states ``supports_interface_zone_requests`` is believed over the table."""
+async def test_profile_flag_wins_over_the_interface_zone_default(hass, model, flag, expected_temp, expected_frames):
+    """An OWNd profile that states ``supports_interface_zone_requests`` overrides the fleet default."""
     handler = _handler(hass, model)
     handler.gateway.profile = SimpleNamespace(
         model_name=handler.gateway.profile.model_name,
         supports_interface_zone_requests=flag,
         supports_who=lambda who: True,
     )
+    handler.send_status_request = AsyncMock()
     assert handler.interface_zone_request_refused is (not flag)
     zone = _zone(hass, handler, interface="01")
-    assert zone._polls_temperature is expected
+    assert zone._polls_temperature is expected_temp
+    assert zone._poll_on_add is flag
+    await zone.async_update()
+    assert [str(call.args[0]) for call in handler.send_status_request.await_args_list] == expected_frames
 
 
 async def test_f455_zone_still_sends_nothing(hass, caplog):
@@ -284,11 +286,11 @@ async def test_f455_zone_still_sends_nothing(hass, caplog):
     handler.send_status_request = AsyncMock()
     zone = _zone(hass, handler, interface="01")
     assert zone._poll_on_add is False
-    assert zone._interface_poll_refused is False  # no temperature poll wanted, so nothing is "withheld"
+    assert zone._interface_poll_refused is True
     with caplog.at_level("DEBUG", logger="custom_components.myhome"):
         await zone.async_update()
     handler.send_status_request.assert_not_awaited()
-    assert not [record for record in caplog.records if "firmware drops" in record.message]
+    assert not [record for record in caplog.records if "does not route WHO 4 requests" in record.message]
 
 
 async def test_central_unit_is_not_a_temperature_poll(hass):

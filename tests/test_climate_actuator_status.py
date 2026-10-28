@@ -167,11 +167,19 @@ async def test_f461_asks_every_zone_s_actuators_with_one_frame(hass, fast_bus_pa
     assert _drain(handler) == ["*#4*#0*20##"]
 
 
-async def test_routed_zone_is_asked_on_its_own(hass, fast_bus_pacing):
+async def test_routed_zone_is_withheld_by_default_and_asked_when_profile_opts_in(hass, fast_bus_pacing):
     handler = _handler(hass, "F461")
     handler._initial_discovery_done.set()
     handler.watch_zone_actuators("2")
     handler.watch_zone_actuators("3#4#01")
+    await _settle(hass)
+    assert _drain(handler) == ["*#4*#0*20##"]
+
+    handler.gateway.profile = SimpleNamespace(
+        model_name=handler.gateway.profile.model_name, supports_interface_zone_requests=True
+    )
+    handler.request_zone_dimension("2", 20)
+    handler.request_zone_dimension("3#4#01", 20)
     await _settle(hass)
     assert _drain(handler) == ["*#4*#0*20##", "*#4*3#4#01*20##"]
 
@@ -533,7 +541,13 @@ async def test_central_off_keeps_the_actuators_attribute(hass):
 
 # ------------------------------------------------------------------ gateway: invalid zone addresses (review 5639409551, 3)
 
-@pytest.mark.parametrize("where", ["", "2*22", "2 ", "a", "*#0", "2#1*20", "#", "2##", "##2", "2#", "2#4#", "2#1#2#3", "3#4#001"])
+@pytest.mark.parametrize(
+    "where",
+    [
+        "", "2*22", "2 ", "a", "*#0", "2#1*20", "#", "2##", "##2", "2#",
+        "2#4#", "2#1#2#3", "3#4#001", "105", "001", "2#10", "#4#1", "#4#01",
+    ],
+)
 def test_an_invalid_zone_address_is_refused_at_once(hass, where):
     """``2*22`` would make ``*#4*2*22*20##``, a dimension 22 write that reboots the F461."""
     handler = _handler(hass, "F454")
@@ -543,23 +557,33 @@ def test_an_invalid_zone_address_is_refused_at_once(hass, where):
     assert handler._zone_request_task is None
 
 
-@pytest.mark.parametrize("where", ["2", "#2", "01", "3#4#01", "#3#4#01", "2#1#4#01", "2#1", "0#0"])
+@pytest.mark.parametrize("where", ["2", "#2", "01", "3#4#01", "#3#4#01", "2#1#4#01", "2#4#4#01", "2#1", "0#0"])
 def test_a_plain_or_routed_zone_address_is_accepted(hass, where):
     handler = _handler(hass, "F454")
     handler.request_zone_dimension(where, 20)
     assert handler._zone_requests == {(where, 20)}
 
 
-async def test_a_one_digit_interface_is_asked_with_two_digits(hass, fast_bus_pacing):
-    """``3#4#1`` is zone 3 behind interface 01: the frame says ``#4#01``, as OWNd#140's builder requires."""
+async def test_a_one_digit_interface_is_normalized_to_two_digits_and_gated(hass, fast_bus_pacing):
+    """``3#4#1`` and ``2#4#4#1`` normalize trailing ``#4#1`` to ``#4#01``, withheld by default, and sent only when the profile opts in."""
     handler = _handler(hass, "F454")
     handler._initial_discovery_done.set()
     unwatch = handler.watch_zone_actuators("3#4#1")
-    assert handler._actuator_zones == {"3#4#01": 1}
-    assert handler._zone_requests == {("3#4#01", 20)}
+    unwatch_act = handler.watch_zone_actuators("2#4#4#1")
+    assert handler._actuator_zones == {"3#4#01": 1, "2#4#4#01": 1}
+    assert handler._zone_requests == {("3#4#01", 20), ("2#4#4#01", 20)}
     await _settle(hass)
-    assert _drain(handler) == ["*#4*3#4#01*20##"]
+    assert _drain(handler) == []
+
+    handler.gateway.profile = SimpleNamespace(
+        model_name=handler.gateway.profile.model_name, supports_interface_zone_requests=True
+    )
+    handler.request_zone_dimension("3#4#1", 20)
+    handler.request_zone_dimension("2#4#4#1", 20)
+    await _settle(hass)
+    assert _drain(handler) == ["*#4*2#4#4#01*20##", "*#4*3#4#01*20##"]
     unwatch()
+    unwatch_act()
     assert handler._actuator_zones == {}
 
 
@@ -720,6 +744,9 @@ async def test_zones_discovered_after_the_sweep_share_one_all_zone_request(hass,
     """Dynamically discovered zones arrive a few tens of ms apart: one *#4*#0*20##, not one each."""
     monkeypatch.setattr("custom_components.myhome.gateway.ZONE_REQUEST_COALESCE", 0.2)
     handler = _handler(hass, "F461")
+    handler.gateway.profile = SimpleNamespace(
+        model_name=handler.gateway.profile.model_name, supports_interface_zone_requests=True
+    )
     handler._initial_discovery_done.set()
     handler.watch_zone_actuators("2")
     await asyncio.sleep(0.05)
@@ -1082,3 +1109,393 @@ async def test_replay_myhomeserver1_all_zone_actuator_burst_through_the_climate_
     ]
     assert gw.watch_zone_actuators.call_count == 34
     assert [str(c.args[0]) for c in gw.send_status_request.await_args_list] == [f"*#4*{z}##" for z in zones]
+
+
+# ------------------------------------------------------------------ WHO 4 #4#II non-routing & MH202 crash guards
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        "F450", "F453", "F453AV", "F454", "F459", "F460", "F461",
+        "H4684", "MH200", "MH200N", "MH202", "MyHomeServer1", "Generic",
+    ],
+)
+def test_interface_zone_request_refused_defaults_true_across_fleet(hass, model):
+    """0 of 12 oracle gateways route WHO 4 across #4#II, and Generic may be an unidentified MH202."""
+    handler = _handler(hass, model)
+    assert handler.interface_zone_request_refused is True
+
+
+@pytest.mark.parametrize(("flag", "expected"), [(True, False), (False, True), (None, True)])
+def test_interface_zone_request_refused_respects_profile_flag_and_delegation(hass, flag, expected):
+    primary = _handler(hass, "F461")
+    secondary = _handler(hass, "F454")
+    secondary.gateway.profile = SimpleNamespace(
+        model_name="F454", supports_interface_zone_requests=flag
+    )
+    primary._delegated_target = MagicMock(return_value=secondary)
+    assert primary.interface_zone_request_refused is expected
+
+
+async def test_routed_zone_on_generic_or_f461_never_polls_status_or_raises_unresponsive(hass, fast_bus_pacing):
+    """Prevents Generic->MH202 coso SIGSEGV on *#4*2#4#01## and false unresponsive repair on F461."""
+    for model in ("Generic", "F461"):
+        handler = _handler(hass, model)
+        handler._initial_discovery_done.set()
+        handler.send_status_request = AsyncMock()
+        zone = MyHOMEClimate(
+            hass=hass,
+            name="Zone 2 Bus 01",
+            device_id="4-2#4#01",
+            who="4",
+            where="2",
+            interface="01",
+            heating=True,
+            cooling=True,
+            fan=False,
+            humidity=False,
+            standalone=True,
+            central=False,
+            manufacturer="BTicino",
+            model="Heating Zone",
+            gateway=handler,
+        )
+        zone.hass = hass
+        zone.entity_id = "climate.zone_2_bus_01"
+        zone.async_write_ha_state = MagicMock()
+        assert zone._poll_on_add is False
+        zone._enable_fan_mode()
+        zone._enable_humidity()
+        assert zone._poll_on_add is False
+        zone._ask_fan_coil_sides()
+        assert zone._fan_coil_sides_asked_at is None
+        await zone.async_added_to_hass()
+        await zone.async_update()
+        await zone.async_update()
+        await _settle(hass)
+        handler.send_status_request.assert_not_awaited()
+        assert zone._poll_health.unresponsive is False
+        assert "unresponsive" not in zone.extra_state_attributes
+
+
+def test_is_actuator_where_distinguishes_actuators_from_central_and_routed():
+    from custom_components.myhome.where_grammar import is_actuator_where
+
+    assert is_actuator_where("2#1") is True
+    assert is_actuator_where("2#4") is True
+    assert is_actuator_where("#2#9") is True
+    assert is_actuator_where("4-2#0") is True
+    assert is_actuator_where("0#0") is True
+    assert is_actuator_where("0#1") is True
+    assert is_actuator_where("#0#0") is True
+    assert is_actuator_where("#0#9") is True
+    assert is_actuator_where("2#1#4#01") is True
+    assert is_actuator_where("2#4#4#01") is True
+    assert is_actuator_where("2#4#4#1") is True
+    assert is_actuator_where("3#2#1") is True
+    assert is_actuator_where("3#2#1#4#01") is True
+    assert is_actuator_where("#0") is False
+    assert is_actuator_where("#0#1") is False
+    assert is_actuator_where("#0#2") is False
+    assert is_actuator_where("#0#3") is False
+    assert is_actuator_where("4-#0#4") is False
+    assert is_actuator_where("#0#99") is False
+    assert is_actuator_where("#0#4#01") is False
+    assert is_actuator_where("#0#1#4#01") is False
+    assert is_actuator_where("#4#01") is False
+    assert is_actuator_where("2") is False
+    assert is_actuator_where("2#10") is False
+    assert is_actuator_where("2#4#01") is False
+    assert is_actuator_where("2#4#100") is False
+    assert is_actuator_where("3#4#1") is False
+    assert is_actuator_where("") is False
+    assert is_actuator_where("4-") is False
+
+
+@pytest.mark.parametrize("where", ["2#1", "3#2#1", "2#1#4#01"])
+async def test_actuator_where_never_sends_status_or_zone_dimension_polls(hass, fast_bus_pacing, where):
+    """Actuator and 3-token split addresses suppress *#4*W## (MH202 SIGSEGV), *0##, *11##, *19## and *60##."""
+    for model in ("Generic", "F461", "F459", "MH202", "H4684"):
+        handler = _handler(hass, model)
+        handler._initial_discovery_done.set()
+        if "#4#" in where:
+            handler.gateway.profile = SimpleNamespace(
+                model_name=model, supports_interface_zone_requests=True
+            )
+        handler.send_status_request = AsyncMock()
+        zone = MyHOMEClimate(
+            hass=hass,
+            name=f"Actuator {where}",
+            device_id=f"4-{where}",
+            who="4",
+            where=where,
+            heating=True,
+            cooling=True,
+            fan=False,
+            humidity=False,
+            standalone=True,
+            central=False,
+            manufacturer="BTicino",
+            model="Heating Zone",
+            gateway=handler,
+        )
+        zone.hass = hass
+        zone.entity_id = "climate.zone_act"
+        zone.async_write_ha_state = MagicMock()
+        assert zone._poll_on_add is False
+        assert zone._polls_temperature is False
+        zone._enable_fan_mode()
+        zone._enable_humidity()
+        assert zone._poll_on_add is False
+        zone._ask_fan_coil_sides()
+        assert zone._fan_coil_sides_asked_at is None
+        await zone.async_added_to_hass()
+        await zone.async_update()
+        await _settle(hass)
+        sent = [str(c.args[0]) for c in handler.send_status_request.await_args_list]
+        if where == "3#2#1" or model in ("MH202", "H4684"):
+            expected: list[str] = []
+        elif where == "2#1" and model == "F461":
+            expected = ["*#4*#0*20##"]
+        else:
+            expected = [f"*#4*{where}*20##"]
+        assert sent == expected
+
+
+async def test_inline_routed_where_and_routed_central_withhold_polls_and_writes(hass, fast_bus_pacing, caplog):
+    """Inline ``where='2#4#01'`` (interface=None) and routed central ``#0#4#01`` withhold WHO 4 polls and local-bus writes."""
+    for model in ("Generic", "F461", "F459", "H4684", "MH202"):
+        handler = _handler(hass, model)
+        handler._initial_discovery_done.set()
+        handler.send_status_request = AsyncMock()
+        handler.send = AsyncMock()
+
+        inline_zone = MyHOMEClimate(
+            hass=hass,
+            name="Inline Zone 2 Bus 01",
+            device_id="4-2#4#01",
+            who="4",
+            where="2#4#1",
+            heating=True,
+            cooling=True,
+            fan=True,
+            humidity=True,
+            standalone=True,
+            central=False,
+            manufacturer="BTicino",
+            model="Heating Zone",
+            gateway=handler,
+        )
+        inline_zone.hass = hass
+        inline_zone.entity_id = "climate.inline_zone_2_bus_01"
+        inline_zone.async_write_ha_state = MagicMock()
+        assert (inline_zone._where, inline_zone._interface, inline_zone._full_where) == ("2", "01", "2#4#01")
+        assert inline_zone._interface_poll_refused is True
+        assert inline_zone._poll_on_add is False
+
+        routed_central = MyHOMEClimate(
+            hass=hass,
+            name="Central Bus 01",
+            device_id="4-#0#4#01",
+            who="4",
+            where="#0#4#01",
+            heating=True,
+            cooling=True,
+            fan=False,
+            humidity=False,
+            standalone=False,
+            central=True,
+            manufacturer="BTicino",
+            model="Central Unit (3550)",
+            gateway=handler,
+        )
+        routed_central.hass = hass
+        routed_central.entity_id = "climate.central_bus_01"
+        routed_central.async_write_ha_state = MagicMock()
+        assert (routed_central._where, routed_central._interface, routed_central._full_where) == (
+            "#0", "01", "#0#4#01"
+        )
+        assert routed_central._central is True
+        assert routed_central._interface_poll_refused is True
+        assert routed_central._poll_on_add is False
+
+        caplog.clear()
+        with caplog.at_level("DEBUG", logger="custom_components.myhome"):
+            await inline_zone.async_added_to_hass()
+            await inline_zone.async_update()
+            await inline_zone.async_update()
+            await routed_central.async_added_to_hass()
+            await routed_central.async_update()
+            await routed_central.async_update()
+            await inline_zone.async_set_temperature(temperature=21.0)
+            await inline_zone.async_set_hvac_mode(HVACMode.OFF)
+            await inline_zone.async_set_fan_mode("high")
+            await routed_central.async_set_hvac_mode(HVACMode.OFF)
+            await routed_central.async_set_temperature(temperature=20.0)
+        await _settle(hass)
+        handler.send_status_request.assert_not_awaited()
+        handler.send.assert_not_awaited()
+        assert _drain(handler) == []
+        assert len([r for r in caplog.records if "does not route WHO 4 requests across `#4#01`" in r.message]) == 2
+        assert len([r for r in caplog.records if "not writing to local" in r.message and r.levelname == "WARNING"]) == 5
+
+
+@pytest.mark.parametrize("where", ["#0#1", "#0#2", "#0#3", "#0#4", "4-#0#4"])
+async def test_four_zone_central_channels_1_to_4_are_central_and_never_polled(hass, fast_bus_pacing, where):
+    """4-zone central unit channels (#0#1..#0#4) are central even when restored without central=True."""
+    for model in ("Generic", "F461", "F454", "MH202"):
+        handler = _handler(hass, model)
+        handler._initial_discovery_done.set()
+        handler.send_status_request = AsyncMock()
+        cu = MyHOMEClimate(
+            hass=hass,
+            name=f"Central {where}",
+            device_id=f"4-{where.removeprefix('4-')}",
+            who="4",
+            where=where,
+            heating=True,
+            cooling=True,
+            fan=False,
+            humidity=False,
+            standalone=None,
+            central=False,
+            manufacturer="BTicino",
+            model="Heating Zone",
+            gateway=handler,
+        )
+        cu.hass = hass
+        cu.entity_id = "climate.cu_4zone"
+        cu.async_write_ha_state = MagicMock()
+        assert cu._central is True
+        assert cu._poll_on_add is False
+        await cu.async_added_to_hass()
+        await cu.async_update()
+        await _settle(hass)
+        handler.send_status_request.assert_not_awaited()
+        assert handler._actuator_zones == {}
+
+
+async def test_four_zone_central_configured_channels_use_4695_model_and_skip_polls(hass, fast_bus_pacing):
+    """Configuring #0#2..#0#4 sets Central Unit (4695), default Central Unit name, and _central=True via climate.build()."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.climate import async_setup_entry
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_HOST: "192.0.2.44",
+            CONF_PORT: 20000,
+            CONF_PASSWORD: "x",
+            CONF_NAME: "F461",
+            CONF_FIRMWARE: "2.0.11",
+            CONF_MAC: MAC,
+        },
+    )
+    entry.add_to_hass(hass)
+    handler = MyHOMEGatewayHandler(hass, entry)
+    handler._initial_discovery_done.set()
+    handler.send_status_request = AsyncMock()
+    runtime = attach_runtime(hass, entry, MAC, handler)
+    runtime.platforms["climate"] = {
+        "central_2": {CONF_WHERE: "#0#2"},
+        "central_3": {CONF_WHERE: "#0#3"},
+        "central_4": {CONF_WHERE: "#0#4"},
+        "local_02": {CONF_WHERE: "02"},
+    }
+
+    added: list[MyHOMEClimate] = []
+    await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
+    assert len(added) == 4
+    by_where = {entity._where: entity for entity in added}
+    for ch in ("#0#2", "#0#3", "#0#4"):
+        ent = by_where[ch]
+        assert ent._central is True
+        assert ent._model == "Central Unit (4695)"
+        assert ent._device_name.startswith("Central Unit ")
+        assert ent._poll_on_add is False
+        ent.hass = hass
+        ent.entity_id = f"climate.central_{ch[-1]}"
+        ent.async_write_ha_state = MagicMock()
+        await ent.async_added_to_hass()
+        await ent.async_update()
+    # Zero-padded local zone "02" (zone_number == "02") must stay a regular Heating Zone, not central.
+    assert by_where["02"]._central is False
+    assert by_where["02"]._model == "Heating Zone"
+    await _settle(hass)
+    handler.send_status_request.assert_not_awaited()
+
+
+@pytest.mark.parametrize("where", ["2#4#100", "3#4#001", "#4#01"])
+async def test_malformed_inline_routing_does_not_crash_added_to_hass_or_poll(hass, fast_bus_pacing, caplog, where):
+    """3-digit or bare #4# strings do not split into an invalid _interface that crashes watch_zone_actuators."""
+    handler = _handler(hass, "F461")
+    handler._initial_discovery_done.set()
+    handler.send_status_request = AsyncMock()
+    zone = MyHOMEClimate(
+        hass=hass,
+        name=f"Zone {where}",
+        device_id=f"4-{where}",
+        who="4",
+        where=where,
+        heating=True,
+        cooling=True,
+        fan=False,
+        humidity=False,
+        standalone=True,
+        central=False,
+        manufacturer="BTicino",
+        model="Heating Zone",
+        gateway=handler,
+    )
+    zone.hass = hass
+    zone.entity_id = "climate.zone_malformed"
+    zone.async_write_ha_state = MagicMock()
+    assert zone._interface is None
+    assert zone._interface_poll_refused is True
+    assert zone._poll_on_add is False
+    with caplog.at_level("DEBUG", logger="custom_components.myhome"):
+        await zone.async_added_to_hass()
+        await zone.async_update()
+    await _settle(hass)
+    handler.send_status_request.assert_not_awaited()
+    assert handler._actuator_zones == {}
+
+
+async def test_gateway_events_dim14_echo_guards_routed_central_and_actuator_addresses(hass):
+    """Event-session Dimension 14 echoes do not cross-poll local zone Z on #4#II or send *#4*0## on #0."""
+    from OWNd.message import OWNCommand
+
+    handler = _handler(hass, "F461")
+    handler.send_status_request = AsyncMock()
+    dispatcher = handler._event_dispatcher
+
+    for blocked in (
+        "*#4*2#4#01*#14*0210*3##",
+        "*#4*#0*#14*0200*1##",
+        "*#4*#0#1*#14*0200*1##",
+        "*#4*#2#1*#14*0210*3##",
+    ):
+        msg = OWNCommand.parse(blocked)
+        assert msg is not None
+        await dispatcher.process_message(msg)
+    handler.send_status_request.assert_not_awaited()
+
+    local_msg = OWNCommand.parse("*#4*#3*#14*0210*3##")
+    assert local_msg is not None
+    await dispatcher.process_message(local_msg)
+    assert [str(c.args[0]) for c in handler.send_status_request.await_args_list] == ["*#4*3##"]
+
+    handler.send_status_request.reset_mock()
+    handler.gateway.profile = SimpleNamespace(
+        model_name="F461", supports_interface_zone_requests=True
+    )
+    routed_actuator_msg = OWNCommand.parse("*#4*2#1#4#01*#14*0210*3##")
+    assert routed_actuator_msg is not None
+    await dispatcher.process_message(routed_actuator_msg)
+    handler.send_status_request.assert_not_awaited()
+
+    routed_msg = OWNCommand.parse("*#4*2#4#1*#14*0210*3##")
+    assert routed_msg is not None
+    await dispatcher.process_message(routed_msg)
+    assert [str(c.args[0]) for c in handler.send_status_request.await_args_list] == ["*#4*2#4#01##"]
