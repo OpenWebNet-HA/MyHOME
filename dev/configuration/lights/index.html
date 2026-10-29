@@ -2290,7 +2290,7 @@
 <p>Unlike legacy configurations that required manual flags (such as <code>dimmable: True</code>), v2 dynamically learns each fixture's capabilities directly from OpenWebNet bus traffic:</p>
 <ul>
 <li><strong>On / Off</strong>: All discovered fixtures initially support standard switching (<code>turn_on</code>, <code>turn_off</code>).</li>
-<li><strong>Brightness / Dimming</strong>: When the actuator reports a brightness frame (<code>Dimension = 1</code>), the integration unlocks the brightness slider in Home Assistant.</li>
+<li><strong>Brightness / Dimming</strong>: When the actuator reports a brightness frame (<code>Dimension = 1</code>) or a coarse dimmer preset (<code>WHAT = 2..10</code>, mapped to BTicino's non-linear <code>1, 10, 20, 30, 40, 50, 60, 75, 100 %</code> curve), the integration unlocks the brightness slider in Home Assistant.</li>
 <li><strong>Colour Temperature (Tunable White)</strong>: When a DALI or SCS gateway reports colour temperature telemetry (<code>Dimension = 14</code>), Home Assistant exposes mireds/Kelvin colour temperature control.</li>
 <li><strong>HSV / RGB Colour</strong>: Telemetry reporting hue and saturation (<code>Dimension = 12</code>) dynamically enables the Home Assistant colour picker.</li>
 <li><strong>Additive Retention</strong>: Capabilities are <strong>added, never removed</strong>. A DALI DT8 driver reporting both dimensions <code>12</code> and <code>14</code> ends up with <code>supported_color_modes: [hs, color_temp]</code>, and its active <code>color_mode</code> smoothly tracks incoming bus frames.</li>
