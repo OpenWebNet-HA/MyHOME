@@ -724,7 +724,7 @@ Verbatim bus sweep trace contributed by **@emil-d** on [#466 (comment 6436427163
 - **WHO 13 Device Type Code**: `200` (`*#13**15*200##`)
 - **WHO 1013 Object Model**: `10` (`N_CONF=15`, `BRAND=0`, `LINE=5` recorded in `gateway.identification` from startup `*#1013**1*10*15*0*5##`)
 - **Reported Plant Topology**:
-  - `IN` bus (powered by `E46ADCN`): MH201 (`3.6.43`), lighting/dimmer actuators (`31`, `32`, `71`, `72`, `73`, including `F414` dimmer), `F425` scenario memory module (no covers, climate, alarm, or energy meters on the automation bus).
+  - `IN` bus (powered by `E46ADCN`): MH201 (`3.6.43`), lighting/dimmer actuators (5 online in this morning capture: `31`, `32`, `71`, `72`, `73`, including `F414` dimmer; 27 lighting endpoints + at least one `WHO 2` cover at `WHERE = 33` when the full plant bus is powered, see comments `6453327840` & `6481616497` below), `F425` scenario memory module (no climate, alarm, or energy meters on the automation bus).
   - Bus Coupling: `F422` SCS/SCS interface in galvanic separation mode (`MOD` empty, `I1..I3` empty, `I4 = 2`).
   - `OUT` bus (powered separately by `346000`): `F441M` multi-channel audio matrix (`S1` = `F500 COAX` radio tuner, `S2`/`S3` = jack nodes, outputs `1, 3, 4, 5, 6`), and physical sound controls/amplifiers.
 - **Connection**: TCP OpenWebNet (Port 20000)
@@ -749,7 +749,7 @@ Verbatim bus sweep trace contributed by **@emil-d** on [#466 (comment 6436427163
    - `[tx] *#1*0##` (`07:26:31.757Z`) is echoed on the event session in `66.9 ms` (`[rx] *#1*0##`) and answered by 5 `OFF` lighting endpoints within `283.8 ms`: `*1*0*31##`, `*1*0*71##`, `*1*0*72##`, `*1*0*73##`, and `*1*0*32##`, followed by `BUS_QUIET_PERIOD = 0.750 s` (`+0.751 s` to `frames[15]`).
 
 3. **Silent Command-Session Hangs & Single-Slot TCP Lockout (`frames[15..21]`)**:
-   - **`frames[15]` (`07:26:32.792Z`, `[tx] *#2*0##`)**: On a plant with no WHO 2 cover actuators, the MH201 emits neither an event-session echo nor a command-session `ACK`/`NACK`. `OWNCommandSession.send_command` hits `COMMAND_TIMEOUT = 10.0 s` and closes the client socket, followed by `BUS_QUIET_PERIOD = 0.750 s` (`+10.753 s` to `frames[16]`).
+   - **`frames[15]` (`07:26:32.792Z`, `[tx] *#2*0##`)**: On this partial morning bus where no `WHO 2` cover actuators answered, the MH201 emits neither an event-session echo nor a command-session `ACK`/`NACK`. `OWNCommandSession.send_command` hits `COMMAND_TIMEOUT = 10.0 s` and closes the client socket, followed by `BUS_QUIET_PERIOD = 0.750 s` (`+10.753 s` to `frames[16]`).
    - **`frames[16]` (`07:26:43.545Z`, `[tx] *#4*0##`)**: Sent on `2.0.0b16` (prior to #794 adding `MH201` to `GENERAL_ZONE_REQUEST_REFUSED`); `CommandWorkerPool.sending_loop` logs `tx` to `bus_monitor` before `connect()`. Because the MH201's single TCP command slot remains occupied server-side by the unacknowledged `*#2*0##` session, `connect()` backs off (`1 + 2 + 4 + 6 = 13.0 s`, `~13.74 s`), opens the slot once freed, writes `*#4*0##`, and again receives neither `ACK` nor `NACK` for `COMMAND_TIMEOUT = 10.0 s` + `0.750 s` = **`+24.494 s`** to `frames[17]`.
    - **`frames[17..21]` (`*#16*0*5##` at `+14.477 s`, then `*#18*51*51##`, `*#18*51*1200##`, `*#18*52*51##`, `*#18*52*1200##` at `+13.682 s`, `+13.701 s`, `+13.685 s`)**: Each `tx` is recorded in `bus_monitor` prior to `connect()`, which exhausts all `MAX_CONNECT_ATTEMPTS = 5` (`1 + 2 + 4 + 6 = 13.0 s` sleep + 5 refused TCP `*99*0##` handshakes at `~136–145 ms` each = `13.682–13.727 s`). On `*#16*0*5##`, `send_paced` then waits `BUS_QUIET_PERIOD = 0.750 s` (`13.727 + 0.750 = +14.477 s`) before `handle_sweep_bus` enqueues all `36` `WHO 18` point queries into `FrameScheduler` (`capture.started_at = 07:27:23.987Z` when the service call returns); on `frames[18..21]`, the worker hits `continue` on failed `connect()` (bypassing `command_queue_delay`) and immediately pops the next buffered `WHO 18` query with zero extra sleep until export at `07:28:09.554Z`.
    - **Independent Idle-Session Sound Probe**: Contributor separately sent `*#16*0*5##` on a fresh command session (`*99*0##`) when the command slot was free: the MH201 returned neither `ACK` nor `NACK` on the command session, echoed `*#16*0*5##` once on the event session (`*99*1##`) with zero amplifier/matrix replies, and never forwarded `WHO 16` bus traffic when physical sound controls were operated across the `F422` (`I4 = 2`) galvanic interface.
@@ -777,7 +777,7 @@ Follow-up verbatim `<myhome-bus-card>` captures contributed by **@emil-d** on [#
 
 1. **Full 27-Endpoint `WHO 1` Bus Sweep & Non-Blocking `*#2*0##` Completion (`myhome_sweep_MH201_who1-rx_...`, `frames[0..56]`)**:
    - **`*#1*0##` Burst (`frames[0..28]`, `20:34:08.912Z -> 20:34:11.009Z`, `2.097 s`)**: Event echo `*#1*0##` followed by **28 `WHO 1` status replies** across **27 distinct `WHERE` addresses** (`13, 26..29, 31, 32, 35..39, 42, 45..48, 51..53, 55..58, 71..73`, with `13`, `37`, `55` `ON`, `24` `OFF` including `42`, and `38` emitting `*1*0*38##` twice).
-   - **`*#2*0##` Burst (`frames[29..56]`, `20:34:11.859Z -> 20:34:13.909Z`, `2.050 s`)**: Starting `+0.850 s` after `frames[28]` (`BUS_QUIET_PERIOD = 0.750 s` + `MH201Profile.command_queue_delay = 0.100 s`), `[tx] *#2*0##` elicits the **same 28-frame `WHO 1` A/PL status burst** (differing only in adjacent `45`/`56` bus arbitration order). Because the full plant bus answered `*#2*0##` (unlike the morning capture where only 5 endpoints were online), the MH201 command session did not hit `COMMAND_TIMEOUT = 10.0 s`, `handle_sweep_bus` returned at `capture.started_at = 20:34:17.995Z`, and all `45 tx` sweep queries (`5 WHO 13 + 4 general + 36 WHO 18`) drained cleanly (`queue_depth: 0`).
+   - **`*#2*0##` Burst (`frames[29..56]`, `20:34:11.859Z -> 20:34:13.909Z`, `2.050 s`)**: Starting `+0.850 s` after `frames[28]` (`BUS_QUIET_PERIOD = 0.750 s` + `MH201Profile.command_queue_delay = 0.100 s`), `[tx] *#2*0##` elicits the **same 28-frame `WHO 1` A/PL status burst** (differing only in adjacent `45`/`56` bus arbitration order) alongside non-`WHO 1` replies (`91 - 85 = 6` `rx` frames hidden by the `who="1", direction="rx"` export filter — including the `WHO 2` cover at `WHERE = 33` confirmed unfiltered via `*2*0*33##` in `myhome_trace_MH201_all_2026-10-28T19-16-51.json` below). Because the full plant bus answered `*#2*0##` (unlike the morning capture where only 5 lighting endpoints were online), the MH201 command session did not hit `COMMAND_TIMEOUT = 10.0 s`, `handle_sweep_bus` returned at `capture.started_at = 20:34:17.995Z`, and all `45 tx` sweep queries (`5 WHO 13 + 4 general + 36 WHO 18`) drained cleanly (`queue_depth: 0`).
 
 2. **Physical Wall Pushbutton Command Translation (`WHAT 1000`) & `F414` Hold-to-Dim Cadence (`frames[57..84]`)**:
    - **Relay `32` (`frames[57..60]`)**: Wall button short press ON emits `*1*1000#1*32##` -> `*1*1*32##` (`+34.9 ms`); short press OFF emits `*1*1000#0*32##` -> `*1*0*32##` (`+47.4 ms`).
@@ -790,4 +790,33 @@ Follow-up verbatim `<myhome-bus-card>` captures contributed by **@emil-d** on [#
    - `[0] tx *1*1*42##` (`20:38:02.525Z`) -> `[1] rx *1*7*42##` (`+326.5 ms`): `F414` turns ON to stored coarse level `WHAT 7`.
    - `[2] tx *#1*42*1##` (`+63.6 ms` after `rx *1*7*42##`, queued by `MyHOMELight.async_turn_on()` -> `async_update()`) -> `[3] rx *#1*42*1*148*5##` (`+128.5 ms`): `F414` answers Dimension 1 on `MH201` (`3.6.43`) with **`LEVEL100 = 148` (`48 %` brightness)** at active transition speed `5` (corroborating `MH200` + `F414` where `150` (`50 %`) mapped to coarse `WHAT 7`).
    - `[4] tx *1*0*42##` (`20:38:06.762Z`) -> `[5] rx *1*0*42##` (`+79.6 ms`): clean discrete `WHAT 0` turn-off.
+
+---
+
+# #466 BTicino MH201 (FW 3.6.43) + F414 Classic Dimmer PR #828 Live Verification Trace (Full `WHAT 2..10` Ladder, Fine Slider, `78 % -> WHAT 9` Recall & Zero-Bounce `1 %` Turn-On)
+
+Live PR #828 hardware verification trace contributed by **@emil-d** on [#466 (comment 6481616497)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6481616497) (`Home Assistant 2026.10.4`, `MyHOME 2.0.0b16` with PR #828 applied, `OWNd 2.0.0b11`, physical **BTicino MH201** firmware `3.6.43` + **BTicino F414** dimmer at `WHERE = 42`).
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_trace_MH201_all_2026-10-28T19-16-51.json` | Bus Card Trace Export (200 frames in ring buffer: `19 tx / 181 rx`, unfiltered, `truncated: true`, lifetime `total_tx: 36 / total_rx: 354`, `SHA-256: 76d9793e60cb6a7b96a86088d003ef8628e0731ada7f31fa9b11e49da029496a`) | Unfiltered PR #828 verification trace covering the entire `WHAT 2..10` wall-button dimmer ladder (`1, 10, 20, 30, 40, 50, 60, 75, 100 %`), ceiling (`WHAT 10 -> 10`) and floor (`WHAT 2 -> 2 -> 2`) hold clamping, `15` HA fine `Dimension 1` slider writes (`103..199..178` -> `speed = 5`), `178 (78 %) -> *1*9*42## (75 %)` wall-button ON recall, zero-bounce HA `turn_on` at minimum `1 %` (`*1*2*42##` -> `*#1*42*1*101*5##`), periodic `~5.0 s` `*#13**15*200##` and 27-light background beacons, and `WHO 2` cover `*2*0*33##`. |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Full `WHAT 2..10` Wall-Button Ladder, Ceiling Clamp & Floor Clamp (`WHERE = 42`)**:
+   - **Excursion 1 (`frames[1..35]`)**: Wall ON (`*1*1000#1*42##` -> `*1*5*42##` = `30 %`), hold UP 6 steps (`6 -> 7 -> 8 -> 9 -> 10 -> 10`, clamping at ceiling `WHAT 10 = 100 %`), hold DOWN 7 steps (`9 -> 8 -> 7 -> 6 -> 5 -> 4 -> 3`), and wall OFF (`*1*1000#0*42##` -> `*1*0*42##`).
+   - **Excursion 2 (`frames[80..166]`)**: Wall ON (`*1*9*42##`), hold DOWN (`8 -> 7`), hold UP (`8 -> 9 -> 10 -> 10` ceiling clamp), full hold DOWN across all 9 levels (`9 -> 8 -> 7 -> 6 -> 5 -> 4 -> 3 -> 2` = `1 %`), full hold UP (`3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10 -> 10` = `100 %`), and full hold DOWN (`9 -> 8 -> 7 -> 6 -> 5 -> 4 -> 3 -> 2 -> 2 -> 2`, confirming physical `F414` floor clamping repeats `*1*2*42##` on continued `1000#31` holds without turning OFF), followed by OFF, ON recall at `*1*2*42##`, and OFF.
+
+2. **Home Assistant Fine `Dimension 1` Slider & `78 % -> WHAT 9` Wall-Button Recall (`frames[38..81]`)**:
+   - `14` fine HA slider adjustments (`103` `3 %`, `115` `15 %`, `135` `35 %`, `147` `47 %`, `158` `58 %`, `171` `71 %`, `187` `87 %`, `195` `95 %`, `199` `99 %`, `193` `93 %` x2, `189` `89 %`, `184` `84 %`, `178` `78 %`) each emit `tx *#1*42*#1*<100+pct>*0##` and receive `rx *#1*42*1*<100+pct>*5##`, followed by HA OFF (`tx *1*0*42##` -> `rx *1*0*42##`).
+   - Pressing the physical wall button ON (`frames[80..81]`: `*1*1000#1*42##` -> `*1*9*42##`) recalls coarse **`WHAT 9`** (`75 %` on `COARSE_PRESET_TO_PERCENT`, within `3 pp` of `78 %` and matching BTicino's `68..85 % -> WHAT 9` quantization bucket, whereas `preset * 10` previously jumped to `90 %`).
+
+3. **Zero-Bounce HA `turn_on` at Minimum `1 %` Brightness (`frames[168..177]`)**:
+   - `[168] tx *1*1*42##` (`19:15:52.574Z`) -> `[169] rx *1*2*42##` (`+313.8 ms`, mapped via `COARSE_PRESET_TO_PERCENT[2] = 1 %` / `brightness = 3`, vs `20 %` / `51` pre-#828) -> `[170] tx *#1*42*1##` (`+63.7 ms`) -> `[171] rx *#1*42*1*101*5##` (`+128.2 ms`, **`LEVEL100 = 101` = `1 %`**, `brightness = 3` — **0 pp / 0-unit slider bounce**), followed by slider set to `58 %` (`158*5`) and HA OFF (`*1*0*42##`).
+
+4. **`WHO 2` Cover Presence (`WHERE = 33`) & Periodic `~5.0 s` Plant Beacons**:
+   - `frames[36]` (`19:14:45.087Z`) captures `[rx] *2*0*33##`, proving the full plant has a `WHO 2` cover/automation actuator at `WHERE = 33` (explaining why `#827`'s full-plant `*#2*0##` sweep answered cleanly without the `10.0 s` empty-subsystem timeout seen on the partial morning capture in `#824`).
+   - `29` autonomous `[rx] *#13**15*200##` frames arrive at an exact `4.99–5.02 s` period alongside background `WHO 1` status frames covering all `27` plant light `WHERE` addresses.
 

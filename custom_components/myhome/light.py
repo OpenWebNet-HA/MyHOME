@@ -45,6 +45,7 @@ from OWNd.message import (
 
 from .const import (
     BUS_ROUTING,
+    COARSE_PRESET_TO_PERCENT,
     CONF_COLOR_TEMP,
     CONF_DEVICE_MODEL,
     CONF_DIMMABLE,
@@ -1118,6 +1119,9 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         )
         unknown_state = getattr(message, "unknown_state", None)
         is_no_load = unknown_state == 19
+        preset = getattr(message, "brightness_preset", None)
+        has_preset = isinstance(preset, int) and not isinstance(preset, bool)
+        update_bus_state_complete = False
 
         if is_no_load:
             self._attr_is_on = False
@@ -1142,13 +1146,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             # still reports it as `is_on True`, and a step from 0 % may leave the light off (#367).
             self._attr_is_on = message.is_on
             self._is_on_restored = False
-            # An "off" frame is complete for a dimmer too: there is no brightness to ask for.
-            if (
-                not message.is_on
-                or not (set(self._attr_supported_color_modes or ()) - {ColorMode.ONOFF, ColorMode.UNKNOWN})
-                or getattr(message, "brightness", None) is not None
-            ):
-                self._bus_state_complete = True
+            update_bus_state_complete = True
             self._attr_extra_state_attributes.pop("unknown_state", None)
             if message.is_on and self._attr_extra_state_attributes.pop("no_load", None):
                 LOGGER.info(
@@ -1187,7 +1185,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         rgb = getattr(message, "rgb", None)
         has_rgb = is_valid_rgb_tuple(rgb, raw_val)
         has_color_temp = isinstance(getattr(message, "color_temp", None), int)
-        has_level = message.brightness is not None or message.brightness_preset is not None
+        has_level = message.brightness is not None or has_preset
 
         # A dimension the light is locked out of carries no truth in any of its
         # fields: the gateway is replaying a value once written to an address
@@ -1262,6 +1260,21 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 )
                 self._promote_color_mode(ColorMode.BRIGHTNESS)
 
+        # Evaluate after capability auto-promotion so an ONOFF entity promoted to
+        # BRIGHTNESS by a coarse WHAT 2..10 preset still polls Dimension 1 (#466, #612).
+        # An "off" frame is complete for a dimmer too: there is no brightness to ask for.
+        # A coarse WHAT 2..10 frame is NOT complete even if OWNd >= 2.0.0b12 populates
+        # `brightness` on a cached coarse dimmer: Dimension 1 still holds exact 1..100%.
+        if update_bus_state_complete and (
+            not message.is_on
+            or not (
+                set(self._attr_supported_color_modes or ())
+                - {ColorMode.ONOFF, ColorMode.UNKNOWN}
+            )
+            or (getattr(message, "brightness", None) is not None and not has_preset)
+        ):
+            self._bus_state_complete = True
+
         if (
             (
                 ColorMode.BRIGHTNESS in self._attr_supported_color_modes
@@ -1271,12 +1284,18 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             )
             and has_level
             and message.brightness is not None
+            and not has_preset
         ):
             if is_fading:
-                # Precise policy during fade: only apply significant physical changes
+                # Precise policy during fade: only apply significant physical changes.
+                # Pre-09W29 coarse dimmers (is_coarse_dimmer=True, #767) quantize levels
+                # onto BTicino's coarse ladder where 86% -> WHAT 10 -> 100% spans 14 pp.
                 current_opt = self._attr_brightness_pct or 0
                 reported = message.brightness
-                if reported == 0 or abs(reported - current_opt) >= 10:
+                cancel_delta = (
+                    25 if getattr(message, "is_coarse_dimmer", None) is True else 10
+                )
+                if reported == 0 or abs(reported - current_opt) >= cancel_delta:
                     self._cancel_fade_if_active()
                     self._apply_brightness_state(reported)
                 # else: keep optimistic state
@@ -1285,10 +1304,19 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 self._attr_brightness = percent_to_eight_bits(message.brightness)
                 if message.brightness > 0:
                     self._last_brightness_pct = message.brightness
-        elif has_level and message.brightness is None and isinstance(message.brightness_preset, int) and not is_fading:
-            # WHAT 2..10 is "ON at 20 %..100 %": the preset is the level, not just
-            # a hint that the actuator can dim.
-            self._apply_brightness_state(max(0, min(100, message.brightness_preset * 10)))
+        elif has_level and has_preset and not is_fading:
+            # Coarse WHAT 2..10 presets map to BTicino's non-linear dimmerLevelTo100 curve
+            # (2->1%, 3->10%, 4->20%, 5->30%, 6->40%, 7->50%, 8->60%, 9->75%, 10->100%),
+            # corroborated on physical F414 and F418U2 dimmers (#466, #767).
+            # Ignored while software_stepped fade is active — including under OWNd >= 2.0.0b12
+            # where is_coarse_dimmer=True also populates message.brightness on *1*2..10*WHERE##
+            # (86% -> WHAT 10 -> 100% has a 14 pp quantization jump that would self-cancel fades).
+            preset_pct = getattr(message, "brightness_preset_percent", None)
+            if not isinstance(preset_pct, int) or isinstance(preset_pct, bool):
+                preset_pct = COARSE_PRESET_TO_PERCENT.get(
+                    cast(int, preset), cast(int, preset) * 10
+                )
+            self._apply_brightness_state(max(0, min(100, preset_pct)))
 
         if self._off_icon is not None and self._on_icon is not None:
             self._attr_icon = self._on_icon if self._attr_is_on else self._off_icon

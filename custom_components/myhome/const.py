@@ -299,6 +299,22 @@ def percent_to_eight_bits(value: int) -> int:
     return int(round((value * 255) / 100, 0))
 
 
+# BTicino libqtdevices dimmerLevelTo100 mapping for WHO=1 coarse WHAT 2..10 presets
+# (mirrors OWNd.message.COARSE_PRESET_TO_PERCENT while OWNd==2.0.0b11 is pinned;
+# corroborated on physical F414 and F418U2 dimmers, #466 / #767).
+COARSE_PRESET_TO_PERCENT: dict[int, int] = {
+    2: 1,
+    3: 10,
+    4: 20,
+    5: 30,
+    6: 40,
+    7: 50,
+    8: 60,
+    9: 75,
+    10: 100,
+}
+
+
 SERVICE_TURN_ON_TIMED = "turn_on_timed"
 
 PRESET_TIMERS: dict[float, int] = {

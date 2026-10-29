@@ -90,7 +90,7 @@ async def test_brightness_one_of_255_is_on_at_minimum_not_off(hass: HomeAssistan
     assert light._attr_is_on is not False
 
 
-@pytest.mark.parametrize(("what", "percent"), [(2, 20), (5, 50), (10, 100)])
+@pytest.mark.parametrize(("what", "percent"), [(2, 1), (5, 30), (9, 75), (10, 100)])
 def test_wall_dimmer_preset_is_the_level(hass: HomeAssistant, gateway, what, percent) -> None:
     light = _light(hass, gateway)
     light.handle_event(OWNMessage.parse(f"*1*{what}*12##"))

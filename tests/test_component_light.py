@@ -798,6 +798,8 @@ def test_auto_dimmer_promotion_and_flash_support(hass):
     assert light.color_mode == ColorMode.BRIGHTNESS
     assert light.supported_features & LightEntityFeature.TRANSITION
     assert not (light.supported_features & LightEntityFeature.FLASH)
+    assert light._attr_brightness_pct == 20
+    assert light.brightness == percent_to_eight_bits(20)
 
 
 async def test_discovery_callback_message_filtering(hass):
@@ -2211,11 +2213,11 @@ def test_what_19_recovers_when_load_connected(hass):
     assert light.is_on is False
     assert light.extra_state_attributes.get("no_load") is True
 
-    # Bus emits level 4 (40%) when load is attached and light is turned on
+    # Bus emits coarse preset WHAT=4 (20% on BTicino dimmerLevelTo100 curve) when load is attached and light is turned on
     light.handle_event(OWNEvent.parse("*1*4*74##"))
     assert light.is_on is True
-    assert light._attr_brightness_pct == 40
-    assert light.brightness == percent_to_eight_bits(40)
+    assert light._attr_brightness_pct == 20
+    assert light.brightness == percent_to_eight_bits(20)
     assert "no_load" not in light.extra_state_attributes
     assert "unknown_state" not in light.extra_state_attributes
 
@@ -2327,7 +2329,9 @@ async def test_poll_after_discovery_skipped_when_sweep_reported_state(hass):
     gateway.send_status_request.assert_not_called()
 
 
-async def _poll_count_after(hass, frame: str | None, *, dimmable: bool) -> int:
+async def _poll_count_after(
+    hass, frame: str | None, *, dimmable: bool, lock_features: bool = False
+) -> int:
     gateway = MagicMock()
     gateway.send_status_request = AsyncMock()
     gateway.wait_for_initial_discovery = AsyncMock()
@@ -2335,7 +2339,7 @@ async def _poll_count_after(hass, frame: str | None, *, dimmable: bool) -> int:
     light = MyHOMELight(
         hass=hass, name="L", entity_name="L", icon="mdi:lightbulb-off", icon_on="mdi:lightbulb-on",
         device_id="11", who="1", where="11", interface=None, dimmable=dimmable,
-        manufacturer="B", model="M", gateway=gateway,
+        manufacturer="B", model="M", gateway=gateway, lock_features=lock_features,
     )
     light.async_schedule_update_ha_state = MagicMock()
     if frame:
@@ -2355,8 +2359,10 @@ async def test_dimmer_with_brightness_frame_is_not_polled(hass):
 
 
 async def test_dimmer_with_preset_frame_is_still_polled(hass):
-    """WHAT 2..10 carries a preset, not a bus brightness, so the dimmer is still queried (#612)."""
+    """WHAT 2..10 carries a preset, not exact Dimension 1 brightness, even on ONOFF->BRIGHTNESS promotion (#466, #612)."""
     assert await _poll_count_after(hass, "*1*5*11##", dimmable=True) == 1
+    assert await _poll_count_after(hass, "*1*5*11##", dimmable=False) == 1
+    assert await _poll_count_after(hass, "*1*5*11##", dimmable=False, lock_features=True) == 0
 
 
 async def test_dimmer_reported_off_is_not_polled(hass):
@@ -2392,3 +2398,325 @@ def test_dim_step_does_not_flip_point_to_point_light(hass, step):
     assert light.is_on is True
     light.handle_event(OWNMessage.parse(step))
     assert light.is_on is True
+
+
+@pytest.mark.parametrize(
+    ("what_preset", "expected_pct"),
+    [
+        (2, 1),
+        (3, 10),
+        (4, 20),
+        (5, 30),
+        (6, 40),
+        (7, 50),
+        (8, 60),
+        (9, 75),
+        (10, 100),
+    ],
+)
+def test_coarse_what_2_to_10_maps_to_bticino_dimmer_curve(
+    hass, what_preset, expected_pct
+):
+    """Coarse WHAT 2..10 events map to BTicino's non-linear dimmerLevelTo100 curve (#466)."""
+    gateway = MagicMock()
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+    light = MyHOMELight(
+        hass=hass,
+        name="F414 Dimmer",
+        entity_name="F414 Dimmer",
+        icon=None,
+        icon_on=None,
+        device_id="42",
+        who="1",
+        where="42",
+        interface=None,
+        dimmable=False,
+        manufacturer="BTicino",
+        model="MH201",
+        gateway=gateway,
+    )
+    light.hass = hass
+    light.async_schedule_update_ha_state = MagicMock()
+
+    light.handle_event(OWNMessage.parse(f"*1*{what_preset}*42##"))
+
+    assert light.is_on is True
+    assert light.color_mode == ColorMode.BRIGHTNESS
+    assert light.supported_features & LightEntityFeature.TRANSITION
+    assert not (light.supported_features & LightEntityFeature.FLASH)
+    assert light._attr_brightness_pct == expected_pct
+    assert light.brightness == percent_to_eight_bits(expected_pct)
+    assert light._last_brightness_pct == expected_pct
+    assert light._bus_state_complete is False
+
+
+async def test_software_fade_after_wall_dimmer_preset_starts_from_mapped_curve(hass):
+    """Software fade after wall-button coarse dimming uses mapped curve, not preset*10 (#466)."""
+    gateway = MagicMock()
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+    cfg = MagicMock()
+    cfg.options = {CONF_TRANSITION_MODE: TRANSITION_MODE_SOFTWARE}
+    gateway.config_entry = cfg
+
+    light = MyHOMELight(
+        hass=hass,
+        name="F414 Dimmer",
+        entity_name="F414 Dimmer",
+        icon=None,
+        icon_on=None,
+        device_id="42",
+        who="1",
+        where="42",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="MH201",
+        gateway=gateway,
+    )
+    light.hass = hass
+    light.async_schedule_update_ha_state = MagicMock()
+
+    # Wall button steps dimmer down to WHAT=4 (20% on BTicino curve, NOT 40%)
+    light.handle_event(OWNMessage.parse("*1*4*42##"))
+    assert light.is_on is True
+    assert light._attr_brightness_pct == 20
+
+    with patch.object(light._fade_engine, "start_fade") as mock_start_fade:
+        await light.async_turn_on(**{ATTR_BRIGHTNESS_PCT: 10, ATTR_TRANSITION: 2.0})
+        mock_start_fade.assert_called_once_with(20, 10, 2.0)
+
+    # Wall button leaves dimmer at WHAT=7 (50%, NOT 70%) and turns OFF; transition-only turn_on
+    # restores _last_brightness_pct == 50% instead of over-driving to 70%.
+    light.handle_event(OWNMessage.parse("*1*7*42##"))
+    light.handle_event(OWNMessage.parse("*1*0*42##"))
+    assert light.is_on is False
+    assert light._last_brightness_pct == 50
+
+    with patch.object(light._fade_engine, "start_fade") as mock_start_fade:
+        await light.async_turn_on(**{ATTR_TRANSITION: 2.0})
+        mock_start_fade.assert_called_once_with(0, 50, 2.0)
+
+
+def test_coarse_dimmer_echo_during_software_fade_does_not_self_cancel(hass):
+    """Coarse dimmer echoes (86% -> WHAT 10 -> 100%, 14 pp jump) must not self-cancel fades (#466, #767)."""
+    import OWNd.message.lighting as lighting_mod
+
+    clear_registry = getattr(lighting_mod, "clear_coarse_dimmer_wheres", None)
+    gateway = MagicMock()
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+
+    light = MyHOMELight(
+        hass=hass,
+        name="Pre-09W29 F414",
+        entity_name="Pre-09W29 F414",
+        icon=None,
+        icon_on=None,
+        device_id="61",
+        who="1",
+        where="61",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="MH200N",
+        gateway=gateway,
+    )
+    light.hass = hass
+    light.async_schedule_update_ha_state = MagicMock()
+
+    try:
+        # 1. Seed coarse-dimmer detection via speed=240 Dimension 1 reply (on OWNd >= 2.0.0b12)
+        light.handle_event(OWNEvent.parse("*#1*61*1*186*240##"))
+        assert light._attr_brightness_pct == 86
+
+        mock_task = MagicMock()
+        mock_task.done.return_value = False
+        light._fade_task = mock_task
+        light._attr_is_on = True
+        light._attr_brightness_pct = 86
+
+        # Real parsed *1*10*61## echo (on OWNd >= 2.0.0b12: brightness=100, brightness_preset=10,
+        # is_coarse_dimmer=True; on OWNd==2.0.0b11: brightness=None, brightness_preset=10)
+        light.handle_event(OWNEvent.parse("*1*10*61##"))
+        mock_task.cancel.assert_not_called()
+        assert light._fade_task is mock_task
+        assert light._attr_brightness_pct == 86
+
+        # 2. Explicit OWNd >= 2.0.0b12 coarse-preset event shape (deterministic even on pinned OWNd==2.0.0b11):
+        # both 14 pp quantization jump (86% -> WHAT 10 = 100%) and delayed 26 pp step echo (WHAT 8 = 60%)
+        for preset, mapped_pct in ((10, 100), (8, 60)):
+            coarse_preset_echo = MagicMock(spec=OWNLightingEvent)
+            coarse_preset_echo.is_on = True
+            coarse_preset_echo.what = preset
+            coarse_preset_echo.brightness = mapped_pct
+            coarse_preset_echo.brightness_preset = preset
+            coarse_preset_echo.brightness_preset_percent = mapped_pct
+            coarse_preset_echo.is_coarse_dimmer = True
+            coarse_preset_echo.human_readable_log = f"Coarse preset {preset} ({mapped_pct}%)"
+            light.handle_event(coarse_preset_echo)
+            mock_task.cancel.assert_not_called()
+            assert light._attr_brightness_pct == 86
+
+        # 3. Coarse Dimension 1/4 echo (has_preset=False, is_coarse_dimmer=True):
+        # 14 pp quantization (< 25 pp) keeps fade running, while >= 25 pp external override cancels it.
+        coarse_dim_echo = MagicMock(spec=OWNLightingEvent)
+        coarse_dim_echo.is_on = True
+        coarse_dim_echo.what = None
+        coarse_dim_echo.brightness = 100  # |100 - 86| == 14 < 25
+        coarse_dim_echo.brightness_preset = None
+        coarse_dim_echo.is_coarse_dimmer = True
+        coarse_dim_echo.human_readable_log = "Coarse dim echo 100%"
+        light.handle_event(coarse_dim_echo)
+        mock_task.cancel.assert_not_called()
+        assert light._attr_brightness_pct == 86
+
+        coarse_dim_override = MagicMock(spec=OWNLightingEvent)
+        coarse_dim_override.is_on = True
+        coarse_dim_override.what = None
+        coarse_dim_override.brightness = 30  # |30 - 86| == 56 >= 25
+        coarse_dim_override.brightness_preset = None
+        coarse_dim_override.is_coarse_dimmer = True
+        coarse_dim_override.human_readable_log = "External override 30%"
+        light.handle_event(coarse_dim_override)
+        mock_task.cancel.assert_called_once()
+        assert light._fade_task is None
+        assert light._attr_brightness_pct == 30
+
+        # 4. Physical OFF (*1*0*61##) during fade on a coarse dimmer still cancels immediately
+        mock_task2 = MagicMock()
+        mock_task2.done.return_value = False
+        light._fade_task = mock_task2
+        light.handle_event(OWNEvent.parse("*1*0*61##"))
+        mock_task2.cancel.assert_called_once()
+        assert light._fade_task is None
+        assert light.is_on is False
+    finally:
+        if callable(clear_registry):
+            clear_registry()
+
+
+def test_coarse_dimmer_preset_outside_fade_leaves_bus_state_incomplete(hass):
+    """Coarse WHAT 2..10 with is_coarse_dimmer=True applies curve pct when idle but keeps _bus_state_complete False."""
+    gateway = MagicMock()
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+
+    light = MyHOMELight(
+        hass=hass,
+        name="Pre-09W29 F414",
+        entity_name="Pre-09W29 F414",
+        icon=None,
+        icon_on=None,
+        device_id="61",
+        who="1",
+        where="61",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="MH200N",
+        gateway=gateway,
+    )
+    light.hass = hass
+    light.async_schedule_update_ha_state = MagicMock()
+
+    assert light._bus_state_complete is False
+
+    coarse_event = MagicMock(spec=OWNLightingEvent)
+    coarse_event.is_on = True
+    coarse_event.what = 9
+    coarse_event.brightness = 75
+    coarse_event.brightness_preset = 9
+    coarse_event.brightness_preset_percent = 75
+    coarse_event.is_coarse_dimmer = True
+    coarse_event.human_readable_log = "Coarse preset 9 (75%)"
+
+    light.handle_event(coarse_event)
+    assert light.is_on is True
+    assert light._attr_brightness_pct == 75
+    assert light.brightness == percent_to_eight_bits(75)
+    assert light._bus_state_complete is False
+
+    # Subsequent Dimension 1 reply completes bus state with exact percentage
+    light.handle_event(OWNEvent.parse("*#1*61*1*178*5##"))
+    assert light._bus_state_complete is True
+    assert light._attr_brightness_pct == 78
+    assert light.brightness == percent_to_eight_bits(78)
+
+
+async def test_coarse_dimmer_real_software_fade_engine_with_echoes(hass):
+    """End-to-end SoftwareFadeEngine 72% -> 86% -> 100% with live *1*10*61## echo loopback (#466, #767)."""
+    import OWNd.message.lighting as lighting_mod
+
+    clear_registry = getattr(lighting_mod, "clear_coarse_dimmer_wheres", None)
+    sent_cmds: list[str] = []
+    echoes_delivered: list[OWNLightingEvent] = []
+
+    gateway = MagicMock()
+    gateway.send_status_request = AsyncMock()
+    cfg = MagicMock()
+    cfg.options = {CONF_TRANSITION_MODE: TRANSITION_MODE_SOFTWARE}
+    gateway.config_entry = cfg
+
+    light = MyHOMELight(
+        hass=hass,
+        name="Pre-09W29 F414",
+        entity_name="Pre-09W29 F414",
+        icon=None,
+        icon_on=None,
+        device_id="61",
+        who="1",
+        where="61",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="MH200N",
+        gateway=gateway,
+    )
+    light.hass = hass
+    light.async_schedule_update_ha_state = MagicMock()
+
+    async def _send_with_bus_echo(cmd):
+        raw = str(cmd)
+        sent_cmds.append(raw)
+        # Physical MH200N + pre-09W29 F414 answers both *1*10*61## (OWNd >= 2.0.0b12)
+        # and *#1*61*#1*186*0## (OWNd==2.0.0b11) with *1*10*61## on the event session
+        echo_frame = raw if raw.startswith("*1*") else "*1*10*61##"
+
+        def _deliver() -> None:
+            parsed = OWNEvent.parse(echo_frame)
+            assert isinstance(parsed, OWNLightingEvent)
+            echoes_delivered.append(parsed)
+            light.handle_event(parsed)
+
+        hass.loop.call_soon(_deliver)
+
+    gateway.send = AsyncMock(side_effect=_send_with_bus_echo)
+    gateway.send_fade_step = AsyncMock(side_effect=_send_with_bus_echo)
+
+    try:
+        # Seed coarse-dimmer detection (speed=240) at 72% so a 2-step fade hits 86% -> 100%
+        light.handle_event(OWNEvent.parse("*#1*61*1*172*240##"))
+        assert light._attr_brightness_pct == 72
+
+        await light.async_turn_on(**{ATTR_BRIGHTNESS_PCT: 100, ATTR_TRANSITION: 0.06})
+        fade_task = light._fade_task
+        assert fade_task is not None
+        await fade_task
+        await asyncio.sleep(0)
+
+        assert not fade_task.cancelled()
+        assert len(sent_cmds) >= 2
+        assert len(echoes_delivered) == len(sent_cmds)
+        if hasattr(lighting_mod, "is_coarse_dimmer_where"):
+            assert sent_cmds[0] == "*1*10*61##"
+            assert echoes_delivered[0].is_coarse_dimmer is True
+            assert echoes_delivered[0].brightness == 100
+        assert light.is_on is True
+        assert light._attr_brightness_pct == 100
+        assert light.brightness == 255
+        assert light._fade_task is None
+    finally:
+        if callable(clear_registry):
+            clear_registry()
