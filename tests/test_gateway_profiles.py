@@ -319,11 +319,15 @@ def test_discovery_table_with_ownd_matches_the_committed_docs():
     end = doc.index(ugp.DISCOVERY_END_MARKER) + len(ugp.DISCOVERY_END_MARKER)
     committed = doc[start:end].splitlines()
     generated = ugp.build_discovery_block().splitlines()
-    rows_off_the_pin = {
-        str(row["model"])
-        for row in ugp.GATEWAY_DISCOVERY_METADATA
-        if ugp.discovery_whos_for(get_gateway_profile(str(row["profile_name"]))) != row["pinned_whos"]
-    }
+    rows_off_the_pin = (
+        {
+            str(row["model"])
+            for row in ugp.GATEWAY_DISCOVERY_METADATA
+            if ugp.discovery_whos_for(get_gateway_profile(str(row["profile_name"]))) != row["pinned_whos"]
+        }
+        if ugp.manifest_pins_pre_who16_ownd()
+        else set()
+    )
     assert len(generated) == len(committed)
     for got, want in zip(generated, committed, strict=True):
         model = got.split(" | ")[0].lstrip("| ")
@@ -526,3 +530,83 @@ def test_missing_files_and_markers_graceful_degradation(tmp_path: Path):
     nonexistent_const = tmp_path / "const.py"
     assert extract_gateway_models_from_const(nonexistent_const) == []
 
+
+def test_calibrate_discovery_use_pinned_overrides_installed_ownd(monkeypatch: pytest.MonkeyPatch):
+    """``use_pinned=True`` generates the pinned OWNd rows even when an unpinned OWNd drops WHO 16."""
+    import OWNd.profiles as ownd_profiles
+
+    real = ownd_profiles.get_gateway_profile
+
+    def _patched(name: str, *args, **kwargs):
+        if name in ("F461", "MyHomeServer1"):
+            return _ProfileWithoutWho16()
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(ownd_profiles, "get_gateway_profile", _patched)
+    doc = (ugp.REPO_ROOT / "docs" / "getting-started" / "hardware-compatibility.md").read_text(
+        encoding="utf-8"
+    )
+    start = doc.index(ugp.DISCOVERY_START_MARKER)
+    end = doc.index(ugp.DISCOVERY_END_MARKER) + len(ugp.DISCOVERY_END_MARKER)
+
+    assert ugp.build_discovery_block(use_pinned=True) == doc[start:end]
+    assert ugp.build_discovery_block(use_pinned=False) != doc[start:end]
+
+
+def test_oracle_check_enforces_who16_pin_once_manifest_bumps_past_2_0_0b11(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Once manifest.json bumps past OWNd==2.0.0b11, stale WHO 16 pins on F461 / MyHomeServer1 are flagged."""
+    import OWNd.profiles as ownd_profiles
+
+    assert ugp.manifest_pins_pre_who16_ownd() is True
+    assert ugp.manifest_pins_pre_who16_ownd(tmp_path / "missing.json") is False
+
+    bad_json = tmp_path / "bad.json"
+    bad_json.write_text("{not-json", encoding="utf-8")
+    assert ugp.manifest_pins_pre_who16_ownd(bad_json) is False
+
+    bumped_manifest = tmp_path / "manifest.json"
+    bumped_manifest.write_text('{"requirements": ["OWNd==2.0.0b12"]}', encoding="utf-8")
+    assert ugp.manifest_pins_pre_who16_ownd(bumped_manifest) is False
+
+    real = ownd_profiles.get_gateway_profile
+
+    class _DelegatingWithoutWho16:
+        def __init__(self, base):
+            self._base = base
+
+        def __getattr__(self, attr: str):
+            return getattr(self._base, attr)
+
+        def supports_who(self, who: int) -> bool:
+            if who == 16:
+                return False
+            return bool(self._base.supports_who(who))
+
+    def _patched(name: str, *args, **kwargs):
+        base = real(name, *args, **kwargs)
+        if getattr(base, "model_name", None) in ("F461", "MyHomeServer1"):
+            return _DelegatingWithoutWho16(base)
+        return base
+
+    monkeypatch.setattr(ownd_profiles, "get_gateway_profile", _patched)
+    monkeypatch.setattr(ugp, "_patched_ownd_profiles", lambda: [])
+
+    # Pre-bump manifest (OWNd==2.0.0b11): WHO 16 transition is tolerated.
+    assert ugp.verify_profiles_against_oracle() == []
+
+    # Post-bump manifest (OWNd==2.0.0b12): stale pinned_whos with WHO 16 is rejected.
+    violations = ugp.verify_profiles_against_oracle(manifest_path=bumped_manifest)
+    assert [v for v in violations if "**F461** pinned_whos=[1, 2, 4, 16, 18] disagrees" in v]
+    assert [v for v in violations if "**MyHomeServer1** pinned_whos=[1, 2, 4, 16, 18] disagrees" in v]
+    assert len(violations) == 2
+
+    # Updating pinned_whos and sweep_omits at the pin bump clears all violations.
+    rows = copy.deepcopy(ugp.GATEWAY_DISCOVERY_METADATA)
+    for row in rows:
+        if row["profile_name"] in ("F461", "MyHomeServer1"):
+            row["pinned_whos"] = [1, 2, 4, 18]
+            row["sweep_omits"] = [ugp.GENERAL_ZONE_STATUS]
+    monkeypatch.setattr(ugp, "GATEWAY_DISCOVERY_METADATA", rows)
+    assert ugp.verify_profiles_against_oracle(manifest_path=bumped_manifest) == []

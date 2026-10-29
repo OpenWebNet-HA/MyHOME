@@ -34,6 +34,7 @@ DISCOVERY_START_MARKER = "<!-- GATEWAY_DISCOVERY_START -->"
 DISCOVERY_END_MARKER = "<!-- GATEWAY_DISCOVERY_END -->"
 
 ORACLE_JSON = REPO_ROOT / "tests" / "golden" / "firmware_oracle.json"
+PRE_WHO16_OWND_PIN = "OWNd==2.0.0b11"
 STARTUP_DISCOVERY_WHOS: tuple[int, ...] = (1, 2, 4, 5, 16, 18)
 
 FOOTER_NOTE = (
@@ -349,6 +350,19 @@ def extract_ssdp_models_from_manifest(manifest_path: Path = MANIFEST_JSON) -> se
         return set()
 
 
+def manifest_pins_pre_who16_ownd(manifest_path: Path = MANIFEST_JSON) -> bool:
+    """Return True while manifest.json still pins the pre-OWNd#142 release (OWNd==2.0.0b11)."""
+    if not manifest_path.exists():
+        return False
+
+    try:
+        manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        reqs = manifest_data.get("requirements", [])
+        return isinstance(reqs, list) and PRE_WHO16_OWND_PIN in reqs
+    except Exception:
+        return False
+
+
 def calibrate_metadata_with_ownd(
     manifest_path: Path = MANIFEST_JSON,
     metadata: list[dict[str, object]] | None = None,
@@ -489,18 +503,24 @@ def discovery_whos_for(profile: object) -> list[int]:
 
 def calibrate_discovery_with_ownd(
     discovery_metadata: list[dict[str, object]] | None = None,
+    *,
+    use_pinned: bool = False,
 ) -> list[dict[str, object]]:
     """Derive the startup discovery rows from OWNd.profiles.
 
     ``queried_whos`` (the advertised column), the ``sweep_omits`` that still apply and the
-    sound wording follow the installed profile. Without an importable OWNd the rows carry
-    ``pinned_whos`` (what the pinned OWNd yields), so the generated table is the same either
-    way as long as the pin and the fallback agree; nothing else is guessed.
+    sound wording follow the installed profile unless ``use_pinned=True``. Without an
+    importable OWNd (or when ``use_pinned=True``) the rows carry ``pinned_whos`` (what the
+    pinned OWNd yields), so the generated table matches the pinned release either way; nothing
+    else is guessed.
     """
-    try:
-        from OWNd.profiles import get_gateway_profile
-    except ImportError:
+    if use_pinned:
         get_gateway_profile = None
+    else:
+        try:
+            from OWNd.profiles import get_gateway_profile
+        except ImportError:
+            get_gateway_profile = None
 
     calibrated = copy.deepcopy(
         GATEWAY_DISCOVERY_METADATA if discovery_metadata is None else discovery_metadata
@@ -526,9 +546,9 @@ def calibrate_discovery_with_ownd(
     return calibrated
 
 
-def generate_gateway_discovery_table() -> str:
+def generate_gateway_discovery_table(*, use_pinned: bool = False) -> str:
     """Generate the markdown table for Gateway Startup Discovery Capabilities."""
-    rows = calibrate_discovery_with_ownd()
+    rows = calibrate_discovery_with_ownd(use_pinned=use_pinned)
     lines = [
         "| Gateway Model | Profile Subsystems (advertised) | Startup Sweep Requests (sent) | Profile Support Notes |",
         "| :--- | :--- | :--- | :--- |",
@@ -546,9 +566,9 @@ def generate_gateway_discovery_table() -> str:
     return "\n".join(lines)
 
 
-def build_discovery_block() -> str:
+def build_discovery_block(*, use_pinned: bool = False) -> str:
     """Return the complete marker-wrapped startup discovery table block."""
-    table = generate_gateway_discovery_table()
+    table = generate_gateway_discovery_table(use_pinned=use_pinned)
     return f"{DISCOVERY_START_MARKER}\n{table}\n{DISCOVERY_END_MARKER}"
 
 
@@ -575,7 +595,10 @@ def _patched_ownd_profiles() -> list[str]:
     return patched
 
 
-def verify_profiles_against_oracle(oracle_path: Path = ORACLE_JSON) -> list[str]:
+def verify_profiles_against_oracle(
+    oracle_path: Path = ORACLE_JSON,
+    manifest_path: Path = MANIFEST_JSON,
+) -> list[str]:
     """Cross-verify OWNd gateway profiles and MyHOME discovery metadata against firmware_oracle.json."""
     try:
         from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
@@ -638,6 +661,7 @@ def verify_profiles_against_oracle(oracle_path: Path = ORACLE_JSON) -> list[str]
                     f"disagrees with oracle {probe_frame} verdict (expected {expected_supported})."
                 )
 
+    allow_who16_transition = manifest_pins_pre_who16_ownd(manifest_path)
     for row in GATEWAY_DISCOVERY_METADATA:
         prof_name = str(row.get("profile_name", ""))
         prof = get_gateway_profile(prof_name)
@@ -661,12 +685,17 @@ def verify_profiles_against_oracle(oracle_path: Path = ORACLE_JSON) -> list[str]
                 f"Discovery row {row.get('model')} pinned_whos={pinned} is not in startup sweep order "
                 f"{in_sweep_order(pinned)} (a repeated or reordered WHO)."
             )
-        # The pin may differ from the installed profile only by WHO 16, and only on a row that
-        # declares the WHO 16 switch (``notes_without_who16``): the one profile change the
-        # fallback absorbs between the pinned release and the next (OWNd #142). Any other
-        # difference is a stale or mistyped pin.
+        # While manifest.json still pins OWNd==2.0.0b11, the pin may differ from the installed
+        # profile only by WHO 16, and only on a row that declares the WHO 16 switch
+        # (``notes_without_who16``): the one profile change the fallback absorbs between the
+        # pinned release and the next (OWNd #142). Once manifest.json bumps past 2.0.0b11,
+        # ``allow_who16_transition`` flips to False and any difference is flagged as stale.
         expected_whos = discovery_whos_for(prof)
-        tolerated = {16} if row.get("notes_without_who16") else set()
+        tolerated = (
+            {16}
+            if (allow_who16_transition and row.get("notes_without_who16"))
+            else set()
+        )
         if (set(pinned) ^ set(expected_whos)) - tolerated:
             violations.append(
                 f"Discovery row {row.get('model')} pinned_whos={pinned} disagrees with the installed "
