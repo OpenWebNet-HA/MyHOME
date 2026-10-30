@@ -101,6 +101,8 @@ async def test_options_flow_rejects_workers_above_gateway_limit(hass: HomeAssist
     entry.add_to_hass(hass)
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "user"})
     assert result["type"] == FlowResultType.FORM
     assert result["description_placeholders"]["session_limit"] == "1"
 
@@ -128,6 +130,8 @@ async def test_options_flow_checks_the_newly_chosen_model(hass: HomeAssistant) -
     entry.add_to_hass(hass)
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "user"})
     with patch("homeassistant.config_entries.ConfigEntries.async_reload", return_value=True):
         accepted = await hass.config_entries.options.async_configure(
             result["flow_id"],
@@ -150,6 +154,8 @@ async def test_options_flow_suggests_a_count_within_the_limit(hass: HomeAssistan
     entry.add_to_hass(hass)
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "user"})
     field = next(k for k in result["data_schema"].schema if k == "command_worker_count")
     assert field.description["suggested_value"] == 1
 

@@ -261,6 +261,20 @@
           "tuner_pictures": "Una voce MHz=URL per riga (es. 96.2=/local/radio/one.png): l'immagine mostrata finché un sintonizzatore è su quella frequenza. Immagini tue; nessuna è inclusa.",
           "command_worker_count": "Consigliato per il {model}: {session_default}. Accetta al massimo {session_limit} sessione/i di comando, e ognuna, insieme alla sessione eventi, occupa una delle sue poche connessioni, necessarie anche all'app Legrand/BTicino e ad altri client. Aumenta solo se i comandi si accodano."
         }
+      },
+      "init": {
+        "title": "MyHOME",
+        "menu_options": {
+          "panel": "Pannello MyHOME",
+          "user": "Impostazioni gateway"
+        }
+      },
+      "panel": {
+        "title": "Pannello MyHOME",
+        "description": "[Apri il pannello MyHOME]({panel_url}) per questo gateway.\n\nLa visibilità nella barra laterale è condivisa da tutti i gateway e dagli amministratori. Il pannello resta accessibile da questo collegamento anche quando la voce è nascosta.",
+        "data": {
+          "show_sidebar": "Mostra MyHOME nella barra laterale"
+        }
       }
     },
     "error": {
@@ -281,6 +295,7 @@
       "secondary_requires_shared_topology": "I ruoli secondario e di riserva richiedono che la topologia del bus sia impostata su Condiviso.",
       "multiple_shared_primaries": "Un altro gateway è già configurato come gateway primario per questo bus condiviso. Selezionare Secondario o Riserva attiva.",
       "duplicate_decoder_source": "Ciascun decoder deve essere collegato a un ingresso sorgente della matrice diverso.",
+      "panel_save_failed": "Impossibile salvare la preferenza. Riprova.",
       "invalid_ignored_address": "Formato indirizzo ignorato non valido (atteso 'WHO/WHERE', es. '1/74' o '1/74#4#01')"
     }
   },
@@ -585,6 +600,9 @@
     },
     "seek_not_supported": {
       "message": "{entity_id}: la ricerca di frequenza è supportata solo sulle entità sintonizzatore"
+    },
+    "cover_position_unknown": {
+      "message": "{name}: esegui un’apertura o una chiusura completa prima di impostare una posizione intermedia."
     },
     "volume_not_finite": {
       "message": "{entity_id}: il livello del volume {volume} non è un numero finito valido"

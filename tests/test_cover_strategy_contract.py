@@ -16,7 +16,7 @@ from homeassistant.components.cover import CoverEntityFeature
 from homeassistant.helpers.restore_state import RestoredExtraData
 from homeassistant.util import dt as dt_util
 from OWNd.message import OWNEvent
-from pytest_homeassistant_custom_component.common import async_fire_time_changed
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 from custom_components.myhome.cover import CoverScope, MyHOMECover, MyHOMEScopeCover
 from custom_components.myhome.cover_motion import END_SETTLE_MARGIN
@@ -99,6 +99,8 @@ def _cover(hass, strategy: Any = None, **kwargs: Any) -> MyHOMECover:
     gw.mac = "00:03:50:00:12:34"
     gw.log_id = "[TestGW]"
     gw.send = AsyncMock()
+    gw.config_entry = MockConfigEntry(domain="myhome", data={"mac": gw.mac})
+    gw.config_entry.add_to_hass(hass)
     args: dict[str, Any] = {
         "hass": hass,
         "name": "Cover 21",
