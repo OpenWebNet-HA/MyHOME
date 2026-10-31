@@ -230,10 +230,12 @@ async def test_stale_auto_stop_generation_is_a_noop(cover, gateway, clock, fake_
     await _yield()
     # A second command supersedes the first before its timer fires
     await cover.async_open_cover()
-    assert first_task.cancelled() or first_task.done() or cover._stop_task is None
+    assert cover._stop_task is not first_task
     await _yield()
+    assert first_task.cancelled() or first_task.done()
     # Only the direction frames were sent: no stop from the stale run
     assert [f for f, _ in gateway.deliveries] == ["*2*2*21##", "*2*1*21##"]
+    cover._cancel_stop_task()
 
 
 async def test_echo_window_bounded_without_delivery_info(cover, clock, fake_time):
@@ -383,6 +385,7 @@ async def test_echo_path_tolerates_state_write_runtime_error(cover, gateway, clo
     cover.async_schedule_update_ha_state = MagicMock(side_effect=RuntimeError("no loop"))
     cover.handle_event(OWNEvent.parse("*2*0*21##"))  # echo inside the window
     assert cover.is_opening is True
+    cover._cancel_stop_task()
 
 
 # ── review of #318 ───────────────────────────────────────────────────────
