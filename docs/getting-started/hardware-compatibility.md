@@ -36,11 +36,16 @@ The MyHOME integration supports all official BTicino and Legrand OpenWebNet gate
 | **Automation / Covers** | `2` | `cover` | F401, F411, LN4672M2, 67557 |
 | **Thermoregulation** | `4` | `climate`, `sensor` | 3550, 4695 (Central Units), 3455, L4691, L4577, F430/2, F430/4 |
 | **Burglar Alarm** | `5` | `alarm_control_panel` | 3485, 3486 (Central Units), 3480 |
+| **Door Entry** | `6` | `lock`, `event` | 346230, 346260, 346210 (Door lock / gate actuators), Entrance Panels (`4000`–`4099`) — *requires A/V-capable gateway (`F454`, `F453AV`, `F452V`, `F452`, `F459`, or `MH200`/`MH200N`/`F453`/`MH202` via `F422`)* |
+| **Video Door Entry / Intercom** | `8` | `event` | 2-wire entrance panels (`PE1`–`PE4`) — *requires A/V gateway (`F454`, `F453AV`, `F452V`, `F452`, `F459`, or `MH200`/`MH200N`/`MH202` via `F422`)* |
 | **Gateway Diagnostics** | `13` | `diagnostics`, `repair` | Gateway internal RTC clock, firmware, uptime, device types |
 | **Scenario Control (CEN)** | `15` | `device_trigger`, `event` | 3477, L4651/2, L4652/2 (Short / Long press) |
 | **Sound System** | `16` | `media_player` | F441, F441M (Audio matrix), L4561N / L4561, L4560, 3482, 3495 (Audio source interfaces & isolator), H4562, L4562, F502, 3484, 3487 (Room amplifiers), F500, F500COAX (FM RDS Tuners) |
 | **Energy Management** | `18` | `sensor` | F520, F521, F522, F523, 3522 |
 | **Scenario Control (CEN+)** | `25` | `device_trigger`, `event` | L4652/3, LN4652, H4652 (Rotary dials, pushbuttons) |
+
+> [!IMPORTANT]
+> **Door Entry & Intercom (`WHO = 6 / 8`) — `MH` vs `AV` Bus Separation**: BTicino 2-wire door entry (`AV` SCS riser) and home automation (`MH` SCS bus) are physically separate buses unless bridged through an `F422` SCS/SCS interface or an A/V gateway (`F454`, `F453AV`, `F452V`, `F459`). Dual-bus indoor touchscreens such as **HomeTouch `3488`** have isolated `MH SCS BUS` and `AV SCS BUS` terminals (they do **not** bridge door-entry frames onto `MH`) and do **not** run a local OpenWebNet server on TCP port `20000`. Automation-only gateways (**`MyHomeServer1`**, **`F455`**, **`F461`**, **`F450`**, **`F460`**) omit the `bt_vct` door-entry translator in firmware and NACK `*6*10*<where>##` with `*#*0##`. On such plants, either drive gates/strikes via an `MH`-bus dry-contact relay (`F411/4`, `F411/2`, `WHO = 1` impulse cover) or add an `F454` / `F453AV` A/V gateway in **Shared Bus → Secondary** mode with `WHO 6` and `WHO 8` delegated to it.
 
 > [!NOTE]
 > **Sound System (WHO = 16) Wiring**: The 2-wire SCS bus carries both digital commands (power, volume, input routing via OpenWebNet WHO 16) and modulated stereo audio simultaneously over the same 2-wire bus. External audio streamers connect their stereo analog line-out to an audio source interface (e.g. Legrand / BTicino L4561N, L4560, or 3482), which modulates the audio onto the 2-wire SCS bus into the F441/F441M matrix inputs S1–S4. For full details and the official wiring schematic, see the [Sound System / Media Player Guide](../configuration/media_player.md).

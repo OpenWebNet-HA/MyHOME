@@ -50,6 +50,14 @@ Things the integration does not do, or does with a caveat, and the reason. Where
 | **Zones are not entities; the panel follows the central unit.** Some plants (F454 + 3486) surface several zone objects with no arm / disarm frames answered (#311). | WHO 5 zone and sensor discovery needs a bus trace from a physical central unit to model correctly; the current implementation is built on golden frames. | Zone frames are available as `myhome_message_event` (with **Generate Events** on) and alarm state changes as `myhome_alarm_event`; a trace attached to #311 unblocks the design. |
 | **Arming requires the central unit to accept the command.** | Central units reject arming while a zone is open or the engineer code is active; the bus only reports the refusal. | Watch the bus-monitor card for the NACK. |
 
+## Door entry and intercom (WHO 6 / WHO 8)
+
+| Limitation | Why | Workaround |
+| :--- | :--- | :--- |
+| **Automation-only gateways (`MyHomeServer1`, `F455`, `F461`, `F450`, `F460`) reject `WHO 6` unlock commands (`*6*10*<where>##`) with NACK (`*#*0##`) and see no `WHO 6 / 8` traffic.** (Discussion #833) | Their firmware omits the `bt_vct` door-entry translator daemon and has only an automation (`MH`) SCS terminal — never a 2-wire door-entry (`AV`) terminal. | Either wire an `MH`-bus relay actuator (`F411/4`, `F411/2`, `L4652`) in parallel with the gate/strike dry-contact input and configure it as a `WHO 1` impulse `cover`, or add an A/V OpenWebNet gateway (`F454`, `F453AV`) coupled to the `AV` riser (or via an `F422` interface) as a **Shared Bus → Secondary** gateway with `WHO 6` and `WHO 8` delegated to it. |
+| **`HomeTouch 3488` and `Classe 100X / 300X / 300EOS` indoor video displays neither bridge `AV` frames onto `MH` nor expose a local OpenWebNet server on TCP port `20000`.** (Discussion #833) | `HomeTouch 3488` has physically isolated `MH SCS BUS` and `AV SCS BUS` 2-wire terminals: tapping its screen for lights transmits on `MH`, while door/gate release buttons transmit strictly on `AV`. Over LAN, `3488` acts only as an OpenWebNet *client* pairing to `MyHomeServer1` and exposes SIP/HTTPS for the BTicino cloud *Door Entry for HOMETOUCH* app — no local `openserver` listens on port `20000`. | Do not point the integration's host IP at `HomeTouch 3488`. Use an `MH`-bus impulse relay (`F411/4`) at the gate/strike inputs or an `F454` / `F453AV` A/V gateway on the `AV` bus (see above). |
+| **Door entry locks (`lock`) are never auto-discovered from bus traffic.** | Creating a code-less `lock` entity automatically whenever someone presses an indoor door-release button would let anyone with dashboard access unlatch the strike. | Declare door entry locks explicitly under `lock:` in `myhome.yaml` (with an optional `code:` PIN). |
+
 ## Sound system (WHO 16)
 
 | Limitation | Why | Workaround |

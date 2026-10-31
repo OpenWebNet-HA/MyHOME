@@ -209,9 +209,15 @@ class GatewayEventDispatcher:
         """Return True if this gateway is the active owner for this WHO subsystem."""
         if getattr(self.handler, "is_standby", False):
             # Standby is only active for bus events if failover is active (primary is offline)
+            # and no connected secondary already owns this delegated subsystem.
             primary_gw = self.handler._get_primary_gateway()
-            if primary_gw is not None and not primary_gw.is_connected:
-                return who is not None and self.handler._profile_supports_who(who)
+            if primary_gw is not None and not primary_gw.is_connected and who is not None:
+                if who in getattr(primary_gw, "delegated_away_whos", set()):
+                    sec_fn = getattr(primary_gw, "_get_secondary_for_who", None)
+                    sec = sec_fn(who) if callable(sec_fn) else None
+                    if sec is not None and getattr(sec, "is_connected", False):
+                        return False
+                return bool(self.handler._profile_supports_who(who))
             return False
 
         if getattr(self.handler, "is_secondary", False):

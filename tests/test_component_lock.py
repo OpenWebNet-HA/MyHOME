@@ -377,3 +377,354 @@ async def test_lock_receives_live_bus_frames_and_isolates_sub_bus(hass: HomeAssi
         lck._cancel_auto_relock()
         await lck.async_will_remove_from_hass()
 
+
+def test_gateway_door_entry_support_and_label_helpers():
+    """Verify _gateway_supports_door_entry, _effective_send_gateway, and _gateway_model_label across fallbacks and delegation."""
+    from custom_components.myhome.lock import (
+        _effective_send_gateway,
+        _gateway_model_label,
+        _gateway_supports_door_entry,
+        _gateway_supports_who6,
+    )
+
+    # Unsupported primary without delegation -> False
+    mhs1 = MagicMock(spec=["model", "delegated_away_whos", "profile_supports_who"])
+    mhs1.model = "MyHomeServer1"
+    mhs1.delegated_away_whos = set()
+    mhs1.profile_supports_who.return_value = False
+    assert _gateway_supports_door_entry(mhs1) is False
+    assert _gateway_supports_who6(mhs1) is False
+    assert _gateway_model_label(_effective_send_gateway(mhs1)) == "MyHomeServer1"
+
+    # Delegated WHO 6 to connected F454 -> True, and effective send gateway resolves to secondary F454
+    f454 = MagicMock(spec=["model", "is_connected", "profile_supports_who"])
+    f454.model = "F454"
+    f454.is_connected = True
+    f454.profile_supports_who.return_value = True
+    mhs1_delegated = MagicMock(
+        spec=[
+            "model",
+            "is_connected",
+            "delegated_away_whos",
+            "_get_secondary_for_who",
+            "_get_standby_gateway",
+            "profile_supports_who",
+        ]
+    )
+    mhs1_delegated.model = "MyHomeServer1"
+    mhs1_delegated.is_connected = True
+    mhs1_delegated.delegated_away_whos = {6, 8}
+    mhs1_delegated._get_secondary_for_who.return_value = f454
+    mhs1_delegated._get_standby_gateway.return_value = None
+    mhs1_delegated.profile_supports_who.return_value = False
+    assert _gateway_supports_door_entry(mhs1_delegated) is True
+    assert _effective_send_gateway(mhs1_delegated) is f454
+    assert _gateway_model_label(_effective_send_gateway(mhs1_delegated)) == "F454"
+
+    # Secondary temporarily disconnected -> send() fell back to primary, so effective gateway is MyHomeServer1
+    f454.is_connected = False
+    assert _gateway_supports_door_entry(mhs1_delegated) is True
+    assert _effective_send_gateway(mhs1_delegated) is mhs1_delegated
+    assert _gateway_model_label(_effective_send_gateway(mhs1_delegated)) == "MyHomeServer1"
+
+    # Both primary and secondary disconnected, connected WHO=6 warm standby (F453AV) carries send()
+    f453av = MagicMock(spec=["model", "is_connected", "profile_supports_who"])
+    f453av.model = "F453AV"
+    f453av.is_connected = True
+    f453av.profile_supports_who.return_value = True
+    mhs1_delegated.is_connected = False
+    mhs1_delegated._get_standby_gateway.return_value = f453av
+    assert _effective_send_gateway(mhs1_delegated) is f453av
+    assert _gateway_model_label(_effective_send_gateway(mhs1_delegated)) == "F453AV"
+
+    # Warm standby that lacks WHO=6 (F455) is skipped by _failover_target -> falls back to primary
+    f453av.profile_supports_who.return_value = False
+    assert _effective_send_gateway(mhs1_delegated) is mhs1_delegated
+
+    # Delegated WHO 6 when secondary is not yet loaded -> falls back to primary's label
+    mhs1_delegated.is_connected = True
+    mhs1_delegated._get_secondary_for_who.return_value = None
+    assert _gateway_model_label(_effective_send_gateway(mhs1_delegated)) == "MyHomeServer1"
+
+    # Legacy stub with only _profile_supports_who, raising vs returning bool
+    legacy = MagicMock(spec=["name", "_profile_supports_who"])
+    legacy.name = "  F455 Gateway  "
+    legacy._profile_supports_who.return_value = False
+    assert _gateway_supports_door_entry(legacy) is False
+    assert _gateway_model_label(legacy) == "F455 Gateway"
+
+    legacy._profile_supports_who.side_effect = RuntimeError("broken profile")
+    assert _gateway_supports_door_entry(legacy) is True
+
+    # Bare object without profile helpers or string labels
+    bare = object()
+    assert _gateway_supports_door_entry(bare) is True
+    assert _gateway_model_label(bare) == "MyHOME gateway"
+
+
+async def test_lock_setup_warns_only_on_unsupported_undelagated_gateway(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+):
+    """Startup logs a clear warning when WHO=6 locks are configured on an automation-only gateway unless WHO 6 is delegated."""
+    mac = "00:03:50:11:22:33"
+    gw = MagicMock()
+    gw.mac = mac
+    gw.unique_id = mac
+    gw.log_id = "[MyHomeServer1 192.168.1.10]"
+    gw.model = "MyHomeServer1"
+    gw.device_registry_id = "gw_dev"
+    gw.available = True
+    gw.availability_signal = f"myhome_{mac}_availability"
+    gw.delegated_away_whos = set()
+    gw.profile_supports_who.return_value = False
+
+    def _build_entry(entry_id: str, locks_cfg: dict) -> MagicMock:
+        hass.data[DOMAIN] = {
+            mac: {
+                "entity": gw,
+                CONF_PLATFORMS: {PLATFORM: dict(locks_cfg)},
+            }
+        }
+        entry = MagicMock()
+        entry.data = {"mac": mac}
+        entry.entry_id = entry_id
+        attach_runtime(hass, entry)
+        return entry
+
+    with (
+        patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]),
+        patch("custom_components.myhome.discovery.er.async_get"),
+    ):
+        # 1. Unsupported gateway with configured locks -> logs warning naming addresses and workarounds
+        caplog.clear()
+        entry1 = _build_entry(
+            "mhs1_warn",
+            {
+                "6-4000": {"who": "6", "where": "4000", "name": "Gate 1"},
+                "6-5#4#01": {"who": "6", "where": "5", "interface": "01", "name": "Gate 2"},
+            },
+        )
+        added: list[MyHOMELock] = []
+        with caplog.at_level("WARNING"):
+            await async_setup_entry(hass, entry1, added.extend)
+        assert len(added) == 2
+        warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
+        assert any(
+            "4000, 5#4#01" in msg
+            and "MyHomeServer1" in msg
+            and "bt_vct" in msg
+            and "HomeTouch 3488" in msg
+            for msg in warnings
+        )
+
+        # 2. Unsupported gateway with NO configured locks -> no warning
+        caplog.clear()
+        entry2 = _build_entry("mhs1_empty", {})
+        with caplog.at_level("WARNING"):
+            await async_setup_entry(hass, entry2, [].extend)
+        assert not [r for r in caplog.records if r.levelname == "WARNING"]
+
+        # 3. Same MyHomeServer1 with WHO 6 delegated to a secondary F454 -> no warning
+        caplog.clear()
+        gw.delegated_away_whos = {6, 8}
+        entry3 = _build_entry(
+            "mhs1_delegated",
+            {"6-4000": {"who": "6", "where": "4000", "name": "Gate 1"}},
+        )
+        with caplog.at_level("WARNING"):
+            await async_setup_entry(hass, entry3, [].extend)
+        assert not [r for r in caplog.records if r.levelname == "WARNING"]
+
+
+async def test_lock_unlock_raises_homeassistant_error_on_nack_timeout_and_failure(
+    hass: HomeAssistant,
+):
+    """Verify async_unlock translates NACKs, timeouts, and transport errors into HomeAssistantError while preserving external task cancellation."""
+    from homeassistant.exceptions import HomeAssistantError
+
+    gw = MagicMock()
+    gw.mac = "00:03:50:99:88:77"
+    gw.unique_id = gw.mac
+    gw.log_id = "[MyHomeServer1]"
+    gw.model = "MyHomeServer1"
+    gw.is_connected = True
+    gw.delegated_away_whos = set()
+    gw._get_secondary_for_who.return_value = None
+    gw._get_standby_gateway.return_value = None
+    gw.profile_supports_who.return_value = False
+    gw.send = AsyncMock()
+
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        lock = MyHOMELock(
+            hass=hass,
+            name="Gate 1",
+            entity_name=None,
+            device_id="4000",
+            who="6",
+            where="4000",
+            interface=None,
+            manufacturer="BTicino",
+            model="Door Entry Lock",
+            gateway=gw,
+        )
+        lock.hass = hass
+        lock.entity_id = "lock.gate_1"
+        lock.async_write_ha_state = MagicMock()
+
+    # 1. Gateway NACK (*#*0##) cancels write_fut mid-flight on unsupported MyHomeServer1
+    fut_nack: asyncio.Future[float] = hass.loop.create_future()
+    hass.loop.call_soon(fut_nack.cancel)
+    gw.send.return_value = fut_nack
+
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await lock.async_unlock()
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == "lock_gateway_who6_unsupported"
+    assert exc_info.value.translation_placeholders == {
+        "name": "Gate 1",
+        "gateway": "MyHomeServer1",
+        "frame": "*6*10*4000##",
+    }
+    assert lock.is_locked is True
+    assert lock._relock_unsub is None
+    lock.async_write_ha_state.assert_not_called()
+
+    # 1b. Delegated secondary (F454) temporarily disconnected -> MyHomeServer1 NACKs locally and is named in error
+    f454_down = MagicMock()
+    f454_down.model = "F454"
+    f454_down.is_connected = False
+    f454_down.profile_supports_who.return_value = True
+    gw.delegated_away_whos = {6, 8}
+    gw._get_secondary_for_who.return_value = f454_down
+    fut_local_nack: asyncio.Future[float] = hass.loop.create_future()
+    fut_local_nack.cancel()
+    gw.send.return_value = fut_local_nack
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await lock.async_unlock()
+    assert exc_info.value.translation_key == "lock_gateway_who6_unsupported"
+    assert exc_info.value.translation_placeholders["gateway"] == "MyHomeServer1"
+    gw.delegated_away_whos = set()
+    gw._get_secondary_for_who.return_value = None
+
+    # 2. Gateway NACK / drop on a WHO=6-capable gateway (F454) raises lock_command_rejected
+    gw.model = "F454"
+    gw.profile_supports_who.return_value = True
+    fut_rejected: asyncio.Future[float] = hass.loop.create_future()
+    fut_rejected.cancel()
+    gw.send.return_value = fut_rejected
+
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await lock.async_open()
+    assert exc_info.value.translation_key == "lock_command_rejected"
+    assert exc_info.value.translation_placeholders == {
+        "name": "Gate 1",
+        "gateway": "F454",
+        "frame": "*6*10*4000##",
+    }
+    assert lock.is_locked is True
+    assert lock._relock_unsub is None
+
+    # 3. External task cancellation while write_fut is still pending re-raises CancelledError
+    fut_pending: asyncio.Future[float] = hass.loop.create_future()
+    gw.send.return_value = fut_pending
+    unlock_task = hass.async_create_task(lock.async_unlock())
+    await asyncio.sleep(0)
+    unlock_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await unlock_task
+    assert not fut_pending.cancelled()
+    assert lock.is_locked is True
+
+    # 3b. Simultaneous shutdown race: both unlock_task AND write_fut cancelled in the same turn -> re-raises CancelledError
+    fut_race: asyncio.Future[float] = hass.loop.create_future()
+    gw.send.return_value = fut_race
+    race_task = hass.async_create_task(lock.async_unlock())
+    await asyncio.sleep(0)
+    race_task.cancel()
+    fut_race.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await race_task
+    assert lock.is_locked is True
+
+    # 4. Non-Future awaitable raising CancelledError internally vs external task cancellation
+    async def _cancelled_coro() -> None:
+        raise asyncio.CancelledError
+
+    gw.send.return_value = _cancelled_coro()
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await lock.async_unlock()
+    assert exc_info.value.translation_key == "lock_command_rejected"
+    assert lock.is_locked is True
+
+    gate_evt = asyncio.Event()
+
+    async def _hanging_coro() -> None:
+        await gate_evt.wait()
+
+    gw.send.return_value = _hanging_coro()
+    coro_task = hass.async_create_task(lock.async_unlock())
+    await asyncio.sleep(0)
+    coro_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await coro_task
+    assert lock.is_locked is True
+
+    # 5. Delivery timeout raises lock_command_timeout and consumes late exceptions on unawaited future
+    fut_slow: asyncio.Future[float] = hass.loop.create_future()
+    gw.send.return_value = fut_slow
+    with (
+        patch("custom_components.myhome.lock.LOCK_WRITE_TIMEOUT", 0.01),
+        pytest.raises(HomeAssistantError) as exc_info,
+    ):
+        await lock.async_unlock()
+    assert exc_info.value.translation_key == "lock_command_timeout"
+    assert not fut_slow.cancelled()
+    assert lock.is_locked is True
+    assert lock._relock_unsub is None
+    fut_slow.set_exception(RuntimeError("late transport error"))
+    await asyncio.sleep(0)
+
+    # 5b. Delivery timeout on non-Future coroutine awaitable
+    async def _slow_coro() -> None:
+        await gate_evt.wait()
+
+    coro_slow = _slow_coro()
+    gw.send.return_value = coro_slow
+    with (
+        patch("custom_components.myhome.lock.LOCK_WRITE_TIMEOUT", 0.01),
+        pytest.raises(HomeAssistantError) as exc_info,
+    ):
+        await lock.async_unlock()
+    assert exc_info.value.translation_key == "lock_command_timeout"
+
+    # 6. write_fut resolving with HomeAssistantError vs generic Exception
+    fut_ha_err: asyncio.Future[float] = hass.loop.create_future()
+    fut_ha_err.set_exception(HomeAssistantError("upstream ha error"))
+    gw.send.return_value = fut_ha_err
+    with pytest.raises(HomeAssistantError, match="upstream ha error"):
+        await lock.async_unlock()
+    assert lock.is_locked is True
+
+    fut_runtime_err: asyncio.Future[float] = hass.loop.create_future()
+    fut_runtime_err.set_exception(RuntimeError("worker crashed"))
+    gw.send.return_value = fut_runtime_err
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await lock.async_unlock()
+    assert exc_info.value.translation_key == "lock_command_failed"
+    assert exc_info.value.translation_placeholders == {
+        "name": "Gate 1",
+        "error": "worker crashed",
+    }
+    assert lock.is_locked is True
+
+    # 7. send() itself raising HomeAssistantError vs generic OSError
+    gw.send.side_effect = HomeAssistantError("queue rejected")
+    with pytest.raises(HomeAssistantError, match="queue rejected"):
+        await lock.async_unlock()
+    assert lock.is_locked is True
+
+    gw.send.side_effect = OSError("connection reset")
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await lock.async_unlock()
+    assert exc_info.value.translation_key == "lock_command_failed"
+    assert lock.is_locked is True

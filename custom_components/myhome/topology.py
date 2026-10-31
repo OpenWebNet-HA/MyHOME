@@ -82,40 +82,110 @@ def gateway_tier(model: str | None) -> int:
     return 3
 
 
+#: Dedicated A/V gateways whose firmware runs ``bt_vct`` for both WHO 6 (door entry) and WHO 8 (intercom).
+DOOR_ENTRY_AV_MODELS: frozenset[str] = frozenset({"F452", "F452V", "F453AV", "F454", "F459"})
+#: Single-bus ``MH`` scenario programmers whose firmware ships ``bt_vct`` and relays both WHO 6
+#: and WHO 8 on the event session when an external ``F422`` interface bridges an ``AV`` riser
+#: (live-verified on ``MH200`` 2.1.0 in ``issue_667`` and ``MH202`` 1.0 in
+#: ``mh202_sound_intercom_ducking``; ``MH200N`` by ``MH200`` family in OWNd).
+DOOR_ENTRY_MH_BRIDGE_AV_MODELS: frozenset[str] = frozenset({"MH200", "MH200N", "MH202"})
+#: Single-bus ``MH`` gateways whose firmware supervises ``bt_vct`` for WHO 6 (``<chi>6.7</chi>``)
+#: or unmeasured ``MH`` counterparts without a captured WHO 8 intercom relay.
+DOOR_ENTRY_WHO6_ONLY_MODELS: frozenset[str] = frozenset({"F453", "H4684", "H4890", "MH201"})
+#: Automation/supervision gateways whose firmware omits ``bt_vct`` completely and rejects
+#: WHO 6 / WHO 8 frames with ``*#*0##``.
+DOOR_ENTRY_UNSUPPORTED_MODELS: frozenset[str] = frozenset(
+    {"F450", "F455", "F460", "F461", "MYHOMESERVER1"}
+)
+#: Subsystems eligible for shared-bus delegation.
+DELEGATABLE_WHOS: tuple[int, ...] = (1, 2, 4, 5, 6, 8, 9, 15, 16, 18, 22, 25)
+
+
+def _profile_and_model(model: str | None, firmware: str | None = None) -> tuple[Any, str]:
+    """Return ``(profile, canonical_model_name)`` for ``model``."""
+    import re
+
+    import OWNd.profiles as _ownd_profiles
+
+    from .gateway import _ZONE_REQUEST_MODELS, _alnum, _profile_for_model, _resolved_model
+
+    raw = model or ""
+    profile = _profile_for_model(raw, firmware, lookup=_ownd_profiles.get_gateway_profile)
+    if isinstance(profile, _ownd_profiles.GenericGatewayProfile) and raw:
+        for word in re.findall(r"[A-Za-z0-9]+", raw):
+            resolved = _resolved_model(word)
+            if resolved is not None:
+                profile = _profile_for_model(
+                    resolved, firmware, lookup=_ownd_profiles.get_gateway_profile
+                )
+                break
+    model_name = str(getattr(profile, "model_name", "") or "").upper()
+    if isinstance(profile, _ownd_profiles.GenericGatewayProfile):
+        normalized = _alnum(raw)
+        for candidate in _ZONE_REQUEST_MODELS:
+            if candidate in normalized:
+                model_name = candidate
+                break
+    return profile, model_name
+
+
 def gateway_supported_whos(model: str | None, firmware: str | None = None) -> set[int]:
-    """Retrieve supported WHO set directly from OWNd profile."""
+    """Retrieve intrinsic supported WHO set from OWNd profile for topology inference."""
     whos: set[int] = set()
     norm = (model or "").strip().upper()
     try:
-        import OWNd.profiles as _ownd_profiles
+        from .gateway import _firmware_at_least
 
-        from .gateway import _firmware_at_least, _profile_for_model
-
-        profile = _profile_for_model(
-            model or "", firmware, lookup=_ownd_profiles.get_gateway_profile
-        )
+        profile, model_name = _profile_and_model(model, firmware)
         supports = getattr(profile, "supports_who", None)
         for w in getattr(profile, "supported_who", None) or ():
             if not callable(supports) or supports(int(w)):
                 whos.add(int(w))
-        # TODO(OWNd>2.0.0b11): remove shim once manifest.json pins an OWNd release containing OWNd#147.
-        if getattr(profile, "model_name", None) == "H4684" and _firmware_at_least(firmware, (6, 0, 0)):
+        # TODO(OWNd>2.0.0b11): remove shims once manifest.json pins an OWNd release with
+        # H4684 FW>=6.0 WHO 22 (OWNd#147) and A/V gateway WHO 6/8 profile flags.
+        if model_name == "H4684" and _firmware_at_least(firmware, (6, 0, 0)):
             whos.add(22)
+        if model_name in DOOR_ENTRY_AV_MODELS:
+            whos |= {6, 8}
+        elif model_name in DOOR_ENTRY_MH_BRIDGE_AV_MODELS or model_name in DOOR_ENTRY_WHO6_ONLY_MODELS:
+            whos -= {6, 8}
     except Exception:
-        pass
+        model_name = ""
     # Model-specific hardware capability constraints:
-    # MyHomeServer1 firmware does not route audio (WHO 16 / WHO 22) or burglar alarm (WHO 5).
-    if "MYHOMESERVER1" in norm:
-        whos -= {5, 16, 22}
-    return {w for w in whos if w in {1, 2, 4, 5, 9, 15, 16, 18, 22, 25}}
+    # MyHomeServer1 firmware omits audio (WHO 16/22), burglar alarm (WHO 5), and door entry (WHO 6/8).
+    if model_name == "MYHOMESERVER1" or "MYHOMESERVER1" in norm:
+        whos -= {5, 6, 8, 16, 22}
+    if model_name in DOOR_ENTRY_UNSUPPORTED_MODELS or any(k in norm for k in DOOR_ENTRY_UNSUPPORTED_MODELS):
+        whos -= {6, 8}
+    return {w for w in whos if w in DELEGATABLE_WHOS}
+
+
+def gateway_delegatable_whos(model: str | None, firmware: str | None = None) -> set[int]:
+    """Subsystems ``model`` can accept when explicitly delegated on a shared bus.
+
+    Includes :func:`gateway_supported_whos` plus door-entry WHOs that single-bus
+    ``MH`` gateways translate via ``bt_vct`` when an ``F422`` interface bridges an
+    ``AV`` riser.
+    """
+    whos = set(gateway_supported_whos(model, firmware))
+    try:
+        _, model_name = _profile_and_model(model, firmware)
+    except Exception:
+        model_name = ""
+    if model_name in DOOR_ENTRY_MH_BRIDGE_AV_MODELS:
+        whos |= {6, 8}
+    elif model_name in DOOR_ENTRY_WHO6_ONLY_MODELS:
+        whos.add(6)
+    return whos
 
 
 def _follower_delegation(pri_whos: set[int], sec_whos: set[int]) -> tuple[str, set[int], bool]:
     """Role, delegated WHOs and audio coupling of a follower next to a primary.
 
     The follower takes the subsystems the primary lacks; when that includes
-    sound (WHO 16 or 22) it takes both, so audio stays on one gateway. With
-    nothing to delegate it is a warm standby.
+    sound (WHO 16 or 22) or door entry / intercom (WHO 6 or 8) it takes both,
+    so coupled subsystems stay on one gateway. With nothing to delegate it is
+    a warm standby.
     """
     delta = sec_whos - pri_whos
     audio_coupled = False
@@ -124,6 +194,10 @@ def _follower_delegation(pri_whos: set[int], sec_whos: set[int]) -> tuple[str, s
             if audio_who in sec_whos and audio_who not in delta:
                 delta.add(audio_who)
                 audio_coupled = True
+    if (6 in delta or 8 in delta) and (6 in sec_whos or 8 in sec_whos):
+        for door_who in (6, 8):
+            if door_who in sec_whos and door_who not in delta:
+                delta.add(door_who)
     return (ROLE_STANDBY, set(), False) if not delta else (ROLE_SECONDARY, delta, audio_coupled)
 
 
@@ -360,7 +434,7 @@ def validate_shared_bus_topology(
                     pass
             model = model_override or entry_model(entry)
             if model:
-                supported = gateway_supported_whos(model, entry_firmware(entry))
+                supported = gateway_delegatable_whos(model, entry_firmware(entry))
                 for w in delegated:
                     if w not in supported:
                         errors[CONF_DELEGATED_WHOS] = "who_not_supported_by_gateway"
@@ -449,12 +523,19 @@ class GatewayTopologyMixin:
         return bool(standby is not None and standby.available)
 
     def is_who_available(self, who: str | int) -> bool:
-        """Return True if this gateway (or its failover) can currently handle the given WHO."""
-        if self._available:
+        """Return True if this gateway (or its delegated/standby peer) can currently handle the given WHO."""
+        who_int = int(who)
+        if who_int not in (13, 1013) and who_int in self.delegated_away_whos:
+            sec = self._get_secondary_for_who(who_int)
+            if sec is not None and sec.available:
+                return True
+            if self._available:
+                return self._profile_supports_who(who_int)
+        elif self._available:
             return True
         standby = self._get_standby_gateway()
         if standby is not None and standby.available:
-            return standby._profile_supports_who(int(who))
+            return standby._profile_supports_who(who_int)
         return False
 
     @property
@@ -585,16 +666,30 @@ class GatewayTopologyMixin:
         return IgnoredAddresses.from_config_entry(self.config_entry)
 
     def _bridge_to_primary(self, message: Any) -> None:
-        """Hand a bus frame to the offline primary's entities (warm standby only)."""
+        """Hand a bus frame to the primary's entities on warm-standby failover or delegated WHOs the primary does not hear."""
         from . import gateway as _gw
 
-        if not self.is_standby or getattr(message, "who", None) in (13, 1013):
+        raw_who = getattr(message, "who", getattr(message, "_who", None))
+        who_int = int(raw_who) if raw_who is not None and str(raw_who).isdigit() else None
+        if who_int in (13, 1013):
             return
-        primary_gw = self._get_primary_gateway()
-        if primary_gw is None or primary_gw.is_connected or primary_gw._get_standby_gateway() is not self:
+        if self.is_standby:
+            primary_gw = self._get_primary_gateway()
+            if primary_gw is None or primary_gw.is_connected or primary_gw._get_standby_gateway() is not self:
+                return
+            primary_gw._evaluate_failover()
+            if who_int is not None and who_int in primary_gw.delegated_away_whos:
+                sec = primary_gw._get_secondary_for_who(who_int)
+                if sec is not None and sec.is_connected:
+                    return
+            _gw.async_dispatcher_send(self.hass, f"myhome_message_{primary_gw.mac}", message)
             return
-        primary_gw._evaluate_failover()
-        _gw.async_dispatcher_send(self.hass, f"myhome_message_{primary_gw.mac}", message)
+        if self.is_secondary and who_int is not None and who_int in self.delegated_whos:
+            primary_gw = self._get_primary_gateway()
+            if primary_gw is not None and not (
+                primary_gw.is_connected and primary_gw._profile_supports_who(who_int)
+            ):
+                _gw.async_dispatcher_send(self.hass, f"myhome_message_{primary_gw.mac}", message)
 
     def _outage_confirmed(self) -> bool:
         """Down past the reconnect grace, or not up yet a grace period after setup."""
@@ -613,7 +708,7 @@ class GatewayTopologyMixin:
 
     @callback
     def _notify_availability(self) -> None:
-        """Notify all entities bound to this gateway, and any primary backed by this standby."""
+        """Notify all entities bound to this gateway, and any primary backed by this standby or secondary."""
         from . import gateway as _gw
 
         _gw.async_dispatcher_send(self.hass, self.availability_signal)
@@ -621,6 +716,10 @@ class GatewayTopologyMixin:
             primary = self._get_primary_gateway()
             if primary is not None and not primary._available:
                 primary._evaluate_failover()
+                _gw.async_dispatcher_send(self.hass, primary.availability_signal)
+        elif self.is_secondary and self.delegated_whos:
+            primary = self._get_primary_gateway()
+            if primary is not None:
                 _gw.async_dispatcher_send(self.hass, primary.availability_signal)
 
     def _record_tx(self, written_at: float, message: Any) -> None:

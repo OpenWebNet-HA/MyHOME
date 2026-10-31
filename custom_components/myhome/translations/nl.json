@@ -594,6 +594,18 @@
     },
     "invert_switch_no_timer": {
       "message": "{name} is een configuratieschakelaar voor een binaire sensor en ondersteunt geen WHO=1 hardware-bustimers."
+    },
+    "lock_gateway_who6_unsupported": {
+      "message": "{name}: gateway {gateway} heeft de WHO=6 deurintercom-ontgrendeling geweigerd ({frame}). Automatiseringsgateways bevatten geen deurintercom-ondersteuning (bt_vct) en overbruggen de 2-draads AV-intercombus niet."
+    },
+    "lock_command_rejected": {
+      "message": "{name}: gateway {gateway} heeft het WHO=6 ontgrendelcommando geweigerd of genegeerd ({frame})"
+    },
+    "lock_command_timeout": {
+      "message": "{name}: ontgrendelcommando voor deurintercom is niet binnen {timeout} s op de bus afgeleverd"
+    },
+    "lock_command_failed": {
+      "message": "{name}: ontgrendelcommando voor deurintercom mislukt: {error}"
     }
   },
   "entity": {
@@ -645,6 +657,8 @@
         "2": "2 - Rolluiken / zonwering",
         "4": "4 - Thermoregeling",
         "5": "5 - Inbraakalarm",
+        "6": "6 - Deurintercom",
+        "8": "8 - Videofonie / intercom",
         "9": "9 - Hulpkanalen",
         "15": "15 - CEN-scenario's",
         "16": "16 - Geluidsdistributie",

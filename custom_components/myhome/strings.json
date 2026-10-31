@@ -691,6 +691,18 @@
     },
     "invert_switch_no_timer": {
       "message": "{name} is a binary sensor configuration switch and does not support WHO=1 hardware bus timers."
+    },
+    "lock_gateway_who6_unsupported": {
+      "message": "{name}: gateway {gateway} rejected WHO=6 door-entry unlock ({frame}). Automation-only gateways omit door-entry support (bt_vct) and do not bridge the 2-wire AV door-entry bus."
+    },
+    "lock_command_rejected": {
+      "message": "{name}: gateway {gateway} rejected or dropped the WHO=6 door-entry unlock command ({frame})"
+    },
+    "lock_command_timeout": {
+      "message": "{name}: door-entry unlock command was not delivered to the bus within {timeout} s"
+    },
+    "lock_command_failed": {
+      "message": "{name}: door-entry unlock command failed: {error}"
     }
   },
   "entity": {
@@ -742,6 +754,8 @@
         "2": "2 - Covers / shutters",
         "4": "4 - Thermoregulation",
         "5": "5 - Burglar alarm",
+        "6": "6 - Door entry",
+        "8": "8 - Video door entry / intercom",
         "9": "9 - Auxiliary",
         "15": "15 - CEN scenarios",
         "16": "16 - Sound diffusion",

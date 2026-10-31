@@ -13,7 +13,8 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 | 2 | Automation (shutters, blinds) | `cover` | ✅ | Timed and position-reporting actuators. |
 | 4 | Thermoregulation | `climate`, `sensor` | ✅ | Zone thermostats, central units 3550 (`#0`) and 4695 (`#0#1`), probes. |
 | 5 | Burglar alarm | `alarm_control_panel` | 👁️ | Central unit status (read-only); arm/disarm through installer-programmed AUX frames — see [alarm](alarm.md#arming-and-disarming). |
-| 6 | Door entry | `lock`, `event` | ✅ | Door strikes, lock actuators, and doorbell events. |
+| 6 | Door entry | `lock`, `event` | ✅ | Door strikes (`*6*10*<where>##`), lock release status, and doorbell events. Requires a gateway with `bt_vct` coupled to the 2-wire door-entry bus (`F454`, `F453AV`, `F452V`, `F452`, `F459`, or via `F422` on `MH200`, `MH200N`, `F453`, `MH202`, `H4684`) — omitted on `MyHomeServer1`, `F455`, `F461`, `F450`, and `F460`. |
+| 8 | Video door entry / intercom | `event` | 👁️ | Entrance panel doorbell events (`*8*1#<1..4>#<mm>*<where>##`) on A/V gateways (`F454`, `F453AV`, `F452V`, `F452`, `F459`, or `MH200` / `MH200N` / `MH202` via `F422`). |
 | 9 | Auxiliary channels | `binary_sensor` | 👁️ | AUX 1–9 as binary sensors. |
 | 13 | Gateway management | — | ⚙️ | Clock sync (`myhome.sync_time`), firmware / model / identity for the device registry and diagnostics. |
 | 14 | Actuator lock | `button` | ✅ | Lock / unlock buttons on every light, switch and cover device. |
@@ -61,8 +62,8 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 
 | Function | Status | Notes |
 | :--- | :---: | :--- |
-| Door entry lock (WHO 6) | ✅ | Door entry strikes from `myhome.yaml` with optional constant-time PIN authentication and auto-relock. Never created from bus traffic; `who: 1` relays are rejected (motorized gates and garage doors are impulse covers). |
-| Doorbell event (WHO 6 / WHO 8) | ✅ | `myhome_doorbell_event` for an entrance panel ringing (WHO 8 call kinds 1-4, WHO 6 call), not for handset-to-handset calls or pager broadcasts. Fired by the gateway that owns the subsystem only. The WHO 6 chime (WHAT 20) is unverified: it is not in the published WHO 6 table and has no capture. |
+| Door entry lock (WHO 6) | ✅ | Door entry strikes from `myhome.yaml` with optional constant-time PIN authentication and auto-relock. Never created from bus traffic; `who: 1` relays are rejected (motorized gates and garage doors are impulse covers). Requires a gateway with `bt_vct` coupled to the 2-wire door-entry bus (or **Shared Bus → Secondary** `WHO 6` delegation to an `F454` / `F453AV`); if the gateway rejects `*6*10*<where>##` with `*#*0##` (e.g. `MyHomeServer1`, `F455`, `F461`), `lock.unlock` raises `HomeAssistantError` and leaves the entity locked. |
+| Doorbell event (WHO 6 / WHO 8) | ✅ | `myhome_doorbell_event` for an entrance panel ringing (WHO 8 call kinds 1-4, WHO 6 call), not for handset-to-handset calls or pager broadcasts. Fired by the gateway that owns the subsystem only (delegatable via `WHO 6` / `WHO 8` on a shared bus). The WHO 6 chime (WHAT 20) is unverified: it is not in the published WHO 6 table and has no capture. |
 
 ### `climate` (WHO 4)
 

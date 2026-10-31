@@ -594,6 +594,18 @@
     },
     "invert_switch_no_timer": {
       "message": "{name} è un interruttore di configurazione di sensore binario e non supporta i timer hardware su bus WHO=1."
+    },
+    "lock_gateway_who6_unsupported": {
+      "message": "{name}: il gateway {gateway} ha rifiutato il comando di apertura serratura videocitofonica WHO=6 ({frame}). I gateway solo automazione non includono il modulo videocitofonico (bt_vct) e non collegano il bus AV a 2 fili."
+    },
+    "lock_command_rejected": {
+      "message": "{name}: il gateway {gateway} ha rifiutato o scartato il comando di apertura serratura WHO=6 ({frame})"
+    },
+    "lock_command_timeout": {
+      "message": "{name}: il comando di apertura serratura non è stato consegnato al bus entro {timeout} s"
+    },
+    "lock_command_failed": {
+      "message": "{name}: comando di apertura serratura non riuscito: {error}"
     }
   },
   "entity": {
@@ -645,6 +657,8 @@
         "2": "2 - Tapparelle / tende",
         "4": "4 - Termoregolazione",
         "5": "5 - Antifurto",
+        "6": "6 - Citofonia",
+        "8": "8 - Videocitofonia / intercom",
         "9": "9 - Ausiliari",
         "15": "15 - Scenari CEN",
         "16": "16 - Diffusione sonora",
