@@ -461,7 +461,8 @@ class TestCoverEntity:
 
             # 2. Test message listener handling
             assert config_entry.async_on_unload.called
-            assert len(listeners) == 1
+            # The WHO 2 discovery's listener, the translation relay's listener and its close.
+            assert len(listeners) == 3
 
         # Test async_unload_entry
         attach_runtime(mock_hass, config_entry)

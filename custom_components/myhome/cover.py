@@ -35,6 +35,7 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoredExtraData
@@ -140,6 +141,7 @@ from .cover_strategies import (
     clamp_slat_time,
     resolve_cover_strategy,
 )
+from .cover_translation import CoverTranslationRelay, event_age
 from .discovery import (
     Address,
     DeviceContext,
@@ -320,14 +322,21 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
         """An area or group command moves the covers in it, and is the scope cover's own frame."""
         runtime.router.publish("2", [address.key, *family.keys_moved_by(address.where, address.interface)], message)
 
-    PlatformDiscovery(
+    shutters = PlatformDiscovery(
         hass, config_entry, async_add_entities,
         platform=PLATFORM, who="2", event_type=OWNAutomationEvent, build=build, announce=True,
         registry_address=cover_registry_address("2"), accept=accept_shutter,
         on_general=relay_general, on_scope=relay_scope,
         known_keys=lambda ctx: [*default_known_keys(ctx), "general"],
         route_translations=True,
-    ).start()
+    )
+    shutters.start()
+    # A direction translation no status followed stands for the shutter's movement.
+    translations = CoverTranslationRelay(hass, shutters.relay)
+    config_entry.async_on_unload(
+        async_dispatcher_connect(hass, f"myhome_message_{shutters.mac}", translations.handle_message)
+    )
+    config_entry.async_on_unload(translations.close)
 
     PlatformDiscovery(
         hass, config_entry, async_add_entities,
@@ -2873,7 +2882,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._gateway_handler.log_id,
             getattr(message, "human_readable_log", str(message)),
         )
-        now = time.monotonic()
+        # A command translation standing for a missing status is dated when it arrived.
+        now = time.monotonic() - event_age(message)
         moving = bool(is_opening or is_closing)
         if moving and position is not None:
             # While the motor runs the actuator repeats the level it started from
