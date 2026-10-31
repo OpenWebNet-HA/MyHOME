@@ -112,9 +112,9 @@ class MyHOMEScopeCover(MyHOMECover):
     A scope with no known members ends a run after its travel time.
     """
 
-    # No position of its own to settle: the members with no position settle on their
-    # travel timer, armed by _async_run_members_to_end for a scope frame the gateway relays.
-    _settles_open_close_from_unknown = False
+    # No position of its own to settle: timed members settle on their own travel
+    # timer, armed by _async_run_members_to_end for a scope frame the gateway relays.
+    _settles_open_close = False
 
     def __init__(self, *args: Any, scope: CoverScope, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -227,15 +227,15 @@ class MyHOMEScopeCover(MyHOMECover):
         """One scope frame runs every member to its end stop (no F422 fan-out: the main bus,
         or a general frame, which crosses the interface natively).
 
-        The gateway relays the frame to the members, which took it as an external run
-        and froze at the actuator's own stop: a member with no position stayed unknown
-        when its F411/2 stopped before `travel_time`, while the same member commanded
-        directly settled on its travel timer (#795). Such members now open their run on
-        the scope's frame and settle like their own open / close; members with a known
-        position keep timing the run from it, as for a direct command.
+        The gateway relays the frame to the members. Each timed member opens its run on the
+        scope's frame and settles on its own travel timer (#770, #795); an early stop on a
+        known member still freezes its interpolated position, while an early stop on an
+        unknown member keeps settling to the end stop.
         """
         direction = "open" if opening else "close"
-        followers = [m for m in self._members() if m._runs_to_end_from_unknown(opening)]
+        if self._is_tilting:
+            self._apply_tilt_stop()
+        followers = [m for m in self._members() if m._settles_full_run(opening)]
         for member in followers:
             member._begin_run(direction)
         try:
@@ -261,9 +261,9 @@ class MyHOMEScopeCover(MyHOMECover):
                 await member.async_stop_cover(**kwargs)
             return
         for member in self._members():
-            if member._end_run_from_unknown:
-                # The relayed stop must end the member's run from unknown (position still
-                # unknown), not be taken for the actuator's own early stop: as a direct stop.
+            if not member._is_tilting:
+                # Cancel each member's end-of-run settle so the relayed stop freezes
+                # known members at their interpolated position and leaves unknown ones unknown.
                 member._cancel_stop_task()
         await super().async_stop_cover(**kwargs)
 

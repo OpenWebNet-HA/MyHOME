@@ -538,4 +538,27 @@ class TestPlatformImportCleanliness:
         assert "Detected that custom integration 'myhome' calls deprecated_helper" in captured[0]
         assert "The deprecated constant OLD_CONST was used from myhome" in captured[1]
 
+    def test_typing_compat_resolves_undefined_without_getattr_deprecation(self):
+        """Verify typing_compat prefers HA 2026.12+ Undefined without triggering __getattr__."""
+        import types
+
+        from custom_components.myhome import myhome_device, typing_compat
+
+        new_sentinel = object()
+        legacy_sentinel = object()
+
+        class _ModernTypingModule(types.ModuleType):
+            def __getattr__(self, name: str):
+                raise AssertionError(f"__getattr__({name!r}) must not be called")
+
+        modern_mod = _ModernTypingModule("fake_ha_typing_modern")
+        modern_mod.__dict__["Undefined"] = new_sentinel
+        assert typing_compat._resolve_undefined(modern_mod) is new_sentinel
+
+        legacy_mod = types.ModuleType("fake_ha_typing_legacy")
+        legacy_mod.__dict__["UNDEFINED"] = legacy_sentinel
+        assert typing_compat._resolve_undefined(legacy_mod) is legacy_sentinel
+
+        assert myhome_device.UNDEFINED is typing_compat.UNDEFINED
+
 

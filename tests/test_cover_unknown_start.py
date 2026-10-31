@@ -596,7 +596,7 @@ async def test_scope_open_on_the_main_bus_settles_members_whose_actuator_stops_e
 
 
 async def test_scope_close_on_the_main_bus_leaves_a_known_member_to_the_actuator_stop(hass, gateway, clock, fake_time) -> None:
-    """Only members with no position are settled on the timer; a known one is timed from its position, as for a direct close."""
+    """An early stop freezes a known member's interpolated position while an unknown member keeps settling."""
     members = _make_members(hass, gateway)
     known, unknown = members
     known._attr_current_cover_position = known._start_position = 100
@@ -608,7 +608,7 @@ async def test_scope_close_on_the_main_bus_leaves_a_known_member_to_the_actuator
             await area.async_close_cover()
             raw, written = gateway.deliveries[-1]
             assert raw == "*2*2*1##"
-            assert known._end_run_from_unknown is False and known._stop_task is None
+            assert known._end_run_from_unknown is False and known._stop_task is not None
             assert unknown._end_run_from_unknown is True
             written.set_result(clock.now)
             await _yield()
@@ -618,6 +618,7 @@ async def test_scope_close_on_the_main_bus_leaves_a_known_member_to_the_actuator
             clock.now += 3.0
             for member in members:
                 member.handle_event(OWNEvent.parse(f"*2*0*{member._where}##"))
+            assert known._stop_task is None
             assert known.is_closing is False
             assert known.current_cover_position == 50  # halfway down a 6 s travel from 100
             assert unknown.is_closing is True

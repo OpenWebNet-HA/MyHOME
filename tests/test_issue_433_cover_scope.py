@@ -638,6 +638,7 @@ async def test_curtain_command_right_after_a_scope_pulse_releases_the_followers(
     for m in (p1, p2):
         assert m._is_tilting is False and m._tilt_follows is None
         assert m.current_cover_tilt_position == 0
+        m._cancel_stop_task()
 
 
 async def test_scope_without_slat_tilt_ignores_tilt_commands(gateway) -> None:
