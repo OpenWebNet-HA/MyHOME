@@ -253,9 +253,11 @@ class GeometryCalibrationSession(guided.CalibrationSession):
             seconds = (cast(CalibrationCheck, self.check).planned_seconds if self.step == "check"
                        else ((self.samples["lift"] if self.slats else 0.0) + self.values["opening_time"]) / 2
                        if self.step == "half_open" else (self.values["closing_time"] - self.geometry["slat_time_s"]) / 2)
-            # Reuse the motion deadline: interruption/close already cancels it.
+            # Reuse the motion deadline: interruption/close already cancels it. The run is timed
+            # from its start, which a command translation dates before its delivery.
             cast(asyncio.TimerHandle, self.deadline).cancel()
-            self.deadline = self.hass.loop.call_later(seconds, self._sample_stop)
+            elapsed = guided.monotonic() - cast(float, self.started_at)
+            self.deadline = self.hass.loop.call_later(max(0.0, seconds - elapsed), self._sample_stop)
 
     def _sample_stop(self) -> None:
         self.phase, self.after_stop, self.stop_written = "geometry_wait_stop", "reading", False

@@ -6,6 +6,7 @@ The guided step waited 10 s and discarded the run (`start_timeout`) and the cove
 "stopped". The translation is now held for TRANSLATION_GRACE seconds and, when no status of
 that shutter follows, delivered as its movement, dated when the translation arrived.
 """
+import asyncio
 import logging
 from datetime import timedelta
 from types import SimpleNamespace
@@ -30,6 +31,15 @@ from custom_components.myhome.cover_translation import (
 )
 from custom_components.myhome.gateway_events import GatewayEventDispatcher
 from tests.conftest import attach_runtime
+from tests.test_cover_calibration_geometry import endpoint, lift
+from tests.test_cover_calibration_geometry import geometry as geometry_fixture
+from tests.test_cover_profiles import plant as plant_fixture
+from tests.test_panel_cover_calibration import act
+from tests.test_panel_cover_calibration import calibration as calibration_fixture
+
+plant = plant_fixture
+calibration = calibration_fixture
+geometry = geometry_fixture
 
 CLOCK = "custom_components.myhome.cover_translation.monotonic"
 # The live sequence of a direction command whose status never came.
@@ -341,3 +351,88 @@ async def test_the_cover_moves_from_the_translation_as_if_its_status_had_come_th
     assert _at(1015, lambda: translated.current_cover_position) == 50
     _at(1015, translated.handle_event, frame("*2*0*81##"))
     assert not translated.is_opening and translated.current_cover_position == 50
+
+
+# ── the guided session ──────────────────────────────────────────────
+
+
+def _wire(cal, relay, raw):
+    """What the platform does with a frame: the relay sees it, discovery routes the statuses."""
+    message = frame(raw)
+    relay.send(message)
+    if not message.is_translation:
+        cal.cover.handle_event(message)
+
+
+async def test_a_run_confirmed_only_by_its_translation_is_measured(hass, calibration):
+    cal = calibration
+    relay = Relay(hass, cal.clock)
+    relay.relay.deliver = cal.cover.handle_event
+    await act(cal, "open")
+    assert cal.queue[-1][1]()  # Written now.
+    cal.clock[0] += .05
+    _wire(cal, relay, "*2*1000#0*11##")
+    _wire(cal, relay, "*2*0*11##")  # The gateway's stop around the command: not the run's end.
+    cal.clock[0] += .07
+    _wire(cal, relay, "*2*1000#1*11##")
+    assert cal.session.phase == "starting_open"
+    arrived = cal.clock[0]
+    relay.release("11")
+    assert cal.session.phase == "opening"
+    assert cal.session.started_at == pytest.approx(arrived)
+    assert cal.session.deadline._args == (cal.session.travel_reason,)  # No start_timeout armed.
+    # The status relayed after the grace changes nothing.
+    cal.clock[0] += .3
+    _wire(cal, relay, "*2*1*11##")
+    assert cal.session.phase == "opening" and cal.session.started_at == pytest.approx(arrived)
+    cal.clock[0] = arrived + 20.5
+    await act(cal, "endpoint")
+    assert cal.session.values["opening_time"] == 20.5
+    relay.relay.close()
+
+
+async def test_a_status_that_follows_still_dates_the_run(hass, calibration):
+    cal = calibration
+    relay = Relay(hass, cal.clock)
+    relay.relay.deliver = cal.cover.handle_event
+    await act(cal, "open")
+    assert cal.queue[-1][1]()
+    for raw in ("*2*1000#0*11##", "*2*0*11##", "*2*1000#1*11##"):
+        _wire(cal, relay, raw)
+    cal.clock[0] += .4
+    _wire(cal, relay, "*2*1*11##")
+    assert relay.held() == []  # Superseded: never delivered.
+    assert cal.session.phase == "opening" and cal.session.started_at == cal.clock[0]
+
+
+# ── the geometry session ────────────────────────────────────────────
+
+
+async def test_a_half_run_confirmed_by_its_translation_arms_its_stop_once(hass, geometry):
+    cal = geometry
+    relay = Relay(hass, cal.clock)
+    relay.relay.deliver = cal.cover.handle_event
+    await lift(cal)
+    await act(cal, "reading", reading_cm=2.0)
+    await endpoint(cal, 8)
+    await endpoint(cal, 22)
+    await act(cal, "reading", reading_cm=200)
+    await endpoint(cal, 20)
+    assert (cal.session.phase, cal.session.step) == ("briefing", "half_open")
+    await act(cal, "next")
+    _, guard, _, written = cal.queue[-1]
+    assert guard()
+    written.set_result(cal.clock[0])
+    await asyncio.sleep(0)
+    cal.clock[0] += .1
+    _wire(cal, relay, "*2*1000#1*11##")
+    relay.release("11")
+    assert cal.session.phase == "opening"
+    sample = cal.session.deadline
+    assert sample._callback == cal.session._sample_stop
+    seconds = (cal.session.samples["lift"] + cal.session.values["opening_time"]) / 2
+    # Timed from the translation, a grace before the delivery.
+    assert sample.when() - hass.loop.time() == pytest.approx(seconds - TRANSLATION_GRACE, abs=.1)
+    cal.clock[0] += .3
+    _wire(cal, relay, "*2*1*11##")
+    assert cal.session.deadline is sample and not sample.cancelled()
