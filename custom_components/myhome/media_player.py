@@ -89,9 +89,11 @@ from __future__ import annotations
 import asyncio
 import math
 import time
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
+import voluptuous as vol
 from homeassistant.components.media_player.const import (
     MediaPlayerEntityFeature,
     MediaPlayerState,
@@ -99,6 +101,7 @@ from homeassistant.components.media_player.const import (
 from homeassistant.const import CONF_MAC, Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -115,10 +118,12 @@ from .const import (
     LOGGER,
     SERVICE_TUNER_SEEK_DOWN,
     SERVICE_TUNER_SEEK_UP,
+    SERVICE_TUNER_SET_FREQUENCY,
+    SERVICE_TUNER_STORE_STATION,
 )
-from .data import MyHOMEConfigEntry
+from .data import MyHOMEConfigEntry, get_runtime_data
 from .decoder_pool import EnvironmentBusyError
-from .discovery import Address, DeviceContext, PlatformDiscovery
+from .discovery import Address, DeviceContext, PlatformDiscovery, prune_entity
 from .media_player_decoder import DEFAULT_DECODER_FEED_LEVEL, decoder_feed_volume
 from .media_player_group import ZoneGroupLayer
 from .media_player_pool import (
@@ -199,6 +204,14 @@ async def async_setup_entry(
 
     # Declared tuner sources exist before any bus traffic; zones are discovered.
     sound_sources = _build_sound_sources(hass, config_entry, runtime.gateway)
+    runtime.sound_sources = {source._where: source for source in sound_sources}
+    mac = str(config_entry.data.get(CONF_MAC) or runtime.mac)
+    _prune_unchecked_tuner_entities(
+        hass,
+        ent_reg,
+        config_entry,
+        (f"{runtime.gateway.mac}-", f"{mac}-"),
+    )
     for source in sound_sources:
         source.async_on_remove(
             runtime.router.subscribe("16", [source.device_key], source.handle_event)
@@ -206,7 +219,6 @@ async def async_setup_entry(
     if sound_sources:
         async_add_entities(sound_sources)
         # An F500 mirrors its reports onto WHO=22; a plant may deliver only those.
-        mac = str(config_entry.data.get(CONF_MAC) or runtime.mac)
         config_entry.async_on_unload(
             async_dispatcher_connect(
                 hass, f"myhome_message_{mac}", who22_tuner_listener(sound_sources)
@@ -225,6 +237,11 @@ async def async_setup_entry(
         pre_message=route_pseudo_zones(runtime.router),
         route_keys=_sound_route_keys,
         key_suffix="#16",
+        accept=lambda ctx: not _is_source_where(ctx.address.clean_where),
+        reject_registry_entry=(
+            lambda _entry, ctx: _is_source_where(ctx.address.clean_where)
+            and ctx.address.clean_where not in runtime.sound_sources
+        ),
     )
     # Audio zones are keyed "<zone>#16" in unique ids; the registry restore reads that key back.
     discovery.start()
@@ -241,6 +258,66 @@ async def async_setup_entry(
             {},
             "async_seek_down",
         )
+        platform.async_register_entity_service(
+            SERVICE_TUNER_SET_FREQUENCY,
+            cv.make_entity_service_schema(
+                {vol.Required("frequency"): vol.Coerce(float)}
+            ),
+            "async_set_frequency",
+        )
+        platform.async_register_entity_service(
+            SERVICE_TUNER_STORE_STATION,
+            cv.make_entity_service_schema(
+                {vol.Required("station"): vol.Coerce(int)}
+            ),
+            "async_store_station",
+        )
+
+
+def _is_source_where(where: str) -> bool:
+    """Return True when ``where`` is a matrix source input address (101-109)."""
+    return where.isdigit() and 101 <= int(where) <= 109
+
+
+def _prune_unchecked_tuner_entities(
+    hass: HomeAssistant,
+    ent_reg: er.EntityRegistry,
+    config_entry: MyHOMEConfigEntry,
+    mac_prefixes: tuple[str, ...],
+) -> None:
+    """Remove stale tuner media_player / number / button entries when a tuner slot is unchecked."""
+    options = getattr(config_entry, "options", None)
+    if not isinstance(options, Mapping):
+        return
+    unchecked_wheres = {
+        source_address(i)
+        for i in range(1, CONF_SOURCE_SLOTS + 1)
+        if options.get(CONF_SOURCE_TUNER.format(i)) is not True
+    }
+    if not unchecked_wheres:
+        return
+    entries = list(er.async_entries_for_config_entry(ent_reg, config_entry.entry_id))
+    for reg_entry in entries:
+        uid = getattr(reg_entry, "unique_id", "") or ""
+        matched = False
+        for prefix in mac_prefixes:
+            if not uid.startswith(prefix):
+                continue
+            tail = uid[len(prefix):]
+            for where in unchecked_wheres:
+                base = f"16-{where}#16"
+                if tail in (
+                    base,
+                    f"{base}-frequency",
+                    f"{base}-seek-up",
+                    f"{base}-seek-down",
+                ):
+                    matched = True
+                    break
+            if matched:
+                break
+        if matched:
+            prune_entity(hass, ent_reg, reg_entry, config_entry.entry_id)
 
 
 def _zone_address(message: Any) -> Address | None:
@@ -298,6 +375,9 @@ def _build_sound_sources(
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: MyHOMEConfigEntry) -> bool:
     """Unload media player platform."""
+    runtime = get_runtime_data(config_entry)
+    if runtime is not None:
+        runtime.sound_sources.clear()
     return True
 
 
@@ -1037,5 +1117,23 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
             f"{self.entity_id}: seek is only supported on tuner source entities",
             translation_domain=DOMAIN,
             translation_key="seek_not_supported",
+            translation_placeholders={"entity_id": str(self.entity_id)},
+        )
+
+    async def async_set_frequency(self, frequency: float) -> None:
+        """Tune directly to an FM frequency; only valid on tuner source entities."""
+        raise HomeAssistantError(
+            f"{self.entity_id}: setting FM frequency is only supported on tuner source entities",
+            translation_domain=DOMAIN,
+            translation_key="tuner_only_operation",
+            translation_placeholders={"entity_id": str(self.entity_id)},
+        )
+
+    async def async_store_station(self, station: int) -> None:
+        """Store an FM preset station; only valid on tuner source entities."""
+        raise HomeAssistantError(
+            f"{self.entity_id}: storing FM presets is only supported on tuner source entities",
+            translation_domain=DOMAIN,
+            translation_key="tuner_only_operation",
             translation_placeholders={"entity_id": str(self.entity_id)},
         )

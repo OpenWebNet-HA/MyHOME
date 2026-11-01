@@ -34,10 +34,11 @@ def test_extract_platforms_from_const():
     assert "binary_sensor" in platforms
     assert "sensor" in platforms
     assert "button" in platforms
+    assert "number" in platforms
     assert "media_player" in platforms
     assert "alarm_control_panel" in platforms
     assert "lock" in platforms
-    assert len(platforms) == 10
+    assert len(platforms) == 11
 
 
 def test_extract_who_mapping():
@@ -51,8 +52,9 @@ def test_extract_who_mapping():
     assert mapping["alarm_control_panel"] == "WHO=5"
     assert mapping["binary_sensor"] == "WHO=1 / 9 / 25"
     assert mapping["sensor"] == "WHO=1 / 4 / 18"
-    assert mapping["button"] == "WHO=14 / 2"
-    assert mapping["media_player"] == "WHO=16"
+    assert mapping["button"] == "WHO=14 / 2 / 16 / 22"
+    assert mapping["number"] == "WHO=16 / 22"
+    assert mapping["media_player"] == "WHO=16 / 22"
     assert mapping["device_trigger"] == "WHO=15 / 25"
 
 
@@ -61,7 +63,8 @@ def test_generate_domains_table():
     table = generate_domains_table()
     assert "| Domain | WHO | Capabilities |" in table
     assert "| **`light`** | WHO=1 |" in table
-    assert "| **`button`** | WHO=14 / 2 |" in table
+    assert "| **`button`** | WHO=14 / 2 / 16 / 22 |" in table
+    assert "| **`number`** | WHO=16 / 22 |" in table
     assert "| **`device_trigger`** *(Automations)* | WHO=15 / 25 |" in table
 
     for domain in DOMAIN_METADATA:
@@ -101,7 +104,7 @@ def test_temp_readme_detection_and_update(tmp_path: Path):
     content = temp_readme.read_text(encoding="utf-8")
     assert START_MARKER in content
     assert END_MARKER in content
-    assert "| **`button`** | WHO=14 / 2 |" in content
+    assert "| **`button`** | WHO=14 / 2 / 16 / 22 |" in content
 
     changed_again = update_readme(temp_readme)
     assert changed_again is False

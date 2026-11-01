@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from OWNd.message import OWNCommand
@@ -28,6 +29,9 @@ from .const import (
     CONF_BUS_INTERFACE,
     CONF_DEVICE_MODEL,
     CONF_MANUFACTURER,
+    CONF_SOURCE_NAME,
+    CONF_SOURCE_SLOTS,
+    CONF_SOURCE_TUNER,
     CONF_WHERE,
     CONF_WHO,
     DOMAIN,
@@ -38,6 +42,7 @@ from .data import MyHOMEConfigEntry, get_runtime_data
 from .discovery import Address, parse_unique_id, prune_orphaned_companions
 from .expose import is_exposed_on_bus
 from .myhome_device import MyHOMEEntity
+from .sound_source import source_address, tuner_source, uses_who22_commands
 
 PARALLEL_UPDATES = 0
 PLATFORM = Platform.BUTTON
@@ -113,6 +118,26 @@ async def async_setup_entry(
 
     if gateway is not None:
         _buttons.append(CalibrateAllCoversButtonEntity(hass=hass, config_entry=config_entry, gateway=gateway))
+        options = getattr(config_entry, "options", None)
+        if isinstance(options, Mapping) and not (
+            runtime.is_follower and 16 not in runtime.delegated_whos and 22 not in runtime.delegated_whos
+        ):
+            for slot in range(1, CONF_SOURCE_SLOTS + 1):
+                if options.get(CONF_SOURCE_TUNER.format(slot)) is not True:
+                    continue
+                where = source_address(slot)
+                src_name = str(options.get(CONF_SOURCE_NAME.format(slot), "") or "").strip()
+                tuner_name = src_name or f"Audio Source {slot}"
+                for button_cls in (TunerSeekUpButtonEntity, TunerSeekDownButtonEntity):
+                    _buttons.append(
+                        button_cls(
+                            hass=hass,
+                            config_entry=config_entry,
+                            where=where,
+                            name=tuner_name,
+                            gateway=gateway,
+                        )
+                    )
 
     def _create_buttons_for_device(dev_id: str | int, cfg: dict[str, Any]) -> list[ButtonEntity]:
         """Lock and unlock buttons for one actuator (a yaml entry or an announcement)."""
@@ -504,3 +529,63 @@ class CalibrateAllCoversButtonEntity(ButtonEntity):
         await self.hass.services.async_call(DOMAIN, SERVICE_CALIBRATE_COVER, {"entity_id": entity_ids}, blocking=False)
 
 
+class _TunerSeekButtonBase(ButtonEntity, MyHOMEEntity):
+    """Companion button for FM radio hardware seek up / down on an Audio Source."""
+
+    _translation_key: str
+    _unique_suffix: str
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        config_entry: MyHOMEConfigEntry,
+        where: str,
+        name: str,
+        gateway: MyHOMEGatewayHandler,
+    ) -> None:
+        super().__init__(
+            hass=hass,
+            name=name,
+            platform=PLATFORM,
+            device_id=f"{where}#16",
+            who="16",
+            where=where,
+            manufacturer="BTicino",
+            model="Audio Source",
+            gateway=gateway,
+            translation_key=self._translation_key,
+        )
+        self._config_entry = config_entry
+        self._attr_unique_id = f"{gateway.mac}-16-{where}#16-{self._unique_suffix}"
+        self._poll_on_add = False
+
+    async def async_update(self) -> None:
+        """Buttons have no state to request."""
+
+    @property
+    def available(self) -> bool:
+        """Return True if this tuner's active WHO subsystem is available."""
+        who = "22" if uses_who22_commands(self._gateway_handler) else self._who
+        return self._gateway_handler.is_who_available(who)
+
+
+class TunerSeekUpButtonEntity(_TunerSeekButtonBase):
+    """Seek forward to the next receivable FM radio station on an F500 / F500N tuner."""
+
+    _translation_key = "tuner_seek_up"
+    _unique_suffix = "seek-up"
+
+    async def async_press(self) -> None:
+        """Seek forward on the tuner."""
+        await tuner_source(self._config_entry, self._where, self.entity_id).async_seek_up()
+
+
+class TunerSeekDownButtonEntity(_TunerSeekButtonBase):
+    """Seek backward to the previous receivable FM radio station on an F500 / F500N tuner."""
+
+    _translation_key = "tuner_seek_down"
+    _unique_suffix = "seek-down"
+
+    async def async_press(self) -> None:
+        """Seek backward on the tuner."""
+        await tuner_source(self._config_entry, self._where, self.entity_id).async_seek_down()

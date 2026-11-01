@@ -58,6 +58,7 @@ PLATFORMS: tuple[Platform, ...] = (
     Platform.SENSOR,
     Platform.MEDIA_PLAYER,
     Platform.BUTTON,
+    Platform.NUMBER,
     Platform.ALARM_CONTROL_PANEL,
     Platform.LOCK,
 )
@@ -226,6 +227,8 @@ TUNER_STATION_COUNT = 5
 TUNER_MAX_STATION_COUNT = 15
 SERVICE_TUNER_SEEK_UP = "tuner_seek_up"
 SERVICE_TUNER_SEEK_DOWN = "tuner_seek_down"
+SERVICE_TUNER_SET_FREQUENCY = "tuner_set_frequency"
+SERVICE_TUNER_STORE_STATION = "tuner_store_station"
 
 # Default source per environment. The F441M routes per output and an output
 # serves one environment, so a default belongs to an environment, not to a

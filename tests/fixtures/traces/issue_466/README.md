@@ -820,3 +820,45 @@ Live PR #828 hardware verification trace contributed by **@emil-d** on [#466 (co
    - `frames[36]` (`19:14:45.087Z`) captures `[rx] *2*0*33##`, proving the full plant has a `WHO 2` cover/automation actuator at `WHERE = 33` (explaining why `#827`'s full-plant `*#2*0##` sweep answered cleanly without the `10.0 s` empty-subsystem timeout seen on the partial morning capture in `#824`).
    - `29` autonomous `[rx] *#13**15*200##` frames arrive at an exact `4.99–5.02 s` period alongside background `WHO 1` status frames covering all `27` plant light `WHERE` addresses.
 
+---
+
+# #466 BTicino H/L4684 (FW 6.0.11) Follow-Up Traces: Zone `66#1` `F430/4` Recovery, `WHO 1004` / `WHO 1001` Diagnostics & Physical `F500` FM Tuner (`WHO 16` + `WHO 22`)
+
+Follow-up verbatim `<myhome-bus-card>` trace exports contributed by **@andrea-mag** on [#466 (comment 6559432736)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6559432736) (`Home Assistant 2026.10.2`, `MyHOME 2.0.0b16`, `OWNd 2.0.0b11`, physical **BTicino H/L4684** firmware `6.0.11`).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino H/L4684 (`FW 6.0.11`, kernel `2.6.2`, distro `6.0.0`, `WHO 13` device type `23`)
+- **Subsystems Captured**:
+  - Thermoregulation (`WHO 4` + `WHO 1004` thermoregulation diagnostics): 8 zones (`11, 22, 33, 44, 55, 66, 77, 88`), central unit `3550` (`#0`), and Zone `66` `F430/4` actuator channel `66#1` brought back online mid-capture alongside `66#2` & `66#3`
+  - Sound Diffusion (`WHO 16` + `WHO 22` dual-stack): `F441M` audio matrix (`Source 1` = physical **BTicino F500** FM radio tuner at `101` / `2#1` / `5#2#1`, `Source 2` = `102` / `2#2`, `Source 3` = `103` / `2#3`) + Zone `42` (`3#4#2`, Environment `4`, Amplifier `2`)
+  - Lighting Diagnostics (`WHO 1001`) + Lighting (`WHO 1`) + Load Control (`WHO 3`)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_trace_HL4684_all_2026-11-01T11-30-19.json` | Bus Card Trace Export (150 `rx` frames, `0 tx`, `truncated: true`, `SHA-256: ca615a981f99d7d0e6f754f2f55b20b82f6afa043a069278232abca12bb6ae83`) | Live capture of Zone `66` `F430/4` channel `66#1` returning online at `11:25:21Z`, terminating the central unit's `~20 s` `*4*303*66##` retry loop and emitting the repository's first physical `WHO 1004` thermoregulation diagnostic fault-mask frames (`Dimension 11` & `Dimension 22`). |
+| `myhome_trace_HL4684_all_2026-11-01T11-48-15.json` | Bus Card Trace Export (150 frames: `141 rx / 9 tx`, `truncated: true`, `SHA-256: ac5c96c9029668eeab1586a0a70c7ebd74304cff85b783ab8bc26e1348d70e18`) | First physical `H/L4684` `WHO 1001` lighting diagnostic frame (`*#1001*91*11*111111111111111111111111##`) plus the repository's first physical `WHO 22` + `WHO 16` dual-stack `F500` FM radio tuner & `F441M` source-routing capture (`105.30 MHz`, `Station 5`, RDS `"MY HOME "` -> `"DIM*SOFT"`, standby transition). |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Zone `66#1` `F430/4` Recovery & First Physical `WHO 1004` Diagnostic Frames (`11-30-19.json`)**:
+   - **Pre-recovery (`11:15:02–11:25:01Z`)**: Zone `66` reports only `66#2` and `66#3` (`*#4*66#2*20*5##`, `*#4*66#3*20*5##`), while missing channel `66#1` causes the `3550` central unit to re-issue `*4*303*66##` (*Thermal Protection*) every `~20 s` (`11:15:22.467Z`, `11:15:42.846Z`).
+   - **Recovery (`11:25:21.747Z` onwards)**: Once the contributor resolved the `F430/4` actuator fault on `66#1`, `*#4*66#1*20*5##` begins reporting alongside `66#2` and `66#3`, `*4*303*66##` retries cease completely, and the bus emits three `WHO 1004` all-clear (`1` = healthy bit) diagnostic bitmasks:
+     - `*#1004*66*11*111111111111111111111111##` (24-bit probe `66` diagnostic mask)
+     - `*#1004*#66*22*1111111111111111##` (16-bit zone `#66` actuator diagnostic mask)
+     - `*#1004*#0*11*111111111111111111111111##` (24-bit central unit `#0` diagnostic mask)
+
+2. **First `WHO 1001` Diagnostic Frame on `H/L4684` (`11-48-15.json`)**:
+   - Captures `[rx] *#1001*91*11*111111111111111111111111##` on lighting actuator `WHERE = 91` (all 24 diagnostic bits `'1'` = healthy).
+
+3. **First Physical Dual-Stack `WHO 16` + `WHO 22` `F500` FM Tuner & `F441M` Routing Lifecycle (`11-48-15.json`)**:
+   - **Environment `4` (`Zone 42` / `3#4#2`) routed to `Source 1` (`F500` FM Tuner, `101` / `2#1` / `5#2#1`)**:
+     - Zone `42` wakes and switches from `Source 3` (`143` / `Source 3`) to `Source 1` (`141` / `Source 1`).
+     - `F500` powers ON: `*16*3*101##` paired with `*#22*2#1*12*1*4##`, followed by RDS enable `*22*31*2#1##` and frequency query `*#22*2#1*5##`.
+     - **Boot RDS banner (`"MY HOME "`)**: `*#16*101*8*77*89*32*72*79*77*69*32##` paired with `*#22*5#2#1*10*77*89*32*72*79*77*69*32##`.
+     - **Frequency `105.30 MHz` + Stored Preset `Station 5`**: `*#16*101*6*0*105300##` / `*#22*5#2#1*5*1*10530##` and `*#16*101*7*0*5##` / `*#22*5#2#1*11*1*10530*5##`.
+     - **Live broadcast RDS (`"DIM*SOFT"`, Dimensione Suono Soft `105.30 MHz`)**: `*#16*101*8*68*73*77*42*83*79*70*84##` paired with `*#22*5#2#1*10*68*73*77*42*83*79*70*84##`.
+     - **Tuner Standby on Source Switch**: When Zone `42` switches back to `Source 2` (`102` / `142`) and turns OFF (`*16*13*42##` / `*22*0*3#4#2##`), the `F500` enters standby via `*16*13*101##` paired with `*#22*2#1*12*0*10##`.
+

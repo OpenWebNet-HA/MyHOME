@@ -100,6 +100,7 @@ def test_parse_services_yaml():
         "reset_cover_travel_time", "start_sending_instant_power",
         "stop_sending_instant_power",
         "tuner_seek_up", "tuner_seek_down",
+        "tuner_set_frequency", "tuner_store_station",
     ):
         assert expected_svc in services
 
