@@ -48,7 +48,7 @@ The panel follows what the central unit reports on the bus:
 
 ## 🔑 Arming and disarming
 
-Current central-unit firmware rejects arm and disarm commands sent as WHO 5 frames over the SCS bus, whichever gateway sends them. A plant owner reported this, quoting BTicino support ([#564](https://github.com/OpenWebNet-HA/MyHOME/issues/564#issuecomment-5913248544)), and no capture shows such a command being accepted. The `alarm_control_panel` entity therefore offers no arm actions, and a disarm request is refused with an error.
+Current central-unit firmware rejects arm and disarm commands sent as WHO 5 frames over the SCS bus, whichever gateway sends them. A plant owner reported this, quoting BTicino support ([#564](https://github.com/OpenWebNet-HA/MyHOME/issues/564#issuecomment-5913248544)), and no capture shows such a command being accepted. The `alarm_control_panel` entity advertises `ARM_AWAY` so HomeKit Bridge, voice assistants, and Home Assistant `armed_away` triggers and conditions recognize the `armed_away` state ([#466](https://github.com/OpenWebNet-HA/MyHOME/issues/466)), while refusing direct `alarm_arm_away` and `alarm_disarm` requests with an error. To arm and disarm from Home Assistant or Apple Home, expose the template alarm control panel below instead.
 
 The route that works is an **auxiliary (WHO 9) command**. Your installer programs the central unit so that receiving, for example, `*9*1*7##` (AUX channel 7 on) arms a set of zones. Which AUX channels and values arm or disarm depends on that programming: check the central unit's configuration or ask your installer.
 

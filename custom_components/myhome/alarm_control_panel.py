@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, NoReturn
 
 from homeassistant.components.alarm_control_panel import (
     AlarmControlPanelEntity,
@@ -124,9 +124,11 @@ class MyHOMEAlarmControlPanel(MyHOMEEntity, AlarmControlPanelEntity):
     BTicino support, via the plant owner; no TX capture shows one accepted).
     Plants arm through a WHO 9 AUX frame (e.g. *9*1*7##) that an automation
     programmed on the central unit maps to zones, so the frames are the
-    installer's choice. This entity reports the state; a core template alarm
-    panel sends the AUX frames with myhome.send_message
-    (docs/configuration/alarm.md).
+    installer's choice. This entity reports the state and advertises ARM_AWAY so
+    HomeKit Bridge, voice assistants, and core armed_away triggers/conditions
+    recognize STATE_ARMED_AWAY (#466), while refusing direct arm/disarm service
+    calls; a core template alarm panel sends the AUX frames with
+    myhome.send_message (docs/configuration/alarm.md).
     """
 
     def __init__(
@@ -155,8 +157,11 @@ class MyHOMEAlarmControlPanel(MyHOMEEntity, AlarmControlPanelEntity):
         )
 
         self._gateway_handler = gateway
-        # Read-only: no arm/trigger actions (see the class docstring).
-        self._attr_supported_features = AlarmControlPanelEntityFeature(0)
+        # Advertise ARM_AWAY so HomeKit SecuritySystem ValidValues, core
+        # armed_away triggers/conditions, Alexa, and Google Assistant accept
+        # STATE_ARMED_AWAY (#466); async_alarm_arm_away and async_alarm_disarm
+        # refuse service calls so no WHO 5 command is sent (#564).
+        self._attr_supported_features = AlarmControlPanelEntityFeature.ARM_AWAY
         # The central unit takes no code over the bus.
         self._attr_code_arm_required = False
         self._attr_alarm_state = STATE_DISARMED
@@ -179,14 +184,22 @@ class MyHOMEAlarmControlPanel(MyHOMEEntity, AlarmControlPanelEntity):
         """Request status from the gateway."""
         await self._gateway_handler.send_status_request(OWNAlarmCommand.status(self._where))
 
-    async def async_alarm_disarm(self, code: str | None = None) -> None:  # pylint: disable=unused-argument
-        """Disarm has no feature flag in core, so refuse it here instead of sending a frame the panel rejects."""
+    def _raise_read_only(self) -> NoReturn:
+        """Refuse direct arm/disarm instead of sending a WHO 5 frame the panel rejects."""
         raise ServiceValidationError(
             f"{self._display_name} is read-only: arm and disarm through the AUX frames your central unit is programmed for",
             translation_domain=DOMAIN,
             translation_key="alarm_read_only",
             translation_placeholders={"name": self._display_name},
         )
+
+    async def async_alarm_arm_away(self, code: str | None = None) -> None:  # pylint: disable=unused-argument
+        """Refuse arm_away: ARM_AWAY is advertised for state compatibility (#466), not SCS WHO 5 arming (#564)."""
+        self._raise_read_only()
+
+    async def async_alarm_disarm(self, code: str | None = None) -> None:  # pylint: disable=unused-argument
+        """Disarm has no feature flag in core, so refuse it here instead of sending a frame the panel rejects."""
+        self._raise_read_only()
 
     @callback
     def handle_event(self, message: OWNAlarmEvent) -> None:
