@@ -23,6 +23,8 @@ This document provides a comprehensive reference for all custom services registe
 | [`myhome.send_scenario_plus_command`](#13-myhomesend_scenario_plus_command) | Gateway | Send a WHO 25 scenario plus command (on, off, increase, decrease, stop). |
 | [`myhome.cancel_cover_request`](#14-myhomecancel_cover_request) | `cover` | Cancel a pending approval request or running pre-warning countdown. |
 | [`myhome.acknowledge_cover_fault`](#15-myhomeacknowledge_cover_fault) | `cover` | Clear a latched safety watchdog fault after verifying physical gate/door clearance. |
+| [`myhome.tuner_set_frequency`](#16-myhometuner_set_frequency) | `media_player` | Tune an F500 / F500N radio tuner directly to an FM frequency in MHz (`87.50–108.00 MHz`). |
+| [`myhome.tuner_store_station`](#17-myhometuner_store_station) | `media_player` | Memorise the currently tuned FM frequency into a preset station slot (`1–15`). |
 
 ---
 
@@ -338,4 +340,46 @@ Clears the safety fault latched when a gate or garage door did not reach its exp
 action: myhome.acknowledge_cover_fault
 target:
   entity_id: cover.garage_door_1
+```
+
+---
+
+## 16. `myhome.tuner_set_frequency`
+
+Tunes an F500 / F500N sound source tuner entity (`WHERE` 101–109 / `WHO 22` `2#S`) directly to an explicit FM radio frequency (`87.50–108.00 MHz`, `0.05 MHz` step), dispatching `*#16*10S*#6*0*<kHz>##` on `WHO 16` gateways or `*#22*2#S*#5*1*<10kHz>##` on `WHO 22`-only gateways (`MyHomeServer1`, `F459`, `F460`, `F461`). You can also adjust this directly in the UI via the companion `number.<source>_frequency` entity.
+
+### Fields
+| Parameter | Type | Required | Description | Example |
+| :--- | :---: | :---: | :--- | :--- |
+| `entity_id` | target | Yes | Target MyHOME tuner source `media_player` entity. | `media_player.audio_source_1` |
+| `frequency` | float | **Yes** | Target FM radio frequency in MHz (`87.5`–`108.0`, `0.05` MHz step). | `105.3` |
+
+### Example YAML Call
+```yaml
+action: myhome.tuner_set_frequency
+target:
+  entity_id: media_player.audio_source_1
+data:
+  frequency: 105.3
+```
+
+---
+
+## 17. `myhome.tuner_store_station`
+
+Memorises the currently tuned FM radio frequency into a hardware preset slot (`1–5` on F500, up to `1–15` on F500N), dispatching `*#16*10S*#10*<station>##` on `WHO 16` gateways or `*22*33#<station>*2#S##` on `WHO 22`-only gateways.
+
+### Fields
+| Parameter | Type | Required | Description | Example |
+| :--- | :---: | :---: | :--- | :--- |
+| `entity_id` | target | Yes | Target MyHOME tuner source `media_player` entity. | `media_player.audio_source_1` |
+| `station` | integer | **Yes** | Preset memory slot number (`1`–`15`). | `5` |
+
+### Example YAML Call
+```yaml
+action: myhome.tuner_store_station
+target:
+  entity_id: media_player.audio_source_1
+data:
+  station: 5
 ```

@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from homeassistant.components.media_player import MediaPlayerState
 from homeassistant.const import CONF_MAC
 from OWNd.message import OWNMessage, OWNSoundEvent
 
@@ -325,4 +326,117 @@ def test_synthetic_mh200n_who22_first_dual_stack_trace_replay(hass, gateway):
             assert tuner.extra_state_attributes == {"frequency": 99.5}
             assert tuner.source is None
             assert tuner.media_title is None
+
+
+def test_who22_only_power_transitions_and_same_freq_preset_clear(hass, gateway):
+    """WHO 22 power-on/power-off commands and dim 12 status update state; dim 11 preset=0 clears same-freq preset."""
+    tuner = _tuner(hass, gateway, 1)
+    listener = who22_tuner_listener([tuner])
+
+    # 1. Power ON via *22*1*2#1## sets ON
+    listener(OWNMessage.parse("*22*1*2#1##"))
+    assert tuner.state == MediaPlayerState.ON
+
+    # 2. Tune Preset 5 at 105.30 MHz + RDS 'DIM*SOFT'
+    listener(_wire_to_who22_event("*#22*5#2#1*11*1*10530*5##"))
+    listener(_wire_to_who22_event("*#22*5#2#1*10*68*73*77*42*83*79*70*84##"))
+    assert tuner.extra_state_attributes == {"frequency": 105.3, "station": 5}
+    assert tuner.source == "Station 5"
+    assert tuner.media_title == "DIM*SOFT"
+
+    # 3. Same frequency 105.30 MHz reported with preset=0 (dim 11) MUST still clear preset/source!
+    listener(_wire_to_who22_event("*#22*5#2#1*11*1*10530*0##"))
+    assert tuner.extra_state_attributes == {"frequency": 105.3}
+    assert tuner.source is None
+
+    # 4. Dimension 12 status report: 0 = OFF (clears media_title), 1 = ON
+    listener(OWNMessage.parse("*#22*2#1*12*0*0##"))
+    assert tuner.state == MediaPlayerState.OFF
+    assert tuner.media_title is None
+
+    listener(OWNMessage.parse("*#22*2#1*12*1*0##"))
+    assert tuner.state == MediaPlayerState.ON
+
+    # 5. Power OFF via *22*0*2#1## sets OFF and clears media_title
+    listener(_wire_to_who22_event("*#22*5#2#1*10*82*65*68*73*79*32*32*32##"))
+    assert tuner.media_title == "RADIO"
+    listener(OWNMessage.parse("*22*0*2#1##"))
+    assert tuner.state == MediaPlayerState.OFF
+    assert tuner.media_title is None
+
+
+def test_real_hl4684_f500_who22_only_replay(hass, gateway):
+    """Replay ONLY the WHO 22 frames from physical H/L4684 trace 11-48-15 (simulating MyHomeServer1 WHO 22-only)."""
+    trace_path = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "traces"
+        / "issue_466"
+        / "myhome_trace_HL4684_all_2026-11-01T11-48-15.json"
+    )
+    doc = json.loads(trace_path.read_text(encoding="utf-8"))
+    tuner = _tuner(hass, gateway, 1)
+    listener = who22_tuner_listener([tuner])
+
+    titles: list[str] = []
+    states: list[MediaPlayerState | None] = []
+    for f in doc["frames"]:
+        if f["direction"] == "rx" and f["who"] == "22":
+            msg = OWNMessage.parse(f["raw"])
+            listener(msg)
+            states.append(tuner.state)
+            if tuner.media_title and (not titles or titles[-1] != tuner.media_title):
+                titles.append(tuner.media_title)
+
+    assert MediaPlayerState.ON in states
+    assert "MY HOME" in titles
+    assert "DIM*SOFT" in titles
+    assert tuner.state == MediaPlayerState.OFF
+    assert tuner.media_title is None
+    assert tuner.extra_state_attributes == {"frequency": 105.3, "station": 5}
+    assert tuner.source == "Station 5"
+
+
+async def test_who22_only_gateway_outbound_commands(hass):
+    """On a WHO 22-only gateway (MyHomeServer1), MyHOMESoundSource dispatches WHO 22 commands instead of WHO 16."""
+    gw = MagicMock()
+    gw.mac = "00:03:50:aa:bb:cc"
+    gw.send = AsyncMock()
+    gw.send_status_request = AsyncMock()
+    gw.profile_supports_who = MagicMock(side_effect=lambda who: who == 22)
+
+    tuner = _tuner(hass, gw, 1)
+    assert tuner._uses_who22_commands() is True
+
+    await tuner.async_added_to_hass()
+    assert [str(call.args[0]) for call in gw.send.call_args_list] == ["*22*31*2#1##"]
+
+    await tuner.async_update()
+    sent_status = [str(call.args[0]) for call in gw.send_status_request.call_args_list]
+    assert sent_status == ["*#22*2#1*5##", "*#22*2#1*6##", "*#22*2#1*12##"]
+
+    gw.send.reset_mock()
+    await tuner.async_turn_on()
+    await tuner.async_turn_off()
+    await tuner.async_media_next_track()
+    await tuner.async_media_previous_track()
+    await tuner.async_seek_up()
+    await tuner.async_seek_down()
+    await tuner.async_select_source("Station 5")
+    await tuner.async_set_frequency(105.3)
+    await tuner.async_store_station(5)
+
+    sent_cmds = [str(call.args[0]) for call in gw.send.call_args_list]
+    assert sent_cmds == [
+        "*22*1*2#1##",
+        "*22*0*2#1##",
+        "*22*9*2#1##",
+        "*22*10*2#1##",
+        "*22*5*2#1##",
+        "*22*6*2#1##",
+        "*#22*2#1*#6*5##",
+        "*#22*2#1*#5*1*10530##",
+        "*22*33#5*2#1##",
+    ]
+
 

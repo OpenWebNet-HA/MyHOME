@@ -381,6 +381,26 @@
       "name": "Ricerca frequenza precedente sintonizzatore",
       "description": "Cerca all'indietro la frequenza radio FM ricevibile precedente su una sorgente sintonizzatore F500."
     },
+    "tuner_set_frequency": {
+      "name": "Imposta frequenza sintonizzatore",
+      "description": "Sintonizza direttamente una frequenza radio FM manuale (87,50–108,00 MHz) su una sorgente sintonizzatore F500 / F500N.",
+      "fields": {
+        "frequency": {
+          "name": "Frequenza",
+          "description": "Frequenza radio FM desiderata in MHz (87,50–108,00 MHz, passi di 0,05 MHz)."
+        }
+      }
+    },
+    "tuner_store_station": {
+      "name": "Memorizza stazione sintonizzatore",
+      "description": "Memorizza la frequenza radio FM attuale in una posizione preimpostata (1–15) su una sorgente sintonizzatore F500 / F500N.",
+      "fields": {
+        "station": {
+          "name": "Stazione",
+          "description": "Numero della memoria preimpostata (1–5 su F500, fino a 1–15 su F500N)."
+        }
+      }
+    },
     "calibrate_cover": {
       "name": "Calibra il tempo di corsa della tapparella",
       "description": "Misura i tempi di corsa in salita e in discesa di una tapparella temporizzata sul bus SCS e li salva: la tapparella viene portata tutta su, poi tutta giù (cronometrata), poi di nuovo tutta su (cronometrata). Le tapparelle vengono calibrate una alla volta per gateway."
@@ -586,6 +606,9 @@
     "seek_not_supported": {
       "message": "{entity_id}: la ricerca di frequenza è supportata solo sulle entità sintonizzatore"
     },
+    "tuner_only_operation": {
+      "message": "{entity_id}: questa azione è supportata solo sulle entità sorgente sintonizzatore"
+    },
     "volume_not_finite": {
       "message": "{entity_id}: il livello del volume {volume} non è un numero finito valido"
     },
@@ -609,6 +632,17 @@
       },
       "calibrate_all_covers": {
         "name": "Calibra tutte le tapparelle"
+      },
+      "tuner_seek_up": {
+        "name": "Ricerca avanti"
+      },
+      "tuner_seek_down": {
+        "name": "Ricerca indietro"
+      }
+    },
+    "number": {
+      "tuner_frequency": {
+        "name": "Frequenza"
       }
     },
     "sensor": {

@@ -270,22 +270,27 @@ relies on the "Hardware Routing First" model below, as earlier releases did.
 ### Tuner sources (F500 / F500N)
 
 A matrix input can hold a **tuner** rather than a line interface. Tick *Source N
-is a tuner* in the options and the integration adds a radio entity for that
-input, alongside the amplifier zones.
+is a tuner* in the options and the integration creates a dedicated `Audio Source`
+device with four entities alongside the amplifier zones:
 
-| Home Assistant | OpenWebNet |
+- `media_player.<source>` — power, preset dropdown (`Station 1`–`Station 15`), next/previous preset, RDS title, and Home Assistant Media Browser (`BROWSE_MEDIA`)
+- `number.<source>_frequency` — direct manual FM frequency input & stepping (`87.50–108.00 MHz`, `0.05 MHz` step, box mode)
+- `button.<source>_seek_up` & `button.<source>_seek_down` — one-tap hardware FM auto-seek buttons
+
+| Home Assistant | OpenWebNet (`WHO 16` / `WHO 22`-only gateways) |
 | :--- | :--- |
-| On / off | `*16*3*10S##` / `*16*13*10S##` |
-| Next / previous track | next / previous station (`*16*6001*10S##` / `*16*6101*10S##`) |
-| Source list | stored stations (defaults to 1–5 for F500, dynamically expands up to 1–15 for F500N: `*#16*10S*#7*<N>##`) |
-| Seek up / down | `myhome.tuner_seek_up` / `myhome.tuner_seek_down` (`*16*5000*10S##` / `*16*5100*10S##`) |
-| `play_media`, content type `channel` | `"1"`–`"15"` selects a station; anything else is read as MHz, so `"107.5"` tunes there |
-| `media_title` | RDS text, reported as eight ASCII codes on `DIMENSION 8` |
-| `frequency` attribute | `DIMENSION 6`, in MHz |
-| `station` attribute | `DIMENSION 7` |
+| On / off | `*16*3*10S##` / `*16*13*10S##` (or `*22*1*2#S##` / `*22*0*2#S##`) |
+| Next / previous track | next / previous station (`*16*6001*10S##` / `*16*6101*10S##`, or `*22*9*2#S##` / `*22*10*2#S##`) |
+| Source list | stored stations (defaults to 1–5 for F500, dynamically expands up to 1–15 for F500N: `*#16*10S*#7*<N>##` or `*#22*2#S*#6*<N>##`) |
+| Manual frequency (`number.<source>_frequency` / `myhome.tuner_set_frequency`) | `87.50–108.00 MHz` (`*#16*10S*#6*0*<kHz>##` or `*#22*2#S*#5*1*<10kHz>##`) |
+| Seek up / down (`button` / `myhome.tuner_seek_up` & `tuner_seek_down`) | `*16*5000*10S##` / `*16*5100*10S##` (or `*22*5*2#S##` / `*22*6*2#S##`) |
+| Store preset (`myhome.tuner_store_station`) | `*#16*10S*#10*<N>##` (or `*22*33#<N>*2#S##`) |
+| Media Browser (`BROWSE_MEDIA`) & `play_media` (`channel`) | `"1"`–`"15"` selects a station; anything else is read as MHz, so `"105.3"` tunes to `105.30 MHz` |
+| `media_title` | RDS text, reported as ASCII codes on `WHO 16` `DIMENSION 8` / `WHO 22` `DIMENSION 10` |
+| `frequency` attribute | `WHO 16` `DIMENSION 6` / `WHO 22` `DIMENSION 5` & `11`, in MHz |
+| `station` attribute | `WHO 16` `DIMENSION 7` / `WHO 22` `DIMENSION 6` & `11` |
 
-The entity asks the tuner to start reporting RDS (`*16*101*10S##`) when it is
-added, although modern tuners broadcast their RDS text autonomously when active.
+The entity asks the tuner to start reporting RDS (`*16*101*10S##`, or `*22*31*2#S##` on `WHO 22`-only gateways such as `MyHomeServer1` and `F461`) when it is added, although modern tuners broadcast their RDS text autonomously when active.
 
 Two notes on the frames, both from the specification rather than choice: a
 station **write** carries its parameter directly (`*#16*101*#7*3##`) while the
@@ -300,8 +305,10 @@ nothing at all.
 > **Tested on real hardware.** Frequency tuning (`*#16*10S*#6*0*<kHz>##` with leading zero;
 > write without zero is ignored), hardware seek up / down (`*16*5000*10S##` / `*16*5100*10S##`),
 > station stepping (`*16*6001*10S##` / `*16*6101*10S##`), station selection (`*#16*10S*#7*<N>##`),
-> kHz frequency parsing, and autonomous RDS text (`DIMENSION 8`) are hardware-verified
-> against a live MH200N + F500N tuner with antenna (contributed by `@manfredgittmaier-afk` on PR #427).
+> kHz frequency parsing, autonomous RDS text (`DIMENSION 8`), and dual-stack `WHO 16` + `WHO 22`
+> (`5#2#S` / `2#S`) tuner telemetry & standby transitions are hardware-verified against live
+> `MH200N` + `F500N` (`@manfredgittmaier-afk`, PR #427) and `H/L4684` FW `6.0.11` + `F500`
+> (`@andrea-mag`, Issue #466) installations.
 
 ### The "Hardware Routing First" Model
 

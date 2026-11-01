@@ -381,6 +381,26 @@
       "name": "Tuner achteruit zoeken",
       "description": "Zoek achteruit naar de vorige ontvangbare FM-frequentie op een F500-tunerbron."
     },
+    "tuner_set_frequency": {
+      "name": "Tunerfrequentie instellen",
+      "description": "Stem direct af op een handmatige FM-radiofrequentie (87,50–108,00 MHz) op een F500 / F500N-tunerbron.",
+      "fields": {
+        "frequency": {
+          "name": "Frequentie",
+          "description": "Gewenste FM-radiofrequentie in MHz (87,50–108,00 MHz, stappen van 0,05 MHz)."
+        }
+      }
+    },
+    "tuner_store_station": {
+      "name": "Tunerzender opslaan",
+      "description": "Sla de huidig afgestemde FM-frequentie op onder een voorkeuzezender (1–15) op een F500 / F500N-tunerbron.",
+      "fields": {
+        "station": {
+          "name": "Zender",
+          "description": "Nummer van het voorkeuzegeheugen (1–5 op F500, tot 1–15 op F500N)."
+        }
+      }
+    },
     "calibrate_cover": {
       "name": "Looptijd rolluik kalibreren",
       "description": "Meet de op- en neerwaartse looptijden van een tijdgestuurd rolluik op de SCS-bus en slaat ze op: het rolluik gaat helemaal omhoog, dan helemaal omlaag (getimed) en daarna weer helemaal omhoog (getimed). Rolluiken worden per gateway één voor één gekalibreerd."
@@ -586,6 +606,9 @@
     "seek_not_supported": {
       "message": "{entity_id}: frequentie zoeken wordt alleen ondersteund op tunerbron-entiteiten"
     },
+    "tuner_only_operation": {
+      "message": "{entity_id}: deze actie wordt alleen ondersteund op tunerbron-entiteiten"
+    },
     "volume_not_finite": {
       "message": "{entity_id}: volumeniveau {volume} is geen geldig eindig getal"
     },
@@ -609,6 +632,17 @@
       },
       "calibrate_all_covers": {
         "name": "Alle rolluiken kalibreren"
+      },
+      "tuner_seek_up": {
+        "name": "Vooruit zoeken"
+      },
+      "tuner_seek_down": {
+        "name": "Achteruit zoeken"
+      }
+    },
+    "number": {
+      "tuner_frequency": {
+        "name": "Frequentie"
       }
     },
     "sensor": {

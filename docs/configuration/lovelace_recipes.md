@@ -330,6 +330,25 @@ type: media-control
 entity: media_player.kitchen_sound
 ```
 
+#### Option 3: F500 / F500N FM Radio Tuner Control Card (Stock Cards Only)
+When *Source N is a tuner* is ticked in the gateway Options, you get a `media_player`, a manual MHz `number` input, and `Seek up` / `Seek down` buttons on the `Audio Source` device:
+
+```yaml
+type: vertical-stack
+cards:
+  - type: media-control
+    entity: media_player.fm_radio
+  - type: entities
+    title: 📻 FM Radio Tuning
+    entities:
+      - entity: number.fm_radio_frequency
+        name: Frequency (MHz)
+      - entity: button.fm_radio_seek_down
+        name: Seek down
+      - entity: button.fm_radio_seek_up
+        name: Seek up
+```
+
 ---
 
 ## 🚪 Recipe 3: Active Perimeter & Safety Status Center
