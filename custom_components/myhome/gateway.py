@@ -864,6 +864,15 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         except Exception:  # pragma: no cover - defensive against foreign profile objects
             return True
 
+    def _natively_hears_who(self, who: int) -> bool:
+        """Return whether this gateway hears ``who`` on its local bus without an external F422 bridge."""
+        if who in (6, 8) and (
+            self._model_key in DOOR_ENTRY_MH_BRIDGE_AV_MODELS
+            or self._model_key in DOOR_ENTRY_WHO6_ONLY_MODELS
+        ):
+            return False
+        return self._profile_supports_who(who)
+
     async def _process_message(self, message: Any) -> None:
         """Process a received message and dispatch to Home Assistant."""
         await self._event_dispatcher.process_message(message)
@@ -1079,7 +1088,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         """Claim the sole point-to-point WHERE with an in-flight dimension request (#777)."""
         if who not in (13, 1013) and who in self.delegated_away_whos:
             sec = self._get_secondary_for_who(who)
-            if sec is not None and sec.is_connected:
+            if sec is not None and sec.is_connected and sec._profile_supports_who(int(who)):
                 return sec._command_pool.claim_in_flight_dimension_where(who, dimension)
         if who not in (13, 1013) and not self.is_connected:
             standby = self._get_standby_gateway()

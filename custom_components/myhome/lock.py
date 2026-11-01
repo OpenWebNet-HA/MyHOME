@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import inspect
+from collections.abc import Sequence
 from typing import Any, NoReturn
 
 from homeassistant.components.lock import (  # type: ignore[attr-defined, unused-ignore]
@@ -78,7 +79,10 @@ def _gateway_supports_door_entry(gateway: Any) -> bool:
     """Return False only when the gateway (and its configured shared-bus topology) omits WHO=6 support."""
     delegated = getattr(gateway, "delegated_away_whos", None)
     if isinstance(delegated, (set, frozenset, list, tuple)) and 6 in delegated:
-        return True
+        sec_fn = getattr(gateway, "_get_secondary_for_who", None)
+        sec = sec_fn(6) if callable(sec_fn) else None
+        if sec is None or _gateway_supports_who6(sec):
+            return True
     return _gateway_supports_who6(gateway)
 
 
@@ -88,7 +92,11 @@ def _effective_send_gateway(gateway: Any) -> Any:
     if isinstance(delegated, (set, frozenset, list, tuple)) and 6 in delegated:
         sec_fn = getattr(gateway, "_get_secondary_for_who", None)
         sec = sec_fn(6) if callable(sec_fn) else None
-        if sec is not None and getattr(sec, "is_connected", True) is not False:
+        if (
+            sec is not None
+            and getattr(sec, "is_connected", True) is not False
+            and _gateway_supports_who6(sec)
+        ):
             return sec
     if getattr(gateway, "is_connected", True) is False:
         sb_fn = getattr(gateway, "_get_standby_gateway", None)
@@ -109,6 +117,32 @@ def _gateway_model_label(gateway: Any) -> str:
         if isinstance(val, str) and val.strip():
             return val.strip()
     return "MyHOME gateway"
+
+
+def warn_if_locks_unsupported(gateway: Any, entities: Sequence[Any]) -> bool:
+    """Warn once when WHO=6 locks are configured on a gateway without WHO=6 support."""
+    if not entities or _gateway_supports_door_entry(gateway):
+        return False
+    if getattr(gateway, "_who6_locks_unsupported_warned", False) is True:
+        return False
+    wheres = ", ".join(
+        sorted(str(getattr(ent, "_full_where", getattr(ent, "_where", "?"))) for ent in entities)
+    )
+    LOGGER.warning(
+        "%s Configured WHO=6 door-entry lock(s) (%s) on gateway %s, whose firmware omits "
+        "door-entry support (bt_vct) and does not bridge the 2-wire AV door-entry bus "
+        "(e.g. HomeTouch 3488). Unlock commands (*6*10*WHERE##) will be NACKed unless WHO 6 "
+        "is delegated to an A/V gateway (F454 / F453AV) on a shared bus or the strike/gate "
+        "is driven by an MH-bus relay (WHO=1 impulse cover).",
+        gateway.log_id,
+        wheres,
+        _gateway_model_label(gateway),
+    )
+    try:
+        gateway._who6_locks_unsupported_warned = True
+    except Exception:  # pragma: no cover - defensive against frozen stand-ins
+        pass
+    return True
 
 
 def _consume_future_exception(fut: asyncio.Future[Any]) -> None:
@@ -182,20 +216,10 @@ async def async_setup_entry(
         accept=accept,
     ).start(listen=True)
 
-    if entities and not _gateway_supports_door_entry(gateway):
-        wheres = ", ".join(
-            sorted(str(getattr(ent, "_full_where", getattr(ent, "_where", "?"))) for ent in entities)
-        )
-        LOGGER.warning(
-            "%s Configured WHO=6 door-entry lock(s) (%s) on gateway %s, whose firmware omits "
-            "door-entry support (bt_vct) and does not bridge the 2-wire AV door-entry bus "
-            "(e.g. HomeTouch 3488). Unlock commands (*6*10*WHERE##) will be NACKed unless WHO 6 "
-            "is delegated to an A/V gateway (F454 / F453AV) on a shared bus or the strike/gate "
-            "is driven by an MH-bus relay (WHO=1 impulse cover).",
-            gateway.log_id,
-            wheres,
-            _gateway_model_label(gateway),
-        )
+    runtime.entities[PLATFORM] = {
+        str(getattr(ent, "_full_where", getattr(ent, "_where", "?"))): ent for ent in entities
+    }
+    warn_if_locks_unsupported(gateway, entities)
 
     return True
 
@@ -206,6 +230,11 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
     if runtime is None or PLATFORM not in runtime.platforms:
         return True
 
+    runtime.entities.pop(PLATFORM, None)
+    try:
+        runtime.gateway._who6_locks_unsupported_warned = False  # type: ignore[attr-defined]
+    except Exception:  # pragma: no cover - defensive against frozen stand-ins
+        pass
     configured_locks = runtime.platforms[PLATFORM]
     for lock_key in list(configured_locks.keys()):
         del runtime.platforms[PLATFORM][lock_key]
@@ -269,11 +298,17 @@ class MyHOMELock(MyHOMEEntity, LockEntity):
         self._attr_is_locked = True
         self.async_write_ha_state()
 
-    def _raise_unlock_rejected(self, frame: str, cause: BaseException | None = None) -> NoReturn:
+    def _raise_unlock_rejected(
+        self,
+        frame: str,
+        cause: BaseException | None = None,
+        *,
+        target_gw: Any = None,
+    ) -> NoReturn:
         """Raise a translated HomeAssistantError when the gateway NACKs or drops WHO=6 unlock."""
-        target_gw = _effective_send_gateway(self._gateway_handler)
-        gw_label = _gateway_model_label(target_gw)
-        if not _gateway_supports_who6(target_gw):
+        effective_gw = target_gw if target_gw is not None else _effective_send_gateway(self._gateway_handler)
+        gw_label = _gateway_model_label(effective_gw)
+        if not _gateway_supports_who6(effective_gw):
             raise HomeAssistantError(
                 f"{self._display_name}: gateway {gw_label} rejected WHO=6 door-entry unlock "
                 f"(`{frame}`). Automation-only gateways omit door-entry support (bt_vct) and "
@@ -307,6 +342,7 @@ class MyHOMELock(MyHOMEEntity, LockEntity):
 
         cmd = OWNDoorEntryCommand.open_lock(self._full_where)
         frame = str(cmd)
+        target_gw = _effective_send_gateway(self._gateway_handler)
         try:
             write_fut: Any = await self._gateway_handler.send(cmd)
         except HomeAssistantError:
@@ -348,7 +384,7 @@ class MyHOMELock(MyHOMEEntity, LockEntity):
                 )
                 if externally_cancelled:
                     raise
-                self._raise_unlock_rejected(frame, err)
+                self._raise_unlock_rejected(frame, err, target_gw=target_gw)
             except HomeAssistantError:
                 raise
             except Exception as err:

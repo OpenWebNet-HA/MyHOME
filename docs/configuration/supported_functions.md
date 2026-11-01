@@ -13,7 +13,7 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 | 2 | Automation (shutters, blinds) | `cover` | ✅ | Timed and position-reporting actuators. |
 | 4 | Thermoregulation | `climate`, `sensor` | ✅ | Zone thermostats, central units 3550 (`#0`) and 4695 (`#0#1`), probes. |
 | 5 | Burglar alarm | `alarm_control_panel` | 👁️ | Central unit status (read-only); arm/disarm through installer-programmed AUX frames — see [alarm](alarm.md#arming-and-disarming). |
-| 6 | Door entry | `lock`, `event` | ✅ | Door strikes (`*6*10*<where>##`), lock release status, and doorbell events. Requires a gateway with `bt_vct` coupled to the 2-wire door-entry bus (`F454`, `F453AV`, `F452V`, `F452`, `F459`, or via `F422` on `MH200`, `MH200N`, `F453`, `MH202`, `H4684`) — omitted on `MyHomeServer1`, `F455`, `F461`, `F450`, and `F460`. |
+| 6 | Door entry | `lock`, `event` | ✅ | Door strikes (`*6*10*<where>##`), lock release status, and doorbell events. Requires a gateway with `bt_vct` coupled to the 2-wire door-entry bus (`F454`, `F453AV`, `F452V`, `F452`, `F459`, or via `F422` on `MH200`, `MH200N`, `MH202`, `F453`, `H4684`, `H4890`, `MH201`) — omitted on `MyHomeServer1`, `F455`, `F461`, `F450`, and `F460`. |
 | 8 | Video door entry / intercom | `event` | 👁️ | Entrance panel doorbell events (`*8*1#<1..4>#<mm>*<where>##`) on A/V gateways (`F454`, `F453AV`, `F452V`, `F452`, `F459`, or `MH200` / `MH200N` / `MH202` via `F422`). |
 | 9 | Auxiliary channels | `binary_sensor` | 👁️ | AUX 1–9 as binary sensors. |
 | 13 | Gateway management | — | ⚙️ | Clock sync (`myhome.sync_time`), firmware / model / identity for the device registry and diagnostics. |

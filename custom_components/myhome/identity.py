@@ -538,6 +538,7 @@ class GatewayIdentityMixin:
         self.gateway.profile = _gw._profile_for_model(model, fw)
         self.gateway._log_id = f"[{model} gateway - {self.gateway.host}]"
         self._trim_sending_workers(model)
+        self._recheck_door_entry_locks()
         new_data = dict(self.config_entry.data)
         if new_data.get(CONF_NAME) == model:
             return
@@ -547,6 +548,31 @@ class GatewayIdentityMixin:
         if str(getattr(self.config_entry, "title", "")).endswith("Gateway"):
             update_kwargs["title"] = f"{model} Gateway"
         self.hass.config_entries.async_update_entry(self.config_entry, **update_kwargs)
+
+    def _recheck_door_entry_locks(self) -> None:
+        """Warn on WHO=6 locks and refresh availability when in-band identity resolves an unsupported model."""
+        from .data import get_runtime_data
+        from .lock import PLATFORM as LOCK_PLATFORM
+        from .lock import warn_if_locks_unsupported
+
+        entry = getattr(self, "config_entry", None)
+        runtime = get_runtime_data(entry) if entry is not None else None
+        if runtime is not None:
+            locks = runtime.entities.get(LOCK_PLATFORM)
+            if locks:
+                warn_if_locks_unsupported(self, list(locks.values()))
+        if getattr(self, "is_secondary", False) and 6 in getattr(self, "delegated_whos", ()):
+            notify = getattr(self, "_notify_availability", None)
+            if callable(notify):
+                notify()
+            primary_fn = getattr(self, "_get_primary_gateway", None)
+            primary = primary_fn() if callable(primary_fn) else None
+            pri_entry = getattr(primary, "config_entry", None) if primary is not None else None
+            pri_runtime = get_runtime_data(pri_entry) if pri_entry is not None else None
+            if pri_runtime is not None and primary is not None:
+                pri_locks = pri_runtime.entities.get(LOCK_PLATFORM)
+                if pri_locks:
+                    warn_if_locks_unsupported(primary, list(pri_locks.values()))
 
     def _trim_sending_workers(self, model: str) -> None:
         """Stop the command workers a corrected model has no sessions for."""

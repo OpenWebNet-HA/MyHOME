@@ -11,7 +11,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from homeassistant.helpers import typing as _ha_typing
 from voluptuous import Schema
+
+# Home Assistant 2026.12 replaced ``UNDEFINED`` with ``Undefined`` and gated
+# ``UNDEFINED`` behind module ``__getattr__`` deprecation logging. Reading
+# ``vars(_ha_typing)`` directly resolves ``Undefined`` on 2026.12+ and
+# ``UNDEFINED`` on 2026.3-2026.11 without triggering the deprecation hook.
+UNDEFINED_SENTINEL: Any = vars(_ha_typing).get("Undefined", vars(_ha_typing).get("UNDEFINED"))
 
 
 def flow_schema(definition: Any) -> Any:

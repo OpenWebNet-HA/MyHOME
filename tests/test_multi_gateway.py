@@ -2873,8 +2873,9 @@ async def test_shared_bus_who6_who8_delegation_end_to_end(hass: HomeAssistant) -
     assert len(doorbells) == 1
     assert doorbells[0].data["gateway_mac"] == sec_mac
 
-    # 5. Secondary does NOT bridge a delegated WHO while a WHO-capable primary (MH202) is connected,
-    #    and DOES bridge it while MH202 is disconnected
+    # 5a. Single-bus MH primary (MH202) does NOT natively hear an unbridged AV riser:
+    #     Secondary F454 DOES bridge delegated WHO 6 even while MH202 is connected,
+    #     while NOT double-bridging delegated WHO 16 (which MH202 hears on MH).
     _, gw_mh202 = _create_mock_gateway(
         hass,
         "00:03:50:de:10:03",
@@ -2889,19 +2890,49 @@ async def test_shared_bus_who6_who8_delegation_end_to_end(hass: HomeAssistant) -
         topology=TOPOLOGY_SHARED,
         role=ROLE_SECONDARY,
         primary_gateway="00:03:50:de:10:03",
-        delegated_whos=[6],
+        delegated_whos=[6, 16],
     )
     gw_mh202.is_connected = True
     bridged: list[Any] = []
     unsub_bridge = async_dispatcher_connect(hass, f"myhome_message_{gw_mh202.mac}", bridged.append)
     try:
         gw_f454_b._bridge_to_primary(OWNEvent.parse("*6*10*4000##"))
-        assert bridged == []
-        gw_mh202.is_connected = False
-        gw_f454_b._bridge_to_primary(OWNEvent.parse("*6*10*4000##"))
+        assert len(bridged) == 1
+        gw_f454_b._bridge_to_primary(OWNEvent.parse("*#16*1*0*1##"))
         assert len(bridged) == 1
     finally:
         unsub_bridge()
+
+    # 5b. Native A/V primary (F453AV) hears WHO 6 directly while connected and only bridges when offline
+    _, gw_f453av_pri = _create_mock_gateway(
+        hass,
+        "00:03:50:de:10:06",
+        name="F453AV",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_PRIMARY,
+    )
+    _, gw_f454_c = _create_mock_gateway(
+        hass,
+        "00:03:50:de:10:07",
+        name="F454",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_SECONDARY,
+        primary_gateway="00:03:50:de:10:06",
+        delegated_whos=[6],
+    )
+    gw_f453av_pri.is_connected = True
+    bridged_av: list[Any] = []
+    unsub_bridge_av = async_dispatcher_connect(
+        hass, f"myhome_message_{gw_f453av_pri.mac}", bridged_av.append
+    )
+    try:
+        gw_f454_c._bridge_to_primary(OWNEvent.parse("*6*10*4000##"))
+        assert bridged_av == []
+        gw_f453av_pri.is_connected = False
+        gw_f454_c._bridge_to_primary(OWNEvent.parse("*6*10*4000##"))
+        assert len(bridged_av) == 1
+    finally:
+        unsub_bridge_av()
 
     # 6. Closing/unloading secondary gateway notifies primary availability listeners immediately
     pri_avail_signals: list[None] = []
@@ -3227,6 +3258,145 @@ async def test_mh202_live_trace_who6_who8_delegation_and_standby_failover(
     finally:
         for lk in added_locks:
             await lk.async_will_remove_from_hass()
+
+
+@pytest.mark.asyncio
+async def test_door_entry_generic_delegation_and_runtime_who13_resolution(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Verify Generic manual WHO 6/8 delegation and runtime WHO=13/1013 resolution warnings & target fallback."""
+    from homeassistant.const import Platform
+    from OWNd.message import OWNCommand
+
+    from custom_components.myhome.lock import MyHOMELock
+    from custom_components.myhome.lock import async_setup_entry as async_setup_lock
+    from custom_components.myhome.topology import (
+        gateway_delegatable_whos,
+        gateway_supported_whos,
+        validate_shared_bus_topology,
+    )
+
+    # 1. Generic manual-IP gateway allows manual WHO 6/8 delegation without auto-inferring WHO 6/8;
+    #    Legrand 3578 USB coordinator excludes WHO 6/8 from both.
+    assert {6, 8}.isdisjoint(gateway_supported_whos("Generic"))
+    assert {6, 8} <= gateway_delegatable_whos("Generic")
+    assert {6, 8}.isdisjoint(gateway_delegatable_whos("Legrand 3578"))
+
+    entry_pri_check = MockConfigEntry(
+        domain=DOMAIN,
+        title="MyHomeServer1 Gateway",
+        data={CONF_NAME: "MyHomeServer1", CONF_MAC: "00:03:50:de:40:01"},
+        options={CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_PRIMARY},
+        unique_id="00:03:50:de:40:01",
+    )
+    entry_pri_check.add_to_hass(hass)
+    entry_gen_check = MockConfigEntry(
+        domain=DOMAIN,
+        title="Generic Gateway",
+        data={CONF_NAME: "Generic", CONF_MAC: "00:03:50:de:40:02"},
+        unique_id="00:03:50:de:40:02",
+    )
+    entry_gen_check.add_to_hass(hass)
+    assert not validate_shared_bus_topology(
+        hass,
+        entry_gen_check,
+        {
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: "00:03:50:de:40:01",
+            CONF_DELEGATED_WHOS: [6, 8],
+        },
+    )
+
+    # 2. Standalone Generic gateway with WHO=6 lock warns once as soon as _apply_model resolves MyHomeServer1
+    entry_standalone, gw_standalone = _create_mock_gateway(
+        hass, "00:03:50:de:40:03", name="Generic"
+    )
+    entry_standalone.runtime_data.platforms[Platform.LOCK] = {
+        "6-4000": {"who": "6", "where": "4000", "name": "Standalone Gate"},
+    }
+    standalone_locks: list[MyHOMELock] = []
+    caplog.clear()
+    with (
+        patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]),
+        patch("custom_components.myhome.discovery.er.async_get"),
+        caplog.at_level("WARNING"),
+    ):
+        await async_setup_lock(hass, entry_standalone, standalone_locks.extend)
+    assert len(standalone_locks) == 1
+    assert not [r for r in caplog.records if "bt_vct" in r.message]
+
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        gw_standalone._apply_model("MyHomeServer1")
+        gw_standalone._apply_model("MyHomeServer1")
+    who6_warnings = [r.message for r in caplog.records if "bt_vct" in r.message]
+    assert len(who6_warnings) == 1
+    assert "4000" in who6_warnings[0] and "MyHomeServer1" in who6_warnings[0]
+
+    # 3. Shared-bus MyHomeServer1 Primary + Generic Secondary (delegated_whos=[6, 8]):
+    #    when WHO=13 corrects Secondary to F455, Primary warns, lock availability drops,
+    #    and _delegated_target / claim_in_flight_dimension_where skip F455.
+    pri_mac = "00:03:50:de:40:04"
+    sec_mac = "00:03:50:de:40:05"
+    entry_pri, gw_pri = _create_mock_gateway(
+        hass,
+        pri_mac,
+        name="MyHomeServer1",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_PRIMARY,
+    )
+    entry_sec, gw_sec = _create_mock_gateway(
+        hass,
+        sec_mac,
+        name="Generic",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_SECONDARY,
+        primary_gateway=pri_mac,
+        delegated_whos=[6, 8],
+    )
+    gw_pri.is_connected = True
+    gw_pri._available = True
+    gw_sec.is_connected = True
+    gw_sec._available = True
+
+    entry_pri.runtime_data.platforms[Platform.LOCK] = {
+        "6-4001": {"who": "6", "where": "4001", "name": "Shared Gate"},
+    }
+    pri_locks: list[MyHOMELock] = []
+    caplog.clear()
+    with (
+        patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]),
+        patch("custom_components.myhome.discovery.er.async_get"),
+        caplog.at_level("WARNING"),
+    ):
+        await async_setup_lock(hass, entry_pri, pri_locks.extend)
+    assert len(pri_locks) == 1
+    assert not [r for r in caplog.records if "bt_vct" in r.message]
+
+    shared_lock = pri_locks[0]
+    shared_lock.hass = hass
+    shared_lock.entity_id = "lock.shared_gate"
+    shared_lock.async_write_ha_state = MagicMock()
+    assert shared_lock.available is True
+
+    cmd_lock = OWNCommand.parse("*6*10*4001##")
+    assert cmd_lock is not None
+    assert gw_pri._delegated_target(cmd_lock) is gw_sec
+
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        gw_sec._apply_model("F455")
+    pri_warnings = [r.message for r in caplog.records if "bt_vct" in r.message]
+    assert len(pri_warnings) == 1
+    assert "4001" in pri_warnings[0] and "MyHomeServer1" in pri_warnings[0]
+    assert shared_lock.available is False
+    assert gw_pri._delegated_target(cmd_lock) is None
+    assert gw_pri.claim_in_flight_dimension_where(6, 1) is None
+
+    for lk in (*standalone_locks, *pri_locks):
+        await lk.async_will_remove_from_hass()
+
 
 
 

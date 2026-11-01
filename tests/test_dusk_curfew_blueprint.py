@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import pytest
 from homeassistant.components.automation.config import AUTOMATION_BLUEPRINT_SCHEMA
 from homeassistant.components.blueprint.models import Blueprint, BlueprintInputs
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
@@ -19,6 +20,14 @@ from homeassistant.util import yaml as yaml_util
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 Calls = list[tuple[str, list[str]]]
+
+
+@pytest.fixture(autouse=True)
+async def _utc_timezone(request: pytest.FixtureRequest) -> None:
+    """Use UTC in hass tests so wall-clock curfew windows avoid US/Pacific DST folds/gaps."""
+    if "hass" in request.fixturenames:
+        hass: HomeAssistant = request.getfixturevalue("hass")
+        await hass.config.async_set_time_zone("UTC")
 
 
 def _get_blueprint_path() -> Path:

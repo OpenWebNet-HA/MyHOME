@@ -539,3 +539,30 @@ class TestPlatformImportCleanliness:
         assert "The deprecated constant OLD_CONST was used from myhome" in captured[1]
 
 
+def test_undefined_sentinel_avoids_ha_2026_12_deprecation() -> None:
+    """Verify UNDEFINED_SENTINEL prefers Undefined via module __dict__ without invoking __getattr__."""
+    import types
+
+    from custom_components.myhome import typing_compat
+
+    assert typing_compat.UNDEFINED_SENTINEL is not None
+
+    fake_undefined = object()
+
+    class _FakeHaTyping(types.ModuleType):
+        def __getattr__(self, name: str) -> object:
+            raise AssertionError(f"Deprecated __getattr__ accessed for {name}")
+
+    mod_2026_12 = _FakeHaTyping("fake_typing_2026_12")
+    mod_2026_12.__dict__["Undefined"] = fake_undefined
+    resolved_new = vars(mod_2026_12).get("Undefined", vars(mod_2026_12).get("UNDEFINED"))
+    assert resolved_new is fake_undefined
+
+    fake_legacy = object()
+    mod_2026_10 = _FakeHaTyping("fake_typing_2026_10")
+    mod_2026_10.__dict__["UNDEFINED"] = fake_legacy
+    resolved_old = vars(mod_2026_10).get("Undefined", vars(mod_2026_10).get("UNDEFINED"))
+    assert resolved_old is fake_legacy
+
+
+

@@ -728,3 +728,40 @@ async def test_lock_unlock_raises_homeassistant_error_on_nack_timeout_and_failur
         await lock.async_unlock()
     assert exc_info.value.translation_key == "lock_command_failed"
     assert lock.is_locked is True
+
+    # 8. Mid-flight secondary disconnect during send() still attributes NACK/drop to F454 (not MyHomeServer1),
+    #    and direct _raise_unlock_rejected() without target_gw resolves dynamically
+    gw.send.side_effect = None
+    gw.model = "MyHomeServer1"
+    gw.profile_supports_who.return_value = False
+    f454_mid = MagicMock()
+    f454_mid.model = "F454"
+    f454_mid.is_connected = True
+    f454_mid.profile_supports_who.return_value = True
+    gw.delegated_away_whos = {6, 8}
+    gw._get_secondary_for_who.return_value = f454_mid
+
+    fut_mid_drop: asyncio.Future[float] = hass.loop.create_future()
+
+    def _drop_mid_flight() -> None:
+        f454_mid.is_connected = False
+        fut_mid_drop.cancel()
+
+    hass.loop.call_soon(_drop_mid_flight)
+    gw.send.return_value = fut_mid_drop
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await lock.async_unlock()
+    assert exc_info.value.translation_key == "lock_command_rejected"
+    assert exc_info.value.translation_placeholders["gateway"] == "F454"
+
+    with pytest.raises(HomeAssistantError) as exc_info:
+        lock._raise_unlock_rejected("*6*10*4000##")
+    assert exc_info.value.translation_key == "lock_gateway_who6_unsupported"
+    assert exc_info.value.translation_placeholders["gateway"] == "MyHomeServer1"
+
+    from custom_components.myhome.lock import warn_if_locks_unsupported
+
+    gw.delegated_away_whos = set()
+    gw._who6_locks_unsupported_warned = False
+    assert warn_if_locks_unsupported(gw, [lock]) is True
+    assert warn_if_locks_unsupported(gw, [lock]) is False

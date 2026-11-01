@@ -165,17 +165,28 @@ def gateway_delegatable_whos(model: str | None, firmware: str | None = None) -> 
 
     Includes :func:`gateway_supported_whos` plus door-entry WHOs that single-bus
     ``MH`` gateways translate via ``bt_vct`` when an ``F422`` interface bridges an
-    ``AV`` riser.
+    ``AV`` riser, and all delegatable WHOs for un-identified ``Generic`` gateways.
     """
     whos = set(gateway_supported_whos(model, firmware))
+    norm = (model or "").strip().upper()
     try:
-        _, model_name = _profile_and_model(model, firmware)
+        import OWNd.profiles as _ownd_profiles
+
+        profile, model_name = _profile_and_model(model, firmware)
+        is_generic = isinstance(profile, _ownd_profiles.GenericGatewayProfile)
     except Exception:
-        model_name = ""
+        model_name, is_generic = "", False
     if model_name in DOOR_ENTRY_MH_BRIDGE_AV_MODELS:
         whos |= {6, 8}
     elif model_name in DOOR_ENTRY_WHO6_ONLY_MODELS:
         whos.add(6)
+    elif (
+        is_generic
+        and "3578" not in norm
+        and model_name not in DOOR_ENTRY_UNSUPPORTED_MODELS
+        and not any(k in norm for k in DOOR_ENTRY_UNSUPPORTED_MODELS)
+    ):
+        whos = set(DELEGATABLE_WHOS)
     return whos
 
 
@@ -513,6 +524,7 @@ class GatewayTopologyMixin:
         @property
         def log_id(self) -> str: ...
         def _profile_supports_who(self, who: int) -> bool: ...
+        def _natively_hears_who(self, who: int) -> bool: ...
 
     @property
     def available(self) -> bool:
@@ -527,7 +539,7 @@ class GatewayTopologyMixin:
         who_int = int(who)
         if who_int not in (13, 1013) and who_int in self.delegated_away_whos:
             sec = self._get_secondary_for_who(who_int)
-            if sec is not None and sec.available:
+            if sec is not None and sec.available and sec._profile_supports_who(who_int):
                 return True
             if self._available:
                 return self._profile_supports_who(who_int)
@@ -680,14 +692,14 @@ class GatewayTopologyMixin:
             primary_gw._evaluate_failover()
             if who_int is not None and who_int in primary_gw.delegated_away_whos:
                 sec = primary_gw._get_secondary_for_who(who_int)
-                if sec is not None and sec.is_connected:
+                if sec is not None and sec.is_connected and sec._profile_supports_who(who_int):
                     return
             _gw.async_dispatcher_send(self.hass, f"myhome_message_{primary_gw.mac}", message)
             return
         if self.is_secondary and who_int is not None and who_int in self.delegated_whos:
             primary_gw = self._get_primary_gateway()
             if primary_gw is not None and not (
-                primary_gw.is_connected and primary_gw._profile_supports_who(who_int)
+                primary_gw.is_connected and primary_gw._natively_hears_who(who_int)
             ):
                 _gw.async_dispatcher_send(self.hass, f"myhome_message_{primary_gw.mac}", message)
 
@@ -779,7 +791,7 @@ class GatewayTopologyMixin:
         if msg_who in (13, 1013) or msg_who is None or msg_who not in self.delegated_away_whos:
             return None
         sec = self._get_secondary_for_who(msg_who)
-        if sec is None or not sec.is_connected:
+        if sec is None or not sec.is_connected or not sec._profile_supports_who(int(msg_who)):
             return None
         LOGGER.debug("%s Subsystem WHO=%s is delegated; sending `%s` through secondary gateway %s.", self.log_id, msg_who, message, sec.log_id)
         return sec
