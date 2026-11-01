@@ -862,3 +862,36 @@ Follow-up verbatim `<myhome-bus-card>` trace exports contributed by **@andrea-ma
      - **Live broadcast RDS (`"DIM*SOFT"`, Dimensione Suono Soft `105.30 MHz`)**: `*#16*101*8*68*73*77*42*83*79*70*84##` paired with `*#22*5#2#1*10*68*73*77*42*83*79*70*84##`.
      - **Tuner Standby on Source Switch**: When Zone `42` switches back to `Source 2` (`102` / `142`) and turns OFF (`*16*13*42##` / `*22*0*3#4#2##`), the `F500` enters standby via `*16*13*101##` paired with `*#22*2#1*12*0*10##`.
 
+
+---
+
+# #466 BTicino F454 (FW 2.0.51) + 3486 Burglar Alarm Bus Sweep, Transponder Arm/Disarm & Broadcast Resync Trace
+
+Verbatim `<myhome-bus-card>` sweep + live burglar-alarm capture contributed by **@gimprota76** on [#466 (comment 6562473665)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6562473665) (`Home Assistant 2026.10.4`, `MyHOME 2.0.0b16`, `OWNd 2.0.0b11`, physical **BTicino F454** firmware `2.0.51` + **BTicino 3486** central burglar alarm unit).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino F454 (`FW 2.0.51`, Linux kernel `2.6.32`, distribution `2.16.11`, `WHO 13` device type `200`, `WHO 1013` `OBJECT_MODEL = 51` / `003598` with `N_CONF = 15`, `BRAND = 5 (Legrand BTicino)`, `LINE = 0 (Undefined)`)
+- **Alarm Hardware**: BTicino 3486 central burglar alarm unit (`WHERE = 0`, 8 zones `#1..#8` with zones `#1..#4` active and `#5..#8` non-active) armed and disarmed via physical transponder key
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_sweep_F454_all_2026-11-01T18-58-06.json` | Bus Card Sweep Export (156 frames: `54 tx / 102 rx`, unfiltered, `truncated: false`, `SHA-256: bfbda13c13f76fc203f23348cedcd0ef22b4e182af54729a93ad919852f7c70d`) | Unfiltered `myhome.sweep_bus` capture on `F454` (`FW 2.0.51`: `16` `WHO 1` lights, `5` `WHO 2` covers, silent drop on `*#4*0##`, `WHO 18` energy sweep) interleaved with live `3486` transponder Away arming (`*5*1*0## -> *5*8*0##`), scenario cover/light broadcasts (`*2*2*0##`, `*1*0*0##`), empty-`WHERE` battery status (`*5*5*##`), transponder disarming (`*5*2*0## -> *5*1*0## -> *5*9*0##`), Area `3` timed courtesy light (`*1*17*3##`), and automatic area lighting broadcast resync (`*#1*2..9##`, `*#1*3##`). |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Gateway `WHO 13` Identification, Dual `21`-Endpoint Sweep & Dropped `*#4*0##` (`frames[0..56]`)**:
+   - **`WHO 13` Metadata (`frames[0..9]`, `18:57:15.584Z -> 18:57:16.004Z`)**: `*#13**0## -> *#13**0*19*57*17*001##` (`UTC+1`), `*#13**15## -> *#13**15*200##`, `*#13**16## -> *#13**16*2*0*51##`, `*#13**23## -> *#13**23*2*6*32##`, and `*#13**24## -> *#13**24*2*16*11##`, plus autonomous `*#13**15*200##` beacons every `~25.0 s` (`frames[56]` at `18:57:25.861Z` and `frames[132]` at `18:57:50.874Z`).
+   - **Dual `WHO 1` / `WHO 2` General Bursts (`frames[10..53]`)**: Both `*#1*0##` (`frames[10..31]`) and `*#2*0##` (`frames[32..53]`) return the identical **21 A/PL status frames** (`16` `WHO 1` lights `21, 22, 25, 31, 41, 51, 53, 54, 61, 62, 71, 73, 74, 81, 84, 99` all `OFF`, and `5` `WHO 2` covers `23, 42, 52, 64, 72` stopped `*2*0*<WHERE>##`).
+   - **`*#4*0##` Silent Drop & `*#16*0*5##` (`frames[54..55]`)**: `*#4*0##` produces zero `WHO 4` bus frames (corroborating `own-firmware-oracle` `F454 020051` and `GENERAL_ZONE_REQUEST_REFUSED`); `*#16*0*5##` produces zero `WHO 16` replies on this audio-less plant, followed by `36` `WHO 18` energy probes (`51..59`, `71#0..79#0` x dimensions `51` and `1200`).
+
+2. **Physical `3486` Away Arming via Transponder (`frames[76..99]`, `18:57:36.435Z -> 18:57:41.987Z`)**:
+   - **Approach Light `31` (`frames[76..77]`)**: `*1*1000#1*31## -> *1*1*31##` (`+11.0 ms`) turns Area `3` light `31` `ON`.
+   - **Arming Burst (`frames[84..99]`)**: Scenario general covers DOWN (`*2*2*0##`) -> central activation (`*5*1*0##`) -> **central engaged (`*5*8*0##` at `18:57:40.023Z`, transitioning `alarm_control_panel.alarm_0` to `armed_away`)** -> partition telemetry `*5*18*#5..#8##` (non-active) and `*5*11*#1..#4##` (active, ignored as non-panel zone telemetry) -> scenario general lights OFF (`*1*0*0##`) -> empty-`WHERE` system battery OK (`*5*5*##`, routed to central unit `"0"` without altering `armed_away`) -> general covers STOP (`*2*0*0##`).
+
+3. **Physical `3486` Disarming via Transponder & Courtesy Light Broadcast Resync (`frames[106..155]`, `18:57:44.444Z -> 18:57:58.208Z`)**:
+   - **Disarming Burst (`frames[106..120]`)**: `*5*2*0##` (*deactivation*) -> `*5*1*0##` (*activation* — operational status, **not** armed) -> **`*5*9*0##` (*disengage* -> `disarmed`)** -> `*5*18*#5..#8##` -> repeated `*5*1*0## -> *5*9*0##` -> **`*1*17*3##` (Area `3` 15-minute timed courtesy light `ON`)** -> `*5*11*#1..#4##` -> `*5*5*##`.
+   - **Queued Broadcast Resync (`frames[124..155]`)**: Once the `36` `WHO 18` sweep queries finish draining at `frames[123]`, MyHOME drains the `8` populated-area polls `*#1*2## .. *#1*9##` queued by `*1*0*0##` (skipping unpopulated Area `1`) plus the targeted `*#1*3##` poll queued by `*1*17*3##` (`5 + 4 + 36 + 8 + 1 = 54 tx` frames total), reconciling `light.light_31` to `ON` (`*1*1*31##` at `frames[130]` & `frames[155]`) while all other `15` lights confirm `OFF`.
