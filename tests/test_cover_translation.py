@@ -8,19 +8,38 @@ that shutter follows, delivered as its movement, dated when the translation arri
 """
 import asyncio
 import logging
+import time
 from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.const import CONF_MAC
-from homeassistant.core import callback
+from homeassistant.const import (
+    CONF_FRIENDLY_NAME,
+    CONF_HOST,
+    CONF_MAC,
+    CONF_NAME,
+    CONF_PASSWORD,
+    CONF_PORT,
+    EVENT_STATE_CHANGED,
+)
+from homeassistant.core import Event, callback
+from homeassistant.helpers import entity_platform
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.util import dt as dt_util
 from OWNd.message import OWNMessage
-from pytest_homeassistant_custom_component.common import async_fire_time_changed
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
-from custom_components.myhome.const import CONF_ENTITY, CONF_PLATFORMS, DOMAIN
+from custom_components.myhome.const import (
+    CONF_DEVICE_TYPE,
+    CONF_ENTITY,
+    CONF_FILE_PATH,
+    CONF_FIRMWARE,
+    CONF_MANUFACTURER,
+    CONF_PLATFORMS,
+    DOMAIN,
+)
 from custom_components.myhome.cover import MyHOMECover
 from custom_components.myhome.cover_translation import (
     TRANSLATION_GRACE,
@@ -436,3 +455,274 @@ async def test_a_half_run_confirmed_by_its_translation_arms_its_stop_once(hass, 
     cal.clock[0] += .3
     _wire(cal, relay, "*2*1*11##")
     assert cal.session.deadline is sample and not sample.cancelled()
+
+
+# ── the bus, end to end ─────────────────────────────────────────────
+#
+# A loaded config entry with two shutters: every frame goes through the gateway's dispatcher
+# signal, the relay and discovery as on a live plant, the grace runs on the loop's timer and
+# the state machine records what the cover shows. The clocks of the relay and of the cover
+# are the same hand-driven one.
+
+MAC = "00:03:50:00:00:81"
+SIGNAL = f"myhome_message_{MAC}"
+
+
+async def _plant(hass, tmp_path):
+    plant_yaml = tmp_path / "myhome.yaml"
+    plant_yaml.write_text(
+        f"mh201:\n  mac: '{MAC}'\n  cover:\n"
+        + "".join(f"    cover_{w}:\n      where: '{w}'\n      name: Cover {w}\n      travel_time: 30\n"
+                  for w in ("81", "82")),
+        encoding="utf-8")
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_HOST: "192.0.2.1", CONF_PORT: 20000, CONF_PASSWORD: "pass", CONF_MAC: MAC,
+              CONF_NAME: "MH201", CONF_DEVICE_TYPE: "urn:schemas-bticino-it:device:IP scenario module:1",
+              CONF_FRIENDLY_NAME: "MH201 Gateway", CONF_MANUFACTURER: "BTicino S.p.A.", CONF_FIRMWARE: "1.0"},
+        options={CONF_FILE_PATH: str(plant_yaml)},
+        unique_id=MAC,
+    )
+    entry.add_to_hass(hass)
+    with patch("custom_components.myhome.gateway.OWNSession.test_connection",
+               return_value={"Success": True, "Message": None}), \
+         patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"), \
+         patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    entry.runtime_data.gateway._on_event_connection_state_change(True)
+    return entry
+
+
+class Bus:
+    """The loaded plant on a hand-driven clock, counting what cover 81 does."""
+
+    def __init__(self, hass, entry):
+        self.hass, self.entry, self.clock = hass, entry, [1000.0]
+        (platform,) = [p for p in entity_platform.async_get_platforms(hass, DOMAIN) if p.domain == "cover"]
+        self.cover = platform.entities["cover.cover_81"]
+        self.anchors = []  # Every movement start of cover 81: when it was dated.
+        self.states = []  # Every state cover 81 entered.
+
+        @callback
+        def entered(event: Event) -> None:
+            old, new = event.data["old_state"], event.data["new_state"]
+            if event.data["entity_id"] == "cover.cover_81" and new is not None and (old is None or old.state != new.state):
+                self.states.append(new.state)
+
+        self._undo = hass.bus.async_listen(EVENT_STATE_CHANGED, entered)
+        anchor = MyHOMECover._anchor_run
+
+        def counted(cover, at):
+            if cover is self.cover:
+                self.anchors.append(at)
+            return anchor(cover, at)
+
+        fake_time = SimpleNamespace(monotonic=lambda: self.clock[0], time=time.time)
+        self._patches = [patch.object(MyHOMECover, "_anchor_run", counted),
+                         patch("custom_components.myhome.cover.time", fake_time),
+                         patch(CLOCK, side_effect=lambda: self.clock[0])]
+        for p in self._patches:
+            p.start()
+
+    async def send(self, *raws, step=0.0):
+        for raw in raws:
+            self.clock[0] += step
+            async_dispatcher_send(self.hass, SIGNAL, frame(raw))
+        await self.hass.async_block_till_done()
+
+    async def wait(self, seconds):
+        """Let `seconds` pass on both clocks: the grace timer runs when it is due."""
+        self.clock[0] += seconds
+        async_fire_time_changed(self.hass, dt_util.utcnow() + timedelta(seconds=seconds))
+        await self.hass.async_block_till_done()
+
+    def state(self):
+        return self.hass.states.get("cover.cover_81")
+
+    def stop(self):
+        self._undo()
+        for p in self._patches:
+            p.stop()
+
+
+def _pending_releases(hass):
+    """The grace timers still due on the loop."""
+    return [h for h in hass.loop._scheduled
+            if not h.cancelled() and getattr(h._callback, "__name__", None) == "_release"]
+
+
+@pytest.fixture
+async def bus(hass, tmp_path):
+    entry = await _plant(hass, tmp_path)
+    bus = Bus(hass, entry)
+    await bus.send("*2*0*81##", "*2*0*82##")  # Both shutters known and at rest.
+    cover = bus.cover  # Closed, as after a run to the end stop.
+    cover._motion.confirm(0)
+    cover._attr_current_cover_position = cover._start_position = 0
+    cover._attr_is_closed = True
+    cover.async_write_ha_state()
+    bus.states.clear()
+    yield bus
+    bus.stop()
+    if entry.state.recoverable:
+        await hass.config_entries.async_unload(entry.entry_id)
+    assert _pending_releases(hass) == []
+
+
+@pytest.mark.parametrize(("what", "moving", "ended", "position"), [
+    ("1", "opening", "open", 50),  # From closed, half the travel time up.
+    ("2", "closing", "closed", 0),  # From half open, half the travel time down.
+])
+async def test_a_status_relayed_after_the_delivery_is_the_same_movement(bus, what, moving, ended, position):
+    """1 and 4: the actuator's status comes after the grace, once the translation has been delivered."""
+    if what == "2":  # Half open, so that it can close.
+        bus.cover._motion.confirm(50)
+        bus.cover._attr_current_cover_position = bus.cover._start_position = 50
+        bus.cover._attr_is_closed = False
+        bus.cover.async_write_ha_state()
+        bus.states.clear()
+    await bus.send("*2*1000#0*81##", "*2*0*81##")
+    await bus.send(f"*2*1000#{what}*81##", step=.02)
+    arrived = bus.clock[0]
+    assert bus.state().state not in ("opening", "closing") and len(_pending_releases(bus.hass)) == 1
+    await bus.wait(TRANSLATION_GRACE)
+    assert bus.state().state == moving
+    assert bus.anchors == [arrived] and bus.cover._move_start_time == arrived
+    started, changed = bus.state().attributes["motion_started_at"], bus.state().last_changed
+    # The status relayed late: the same movement, neither a second start nor a new date.
+    await bus.wait(.4)
+    await bus.send(f"*2*{what}*81##")
+    assert bus.anchors == [arrived] and bus.cover._move_start_time == arrived
+    assert bus.state().state == moving and bus.state().last_changed == changed
+    assert bus.state().attributes["motion_started_at"] == started
+    assert bus.states == [moving]  # One movement entered, once.
+    # The run ends on its stop, timed from the translation.
+    bus.clock[0] = arrived + 15
+    await bus.send("*2*0*81##")
+    assert bus.state().attributes["last_run_seconds"] == 15.0
+    assert bus.state().attributes["current_position"] == position
+    assert bus.states == [moving, ended]
+    assert _pending_releases(bus.hass) == []
+
+
+async def test_a_status_inside_the_window_is_the_only_start(bus):
+    """4: the usual sequence, the status ~0.4 s after the translation, starts the movement once."""
+    await bus.send(*LIVE_UP)
+    await bus.send("*2*1*81##", step=.4)
+    status_at = bus.clock[0]
+    assert _pending_releases(bus.hass) == []
+    await bus.wait(2 * TRANSLATION_GRACE)
+    assert bus.state().state == "opening"
+    assert bus.anchors == [status_at] and bus.cover._move_start_time == status_at
+    assert bus.states == ["opening"]
+
+
+@pytest.mark.parametrize(("follower", "outcome", "dated"), [
+    ("*2*0*81##", [], None),  # The actuator reports it is stopped: it never moved.
+    ("*2*1000#0*81##", [], None),  # A Stop translated after the direction: that run is over.
+    ("*2*2*81##", ["closing"], "follower"),  # The actuator runs the other way.
+    ("*2*1000#2*81##", ["closing"], "follower"),  # The other way, and no status follows that either.
+])
+async def test_a_stop_or_reversal_in_the_window_decides_once(bus, follower, outcome, dated):
+    """2: whatever follows the held `1000#1` in the window leaves one outcome and no timer behind."""
+    await bus.send(*LIVE_UP)
+    (first,) = _pending_releases(bus.hass)
+    await bus.send(follower, step=.3)
+    follower_at = bus.clock[0]
+    assert first.cancelled()
+    await bus.wait(TRANSLATION_GRACE)
+    await bus.wait(TRANSLATION_GRACE)  # Long after either window: nothing stale arrives.
+    assert bus.states == outcome
+    assert "opening" not in bus.states and not bus.cover.is_opening
+    assert bus.anchors == ([follower_at] if dated else [])
+    assert _pending_releases(bus.hass) == []
+
+
+async def test_a_reversal_after_the_delivery_is_a_new_run(bus):
+    """2: down pressed while the delivered up runs; the gateway's frames for it, then no status again."""
+    await bus.send(*LIVE_UP)
+    up = bus.clock[0]
+    await bus.wait(TRANSLATION_GRACE)
+    bus.clock[0] = up + 6
+    await bus.send("*2*1000#0*81##", "*2*0*81##")
+    stopped = bus.state().attributes["current_position"]
+    assert bus.state().state == "open" and stopped == 20
+    await bus.send("*2*1000#2*81##", step=.02)
+    down = bus.clock[0]
+    await bus.wait(TRANSLATION_GRACE)
+    assert bus.states == ["opening", "open", "closing"]
+    assert bus.anchors == [up, down]
+    bus.clock[0] = down + 3
+    assert bus.cover.current_cover_position == stopped - 10
+
+
+async def test_unloading_the_entry_cancels_the_held_translation(hass, bus):
+    """3: the held delivery is cancelled with the entry, never runs and leaves no handle."""
+    await bus.send(*LIVE_UP)
+    (held,) = _pending_releases(hass)
+    assert await hass.config_entries.async_unload(bus.entry.entry_id)
+    await hass.async_block_till_done()
+    assert held.cancelled() and _pending_releases(hass) == []
+    await bus.wait(2 * TRANSLATION_GRACE)
+    assert bus.anchors == [] and "opening" not in bus.states
+    # The relay no longer listens: a translation after the unload is not held.
+    await bus.send("*2*1000#1*81##")
+    assert _pending_releases(hass) == []
+
+
+async def test_a_cover_removed_while_held_receives_nothing(hass, bus):
+    """3: the entity goes, the entry stays: the delivery finds no one and raises nothing."""
+    await bus.send(*LIVE_UP)
+    er.async_get(hass).async_remove("cover.cover_81")
+    await hass.async_block_till_done()
+    assert hass.states.get("cover.cover_81") is None
+    await bus.wait(TRANSLATION_GRACE)
+    assert bus.anchors == [] and not bus.cover.is_opening
+    assert _pending_releases(hass) == []
+
+
+async def test_a_dropped_connection_does_not_cancel_the_held_translation(hass, bus):
+    """3: the connection drops inside the window; the cover lives on and still gets its movement.
+
+    The translation is the gateway's report of a command already on the bus. A dropped event
+    session is one more way for the status to go missing, the case the translation stands in
+    for; the entities stay available through the reconnect grace and nothing is torn down.
+    """
+    gateway = bus.entry.runtime_data.gateway
+    await bus.send(*LIVE_UP)
+    arrived = bus.clock[0]
+    gateway._on_event_connection_state_change(False)
+    await bus.wait(TRANSLATION_GRACE)
+    assert bus.state().state == "opening" and bus.anchors == [arrived]
+    gateway._on_event_connection_state_change(True)
+    assert _pending_releases(hass) == []
+
+
+@pytest.mark.parametrize(("confirmed_by", "anchors"), [
+    ("status", [1000.0, 1000.4]),  # The usual sequence.
+    ("translation", [1000.0, 1000.1]),  # No status in the window: the translation, dated on arrival.
+])
+async def test_our_own_command_starts_alike_whatever_confirms_it(hass, confirmed_by, anchors):
+    """1 and 4: HA wrote the Up. The write anchors the run provisionally and its confirmation once
+    more, precisely; the translation does what the status does, and the status relayed late adds
+    nothing."""
+    cover = _cover(hass)
+    written = hass.loop.create_future()
+    written.set_result(1000.0)
+    cover._gateway_handler.send = AsyncMock(return_value=written)
+    with patch.object(cover, "_anchor_run", wraps=cover._anchor_run) as anchor:
+        with patch("custom_components.myhome.cover.time.monotonic", return_value=1000.0):
+            await cover._async_move("open")
+            await asyncio.sleep(0)  # The write is confirmed.
+        _at(1000.05, cover.handle_event, frame("*2*0*81##"))  # The gateway's stop around the write.
+        if confirmed_by == "status":
+            _at(1000.4, cover.handle_event, frame("*2*1*81##"))
+        else:
+            movement = movement_translation(frame("*2*1000#1*81##"))
+            movement.age = TRANSLATION_GRACE
+            _at(1000.1 + TRANSLATION_GRACE, cover.handle_event, movement)
+            _at(1001.5, cover.handle_event, frame("*2*1*81##"))  # Late.
+        assert [c.args[0] for c in anchor.call_args_list] == pytest.approx(anchors)
+    assert cover._pending_cmd is None and cover.is_opening
+    assert cover._move_start_time == pytest.approx(anchors[-1])
