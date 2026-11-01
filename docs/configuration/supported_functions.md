@@ -19,9 +19,9 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 | 13 | Gateway management | — | ⚙️ | Clock sync (`myhome.sync_time`), firmware / model / identity for the device registry and diagnostics. |
 | 14 | Actuator lock | `button` | ✅ | Lock / unlock buttons on every light, switch and cover device. |
 | 15 | CEN scenario pushbuttons | device triggers | ✅ | Short / long press and release, rotary dials. |
-| 16 | Sound system | `media_player` | ✅ | F441 / F441M matrices; streaming proxy for network decoders. |
+| 16 | Sound system | `media_player`, `number`, `button` | ✅ | F441 / F441M matrices, F500 / F500N FM radio tuners, streaming proxy for network decoders. |
 | 18 | Energy management | `sensor` | ✅ | Instantaneous power, total / daily / monthly energy. |
-| 22 | FM tuner (legacy sound system) | — | ❌ | Deferred in RFC #248; the F441 streaming proxy replaces it. |
+| 22 | Sound diffusion (audio matrix & FM tuner) | `media_player`, `number`, `button` | ✅ | F500 / F500N FM tuner control and telemetry (`5#2#S` / `2#S`) on dual-stack and `WHO 22`-only gateways (`MyHomeServer1`, `F459`, `F460`, `F461`, `H/L4684` FW ≥ 6.0). |
 | 24 | Lighting management (commercial) | — | ❌ | BMNE500 / BMview controllers; out of residential scope. |
 | 25 | CEN+ pushbuttons and dry contacts | device triggers, `binary_sensor` | ✅ | Short / long press, release; F482 / 3477 dry contacts. |
 
@@ -106,20 +106,28 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 | Illuminance (lux) | ✅ | WHO 1 light sensors. |
 | Humidity | 👁️ | Shown as the climate entity's `current_humidity` when the zone reports it; no separate sensor. |
 
-### `button` (WHO 14 / 2)
+### `button` (WHO 14 / 2 / 16 / 22)
 
 | Function | Status | Notes |
 | :--- | :---: | :--- |
 | Lock / unlock actuator | ✅ | On every light, switch and cover device (`EntityCategory.CONFIG`). |
 | Calibrate travel time | ✅ | On every timed cover device, plus *Calibrate all covers* on the gateway device. |
+| FM tuner seek up / down | ✅ | Companion *Seek up* and *Seek down* buttons on every declared F500 / F500N `Audio Source` device (`WHO 16` `*16*5000/5100*10S##` or `WHO 22` `*22*5/6*2#S##`). |
 
-### `media_player` (WHO 16)
+### `number` (WHO 16 / 22)
 
 | Function | Status | Notes |
 | :--- | :---: | :--- |
-| On / off, volume, mute, source 0–4 | ✅ | Per zone / amplifier. |
+| FM tuner manual frequency | ✅ | `number.<source>_frequency` (`87.50–108.00 MHz`, `0.05 MHz` step, `NumberMode.BOX`) on every declared F500 / F500N `Audio Source` device (`*#16*10S*#6*0*<kHz>##` or `*#22*2#S*#5*1*<10kHz>##`). |
+
+### `media_player` (WHO 16 / 22)
+
+| Function | Status | Notes |
+| :--- | :---: | :--- |
+| On / off, volume, mute, source 1–4 | ✅ | Per zone / amplifier. |
+| FM radio tuner sources (F500 / F500N) | ✅ | Power on/off, stored presets (`Station 1`–`15`), RDS programme text, Media Browser (`BROWSE_MEDIA`), direct frequency tuning (`myhome.tuner_set_frequency` / `play_media`), hardware seek (`myhome.tuner_seek_up` / `tuner_seek_down`), and preset storage (`myhome.tuner_store_station`) across both `WHO 16` and `WHO 22` gateways. |
 | Streaming (play, pause, next, previous) | ✅ | Only when decoders are mapped in the options flow: the zone becomes a Music Assistant / Spotify target and routes the matrix to a free decoder. |
-| Media metadata | 👁️ | Mirrored from the decoder while a stream is active. |
+| Media metadata | 👁️ | Mirrored from the decoder while a stream is active, or decoded from live FM RDS on tuner sources. |
 | Speaker groups | ✅ | Home Assistant `join` / `unjoin` and Music Assistant sync groups: rooms of a group share one decoder and one source. See [Multi-Room Audio Grouping](media_player.md#multi-room-audio-grouping-music-assistant-home-assistant). |
 
 ### Device triggers (WHO 15 / 25)
@@ -134,7 +142,7 @@ Buttons 0–31 per device; every trigger carries the gateway MAC so multi-gatewa
 
 ## Services
 
-All services are documented in the [Services Reference](services.md): `send_message`, `turn_on_timed`, `sync_time`, `start_sending_instant_power`, `stop_sending_instant_power`, `sweep_bus`, `calibrate_cover`, `stop_cover_calibration`, `set_cover_travel_time`, `reset_cover_travel_time`, `tuner_seek_up`, `tuner_seek_down`.
+All services are documented in the [Services Reference](services.md): `send_message`, `turn_on_timed`, `sync_time`, `start_sending_instant_power`, `stop_sending_instant_power`, `sweep_bus`, `calibrate_cover`, `stop_cover_calibration`, `set_cover_travel_time`, `reset_cover_travel_time`, `tuner_seek_up`, `tuner_seek_down`, `tuner_set_frequency`, `tuner_store_station`, `send_scenario_plus_command`, `cancel_cover_request`, `acknowledge_cover_fault`.
 
 ## Diagnostics and tooling
 

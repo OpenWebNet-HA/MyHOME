@@ -381,6 +381,26 @@
       "name": "Recherche fréquence arrière du tuner",
       "description": "Recherche la fréquence radio FM captable précédente sur une source tuner F500."
     },
+    "tuner_set_frequency": {
+      "name": "Régler la fréquence du tuner",
+      "description": "Règle directement une fréquence radio FM manuelle (87,50–108,00 MHz) sur une source tuner F500 / F500N.",
+      "fields": {
+        "frequency": {
+          "name": "Fréquence",
+          "description": "Fréquence radio FM cible en MHz (87,50–108,00 MHz, pas de 0,05 MHz)."
+        }
+      }
+    },
+    "tuner_store_station": {
+      "name": "Mémoriser une station du tuner",
+      "description": "Mémorise la fréquence radio FM actuelle dans un emplacement de station (1–15) sur une source tuner F500 / F500N.",
+      "fields": {
+        "station": {
+          "name": "Station",
+          "description": "Numéro d'emplacement mémoire (1–5 sur F500, jusqu'à 1–15 sur F500N)."
+        }
+      }
+    },
     "calibrate_cover": {
       "name": "Calibrer le temps de course du volet",
       "description": "Mesure les temps de course en montée et en descente d'un volet temporisé sur le bus SCS et les enregistre : le volet est entièrement monté, puis entièrement descendu (chronométré), puis de nouveau entièrement monté (chronométré). Les volets sont calibrés un par un pour chaque passerelle."
@@ -586,6 +606,12 @@
     "seek_not_supported": {
       "message": "{entity_id} : la recherche de fréquence n'est prise en charge que sur les entités tuner"
     },
+    "tuner_only_operation": {
+      "message": "{entity_id} : cette action n'est prise en charge que sur les entités source tuner"
+    },
+    "tuner_not_ready": {
+      "message": "{entity_id} : le tuner {where} n'est pas encore configuré ; rechargez l'intégration si le problème persiste"
+    },
     "volume_not_finite": {
       "message": "{entity_id} : le niveau de volume {volume} n'est pas un nombre fini valide"
     },
@@ -621,6 +647,17 @@
       },
       "calibrate_all_covers": {
         "name": "Calibrer tous les volets"
+      },
+      "tuner_seek_up": {
+        "name": "Recherche avant"
+      },
+      "tuner_seek_down": {
+        "name": "Recherche arrière"
+      }
+    },
+    "number": {
+      "tuner_frequency": {
+        "name": "Fréquence"
       }
     },
     "sensor": {

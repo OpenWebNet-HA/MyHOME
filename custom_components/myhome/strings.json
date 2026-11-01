@@ -444,6 +444,26 @@
       "name": "Tuner seek down",
       "description": "Seek backward to the previous receivable FM radio frequency on an F500 tuner source."
     },
+    "tuner_set_frequency": {
+      "name": "Tuner set frequency",
+      "description": "Tune directly to a manual FM radio frequency (87.50–108.00 MHz) on an F500 / F500N tuner source.",
+      "fields": {
+        "frequency": {
+          "name": "Frequency",
+          "description": "Target FM radio frequency in MHz (87.50–108.00 MHz, 0.05 MHz steps)."
+        }
+      }
+    },
+    "tuner_store_station": {
+      "name": "Tuner store station",
+      "description": "Memorise the currently tuned FM radio frequency into a preset station slot (1–15) on an F500 / F500N tuner source.",
+      "fields": {
+        "station": {
+          "name": "Station",
+          "description": "Preset memory slot number (1–5 on F500, up to 1–15 on F500N)."
+        }
+      }
+    },
     "send_scenario_plus_command": {
       "name": "Send scenario plus command",
       "description": "Send a WHO 25 scenario plus command (on, off, increase, decrease, stop) to an addressed scenario plus object.",
@@ -665,6 +685,12 @@
     "seek_not_supported": {
       "message": "{entity_id}: seek is only supported on tuner source entities"
     },
+    "tuner_only_operation": {
+      "message": "{entity_id}: this action is only supported on tuner source entities"
+    },
+    "tuner_not_ready": {
+      "message": "{entity_id}: tuner {where} is not set up yet; reload the integration if this persists"
+    },
     "volume_not_finite": {
       "message": "{entity_id}: volume level {volume} is not a valid finite number"
     },
@@ -718,6 +744,17 @@
       },
       "calibrate_all_covers": {
         "name": "Calibrate all covers"
+      },
+      "tuner_seek_up": {
+        "name": "Seek up"
+      },
+      "tuner_seek_down": {
+        "name": "Seek down"
+      }
+    },
+    "number": {
+      "tuner_frequency": {
+        "name": "Frequency"
       }
     },
     "sensor": {

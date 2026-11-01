@@ -39,6 +39,7 @@ PREFERRED_ORDER = [
     "binary_sensor",
     "sensor",
     "button",
+    "number",
     "media_player",
     "device_trigger",
 ]
@@ -106,14 +107,23 @@ DOMAIN_METADATA: dict[str, dict[str, str]] = {
         "label": "**`button`**",
         "capabilities": (
             "Hardware actuator lock/unlock for lights, switches & covers (WHO=14), "
-            "cover travel time calibration buttons (per cover & gateway-wide, WHO=2)"
+            "cover travel time calibration buttons (per cover & gateway-wide, WHO=2), "
+            "F500/F500N FM tuner Seek up / Seek down buttons (WHO=16 / 22)"
+        ),
+    },
+    "number": {
+        "label": "**`number`**",
+        "capabilities": (
+            "Direct manual FM radio frequency input & stepping (`87.50–108.00 MHz`, `0.05 MHz` step) "
+            "for declared F500/F500N tuner sources (WHO=16 / 22)"
         ),
     },
     "media_player": {
         "label": "**`media_player`**",
         "capabilities": (
-            "F441/F441M audio zones, source tracking, volume normalization, software mute, "
-            "streaming dynamic proxy (Music Assistant / Spotify Connect)"
+            "F441/F441M audio zones, F500/F500N FM radio tuners (presets, RDS, Media Browser, "
+            "manual frequency & preset storage on WHO=16 & WHO=22), volume normalization, "
+            "software mute, streaming dynamic proxy (Music Assistant / Spotify Connect)"
         ),
     },
     "device_trigger": {

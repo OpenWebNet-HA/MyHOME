@@ -18,7 +18,7 @@ from .const import CONF_ENTITIES, DOMAIN, LOGGER
 from .data import get_runtime_data
 from .device_health import DeviceHealth, Fault, FaultKind
 from .migrate import preserve_legacy_compat_name
-from .typing_compat import UNDEFINED_SENTINEL
+from .typing_compat import UNDEFINED
 
 __all__ = ["Entity", "MyHOMEEntity"]
 
@@ -113,8 +113,8 @@ class MyHOMEEntity(RestoreEntity):
         try:
             own = self.name
         except AttributeError:  # translation lookup needs a platform; not added yet
-            own = UNDEFINED_SENTINEL
-        if own is UNDEFINED_SENTINEL or (own is None and not hasattr(self, "_attr_name")):
+            own = UNDEFINED
+        if own is UNDEFINED or (own is None and not hasattr(self, "_attr_name")):
             key = getattr(self, "_attr_translation_key", None)
             device_class = getattr(self, "device_class", None) if self._name_from_device_class else None
             raw = key or (str(device_class) if device_class else None)

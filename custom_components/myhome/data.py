@@ -7,6 +7,7 @@ read it from there. ``hass.data[DOMAIN]`` only holds integration-wide singletons
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -40,6 +41,10 @@ class MyHOMERuntimeData:
     routing_recent: dict[str, float] = field(default_factory=dict)
     # Media player entity instances registered by entity_id
     media_players: dict[str, Any] = field(default_factory=dict)
+    # Declared tuner sound-source entities keyed by bus WHERE ("101".."109")
+    sound_sources: dict[str, Any] = field(default_factory=dict)
+    # In-memory callbacks notifying companion tuner frequency entities (WHERE -> [cb(khz)])
+    tuner_frequency_callbacks: dict[str, list[Callable[[int], None]]] = field(default_factory=dict)
     # Delivers bus frames to the entities owning their addresses (see router.py).
     router: FrameRouter = field(default_factory=FrameRouter)
     # Cover calibration state and serialization per gateway

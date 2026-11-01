@@ -5,12 +5,15 @@ Contributed by @andrea-mag in https://github.com/OpenWebNet-HA/MyHOME/issues/466
 """
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.components.climate import ClimateEntityFeature, HVACAction, HVACMode
+from homeassistant.components.media_player import MediaPlayerState
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PASSWORD, CONF_PORT
 from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers import entity_registry as er
@@ -31,6 +34,7 @@ from custom_components.myhome.const import (
     CONF_ENTITY,
     CONF_FILE_PATH,
     CONF_FIRMWARE,
+    CONF_SOURCE_TUNER,
     CONF_SSDP_LOCATION,
     CONF_SSDP_ST,
     DOMAIN,
@@ -489,3 +493,118 @@ async def test_hl4684_trace_dual_dialect_sound_inventory_deduplication(
         # 24 zone frames + 4 stereo-source frames (101/2#1, 102/2#2 are source inputs, not entities)
         # register 12 deduplicated amplifier-zone media_player entities (11..13, 21..22, 31..33, 41..42, 51, 61).
         assert len(mp_entries) == 12
+
+
+async def test_hl4684_followup_traces_zone66_recovery_who1004_and_f500_tuner(
+    hass: HomeAssistant,
+) -> None:
+    """Replay both follow-up H/L4684 traces from #466#issuecomment-6559432736."""
+    trace_dir = TRACE_PATH.parent
+    trace_1130 = trace_dir / "myhome_trace_HL4684_all_2026-11-01T11-30-19.json"
+    trace_1148 = trace_dir / "myhome_trace_HL4684_all_2026-11-01T11-48-15.json"
+
+    raw_1130 = trace_1130.read_bytes()
+    raw_1148 = trace_1148.read_bytes()
+    assert (
+        hashlib.sha256(raw_1130).hexdigest()
+        == "ca615a981f99d7d0e6f754f2f55b20b82f6afa043a069278232abca12bb6ae83"
+    )
+    assert (
+        hashlib.sha256(raw_1148).hexdigest()
+        == "ac5c96c9029668eeab1586a0a70c7ebd74304cff85b783ab8bc26e1348d70e18"
+    )
+
+    doc_1130 = json.loads(raw_1130.decode("utf-8"))
+    doc_1148 = json.loads(raw_1148.decode("utf-8"))
+    frames_1130 = doc_1130["frames"]
+    frames_1148 = doc_1148["frames"]
+    assert len(frames_1130) == 150
+    assert len(frames_1148) == 150
+
+    # 1. Trace 11-30-19: Zone 66#1 F430/4 actuator online (*#4*66#1*20*5##), zero retries after recovery,
+    #    and physical WHO 1004 diagnostic bitmasks for probe, #0 central unit, and #ZZ actuators.
+    raws_1130 = [f["raw"] for f in frames_1130]
+    assert "*#4*66#1*20*5##" in raws_1130
+    idx_recovery = raws_1130.index("*#4*66#1*20*5##")
+    assert "*4*303*66##" in raws_1130[:idx_recovery]
+    assert "*4*303*66##" not in raws_1130[idx_recovery:]
+    who1004_raws = [f["raw"] for f in frames_1130 if f["who"] == "1004"]
+    assert who1004_raws == [
+        "*#1004*66*11*111111111111111111111111##",
+        "*#1004*#66*22*1111111111111111##",
+        "*#1004*#0*11*111111111111111111111111##",
+    ]
+
+    # 2. Trace 11-48-15: First physical WHO 1001 frame on H/L4684 + dual-stack F500 FM tuner session.
+    raws_1148 = [f["raw"] for f in frames_1148]
+    assert "*#1001*91*11*111111111111111111111111##" in raws_1148
+
+    mac = "00:03:50:aa:bb:cc"
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="H/L4684 Gateway",
+        data={
+            CONF_HOST: "192.0.2.10",
+            CONF_PORT: 20000,
+            CONF_PASSWORD: "12345",
+            CONF_MAC: mac,
+            CONF_NAME: "H/L4684",
+            CONF_FIRMWARE: "6.0.11",
+        },
+        options={
+            "enable_auto_learning": True,
+            CONF_SOURCE_TUNER.format(1): True,
+        },
+        unique_id=mac,
+    )
+    entry.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.myhome.gateway.OWNSession.test_connection",
+            return_value={"Success": True},
+        ),
+        patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+        patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"),
+        patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.send", new_callable=AsyncMock),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        handler: MyHOMEGatewayHandler = hass.data[DOMAIN][mac][CONF_ENTITY]
+        handler._on_event_connection_state_change(True)
+        await hass.async_block_till_done()
+
+        rds_titles_seen: list[str] = []
+        tuner_states_seen: list[str] = []
+        for f in frames_1148:
+            if f["direction"] != "rx":
+                continue
+            msg = OWNMessage.parse(f["raw"])
+            if isinstance(msg, OWNEvent):
+                await handler._process_message(msg)
+                await asyncio.sleep(0)
+                tuner_state = hass.states.get("media_player.audio_source_1")
+                if tuner_state is not None:
+                    tuner_states_seen.append(tuner_state.state)
+                    title = tuner_state.attributes.get("media_title")
+                    if title and (not rds_titles_seen or rds_titles_seen[-1] != title):
+                        rds_titles_seen.append(title)
+        await hass.async_block_till_done()
+
+        # Verify RDS progression ("MY HOME" -> "DIM*SOFT"), frequency 105.3 MHz, Station 5,
+        # synchronized number entity, and clean standby OFF at the end of the session:
+        assert "MY HOME" in rds_titles_seen
+        assert "DIM*SOFT" in rds_titles_seen
+        assert MediaPlayerState.ON in tuner_states_seen
+
+        final_tuner = hass.states.get("media_player.audio_source_1")
+        assert final_tuner is not None
+        assert final_tuner.state == MediaPlayerState.OFF
+        assert final_tuner.attributes.get("frequency") == 105.3
+        assert final_tuner.attributes.get("station") == 5
+
+        freq_number = hass.states.get("number.audio_source_1_frequency")
+        assert freq_number is not None
+        assert float(freq_number.state) == pytest.approx(105.3)
+

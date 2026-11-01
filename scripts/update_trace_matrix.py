@@ -97,7 +97,7 @@ def build_matrix():
     who_names = {
         0: 'Scenario', 1: 'Lights', 2: 'Autom.', 3: 'Load', 4: 'Climate', 5: 'Alarm', 9: 'Power',
         13: 'Gateway', 14: 'Lock', 15: 'CEN', 16: 'Audio', 17: 'Scenario', 18: 'Energy',
-        22: 'Audio Diff.', 25: 'Diag', 1001: 'Diag', 1013: 'Diag', 1022: 'Diag'
+        22: 'Audio Diff.', 25: 'Diag', 1001: 'Diag', 1004: 'Diag', 1013: 'Diag', 1022: 'Diag'
     }
 
     whos_list = sorted([w for w in all_whos_found if w in who_names])
