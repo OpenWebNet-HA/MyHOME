@@ -1666,6 +1666,84 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#16-myhometuner_set_frequency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        16. myhome.tuner_set_frequency
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="16. myhome.tuner_set_frequency">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#17-myhometuner_store_station" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        17. myhome.tuner_store_station
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="17. myhome.tuner_store_station">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3136,6 +3214,84 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#16-myhometuner_set_frequency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        16. myhome.tuner_set_frequency
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="16. myhome.tuner_set_frequency">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#17-myhometuner_store_station" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        17. myhome.tuner_store_station
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="17. myhome.tuner_store_station">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields_16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-yaml-call_16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example YAML Call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3243,6 +3399,16 @@
 <td style="text-align: left;"><a href="#15-myhomeacknowledge_cover_fault"><code>myhome.acknowledge_cover_fault</code></a></td>
 <td style="text-align: left;"><code>cover</code></td>
 <td style="text-align: left;">Clear a latched safety watchdog fault after verifying physical gate/door clearance.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><a href="#16-myhometuner_set_frequency"><code>myhome.tuner_set_frequency</code></a></td>
+<td style="text-align: left;"><code>media_player</code></td>
+<td style="text-align: left;">Tune an F500 / F500N radio tuner directly to an FM frequency in MHz (<code>87.50–108.00 MHz</code>).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><a href="#17-myhometuner_store_station"><code>myhome.tuner_store_station</code></a></td>
+<td style="text-align: left;"><code>media_player</code></td>
+<td style="text-align: left;">Memorise the currently tuned FM frequency into a preset station slot (<code>1–15</code>).</td>
 </tr>
 </tbody>
 </table>
@@ -3819,6 +3985,82 @@
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.acknowledge_cover_fault</span>
 </span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="nt">target</span><span class="p">:</span>
 </span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.garage_door_1</span>
+</span></code></pre></div>
+<hr />
+<h2 id="16-myhometuner_set_frequency">16. <code>myhome.tuner_set_frequency</code><a class="headerlink" href="#16-myhometuner_set_frequency" title="Permanent link">&para;</a></h2>
+<p>Tunes an F500 / F500N sound source tuner entity (<code>WHERE</code> 101–109 / <code>WHO 22</code> <code>2#S</code>) directly to an explicit FM radio frequency (<code>87.50–108.00 MHz</code>, <code>0.05 MHz</code> step), dispatching <code>*#16*10S*#6*0*&lt;kHz&gt;##</code> on <code>WHO 16</code> gateways or <code>*#22*2#S*#5*1*&lt;10kHz&gt;##</code> on <code>WHO 22</code>-only gateways (<code>MyHomeServer1</code>, <code>F459</code>, <code>F460</code>, <code>F461</code>). You can also adjust this directly in the UI via the companion <code>number.&lt;source&gt;_frequency</code> entity.</p>
+<h3 id="fields_15">Fields<a class="headerlink" href="#fields_15" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter</th>
+<th style="text-align: center;">Type</th>
+<th style="text-align: center;">Required</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;">Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>entity_id</code></td>
+<td style="text-align: center;">target</td>
+<td style="text-align: center;">Yes</td>
+<td style="text-align: left;">Target MyHOME tuner source <code>media_player</code> entity.</td>
+<td style="text-align: left;"><code>media_player.audio_source_1</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>frequency</code></td>
+<td style="text-align: center;">float</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: left;">Target FM radio frequency in MHz (<code>87.5</code>–<code>108.0</code>, <code>0.05</code> MHz step).</td>
+<td style="text-align: left;"><code>105.3</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-yaml-call_15">Example YAML Call<a class="headerlink" href="#example-yaml-call_15" title="Permanent link">&para;</a></h3>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.tuner_set_frequency</span>
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="nt">target</span><span class="p">:</span>
+</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">media_player.audio_source_1</span>
+</span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="nt">data</span><span class="p">:</span>
+</span><span id="__span-15-5"><a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="w">  </span><span class="nt">frequency</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">105.3</span>
+</span></code></pre></div>
+<hr />
+<h2 id="17-myhometuner_store_station">17. <code>myhome.tuner_store_station</code><a class="headerlink" href="#17-myhometuner_store_station" title="Permanent link">&para;</a></h2>
+<p>Memorises the currently tuned FM radio frequency into a hardware preset slot (<code>1–5</code> on F500, up to <code>1–15</code> on F500N), dispatching <code>*#16*10S*#10*&lt;station&gt;##</code> on <code>WHO 16</code> gateways or <code>*22*33#&lt;station&gt;*2#S##</code> on <code>WHO 22</code>-only gateways.</p>
+<h3 id="fields_16">Fields<a class="headerlink" href="#fields_16" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter</th>
+<th style="text-align: center;">Type</th>
+<th style="text-align: center;">Required</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;">Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>entity_id</code></td>
+<td style="text-align: center;">target</td>
+<td style="text-align: center;">Yes</td>
+<td style="text-align: left;">Target MyHOME tuner source <code>media_player</code> entity.</td>
+<td style="text-align: left;"><code>media_player.audio_source_1</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>station</code></td>
+<td style="text-align: center;">integer</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: left;">Preset memory slot number (<code>1</code>–<code>15</code>).</td>
+<td style="text-align: left;"><code>5</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-yaml-call_16">Example YAML Call<a class="headerlink" href="#example-yaml-call_16" title="Permanent link">&para;</a></h3>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.tuner_store_station</span>
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="nt">target</span><span class="p">:</span>
+</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">media_player.audio_source_1</span>
+</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="nt">data</span><span class="p">:</span>
+</span><span id="__span-16-5"><a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="w">  </span><span class="nt">station</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
 </span></code></pre></div>
 
 

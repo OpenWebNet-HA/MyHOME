@@ -1612,10 +1612,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#button-who-14-2" class="md-nav__link">
+  <a href="#button-who-14-2-16-22" class="md-nav__link">
     <span class="md-ellipsis">
       
-        button (WHO 14 / 2)
+        button (WHO 14 / 2 / 16 / 22)
       
     </span>
   </a>
@@ -1623,10 +1623,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#media_player-who-16" class="md-nav__link">
+  <a href="#number-who-16-22" class="md-nav__link">
     <span class="md-ellipsis">
       
-        media_player (WHO 16)
+        number (WHO 16 / 22)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#media_player-who-16-22" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        media_player (WHO 16 / 22)
       
     </span>
   </a>
@@ -2227,10 +2238,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#button-who-14-2" class="md-nav__link">
+  <a href="#button-who-14-2-16-22" class="md-nav__link">
     <span class="md-ellipsis">
       
-        button (WHO 14 / 2)
+        button (WHO 14 / 2 / 16 / 22)
       
     </span>
   </a>
@@ -2238,10 +2249,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#media_player-who-16" class="md-nav__link">
+  <a href="#number-who-16-22" class="md-nav__link">
     <span class="md-ellipsis">
       
-        media_player (WHO 16)
+        number (WHO 16 / 22)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#media_player-who-16-22" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        media_player (WHO 16 / 22)
       
     </span>
   </a>
@@ -2394,9 +2416,9 @@
 <tr>
 <td style="text-align: center;">16</td>
 <td style="text-align: left;">Sound system</td>
-<td style="text-align: left;"><code>media_player</code></td>
+<td style="text-align: left;"><code>media_player</code>, <code>number</code>, <code>button</code></td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">F441 / F441M matrices; streaming proxy for network decoders.</td>
+<td style="text-align: left;">F441 / F441M matrices, F500 / F500N FM radio tuners, streaming proxy for network decoders.</td>
 </tr>
 <tr>
 <td style="text-align: center;">18</td>
@@ -2407,10 +2429,10 @@
 </tr>
 <tr>
 <td style="text-align: center;">22</td>
-<td style="text-align: left;">FM tuner (legacy sound system)</td>
-<td style="text-align: left;">—</td>
-<td style="text-align: center;">❌</td>
-<td style="text-align: left;">Deferred in RFC #248; the F441 streaming proxy replaces it.</td>
+<td style="text-align: left;">Sound diffusion (audio matrix &amp; FM tuner)</td>
+<td style="text-align: left;"><code>media_player</code>, <code>number</code>, <code>button</code></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: left;">F500 / F500N FM tuner control and telemetry (<code>5#2#S</code> / <code>2#S</code>) on dual-stack and <code>WHO 22</code>-only gateways (<code>MyHomeServer1</code>, <code>F459</code>, <code>F460</code>, <code>F461</code>, <code>H/L4684</code> FW ≥ 6.0).</td>
 </tr>
 <tr>
 <td style="text-align: center;">24</td>
@@ -2720,7 +2742,7 @@
 </tr>
 </tbody>
 </table>
-<h3 id="button-who-14-2"><code>button</code> (WHO 14 / 2)<a class="headerlink" href="#button-who-14-2" title="Permanent link">&para;</a></h3>
+<h3 id="button-who-14-2-16-22"><code>button</code> (WHO 14 / 2 / 16 / 22)<a class="headerlink" href="#button-who-14-2-16-22" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
@@ -2740,9 +2762,14 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: left;">On every timed cover device, plus <em>Calibrate all covers</em> on the gateway device.</td>
 </tr>
+<tr>
+<td style="text-align: left;">FM tuner seek up / down</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: left;">Companion <em>Seek up</em> and <em>Seek down</em> buttons on every declared F500 / F500N <code>Audio Source</code> device (<code>WHO 16</code> <code>*16*5000/5100*10S##</code> or <code>WHO 22</code> <code>*22*5/6*2#S##</code>).</td>
+</tr>
 </tbody>
 </table>
-<h3 id="media_player-who-16"><code>media_player</code> (WHO 16)<a class="headerlink" href="#media_player-who-16" title="Permanent link">&para;</a></h3>
+<h3 id="number-who-16-22"><code>number</code> (WHO 16 / 22)<a class="headerlink" href="#number-who-16-22" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
@@ -2753,9 +2780,31 @@
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;">On / off, volume, mute, source 0–4</td>
+<td style="text-align: left;">FM tuner manual frequency</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: left;"><code>number.&lt;source&gt;_frequency</code> (<code>87.50–108.00 MHz</code>, <code>0.05 MHz</code> step, <code>NumberMode.BOX</code>) on every declared F500 / F500N <code>Audio Source</code> device (<code>*#16*10S*#6*0*&lt;kHz&gt;##</code> or <code>*#22*2#S*#5*1*&lt;10kHz&gt;##</code>).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="media_player-who-16-22"><code>media_player</code> (WHO 16 / 22)<a class="headerlink" href="#media_player-who-16-22" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Function</th>
+<th style="text-align: center;">Status</th>
+<th style="text-align: left;">Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">On / off, volume, mute, source 1–4</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: left;">Per zone / amplifier.</td>
+</tr>
+<tr>
+<td style="text-align: left;">FM radio tuner sources (F500 / F500N)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: left;">Power on/off, stored presets (<code>Station 1</code>–<code>15</code>), RDS programme text, Media Browser (<code>BROWSE_MEDIA</code>), direct frequency tuning (<code>myhome.tuner_set_frequency</code> / <code>play_media</code>), hardware seek (<code>myhome.tuner_seek_up</code> / <code>tuner_seek_down</code>), and preset storage (<code>myhome.tuner_store_station</code>) across both <code>WHO 16</code> and <code>WHO 22</code> gateways.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Streaming (play, pause, next, previous)</td>
@@ -2765,7 +2814,7 @@
 <tr>
 <td style="text-align: left;">Media metadata</td>
 <td style="text-align: center;">👁️</td>
-<td style="text-align: left;">Mirrored from the decoder while a stream is active.</td>
+<td style="text-align: left;">Mirrored from the decoder while a stream is active, or decoded from live FM RDS on tuner sources.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Speaker groups</td>
@@ -2803,7 +2852,7 @@
 </table>
 <p>Buttons 0–31 per device; every trigger carries the gateway MAC so multi-gateway plants do not cross-fire.</p>
 <h2 id="services">Services<a class="headerlink" href="#services" title="Permanent link">&para;</a></h2>
-<p>All services are documented in the <a href="../services/">Services Reference</a>: <code>send_message</code>, <code>turn_on_timed</code>, <code>sync_time</code>, <code>start_sending_instant_power</code>, <code>stop_sending_instant_power</code>, <code>sweep_bus</code>, <code>calibrate_cover</code>, <code>stop_cover_calibration</code>, <code>set_cover_travel_time</code>, <code>reset_cover_travel_time</code>, <code>tuner_seek_up</code>, <code>tuner_seek_down</code>.</p>
+<p>All services are documented in the <a href="../services/">Services Reference</a>: <code>send_message</code>, <code>turn_on_timed</code>, <code>sync_time</code>, <code>start_sending_instant_power</code>, <code>stop_sending_instant_power</code>, <code>sweep_bus</code>, <code>calibrate_cover</code>, <code>stop_cover_calibration</code>, <code>set_cover_travel_time</code>, <code>reset_cover_travel_time</code>, <code>tuner_seek_up</code>, <code>tuner_seek_down</code>, <code>tuner_set_frequency</code>, <code>tuner_store_station</code>, <code>send_scenario_plus_command</code>, <code>cancel_cover_request</code>, <code>acknowledge_cover_fault</code>.</p>
 <h2 id="diagnostics-and-tooling">Diagnostics and tooling<a class="headerlink" href="#diagnostics-and-tooling" title="Permanent link">&para;</a></h2>
 <table>
 <thead>

@@ -3273,52 +3273,64 @@ applied while another zone in the environment is streaming.</p>
 relies on the "Hardware Routing First" model below, as earlier releases did.</p>
 <h3 id="tuner-sources-f500-f500n">Tuner sources (F500 / F500N)<a class="headerlink" href="#tuner-sources-f500-f500n" title="Permanent link">&para;</a></h3>
 <p>A matrix input can hold a <strong>tuner</strong> rather than a line interface. Tick <em>Source N
-is a tuner</em> in the options and the integration adds a radio entity for that
-input, alongside the amplifier zones.</p>
+is a tuner</em> in the options and the integration creates a dedicated <code>Audio Source</code>
+device with four entities alongside the amplifier zones:</p>
+<ul>
+<li><code>media_player.&lt;source&gt;</code> — power, preset dropdown (<code>Station 1</code>–<code>Station 15</code>), next/previous preset, RDS title, and Home Assistant Media Browser (<code>BROWSE_MEDIA</code>)</li>
+<li><code>number.&lt;source&gt;_frequency</code> — direct manual FM frequency input &amp; stepping (<code>87.50–108.00 MHz</code>, <code>0.05 MHz</code> step, box mode)</li>
+<li><code>button.&lt;source&gt;_seek_up</code> &amp; <code>button.&lt;source&gt;_seek_down</code> — one-tap hardware FM auto-seek buttons</li>
+</ul>
 <table>
 <thead>
 <tr>
 <th style="text-align: left;">Home Assistant</th>
-<th style="text-align: left;">OpenWebNet</th>
+<th style="text-align: left;">OpenWebNet (<code>WHO 16</code> / <code>WHO 22</code>-only gateways)</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td style="text-align: left;">On / off</td>
-<td style="text-align: left;"><code>*16*3*10S##</code> / <code>*16*13*10S##</code></td>
+<td style="text-align: left;"><code>*16*3*10S##</code> / <code>*16*13*10S##</code> (or <code>*22*1*2#S##</code> / <code>*22*0*2#S##</code>)</td>
 </tr>
 <tr>
 <td style="text-align: left;">Next / previous track</td>
-<td style="text-align: left;">next / previous station (<code>*16*6001*10S##</code> / <code>*16*6101*10S##</code>)</td>
+<td style="text-align: left;">next / previous station (<code>*16*6001*10S##</code> / <code>*16*6101*10S##</code>, or <code>*22*9*2#S##</code> / <code>*22*10*2#S##</code>)</td>
 </tr>
 <tr>
 <td style="text-align: left;">Source list</td>
-<td style="text-align: left;">stored stations (defaults to 1–5 for F500, dynamically expands up to 1–15 for F500N: <code>*#16*10S*#7*&lt;N&gt;##</code>)</td>
+<td style="text-align: left;">stored stations (defaults to 1–5 for F500, dynamically expands up to 1–15 for F500N: <code>*#16*10S*#7*&lt;N&gt;##</code> or <code>*#22*2#S*#6*&lt;N&gt;##</code>)</td>
 </tr>
 <tr>
-<td style="text-align: left;">Seek up / down</td>
-<td style="text-align: left;"><code>myhome.tuner_seek_up</code> / <code>myhome.tuner_seek_down</code> (<code>*16*5000*10S##</code> / <code>*16*5100*10S##</code>)</td>
+<td style="text-align: left;">Manual frequency (<code>number.&lt;source&gt;_frequency</code> / <code>myhome.tuner_set_frequency</code>)</td>
+<td style="text-align: left;"><code>87.50–108.00 MHz</code> (<code>*#16*10S*#6*0*&lt;kHz&gt;##</code> or <code>*#22*2#S*#5*1*&lt;10kHz&gt;##</code>)</td>
 </tr>
 <tr>
-<td style="text-align: left;"><code>play_media</code>, content type <code>channel</code></td>
-<td style="text-align: left;"><code>"1"</code>–<code>"15"</code> selects a station; anything else is read as MHz, so <code>"107.5"</code> tunes there</td>
+<td style="text-align: left;">Seek up / down (<code>button</code> / <code>myhome.tuner_seek_up</code> &amp; <code>tuner_seek_down</code>)</td>
+<td style="text-align: left;"><code>*16*5000*10S##</code> / <code>*16*5100*10S##</code> (or <code>*22*5*2#S##</code> / <code>*22*6*2#S##</code>)</td>
+</tr>
+<tr>
+<td style="text-align: left;">Store preset (<code>myhome.tuner_store_station</code>)</td>
+<td style="text-align: left;"><code>*#16*10S*#10*&lt;N&gt;##</code> (or <code>*22*33#&lt;N&gt;*2#S##</code>)</td>
+</tr>
+<tr>
+<td style="text-align: left;">Media Browser (<code>BROWSE_MEDIA</code>) &amp; <code>play_media</code> (<code>channel</code>)</td>
+<td style="text-align: left;"><code>"1"</code>–<code>"15"</code> selects a station; anything else is read as MHz, so <code>"105.3"</code> tunes to <code>105.30 MHz</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>media_title</code></td>
-<td style="text-align: left;">RDS text, reported as eight ASCII codes on <code>DIMENSION 8</code></td>
+<td style="text-align: left;">RDS text, reported as ASCII codes on <code>WHO 16</code> <code>DIMENSION 8</code> / <code>WHO 22</code> <code>DIMENSION 10</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>frequency</code> attribute</td>
-<td style="text-align: left;"><code>DIMENSION 6</code>, in MHz</td>
+<td style="text-align: left;"><code>WHO 16</code> <code>DIMENSION 6</code> / <code>WHO 22</code> <code>DIMENSION 5</code> &amp; <code>11</code>, in MHz</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>station</code> attribute</td>
-<td style="text-align: left;"><code>DIMENSION 7</code></td>
+<td style="text-align: left;"><code>WHO 16</code> <code>DIMENSION 7</code> / <code>WHO 22</code> <code>DIMENSION 6</code> &amp; <code>11</code></td>
 </tr>
 </tbody>
 </table>
-<p>The entity asks the tuner to start reporting RDS (<code>*16*101*10S##</code>) when it is
-added, although modern tuners broadcast their RDS text autonomously when active.</p>
+<p>The entity asks the tuner to start reporting RDS (<code>*16*101*10S##</code>, or <code>*22*31*2#S##</code> on <code>WHO 22</code>-only gateways such as <code>MyHomeServer1</code> and <code>F461</code>) when it is added, although modern tuners broadcast their RDS text autonomously when active.</p>
 <p>Two notes on the frames, both from the specification rather than choice: a
 station <strong>write</strong> carries its parameter directly (<code>*#16*101*#7*3##</code>) while the
 <strong>report</strong> prefixes it with a zero (<code>*#16*101*7*0*3##</code>), and frequencies are
@@ -3331,8 +3343,10 @@ nothing at all.</p>
 <p><strong>Tested on real hardware.</strong> Frequency tuning (<code>*#16*10S*#6*0*&lt;kHz&gt;##</code> with leading zero;
 write without zero is ignored), hardware seek up / down (<code>*16*5000*10S##</code> / <code>*16*5100*10S##</code>),
 station stepping (<code>*16*6001*10S##</code> / <code>*16*6101*10S##</code>), station selection (<code>*#16*10S*#7*&lt;N&gt;##</code>),
-kHz frequency parsing, and autonomous RDS text (<code>DIMENSION 8</code>) are hardware-verified
-against a live MH200N + F500N tuner with antenna (contributed by <code>@manfredgittmaier-afk</code> on PR #427).</p>
+kHz frequency parsing, autonomous RDS text (<code>DIMENSION 8</code>), and dual-stack <code>WHO 16</code> + <code>WHO 22</code>
+(<code>5#2#S</code> / <code>2#S</code>) tuner telemetry &amp; standby transitions are hardware-verified against live
+<code>MH200N</code> + <code>F500N</code> (<code>@manfredgittmaier-afk</code>, PR #427) and <code>H/L4684</code> FW <code>6.0.11</code> + <code>F500</code>
+(<code>@andrea-mag</code>, Issue #466) installations.</p>
 </blockquote>
 <h3 id="the-hardware-routing-first-model">The "Hardware Routing First" Model<a class="headerlink" href="#the-hardware-routing-first-model" title="Permanent link">&para;</a></h3>
 <p>For installations that have not named their sources, <code>play_media</code> leaves the
